@@ -6,7 +6,7 @@
  * The probing itself is server-side (packages/server/src/services/protocol-detect.ts); these
  * only decide what the dialog shows and what is worth sending there.
  */
-import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
+import { providerClientType, providerInfo } from "@prismshadow/penguin-core/model-catalog";
 
 /**
  * AgentHub's generic protocol client types, in detection order (custom / user-defined
@@ -81,8 +81,9 @@ export function detectableBaseUrl(baseUrl: string): boolean {
 
 /**
  * Custom-like group: the entry picks its own protocol from the generic trio, rather than
- * being auto-routed inside a first-party vendor group or pinned by a gateway preset.
- * `custom` plus every user-defined group (a provider id the catalog does not know).
+ * being auto-routed inside a first-party vendor group or pinned by a gateway preset or a
+ * group-level pin. `custom` plus every user-defined group (a provider id the catalog does
+ * not know).
  */
 export function isCustomLikeGroup(provider: string): boolean {
   return provider === "custom" || providerInfo(provider) === undefined;
@@ -99,13 +100,20 @@ export function isCustomLikeGroup(provider: string): boolean {
  * net for the paths that do not (set-default, set-vision-proxy, remove), where probing
  * the endpoint would be the wrong thing to do.
  *
+ * A group that pins a protocol answers the same question one step earlier, and for a
+ * stronger reason: the pin is not a fallback but the group's own semantics, so an entry
+ * that reaches here without one takes it rather than the compatible-client default.
+ *
  * Preset and vendor-group entries are returned untouched: their model ids ARE routable,
  * so an empty value there correctly means "let AgentHub infer from the id", and the
  * empty default must not leak into them as a bogus pin.
  */
 export function protocolForPersist(provider: string, clientType: string): string {
   const t = clientType.trim();
-  if (t !== "" || !isCustomLikeGroup(provider)) return t;
+  if (t !== "") return t;
+  const pinned = providerClientType(provider);
+  if (pinned !== undefined) return pinned;
+  if (!isCustomLikeGroup(provider)) return t;
   return DEFAULT_CUSTOM_CLIENT_TYPE;
 }
 
@@ -119,6 +127,9 @@ export function protocolForPersist(provider: string, clientType: string): string
  * not the user declaring the model ready, and probing an endpoint as a side effect of
  * "make this the default" would be surprising. Those paths stay safe through
  * protocolForPersist instead.
+ *
+ * A group that pins a protocol never reaches here either — it is not custom-like, and there
+ * is nothing to probe for when the group has already decided the answer.
  */
 export function needsProtocolDetectOnSave(
   action: string,
@@ -136,12 +147,17 @@ export function needsProtocolDetectOnSave(
  * a custom group would then claim the entry reads ANTHROPIC_API_KEY, when nothing about
  * that group routes by id and the entry will in fact be saved on the compatible client.
  * Returning the default for custom-like groups keeps the hint honest; undefined elsewhere
- * preserves the id-based routing those groups genuinely use.
+ * preserves the id-based routing those groups genuinely use. A group that pins a protocol
+ * is the same argument again: nothing there routes by id, so the pin is what the entry will
+ * be saved on and what the hint has to resolve against.
  */
 export function envHintClientType(provider: string, clientType: string): string | undefined {
   const t = clientType.trim();
   if (t !== "") return t;
-  return isCustomLikeGroup(provider) ? DEFAULT_CUSTOM_CLIENT_TYPE : undefined;
+  return (
+    providerClientType(provider) ??
+    (isCustomLikeGroup(provider) ? DEFAULT_CUSTOM_CLIENT_TYPE : undefined)
+  );
 }
 
 /*

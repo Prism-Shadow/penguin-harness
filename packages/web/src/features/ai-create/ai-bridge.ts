@@ -2,12 +2,14 @@
  * The bridge from a "Create with AI" surface into a new conversation. The prompt is written into
  * the active new-chat draft (the cache draft-view reads on mount), the requested agent becomes
  * the current one, and the route jumps to the draft page with the request in location.state.
- * `autoSend` asks draft-view to submit the prefilled draft as soon as its send preconditions
- * hold (draft-view's auto-send effect); without it the draft is only prefilled.
+ * Nothing is ever submitted here: the prompt lands in the composer and sending stays the user's
+ * action, so what reaches the model is always something a person read and pressed Send on.
  *
  * Typed-but-unsent text in the active draft is parked first (draft-sessions.ts) rather than
  * overwritten by the canned prompt, and the model selection carries over, as it does across
- * sends.
+ * sends. The composed prompt itself is written as `aiPrefill` (draft-cache.ts) so that it dies
+ * with the draft it seeds: nobody typed it, so it is never parked in turn, and leaving the draft
+ * page without editing or sending it clears the slot.
  */
 import { useCallback } from "react";
 import { useNavigate } from "react-router";
@@ -27,21 +29,19 @@ export interface AiChatRequest {
   workspace?: string;
   /** Skills to preselect in the composer; absent or empty clears a stale selection. */
   skills?: string[];
-  /** Submit the draft on arrival instead of leaving it in the composer. */
-  autoSend?: boolean;
 }
 
 /** What the draft page finds in `location.state` after openAiChat. */
 export interface AiChatRouteState {
   agentId: string;
   workspace?: string;
-  autoSend?: true;
 }
 
 /**
  * The draft cache entry for a request, merged over what the active slot holds so the model
  * carry-over survives. A leftover `/agent` handoff chip is dropped: it would forward the prompt
- * to a different agent than the one named here.
+ * to a different agent than the one named here. The text is marked as composed rather than typed
+ * (`aiPrefill`, see draft-cache.ts), which is what keeps it from outliving the draft it seeds.
  */
 export function buildAiDraft(existing: DraftCache, req: AiChatRequest): DraftCache {
   const draft: DraftCache = {
@@ -49,18 +49,18 @@ export function buildAiDraft(existing: DraftCache, req: AiChatRequest): DraftCac
     agentId: req.agentId,
     text: req.text,
     skills: req.skills ?? [],
+    aiPrefill: true,
   };
   if (req.workspace !== undefined) draft.workspace = req.workspace;
   delete draft.handoffAgentId;
   return draft;
 }
 
-/** The route state carried to the draft page: only what was asked for, so a plain request leaves no `autoSend` key behind. */
+/** The route state carried to the draft page: only what was asked for, so a request that pins no Workspace leaves no `workspace` key behind. */
 export function aiChatRouteState(req: AiChatRequest): AiChatRouteState {
   return {
     agentId: req.agentId,
     ...(req.workspace !== undefined ? { workspace: req.workspace } : {}),
-    ...(req.autoSend ? { autoSend: true as const } : {}),
   };
 }
 

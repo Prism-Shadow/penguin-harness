@@ -336,6 +336,15 @@ export interface Messages {
     noServer(root: string): string;
     failed(detail: string): string;
   };
+  /** `penguin server status`: help text. */
+  serverStatus: {
+    /** One-line description in `penguin server --help`. */
+    desc: string;
+  };
+  /** `penguin server stop`: help text. */
+  serverStop: {
+    desc: string;
+  };
   resetPassword: {
     desc: string;
     /** Refusal while a live server owns the data root (stop it first, then retry). */
@@ -639,7 +648,8 @@ const en: Messages = {
     addPriceOutput: "Price per 1M tokens: output (USD)",
     addSetDefault: "Also set as the Project default model",
     defaultDesc: "Set the Project default model",
-    visionDesc: "Set the vision model used by read_image for non-vision session models",
+    visionDesc:
+      "Set the vision model that reads images for non-vision session models (read_file hands images to it)",
     refModelId: "Upstream model id; forms the (provider, model_id) pair reference with --provider",
     refProvider: "Provider group of the referenced entry (see `penguin config model list`)",
     listDesc: "List the Project's models (API keys hidden)",
@@ -870,6 +880,12 @@ const en: Messages = {
     noServer: (root) =>
       `${root} has no web.db — no server has ever run on this data root, so there is no account to mint for.`,
     failed: (detail) => `Could not mint a token: ${detail}`,
+  },
+  serverStatus: {
+    desc: "Print this data root's server state and machine id as one line of JSON",
+  },
+  serverStop: {
+    desc: "Stop the server running on this data root and report the outcome as JSON",
   },
   resetPassword: {
     desc: "Reset the Web admin password to a fresh initial password (the server must be stopped)",
@@ -1172,7 +1188,7 @@ const zh: Messages = {
     addPriceOutput: "每百万 token 价格：输出（USD）",
     addSetDefault: "同时设为该 Project 的默认模型",
     defaultDesc: "设置 Project 的默认模型",
-    visionDesc: "设置 read_image 代读用的视觉模型（供不支持图片的会话模型读图）",
+    visionDesc: "设置代读图片的视觉模型（不支持图片的会话模型用 read_file 读图时由它代读）",
     refModelId: "上游模型 id；与 --provider 构成 (provider, model_id) 成对引用",
     refProvider: "引用条目的 provider 分组（见 `penguin config model list`）",
     listDesc: "列出当前 Project 的模型（API key 隐藏）",
@@ -1389,6 +1405,12 @@ const zh: Messages = {
     badTtl: "--ttl-seconds 必须是正整数。",
     noServer: (root) => `${root} 上没有 web.db——该数据根上从未运行过服务，因此没有可签发的账号。`,
     failed: (detail) => `签发失败：${detail}`,
+  },
+  serverStatus: {
+    desc: "以单行 JSON 打印本数据根目录的服务状态与本机 id",
+  },
+  serverStop: {
+    desc: "停止本数据根目录上运行的服务，并以 JSON 报告结果",
   },
   resetPassword: {
     desc: "把 Web 管理员密码重置为新的初始密码（须先停止服务）",

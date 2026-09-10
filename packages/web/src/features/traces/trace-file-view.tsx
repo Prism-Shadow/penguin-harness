@@ -13,7 +13,9 @@
  * icon, hover shows the hit rate = cache hit ÷ input), this round's output,
  * plus tool-call count / cost / duration / output TPS. The conversation
  * page's stats row only gives input/output totals — cache composition and
- * this kind of debugging detail belongs here.
+ * this kind of debugging detail belongs here. Every figure, cost included, is
+ * the server's: the analysis prices each round with the cost center's rule,
+ * so the file's total is what the toolbar shows for the same requests.
  *
  * Task attribution: model segments/tool spans carry their own taskIndex
  * (computed by the server), and messages fall into a Task's time range by
@@ -24,7 +26,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type {
-  ModelsResponse,
   TraceAnalysisResponse,
   TraceModelSegment,
   TraceOtherSpan,
@@ -169,6 +170,21 @@ function InputChip({ buckets }: { buckets: Buckets }) {
   );
 }
 
+/**
+ * The parenthesised API / tool breakdown printed after a duration, or the empty string when
+ * neither component has anything. The two are measurements of the same span, not a partition
+ * of it: a tool running in the background overlaps the model's decoding, while approval waits
+ * and harness overhead belong to neither — so they may exceed or fall short of the duration
+ * they follow, and neither is ever derived from the other.
+ */
+function durationSplit(apiMs: number, toolMs: number): string {
+  if (apiMs <= 0 && toolMs <= 0) return "";
+  return `${S.chat.statParenOpen}${S.chat.statElapsedSplit(
+    humanizeDuration(apiMs),
+    humanizeDuration(toolMs),
+  )}${S.chat.statParenClose}`;
+}
+
 export function TraceFileView({
   projectId,
   agentId,
@@ -198,7 +214,6 @@ export function TraceFileView({
   /** events' starting index within the file (pagination offset): used to align with analysis.tasks' index ranges. */
   const [eventsOffset, setEventsOffset] = useState(0);
   const [total, setTotal] = useState(0);
-  const [models, setModels] = useState<ModelsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set());
   /** Message row pinned highlighted after a bar-click jump; auto-clears when its timer fires (independent of hover highlighting, and can stack with it). */
@@ -255,47 +270,11 @@ export function TraceFileView({
     };
   }, [projectId, agentId, sessionId, index, reloadSignal]);
 
-  // Pricing is a PROJECT-level catalog, so it is fetched per project and deliberately left out
-  // of the load above: no turn changes it, and riding along there would refetch the whole
-  // catalog on every settled turn. It is optional and allowed to fail — a project whose models
-  // cannot be listed simply shows no cost column, and that is not the view's error.
-  useEffect(() => {
-    let cancelled = false;
-    void api
-      .getModels(projectId)
-      .then((m) => {
-        if (!cancelled) setModels(m);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
-  // Pricing for the session's Model (main session only; sub-session Tokens
-  // live in their own Trace and aren't part of this file): session_meta carries a paired
-  // reference (provider + model_id), matched against model config by that whole pair.
-  // A Trace whose session_meta has no provider is legacy data (core refuses to resume it
-  // for the same reason) — the model_id alone identifies nothing, since the same id can
-  // exist under several providers at different prices, so no pricing is shown rather than
-  // an arbitrary first match.
-  const pricing = useMemo(() => {
-    const meta = events.find((m) => m.type === "session_meta");
-    const ref = meta ? (meta.payload as { model_id?: string; provider?: string }) : undefined;
-    if (!ref?.model_id || !ref.provider) return undefined;
-    return models?.models.find((m) => m.modelId === ref.model_id && m.provider === ref.provider)
-      ?.pricing;
-  }, [events, models]);
-
-  const costOf = (b: Buckets): number | null => {
-    if (!pricing) return null;
-    return (
-      (b.cacheRead * pricing.cacheRead +
-        b.cacheWrite * pricing.cacheWrite +
-        b.output * pricing.output) /
-      1e6
-    );
-  };
+  // Cost is not priced here: the analysis carries each round's cost (and the file's), priced by
+  // the server with the cost center's own rule — the Project's current rates for the file's
+  // model, at the tier each Request's timestamp fell in — so what this file adds up to is what
+  // the conversation toolbar shows for the same requests. An unpriced model (or a legacy head
+  // naming no provider) simply carries no cost, and formatMoney renders that as a dash.
 
   // Session context window (the upper bound for each round's donut ring): read once from session_meta, falling back to 128000 if unconfigured.
   const contextMax = useMemo(() => {
@@ -493,11 +472,14 @@ export function TraceFileView({
           <div>
             <SummaryRow
               label={S.common.cost}
-              value={formatMoney(costOf(global.buckets), currency)}
+              value={formatMoney(analysis.cost ?? null, currency)}
             />
             <SummaryRow
               label={S.chat.statElapsed}
-              value={humanizeDuration(Math.max(0, globalMs))}
+              value={`${humanizeDuration(Math.max(0, globalMs))}${durationSplit(
+                analysis.apiMs,
+                analysis.toolMs,
+              )}`}
             />
             {/* Global TPS = the output of every round (including compaction
                 rounds) ÷ the sum of LLM generation time, same scope as the
@@ -566,13 +548,13 @@ export function TraceFileView({
                 />
                 <StatChip
                   icon={STAT_ICONS.cost}
-                  value={formatMoney(costOf(tokens), currency)}
+                  value={formatMoney(st?.cost ?? null, currency)}
                   label={`${S.common.cost}（${currency}）`}
                 />
                 <StatChip
                   icon={STAT_ICONS.elapsed}
                   value={humanizeDuration(t.durationMs)}
-                  label={S.chat.statElapsed}
+                  label={`${S.chat.statElapsed}${durationSplit(st?.llmMs ?? 0, st?.toolMs ?? 0)}`}
                 />
                 <StatChip
                   icon={STAT_ICONS.tps}

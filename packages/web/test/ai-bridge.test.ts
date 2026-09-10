@@ -33,18 +33,19 @@ describe("buildAiDraft", () => {
     const draft = buildAiDraft({ handoffAgentId: "other" }, { agentId: "a", text: "t" });
     expect("handoffAgentId" in draft).toBe(false);
   });
+
+  it("marks the prompt as composed, so it is not kept or parked as text the user typed", () => {
+    expect(buildAiDraft({ text: "typed" }, { agentId: "a", text: "t" }).aiPrefill).toBe(true);
+  });
 });
 
 describe("aiChatRouteState", () => {
   it("carries only what was asked for", () => {
     expect(aiChatRouteState({ agentId: "a", text: "t" })).toEqual({ agentId: "a" });
-    expect(aiChatRouteState({ agentId: "a", text: "t", autoSend: false })).toEqual({
-      agentId: "a",
-    });
-    expect(aiChatRouteState({ agentId: "a", text: "t", workspace: "", autoSend: true })).toEqual({
+    // "" is the temporary Workspace — a pin, so it travels; an absent one leaves no key behind.
+    expect(aiChatRouteState({ agentId: "a", text: "t", workspace: "" })).toEqual({
       agentId: "a",
       workspace: "",
-      autoSend: true,
     });
   });
 });

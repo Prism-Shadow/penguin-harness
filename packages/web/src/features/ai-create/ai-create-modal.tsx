@@ -1,8 +1,9 @@
 /**
- * "Create with AI" as a dialog: AiCreatePanel plus the two ways out — send the prompt to the
- * agent in a new conversation (submitted on arrival), or open that conversation with the prompt
- * prefilled for editing. The dialog owns the draft and the agent pick, and mounts its body fresh
- * on every open, so a reopened dialog starts from `initialValue` again.
+ * "Create with AI" as a dialog: AiCreatePanel plus one way out — the prompt lands in a new
+ * conversation's composer, prefilled, for the user to read, edit and send. The dialog never
+ * sends anything itself, so no surface has to weigh whether its prompt is safe to submit unread.
+ * It owns the draft and the agent pick, and mounts its body fresh on every open, so a reopened
+ * dialog starts from `initialValue` again.
  */
 import { useState } from "react";
 import { S } from "../../lib/strings";
@@ -61,14 +62,13 @@ function AiCreateDialog({
   const agentId = picked ?? initialAgentId ?? pickDefaultAgent(agents)?.agentId ?? null;
   const ready = agentId !== null && value.trim() !== "";
 
-  const go = (autoSend: boolean) => {
+  const go = () => {
     if (agentId === null) return;
     openAiChat({
       agentId,
       text: composeAiPrompt(value, tail),
       ...(workspace !== undefined ? { workspace } : {}),
       ...(skills !== undefined ? { skills } : {}),
-      autoSend,
     });
     onClose();
   };
@@ -82,12 +82,14 @@ function AiCreateDialog({
       footer={
         <>
           <Button onClick={onClose}>{S.common.cancel}</Button>
-          <Button disabled={!ready} onClick={() => go(false)}>
-            {S.aiCreate.editInChat}
-          </Button>
-          <Button variant="primary" disabled={!ready} onClick={() => go(true)}>
+          {/*
+            One exit, and its label says where the prompt goes rather than what happens to it:
+            the wand marks it as the AI path, and pressing Send is still the user's own move on
+            the next screen. Disabled until there is a prompt and an agent to take it.
+          */}
+          <Button variant="primary" disabled={!ready} onClick={go}>
             <GlyphIcon d={MAGIC_WAND_ICON} />
-            {S.aiCreate.send}
+            {S.aiCreate.editInChat}
           </Button>
         </>
       }

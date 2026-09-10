@@ -749,9 +749,9 @@ function appendAttachmentParts(
 }
 
 /**
- * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`:
- * the draft screen's example cards fill this composer instead of submitting on their own, and
- * its auto-send (a "Create with AI" bridge) submits through the Send button's own path.
+ * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
+ * One entry so far: the draft screen's example cards fill this composer instead of submitting
+ * on their own.
  */
 export interface ComposerControl {
   /**
@@ -760,12 +760,6 @@ export interface ComposerControl {
    * has not installed are dropped here, where the installed list already lives.
    */
   fillExample: (prompt: string, exampleSkills: readonly string[]) => void;
-  /**
-   * Submit the draft exactly as pressing Send would — the same `canSend` gate, the same path.
-   * Returns whether a send started; false means nothing is sendable right now (an empty draft,
-   * a send in flight, a running or compacting Session).
-   */
-  submit: () => boolean;
 }
 
 export function ChatInput({
@@ -774,6 +768,7 @@ export function ChatInput({
   onSteer,
   steeringDeliveredCount,
   pendingSteering = [],
+  returnedSteering = [],
   onRecallSteering,
   onQueueFollowUp,
   queuedFollowUps = 0,
@@ -848,6 +843,13 @@ export function ChatInput({
    * reloads (#136). The local post-202 flag only bridges until the first event arrives.
    */
   pendingSteering?: PendingSteeringInfo[];
+  /**
+   * Steering a finished run never delivered — an interrupt while a tool was running is the
+   * ordinary way to produce one. This component takes each back into the draft as soon as it
+   * sees it, through the same recall channel a queued line's button uses, so the typed message
+   * lands in the input box instead of disappearing with the run.
+   */
+  returnedSteering?: PendingSteeringInfo[];
   /**
    * Recall an undelivered steering message (#287): resolves to its original content, which
    * this component restores into the draft (text / images / files), or null when the recall
@@ -1321,6 +1323,29 @@ export function ChatInput({
     }
   };
 
+  /**
+   * Steering a finished run never delivered returns to the draft on its own. Interrupting
+   * while a tool is still running is the ordinary way to produce one: core drops its queue as
+   * the run exits, so without this the message — and the text the user had already typed into
+   * it — would simply disappear.
+   *
+   * It goes through the same recall channel the queued lines' button uses, so the merge into
+   * the draft, the attachment restore and the one-at-a-time guard are all the existing ones.
+   * Ids are marked BEFORE the request, not after: a recall that loses the race to another tab
+   * answers 409, and a retry on the next render would spin.
+   */
+  const autoRecalledIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!onRecallSteering || busy || recallingId !== null) return;
+    // Oldest first, matching the order the user typed them.
+    const next = returnedSteering.find((p) => !autoRecalledIds.current.has(p.id));
+    if (!next) return;
+    autoRecalledIds.current.add(next.id);
+    void recallQueued(next.id, onRecallSteering);
+    // recallQueued is re-created every render; depending on it would re-run this on each one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnedSteering, onRecallSteering, busy, recallingId]);
+
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(
     (name: string) => {
@@ -1368,6 +1393,7 @@ export function ChatInput({
     },
     [skills, selectedSkills, onTextChange, onSkillsChange],
   );
+  useImperativeHandle(controlRef, () => ({ fillExample }), [fillExample]);
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
@@ -1834,16 +1860,6 @@ export function ChatInput({
     await sendNormal();
   };
 
-  /** The controlRef's submit (see ComposerControl): gated exactly like the Send button. */
-  const submit = (): boolean => {
-    if (!canSend) return false;
-    void send();
-    return true;
-  };
-  // Rebuilt every render on purpose: `send` closes over the whole draft state, and the handle
-  // must always reach the latest one.
-  useImperativeHandle(controlRef, () => ({ fillExample, submit }));
-
   /**
    * Applies a history step: the recalled text goes through the normal draft path
    * (onTextChange keeps the draft cache in step) with the caret parked at the end — set
@@ -2165,7 +2181,7 @@ export function ChatInput({
 
       {/* When the model doesn't support viewing images directly: images still upload as usual,
           and on send the server writes them to the session's scratchpad and appends the file
-          path into the message text (the model views them via describe_image). A small note is
+          path into the message text (the model views them via read_file). A small note is
           shown while images are attached. */}
       {!vision && images.length > 0 && (
         <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">

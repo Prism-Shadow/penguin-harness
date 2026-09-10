@@ -43,7 +43,9 @@ import {
   RuntimeCapabilities,
 } from "./hmr/capabilities.js";
 import type { ProxyControl } from "./hmr/capabilities.js";
+import { cliShimDir, ensureCliShim } from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
+import { MachinesRepo } from "./db/repos/machines.js";
 import { migrate } from "./db/migrations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
@@ -168,6 +170,7 @@ import { machinesRoutes } from "./http/routes/machines.js";
 import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { previewRoutes } from "./http/routes/preview.js";
 import { MachinesService } from "./machines/service.js";
+import { SERVER_PROXY_PREFIX, machinesProxy } from "./machines/proxy.js";
 
 export interface AppDeps {
   config: ServerConfig;
@@ -330,6 +333,23 @@ export async function bootAppDeps(
   // http/routes/install.ts); this call exists for the minting side effect. Nothing fails
   // when it cannot be persisted: the browser then simply never sweeps.
   ensureInstallId(config.root);
+
+  // The `penguin` an Agent's commands resolve: this harness's own CLI, written into the
+  // data root for every Session to put at the front of PATH (see services/cli-shim.ts).
+  // Here rather than per App, for the same reason the two above are: it is a fact about
+  // this PROCESS's installation, and a hot-pushed platform — compiled somewhere else
+  // entirely — has no way to work out where the CLI it should point at lives.
+  const shimLog = overrides.log ?? ((line: string) => console.log(line));
+  const shim = ensureCliShim(config.root, config.cliEntry);
+  if (shim.kind === "written") {
+    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${shim.entry}`);
+  } else if (shim.kind === "absent") {
+    shimLog(
+      "Agent CLI: no CLI entry found; commands an Agent runs resolve `penguin` on their own PATH.",
+    );
+  } else {
+    console.warn(`[server] could not write the penguin CLI shim: ${shim.reason}`);
+  }
 
   // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot. The interface
@@ -782,6 +802,16 @@ export function buildAppDeps(
   // back, so a restart-only migration is refused here instead of being left behind.
   migrate(db, { swapPath: true });
 
+  /**
+   * This machine's own id is minted on the first boot of this data root and stable ever
+   * after — every stored reference to this machine, here and on the machines it reaches,
+   * points at it. Behind a function so a test that passes its own service never mints one.
+   */
+  const buildMachines = (): MachinesService => {
+    const repo = new MachinesRepo(db);
+    return new MachinesService(config.root, repo.ownId(), repo, {}, () => hmr.assetsDir());
+  };
+
   const usersRepo = new UsersRepo(db);
   const projectsRepo = new ProjectsRepo(db);
   const membersRepo = new MembersRepo(db);
@@ -838,6 +868,14 @@ export function buildAppDeps(
         : (loopbackHostRoles(config.host)?.app ?? config.host);
     return `http://${host}:${config.port}`;
   };
+  // The directory core puts at the FRONT of PATH for every command an Agent runs (and for
+  // its hook scripts): the shim directory bootAppDeps wrote this harness's own `penguin`
+  // into. Derived from the config rather than passed along, so the platform half needs no
+  // new capability — and read for truth rather than for null, because a runtime older than
+  // this field publishes a config without it and wrote no shim either: no field, no
+  // directory, feature off, rather than a push declined over a PATH entry.
+  const shimDir = config.cliEntry ? cliShimDir(config.root) : null;
+  const pathPrepend = (): string[] => (shimDir === null ? [] : [shimDir]);
   const controlEnv = (ctx: ControlEnvContext): Record<string, string> => {
     const token = authService.localApiToken();
     return {
@@ -874,6 +912,10 @@ export function buildAppDeps(
     index: traceIndex,
     sessions: sessionsRepo,
     sources: sessionSources,
+    // The one price table: the analysis costs a file's Requests with the lookup the cost
+    // center prices usage rows with, so the Trace panel and the toolbar never disagree.
+    lookupPricing: (projectId, provider, modelId) =>
+      projectConfigService.getPricing(projectId, provider, modelId),
   });
   const workspaceFiles = new WorkspaceFilesService();
   // Per-process secret: preview tokens are short-lived, so losing them on restart is
@@ -928,7 +970,7 @@ export function buildAppDeps(
     channels,
     loader:
       overrides.loader ??
-      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv }),
+      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv, pathPrepend }),
     sources: sessionSources,
     recorder,
     errors,
@@ -1025,6 +1067,7 @@ export function buildAppDeps(
     traceIndex,
     proxyEnv,
     controlEnv,
+    pathPrepend,
     // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
     // the row); a point query per row keeps the repo out of the service. An unknown
     // stored channel reads as none (same defensive skip as the bridge and the routes).
@@ -1095,7 +1138,7 @@ export function buildAppDeps(
     lifecycle: caps.lifecycle,
     // Anchored at the data root: that is where the hmr store the pushable image comes from
     // lives, and where verified Node runtime downloads are cached between installs.
-    machines: overrides.machines ?? new MachinesService(config.root, {}, () => hmr.assetsDir()),
+    machines: overrides.machines ?? buildMachines(),
     hmr,
     proxyControl: caps.proxyControl,
     log,
@@ -1185,6 +1228,25 @@ export function createApp(
   // For that reason /api/install is deliberately absent from RUNTIME_PREFIXES above — the
   // platform must serve it, not decline it.
   app.route("/api/install", installRoutes(deps));
+  // `/server/<machineId>/api/…` — a connected machine's API, forwarded over the forward held
+  // to it and addressed by the machine's OWN id. Admins only: the request is made over there
+  // as that machine's admin, with a session this server minted over the ssh access that
+  // installed it, so this server's admin session is the one credential involved.
+  const serverProxy = machinesProxy(
+    (machineId) => deps.machines.proxyTarget(machineId),
+    (machineId, outcome) => deps.machines.noteApiSeen(machineId, outcome),
+  );
+  app.all(
+    `${SERVER_PROXY_PREFIX}*`,
+    authMiddleware(deps.authService, deps.config.trustProxy),
+    async (c) => {
+      if (!c.var.user.isAdmin) {
+        throw new HttpError(403, "admin_required", "Only an admin can reach a machine's API.");
+      }
+      const answer = await serverProxy(c.req.raw);
+      return answer ?? c.notFound();
+    },
+  );
 
   // Protected routes: cookie -> auth_session -> user, over the runtime's auth service.
   app.use("/api/*", authMiddleware(deps.authService, deps.config.trustProxy));
@@ -1192,10 +1254,10 @@ export function createApp(
   app.route("/api/version", versionRoutes(deps));
   app.route("/api/admin/users", adminUsersRoutes(deps));
   app.route("/api/admin/settings", adminSettingsRoutes(deps));
-  app.route("/api/machines", machinesRoutes(deps));
   app.route("/api/events", eventsRoutes(deps));
   // Plugin library listing: readable once logged in, not nested under a Project prefix.
   app.route("/api/plugins", pluginLibraryRoutes());
+  app.route("/api/projects/:projectId/machines", machinesRoutes(deps));
   app.route("/api/projects", projectsRoutes(deps));
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));
