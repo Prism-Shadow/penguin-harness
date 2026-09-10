@@ -54,7 +54,8 @@ describe("compactionResultVisible (the result section waits for the thinking to 
 
   it("is shown on a completed row, and never on one that failed with its drafts discarded", () => {
     expect(compactionResultVisible({ running: false, status: "completed" })).toBe(true);
-    expect(compactionResultVisible({ running: false, status: "failed" })).toBe(false);
+    expect(compactionResultVisible({ running: false, status: "fatal" })).toBe(false);
+    expect(compactionResultVisible({ running: false, status: "aborted" })).toBe(false);
   });
 });
 
