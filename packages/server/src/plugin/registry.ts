@@ -2,8 +2,8 @@
  * Plugin registries: WHERE plugin index entries come from. A registry is one source
  * of `PluginIndexEntry` rows — the shared index format every registry speaks (see
  * api/types.ts; the schema follows typst/packages' `index.json`: a flat array of
- * per-version entries). Discovery only: installing an entry stays the operator's
- * `plugins.json` edit (plugin/loader.ts), and nothing here imports plugin code.
+ * per-version entries). Discovery only: a Project asks for an entry on the Plugins page
+ * (http/routes/plugins-installed.ts), and nothing here imports plugin code.
  *
  * Two implementations, one contract:
  *   - the builtin registry serves the index embedded in this package
