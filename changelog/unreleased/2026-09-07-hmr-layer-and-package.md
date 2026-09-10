@@ -1,4 +1,4 @@
-# The layer is called HMR, and its mechanism is a package of its own
+# The HMR layer: named, packaged, and reduced to /api/hmr
 
 - **Date:** 2026-09-07
 - **Type:** improvement
@@ -7,14 +7,14 @@
 
 [中文版](2026-09-07-hmr-layer-and-package.zh.md)
 
-Two changes with one purpose: make it hard to put product behaviour where only a reinstall can deliver it.
+One purpose: make it hard to put product behaviour where only a reinstall can deliver it.
 
-**The layer is named after what it does.** "Runtime" also means "the program that is running", so anything the process did sounded like it belonged to the layer — and what lands there ships by rebuilding and redeploying every installation. It is the HMR layer now, in the documentation and in the identifiers. The resource id strings keep their `runtime:` prefix on purpose: an id is a wire contract between generations, and renaming one would make an older layer's registration invisible to a newer platform.
+**The layer is named after what it does.** "Runtime" also means "the program that is running", so anything the process did sounded like it belonged to the layer. It is the HMR layer now, in the documentation and in the identifiers. The tree's node names are not renamed: an older layer resolves a pushed platform's nodes by name, and a parked document is keyed by name.
 
-**The mechanism moved into `packages/hmr`.** The version store, the atomic `harness.json` commit, the resource registry and the park → boot → swap now live in a package that cannot see a platform: the bundle compiled into the program is a constructor argument, and the api a platform exposes is a type parameter. Its README states the rule — mechanism only, and not to be changed without asking — and the package boundary is what enforces it, rather than discipline.
+**The mechanism is `packages/hmr`.** The version store, the atomic `harness.json` commit, the resource registry and the park → boot → swap live in a package that cannot see a platform: the bundle compiled into the program is a constructor argument, and the api a platform exposes is a type parameter. Its README carries the layer's rules; the server keeps its half — the capability contract, the upgrade endpoints, the seam, and the platform itself.
 
-What stays with the server is its half of the layer: which capabilities a platform may claim, the upgrade endpoints, the HTTP seam, and the platform itself.
+**Its HTTP surface is `/api/hmr`.** `/api/auth` and `/api/desktop` are platform route groups now, served through the seam like every other route; the platform's route table no longer carries a list of prefixes to decline, and an unknown path under `/api/auth` answers 404 rather than the cookie gate's 401.
 
-Internal, and inlined into the server's bundle: a boundary in the source tree, not another package on npm.
+**A resource id says which layer owns it.** `hmr:*` is a capability only the process can provide; `platform:*` is the platform's own state, parked so a swap does not lose it. The old `runtime:*` ids stay as aliases for one release.
 
-The tree's node names are **not** part of the rename, for the same reason the resource ids are not: an older runtime resolves nodes in a pushed platform by name, and a parked document is keyed by name. A push that renamed one would kill every older installation at boot.
+The rollback copies of the two route groups and the id aliases are recorded in [backward compatibility](2026-09-09-backward-compatibility.md).
