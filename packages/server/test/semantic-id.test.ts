@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   fallbackSemanticId,
+  placeholderSemanticId,
   prefixSemanticId,
   sanitizeSuggestedId,
   uniqueSemanticId,
@@ -75,5 +76,25 @@ describe("sanitizeSuggestedId", () => {
 
   it("returns null for an answer that carries no ASCII", () => {
     expect(sanitizeSuggestedId("科研实验室", "org")).toBeNull();
+  });
+});
+
+describe("placeholderSemanticId", () => {
+  const day = new Date(2026, 8, 9); // 2026-09-09, local — the stamp is the host's own date.
+
+  it("is a valid, dated, obviously-temporary id, prefixed by kind", () => {
+    expect(placeholderSemanticId("org", [], day)).toBe("co_org_20260909");
+    expect(placeholderSemanticId("channel", [], day)).toBe("ch_channel_20260909");
+  });
+
+  it("pads a single-digit month and day", () => {
+    expect(placeholderSemanticId("org", [], new Date(2026, 0, 3))).toBe("co_org_20260103");
+  });
+
+  it("avoids the ids already taken, so pressing the button twice gives two ids", () => {
+    expect(placeholderSemanticId("org", ["co_org_20260909"], day)).toBe("co_org_20260909_2");
+    expect(placeholderSemanticId("org", ["co_org_20260909", "co_org_20260909_2"], day)).toBe(
+      "co_org_20260909_3",
+    );
   });
 });

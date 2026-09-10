@@ -7,9 +7,9 @@
  *
  * The proposal REPLACES whatever is in the box: the button is pressed to get an id, not to
  * get a suggestion beside the one already typed. It is unavailable while there is no text to
- * derive from and while a request is in flight, and a name a proposal cannot be derived from
- * (a name with no ASCII in it, when no model is configured) answers 422 and says so under
- * the field rather than in a toast that would be gone by the time the user looks down.
+ * derive from and while a request is in flight, and it always comes back with an id — a name
+ * nothing could translate gets a placeholder, and the note under the field says so and asks
+ * for a real name, rather than a toast that would be gone by the time the user looks down.
  *
  * The button says what it does in words — a model is asked for the id, which is not something
  * a sparkles glyph on its own tells anyone — so it sits BESIDE the box rather than inside it,
@@ -22,22 +22,21 @@ import { useId, useState } from "react";
 import type { KeyboardEvent } from "react";
 import type { SemanticIdSuggestRequest } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
-import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { toneInk } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { FieldError, FieldHint, FieldLabel } from "../../components/ui/field";
 import { toastError } from "../../components/ui/toast";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { idSuggestNotice } from "./id-suggest-notice";
+import type { IdSuggestNotice } from "./id-suggest-notice";
 
 /** Generate (lucide sparkles): the four-pointed star with its two smaller companions. */
 const SPARKLES_ICON =
   "m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275zM5 3v4M19 17v4M3 5h4M17 19h4";
-
-/** The failure that is the user's to resolve, not a transient one: no id can be derived from this name. */
-const NOT_DERIVABLE = "id_not_derivable";
 
 export function SemanticIdField({
   projectId,
@@ -71,14 +70,15 @@ export function SemanticIdField({
   onEnter?: () => void;
 }) {
   const controlId = useId();
-  const errorId = `${controlId}-message`;
+  const messageId = `${controlId}-message`;
   const [busy, setBusy] = useState(false);
-  /** What the last generation attempt has to say, cleared by the next edit or attempt. */
-  const [notice, setNotice] = useState<string | null>(null);
+  /** What the last proposal has to say about the id it filled in; cleared by the next edit or attempt. */
+  const [notice, setNotice] = useState<IdSuggestNotice | null>(null);
   const derivable = source.trim() !== "";
-  // The caller's validation outranks the generation's own message: a rejected id is about
-  // what is in the box, which is what the user is looking at.
-  const message = error ?? notice;
+  // The caller's validation outranks the proposal's own note: a rejected id is about what is
+  // in the box, which is what the user is looking at.
+  const showError = error !== undefined;
+  const below = showError || notice !== null;
 
   const generate = async () => {
     setBusy(true);
@@ -90,9 +90,11 @@ export function SemanticIdField({
         ...(taken !== undefined && taken.length > 0 ? { taken: [...taken] } : {}),
       });
       onChange(res.id);
+      setNotice(idSuggestNotice(res, S.company.idSuggest));
     } catch (e) {
-      if (e instanceof ApiError && e.code === NOT_DERIVABLE) setNotice(S.company.idNotDerivable);
-      else toastError(apiErrorText(e));
+      // The request itself failed (offline, no permission, the mode switched off): the id is
+      // unchanged and there is nothing to say under the field.
+      toastError(apiErrorText(e));
     } finally {
       setBusy(false);
     }
@@ -112,7 +114,7 @@ export function SemanticIdField({
           invalid={error !== undefined}
           className="min-w-0 flex-1 font-mono"
           disabled={disabled}
-          {...(message !== null ? { "aria-describedby": errorId } : {})}
+          {...(below ? { "aria-describedby": messageId } : {})}
           onChange={(e) => {
             setNotice(null);
             onChange(e.target.value);
@@ -145,12 +147,26 @@ export function SemanticIdField({
           {S.company.generateIdLabel}
         </Button>
       </div>
-      {message !== null ? (
-        <FieldError id={errorId}>{message}</FieldError>
+      {showError ? (
+        <FieldError id={messageId}>{error}</FieldError>
+      ) : notice?.tone === "attention" ? (
+        // A placeholder id: what the user must act on, so it takes the slot the error would.
+        // `status` rather than `alert` — the box holds a valid id, nothing was rejected.
+        <span id={messageId} role="status" className={`mt-1 block text-xs ${toneInk.attention}`}>
+          {notice.text}
+        </span>
       ) : (
-        // The generation clause carries its own leading separator: what joins two clauses is
-        // punctuation, and punctuation is part of the language.
-        <FieldHint>{`${hint}${S.company.idGenerateHint}`}</FieldHint>
+        <>
+          {/* The generation clause carries its own leading separator: what joins two clauses
+              is punctuation, and punctuation is part of the language. The id rule stays on
+              screen beside a quiet note — it is what the user reads while typing. */}
+          <FieldHint>{`${hint}${S.company.idGenerateHint}`}</FieldHint>
+          {notice !== null && (
+            <span id={messageId} role="status" className={`mt-1 block text-xs ${toneInk.muted}`}>
+              {notice.text}
+            </span>
+          )}
+        </>
       )}
     </div>
   );

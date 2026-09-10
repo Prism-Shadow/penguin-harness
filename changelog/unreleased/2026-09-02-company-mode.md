@@ -251,6 +251,19 @@ cursors, budget marks) and each user's read cursor per channel.
   are recorded in [backward compatibility](2026-09-09-backward-compatibility.md).
   `POST .../sessions` still accepts only `"web"` and `"cli"`: `"org"` is written by the
   organization runtime, which calls the service directly, so no request can claim it.
+- "Generate with AI" always produces an id. `POST /organizations/suggest-id` ran its one-off
+  completion with thinking on and a 48-token cap, and a reasoning model spends its thinking out
+  of that same cap — the request ended at `finish_reason=length` before a single text token, and
+  a Chinese name, whose ASCII fallback is empty by construction, came back as
+  `422 id_not_derivable`. The completion now runs the way core's own out-of-band requests do:
+  thinking off, and the shared meta budget tightened by the entry's pinned per-model cap. An
+  answer that still yields no id buys one retry with the format spelled out, and a name neither
+  the model nor the ASCII slug can name is answered with `co_org_<yyyymmdd>` /
+  `ch_channel_<yyyymmdd>` — `source: "placeholder"` plus a `reason` (`no_default_model`,
+  `model_failed`, `unusable_answer`, `no_ascii`), which the dialog renders as a note asking for
+  a meaningful name in its place. The 422 and its `id_not_derivable` code are gone. Every model
+  dead end is now recorded as an `organization` / `id_suggest_failed` error and logged, instead
+  of being swallowed where nobody could see it.
 - Generated ids carry a prefix that says what they name: `co_` for an organization, `ch_` for
   a channel. `POST /organizations/suggest-id` asks the model for the semantic core as before
   and prefixes the answer itself — the ASCII-slug fallback too, before the length cap and the

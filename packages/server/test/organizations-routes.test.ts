@@ -50,6 +50,10 @@ function fakeService(calls: Call[]): OrganizationService {
             return { channelId: "site", name: "Site", members: [] };
           case "startTicket":
             return { sessionId: "session-x" };
+          // A proposal that fell all the way through: the route must serve `reason` too, and
+          // must not turn a name nothing could translate into an error.
+          case "suggestId":
+            return { id: "co_org_20260909", source: "placeholder", reason: "no_default_model" };
           case "handbook":
             return "# Handbook";
           case "handbookFiles":
@@ -221,15 +225,17 @@ describe("organization routes", () => {
       (await owner.post(`${base}/suggest-id`, { name: "科研公司", kind: "team" })).status,
     ).toBe(400);
     expect(calls).toEqual([]);
-    expect(
-      (
-        await owner.post(`${base}/suggest-id`, {
-          name: "科研公司",
-          kind: "org",
-          taken: ["research_lab"],
-        })
-      ).status,
-    ).toBe(200);
+    const proposal = await owner.post(`${base}/suggest-id`, {
+      name: "科研公司",
+      kind: "org",
+      taken: ["research_lab"],
+    });
+    expect(proposal.status).toBe(200);
+    expect(await proposal.json()).toEqual({
+      id: "co_org_20260909",
+      source: "placeholder",
+      reason: "no_default_model",
+    });
     expect(calls.at(-1)).toEqual({
       method: "suggestId",
       args: [ownerProject, { name: "科研公司", kind: "org", taken: ["research_lab"] }],

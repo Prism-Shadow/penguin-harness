@@ -17,7 +17,7 @@ A desk or ticket session is stamped as the organization's on the row itself when
 
 Three entry points, one server call behind all of them:
 
-- **the Web App** — 新建组织 in the organization switcher: the display name comes first, and a button inside the id field asks the server to derive an id from it (the Project's default model proposes a short English snake_case id, an ASCII slug of the name answers when it cannot, and a name neither can name says so under the field); three mission examples fill the mission with one click;
+- **the Web App** — 新建组织 in the organization switcher: the display name comes first, and a button beside the id field asks the server to derive an id from it (the Project's default model proposes a short English snake_case id, an ASCII slug of the name answers when it cannot, and a name neither can name is filled with a dated placeholder that says under the field why and asks to be replaced — the button always leaves an id in the box); three mission examples fill the mission with one click;
 - **the CLI** — `penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>]`;
 - **the general agent** — ask any Agent carrying the `agent-development` plugin to set a company up and its `company-setup` skill takes over: one question at a time (id, name, mission, shared workspace, model, CEO budget), a summary to confirm, then that same command. It stops there — hiring, scheduling and tickets are the CEO's, after the board answers.
 

@@ -17,7 +17,7 @@ description: 把一句话使命变成一家由 Agent 组成的公司——CEO �
 
 三个入口，背后是同一个服务端调用：
 
-- **Web App**——组织切换器里的「新建组织」：显示名在前，id 字段内的按钮请服务端据名称推导一个 id（Project 的缺省 Model 提出一个简短的英文 snake_case id，模型给不出时以名称的 ASCII slug 兜底，两条路都命名不了的名称会在字段下方说明）；使命字段下另有三个示例，点一下即填入；
+- **Web App**——组织切换器里的「新建组织」：显示名在前，id 字段旁的按钮请服务端据名称推导一个 id（Project 的缺省 Model 提出一个简短的英文 snake_case id，模型给不出时以名称的 ASCII slug 兜底，两条路都命名不了的名称则填入一个带日期的占位 id，并在字段下方说明原因、请你改成有含义的名字——按钮一定会在框里留下一个 id）；使命字段下另有三个示例，点一下即填入；
 - **CLI**——`penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>]`；
 - **通用 Agent**——让任何装有 `agent-development` 插件的 Agent 帮你开一家公司，它的 `company-setup` Skill 接手：一次只问一个问题（id、名称、使命、公共工作区、Model、CEO 预算），确认一屏摘要，然后执行上面这条命令。它到此为止——招募、排日程和开工单是 CEO 在董事会答复之后的事。
 

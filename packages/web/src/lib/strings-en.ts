@@ -2459,14 +2459,30 @@ Scenarios:
       "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores; also the directory name, fixed once created",
     /**
      * The id field's generate button — its label says who proposes the id, its tooltip says
-     * what the proposal is derived from — the clause the hint appends for it, and what a name
-     * no id can be derived from is told. The clause carries its own leading separator: what
-     * joins two clauses is punctuation, and punctuation belongs to the language.
+     * what the proposal is derived from — and the clause the hint appends for it. The clause
+     * carries its own leading separator: what joins two clauses is punctuation, and
+     * punctuation belongs to the language.
      */
     generateIdLabel: "Generate with AI",
     generateId: "Generate an id from the name",
     idGenerateHint: "; you can also generate one from the display name",
-    idNotDerivable: "No id can be derived from this name — type one by hand",
+    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
+    idSuggest: {
+      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
+      fromName: "Transliterated from the name",
+      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
+      placeholder: (reason: string): string =>
+        `The model gave no usable id (${reason}); a placeholder was filled in — please change it to something meaningful`,
+      /** Why the proposal fell through, keyed by the server's reason code. */
+      reasons: {
+        no_default_model: "no default model configured",
+        model_failed: "the model request failed",
+        unusable_answer: "the model's answer was unusable",
+        no_ascii: "the name carries no ASCII to transliterate",
+      },
+      /** A reason a newer server named and this build does not know. */
+      reasonUnknown: "reason unknown",
+    },
     displayName: "Display name",
     displayNameHint: "Leave empty to use the organization id",
     mission: "Mission",

@@ -7,7 +7,9 @@
  * suggested id says what it names and starts with a letter as the rule demands; a core that
  * already carries the prefix is not prefixed twice. A name with no ASCII letters or digits
  * at all (a Chinese name) yields null: nothing mechanical can name it, and that is exactly
- * the case the model exists for.
+ * the case the model exists for. When the model cannot name it either, `placeholderSemanticId`
+ * is the floor — a valid, dated, obviously-temporary id, so the dialog is never left with
+ * nothing to put in the box.
  */
 import { SEMANTIC_ID_PATTERN } from "../services/ids.js";
 
@@ -84,4 +86,27 @@ export function sanitizeSuggestedId(
     .find((l) => l !== "");
   if (line === undefined) return null;
   return fallbackSemanticId(line.replace(/^[`"'“”‘’]+|[`"'“”‘’.]+$/g, ""), kind, taken);
+}
+
+/** `yyyymmdd` in the host's own local date, the stamp a placeholder id carries. */
+function dateStamp(now: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+}
+
+/**
+ * The id a name that neither the model nor the ASCII fallback can name gets: `co_org_<yyyymmdd>`
+ * / `ch_channel_<yyyymmdd>`, made unique against `taken`. It names nothing — that is the point.
+ * It is valid, so the dialog can go on, and it reads as temporary at a glance, so the surface
+ * that fills it in can ask for a meaningful name in its place. Refusing instead would leave the
+ * user of a Chinese-named organization with no model configured staring at a dialog that
+ * cannot be completed.
+ */
+export function placeholderSemanticId(
+  kind: SemanticIdKind,
+  taken: Iterable<string> = [],
+  now: Date = new Date(),
+): string {
+  const core = kind === "org" ? "org" : "channel";
+  return uniqueSemanticId(prefixSemanticId(`${core}_${dateStamp(now)}`, kind), taken);
 }

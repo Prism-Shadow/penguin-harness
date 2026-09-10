@@ -39,6 +39,7 @@ import {
   catalogEntryFor,
   defaultProjectConfig,
   imageUrlMessage,
+  metaMaxTokens,
   projectConfigFromTable,
   projectConfigPath,
   renderProjectConfigToml,
@@ -48,6 +49,7 @@ import {
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type {
   CommandPolicyRule,
+  GenerativeModelConfig,
   LLMOutcome,
   ModelRef,
   OmniMessage,
@@ -255,12 +257,100 @@ const SPEED_PROBE_PROMPT =
   "Count from 1 to 50 as a comma-separated list, and nothing else. Do not think or explain.\n<think></think>";
 
 /**
- * Bounds for a one-off utility completion (see completeOnce). An identifier is a handful of
- * tokens, and the caller is a dialog waiting on the answer with a working fallback already
- * in hand — so the budget is small and the wait is short.
+ * Bounds for a one-off utility completion (see completeOnce). The budget is core's own
+ * meta-request budget, the one `createBareLLM` sizes session titles and vision descriptions
+ * with, tightened by the entry's pinned per-model cap: an identifier is a handful of tokens,
+ * but on a reasoning model the thinking is spent out of the same cap, and a budget cut to the
+ * size of the answer leaves the answer itself with nothing (`finish_reason=length` before a
+ * single text token — the failure the connectivity probe's `probeVerdict` tolerates by name).
+ * The caller is a dialog waiting on the answer, so the wait stays short.
  */
-const UTILITY_COMPLETION_MAX_TOKENS = 48;
+const UTILITY_COMPLETION_BUDGET = 300;
 const UTILITY_COMPLETION_TIMEOUT_MS = 15_000;
+
+/**
+ * What one utility completion produced: the model's text, or why there is none. A bare null
+ * would say "no answer" and nothing else — and every one of these failures (no model
+ * configured, a missing credential, a provider rejection, a timeout, an answer that was all
+ * thinking) is one the user can act on, so the reason travels to the caller, which records it.
+ */
+export type UtilityCompletion =
+  | { ok: true; text: string }
+  | {
+      ok: false;
+      /** `no_model`: the Project names no default model, or names one it has no entry for — nothing was asked. `failed`: the model was asked and produced no text. */
+      cause: "no_model" | "failed";
+      error: string;
+    };
+
+/** How much of a failure detail is kept for display; the error recorder truncates again at its own bound. */
+const MAX_FAILURE_DETAIL = 300;
+
+/**
+ * What a request that did not complete has to say: the provider's own message when the outcome
+ * carries one, and the bare status (`aborted`, a `retryable` idle timeout) when it does not.
+ */
+function outcomeDetail(outcome: LLMOutcome): string {
+  const detail = outcome.errorMessage ? outcome.errorMessage : outcome.status;
+  return String(detail).slice(0, MAX_FAILURE_DETAIL);
+}
+
+/**
+ * The model config one utility completion runs with, built from the Project's default model
+ * entry. Exported because two of its fields decide whether an answer arrives at all, and
+ * reading them here costs no network:
+ *
+ * - `thinkingLevel: "none"`, the level core's own out-of-band requests use. Every provider the
+ *   product ships works with it; a level that leaves thinking on spends the budget below on
+ *   reasoning nobody reads.
+ * - `maxTokens`: the shared meta budget, tightened by the entry's pinned per-model cap — never
+ *   a budget cut to the size of an identifier. A reasoning model spends its thinking out of the
+ *   same cap, so a budget that small ends the request at `finish_reason=length` with the answer
+ *   never started (see `probeVerdict`, which tolerates exactly that ending for the probe).
+ */
+export function utilityCompletionConfig(
+  modelId: string,
+  entry: Record<string, unknown>,
+): GenerativeModelConfig {
+  const apiKey = optStr(entry.api_key);
+  const baseUrl = optStr(entry.base_url);
+  const clientType = canonicalClientType(optStr(entry.client_type));
+  return {
+    modelId,
+    ...(apiKey ? { apiKey } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+    ...(clientType ? { clientType } : {}),
+    tools: [],
+    thinkingLevel: "none",
+    maxTokens: metaMaxTokens(UTILITY_COMPLETION_BUDGET, optNum(entry.max_tokens)),
+    requestTimeoutMs: UTILITY_COMPLETION_TIMEOUT_MS,
+  };
+}
+
+/**
+ * Drains a model stream into the answer's text, or the reason there is none.
+ *
+ * Complete `text` messages only. Every partial fragment is backfilled into one complete `text`
+ * message when the stream ends — on a normal finish and on an interrupted one alike (the
+ * translator's `finish` and `finishInterrupted` both flush the text buffer) — so counting both
+ * would return the answer twice, and counting only the partials would drop nothing but gain
+ * nothing either. A stream that carried only thinking leaves the buffer empty, and the
+ * terminal outcome is then what has something to say about why.
+ */
+export async function collectUtilityCompletion(
+  stream: AsyncGenerator<OmniMessage, LLMOutcome>,
+): Promise<UtilityCompletion> {
+  let text = "";
+  for (;;) {
+    const step = await stream.next();
+    if (step.done) {
+      if (text.trim() !== "") return { ok: true, text };
+      return { ok: false, cause: "failed", error: outcomeDetail(step.value) };
+    }
+    const p = step.value.payload as { type?: string; text?: string };
+    if (p.type === "text" && typeof p.text === "string") text += p.text;
+  }
+}
 
 export class ProjectConfigService {
   /**
@@ -632,11 +722,7 @@ export class ProjectConfigService {
         if (step.done) {
           const outcome = classifyVisionProbe(step.value, sawContent);
           if (outcome !== "failed") return { outcome };
-          const detail =
-            "errorMessage" in step.value && step.value.errorMessage
-              ? step.value.errorMessage
-              : step.value.status;
-          return { outcome, message: String(detail).slice(0, 300) };
+          return { outcome, message: outcomeDetail(step.value) };
         }
         if (isProbeContent(step.value)) sawContent = true;
       }
@@ -653,48 +739,47 @@ export class ProjectConfigService {
   /**
    * One short completion on the Project's **default** model, for utility asks that belong to
    * no Session — today the English identifier a display name is translated into. Everything
-   * comes from the stored default entry (credential, base URL, pinned protocol), the answer
-   * is the model's plain text, and every failure is `null` rather than an exception: no
-   * default model, no entry for it, a construction that throws on a missing credential, a
-   * refusal, a timeout, or an answer with no text at all. Callers must have a result that
-   * works without it. The request is not metered — it carries no Session to attribute it to.
+   * comes from the stored default entry (credential, base URL, pinned protocol), and the
+   * answer is the model's plain text. Nothing throws: no default model, no entry for it, a
+   * construction that throws on a missing credential, a refusal, a timeout, or an answer with
+   * no text all come back as `{ ok: false }` carrying the reason, which the caller records so
+   * the errors panel can say why the ask produced nothing. Callers must still have a result
+   * that works without it. The request is not metered — it carries no Session to attribute
+   * it to.
+   *
+   * Thinking is off and the budget is the shared meta budget, for the same reason core's own
+   * out-of-band requests set them that way: a reasoning model spends thinking out of
+   * `maxTokens`, so a budget the size of the answer ends the request at `finish_reason=length`
+   * with no text at all.
    */
-  async completeOnce(projectId: string, prompt: string): Promise<string | null> {
+  async completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion> {
     const raw = await this.readRaw(projectId);
     const ref = optRef(raw.default_model);
-    if (ref === undefined) return null;
+    if (ref === undefined) {
+      return { ok: false, cause: "no_model", error: "the Project names no default model" };
+    }
     const entry = asArray(raw.models).find((m) => entryMatches(m, ref.provider, ref.model_id));
-    if (entry === undefined) return null;
-    const apiKey = optStr(entry.api_key);
-    const baseUrl = optStr(entry.base_url);
-    const clientType = canonicalClientType(optStr(entry.client_type));
+    if (entry === undefined) {
+      return {
+        ok: false,
+        cause: "no_model",
+        error: `the default model ${ref.provider}/${ref.model_id} has no entry in the Project config`,
+      };
+    }
     try {
       // Inside the try for the same reason as the probes: the SDK throws during
-      // construction when a credential is missing, and that must read as "no answer".
-      const llm = new GenerativeModel({
-        modelId: ref.model_id,
-        ...(apiKey ? { apiKey } : {}),
-        ...(baseUrl ? { baseUrl } : {}),
-        ...(clientType ? { clientType } : {}),
-        tools: [],
-        // The lowest real level, not "none": several reasoning endpoints reject a request
-        // that disables thinking outright.
-        thinkingLevel: "low",
-        maxTokens: UTILITY_COMPLETION_MAX_TOKENS,
-        requestTimeoutMs: UTILITY_COMPLETION_TIMEOUT_MS,
-      });
-      const gen = llm.streamGenerate({ newMessages: [userText(prompt)] });
-      let text = "";
-      for (;;) {
-        const step = await gen.next();
-        if (step.done) return text.trim() === "" ? null : text;
-        // Complete text messages only: the partial fragments concatenate to the same string,
-        // so counting both would return the answer twice.
-        const p = step.value.payload as { type?: string; text?: string };
-        if (p.type === "text" && typeof p.text === "string") text += p.text;
-      }
-    } catch {
-      return null;
+      // construction when a credential is missing, and that must read as a failure with a
+      // reason rather than an exception out of a dialog's helper.
+      const llm = new GenerativeModel(utilityCompletionConfig(ref.model_id, entry));
+      return await collectUtilityCompletion(
+        llm.streamGenerate({ newMessages: [userText(prompt)] }),
+      );
+    } catch (err) {
+      return {
+        ok: false,
+        cause: "failed",
+        error: (err instanceof Error ? err.message : String(err)).slice(0, MAX_FAILURE_DETAIL),
+      };
     }
   }
 
@@ -1183,9 +1268,7 @@ export function probeVerdict(
 ): { ok: true } | { ok: false; message: string } {
   if (outcome.status === "completed") return { ok: true };
   if (outcome.status === "retryable" && sawContent) return { ok: true };
-  const detail =
-    "errorMessage" in outcome && outcome.errorMessage ? outcome.errorMessage : outcome.status;
-  return { ok: false, message: String(detail).slice(0, 300) };
+  return { ok: false, message: outcomeDetail(outcome) };
 }
 
 /**

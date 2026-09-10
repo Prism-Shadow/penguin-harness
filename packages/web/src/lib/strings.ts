@@ -2409,14 +2409,30 @@ Benchmark：
     orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；也是目录名，创建后不可修改",
     /**
      * The id field's generate button — its label says who proposes the id, its tooltip says
-     * what the proposal is derived from — the clause the hint appends for it, and what a name
-     * no id can be derived from is told. The clause carries its own leading separator: what
-     * joins two clauses is punctuation, and punctuation belongs to the language.
+     * what the proposal is derived from — and the clause the hint appends for it. The clause
+     * carries its own leading separator: what joins two clauses is punctuation, and
+     * punctuation belongs to the language.
      */
     generateIdLabel: "用 AI 生成",
     generateId: "从名称生成 ID",
     idGenerateHint: "；也可以从显示名生成",
-    idNotDerivable: "无法从名称推导 ID，请手动输入",
+    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
+    idSuggest: {
+      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
+      fromName: "按名称转写生成",
+      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
+      placeholder: (reason: string): string =>
+        `模型没有给出可用的 ID（${reason}），已填入占位 ID，请改成有含义的英文名`,
+      /** Why the proposal fell through, keyed by the server's reason code. */
+      reasons: {
+        no_default_model: "未配置默认模型",
+        model_failed: "模型调用失败",
+        unusable_answer: "模型回答不可用",
+        no_ascii: "名称里没有可转写的英文",
+      },
+      /** A reason a newer server named and this build does not know. */
+      reasonUnknown: "原因未知",
+    },
     displayName: "显示名",
     displayNameHint: "留空则使用组织 id",
     mission: "使命",
