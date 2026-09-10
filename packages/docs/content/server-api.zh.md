@@ -201,9 +201,14 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/plugins | 插件市场页的插件索引：`{plugins: PluginIndexEntry[]}`——所有已配置注册表（当前仅内置注册表）合并后的索引 |
+| GET | /api/plugins/registry | 插件市场页的插件索引：`{plugins: PluginIndexEntry[]}`——所有已配置注册表（当前仅内置注册表）合并后的索引 |
+| GET | /api/plugins/registry/readme?name=… | 某个已列出条目的说明文档：`{name, readme}`（注册表没有时 `readme` 为 null）；索引未列出的名字返回 404 |
+| GET | /api/projects/:projectId/plugins/installed | 该 Project 要求的插件，并联上进程实际在跑的状态：`{plugins: [{specifier, active, builtin, modules, replaces, error?}], shipped, file, restartPending}`（成员即可） |
+| POST | /api/projects/:projectId/plugins/installed | `{specifier}`——为该 Project 要求一个随构建发布的插件（否则 400 `plugin_not_shipped`），运行时能重组 App 时无需重启即生效（管理员） |
+| PUT | /api/projects/:projectId/plugins/installed | `{plugins}`——重写该 Project 的列表并应用（管理员） |
+| DELETE | /api/projects/:projectId/plugins/installed?specifier=… | 从该 Project 的列表中去掉并应用；磁盘上什么都不变（管理员） |
 
-索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。仅用于发现——安装插件仍是运维侧编辑 `plugins.json` 的操作，此接口不会导入任何插件代码。
+索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。注册表仅用于发现，不会导入任何插件代码；Project 通过上面的路由要求某个条目，其列表存在自己的 `.project_config.toml`（`plugins`）里。进程运行的是所有 Project 列表的并集。
 
 ### Agent
 

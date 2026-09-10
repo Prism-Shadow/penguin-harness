@@ -3301,10 +3301,10 @@ export interface SkillArchiveInstallRequest {
  * speaks (modeled on the typst/packages `index.json` schema: a flat array of
  * per-version entries; a plugin published at several versions appears once per
  * version). Installation is out of scope here: an entry's `name` is the package
- * specifier an operator puts into `plugins.json`.
+ * specifier a Project's plugin list names.
  */
 export interface PluginIndexEntry {
-  /** Package specifier — the string that goes into `plugins.json`. */
+  /** Package specifier — the string a Project's plugin list names. */
   name: string;
   /** Semantic version of this entry. */
   version: string;
@@ -3323,12 +3323,12 @@ export interface PluginIndexEntry {
   updatedAt?: number;
 }
 
-/** GET /api/plugins: the merged index of every configured registry (currently the builtin one). */
+/** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
 export interface PluginIndexResponse {
   plugins: PluginIndexEntry[];
 }
 
-/** GET /api/plugins/readme — long-form docs for one entry; `readme` is null when none exists. */
+/** GET /api/plugins/registry/readme — long-form docs for one entry; `readme` is null when none exists. */
 export interface PluginReadmeResponse {
   name: string;
   /** Markdown, rendered by the Web App. Null when this entry has no readme. */
@@ -3647,7 +3647,7 @@ export interface ContributionsResponse {
   sessionTabs: WebContribution[];
 }
 
-/** One plugin `<root>/plugins.json` lists (GET /api/plugins/installed). */
+/** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
 export interface InstalledPlugin {
   /** The package specifier as written in the file. */
   specifier: string;

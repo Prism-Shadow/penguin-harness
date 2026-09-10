@@ -201,9 +201,14 @@ What that route may do is bounded a second time: it stores the code on the flow 
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/plugins | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[]}` — the merged index of every configured registry (currently the builtin one) |
+| GET | /api/plugins/registry | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[]}` — the merged index of every configured registry (currently the builtin one) |
+| GET | /api/plugins/registry/readme?name=… | One listed entry's readme: `{name, readme}` (`readme` null when the registry has none); 404 for a name the index does not list |
+| GET | /api/projects/:projectId/plugins/installed | What this Project asks for, joined with what the process runs: `{plugins: [{specifier, active, builtin, modules, replaces, error?}], shipped, file, restartPending}` (any member) |
+| POST | /api/projects/:projectId/plugins/installed | `{specifier}` — ask this Project for a plugin the build ships (400 `plugin_not_shipped` otherwise), applied without a restart where the runtime can re-assemble the App (admin) |
+| PUT | /api/projects/:projectId/plugins/installed | `{plugins}` — rewrite this Project's list and apply (admin) |
+| DELETE | /api/projects/:projectId/plugins/installed?specifier=… | Drop it from this Project's list and apply; nothing on disk changes (admin) |
 
-The index format follows typst/packages' `index.json` schema: a flat array of per-version entries (`name`, `version`, `description`, `authors`, `license`, plus optional `repository` / `homepage` / `keywords` / `categories` / `updatedAt`). Discovery only — installing an entry stays the operator-side `plugins.json` edit; this endpoint never imports plugin code.
+The index format follows typst/packages' `index.json` schema: a flat array of per-version entries (`name`, `version`, `description`, `authors`, `license`, plus optional `repository` / `homepage` / `keywords` / `categories` / `updatedAt`). The registry is discovery only and never imports plugin code; a Project asks for an entry through the routes above, and its list lives in its own `.project_config.toml` (`plugins`). The process runs the union over every Project's list.
 
 ### Agents
 

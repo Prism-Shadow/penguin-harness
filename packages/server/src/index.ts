@@ -150,7 +150,6 @@ class PenguinServer {
   }
 
   /**
-   * Plugins are configuration, and reading configuration is the runtime's job: take the
    * A SHIM, since the platform loads its own (plugin/loader.ts's loadPluginHost, called from
    * the platform's create()). Which plugins a deployment runs, and how that list is read, is
    * policy — it ships by push, and a machine whose program predates a new rule must still
