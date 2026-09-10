@@ -1,5 +1,5 @@
 ---
-title: "PenguinHarness 0.2.10: a Files panel you can type into, a compaction cutter, hooks as plugins, and a server in Docker"
+title: "PenguinHarness 0.2.10: an upgraded file browser, adjustable compaction timing, hooks, and a Docker image"
 date: 2026-09-10
 category: news
 excerpt: The conversation grew a workbench. The Files panel became a two-pane browser with in-place editing and version-checked saves, the context ring now measures against the point compaction actually fires and its threshold is a cutter you drag, a shortcuts ball fans the dock open from the edge of the chat, and scheduled tasks moved in beside it. Hooks became a capability of the loop itself, with goal mode and continual learning shipping as installable plugins. An official Docker image makes a server one `docker run`, and DeepSeek V4.1 Flash is the model a new Project starts on.
