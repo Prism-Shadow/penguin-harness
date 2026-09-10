@@ -4,6 +4,7 @@
  * `@prismshadow/penguin-server/plugin` subpath stays types only.
  */
 import type { ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
+import { claimAny } from "../hmr/capabilities.js";
 
 /** One loaded plugin: the package, and its modules with manifests paired to code. */
 export interface LoadedPlugin {
@@ -68,7 +69,7 @@ export class PluginHost {
  * exists to flag: it is why a machine whose program is older cannot learn a new loading rule
  * from a push, and had to be restarted to pick up a plugin list.
  */
-export const PLUGINS_RESOURCE_ID = "runtime:plugins";
+export const PLUGINS_RESOURCE_ID = "platform:plugins";
 
 /**
  * The host the runtime loaded (see ./loader.ts), or an empty one — the honest reading
@@ -79,5 +80,5 @@ export const PLUGINS_RESOURCE_ID = "runtime:plugins";
  * on the first hot push.
  */
 export function pluginHostFrom(resources: Resources): PluginHost {
-  return resources.claim<PluginHost>(PLUGINS_RESOURCE_ID) ?? new PluginHost();
+  return claimAny<PluginHost>(resources, PLUGINS_RESOURCE_ID) ?? new PluginHost();
 }

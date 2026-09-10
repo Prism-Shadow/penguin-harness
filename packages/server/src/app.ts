@@ -40,6 +40,7 @@ import {
   HMR_LIFECYCLE_RESOURCE_ID,
   HMR_HOST_RESOURCE_ID,
   PARKED_OVERRIDES_RESOURCE_ID,
+  publish,
   type Replacements,
   HMR_PROXY_RESOURCE_ID,
   HmrCapabilities,
@@ -266,30 +267,25 @@ export async function bootAppDeps(
 
   // What buildAppDeps claims (see hmr/capabilities.ts) — every entry must be in place before
   // ensure() below performs the first boot. The interface descriptor leads: it is what a
-  // bundle's handshake reads before trusting any of the rest.
-  //
-  // Two kinds go in, and the ids do not say which is which (they all read `runtime:`, which
-  // is history — see the note above their definitions). CAPABILITIES are what only this
-  // process can provide; PARKED state is the platform's own, put where a swap cannot lose it.
-  hmr.resources.register(HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
-  hmr.resources.register(HMR_CONFIG_RESOURCE_ID, config);
-  hmr.resources.register(HMR_DB_RESOURCE_ID, db);
-  hmr.resources.register(HMR_CHANNELS_RESOURCE_ID, channels);
-  hmr.resources.register(HMR_PROXY_RESOURCE_ID, applyProxySettings);
-  hmr.resources.register(HMR_HOST_RESOURCE_ID, hmr);
+  // bundle's handshake reads before trusting any of the rest. Capabilities first (`hmr:*`),
+  // then the platform's parked state (`platform:*`).
+  publish(hmr.resources, HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
+  publish(hmr.resources, HMR_CONFIG_RESOURCE_ID, config);
+  publish(hmr.resources, HMR_DB_RESOURCE_ID, db);
+  publish(hmr.resources, HMR_CHANNELS_RESOURCE_ID, channels);
+  publish(hmr.resources, HMR_PROXY_RESOURCE_ID, applyProxySettings);
+  publish(hmr.resources, HMR_HOST_RESOURCE_ID, hmr);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
-  hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
+  publish(hmr.resources, HMR_DESKTOP_RESOURCE_ID, desktop);
   const lifecycle = new LifecycleService(config.supervised);
-  hmr.resources.register(HMR_LIFECYCLE_RESOURCE_ID, lifecycle);
-  // …and the parked half. The auth values and the nodes a test stands in for: platform
-  // state, every one.
-  hmr.resources.register(PARKED_AUTH_STATE_RESOURCE_ID, authState);
-  hmr.resources.register(PARKED_OVERRIDES_RESOURCE_ID, replacements);
+  publish(hmr.resources, HMR_LIFECYCLE_RESOURCE_ID, lifecycle);
+  publish(hmr.resources, PARKED_AUTH_STATE_RESOURCE_ID, authState);
+  publish(hmr.resources, PARKED_OVERRIDES_RESOURCE_ID, replacements);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
   if (plugins !== undefined) {
-    hmr.resources.register(PLUGINS_RESOURCE_ID, plugins, () => void plugins.dispose());
+    publish(hmr.resources, PLUGINS_RESOURCE_ID, plugins, () => void plugins.dispose());
   }
 
   // Boot the platform now rather than on the first request: the business surface —

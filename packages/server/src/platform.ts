@@ -222,8 +222,8 @@ export class RuntimeModule {}
 // across generations. The runtime resolves nodes by name — `tree.api("RuntimeModule",
 // "Log")` in app.ts — and a parked document is keyed by it, so a pushed platform that
 // renamed one would fail an older runtime's lookup at boot ("no api 'Log' on module
-// 'RuntimeModule'") and orphan whatever that node had parked. Same rule as the `runtime:`
-// resource ids: the name is history, the classification lives in words.
+// 'RuntimeModule'") and orphan whatever that node had parked. A node name has no alias
+// the way a resource id does (LEGACY_RESOURCE_IDS), so it stays.
 
 @Module({
   children: [
