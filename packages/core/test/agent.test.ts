@@ -193,9 +193,9 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
       // (same source that Trace writes).
       const meta = session.metaMessage.payload as { provider: string; model_id: string };
       expect(meta.provider).toBe("deepseek");
-      expect(meta.model_id).toBe("deepseek-v4-flash-vision-exp");
+      expect(meta.model_id).toBe("deepseek-flash");
       expect(session.provider).toBe("deepseek");
-      expect(session.modelId).toBe("deepseek-v4-flash-vision-exp");
+      expect(session.modelId).toBe("deepseek-flash");
     } finally {
       session.dispose();
     }
@@ -253,7 +253,7 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
     const session = await agent.createSession({ workspaceDir: ws });
     try {
       expect(session.provider).toBe("deepseek");
-      expect(session.modelId).toBe("deepseek-v4-flash-vision-exp");
+      expect(session.modelId).toBe("deepseek-flash");
     } finally {
       session.dispose();
     }
@@ -917,6 +917,36 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       // The Agent object's copies are the load-time snapshot; no Session runs on them.
       expect(agent.state.agentsMd).not.toContain("EDITED AFTER LOAD");
       expect(agent.state.systemConfig.max_turns).not.toBe(7);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("the compaction section is re-read from disk on demand, so an edited threshold reaches a running Session", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-live-compaction");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      const readCompaction = (
+        session as unknown as {
+          engineDeps: {
+            readCompaction?: () => Promise<{ maxContextLength: number; mode: string }>;
+          };
+        }
+      ).engineDeps.readCompaction!;
+
+      await patchSystemConfig((cfg) => {
+        cfg.compaction = { ...(cfg.compaction ?? {}), max_context_length: 40000, mode: "discard" };
+      });
+      // No rotation, no new Session: the reader the engine calls at each checkpoint answers
+      // from the file as it is now.
+      expect(await readCompaction()).toMatchObject({ maxContextLength: 40000, mode: "discard" });
+
+      await patchSystemConfig((cfg) => {
+        cfg.compaction = { ...(cfg.compaction ?? {}), max_context_length: 199000 };
+      });
+      expect((await readCompaction()).maxContextLength).toBe(199000);
     } finally {
       session.dispose();
     }

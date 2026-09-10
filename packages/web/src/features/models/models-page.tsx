@@ -194,8 +194,19 @@ const TONE_CLASS: Record<SpeedTone, string> = {
  */
 const refMapKey = (provider: string, modelId: string) => `${provider}\u0000${modelId}`;
 
-/** Default context window (tokens) for custom models when left unset. */
-const CUSTOM_CONTEXT_DEFAULT = 128000;
+/**
+ * Context window (tokens) recorded for a custom or user-group model whose field is left blank.
+ *
+ * A million, not the 128000 the rest of the app assumes for an *unknown* window. The two answer
+ * different questions: the assumption exists so a model with nothing on file still gets a
+ * conservative compaction threshold, while this is a value the dialog is about to WRITE, on an
+ * entry the user is adding by hand — and models being added by hand today are large-window ones.
+ * Guessing low there costs real capacity (the ring reads full, compaction fires early) for a
+ * model that can hold far more; guessing high costs a number the user narrows once, when the
+ * endpoint turns out to serve less. Preset entries left blank still mean "unknown" and stay
+ * blank.
+ */
+const CUSTOM_CONTEXT_DEFAULT = 1000000;
 
 /** Numeric input filter: context window keeps digits only. */
 export function digitsOnly(v: string): string {

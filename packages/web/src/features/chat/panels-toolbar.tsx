@@ -12,6 +12,7 @@
 import { useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { PANEL_BOTTOM_ICON, PANEL_RIGHT_ICON } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot } from "../../lib/tone";
 import {
@@ -22,10 +23,6 @@ import {
   toggleDock,
   type DockPosition,
 } from "../dock/dock-state";
-
-/** Window with a bottom pane / a right pane: the two pull-open buttons. */
-const PANEL_BOTTOM_ICON = "M4 5h16v14H4zM4 14h16";
-const PANEL_RIGHT_ICON = "M4 5h16v14H4zM14 5v14";
 
 export interface PanelsToolbarProps {
   /** A pending approval inside a subagent: amber dot beside the agents tab's dock button. */
@@ -57,6 +54,8 @@ export function PanelsToolbar({ agentsPending }: PanelsToolbarProps) {
           key={position}
           type="button"
           aria-expanded={isDockVisible(position)}
+          // Hiding a dock keeps every body mounted (dock-panel.tsx renders it at zero
+          // size), so a tab holding unsaved work has nothing to lose and nothing to ask.
           onClick={() => toggleDock(position)}
           title={label}
           aria-label={label}

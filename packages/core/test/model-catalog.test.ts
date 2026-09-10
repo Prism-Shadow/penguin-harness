@@ -241,16 +241,28 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("zhipu", "glm-5.2")?.contextWindow).toBe(1000000);
     expect(catalogEntryFor("qwen-token-plan", "glm-5.2")?.contextWindow).toBe(1048576);
     expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.provider).toBe("deepseek");
-    // The vision revision is a model of its own in both the direct group and on OpenRouter,
-    // and on OpenRouter it is the only vision-capable DeepSeek row. In the direct group the
-    // pre-registered deepseek-v4.1-flash reads images too, so the flag is per row rather than
-    // a property of the id's spelling.
+    // deepseek-flash leads the direct group: the released V4.1 Flash, which the vendor names
+    // without a version segment. The dotted spelling is a RESOLD id only — TokenDance and
+    // OpenRouter sell it that way — so it must not appear in the vendor's own group.
+    expect(MODEL_CATALOG.filter((m) => m.provider === "deepseek")[0]!.modelId).toBe(
+      "deepseek-flash",
+    );
+    expect(catalogEntryFor("deepseek", "deepseek-v4.1-flash")).toBeUndefined();
+    expect(catalogEntryFor("tokendance", "deepseek-v4.1-flash")?.provider).toBe("tokendance");
+    expect(catalogEntryFor("openrouter", "deepseek/deepseek-v4.1-flash")?.provider).toBe(
+      "openrouter",
+    );
+    // Vision is a per-row flag, not a property of the id's spelling. Every Flash row in the
+    // direct group reads images: deepseek-flash natively, and both V4 Flash ids because
+    // DeepSeek retired them on 2026-09-10 and now serves them from V4.1 Flash. deepseek-v4-pro
+    // is the group's one text-only row.
+    expect(catalogEntryFor("deepseek", "deepseek-flash")?.supportsVision).toBe(true);
+    expect(catalogEntryFor("deepseek", "deepseek-v4-flash")?.supportsVision).toBe(true);
     expect(catalogEntryFor("deepseek", "deepseek-v4-flash-vision-exp")?.supportsVision).toBe(true);
+    expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.supportsVision).toBe(false);
     expect(
       catalogEntryFor("openrouter", "deepseek/deepseek-v4-flash-vision-exp")?.supportsVision,
     ).toBe(true);
-    expect(catalogEntryFor("deepseek", "deepseek-v4.1-flash")?.supportsVision).toBe(true);
-    expect(catalogEntryFor("deepseek", "deepseek-v4-flash")?.supportsVision).toBe(false);
     expect(catalogEntryFor("qwen-token-plan", "deepseek-v4-pro")?.provider).toBe("qwen-token-plan");
     expect(catalogEntryFor("minimax", "MiniMax-M3")?.displayName).toBe("MiniMax M3");
   });
@@ -272,9 +284,10 @@ describe("model-catalog", () => {
         cat.offPeakDiscount !== undefined ? cat.pricing : effectivePricing(cat),
       );
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
-      // Gateway and direct MiniMax presets pin a client protocol; other direct models auto-route.
+      // Gateway presets pin a client protocol, and so do the two direct rows whose own id
+      // does not route (MiniMax M3, DeepSeek deepseek-flash); other direct models auto-route.
       expect(entry.client_type).toBe(cat.clientType);
-      // Gateway and direct MiniMax models inline a preset base URL; no entry carries credentials.
+      // The same rows inline a preset base URL; no entry carries credentials.
       expect(entry.base_url).toBe(cat.baseUrl);
       expect(entry.api_key).toBeUndefined();
       // The concatenated storage id and request_model_id have been removed and no longer appear.
@@ -293,6 +306,7 @@ describe("model-catalog", () => {
       "anthropic/claude-opus-4.8",
       "anthropic/claude-opus-4.7",
       "anthropic/claude-sonnet-5",
+      "deepseek/deepseek-v4.1-flash",
       "deepseek/deepseek-v4-flash-0731",
       "deepseek/deepseek-v4-flash",
       "deepseek/deepseek-v4-flash-vision-exp",
@@ -404,6 +418,7 @@ describe("model-catalog", () => {
       ["deepseek-v4-flash-0731", 1048576, false],
       ["deepseek-v4-flash-vision-exp", 1000000, true],
       ["deepseek-v4-pro-0813", 1000000, false],
+      ["deepseek-v4.1-flash", 1000000, true],
       ["glm-5.3", 1000000, false],
       ["glm-5.3-flash", 1000000, true],
       ["hy4-preview", 1024000, false],
@@ -436,10 +451,10 @@ describe("model-catalog", () => {
       ];
     };
     const discounted: Array<[string, number, [number, number, number]]> = [
-      ["glm-5.3-flash", 0.5, [0.4, 1.4, 0.115]],
+      ["glm-5.3-flash", 0.1, [0.72, 2.52, 0.207]],
       ["glm-5.3", 0.1, [7.2, 25.2, 1.8]],
-      ["deepseek-v4-pro-0813", 0.5, [4.5, 13.5, 0.15]],
-      ["deepseek-v4-flash-0731", 0.5, [1.5, 4.5, 0.05]],
+      ["deepseek-v4-pro-0813", 0.2, [7.2, 21.6, 0.24]],
+      ["deepseek-v4-flash-0731", 0.2, [2.4, 7.2, 0.08]],
       ["kimi-k3", 0.2, [16, 80, 1.6]],
       ["qwen3.8-max", 0.1, [10.8, 32.4, 1.35]],
       ["seed-2.1-pro", 0.5, [3, 15, 0.6]],
@@ -454,16 +469,38 @@ describe("model-catalog", () => {
       expect(output, `${modelId} output`).toBeCloseTo(cnyBilled[1], 4);
       expect(cacheHit, `${modelId} cache hit`).toBeCloseTo(cnyBilled[2], 4);
     }
-    // Exactly those nine are promoted; every other row bills its list price unchanged.
+    // Exactly those nine carry a flat discount; every other row bills its list price
+    // unchanged. Two of those others declare DeepSeek's peak/off-peak schedule instead, so
+    // they are compared at a PEAK instant — 2026-09-10 is a Thursday, and 10:00 Beijing is
+    // inside the morning window — because effectivePricing halves them off-peak by design.
     expect(
       td
         .filter((m) => m.discount !== undefined)
         .map((m) => m.modelId)
         .sort(),
     ).toEqual(discounted.map(([id]) => id).sort());
+    const peakInstant = new Date("2026-09-10T10:00:00+08:00");
     for (const m of td.filter((x) => x.discount === undefined)) {
-      expect(effectivePricing(m), m.modelId).toEqual(m.pricing);
+      expect(effectivePricing(m, peakInstant), m.modelId).toEqual(m.pricing);
     }
+    // The two rows that follow the vendor's schedule instead of a gateway promotion, at the
+    // same peak tier the direct DeepSeek rows store: CNY 0.04 / 2 / 8 per million.
+    const tdScheduled = td.filter((m) => m.offPeakDiscount !== undefined).map((m) => m.modelId);
+    expect(tdScheduled).toEqual(["deepseek-v4-flash-vision-exp", "deepseek-v4.1-flash"]);
+    for (const id of tdScheduled) {
+      const row = td.find((m) => m.modelId === id)!;
+      expect(row.offPeakDiscount, id).toBe(DEEPSEEK_OFF_PEAK);
+      expect(row.discount, id).toBeUndefined();
+      expect([row.pricing!.cache_read, row.pricing!.cache_write, row.pricing!.output], id).toEqual([
+        0.005714, 0.285714, 1.142857,
+      ]);
+    }
+    // Display names are the seller's own spelling, not a prettified one.
+    expect(td.filter((m) => m.modelId.startsWith("seed-")).map((m) => m.displayName)).toEqual([
+      "Seed-2.1-Pro",
+      "Seed-2.1-Turbo",
+      "Seed-Evolving",
+    ]);
     // The stored list prices themselves, in the catalog's own argument order.
     const tdQwen = td.find((m) => m.modelId === "qwen3.8-max")!.pricing!;
     expect([tdQwen.cache_read, tdQwen.cache_write, tdQwen.output]).toEqual([
@@ -613,10 +650,13 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("openrouter", "google/gemini-3.5-flash")!.contextWindow).toBe(1048576);
     expect(catalogEntryFor("google", "gemini-3.5-flash")!.contextWindow).toBe(1048576);
 
-    // In preset entries, every gateway model and the direct MiniMax client inline base_url (no credentials).
+    // In preset entries, every gateway model inlines base_url, and so do the two direct rows
+    // whose own id does not route — MiniMax M3 and DeepSeek deepseek-flash (no credentials).
+    const pinnedDirect = MODEL_CATALOG.filter((m) => m.provider === "deepseek" && m.baseUrl);
+    expect(pinnedDirect.map((m) => m.modelId)).toEqual(["deepseek-flash"]);
     const withBaseUrl = presetModelEntries().filter((e) => e.base_url !== undefined);
     expect(withBaseUrl.map((e) => [e.provider, e.model_id]).sort()).toEqual(
-      [...gateway, ...minimax].map((m) => [m.provider, m.modelId]).sort(),
+      [...gateway, ...minimax, ...pinnedDirect].map((m) => [m.provider, m.modelId]).sort(),
     );
   });
 
@@ -628,6 +668,23 @@ describe("model-catalog", () => {
         expect(m.clientType, m.modelId).toBeUndefined();
         expect(m.baseUrl, m.modelId).toBeUndefined();
       }
+    }
+    // The DeepSeek group is the exception, and only for one row: AgentHub 0.4.11 routes
+    // DeepSeek on the `deepseek-v4` substring alone, which the released `deepseek-flash`
+    // does not carry, so that row pins the client and inlines the vendor endpoint. Every
+    // other row in the group still auto-routes on its own spelling, and the pin comes off
+    // once AgentHub routes the bare id.
+    const pinned = MODEL_CATALOG.filter(
+      (m) => m.provider === "deepseek" && m.clientType !== undefined,
+    );
+    expect(pinned.map((m) => m.modelId)).toEqual(["deepseek-flash"]);
+    expect(pinned[0]!.clientType).toBe("deepseek-v4");
+    expect(pinned[0]!.baseUrl).toBe("https://api.deepseek.com");
+    for (const m of MODEL_CATALOG.filter(
+      (e) => e.provider === "deepseek" && e.modelId !== "deepseek-flash",
+    )) {
+      expect(m.clientType, m.modelId).toBeUndefined();
+      expect(m.baseUrl, m.modelId).toBeUndefined();
     }
     // Dictionary order by tier with newer versions of a tier first (same rule the OpenRouter
     // block follows for the identical Claude line-up).
@@ -872,6 +929,19 @@ describe("model-catalog", () => {
     expect([flash0731.cache_read, flash0731.cache_write, flash0731.output]).toEqual([
       0.0157192, 0.078596, 0.157192,
     ]);
+    // The V4.1 Flash listing (added 2026-09-10) is the one OpenRouter DeepSeek row on a
+    // schedule: its base price is the PEAK tier and `pricing.overrides` bill exactly half in
+    // DeepSeek's own off-peak windows, so the row stores the peak figures and declares the
+    // shared schedule rather than a flat gateway discount.
+    const flash41 = catalogEntryFor("openrouter", "deepseek/deepseek-v4.1-flash")!;
+    expect([flash41.contextWindow, flash41.supportsVision]).toEqual([1048576, true]);
+    expect([
+      flash41.pricing!.cache_read,
+      flash41.pricing!.cache_write,
+      flash41.pricing!.output,
+    ]).toEqual([0.006, 0.3, 1.2]);
+    expect(flash41.offPeakDiscount).toBe(DEEPSEEK_OFF_PEAK);
+    expect(flash41.discount).toBeUndefined();
   });
 
   it("the OpenAI line-up is listed both directly and on OpenRouter, and only the gateway rows speak Responses", () => {
@@ -968,9 +1038,22 @@ describe("model-catalog", () => {
 describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
   it("first-party model ids route to the provider client's env var", () => {
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
-    // The dotted V4.1 spelling still carries the deepseek-v4 substring AutoLLMClient routes on.
+    // The dotted V4.1 spelling still carries the deepseek-v4 substring AutoLLMClient routes
+    // on. It survives in the catalog as a RESOLD id — TokenDance's deepseek-v4.1-flash and
+    // OpenRouter's deepseek/deepseek-v4.1-flash, both of which pin openai-chat anyway — so
+    // this branch is what the bare spelling would resolve to, not what those rows use.
     expect(resolveModelEnv("deepseek-v4.1-flash")?.envKey).toBe("DEEPSEEK_API_KEY");
     expect(resolveModelEnv("deepseek-v4.1-flash")?.envBaseUrlKey).toBe("DEEPSEEK_BASE_URL");
+    // The released direct id carries no `deepseek-v4` substring, and AgentHub 0.4.11 routes
+    // DeepSeek on that substring alone: unroutable on its own, which is why the catalog row
+    // pins client_type "deepseek-v4" — and with the pin it lands on the DeepSeek client.
+    // Mirroring AgentHub is the contract, so this stays undefined until AgentHub itself
+    // routes the bare name.
+    expect(resolveModelEnv("deepseek-flash")).toBeUndefined();
+    expect(resolveModelEnv("deepseek-flash", "deepseek-v4")?.envKey).toBe("DEEPSEEK_API_KEY");
+    expect(resolveModelEnv("deepseek-flash", "deepseek-v4")?.envBaseUrlKey).toBe(
+      "DEEPSEEK_BASE_URL",
+    );
     expect(resolveModelEnv("claude-opus-4-8")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("claude-sonnet-4-6")?.envKey).toBe("ANTHROPIC_API_KEY");
     expect(resolveModelEnv("gemini-3.5-flash")?.envKey).toBe("GEMINI_API_KEY");
@@ -1254,8 +1337,19 @@ describe("off-peak schedules", () => {
   const beijing = (iso: string): Date => new Date(`${iso}+08:00`);
 
   it("the DeepSeek rows store the peak price and declare the schedule", () => {
-    const rows = MODEL_CATALOG.filter((m) => m.provider === "deepseek");
+    // Every direct row, plus the three resold rows whose sellers pass DeepSeek's own windows
+    // through: two on TokenDance and one on OpenRouter. A gateway row on the schedule carries
+    // no flat `discount` — the two are mutually exclusive, pinned by the last case here.
+    const rows = MODEL_CATALOG.filter(
+      (m) =>
+        m.provider === "deepseek" ||
+        (m.provider === "tokendance" &&
+          ["deepseek-v4.1-flash", "deepseek-v4-flash-vision-exp"].includes(m.modelId)) ||
+        (m.provider === "openrouter" && m.modelId === "deepseek/deepseek-v4.1-flash"),
+    );
     expect(rows.length).toBeGreaterThan(0);
+    // And nothing else in the catalog is on a schedule at all.
+    expect(MODEL_CATALOG.filter((m) => m.offPeakDiscount !== undefined).length).toBe(rows.length);
     for (const m of rows) {
       expect(m.offPeakDiscount, m.modelId).toBe(S);
       // Peak is exactly double the off-peak tier DeepSeek publishes. Compared at 1e-5: both

@@ -2356,6 +2356,21 @@ export interface ContextToolShare {
 }
 
 /**
+ * One file's share of the context: its `read_file` / `edit_file` / `write_file` calls plus their
+ * results, keyed by the file each call named.
+ */
+export interface ContextFileShare {
+  /**
+   * Workspace-relative when the file is inside the Session's Workspace; otherwise absolute, with
+   * the home directory shortened to `~`. Spellings that resolve to the same file are one row.
+   */
+  path: string;
+  tokens: number;
+  /** How many calls of each file tool named the file in this context. */
+  ops: { read: number; edit: number; write: number };
+}
+
+/**
  * What the Session's current model context is made of — the part derived from its messages.
  *
  * Every token figure is an **estimate** from a character heuristic, not a tokenizer: the
@@ -2365,7 +2380,8 @@ export interface ContextToolShare {
  *
  * The six parts partition the context and sum to `total`; `topTools` is a ranking inside
  * `toolRequests + toolResults` and can sum to less than those two (a result whose call was not
- * recorded in the same Trace shard has no tool to be attributed to).
+ * recorded in the same Trace shard has no tool to be attributed to). `topFiles` is the same
+ * ranking narrowed to the three file tools and keyed by the file each call named.
  */
 export interface SessionContextParts {
   systemPrompt: number;
@@ -2378,6 +2394,8 @@ export interface SessionContextParts {
   total: number;
   /** Tools ranked by the context their traffic occupies, descending; at most five. */
   topTools: ContextToolShare[];
+  /** Files ranked by the context their file-tool traffic occupies, descending; at most five. */
+  topFiles: ContextFileShare[];
   /**
    * A completed compaction closed the context these figures describe, and the next one has not
    * been written yet: the composition is of what was compacted away, not of what the model now
@@ -2549,6 +2567,22 @@ export interface WorkspaceFilesResponse {
   /** Requested relative path ("" = Workspace root). */
   path: string;
   entries: WorkspaceFileEntry[];
+}
+
+/** Write one Workspace file whole (the Upload button, a drop, and the Files panel's editor). */
+export interface FilesWriteRequest {
+  /** The entire file, base64-encoded (≤14MB decoded). */
+  dataBase64: string;
+  /**
+   * Write precondition: the version marker the caller read off this file's `ETag` on
+   * `GET files/content`. The server compares it against the file's state immediately
+   * before writing and answers 409 `file_changed` — having written nothing — when they
+   * differ, which is what stops the editor's save from quietly dropping what the Agent
+   * wrote during the turn. Omitted by a caller that read no version (an upload creates or
+   * replaces unconditionally); that absence, not a sentinel value, is what says there was
+   * no prior version to match.
+   */
+  ifVersion?: string;
 }
 
 /** Batch file existence check (message file cards only list files that actually exist). */

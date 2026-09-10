@@ -72,17 +72,19 @@ Model entry (`[[models]]`) fields:
 | `fast_mode` | Per-model fast mode (premium faster serving tier); off by default, only `true` is persisted. Offered only for models whose AgentHub client can serve it; the others reject requests carrying it — see [Models](/models#fast-mode) |
 | `pricing` | Three price buckets `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`) |
 | `api_key` | Inline credential; when empty, falls back to the provider environment variable |
-| `base_url` | Custom base URL; preset by the built-in catalog for gateways and direct MiniMax models |
+| `base_url` | Custom base URL; preset by the built-in catalog for gateways and for the direct rows that pin a client — MiniMax M3 and DeepSeek `deepseek-flash` |
 | `created_at` | Write timestamp of `api_key` (ISO 8601; a display field maintained by the interface layer) |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
+default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash-vision-exp"
+model_id = "deepseek-flash"
 context_window = 1000000
 vision = true
+client_type = "deepseek-v4"
+base_url = "https://api.deepseek.com"
 api_key = "sk-..."
 
 [models.pricing]
@@ -155,6 +157,8 @@ Manage it from the Security policy tab of Project Settings in the Web App (owner
 | `compaction.max_session_turns` | `-1` | Cumulative Session turn threshold (`-1` = unlimited) |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | built-in template | Prompt used for summarize compaction |
+
+The four `compaction.*` fields are the one part of this file a running conversation does not have to wait for: the engine re-reads the section at every compaction checkpoint (after each request reports its token usage, and on a manual `/compact`), so a saved change applies to Sessions already running. Everything else here is read when a model context opens and lands at the next compaction. The Web App can also change the threshold straight from the context panel — drag the dashed cutter on its bar.
 | `memory.enabled` | `true` | Whether Memory enters the context and Memory directories are prepared |
 | `memory.prompt` | built-in template | Always-injected half of the `{{MEMORY}}` block, editable on the Memory tab — carries `{{USER_MEMORY_INDEX}}` |
 | `memory.workspace_prompt` | built-in template | Appended only in a persistent Workspace, editable on the Memory tab — carries `{{WORKSPACE_MEMORY_INDEX}}` and `{{WORKSPACE_MEMORY_DIR}}` |
@@ -236,7 +240,7 @@ For developers: `kernel_version` advances manually, and only on a substantive ch
 
 On Windows, `{{PROJECT_DIR}}` and `{{CWD}}` are injected with forward slashes — like every other path core composes for the model (attachment lines, the goal-file line, truncated-output recovery paths). The model re-emits these spellings into JSON tool arguments and shell commands; forward slashes are accepted by Node's fs APIs and the package's (Git) Bash tool shell, and avoid JSON backslash-escaping mistakes.
 
-`agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)). Like the rest of the Agent State — `system_config.yaml` included — it is read whenever a model context opens: at Session creation and again when a compaction opens the next context. An edit therefore takes effect at the next compaction of a running Session, not only in new Sessions, and never inside the context that is running (see [Compaction](/agent-loop)).
+`agent_state/AGENTS.md` is the developer-editable instruction file, injected via `{{AGENTS_MD}}` and empty by default — it is also the file an optimizer edits most (see [Self-Improvement](/self-improvement)). Like the rest of the Agent State — `system_config.yaml` included — it is read whenever a model context opens: at Session creation and again when a compaction opens the next context. An edit therefore takes effect at the next compaction of a running Session, not only in new Sessions, and never inside the context that is running (the `compaction` section is the exception — see [Compaction](/agent-loop)).
 
 The Vault / Skills / Memory / Schedules sections all follow the same placeholder + toggle + editable prompt pattern: the template holds only the `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` placeholders, the section text lives in the corresponding `*.prompt` config (edited on its settings tab), and turning `*.enabled` off empties the whole block. The four section placeholders are expanded **last, in a single pass** at assembly time: expansion products are never rescanned, so placeholder-looking text inside a memory index or a section prompt stays literal instead of triggering a second substitution.
 

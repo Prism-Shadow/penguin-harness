@@ -9,7 +9,7 @@ The official image runs the same server `penguin server` starts, with the Web Ap
 hiyouga/penguinharness
 ```
 
-`latest` follows `main` — every push rebuilds it, and `main-<sha7>` names that same image immutably. `stable` is the newest release; `X.Y.Z` and `X.Y` pin one. Every tag is built from this repository's source at that commit, and each is a multi-platform manifest covering `linux/amd64` and `linux/arm64`, so the same reference serves an x86 VPS and an arm64 one alike. The examples below use `latest`; a deployment that should move only when a version ships wants `stable` instead.
+The image has two kinds of tag: `latest` follows `main` — every push rebuilds it — and `X.Y.Z` is a release, built from that tag's own source. There is no `main-<sha>`, `X.Y` or `stable`: nothing that moves under a second name. Every tag is a multi-platform manifest covering `linux/amd64` and `linux/arm64`, so the same reference serves an x86 VPS and an arm64 one alike. The examples below use `latest`; a deployment that should move only when a version ships pins a version.
 
 ## Run it
 
@@ -76,7 +76,7 @@ PenguinHarness ships with no model credentials. Use the **Models** page in the W
 
 ```bash
 docker compose exec -u penguin penguin \
-  penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
+  penguin config model add --provider deepseek --model-id deepseek-flash --api-key sk-... --set-default
 ```
 
 The `-u penguin` matters: `docker exec` runs as root by default, and files it writes into `/data` would then be owned by root while the server runs as uid 1000. See [Models & Providers](/models) for the built-in groups.

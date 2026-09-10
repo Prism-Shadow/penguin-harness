@@ -100,6 +100,12 @@ export const en: Strings = {
     killConfirmTitle: "Close this terminal?",
     killConfirmBody: (name: string): string =>
       `This ends the shell "${name}" — it cannot be restored.`,
+    launcher: "Shortcuts",
+    launcherCaption: "Shortcuts",
+    launcherPending: "a subagent awaits approval",
+    launcherPanels: "Shortcuts",
+    launcherHide: "Hide launcher",
+    launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
   },
 
   tracePanel: {
@@ -172,6 +178,9 @@ export const en: Strings = {
     fontLarge: "L",
     accent: "Accent",
     accentInfo: "Interface accent color.",
+    launcher: "Shortcuts launcher",
+    launcherInfo:
+      "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
@@ -495,6 +504,7 @@ export const en: Strings = {
   agent: {
     savedTakesEffect:
       "Saved. New conversations pick it up right away; running ones after their next compaction.",
+    savedTakesEffectNow: "Saved. It takes effect immediately, including running conversations.",
     takesEffectSuffix:
       " — new conversations pick it up right away, running ones after their next compaction",
     listTitle: "Agents",
@@ -1785,13 +1795,35 @@ Scenarios:
     contextPartToolRequests: "Tool requests",
     contextPartToolResults: "Tool results",
     contextTopTools: "Top 5 tools",
-    contextCompactAt: (n: string): string => `Compaction threshold ${n}`,
+    contextWindowIs: (n: string): string => `Max context ${n}`,
     contextTopToolsHint:
       "Ranked by the context each tool's calls and results occupy (definitions count under “Tool definitions”)",
+    contextTopFiles: "Top 5 files",
+    contextTopFilesHint:
+      "Ranked by the context each file's read_file / edit_file / write_file calls and results occupy; hover a row for the full path",
+    contextRankLabel: "Ranking",
+    contextRankTools: "Tools",
+    contextRankFiles: "Files",
+    contextNoFileTraffic: "No file traffic in this context",
     contextUnknownHint:
       "Just compacted — the next request reports the usage, and the composition with it",
     contextBreakdownEmpty: "Nothing in the current context to break down yet",
     contextBreakdownFailed: "Could not read the context composition",
+    contextThresholdCutter: "Compaction threshold",
+    contextThresholdHover: (n: string): string => `Compaction threshold ${n} (drag to adjust)`,
+    contextThresholdTitle: "Change the compaction threshold",
+    contextThresholdBody: (agentName: string, old: string): string =>
+      `Change ${agentName}'s compaction threshold from ${old} to the value below? It takes effect immediately, including the running conversation.`,
+    contextThresholdField: "Compaction threshold (tokens)",
+    contextThresholdInvalid: "Must be a whole number above 0",
+    contextThresholdCapped: (n: string): string =>
+      `Above the model window — the threshold in force will be ${n}`,
+    contextThresholdSaved: (n: string): string =>
+      `Compaction threshold changed to ${n}; it applies immediately`,
+    contextWindowUnderThreshold: (n: string, m: string): string =>
+      `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Drag the dashed mark in the context panel, or set the threshold below the window in the agent settings — it applies immediately.`,
+    contextWindowUnderThresholdAction: "Open agent settings",
+    contextWindowUnderThresholdDismiss: "Dismiss",
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",
@@ -1847,6 +1879,9 @@ Scenarios:
     mcpServerFailed: "connection failed",
     mcpConnectAborted: "interrupted — reconnects on the next send",
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
+    compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),
+    compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
+    compactionResult: "Result",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
@@ -2280,21 +2315,65 @@ Scenarios:
     previewNotIsolatedHint:
       "This address has no separate preview origin, so the page opens sandboxed: localStorage, cookies and third-party embeds will not work. Reach the app over 127.0.0.1 or localhost, or set PENGUIN_PREVIEW_ORIGIN.",
     refresh: "Refresh",
-    root: "Workspace root",
+    /** The Workspace root, as the breadcrumbs and the drop overlay name it. "." is what a
+     *  shell calls the working directory, so it needs no translation. */
+    root: ".",
     empty: "Empty directory",
     previewUnsupported: "Preview not supported for this type; download instead",
-    uploaded: "Uploaded",
-    /** Upload-overwrite confirmation: same-name files in the current directory will be replaced. */
+    uploadedCount: (n: number): string => (n === 1 ? "1 file uploaded" : `${n} files uploaded`),
+    uploading: (done: number, total: number): string => `Uploading ${done}/${total}…`,
+    /** Oversize picks are named and skipped before anything is read. */
+    uploadTooLarge: (names: string, mb: number): string =>
+      `Over the ${mb}MB upload limit, skipped: ${names}`,
+    /** A dropped folder is not a file the upload endpoint can take; it is named and skipped. */
+    folderDropSkipped: (names: string): string => `Folders cannot be uploaded, skipped: ${names}`,
+    /** Upload-overwrite confirmation: same-name files in the target directory will be replaced. */
     overwriteTitle: "Overwrite existing files",
     overwriteConfirm: (n: number): string =>
-      `The current directory already has ${n} file(s) with these names — uploading will overwrite:`,
+      `The target directory already has ${n} file(s) with these names — uploading will overwrite:`,
     loadFailed: "Failed to load",
     previewTruncated: "File too large; preview truncated, download for the full file",
-    details: "Details",
-    workspacePath: "Workspace path",
     htmlRendered: "Rendered",
     htmlSource: "Source",
     backToList: "Back to list",
+    /** The tree pane: its accessible name and the toolbar toggle's two states. */
+    treeLabel: "File tree",
+    showTree: "Show file tree",
+    hideTree: "Hide file tree",
+    /** The divider between the tree and the preview: drag, or nudge with the arrow keys. */
+    treeWidth: "Resize the file tree",
+    /** The search box above the tree; it reaches only as far as the lazy tree has been loaded. */
+    searchPlaceholder: "Search files",
+    searchClear: "Clear search",
+    searchNoMatch: "Nothing loaded matches",
+    selectFile: "Select a file to preview",
+    /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
+    dropToUpload: (dir: string): string => `Drop to upload into ${dir}`,
+    /** In-place text editing. */
+    editorLabel: (name: string): string => `Editing ${name}`,
+    /** Editor soft-wrap toggle: off means long lines scroll sideways. */
+    editorWrap: "Wrap",
+    unsaved: "Unsaved changes",
+    saveTitle: "Save (Ctrl+S / ⌘S)",
+    saveConfirmTitle: "Save file",
+    saveConfirm: (name: string): string =>
+      `Save changes to ${name}? The file in the Workspace will be overwritten.`,
+    editTooLarge: (kb: number): string =>
+      `The file is larger than ${kb}KB and cannot be edited here — download it instead`,
+    saveTooLarge: (mb: number): string =>
+      `The content exceeds the ${mb}MB write limit and was not saved`,
+    discardTitle: "Discard unsaved changes",
+    discardBody: (name: string): string => `${name} has unsaved changes. Discard them?`,
+    discard: "Discard",
+    unsavedRestored: (name: string): string => `Restored unsaved changes to ${name}`,
+    /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
+    changedOnDisk: "Changed on disk",
+    changedOnDiskHint:
+      "This file has been rewritten since you opened it — saving replaces that version with yours.",
+    conflictTitle: "File changed on disk",
+    conflictBody: (name: string): string =>
+      `${name} was rewritten after you opened it, most likely by the Agent during its turn, so nothing was saved. Overwrite it with your version, or keep editing and copy what you need out first — either way your text is kept.`,
+    overwriteAnyway: "Overwrite",
   },
 
   usage: {

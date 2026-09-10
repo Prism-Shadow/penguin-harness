@@ -16,8 +16,10 @@
  * which together with `--provider` forms a `(provider, model_id)` paired reference —
  * **no string concatenation is ever performed**. `--provider` is **required** on every model
  * subcommand that names an entry: the group is never guessed, so `--api-key` can never land on
- * a vendor the user did not name. For `model add`, a new entry's client_type defaults according
- * to the group's semantics (not set for first-party vendors; openai-chat for custom /
+ * a vendor the user did not name. For `model add`, a new entry's
+ * client_type and base_url are inherited from the built-in catalog row for that exact
+ * (provider, model_id) pair when one pins them, and otherwise default according to the
+ * group's semantics (not set for first-party vendors; openai-chat for custom /
  * self-hosted groups / gateways, with the gateway's endpoint base URL pre-filled). For `model default`
  * / `model vision`, core validation raises an error when the reference is not
  * found in models; `model remove` reports the same condition itself, since removal is
@@ -155,22 +157,29 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       const ref: ModelRef = { provider, model_id: modelId };
       const before = await loadProjectConfig(root, opts.projectId);
       const existed = getModel(before, ref) !== undefined;
-      // client_type default rule, only injected for new entries (updating an
-      // existing entry never overrides an explicit config): a group that pins a protocol
-      // (vLLM) gets that pin, whatever the id; otherwise not set for first-party vendor
-      // groups (AgentHub auto-routes by upstream id, with env fallback keyed on id), and
-      // openai-chat for custom / user-defined / gateway groups, with the gateway's endpoint
-      // base URL pre-filled as well. (An explicit --client-type is passed through; core's
-      // addModel normalizes the deprecated bare "openai" alias.)
+      // client_type / base_url default rule, only injected for new entries (updating an
+      // existing entry never overrides an explicit config). The catalog row for this exact
+      // (provider, model_id) pair is consulted first: a preset that pins a protocol and an
+      // endpoint does so because its own id would not route otherwise — MiniMax M3 and the
+      // direct DeepSeek `deepseek-flash` — and an entry added by hand must inherit that pin
+      // or it is written unroutable. Failing a catalog row, the group decides: a group that
+      // pins a protocol (vLLM) gets that pin, whatever the id; otherwise not set for
+      // first-party vendor groups (AgentHub auto-routes by upstream id, with env fallback
+      // keyed on id), and openai-chat for custom / user-defined / gateway groups, with the
+      // gateway's endpoint base URL pre-filled as well. (An explicit --client-type /
+      // --base-url is passed through and outranks both; core's addModel normalizes the
+      // deprecated bare "openai" alias.)
       const pInfo = providerInfo(provider);
+      const catalogEntry = catalogEntryFor(provider, modelId);
       const openAiDefault =
         pInfo === undefined || pInfo.id === "custom" || pInfo.gatewayBaseUrl !== undefined;
       const groupClientType = providerClientType(provider);
-      const defaultClientType = groupClientType ?? (openAiDefault ? "openai-chat" : undefined);
+      const defaultClientType =
+        catalogEntry?.clientType ?? groupClientType ?? (openAiDefault ? "openai-chat" : undefined);
+      const defaultBaseUrl = catalogEntry?.baseUrl ?? pInfo?.gatewayBaseUrl;
       const clientType: string | undefined =
         opts.clientType ?? (!existed ? defaultClientType : undefined);
-      const baseUrl: string | undefined =
-        opts.baseUrl ?? (!existed ? pInfo?.gatewayBaseUrl : undefined);
+      const baseUrl: string | undefined = opts.baseUrl ?? (!existed ? defaultBaseUrl : undefined);
       // Only collect explicitly given price fields, letting addModel merge them with the existing pricing per-field.
       const pricing: Partial<ModelPricing> = {};
       if (opts.priceCacheRead !== undefined) pricing.cache_read = opts.priceCacheRead;
