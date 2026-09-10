@@ -57,6 +57,8 @@ export class BackgroundRegistry<T extends BackgroundTask> {
   private readonly maxTasks: number;
   private readonly reapTimer: ReturnType<typeof setInterval>;
   private disposed = false;
+  /** Single membership listener (see onChange); null until a manager subscribes. */
+  private changeListener: (() => void) | null = null;
 
   constructor(opts: { idPrefix: string; maxTasks: number }) {
     this.idPrefix = opts.idPrefix;
@@ -109,7 +111,19 @@ export class BackgroundRegistry<T extends BackgroundTask> {
     while (this.tasks.has(id)) id = this.randomId();
     task.lastUsed = Date.now();
     this.tasks.set(id, task);
+    this.changeListener?.();
     return id;
+  }
+
+  /**
+   * Attaches the single membership listener: pinged after a session enters the registry
+   * and after one leaves it — an explicit removal, a capacity eviction, an idle reap, or the
+   * clear-out of killAll/dispose (killAllHard fires nothing: the event loop is already
+   * gone). Payload-free; a subscriber re-reads `list()`. A later call replaces the earlier
+   * one.
+   */
+  onChange(listener: () => void): void {
+    this.changeListener = listener;
   }
 
   private randomId(): string {
@@ -140,12 +154,15 @@ export class BackgroundRegistry<T extends BackgroundTask> {
     if (!t) return;
     this.tasks.delete(id);
     t.kill();
+    this.changeListener?.();
   }
 
   /** Kills and clears all sessions (called when the Session/Environment ends). */
   killAll(): void {
+    const had = this.tasks.size > 0;
     for (const t of this.tasks.values()) t.kill();
     this.tasks.clear();
+    if (had) this.changeListener?.();
   }
 
   /** Synchronously hard-kills all sessions (process 'exit' fallback path). */

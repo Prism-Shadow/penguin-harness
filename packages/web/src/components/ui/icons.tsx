@@ -164,6 +164,20 @@ export function CloseButton({
 /** Info circle: the app's 9-radius status circle with a bar and a dot inside it. */
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
+/**
+ * Activity trace (a flat line with one tall beat in it): work still going on behind the
+ * conversation — the background-task mark on a session row, the matching count in the chat
+ * header, and the marker on a tool row whose call was made with `run_in_background`.
+ *
+ * A trace rather than the layered stack it replaces, which read as "layers" (a thing) instead
+ * of "still running" (an event), and whose two parallelograms sit ~2.5px apart at the row's
+ * 12px and merge into a smudge. One continuous stroke with a single tall beat keeps its shape
+ * at that size, and it is nobody else's shape in these rows: not the hourglass or the compress
+ * chevrons (`attention`, session activity), not the spinner ring or the circled check / cross
+ * (a tool row's own status), not the unread dot.
+ */
+export const BACKGROUND_TASKS_ICON = "M2 12h4l3 9 6-18 3 9h4";
+
 /** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab). */
 export const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
 

@@ -93,6 +93,7 @@ export class SessionService {
   async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace);
     const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
+    const backgroundTasks = this.deps.manager.backgroundTasksOf(row.sessionId);
     return {
       sessionId: row.sessionId,
       projectId: row.projectId,
@@ -112,6 +113,7 @@ export class SessionService {
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
       ...(messagingChannel !== null ? { messagingChannel } : {}),
+      ...(backgroundTasks !== undefined ? { backgroundTasks } : {}),
     };
   }
 
