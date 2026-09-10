@@ -30,7 +30,7 @@ import {
   HMR_DB_RESOURCE_ID,
   HMR_HOST_RESOURCE_ID,
   HMR_PROXY_RESOURCE_ID,
-  PARKED_AUTH_STATE_RESOURCE_ID,
+  HMR_AUTH_STATE_RESOURCE_ID,
   LEGACY_RESOURCE_IDS,
   claimAny,
   claimHmrCapabilities,
@@ -401,7 +401,7 @@ describe("runtime capability handshake", () => {
     r.register(legacy(HMR_HOST_RESOURCE_ID), carrying("hmr"));
     r.register(legacy(HMR_LIFECYCLE_RESOURCE_ID), carrying("lifecycle"));
     const published = { firstLoginToken: "x", apiToken: null };
-    r.register(legacy(PARKED_AUTH_STATE_RESOURCE_ID), published);
+    r.register(legacy(HMR_AUTH_STATE_RESOURCE_ID), published);
     const claim = claimHmrCapabilities(r);
     expect(claim).toMatchObject({ kind: "claimed" });
     if (claim.kind !== "claimed") return;
@@ -411,13 +411,13 @@ describe("runtime capability handshake", () => {
   it("publishes under both ids, and the new id wins a claim", () => {
     const r = new HotResources();
     const fresh = { firstLoginToken: null, apiToken: null };
-    publish(r, PARKED_AUTH_STATE_RESOURCE_ID, fresh);
-    expect(r.claim(PARKED_AUTH_STATE_RESOURCE_ID)).toBe(fresh);
-    expect(r.claim(LEGACY_RESOURCE_IDS[PARKED_AUTH_STATE_RESOURCE_ID]!)).toBe(fresh);
+    publish(r, HMR_AUTH_STATE_RESOURCE_ID, fresh);
+    expect(r.claim(HMR_AUTH_STATE_RESOURCE_ID)).toBe(fresh);
+    expect(r.claim(LEGACY_RESOURCE_IDS[HMR_AUTH_STATE_RESOURCE_ID]!)).toBe(fresh);
     // A stale legacy entry beside a current one is not what the platform reads.
     const stale = { firstLoginToken: "old", apiToken: null };
-    r.register(LEGACY_RESOURCE_IDS[PARKED_AUTH_STATE_RESOURCE_ID]!, stale);
-    expect(claimAny(r, PARKED_AUTH_STATE_RESOURCE_ID)).toBe(fresh);
+    r.register(LEGACY_RESOURCE_IDS[HMR_AUTH_STATE_RESOURCE_ID]!, stale);
+    expect(claimAny(r, HMR_AUTH_STATE_RESOURCE_ID)).toBe(fresh);
   });
 
   it("fills the fields an older runtime's auth state lacks, in place", () => {
@@ -428,7 +428,7 @@ describe("runtime capability handshake", () => {
     stubCaps(r);
     r.register(HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
     const published = { firstLoginToken: "printed-by-the-old-runtime" };
-    r.register(PARKED_AUTH_STATE_RESOURCE_ID, published);
+    r.register(HMR_AUTH_STATE_RESOURCE_ID, published);
     const claim = claimHmrCapabilities(r);
     expect(claim).toMatchObject({ kind: "claimed" });
     if (claim.kind !== "claimed") return;
