@@ -47,6 +47,7 @@ import {
   subscribeTerminalViewStates,
   terminalViewContainer,
   terminalViewState,
+  subscribeTerminalCloseRequests,
 } from "../terminal/terminal-view-pool";
 import type { TerminalInfo } from "../terminal/terminal-view";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
@@ -130,6 +131,8 @@ function DockTabButton(props: {
   /** Attention dot (e.g. a pending approval inside a subagent) shown beside the name. */
   badge: boolean;
   closeLabel: string;
+  /** The keyboard shortcut that runs the same close, named after the label in the ×'s tooltip. */
+  closeShortcut?: string;
   onSelect: () => void;
   onClose: () => void;
   /** Terminal tabs keep their id on the node for tests and the strip's drag targeting. */
@@ -163,7 +166,11 @@ function DockTabButton(props: {
       </button>
       <button
         type="button"
-        title={props.closeLabel}
+        title={
+          props.closeShortcut !== undefined
+            ? `${props.closeLabel} (${props.closeShortcut})`
+            : props.closeLabel
+        }
         aria-label={`${props.closeLabel}: ${props.label}`}
         data-testid="dock-tab-close"
         onClick={props.onClose}
@@ -628,6 +635,19 @@ export function DockPanel({
     if (tab.kind === "terminal") terminalOrdinals.set(tab.terminalId, terminalOrdinals.size + 1);
   });
 
+  // Ctrl+W inside a shown terminal asks for its tab to close, and takes the × path above,
+  // confirmation included. Only the dock holding that tab answers — and not while it is
+  // collapsing out, when the merged view may list the same tab — so no request is answered
+  // twice. The ref keeps one subscription per mount while the handler reads the current tabs.
+  const closeRequest = useRef<(id: string) => void>(() => {});
+  closeRequest.current = (id) => {
+    if (!open) return;
+    const tab = tabs.find((t) => t.kind === "terminal" && t.terminalId === id);
+    if (!tab) return;
+    closeTab(tab, terminalLabel(terminalById.get(id), id, terminalOrdinals.get(id) ?? 1));
+  };
+  useEffect(() => subscribeTerminalCloseRequests((id) => closeRequest.current(id)), []);
+
   const header = (
     <header
       data-testid="dock-header"
@@ -679,6 +699,7 @@ export function DockPanel({
               active={key === activeKey}
               badge={false}
               closeLabel={S.terminal.killShell}
+              closeShortcut="Ctrl+W"
               onSelect={() => activateTab(key)}
               onClose={() => closeTab(tab, label)}
             />
