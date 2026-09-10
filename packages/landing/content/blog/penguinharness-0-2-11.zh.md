@@ -1,11 +1,11 @@
 ---
-title: "PenguinHarness 0.2.10：文件浏览升级、压缩时机动态调整、Hook 能力、Docker 镜像"
+title: "PenguinHarness 0.2.11：文件浏览升级、压缩时机动态调整、Hook 能力、Docker 镜像"
 date: 2026-09-10
 category: news
 excerpt: 对话长出了一张工作台。文件面板变成可就地编辑、带版本校验保存的双栏浏览器；上下文环改为对着压缩真正触发的那个点计量，阈值本身成了一把可拖动的刻刀；对话右缘多了一颗快捷球，可以把整个面板栏扇开；定时任务也搬进了面板栏。钩子成为智能体循环自身的能力，目标模式与持续学习则作为可安装插件发布。官方 Docker 镜像让一台服务端只需一条 `docker run`，而新建 Project 的默认模型换成了 DeepSeek V4.1 Flash。
 ---
 
-PenguinHarness 0.2.10 发布。本版大部分变化在对话内部：文件面板可编辑、上下文环按压缩点计量、快捷球与定时任务进入面板栏；钩子成为智能体循环能力，官方容器镜像让服务端一条命令部署，模型库同步更新。
+PenguinHarness 0.2.11 发布。本版大部分变化在对话内部：文件面板可编辑、上下文环按压缩点计量、快捷球与定时任务进入面板栏；钩子成为智能体循环能力，官方容器镜像让服务端一条命令部署，模型库同步更新。
 
 ## 可以直接敲字的文件面板
 
@@ -93,4 +93,4 @@ penguin web
 docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
 ```
 
-每一项改动的完整细节见 [`changelog/0.2.10/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.10)。
+0.2.11 是 0.2.10 的重新构建版：electron-builder 升至 26.16.1，签名的 macOS 安装包得以重新构建；0.2.10 本身没有安装包也没有 Release 页面。完整细节见 [`changelog/0.2.10/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.10)。

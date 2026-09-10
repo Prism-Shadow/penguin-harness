@@ -1,6 +1,6 @@
 {
   "name": "@penguinharness/goal",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "Goal mode: a stop hook that keeps the session working toward an objective — re-injecting it every round and checking the goal file — until the goal is complete, blocked, or out of token budget.",
   "license": "Apache-2.0",
   "repository": {
