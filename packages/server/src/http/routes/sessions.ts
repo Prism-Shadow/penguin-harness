@@ -42,7 +42,7 @@ import type {
 } from "../../api/types.js";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { decodeCursor } from "../../services/message-window.js";
-import type { MessagesPageRequest } from "../../services/trace-service.js";
+import type { MessagesPageRequest, MessagesPageUnit } from "../../services/trace-service.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionRow } from "../../db/repos/sessions.js";
@@ -95,9 +95,9 @@ export const APPROVAL_MODES: readonly ApprovalMode[] = [
   "always-ask",
 ];
 
-/** Unit-count bounds for windowed history reads (`tailLimit` / `limit`), and the `before` page's default. */
+/** Unit-count bounds for windowed history reads (`tailLimit` / `limit`), and the `before` page's default per unit. */
 const MESSAGES_PAGE_LIMIT_MAX = 1000;
-const MESSAGES_PAGE_LIMIT_DEFAULT = 200;
+const MESSAGES_PAGE_LIMIT_DEFAULT: Record<MessagesPageUnit, number> = { task: 200, file: 1 };
 
 /** Parse one windowed-read unit-count param (positive integer, capped). */
 function pageLimit(raw: string, name: string): number {
@@ -109,12 +109,20 @@ function pageLimit(raw: string, name: string): number {
   return v;
 }
 
+/** Parse the windowed-read `unit` param: what `tailLimit` / `limit` count (Tasks by default). */
+function pageUnit(raw: string): MessagesPageUnit {
+  if (raw !== "task" && raw !== "file") throw badRequest("unit must be task or file.");
+  return raw;
+}
+
 /**
  * Parse GET /messages windowed-read params. No params → null: the legacy full-transcript
  * read, byte-identical to the pre-pagination response (other consumers depend on it).
  * `tailLimit=<n>` → the newest n units; `before=<cursor>[&limit=<n>]` → the n units
- * preceding the cursor. The two forms are mutually exclusive, and `limit` belongs to
- * `before` alone — mixing them is a caller bug worth a loud 400 rather than a guess.
+ * preceding the cursor; `unit=task|file` says what a unit is (a Task, or a whole Trace
+ * file — the Web App's conversation page reads one file at a time). The two forms are
+ * mutually exclusive, and `limit` belongs to `before` alone — mixing them is a caller bug
+ * worth a loud 400 rather than a guess.
  */
 /**
  * Appends the running Task's already-published input messages that the Trace read has not
@@ -139,14 +147,17 @@ function messagesPageQuery(c: Context): MessagesPageRequest | null {
   const rawTail = c.req.query("tailLimit");
   const rawBefore = c.req.query("before");
   const rawLimit = c.req.query("limit");
+  const rawUnit = c.req.query("unit");
   if (rawTail === undefined && rawBefore === undefined) {
     if (rawLimit !== undefined) throw badRequest("limit requires before.");
+    if (rawUnit !== undefined) throw badRequest("unit requires tailLimit or before.");
     return null;
   }
+  const unit = rawUnit !== undefined ? pageUnit(rawUnit) : "task";
   if (rawTail !== undefined) {
     if (rawBefore !== undefined) throw badRequest("tailLimit and before are mutually exclusive.");
     if (rawLimit !== undefined) throw badRequest("limit only applies to before requests.");
-    return { kind: "tail", limit: pageLimit(rawTail, "tailLimit") };
+    return { kind: "tail", limit: pageLimit(rawTail, "tailLimit"), unit };
   }
   const cursor = decodeCursor(rawBefore!);
   if (cursor === null) {
@@ -155,7 +166,9 @@ function messagesPageQuery(c: Context): MessagesPageRequest | null {
   return {
     kind: "before",
     cursor,
-    limit: rawLimit !== undefined ? pageLimit(rawLimit, "limit") : MESSAGES_PAGE_LIMIT_DEFAULT,
+    limit:
+      rawLimit !== undefined ? pageLimit(rawLimit, "limit") : MESSAGES_PAGE_LIMIT_DEFAULT[unit],
+    unit,
   };
 }
 
@@ -819,6 +832,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
       const info: MessagesPageInfo = {
         ...(result.before !== undefined ? { before: result.before } : {}),
         earlierTurns: result.prior.turns,
+        earlierFiles: result.earlierFiles,
         prior: {
           subagentTokens: result.prior.subagentTokens,
           elapsedMs: result.prior.elapsedMs,

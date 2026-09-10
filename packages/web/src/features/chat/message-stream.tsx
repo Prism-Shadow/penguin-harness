@@ -12,6 +12,7 @@ import type { ChatItem } from "../../lib/omni/stream-model";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
+import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { MessageItem } from "./message-item";
 import { WorkGroup, isWorkItem } from "./work-group";
@@ -165,21 +166,21 @@ export function MessageItems({ items, ctx }: { items: ChatItem[]; ctx: StreamRen
   return <>{nodes}</>;
 }
 
-/** Scroll-up backfill wiring (windowed history): state + trigger for the top-of-stream affordance. */
+/** Load-earlier wiring (file-by-file history): state + action for the top-of-stream affordance. */
 export interface OlderHistoryControls {
-  /** Older windows exist beyond the loaded history (scrolling near the top triggers onLoad). */
+  /** Older Trace files exist beyond the loaded history (the top row offers to load the previous one). */
   hasMore: boolean;
-  /** A backfill request is in flight (spinner row). */
+  /** Trace files not loaded yet — the count the load-earlier button shows. */
+  earlierFiles: number;
+  /** A load-earlier request is in flight (spinner row). */
   loading: boolean;
-  /** The last backfill failed (retry row); null = fine. */
+  /** The last load-earlier failed (retry row); null = fine. */
   error: string | null;
-  /** Number of windows already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one window shows no extra chrome). */
+  /** Number of files already prepended: the prepend signal for scroll anchoring, and >0 gates the beginning-of-history marker (a session that fit one file shows no extra chrome). */
   prependedCount: number;
+  /** Load the previous Trace file (the button's click, and the retry row's). */
   onLoad: () => void;
 }
-
-/** Distance from the top (px) at which scrolling starts fetching the previous history window. */
-const OLDER_TRIGGER_PX = 300;
 
 export function MessageStream({
   items,
@@ -250,17 +251,8 @@ export function MessageStream({
   };
 
   /** Held refs for prepend scroll anchoring (see the layout effect below). */
-  const olderRef = useRef(older);
-  olderRef.current = older;
   const lastPrependedRef = useRef(older?.prependedCount ?? 0);
   const lastHeightRef = useRef(0);
-
-  /** Near the top of loaded history: fetch the previous window (loading/error states gate re-triggering; the retry row is click-driven). */
-  const maybeLoadOlder = (el: HTMLDivElement) => {
-    const o = olderRef.current;
-    if (!o || !o.hasMore || o.loading || o.error !== null) return;
-    if (el.scrollTop < OLDER_TRIGGER_PX) o.onLoad();
-  };
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -276,7 +268,6 @@ export function MessageStream({
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
     });
-    maybeLoadOlder(el);
     syncJump();
   };
 
@@ -289,7 +280,7 @@ export function MessageStream({
   // conversation (see stream-follow.ts).
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    // Prepend scroll anchoring: when older windows land ABOVE the viewport, keep the
+    // Prepend scroll anchoring: when an earlier file lands ABOVE the viewport, keep the
     // message the user was reading exactly where it was by offsetting scrollTop by the
     // content growth (same pre-paint timing as the stick snap, so nothing flashes).
     // Keyed on the prepend count — ordinary streaming growth at the bottom must not
@@ -400,10 +391,11 @@ export function MessageStream({
         className="anim-fade h-full overflow-y-auto px-4 py-4 md:px-6"
       >
         <div className="mx-auto max-w-3xl">
-          {/* Top-of-history affordance: spinner while the previous window loads, a click-to-retry
-              row after a failure, and — once at least one window was backfilled — a quiet
-              beginning-of-conversation marker when there is nothing older. Idle-with-more shows
-              nothing: scrolling near the top triggers the fetch by itself. */}
+          {/* Top-of-history affordance: a load-earlier button while older Trace files remain
+              (one file per click — nothing loads on scroll, a file can be a whole context's
+              worth of tool output), a spinner while it loads, a click-to-retry row after a
+              failure, and — once at least one file was loaded — a quiet beginning-of-conversation
+              marker when there is nothing older. */}
           {older && items.length > 0 && (
             <div className="flex justify-center pb-2">
               {older.loading ? (
@@ -419,7 +411,11 @@ export function MessageStream({
                 >
                   {S.chat.loadEarlierRetry}
                 </button>
-              ) : !older.hasMore && older.prependedCount > 0 ? (
+              ) : older.hasMore ? (
+                <Button size="sm" onClick={older.onLoad}>
+                  {S.chat.loadEarlier(older.earlierFiles)}
+                </Button>
+              ) : older.prependedCount > 0 ? (
                 <span className="py-1 text-xs text-gray-400 dark:text-gray-500">
                   {S.chat.historyBeginning}
                 </span>

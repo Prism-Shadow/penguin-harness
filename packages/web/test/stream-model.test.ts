@@ -2077,6 +2077,86 @@ describe("compaction-internal messages (#17: history rebuild aligned with the li
   });
 });
 
+describe("a history window opening mid-Task renders the continuation as its own round", () => {
+  /** The head of a Trace file a compaction rotated into: its own header, then the run resumes. */
+  const HEAD: OmniMessage[] = [
+    at(meta("session-2026-07-05-00-00-00-aabb0001"), "2026-07-05T00:00:00.000Z"),
+    at(
+      toolListReady([{ name: "read_file", description: "Read a file", parameters: {} }]),
+      "2026-07-05T00:00:01.000Z",
+    ),
+  ];
+
+  it("the summary injection opens the round, and the round's span starts there", () => {
+    // A file-unit page of GET /messages can begin here: the prompt that opened this run
+    // lives in the previous file (its part of the span rides the seeded priors).
+    const m = createStreamModel();
+    pushMessages(m, [
+      ...HEAD,
+      at(
+        userText("[context_summary]\nprogress summary\n[/context_summary]"),
+        "2026-07-05T00:00:02.000Z",
+      ),
+      at(requestBegin(), "2026-07-05T00:00:03.000Z"),
+      at(assistantText("continuing the fix"), "2026-07-05T00:00:05.000Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:07.000Z"),
+      at(tokenUsage(counts(3000), counts(1200)), "2026-07-05T00:00:07.500Z"),
+    ]);
+    finalizeHistory(m);
+    // The reply gets its footer, and the injection itself still renders no user bubble.
+    expect(items(m).map((i) => i.kind)).toEqual(["assistant_text", "task_stats"]);
+    const stats = items(m)[1] as TaskStatsItem;
+    expect(stats.stats!.elapsedDeltaMs).toBe(5_000); // 00:02 (the injection) → 00:07
+    expect(stats.stats!.tokensDelta).toBe(1200); // the continuation's usage lands on this round
+  });
+
+  it("a discard-mode rotation, which injects no summary, opens the round at the first request", () => {
+    const m = createStreamModel();
+    pushMessages(m, [
+      ...HEAD,
+      at(requestBegin(), "2026-07-05T00:00:02.000Z"),
+      at(assistantText("continuing the fix"), "2026-07-05T00:00:05.000Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:06.000Z"),
+      at(tokenUsage(counts(3000), counts(1200)), "2026-07-05T00:00:06.500Z"),
+    ]);
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual(["assistant_text", "task_stats"]);
+    expect((items(m)[1] as TaskStatsItem).stats!.elapsedDeltaMs).toBe(4_000); // 00:02 → 00:06
+  });
+
+  it("in a full transcript the injection still joins the open round: one row, timed from the prompt", () => {
+    // Regression guard for the rule above being scoped to a model's FIRST round: read whole,
+    // the same rotation is one round that the compaction happened inside of.
+    const m = createStreamModel();
+    pushMessages(m, [
+      at(userText("fix a bug"), "2026-07-05T00:00:00.000Z"),
+      at(requestBegin(), "2026-07-05T00:00:01.000Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:02.000Z"),
+      at(
+        compactionBegin({ reason: "context", mode: "summarize", context: 9000, turns: 3 }),
+        "2026-07-05T00:00:03.000Z",
+      ),
+      at(
+        compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+        "2026-07-05T00:00:04.000Z",
+      ),
+      at(
+        userText("[context_summary]\nprogress summary\n[/context_summary]"),
+        "2026-07-05T00:00:05.000Z",
+      ),
+      at(requestBegin(), "2026-07-05T00:00:06.000Z"),
+      at(assistantText("continuing the fix"), "2026-07-05T00:00:08.000Z"),
+      at(requestEnd("completed"), "2026-07-05T00:00:09.000Z"),
+      at(tokenUsage(counts(3000), counts(1200)), "2026-07-05T00:00:09.500Z"),
+    ]);
+    finalizeHistory(m);
+    const rows = items(m).filter((i) => i.kind === "task_stats") as TaskStatsItem[];
+    expect(rows).toHaveLength(1);
+    // Timed from the user's prompt, not from the injection: the round never restarted.
+    expect(rows[0]!.stats!.elapsedDeltaMs).toBe(9_000); // 00:00 → 00:09
+  });
+});
+
 describe("elapsed comes from Trace timestamps (#5/#20: settled spans, reload-stable live anchor)", () => {
   it("reloading mid-run resumes the header's live elapsed instead of restarting it", () => {
     const m = createStreamModel();

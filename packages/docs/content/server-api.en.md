@@ -268,7 +268,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
 | PATCH | / | Update: `{approvalMode?, thinkingLevel?, archived?, title?}`. `thinkingLevel` pins the level on this Session (durable) and applies from its very next LLM request — the thinking level is soft-limited: changeable mid-context, at the cost of the provider's cached context, which is why the picker advises compacting first — and it comes back as `SessionInfo.thinkingLevel` (absent = never pinned: the Agent config applies) |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
-| GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
+| GET | /messages | Without parameters, the full OmniMessage history; `tailLimit=n` or `before=<cursor>&limit=n` reads a window instead, and `unit=file` makes a unit a whole Trace file (how the bundled Web App opens a conversation: its newest file only, one more per "Load earlier messages" click). A windowed response then carries `page` (the next-page cursor `before`, the Trace files that begin before the window `earlierFiles`, the turns before it `earlierTurns`, and the cumulative `prior` stats). While a Task runs the response also carries `live` (the in-progress stream tail, see below) |
 | POST | /fork | Fork an idle Session through a completed assistant reply: `{position:{fileIndex,ordinal}}` → `{session}` |
 | GET | /stream | SSE event stream (next section) |
 | POST | /tasks | Start a Task: `{input: TaskInputPart[], queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see the request body below). With `goal: {budget?}` the input starts a goal loop instead (409 `goal_plugin_not_installed` unless the `goal` plugin is installed on the Agent): it must carry non-empty text (an image alone states no objective), any images it carries fold into the objective as scratchpad path lines whatever the model's vision, and `file` parts are refused — nothing folds them into a re-injected objective — see [Goal mode](/goal-mode) |
@@ -478,7 +478,7 @@ export type ServerEvent =
 The order the bundled Web App uses:
 
 1. Connect `/stream` first and buffer incoming events;
-2. GET `/messages` for the full history;
+2. Refetch `/messages` (the bundled Web App refetches its newest-file window);
 3. If the response carries `live` (a Task is running), drop the buffered partials the cursor already covers and seed the `live.fragments` on top of history — the in-progress message reappears with its streamed prefix intact;
 4. Replay the buffer, deduplicating the overlap;
 5. Go live.

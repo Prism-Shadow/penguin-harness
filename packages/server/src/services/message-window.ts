@@ -183,6 +183,27 @@ export function initialScanState(): ScanState {
   };
 }
 
+/**
+ * The cumulative totals at this point with a still-open Task folded in as if it ended here —
+ * the same fold finalizeTask applies at a Task's real end. A window cut at a shard boundary
+ * (the `file` unit) can fall inside a Task: a compaction mid-run rotates the shard, and the
+ * new shard resumes the run without a prompt of its own. The Web reducer then opens that
+ * continuation as its own round and counts only what follows the cut, so the part before
+ * it has to ride in the seeded priors for the session totals to cover both halves. Pure —
+ * the scan state is a cached record and stays exactly as scanned.
+ */
+export function totalsWithOpenTask(state: ScanState): WindowPriorStats {
+  const t = state.task;
+  if (!t.open) return { ...state.totals };
+  const endMs = t.lastReqEndMs ?? t.lastTsMs;
+  return {
+    ...state.totals,
+    elapsedMs: state.totals.elapsedMs + Math.max(0, endMs - t.firstTsMs),
+    apiMs: state.totals.apiMs + t.apiMs,
+    toolMs: state.totals.toolMs + mergedIntervalMs(t.toolIntervals),
+  };
+}
+
 /** One safe cut point: `ordinal` indexes into the shard's parsed message array; `stats` is the cumulative prior AT the cut (the unit itself not included). */
 export interface UnitBoundary {
   ordinal: number;

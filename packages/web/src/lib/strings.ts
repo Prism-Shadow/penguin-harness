@@ -1677,11 +1677,13 @@ Benchmark：
     backgroundCall: "在后台运行",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
-    /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
+    /** Top-of-stream button while older Trace files remain: each click loads the previous one; `n` = files not loaded yet. */
+    loadEarlier: (n: number) => (n > 1 ? `加载更早的对话（还有 ${n} 段）` : "加载更早的对话"),
+    /** Top-of-stream affordance while the previous Trace file is being fetched. */
     loadingEarlier: "正在加载更早的对话…",
-    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
+    /** Top-of-stream affordance after a load-earlier failure: click to retry fetching the previous file. */
     loadEarlierRetry: "更早的对话加载失败，点击重试",
-    /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
+    /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after an earlier file was loaded). */
     historyBeginning: "已是对话开头",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "对话索引",

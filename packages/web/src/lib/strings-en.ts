@@ -1704,11 +1704,14 @@ Scenarios:
     backgroundCall: "Runs in the background",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
-    /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
+    /** Top-of-stream button while older Trace files remain: each click loads the previous one; `n` = files not loaded yet. */
+    loadEarlier: (n: number) =>
+      n > 1 ? `Load earlier messages (${n} segments left)` : "Load earlier messages",
+    /** Top-of-stream affordance while the previous Trace file is being fetched. */
     loadingEarlier: "Loading earlier messages…",
-    /** Top-of-stream affordance after a backfill failure: click to retry fetching the previous window. */
+    /** Top-of-stream affordance after a load-earlier failure: click to retry fetching the previous file. */
     loadEarlierRetry: "Failed to load earlier messages — click to retry",
-    /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after a backfill happened). */
+    /** Top-of-stream marker once the loaded history reaches the very beginning (shown only after an earlier file was loaded). */
     historyBeginning: "Beginning of conversation",
     /** Conversation minimap (tick rail over the stream's left gutter): rail aria-label. */
     outlineTitle: "Outline",

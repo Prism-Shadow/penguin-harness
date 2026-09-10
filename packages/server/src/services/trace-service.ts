@@ -66,6 +66,7 @@ import {
   mergedIntervalMs,
   scanMessages,
   serializePrefix,
+  totalsWithOpenTask,
 } from "./message-window.js";
 import type {
   ChildAggregate,
@@ -163,17 +164,27 @@ interface LocatedFile {
   sizeBytes: number;
 }
 
+/**
+ * What `limit` counts in a windowed history read: Tasks (`task`, the default — cut at the
+ * unit boundaries of message-window.ts) or whole Trace files (`file` — cut at shard
+ * boundaries, where a compaction closed one model context and opened the next).
+ */
+export type MessagesPageUnit = "task" | "file";
+
 /** A windowed history read's request shape (see readMessagesPage). */
 export type MessagesPageRequest =
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: MessageCursor; limit: number };
+  | { kind: "tail"; limit: number; unit?: MessagesPageUnit }
+  | { kind: "before"; cursor: MessageCursor; limit: number; unit?: MessagesPageUnit };
 
 /** A windowed history read's result (route maps it onto MessagesResponse.page). */
 export interface MessagesPageResult {
   messages: OmniMessage[];
-  /** Cursor of the window's first unit; absent = the window reaches the beginning. */
+  /** Cursor of the window's first record; absent = the window reaches the beginning. */
   before?: string;
   /** Cumulative stats before the window (earlierTurns = prior.turns). */
   prior: WindowPriorStats;
+  /** Trace files that begin before the window's first record (0 = the window starts at the beginning). */
+  earlierFiles: number;
 }
 
 export interface ForkTraceResult {
@@ -522,11 +533,15 @@ export class TraceService {
 
   /**
    * Windowed history read (the `tailLimit` / `before` forms of GET /messages). The
-   * window is a run of whole units — cut points and unit semantics live in
-   * message-window.ts — assembled by reading ONLY the shards the window overlaps
-   * (plus, once ever per old shard, the prefix-cache backfill above). Subagent
-   * pointers are expanded exactly as the full path expands them, but only within the
-   * window: children referenced by older windows load when those windows do.
+   * window is a run of whole units — Tasks by default (cut points and unit semantics
+   * live in message-window.ts), or whole Trace files (`unit: "file"`: the cut is the
+   * shard boundary itself, so a window opens with the shard's own header records and,
+   * when a compaction rotated the shard mid-run, inside a Task — the priors at such a
+   * cut carry the open Task folded in, see totalsWithOpenTask) — assembled by reading
+   * ONLY the shards the window overlaps (plus, once ever per old shard, the
+   * prefix-cache backfill above). Subagent pointers are expanded exactly as the full
+   * path expands them, but only within the window: children referenced by older
+   * windows load when those windows do.
    */
   async readMessagesPage(
     projectId: string,
@@ -538,6 +553,7 @@ export class TraceService {
     const empty = (): MessagesPageResult => ({
       messages: [],
       prior: initialScanState().totals,
+      earlierFiles: 0,
     });
     if (files.length === 0) return empty();
     const ctx: ExpandCtx = {
@@ -563,46 +579,72 @@ export class TraceService {
 
     const prefixes = await this.prefixStates(projectId, agentId, sessionId, files, endPos - 1, ctx);
 
-    // Walk backward from the end, scanning whole shards (each from its cached carry-in)
-    // until the window has more units than requested or the beginning is reached.
     const shardMessages = new Map<number, OmniMessage[]>();
-    let boundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
-    let startPos = endPos + 1;
-    while (boundaries.length <= req.limit && startPos > 0) {
-      startPos -= 1;
-      const messages = await this.readShard(files[startPos]!.path);
-      shardMessages.set(startPos, messages);
-      const state = cloneScanState(startPos === 0 ? initialScanState() : prefixes[startPos - 1]!);
-      const shardBoundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
-      const to = startPos === endPos && endOrdinal !== null ? endOrdinal : messages.length;
-      await scanMessages(
-        state,
-        messages,
-        (ordinal, stats) => shardBoundaries.push({ pos: startPos, ordinal, stats }),
-        (sid) => this.aggregateChild(projectId, sid, ctx),
-        0,
-        Math.min(to, messages.length),
-      );
-      boundaries = [...shardBoundaries, ...boundaries];
-    }
-
-    // Window start: the last `limit` units, or the very beginning (preamble included)
-    // when the whole remaining history fits — then there is no `before` cursor.
     let start: { pos: number; ordinal: number };
     let before: string | undefined;
     let prior: WindowPriorStats;
-    if (boundaries.length > req.limit) {
-      const wb = boundaries[boundaries.length - req.limit]!;
-      start = { pos: wb.pos, ordinal: wb.ordinal };
-      before = encodeCursor({ fileIndex: files[wb.pos]!.index, ordinal: wb.ordinal });
-      prior = wb.stats;
+    if (req.unit === "file") {
+      // Whole-file windows: the newest `limit` shards (tail), or the `limit` shards before
+      // the cursor's shard plus that shard's head up to the cursor (a cursor from a Task
+      // window can sit mid-shard; a file window's own cursors always sit at ordinal 0). The
+      // window starts at a shard's first record, so it needs no scan of its own: the priors
+      // at the cut are the previous shard's cached end state, open Task included.
+      const startPos = Math.max(
+        0,
+        endOrdinal === null ? endPos - req.limit + 1 : endPos - req.limit,
+      );
+      start = { pos: startPos, ordinal: 0 };
+      if (startPos > 0) {
+        before = encodeCursor({ fileIndex: files[startPos]!.index, ordinal: 0 });
+        prior = totalsWithOpenTask(prefixes[startPos - 1]!);
+      } else {
+        prior = initialScanState().totals;
+      }
     } else {
-      start = { pos: 0, ordinal: 0 };
-      prior = initialScanState().totals;
+      // Walk backward from the end, scanning whole shards (each from its cached carry-in)
+      // until the window has more units than requested or the beginning is reached.
+      let boundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> = [];
+      let startPos = endPos + 1;
+      while (boundaries.length <= req.limit && startPos > 0) {
+        startPos -= 1;
+        const messages = await this.readShard(files[startPos]!.path);
+        shardMessages.set(startPos, messages);
+        const state = cloneScanState(startPos === 0 ? initialScanState() : prefixes[startPos - 1]!);
+        const shardBoundaries: Array<{ pos: number; ordinal: number; stats: WindowPriorStats }> =
+          [];
+        const to = startPos === endPos && endOrdinal !== null ? endOrdinal : messages.length;
+        await scanMessages(
+          state,
+          messages,
+          (ordinal, stats) => shardBoundaries.push({ pos: startPos, ordinal, stats }),
+          (sid) => this.aggregateChild(projectId, sid, ctx),
+          0,
+          Math.min(to, messages.length),
+        );
+        boundaries = [...shardBoundaries, ...boundaries];
+      }
+
+      // Window start: the last `limit` units, or the very beginning (preamble included)
+      // when the whole remaining history fits — then there is no `before` cursor.
+      if (boundaries.length > req.limit) {
+        const wb = boundaries[boundaries.length - req.limit]!;
+        start = { pos: wb.pos, ordinal: wb.ordinal };
+        before = encodeCursor({ fileIndex: files[wb.pos]!.index, ordinal: wb.ordinal });
+        prior = wb.stats;
+      } else {
+        start = { pos: 0, ordinal: 0 };
+        prior = initialScanState().totals;
+      }
     }
+    // A window starting mid-shard leaves that shard's beginning behind it too.
+    const earlierFiles = start.pos + (start.ordinal > 0 ? 1 : 0);
 
     const windowRaw: HistoryMessage[] = [];
     for (let pos = start.pos; pos <= endPos; pos++) {
+      // A cursor at a shard's first record takes nothing from that shard, so it is not
+      // read: for a file window's `before` page that shard is the newest — the largest,
+      // still-appended one — and every load-earlier click would otherwise reopen it.
+      if (pos === endPos && endOrdinal === 0) continue;
       const messages = shardMessages.get(pos) ?? (await this.readShard(files[pos]!.path));
       const from = pos === start.pos ? start.ordinal : 0;
       const to =
@@ -617,7 +659,12 @@ export class TraceService {
       }
     }
     const expanded = await this.expandMessages(projectId, windowRaw, ctx);
-    return { messages: expanded, ...(before !== undefined ? { before } : {}), prior };
+    return {
+      messages: expanded,
+      ...(before !== undefined ? { before } : {}),
+      prior,
+      earlierFiles,
+    };
   }
 
   /**

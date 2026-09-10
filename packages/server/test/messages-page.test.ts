@@ -1,7 +1,8 @@
 /**
  * Windowed history reads (TraceService.readMessagesPage + GET /messages paging params).
  *
- * Covers: tail/before window slicing mid-shard and across shard boundaries, cursor
+ * Covers: tail/before window slicing mid-shard and across shard boundaries, whole-file
+ * windows (`unit: "file"`) and the open Task they fold into their priors, cursor
  * round-trips, pairing-safe cut points (a window never separates a tool_call from its
  * output, a compaction span, or a steering group), subagent expansion happening only
  * for pointers inside the window, outline-turn counting (`earlierTurns`) staying in
@@ -119,6 +120,8 @@ describe("messages windowed reads", () => {
     expect(tail.prior.turns).toBe(2);
     // The cursor names the window's first unit: shard 1, ordinal of q3 (meta + 2×5 turns).
     expect(decodeCursor(tail.before!)).toEqual({ fileIndex: 1, ordinal: 11 });
+    // Starting mid-shard leaves that shard's own beginning unloaded: one file still to fetch.
+    expect(tail.earlierFiles).toBe(1);
 
     const mid = await service.readMessagesPage(P, A, S, {
       kind: "before",
@@ -621,6 +624,7 @@ describe("messages windowed reads", () => {
         sessionTokens: 0,
         contextTokens: 0,
       },
+      earlierFiles: 0,
     });
     await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
       sessionMeta(metaPayload()),
@@ -640,6 +644,203 @@ describe("messages windowed reads", () => {
     });
     expect(decodeCursor("12:")).toBeNull();
     expect(decodeCursor("a:b")).toBeNull();
+  });
+
+  describe("file-unit windows", () => {
+    /** Three Trace files, each opening with the session_meta a rotation rewrites. */
+    async function threeFiles(): Promise<void> {
+      await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+        sessionMeta(metaPayload()),
+        ...turn(0, 1, 1000),
+        ...turn(1, 2, 2000),
+      ]);
+      await writeTraceFile(root, P, A, "2026-07-20", S, 2, [
+        sessionMeta(metaPayload()),
+        ...turn(2, 3, 3000),
+      ]);
+      await writeTraceFile(root, P, A, "2026-07-20", S, 3, [
+        sessionMeta(metaPayload()),
+        ...turn(3, 4, 4000),
+        ...turn(4, 5, 5000),
+      ]);
+    }
+
+    it("the tail is the newest file whole; each step back is one more file, and the first ends the chain", async () => {
+      await threeFiles();
+
+      const tail = await service.readMessagesPage(P, A, S, {
+        kind: "tail",
+        limit: 1,
+        unit: "file",
+      });
+      // A file window opens at its shard's first record — its own header included.
+      expect(tail.messages[0]!.type).toBe("session_meta");
+      expect(userTexts(tail.messages)).toEqual(["q4", "q5"]);
+      expect(decodeCursor(tail.before!)).toEqual({ fileIndex: 3, ordinal: 0 });
+      expect(tail.earlierFiles).toBe(2);
+      expect(tail.prior.turns).toBe(3); // q1..q3 live in the two older files
+      expect(tail.prior.sessionTokens).toBe(3000); // the last reading of file 2
+
+      const second = await service.readMessagesPage(P, A, S, {
+        kind: "before",
+        cursor: decodeCursor(tail.before!)!,
+        limit: 1,
+        unit: "file",
+      });
+      expect(second.messages[0]!.type).toBe("session_meta");
+      expect(userTexts(second.messages)).toEqual(["q3"]);
+      expect(decodeCursor(second.before!)).toEqual({ fileIndex: 2, ordinal: 0 });
+      expect(second.earlierFiles).toBe(1);
+      expect(second.prior.turns).toBe(2);
+
+      const first = await service.readMessagesPage(P, A, S, {
+        kind: "before",
+        cursor: decodeCursor(second.before!)!,
+        limit: 1,
+        unit: "file",
+      });
+      expect(first.messages[0]!.type).toBe("session_meta");
+      expect(userTexts(first.messages)).toEqual(["q1", "q2"]);
+      expect(first.before).toBeUndefined();
+      expect(first.earlierFiles).toBe(0);
+      expect(first.prior).toEqual({
+        turns: 0,
+        subagentTokens: 0,
+        elapsedMs: 0,
+        apiMs: 0,
+        toolMs: 0,
+        sessionTokens: 0,
+        contextTokens: 0,
+      });
+
+      // The three files tile the transcript exactly.
+      const full = await service.readMessages(P, A, S);
+      expect([...first.messages, ...second.messages, ...tail.messages]).toEqual(full);
+    });
+
+    it("a limit above 1 takes that many whole files, in order", async () => {
+      await threeFiles();
+      const two = await service.readMessagesPage(P, A, S, {
+        kind: "tail",
+        limit: 2,
+        unit: "file",
+      });
+      expect(userTexts(two.messages)).toEqual(["q3", "q4", "q5"]);
+      expect(two.messages.filter((m) => m.type === "session_meta")).toHaveLength(2);
+      expect(decodeCursor(two.before!)).toEqual({ fileIndex: 2, ordinal: 0 });
+      expect(two.earlierFiles).toBe(1);
+    });
+
+    it("a Task cursor sitting mid-file: the window is the previous file whole plus that file's head", async () => {
+      await threeFiles();
+      // A Task cursor lands wherever the prompt is — here inside the newest file.
+      const taskTail = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+      expect(decodeCursor(taskTail.before!)).toEqual({ fileIndex: 3, ordinal: 6 });
+
+      const win = await service.readMessagesPage(P, A, S, {
+        kind: "before",
+        cursor: decodeCursor(taskTail.before!)!,
+        limit: 1,
+        unit: "file",
+      });
+      expect(win.messages[0]!.type).toBe("session_meta"); // file 2's header
+      expect(userTexts(win.messages)).toEqual(["q3", "q4"]);
+      // It ends on the record right before the cursor, so the two windows still abut:
+      // together they are everything from file 2's start (file 1 is 11 records).
+      const full = await service.readMessages(P, A, S);
+      expect([...win.messages, ...taskTail.messages]).toEqual(full.slice(11));
+      expect(win.earlierFiles).toBe(1);
+    });
+
+    it("a rotation inside a Task folds the open Task into the priors, which a Task window does not", async () => {
+      // File 1 runs q1 up to an auto compaction that rotates mid-Task; file 2 resumes the
+      // same run behind the summary injection, then takes a prompt of its own.
+      await writeTraceFile(root, P, A, "2026-07-20", S, 1, [
+        sessionMeta(metaPayload()),
+        at("2026-07-20T10:00:00.000Z", userText("q1")),
+        at("2026-07-20T10:00:01.000Z", requestBegin()),
+        at(
+          "2026-07-20T10:00:02.000Z",
+          toolCall({ name: "exec", arguments: "{}", toolCallId: "t1" }),
+        ),
+        at("2026-07-20T10:00:03.000Z", requestEnd("completed")),
+        at("2026-07-20T10:00:04.000Z", toolCallOutput({ output: "out", toolCallId: "t1" })),
+        at("2026-07-20T10:00:05.000Z", requestBegin()),
+        at("2026-07-20T10:00:06.000Z", assistantText("half done")),
+        at("2026-07-20T10:00:07.000Z", requestEnd("completed")),
+        at("2026-07-20T10:00:07.500Z", tokenUsage(counts(9000), counts(8900))),
+        at(
+          "2026-07-20T10:00:08.000Z",
+          compactionBegin({ reason: "context", mode: "summarize", context: 8900, turns: 1 }),
+        ),
+        at("2026-07-20T10:00:09.000Z", requestBegin()),
+        at("2026-07-20T10:00:10.000Z", assistantText("[summary]s[/summary]")),
+        at("2026-07-20T10:00:11.000Z", requestEnd("completed")),
+        at(
+          "2026-07-20T10:00:12.000Z",
+          compactionEnd({ reason: "context", mode: "summarize", status: "completed" }),
+        ),
+      ]);
+      await writeTraceFile(root, P, A, "2026-07-20", S, 2, [
+        sessionMeta(metaPayload()),
+        at("2026-07-20T10:00:13.000Z", userText("[context_summary]\ns\n[/context_summary]")),
+        at("2026-07-20T10:00:14.000Z", requestBegin()),
+        at("2026-07-20T10:00:15.000Z", assistantText("finished")),
+        at("2026-07-20T10:00:16.000Z", requestEnd("completed")),
+        at("2026-07-20T10:00:16.500Z", tokenUsage(counts(3000), counts(2000))),
+        ...turn(1, 2, 4000),
+      ]);
+
+      const file = await service.readMessagesPage(P, A, S, {
+        kind: "tail",
+        limit: 1,
+        unit: "file",
+      });
+      expect(file.messages[0]!.type).toBe("session_meta");
+      expect(file.earlierFiles).toBe(1);
+      expect(file.prior.turns).toBe(1);
+      // q1's Task is still open at the cut. The Web reducer renders the continuation as a
+      // round of its own and counts only what follows, so the span up to the rotation —
+      // q1 at 10:00:00 to its last non-compaction request_end at 10:00:07 — rides the priors.
+      expect(file.prior.elapsedMs).toBe(7_000);
+
+      // The Task window cuts at q2 instead, where q1's Task has ended: no fold, and the
+      // whole run (both halves) is already settled in the priors.
+      const task = await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1 });
+      expect(userTexts(task.messages)).toEqual(["q2"]);
+      expect(decodeCursor(task.before!)).toEqual({ fileIndex: 2, ordinal: 6 });
+      expect(task.prior.elapsedMs).toBe(16_000); // 10:00:00 → 10:00:16
+      expect(task.earlierFiles).toBe(2); // file 1, plus file 2's head before the cut
+    });
+
+    it("shard-read discipline: a file tail reads only the newest file, and a step back reads only the file it returns", async () => {
+      await threeFiles();
+      // Priming: the first windowed read backfills the per-shard prefix cache.
+      await service.readMessagesPage(P, A, S, { kind: "tail", limit: 1, unit: "file" });
+
+      harness.shardReads.length = 0;
+      const tail = await service.readMessagesPage(P, A, S, {
+        kind: "tail",
+        limit: 1,
+        unit: "file",
+      });
+      expect(userTexts(tail.messages)).toEqual(["q4", "q5"]);
+      expect(harness.shardReads).toHaveLength(1);
+      expect(harness.shardReads[0]).toContain(`${S}_003.jsonl`);
+
+      // A step back reads exactly the file it returns: neither the newest file (the cursor
+      // sits at its first record, so it contributes nothing) nor anything older.
+      harness.shardReads.length = 0;
+      const older = await service.readMessagesPage(P, A, S, {
+        kind: "before",
+        cursor: decodeCursor(tail.before!)!,
+        limit: 1,
+        unit: "file",
+      });
+      expect(userTexts(older.messages)).toEqual(["q3"]);
+      expect(harness.shardReads).toHaveLength(1);
+      expect(harness.shardReads[0]).toContain(`${S}_002.jsonl`);
+    });
   });
 
   it("tail covering the whole transcript returns everything with no cursor and equals the full read", async () => {

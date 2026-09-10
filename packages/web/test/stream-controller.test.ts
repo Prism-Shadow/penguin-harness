@@ -25,7 +25,7 @@ import type {
   ServerEvent,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import { OLDER_UNITS, TAIL_UNITS, createStreamController } from "../src/lib/omni/stream-controller";
+import { OLDER_FILES, TAIL_PAGE, createStreamController } from "../src/lib/omni/stream-controller";
 import type { MessagesPageQuery, StreamController } from "../src/lib/omni/stream-controller";
 import { approvalKey, findToolCard } from "../src/lib/omni/stream-model";
 import type { AssistantTextItem, TaskStatsItem, ToolCallItem } from "../src/lib/omni/stream-model";
@@ -127,6 +127,7 @@ function createHarness(): Harness {
 function pageInfo(over: Partial<MessagesPageInfo> = {}): MessagesPageInfo {
   return {
     earlierTurns: 0,
+    earlierFiles: 0,
     prior: {
       subagentTokens: 0,
       elapsedMs: 0,
@@ -517,7 +518,7 @@ describe("live-tail seeding (reload mid-stream)", () => {
   });
 });
 
-describe("windowed history: tail-first load + scroll-up backfill", () => {
+describe("windowed history: newest-file-first load + load-earlier", () => {
   const OLD_TURN: OmniMessage[] = [
     at(userText("old question"), "2026-07-04T00:00:00.000Z"),
     at(assistantText("old answer"), "2026-07-04T00:00:02.000Z"),
@@ -527,7 +528,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
   it("initial load requests the TAIL window and seeds the prior stats into the tracker", async () => {
     const h = createHarness();
     const p = h.controller.load();
-    expect(h.pageArgs[0]).toEqual({ kind: "tail", limit: TAIL_UNITS });
+    expect(h.pageArgs[0]).toEqual(TAIL_PAGE);
     h.controller.handleServer({ type: "task_state", state: "idle" });
     h.resolveLoad(
       HISTORY_TASK,
@@ -536,6 +537,7 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       pageInfo({
         before: "2:10",
         earlierTurns: 7,
+        earlierFiles: 4,
         prior: {
           subagentTokens: 500,
           elapsedMs: 60_000,
@@ -548,7 +550,12 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     );
     await p;
     expect(h.controller.outlineOffset).toBe(7);
-    expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: null });
+    expect(h.controller.older).toEqual({
+      hasMore: true,
+      earlierFiles: 4,
+      loading: false,
+      error: null,
+    });
     // Header basis: prior elapsed + the loaded turn's own span (usage at +5s of a turn
     // starting at 0s); token cumulative = in-window session.total + prior subagent total.
     expect(h.controller.model.stats.sessionElapsedMs).toBe(60_000 + 5_000);
@@ -560,15 +567,25 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     expect(stats.stats!.tokens).toBe(1000 + 500);
   });
 
-  it("loadOlder prepends the previous window: frozen items ahead of the live model, unique ids, closed stats row", async () => {
+  it("loadOlder prepends the previous Trace file: frozen items ahead of the live model, unique ids, closed stats row", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.controller.handleServer({ type: "task_state", state: "idle" });
-    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "1:8", earlierTurns: 1 }));
+    h.resolveLoad(
+      HISTORY_TASK,
+      undefined,
+      null,
+      pageInfo({ before: "1:8", earlierTurns: 1, earlierFiles: 2 }),
+    );
     await p;
 
     const older = h.controller.loadOlder();
-    expect(h.pageArgs[1]).toEqual({ kind: "before", cursor: "1:8", limit: OLDER_UNITS });
+    expect(h.pageArgs[1]).toEqual({
+      kind: "before",
+      cursor: "1:8",
+      limit: OLDER_FILES,
+      unit: "file",
+    });
     // Reaches the beginning: no cursor, offset drops to 0.
     h.resolveLoad(OLD_TURN, undefined, null, pageInfo({ earlierTurns: 0 }));
     await older;
@@ -580,7 +597,12 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       "assistant_text",
       "task_stats",
     ]);
-    expect(h.controller.older).toEqual({ hasMore: false, loading: false, error: null });
+    expect(h.controller.older).toEqual({
+      hasMore: false,
+      earlierFiles: 0,
+      loading: false,
+      error: null,
+    });
     expect(h.controller.outlineOffset).toBe(0);
     // Ids stay unique across the concatenated view (negative prefix base vs. positive live ids).
     const ids = [...h.controller.prefixItems, ...h.controller.model.items].map((i) => i.id);
@@ -603,16 +625,26 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     expect(h.loadCalls()).toBe(1);
   });
 
-  it("a failed backfill surfaces on older.error and can be retried", async () => {
+  it("a failed load-earlier surfaces on older.error and can be retried", async () => {
     const h = createHarness();
     const p = h.controller.load();
     h.controller.handleServer({ type: "task_state", state: "idle" });
-    h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "1:8", earlierTurns: 1 }));
+    h.resolveLoad(
+      HISTORY_TASK,
+      undefined,
+      null,
+      pageInfo({ before: "1:8", earlierTurns: 1, earlierFiles: 1 }),
+    );
     await p;
     const older = h.controller.loadOlder();
     h.rejectLoad(new Error("boom"));
     await older;
-    expect(h.controller.older).toEqual({ hasMore: true, loading: false, error: "boom" });
+    expect(h.controller.older).toEqual({
+      hasMore: true,
+      earlierFiles: 1,
+      loading: false,
+      error: "boom",
+    });
     expect(h.controller.prefixItems).toHaveLength(0);
     const again = h.controller.loadOlder();
     h.resolveLoad(OLD_TURN, undefined, null, pageInfo());
@@ -651,7 +683,7 @@ describe("resync decision tree (windowed history)", () => {
     h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 3 }));
     await p;
     h.controller.handleServer({ type: "resync_required" });
-    expect(h.pageArgs[1]).toEqual({ kind: "tail", limit: TAIL_UNITS });
+    expect(h.pageArgs[1]).toEqual(TAIL_PAGE);
     h.resolveLoad(HISTORY_TASK, undefined, null, pageInfo({ before: "2:10", earlierTurns: 3 }));
     await flush();
     expect(h.loadCalls()).toBe(2);
@@ -672,21 +704,28 @@ describe("resync decision tree (windowed history)", () => {
     expect(h.controller.model.items.some((i) => i.kind === "user_text")).toBe(true);
   });
 
-  it("prefix + moved cursor (new units arrived): doubt — falls back to the FULL refetch, prefix dropped", async () => {
+  it("prefix + moved cursor (the file rotated): the refetched tail is adopted and the prefix dropped, with no second fetch", async () => {
     const h = await withPrefix();
     h.controller.handleServer({ type: "resync_required" });
-    // The tail window slid forward: splicing would leave a gap between prefix and tail.
-    h.resolveLoad([], undefined, null, pageInfo({ before: "3:0", earlierTurns: 9 }));
+    // A compaction opened a newer Trace file while disconnected: the tail no longer abuts
+    // the prefix. The tail window is disk-true on its own, so it is adopted as the new
+    // baseline — the dropped prefix comes back with a load-earlier click.
+    h.resolveLoad(
+      HISTORY_TASK,
+      undefined,
+      null,
+      pageInfo({ before: "3:0", earlierTurns: 9, earlierFiles: 3 }),
+    );
     await flush();
-    // The fallback full read (no page argument) is issued within the same rebuild.
-    expect(h.pageArgs[h.pageArgs.length - 1]).toBeUndefined();
-    h.resolveLoad([at(userText("old question"), "2026-07-04T00:00:00.000Z"), ...HISTORY_TASK]);
-    await flush();
+    // Only the tail refetch was issued: initial + backfill + this one, no full read.
+    expect(h.loadCalls()).toBe(3);
+    expect(h.pageArgs[h.pageArgs.length - 1]).toEqual(TAIL_PAGE);
     expect(h.controller.prefixItems).toHaveLength(0);
-    expect(h.controller.outlineOffset).toBe(0);
-    expect(h.controller.older.hasMore).toBe(false);
-    // The full transcript lives in the single model now.
-    expect(h.controller.model.items.filter((i) => i.kind === "user_text")).toHaveLength(2);
+    expect(h.controller.outlineOffset).toBe(9);
+    expect(h.controller.older.hasMore).toBe(true);
+    expect(h.controller.older.earlierFiles).toBe(3);
+    // The adopted window is the whole transcript on screen now.
+    expect(h.controller.model.items.filter((i) => i.kind === "user_text")).toHaveLength(1);
   });
 
   it("prefix + tail reaching the beginning: prefix superseded without a second fetch", async () => {
@@ -708,12 +747,15 @@ describe("resync decision tree (windowed history)", () => {
     const h = await withPrefix();
     h.controller.handleServer({ type: "resync_required" });
     // A server without windowing support answers the tail request with the full
-    // transcript and no envelope: doubt — the full-fallback branch also covers it
-    // (the second fetch returns the same full transcript).
+    // transcript and no envelope: the one remaining full-fallback branch (the second
+    // fetch returns the same full transcript).
     h.resolveLoad([...HISTORY_TASK]);
     await flush();
+    // The fallback full read (no page argument) is issued within the same rebuild.
+    expect(h.pageArgs[h.pageArgs.length - 1]).toBeUndefined();
     h.resolveLoad([at(userText("old question"), "2026-07-04T00:00:00.000Z"), ...HISTORY_TASK]);
     await flush();
+    expect(h.loadCalls()).toBe(4);
     expect(h.controller.prefixItems).toHaveLength(0);
     expect(h.controller.older.hasMore).toBe(false);
     expect(h.controller.outlineOffset).toBe(0);

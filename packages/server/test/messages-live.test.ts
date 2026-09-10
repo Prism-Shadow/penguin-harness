@@ -193,4 +193,20 @@ describe("messages live tail", () => {
     );
     expect(badCursor.status).toBe(400);
   });
+
+  it("`unit` picks what a window counts, and only means something with a window request", async () => {
+    const files = await getMessages("?tailLimit=1&unit=file");
+    expect(files.page).toBeDefined();
+    expect(typeof files.page!.earlierFiles).toBe("number");
+    // `before` without a limit keeps working: the default limit is the unit's own.
+    const before = await apiClient(t.app, cookie).get(`/api/sessions/${SID}/messages?before=1:0`);
+    expect(before.status).toBe(200);
+    // An unknown unit, or one on the parameterless full read, is a caller bug: 400, not a guess.
+    const badUnit = await apiClient(t.app, cookie).get(
+      `/api/sessions/${SID}/messages?tailLimit=1&unit=bogus`,
+    );
+    expect(badUnit.status).toBe(400);
+    const loneUnit = await apiClient(t.app, cookie).get(`/api/sessions/${SID}/messages?unit=file`);
+    expect(loneUnit.status).toBe(400);
+  });
 });

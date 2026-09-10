@@ -77,22 +77,26 @@ function parseEventId(id: string): { epoch: string; seq: number } | null {
   return { epoch: id.slice(0, sep), seq };
 }
 
-/** A windowed history request (mirrors the server's tailLimit / before params). */
+/** What a windowed history request counts: Tasks (the server default) or whole Trace files. */
+export type MessagesPageUnit = "task" | "file";
+
+/** A windowed history request (mirrors the server's tailLimit / before / unit params). */
 export type MessagesPageQuery =
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
+  | { kind: "tail"; limit: number; unit?: MessagesPageUnit }
+  | { kind: "before"; cursor: string; limit: number; unit?: MessagesPageUnit };
 
 /**
- * Initial (tail) window size, in message-bearing units — one unit = one Task, opened by
- * a user prompt (the server's cut rule; see MessagesPageInfo). 200 covers the vast
- * majority of real sessions in a single request, so ordinary conversations still load
- * whole exactly as before — only the pathological long tail (months-long sessions,
- * agentic marathons) starts windowed, which is the point: their full-transcript reads
- * were the unbounded memory/disk cost this pagination removes.
+ * Initial (tail) window: the newest Trace file only. One file is one model context — what
+ * the model itself still sees, bounded by the compaction threshold rather than by the age
+ * of the Session — so a months-long conversation opens as fast as a fresh one. Everything
+ * older loads one file per click from the top of the stream (see loadOlder); nothing is
+ * fetched on scroll, because a file can be a whole context's worth of tool output and
+ * whether to pay for it is the reader's call.
  */
-export const TAIL_UNITS = 200;
+export const TAIL_PAGE: MessagesPageQuery = { kind: "tail", limit: 1, unit: "file" };
 
-/** Scroll-up backfill window size: smaller than the tail so each prepend stays snappy. */
-export const OLDER_UNITS = 100;
+/** Each load-earlier click prepends exactly one more Trace file. */
+export const OLDER_FILES = 1;
 
 /**
  * Item-id space reserved per prepended window. The live model numbers its items upward
@@ -146,13 +150,15 @@ export interface StreamControllerDeps {
   now?: () => number;
 }
 
-/** Scroll-up backfill state (drives the stream's top affordance). */
+/** Load-earlier state (drives the stream's top affordance). */
 export interface OlderHistoryState {
-  /** Older windows exist beyond the loaded prefix. */
+  /** Older Trace files exist beyond the loaded prefix. */
   hasMore: boolean;
-  /** A backfill request is in flight. */
+  /** Trace files not loaded yet (the count the load-earlier button shows); 0 when at the beginning. */
+  earlierFiles: number;
+  /** A load-earlier request is in flight. */
   loading: boolean;
-  /** The last backfill failed (the affordance offers a retry); null = fine. */
+  /** The last load-earlier failed (the affordance offers a retry); null = fine. */
   error: string | null;
 }
 
@@ -160,9 +166,10 @@ export interface StreamController {
   /** The current view model (a resync rebuild swaps in a new object): the LIVE tail window. */
   readonly model: StreamModel;
   /**
-   * Items of the backfilled older windows, oldest first — render them immediately BEFORE
-   * `model.items`. Frozen once built (their Tasks are complete); item ids are negative
-   * and unique across windows, so the concatenated list keys/anchors cleanly.
+   * Items of the older Trace files loaded so far, oldest first — render them immediately
+   * BEFORE `model.items`. Frozen once built (a newer file follows, so every Task in them
+   * has ended); item ids are negative and unique across windows, so the concatenated
+   * list keys/anchors cleanly.
    */
   readonly prefixItems: readonly ChatItem[];
   /** Nested subagent models of the backfilled windows (merged view for the subagents panel; disjoint from model.subagents — a child session lives in exactly one window). */
@@ -175,7 +182,7 @@ export interface StreamController {
   load: () => Promise<void>;
   /** Retry entry point after a history load failure (keeps the buffer, refetches history). */
   retry: () => Promise<void>;
-  /** Prepend the previous window (scroll-up backfill); no-op while loading, failed, at the beginning, or before the initial load settled. */
+  /** Prepend the previous Trace file (the load-earlier click); no-op while loading, failed, at the beginning, or before the initial load settled. */
   loadOlder: () => Promise<void>;
   /** SSE OmniMessage entry point (`eventId`: the SSE event id, used for live-tail cursor alignment). */
   handleOmni: (msg: OmniMessage, eventId?: string | null) => void;
@@ -223,7 +230,12 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    * whole), in which case there is no prefix to splice against.
    */
   let tailStartCursor: string | null = null;
-  const older: OlderHistoryState = { hasMore: false, loading: false, error: null };
+  const older: OlderHistoryState = {
+    hasMore: false,
+    earlierFiles: 0,
+    loading: false,
+    error: null,
+  };
   /** Outline entries before the OLDEST loaded window (the outline's numbering offset). */
   let outlineOffset = 0;
 
@@ -235,6 +247,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     nextBefore = null;
     tailStartCursor = null;
     older.hasMore = false;
+    older.earlierFiles = 0;
     older.loading = false;
     older.error = null;
     outlineOffset = 0;
@@ -247,6 +260,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     nextBefore = page.before ?? null;
     tailStartCursor = page.before ?? null;
     older.hasMore = page.before !== undefined;
+    older.earlierFiles = page.earlierFiles;
     outlineOffset = page.earlierTurns;
   };
 
@@ -347,7 +361,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    * SSE buffer was evicted and the transcript state is suspect, so every branch below
    * chooses correctness over cleverness (ANY doubt falls back to the full read):
    *
-   *   1. No backfilled prefix → refetch the TAIL window. Identical in shape to the
+   *   1. No loaded prefix → refetch the TAIL window. Identical in shape to the
    *      initial load: the window is a disk-true suffix, the buffered events replay
    *      with overlap dedup, and the live attachment weaves in under the existing
    *      channel-epoch guard (weaveLiveTail skips seeding when the cursor's epoch
@@ -356,14 +370,17 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
    *      provable: the refetched window's start cursor must EQUAL the recorded start
    *      of the current tail window (cursors are (shard, ordinal) positions on
    *      immutable storage, so equality proves the new tail abuts the prefix exactly —
-   *      no gap, no overlap). Equality holds precisely when no new unit started since
-   *      the last tail fetch, the common mid-Task resync.
+   *      no gap, no overlap). A file window starts at its file's first record, so
+   *      equality holds until a compaction rotates the file — every resync inside one
+   *      context, however many Tasks it added, keeps the prefix.
    *   3. Prefix retained but the refetched tail reaches the very beginning (no cursor)
    *      → the tail alone provably covers everything: drop the prefix and use it.
-   *   4. Anything else — the start cursor moved (new units arrived), the response
-   *      carried no page envelope, or the tail fetch itself failed mid-decision —
-   *      is doubt: fall back to the legacy FULL refetch (one complete transcript, no
-   *      prefix, offsets zeroed). Slow but beyond suspicion.
+   *   4. Prefix retained but the start cursor moved — a rotation opened a newer file
+   *      while disconnected, so the prefix no longer abuts the tail → the tail alone is
+   *      disk-true: adopt it and drop the prefix (a click reloads it) rather than
+   *      refetch the whole transcript to bridge the gap.
+   *   5. No page envelope at all (a server without windowing) → the legacy FULL
+   *      refetch: one complete transcript, no prefix, offsets zeroed.
    *
    * The decision runs inside load() (it needs the response); this entry only picks the
    * request shape.
@@ -385,7 +402,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     // focus/draft.) Deltas arriving during the refetch are buffered and replayed on swap; the brief
     // no-new-text pause is invisible next to a full teardown.
     await load(epoch, createStreamModel(localDecisions), {
-      page: { kind: "tail", limit: TAIL_UNITS },
+      page: TAIL_PAGE,
       splice: prefixItems.length > 0,
     });
   };
@@ -433,14 +450,14 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       if (disposed || currentEpoch !== epoch) return;
       if (opts.splice === true) {
         // The resync decision tree's prefix-retained branches (see rebuild): splice only
-        // on exact cursor continuity; a beginning-reaching tail supersedes the prefix;
-        // everything else falls back to the full read within this same epoch (events
-        // keep buffering meanwhile).
+        // on exact cursor continuity; any other windowed tail supersedes the prefix; only
+        // a server without windowing falls back to the full read, within this same epoch
+        // (events keep buffering meanwhile).
         const start = res.page?.before ?? null;
         if (res.page !== undefined && start !== null && start === tailStartCursor) {
           // Continuity proven: keep prefix and paging state exactly as they are.
-        } else if (res.page !== undefined && start === null) {
-          adoptTailPage(res.page); // tail covers everything: prefix dropped, provably complete
+        } else if (res.page !== undefined) {
+          adoptTailPage(res.page); // beginning reached, or the file rotated: prefix dropped
         } else {
           res = await deps.loadMessages();
           if (disposed || currentEpoch !== epoch) return;
@@ -502,12 +519,13 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
   };
 
   /**
-   * Scroll-up backfill: fetch the window before the oldest loaded one and prepend it.
-   * The window's messages build a FRESH model (its own negative id base, priors seeded,
-   * finalizeHistory closing its last Task — complete by construction, since a newer
-   * window follows), whose items freeze into the prefix. Guarded to the live phase: a
-   * rebuild in flight owns the loading pipeline, and its epoch bump discards any
-   * backfill that raced it.
+   * Load earlier: fetch the Trace file before the oldest loaded one and prepend it. The
+   * file's messages build a FRESH model (its own negative id base, priors seeded,
+   * finalizeHistory closing its last Task — ended by construction, since a newer file
+   * follows; a Task the rotation cut in two shows as one round per file, the compaction
+   * banner between them), whose items freeze into the prefix. Guarded to the live phase:
+   * a rebuild in flight owns the loading pipeline, and its epoch bump discards any load
+   * that raced it.
    */
   const loadOlder = async (): Promise<void> => {
     if (disposed || phase !== "live" || failed) return;
@@ -520,7 +538,8 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       const res = await deps.loadMessages({
         kind: "before",
         cursor: nextBefore,
-        limit: OLDER_UNITS,
+        limit: OLDER_FILES,
+        unit: "file",
       });
       if (disposed || currentEpoch !== epoch) return;
       // A before-request against a server without windowing support would return the
@@ -540,6 +559,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       prefixSubagents = mergedSubagents;
       nextBefore = res.page.before ?? null;
       older.hasMore = res.page.before !== undefined;
+      older.earlierFiles = res.page.earlierFiles;
       outlineOffset = res.page.earlierTurns;
     } catch (e) {
       if (disposed || currentEpoch !== epoch) return;
@@ -573,7 +593,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
     },
     load: () => {
       epoch += 1;
-      return load(epoch, undefined, { page: { kind: "tail", limit: TAIL_UNITS } });
+      return load(epoch, undefined, { page: TAIL_PAGE });
     },
     retry: async () => {
       if (disposed || !failed) return;
@@ -587,9 +607,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       deps.onError(null);
       deps.onLoading(true);
       epoch += 1;
-      await load(epoch, createStreamModel(localDecisions), {
-        page: { kind: "tail", limit: TAIL_UNITS },
-      });
+      await load(epoch, createStreamModel(localDecisions), { page: TAIL_PAGE });
     },
     loadOlder,
     handleOmni: (msg, eventId = null) => {

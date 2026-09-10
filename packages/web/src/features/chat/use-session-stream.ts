@@ -44,18 +44,18 @@ export interface SessionStreamState {
   /** View model (updated in place; version bump triggers re-render): the LIVE tail window. */
   model: StreamModel;
   /**
-   * Backfilled older-window items, oldest first — the transcript renders
-   * `[...prefixItems, ...model.items]`. Empty until the user scrolls up past the tail
-   * window (see loadOlder); ids are negative and unique, so keys/anchors stay clean.
+   * Items of the earlier Trace files loaded so far, oldest first — the transcript renders
+   * `[...prefixItems, ...model.items]`. Empty until the user clicks load-earlier at the top
+   * of the stream (see loadOlder); ids are negative and unique, so keys/anchors stay clean.
    */
   prefixItems: readonly ChatItem[];
-  /** Nested subagent models owned by backfilled windows (the subagents panel merges them with model.subagents). */
+  /** Nested subagent models owned by earlier files (the subagents panel merges them with model.subagents). */
   prefixSubagents: ReadonlyMap<string, StreamModel>;
   /** Outline entries existing before the oldest loaded window (global turn-numbering offset). */
   outlineOffset: number;
-  /** Scroll-up backfill state (top affordance: spinner / retry / beginning-of-history). */
+  /** Load-earlier state (top affordance: button / spinner / retry / beginning-of-history). */
   older: OlderHistoryState;
-  /** Prepend the previous history window (triggered near the top of the loaded transcript). */
+  /** Prepend the previous Trace file (the load-earlier click at the top of the stream). */
   loadOlder: () => void;
   version: number;
   /** True until history finishes loading. */
@@ -96,7 +96,12 @@ export interface SessionStreamState {
 const EMPTY_PENDING: ReadonlyMap<string, PendingApproval> = new Map();
 const EMPTY_PREFIX: readonly ChatItem[] = [];
 const EMPTY_SUBAGENTS: ReadonlyMap<string, StreamModel> = new Map();
-const IDLE_OLDER: OlderHistoryState = { hasMore: false, loading: false, error: null };
+const IDLE_OLDER: OlderHistoryState = {
+  hasMore: false,
+  earlierFiles: 0,
+  loading: false,
+  error: null,
+};
 
 export function useSessionStream(
   sessionId: string | null,

@@ -1400,18 +1400,30 @@ export interface MessagesLiveTail {
 /**
  * Pagination envelope of a windowed `GET /messages` (`tailLimit` / `before` requests
  * only; the parameterless full read never carries it). A window is a run of whole
- * message-bearing units — one unit = one Task in the Web reducer's sense, opened by a
- * main-session user prompt — cut so that no pairing (tool_call/output), compaction span
- * or steering group ever splits across windows.
+ * units, and `unit=` picks what a unit is:
+ *   - `task` (default): one Task in the Web reducer's sense, opened by a main-session
+ *     user prompt — cut so that no pairing (tool_call/output), compaction span or
+ *     steering group ever splits across windows;
+ *   - `file`: one whole Trace file — one model context, closed by a compaction. The cut
+ *     is the shard boundary itself: the window opens with the shard's header records,
+ *     and when a compaction rotated the shard mid-run it opens inside a Task, whose
+ *     part before the cut is folded into `prior`. The bundled Web App reads a
+ *     conversation this way: the newest file on open, one more per click.
  */
 export interface MessagesPageInfo {
   /**
-   * Cursor of this window's first unit (`<shardIndex>:<ordinal>`): pass it back as
+   * Cursor of this window's first record (`<shardIndex>:<ordinal>`): pass it back as
    * `before=` to fetch the previous window. Stable across requests and compaction —
    * rotation opens a NEW shard and closed shards are immutable. Absent = this window
    * reaches the very beginning of the transcript (no older history).
    */
   before?: string;
+  /**
+   * Trace files that begin before this window's first record: the number of `file`
+   * windows still to fetch, and the count the Web App's load-earlier button shows. 0 when
+   * the window starts at the beginning.
+   */
+  earlierFiles: number;
   /**
    * Outline turns (the Web conversation outline's entry rule) opened BEFORE this
    * window: the client offsets its global "round N" numbering by this, so a partial

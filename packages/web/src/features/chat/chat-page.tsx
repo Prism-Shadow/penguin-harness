@@ -2139,11 +2139,12 @@ export function ChatPage() {
                           version={stream.version}
                           ctx={ctx}
                           scrollElRef={streamScrollRef}
-                          // Scroll-up backfill of older history windows (tail-first
-                          // loading): near-top scrolling prepends the previous window,
-                          // scroll position anchored (see MessageStream).
+                          // Earlier Trace files load on demand: the conversation opens on
+                          // its newest file, and the button at the top prepends the previous
+                          // one per click, scroll position anchored (see MessageStream).
                           older={{
                             hasMore: stream.older.hasMore,
+                            earlierFiles: stream.older.earlierFiles,
                             loading: stream.older.loading,
                             error: stream.older.error,
                             prependedCount: stream.prefixItems.length,

@@ -679,9 +679,13 @@ export const sendMessagingTestMessage = (sessionId: string, channel: MessagingCh
     { method: "POST", body: {} },
   );
 
+/** What a windowed history request counts: Tasks (the server default) or whole Trace files. */
+export type MessagesPageUnit = "task" | "file";
+
 /** Windowed history request: the newest N units (tail), or the N units before a cursor. */
 export type MessagesPageQuery =
-  { kind: "tail"; limit: number } | { kind: "before"; cursor: string; limit: number };
+  | { kind: "tail"; limit: number; unit?: MessagesPageUnit }
+  | { kind: "before"; cursor: string; limit: number; unit?: MessagesPageUnit };
 
 /**
  * History rebuild. Carries the server's clock at read time (see ApiFetchMeta.serverNowMs)
@@ -690,17 +694,18 @@ export type MessagesPageQuery =
  * message timestamp — both server-side values, so no client clock offset enters the result
  * (see pushMessages).
  *
- * With `page`, requests a WINDOW instead of the full transcript (tail-first loading /
- * scroll-up backfill — see stream-controller): the response then carries
- * `MessagesResponse.page`. Omitted = the legacy full read (the resync fallback path).
+ * With `page`, requests a WINDOW instead of the full transcript (the newest Trace file on
+ * open, one more per load-earlier click — see stream-controller): the response then carries
+ * `MessagesResponse.page`. Omitted = the legacy full read (the last-resort resync path).
  */
 export const getMessages = (sessionId: string, page?: MessagesPageQuery) => {
+  const unit = page?.unit === undefined ? "" : `&unit=${page.unit}`;
   const qs =
     page === undefined
       ? ""
       : page.kind === "tail"
-        ? `?tailLimit=${page.limit}`
-        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}`;
+        ? `?tailLimit=${page.limit}${unit}`
+        : `?before=${encodeURIComponent(page.cursor)}&limit=${page.limit}${unit}`;
   return apiFetchWithMeta<MessagesResponse>(
     `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs}`,
   ).then(({ data, serverNowMs }) => ({ ...data, serverNowMs }));

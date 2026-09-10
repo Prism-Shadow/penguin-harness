@@ -532,6 +532,8 @@ export interface StreamModel {
   openApprovalWaitMs: number;
   /** Task segmentation state. */
   taskOpen: boolean;
+  /** Whether any Task has opened in this model (decides whether a history window may be opening mid-Task, see openContinuationTask). */
+  taskEverOpened: boolean;
   /**
    * Local-clock instant the running Task's header elapsed ticks from — display
    * only; no settled duration is ever derived from it (see finalizeOpenTask,
@@ -616,6 +618,7 @@ function newModel(nested: boolean, localDecisions: Set<string>): StreamModel {
     openRequestBeginMs: null,
     openApprovalWaitMs: 0,
     taskOpen: false,
+    taskEverOpened: false,
     taskStartLocalMs: 0,
     taskFirstTsMs: 0,
     taskLastTsMs: 0,
@@ -717,6 +720,11 @@ export function pushMessage(
     return;
   }
   if (isEventMessage(msg)) {
+    // A window opening mid-Task without a summary injection (a discard-mode rotation) has
+    // its first Request as the continuation's first record.
+    if ((msg.payload as EventPayload).type === "request_begin" && !model.stats.compactionActive) {
+      openContinuationTask(model, msg.timestamp, nowMs);
+    }
     touchTask(model, msg.timestamp);
     handleEvent(model, msg.payload as EventPayload, tsOf(msg.timestamp), nowMs);
     advanceLastTs(model, msg.timestamp);
@@ -914,6 +922,7 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   model.turnToolOutputs = false;
   model.reopenTaskAtSteering = false;
   model.taskOpen = true;
+  model.taskEverOpened = true;
   model.taskStartLocalMs = nowMs;
   const ts = Date.parse(timestamp);
   model.taskFirstTsMs = Number.isFinite(ts) ? ts : nowMs;
@@ -921,6 +930,23 @@ function startTask(model: StreamModel, timestamp: string, nowMs: number): void {
   model.taskLastReqEndMs = null;
   // Usage outside this Task's boundary (e.g. a manual compaction) shouldn't be mistakenly counted into this Task's delta.
   resetTaskCounters(model.stats);
+}
+
+/**
+ * A history window cut at a Trace file boundary can open inside a Task: a compaction
+ * mid-run rotates the file, and the new file resumes the run with the summary injection
+ * and the next Request — no user prompt of its own. Read on its own (the file-unit pages
+ * of GET /messages), that continuation would otherwise render outside any round: no stats
+ * footer under its reply, its usage attributed to nothing. So the first such record opens
+ * a round in place, at its own timestamp; the round's stats then cover exactly the
+ * continuation, while the seeded priors carry the part before the cut (the server folds an
+ * open Task into them at a file boundary). Only ever a model's first round — once any Task
+ * has opened, the ordinary segmentation rules decide — and never a nested child model,
+ * whose transcript is expanded whole.
+ */
+function openContinuationTask(model: StreamModel, timestamp: string, nowMs: number): void {
+  if (model.nested || model.taskOpen || model.taskEverOpened) return;
+  startTask(model, timestamp, nowMs);
 }
 
 function finalizeOpenTask(model: StreamModel): void {
@@ -1189,6 +1215,7 @@ function handleComplete(
         // start a new Task. The old `<context_summary>` prefix is still recognized — old
         // Traces containing it are re-rendered through this reducer.
         if (p.text.startsWith("[context_summary]") || p.text.startsWith("<context_summary>")) {
+          openContinuationTask(model, timestamp, nowMs);
           touchTask(model, timestamp);
           return;
         }
