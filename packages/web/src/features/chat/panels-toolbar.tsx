@@ -54,6 +54,8 @@ export function PanelsToolbar({ agentsPending }: PanelsToolbarProps) {
           key={position}
           type="button"
           aria-expanded={isDockVisible(position)}
+          // Hiding a dock keeps every body mounted (dock-panel.tsx renders it at zero
+          // size), so a tab holding unsaved work has nothing to lose and nothing to ask.
           onClick={() => toggleDock(position)}
           title={label}
           aria-label={label}

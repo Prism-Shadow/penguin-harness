@@ -4,7 +4,8 @@
  * windows managing their own tabs: switching Sessions switches the whole arrangement, and
  * no conversation's tabs depend on another's. An open dock with no tabs is still visible
  * (it shows the picker); closing a tab removes it, and the last tab closing puts the dock
- * away; a dock's own toggle hides it keeping its tabs.
+ * away; a dock's own toggle hides it keeping its tabs — and, through closedDockView, the
+ * mounted bodies behind them.
  *
  * The module reads localStorage at import time, so the stub is installed first and the
  * module imported dynamically.
@@ -352,5 +353,24 @@ describe("view models", () => {
     expect(views[0]?.merged).toBe(false);
     expect(views[0]?.activeKey).toBe("workspace");
     expect(views[1]?.activeKey).toBe("terminal:term-a");
+  });
+
+  it("a hidden dock keeps a view to stay mounted on, an empty one has nothing to keep", () => {
+    dock.openPanel("workspace", "right");
+    dock.openPanel("memory", "right");
+    // Open: dockViews() owns it, so there is nothing to keep mounted separately.
+    expect(dock.closedDockView("right")).toBeNull();
+    dock.toggleDock("right");
+    expect(dock.dockViews()).toEqual([]);
+    expect(dock.closedDockView("right")).toEqual({
+      position: "right",
+      merged: false,
+      tabs: dock.dockTabs("right"),
+      activeKey: "memory",
+    });
+    // The last tab's × takes the dock away with it: no body left to keep.
+    dock.closePanel("workspace");
+    dock.closePanel("memory");
+    expect(dock.closedDockView("right")).toBeNull();
   });
 });

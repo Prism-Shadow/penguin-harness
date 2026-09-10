@@ -46,14 +46,17 @@ export function dockDropCandidate(x: number, y: number): DockPosition | null {
 /**
  * The exact region a dock at `position` would occupy after the drop — measured from the
  * live layout, not assumed: an already-open dock contributes its rendered rect; otherwise
- * the stored sizes apply, clamped exactly like the docks' own CSS. The right region's top
- * is the main row (`[data-dock-row]`, below the chat toolbar), the row the right dock
- * really renders in.
+ * the stored sizes apply, clamped exactly like the docks' own CSS. Only an OPEN dock
+ * counts: a hidden one stays in the tree at zero size, and measuring that would preview a
+ * region of nothing. The right region's top is the main row (`[data-dock-row]`, below the
+ * chat toolbar), the row the right dock really renders in.
  */
 function previewStyle(host: DOMRect, position: DockPosition): CSSProperties {
   const existing =
     document
-      .querySelector<HTMLElement>(`[data-testid='dock'][data-position='${position}']`)
+      .querySelector<HTMLElement>(
+        `[data-testid='dock'][data-position='${position}'][data-open='true']`,
+      )
       ?.getBoundingClientRect() ?? null;
   if (position === "bottom") {
     const height = Math.min(

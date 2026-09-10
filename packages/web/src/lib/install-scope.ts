@@ -151,6 +151,24 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.files.treeVisible",
+    scope: "browser",
+    why: "Whether the Files panel shows its directory tree beside the preview; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.files.treeWidth",
+    scope: "browser",
+    why: "How wide that tree pane was dragged, in px; the same layout preference, one axis over.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.files.editorWrap",
+    scope: "browser",
+    why: "Whether the Files panel's editor soft-wraps long lines; a reading habit, valid against any root.",
+  },
+  {
+    kind: "exact",
     key: "penguin.sidebarGroupMode",
     scope: "browser",
     why: "Group sessions by Workspace/Agent/time — the MODE, not the groups; valid against any root.",
