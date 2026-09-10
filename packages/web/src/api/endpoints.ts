@@ -196,6 +196,7 @@ import type {
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
   VersionRollbackResponse,
+  SandboxSettingsResponse,
   VersionResponse,
   WeChatBindingPutRequest,
   WeChatBindingResponse,
@@ -1742,7 +1743,7 @@ export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/de
 export const setDesktopTray = (patch: DesktopTrayPatch) =>
   apiFetch<void>("/api/desktop/tray", { method: "PUT", body: patch });
 
-// ---- The plugins a Project asks for ----
+// ---- The plugins a Project asks for, and the confinement agent commands run under ----
 /**
  * A Project's plugin list. Project-scoped because machines are lent to Projects, so this is
  * what says which machines a plugin has to reach; what the process RUNS is the union over
@@ -1773,3 +1774,10 @@ export const uninstallPlugin = (projectId: string, specifier: string) =>
     `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}`,
     { method: "DELETE" },
   );
+export const adminGetSandbox = () => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox");
+/** Applies to the next command spawn; no restart. */
+export const adminPutSandbox = (body: {
+  mode: string;
+  network: "none" | null;
+  maskPaths: string[];
+}) => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox", { method: "PUT", body });

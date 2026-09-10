@@ -200,6 +200,10 @@ Saving takes effect immediately, with no restart: the attachment validators and 
 
 Two numbers are deliberately not exposed. The per-message file **count** stays at 20: it bounds how usable the composer's chip row is, not what the server can survive — the byte budgets do that. And an inline **image** stays capped at 20MB rather than following the attachment limit up, because an image placed inline enters the conversation and the Trace, where its size is paid again on every history page and every session resume; the model side is lower still (providers commonly cap around 5MB, and `read_file` reads an image of at most 5MB), so raising it to 100MB would only trade a clear refusal for a later, more confusing failure.
 
+### Sandbox
+
+Admin only, server-global: the confinement every agent command spawns under — the **mode** (off / workspace write only / read-only), whether the **network** is cut off, and the **masked paths** hidden from a confined command (at most 64). Saving applies to the next command spawn with no restart; the settings are stored with the server's other settings, so a restart keeps them. What enforces a mode is a sandbox backend installed as a plugin (bwrap, Seatbelt, MXC, DSH); the page lists the mounted ones and the isolation each implements, and says plainly when there is none — a mode chosen without a backend confines nothing.
+
 ## Version and Updates
 
 Updating works the way an app updater does, from one dialog. Two entries open it: the row directly under **System settings** in the sidebar user menu, and the small "New version available" superscript on the new-chat page's version line (`vX.Y.Z · Last updated Jul 26` — the date is stamped into the build by the release workflow and shown without any network access; dev builds and releases predating the stamping, v0.1.2 and earlier, have no date). The row names where things stand — "Check for updates", "Checking…", "New version vX available", "Downloading vX 42%", "Restart to update to vX" — with the running version muted on its right, and every state opens the dialog.
