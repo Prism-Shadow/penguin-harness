@@ -59,7 +59,7 @@ import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
+import { jsonOnlyWrites } from "./auth/middleware.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
@@ -72,7 +72,6 @@ import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
-import { authRoutes } from "./http/routes/auth.js";
 import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
@@ -104,7 +103,6 @@ import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
 import { LifecycleService } from "./services/lifecycle-service.js";
-import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -270,15 +268,15 @@ export async function bootAppDeps(
   hmr.resources.register(HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
   hmr.resources.register(HMR_CONFIG_RESOURCE_ID, config);
   hmr.resources.register(HMR_DB_RESOURCE_ID, db);
+  hmr.resources.register(HMR_AUTH_STATE_RESOURCE_ID, authState);
   hmr.resources.register(HMR_CHANNELS_RESOURCE_ID, channels);
   hmr.resources.register(HMR_PROXY_RESOURCE_ID, applyProxySettings);
   hmr.resources.register(HMR_HOST_RESOURCE_ID, hmr);
+  hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
   const lifecycle = new LifecycleService(config.supervised);
   hmr.resources.register(HMR_LIFECYCLE_RESOURCE_ID, lifecycle);
-  hmr.resources.register(HMR_AUTH_STATE_RESOURCE_ID, authState);
-  hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -418,18 +416,7 @@ export function createHmrApp(boot: ServerBoot): Hono<AppEnv> {
   app.use("*", platformHttpSeam(deps.hmr));
 
   // Every route but /api/hmr is the platform's, served through the seam above. What follows
-  // is the layer's own tail: rollback copies, static hosting and the SPA fallback.
-
-  // Rollback copies of /api/auth and /api/desktop: a platform older than the move that made
-  // them its own declines these prefixes, and login and the shell's shutdown must survive
-  // that rollback. Drop them once no such platform can be rolled back to.
-  app.route("/api/auth", authRoutes(deps));
-  if (deps.desktop) {
-    app.route("/api/desktop", desktopRoutes(deps));
-    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.route("/api/desktop/update", desktopUpdateRoutes(deps));
-  }
+  // is the layer's own tail: static hosting and the SPA fallback.
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a

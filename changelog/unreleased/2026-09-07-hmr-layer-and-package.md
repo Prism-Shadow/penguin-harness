@@ -16,5 +16,3 @@ One purpose: make it hard to put product behaviour where only a reinstall can de
 **Its HTTP surface is `/api/hmr`.** `/api/auth` and `/api/desktop` are platform route groups now, served through the seam like every other route; the platform's route table no longer carries a list of prefixes to decline, and an unknown path under `/api/auth` answers 404 rather than the cookie gate's 401.
 
 **The registry is the platform's state, and the ids say so.** Every entry reads `platform.<name>`. The registry is in-memory state, so the rename is a hard upgrade: a platform built with it needs a layer built with it, and the other way round.
-
-The rollback copies of the two route groups are recorded in [backward compatibility](2026-09-09-backward-compatibility.md).
