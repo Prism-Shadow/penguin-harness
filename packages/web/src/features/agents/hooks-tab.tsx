@@ -10,9 +10,11 @@
  * and uninstall. The switch is the owner's (members see a "disabled" badge on a switched-off
  * row instead); it writes `enabled: false` into the package's hooks.json, and a Session
  * created from then on skips the package. Export downloads the installed directory as a zip;
- * the "Import hook" modal takes such a zip back (409 hook_exists asks before overwriting) or,
- * in its AI mode, hands the job to the Project's default agent through the "Create with AI"
- * kit (hook-import.ts builds the prompt). Read, import/export and uninstall are member-level,
+ * the "Import hook" modal offers the Skills tab's two paths: the recommended chat import (a
+ * source field taking a URL / repo / local path / description / another tool's hooks config,
+ * whose generated review-then-install prompt — hook-import.ts — can be copied or prefilled
+ * into a new chat with this Agent) and a zip upload that takes such a package back (409
+ * hook_exists asks before overwriting). Read, import/export and uninstall are member-level,
  * matching the hooks routes.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -32,21 +34,18 @@ import { SettingsEmpty } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { HelpFold } from "../../components/ui/help-fold";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { DownloadIcon, HOOK_ICON, MAGIC_WAND_ICON } from "../../components/ui/icons";
+import { DownloadIcon, HOOK_ICON } from "../../components/ui/icons";
+import { Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { Segmented } from "../../components/ui/segmented";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { localizedText } from "../chat/skill-use";
 import { SkillTile } from "../skills/skill-icon-view";
-import { AiCreatePanel, pickDefaultAgent, useAiBridge } from "../ai-create";
+import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
-import { buildHookImportPrompt, hookImportExamples, hookImportTail } from "./hook-import";
+import { buildHookImportPrompt } from "./hook-import";
 import { TRASH_ICON, UPLOAD_LABEL_CLASS } from "./skills-tab";
-
-/** The import modal's two paths: a zip upload, or a prompt to an agent. */
-type ImportMode = "upload" | "ai";
 
 /** Zip pending an overwrite confirmation: the payload to resend with overwrite: true plus the package name for the confirm copy. */
 interface PendingOverwrite {
@@ -69,11 +68,9 @@ export function HooksTab({ agentId }: { agentId: string }) {
   const [switching, setSwitching] = useState<string | null>(null);
   // Package name pending uninstall confirmation (non-null shows the confirm modal).
   const [removing, setRemoving] = useState<string | null>(null);
-  // Import modal: the mode, the AI draft and agent pick, and the upload state travel with it.
+  // Import modal: the source for the chat-import prompt + upload state travel with the modal.
   const [importOpen, setImportOpen] = useState(false);
-  const [mode, setMode] = useState<ImportMode>("upload");
-  const [draft, setDraft] = useState("");
-  const [pickedAgent, setPickedAgent] = useState<string | null>(null);
+  const [source, setSource] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   // Non-null shows the overwrite confirm (the archive POST answered 409 hook_exists).
@@ -145,11 +142,9 @@ export function HooksTab({ agentId }: { agentId: string }) {
     }
   };
 
-  /** Open the import modal from a clean slate (mode, draft, agent pick and upload state). */
+  /** Open the import modal (reset the form and upload state). */
   const openImport = () => {
-    setMode("upload");
-    setDraft("");
-    setPickedAgent(null);
+    setSource("");
     setUploadError(null);
     setOverwriting(null);
     setImportOpen(true);
@@ -204,40 +199,29 @@ export function HooksTab({ agentId }: { agentId: string }) {
     reader.readAsDataURL(file);
   };
 
-  // AI mode: the prompt goes to the Project's default agent (it carries the plugin library the
-  // canned prompts assume), the tail names THIS Agent as the install target; the pick is free.
-  const aiAgentId = pickedAgent ?? pickDefaultAgent(agents)?.agentId ?? null;
-  const tail = projectId !== null ? hookImportTail(projectId, agentId) : "";
-  const fullPrompt = projectId !== null ? buildHookImportPrompt(draft, projectId, agentId) : "";
-  const aiReady = aiAgentId !== null && draft.trim() !== "";
+  // A URL / repo / path source gets an import lead sentence, free text is the lead itself (see
+  // hook-import.ts); the preview substitutes a placeholder token until something is entered.
+  const trimmedSource = source.trim();
+  const chatPrompt =
+    projectId !== null
+      ? buildHookImportPrompt(trimmedSource || S.hooks.importSourceToken, projectId, agentId)
+      : "";
   // Copy feedback lives at the button (the shared copy convention): its glyph flips to the
   // check while copied — no toast, and the button label never changes.
   const promptCopy = useCopied();
-  const sendToAgent = (autoSend: boolean) => {
-    if (aiAgentId === null) return;
-    openAiChat({ agentId: aiAgentId, text: fullPrompt, autoSend });
+
+  /**
+   * "Open a new chat" with this Agent: the AI bridge prefills the composer with the generated
+   * import prompt (parking typed-but-unsent draft text first) and clears a stale handoff
+   * target and skill pre-selection along with it.
+   */
+  const openChat = () => {
+    if (projectId === null || trimmedSource === "") return;
+    openAiChat({ agentId, text: buildHookImportPrompt(trimmedSource, projectId, agentId) });
     setImportOpen(false);
   };
 
   if (!projectId) return null;
-
-  const aiFooter = (
-    <>
-      <Button onClick={() => setImportOpen(false)}>{S.common.cancel}</Button>
-      <Button disabled={!aiReady} onClick={() => promptCopy.flash(fullPrompt)}>
-        <CopyCheckGlyph copied={promptCopy.copied} size={12} />
-        {S.aiCreate.copyPrompt}
-      </Button>
-      <CopiedStatus copied={promptCopy.copied} />
-      <Button disabled={!aiReady} onClick={() => sendToAgent(false)}>
-        {S.aiCreate.editInChat}
-      </Button>
-      <Button variant="primary" disabled={!aiReady} onClick={() => sendToAgent(true)}>
-        <GlyphIcon d={MAGIC_WAND_ICON} />
-        {S.aiCreate.send}
-      </Button>
-    </>
-  );
 
   return (
     <div className="space-y-4">
@@ -344,51 +328,77 @@ export function HooksTab({ agentId }: { agentId: string }) {
         </div>
       )}
 
-      {/* Import modal: a zip upload, or the "Create with AI" panel with the kit's footer. */}
+      {/* Import modal: recommended chat import on top, zip upload below (the Skills tab's shape). */}
       <Modal
         open={importOpen}
         title={S.hooks.importHook}
         onClose={() => setImportOpen(false)}
-        widthClass="sm:max-w-xl"
-        {...(mode === "ai" ? { footer: aiFooter } : {})}
+        widthClass="sm:max-w-lg"
       >
         <div className="space-y-4">
-          <Segmented
-            cols={2}
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: "upload", label: S.hooks.importModeUpload },
-              { value: "ai", label: S.hooks.importModeAi },
-            ]}
-          />
-          {mode === "upload" ? (
-            <section>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{S.hooks.importUploadDesc}</p>
-              <label
-                className={`${UPLOAD_LABEL_CLASS} mt-2.5 ${uploading ? "pointer-events-none opacity-60" : ""}`}
-              >
-                <HiddenFileInput accept=".zip" disabled={uploading} onChange={onPickFile} />
-                {uploading ? S.hooks.importUploading : S.hooks.importUploadAction}
-              </label>
-              {uploadError && (
-                <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{uploadError}</p>
-              )}
-            </section>
-          ) : (
-            <AiCreatePanel
-              value={draft}
-              onChange={setDraft}
-              placeholder={S.hooks.importAiPlaceholder}
-              intro={S.hooks.importAiDesc}
-              examples={hookImportExamples()}
-              tail={tail}
-              agents={agents}
-              agentId={aiAgentId}
-              onAgentChange={setPickedAgent}
-              allowAgentChoice
-            />
-          )}
+          <section>
+            <p className="text-sm font-medium">{S.hooks.importChatTitle}</p>
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              {S.hooks.importChatWhy}
+            </p>
+            <div className="mt-2.5 space-y-2.5">
+              {/* A source may be a whole pasted hooks config block, so the field is multi-line. */}
+              <Textarea
+                label={S.hooks.importSourceLabel}
+                hint={S.hooks.importSourceHint}
+                size="sm"
+                rows={3}
+                value={source}
+                onChange={(e) => setSource(e.target.value)}
+                placeholder={S.hooks.importSourcePlaceholder}
+              />
+              <Textarea
+                label={S.hooks.importPromptLabel}
+                size="sm"
+                rows={5}
+                readOnly
+                value={chatPrompt}
+                className="text-gray-600 dark:text-gray-300"
+              />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={trimmedSource === ""}
+                  onClick={() =>
+                    promptCopy.flash(buildHookImportPrompt(trimmedSource, projectId, agentId))
+                  }
+                >
+                  <CopyCheckGlyph copied={promptCopy.copied} size={12} />
+                  {S.hooks.importCopyPrompt}
+                </Button>
+                <CopiedStatus copied={promptCopy.copied} />
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={trimmedSource === ""}
+                  onClick={openChat}
+                >
+                  {S.hooks.importOpenChat}
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          <section className="border-t border-gray-200 pt-4 dark:border-gray-800">
+            <p className="text-sm font-medium">{S.hooks.importUploadTitle}</p>
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              {S.hooks.importUploadDesc}
+            </p>
+            <label
+              className={`${UPLOAD_LABEL_CLASS} mt-2.5 ${uploading ? "pointer-events-none opacity-60" : ""}`}
+            >
+              <HiddenFileInput accept=".zip" disabled={uploading} onChange={onPickFile} />
+              {uploading ? S.hooks.importUploading : S.hooks.importUploadAction}
+            </label>
+            {uploadError && (
+              <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{uploadError}</p>
+            )}
+          </section>
         </div>
       </Modal>
 

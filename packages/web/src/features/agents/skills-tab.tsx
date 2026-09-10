@@ -19,7 +19,6 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
-import { useNavigate } from "react-router";
 import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -40,7 +39,6 @@ import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { SkillTile } from "../skills/skill-icon-view";
 import { localizedShortText } from "../chat/skill-use";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { useAiBridge } from "../ai-create";
 import { downloadArchive } from "./archive-download";
 import { buildImportPrompt } from "./skill-import-source";
@@ -72,10 +70,9 @@ export function SkillsTab({
   /** Config writes (toggle / prompt / placeholder insert) happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them. */
   onConfigChanged?: () => void;
 }) {
-  const navigate = useNavigate();
   const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
-  const { currentProject, agents, setCurrentAgentId, reloadAgents } = useProject();
+  const { currentProject, agents, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // Prompt-injection controls (toggle / template alert / prompt editor): member-level like
   // every other mutation on this tab.
@@ -173,18 +170,14 @@ export function SkillsTab({
   const promptCopy = useCopied();
 
   /**
-   * "Open a new chat" with this Agent: the same draft-state entry as the agents page
-   * "New Chat" button. A non-empty source goes through the AI bridge instead, which prefills
-   * the composer with the generated install prompt (parking typed-but-unsent draft text
-   * first) and clears a stale handoff target and skill pre-selection along with it.
+   * "Open a new chat" with this Agent: the AI bridge prefills the composer with the generated
+   * install prompt (parking typed-but-unsent draft text first) and clears a stale handoff
+   * target and skill pre-selection along with it. Disabled without a source, like the copy
+   * button — a blank chat would drop the prompt the dialog just built.
    */
   const openChat = () => {
-    if (trimmedSource) {
-      openAiChat({ agentId, text: buildImportPrompt(trimmedSource) });
-      return;
-    }
-    setCurrentAgentId(agentId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
+    if (trimmedSource === "") return;
+    openAiChat({ agentId, text: buildImportPrompt(trimmedSource) });
   };
 
   /**
@@ -364,7 +357,12 @@ export function SkillsTab({
                   {S.skills.importCopyPrompt}
                 </Button>
                 <CopiedStatus copied={promptCopy.copied} />
-                <Button size="sm" variant="primary" onClick={openChat}>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={trimmedSource === ""}
+                  onClick={openChat}
+                >
                   {S.skills.importOpenChat}
                 </Button>
               </div>

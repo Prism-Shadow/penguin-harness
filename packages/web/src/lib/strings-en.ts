@@ -1209,7 +1209,7 @@ export const en: Strings = {
       `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (zip upload / AI) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
+  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     agentTabDesc:
       "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task. A switched-off package stays on disk, but new Sessions no longer consult it; uninstalling deletes the whole package directory.",
@@ -1226,9 +1226,22 @@ export const en: Strings = {
     disabledToast: (name: string): string => `Disabled the ${name} hook package`,
     exportHook: "Export",
     importHook: "Import hook",
-    /** The import modal's two modes (a Segmented control). */
-    importModeUpload: "Upload a zip",
-    importModeAi: "Let AI import",
+    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatWhy:
+      "The agent reads the source in full, reviews every script and installs the package on this agent — more reliable than a bare upload.",
+    importSourceLabel: "Hook source",
+    importSourceHint:
+      "A URL, a GitHub repository, a local path, a description, or another tool's hook config (such as the hooks block of a Claude Code settings.json)",
+    importSourcePlaceholder:
+      'https://…, /path/to/hooks, or "write a stop hook that runs after every task…"',
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    /** Lead sentence for a URL / repo / path source; free text (a description, a pasted hooks config) is used verbatim as the lead instead. Composed with importPromptTail by buildHookImportPrompt (features/agents/hook-import.ts). */
+    importPromptLead: (s: string): string => `Import ${s} as a hook package.`,
+    importCopyPrompt: "Copy prompt",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a hook package zip",
     importUploadDesc:
       "hooks.json and the scripts at the zip root, or exactly one top-level directory containing them. An imported package is switched on: its scripts run on this machine at every hook point, so import only what you trust.",
     importUploadAction: "Choose zip file",
@@ -1238,34 +1251,7 @@ export const en: Strings = {
     importOverwriteBody: (name: string): string =>
       `The hook package "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
     importOverwriteAction: "Overwrite",
-    /** AI mode: the lead line above the prompt box, and the box's placeholder. */
-    importAiDesc:
-      "Point at a hook package or describe what it should do: the agent reads the source, reviews the scripts, then installs it on this agent.",
-    importAiPlaceholder:
-      "A URL, local path or description of a hook package, or another tool's hooks config (e.g. the hooks block of a Claude Code settings.json)",
-    /** Clickable examples of the AI mode (features/agents/hook-import.ts); a click replaces the draft with `prompt`. */
-    importExamples: [
-      {
-        key: "repo",
-        label: "Import from a repository",
-        description: "Turn a GitHub repository into a hook package",
-        prompt: "Import https://github.com/<org>/my-hooks as a hook package",
-      },
-      {
-        key: "claudeCode",
-        label: "Convert Claude Code hooks",
-        description: "Rewrite another tool's hooks config as a hook package",
-        prompt: "Convert the hooks in ~/.claude/settings.json into a PenguinHarness hook package",
-      },
-      {
-        key: "stopChangelog",
-        label: "Write a stop hook",
-        description: "Write a script from scratch that runs after every task",
-        prompt:
-          "Write a stop hook: after every task, append the list of files changed in the workspace to CHANGELOG-agent.md",
-      },
-    ],
-    /** The fixed tail joined after the draft (features/agents/hook-import.ts): the review step, the package format, the script contract and the install target — named by Project and Agent id, since the prompt goes to the Project's default agent. */
+    /** The fixed tail joined after the lead (features/agents/hook-import.ts): the review step, the package format, the script contract and the install target, named by Project and Agent id. */
     importPromptTail: (projectId: string, agentId: string): string =>
       [
         "Read the source in full first and review every script for malicious behavior (exfiltrating data, touching files outside its source, running unknown commands); continue only once it is safe.",
