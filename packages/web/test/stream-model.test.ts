@@ -215,7 +215,7 @@ describe("partial aggregation and full-message convergence", () => {
     const m = createStreamModel();
     pushMessage(
       m,
-      toolCall({ name: "read_image", arguments: '{"source":"a.png"}', toolCallId: "t4" }),
+      toolCall({ name: "read_file", arguments: '{"file_path":"a.png"}', toolCallId: "t4" }),
     );
     const card = items(m)[0] as ToolCallItem;
     expect(card.images).toBeUndefined();

@@ -128,7 +128,7 @@ export function approximateTokens(text: string): number {
  *
  * Images appear in two shapes and both must bypass the character count: as a payload of
  * their own (`image_url` / `inline_data`), and as the `images` array of data URLs riding
- * on a tool output (complete or partial — `read_image` and screenshot-returning tools).
+ * on a tool output (complete or partial — `read_file` on an image and screenshot-returning tools).
  * Serializing those data URLs would count every base64 character: a 1 MB image would
  * estimate ≈ 262k "tokens" (~163x over) and floor the next request's output cap even on a
  * 128k window (PR #235 review).

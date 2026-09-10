@@ -12,7 +12,7 @@
  * itself, so the message carries their path instead):
  *   - `[attached image: <path|URL>]` — core, when the session model has no image input: the
  *     input images are written to the session scratchpad and the model reads them by path via
- *     describe_image (see internal/session-support.ts);
+ *     read_file (see internal/session-support.ts);
  *   - `[attached file: <path>]` — the server, for the composer's file attachments: the upload
  *     lands in the session scratchpad and the model opens it with its ordinary file tools
  *     (see services/task-attachments.ts).

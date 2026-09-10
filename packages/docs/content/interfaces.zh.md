@@ -163,7 +163,7 @@ type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy
 
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // run_subagent 所需
-  visionDescriber?: VisionDescriberService; // text-only 模型的 describe_image 所需
+  visionDescriber?: VisionDescriberService; // 仅注入 text-only 模型的 Session:read_file 经它代读图片
   commandSessions?: CommandSessionManager;  // 长驻命令会话登记表(Environment 内部构造)
   subagentSessions?: SubagentSessionManager;// 后台 Subagent 会话登记表(同上)
   backgroundDone?: (event: BackgroundTaskDoneEvent) => void; // run_in_background 完成回报的汇聚点(同上)
@@ -207,7 +207,7 @@ interface ToolDefinitionConfig {
   description: string;
   parameters?: Record<string, unknown>;   // JSON Schema
   permission?: "r" | "rw";
-  forModel?: "vision" | "text-only";      // 按 Session 模型类别装配
+  forModel?: "vision" | "text-only";      // 按 Session 模型类别装配(内置条目不设)
   timeoutMs?: number;                     // 默认 120000;<=0 关闭
   maxOutputLength?: number;               // 默认 16000,头部保留截断;<=0 关闭
 }
@@ -278,7 +278,7 @@ interface SubagentHandle {
 
 ## VisionDescriberService
 
-text-only 模型的图像代读服务(`describe_image` 所需):
+text-only 模型的图像代读服务(`read_file` 读图所需——它的存在即工具判定 Session 模型不能看图的依据):
 
 ```ts
 interface VisionDescriberService {

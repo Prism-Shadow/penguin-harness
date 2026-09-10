@@ -65,28 +65,26 @@ Each tool is described by one `ToolDefinitionConfig`:
 | `description` | Tool description handed to the model |
 | `parameters` | JSON Schema of the arguments |
 | `permission` | `"r"` read-only / `"rw"` read-write |
-| `forModel` | `"vision"` / `"text-only"`: selected by the Session model's class; omitted = available to all models |
+| `forModel` | `"vision"` / `"text-only"`: selected by the Session model's class; omitted = available to all models (no built-in entry sets it — `read_file` serves both classes) |
 | `timeoutMs` | Per-call timeout (ms), default 120000; `<=0` disables |
 | `maxOutputLength` | Output length cap (characters); `<=0` disables |
 | `call_description` | Per-tool toggle for the `description` call argument declared in `parameters` (required while on); missing = kept, `false` filters it and its `required` entry out of the schema at assembly |
 
 ## Built-in tools
 
-There are 9 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
+There are 7 built-in tools (assembled via `packages/core/src/environment/tools/registry.ts`):
 
 | Tool | Permission | Timeout (ms) | Purpose |
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | Run a shell command in the Workspace via `bash -lc`, streaming stdout/stderr |
-| `input_command` | rw | 130000 | Drive a command session by `process_id`: write stdin, send Ctrl-C, poll output, or terminate it (`kill: true`) |
-| `read_file` | r | 30000 | Read a text file as a line-numbered (`cat -n`) window, paged by offset/limit |
+| `input_command` | rw | 120000 | Drive a command session by `process_id`: write stdin, send Ctrl-C, poll output, or terminate it (`kill: true`) |
+| `read_file` | r | 60000 | Read a text file as a line-numbered (`cat -n`) window paged by offset/limit, or an image (path or URL) as image content — described in text by the `vision_model` for a text-only model |
 | `edit_file` | rw | 30000 | Exact-string replacement in an existing file, echoing a verification snippet |
 | `write_file` | rw | 30000 | Create or overwrite a whole file, creating parent directories as needed |
 | `run_subagent` | rw | 600000 | Delegate a self-contained subtask to a child Agent in the same Workspace |
 | `input_subagent` | rw | 600000 | Poll a background subagent, steer it mid-run, stop its current run, or continue it with a follow-up prompt |
-| `read_image` | r | 60000 | Read an image and return it as image content (vision models) |
-| `describe_image` | r | 90000 | Have the configured `vision_model` read the image and answer in text (text-only models) |
 
-Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up newer tools (e.g. the file tools) or newer arguments (`run_in_background`, `kill`, `abort`) automatically — and entries for since-removed tools (`kill_command`, `kill_subagent`) simply stop assembling: a model calling them gets the standard unknown-tool failure — hand-edit the agent's `system_config.yaml` and add the new entries (copy them from the default definitions in `packages/core/src/state/default-config.ts`) to adopt them.
+Note that an existing agent's persisted `tools.builtin` list is frozen as written (the settings UI edits rows but adds none): agents created before this toolset do not pick up newer tools (e.g. the file tools) or newer arguments (`run_in_background`, `kill`, `abort`) automatically — and entries for since-removed tools (`kill_command`, `kill_subagent`, `read_image`, `describe_image`) simply stop assembling: a model calling them gets the standard unknown-tool failure. A stored `read_file` entry from before it read images keeps its old description and timeout (the implementation behind it already reads images) — hand-edit the agent's `system_config.yaml` (copy the entries from the default definitions in `packages/core/src/state/default-config.ts`) or run the kernel update from the agent's settings page to adopt the current definitions.
 
 ### Call descriptions
 
@@ -126,7 +124,7 @@ The tools' arguments (explicit keys):
   process_id: string;      // required: the command-session id returned by exec_command
   chars?: string;          // characters for stdin; send "\u0003" alone to deliver Ctrl-C; empty = poll only
   kill?: boolean;          // true = terminate: kill the whole process group, return undelivered output, remove the session
-  yield_time_ms?: number;  // wait; defaults 250 for writes, 120000 for empty polls (one poll waits out most builds; pass a smaller value to peek)
+  yield_time_ms?: number;  // wait; defaults 250 for writes, 110000 for empty polls (one poll waits out most builds; pass a smaller value to peek)
   description: string;     // required while call_description is on
 }
 ```
@@ -137,13 +135,18 @@ On POSIX, Ctrl-C sends `SIGINT` to the session's process group, interrupting the
 
 `read_file` / `edit_file` / `write_file` run with the user's full permissions, same as the shell tool; relative paths resolve against the Workspace and absolute paths are allowed. A symlinked path is followed to the file it names — reads, edits and writes all land on that file, and the link stays a link. They are non-streaming (a single final output) and never throw — failures come back as explanatory text with `stop_reason: failed`.
 
+`read_file` reads images as well as text. A png/jpeg/gif/webp file up to 5MB — recognized by its magic number, then by its extension — or an http(s) URL in `file_path` (a URL is only ever an image source; the response content-type is consulted first) takes the image branch, and what comes back depends on the Session model's vision flag: a model that accepts images gets the image itself as image content (the text output is a one-line `image/png, 123.4 kB`), while a text-only model gets the Project's configured `vision_model` answering `prompt` (default: a detailed description), streamed as the tool's text output — the image never enters that Session's history. Without a `vision_model`, an image read on a text-only Session fails with an explanation asking the user to pick one in the model settings. See [Models & Providers](/models). The branch is decided by the `VisionDescriberService` the SDK injects into the Environment for text-only Sessions only, so one config entry (no `forModel`) serves both model classes.
+
 ```ts
-// read_file — cat -n style output (line number, tab, content); overlong single lines are
-// truncated, and binary content (NUL bytes) is rejected with advice to use shell/image tools.
+// read_file — cat -n style output (line number, tab, content) for text; overlong single lines
+// are truncated, and binary content that is no supported image (NUL bytes) is rejected with
+// advice to use the shell. An image (or an http(s) URL) returns image content or a text
+// description instead, and ignores offset/limit.
 {
-  file_path: string;       // required: absolute, or relative to the Workspace
+  file_path: string;       // required: absolute, or relative to the Workspace; an http(s) URL for an image
   offset?: number;         // 1-based line to start from; default 1
   limit?: number;          // max lines returned; default 2000 — a trailing note points at the continuation
+  prompt?: string;         // a question about an image, answered by the vision_model for a text-only model; default: a detailed description
 }
 
 // edit_file — the file must exist; old_string must occur exactly once (or set replace_all);
@@ -200,23 +203,6 @@ The Web App's subagents panel drives a selected child with the **same composer a
 - The child Session follows the parent Session — its model (unless `model_id`/`provider` pick another), thinking level (unless `thinking_level` picks another — lower for cheap mechanical subtasks, higher for hard analysis), and Workspace — never the Project defaults.
 - The child Session inherits the parent Agent's approval callback, so the approval mode follows the parent.
 - The child Session gets its own Trace, linked from the parent by a `subagent` pointer event; child messages stream back into the parent flow tagged with `origin`. See [Sessions & Traces](/sessions-and-traces).
-
-### Image tools
-
-`read_image` and `describe_image` are mutually exclusive, selected by the Session model's vision flag. Both accept an http(s) URL or a Workspace path and support png/jpeg/gif/webp up to 5MB. Text-only models get `describe_image`: the image plus a prompt are forwarded to the Project's configured `vision_model`, whose text answer becomes the tool output. See [Models & Providers](/models).
-
-```ts
-// read_image (vision models)
-{
-  source: string;          // required: an http(s) URL, or a file path inside the Workspace
-}
-
-// describe_image (text-only models)
-{
-  source: string;          // required: as above
-  prompt?: string;         // what to ask about the image; defaults to a detailed description
-}
-```
 
 ### Background completion reports
 
