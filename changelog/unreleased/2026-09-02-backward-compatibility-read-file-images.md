@@ -16,7 +16,7 @@ An Agent created before this release carries a `read_image` (`forModel: vision`)
 
 Without any action, such an Agent therefore loses its image tools by name and gains image reading under `read_file` without being told. To adopt the current definitions:
 
-- **Kernel update** (the badge on the Agents page, or the settings page's kernel action): the kernel version advanced to `2026-09-02`, so every existing Agent is flagged. A tools tab the user never edited advances whole — the new `read_file` entry in, the two image entries out. A tools tab with any customization is kept, as always; restoring the default config or a hand edit (copy the entry from `packages/core/src/state/default-config.ts`) is the recourse there.
+- **Kernel update** (the badge on the Agents page, or the settings page's kernel action): the kernel version advanced to `2026-09-10`, so every existing Agent is flagged. A tools tab the user never edited advances whole — the new `read_file` entry in, the two image entries out. A tools tab with any customization is kept, as always; restoring the default config or a hand edit (copy the entry from `packages/core/src/state/default-config.ts`) is the recourse there.
 - Nothing else. The skip is the registry's standing behavior, not a shim: there is no compatibility code to remove later.
 
 Alternatives not taken: a load-time migration that rewrites `tools.builtin` in place (a silent edit of a user-owned file), and keeping `read_image` / `describe_image` assembling as aliases of `read_file` for a few releases (three names on the model's tool list, and the same cleanup deferred).
