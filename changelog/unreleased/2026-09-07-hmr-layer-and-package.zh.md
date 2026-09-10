@@ -15,6 +15,6 @@
 
 **它的 HTTP 面只有 `/api/hmr`。** `/api/auth` 与 `/api/desktop` 现在是平台的路由组，和其他路由一样经接缝提供；平台的路由表不再携带要拒绝的前缀清单，`/api/auth` 下的未知路径答 404 而不是被 cookie 门拦成 401。
 
-**资源 id 说明它属于哪一层。** `hmr:*` 是只有进程能提供的能力；`platform:*` 是平台自己的状态，停放在那里以免 swap 丢失。旧的 `runtime:*` id 作为别名保留一个版本。
+**registry 里的是平台的状态，id 也这么说。** 每个条目都是 `platform:*`；旧的 `runtime:*` id 作为别名保留一个版本。
 
 两组路由的回滚副本与 id 别名记录在[向后兼容](2026-09-09-backward-compatibility.zh.md)。

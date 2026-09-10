@@ -55,9 +55,7 @@ export class PluginHost {
 }
 
 /**
- * Registry key for the loaded plugin host — PARKED PLATFORM STATE, whatever the `runtime:`
- * in the id says (that prefix is a wire contract with older generations, not ownership; see
- * the note over the ids in hmr/capabilities.ts).
+ * Registry key for the loaded plugin host.
  *
  * Nothing about the host is the runtime's business: which plugins a deployment runs is
  * configuration the platform reads, the modules go into the platform's tree, and a platform

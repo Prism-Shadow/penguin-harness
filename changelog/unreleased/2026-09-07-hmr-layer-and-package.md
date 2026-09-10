@@ -15,6 +15,6 @@ One purpose: make it hard to put product behaviour where only a reinstall can de
 
 **Its HTTP surface is `/api/hmr`.** `/api/auth` and `/api/desktop` are platform route groups now, served through the seam like every other route; the platform's route table no longer carries a list of prefixes to decline, and an unknown path under `/api/auth` answers 404 rather than the cookie gate's 401.
 
-**A resource id says which layer owns it.** `hmr:*` is a capability only the process can provide; `platform:*` is the platform's own state, parked so a swap does not lose it. The old `runtime:*` ids stay as aliases for one release.
+**The registry is the platform's state, and the ids say so.** Every entry reads `platform:*`; the old `runtime:*` ids stay as aliases for one release.
 
 The rollback copies of the two route groups and the id aliases are recorded in [backward compatibility](2026-09-09-backward-compatibility.md).

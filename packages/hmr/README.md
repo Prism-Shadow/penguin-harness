@@ -51,20 +51,15 @@ which is why it is never offered to the platform. Every other route is the platf
 layer keeps rollback copies of `/api/auth` and `/api/desktop` below its seam only until no
 platform that declines them can be rolled back to.
 
-## The registry is the state layer, not an HMR-layer API
+## The registry is the platform's state, not an HMR-layer API
 
-Most of what the resource registry holds is the **platform's own state**, kept there for one
-reason: a swap must not lose it. The auth values, the plugin host's imported objects, the frames
-the shell last sent, the nodes a test stands in for — platform code writes them, platform code
-reads them, and their meaning changes by push.
-
-The id says which kind an entry is: `hmr:*` is a capability — what only the process can
-provide (the config it started with, the open database, the channels, the hot host) —
-and `platform:*` is parked state. An id is a wire contract between generations, so the
-`runtime:*` names the entries had before are registered and claimed as aliases until no
-installed layer predates the rename (`LEGACY_RESOURCE_IDS` in
-`packages/server/src/hmr/capabilities.ts`). Reading parked state as a capability is how
-behaviour ends up misfiled.
+What the resource registry holds is the **platform's**: the config the process started with,
+the open database, the channels, the hot host, the auth values, the plugin host's imported
+objects, the nodes a test stands in for. The process keeps them there for one reason — a swap
+must not lose them — and every id reads `platform:*`. An id is a wire contract between
+generations, so the `runtime:*` names the entries had before are registered and claimed as
+aliases until nothing installed predates the rename (`LEGACY_RESOURCE_IDS` in
+`packages/server/src/hmr/capabilities.ts`).
 
 ## The test to apply BEFORE editing HMR-layer code
 
