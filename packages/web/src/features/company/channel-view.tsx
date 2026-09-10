@@ -11,10 +11,12 @@
  * state and the header's "?" say so.
  *
  * The stream is drawn the way every chat client draws one, because a channel is read the way
- * every chat is. Somebody else's run stands on the left: the avatar once, bottom-aligned to
- * the run's last bubble, the sender's name above its first — with the relay chip beside it
- * from the second hop on, the whole @-chain rule in its tooltip — and the bubbles between
- * them. The reader's own run stands on the right in its own tint, with no avatar and no name
+ * every chat is. Somebody else's run stands on the left: the avatar once, top-aligned so that
+ * it sits beside the sender's name — with the relay chip beside it from the second hop on, the
+ * whole @-chain rule in its tooltip — and the run's bubbles under both, in the column the name
+ * starts. Who is speaking is one mark, so the two halves of it stay on one line: an avatar tied
+ * to the run's last bubble drifts a screenful below its own name as soon as a message runs
+ * long. The reader's own run stands on the right in its own tint, with no avatar and no name
  * (a screen reader gets one, since a side and a colour are not something every reader can
  * read). Each bubble carries its own time at its bottom-right, inside it: a time that only
  * appears on hover is a time a touch reader never sees, and one time per run leaves every
@@ -109,9 +111,10 @@ const BUBBLE_SURFACE = {
 
 /**
  * A bubble's corners: 2xl all round, except on the last bubble of a run, where the corner
- * nearest the run's tail is squared — bottom-left towards the avatar, bottom-right on the
- * reader's own side. Every corner is named rather than layering a per-corner utility over the
- * all-corner one, so the result does not depend on which of the two the stylesheet emits last.
+ * nearest the run's tail is squared — bottom-left on somebody else's side of the stream,
+ * bottom-right on the reader's own. Every corner is named rather than layering a per-corner
+ * utility over the all-corner one, so the result does not depend on which of the two the
+ * stylesheet emits last.
  */
 function bubbleCorners(shape: BubbleShape): string {
   if (!shape.last) return "rounded-2xl";
@@ -491,9 +494,11 @@ export function ChannelView() {
     const senderLabel = principalLabel(item.sender, names);
     const own = isOwnRun(item.sender, me);
     return (
-      <div key={first.id} className={`flex items-end ${ICON_GAP.card} py-1.5`}>
-        {/* One avatar per run, bottom-aligned to its last bubble: a run is one person
-            speaking, and an avatar per line turns a burst of three into three arrivals. */}
+      <div key={first.id} className={`flex items-start ${ICON_GAP.card} py-1.5`}>
+        {/* One avatar per run, top-aligned so it lands beside the name row: a run is one person
+            speaking, and an avatar per line turns a burst of three into three arrivals. The
+            face and the name are one identity and have to be read as one — aligning the avatar
+            to the run's last bubble instead puts a ten-line message between them. */}
         {!own &&
           (p.kind === "agent" ? (
             <AgentAvatar
@@ -717,7 +722,7 @@ function StreamSkeleton() {
       {[0, 1, 2].map((i) => {
         const own = i === 1;
         return (
-          <div key={i} className={`flex items-end ${ICON_GAP.card}`}>
+          <div key={i} className={`flex items-start ${ICON_GAP.card}`}>
             {!own && <Skeleton className="h-7 w-7 shrink-0 rounded-md" />}
             <div className={`flex flex-1 flex-col gap-1 ${own ? "items-end" : "items-start"}`}>
               {!own && <Skeleton className="h-3 w-24" />}

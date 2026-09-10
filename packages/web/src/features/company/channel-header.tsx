@@ -1,9 +1,10 @@
 /**
  * A channel's header, above its stream: the name (the localized label for the all-hands
  * channel, never its stored name) with the "?" that says what kind of channel this is and how
- * far an @-chain relays, the purpose beside it, the members as a stack of avatars opening a
- * member popover — an employee row there opens its desk session — and the actions: invite,
- * leave, and the overflow menu with rename, purpose, archive and unarchive.
+ * far an @-chain relays, the channel's own purpose beside it — nothing when the all-hands
+ * channel has none, since what that channel is for is in the "?" — the members as a stack of
+ * avatars opening a member popover — an employee row there opens its desk session — and the
+ * actions: invite, leave, and the overflow menu with rename, purpose, archive and unarchive.
  *
  * Who may do what is the server's rule, not this file's: everything here is shown to a
  * person, who is a Project member and therefore may join, archive and unarchive — and may
@@ -304,14 +305,13 @@ export function ChannelHeader({
 
   const allHands = isAllHands(detail.channelId);
   const label = channelLabel(detail, S.company.channels.allHands);
-  // The subtitle: the stored purpose, or — for the all-hands channel, whose purpose the
-  // server seeds empty rather than in one language — the localized line that says what it is.
+  // The subtitle is the channel's own purpose and nothing else. The all-hands channel is seeded
+  // without one and stays blank until somebody writes one: what it is for is the kind of channel
+  // it is, which is the "?" beside the name, and standing text there would be a sentence the
+  // reader re-reads on every visit to a channel it can never change. An invited channel without
+  // a purpose says so instead, because writing one is a menu row away.
   const purpose =
-    detail.purpose !== ""
-      ? detail.purpose
-      : allHands
-        ? S.company.channels.allHandsPurpose
-        : S.company.channels.purposeEmpty;
+    detail.purpose !== "" ? detail.purpose : allHands ? null : S.company.channels.purposeEmpty;
   const candidates = inviteCandidates(employees, projectMembers, detail.members, query);
 
   const openDesk = async (principal: string) => {
@@ -408,12 +408,14 @@ export function ChannelHeader({
             </InfoPopover>
           </h1>
           {/* The purpose reads as a subtitle on the same line, so the header stays one row. */}
-          <span
-            title={purpose}
-            className="hidden min-w-0 flex-1 truncate text-xs text-gray-500 sm:block dark:text-gray-400"
-          >
-            {purpose}
-          </span>
+          {purpose !== null && (
+            <span
+              title={purpose}
+              className="hidden min-w-0 flex-1 truncate text-xs text-gray-500 sm:block dark:text-gray-400"
+            >
+              {purpose}
+            </span>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <MemberPopover

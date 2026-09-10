@@ -314,6 +314,10 @@ export function HandbookPage() {
               <span className="truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-200">
                 {selected}
               </span>
+              {/* The one place the index's reason for being pinned is on screen — it says what
+                  the document open in this pane is, so it belongs to the document, not to a row
+                  in a list of them. The explorer row carries the same sentence in its tooltip
+                  and its accessible name. */}
               {isIndex && (
                 <span className="shrink-0 rounded-full bg-gray-100 px-1.5 text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                   {S.company.handbook.indexLabel}

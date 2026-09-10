@@ -156,10 +156,11 @@ export function HandbookExplorer({
 
 /**
  * One row: the indent guides of the levels above it, its twisty (folders only), its glyph, its
- * name — with the index's reason for being pinned under it — and, on the right, how long ago a
- * document was written or how many documents a folder holds. The whole path, the exact time and
- * the size ride in the tooltip. The selected row is filled rather than merely bold, so the pane
- * beside it reads as that row's.
+ * name and, on the right, how long ago a document was written or how many documents a folder
+ * holds. The whole path, the exact time and the size ride in the tooltip — and so does the
+ * index's reason for being pinned, which the index row also carries in its accessible name: a
+ * second line under one row's name costs every row the same height for a fact about that one,
+ * and the same sentence is already visible in the pane beside it.
  */
 function ExplorerRowButton({
   row,
@@ -193,12 +194,25 @@ function ExplorerRowButton({
       : node === null
         ? NAV_ICONS.orgHandbook
         : FILE_ICON;
-  const tooltip =
+  // The index row alone overrides its accessible name: its visible name is only a file name, and
+  // why that file is pinned above the tree is the part a screen reader would otherwise never
+  // reach now that it is a tooltip. Every other row says on screen everything it has to say.
+  const tooltip = (
     folder !== null
-      ? `${row.path} · ${S.company.handbook.documentsInFolder(countDocuments(folder.children))}`
-      : file === null
-        ? row.path
-        : `${file.path} · ${S.company.handbook.updatedAt(formatDateTime(file.updatedAt), formatBytes(file.size))}`;
+      ? [row.path, S.company.handbook.documentsInFolder(countDocuments(folder.children))]
+      : [
+          row.path,
+          ...(node === null ? [S.company.handbook.indexLabel] : []),
+          ...(file === null
+            ? []
+            : [
+                S.company.handbook.updatedAt(
+                  formatDateTime(file.updatedAt),
+                  formatBytes(file.size),
+                ),
+              ]),
+        ]
+  ).join(" · ");
   return (
     <button
       type="button"
@@ -207,6 +221,7 @@ function ExplorerRowButton({
       aria-level={row.depth + 1}
       aria-selected={selected}
       {...(folder !== null ? { "aria-expanded": expanded } : {})}
+      {...(node === null ? { "aria-label": tooltip } : {})}
       tabIndex={tabbable ? 0 : -1}
       title={tooltip}
       onClick={onActivate}
@@ -234,14 +249,7 @@ function ExplorerRowButton({
       >
         <GlyphIcon d={glyph} size={ICON_SIZE.rowLead} />
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">{name}</span>
-        {node === null && (
-          <span className="block truncate text-[11px] font-normal text-gray-500 dark:text-gray-400">
-            {S.company.handbook.indexLabel}
-          </span>
-        )}
-      </span>
+      <span className="min-w-0 flex-1 truncate">{name}</span>
       <span className="shrink-0 text-[11px] font-normal tabular-nums text-gray-400 dark:text-gray-500">
         {folder !== null
           ? countDocuments(folder.children)
