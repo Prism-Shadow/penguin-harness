@@ -1,11 +1,13 @@
 /**
- * Optimize one Benchmark: the dialog that hands the `agent-optimization` Skill its inputs.
- * Two ways to fill them — a form (the optimizer agent, its conversation's model, runs per case,
- * round limit, target score, an optional focus) or a free prompt over the same parameter tail —
- * and one way out: the kit's send / edit-in-chat footer, which opens a new conversation with
- * the optimizer agent. The evaluation runtime is not chosen here: the Skill reuses the
- * provider, model and thinking level the baseline recorded, so scores stay comparable. Mounted
- * fresh per Benchmark by the page.
+ * Optimize one Benchmark: the dialog that hands the `agent-optimization` Skill its inputs. Two
+ * entries open it, and each names its own way of filling them, so the dialog renders that one
+ * body and never a mode switch: "Optimize manually" the form (the optimizer agent, its
+ * conversation's model, runs per case, round limit, target score, an optional focus), and
+ * "Optimize with AI" a free prompt over the same parameter tail. One way out either way — the
+ * prompt lands in a new conversation with the optimizer agent, prefilled; pressing Send stays
+ * the user's move. The evaluation runtime is not chosen here: the Skill reuses the provider,
+ * model and thinking level the baseline recorded, so scores stay comparable. Mounted fresh per
+ * Benchmark and per mode by the page.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -24,7 +26,6 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
 import {
   AiCreatePanel,
@@ -40,7 +41,8 @@ import type { OptimizeParams } from "./benchmark-prompts";
 /** The Skill the optimizer agent must carry; the dialog warns when the chosen agent lacks it. */
 const OPTIMIZATION_SKILL = "agent-optimization";
 
-type Mode = "manual" | "prompt";
+/** Which entry opened the dialog: the form, or the free prompt. */
+export type OptimizeMode = "manual" | "prompt";
 
 /** In-dialog key of a paired model reference; never persisted. */
 const modelKey = (m: ModelRefDto) => `${m.provider} ${m.modelId}`;
@@ -60,6 +62,7 @@ export function OptimizeModal({
   onClose,
   projectId,
   agentId,
+  mode,
   benchmark,
   agents,
   models,
@@ -69,6 +72,8 @@ export function OptimizeModal({
   projectId: string;
   /** The Test Agent: the one the Benchmark belongs to and the one the optimizer edits. */
   agentId: string;
+  /** Fixed by the entry the user pressed; the dialog renders only this body. */
+  mode: OptimizeMode;
   benchmark: BenchmarkSummary;
   agents: readonly AgentSummary[];
   /** The Project's models, for the optimizer conversation's model picker; null while unknown. */
@@ -78,7 +83,6 @@ export function OptimizeModal({
   const target = agents.find((a) => a.agentId === agentId) ?? null;
   const baseline = latestScore(benchmark.evaluations);
   const defaultTarget = defaultTargetScore(baseline?.score ?? null);
-  const [mode, setMode] = useState<Mode>("manual");
   const [optimizerId, setOptimizerId] = useState<string | null>(
     pickDefaultAgent(agents)?.agentId ?? null,
   );
@@ -129,14 +133,13 @@ export function OptimizeModal({
     const found = models?.models.find((m) => modelKey(m) === model);
     return found ? { provider: found.provider, modelId: found.modelId } : undefined;
   };
-  const go = (autoSend: boolean) => {
+  const go = () => {
     if (optimizerId === null) return;
     const ref = pickedModel();
     openAiChat({
       agentId: optimizerId,
       text,
       ...(ref !== undefined ? { modelRef: ref } : {}),
-      autoSend,
     });
     onClose();
   };
@@ -161,13 +164,17 @@ export function OptimizeModal({
       widthClass="sm:max-w-2xl"
       footer={
         <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
-          <Button disabled={!ready} onClick={() => go(false)}>
-            {S.aiCreate.editInChat}
+          <Button size="sm" onClick={onClose}>
+            {S.common.cancel}
           </Button>
-          <Button variant="primary" disabled={!ready} onClick={() => go(true)}>
+          {/*
+            One exit, and it hands the assembled prompt to a new conversation instead of sending
+            it: the optimizer starts only when the user presses Send there, on text they have
+            read. Disabled until there is an optimizer agent and every parameter is in range.
+          */}
+          <Button size="sm" variant="primary" disabled={!ready} onClick={go}>
             <GlyphIcon d={MAGIC_WAND_ICON} />
-            {S.aiCreate.send}
+            {S.aiCreate.editInChat}
           </Button>
         </>
       }
@@ -185,18 +192,6 @@ export function OptimizeModal({
             {S.benchmark.baselineLine(formatScore(baseline.score), params.targetScore)}
           </p>
         )}
-        <div className="w-64">
-          <Segmented
-            cols={2}
-            options={[
-              { value: "manual", label: S.benchmark.modeManual },
-              { value: "prompt", label: S.benchmark.modePrompt },
-            ]}
-            value={mode}
-            onChange={setMode}
-          />
-        </div>
-
         {mode === "manual" ? (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

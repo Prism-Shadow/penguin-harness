@@ -1,6 +1,6 @@
 /**
  * The Evaluation Center's prompts and id helpers (src/features/benchmark/benchmark-prompts.ts):
- * the New Benchmark tail hands the benchmark-design Skill its Test Agent and layout, the
+ * the Create-with-AI tail hands the benchmark-design Skill its Test Agent and layout, the
  * Optimize tail carries every input the agent-optimization Skill requires, and the manual
  * form's directory names follow the id alphabet.
  */

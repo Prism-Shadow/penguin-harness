@@ -2689,7 +2689,6 @@ Scenarios:
     ],
     guideNote:
       "All three Skills ship in the agent-tuning plugin, which the default agent already carries; install it on a new agent from the plugin library.",
-    newBenchmark: "New Benchmark",
     searchPlaceholder: "Search titles, descriptions or agents",
     noMatches: "No Benchmark matches",
     emptyTitle: "No Benchmarks yet",
@@ -2781,7 +2780,7 @@ Scenarios:
       "one `CASE-NNN-<slug>/` per case (`statement/README.md` is the statement, `rubric/README.md` the scoring rubric, 100 points per case, nothing from the rubric leaking into the statement) " +
       "and `scoreboard.yaml` (initially `evaluations: []`). Delegate one `agent-evaluation` run per case through `run_subagent` to calibrate difficulty, " +
       "freeze the final revision, append the Formal Baseline to scoreboard.yaml, and finish by reporting the Benchmark id, the baseline score and the per-case scores.",
-    manualCreateTitle: "Set up a Benchmark manually",
+    manualCreateTitle: "Create a Benchmark manually",
     manualCreateIntro:
       "Fill in the title, the statements and the rubrics; the directory layout the Skills expect is written under the Test Agent's benchmarks/, ready to evaluate or optimize.",
     agentField: "Agent",
@@ -2822,8 +2821,8 @@ Scenarios:
     optimizeTitle: (title: string): string => `Optimize: ${title}`,
     optimizeDescription:
       "AI changes the Test Agent under a falsifiable hypothesis and re-evaluates; a new version is kept only when the score strictly improves.",
-    modeManual: "Set up manually",
-    modePrompt: "Write a prompt",
+    optimizeWithAi: "Optimize with AI",
+    optimizeManual: "Optimize manually",
     optimizerAgent: "Optimizer agent",
     optimizerAgentHint:
       "The one that reads the scores and Traces and edits the Test Agent; needs the agent-optimization Skill",

@@ -33,7 +33,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { GroupHeader } from "../../components/ui/group-list";
 import { HelpFold } from "../../components/ui/help-fold";
-import { CloseButton, MAGIC_WAND_ICON } from "../../components/ui/icons";
+import { CloseButton, HAND_ICON, MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import {
@@ -45,12 +45,13 @@ import {
 } from "../../components/ui/session-row-menu";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
-import { AiCreateButton, AiCreateModal, CreateMenuButton, pickDefaultAgent } from "../ai-create";
+import { AiCreateModal, CreateButtons, pickDefaultAgent } from "../ai-create";
 import { latestScore, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
 import { benchmarkCreateExamples, benchmarkCreateTail, benchmarkPath } from "./benchmark-prompts";
 import { BenchmarkDetail } from "./benchmark-detail";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { OptimizeModal } from "./optimize-modal";
+import type { OptimizeMode } from "./optimize-modal";
 import { ScoreSparkline } from "./score-sparkline";
 
 /** Where a Benchmark lives: the Agent it tests and its directory name. */
@@ -58,6 +59,9 @@ interface BenchmarkRef {
   agentId: string;
   benchmarkId: string;
 }
+
+/** An open optimize dialog: which Benchmark, and which way the Skill's inputs get filled. */
+type OptimizeTarget = BenchmarkRef & { mode: OptimizeMode };
 
 /** One Agent's fetched list: null benchmarks with a null error means the fetch is in flight. */
 interface GroupState {
@@ -226,8 +230,13 @@ function BenchmarkRow({
       <div
         className={`flex shrink-0 items-center ${ICON_GAP.tight} @max-md:basis-full @max-md:justify-end`}
       >
-        <Button size="sm" variant="primary" onClick={onOptimize}>
-          <GlyphIcon d={MAGIC_WAND_ICON} />
+        {/*
+          A row holds one control, not the pair the wider surfaces offer, so this one takes the
+          manual path — the form, where every input is visible before anything is sent. The AI
+          path is one click away in the detail pane's header.
+        */}
+        <Button size="sm" title={S.benchmark.optimizeManual} onClick={onOptimize}>
+          <GlyphIcon d={HAND_ICON} />
           {S.benchmark.optimize}
         </Button>
         <Button size="sm" onClick={onSelect}>
@@ -260,7 +269,7 @@ export function BenchmarkPage() {
   const [aiTarget, setAiTarget] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
   const [manualAgent, setManualAgent] = useState<string | null>(null);
-  const [optimizing, setOptimizing] = useState<BenchmarkRef | null>(null);
+  const [optimizing, setOptimizing] = useState<OptimizeTarget | null>(null);
   const [deleting, setDeleting] = useState<BenchmarkRef | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const appliedDeepLink = useRef<string | null>(null);
@@ -456,7 +465,7 @@ export function BenchmarkPage() {
       <EmptyState
         title={S.benchmark.emptyTitle}
         description={S.benchmark.emptyDescription}
-        action={<AiCreateButton variant="primary" onClick={() => openAi(null)} />}
+        action={<CreateButtons onAi={() => openAi(null)} onManual={() => openManual(null)} />}
       />
     );
   } else if (searching && visible.length === 0) {
@@ -504,10 +513,11 @@ export function BenchmarkPage() {
                   ) : rows.length === 0 ? (
                     <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs text-gray-400 dark:text-gray-500">
                       <span>{S.benchmark.emptyAgent}</span>
-                      <Button size="sm" variant="ghost" onClick={() => openAi(agent.agentId)}>
-                        <GlyphIcon d={MAGIC_WAND_ICON} />
-                        {S.benchmark.createForAgent}
-                      </Button>
+                      <CreateButtons
+                        size="sm"
+                        onAi={() => openAi(agent.agentId)}
+                        onManual={() => openManual(agent.agentId)}
+                      />
                     </div>
                   ) : (
                     rows.map((b) => {
@@ -522,7 +532,7 @@ export function BenchmarkPage() {
                           locale={locale}
                           canDelete={isOwner}
                           onSelect={() => select(ref)}
-                          onOptimize={() => setOptimizing(ref)}
+                          onOptimize={() => setOptimizing({ ...ref, mode: "manual" })}
                           onCopyPath={() => copyPath(ref)}
                           onDelete={() => setDeleting(ref)}
                         />
@@ -557,12 +567,7 @@ export function BenchmarkPage() {
               onChange={(e) => setQuery(e.target.value)}
               className="w-56"
             />
-            <CreateMenuButton
-              size="sm"
-              label={S.benchmark.newBenchmark}
-              onAi={() => openAi(null)}
-              onManual={() => openManual(null)}
-            />
+            <CreateButtons size="sm" onAi={() => openAi(null)} onManual={() => openManual(null)} />
           </div>
         </div>
         <HelpFold title={S.benchmark.guideTitle} className="mt-2">
@@ -603,10 +608,13 @@ export function BenchmarkPage() {
                 {agentDisplayName(selectedAgent)}
               </span>
               <span className="min-w-0 flex-1" />
-              <Button size="sm" variant="primary" onClick={() => setOptimizing(selection)}>
-                <GlyphIcon d={MAGIC_WAND_ICON} />
-                {S.benchmark.optimize}
-              </Button>
+              <CreateButtons
+                size="sm"
+                aiLabel={S.benchmark.optimizeWithAi}
+                manualLabel={S.benchmark.optimizeManual}
+                onAi={() => setOptimizing({ ...selection, mode: "prompt" })}
+                onManual={() => setOptimizing({ ...selection, mode: "manual" })}
+              />
               <CloseButton
                 onClose={() => select(null)}
                 title={S.benchmark.closeDetail}
@@ -659,11 +667,12 @@ export function BenchmarkPage() {
       />
       {optimizing && optimizingBenchmark && (
         <OptimizeModal
-          key={`${optimizing.agentId}/${optimizing.benchmarkId}`}
+          key={`${optimizing.agentId}/${optimizing.benchmarkId}/${optimizing.mode}`}
           open
           onClose={() => setOptimizing(null)}
           projectId={projectId}
           agentId={optimizing.agentId}
+          mode={optimizing.mode}
           benchmark={optimizingBenchmark}
           agents={agents}
           models={models}

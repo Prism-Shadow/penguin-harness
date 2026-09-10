@@ -40,7 +40,7 @@ Builder 和 Optimizer 在各自的顶层 Session 中直接遵循对应 Skill。E
 
 ## 从评估中心发起
 
-Web App 的评估中心不需要手写提示词就能启动同样的两个 Session。**新建 Benchmark → 让 AI 创建**选定被测 Agent 并描述需求后，在新对话里把 `benchmark-design` 请求——Agent id、期望基线分、Pilot 迭代上限——发给 Project 的默认 Agent；**手动配置**则按下文的目录结构从表单写出一个 Benchmark，可直接评测。Benchmark 行上的**优化**把 `agent-optimization` 请求——被测 Agent、Benchmark id、每题运行次数、最多轮数、目标分数——发给所选的优化 Agent，既可从表单填写，也可写一段自由提示词、参数相同。评测 Runtime 从不在那里选择：Optimizer 沿用基线记录的模型对与推理强度。
+Web App 的评估中心不需要手写提示词就能启动同样的两个 Session。**用 AI 创建**选定被测 Agent 并描述需求后，把 `benchmark-design` 请求——Agent id、期望基线分、Pilot 迭代上限——预填进与 Project 默认 Agent 的新对话；**手动创建**则按下文的目录结构从表单写出一个 Benchmark，可直接评测。**用 AI 优化**与**手动优化**同样以两个按钮给出，把 `agent-optimization` 请求——被测 Agent、Benchmark id、每题运行次数、最多轮数、目标分数——预填进与所选优化 Agent 的新对话。两处都只做预填：发送由用户在对话里决定。评测 Runtime 从不在那里选择：Optimizer 沿用基线记录的模型对与推理强度。
 
 ## Benchmark 存储
 

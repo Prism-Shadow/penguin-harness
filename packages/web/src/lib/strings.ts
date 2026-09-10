@@ -2644,7 +2644,6 @@ Benchmark：
     ],
     guideNote:
       "三个技能都在 agent-tuning 插件里，默认智能体已自带；新建的智能体可以在插件库里安装。",
-    newBenchmark: "新建 Benchmark",
     searchPlaceholder: "搜索标题、描述或智能体",
     noMatches: "没有匹配的 Benchmark",
     emptyTitle: "还没有 Benchmark",
@@ -2740,7 +2739,7 @@ Benchmark：
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`）。通过 `run_subagent` 委派 `agent-evaluation` 逐题试测以校准难度，" +
       "定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题得分。",
     // New Benchmark, manual mode: the form.
-    manualCreateTitle: "手动配置 Benchmark",
+    manualCreateTitle: "手动创建 Benchmark",
     manualCreateIntro:
       "填好标题、题干与评分细则后，目录结构会按技能约定写入被测智能体的 benchmarks/ 下，之后可以直接评测或优化。",
     agentField: "所属智能体",
@@ -2777,8 +2776,8 @@ Benchmark：
     // Optimize: the dialog's two modes over one parameter tail.
     optimizeTitle: (title: string): string => `优化：${title}`,
     optimizeDescription: "AI 会按可证伪的假设修改被测智能体并重新评测，分数严格提升才保留新版本。",
-    modeManual: "手动配置",
-    modePrompt: "写提示词",
+    optimizeWithAi: "用 AI 优化",
+    optimizeManual: "手动优化",
     optimizerAgent: "执行优化的智能体",
     optimizerAgentHint: "读分数与 Trace、修改被测智能体的一方；需要装有 agent-optimization 技能",
     optimizerMissingSkill:
