@@ -201,11 +201,10 @@ export const HMR_OVERRIDES_RESOURCE_ID = "platform.overrides";
  * registration order) before it adopts anything. Riding the registry, not the kernel
  * iface, keeps the swap mechanism untouched and the policy itself hot-pushable.
  *
- * Deliberately colon-free: an ID without a group can never be swept by disposeGroup —
- * the declaration must outlive the App that wrote it (its dispose effect does NOT
- * release it) to inform the successor.
+ * Not in any `<group>:` — disposeGroup never sweeps it: the declaration must outlive the App
+ * that wrote it (its dispose effect does NOT release it) to inform the successor.
  */
-export const RESOURCE_IFACES_RESOURCE_ID = "resource-interfaces";
+export const RESOURCE_IFACES_RESOURCE_ID = "platform.resourceInterfaces";
 
 /*
  * There is deliberately NO reverse-direction registry entry. The runtime already holds
@@ -402,7 +401,7 @@ export abstract class Log extends Interface<{
 
 /**
  * Whether a registry resource group inherited from the previous App may be adopted — the
- * platform node decides from the resource-interfaces declaration (hmr/platform.ts); a
+ * platform node decides from the parked declaration (hmr/platform.ts); a
  * module that parks handles asks before claiming them back.
  */
 export abstract class ResourceGroups extends Interface<{
