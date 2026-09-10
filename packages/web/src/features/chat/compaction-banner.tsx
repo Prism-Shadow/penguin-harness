@@ -24,8 +24,10 @@
  * and how long each is taking — while the sections themselves stay closed (DisclosureRow's
  * default), because their contents are the compaction's raw workings and not what the row is
  * for. Once the compaction settles the banner closes itself again, leaving the one-line
- * summary. The result section shows `…` for its time until the first summary token arrives,
- * which is also the honest reading of that moment: the request is thinking, not writing yet.
+ * summary. The sections arrive in the order the request produces them: the thinking section
+ * once any thinking lands, the result section only after that thinking finishes — its first
+ * summary token is what settles the thinking section — so a running row never shows a result
+ * row beside a thought still being written (compactionResultVisible decides).
  *
  * The header's chevron is there from the moment a summarize compaction starts, so the reader
  * can reopen it to watch the request work, or read the outcome afterwards. A `discard`
@@ -43,7 +45,7 @@
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
 import type { CompactionItem } from "../../lib/omni/stream-model";
-import { compactionSummaryText } from "../../lib/omni/compaction-summary";
+import { compactionResultVisible, compactionSummaryText } from "../../lib/omni/compaction-summary";
 import { StatusIcon } from "../../components/ui/status-icon";
 import { DisclosureRow } from "./disclosure-row";
 import { LiveDuration } from "./live-duration";
@@ -118,13 +120,15 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
           durationMs={item.thinkingDurationMs}
         />
       )}
-      <CompactionSection
-        label={S.chat.compactionResult}
-        text={summary}
-        streaming={item.running}
-        startedAtMs={item.summaryStartedAtMs}
-        durationMs={item.summaryDurationMs}
-      />
+      {compactionResultVisible(item) && (
+        <CompactionSection
+          label={S.chat.compactionResult}
+          text={summary}
+          streaming={item.running}
+          startedAtMs={item.summaryStartedAtMs}
+          durationMs={item.summaryDurationMs}
+        />
+      )}
     </>
   ) : null;
 

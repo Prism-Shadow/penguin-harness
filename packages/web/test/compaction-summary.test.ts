@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { en } from "../src/lib/strings-en";
 import { zh } from "../src/lib/strings";
-import { compactionSummaryText } from "../src/lib/omni/compaction-summary";
+import { compactionResultVisible, compactionSummaryText } from "../src/lib/omni/compaction-summary";
 
 describe("compactionSummaryText", () => {
   it("strips the summary tags so the body reads as prose", () => {
@@ -36,6 +36,25 @@ describe("compactionSummaryText", () => {
     expect(compactionSummaryText({})).toBe("");
     expect(compactionSummaryText({ summaryText: "" })).toBe("");
     expect(compactionSummaryText({ summaryText: "   " })).toBe("");
+  });
+});
+
+describe("compactionResultVisible (the result section waits for the thinking to finish)", () => {
+  it("stays hidden while the request is still thinking and no summary has started", () => {
+    expect(
+      compactionResultVisible({ running: true, summaryText: "", summaryStartedAtMs: undefined }),
+    ).toBe(false);
+    expect(compactionResultVisible({ running: true })).toBe(false);
+  });
+
+  it("appears with the first summary text, which is what ends the thinking", () => {
+    expect(compactionResultVisible({ running: true, summaryStartedAtMs: 1000 })).toBe(true);
+    expect(compactionResultVisible({ running: true, summaryText: "<summary>x" })).toBe(true);
+  });
+
+  it("is shown on a completed row, and never on one that failed with its drafts discarded", () => {
+    expect(compactionResultVisible({ running: false, status: "completed" })).toBe(true);
+    expect(compactionResultVisible({ running: false, status: "failed" })).toBe(false);
   });
 });
 
