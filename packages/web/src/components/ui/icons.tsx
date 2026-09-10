@@ -165,6 +165,16 @@ export function CloseButton({
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
 /**
+ * File glyphs, shared by every place a file operation is marked — the file summary card, the
+ * memory-changes card, the context panel's file ranking — so a read, an edit and a write look
+ * the same everywhere: a page with a folded corner, the same page with a plus (a full write),
+ * and a pencil (an in-place edit).
+ */
+export const FILE_ICON = "M6 3h8l4 4v14H6zM14 3v4h4";
+export const FILE_WRITE_ICON = "M6 3h8l4 4v14H6zM12 11v6M9 14h6";
+export const FILE_EDIT_ICON = "M12 20h9M16.5 3.5a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z";
+
+/**
  * Activity trace (a flat line with one tall beat in it): work still going on behind the
  * conversation — the background-task mark on a session row, the matching count in the chat
  * header, and the marker on a tool row whose call was made with `run_in_background`.

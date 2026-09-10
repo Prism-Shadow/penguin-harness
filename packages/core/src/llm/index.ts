@@ -27,6 +27,7 @@ export type { ListEndpointModelsOptions } from "./list-models.js";
 export { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
 export {
   DEFAULT_CONTEXT_WINDOW,
+  DEFAULT_MAX_CONTEXT_LENGTH,
   OUTPUT_SAFETY_MARGIN,
   MIN_OUTPUT_TOKENS,
   COMPACTION_HEADROOM,

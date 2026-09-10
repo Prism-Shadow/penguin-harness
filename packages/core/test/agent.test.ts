@@ -922,6 +922,36 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
     }
   });
 
+  it("the compaction section is re-read from disk on demand, so an edited threshold reaches a running Session", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-live-compaction");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      const readCompaction = (
+        session as unknown as {
+          engineDeps: {
+            readCompaction?: () => Promise<{ maxContextLength: number; mode: string }>;
+          };
+        }
+      ).engineDeps.readCompaction!;
+
+      await patchSystemConfig((cfg) => {
+        cfg.compaction = { ...(cfg.compaction ?? {}), max_context_length: 40000, mode: "discard" };
+      });
+      // No rotation, no new Session: the reader the engine calls at each checkpoint answers
+      // from the file as it is now.
+      expect(await readCompaction()).toMatchObject({ maxContextLength: 40000, mode: "discard" });
+
+      await patchSystemConfig((cfg) => {
+        cfg.compaction = { ...(cfg.compaction ?? {}), max_context_length: 199000 };
+      });
+      expect((await readCompaction()).maxContextLength).toBe(199000);
+    } finally {
+      session.dispose();
+    }
+  });
+
   it("the context opened after compaction is rebuilt whole — prompt, toolset, vault, run settings — and its records describe it", async () => {
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-rebuild");
