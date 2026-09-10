@@ -25,7 +25,6 @@ import type {
 } from "@prismshadow/penguin-core/interfaces";
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport } from "@prismshadow/penguin-core";
-import type { SandboxSettings as SandboxSettingsType } from "@prismshadow/penguin-core/plugin";
 
 // ---------------------------------------------------------------------------
 // General
@@ -3679,11 +3678,4 @@ export interface InstalledPluginsResponse {
   file: string;
   /** A listed plugin is not running: plugins load once per process, so a restart applies it. */
   restartPending: boolean;
-}
-
-/** GET|PUT /api/admin/sandbox — the confinement settings and what can enforce them. */
-export interface SandboxSettingsResponse {
-  settings: SandboxSettingsType;
-  /** Mounted backends and the isolation dimensions each implements; empty = nothing enforces. */
-  backends: Array<{ name: string; dimensions: string[] }>;
 }

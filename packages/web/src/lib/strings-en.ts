@@ -146,22 +146,6 @@ export const en: Strings = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
-    /** Admin-only sub-page (server-global). */
-    sandboxTitle: "Sandbox",
-    sandboxInfo:
-      "The confinement agent commands run under. What enforces it is a backend contributed by a plugin (bwrap on Linux, Seatbelt on macOS, MXC on Windows, or DSH); with none installed, choosing a mode confines nothing. The settings park with the platform, so they survive a hot update.",
-    sandboxMode: "Confinement mode",
-    sandboxModeHint: "Applies to the next command spawn; no restart.",
-    sandboxModeOff: "Off (full access)",
-    sandboxModeWorkspace: "Workspace write only",
-    sandboxModeReadOnly: "Read-only",
-    sandboxNetwork: "Cut off the network",
-    sandboxMaskPaths: "Masked paths",
-    sandboxMaskPathsHint:
-      "One path per line; hidden from confined commands. Only while confinement is on.",
-    sandboxBackends: "Backends",
-    sandboxNoBackend:
-      "This deployment has no sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.",
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
