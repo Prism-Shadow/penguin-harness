@@ -33,7 +33,12 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
-import { CloseIcon, NAV_ICONS } from "../../components/ui/icons";
+import {
+  CloseIcon,
+  NAV_ICONS,
+  PANEL_BOTTOM_ICON,
+  PANEL_RIGHT_ICON,
+} from "../../components/ui/icons";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -92,9 +97,6 @@ import { usePointerDrag } from "./use-pointer-drag";
 
 /** Plus: the add-tab trigger. */
 const ADD_ICON = "M12 5v14M5 12h14";
-/** Window with a bottom pane / a right pane: the move-dock buttons. */
-const PANEL_BOTTOM_ICON = "M4 5h16v14H4zM4 14h16";
-const PANEL_RIGHT_ICON = "M4 5h16v14H4zM14 5v14";
 /** Box with an arrow escaping to the top right: detach to its own window. */
 const DETACH_ICON = "M14 4h6v6M20 4l-8 8M10 6H5a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5";
 
@@ -435,9 +437,13 @@ export function DockPanel({
       return id ? { id } : null;
     },
     onMove: (event, { id }) => {
+      // The gesture is tracked on the window, so the strip comes from its ref rather than
+      // from the event's target — which is wherever the pointer has travelled to.
+      const stripEl = stripRef.current;
+      if (!stripEl) return;
       // Out of the strip (with a little slack): the gesture becomes "move to the other
       // edge" — the same overlay as moving a dock, with the preview showing the landing.
-      const strip = event.currentTarget.getBoundingClientRect();
+      const strip = stripEl.getBoundingClientRect();
       if (event.clientY < strip.top - 20 || event.clientY > strip.bottom + 20) {
         setTabDrag({ active: true, candidate: dockDropCandidate(event.clientX, event.clientY) });
         return;
@@ -445,7 +451,7 @@ export function DockPanel({
       setTabDrag({ active: false, candidate: null });
 
       // Within the strip: live reorder against the other tabs' midpoints.
-      const tabEls = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-tab-id]")];
+      const tabEls = [...stripEl.querySelectorAll<HTMLElement>("[data-tab-id]")];
       const currentIds = tabEls.map((el) => el.dataset.tabId as string);
       const others = tabEls.filter((el) => el.dataset.tabId !== id);
       let insertAt = others.length;

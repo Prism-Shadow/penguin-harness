@@ -193,9 +193,9 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
       // (same source that Trace writes).
       const meta = session.metaMessage.payload as { provider: string; model_id: string };
       expect(meta.provider).toBe("deepseek");
-      expect(meta.model_id).toBe("deepseek-v4-flash-vision-exp");
+      expect(meta.model_id).toBe("deepseek-flash");
       expect(session.provider).toBe("deepseek");
-      expect(session.modelId).toBe("deepseek-v4-flash-vision-exp");
+      expect(session.modelId).toBe("deepseek-flash");
     } finally {
       session.dispose();
     }
@@ -253,7 +253,7 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
     const session = await agent.createSession({ workspaceDir: ws });
     try {
       expect(session.provider).toBe("deepseek");
-      expect(session.modelId).toBe("deepseek-v4-flash-vision-exp");
+      expect(session.modelId).toBe("deepseek-flash");
     } finally {
       session.dispose();
     }

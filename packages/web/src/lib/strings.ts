@@ -109,6 +109,20 @@ export const zh = {
     /** Terminal tab ×: ends the shell for real, so it asks first. `name` is the tab label. */
     killConfirmTitle: "关闭此终端？",
     killConfirmBody: (name: string): string => `将结束 Shell「${name}」的进程，无法恢复。`,
+    /**
+     * The floating launcher on the chat body's right edge while the right dock is hidden.
+     * `launcherCaption` is printed under the ball at rest — the same words as the ball's
+     * accessible name — and gives way to the pointed-at entry's name while the fan is open.
+     */
+    launcher: "快捷方式",
+    launcherCaption: "快捷方式",
+    /** Appended to the launcher's accessible name while its amber dot shows. */
+    launcherPending: "子智能体有待审批",
+    /** The fan of entries the launcher opens (its accessible group name). */
+    launcherPanels: "快捷方式",
+    /** The fan's last entry: puts the launcher away until Appearance settings bring it back. */
+    launcherHide: "隐藏悬浮球",
+    launcherHiddenToast: "悬浮球已隐藏，可在 设置 › 外观 中重新开启",
   },
 
   /** The Trace dock panel (the current conversation's Trace files). */
@@ -179,6 +193,9 @@ export const zh = {
     fontLarge: "大",
     accent: "主题色",
     accentInfo: "界面强调色。",
+    launcher: "快捷方式悬浮球",
+    launcherInfo:
+      "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
     currencyInfo: "价格显示币种；存储始终为美元。",
     changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {

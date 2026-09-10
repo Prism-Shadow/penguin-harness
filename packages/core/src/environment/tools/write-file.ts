@@ -31,6 +31,7 @@ import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
+import { describeArgumentError } from "./tool-arguments.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
 export const WRITE_FILE_NAME = "write_file";
@@ -74,14 +75,18 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
 
       const filePath = args["file_path"];
       if (typeof filePath !== "string" || filePath.length === 0) {
-        yield delta(`Missing required argument "file_path" for ${definition.name}.`);
+        yield delta(
+          describeArgumentError(definition, args, { argument: "file_path", kind: "missing" }),
+        );
         return { stopReason: "fatal" };
       }
       // An empty string is valid content (creates an empty file); only a missing/non-string
       // value is an argument error.
       const content = args["content"];
       if (typeof content !== "string") {
-        yield delta(`Missing required argument "content" for ${definition.name}.`);
+        yield delta(
+          describeArgumentError(definition, args, { argument: "content", kind: "missing" }),
+        );
         return { stopReason: "fatal" };
       }
 

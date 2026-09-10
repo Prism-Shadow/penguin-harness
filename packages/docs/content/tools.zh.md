@@ -43,7 +43,7 @@ interface ToolResult {
 - 输出永不为空：没有任何输出时补 `[no output]`;
 - `note`(如退出码)与图像附加在输出预算之外，长输出被截断时终止标记不会丢失。
 
-工具与 Environment 从不向引擎抛异常：错误一律折叠为 `tool_call_output` 消息，交给模型阅读并调整下一步。消息结构见 [OmniMessage 协议](/omni-message)。
+工具与 Environment 从不向引擎抛异常：错误一律折叠为 `tool_call_output` 消息，交给模型阅读并调整下一步。参数不合工具定义的调用以 `fatal` 收尾，整段输出即一份纠错指引：出错之处、实际收到的参数名（点出 schema 未声明的名字）、按 schema 重述的全部参数，以及一次正确调用的形态——仅凭这段输出就能改对再发。消息结构见 [OmniMessage 协议](/omni-message)。
 
 ### 过长输出恢复
 
@@ -111,7 +111,7 @@ exec_command(cmd)
 ```ts
 // exec_command
 {
-  cmd: string;             // 必填:要执行的 shell 命令
+  cmd: string;             // 必填:要执行的 shell 命令(也接受别名 `command`;schema 只声明 `cmd`)
   workdir?: string;        // 工作目录;缺省为 Workspace 根,相对路径按其解析
   yield_time_ms?: number;  // 前台等待时长;默认 60000,最小 250,上限受工具超时约束
   run_in_background?: boolean; // true = 立即返回 process_id;完成回报以 user message 送达

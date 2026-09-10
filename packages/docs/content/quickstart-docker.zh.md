@@ -76,7 +76,7 @@ PenguinHarness 不内置任何模型凭据。可以用 Web 应用的**模型**�
 
 ```bash
 docker compose exec -u penguin penguin \
-  penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
+  penguin config model add --provider deepseek --model-id deepseek-flash --api-key sk-... --set-default
 ```
 
 `-u penguin` 是必要的：`docker exec` 默认以 root 执行，它写进 `/data` 的文件会归 root 所有，而服务端是以 uid 1000 运行的。内置分组见[模型与 Provider](/models)。
