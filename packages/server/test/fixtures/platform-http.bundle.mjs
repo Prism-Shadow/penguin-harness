@@ -2,7 +2,7 @@
  * Test fixture: a pushed platform that SERVES HTTP.
  *
  * The point of the seam it exercises: this bundle adds `/api/demo/ping`, replaces the
- * runtime's `/api/version`, and tries (and fails) to claim `/api/hmr/platform` — none of which
+ * runtime's `/api/version`, and carries the upgrade channel a generation must — none of which
  * the runtime knows anything about. It arrives as bytes over one HTTP push, with no rebuild.
  *
  * Standalone on purpose, like the other fixtures: no kernel or arktype imports, only what an
@@ -37,7 +37,7 @@ const iface = {
 };
 
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     return {
       park: () => context,
       info: () => ({ impl: "http-fixture" }),
@@ -66,10 +66,11 @@ const impl = {
         if (url.pathname === "/api/demo/boom") {
           throw new Error("deliberate platform failure");
         }
-        if (url.pathname.startsWith("/api/hmr")) {
-          // Never reached: the runtime keeps its upgrade channel, so a push cannot lock the
-          // installation out of being replaced.
-          return new Response("hijacked", { status: 418 });
+        if (url.pathname === "/api/hmr/upgrade") {
+          // The upgrade channel is the platform's to serve; a generation without it is
+          // refused before commit (admitsUpgradeRoute). The protocol is the mechanism's,
+          // claimed off the registry — that is how this bundle carries it without a platform.
+          return ctx.resources.claim("platform.hmrControl").endpoint(request);
         }
         return null; // not mine — the runtime's own routes answer
       },

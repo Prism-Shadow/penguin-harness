@@ -332,8 +332,11 @@ export class HmrHost<Api extends Park = Park> {
   }
 
   /** Strictly request-driven; serialized on the op queue (never auto-triggered). */
-  upgradeAll(target: UpgradeAllTarget): Promise<UpgradeOutcome> {
-    const run = this.opQueue.then(() => this.doUpgradeAll(target));
+  upgradeAll(
+    target: UpgradeAllTarget,
+    admit?: (instance: Instance<Api>) => Promise<string | null> | string | null,
+  ): Promise<UpgradeOutcome> {
+    const run = this.opQueue.then(() => this.doUpgradeAll(target, admit));
     // The queue must survive a failed upgrade: swallow for chaining only.
     this.opQueue = run.then(
       () => undefined,
@@ -342,7 +345,10 @@ export class HmrHost<Api extends Park = Park> {
     return run;
   }
 
-  private async doUpgradeAll(target: UpgradeAllTarget): Promise<UpgradeOutcome> {
+  private async doUpgradeAll(
+    target: UpgradeAllTarget,
+    admit?: (instance: Instance<Api>) => Promise<string | null> | string | null,
+  ): Promise<UpgradeOutcome> {
     const current = await this.ensure();
 
     if (typeof target.web["index.html"] !== "string") {
@@ -374,6 +380,7 @@ export class HmrHost<Api extends Park = Park> {
         impl: bundle.impl,
         iface: bundle.iface,
         resources: this.resources,
+        ...(admit !== undefined ? { admit: admit as never } : {}),
       });
     } catch (err) {
       this.publishAssets(previousAssets);
