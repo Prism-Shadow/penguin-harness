@@ -2,7 +2,7 @@
  * One plugin's detail page: the index entry's metadata plus its long-form readme,
  * rendered from Markdown.
  *
- * The readme is fetched separately from the index (GET /api/plugins/readme) because the
+ * The readme is fetched separately from the index (GET /api/plugins/registry/readme) because the
  * shapes differ — the listing is sent in full on every visit to the Plugins page, while a
  * readme is large and wanted only for the entry someone opened.
  *
@@ -19,9 +19,11 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { Button } from "../../components/ui/button";
+import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { NAV_ICONS } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/skeleton";
+import { toneInk } from "../../lib/tone";
 
 export function PluginDetailPage() {
   const params = useParams();
@@ -31,7 +33,7 @@ export function PluginDetailPage() {
   const [entry, setEntry] = useState<PluginIndexEntry | null | undefined>(undefined);
   const [readme, setReadme] = useState<string | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, flash } = useCopied();
 
   // The index carries every field this page shows except the readme, and it is one cached
   // call — cheaper and simpler than a per-entry metadata endpoint that would duplicate it.
@@ -63,13 +65,6 @@ export function PluginDetailPage() {
     };
   }, [name]);
 
-  const copy = () => {
-    void navigator.clipboard?.writeText(name).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
-
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-3xl">
@@ -83,7 +78,7 @@ export function PluginDetailPage() {
 
         {error ? (
           <div className="mt-6 flex items-center gap-3">
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <p className={`text-sm ${toneInk.danger}`}>{error}</p>
             <Button size="sm" onClick={() => window.location.reload()}>
               {S.common.retry}
             </Button>
@@ -112,11 +107,14 @@ export function PluginDetailPage() {
                   <span className="font-mono text-xs text-gray-400">v{entry.version}</span>
                   <button
                     type="button"
-                    onClick={copy}
-                    className="rounded border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
+                    onClick={() => flash(entry.name)}
+                    title={copied ? S.common.copied : S.pluginRegistry.copySpecifier}
+                    className="inline-flex items-center gap-1 rounded border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-500 transition-colors duration-150 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
                   >
-                    {copied ? S.pluginRegistry.copied : S.pluginRegistry.copySpecifier}
+                    <CopyCheckGlyph copied={copied} size={12} />
+                    {S.pluginRegistry.copySpecifier}
                   </button>
+                  <CopiedStatus copied={copied} />
                 </div>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{entry.description}</p>
               </div>

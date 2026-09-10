@@ -79,6 +79,8 @@ import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { toneInk, toneSurface } from "../../lib/tone";
+import { InstalledPluginsDialog } from "./installed-dialog";
 
 /**
  * What one Agent has installed, by name → the installed copy's version (`YYYY.MM.DD.N`, or ""
@@ -196,9 +198,6 @@ export function pluginUpdatePlan(
   }
   return { perAgent, plugins: [...plugins].sort() };
 }
-import { InstalledPluginsDialog } from "./installed-dialog";
-import { toneInk, toneSurface } from "../../lib/tone";
-
 export function PluginsPage() {
   useDocumentTitle(S.nav.plugins);
   const navigate = useNavigate();
@@ -496,7 +495,7 @@ export function PluginsPage() {
 
         {error ? (
           <div className="mt-6 flex items-center gap-3">
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <p className={`text-sm ${toneInk.danger}`}>{error}</p>
             <Button size="sm" onClick={() => window.location.reload()}>
               {S.common.retry}
             </Button>
@@ -1018,7 +1017,7 @@ function RegistrySection({
     <section className="mt-10">
       <h2 className="text-base font-semibold">{S.pluginRegistry.pageTitle}</h2>
       {error ? (
-        <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>
+        <p className={`mt-4 text-sm ${toneInk.danger}`}>{error}</p>
       ) : plugins === null ? (
         <div className="mt-4 flex flex-col gap-2.5">
           {Array.from({ length: 3 }, (_, i) => (
