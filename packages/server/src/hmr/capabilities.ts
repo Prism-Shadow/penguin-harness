@@ -167,9 +167,8 @@ export function lacksMembers(value: unknown, need: readonly string[]): string[] 
   return need.filter((m) => (value as Record<string, unknown>)[m] === undefined);
 }
 
-// What the layer publishes for the platform to claim. Every id is `platform.<name>` — dot-split,
-// camelCase, the plugin-id shape: the registry is the platform's state, kept by the process so
-// a swap does not lose it.
+// What the layer publishes for the platform to claim: the platform's state, kept by the process
+// so a swap does not lose it. Ids are `platform.<name>`, the plugin-id shape.
 
 export const HMR_CONFIG_RESOURCE_ID = "platform.config";
 export const HMR_DB_RESOURCE_ID = "platform.db";
@@ -193,43 +192,6 @@ export const HMR_LIFECYCLE_RESOURCE_ID = "platform.lifecycle";
 export const HMR_AUTH_STATE_RESOURCE_ID = "platform.authState";
 /** Test-only: the node Replacements bootAppDeps leaves for the platform boot to claim. */
 export const HMR_OVERRIDES_RESOURCE_ID = "platform.overrides";
-
-/**
- * The ids before the `platform.` prefix. An installed layer registers under both (`publish`)
- * and a platform claims new-then-old (`claimAny`), so either side may be older than the other.
- * Drop with the aliases once nothing installed or rolled back to predates the rename.
- */
-export const LEGACY_RESOURCE_IDS: Readonly<Record<string, string>> = {
-  "platform.interfaces": "runtime:interfaces",
-  "platform.config": "runtime:config",
-  "platform.db": "runtime:db",
-  "platform.channels": "runtime:channels",
-  "platform.proxyControl": "runtime:proxy-control",
-  "platform.host": "runtime:hmr-host",
-  "platform.desktop": "runtime:desktop",
-  "platform.lifecycle": "runtime:lifecycle",
-  "platform.authState": "runtime:auth-state",
-  "platform.overrides": "runtime:overrides",
-  "platform.plugins": "runtime:plugins",
-};
-
-/** Registers `resource` under `id` and, while one exists, its legacy id. */
-export function publish(
-  resources: Resources,
-  id: string,
-  resource: unknown,
-  dispose?: () => void,
-): void {
-  resources.register(id, resource, dispose);
-  const legacy = LEGACY_RESOURCE_IDS[id];
-  if (legacy !== undefined) resources.register(legacy, resource);
-}
-
-/** Claims `id`, or what an older layer registered under its legacy id. */
-export function claimAny<T>(resources: Resources, id: string): T | undefined {
-  const legacy = LEGACY_RESOURCE_IDS[id];
-  return resources.claim<T>(id) ?? (legacy === undefined ? undefined : resources.claim<T>(legacy));
-}
 
 /**
  * The {@link Interfaces} descriptor each App leaves for its successor, naming the
@@ -296,7 +258,7 @@ export type HmrClaim =
   | { kind: "refused"; reason: string };
 
 export function claimHmrCapabilities(resources: Resources): HmrClaim {
-  const offered = claimAny<Interfaces>(resources, HMR_INTERFACES_RESOURCE_ID);
+  const offered = resources.claim<Interfaces>(HMR_INTERFACES_RESOURCE_ID);
   if (offered === undefined) {
     return { kind: "refused", reason: "no interface descriptor published" };
   }
@@ -314,25 +276,25 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
   }
   const mismatch = interfaceMismatch(offered, HMR_INTERFACES);
   if (mismatch !== null) return { kind: "refused", reason: mismatch };
-  const config = claimAny<ServerConfig>(resources, HMR_CONFIG_RESOURCE_ID);
-  const db = claimAny<DatabaseSync>(resources, HMR_DB_RESOURCE_ID);
-  const channels = claimAny<ChannelHub>(resources, HMR_CHANNELS_RESOURCE_ID);
-  const proxyControl = claimAny<ProxyControl>(resources, HMR_PROXY_RESOURCE_ID);
-  const hmr = claimAny<HmrHost>(resources, HMR_HOST_RESOURCE_ID);
-  const lifecycle = claimAny<LifecycleService>(resources, HMR_LIFECYCLE_RESOURCE_ID);
+  const config = resources.claim<ServerConfig>(HMR_CONFIG_RESOURCE_ID);
+  const db = resources.claim<DatabaseSync>(HMR_DB_RESOURCE_ID);
+  const channels = resources.claim<ChannelHub>(HMR_CHANNELS_RESOURCE_ID);
+  const proxyControl = resources.claim<ProxyControl>(HMR_PROXY_RESOURCE_ID);
+  const hmr = resources.claim<HmrHost>(HMR_HOST_RESOURCE_ID);
+  const lifecycle = resources.claim<LifecycleService>(HMR_LIFECYCLE_RESOURCE_ID);
   if (!config || !db || !channels || !proxyControl || !hmr || !lifecycle) {
     return { kind: "refused", reason: "a declared capability was not actually published" };
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
-  const desktop = claimAny<DesktopService | null>(resources, HMR_DESKTOP_RESOURCE_ID) ?? null;
-  const replacements = claimAny<Replacements>(resources, HMR_OVERRIDES_RESOURCE_ID) ?? [];
+  const desktop = resources.claim<DesktopService | null>(HMR_DESKTOP_RESOURCE_ID) ?? null;
+  const replacements = resources.claim<Replacements>(HMR_OVERRIDES_RESOURCE_ID) ?? [];
   // Optional by design (see the resource's own note): an older runtime published no such
   // holder, and a fresh one is a correct, slightly forgetful substitute. A runtime older
   // than this platform may also publish a holder missing the fields added since; they are
   // filled IN PLACE, never by copying — the bag is shared with the runtime by identity, and
   // a copy would strand every write the App makes to it.
   const authState =
-    claimAny<AuthRuntimeState>(resources, HMR_AUTH_STATE_RESOURCE_ID) ?? newAuthRuntimeState();
+    resources.claim<AuthRuntimeState>(HMR_AUTH_STATE_RESOURCE_ID) ?? newAuthRuntimeState();
   authState.firstLoginToken ??= null;
   authState.apiToken ??= null;
   // …then the objects themselves. A descriptor is a claim about what is there; this is
