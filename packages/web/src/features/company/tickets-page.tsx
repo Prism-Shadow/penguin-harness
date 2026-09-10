@@ -306,7 +306,7 @@ export function TicketsPage() {
           <span className="ml-auto inline-flex shrink-0 items-center gap-2 tabular-nums">
             <span className="inline-flex items-center gap-1">
               {S.company.tickets.sessionsCount(t.sessions.length)}
-              {t.running && <SessionActivityIcon activity="running" size={11} />}
+              {t.running && <SessionActivityIcon activity="running" />}
             </span>
             <span>{formatMoney(t.cost, currency)}</span>
           </span>

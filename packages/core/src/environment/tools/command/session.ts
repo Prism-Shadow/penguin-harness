@@ -29,6 +29,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
 import { sessionShell } from "./shell.js";
+import { pathPrependPrefix } from "./path-prepend.js";
 import { ServiceUrlScanner } from "./service-url.js";
 import { probeGroupListenPorts } from "./port-probe.js";
 
@@ -71,6 +72,14 @@ export interface SpawnOptions {
   cwd: string;
   /** Child process environment variables (the caller has already injected hardening entries like PAGER/TERM). */
   env: NodeJS.ProcessEnv;
+  /**
+   * Directories to put at the front of PATH from INSIDE the shell, as a statement prefixed
+   * to the command string (see {@link pathPrependPrefix}). The caller has already put them
+   * at the front of `env`'s PATH; this is the half that survives a login profile
+   * re-prepending its own directories. Absent or empty = no prefix, and the command string
+   * is spawned exactly as given.
+   */
+  pathPrepend?: readonly string[];
 }
 
 export class ManagedSession {
@@ -98,7 +107,11 @@ export class ManagedSession {
     this.cmd = opts.cmd;
     this.cwd = opts.cwd;
     const shell = sessionShell();
-    this.child = spawn(shell.command, [...shell.args, opts.cmd], {
+    // `cmd` above keeps the command as the caller wrote it — it is what the host lists and
+    // what the model is shown; only the string actually handed to the shell carries the
+    // PATH statement in front of it.
+    const prefix = pathPrependPrefix(shell.name, opts.pathPrepend ?? []);
+    this.child = spawn(shell.command, [...shell.args, prefix + opts.cmd], {
       cwd: opts.cwd,
       env: opts.env,
       detached: SUPPORTS_PROCESS_GROUP, // Become the process-group leader, so the whole group can be signaled
@@ -191,10 +204,13 @@ export class ManagedSession {
   // One-shot exit watchers (run_in_background completion reports). Consumed on fire; a
   // watcher armed after exit fires on a microtask, so the caller never misses a fast command.
   private exitWatchers: Array<() => void> = [];
+  /** Persistent exit listener (see setExitListener); null until the registry subscribes. */
+  private exitListener: (() => void) | null = null;
   private fireExitWatchers(): void {
     const watchers = this.exitWatchers;
     this.exitWatchers = [];
     for (const cb of watchers) cb();
+    this.exitListener?.();
   }
 
   /** Registers a one-shot callback for the foreground process's terminal state (exit or spawn failure); fires immediately (microtask) when already terminal. */
@@ -209,6 +225,18 @@ export class ManagedSession {
   /** Clears armed exit watchers (a deliberate kill already reports its outcome synchronously, so the completion report is disarmed first). */
   clearExitWatchers(): void {
     this.exitWatchers = [];
+  }
+
+  /**
+   * Attaches the single persistent exit listener: fires once when the foreground process
+   * reaches its terminal state, whatever ended it. Unlike the one-shot watchers above it is
+   * not disarmed by clearExitWatchers — a deliberate kill is still the process leaving the
+   * running set, which is what a registry's membership view has to hear. Fires on a
+   * microtask when the session is already terminal.
+   */
+  setExitListener(listener: () => void): void {
+    this.exitListener = listener;
+    if (this.exited) queueMicrotask(listener);
   }
 
   /** Synchronously drains the yet-undelivered output (the same buffer `collect` serves) — used to build completion reports without an async window. */

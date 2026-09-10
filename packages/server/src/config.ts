@@ -13,6 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_SERVER_PORT, resolveRoot } from "@prismshadow/penguin-core";
+import { checkoutCliEntry } from "./services/cli-shim.js";
 
 export interface ServerConfig {
   /** Local data root directory (shared with the SDK/CLI). */
@@ -84,6 +85,20 @@ export interface ServerConfig {
    * cookies WITHOUT the `Secure` flag (auth/middleware.ts cookieOptions).
    */
   trustProxy: boolean;
+  /**
+   * The CLI entry script this harness offers to the Agents it runs — the file the
+   * `<root>/bin/penguin` shim execs (see services/cli-shim.ts). `PENGUIN_CLI_ENTRY` when
+   * set: `penguin server|web` exports its own entry there, and the desktop shell passes
+   * the bundled one to the server it forks. Otherwise the entry of the checkout this
+   * server was started from, when it has a built one. Null = no CLI to offer, and no shim
+   * is written.
+   *
+   * Related to but wider than the self-update endpoint's use of the same variable
+   * (http/routes/version.ts), which accepts only an INSTALLED entry it can re-run as
+   * `penguin update`: a checkout has no release to update to, but its CLI is exactly the
+   * one an Agent working on that checkout should be running.
+   */
+  cliEntry: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -100,6 +115,16 @@ function defaultWebDist(): string {
   const bundled = path.resolve(here, "..", "web-dist");
   if (fs.existsSync(bundled)) return bundled;
   return path.resolve(here, "..", "..", "web", "dist");
+}
+
+/**
+ * The CLI entry of the checkout this server module lives in, resolved from the module's
+ * own location (`packages/server/src/…` under tsx, `packages/server/dist/…` when built,
+ * the desktop shell's bundle in a source desktop run — all reached by the same walk to the
+ * workspace root). Null outside a checkout, and null when its CLI has not been built.
+ */
+function defaultCliEntry(): string | null {
+  return checkoutCliEntry(path.dirname(fileURLToPath(import.meta.url)));
 }
 
 /**
@@ -121,7 +146,7 @@ function normalizePreviewOrigin(raw: string | undefined): string | null {
   return url.origin;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY). */
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
@@ -152,5 +177,6 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     portFile: env.PENGUIN_PORT_FILE?.trim() || null,
     trustProxy: env.PENGUIN_TRUST_PROXY === "1",
     supervised: env.PENGUIN_SUPERVISED === "1",
+    cliEntry: env.PENGUIN_CLI_ENTRY?.trim() || defaultCliEntry(),
   };
 }

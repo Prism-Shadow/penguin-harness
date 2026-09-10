@@ -36,7 +36,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
+import { FOCUSABLE_SELECTOR, isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
 import { scrollMovesAnchor } from "../../lib/context-menu";
 
 /** Gap between the trigger and the portaled panel, and the panel's minimum distance from the viewport edge (px). */
@@ -133,11 +133,7 @@ export function Dropdown({
   const panelItems = useCallback(
     () =>
       panelRef.current
-        ? [
-            ...panelRef.current.querySelectorAll<HTMLElement>(
-              'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-            ),
-          ]
+        ? [...panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)]
         : [],
     [],
   );

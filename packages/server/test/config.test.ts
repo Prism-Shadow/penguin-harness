@@ -9,6 +9,7 @@
  * PENGUIN_SEED_ADMIN_PASSWORD: unset/empty/whitespace → null (random seed password).
  */
 import { describe, expect, it } from "vitest";
+import path from "node:path";
 import { resolveServerConfig } from "../src/config.js";
 
 const base = { PENGUIN_HOME: "/tmp/penguin-config-test" };
@@ -68,5 +69,23 @@ describe("resolveServerConfig: PENGUIN_SEED_ADMIN_PASSWORD parsing", () => {
       resolveServerConfig({ ...base, PENGUIN_SEED_ADMIN_PASSWORD: " penguin-9999 " })
         .seedAdminPassword,
     ).toBe("penguin-9999");
+  });
+});
+
+describe("resolveServerConfig: PENGUIN_CLI_ENTRY parsing", () => {
+  it("a value is kept trimmed — it is what the <root>/bin/penguin shim execs", () => {
+    expect(
+      resolveServerConfig({ ...base, PENGUIN_CLI_ENTRY: " /opt/penguin/dist/penguin.js " })
+        .cliEntry,
+    ).toBe("/opt/penguin/dist/penguin.js");
+  });
+
+  it("empty/whitespace falls through to the checkout lookup, like unset", () => {
+    // What the lookup finds depends on whether this checkout has built its CLI, so the
+    // claim here is only that a blank value is not treated as an entry (see cli-shim.test.ts
+    // for checkoutCliEntry itself).
+    const blank = resolveServerConfig({ ...base, PENGUIN_CLI_ENTRY: "   " }).cliEntry;
+    expect(blank).toBe(resolveServerConfig({ ...base }).cliEntry);
+    expect(blank === null || blank.endsWith(`${path.sep}penguin.js`)).toBe(true);
   });
 });

@@ -43,6 +43,7 @@ import {
   RuntimeCapabilities,
 } from "./hmr/capabilities.js";
 import type { ProxyControl } from "./hmr/capabilities.js";
+import { cliShimDir, ensureCliShim } from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { migrate } from "./db/migrations.js";
@@ -341,6 +342,23 @@ export async function bootAppDeps(
   // http/routes/install.ts); this call exists for the minting side effect. Nothing fails
   // when it cannot be persisted: the browser then simply never sweeps.
   ensureInstallId(config.root);
+
+  // The `penguin` an Agent's commands resolve: this harness's own CLI, written into the
+  // data root for every Session to put at the front of PATH (see services/cli-shim.ts).
+  // Here rather than per App, for the same reason the two above are: it is a fact about
+  // this PROCESS's installation, and a hot-pushed platform — compiled somewhere else
+  // entirely — has no way to work out where the CLI it should point at lives.
+  const shimLog = overrides.log ?? ((line: string) => console.log(line));
+  const shim = ensureCliShim(config.root, config.cliEntry);
+  if (shim.kind === "written") {
+    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${shim.entry}`);
+  } else if (shim.kind === "absent") {
+    shimLog(
+      "Agent CLI: no CLI entry found; commands an Agent runs resolve `penguin` on their own PATH.",
+    );
+  } else {
+    console.warn(`[server] could not write the penguin CLI shim: ${shim.reason}`);
+  }
 
   // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot. The interface
@@ -862,6 +880,14 @@ export function buildAppDeps(
         : (loopbackHostRoles(config.host)?.app ?? config.host);
     return `http://${host}:${config.port}`;
   };
+  // The directory core puts at the FRONT of PATH for every command an Agent runs (and for
+  // its hook scripts): the shim directory bootAppDeps wrote this harness's own `penguin`
+  // into. Derived from the config rather than passed along, so the platform half needs no
+  // new capability — and read for truth rather than for null, because a runtime older than
+  // this field publishes a config without it and wrote no shim either: no field, no
+  // directory, feature off, rather than a push declined over a PATH entry.
+  const shimDir = config.cliEntry ? cliShimDir(config.root) : null;
+  const pathPrepend = (): string[] => (shimDir === null ? [] : [shimDir]);
   const controlEnv = (ctx: ControlEnvContext): Record<string, string> => {
     const token = authService.localApiToken();
     const orgId = orgCacheRepo.ownerOfSession(ctx.sessionId)?.orgId ?? null;
@@ -956,7 +982,7 @@ export function buildAppDeps(
     channels,
     loader:
       overrides.loader ??
-      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv }),
+      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv, pathPrepend }),
     sources: sessionSources,
     recorder,
     errors,
@@ -1054,6 +1080,7 @@ export function buildAppDeps(
     traceIndex,
     proxyEnv,
     controlEnv,
+    pathPrepend,
     // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
     // the row); a point query per row keeps the repo out of the service. An unknown
     // stored channel reads as none (same defensive skip as the bridge and the routes).

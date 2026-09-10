@@ -42,7 +42,7 @@ import {
   humanizeTokens,
 } from "../../lib/format";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
-import { sessionActivity } from "../../lib/session-activity";
+import { sessionActivity, sessionBackgroundTasks } from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
 import {
   approvalKey,
@@ -129,7 +129,7 @@ import { PanelsToolbar } from "./panels-toolbar";
 import { toneDot, toneInk } from "../../lib/tone";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { INFO_ICON } from "../../components/ui/icons";
+import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
@@ -287,9 +287,8 @@ export function ChatPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
-  // Background processes the conversation started (details popover list + the header's
-  // running-services count), refreshed by the polling effect below; procBusy marks the
-  // row whose stop request is in flight.
+  // Background processes the conversation started (the details popover list), refreshed by
+  // the polling effect below; procBusy marks the row whose stop request is in flight.
   const [processes, setProcesses] = useState<SessionProcessInfo[]>([]);
   const [procBusy, setProcBusy] = useState<string | null>(null);
   // Session Token buckets from the last usage fetch (the popover's tokens-line breakdown):
@@ -847,6 +846,10 @@ export function ChatPage() {
   const runningProcessCount = processes.filter((p) => p.running).length;
   const processesCanChange =
     stream.taskState !== "idle" || runningProcessCount > 0 || (infoOpen && processes.length > 0);
+  // The row's own count moves the moment the server sees a process promoted or gone (the
+  // user channel's session_background), so a change there re-reads the list at once instead
+  // of a poll interval later — the popover stays in step with the header's count.
+  const backgroundProcessCount = selected?.backgroundTasks?.processes ?? 0;
   useEffect(() => {
     if (!selectedSessionId) return;
     let cancelled = false;
@@ -869,7 +872,7 @@ export function ChatPage() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [selectedSessionId, stream.taskState, processesCanChange]);
+  }, [selectedSessionId, stream.taskState, processesCanChange, backgroundProcessCount]);
 
   /**
    * Shared body of the per-row process actions (Stop / Remove): one request at a time
@@ -1625,6 +1628,7 @@ export function ChatPage() {
       // "queued" indicator up until this count increases (i.e. the steering message arrived).
       steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
       pendingSteering={stream.pendingSteering}
+      returnedSteering={stream.returnedSteering}
       onRecallSteering={onRecallSteering}
       onQueueFollowUp={onQueueFollowUp}
       queuedFollowUps={stream.queuedFollowUps}
@@ -1679,6 +1683,8 @@ export function ChatPage() {
    */
   const headerActivity =
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
+  /** Background tasks the conversation still owns — the same live count the sidebar row's mark carries. */
+  const backgroundCount = selected === null ? 0 : sessionBackgroundTasks(selected);
 
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
@@ -1768,15 +1774,19 @@ export function ChatPage() {
                     value={hs.elapsedNode}
                     label={S.chat.statElapsed}
                   />
-                  {/* Right of the time, only while the conversation has live background
-                      processes: their count, in the live-status green. */}
-                  {runningProcessCount > 0 && (
+                  {/* Right of the time, only while the conversation still owns background
+                      work — command processes past their yield window, background subagents
+                      mid-round: their count, in the live-status green, the same figure and
+                      glyph as the session row's mark and read live off the row. Bare ink like
+                      the chips beside it, not a tinted pill: this is one more reading in the
+                      stat row, not a badge that should out-weigh them. */}
+                  {backgroundCount > 0 && (
                     <span
-                      title={S.chat.runningServices(runningProcessCount)}
+                      title={S.chat.backgroundTasks(backgroundCount)}
                       className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
-                      <GlyphIcon d={STAT_ICONS.services} />
-                      {runningProcessCount}
+                      <GlyphIcon d={BACKGROUND_TASKS_ICON} />
+                      {backgroundCount}
                     </span>
                   )}
                 </span>
