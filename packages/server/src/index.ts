@@ -20,7 +20,12 @@ import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
-import { bootAppDeps, createApp, platformLog } from "./app.js";
+import { bootAppDeps, createApp } from "./app.js";
+import { HmrHost, hmrMain } from "@prismshadow/penguin-hmr";
+import type { Hmr } from "@prismshadow/penguin-hmr";
+import type { Instance } from "@prismshadow/penguin-core/kernel";
+import { packagedPlatform } from "./hmr/platform.js";
+import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import type { ServerBoot } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
@@ -48,41 +53,24 @@ async function main(): Promise<void> {
   server.installProxy();
   server.readConfig();
   await server.ensureSoleInstance();
-  await hmrMain(server.listen(), server.getLogger(), async () => {
-    await server.loadPlugins();
-    await server.buildDeps();
-    server.applyPersistedProxy();
-    server.buildApp();
-    await server.seedAdmin();
-    server.installProcessHandlers();
-    await server.printFirstLoginNotice();
-  });
-}
-
-/** What the layer serves: the listening port's fetch, pointed at whatever is current. */
-export interface HttpHandle {
-  fetch(request: Request): Promise<Response> | Response;
-}
-
-/** Where the layer writes: the current platform's log, the console before there is one. */
-export interface LogHandle {
-  line(text: string): void;
-}
-
-/**
- * The HMR layer's entry (PRFC-0013). The layer holds two handles — the HTTP face it serves
- * and the log it writes through — and everything else is `start`: the platform, built
- * inside it, is what the handles come to point at. The port is open before `start` runs
- * and answers 503 until the platform is up; a push later replaces the platform behind the
- * same two handles without the layer changing.
- */
-export async function hmrMain(
-  http: HttpHandle,
-  log: LogHandle,
-  start: () => Promise<void>,
-): Promise<void> {
-  log.line("[server] starting the platform");
-  await start();
+  server.listen();
+  // The HMR layer's entry (packages/hmr's main.ts) owns the frozen operations: which
+  // generation a request goes to, how a push lands, what happens when one fails. The
+  // product hands it the host, what to refresh once a generation is current, and its own
+  // start — everything the platform is comes up inside it.
+  await hmrMain(
+    server.createHost(),
+    (instance) => server.replace(instance),
+    async (hmr) => {
+      await server.loadPlugins();
+      await server.buildDeps(hmr);
+      server.applyPersistedProxy();
+      server.buildApp();
+      await server.seedAdmin();
+      server.installProcessHandlers();
+      await server.printFirstLoginNotice();
+    },
+  );
 }
 
 /**
@@ -100,6 +88,8 @@ class PenguinServer {
   private config!: ServerConfig;
   /** Assigned by loadPlugins(); published to the platform tree by buildDeps(). */
   private plugins!: PluginHost;
+  /** Assigned by createHost(): the store and the swap, built over the packaged platform. */
+  private host!: ServerHmrHost;
   /** Assigned by buildDeps(); the merged runtime + business view (see app.ts). */
   private deps!: ServerBoot;
   /** Assigned by buildApp(). */
@@ -193,8 +183,24 @@ class PenguinServer {
    * registry is the only way a pushed bundle — compiled standalone — can reach these
    * plugin objects at all (see plugin/index.ts's pluginHostFrom).
    */
-  async buildDeps(): Promise<void> {
-    this.deps = await bootAppDeps(this.config, [], this.plugins);
+  /** The store and the swap, ahead of everything that boots against them (hmrMain takes it first). */
+  createHost(): ServerHmrHost {
+    this.host = new HmrHost<PlatformApi>(this.config.root, packagedPlatform);
+    return this.host;
+  }
+
+  async buildDeps(hmr: Hmr<PlatformApi>): Promise<void> {
+    this.deps = await bootAppDeps(this.config, [], this.plugins, this.host, hmr);
+  }
+
+  /**
+   * What the layer refreshes once a generation is current (hmrMain's replace): the tree it
+   * resolves nodes from. Everything read through `deps.tree` — the auth for the socket and
+   * the hot-update gate, the settings, the error recorder — is the new generation's from here.
+   */
+  replace(instance: Instance<PlatformApi>): void {
+    const tree = typeof instance.api.business === "function" ? instance.api.business() : null;
+    if (tree !== null && this.deps !== undefined) this.deps.tree = tree;
   }
 
   /**
@@ -227,16 +233,6 @@ class PenguinServer {
     }
   }
 
-  /** The layer's log handle: the current platform's log once there is a platform, the console before. */
-  getLogger(): LogHandle {
-    return {
-      line: (text) => {
-        if (this.deps === undefined) console.log(text);
-        else platformLog(this.deps.hmr)(text);
-      },
-    };
-  }
-
   /**
    * Built-in admin seed (idempotent): creates admin and adopts default_project when the
    * users table is empty. The seed password is random, hashed, and discarded — nobody ever
@@ -265,12 +261,12 @@ class PenguinServer {
   }
 
   /**
-   * Opens the HTTP listener and returns its handle. The port is bound before the platform
-   * exists: until buildApp() the handle answers 503, so a client that arrives early sees
-   * "starting" rather than a refused connection. Everything that needs the port the OS
+   * Opens the HTTP listener. The port is bound before the platform exists: until buildApp()
+   * it answers 503, so a client that arrives early sees "starting" rather than a refused
+   * connection. Everything that needs the port the OS
    * actually handed out (PORT=0 asks for an ephemeral one) waits for onListening().
    */
-  listen(): HttpHandle {
+  listen(): void {
     // The listener's callback records this process as the root's server (the lock, the
     // port file); the root has to exist for that, and the database that used to create it
     // is now opened later, inside start.
@@ -278,17 +274,17 @@ class PenguinServer {
     this.bound = new Promise((resolve) => {
       this.resolveBound = resolve;
     });
-    const handle: HttpHandle = {
-      fetch: (request) =>
-        this.app === undefined
-          ? new Response("penguin-server is starting", { status: 503 })
-          : this.app.fetch(request),
-    };
     this.httpServer = serve(
-      { fetch: handle.fetch, hostname: this.config.host, port: this.config.port },
+      {
+        fetch: (request: Request) =>
+          this.app === undefined
+            ? new Response("penguin-server is starting", { status: 503 })
+            : this.app.fetch(request),
+        hostname: this.config.host,
+        port: this.config.port,
+      },
       (info) => this.onListening(info.port),
     );
-    return handle;
   }
 
   /**
@@ -456,9 +452,13 @@ class PenguinServer {
 
   /** Terminal WebSocket wiring, shared by every listener this process opens. */
   private terminalWebSocketDeps() {
+    const auth = () => this.auth();
     return {
       hmr: this.deps.hmr,
-      authService: this.auth(),
+      // A getter: the upgrade handler asks per handshake, and gets the current generation's.
+      get authService() {
+        return auth();
+      },
       log: (line: string) => console.log(line),
     };
   }
