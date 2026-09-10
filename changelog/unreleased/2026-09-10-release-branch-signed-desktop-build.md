@@ -1,7 +1,7 @@
 # A release branch builds its signed installers before the tag
 
 - **Date:** 2026-09-10
-- **Type:** ci
+- **Type:** process
 - **Scope:** `ci`, `desktop`
 - **PR:** [#670](https://github.com/Prism-Shadow/penguin-harness/pull/670)
 

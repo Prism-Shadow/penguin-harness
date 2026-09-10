@@ -297,7 +297,6 @@ jobs:
       - name: Verify Windows signing and update metadata
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
         run: |
           $ErrorActionPreference = "Stop"
 
