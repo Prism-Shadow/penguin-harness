@@ -52,7 +52,13 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
-import { CloseIcon, GEAR_ICON, HOOK_ICON, PLUGIN_ICON, SCHEDULE_ICON } from "../../components/ui/icons";
+import {
+  CloseIcon,
+  GEAR_ICON,
+  HOOK_ICON,
+  PLUGIN_ICON,
+  SCHEDULE_ICON,
+} from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
