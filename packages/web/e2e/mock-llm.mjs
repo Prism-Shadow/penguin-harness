@@ -20,6 +20,8 @@
  *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
  *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
  *    (reload-midstream.spec reloads while the TEXT streams)
+ *  - "long thinking test" -> a thinking block several viewports tall + tool_use(exec_command)
+ *    (sticky-thinking.spec scrolls through the expanded thinking body)
  *  - last message has tool_result -> final text (turn 2)
  *  - otherwise (first user turn) -> thinking + text + tool_use(exec_command)
  */
@@ -422,6 +424,29 @@ const server = http.createServer((req, res) => {
         { type: "input_json_delta", partial_json: ' "yield_time_ms": 300}' },
       ]);
       messageStop(res, "tool_use", 14);
+      return;
+    }
+
+    // Long THINKING test case (sticky-thinking.spec): one reasoning block several
+    // viewports tall, then an exec_command — the expanded thinking body has no internal
+    // scroll (unlike a tool output's max-h pre), so the group header and the thinking row
+    // must ride the message list's scrollport across the whole body.
+    if (flat.includes("long thinking test") && !hasToolResult) {
+      const deltas = [];
+      for (let n = 1; n <= 120; n++) {
+        deltas.push({
+          type: "thinking_delta",
+          thinking: `Step ${n}: the wrapper layout got flattened during copy, so the jar and the properties file must move back under gradle/wrapper/ before the build can run.\n\n`,
+        });
+      }
+      block(res, 0, { type: "thinking", thinking: "" }, deltas, {
+        type: "signature_delta",
+        signature: "sig_mock_long",
+      });
+      block(res, 1, { type: "tool_use", id: "toolu_long_1", name: "exec_command", input: {} }, [
+        { type: "input_json_delta", partial_json: '{"cmd": "ls -la"}' },
+      ]);
+      messageStop(res, "tool_use", 400);
       return;
     }
 
