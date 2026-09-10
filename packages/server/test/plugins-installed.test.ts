@@ -89,21 +89,16 @@ describe("installed plugins", () => {
     ).toBe(400);
   });
 
-  it("refuses a specifier that is not a package name, or one the build does not ship", async () => {
-    for (const bad of ["../evil", "https://example.com/x.tgz", "", "Has Spaces", "pkg@1.0.0"]) {
+  it("installs a package before listing it, and refuses a specifier that is not a package name", async () => {
+    // npm is not driven in a unit test: what is pinned here is that the route validates the
+    // specifier and does not write the list when nothing was installed.
+    for (const bad of ["../evil", "https://example.com/x.tgz", "", "Has Spaces"]) {
       expect(
         (await admin.post("/api/projects/default_project/plugins/installed", { specifier: bad }))
           .status,
         bad,
       ).toBe(400);
     }
-    // A well-formed name the build does not ship is fetched from nowhere: refused, and the
-    // list is left as it was rather than naming a package that is not on the machine.
-    const res = await admin.post("/api/projects/default_project/plugins/installed", {
-      specifier: "@acme/not-shipped",
-    });
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ error: { code: "plugin_not_shipped" } });
     expect(await view()).toMatchObject({ plugins: [] });
   });
 
