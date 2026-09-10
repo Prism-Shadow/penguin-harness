@@ -478,6 +478,7 @@ export const en: Strings = {
   agent: {
     savedTakesEffect:
       "Saved. New conversations pick it up right away; running ones after their next compaction.",
+    savedTakesEffectNow: "Saved. It takes effect immediately, including running conversations.",
     takesEffectSuffix:
       " — new conversations pick it up right away, running ones after their next compaction",
     listTitle: "Agents",
@@ -1784,8 +1785,19 @@ Scenarios:
       "Just compacted — the next request reports the usage, and the composition with it",
     contextBreakdownEmpty: "Nothing in the current context to break down yet",
     contextBreakdownFailed: "Could not read the context composition",
+    contextThresholdCutter: "Compaction threshold",
+    contextThresholdHover: (n: string): string => `Compaction threshold ${n} (drag to adjust)`,
+    contextThresholdTitle: "Change the compaction threshold",
+    contextThresholdBody: (agentName: string, old: string): string =>
+      `Change ${agentName}'s compaction threshold from ${old} to the value below? It takes effect immediately, including the running conversation.`,
+    contextThresholdField: "Compaction threshold (tokens)",
+    contextThresholdInvalid: "Must be a whole number above 0",
+    contextThresholdCapped: (n: string): string =>
+      `Above the model window — the threshold in force will be ${n}`,
+    contextThresholdSaved: (n: string): string =>
+      `Compaction threshold changed to ${n}; it applies immediately`,
     contextWindowUnderThreshold: (n: string, m: string): string =>
-      `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Set the threshold below the window, then run /compact once — the new threshold applies from the next context on.`,
+      `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Drag the dashed mark in the context panel, or set the threshold below the window in the agent settings — it applies immediately.`,
     contextWindowUnderThresholdAction: "Open agent settings",
     contextWindowUnderThresholdDismiss: "Dismiss",
     slashHint: "Type / for commands",

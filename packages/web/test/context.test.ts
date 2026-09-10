@@ -1,15 +1,21 @@
 /**
  * context.ts unit tests: the two upper bounds the app draws against — the model's context
  * window (positive numbers as-is, otherwise the 128000 default) and the compaction threshold
- * the composer's ring fills against — plus the small-window notice's predicate.
+ * the composer's ring fills against — the small-window notice's predicate, and the arithmetic
+ * behind the context panel's threshold cutter (pointer to tokens, tokens to bar position).
  */
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CONTEXT_WINDOW,
+  MIN_COMPACTION_THRESHOLD,
   configuredCompactionLimit,
   contextFillBasis,
   modelWindowBelowCompactionLimit,
   resolveContextWindow,
+  snapThreshold,
+  thresholdCappedByWindow,
+  thresholdFraction,
+  thresholdFromPointer,
 } from "../src/lib/context";
 
 describe("resolveContextWindow", () => {
@@ -84,5 +90,60 @@ describe("modelWindowBelowCompactionLimit", () => {
     expect(modelWindowBelowCompactionLimit(undefined, 256000)).toBe(false);
     expect(modelWindowBelowCompactionLimit(32768, undefined)).toBe(false);
     expect(modelWindowBelowCompactionLimit(32768, 0)).toBe(false);
+  });
+});
+
+describe("snapThreshold", () => {
+  it("rounds onto the 1,000-token lattice", () => {
+    expect(snapThreshold(127431, 1000000)).toBe(127000);
+    expect(snapThreshold(127500, 1000000)).toBe(128000);
+  });
+
+  it("never proposes 0 — that is the configured value meaning 'compaction off'", () => {
+    expect(snapThreshold(0, 1000000)).toBe(MIN_COMPACTION_THRESHOLD);
+    expect(snapThreshold(-50000, 1000000)).toBe(MIN_COMPACTION_THRESHOLD);
+  });
+
+  it("stops at the window itself, not at the nearest step below it", () => {
+    // A 32768 window would otherwise leave its own right edge unreachable at 32,000.
+    expect(snapThreshold(32768, 32768)).toBe(32768);
+    expect(snapThreshold(999999, 32768)).toBe(32768);
+  });
+});
+
+describe("thresholdFraction", () => {
+  it("is the plain ratio against the bar's window scale", () => {
+    expect(thresholdFraction(250000, 1000000)).toBe(0.25);
+  });
+
+  it("pins a threshold past the window to the right edge instead of dropping the cutter off the bar", () => {
+    expect(thresholdFraction(256000, 32768)).toBe(1);
+    expect(thresholdFraction(-1, 200000)).toBe(0);
+  });
+});
+
+describe("thresholdFromPointer", () => {
+  it("reads the pointer against the bar's box and snaps the result", () => {
+    // Half way along a 200px bar on a 1M window.
+    expect(thresholdFromPointer(140, 40, 200, 1000000)).toBe(500000);
+  });
+
+  it("clamps a pointer that ran off either end of the bar", () => {
+    expect(thresholdFromPointer(1000, 40, 200, 1000000)).toBe(1000000);
+    expect(thresholdFromPointer(-1000, 40, 200, 1000000)).toBe(MIN_COMPACTION_THRESHOLD);
+  });
+
+  it("an unmeasurable bar yields the floor rather than NaN", () => {
+    expect(thresholdFromPointer(140, 40, 0, 1000000)).toBe(MIN_COMPACTION_THRESHOLD);
+  });
+});
+
+describe("thresholdCappedByWindow", () => {
+  it("names the value actually in force when the window cuts the typed one down", () => {
+    expect(thresholdCappedByWindow(256000, 32768)).toBe(32768 - 2048);
+  });
+
+  it("is null when the typed value is what will run", () => {
+    expect(thresholdCappedByWindow(128000, 1000000)).toBeNull();
   });
 });

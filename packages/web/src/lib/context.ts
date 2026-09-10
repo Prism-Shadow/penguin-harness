@@ -12,6 +12,13 @@
  * The threshold arithmetic itself is core's (`effectiveMaxContextLength`), imported rather than
  * restated: the number drawn here has to be the number the Agent actually compacts at, and two
  * copies of that rule would eventually disagree.
+ *
+ * The panel's bar keeps the window as its scale, and marks the threshold on it with a draggable
+ * cutter; the second half of this module is that cutter's arithmetic — pointer position to
+ * proposed tokens, tokens to bar position, and what the window does to a value typed past it.
+ * It lives here rather than in the component because it is the part worth pinning down: a
+ * rounding or clamping mistake in a gesture that rewrites an Agent's configuration is not
+ * something a render test would catch.
  */
 import {
   DEFAULT_MAX_CONTEXT_LENGTH,
@@ -80,4 +87,77 @@ export function modelWindowBelowCompactionLimit(
 ): boolean {
   if (modelContextWindow === undefined || compactionLimit === undefined) return false;
   return compactionLimit > 0 && modelContextWindow < compactionLimit;
+}
+
+/**
+ * Granularity of the panel's threshold cutter, in tokens. A threshold is a coarse quantity —
+ * nobody means 127,431 — so a drag and an arrow key both land on this lattice, which is also
+ * what makes a dragged value readable the moment it appears.
+ */
+export const THRESHOLD_STEP = 1000;
+
+/**
+ * Floor of the cutter's travel. One step, so the extreme left is on the same lattice as every
+ * other stop, and above all NOT zero: zero is the configured value that means "compaction off",
+ * and a gesture aimed at "compact very early" must never be read as "never compact". Switching
+ * compaction off stays an Agent-settings decision, where the field says what the value means.
+ */
+export const MIN_COMPACTION_THRESHOLD = THRESHOLD_STEP;
+
+/**
+ * Rounds a proposed threshold onto the step lattice and clamps it to the cutter's travel —
+ * `[MIN_COMPACTION_THRESHOLD, the model window]`.
+ *
+ * The upper clamp is applied AFTER rounding and is the window itself, not the nearest step
+ * below it: a 32768-token window would otherwise stop the cutter at 32,000 and leave the bar's
+ * right edge unreachable. Beyond the window is refused here because there is nothing to point
+ * at past the bar's end — the confirmation dialog's number field is where a threshold above the
+ * window is typed deliberately, and it says there what the window will do to it.
+ */
+export function snapThreshold(tokens: number, windowTokens: number): number {
+  const max = Math.max(windowTokens, MIN_COMPACTION_THRESHOLD);
+  const stepped = Math.round(tokens / THRESHOLD_STEP) * THRESHOLD_STEP;
+  return Math.min(Math.max(stepped, MIN_COMPACTION_THRESHOLD), max);
+}
+
+/**
+ * Where along the bar (0..1) a threshold is drawn. The bar's scale is the model window, so this
+ * is the plain ratio — clamped, because a threshold above the window has to pin the cutter to
+ * the right edge rather than leave the bar: the cutter is the control that lowers such a
+ * threshold, so it is the last thing that may disappear when the threshold is wrong.
+ */
+export function thresholdFraction(threshold: number, windowTokens: number): number {
+  if (!(windowTokens > 0)) return 0;
+  return Math.min(1, Math.max(0, threshold / windowTokens));
+}
+
+/**
+ * Pointer position to proposed threshold: the x coordinate is read against the bar's own box
+ * (viewport coordinates, as `getBoundingClientRect` gives them), turned into a fraction of the
+ * window, then snapped. A zero-width box — a bar measured while the panel is mid-animation —
+ * yields the floor rather than a NaN that would travel into the dialog.
+ */
+export function thresholdFromPointer(
+  pointerX: number,
+  barLeft: number,
+  barWidth: number,
+  windowTokens: number,
+): number {
+  if (!(barWidth > 0)) return MIN_COMPACTION_THRESHOLD;
+  const fraction = Math.min(1, Math.max(0, (pointerX - barLeft) / barWidth));
+  return snapThreshold(fraction * windowTokens, windowTokens);
+}
+
+/**
+ * The threshold actually in force for a value the user typed, when the model window cuts it
+ * down; null when the typed value is what will run. Feeds the dialog's hint, which has to name
+ * the number rather than only warn that one exists.
+ */
+export function thresholdCappedByWindow(
+  threshold: number,
+  contextWindow: number | string | undefined | null,
+): number | null {
+  const windowTokens = resolveContextWindow(contextWindow);
+  const effective = effectiveMaxContextLength(threshold, windowTokens);
+  return effective < threshold ? effective : null;
 }

@@ -631,6 +631,32 @@ export function ChatPage() {
       cancelled = true;
     };
   }, [projectId, selectedAgentId, agentConfigTick]);
+  /**
+   * Commits the threshold the context panel's cutter proposed, then re-reads the Agent config
+   * this page holds so the ring, the cutter and the small-window notice all move together.
+   *
+   * Compaction settings are re-read by the engine at every compaction checkpoint, so this
+   * applies to the conversation on screen without waiting for a rotation — which is what the
+   * toast says. Rejecting rather than swallowing the failure is what keeps the dialog open on
+   * the value the user typed.
+   */
+  const onChangeCompactionLimit = useCallback(
+    async (maxContextLength: number): Promise<void> => {
+      if (!projectId || !selectedAgentId) return;
+      try {
+        await api.putAgentConfig(projectId, selectedAgentId, {
+          config: { compaction: { maxContextLength } },
+        });
+      } catch (e) {
+        toastError(apiErrorText(e));
+        throw e;
+      }
+      setCompactionLimit(configuredCompactionLimit(maxContextLength));
+      setAgentConfigTick((n) => n + 1);
+      toastSuccess(S.chat.contextThresholdSaved(humanizeTokens(maxContextLength)));
+    },
+    [projectId, selectedAgentId],
+  );
 
   // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
   // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
@@ -1677,6 +1703,7 @@ export function ChatPage() {
       onChangeTurnThinkingLevel={onPickTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
       {...(compactionLimit !== undefined ? { compactionLimit } : {})}
+      onChangeCompactionLimit={onChangeCompactionLimit}
       onOpenAgentSettings={() => navigate(`/agents/${selected.agentId}?tab=runtime`)}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}

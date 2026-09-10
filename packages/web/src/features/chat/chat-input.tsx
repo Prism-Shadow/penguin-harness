@@ -801,6 +801,7 @@ export function ChatInput({
   onChangeTurnThinkingLevel,
   contextWindow,
   compactionLimit,
+  onChangeCompactionLimit,
   onOpenAgentSettings,
   contextNow,
   contextStale = false,
@@ -954,6 +955,8 @@ export function ChatInput({
    * window and the notice cannot be raised at all.
    */
   compactionLimit?: number;
+  /** Writes a new compaction threshold to the Session's Agent and re-reads `compactionLimit` from it: what the context panel's threshold cutter commits through. Absent wherever no Agent config is at hand, leaving the cutter a readout. */
+  onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
   /** Opens the Session Agent's settings, where the compaction threshold is edited: the small-window notice's action. */
   onOpenAgentSettings?: () => void;
   /** Current context usage (total of the most recent main-session Request). */
@@ -1287,6 +1290,10 @@ export function ChatInput({
     windowNoticeKey !== null &&
     !windowNoticeDismissed &&
     modelWindowBelowCompactionLimit(contextWindow, compactionLimit);
+  // The Agent the threshold confirmation is about to name. Its display name where it has one,
+  // else the id, which is the same fallback the `/agent` picker draws rows with.
+  const currentAgent = agents.find((a) => a.agentId === currentAgentId);
+  const currentAgentName = currentAgent?.name || (currentAgentId ?? "");
 
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
@@ -2677,6 +2684,8 @@ export function ChatInput({
                 {...(contextWindow !== undefined ? { window: contextWindow } : {})}
                 {...(compactionLimit !== undefined ? { compactionLimit } : {})}
                 {...(sessionId !== undefined ? { sessionId } : {})}
+                agentName={currentAgentName}
+                {...(onChangeCompactionLimit ? { onChangeCompactionLimit } : {})}
               />
             )}
             {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}

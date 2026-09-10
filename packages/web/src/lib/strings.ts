@@ -471,6 +471,8 @@ export const zh = {
      * next compaction; a new conversation starts with it.
      */
     savedTakesEffect: "已保存。新对话立即生效；进行中的对话在下一次压缩后生效。",
+    /** Save feedback when the change touched compaction settings only: the engine re-reads them at every compaction checkpoint, so a running conversation does not have to reach one first. */
+    savedTakesEffectNow: "已保存，立即生效（包括进行中的对话）。",
     /** Appended to an action's own toast (skill install / uninstall) — same timing statement. */
     takesEffectSuffix: "；新对话立即生效，进行中的对话在下一次压缩后生效",
     listTitle: "Agents",
@@ -1757,9 +1759,20 @@ Benchmark：
     contextUnknownHint: "刚压缩过，占用待下次请求回报，届时才能给出构成",
     contextBreakdownEmpty: "当前上下文还没有可统计的内容",
     contextBreakdownFailed: "读取上下文构成失败",
+    /** The dashed cutter on the panel's bar: its accessible name, and its tooltip naming the threshold it stands on. */
+    contextThresholdCutter: "压缩阈值",
+    contextThresholdHover: (n: string): string => `压缩阈值 ${n}（拖动可调整）`,
+    /** Confirmation for a dragged (or arrowed) threshold: dialog name, body (agent name + the threshold being replaced), the editable field and its rejection, the note when the model window will cut the typed value down, and the toast on success. */
+    contextThresholdTitle: "修改压缩阈值",
+    contextThresholdBody: (agentName: string, old: string): string =>
+      `把 ${agentName} 的压缩阈值从 ${old} 改为下面的值？立即生效，包括正在进行的对话。`,
+    contextThresholdField: "压缩阈值（token）",
+    contextThresholdInvalid: "必须是大于 0 的整数",
+    contextThresholdCapped: (n: string): string => `超出模型窗口，实际生效的阈值是 ${n}`,
+    contextThresholdSaved: (n: string): string => `压缩阈值已改为 ${n}，立即生效`,
     /** Composer notice: the model's window is below the Agent's configured compaction threshold; n = window, m = threshold. */
     contextWindowUnderThreshold: (n: string, m: string): string =>
-      `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。把压缩阈值调到窗口以下，再手动执行一次 /compact，新阈值即从下一个上下文起生效。`,
+      `当前模型的上下文窗口 ${n} 小于本 Agent 的压缩阈值 ${m}，压缩实际会在窗口边缘触发。拖动上下文面板里的虚线或在 Agent 设置中把阈值调到窗口以下，立即生效。`,
     contextWindowUnderThresholdAction: "打开 Agent 设置",
     contextWindowUnderThresholdDismiss: "忽略",
     slashHint: "输入 / 使用命令",

@@ -1,4 +1,4 @@
-# The context ring measures against compaction, and ranks files beside tools
+# The context ring measures against compaction, its threshold becomes a draggable cutter, and the panel ranks files beside tools
 
 - **Date:** 2026-09-02
 - **Type:** feature
@@ -9,10 +9,14 @@
 
 The composer's context ring now fills against the point compaction fires rather than the model's
 context window, so a context half-way to being summarized reads as half full instead of nearly
-empty on a large-window model. Its composition panel also gained a second Top 5: the files whose
-`read_file` / `edit_file` / `write_file` traffic occupies the most of the current context, beside
-the tool ranking it already had. A Tools / Files switch above the list picks the view, and the
-panel remembers the choice for the rest of the tab session.
+empty on a large-window model. The panel's bar keeps the window as its scale and marks that point
+with a dashed cutter — which is now also the control that moves it: drag the cutter, confirm the
+number, and the Agent's compaction threshold changes for the conversation you are looking at,
+immediately. That immediacy is a core change: compaction settings have left the strict tier and
+are re-read at every compaction checkpoint. The composition panel also gained a second Top 5: the
+files whose `read_file` / `edit_file` / `write_file` traffic occupies the most of the current
+context, beside the tool ranking it already had. A Tools / Files switch above the list picks the
+view, and the panel remembers the choice for the rest of the tab session.
 
 ## The ring fills against the compaction threshold
 
@@ -25,10 +29,11 @@ panel remembers the choice for the rest of the tab session.
   basis.
 - The window has not disappeared from view: when it is larger than the threshold, the panel header
   names it under the ratio.
-- The bar therefore ends where compaction fires, so the dashed mark that used to say so inside it
-  is gone. While the panel is open the server's own `compactionThreshold` is preferred over the
-  client's derivation — the same arithmetic, one of them read from disk a moment ago — so an
-  Agent-config edit shows up without a page reload.
+- The panel's **bar** keeps the model window as its scale, because the two answer different
+  questions: the ring says how close compaction is, the bar says how much model there is and
+  where inside it the trigger sits. While the panel is open the server's own `compactionThreshold`
+  is preferred over the client's derivation — the same arithmetic, one of them read from disk a
+  moment ago — so an Agent-config edit shows up without a page reload.
 - Two fallbacks keep the ring honest where no threshold applies: compaction switched off (`<= 0`)
   and the subagent composer, which has no Session-level Agent config to reason from, both keep the
   old window basis.
@@ -40,8 +45,9 @@ panel remembers the choice for the rest of the tab session.
 - The composer raises a dismissible amber notice when the selected model's `context_window` is
   below the Agent's **configured** `compaction.max_context_length` — the case where compaction
   silently fires at the window's edge instead of at the number the user set. It names both
-  figures, says to lower the threshold below the window and then run `/compact` once so the new
-  threshold takes effect from the next context, and links to that Agent's settings.
+  figures, says compaction therefore fires at the edge of the window, points at the two ways to
+  lower the threshold below it — the panel's cutter, or the Agent settings — and notes that either
+  applies immediately. It links to that Agent's settings.
 - Judged on the configured threshold, never the effective one, which is already capped by the
   window and so could never disagree with it. It re-evaluates when the model changes and when the
   Agent config is re-read; a dismissal is remembered per Session and model for the rest of the tab
@@ -56,6 +62,48 @@ panel remembers the choice for the rest of the tab session.
 - Core's assumption for an entry that carries **no** `context_window` at all is unchanged at
   128000 — that is the safety default for an unknown window, a different number for a different
   question. `penguin config model add` still writes no default when `--context-window` is omitted.
+
+## The compaction threshold is a draggable cutter
+
+- The dashed cutter on the panel's bar sits at the effective compaction threshold and names it on
+  hover. Dragging it proposes a new threshold, snapped to the nearest 1,000 tokens and clamped to
+  the bar's own ends, with the proposed value shown beside it while the gesture runs.
+- It is a `role="slider"` and takes the keyboard too: ArrowLeft / ArrowRight move it by 1,000,
+  Shift by 10,000, Enter releases and Escape abandons the adjustment.
+- A release (or Enter) opens a confirmation naming the Agent and the threshold being replaced,
+  carrying a **number field prefilled with the proposal and still editable** — a gesture this
+  coarse must not write a configuration value on its own. The field takes any whole number above
+  zero; a value above the model window is allowed, and the hint then names the threshold that will
+  actually be in force. Cancel or Escape snaps the cutter back.
+- Confirming writes `compaction.max_context_length` through the same endpoint the Agent settings
+  page uses, sending only the compaction change, then re-reads the Agent config the chat page
+  holds — so the ring, the cutter and the small-window notice all move together — and a toast
+  says it applied.
+- A cutter is drawn whenever compaction is on. A threshold the model window cannot reach pins it
+  to the bar's right edge rather than removing it: the cutter is how such a threshold gets
+  lowered, so it is the last thing that may disappear when the threshold is wrong.
+
+## Compaction settings apply immediately, mid-conversation
+
+- `compaction.max_context_length`, `max_session_turns`, `mode` and `prompt` have left the strict
+  tier. The engine re-reads the section from the Agent's `system_config.yaml` at every compaction
+  checkpoint — after each request reports its token usage, and on a manual `/compact` — so a
+  change saved to an Agent is honoured by Sessions already running, without waiting for a
+  compaction to rotate the context. Compaction settings never belonged to the request prefix: they
+  decide when a context ends, not what it looks like.
+- `ContextEngineDeps` gained an optional `readCompaction` provider for this. It refreshes an
+  existing baseline and never creates one, so whether compaction is *configured* stays a constant
+  of the Session; an embedder that supplies only `compaction` keeps the previous
+  fixed-per-context behaviour, and `openNextContext`'s `compaction` still replaces the baseline at
+  a rotation. A read that throws leaves the settings already in force and warns once — a config
+  file that is momentarily unreadable must not end a run.
+- `Agent` supplies that provider for every Session, reading only the `compaction` section and
+  caching it by the config file's identity on disk, so an unchanged file costs one `stat` per
+  checkpoint. Everything else in the file stays strict tier and still belongs to the context that
+  was assembled from it.
+- The Agent settings page's save feedback follows: a save that changed **only** compaction fields
+  now says it takes effect immediately, including running conversations. Every other runtime field
+  keeps the existing wording.
 
 ## Files beside tools in the composition panel
 
