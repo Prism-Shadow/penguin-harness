@@ -3,6 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#664](https://github.com/Prism-Shadow/penguin-harness/pull/664)
 
 [English](2026-09-10-conversation-loads-one-trace-file.md)
 
