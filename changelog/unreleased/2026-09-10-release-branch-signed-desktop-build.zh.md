@@ -3,7 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** ci
 - **Scope:** `ci`, `desktop`
-- **PR:** PR_PLACEHOLDER
+- **PR:** [#670](https://github.com/Prism-Shadow/penguin-harness/pull/670)
 
 [English](2026-09-10-release-branch-signed-desktop-build.md)
 
