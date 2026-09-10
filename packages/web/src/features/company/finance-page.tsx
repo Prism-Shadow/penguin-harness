@@ -7,10 +7,10 @@
  * columns a reader needs at a glance with the rest in the row's tooltip: the spend tree walks
  * the reporting line in three columns — who they are, how they stand, and cumulative against
  * budget as one meter carrying its own percent with the amounts after it and the budget edited
- * in place (written straight to the employee) — and the ticket table rolls costs up along
- * parent tickets. The period's warnings and pauses close the page full width, listed by state
- * with how a pause is lifted. `?period=yyyy-mm` switches between this period and the previous
- * one.
+ * in place (typed in the reader's currency, written to the employee in USD) — and the ticket
+ * table rolls costs up along parent tickets. The period's warnings and pauses close the page
+ * full width, listed by state with how a pause is lifted. `?period=yyyy-mm` switches between
+ * this period and the previous one.
  *
  * Every panel here is a card and not a ruled section: the KPI tiles are bordered, and a rule
  * standing among them reads as a different kind of thing rather than as the same thing without
@@ -41,6 +41,7 @@ import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useTheme } from "../../state/theme";
+import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -54,7 +55,16 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { TrendChart } from "../usage/trend-chart";
 import { orgPagePath } from "./company-nav";
 import { OrgPage, OrgPageSkeleton, useOrg } from "./org-layout";
-import { INVALID_ICON, PrincipalChip, StatTile, TicketStatusBadge, principalLabel } from "./shared";
+import {
+  INVALID_ICON,
+  MoneyPerMonthUnit,
+  PrincipalChip,
+  StatTile,
+  StoredUsdNote,
+  TicketStatusBadge,
+  principalLabel,
+} from "./shared";
+import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { FinanceGauge, SpendMeter } from "./finance-gauge";
 import {
   budgetTone,
@@ -148,37 +158,37 @@ function FinanceCard({
 }
 
 /**
- * The budget cell while it is being typed: a number box (empty = unbounded, said beneath it
- * while typing), save and cancel. Enter saves, Escape cancels, and focus leaving the editor
- * saves too — the two buttons keep focus on mousedown so clicking cancel never saves first.
+ * The budget cell while it is being typed: a number box in the reader's own currency with the
+ * unit after it (empty = unbounded, said beneath it while typing), save and cancel. Enter
+ * saves, Escape cancels, and focus leaving the editor saves too — the two buttons keep focus
+ * on mousedown so clicking cancel never saves first. What goes out is USD, which is what the
+ * chart file holds, and a box in another currency says so under itself.
  */
 function BudgetEditor({
   initial,
   name,
+  currency,
   busy,
   onSave,
   onCancel,
 }: {
+  /** The stored budget in USD; undefined is unbounded. */
   initial: number | undefined;
   name: string;
+  currency: Currency;
   busy: boolean;
+  /** The new budget in USD, or null for unbounded. */
   onSave: (value: number | null) => void;
   onCancel: () => void;
 }) {
-  const [text, setText] = useState(initial === undefined ? "" : String(initial));
+  const [text, setText] = useState(() => fromStoredUsd(initial, currency));
   const wrapRef = useRef<HTMLSpanElement>(null);
   const commit = () => {
-    const t = text.trim();
-    if (t === "") {
-      onSave(null);
-      return;
-    }
-    const v = Number(t);
-    if (!Number.isFinite(v) || v < 0) {
+    if (!isBudgetText(text)) {
       toastError(S.company.chart.budgetHint);
       return;
     }
-    onSave(v);
+    onSave(toStoredUsd(text, currency));
   };
   return (
     <span
@@ -212,6 +222,7 @@ function BudgetEditor({
           }}
           className="w-24 rounded-md border border-gray-300 bg-white px-1.5 py-0.5 text-right text-xs tabular-nums focus:border-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900"
         />
+        <MoneyPerMonthUnit currency={currency} />
         <button
           type="button"
           title={S.company.finance.saveBudget}
@@ -237,6 +248,7 @@ function BudgetEditor({
       <span className="text-[10px] text-gray-400 dark:text-gray-500">
         {S.company.finance.budgetEmptyHint}
       </span>
+      <StoredUsdNote usd={toStoredUsd(text, currency)} currency={currency} />
     </span>
   );
 }
@@ -567,6 +579,7 @@ export function FinancePage() {
                             <BudgetEditor
                               initial={employee.budget}
                               name={employee.name}
+                              currency={currency}
                               busy={busy}
                               onSave={(value) => void saveBudget(employee.agentId, value)}
                               onCancel={() => setEditingId(null)}

@@ -109,6 +109,11 @@ export function OrgIndexRedirect() {
  * lines with the whole text in the tooltip. Each opens the dialog already filled in — the
  * hardest part of an empty landing is not the form, it is having nothing to type into it — and
  * leaves the id to the field's own generator.
+ *
+ * The cards stretch to one height and lay their content out as a column, so the three names
+ * sit on one line and each mission starts under its own name: a `<button>` centres its own
+ * content vertically, which left the shorter cards' names floating half a line below the
+ * tallest card's.
  */
 function OrgEmptyLanding() {
   const navigate = useNavigate();
@@ -150,7 +155,7 @@ function OrgEmptyLanding() {
                   type="button"
                   title={copy.mission}
                   onClick={() => openCreate(copy)}
-                  className="h-full w-full rounded-md border border-gray-200 p-3 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/60"
+                  className="flex h-full w-full flex-col rounded-md border border-gray-200 p-3 text-left transition-colors duration-150 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-800 dark:hover:border-gray-700 dark:hover:bg-gray-800/60"
                 >
                   <span className="block text-sm font-medium">{copy.name}</span>
                   <span className="mt-1 line-clamp-3 block text-xs leading-relaxed text-gray-500 dark:text-gray-400">

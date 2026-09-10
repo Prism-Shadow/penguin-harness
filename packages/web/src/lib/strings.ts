@@ -2473,7 +2473,7 @@ Benchmark：
     workspaceClear: "改回组织自己的目录",
     /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
     ceoBudget: "CEO 预算",
-    ceoBudgetHint: "每月 USD；CEO 的预算就是整家公司的预算",
+    ceoBudgetHint: "每月上限；CEO 的预算就是整家公司的预算",
     /** The create dialog's draft (org-draft.ts): restored on reopen, dropped on create or on demand. */
     draftRestored: "已恢复上次未提交的草稿",
     clearDraft: "清空草稿",
@@ -2521,6 +2521,13 @@ Benchmark：
     /** Spend against a budget, and the unbounded case. */
     spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
     noBudget: "不限",
+    /**
+     * A budget is a monthly cap the server keeps in USD. A budget box speaks the currency the
+     * reader picked, so the unit rides after the box, and a box in CNY says under itself what
+     * it will actually store.
+     */
+    budgetUnit: (symbol: string): string => `${symbol} / 月`,
+    budgetStoredAs: (amount: string): string => `存为 ${amount} / 月`,
     /** The two groups under the company sidebar's channel list: one row per employee, and the sessions attached to tickets. */
     sessionList: {
       desks: (n: number): string => `工位（${n}）`,
@@ -2596,7 +2603,6 @@ Benchmark：
       inboxCategories: { mention: "@我", blocked: "阻塞", done: "已完成" },
       /** Today's timeline. */
       timelineMore: (n: number): string => `还有 ${n} 项，打开日历查看`,
-      viewAll: "查看全部",
     },
     calendarOutcomes: {
       fired: "已触发",
@@ -2642,8 +2648,8 @@ Benchmark：
       dutiesHint: "写进组织图，员工每次工作轮都会读到",
       workspace: "工作区",
       workspaceHint: "公共工作区下的子目录（`.` 为整个公共工作区），或一个已存在的绝对路径",
-      budget: "月预算（USD）",
-      budgetHint: "留空为不限；口径是本人加全部下属的累计支出",
+      budget: "月预算",
+      budgetHint: "每月上限，留空为不限；口径是本人加全部下属的累计支出",
       hireConfirm: (name: string, manager: string): string =>
         `将 ${name} 加入组织，汇报给 ${manager}？会改写组织图文件。`,
       hired: (name: string): string => `已招募 ${name}`,
