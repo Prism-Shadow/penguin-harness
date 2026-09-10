@@ -411,26 +411,9 @@ export function createHmrApp(boot: ServerBoot): Hono<AppEnv> {
   });
   app.use("/api/*", jsonOnlyWrites);
 
-  // Public routes (no login required).
-  app.route("/api/auth", authRoutes(deps));
-  // Desktop shutdown authenticates with the shell's Bearer token, not the cookie
-  // session, so it mounts outside authMiddleware (and only in desktop mode).
-  if (deps.desktop) {
-    app.route("/api/desktop", desktopRoutes(deps));
-    // The client-update surface is runtime-owned like the rest of /api/desktop (the
-    // platform declines that whole prefix): it reads the updater snapshot the shell
-    // pushes over the parentPort this process wires at startup, and forwards
-    // check/install back. Cookie-authed, unlike the Bearer-token shutdown above, so it
-    // carries the auth middleware on its own subtree — the routes then gate on
-    // `sessionVia === "desktop"`, i.e. the shell's own window.
-    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.route("/api/desktop/update", desktopUpdateRoutes(deps));
-  }
-  // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
-  // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin
-  // cookie session) with an admin check on top; see hmr/routes.ts. That is why they mount
-  // above the blanket /api/* middleware rather than under it.
+  // The layer's one API, with its own gate: the network gate, then the same auth middleware
+  // the platform uses (the boot's local API token as `Authorization: Bearer`, or an admin
+  // cookie session) with an admin check on top; see hmr/routes.ts.
   app.route("/api/hmr", hmrRoutes(deps));
 
   // THE seam: from here down, every route is one the platform may take over by push. Mounted
@@ -440,9 +423,19 @@ export function createHmrApp(boot: ServerBoot): Hono<AppEnv> {
   // the runtime's own routes below, which is what a platform without an `http` handler does.
   app.use("*", platformHttpSeam(deps.hmr));
 
-  // Every protected business route — /api/me through /api/sessions, and /preview — is
-  // served by the platform through the seam above (see app.ts). What
-  // follows is the runtime's own tail: static hosting and the SPA fallback.
+  // Every route but /api/hmr is the platform's, served through the seam above. What follows
+  // is the layer's own tail: rollback copies, static hosting and the SPA fallback.
+
+  // Rollback copies of /api/auth and /api/desktop: a platform older than the move that made
+  // them its own declines these prefixes, and login and the shell's shutdown must survive
+  // that rollback. Drop them once no such platform can be rolled back to.
+  app.route("/api/auth", authRoutes(deps));
+  if (deps.desktop) {
+    app.route("/api/desktop", desktopRoutes(deps));
+    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
+    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
+    app.route("/api/desktop/update", desktopUpdateRoutes(deps));
+  }
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a

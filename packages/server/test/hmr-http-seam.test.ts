@@ -73,14 +73,17 @@ describe("platform HTTP seam", () => {
     expect(await (await api.get("/api/version")).json()).toEqual({ version: "from-platform" });
   });
 
-  it("routes the platform declines still reach the runtime's own", async () => {
+  it("a platform that declines /api/auth and /api/desktop lands on the layer's rollback copies", async () => {
     await pushPlatform(t.app, cookie, bundle);
-    // The runtime's own routes are the mechanism surface (auth, hmr, desktop, static):
-    // login still works with a fixture platform in place, because the fixture declines
-    // /api/auth and the runtime serves it. Business routes are NOT runtime fallbacks —
-    // /api/me travels with the business platform, which this push replaced.
+    // The fixture declines both prefixes, as a platform older than the move that made them
+    // the platform's would: login still works because the layer keeps a copy below the
+    // seam, and the shell's shutdown answers the layer's own 404 outside desktop mode.
+    // Business routes are NOT rollback copies — /api/me travels with the platform, which
+    // this push replaced.
     const login = await loginAdmin(t.app);
     expect(login.user.userId).toBe("admin");
+    const shutdown = await t.app.request("/api/desktop/shutdown", { method: "POST" });
+    expect(shutdown.status).toBe(404);
     expect((await api.get("/api/me")).status).toBe(404);
   });
 
