@@ -7,7 +7,11 @@
  * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26, its
  * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
  * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
- * the direct qwen3.8-flash: 2026-08-26 — per each provider's docs).
+ * the direct qwen3.8-flash: 2026-08-26; the vLLM group: 2026-09-03; the direct DeepSeek V4
+ * Flash rows (flash and flash-vision-exp): 2026-09-08, for the official adjustment effective
+ * 2026-09-10; the GPT-6 Astra rows (direct + OpenRouter): 2026-09-09; the pre-registered
+ * deepseek-v4.1-flash row: 2026-09-09, from DeepSeek's release announcement — per each
+ * provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -31,7 +35,10 @@
  * auto-routed by AgentHub and leave client_type unset; the six gateway groups (OpenRouter,
  * Fireworks AI, SiliconFlow, TokenDance, Qwen Pay-As-You-Go, Qwen Token Plan) can't be
  * auto-routed, so every gateway row **always pins an explicit client_type** and inlines its
- * preset base URL.
+ * preset base URL. The vLLM group pins one too, but as a property of the GROUP rather than
+ * of each row (ModelProviderInfo.clientType, read through providerClientType): a model the
+ * user adds there speaks the same protocol as the presets, and has no preset base URL to
+ * inherit — see the group's own block comment.
  * That pin is load-bearing, not decoration: AgentHub's AutoLLMClient matches raw substrings
  * against `client_type || model_id` and never looks at base_url, so an unpinned gateway id
  * would be routed by its own spelling — `openai/gpt-5.6-sol` would reach the first-party
@@ -41,7 +48,10 @@
  *   Completions client — the bare "openai" spelling is a deprecated upstream alias, see
  *   canonicalClientType);
  * - `openai-responses` for the OpenRouter `openai/*` rows, whose upstream really is an
- *   OpenAI Responses server (see the OpenRouter block comment for why only those rows).
+ *   OpenAI Responses server (see the OpenRouter block comment for why only those rows);
+ * - `openai-chat-vllm-adapter` for the vLLM group, which is Chat Completions on the wire
+ *   but maps the thinking level onto the served model's own chat template
+ *   (VLLM_CLIENT_TYPE).
  * The MiniMax M3 preset pins AgentHub's first-party `minimax-m3` protocol and direct API
  * endpoint.
  *
@@ -93,6 +103,22 @@ export interface ModelProviderInfo {
    */
   oauth?: ModelProviderOAuth;
   /**
+   * The AgentHub protocol EVERY entry in this group speaks, models the user adds included.
+   *
+   * Set it only where the group itself decides the answer and no other property already
+   * implies it: the gateways derive `openai-chat` from carrying a `gatewayBaseUrl`, and
+   * `custom` / user-defined groups deliberately declare nothing — their whole point is that
+   * the protocol is detected from the endpoint or picked by hand, and a pin here would
+   * take that choice away.
+   *
+   * Where it IS set, it outranks every group-shape guess in the app: the add-model dialog
+   * preselects it, moving an entry into the group rewrites the entry to it, the API-key env
+   * hint resolves against it, and protocol detection is skipped because the group already
+   * knows. Read it through providerClientType rather than reaching for the field, so those
+   * call sites keep answering as one.
+   */
+  clientType?: string;
+  /**
    * The group the product recommends, captioned as such on the models page. It marks the
    * GROUP, not a position: a user who drags the group elsewhere keeps the caption with it,
    * and the default sequence below is what places it first for everyone else.
@@ -135,6 +161,15 @@ export interface ModelCatalogEntry {
   /** Preset base URL: inlined into gateway and direct MiniMax entries so only an API key is required. */
   baseUrl?: string;
 }
+
+/**
+ * AgentHub's client for models served by vLLM's OpenAI-compatible Chat Completions API. It
+ * is Chat Completions on the wire, but a distinct client: it maps the thinking level onto
+ * the `chat_template_kwargs` the SERVED model's chat template reads, which differs per model
+ * family, and AgentHub matches this name by exact equality (before its `openai` substring
+ * branches) so `openai-chat` would silently lose that mapping.
+ */
+const VLLM_CLIENT_TYPE = "openai-chat-vllm-adapter";
 
 /** Preset provider endpoints; only OpenAI-compatible gateways expose theirs as gatewayBaseUrl. */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -284,6 +319,17 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
       "https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-overview",
     gatewayBaseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
+  {
+    // Self-hosted: the user runs the server, so there is no console to mint a key at
+    // (apiKeyUrl) and no endpoint to preset (gatewayBaseUrl). modelsUrl points at the recipe
+    // index, which is where the served ids in this group are documented.
+    id: "vllm",
+    label: "vLLM",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    modelsUrl: "https://recipes.vllm.ai/",
+    clientType: VLLM_CLIENT_TYPE,
+  },
   { id: "custom", label: "Custom", envKey: "OPENAI_API_KEY", envBaseUrlKey: "OPENAI_BASE_URL" },
 ];
 
@@ -419,18 +465,39 @@ export function effectivePricing(
  * takes the group sequence from MODEL_PROVIDERS.
  */
 export const MODEL_CATALOG: ModelCatalogEntry[] = [
-  // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Re-read 2026-08-18
-  // from api-docs.deepseek.com/quick_start/pricing after the official price increase
-  // introduced time-based tiers. The rows store the PEAK tier and declare
-  // DEEPSEEK_OFF_PEAK, which halves every bucket outside Beijing weekday 09:00-12:00 and
-  // 14:00-18:00 — so both tiers are billed at the rate actually in force, rather than one of
-  // them being approximated by the other. --
+  // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Prices re-read
+  // 2026-09-08 from api-docs.deepseek.com/quick_start/pricing, covering the official price
+  // adjustment effective 2026-09-10 12:00 Beijing: the V4 Flash rows (flash and
+  // flash-vision-exp) are on the peak tier CNY 0.04 / 2 / 8, exactly double the off-peak
+  // 0.02 / 1 / 4; deepseek-v4-pro sits outside that adjustment, at 0.3 / 9 / 27. The rows
+  // store the PEAK tier and declare DEEPSEEK_OFF_PEAK, which halves every bucket outside
+  // Beijing weekday 09:00-12:00 and 14:00-18:00 — so both tiers are billed at the rate
+  // actually in force, rather than one of them being approximated by the other.
+  // deepseek-v4.1-flash leads the group ahead of its launch: DeepSeek has announced it and
+  // does not serve it yet, and it carries the V4 Flash series price and schedule. --
+  {
+    // Announced for release after 2026-09-10 and not served yet as of 2026-09-09; the row is
+    // registered ahead of the launch. The announcement gives it image input by default, and
+    // the V4 Flash series price: the peak tier is stored and the schedule declared, exactly
+    // like its siblings. The context window is assumed equal to deepseek-v4-flash until the
+    // official model page lists one. Image parts reach it through @prismshadow/agenthub
+    // ^0.4.11, whose DeepSeek client forwards them to every id except the text-only
+    // deepseek-v4-flash and deepseek-v4-pro (0.4.10 forwarded them to ids containing
+    // "vision" alone).
+    modelId: "deepseek-v4.1-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "deepseek",
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+  },
   {
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.1, 3, 9),
+    pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
   },
@@ -441,7 +508,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.1, 3, 9),
+    pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
   },
@@ -690,6 +757,21 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // The openai/* rows below mirror the direct OpenAI group one-for-one, and are the only
   // gateway rows on the Responses protocol (see the block comment). Their context windows
   // are OpenRouter's published 1,050,000 / 400,000, matching the direct rows.
+  {
+    // Read 2026-09-09 from the models API and the per-model endpoints API: the default
+    // endpoint is OpenAI's own, listed at $10 input / $1 cached input / $12.5 cache write /
+    // $50 output with `discount: 0`, so the list price is what OpenRouter bills. The
+    // endpoints API also publishes `overrides` above 272,000 prompt tokens (2x prompt and
+    // cache, 1.5x completion); as on the direct row, only the base tier is recorded.
+    modelId: "openai/gpt-6-astra",
+    displayName: "GPT-6 Astra",
+    provider: "openrouter",
+    contextWindow: 1050000,
+    pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
   {
     // The 50% promotion this row used to store has ended: OpenRouter now bills the full
     // $0.20/$1.20 rate (endpoints API `discount: 0`), so the stored rates doubled on the
@@ -1503,12 +1585,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- OpenAI (official USD pricing) --
   {
+    // OpenAI's list price (developers.openai.com/api/docs/models/gpt-6-astra, read
+    // 2026-09-09) is $10 input / $1 cached input / $12.5 cache write / $50 output. Per the
+    // bucket convention at the top of this file, cache_write carries the published
+    // cache-write price of 12.5; the $10 rate applies only to input that is not written to
+    // cache, a split the three buckets do not express. Every rate doubles above 272K input
+    // tokens (output 1.5x) — the base tier is what this row records, as the header says.
+    // Served by AgentHub's gpt6 client from the release that ships it.
+    modelId: "gpt-6-astra",
+    displayName: "GPT-6 Astra",
+    provider: "openai",
+    contextWindow: 1050000,
+    pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+  },
+  {
     // The bare gpt-5.6 id routes to gpt-5.6-sol upstream and is priced as that tier, so the
     // row names the Sol codename its siblings and the openai/gpt-5.6-sol row already show —
     // the id stays bare, only the label says which variant this is; served by AgentHub
-    // 0.4.2's native gpt-5.6 client. The three rows here mirror the openai/*
-    // OpenRouter rows above, which carry the gateway's (currently discounted) rates instead
-    // of this list price.
+    // 0.4.2's native gpt-5.6 client. This row and the two gpt-5.6 rows below mirror the
+    // openai/gpt-5.6-* OpenRouter rows above, which carry the gateway's (currently
+    // discounted) rates instead of this list price.
     modelId: "gpt-5.6",
     displayName: "GPT-5.6 Sol",
     provider: "openai",
@@ -1663,6 +1760,104 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.7, 4, 21),
     supportsVision: true,
   },
+  // -- vLLM (self-hosted: the models AgentHub's openai-chat-vllm-adapter client carries a
+  // per-model thinking switch for, as published at recipes.vllm.ai — read 2026-09-03).
+  //
+  // Every row prices at zero, and omits two other things, all because the user runs the server:
+  // - **zero pricing**. There is no seller charging per token: what the deployment costs is
+  //   the operator's own hardware, which no catalog rate could express. Three zero buckets are
+  //   the same genuine $0 tier the `:free` gateway rows carry, so these models show the free
+  //   badge and contribute 0 to the cost center rather than the "unpriced" mark — which is the
+  //   truthful reading of a self-hosted endpoint that bills nobody.
+  // - **no base URL**. Every deployment has its own; the user supplies it, as in `custom`.
+  // - **no auto-routing**. Each row pins openai-chat-vllm-adapter explicitly, and the pin is
+  //   load-bearing twice over: `Qwen/*` matches none of AutoLLMClient's substring rules and
+  //   would be rejected outright, while `deepseek-ai/DeepSeek-V4-*` contains "deepseek-v4"
+  //   and would reach DeepSeek's first-party Responses client — pointed at a vLLM server.
+  //
+  // contextWindow is the recipe's NATIVE length, which is the most a deployment can serve
+  // without reconfiguration; an operator may serve less (`--max-model-len` below the native
+  // limit) or, for the Qwen rows, far more with YaRN rope scaling. The catalog cannot know
+  // which, and it derives the compaction thresholds from this number, so the honest default
+  // is the checkpoint's own figure — an entry without one would be assumed to be 128000.
+  // The DeepSeek rows additionally document `--max-model-len >= 393216` as the floor for
+  // their top reasoning levels, which is well inside the window recorded here.
+  {
+    modelId: "deepseek-ai/DeepSeek-V4-Flash",
+    displayName: "DeepSeek V4 Flash",
+    provider: "vllm",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    // The experimental vision revision: DeepSeek's first multimodal V4, a ViT tower on the
+    // same language backbone. Its recipe verifies a 32K deployment and notes the 1M the
+    // checkpoint advertises was not what was measured; the window below is the checkpoint's,
+    // matching every other DeepSeek V4 row in this catalog.
+    modelId: "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp",
+    displayName: "DeepSeek V4 Flash Vision Exp",
+    provider: "vllm",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "deepseek-ai/DeepSeek-V4-Pro",
+    displayName: "DeepSeek V4 Pro",
+    provider: "vllm",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.5-0.8B",
+    displayName: "Qwen 3.5 0.8B",
+    provider: "vllm",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.5-9B",
+    displayName: "Qwen 3.5 9B",
+    provider: "vllm",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.6-35B-A3B",
+    displayName: "Qwen 3.6 35B A3B",
+    provider: "vllm",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.8-27B",
+    displayName: "Qwen 3.8 27B",
+    provider: "vllm",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.8-Flash-Next",
+    displayName: "Qwen 3.8 Flash Next",
+    provider: "vllm",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
 ];
 
 /**
@@ -1690,6 +1885,20 @@ export function catalogEntryFor(
 /** Looks up provider info by provider id; returns undefined for an unknown id. */
 export function providerInfo(providerId: string): ModelProviderInfo | undefined {
   return MODEL_PROVIDERS.find((p) => p.id === providerId);
+}
+
+/**
+ * The protocol a group pins on every one of its entries (ModelProviderInfo.clientType), or
+ * undefined when the group pins none — an unknown id (a user-defined group) included.
+ *
+ * The single entry point for the pin, so the places that decide a saved model's client_type
+ * cannot drift apart: the web add-model dialog's default, moving an entry between groups,
+ * the last-resort protocol on the save paths that do not probe, the env-var hint, and the
+ * CLI's `config model add`. A group without a pin keeps whatever those call sites already
+ * derive from its shape.
+ */
+export function providerClientType(providerId: string): string | undefined {
+  return providerInfo(providerId)?.clientType;
 }
 
 /** Env var fallback for a single model (the var names AgentHub's client actually reads when api_key / base_url is blank). */
@@ -1720,7 +1929,12 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   ) {
     return env("ANTHROPIC");
   }
-  if (t.includes("gpt-5.4") || t.includes("gpt-5.5") || t.includes("gpt-5.6")) {
+  if (
+    t.includes("gpt-5.4") ||
+    t.includes("gpt-5.5") ||
+    t.includes("gpt-5.6") ||
+    t.includes("gpt-6")
+  ) {
     return env("OPENAI");
   }
   // agenthub 0.4.2's unified GLM client serves the whole glm-5 series (5.3 included).
@@ -1738,15 +1952,18 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   // Order mirrors AutoLLMClient: ant-messages before the openai substring match.
   if (t.includes("ant-messages")) return env("ANTHROPIC");
   // The generic OpenAI-protocol clients — openai-chat (canonical since agenthub 0.4.2, with
-  // bare "openai" as a deprecated alias), openai-responses and openai-embedding — all read
-  // the OPENAI_* pair.
+  // bare "openai" as a deprecated alias), openai-responses, openai-embedding, and
+  // openai-chat-vllm-adapter (an openai_chat subclass, so it reads the same pair) — all
+  // read the OPENAI_* pair. AutoLLMClient matches openai-chat-vllm-adapter by exact
+  // equality one branch earlier; the substring lands on the same answer, so the order costs
+  // nothing here.
   if (t.includes("openai")) return env("OPENAI");
   return undefined;
 }
 
 /**
  * The wire protocol that would carry AgentHub's `fast_mode` for a model: `"openai"` for the
- * OpenAI-protocol clients (openai_chat / openai_responses / gpt5_6 / minimax_m3), which send
+ * OpenAI-protocol clients (openai_chat / openai_responses / gpt6 / minimax_m3), which send
  * `service_tier: "priority"`, and `"anthropic"` for the Anthropic-protocol ones (ant_messages
  * / claude5), which send `speed: "fast"` plus the `fast-mode-2026-02-01` beta header. The two
  * differ in what the user must be warned about, not just in wire shape (see fastModeProtocol).
@@ -1809,11 +2026,22 @@ export function fastModeProtocol(
     if (modelId.includes("4-6")) return undefined;
     return "anthropic";
   }
-  if (t.includes("gpt-5.4") || t.includes("gpt-5.5") || t.includes("gpt-5.6")) return "openai";
+  if (
+    t.includes("gpt-5.4") ||
+    t.includes("gpt-5.5") ||
+    t.includes("gpt-5.6") ||
+    t.includes("gpt-6")
+  ) {
+    return "openai";
+  }
   if (t.includes("glm-5")) return undefined;
   if (t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) return undefined;
   if (t.includes("deepseek-v4")) return undefined;
   if (t.includes("ant-messages")) return "anthropic";
+  // openai-chat-vllm-adapter is not carved out: it subclasses openai_chat without touching
+  // fast mode, so it maps the parameter exactly as the substring branch below reports. What
+  // a self-hosted server then does with `service_tier` is the third-party residue named
+  // above.
   if (t.includes("openai-responses")) return "openai";
   if (t.includes("openai") && t.includes("embedding")) return undefined;
   if (t.includes("openai")) return "openai";
@@ -1888,6 +2116,13 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
     const m = /^kimi-k(\d+)\.(\d+)$/.exec(modelId);
     return m
       ? `https://platform.kimi.com/docs/pricing/chat-k${m[1]}${m[2]}`
+      : providerInfo(provider)?.modelsUrl;
+  }
+  if (provider === "vllm") {
+    // recipes.vllm.ai has a page per model vLLM published a recipe for, which is exactly what
+    // this group presets; an id the user serves themselves has no page, so it gets the index.
+    return catalogEntryFor(provider, modelId) !== undefined
+      ? `https://recipes.vllm.ai/${modelId}`
       : providerInfo(provider)?.modelsUrl;
   }
   if (provider === "custom") return undefined;

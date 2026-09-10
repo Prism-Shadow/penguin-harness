@@ -37,6 +37,7 @@ import {
   tracesDir,
   type AgentState,
   type ModelRef,
+  type ModelEntry,
   type ProjectConfig,
 } from "./state/index.js";
 import { GenerativeModel, ToolCallIdAllocator, effectiveMaxContextLength } from "./llm/index.js";
@@ -92,7 +93,6 @@ import type {
   ToolDefinition,
   VisionDescriberService,
 } from "./interfaces/index.js";
-import type { ModelEntry } from "./state/index.js";
 
 /**
  * Maximum subagent spawn depth. Currently capped at 1 level (a subagent cannot spawn

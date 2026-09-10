@@ -21,8 +21,9 @@ import {
   removeSkill,
   replaceSkillDirectory,
   skillsDir,
+  parseSkillFrontmatter,
+  PLUGIN_NAME_PATTERN,
 } from "@prismshadow/penguin-core";
-import { parseSkillFrontmatter, PLUGIN_NAME_PATTERN } from "@prismshadow/penguin-core";
 import type { AgentSkillsResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
