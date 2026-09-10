@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  AutoLLMClient,
   EmptyResponseError,
   ThinkingLevel,
   ToolCallArgumentParseError,
@@ -2449,5 +2450,48 @@ describe("translateEvents: a chunk carrying the reasoning tail and the answer he
       .filter((p) => p.event_type === "start")
       .map((p) => p.type);
     expect(starts).toEqual(["partial_thinking", "partial_text"]);
+  });
+});
+
+describe("the OpenAI-compatible client and the translator, end to end on a transition chunk", () => {
+  // The wire fact the ordering rests on, taken from the real client rather than assumed: a
+  // Chat Completions delta carrying both `content` and `reasoning_content` is emitted as
+  // [text, thinking]. Fed to the translator untouched, that order split one reasoning stream
+  // and one answer into thinking / text / thinking / text.
+  it("yields one thinking segment and one text segment from raw chunks", () => {
+    const client = new AutoLLMClient({
+      model: "deepseek-reasoner",
+      clientType: "openai-chat",
+      apiKey: "sk-test",
+      baseUrl: "http://127.0.0.1:9",
+    });
+    const chunk = (delta: Record<string, string>) => ({
+      id: "chatcmpl-test",
+      object: "chat.completion.chunk" as const,
+      created: 0,
+      model: "deepseek-reasoner",
+      choices: [{ index: 0, delta, finish_reason: null, logprobs: null }],
+    });
+    const events = [
+      chunk({ reasoning_content: "Let me just reorgan" }),
+      chunk({ content: "The wrapper layout", reasoning_content: "ize." }),
+      chunk({ content: " got flattened during copy." }),
+    ].map((c) => client.transformModelOutputToUniEvent(c));
+
+    expect(events[1]!.content_items.map((i) => i.type)).toEqual(["text", "thinking"]);
+
+    const { messages } = translateEvents([
+      ev({ event_type: "start", content_items: [] }),
+      ...events,
+      ev({ event_type: "stop", content_items: [], finish_reason: "stop" }),
+    ]);
+    const complete = messages
+      .map((m) => m.payload as { type: string; thinking?: string; text?: string })
+      .filter((p) => p.type === "thinking" || p.type === "text")
+      .map((p) => [p.type, p.thinking ?? p.text]);
+    expect(complete).toEqual([
+      ["thinking", "Let me just reorganize."],
+      ["text", "The wrapper layout got flattened during copy."],
+    ]);
   });
 });
