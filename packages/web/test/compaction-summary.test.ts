@@ -1,6 +1,8 @@
 /**
  * What a compaction row shows: the text inside its result section (compaction-summary.ts)
- * and the title above it (the dictionaries' mode-aware `compactionTitle`).
+ * and the titles above it (the dictionaries' mode-aware `compactionTitle`, and the state
+ * titles `compactionRunning` / `compactionDone` the header shows while the step runs and once
+ * it settles, the work-group header's own Running/Done idiom).
  *
  * The row itself is a StepBanner whose body stacks a thinking section and a result section.
  * The banner opens while the compaction runs and closes itself once it settles; the two
@@ -83,6 +85,35 @@ describe("compactionTitle (the row is titled by its mode)", () => {
           dict.chat.compactionTitle("summarize"),
         );
       }
+    }
+  });
+});
+
+describe("compactionRunning / compactionDone (the title doubles as the status, as the work group's does)", () => {
+  it("reads 压缩中 while a compaction runs and 压缩完毕 once it settles", () => {
+    expect(zh.chat.compactionRunning("summarize")).toBe("压缩中");
+    expect(zh.chat.compactionDone("summarize")).toBe("压缩完毕");
+  });
+
+  it("keeps the two states and the two modes apart in both dictionaries", () => {
+    for (const [locale, dict] of [
+      ["zh", zh],
+      ["en", en],
+    ] as const) {
+      for (const mode of ["summarize", "discard"]) {
+        expect(dict.chat.compactionRunning(mode), `${locale} ${mode}`).toBeTruthy();
+        expect(
+          dict.chat.compactionRunning(mode),
+          `${locale} ${mode} running reads as settled`,
+        ).not.toBe(dict.chat.compactionDone(mode));
+      }
+      // A discard never reads as compacting, in either state — the point of titling by mode.
+      expect(dict.chat.compactionRunning("discard"), locale).not.toBe(
+        dict.chat.compactionRunning("summarize"),
+      );
+      expect(dict.chat.compactionDone("discard"), locale).not.toBe(
+        dict.chat.compactionDone("summarize"),
+      );
     }
   });
 });

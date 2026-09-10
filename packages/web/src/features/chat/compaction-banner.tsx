@@ -3,13 +3,15 @@
  * connect row and the reasoning-&-tools group header) — the wall time ticks while it runs
  * and settles once finished, failures stay on a single line.
  *
- * **The title names the mode**, so the two modes read as the two different things they are:
- * a `summarize` row is 压缩 / "Compaction", a `discard` row is 清空 / "Clear" — it drops the
- * old context rather than compacting it, and calling that "compaction" was the confusing part
- * (per maintainer request). With the mode in the title neither outcome needs a detail line:
- * a succeeded row is icon + title + wall time (+ chevron on a summarize), and the detail slot
- * is left for what the title cannot say — why a compaction failed, and, while a summarize
- * runs, the hint that its body is being streamed into.
+ * **The title names the mode and doubles as the status**, the work-group header's idiom
+ * (运行中 → 运行完毕): a `summarize` row reads 压缩中 / "Compacting" while it runs and
+ * 压缩完毕 / "Compacted" once it settles; a `discard` row 清空中 → 清空完毕 ("Clearing" →
+ * "Cleared") — it drops the old context rather than compacting it, and calling that
+ * "compaction" was the confusing part (per maintainer request). With mode and state both in
+ * the title neither outcome needs a detail line: a running row is icon + title + ticking wall
+ * time (+ chevron on a summarize), a succeeded row the same with the time settled, and the
+ * detail slot is left for the one thing a title cannot say — why a compaction failed, under
+ * the bare mode word.
  *
  * The body follows the work group: **two stacked disclosure rows, each with its own status
  * icon and wall time exactly like a thinking block** — 「思考」/ "Thinking", what the
@@ -132,15 +134,14 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
     </>
   ) : null;
 
-  // The title carries the mode in both states, so the running row's detail slot is free for
-  // the streaming hint (a summarize only: a discard has nothing to stream) instead of the
-  // raw `summarize`/`discard` wire value.
+  // The title says both what runs and that it is running (压缩中 / "Compacting"), as the
+  // work-group header's does; no detail line — the body streams behind the chevron, and the
+  // raw `summarize`/`discard` wire value never shows.
   if (item.running) {
     return (
       <StepBanner
         state="running"
-        title={S.chat.compactionTitle(item.mode)}
-        {...(item.mode === "summarize" ? { detail: S.chat.compactionStreaming } : {})}
+        title={S.chat.compactionRunning(item.mode)}
         {...(item.beginTsMs !== undefined ? { liveSinceMs: item.beginTsMs } : {})}
       >
         {body}
@@ -151,9 +152,10 @@ export function CompactionBanner({ item }: { item: CompactionItem }) {
   return (
     <StepBanner
       state={ok ? "done" : "failed"}
-      title={S.chat.compactionTitle(item.mode)}
-      // Success says everything through the title, the icon and the wall time; only a failure
-      // still needs a line, because its reason is the part the title cannot carry.
+      // Success says everything through the title (压缩完毕 / "Compacted"), the icon and the
+      // wall time; a failure keeps the bare mode word and needs a line, because its reason is
+      // the part a title cannot carry.
+      title={ok ? S.chat.compactionDone(item.mode) : S.chat.compactionTitle(item.mode)}
       detail={ok ? undefined : S.chat.compactionFailed(item.status ?? "failed", item.errorMessage)}
       {...(item.durationMs !== undefined ? { durationMs: item.durationMs } : {})}
     >
