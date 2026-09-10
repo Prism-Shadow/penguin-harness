@@ -122,7 +122,7 @@ export const HMR_INTERFACES: HmrInterfaces = {
   lifecycle: ["supervised", "onRestartRequest", "requestRestart"],
 };
 
-export const HMR_INTERFACES_RESOURCE_ID = "platform:interfaces";
+export const HMR_INTERFACES_RESOURCE_ID = "platform.interfaces";
 
 /** The member set an entry names, or [] when the entry is absent or is the family tag. */
 function members(descriptor: Interfaces, name: string): readonly string[] | undefined {
@@ -167,49 +167,50 @@ export function lacksMembers(value: unknown, need: readonly string[]): string[] 
   return need.filter((m) => (value as Record<string, unknown>)[m] === undefined);
 }
 
-// What the layer publishes for the platform to claim. Every id is `platform:*`: the registry
-// is the platform's state, kept by the process so a swap does not lose it.
+// What the layer publishes for the platform to claim. Every id is `platform.<name>` — dot-split,
+// camelCase, the plugin-id shape: the registry is the platform's state, kept by the process so
+// a swap does not lose it.
 
-export const HMR_CONFIG_RESOURCE_ID = "platform:config";
-export const HMR_DB_RESOURCE_ID = "platform:db";
-export const HMR_CHANNELS_RESOURCE_ID = "platform:channels";
-export const HMR_PROXY_RESOURCE_ID = "platform:proxy-control";
-export const HMR_HOST_RESOURCE_ID = "platform:host";
+export const HMR_CONFIG_RESOURCE_ID = "platform.config";
+export const HMR_DB_RESOURCE_ID = "platform.db";
+export const HMR_CHANNELS_RESOURCE_ID = "platform.channels";
+export const HMR_PROXY_RESOURCE_ID = "platform.proxyControl";
+export const HMR_HOST_RESOURCE_ID = "platform.host";
 /**
  * Desktop mode's one service (one-shot login + shutdown token holder). Registered even
  * when null — the platform reads desktop-ness too (`/api/me`, single-user mode), so the
  * claim must distinguish "not desktop" from "not published".
  */
-export const HMR_DESKTOP_RESOURCE_ID = "platform:desktop";
+export const HMR_DESKTOP_RESOURCE_ID = "platform.desktop";
 /** Whether a supervisor relaunches this process, and the restart trigger. Always published. */
-export const HMR_LIFECYCLE_RESOURCE_ID = "platform:lifecycle";
+export const HMR_LIFECYCLE_RESOURCE_ID = "platform.lifecycle";
 
 /**
  * Process-scoped auth values (auth/runtime-state.ts), not an auth service. Claimed
  * optionally: a layer older than the holder gives the platform a fresh one, which costs one
  * reprint of the first-login link.
  */
-export const HMR_AUTH_STATE_RESOURCE_ID = "platform:auth-state";
+export const HMR_AUTH_STATE_RESOURCE_ID = "platform.authState";
 /** Test-only: the node Replacements bootAppDeps leaves for the platform boot to claim. */
-export const HMR_OVERRIDES_RESOURCE_ID = "platform:overrides";
+export const HMR_OVERRIDES_RESOURCE_ID = "platform.overrides";
 
 /**
- * The ids before the `platform:` prefix. An installed layer registers under both (`publish`)
+ * The ids before the `platform.` prefix. An installed layer registers under both (`publish`)
  * and a platform claims new-then-old (`claimAny`), so either side may be older than the other.
  * Drop with the aliases once nothing installed or rolled back to predates the rename.
  */
 export const LEGACY_RESOURCE_IDS: Readonly<Record<string, string>> = {
-  "platform:interfaces": "runtime:interfaces",
-  "platform:config": "runtime:config",
-  "platform:db": "runtime:db",
-  "platform:channels": "runtime:channels",
-  "platform:proxy-control": "runtime:proxy-control",
-  "platform:host": "runtime:hmr-host",
-  "platform:desktop": "runtime:desktop",
-  "platform:lifecycle": "runtime:lifecycle",
-  "platform:auth-state": "runtime:auth-state",
-  "platform:overrides": "runtime:overrides",
-  "platform:plugins": "runtime:plugins",
+  "platform.interfaces": "runtime:interfaces",
+  "platform.config": "runtime:config",
+  "platform.db": "runtime:db",
+  "platform.channels": "runtime:channels",
+  "platform.proxyControl": "runtime:proxy-control",
+  "platform.host": "runtime:hmr-host",
+  "platform.desktop": "runtime:desktop",
+  "platform.lifecycle": "runtime:lifecycle",
+  "platform.authState": "runtime:auth-state",
+  "platform.overrides": "runtime:overrides",
+  "platform.plugins": "runtime:plugins",
 };
 
 /** Registers `resource` under `id` and, while one exists, its legacy id. */
