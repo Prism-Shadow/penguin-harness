@@ -3,6 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `core`, `web`, `cli`, `docs`
+- **PR:** [#661](https://github.com/Prism-Shadow/penguin-harness/pull/661)
 
 [中文版](2026-09-10-tool-argument-guidance.zh.md)
 
