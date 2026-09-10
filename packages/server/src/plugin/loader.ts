@@ -35,7 +35,6 @@ import type {
   Resources,
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
-import { pluginsPrefix } from "./install.js";
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -123,7 +122,8 @@ export async function readPluginClosure(root: string): Promise<string[]> {
  * `<dir>/node_modules/…`) except the installation entry, which resolves as the running
  * program does:
  *
- *   1. `<root>/plugins` — what the Plugins page installs; the operator's explicit choice.
+ *   1. `<root>/plugins` — the data root's own npm prefix, for a package put there by hand
+ *      (nothing in the product writes it yet; a registry install would).
  *   2. `<assets>/plugins` — the BUILTIN plugins the committed hot push carried
  *      (scripts/build-plugins.mjs), i.e. the plugins of the revision that is running.
  *   3. `<installation>/plugins` — the builtin plugins the build shipped (the desktop app
@@ -135,6 +135,11 @@ export async function readPluginClosure(root: string): Promise<string[]> {
 export interface PluginBase {
   file: string;
   builtin: boolean;
+}
+
+/** `<root>/plugins`: the npm prefix of the data root itself. */
+export function pluginsPrefix(root: string): string {
+  return path.join(root, "plugins");
 }
 
 export function pluginBases(root: string | undefined, assetsDir: string | null): PluginBase[] {
