@@ -3,6 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#676](https://github.com/Prism-Shadow/penguin-harness/pull/676)
 
 [中文版](2026-09-10-trace-elapsed-total.zh.md)
 
