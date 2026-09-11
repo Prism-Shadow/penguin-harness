@@ -15,8 +15,10 @@
  * approval block below the row is always on screen and names the tool and its arguments.
  */
 import { useMemo, useRef, useState } from "react";
+import { DETACHED_TOOL_NOTE_PREFIX } from "@prismshadow/penguin-core/interfaces";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
+import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
@@ -27,12 +29,12 @@ import {
   DISCLOSURE_ROW_STICKY_CLASS,
 } from "./disclosure-row";
 import { ZoomableImage } from "../../components/ui/image-zoom";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { BackgroundTasksMark } from "../../components/ui/session-activity-icon";
+import { toneInk } from "../../lib/tone";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
 import { LiveDuration } from "./live-duration";
+import { useTheme } from "../../state/theme";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
 import { SubagentChip } from "./subagent-chip";
 import type { StreamRenderContext } from "./message-stream";
@@ -47,6 +49,13 @@ const DESCRIBED_TOOLS = new Set([
 
 /** The three file tools: previewed by their `file_path` argument. */
 const FILE_TOOLS = new Set(["read_file", "edit_file", "write_file"]);
+
+/**
+ * The tools whose running call can be handed back as a background task: the two that own a
+ * registry the work can move into (a process_id, a subagent_id). The file tools have nothing
+ * to hand back, and an MCP tool has no such concept — asking would be refused.
+ */
+const DETACHABLE_TOOLS = new Set(["exec_command", "run_subagent"]);
 
 /**
  * Tool names Traces carried before `read_file` absorbed image reading (2026-09-02): their
@@ -163,6 +172,37 @@ export function isBackgroundCall(argsJson: string): boolean {
 }
 
 /**
+ * Whether a call was moved to the background by the user while it was executing: its output
+ * carries the note the tool wrote on handing its work back. Read from the output rather than
+ * remembered from the click, so the mark survives a reload — the click is nowhere in the
+ * Trace, and the note is.
+ */
+export function isDetachedCall(output: string): boolean {
+  return output.includes(DETACHED_TOOL_NOTE_PREFIX);
+}
+
+/**
+ * Whether the header offers "move to background": only while the call is genuinely executing
+ * (that is the whole window in which there is something to move), only for a tool that has a
+ * background form, and only on a main-session card — a subagent's call lives in the child
+ * Session's environment, which the route does not target.
+ *
+ * A call launched with `run_in_background` is excluded: its work is already back in the
+ * registry, so there is nothing left to hand over, and the row would briefly carry the
+ * background glyph twice — once as the action, once as the mark that call already wears.
+ */
+export function showsBackgroundAction(
+  name: string,
+  argsJson: string,
+  executing: boolean,
+  origin: readonly string[],
+): boolean {
+  return (
+    executing && origin.length === 0 && DETACHABLE_TOOLS.has(name) && !isBackgroundCall(argsJson)
+  );
+}
+
+/**
  * Decoded file-tool payload for the pending-approval block: the user is approving a
  * concrete rewrite (old_string/new_string/content), so the bare path is not enough — the
  * actual arguments are rendered in the scrollable expanded style while the call is PENDING.
@@ -244,10 +284,19 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   const [open, setOpen] = useState(false);
   const userToggled = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { toolAliases } = useTheme();
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
 
   const preview = previewArguments(item.name, item.argumentsText);
+  // Display-only, and confined to the two render expressions below: every name-keyed
+  // decision on this card (DESCRIBED_TOOLS, FILE_TOOLS, the argument previews, the subagent
+  // chip) and everywhere else in the app (the tools config table, permission rules, the
+  // Trace viewer) keeps reading `item.name`, so an alias can never change what a call means.
+  const displayName = toolDisplayName(item.name, toolAliases);
+  // The tool's own name stays one hover away, for matching a Trace or writing a permission
+  // rule; when nothing was aliased the tooltip would only repeat the visible text.
+  const nameTitle = displayName === item.name ? undefined : item.name;
   // Escape sequences are stripped at render time only (the stored stream/trace data keeps its
   // raw bytes): hardened child envs should no longer produce any, but historical traces and
   // force-color programs still can (#102). Memoized — the aggregated output can be large and
@@ -293,6 +342,16 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   const denied =
     (item.decision === "deny" || item.decision === "forbidden") &&
     item.outputStopReason === "aborted";
+  // Shared by the row and the chevron beside it: two buttons, one disclosure. Collapsing
+  // while the row is stuck lands the view back on the row.
+  const toggleOpen = (): void => {
+    userToggled.current = true;
+    const willClose = open;
+    setOpen((v) => !v);
+    if (willClose) {
+      requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
+    }
+  };
   const stateLabel = pending
     ? S.chat.approvalWaiting
     : state === "running"
@@ -330,61 +389,95 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           always on screen while one is pending — it names the tool, shows the arguments and
           carries the Allow/Deny buttons — so the row would only repeat it. The amber hourglass
           StatusIcon (labeled) marks the wait, at every breakpoint. */}
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => {
-          userToggled.current = true;
-          const willClose = open;
-          setOpen((v) => !v);
-          if (willClose) {
-            requestAnimationFrame(() => rootRef.current?.scrollIntoView({ block: "nearest" }));
-          }
-        }}
-        className={`${DISCLOSURE_ROW_STICKY_CLASS} ${DISCLOSURE_ROW_CLASS}`}
-      >
-        <StatusIcon state={state} label={stateLabel} />
-        <span className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300">
-          {item.name || S.chat.unknownTool}
-        </span>
-        {/* Human-readable subtitle: the model-written call description (command/subagent tools) or the file path (file tools). */}
-        {subtitle && (
-          <span className="min-w-0 shrink truncate text-xs text-gray-500 dark:text-gray-400">
-            {subtitle}
+      <div className={`${DISCLOSURE_ROW_STICKY_CLASS} ${DISCLOSURE_ROW_CLASS}`}>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={toggleOpen}
+          className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left"
+        >
+          <StatusIcon state={state} label={stateLabel} />
+          <span
+            title={nameTitle}
+            className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300"
+          >
+            {displayName || S.chat.unknownTool}
           </span>
-        )}
-        <span className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400">
-          {item.durationMs !== undefined ? (
-            humanizeDuration(item.durationMs)
-          ) : executing ? (
-            // Execution timer: argument-generation baseline + a live segment starting from approval grant (or from call completion if no approval was needed).
-            <LiveDuration sinceMs={item.approvalAtMs ?? item.callStartedAtMs} offsetMs={genMs} />
-          ) : pending ? (
-            // No ticking while waiting on approval: frozen at the settled argument-generation segment.
-            genMs > 0 ? (
-              humanizeDuration(genMs)
-            ) : null
-          ) : item.callStreaming ? (
-            // Generating arguments: live-ticking timer (falls back to a pulsing ellipsis when no start time is known).
-            item.argStartedAtMs !== undefined ? (
-              <LiveDuration sinceMs={item.argStartedAtMs} />
-            ) : (
-              <span className="animate-pulse">…</span>
-            )
-          ) : null}
-        </span>
-        {/* Right of the duration, on a call made with run_in_background: the same mark the
-            session list draws on the conversation, so a backgrounded call and the row that
-            counts it read as one thing. It sits after the duration rather than beside the
-            name so it never competes with the truncating subtitle, and the row's own status
-            icon keeps saying what the CALL did — this says where its work went. */}
-        {isBackgroundCall(item.argumentsText) && (
-          <BackgroundTasksMark label={S.chat.backgroundCall} size={ICON_SIZE.inlineGlyph} />
-        )}
-        <span className="min-w-0 flex-1" />
-        {/* Expand indicator on the right */}
-        <Chevron open={open} className="text-gray-400" />
-      </button>
+          {/* Human-readable subtitle: the model-written call description (command/subagent tools) or the file path (file tools). */}
+          {subtitle && (
+            <span className="min-w-0 shrink truncate text-xs text-gray-500 dark:text-gray-400">
+              {subtitle}
+            </span>
+          )}
+          <span className="shrink-0 font-mono text-xs text-gray-500 dark:text-gray-400">
+            {item.durationMs !== undefined ? (
+              humanizeDuration(item.durationMs)
+            ) : executing ? (
+              // Execution timer: argument-generation baseline + a live segment starting from approval grant (or from call completion if no approval was needed).
+              <LiveDuration sinceMs={item.approvalAtMs ?? item.callStartedAtMs} offsetMs={genMs} />
+            ) : pending ? (
+              // No ticking while waiting on approval: frozen at the settled argument-generation segment.
+              genMs > 0 ? (
+                humanizeDuration(genMs)
+              ) : null
+            ) : item.callStreaming ? (
+              // Generating arguments: live-ticking timer (falls back to a pulsing ellipsis when no start time is known).
+              item.argStartedAtMs !== undefined ? (
+                <LiveDuration sinceMs={item.argStartedAtMs} />
+              ) : (
+                <span className="animate-pulse">…</span>
+              )
+            ) : null}
+          </span>
+          {/* Right of the duration, on a call made with run_in_background or moved there:
+            a bracketed marker in the row's own mono type, the shape this row already used
+            for an outcome that needs a word. A glyph here would be the session list's
+            count-of-many mark doing duty for a single call, and it would say nothing to a
+            reader who cannot spend a hover on it. It sits after the duration rather than
+            beside the name so it never competes with the truncating subtitle, and the row's
+            own status icon keeps saying what the CALL did — this says where its work went. */}
+          {(isBackgroundCall(item.argumentsText) || isDetachedCall(item.output)) && (
+            <span className={`shrink-0 font-mono text-xs ${toneInk.muted}`}>
+              {S.chat.backgroundCall}
+            </span>
+          )}
+          <span className="min-w-0 flex-1" />
+        </button>
+        {/* "Send to background" while the call executes: the tool hands its work back as a
+          background task and the turn carries on. A sibling of the row button rather than a
+          child — a <button> cannot nest another — with the hover tint on the whole row, so the
+          two still read as one line. The app's inline text-action style: a real <button>
+          (it acts, it navigates nowhere) painted as a link. Text at the row's own size and
+          NO padding of its own, so a row carrying it measures exactly like one that does not
+          — an action that changed the row's height would break the rhythm of a list of calls.
+
+          No click guard: a second detach is a no-op on an already-fired controller, and once
+          the call closes the action unmounts on its own — which is also the feedback. */}
+        {showsBackgroundAction(item.name, item.argumentsText, executing, ctx.origin) &&
+          ctx.onSendToBackground && (
+            <button
+              type="button"
+              title={S.chat.sendToBackgroundHint}
+              onClick={() => void ctx.onSendToBackground?.(item.toolCallId)}
+              className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+            >
+              {S.chat.sendToBackground}
+            </button>
+          )}
+        {/* Expand indicator on the right; clicking it toggles too (it is its own button, so the
+          row's action above stays reachable). Named for what it DOES, the way every other
+          chevron toggle here is: naming it after the tool would give the row two buttons under
+          one name, which no row-scoped query could then tell apart. */}
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={open ? S.nav.collapseGroup : S.nav.expandGroup}
+          onClick={toggleOpen}
+          className="flex shrink-0 items-center self-stretch"
+        >
+          <Chevron open={open} className="text-gray-400" />
+        </button>
+      </div>
 
       {/* Pending approval: always visible regardless of collapsed state — shows the tool name and arguments so the user knows what they're approving. */}
       {pending && (
@@ -395,8 +488,11 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               this pending block unmounts and only the truncating header subtitle remains. At
               ≥sm the row stays one line (the desktop column is wide enough in practice). */}
           <div className="mb-2 flex items-start gap-2 sm:items-center">
-            <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300">
-              {item.name || S.chat.unknownTool}
+            <span
+              title={nameTitle}
+              className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300"
+            >
+              {displayName || S.chat.unknownTool}
             </span>
             <span className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-gray-600 sm:truncate dark:text-gray-400">
               {preview}

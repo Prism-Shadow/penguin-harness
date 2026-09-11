@@ -4,7 +4,9 @@
  * there is no Save button. The terminal keeps its own theme row because plenty of people
  * pin a dark terminal inside a light app; it follows the app unless pinned (see
  * TerminalThemeMode). The workbench launcher's row is here rather than with the chat's own
- * settings because it is the same kind of choice: whether a piece of chrome is drawn.
+ * settings because it is the same kind of choice: whether a piece of chrome is drawn. The
+ * tool short-name row is here for the same reason — it changes how a tool call is spelled
+ * on screen, never what runs.
  */
 import { useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
@@ -30,6 +32,8 @@ export function AppearanceSection() {
     setAccent,
     terminalMode,
     setTerminalMode,
+    toolAliases,
+    setToolAliases,
   } = useTheme();
   // The fan's "hide launcher" entry writes the same preference, so this row follows it.
   useSyncExternalStore(subscribeLauncherHidden, launcherHiddenVersion);
@@ -68,6 +72,9 @@ export function AppearanceSection() {
       </PrefRow>
       <PrefRow label={S.settings.launcher} info={S.settings.launcherInfo}>
         <Switch checked={launcherShown} onChange={(shown) => writeLauncherHidden(!shown)} />
+      </PrefRow>
+      <PrefRow label={S.settings.toolAliases} info={S.settings.toolAliasesInfo}>
+        <Switch checked={toolAliases} onChange={setToolAliases} />
       </PrefRow>
     </div>
   );

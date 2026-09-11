@@ -250,6 +250,60 @@ export interface ServerSettingsUpdateRequest {
 }
 
 /**
+ * The endpoints the proxy reachability probe covers. A fixed list: the route takes a provider
+ * id from this set and never a URL, so nothing a caller sends decides what the server fetches.
+ *
+ * GLM is two entries rather than one because it is two hosts: Z.AI serves the global endpoint
+ * and BigModel the mainland one, they are reached over different routes, and a proxy can carry
+ * one and not the other.
+ */
+export type ProxyProbeProvider =
+  "openai" | "anthropic" | "gemini" | "deepseek" | "zai" | "bigmodel";
+
+/**
+ * One probe's verdict. `reachable` means an HTTP answer arrived, whatever its status — a
+ * rejected credential still proves the whole path works. The rest are transport failures,
+ * named so a proxy that swallows connections can be told apart from one whose address does
+ * not resolve: `timeout` (no answer within the probe's window), `dns` (the name never
+ * became an address), `refused` (the connection was refused at the TCP level), `tls` (the
+ * handshake or the certificate failed) and `network` (anything else).
+ */
+export type ProxyProbeOutcome = "reachable" | "timeout" | "dns" | "refused" | "tls" | "network";
+
+/**
+ * One probe target. Served before any probe runs so the page can list what it is about to
+ * request — the URLs are the concrete answer to "what does no API key mean here".
+ */
+export interface ProxyProbeTargetDto {
+  provider: ProxyProbeProvider;
+  /** The exact URL a probe requests, unauthenticated. */
+  url: string;
+}
+
+/** What the probe endpoint would request, without requesting it. */
+export interface ProxyProbeTargetsResponse {
+  targets: ProxyProbeTargetDto[];
+}
+
+/** One provider's probe result. */
+export interface ProxyProbeDto extends ProxyProbeTargetDto {
+  outcome: ProxyProbeOutcome;
+  /** Wall time in milliseconds until the answer's headers arrived, or until the attempt failed. */
+  ms: number;
+  /** The HTTP status, present only when `outcome` is `reachable`. */
+  status?: number;
+}
+
+/**
+ * One probe's answer. The route measures a single target per call: the page asks for all of
+ * them at once and fills each row the moment its own answer lands, so one black-holed host
+ * cannot hold every other result behind its timeout.
+ */
+export interface ProxyProbeResponse {
+  probe: ProxyProbeDto;
+}
+
+/**
  * One draft-screen shortcut: a prompt the user wrote, filed under a name they chose. Clicking it
  * fills the composer exactly like a built-in example does, and sends nothing. Deliberately holds
  * no Skill list — a saved prompt is not authored against a known Skill catalog the way a shipped
@@ -388,7 +442,12 @@ export interface ModelInfo {
   provider: string;
   /** Upstream model id (the request id actually sent to AgentHub); paired with `provider` forms the entry's unique key. */
   modelId: string;
-  /** Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog; falls back to unset (frontend shows modelId). */
+  /**
+   * Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog;
+   * falls back to unset (frontend shows modelId). The empty string is reported as such and
+   * means the user cleared the name on a model the catalog does name — render it as modelId,
+   * and send it back unchanged, since absent would ask for the catalog's name instead.
+   */
   displayName?: string;
   contextWindow?: number;
   /** AgentHub client protocol (`openai-chat`, `openai-responses`, etc.); defaults to AgentHub inferring it from modelId. */
@@ -449,7 +508,11 @@ export interface ModelUpdateEntry {
   provider: string;
   /** Upstream model id (sent to AgentHub as-is). */
   modelId: string;
-  /** Display name; the server does not persist it when it matches the built-in catalog (keeps the config file clean). */
+  /**
+   * Display name; the server does not persist it when it matches the built-in catalog (keeps
+   * the config file clean). Absent and empty are different requests: absent inherits whatever
+   * the catalog calls the model, the empty string records that the user cleared the name.
+   */
   displayName?: string;
   /**
    * The pair reference this entry was renamed from (provided when either the group or the

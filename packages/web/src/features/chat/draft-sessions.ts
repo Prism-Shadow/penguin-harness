@@ -20,6 +20,7 @@
  */
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
+import { randomHex } from "../../lib/random-id";
 import { clearDraft, draftFromUnknown, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache, DraftStorage } from "./draft-cache";
 
@@ -126,7 +127,7 @@ export function useDraftSessions(
   );
 }
 
-const randomDraftId = (): string => `draft-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
+const randomDraftId = (): string => `draft-${randomHex(8)}`;
 
 /**
  * Moves the ACTIVE new-chat draft into the parked list when it holds typed text;

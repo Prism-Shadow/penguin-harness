@@ -1118,6 +1118,31 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
+  // Hand one EXECUTING tool call back as a background task (the tool card's button), so the
+  // turn can close and the conversation carry on. Addressed by tool_call_id, like the
+  // approval route — the only handle the frontend has on a single call.
+  //
+  // 404 when nothing with that id is executing: unknown, already finished, or the runtime is
+  // gone. 409 when the call is real and running but its tool has no background form — 404
+  // would deny a call the user can see on screen, and 400 would blame a request that is
+  // well-formed; the conflict is with what the tool IS, the same shape as refusing to remove
+  // a running process.
+  app.post("/:sessionId/tool-calls/:toolCallId/background", (c) => {
+    const row = resolveSession(c);
+    const result = deps.manager.detachToolCall(row.sessionId, pathParam(c, "toolCallId"));
+    if (result === "not_detachable") {
+      throw new HttpError(
+        409,
+        "tool_not_detachable",
+        "This tool has no background form; it cannot be moved to the background.",
+      );
+    }
+    if (result === "not_running") {
+      throw new HttpError(404, "tool_call_not_found", "This tool call is no longer running.");
+    }
+    return c.body(null, 204);
+  });
+
   app.post("/:sessionId/abort", (c) => {
     const row = resolveSession(c);
     const aborted = deps.manager.abortTask(row.sessionId);

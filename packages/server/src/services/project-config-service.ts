@@ -849,8 +849,11 @@ export class ProjectConfigService {
         // catalog. An empty string is not the same as an absent field — absent means "inherit
         // whatever the catalog calls this model", empty means the user cleared the name on a
         // model the catalog does name, and inheriting there would hand the name straight back.
+        // The distinction is reported rather than flattened, because the whole table comes back
+        // on the next PUT: a cleared name that arrived as "no name" would be written back as
+        // "inherit" and undo itself. Clients render the empty string as the model id.
         const displayName =
-          m.display_name === "" ? undefined : (optStr(m.display_name) ?? cat?.displayName);
+          m.display_name === "" ? "" : (optStr(m.display_name) ?? cat?.displayName);
         // credential is inlined on the entry: a credential block is emitted if either api_key or base_url is present.
         const apiKey = optStr(m.api_key);
         const credBaseUrl = optStr(m.base_url);
@@ -969,10 +972,15 @@ export class ProjectConfigService {
       // catalog (looked up by the paired reference)** — preset models keep the
       // config clean, only user-edited ones (including those not found in the
       // catalog) get written into the TOML.
+      //
+      // An ABSENT name and an EMPTY one are different requests, and a client that confuses
+      // them destroys a name it never meant to touch: absent means "inherit whatever the
+      // catalog calls this model" (nothing is written, so the read path falls back to the
+      // catalog), empty means "the user cleared it".
       const catNew = catalogEntryFor(entry.provider, entry.modelId);
       if (entry.displayName && entry.displayName !== catNew?.displayName) {
         next.display_name = entry.displayName;
-      } else if (!entry.displayName && catNew?.displayName !== undefined) {
+      } else if (entry.displayName === "" && catNew?.displayName !== undefined) {
         // Cleared on a model the catalog names. Writing nothing would leave the field absent,
         // which reads as "inherit" — so the name the user just deleted would come back on the
         // next load. The empty string is what records the deletion. Only reached for a catalog

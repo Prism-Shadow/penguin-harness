@@ -68,7 +68,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | --- | --- | --- |
 | POST | /api/auth/login | Log in: `{userId, password}` → `{user}` |
 | POST | /api/auth/logout | Log out, returns 204 |
-| GET | /api/auth/claim?token=… | Redeem a sign-in link (first-login, or the desktop shell's one-shot token): sets the cookie, redirects to `/` |
+| GET | /api/auth/claim?token=… | Redeem a sign-in link (first-login, or the desktop shell's one-shot token): sets the cookie, redirects to `/`. An invalid or already-used link redirects to `/login?claimFailed=…` instead, where the Web App says how to get a working one |
 | GET | /api/install | Public: `{installId}` — an opaque id identifying the data root being served (`<root>/install-id`), minted the first time the root is used. The Web App compares it against the one it stored and clears the browser-side UI state that references server entities when it differs, so replacing the data root no longer leaves the old Workspace, drafts and pins in place. `null` means the server could not establish one; clients must then change nothing. |
 | GET | /api/me | Current user info |
 | PUT | /api/me/password | Change password: `{oldPassword, newPassword}`; a desktop or first-login session may omit `oldPassword` — its current password is random and was never shown |
@@ -92,6 +92,8 @@ In desktop mode (the server spawned by the desktop app) the whole surface answer
 | --- | --- | --- |
 | GET | /api/admin/settings | Server-global settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
 | PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
+| GET | /api/admin/settings/proxy-probe | The reachability probe's targets: `{targets: [{provider, url}]}` (no request is made) |
+| POST | /api/admin/settings/proxy-probe/:provider | Probe one of those targets over the server's outbound path, no credential sent: `{probe: {provider, url, outcome, ms, status?}}`; `outcome` is `reachable` for any HTTP answer, else `timeout` / `dns` / `refused` / `tls` / `network`; 404 `probe_target_not_found` for an id outside the list |
 
 The proxy settings are two independent switches sharing one optional explicit address; changes take effect for newly initiated connections/spawns immediately — no restart:
 
@@ -278,6 +280,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | DELETE | /steer/:steerId | Recall an undelivered steering message (ids ride `task_state`'s `pendingSteering`): withdraws it from the queue → 200 with its original content `{text, images, files}` (files read back from the scratchpad as data URLs, their disk copies deleted) so the composer can restore it for editing; 409 `not_pending` once it was delivered to the model |
 | DELETE | /follow-ups/:followUpId | Recall a queued follow-up task (ids ride `task_state`'s `pendingFollowUps`): removes it before it auto-starts → 200 with its original content `{text, images, files}` — every queued follow-up carries that content, however it was queued; 409 `follow_up_started` once it already started |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
+| POST | /tool-calls/:toolCallId/background | Hand one **executing** tool call back as a background task, so the turn can close and the conversation carries on: 204. The call ends `completed` with its `process_id` / `subagent_id`, nothing is killed, and the completion arrives later as the usual background-task notice. 404 `tool_call_not_found` when nothing with that id is executing (unknown, already finished, or the runtime is gone), 409 `tool_not_detachable` when the call is running but its tool has no background form (only `exec_command` and `run_subagent` have one) |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /retry-now | "Retry now" on the reconnect countdown: skips the in-progress backoff wait, firing the next retry immediately (attempt counter unchanged) → 200 `{skipped}` — `skipped:false` is the benign "no wait in progress" case, never an error |
 | POST | /compact | Trigger context compaction: 202; 409 when there is nothing to compact, the reason carried by the code — `compaction_not_configured` (this Agent has no compaction configured), `nothing_to_compact` (the context has no completed conversation turn yet), `already_compacted` (nothing new was said since the last compaction). A Session resumed after a server restart reports availability from its Trace, so an existing conversation stays compactable without running a Task first |
