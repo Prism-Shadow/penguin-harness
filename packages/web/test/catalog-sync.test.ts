@@ -43,6 +43,15 @@ function makeRow(partial: Partial<RowState> & Pick<RowState, "provider" | "model
 }
 
 /**
+ * The shipped catalog's name for a pair, read rather than pinned: the fixtures below stand in
+ * for catalog entries on every other field, and a rename in `model-catalog.ts` has no business
+ * breaking a test about the merge.
+ */
+function catalogName(provider: string, modelId: string): string {
+  return catalogEntryFor(provider, modelId)!.displayName;
+}
+
+/**
  * A row matching the catalog on every field a sync owns, the display name included: a saved
  * preset row always carries one, because the GET fills it in from the catalog when the config
  * file does not. Overrides make the one field under test the only thing out of line.
@@ -51,7 +60,7 @@ function inSyncRow(extra: Partial<RowState> = {}): RowState {
   return makeRow({
     provider: "deepseek",
     modelId: "deepseek-v4-pro",
-    displayName: "DeepSeek V4 Pro",
+    displayName: catalogName("deepseek", "deepseek-v4-pro"),
     vision: false,
     contextWindow: "1000000",
     cacheRead: "0.003571",
@@ -108,8 +117,11 @@ describe("syncRowsWithCatalog", () => {
     // The catalog's name travels with the new row: a preset entry carries none (the persisted
     // shape only stores a name that differs from the catalog), so a row built without it would
     // reach the PUT nameless and be saved as a model whose name the user cleared.
-    expect(glm.displayName).toBe("GLM-5.2");
-    // A preset entry the catalog does not name gets none, and falls back to its model id.
+    expect(glm.displayName).toBe(catalogName("qwen-token-plan", "glm-5.2"));
+    // The lookup is against the shipped catalog, not against this list: `qwen3.8-max-preview`
+    // left the Token Plan lineup, so the pair resolves to nothing and the row stays nameless
+    // (falling back to its model id) rather than picking up an empty name.
+    expect(catalogEntryFor("qwen-token-plan", "qwen3.8-max-preview")).toBeUndefined();
     expect(rows.find((r) => r.modelId === "qwen3.8-max-preview")!.displayName).toBeUndefined();
   });
 
@@ -131,7 +143,7 @@ describe("syncRowsWithCatalog", () => {
     expect(updated).toBe(1);
     const row = rows[0]!;
     expect(row.contextWindow).toBe("1000000");
-    expect(row.displayName).toBe("DeepSeek V4 Pro");
+    expect(row.displayName).toBe(catalogName("deepseek", "deepseek-v4-pro"));
     expect(row.vision).toBe(false);
     expect(row.cacheRead).toBe("0.003571");
     expect(row.baseUrl).toBe(""); // catalog has no base_url; differs from originalBaseUrl -> cleared on PUT
@@ -155,11 +167,11 @@ describe("syncRowsWithCatalog", () => {
     // raw model id until something puts the catalog's name back, and this is that something.
     const blank = syncRowsWithCatalog([inSyncRow({ displayName: "" })], PRESET);
     expect(blank.updated).toBe(1);
-    expect(blank.rows[0]!.displayName).toBe("DeepSeek V4 Pro");
+    expect(blank.rows[0]!.displayName).toBe(catalogName("deepseek", "deepseek-v4-pro"));
     // Same for a row that never had the field at all.
     const absent = syncRowsWithCatalog([inSyncRow({ displayName: undefined })], PRESET);
     expect(absent.updated).toBe(1);
-    expect(absent.rows[0]!.displayName).toBe("DeepSeek V4 Pro");
+    expect(absent.rows[0]!.displayName).toBe(catalogName("deepseek", "deepseek-v4-pro"));
     // A name that is there stays: unlike pricing or the context window, it may be the user's
     // own rename, and the catalog has no claim to it.
     const renamed = inSyncRow({ displayName: "My DeepSeek" });

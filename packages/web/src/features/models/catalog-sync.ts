@@ -36,31 +36,29 @@ function presetFields(p: PresetEntry) {
 }
 
 /**
- * The catalog's name for a preset entry, or "" when the catalog does not name it.
- *
- * `presetModelEntries` emits the PERSISTED entry shape, whose `display_name` is only written
- * when it differs from the catalog, so a preset entry never carries the name: it is looked up
- * here, from the catalog that produced the entry.
- */
-function catalogDisplayName(p: PresetEntry): string {
-  return catalogEntryFor(p.provider, p.model_id)?.displayName ?? "";
-}
-
-/**
  * The name a sync writes onto an entry that currently shows `current`, or undefined to leave it
- * alone. Fill-only, unlike every field in `presetFields`: a stored name may be the user's own
- * rename, which the catalog has no claim to, while a blank one (never set, or cleared on disk
- * and reported as "") leaves the row labelled by its raw model id and is worth repairing. The
- * cost of that trade is that a deliberately cleared name comes back on the next sync.
+ * alone (`undefined` for `current` is a brand-new row, which shows nothing yet).
+ *
+ * Fill-only, unlike every field in `presetFields`: a stored name may be the user's own rename,
+ * which the catalog has no claim to, while a blank one (never set, or cleared on disk and
+ * reported as "") leaves the row labelled by its raw model id and is worth repairing. The cost
+ * of that trade is that a deliberately cleared name comes back on the next sync.
+ *
+ * The name comes from the catalog rather than from `p`: `presetModelEntries` emits the
+ * PERSISTED entry shape, whose `display_name` is only written when it differs from the
+ * catalog, so a preset entry never carries one. Every catalog entry is named
+ * (`ModelCatalogEntry.displayName` is required), so the undefined result means the pair is not
+ * in the catalog at all — unreachable for the default preset list, which the catalog produces,
+ * and the answer for a caller that passes a list of its own.
  */
 function displayNameFill(p: PresetEntry, current: string | undefined): string | undefined {
   if (current?.trim()) return undefined;
-  return catalogDisplayName(p) || undefined;
+  return catalogEntryFor(p.provider, p.model_id)?.displayName;
 }
 
 /** A brand-new row for a catalog entry not configured locally (original: null -> added on PUT). */
 function presetToRow(p: PresetEntry): RowState {
-  const displayName = catalogDisplayName(p);
+  const displayName = displayNameFill(p, undefined);
   return {
     provider: p.provider,
     modelId: p.model_id,
@@ -69,8 +67,8 @@ function presetToRow(p: PresetEntry): RowState {
     // The catalog's name, looked up rather than left for the server to infer: the merged rows
     // are what the page renders and what it submits, so a row that shows a name must carry one.
     // Deliberately outside presetFields, which the catalog owns outright — on an existing row
-    // the name is fill-only (see displayNameFill).
-    ...(displayName ? { displayName } : {}),
+    // the same lookup is fill-only (see displayNameFill).
+    ...(displayName !== undefined ? { displayName } : {}),
     // The output cap and fast mode are user-owned, not catalog-owned (deliberately outside
     // presetFields, so a sync never clobbers them on existing rows): fresh rows inherit the
     // Agent setting / default to off.
