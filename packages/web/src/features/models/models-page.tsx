@@ -29,8 +29,16 @@
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
 import type {
   CredentialInfo,
   ModelProtocolDetectRequest,
@@ -2141,6 +2149,59 @@ const CONFIRM_BODY: Record<DialogAction, (name: string) => string> = {
   remove: (n) => S.models.confirmDelete(n),
 };
 
+/**
+ * Live width of the currency symbol and the "/M tok" unit drawn inside the price inputs, so
+ * the inputs can reserve exactly the room those two actually occupy. Both are rendered text:
+ * their width follows the resolved font, the root font size (the appearance setting scales it)
+ * and, for the symbol, the selected currency — none of which is known where the padding is
+ * written, which is why it is measured rather than typed. The affixes are absolutely
+ * positioned, so their size does not depend on the padding derived from it. One pair serves
+ * all three price fields; they share one symbol and one unit string.
+ */
+function useAffixWidths(): {
+  prefixRef: RefObject<HTMLSpanElement | null>;
+  suffixRef: RefObject<HTMLSpanElement | null>;
+  prefixWidth: number;
+  suffixWidth: number;
+} {
+  const prefixRef = useRef<HTMLSpanElement>(null);
+  const suffixRef = useRef<HTMLSpanElement>(null);
+  const [widths, setWidths] = useState({ prefix: 0, suffix: 0 });
+  useLayoutEffect(() => {
+    const prefix = prefixRef.current;
+    const suffix = suffixRef.current;
+    if (!prefix || !suffix) return;
+    // The observer reports the box LAYOUT size, which is what has to be reserved. A rect read
+    // off the element would be wrong here: the dialog pops in under `scale(0.96)`, so a
+    // measurement taken while that animation runs comes back 4% short, and a transform never
+    // notifies an observer that would correct it. Delivery is after layout and before paint,
+    // so the unmeasured state is not painted; a currency switch, a language switch and a
+    // font-size change all resize the affixes and re-run this.
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.borderBoxSize[0]?.inlineSize ?? entry.contentRect.width;
+        setWidths((prev) =>
+          entry.target === prefix ? { ...prev, prefix: width } : { ...prev, suffix: width },
+        );
+      }
+    });
+    ro.observe(prefix);
+    ro.observe(suffix);
+    return () => ro.disconnect();
+  }, []);
+  return { prefixRef, suffixRef, prefixWidth: widths.prefix, suffixWidth: widths.suffix };
+}
+
+/**
+ * Padding that clears an affix of the given rendered width: the 0.5rem the affix is inset
+ * from the input edge (`left-2` / `right-2`), the affix itself, and 0.25rem of separation so
+ * the value does not read as one run of text with it. An unmeasured width (0) still yields a
+ * padding no smaller than the control's own, so nothing lands outside the box.
+ */
+function affixPadding(width: number): string {
+  return `calc(${width}px + 0.75rem)`;
+}
+
 function ModelDialog({
   projectId,
   row,
@@ -2253,6 +2314,8 @@ function ModelDialog({
   const [visionDetecting, setVisionDetecting] = useState(false);
   /** Single-flight guard for the vision probe: it bills the user, so never twice at once. */
   const visionInFlight = useRef<Promise<void> | null>(null);
+  /** Room the price inputs must leave for the currency symbol and the unit (see useAffixWidths). */
+  const { prefixRef, suffixRef, prefixWidth, suffixWidth } = useAffixWidths();
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
 
@@ -3174,11 +3237,16 @@ function ModelDialog({
               ["cacheWrite", S.models.priceCacheWrite, form.cacheWrite],
               ["output", S.models.priceOutput, form.output],
             ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
-          ).map(([key, label, value]) => (
+          ).map(([key, label, value], i) => (
             <label key={key} className="block">
               <FieldLabel>{label}</FieldLabel>
               <span className="relative block">
-                <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400">
+                <span
+                  // The three fields draw the same symbol and the same unit at the same size,
+                  // so only the first pair is measured and every field reserves from it.
+                  ref={i === 0 ? prefixRef : undefined}
+                  className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400"
+                >
                   {CURRENCY_SYMBOL[currency]}
                 </span>
                 <Input
@@ -3188,9 +3256,16 @@ function ModelDialog({
                   disabled={!canEdit}
                   invalid={Boolean(fieldErrors[key])}
                   onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
-                  className="pl-4 pr-11 text-right font-mono"
+                  className="text-right font-mono"
+                  style={{
+                    paddingLeft: affixPadding(prefixWidth),
+                    paddingRight: affixPadding(suffixWidth),
+                  }}
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
+                <span
+                  ref={i === 0 ? suffixRef : undefined}
+                  className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400"
+                >
                   {S.models.priceUnitShort}
                 </span>
               </span>
