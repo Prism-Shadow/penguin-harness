@@ -30,8 +30,12 @@ wrapping, and no box around either.
   The text stays selected afterwards: handing a quote to the composer focuses the composer, and
   focusing a text field drops whatever the document had highlighted, so the range is put back.
 - The source view numbers its lines and lost its border, its language label and its header bar —
-  it presents the text the way the editor does. Copy moved to the preview header, beside Edit,
-  Open in new tab and Download.
+  it presents the text the way the editor does. The toggle above it now reads **Preview / Source**:
+  it names what you are looking at rather than how it was produced.
+- Copy and Edit float over the top-right of the file itself. Both act on the body under them,
+  while the title row names the file and carries what leaves it — the view toggle, wrap, the
+  external link and download. They are always drawn rather than revealed on hover: a hover-only
+  control is no control at all on a touch screen, and Edit has no other way in from here.
 - The editor numbers its lines and highlights them too: it is now a transparent-text textarea
   over the same code surface the source view shows, stacked in one scroll container so the two
   layers cannot drift apart. Files over 32KB are edited unhighlighted — the editor re-highlights

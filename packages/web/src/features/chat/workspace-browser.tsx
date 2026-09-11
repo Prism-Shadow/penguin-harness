@@ -1687,6 +1687,56 @@ export function WorkspaceBrowser({
     </div>
   );
 
+  /**
+   * Copy and Edit, floated over the top-right of the file rather than parked in the title row.
+   * Both act on the body underneath them — the text on screen — while the row above names the
+   * file and carries what leaves it: the view toggle, wrap, the external link and download. The
+   * pill keeps its own ground so two glyphs stay legible over whatever is beneath them, and it
+   * sits clear of the reserved scrollbar gutter.
+   *
+   * Always drawn, never hover-revealed: a hover-only control is no control at all on a touch
+   * screen, and Edit has no other way in from here.
+   */
+  const previewFloatingActions = preview !== null &&
+    (canEdit || (sourceShown && preview.content !== undefined)) && (
+      <div className="absolute right-4 top-2.5 z-10 flex items-center gap-0.5 rounded-md border border-gray-200 bg-white/85 p-0.5 shadow-sm backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/85">
+        {/* Copies the text that was read, which is all of the file unless the preview was cut off. */}
+        {sourceShown && preview.content !== undefined && (
+          <>
+            <Tooltip
+              label={copied ? S.common.copied : S.chat.copyCode}
+              placement="bottom"
+              className="shrink-0"
+            >
+              <button
+                type="button"
+                aria-label={S.chat.copyCode}
+                onClick={() => flashCopy(preview.content ?? "")}
+                className={iconActionClass}
+              >
+                <CopyCheckGlyph copied={copied} size={ICON_SIZE.iconButton} />
+              </button>
+            </Tooltip>
+            {/* Sibling, not a child: the button's accessible name stays the label, and the
+                glyph swap is silent without this region. */}
+            <CopiedStatus copied={copied} />
+          </>
+        )}
+        {canEdit && (
+          <Tooltip label={S.common.edit} placement="bottom" className="shrink-0">
+            <button
+              type="button"
+              aria-label={S.common.edit}
+              onClick={() => void startEdit()}
+              className={iconActionClass}
+            >
+              <GlyphIcon d={FILE_EDIT_ICON} size={ICON_SIZE.iconButton} />
+            </button>
+          </Tooltip>
+        )}
+      </div>
+    );
+
   const previewBody = (p: Preview) => {
     if (editor !== null && editor.path === p.path) {
       return (
@@ -1704,202 +1754,210 @@ export function WorkspaceBrowser({
     const selection = menuSelection;
     return (
       <>
-        {/* scrollbar-gutter: an SVG carries no pixel size, so its height is whatever its width
+        {/* The floating actions' containing block. A positioned ancestor is required here and
+            not optional: an absolute box inside a `static` scroller escapes to the initial
+            containing block and gives the whole shell a second scrollbar (styles.css). */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {/* scrollbar-gutter: an SVG carries no pixel size, so its height is whatever its width
           divides to — which makes the content height a function of the scrollbar's presence.
           Without a reserved gutter that closes a loop: content overflows -> scrollbar takes
           width -> the image shrinks -> content fits -> scrollbar goes -> repeat, forever, as
           a visible shake. Reserving it always breaks the feedback path (and is inert where
           scrollbars are overlays). */}
-        <div
-          ref={(el) => {
-            previewBodyRef.current = el;
-            // The same element is the menu's keyboard anchor and its scroll owner: a scroll of
-            // this box moves the point the panel hangs off.
-            previewMenu.rowRef(el);
-          }}
-          onContextMenu={openPreviewMenu}
-          onKeyDown={previewMenuKeyDown}
-          onPointerDown={(e) => {
-            // Only the press-and-hold path can open the menu from here, and only it is worth
-            // walking the rendered lines for: an ordinary click would pay that on every click.
-            if (isLongPressPointer(e.pointerType)) captureMenuSelection();
-            previewMenu.rowProps.onPointerDown(e);
-          }}
-          onPointerMove={previewMenu.rowProps.onPointerMove}
-          onPointerUp={previewMenu.rowProps.onPointerUp}
-          onPointerCancel={previewMenu.rowProps.onPointerCancel}
-          onClickCapture={previewMenuClickCapture}
-          // Focusable only programmatically, and only so Escape has somewhere to hand focus
-          // back to: the menu is anchored at this box, and a div with no tabindex would take
-          // none, leaving focus on the body when the panel it was in unmounts. -1 keeps it out
-          // of the tab order, and the outline is suppressed because the focus is a handover,
-          // not a destination the user chose.
-          tabIndex={-1}
-          // The source view brings its own padding, and has to: the editor's textarea lies on
-          // top of it, and only padding the two layers share keeps the typed text over the
-          // highlighted text.
-          className={`min-h-0 flex-1 overflow-auto outline-none [scrollbar-gutter:stable] ${
-            sourceShown && preview?.content !== undefined ? "" : "p-3"
-          }`}
-        >
-          {p.kind === "image" ? (
-            // Keyed on the nonce like the isolated HTML iframe: the src alone is unchanged
-            // when the same file is re-read, so only a remount re-requests the bytes the
-            // Agent just rewrote.
-            <ZoomableImage
-              key={p.nonce}
-              src={api.workspaceFileUrl(sessionId, p.path)}
-              alt={p.name}
-              className="max-w-full rounded-md border border-gray-200 dark:border-gray-800"
-            />
-          ) : p.kind === "pdf" ? (
-            <iframe
-              key={p.nonce}
-              src={api.workspaceFileUrl(sessionId, p.path)}
-              title={p.name}
-              className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 dark:border-gray-800"
-            />
-          ) : p.kind === "html" && richView === "rendered" ? (
-            previewIsolated ? (
-              // Same URL and serving path as "open in new tab": the app-origin redirect mints
-              // a token and 302s to the separate preview origin, where the document has a real
-              // base URL — relative subresources (<img src="foo.png">, app.js, style.css)
-              // resolve and load, and storage works, exactly as in the new-page preview.
-              // allow-same-origin is safe here precisely because the document IS on a separate
-              // origin: it grants the preview origin's identity, not the app's, so the frame
-              // still can't reach the app's cookies or DOM. Popups stay sandboxed (no
-              // allow-popups-to-escape-sandbox); allow-downloads keeps download links inside
-              // the page working, as they do in the new tab. The key remounts the iframe on
-              // every previewPath call — its src alone wouldn't change when the same file is
-              // re-opened after the Agent rewrote it.
+          <div
+            ref={(el) => {
+              previewBodyRef.current = el;
+              // The same element is the menu's keyboard anchor and its scroll owner: a scroll of
+              // this box moves the point the panel hangs off.
+              previewMenu.rowRef(el);
+            }}
+            onContextMenu={openPreviewMenu}
+            onKeyDown={previewMenuKeyDown}
+            onPointerDown={(e) => {
+              // Only the press-and-hold path can open the menu from here, and only it is worth
+              // walking the rendered lines for: an ordinary click would pay that on every click.
+              if (isLongPressPointer(e.pointerType)) captureMenuSelection();
+              previewMenu.rowProps.onPointerDown(e);
+            }}
+            onPointerMove={previewMenu.rowProps.onPointerMove}
+            onPointerUp={previewMenu.rowProps.onPointerUp}
+            onPointerCancel={previewMenu.rowProps.onPointerCancel}
+            onClickCapture={previewMenuClickCapture}
+            // Focusable only programmatically, and only so Escape has somewhere to hand focus
+            // back to: the menu is anchored at this box, and a div with no tabindex would take
+            // none, leaving focus on the body when the panel it was in unmounts. -1 keeps it out
+            // of the tab order, and the outline is suppressed because the focus is a handover,
+            // not a destination the user chose.
+            tabIndex={-1}
+            // The source view brings its own padding, and has to: the editor's textarea lies on
+            // top of it, and only padding the two layers share keeps the typed text over the
+            // highlighted text.
+            className={`min-h-0 flex-1 overflow-auto outline-none [scrollbar-gutter:stable] ${
+              sourceShown && preview?.content !== undefined ? "" : "p-3"
+            }`}
+          >
+            {p.kind === "image" ? (
+              // Keyed on the nonce like the isolated HTML iframe: the src alone is unchanged
+              // when the same file is re-read, so only a remount re-requests the bytes the
+              // Agent just rewrote.
+              <ZoomableImage
+                key={p.nonce}
+                src={api.workspaceFileUrl(sessionId, p.path)}
+                alt={p.name}
+                className="max-w-full rounded-md border border-gray-200 dark:border-gray-800"
+              />
+            ) : p.kind === "pdf" ? (
               <iframe
                 key={p.nonce}
-                src={api.workspaceFilePreviewUrl(sessionId, p.path)}
+                src={api.workspaceFileUrl(sessionId, p.path)}
                 title={p.name}
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
-                className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
+                className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 dark:border-gray-800"
               />
-            ) : p.content === undefined ? (
-              // Only reachable when previewIsolated flipped to false after an isolated
-              // preview mounted without content: the lazy source effect is already fetching
-              // it, and the srcDoc fallback renders once it lands.
-              sourceError !== null ? (
-                <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
+            ) : p.kind === "html" && richView === "rendered" ? (
+              previewIsolated ? (
+                // Same URL and serving path as "open in new tab": the app-origin redirect mints
+                // a token and 302s to the separate preview origin, where the document has a real
+                // base URL — relative subresources (<img src="foo.png">, app.js, style.css)
+                // resolve and load, and storage works, exactly as in the new-page preview.
+                // allow-same-origin is safe here precisely because the document IS on a separate
+                // origin: it grants the preview origin's identity, not the app's, so the frame
+                // still can't reach the app's cookies or DOM. Popups stay sandboxed (no
+                // allow-popups-to-escape-sandbox); allow-downloads keeps download links inside
+                // the page working, as they do in the new tab. The key remounts the iframe on
+                // every previewPath call — its src alone wouldn't change when the same file is
+                // re-opened after the Agent rewrote it.
+                <iframe
+                  key={p.nonce}
+                  src={api.workspaceFilePreviewUrl(sessionId, p.path)}
+                  title={p.name}
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+                  className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
+                />
+              ) : p.content === undefined ? (
+                // Only reachable when previewIsolated flipped to false after an isolated
+                // preview mounted without content: the lazy source effect is already fetching
+                // it, and the srcDoc fallback renders once it lands.
+                sourceError !== null ? (
+                  <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
+                ) : (
+                  <SkeletonList rows={6} />
+                )
               ) : (
-                <SkeletonList rows={6} />
+                // No separate preview origin: srcDoc fallback. sandbox allows scripts but
+                // **without allow-same-origin**: the iframe has an opaque origin, so scripts can
+                // run to fully render the page, yet can't read the app's same-origin cookies /
+                // DOM (an XSS defense). The storage shim is injected to avoid a SecurityError
+                // when a script accesses localStorage from an opaque origin. srcdoc has no real
+                // base URL, so relative subresources cannot resolve here — that's what the
+                // isolated branch above fixes.
+                <iframe
+                  srcDoc={withStorageShim(p.content)}
+                  title={p.name}
+                  sandbox="allow-scripts"
+                  className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
+                />
               )
-            ) : (
-              // No separate preview origin: srcDoc fallback. sandbox allows scripts but
-              // **without allow-same-origin**: the iframe has an opaque origin, so scripts can
-              // run to fully render the page, yet can't read the app's same-origin cookies /
-              // DOM (an XSS defense). The storage shim is injected to avoid a SecurityError
-              // when a script accesses localStorage from an opaque origin. srcdoc has no real
-              // base URL, so relative subresources cannot resolve here — that's what the
-              // isolated branch above fixes.
-              <iframe
-                srcDoc={withStorageShim(p.content)}
-                title={p.name}
-                sandbox="allow-scripts"
-                className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
-              />
-            )
-          ) : p.kind === "md" && richView === "rendered" ? (
-            // Markdown's default rendered view: uses the same md-body layout as message bodies
-            // (ReactMarkdown outputs pure static HTML with no script execution surface, so no iframe sandbox is needed).
-            <>
-              <div className="md-body text-base leading-relaxed text-gray-800 dark:text-gray-100">
-                <ReactMarkdown
-                  remarkPlugins={REMARK_PLUGINS}
-                  rehypePlugins={REHYPE_PLUGINS}
-                  components={{
-                    // Relative images are resolved against the md file's directory into the file API (otherwise resolving against the app's origin would always 404).
-                    // `v` is the read nonce, not a cache-buster for its own sake: a
-                    // Workspace image is rewritten under the same path, and without it a
-                    // re-read of the Markdown would keep painting the previous bytes from
-                    // the browser's image cache.
-                    img: ({ src, alt }) => (
-                      <img
-                        src={
-                          typeof src === "string" && !EXTERNAL_REF_RE.test(src)
-                            ? `${api.workspaceFileUrl(
-                                sessionId,
-                                resolveRelative(parentDir(p.path), src),
-                              )}&v=${p.nonce}`
-                            : src
+            ) : p.kind === "md" && richView === "rendered" ? (
+              // Markdown's default rendered view: uses the same md-body layout as message bodies
+              // (ReactMarkdown outputs pure static HTML with no script execution surface, so no iframe sandbox is needed).
+              <>
+                <div className="md-body text-base leading-relaxed text-gray-800 dark:text-gray-100">
+                  <ReactMarkdown
+                    remarkPlugins={REMARK_PLUGINS}
+                    rehypePlugins={REHYPE_PLUGINS}
+                    components={{
+                      // Relative images are resolved against the md file's directory into the file API (otherwise resolving against the app's origin would always 404).
+                      // `v` is the read nonce, not a cache-buster for its own sake: a
+                      // Workspace image is rewritten under the same path, and without it a
+                      // re-read of the Markdown would keep painting the previous bytes from
+                      // the browser's image cache.
+                      img: ({ src, alt }) => (
+                        <img
+                          src={
+                            typeof src === "string" && !EXTERNAL_REF_RE.test(src)
+                              ? `${api.workspaceFileUrl(
+                                  sessionId,
+                                  resolveRelative(parentDir(p.path), src),
+                                )}&v=${p.nonce}`
+                              : src
+                          }
+                          alt={alt ?? ""}
+                          loading="lazy"
+                          className="max-w-full"
+                        />
+                      ),
+                      // External links open in a new tab; relative links point to a Workspace
+                      // file, clicking opens it in the tree and the preview; in-page anchors keep default behavior.
+                      a: ({ href, children }) => {
+                        if (typeof href !== "string" || href.startsWith("#")) {
+                          return <a href={href}>{children}</a>;
                         }
-                        alt={alt ?? ""}
-                        loading="lazy"
-                        className="max-w-full"
-                      />
-                    ),
-                    // External links open in a new tab; relative links point to a Workspace
-                    // file, clicking opens it in the tree and the preview; in-page anchors keep default behavior.
-                    a: ({ href, children }) => {
-                      if (typeof href !== "string" || href.startsWith("#")) {
-                        return <a href={href}>{children}</a>;
-                      }
-                      if (EXTERNAL_REF_RE.test(href)) {
+                        if (EXTERNAL_REF_RE.test(href)) {
+                          return (
+                            <a href={href} target="_blank" rel="noreferrer">
+                              {children}
+                            </a>
+                          );
+                        }
+                        const target = resolveRelative(parentDir(p.path), href);
                         return (
-                          <a href={href} target="_blank" rel="noreferrer">
+                          <a
+                            href={api.workspaceFileUrl(sessionId, target)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              openFile(target, { locate: true });
+                            }}
+                          >
                             {children}
                           </a>
                         );
-                      }
-                      const target = resolveRelative(parentDir(p.path), href);
-                      return (
-                        <a
-                          href={api.workspaceFileUrl(sessionId, target)}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            openFile(target, { locate: true });
-                          }}
-                        >
-                          {children}
-                        </a>
-                      );
-                    },
-                  }}
-                >
-                  {p.content ?? ""}
-                </ReactMarkdown>
-              </div>
-              {p.truncated && (
-                <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
-              )}
-            </>
-          ) : p.kind === "text" || p.kind === "html" || p.kind === "md" ? (
-            p.content === undefined ? (
-              // Isolated HTML reaches the Source view before its lazy fetch lands: show a
-              // skeleton (or the fetch's own error) — toggling back to Rendered is
-              // unaffected, and re-entering Source retries the fetch.
-              sourceError !== null ? (
-                <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
-              ) : (
-                <SkeletonList rows={6} />
-              )
-            ) : (
-              // The text itself, with no box around it — the same surface the editor lays its
-              // textarea over, so Edit changes what you can do and nothing about what you see.
-              // Wrapping is the Wrap toggle's business here; the message stream's own code
-              // blocks still scroll sideways rather than wrap, which is a transcript's answer
-              // and not a file viewer's.
-              <>
-                <CodeSurface
-                  language={languageForExtension(extOf(p.name))}
-                  code={p.content}
-                  highlight={p.content.length <= HIGHLIGHT_LIMIT}
-                  lineNumbers
-                  wrap={wrapLines}
-                  className="text-xs leading-relaxed"
-                />
+                      },
+                    }}
+                  >
+                    {p.content ?? ""}
+                  </ReactMarkdown>
+                </div>
                 {p.truncated && (
-                  <p className="px-3 pb-2 text-xs text-gray-400">… {S.files.previewTruncated}</p>
+                  <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
                 )}
               </>
-            )
-          ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400">{S.files.previewUnsupported}</p>
-          )}
+            ) : p.kind === "text" || p.kind === "html" || p.kind === "md" ? (
+              p.content === undefined ? (
+                // Isolated HTML reaches the Source view before its lazy fetch lands: show a
+                // skeleton (or the fetch's own error) — toggling back to Rendered is
+                // unaffected, and re-entering Source retries the fetch.
+                sourceError !== null ? (
+                  <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
+                ) : (
+                  <SkeletonList rows={6} />
+                )
+              ) : (
+                // The text itself, with no box around it — the same surface the editor lays its
+                // textarea over, so Edit changes what you can do and nothing about what you see.
+                // Wrapping is the Wrap toggle's business here; the message stream's own code
+                // blocks still scroll sideways rather than wrap, which is a transcript's answer
+                // and not a file viewer's.
+                <>
+                  <CodeSurface
+                    language={languageForExtension(extOf(p.name))}
+                    code={p.content}
+                    highlight={p.content.length <= HIGHLIGHT_LIMIT}
+                    lineNumbers
+                    wrap={wrapLines}
+                    className="text-xs leading-relaxed"
+                  />
+                  {p.truncated && (
+                    <p className="px-3 pb-2 text-xs text-gray-400">… {S.files.previewTruncated}</p>
+                  )}
+                </>
+              )
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {S.files.previewUnsupported}
+              </p>
+            )}
+          </div>
+          {previewFloatingActions}
         </div>
         {/* The same menu the file's own tree row offers, plus the selection entry while there is
           one. A right-click inside the HTML or PDF preview never arrives here — those are
@@ -2017,18 +2075,6 @@ export function WorkspaceBrowser({
               <>
                 {richToggle}
                 {wrapToggle}
-                {canEdit && (
-                  <Tooltip label={S.common.edit} placement="bottom" className="shrink-0">
-                    <button
-                      type="button"
-                      aria-label={S.common.edit}
-                      onClick={() => void startEdit()}
-                      className={iconActionClass}
-                    >
-                      <GlyphIcon d={FILE_EDIT_ICON} size={ICON_SIZE.iconButton} />
-                    </button>
-                  </Tooltip>
-                )}
                 {/* rel="noopener noreferrer" is load-bearing, not boilerplate: the preview must
                     not keep a handle back to this window, which is the whole point of serving
                     it from a separate origin.
@@ -2049,30 +2095,6 @@ export function WorkspaceBrowser({
                       <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.iconButton} />
                     </a>
                   </Tooltip>
-                )}
-                {/* Copy lived in the code block's own header bar; the source view no longer has
-                    one, so it joins the file's other take-it-away actions here. It copies the
-                    text that was read, which is all of the file unless the preview was cut off. */}
-                {sourceShown && preview.content !== undefined && (
-                  <>
-                    <Tooltip
-                      label={copied ? S.common.copied : S.chat.copyCode}
-                      placement="bottom"
-                      className="shrink-0"
-                    >
-                      <button
-                        type="button"
-                        aria-label={S.chat.copyCode}
-                        onClick={() => flashCopy(preview.content ?? "")}
-                        className={iconActionClass}
-                      >
-                        <CopyCheckGlyph copied={copied} size={ICON_SIZE.iconButton} />
-                      </button>
-                    </Tooltip>
-                    {/* Sibling, not a child: the button's accessible name stays the label, and
-                        the glyph swap is silent without this region. */}
-                    <CopiedStatus copied={copied} />
-                  </>
                 )}
                 <Tooltip label={S.files.download} placement="bottom" className="shrink-0">
                   <a

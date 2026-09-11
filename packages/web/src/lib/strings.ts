@@ -2440,7 +2440,7 @@ Benchmark：
     overwriteConfirm: (n: number): string => `目标目录已存在以下 ${n} 个同名文件，上传将覆盖：`,
     loadFailed: "加载失败",
     previewTruncated: "内容过大，预览已截断，请下载查看完整文件",
-    htmlRendered: "渲染视图",
+    htmlRendered: "预览",
     htmlSource: "源码",
     backToList: "返回列表",
     /** The tree pane: its accessible name and the toolbar toggle's two states. */

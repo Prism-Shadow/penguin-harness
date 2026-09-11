@@ -2480,7 +2480,7 @@ Scenarios:
       `The target directory already has ${n} file(s) with these names — uploading will overwrite:`,
     loadFailed: "Failed to load",
     previewTruncated: "File too large; preview truncated, download for the full file",
-    htmlRendered: "Rendered",
+    htmlRendered: "Preview",
     htmlSource: "Source",
     backToList: "Back to list",
     /** The tree pane: its accessible name and the toolbar toggle's two states. */
