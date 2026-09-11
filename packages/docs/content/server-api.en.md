@@ -204,7 +204,7 @@ What that route may do is bounded a second time: it stores the code on the flow 
 | GET | /api/plugins/registry | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[]}` — the merged index of every configured registry (currently the builtin one) |
 | GET | /api/plugins/registry/readme?name=… | One listed entry's readme: `{name, readme}` (`readme` null when the registry has none); 404 for a name the index does not list |
 | GET | /api/projects/:projectId/plugins/installed | What this Project asks for, joined with what the process runs: `{plugins: [{specifier, active, builtin, modules, replaces, error?}], shipped, file, restartPending}` (any member) |
-| POST | /api/projects/:projectId/plugins/installed | `{specifier}` — ask this Project for a plugin the build ships (400 `plugin_not_shipped` otherwise), applied without a restart where the runtime can re-assemble the App (admin) |
+| POST | /api/projects/:projectId/plugins/installed | `{specifier}` — ask this Project for a plugin the build ships (400 `plugin_not_shipped` otherwise), applied without a restart — the App re-assembles itself (admin) |
 | PUT | /api/projects/:projectId/plugins/installed | `{plugins}` — rewrite this Project's list and apply (admin) |
 | DELETE | /api/projects/:projectId/plugins/installed?specifier=… | Drop it from this Project's list and apply; nothing on disk changes (admin) |
 

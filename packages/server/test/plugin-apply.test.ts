@@ -1,15 +1,11 @@
 /**
- * Applying a plugin change, after the loading moved below the seam.
+ * Loading the plugin host, after the loading moved below the seam.
  *
  * The host every surface reads from must always describe the tree that is actually running.
- * That used to be enforced by hand — the apply rebuilt a host, registered it, asked for a
- * reload, and put the old one back when the reload did not happen — and the hand-written
- * version had the bug: on a live deployment whose runtime was too old to offer `reload`, a
- * plugin read as active while nothing in the running tree contained it.
- *
- * Now the platform's own create() reads the closure and imports it, and only a create() that
- * succeeded writes the registry. So the apply carries no plugin knowledge at all, and the
- * property holds by construction — which is what these tests pin.
+ * The platform's own create() reads the closure and imports it, and only a create() that
+ * succeeded writes the registry; applying a change is the App re-assembling itself
+ * (hmr/platform.ts), which plugins-installed.test.ts drives end to end. What these tests pin
+ * is the load: what is reused, what is dropped, which assets are read, and what a failure does.
  */
 import { describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -18,8 +14,6 @@ import path from "node:path";
 import { HotResources } from "@prismshadow/penguin-hmr";
 import { PLUGINS_RESOURCE_ID, PluginHost, pluginHostFrom } from "../src/plugin/host.js";
 import { loadPluginHost } from "../src/plugin/loader.js";
-import { applyPluginClosure } from "../src/http/routes/plugins-installed.js";
-import type { Hmr } from "../src/hmr/capabilities.js";
 import type { LoadedPlugin } from "../src/plugin/host.js";
 
 /** A data root whose one Project asks for these specifiers. */
@@ -34,10 +28,6 @@ async function rootAsking(specifiers: string[]): Promise<string> {
   return root;
 }
 
-function hmrWith(resources: HotResources, reload?: () => Promise<boolean>): Hmr {
-  return { resources, ...(reload === undefined ? {} : { reload }) } as unknown as Hmr;
-}
-
 /** An entry as an earlier App would have left it: one module, already imported. */
 const entry = (specifier: string, name: string, file?: string): LoadedPlugin => ({
   specifier,
@@ -49,34 +39,6 @@ const entry = (specifier: string, name: string, file?: string): LoadedPlugin => 
     },
   ],
   replaces: [],
-});
-
-describe("applyPluginClosure", () => {
-  it("asks for a re-assembly and touches nothing else", async () => {
-    const root = await rootAsking(["@acme/not-installed"]);
-    try {
-      const resources = new HotResources();
-      const running = new PluginHost();
-      resources.register(PLUGINS_RESOURCE_ID, running);
-
-      // A runtime older than this capability declares no `reload` at all: nothing was
-      // applied, and the registry still describes the tree that is running.
-      expect(await applyPluginClosure(root, hmrWith(resources))).toBe(false);
-      expect(pluginHostFrom(resources)).toBe(running);
-
-      // A re-assembly that happened is reported as such — and still writes nothing here:
-      // the new create() is what registers its host.
-      expect(
-        await applyPluginClosure(
-          root,
-          hmrWith(resources, async () => true),
-        ),
-      ).toBe(true);
-      expect(pluginHostFrom(resources)).toBe(running);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
 });
 
 describe("loadPluginHost", () => {

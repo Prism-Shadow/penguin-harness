@@ -389,17 +389,6 @@ export abstract class Proxy extends Interface<{
 /** The hot-update host: the cross-generation resource registry and the current App. */
 export abstract class Hmr extends Interface<{
   resources: Resources;
-  /**
-   * Re-assembles the App from the running bundle, so a plugin change applies without a
-   * process restart. Answers whether the new tree is the one running.
-   *
-   * A FIELD holding a function, deliberately, not a method: the signature check tolerates an
-   * optional field the runtime does not declare, and refuses a platform whose required
-   * METHOD is missing (kernel sig.ts). A runtime older than this capability must keep taking
-   * pushes — `config.supervised` is what happens when it cannot — so the platform calls this
-   * as `hmr.reload?.()` and falls back to "restart to apply" when nobody answers.
-   */
-  reload?: () => Promise<boolean>;
   ensure(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
   resolveWebSource(): Opaque<
     "WebSource",
@@ -525,6 +514,25 @@ export class RuntimeHmrControl {
   constructor(private readonly caps: HmrCapabilities) {}
   setup() {
     this.hmrControl = this.caps.hmrControl;
+  }
+}
+
+/**
+ * The App re-assembling itself from the same bundle — how a plugin change applies without
+ * a process restart. The PLATFORM's own, above the seam: it re-boots its inner tree with
+ * the kernel's upgrade, and the runtime holds the same outer instance throughout (see
+ * hmr/platform.ts). Nothing here is a runtime capability, so it works on every runtime.
+ */
+export abstract class Reassembly extends Interface<{
+  /** Whether the re-assembled tree is the one now running; false when its boot failed and the previous one was restored. */
+  reassemble(): Promise<boolean>;
+}>() {}
+@Module()
+export class AppReassembly {
+  @Provide() reassembly!: Reassembly;
+  constructor(private readonly run: () => Promise<boolean>) {}
+  setup() {
+    this.reassembly = { reassemble: this.run };
   }
 }
 @Module()

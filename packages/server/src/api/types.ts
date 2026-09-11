@@ -3679,6 +3679,6 @@ export interface InstalledPluginsResponse {
   shipped: string[];
   /** The file the list lives in, named for the page that explains where to edit it by hand. */
   file: string;
-  /** A listed plugin neither runs nor failed: this runtime could not re-assemble the App, so a restart applies it. */
+  /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
 }

@@ -13,6 +13,7 @@ import {
   RuntimeDesktop,
   RuntimeHmr,
   RuntimeHmrControl,
+  AppReassembly,
   RuntimeProxy,
   RuntimeResourceGroups,
   SystemClock,
@@ -24,6 +25,7 @@ import {
   Desktop,
   Lifecycle,
   Hmr,
+  Reassembly,
   HmrControl,
   Log,
   Paths,
@@ -199,6 +201,7 @@ export class Startup {
     RuntimeProxy,
     RuntimeHmr,
     RuntimeHmrControl,
+    AppReassembly,
     RuntimeDesktop,
     RuntimeAuthState,
     RuntimeLifecycle,
@@ -214,6 +217,7 @@ export class Startup {
     Proxy,
     Hmr,
     HmrControl,
+    Reassembly,
     Desktop,
     AuthState,
     Lifecycle,
@@ -399,6 +403,8 @@ export function platformDef(
   adoptable: (group: string) => boolean,
   plugins: ModuleDef[] = [],
   replace: ReadonlyMap<string, ModuleDef> = new Map(),
+  /** The platform's own re-assembly (hmr/platform.ts); a test tree that never re-assembles answers false. */
+  reassemble: () => Promise<boolean> = () => Promise.resolve(false),
 ): ModuleDef {
   const instances = new Map<ModuleClass, object>([
     [RuntimeConfig, new RuntimeConfig(caps)],
@@ -407,6 +413,7 @@ export function platformDef(
     [RuntimeProxy, new RuntimeProxy(caps)],
     [RuntimeHmr, new RuntimeHmr(caps)],
     [RuntimeHmrControl, new RuntimeHmrControl(caps)],
+    [AppReassembly, new AppReassembly(reassemble)],
     [RuntimeDesktop, new RuntimeDesktop(caps)],
     [RuntimeAuthState, new RuntimeAuthState(caps)],
     [RuntimeLifecycle, new RuntimeLifecycle(caps)],

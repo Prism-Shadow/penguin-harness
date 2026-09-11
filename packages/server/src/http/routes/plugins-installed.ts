@@ -20,11 +20,11 @@
  * and what it contributes is visible to all of them. A row here is therefore "this Project
  * asked for it" joined with "the process has it", which are two different facts.
  *
- * APPLYING. A write re-reads the closure, rebuilds the plugin host, and asks the runtime to
- * re-assemble the App from the same bundle — no process restart, ptys and connections
- * delivered across it exactly as a push delivers them. A runtime too old to offer that
- * (`hmr.reload` absent) leaves the list written and `restartPending` true, which is the
- * behavior this route had before it could apply anything.
+ * APPLYING. A write asks the App to re-assemble itself (the platform's own `Reassembly`,
+ * hmr/platform.ts): the new create() reads the closure and imports what it names — no
+ * process restart, ptys and connections delivered across it exactly as a push delivers
+ * them. A boot that fails is recovered onto the previous App and answered as "did not
+ * take", which the list reports as `restartPending` rather than as plugins that run.
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -32,7 +32,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { InstalledPlugin, InstalledPluginsResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
-import type { Config, Hmr } from "../../hmr/capabilities.js";
+import type { Config, Hmr, Reassembly } from "../../hmr/capabilities.js";
 import {
   discoverBuiltinPlugins,
   PLUGINS_FILE,
@@ -195,23 +195,6 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   return app;
 }
 
-/**
- * Asks the runtime for the one thing only it can do: assemble the App again, from the same
- * bundle. Everything else the apply used to do here is gone — the new create() reads the
- * closure and imports what it names (plugin/loader.ts's loadPluginHost), so this function
- * carries no plugin knowledge at all.
- *
- * That is also what fixed the failure this comment used to describe. The old shape rebuilt a
- * host, registered it, and asked for a reload — and a reload that did not happen (a runtime
- * too old to offer one) left a host in the registry that no running tree contained, so the
- * list reported plugins active while their endpoints served nothing. Now the registry is
- * only ever written by a create() that succeeded, and a runtime that cannot re-assemble
- * simply returns false: the list stays honest and says a restart is pending.
- */
-export async function applyPluginClosure(_root: string, hmr: Hmr): Promise<boolean> {
-  return (await hmr.reload?.()) ?? false;
-}
-
 @Component({
   contributes: {
     "HttpModule.routes": [
@@ -228,14 +211,14 @@ export async function applyPluginClosure(_root: string, hmr: Hmr): Promise<boole
 export class InstalledPluginRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly hmr!: Hmr;
+  @Use() private readonly reassembly!: Reassembly;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly access!: Access;
   @Bind("InstalledPluginRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     const hmr = this.hmr;
-    const root = this.config.root;
     this.routes = installedPluginRoutes({
-      root,
+      root: this.config.root,
       assetsDir: () => hmr.assetsDir(),
       // Claimed per call rather than captured: the host belongs to the process, and a hot
       // swap hands the same one to the next platform.
@@ -245,7 +228,7 @@ export class InstalledPluginRoutes {
       },
       projectConfig: this.projectConfig,
       access: this.access,
-      apply: () => applyPluginClosure(root, hmr),
+      apply: () => this.reassembly.reassemble(),
     });
   }
 }

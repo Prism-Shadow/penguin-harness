@@ -204,7 +204,7 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | GET | /api/plugins/registry | 插件市场页的插件索引：`{plugins: PluginIndexEntry[]}`——所有已配置注册表（当前仅内置注册表）合并后的索引 |
 | GET | /api/plugins/registry/readme?name=… | 某个已列出条目的说明文档：`{name, readme}`（注册表没有时 `readme` 为 null）；索引未列出的名字返回 404 |
 | GET | /api/projects/:projectId/plugins/installed | 该 Project 要求的插件，并联上进程实际在跑的状态：`{plugins: [{specifier, active, builtin, modules, replaces, error?}], shipped, file, restartPending}`（成员即可） |
-| POST | /api/projects/:projectId/plugins/installed | `{specifier}`——为该 Project 要求一个随构建发布的插件（否则 400 `plugin_not_shipped`），运行时能重组 App 时无需重启即生效（管理员） |
+| POST | /api/projects/:projectId/plugins/installed | `{specifier}`——为该 Project 要求一个随构建发布的插件（否则 400 `plugin_not_shipped`），无需重启即生效，App 自行重组（管理员） |
 | PUT | /api/projects/:projectId/plugins/installed | `{plugins}`——重写该 Project 的列表并应用（管理员） |
 | DELETE | /api/projects/:projectId/plugins/installed?specifier=… | 从该 Project 的列表中去掉并应用；磁盘上什么都不变（管理员） |
 
