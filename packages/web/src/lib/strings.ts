@@ -2570,7 +2570,7 @@ Benchmark：
     taskOutput: "本轮输出 tokens",
     cacheHit: "命中缓存",
     hitRate: "命中率",
-    compactions: "压缩次数",
+    avgToolCalls: "每轮平均工具调用",
     /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空) and is the stem of the conversation row's state titles (压缩中 / 压缩完毕), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
     inProgress: "进行中",
     systemPrompt: "系统提示词",

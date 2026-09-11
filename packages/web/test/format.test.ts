@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cacheHitRate,
   computeTps,
+  formatAverage,
   formatBytes,
   formatDateTime,
   formatMoney,
@@ -163,6 +164,21 @@ describe("cacheHitRate (shared by the Trace summaries and the Cost center's cach
   it("denominator 0 (no cache activity) yields null: the bubble omits the line, formatPercent shows —", () => {
     expect(cacheHitRate(0, 0)).toBeNull();
     expect(formatPercent(cacheHitRate(0, 0))).toBe("—");
+  });
+});
+
+describe("formatAverage (the Trace summary's tool calls per round)", () => {
+  it("keeps one decimal place, so an average never reads as the count beside it", () => {
+    expect(formatAverage(17, 5)).toBe("3.4");
+    expect(formatAverage(12, 3)).toBe("4.0");
+    expect(formatAverage(0, 3)).toBe("0.0"); // rounds with no tool call at all: a real average
+    expect(formatAverage(10, 3)).toBe("3.3"); // 3.33… rounds down
+    expect(formatAverage(20, 3)).toBe("6.7"); // 6.66… rounds up
+  });
+
+  it("count 0 (an empty Trace) leaves the average undefined and shows —", () => {
+    expect(formatAverage(0, 0)).toBe("—");
+    expect(formatAverage(7, 0)).toBe("—");
   });
 });
 
