@@ -14,7 +14,7 @@ guessed names or the project's own verification commands, so an agent read files
 on a `y/n` prompt until the poll timed out, imported packages the project does not have, and
 reported a build it never ran. And it said little about how to talk to the user, so replies opened
 with "Sure!", narrated tool names, pasted commands for the user to run, and ended without saying
-where the work was. Seventeen small edits — a clause or a bullet each, several replacing an existing
+where the work was. Thirteen small edits — a clause or a bullet each, several replacing an existing
 sentence, borrowed from the published Claude Code, Qoder and CodeBuddy prompts — close those gaps.
 
 ## Details
@@ -30,14 +30,12 @@ sentence, borrowed from the published Claude Code, Qoder and CodeBuddy prompts �
   manifest or lockfile shows it); send independent tool calls together in one turn, since the engine
   runs a batch concurrently; run commands non-interactively and treat one waiting for input as stuck
   rather than slow.
-- `# Personality`: the sentence about not re-explaining tools became four rules — lead with the
-  outcome (no filler openers, no narrating the next tool call, no closing recap unless asked); plain
-  words rather than tool names, and no restating output the user can see; no emojis unless asked and
-  every code block tagged with its language; a refusal is one sentence plus the nearest alternative.
+- `# Personality`: the sentence about not re-explaining tools became three rules — lead with the
+  outcome, skipping filler openers, narration of the next tool call and closing recaps; plain words
+  rather than tool names, and no restating output the user can see; a refusal is one sentence plus
+  the nearest alternative.
 - `# Success criteria`: verification means the project's own test, lint, typecheck and build
   commands, found in its README or manifest rather than assumed.
-- `# Constraints`: match the surrounding code's conventions; a question gets an answer first, and
-  files change only when asked; git history is the user's — commit, push or reset only when asked.
 - `# Suggested workflows`: a `PLAN.md` step is verified before the next starts and marked done only
   once it has been seen to work; a web app is scaffolded with the framework's CLI and fetched once
   before it is presented.

@@ -207,10 +207,10 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   a web app is scaffolded by CLI and fetched before it is presented) and its interaction
  *   rules (lead with the outcome, plain words rather than tool names, a final answer that
  *   stands on its own, one specific question with options, do the work rather than pasting
- *   it, git history is the user's). The prompt tab moved.
+ *   it). The prompt tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
-  prompt: "437e698814f1aa72736732d83b8ca124a39fc88a38f67f587c99fc9abf311ab0",
+  prompt: "ed3d868946bd14e110ec95b7d72058cde15098e88bdb9fe2549b53dbe2850cbf",
   runtime: "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346",
   tools: "a5e067fe58899be651c3c0541f587b2d5999030dc3008a39737a8fe21f5f7a23",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
