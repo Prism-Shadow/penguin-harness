@@ -93,6 +93,7 @@ import type {
   CommandPolicyConfig,
   GenerativeModelConfig,
   ProxyEnvPolicy,
+  SpawnConfiner,
   SubagentHandle,
   SubagentRunner,
   ThinkingLevelName,
@@ -142,6 +143,40 @@ export interface CreateAgentOptions {
    * at every spawn. Absent = PATH is untouched (SDK/CLI standalone use).
    */
   pathPrepend?: () => string[];
+  /**
+   * Sandbox-confinement seam for the command subprocesses of every Session this Agent
+   * creates or resumes — and of its subagents' Sessions, which inherit the getter (see
+   * {@link SpawnConfiner}). Host policy exactly like `proxyEnv`: re-read at every
+   * spawn, so the hosting server can swap the active confiner without restarting
+   * Sessions. Absent = commands spawn unconfined.
+   */
+  confineSpawn?: () => SpawnConfiner | null;
+  /**
+   * What a host adds to every Session this Agent assembles — see {@link AgentAssembly}.
+   * Host policy like
+   * `proxyEnv`: inherited by subagents' Agents, re-read at every Session creation so a
+   * hot push that changes the set reaches the next Session without a restart.
+   */
+  assembly?: AgentAssembly;
+}
+
+/**
+ * The host's contributions to Session assembly. Everything an Agent's own folder
+ * decides (system prompt, tool selection, MCP servers, model, compaction, memory) stays
+ * in its config; this is what the HOSTING PROCESS adds on top, for every Agent.
+ */
+export interface AgentAssembly {
+  /**
+   * Sections appended to the assembled system prompt, in order, each as `# <title>` +
+   * text. Empty = the prompt is exactly the Agent's own.
+   */
+  promptSections?(): readonly PromptSection[];
+}
+
+export interface PromptSection {
+  /** The `# ` heading the section is appended under. */
+  title: string;
+  text: string;
 }
 
 /** The Session coordinates a {@link CreateAgentOptions.controlEnv} policy is evaluated with. */
@@ -312,6 +347,12 @@ export function metaMaxTokens(budget: number, modelCap: number | undefined): num
   return modelCap !== undefined && modelCap > 0 ? Math.min(budget, modelCap) : budget;
 }
 
+/** The assembled prompt plus the host's sections, each under its own heading. */
+function withPromptSections(prompt: string, sections: readonly PromptSection[]): string {
+  if (sections.length === 0) return prompt;
+  return [prompt, ...sections.map((s) => `# ${s.title}\n${s.text}`)].join("\n\n");
+}
+
 /** Create or load an Agent (the one init-enabled use of `loadAgentState`). */
 export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent> {
   const state = await loadAgentState({
@@ -321,7 +362,15 @@ export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent>
     init: {},
   });
   const projectConfig = await loadProjectConfig(state.root, state.projectId);
-  return new Agent(state, projectConfig, opts.proxyEnv, opts.controlEnv, opts.pathPrepend);
+  return new Agent(
+    state,
+    projectConfig,
+    opts.proxyEnv,
+    opts.controlEnv,
+    opts.pathPrepend,
+    opts.confineSpawn,
+    opts.assembly,
+  );
 }
 
 export class Agent {
@@ -334,6 +383,10 @@ export class Agent {
     private readonly controlEnv?: (ctx: ControlEnvContext) => Record<string, string>,
     /** See {@link CreateAgentOptions.pathPrepend}; forwarded into every Session's Environment and hooks. */
     private readonly pathPrepend?: () => string[],
+    /** See {@link CreateAgentOptions.confineSpawn}; forwarded into every Session's Environment. */
+    private readonly confineSpawn?: () => SpawnConfiner | null,
+    /** See {@link CreateAgentOptions.assembly}; read at every Session creation. */
+    private readonly assembly?: AgentAssembly,
   ) {}
 
   /**
@@ -409,18 +462,21 @@ export class Agent {
         workspaceDir: spec.workspaceDir,
         enabled: state.systemConfig.memory?.enabled !== false,
       });
-      systemPrompt = assembleSystemPrompt(
-        state,
-        sessionEnvironment(spec.workspaceDir, spec.sessionId, {
-          agentId,
-          projectDir: projectDir(root, projectId),
-          provider: spec.modelEntry.provider,
-          modelId: spec.modelEntry.model_id,
-        }),
-        Object.keys(vault),
-        installedSkills,
-        memory,
-        scheduleNames,
+      systemPrompt = withPromptSections(
+        assembleSystemPrompt(
+          state,
+          sessionEnvironment(spec.workspaceDir, spec.sessionId, {
+            agentId,
+            projectDir: projectDir(root, projectId),
+            provider: spec.modelEntry.provider,
+            modelId: spec.modelEntry.model_id,
+          }),
+          Object.keys(vault),
+          installedSkills,
+          memory,
+          scheduleNames,
+        ),
+        this.assembly?.promptSections?.() ?? [],
       );
     }
 
@@ -900,14 +956,16 @@ export class Agent {
                 root,
                 projectId,
                 agentId,
-                // A child Agent loads its own vault/config, but the proxy-env and
-                // control-env policy getters are host policy, not Agent state: the
+                // A child Agent loads its own vault/config, but the proxy-env, control-env
+                // and spawn-confinement getters are host policy, not Agent state: the
                 // subagent's commands run in the same serving process, so they follow the
                 // same settings as the parent's — controlEnv is then evaluated with the
                 // child Session's own coordinates.
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
                 ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
+                ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
+                ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
               })
             : parentAgent;
         // The child Session follows the PARENT Session, never the Project default: with the
@@ -956,6 +1014,8 @@ export class Agent {
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
                 ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
+                ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
+                ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
               });
         const childSession = await childAgent.resumeSession({ sessionId });
         return subagentHandleFor(childSession);
@@ -1114,6 +1174,7 @@ export class Agent {
           }
         : {}),
       ...(this.pathPrepend ? { pathPrepend: this.pathPrepend } : {}),
+      ...(this.confineSpawn ? { confineSpawn: this.confineSpawn } : {}),
     });
 
     // The tool_call_id uniqueness registry is shared by every context's LLM object: its
