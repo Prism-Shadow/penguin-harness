@@ -54,14 +54,15 @@ export interface PlatformHttp {
 export function platformHttpSeam(hmr: HmrHost): MiddlewareHandler {
   return async (c, next) => {
     if (c.req.path.startsWith(RESERVED_PREFIX)) return next();
-    // Wait out any in-flight swap FIRST, same as /api/hmr/*'s own gate (routes.ts): the
-    // kernel's upgrade() disposes the old tree before it awaits the new one's boot, and for
-    // that whole window `hmr.ensure()` still resolves synchronously to the OLD instance —
-    // it only reassigns once the swap is done. Without this wait, a request landing in that
-    // window would be handed to an already-disposed tree instead of observing the freeze as
-    // latency (see host.ts's module doc: "a client never observes the stop-the-world
-    // window").
-    await hmr.waitIdle();
+    // A ticket, not just a gate (see host.ts's enter()): the kernel's upgrade() disposes
+    // the old tree before it awaits the new one's boot, and for that whole window
+    // `hmr.ensure()` still resolves synchronously to the OLD instance — it only reassigns
+    // once the swap is done. Waiting the swap out is what keeps a request ARRIVING in that
+    // window from being handed an already-disposed tree; the ticket is what keeps a swap
+    // from opening one UNDER a request that is already inside the tree. Both directions
+    // have to hold for the freeze to be latency rather than an error (see host.ts's module
+    // doc: "a client never observes the stop-the-world window").
+    const release = await hmr.enter();
     let handler: PlatformHttp["http"];
     try {
       const instance = await hmr.ensure();
@@ -69,9 +70,15 @@ export function platformHttpSeam(hmr: HmrHost): MiddlewareHandler {
     } catch {
       // The platform cannot boot: the runtime's own routes are the fallback, and the
       // upgrade channel above is still reachable to push a working one.
+      handler = undefined;
+    }
+    // Released before delegating: the runtime's own tail (static hosting, the SPA
+    // fallback) does not reach into the platform tree, so holding a swap off for its
+    // duration would only lengthen the freeze.
+    if (!handler) {
+      release();
       return next();
     }
-    if (!handler) return next();
 
     let response: Response | null;
     try {
@@ -88,6 +95,8 @@ export function platformHttpSeam(hmr: HmrHost): MiddlewareHandler {
         },
         500,
       );
+    } finally {
+      release();
     }
     if (response === null) return next();
     return response;

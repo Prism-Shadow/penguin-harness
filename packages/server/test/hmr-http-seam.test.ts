@@ -313,3 +313,117 @@ describe("platform HTTP seam: a request racing an in-flight swap", () => {
     expect(await raced.json()).toEqual({ impl: "v2" });
   });
 });
+
+/**
+ * A platform whose `/api/demo/slow` handler parks inside the seam until the test opens a
+ * gate, and whose `/api/demo/stream` handler returns a Response whose body never ends.
+ * Both coordinate through globals: the bundle is imported into this same process, so a
+ * global is the one channel a separately-compiled bundle and its test can share.
+ */
+const PARKING_PLATFORM = `
+const anySchema = {
+  strictParse: (doc) => ({ ok: true, value: doc === undefined ? {} : doc }),
+  describe: () => ({ kind: "any" }),
+};
+const iface = {
+  kind: "iface",
+  name: "platform",
+  version: 1,
+  context: anySchema,
+  methods: ["park", "info"],
+  children: {},
+  migrations: {},
+};
+const impl = {
+  create(_ctx, context) {
+    return {
+      park: () => context,
+      info: () => ({ impl: "parking" }),
+      async http(request) {
+        const { pathname } = new URL(request.url);
+        if (pathname === "/api/demo/stream") {
+          return new Response(new ReadableStream({ start() {} }), { status: 200 });
+        }
+        if (pathname !== "/api/demo/slow") return null;
+        globalThis.__hmrSeamEntered();
+        await globalThis.__hmrSeamGate;
+        return new Response(JSON.stringify({ servedBy: "parking" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    };
+  },
+};
+export const hotPlatform = { id: "parking", iface, impl, context: {} };
+`;
+
+const AFTER_PLATFORM = PARKING_PLATFORM.replace('"/api/demo/slow"', '"/api/demo/after"').replace(
+  'id: "parking"',
+  'id: "after"',
+);
+
+const seamGlobals = globalThis as typeof globalThis & {
+  __hmrSeamEntered: () => void;
+  __hmrSeamGate: Promise<void>;
+};
+
+describe("a swap waits for the requests already inside the platform tree", () => {
+  let t: TestApp;
+  let cookie: string;
+  let openGate: () => void;
+  let entered: Promise<void>;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+    cookie = (await loginAdmin(t.app)).cookie;
+    seamGlobals.__hmrSeamGate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
+    entered = new Promise<void>((resolve) => {
+      seamGlobals.__hmrSeamEntered = resolve;
+    });
+  });
+  afterEach(async () => {
+    openGate();
+    await t.cleanup();
+  });
+
+  it("holds the upgrade until an in-flight handler returns, then serves both", async () => {
+    expect((await pushPlatform(t.app, cookie, PARKING_PLATFORM)).status).toBe(200);
+
+    // One request parked inside the platform's own handler.
+    const slow = t.app.request("/api/demo/slow", { headers: { cookie } });
+    await entered;
+
+    // An upgrade arriving now must not dispose the tree that request is standing in.
+    let upgraded = false;
+    const upgrade = pushPlatform(t.app, cookie, AFTER_PLATFORM).then((res) => {
+      upgraded = true;
+      return res;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(upgraded).toBe(false);
+
+    openGate();
+    const served = await slow;
+    expect(served.status).toBe(200);
+    expect((await served.json()) as object).toMatchObject({ servedBy: "parking" });
+
+    expect((await upgrade).status).toBe(200);
+    expect((await t.app.request("/api/demo/after", { headers: { cookie } })).status).toBe(200);
+  });
+
+  it("does not wait for a response body that never ends", async () => {
+    expect((await pushPlatform(t.app, cookie, PARKING_PLATFORM)).status).toBe(200);
+
+    // The handler returned; the stream it handed back is still open. An SSE subscriber is
+    // this shape, and no installation with an open browser tab could ever be upgraded if
+    // that held the swap.
+    const streaming = await t.app.request("/api/demo/stream", { headers: { cookie } });
+    expect(streaming.status).toBe(200);
+
+    expect((await pushPlatform(t.app, cookie, AFTER_PLATFORM)).status).toBe(200);
+    await streaming.body?.cancel();
+  });
+});

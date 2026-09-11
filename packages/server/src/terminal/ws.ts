@@ -59,19 +59,29 @@ export function attachTerminalWebSocket(server: HttpServer, deps: TerminalWebSoc
     const authed = token ? deps.authService.authenticateWithMeta(token) : null;
     if (!authed) return refuse(socket, 401, "Unauthorized");
 
-    // The platform may be mid-swap; ensure() resolves the instance that owns the
-    // terminals right now, which is also the one whose protocol should serve this socket.
+    // The same ticket the HTTP seam takes (host.ts's enter()), for the same reason: the
+    // handshake looks the terminal up in the CURRENT App and hands the socket to that
+    // App's stream binding, so it must neither run against a tree being disposed nor have
+    // one disposed under it midway. `handleUpgrade` runs the binding callback before it
+    // returns (noServer, no verifyClient), so the ticket covers attachStream and is
+    // released the moment the socket is bound — the stream itself outlives swaps by
+    // design, since the pty is a registry resource rather than part of the tree.
     void deps.hmr
-      .ensure()
-      .then((platform) => {
-        const manager = platform.api.terminals?.();
-        const session = manager?.get(match[1] as string);
-        if (!session || session.ownerUserId !== authed.user.userId) {
-          return refuse(socket, 404, "Not Found");
+      .enter()
+      .then(async (release) => {
+        try {
+          const platform = await deps.hmr.ensure();
+          const manager = platform.api.terminals?.();
+          const session = manager?.get(match[1] as string);
+          if (!session || session.ownerUserId !== authed.user.userId) {
+            return refuse(socket, 404, "Not Found");
+          }
+          wss.handleUpgrade(req, socket, head, (ws) => {
+            platform.api.attachStream?.(ws, session, url, deps.log);
+          });
+        } finally {
+          release();
         }
-        wss.handleUpgrade(req, socket, head, (ws) => {
-          platform.api.attachStream?.(ws, session, url, deps.log);
-        });
       })
       .catch((err: unknown) => {
         deps.log(`[terminal] stream upgrade failed: ${err instanceof Error ? err.message : err}`);
