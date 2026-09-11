@@ -1341,6 +1341,23 @@ export function ChatPage() {
     [selected, stream],
   );
 
+  // "Move to background" on an executing tool call: the call returns a background handle and
+  // the turn carries on. 404 means it finished in the click's race window and 409 that the
+  // tool has no background form — the card settles on its own either way, so neither is worth
+  // a toast; anything else is a real failure the user should see.
+  const onSendToBackground = useCallback(
+    async (toolCallId: string) => {
+      if (!selected) return;
+      try {
+        await api.postToolCallBackground(selected.sessionId, toolCallId);
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 409)) return;
+        toastError(apiErrorText(e));
+      }
+    },
+    [selected],
+  );
+
   const onChangeApprovalMode = useCallback(
     (mode: ApprovalMode) => {
       if (!selected || modeSaving) return;
@@ -1512,6 +1529,7 @@ export function ChatPage() {
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
     onApprove,
+    onSendToBackground,
     origin: [],
     // Any non-idle state (running / compacting) counts as "not yet stopped": compaction can
     // happen mid-turn, and if only running were checked, the trailing group would flash
@@ -1893,14 +1911,19 @@ export function ChatPage() {
                   />
                   {/* Right of the time, only while the conversation still owns background
                       work — command processes past their yield window, background subagents
-                      mid-round: their count, in the live-status green, the same figure and
-                      glyph as the session row's mark and read live off the row. Bare ink like
-                      the chips beside it, not a tinted pill: this is one more reading in the
-                      stat row, not a badge that should out-weigh them. */}
+                      mid-round: their count, in the same tone, figure and glyph as the
+                      session row's mark and read live off the row. A count is what this
+                      reading is, and a glyph beside a number is how every other chip in this
+                      row says what its number counts. Bare ink like the chips beside it, not
+                      a tinted pill: this is one more reading in the stat row, not a badge
+                      that should out-weigh them. Muted rather than the live-status green:
+                      background work is a fact about the conversation, not the live run this
+                      row is otherwise reporting — and `muted` may recede here because the
+                      title names the count in words, so the colour carries nothing alone. */}
                   {backgroundCount > 0 && (
                     <span
                       title={S.chat.backgroundTasks(backgroundCount)}
-                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
+                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.muted}`}
                     >
                       <GlyphIcon d={BACKGROUND_TASKS_ICON} />
                       {backgroundCount}

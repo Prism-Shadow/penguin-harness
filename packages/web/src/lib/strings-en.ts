@@ -1757,8 +1757,13 @@ Scenarios:
     backgroundTasks: (n: number) => (n === 1 ? "1 background task" : `${n} background tasks`),
     /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
     sessionScheduled: "Has a scheduled task still to fire",
-    /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
-    backgroundCall: "Runs in the background",
+    /** The tool row's marker for the ONE call whose work went to the background — launched with `run_in_background`, or moved there by the user — rather than for a count. Bracketed, like the row's other outcome markers. */
+    backgroundCall: "[Background]",
+    /** The tool row's inline text action, shown while the call is executing (also its accessible name). */
+    sendToBackground: "Send to background",
+    /** Its tooltip: what the click does to the call and to the conversation. */
+    sendToBackgroundHint:
+      "Send this call to the background; the conversation carries on, and its completion arrives as a background notice.",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
