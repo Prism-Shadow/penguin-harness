@@ -14,19 +14,6 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 
-/**
- * Where a rejected sign-in link sends the browser, and which advice the login page reads out
- * of `claimFailed` once it lands there. The value describes the DEPLOYMENT, never the token:
- * a desktop shell mints a fresh link on every start, so restarting the app is the way back
- * in, while anywhere else the link has to come from whoever runs the server and restarting
- * helps nobody. Every token a given server rejects yields the same value, so it still says
- * nothing about which kind was presented — only that a shell is attached, which is a property
- * of how the server was started rather than of the credential.
- */
-export function claimFailureRedirect(desktopMode: boolean): string {
-  return `/login?claimFailed=${desktopMode ? "desktop" : "server"}`;
-}
-
 export function authRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
@@ -67,8 +54,15 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
         : deps.authService.redeemFirstLogin(token);
     // A browser is at the other end of this navigation, so the refusal answers a browser
     // too: an error body would leave the visitor staring at raw JSON with nothing to act
-    // on. The login page takes it from here, form included.
-    if (session === null) return c.redirect(claimFailureRedirect(deps.desktop !== null), 302);
+    // on. The login page takes it from here, form included. The advice it reads out of
+    // `claimFailed` describes the DEPLOYMENT, never the token: a desktop shell mints a fresh
+    // link on every start, so restarting the app is the way back in, while anywhere else the
+    // link has to come from whoever runs the server and restarting helps nobody. Every token
+    // a given server rejects yields the same value, so the refusal still says nothing about
+    // which kind was presented — only that a shell is attached, which is a property of how
+    // the server was started rather than of the credential.
+    if (session === null)
+      return c.redirect(`/login?claimFailed=${deps.desktop !== null ? "desktop" : "server"}`, 302);
     setCookie(
       c,
       SESSION_COOKIE,

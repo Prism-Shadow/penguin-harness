@@ -397,7 +397,7 @@ export const en: Strings = {
       "This one-time sign-in link has already been used or has expired. Restart the PenguinHarness desktop app to get a fresh link and be signed in automatically, or sign in with your username and password below.",
     /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
     claimFailedServer:
-      "This one-time sign-in link has already been used or has expired. Sign in with your username and password below, or ask your administrator for a new sign-in link.",
+      "The first-login link stops working once the server has a password, and a restart replaces it with a new one. Sign in with your username and password below, or ask your administrator for a new sign-in link.",
   },
 
   account: {

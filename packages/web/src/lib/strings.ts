@@ -402,7 +402,7 @@ export const zh = {
       "这个一次性登录链接已被使用或已失效。重启 PenguinHarness 桌面应用即可生成新的登录链接并自动登录；也可以在下方用账号密码登录。",
     /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
     claimFailedServer:
-      "这个一次性登录链接已被使用或已失效。请在下方用账号密码登录，或向管理员索取新的登录链接。",
+      "首次登录链接在服务端设置密码后即失效，重启服务端也会换发新的链接。请在下方用账号密码登录，或向管理员索取新的登录链接。",
   },
 
   account: {

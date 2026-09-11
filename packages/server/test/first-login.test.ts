@@ -291,8 +291,7 @@ describe("the first-login link", () => {
       const res = await second.app.request("/api/auth/claim?token=anything", {
         redirect: "manual",
       });
-      expect(res.status).toBe(302);
-      expect(res.headers.get("location")).toBe("/login?claimFailed=server");
+      expectRefusal(res);
     } finally {
       await second.cleanup();
     }

@@ -171,7 +171,7 @@ export function LoginPage() {
         title={S.auth.claimFailedTitle}
         onClose={() => setNoticeOpen(false)}
         footer={
-          <Button size="sm" variant="primary" onClick={() => setNoticeOpen(false)}>
+          <Button variant="primary" onClick={() => setNoticeOpen(false)}>
             {S.common.gotIt}
           </Button>
         }

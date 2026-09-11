@@ -4,7 +4,6 @@
  * closing the user-management and Project-member surfaces.
  */
 import { describe, expect, it } from "vitest";
-import { claimFailureRedirect } from "../src/http/routes/auth.js";
 import {
   apiClient,
   createDesktopApp,
@@ -22,13 +21,6 @@ describe("desktop claim", () => {
     expect(res.headers.get("location")).toBe(`/login?claimFailed=${advice}`);
     expect(res.headers.get("set-cookie")).toBeNull();
   }
-
-  it("points a failed claim at the shell only where a shell issues the links", () => {
-    // Read from how the server was started, never from the token: every rejected token on a
-    // given server gets the same advice, so the redirect cannot say which kind was presented.
-    expect(claimFailureRedirect(true)).toBe("/login?claimFailed=desktop");
-    expect(claimFailureRedirect(false)).toBe("/login?claimFailed=server");
-  });
 
   it("redeems the token once: cookie session, redirect to /, a replay back to the login page", async () => {
     const t = await createDesktopApp();
