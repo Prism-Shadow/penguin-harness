@@ -3,6 +3,7 @@
 - **Date:** 2026-09-11
 - **Type:** fix
 - **Scope:** `core`
+- **PR:** [#697](https://github.com/Prism-Shadow/penguin-harness/pull/697)
 
 [中文版](2026-09-11-system-prompt-guardrails.zh.md)
 
