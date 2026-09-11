@@ -82,7 +82,7 @@ Write the page's UI copy in the language the user's request was made in — a Ch
 - **Pill chip** — `border-radius: 9999px; border: 1px solid var(--border); padding: 4px 10px; font-size: 12px; color: var(--fg-muted);` hover: bg `--gray-50`. Brand-tinted variant: `--brand-50` bg, `--brand-700` text.
 - **Sticky nav** — `height: 56px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(8px);` logo 28px + product name 15px semibold.
 - **Code block** — `--gray-50`/dark `--surface` bg card with a bordered header row (mono 12px label + copy button), body mono 13px.
-- **Long list** — any list, log or table that can grow lives in a bounded box: `max-height: 24rem; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--gray-300) transparent;` — the page never scrolls because of it.
+- **Long list** — any list, log or table that can grow lives in a bounded box: `max-height: 24rem; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--control-border) transparent;` — the page never scrolls because of it.
 - **Skeleton** — a content region that is loading shows gray blocks in the shape of the content (`--gray-100`/dark `#1f1f1f`, radius 6px, soft opacity pulse); dots and spinners are for actions, skeletons for regions.
 - **Toast** — confirmation of a user action (saved, copied, deleted): fixed bottom-right (bottom-center on mobile), `--surface` bg, `1px solid var(--border)`, radius 8px, padding 10px 14px, 13px, `role="status" aria-live="polite"`; rises in, auto-dismisses after 3–4 s, newest at the bottom. Never a browser `alert()`.
 - **Focus** — `:focus-visible { outline: 3px solid rgb(107 114 128 / .4); outline-offset: 2px; }`.
@@ -130,4 +130,4 @@ The default shape for a generated conversational or docs-QA app:
 
 ## Page layout (marketing / landing)
 
-Content width `max-width: 72rem`, gutters 16–24px; section rhythm `padding: 64–96px 0`; section header = uppercase 14px semibold brand-colored eyebrow → title → one-line subtitle in `--fg-muted`, then a card grid (`gap: 20px`, 2–3 columns, collapsing to one on mobile). Hero: centered, logo + name, headline with at most one brand-colored word, CTA pair (primary + secondary). Responsive by default: single column under 640px, tap targets ≥ 40px, no horizontal scroll.
+Content width `max-width: 72rem`, gutters 16–24px; section rhythm `padding: 64–96px 0`; section header = uppercase 14px semibold brand-colored eyebrow → title → one-line subtitle in `--fg-muted`, then a card grid (`gap: 20px`, 2–3 columns, collapsing to one on mobile). Hero: centered, logo + name, headline with at most one brand-colored word, CTA pair (primary + secondary). Responsive by default: the single column is the base and a `min-width: 640px` query adds the grid, tap targets ≥ 40px, no horizontal scroll.
