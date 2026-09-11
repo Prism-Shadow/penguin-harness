@@ -3,6 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#677](https://github.com/Prism-Shadow/penguin-harness/pull/677)
 
 [English](2026-09-10-session-row-schedule-mark.md)
 
