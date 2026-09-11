@@ -8,9 +8,9 @@
  * via a system Prompt placeholder.
  *
  * The system Prompt is sectioned and trimmed as needed (Role/Personality/Success
- * criteria/Constraints/Stop rules/Tool use/System markers/File system/Suggested workflows); it
- * does not describe specific tools (that comes from the tool schema). AGENTS.md and the
- * Vault/Skills/Memory/Schedules section placeholders go at the end, before Environment.
+ * criteria/Constraints/Output/Stop rules/Tool use/System markers/File system/Suggested
+ * workflows); it does not describe specific tools (that comes from the tool schema). AGENTS.md
+ * and the Vault/Skills/Memory/Schedules section placeholders go at the end, before Environment.
  *
  * Placeholders (`{{...}}`) appear only in the trailing injection zones (AGENTS.md / Vault /
  * Skills / Memory / Schedules / Environment); elsewhere the body uses angle-bracket notation
