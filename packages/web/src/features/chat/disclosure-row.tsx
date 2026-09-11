@@ -52,16 +52,25 @@ export const DISCLOSURE_OUTPUT_PRE_CLASS =
   "max-h-72 overflow-auto whitespace-pre-wrap border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300";
 
 /**
- * Expanded Markdown body — the thinking and compaction sections. Same block as
- * DISCLOSURE_OUTPUT_PRE_CLASS wears: full-bleed under its row, separated by the same
- * divider, on the same type scale, so a thinking body reads as another kind of output
- * rather than as a quotation inset inside the card. Markdown keeps rendering (these
- * bodies are prose, not command output), hence no `whitespace-pre-wrap`, and no height
- * cap either: both bodies stream, and a nested scrollbox would strand the live tail the
- * transcript's own follow scrolls to.
+ * Expanded Markdown body — the thinking and compaction sections. The block
+ * DISCLOSURE_OUTPUT_PRE_CLASS wears, minus the parts that only fit command output:
+ * full-bleed under its row, separated by the same divider and inset by the same padding,
+ * so the body reads as another kind of output rather than as a quotation inset inside the
+ * card.
+ *
+ * It keeps prose type rather than the output block's, because the two are not the same
+ * size on screen: the output block is monospace, and the app's sans at that size reads
+ * visibly smaller beside it. `leading-relaxed` is within a hair of the 1.7 `.md-body p`
+ * applies, so paragraphs, list items and headings all land on one rhythm instead of two.
+ * The outermost block's margin is dropped at each end, so the body's own `py-2` is the
+ * whole gap — the same one the output block leaves.
+ *
+ * Markdown keeps rendering (these bodies are prose, not command output), hence no
+ * `whitespace-pre-wrap`, and there is no height cap either: both bodies stream, and a
+ * nested scrollbox would strand the live tail the transcript's own follow scrolls to.
  */
 export const DISCLOSURE_BODY_MD_CLASS =
-  "md-body border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300";
+  "md-body border-t border-gray-100 px-3 py-2 text-sm leading-relaxed text-gray-600 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 dark:border-gray-800 dark:text-gray-300";
 
 /**
  * The card container a row (or group of rows) sits in — the work group's exact chrome.
