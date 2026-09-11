@@ -9,7 +9,7 @@
 import { Children, isValidElement, useId, useState } from "react";
 import type { ChangeEvent, ReactNode, SelectHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
-import { errorClass, sizeClass } from "./input";
+import { errorClass, sizeClass, sizeTextClass } from "./input";
 import type { ControlSize } from "./input";
 import { Field, controlBase, menuRowClass } from "./field";
 import { CheckIcon, ChevronDown } from "./icons";
@@ -46,9 +46,6 @@ function parseOptions(children: ReactNode): Opt[] {
 }
 
 const CONTROL_CLASS = `flex w-full items-center gap-2 text-left ${controlBase} disabled:cursor-not-allowed disabled:opacity-60`;
-
-/** Menu-row text follows the control's size tier, so the dropdown reads exactly like an Input of the same tier (review: dropdown text = input text). */
-const menuTextClass: Record<ControlSize, string> = { base: "text-base", sm: "text-xs" };
 
 export function Select({
   label,
@@ -128,7 +125,9 @@ export function Select({
                 aria-selected={o.value === current}
                 disabled={o.disabled}
                 onClick={() => pick(o.value)}
-                className={`flex items-center ${menuRowClass} ${menuTextClass[size]} disabled:opacity-50 ${
+                // Menu-row text takes the control's own tier, so the dropdown reads exactly
+                // like an Input of that tier.
+                className={`flex items-center ${menuRowClass} ${sizeTextClass[size]} disabled:opacity-50 ${
                   o.value === current
                     ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800 dark:text-gray-100"
                     : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"

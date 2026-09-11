@@ -673,8 +673,10 @@ export function AgentsPage() {
         onClose={() => setCreateOpen(false)}
         footer={
           <>
-            <Button onClick={() => setCreateOpen(false)}>{S.common.cancel}</Button>
-            <Button variant="primary" disabled={busy} onClick={() => void create()}>
+            <Button size="sm" onClick={() => setCreateOpen(false)}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" variant="primary" disabled={busy} onClick={() => void create()}>
               {S.common.create}
             </Button>
           </>
