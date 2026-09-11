@@ -24,6 +24,13 @@ export interface StreamRenderContext {
   /** approvalKey(origin, toolCallId) → pending approval (disambiguates by origin when parent/child session tool_call_ids collide). */
   pendingApprovals: ReadonlyMap<string, PendingApproval>;
   onApprove: (toolCallId: string, decision: "allow" | "deny", origin: string[]) => Promise<void>;
+  /**
+   * "Move to background" on an executing tool call: the call hands its work back as a
+   * background task and the turn carries on. Only honored on main-session items — a
+   * subagent's call belongs to the child Session's environment, which the route does not
+   * target (same rule as onRetryNow). The button does not render if this isn't wired up.
+   */
+  onSendToBackground?: (toolCallId: string) => Promise<void>;
   /** Origin chain at the current render level (empty array for the main session; subagent cards append one level each). */
   origin: string[];
   /**

@@ -170,6 +170,7 @@ import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useAgentSchedules } from "../../features/schedules/schedule-store";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { toneInk } from "../../lib/tone";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
@@ -296,6 +297,9 @@ const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
 
+/** Standing "no Session is scheduled", so the first render has something to hold before any answer. */
+const NO_SCHEDULED_SESSIONS: ReadonlySet<string> = new Set();
+
 /**
  * Session status glyph: a turning hourglass while the Session is busy, a green dot once it has
  * finished with a reply the user has not seen, and nothing once that reply has been read — or
@@ -353,12 +357,13 @@ export function Sidebar({
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
   // The current Agent's scheduled tasks, shared with the dock's schedules panel through one
-  // store. The scope is the current Agent because that is the one the store can hold: the chat
-  // page keeps the current Agent in step with the open conversation, so the panel and these rows
-  // ask for the same list. In workspace or time grouping the list can also show OTHER Agents'
-  // Sessions, and those rows simply wear no mark — a row saying nothing is honest, a row
-  // answered from another Agent's list would not be. Re-read on every navigation: opening a
-  // conversation is the moment a task may just have been created or switched off.
+  // store, which caches a list per Agent so that neither surface's scope discards the other's.
+  // The scope is the current Agent: the chat page keeps it in step with the open conversation,
+  // so the panel and these rows ask for the same list. In workspace or time grouping the list
+  // can also show OTHER Agents' Sessions, and those rows simply wear no mark — a row saying
+  // nothing is honest, a row answered from another Agent's list would not be. Re-read on every
+  // navigation: opening a conversation is the moment a task may just have been created or
+  // switched off.
   const { items: agentSchedules } = useAgentSchedules(
     currentProjectId,
     currentAgent?.agentId ?? null,
@@ -368,7 +373,19 @@ export function Sidebar({
   // enough. The store re-renders these rows on every refresh (a navigation, a schedule event, a
   // turn ending, the panel's poll), and the server recomputes `nextFireAt` on each listing, so a
   // task that fired for the last time loses its mark at the next refresh.
-  const scheduledSessions = pendingScheduleSessions(agentSchedules ?? []);
+  const pendingScheduled = useMemo(
+    () => (agentSchedules === null ? null : pendingScheduleSessions(agentSchedules)),
+    [agentSchedules],
+  );
+  // A null list means "this Agent has not been read yet", never "this Agent has no tasks":
+  // reading it as the second blanks every alarm in the list for as long as a request takes. The
+  // marks on screen stand until a real answer replaces them, which is the standing the pin and
+  // the relay glyph get for free by being fields of the row itself.
+  const lastScheduledRef = useRef<ReadonlySet<string>>(NO_SCHEDULED_SESSIONS);
+  useEffect(() => {
+    if (pendingScheduled !== null) lastScheduledRef.current = pendingScheduled;
+  }, [pendingScheduled]);
+  const scheduledSessions = pendingScheduled ?? lastScheduledRef.current;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
@@ -2222,10 +2239,11 @@ export function Sidebar({
         onClose={() => (renameBusy ? undefined : setRenamingSession(null))}
         footer={
           <>
-            <Button onClick={() => setRenamingSession(null)} disabled={renameBusy}>
+            <Button size="sm" onClick={() => setRenamingSession(null)} disabled={renameBusy}>
               {S.common.cancel}
             </Button>
             <Button
+              size="sm"
               variant="primary"
               disabled={renameBusy || !renameText.trim()}
               onClick={() => void confirmRename()}
@@ -2236,6 +2254,7 @@ export function Sidebar({
         }
       >
         <Input
+          size="sm"
           label={S.chat.renameSessionLabel}
           value={renameText}
           error={renameError ?? undefined}
@@ -2277,14 +2296,17 @@ export function Sidebar({
         onClose={() => setRenamingWorkspace(null)}
         footer={
           <>
-            <Button onClick={() => setRenamingWorkspace(null)}>{S.common.cancel}</Button>
-            <Button variant="primary" onClick={confirmRenameWorkspace}>
+            <Button size="sm" onClick={() => setRenamingWorkspace(null)}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" variant="primary" onClick={confirmRenameWorkspace}>
               {S.common.save}
             </Button>
           </>
         }
       >
         <Input
+          size="sm"
           label={S.chat.renameWorkspaceLabel}
           hint={S.chat.renameWorkspaceHint}
           value={workspaceAliasText}
@@ -2646,43 +2668,46 @@ function SessionRow({
                   : "text-gray-700 dark:text-gray-300"
             }`}
           />
-          {/* Pinned indicator: a dim pin after the title (tooltip + sr text; unpin lives in the row menu). */}
+          {/* Four marks for the row's STANDING arrangements, all in one dim cluster and all in
+              the `muted` ink: how the row is filed (pinned), where it can be reached from
+              (messaging relay), whether it runs on its own (a scheduled task) and whether it
+              owns work that outlives the turn (background tasks). None of them is live work, so
+              none competes with the status glyph that follows; each names itself in a tooltip
+              and in sr text, which is what lets them recede this far. */}
+          {/* Pinned indicator: a dim pin after the title (unpin lives in the row menu). */}
           {pinned && canPin && (
-            <span
-              title={S.chat.pinnedSession}
-              className="shrink-0 text-gray-400 dark:text-gray-500"
-            >
+            <span title={S.chat.pinnedSession} className={`shrink-0 ${toneInk.muted}`}>
               <Icon d={PIN_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
           {/* Enabled-messaging indicator: one glyph for every channel, the channel named in
-              the tooltip and sr text. Same dim treatment as the pin (saved-but-disabled
-              configs stay off the row; the binding dialog lives in the row menu). */}
+              the tooltip and sr text (saved-but-disabled configs stay off the row; the binding
+              dialog lives in the row menu). */}
           {s.messagingChannel !== undefined && (
             <span
               title={S.messaging.enabledIndicator[s.messagingChannel]}
-              className="shrink-0 text-gray-400 dark:text-gray-500"
+              className={`shrink-0 ${toneInk.muted}`}
             >
               <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
             </span>
           )}
-          {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
-          <StatusGlyph activity={activity} />
-          {/* Beside the glyph, not instead of it: an idle row can still own background work,
-              and the mark leaves with the last task (live via session_background). */}
+          {/* Scheduled-task indicator: the row says this conversation will run on its own, and
+              the schedules panel says how often and what. A paused task, or one past its end
+              time, draws nothing — nothing more will fire from it, and a mark would be noise. */}
+          {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
+          {/* Background work the conversation owns while sitting idle: parked, not running,
+              so it reads as an arrangement rather than as a turn in progress. The mark leaves
+              with the last task (live via session_background). */}
           {background > 0 && (
             <BackgroundTasksMark
               label={S.chat.backgroundTasks(background)}
               size={ICON_SIZE.rowMark}
             />
           )}
-          {/* Standing arrangement rather than live work: the row says this conversation will run
-              on its own, and the schedules panel says how often and what. A paused task, or one
-              past its end time, draws nothing — nothing more will fire from it, and a mark
-              would be noise. */}
-          {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
+          {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
+          <StatusGlyph activity={activity} />
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>

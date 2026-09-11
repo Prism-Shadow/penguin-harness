@@ -141,13 +141,38 @@ export const en: Strings = {
     /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
     proxyTitle: "Proxy options",
     proxyInfo:
-      "Server-global, and in force the moment it is saved — nothing to restart. Loopback addresses always go direct.",
+      "Server-global, and in force the moment it is saved — nothing to restart. Loopback " +
+      "addresses always go direct. The reachability test sends one credential-free GET to each " +
+      "address listed below and measures this server's own outbound hop: any HTTP answer counts " +
+      "as reachable, 401 and 403 included — a refused credential still proves DNS, TCP and TLS " +
+      "all completed — while unreachable means the transport itself failed. It measures the " +
+      "saved settings, since only a save rebuilds the outbound dispatcher; that is why the test " +
+      "sits below Save, and why an edited address has to be saved before testing. Results " +
+      "appear one by one, each as soon as its own answer arrives.",
     /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "Application uses the proxy",
     proxyForAgent: "Agent environment uses the proxy",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
+    /** Reachability test: the block's heading, and its button at rest and while probing. */
+    proxyProbe: "Reachability test",
+    proxyProbeRun: "Test",
+    proxyProbeRunning: "Testing…",
+    /** A provider answered: the latency IS the result, so this is the only visible text. */
+    proxyProbeLatency: (ms: number): string => `${ms} ms`,
+    /** The same verdict in words, read out beside the number — a bare figure does not say "reachable". */
+    proxyProbeReachableState: "Reachable",
+    /** Listed but not yet measured: an absence, not a verdict. */
+    proxyProbeIdle: "Not tested",
+    /** A provider did not answer: the transport fault, each naming the state in words. */
+    proxyProbeFailure: {
+      timeout: "Timed out",
+      dns: "DNS lookup failed",
+      refused: "Connection refused",
+      tls: "TLS handshake failed",
+      network: "Unreachable",
+    },
     /** Admin-only sub-page (server-global). */
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
@@ -183,6 +208,9 @@ export const en: Strings = {
     launcher: "Shortcuts launcher",
     launcherInfo:
       "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
+    toolAliases: "Tool short names",
+    toolAliasesInfo:
+      'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
@@ -348,6 +376,8 @@ export const en: Strings = {
     edit: "Edit",
     settings: "Settings",
     confirm: "Confirm",
+    /** Sole button of a dialog that only informs: it has nothing to confirm or cancel, so the label acknowledges rather than agrees (and does not repeat the header X's "close"). */
+    gotIt: "Got it",
     loading: "Loading…",
     saved: "Saved",
     saving: "Saving…",
@@ -390,6 +420,14 @@ export const en: Strings = {
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
       "Forgot the admin password? Stop the server and run penguin server reset-admin-password to issue a fresh initial one",
+    /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
+    claimFailedTitle: "Sign-in link no longer works",
+    /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
+    claimFailedDesktop:
+      "This one-time sign-in link has already been used or has expired. Restart the PenguinHarness desktop app to get a fresh link and be signed in automatically, or sign in with your username and password below.",
+    /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
+    claimFailedServer:
+      "The first-login link stops working once the server has a password, and a restart replaces it with a new one. Sign in with your username and password below, or ask your administrator for a new sign-in link.",
   },
 
   account: {
@@ -1756,8 +1794,13 @@ Scenarios:
     backgroundTasks: (n: number) => (n === 1 ? "1 background task" : `${n} background tasks`),
     /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
     sessionScheduled: "Has a scheduled task still to fire",
-    /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
-    backgroundCall: "Runs in the background",
+    /** The tool row's marker for the ONE call whose work went to the background — launched with `run_in_background`, or moved there by the user — rather than for a count. Bracketed, like the row's other outcome markers. */
+    backgroundCall: "[Background]",
+    /** The tool row's inline text action, shown while the call is executing (also its accessible name). */
+    sendToBackground: "Send to background",
+    /** Its tooltip: what the click does to the call and to the conversation. */
+    sendToBackgroundHint:
+      "Send this call to the background; the conversation carries on, and its completion arrives as a background notice.",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
@@ -2053,6 +2096,20 @@ Scenarios:
       return `failed${detail}, keeping current context`;
     },
     unknownTool: "(unknown tool)",
+    /**
+     * Short display names for the built-in tools, keyed by the name the model calls them
+     * by. The tool-call card shows these while the Appearance switch is on; a tool absent
+     * from this table (MCP tools, names only older Traces carry) renders as itself.
+     */
+    toolAliases: {
+      read_file: "read",
+      write_file: "write",
+      edit_file: "edit",
+      exec_command: "exec",
+      input_command: "follow",
+      run_subagent: "subagent",
+      input_subagent: "communicate",
+    } as Record<string, string>,
     workRunning: "Running",
     workDone: "Done",
     workGroupSteps: (n: number) => `${n} ${n === 1 ? "step" : "steps"}`,
@@ -2629,7 +2686,7 @@ Scenarios:
     taskOutput: "Output tokens this turn",
     cacheHit: "Cache hits",
     hitRate: "Hit rate",
-    compactions: "compactions",
+    avgToolCalls: "Avg tools / turn",
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,

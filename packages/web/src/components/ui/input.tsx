@@ -13,12 +13,32 @@ const baseClass =
   "placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60 " +
   "dark:placeholder:text-gray-500";
 
-/** Size tier: base (form default) / sm (compact contexts like filter bars, keeps the toolbar from growing taller). */
+/**
+ * Size tier: sm is the form rung — dense forms, dialogs, filter bars, and what almost every
+ * control in the app takes. base is a full standalone page (the login card), which is roomier
+ * on purpose and asks for the tier by name.
+ *
+ * Every control in the family defaults to sm, so a forgotten `size` lands on the rung its
+ * neighbours are already on. The old default was base, which put a forgotten prop at the roomiest
+ * rung in the densest place it could appear — that is how four dialog fields ended up a tier above
+ * the controls beside them. The default is a safety net, not a licence: call sites still name
+ * their rung.
+ */
 export type ControlSize = "base" | "sm";
 
+/**
+ * Font size per tier, and the only place a control's font size is spelled: Select's menu rows,
+ * OptionMenu's row titles and Textarea all read it, so moving a rung moves the whole family.
+ * The rungs are relative (`--text-*` is in rem and theme.tsx sets the root size per font tier),
+ * so a control must never be given a `text-[Npx]` — that freezes it against the user's setting.
+ */
+export const sizeTextClass: Record<ControlSize, string> = { base: "text-base", sm: "text-xs" };
+
+const sizePadClass: Record<ControlSize, string> = { base: "px-3 py-2", sm: "px-2 py-1" };
+
 export const sizeClass: Record<ControlSize, string> = {
-  base: "px-3 py-2 text-base",
-  sm: "px-2 py-1 text-xs",
+  base: `${sizePadClass.base} ${sizeTextClass.base}`,
+  sm: `${sizePadClass.sm} ${sizeTextClass.sm}`,
 };
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
@@ -97,7 +117,7 @@ export function Input({
   error,
   invalid,
   required,
-  size = "base",
+  size = "sm",
   className,
   autoComplete,
   id,
@@ -150,8 +170,8 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
   invalid?: boolean;
   /** Monospace font (for editing Prompts/parameters). */
   mono?: boolean;
-  /** Font size: base (default, matches body text) or sm (smaller, for editing long Prompts). */
-  size?: "base" | "sm";
+  /** Same size tier as Input (sizeTextClass); sm is the form rung, base a standalone page. */
+  size?: ControlSize;
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
@@ -164,7 +184,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     invalid,
     required,
     mono,
-    size = "base",
+    size = "sm",
     className,
     autoComplete,
     id,
@@ -190,7 +210,11 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       <textarea
         ref={ref}
         id={info !== undefined ? controlId : id}
-        className={`${baseClass} px-3 py-2 ${size === "sm" ? "text-xs leading-relaxed" : "text-base"} ${mono ? "font-mono" : ""} ${bad ? errorClass : ""} ${className ?? ""}`}
+        // Font size comes from the shared record; the padding deliberately does NOT follow
+        // sizeClass — a multi-line box keeps the roomier px-3 py-2 at both tiers, because the
+        // sm tier's py-1 is sized for one line of text and crowds a block of them. The extra
+        // leading goes with that, and only at sm, where the lines are closest together.
+        className={`${baseClass} px-3 py-2 ${sizeTextClass[size]} ${size === "sm" ? "leading-relaxed" : ""} ${mono ? "font-mono" : ""} ${bad ? errorClass : ""} ${className ?? ""}`}
         aria-invalid={bad ? true : undefined}
         aria-required={required || undefined}
         aria-describedby={error ? errorId : undefined}

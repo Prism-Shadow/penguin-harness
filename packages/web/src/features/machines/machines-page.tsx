@@ -43,6 +43,7 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Skeleton } from "../../components/ui/skeleton";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { noAutofill } from "../../components/ui/input";
 import { ChevronDown, NAV_ICONS } from "../../components/ui/icons";
 import { installButtonState, installedMachines, verdictOf } from "./machines-view";
 import type { MachineVerdict } from "./machines-view";
@@ -225,7 +226,8 @@ export function MachinesPage() {
                         onChange={(e) => setQuery(e.target.value)}
                         placeholder={S.machines.search}
                         aria-label={S.machines.search}
-                        className="w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-sm transition-colors outline-none placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
+                        {...noAutofill}
+                        className="w-full rounded-md border border-gray-200 bg-transparent px-2.5 py-1.5 text-xs transition-colors outline-none placeholder:text-gray-400 focus:border-gray-400 dark:border-gray-700 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
                       />
                     </div>
                   )}

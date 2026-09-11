@@ -115,6 +115,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.toolAliases",
+    scope: "browser",
+    why: "Whether tool cards name the built-in tools by their short alias; a display choice of this browser, naming nothing on the server.",
+  },
+  {
+    kind: "exact",
     key: "penguin.terminal.theme",
     scope: "browser",
     why: "Terminal appearance pin (light/dark/follow-app); appearance only.",

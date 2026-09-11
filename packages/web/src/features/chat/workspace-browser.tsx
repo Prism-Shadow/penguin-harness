@@ -104,7 +104,7 @@ import { CodeBlock } from "./code-block";
 import { languageForExtension } from "./code-languages";
 import { WorkspaceFileEditor } from "./workspace-editor";
 import { WorkspaceTreeView } from "./workspace-tree-view";
-import type { TreeToggle } from "./workspace-tree-view";
+import type { TreeToggle } from "../../components/ui/file-tree";
 
 /** Source highlighting cap: tokenizing the full preview cap's worth of content in one go would block the main thread, so beyond this it falls back to unhighlighted. */
 const HIGHLIGHT_LIMIT = 64 * 1024;

@@ -30,9 +30,13 @@ import {
 import { loadModelGroupOrder } from "../models/model-group-order";
 import { useProject } from "../../state/project";
 
-/** Display label for a model: the display name, or falls back to the upstream id (model_id is the raw field, no prefix parsing). */
+/**
+ * Display label for a model: the display name, or falls back to the upstream id (model_id is
+ * the raw field, no prefix parsing). Blank counts as absent — a name the user cleared is sent
+ * as the empty string, which must read as the id rather than as an empty label.
+ */
 export function modelLabel(m: ModelInfo): string {
-  return m.displayName ?? m.modelId;
+  return m.displayName?.trim() || m.modelId;
 }
 
 /**
@@ -326,6 +330,7 @@ export function ModelSelect({
   if (variant === "form") {
     return (
       <FormPicker
+        size="sm"
         open={open}
         setOpen={setOpen}
         leading={logo}

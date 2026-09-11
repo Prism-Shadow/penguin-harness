@@ -6,10 +6,18 @@
  *       204 removes it, 409 process_running while it still runs (stop is the kill route's
  *       job — removal never signals a live process group), 404 for unknown ids and for
  *       sessions whose runtime is gone (nothing left to remove either way);
+ *   - POST /api/sessions/:id/tool-calls/:tcid/background — hand an executing call back as a
+ *       background task: 204, 404 tool_call_not_found when nothing with that id is running,
+ *       409 tool_not_detachable when the tool has no background form;
  *   - 404 for foreign/unknown sessions (the shared resolveSession semantics).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { BackgroundCommandInfo, OmniMessage, ApproveFn } from "@prismshadow/penguin-core";
+import type {
+  BackgroundCommandInfo,
+  OmniMessage,
+  ApproveFn,
+  ToolDetachResult,
+} from "@prismshadow/penguin-core";
 import type { SessionProcessesResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
@@ -20,12 +28,23 @@ const SID = "session-2026-08-18-10-00-00-ccdd0031";
 const SID_UNLOADED = "session-2026-08-18-10-00-00-ccdd0032";
 const STARTED_AT = Date.UTC(2026, 7, 18, 12, 4, 0);
 
+/**
+ * What core's detach answers per tool_call_id in these tests: one executing call the user can
+ * move to the background, one executing call whose tool has no background form. Any other id
+ * is a call that is not running.
+ */
+const DETACH_ANSWERS = new Map<string, ToolDetachResult>([
+  ["call_exec_1", "detached"],
+  ["call_read_1", "not_detachable"],
+]);
+
 /** Fake Session backed by a mutable process array; kill removes the entry like core's registry. */
 function processesFakeSession(
   sessionId: string,
   procs: BackgroundCommandInfo[],
   kills: string[],
   probes?: string[],
+  detaches?: string[],
 ): RuntimeSession {
   return {
     sessionId,
@@ -47,6 +66,11 @@ function processesFakeSession(
       procs.splice(i, 1);
       return true;
     },
+    detachToolCall: (toolCallId: string) => {
+      const answer = DETACH_ANSWERS.get(toolCallId) ?? "not_running";
+      if (answer === "detached") detaches?.push(toolCallId);
+      return answer;
+    },
   };
 }
 
@@ -57,6 +81,7 @@ describe("session processes routes", () => {
   let procs: BackgroundCommandInfo[];
   let kills: string[];
   let probes: string[];
+  let detaches: string[];
 
   const sessionRow = (sessionId: string): SessionRow => ({
     sessionId,
@@ -98,8 +123,12 @@ describe("session processes routes", () => {
     ];
     kills = [];
     probes = [];
+    detaches = [];
     t.deps.sessionsRepo.insert(sessionRow(SID));
-    t.deps.manager.adopt(sessionRow(SID), processesFakeSession(SID, procs, kills, probes));
+    t.deps.manager.adopt(
+      sessionRow(SID),
+      processesFakeSession(SID, procs, kills, probes, detaches),
+    );
     // A second session with no runtime entry: truthfully reports no processes.
     t.deps.sessionsRepo.insert(sessionRow(SID_UNLOADED));
   });
@@ -196,12 +225,46 @@ describe("session processes routes", () => {
     expect(body.processes.map((p) => p.processId)).toEqual(["proc-22222222"]);
   });
 
+  it("POST background moves an executing call to the background (204)", async () => {
+    const res = await api.post(`/api/sessions/${SID}/tool-calls/call_exec_1/background`, {});
+    expect(res.status).toBe(204);
+    expect(detaches).toEqual(["call_exec_1"]);
+  });
+
+  it("POST background → 404 tool_call_not_found for a call that is not running, or an unloaded runtime", async () => {
+    const gone = await api.post(`/api/sessions/${SID}/tool-calls/call_ghost/background`, {});
+    expect(gone.status).toBe(404);
+    expect(((await gone.json()) as { error: { code: string } }).error.code).toBe(
+      "tool_call_not_found",
+    );
+
+    const unloaded = await api.post(
+      `/api/sessions/${SID_UNLOADED}/tool-calls/call_exec_1/background`,
+      {},
+    );
+    expect(unloaded.status).toBe(404);
+    expect(detaches).toEqual([]);
+  });
+
+  it("POST background → 409 tool_not_detachable for a tool with no background form", async () => {
+    const res = await api.post(`/api/sessions/${SID}/tool-calls/call_read_1/background`, {});
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+      "tool_not_detachable",
+    );
+    expect(detaches).toEqual([]);
+  });
+
   it("foreign and unknown sessions → 404 (same auth semantics as the other session routes)", async () => {
     expect((await outsider.get(`/api/sessions/${SID}/processes`)).status).toBe(404);
     expect((await outsider.delete(`/api/sessions/${SID}/processes/proc-22222222`)).status).toBe(
       404,
     );
     expect((await api.delete(`/api/sessions/session-ghost/processes/proc-1`)).status).toBe(404);
+    expect(
+      (await outsider.post(`/api/sessions/${SID}/tool-calls/call_exec_1/background`, {})).status,
+    ).toBe(404);
     expect(kills).toEqual([]);
+    expect(detaches).toEqual([]);
   });
 });
