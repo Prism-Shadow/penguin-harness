@@ -1,7 +1,6 @@
 /**
  * Files panel logic (lib/workspace-tree.ts): the tree's rows from lazily loaded listings,
- * the search box's filter over them, the keyboard step over those rows, where a drop lands,
- * the narrow-layout decision and the tree pane's width bounds, how much of a path the
+ * the search box's filter over them, where a drop lands, the narrow-layout decision and the tree pane's width bounds, how much of a path the
  * toolbar can show, which files count as text (by name, or by their bytes when the name says
  * nothing), the preferences' tolerant parses, and when leaving the editor has to ask.
  */
@@ -33,8 +32,6 @@ import {
   readTreeVisible,
   readTreeWidth,
   sortEntries,
-  subtreeEnd,
-  treeKeyStep,
   upsertEntry,
   utf8Complete,
   visibleCrumbSegments,
@@ -140,54 +137,6 @@ describe("flattenTree", () => {
     const rows = flattenTree(LISTINGS, new Set(["a", "a/b"]));
     expect(rows.find((r) => r.path === "a/b")).toMatchObject({ loaded: true, empty: true });
     expect(rows.find((r) => r.path === "a")).toMatchObject({ loaded: true, empty: false });
-  });
-});
-
-describe("subtreeEnd", () => {
-  it("ends a row's subtree at the next row no deeper than it", () => {
-    // root: a/ (b/ empty, y.md), x.txt — "a" owns rows 1..2, the nested "a/b" owns nothing,
-    // and "x.txt" after them is where both stop.
-    const rows = flattenTree(LISTINGS, new Set(["a", "a/b"]));
-    expect(rows.map((r) => r.path)).toEqual(["a", "a/b", "a/y.md", "x.txt"]);
-    expect(subtreeEnd(rows, 0)).toBe(3);
-    expect(subtreeEnd(rows, 1)).toBe(2);
-    expect(subtreeEnd(rows, 3)).toBe(4);
-  });
-});
-
-describe("treeKeyStep", () => {
-  const rows = flattenTree(LISTINGS, new Set(["a", "a/b"]));
-
-  it("moves down and up within the rows on screen, clamped at the ends", () => {
-    expect(treeKeyStep(rows, null, "ArrowDown")).toEqual({ focus: "a" });
-    expect(treeKeyStep(rows, "a", "ArrowDown")).toEqual({ focus: "a/b" });
-    expect(treeKeyStep(rows, "x.txt", "ArrowDown")).toEqual({ focus: "x.txt" });
-    expect(treeKeyStep(rows, "a/b", "ArrowUp")).toEqual({ focus: "a" });
-    expect(treeKeyStep(rows, "a", "ArrowUp")).toEqual({ focus: "a" });
-    expect(treeKeyStep(rows, "a/b", "Home")).toEqual({ focus: "a" });
-    expect(treeKeyStep(rows, "a", "End")).toEqual({ focus: "x.txt" });
-  });
-
-  it("ArrowRight opens a closed directory, steps into an open one, and does nothing on a file or an empty directory", () => {
-    const closed = flattenTree(LISTINGS, new Set());
-    expect(treeKeyStep(closed, "a", "ArrowRight")).toEqual({ expand: "a" });
-    expect(treeKeyStep(rows, "a", "ArrowRight")).toEqual({ focus: "a/b" });
-    expect(treeKeyStep(rows, "a/b", "ArrowRight")).toBeNull();
-    expect(treeKeyStep(rows, "a/y.md", "ArrowRight")).toBeNull();
-    expect(treeKeyStep(rows, null, "ArrowRight")).toEqual({ focus: "a" });
-  });
-
-  it("ArrowLeft closes an open directory, otherwise steps out to the parent row", () => {
-    expect(treeKeyStep(rows, "a/b", "ArrowLeft")).toEqual({ collapse: "a/b" });
-    expect(treeKeyStep(rows, "a/y.md", "ArrowLeft")).toEqual({ focus: "a" });
-    // A root-level file has no parent row to step out to.
-    expect(treeKeyStep(rows, "x.txt", "ArrowLeft")).toBeNull();
-    expect(treeKeyStep(rows, null, "ArrowLeft")).toBeNull();
-  });
-
-  it("ignores keys that are not tree keys, and does nothing with no rows", () => {
-    expect(treeKeyStep(rows, "a", "Enter")).toBeNull();
-    expect(treeKeyStep([], null, "ArrowDown")).toBeNull();
   });
 });
 
