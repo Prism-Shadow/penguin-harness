@@ -71,7 +71,8 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 | `max_tokens` | 单模型最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens`，缺省则继承 |
 | `fast_mode` | 单模型快速模式（厂商的溢价快速推理档位）；默认关闭，只持久化 `true`。只对 AgentHub client 支持该档位的模型开放，其余模型会拒绝携带该参数的请求——见[模型与 Provider](/models#快速模式) |
 | `pricing` | 三档价格 `cache_read` / `cache_write` / `output`，单位 USD 每百万 Token（`unit = "usd_per_mtok"`） |
-| `api_key` | 内联凭证；留空回退到 Provider 环境变量 |
+| `api_key` | 内联凭证；留空回退到 Provider 环境变量；以逗号、分号或换行分隔的值会解析为多个 key |
+| `api_keys` | 用于轮询轮换的有序内联凭据数组；Session 执行时优先于 `api_key` |
 | `base_url` | 自定义 Base URL；内置目录会为网关，以及固定了 client 的直连条目——MiniMax M3 与 DeepSeek `deepseek-flash`——预置 |
 | `created_at` | `api_key` 写入时间（ISO 8601，界面维护的展示字段） |
 
@@ -85,7 +86,8 @@ context_window = 1000000
 vision = true
 client_type = "deepseek-v4"
 base_url = "https://api.deepseek.com"
-api_key = "sk-..."
+api_key = "sk-primary..."
+api_keys = ["sk-primary...", "sk-secondary..."]
 
 [models.pricing]
 unit = "usd_per_mtok"
