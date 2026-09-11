@@ -57,6 +57,9 @@ import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
+import { toneDot, toneInk, toneStrip, toneSurface } from "../../lib/tone";
+import { keyHealthLabel, keyHealthTone } from "./model-keys-health";
+import type { ModelKeyHealthReportDto } from "./model-keys-health";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { FieldError, FieldLabel } from "../../components/ui/field";
@@ -129,7 +132,6 @@ import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
-import { toneInk, toneStrip } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
@@ -2280,6 +2282,11 @@ function ModelDialog({
   });
   /** Field-level validation errors: text below the corresponding input, input highlighted red — closer to the error site than a top-level banner. */
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [multiKeyMode, setMultiKeyMode] = useState<boolean>(
+    () => form.apiKeyInput.includes("\n") || form.apiKeyInput.includes(","),
+  );
+  const [keyHealth, setKeyHealth] = useState<ModelKeyHealthReportDto | null>(null);
+  const [resettingKeys, setResettingKeys] = useState(false);
   /** Connectivity test in progress. */
   const [testing, setTesting] = useState(false);
   /**
@@ -2322,6 +2329,43 @@ function ModelDialog({
   const [tokenUnitRef, tokenUnitWidth] = useAffixWidth();
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
+
+  const keyHealthSeq = useRef(0);
+
+  const loadKeyHealth = useCallback(async () => {
+    const seq = ++keyHealthSeq.current;
+    if (isNew || !form.provider || !form.modelId) {
+      setKeyHealth(null);
+      return;
+    }
+    try {
+      const res = await api.getModelKeyHealth(projectId, form.provider, form.modelId);
+      if (keyHealthSeq.current === seq) {
+        setKeyHealth(res);
+      }
+    } catch {
+      // fail-soft
+    }
+  }, [isNew, projectId, form.provider, form.modelId]);
+
+  useEffect(() => {
+    setKeyHealth(null);
+    void loadKeyHealth();
+  }, [loadKeyHealth]);
+
+  useEffect(() => {
+    if (!keyHealth || keyHealth.cooldownCount === 0) return;
+    const cooldownKeys = keyHealth.keys.filter(
+      (k) => k.status === "cooldown" && k.cooldownRemainingMs > 0,
+    );
+    if (cooldownKeys.length === 0) return;
+    const minCooldown = Math.min(...cooldownKeys.map((k) => k.cooldownRemainingMs));
+    const delay = Math.max(1000, Math.min(minCooldown + 200, 60_000));
+    const timer = setTimeout(() => {
+      void loadKeyHealth();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [keyHealth, loadKeyHealth]);
 
   // Read from the live form, not the saved row, so editing the upstream id, the protocol or
   // the base URL updates the answer as it is typed.
@@ -3004,36 +3048,108 @@ function ModelDialog({
           </div>
         )}
 
-        {/* 1) API key — the most commonly used, placed first in the field section; "get API key"
-            link next to the label. PasswordInput carries its own show/hide toggle and brings its
-            own <label> wrapper, so this outer container is a <div> (a nested <label> is invalid). */}
+        {/* 1) API key — supports single key and multi-key rotation */}
         <div className="block">
           <span className="mb-1 flex items-baseline justify-between gap-2">
             <FieldLabel block={false}>{S.models.apiKey}</FieldLabel>
-            {dialogProvider?.apiKeyUrl && (
-              <a
-                href={dialogProvider.apiKeyUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+            <div className="flex items-center gap-3">
+              {dialogProvider?.apiKeyUrl && (
+                <a
+                  href={dialogProvider.apiKeyUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+                >
+                  {S.models.getApiKey} ↗
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setMultiKeyMode((prev) => !prev)}
+                className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               >
-                {S.models.getApiKey} ↗
-              </a>
-            )}
+                {multiKeyMode ? S.models.multiKeySingle : S.models.multiKeyRotation}
+              </button>
+            </div>
           </span>
-          <PasswordInput
-            size="sm"
-            aria-label={S.models.apiKey}
-            value={form.apiKeyInput}
-            disabled={!canEdit}
-            onChange={(e) => set({ apiKeyInput: e.target.value, clearApiKey: false })}
-            className="font-mono"
-            autoComplete="off"
-            autoFocus={!isNew}
-            placeholder={apiKeyHint}
-          />
+          {multiKeyMode ? (
+            <textarea
+              rows={3}
+              aria-label={S.models.apiKey}
+              value={form.apiKeyInput}
+              disabled={!canEdit}
+              onChange={(e) => set({ apiKeyInput: e.target.value, clearApiKey: false })}
+              className="w-full rounded-md border border-gray-300 bg-white p-2 font-mono text-xs text-gray-900 shadow-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 disabled:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              placeholder={S.models.multiKeyPlaceholder}
+            />
+          ) : (
+            <PasswordInput
+              size="sm"
+              aria-label={S.models.apiKey}
+              value={form.apiKeyInput}
+              disabled={!canEdit}
+              onChange={(e) => set({ apiKeyInput: e.target.value, clearApiKey: false })}
+              className="font-mono"
+              autoComplete="off"
+              autoFocus={!isNew}
+              placeholder={apiKeyHint}
+            />
+          )}
         </div>
         {envNote && <p className="text-xs text-gray-400 dark:text-gray-500">{envNote}</p>}
+        {keyHealth && keyHealth.keys.length > 0 && (
+          <div className="mt-2 space-y-1.5 rounded-lg border border-gray-200 bg-gray-50/50 p-2.5 dark:border-gray-800 dark:bg-gray-900/40">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                {S.models.keyHealthTitle(keyHealth.healthyCount, keyHealth.totalKeys)}
+              </span>
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={resettingKeys}
+                  onClick={async () => {
+                    setResettingKeys(true);
+                    try {
+                      await api.resetModelKeys(projectId, form.provider, form.modelId);
+                      toastSuccess(S.models.keysResetSuccess);
+                      await loadKeyHealth();
+                    } catch (err) {
+                      toastError(apiErrorText(err));
+                    } finally {
+                      setResettingKeys(false);
+                    }
+                  }}
+                >
+                  {resettingKeys ? S.models.resettingKeys : S.models.resetKeys}
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {keyHealth.keys.map((k, idx) => {
+                const tone = keyHealthTone(k.status);
+                return (
+                  <span
+                    key={idx}
+                    className={`inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-mono font-medium ${toneSurface[tone]}`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
+                    <span>{k.maskedKey}</span>
+                    <span className="text-[10px] opacity-80">
+                      (
+                      {keyHealthLabel(k, {
+                        active: S.models.keyHealthActive,
+                        cooldown: S.models.keyHealthCooldown,
+                        evicted: S.models.keyHealthEvicted,
+                      })}
+                      )
+                    </span>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {form.credential?.apiKeyMasked && !form.apiKeyInput && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
             <span className="font-mono">{form.credential.apiKeyMasked}</span>

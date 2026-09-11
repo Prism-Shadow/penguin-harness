@@ -32,8 +32,14 @@ import type {
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import { ApiError } from "../../api/client";
-import { abortSubagent, getAgentSkills, messageSubagent, patchSession } from "../../api/endpoints";
-import { toastError } from "../../components/ui/toast";
+import {
+  abortSubagent,
+  getAgentSkills,
+  messageSubagent,
+  patchSession,
+  resumeSubagent,
+} from "../../api/endpoints";
+import { toastError, toastSuccess } from "../../components/ui/toast";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
@@ -188,6 +194,20 @@ export function SubagentsView({
     navigate(`/chat/${active.sessionId}`);
   };
 
+  const [resuming, setResuming] = useState(false);
+  const handleResume = async (): Promise<void> => {
+    if (!active || resuming) return;
+    setResuming(true);
+    try {
+      await resumeSubagent(session.sessionId, active.sessionId);
+      toastSuccess(S.chat.subagentResumed);
+    } catch (err: unknown) {
+      toastError(apiErrorText(err));
+    } finally {
+      setResuming(false);
+    }
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Call graph of the displayed Task — latest by default, a chip's Task when pinned (capped height; scrolls both ways for deep/wide trees). */}
@@ -248,6 +268,20 @@ export function SubagentsView({
               <StatusIcon state="running" size={10} label={S.chat.subagentRunning} />
             )}
             <span className="min-w-0 flex-1" />
+            {!activeRunning && (
+              <button
+                type="button"
+                title={S.chat.resumeSubagent}
+                aria-label={S.chat.resumeSubagent}
+                data-testid="subagent-resume"
+                disabled={resuming}
+                onClick={() => void handleResume()}
+                className="flex h-6 items-center gap-1 rounded px-1.5 text-xs text-blue-600 transition-colors duration-150 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40"
+              >
+                <GlyphIcon d="M8 5v14l11-7z" size={10} />
+                <span>{S.chat.resumeSubagent}</span>
+              </button>
+            )}
             {/* Jump out of the panel: the child conversation as a full Session. */}
             <button
               type="button"

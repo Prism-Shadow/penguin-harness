@@ -12,6 +12,7 @@ import type { ErrorCode, OmniMessage, StopReason, ToolDefinition } from "../omni
 import type { ThinkingLevelName } from "./shared.js";
 // Concrete class, used only as a type annotation (type-only import; no runtime dependency, no circular reference).
 import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
+import type { ApiKeyRotator } from "../llm/key-rotator.js";
 
 /**
  * GenerativeModel initialization config.
@@ -20,6 +21,10 @@ import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
 export interface GenerativeModelConfig {
   modelId: string;
   apiKey?: string;
+  /** Multiple API keys for rotation, load balancing, and failover. */
+  apiKeys?: string[];
+  /** Optional pre-configured key rotator instance (e.g. from shared registry). */
+  keyRotator?: ApiKeyRotator;
   baseUrl?: string;
   /**
    * AgentHub client protocol (`openai-chat` / `openai-responses` / `claude-4-8` /
@@ -136,4 +141,8 @@ export interface LLMOutcome {
  */
 export interface LLMInterface {
   streamGenerate(parameters: GenerativeModelParameters): AsyncGenerator<OmniMessage, LLMOutcome>;
+  /** Optional key rotator managing active keys for this model. */
+  readonly keyRotator?: ApiKeyRotator;
+  /** Advances/rotates the active API key to the next available candidate. */
+  rotateKey?(): boolean;
 }

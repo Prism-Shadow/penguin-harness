@@ -28,6 +28,10 @@ These configure PenguinHarness itself, so `PORT`, `HOST`, `PENGUIN_WEB_DIST` and
 
 One thing travels the other way: **this installation's own `penguin` is first on the PATH of every command an Agent runs**. At startup the server writes a launcher script at `<root>/bin/penguin` — it runs the CLI entry named above, on the server's own Node — and puts that directory at the front of PATH for each command. So `penguin` inside a command is the harness the Agent is running in, whatever version happens to be installed globally on the machine. The directory is prepended inside the shell as well as in the environment, because commands run through a login shell whose profile routinely rewrites PATH afterwards; that also puts it ahead of a `PATH` set in the [vault](#vault), which otherwise replaces the inherited value outright. The launcher is rewritten at every start, so a moved installation is picked up by the next one, and when there is no entry to point at none is written and `penguin` resolves however it did before.
 
+### Command shell resolution
+
+`PENGUIN_SHELL` is always authoritative. Without it, POSIX systems resolve their normal shell. On Windows the command runner enumerates every `bash` on `PATH` and rejects WSL launchers under `%SystemRoot%` or `WindowsApps`, plus `wsl.exe`; if a later non-WSL bash is found, its absolute path is used so an earlier WSL alias cannot win at spawn time. If no usable `bash` is directly on `PATH`, each discovered `git.exe` is used to probe sibling `..\\bin\\bash.exe` and `..\\usr\\bin\\bash.exe` locations from Git for Windows. The installed package's `PENGUIN_BUNDLED_SHELL` comes next, then PowerShell 7 (`pwsh`), then Windows PowerShell. Resolution is cached for the server process, so PATH or installation changes apply after restart. This keeps native drive paths such as `D:/workspace` in a Windows-aware shell instead of accidentally handing them to WSL.
+
 `PENGUIN_PREVIEW_ORIGIN` must differ from the app's origin by **hostname**, not just port: cookies ignore ports, so a second port would still share the session cookie. Leave it unset for local use — the app is canonicalized onto `localhost` and previews are served from `127.0.0.1`, which needs no configuration and no DNS. Set it when the app is reached over a LAN address or a real domain; otherwise previews there fall back to a same-origin sandbox where `localStorage`, cookies and third-party embeds do not work. When you do set it on a real domain, keep the session cookie host-only (no `Domain=`), or a sibling subdomain shares it. An unparseable value is a startup error rather than a silent fallback.
 
 ### Provider credential variables
@@ -71,7 +75,8 @@ Model entry (`[[models]]`) fields:
 | `max_tokens` | Per-model max output tokens; overrides the Agent's `model.max_tokens` when set, omitted = inherit it |
 | `fast_mode` | Per-model fast mode (premium faster serving tier); off by default, only `true` is persisted. Offered only for models whose AgentHub client can serve it; the others reject requests carrying it — see [Models](/models#fast-mode) |
 | `pricing` | Three price buckets `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`) |
-| `api_key` | Inline credential; when empty, falls back to the provider environment variable |
+| `api_key` | Inline credential; when empty, falls back to the provider environment variable. A comma-, semicolon-, or newline-delimited value is parsed as multiple keys |
+| `api_keys` | Ordered inline credential array for round-robin rotation; takes precedence over `api_key` for Session execution |
 | `base_url` | Custom base URL; preset by the built-in catalog for gateways and for the direct rows that pin a client — MiniMax M3 and DeepSeek `deepseek-flash` |
 | `created_at` | Write timestamp of `api_key` (ISO 8601; a display field maintained by the interface layer) |
 
@@ -85,7 +90,8 @@ context_window = 1000000
 vision = true
 client_type = "deepseek-v4"
 base_url = "https://api.deepseek.com"
-api_key = "sk-..."
+api_key = "sk-primary..."
+api_keys = ["sk-primary...", "sk-secondary..."]
 
 [models.pricing]
 unit = "usd_per_mtok"

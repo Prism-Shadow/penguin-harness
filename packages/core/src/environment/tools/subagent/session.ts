@@ -40,8 +40,31 @@ import type {
   SubagentHandle,
   ThinkingLevelName,
 } from "../../../interfaces/index.js";
+import type { ApiKeyRotator } from "../../../llm/key-rotator.js";
 import type { ToolResult } from "../types.js";
 import { CappedTextBuffer, WakeSignal } from "../background/index.js";
+
+/**
+ * Detects whether a subagent round cutoff was caused by rate limits (429 / quota / cooldown).
+ */
+export function isRateLimitCutoff(cut: RunCutoff, rotator?: ApiKeyRotator): boolean {
+  if (cut.kind !== "llm_failure") return false;
+  const msg = (cut.errorMessage ?? "").toLowerCase();
+  if (
+    msg.includes("rate limit") ||
+    msg.includes("429") ||
+    msg.includes("too many requests") ||
+    msg.includes("resource has been exhausted") ||
+    msg.includes("quota exceeded") ||
+    msg.includes("cooling down")
+  ) {
+    return true;
+  }
+  if (rotator && !rotator.hasAvailableKeys() && rotator.getEarliestCooldownMs() !== undefined) {
+    return true;
+  }
+  return false;
+}
 
 /** Message buffer count cap: overflow drops the oldest (only frontend replay is affected — the child Session has its own Trace). */
 const MESSAGE_BUFFER_CAP = 4096;
@@ -79,6 +102,7 @@ export class ManagedSubagentSession {
 
   private isRunning = false;
   private exitInfo: SubagentExit | null = null;
+  private wasAbortedOrInterrupted = false;
   private killed = false;
 
   private readonly approvals: PendingApproval[] = [];
@@ -151,6 +175,21 @@ export class ManagedSubagentSession {
     return this.killed;
   }
 
+  /** Whether the most recent run was aborted or interrupted. */
+  get isInterrupted(): boolean {
+    return this.wasAbortedOrInterrupted;
+  }
+
+  /** Whether the most recent run ended with a failed status. */
+  get isFailed(): boolean {
+    return this.exitInfo?.status === "failed";
+  }
+
+  /** Whether the subagent is in a state where it can be resumed. */
+  get canResume(): boolean {
+    return !this.killed && !this.isRunning && (this.wasAbortedOrInterrupted || this.isFailed);
+  }
+
   /**
    * Starts a new round of the task on the child Session (async pump, doesn't block the caller).
    * `messages` is the round's input in the same OmniMessage shape `steer` takes — the caller
@@ -165,10 +204,20 @@ export class ManagedSubagentSession {
     if (this.isRunning) throw new Error("subagent is still running");
     this.isRunning = true;
     this.exitInfo = null;
+    this.wasAbortedOrInterrupted = false;
     this.reportCurrentRun = opts?.suppressDoneReport !== true;
     this.runCtrl = new AbortController();
     this.notifyState();
     void this.pump(messages, this.runCtrl);
+  }
+
+  /**
+   * Resumes an interrupted or failed run on the child Session.
+   * If messages are supplied, they are passed as continuation input;
+   * if empty, the session resumes directly from pending carryover.
+   */
+  resumeRun(messages: OmniMessage[] = [], opts?: { suppressDoneReport?: boolean }): void {
+    this.startRun(messages, opts);
   }
 
   /**
@@ -193,6 +242,7 @@ export class ManagedSubagentSession {
     // (the input_subagent call's own result, or the panel the user pressed stop on): the
     // settling round must not additionally fire a completion report at the parent.
     this.reportCurrentRun = false;
+    this.wasAbortedOrInterrupted = true;
     this.runCtrl?.abort();
     return true;
   }
@@ -352,59 +402,89 @@ export class ManagedSubagentSession {
 
   /** Drives one round of `handle.run`: buffers messages and text, settling the terminal state when it ends. */
   private async pump(messages: OmniMessage[], runCtrl: AbortController): Promise<void> {
+    const maxRateLimitRetries = 3;
+    let nextMessages = messages;
     let wroteAny = false;
-    // Whether the round was cut off early (a user abort, a terminal LLM failure, a
-    // mid-task compaction failure): read from the run generator's return value — the
-    // child engine states it directly; a cut-off round is reported failed, not completed.
     let cut: RunCutoff | null = null;
     try {
-      // Either scope ends the round: the session-lifetime kill, or this run's own abort.
-      // Manual iteration (not for-await) so the handle's return value — whether the round
-      // was cut off — is read; a child session failure doesn't throw.
-      const it = this.handle.run({
-        messages,
-        signal: AbortSignal.any([this.abortCtrl.signal, runCtrl.signal]),
-        approve: this.childApprove,
-      });
-      for (;;) {
-        const res = await it.next();
-        if (res.done) {
-          // Older embedders' handles may return nothing: that counts as ran-to-completion.
-          cut = res.value ?? null;
-          break;
+      for (let attempt = 0; attempt <= maxRateLimitRetries; attempt++) {
+        cut = null;
+        // Either scope ends the round: the session-lifetime kill, or this run's own abort.
+        // Manual iteration (not for-await) so the handle's return value — whether the round
+        // was cut off — is read; a child session failure doesn't throw.
+        const it = this.handle.run({
+          messages: nextMessages,
+          signal: AbortSignal.any([this.abortCtrl.signal, runCtrl.signal]),
+          approve: this.childApprove,
+        });
+        for (;;) {
+          const res = await it.next();
+          if (res.done) {
+            // Older embedders' handles may return nothing: that counts as ran-to-completion.
+            cut = res.value ?? null;
+            break;
+          }
+          const msg = res.value;
+          this.bufferMessage(msg);
+          if ((msg.origin?.length ?? 0) === 1) {
+            const p = msg.payload as {
+              type?: string;
+              event_type?: string;
+              text?: string;
+            };
+            if (
+              p.type === "partial_text" &&
+              p.event_type === "delta" &&
+              typeof p.text === "string" &&
+              p.text
+            ) {
+              wroteAny = true;
+              this.appendText(p.text);
+            } else if (
+              p.type === "text" &&
+              (p as { role?: string }).role === "assistant" &&
+              typeof p.text === "string" &&
+              p.text
+            ) {
+              // The child's most recent COMPLETE utterance: what input_subagent hands the model
+              // and what a completion report carries — an idempotent "what it last said"
+              // snapshot rather than an incremental delta drain.
+              wroteAny = true;
+              this.lastAnswer = p.text;
+            }
+          }
+          this.wakeSignal.notify();
         }
-        const msg = res.value;
-        this.bufferMessage(msg);
-        if ((msg.origin?.length ?? 0) === 1) {
-          const p = msg.payload as {
-            type?: string;
-            event_type?: string;
-            text?: string;
-          };
+
+        if (cut !== null) {
+          const rotator = this.handle.getRotator?.();
           if (
-            p.type === "partial_text" &&
-            p.event_type === "delta" &&
-            typeof p.text === "string" &&
-            p.text
+            attempt < maxRateLimitRetries &&
+            !this.killed &&
+            !this.abortCtrl.signal.aborted &&
+            !runCtrl.signal.aborted &&
+            isRateLimitCutoff(cut, rotator)
           ) {
-            wroteAny = true;
-            this.appendText(p.text);
-          } else if (
-            p.type === "text" &&
-            (p as { role?: string }).role === "assistant" &&
-            typeof p.text === "string" &&
-            p.text
-          ) {
-            // The child's most recent COMPLETE utterance: what input_subagent hands the model
-            // and what a completion report carries — an idempotent "what it last said"
-            // snapshot rather than an incremental delta drain.
-            wroteAny = true;
-            this.lastAnswer = p.text;
+            // Rate limit encountered: rotate key and retry after cooldown or brief wait
+            this.handle.rotateKey?.();
+            const earliestCooldownMs = rotator?.getEarliestCooldownMs();
+            const waitMs = Math.min(earliestCooldownMs ?? 500, 30_000);
+            if (waitMs > 0) {
+              await this.wakeSignal.wait(waitMs);
+            }
+            if (!this.killed && !this.abortCtrl.signal.aborted && !runCtrl.signal.aborted) {
+              nextMessages = [];
+              continue;
+            }
           }
         }
-        this.wakeSignal.notify();
+        break;
       }
+
       if (cut !== null) {
+        if (cut.kind === "abort") {
+          this.wasAbortedOrInterrupted = true;
+        }
         // The note reaches the parent model: the cause code plus the raw detail.
         const detail = cut.errorMessage;
         const cause = cut.errorCode ?? (cut.kind === "abort" ? "aborted" : cut.kind);

@@ -142,6 +142,7 @@ import { eventsRoutes, userChannelKey } from "./http/routes/events.js";
 import { projectsRoutes } from "./http/routes/projects.js";
 import { membersRoutes } from "./http/routes/members.js";
 import { modelsRoutes } from "./http/routes/models.js";
+import { ModelKeyHealthService } from "./services/model-key-health.js";
 import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./http/routes/model-oauth.js";
 import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
 import { commandPolicyRoutes } from "./http/routes/command-policy.js";
@@ -179,6 +180,8 @@ export interface AppDeps {
   adminService: AdminService;
   projectService: ProjectService;
   projectConfigService: ProjectConfigService;
+  /** In-memory API key health tracking and rotation registry. */
+  keyHealthService: ModelKeyHealthService;
   /** In-flight provider key-minting flows (PKCE verifiers live here and nowhere else). */
   modelOAuth: ModelOAuthService;
   agentService: AgentService;
@@ -898,6 +901,7 @@ export function buildAppDeps(
     applyGroupKey: (projectId, provider, apiKey) =>
       projectConfigService.setGroupApiKey(projectId, provider, apiKey),
   });
+  const keyHealthService = new ModelKeyHealthService();
   const agentConfigService = new AgentConfigService(config.root);
   const snapshots = new SnapshotService(config.root);
   const agentService = new AgentService(config.root, agentsRepo, agentConfigService, snapshots);
@@ -1118,6 +1122,7 @@ export function buildAppDeps(
     adminService,
     projectService,
     projectConfigService,
+    keyHealthService,
     modelOAuth,
     agentService,
     agentConfigService,

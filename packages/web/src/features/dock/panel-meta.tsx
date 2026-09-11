@@ -37,6 +37,8 @@ export function AgentsGlyph({ size = ICON_SIZE.iconButton }: { size?: number }) 
   );
 }
 
+const API_TRACKER_ICON = "M22 12h-4l-3 9L9 3l-3 9H2";
+
 /** The panel's short display name (read at call time — `S` is a live locale binding). */
 export function panelLabel(kind: PanelKind): string {
   switch (kind) {
@@ -52,6 +54,8 @@ export function panelLabel(kind: PanelKind): string {
       return S.messaging.panelTitle;
     case "schedules":
       return S.schedule.panelTitle;
+    case "apiTracker":
+      return S.apiTracker?.panelTitle ?? "API Tracker";
   }
 }
 
@@ -69,5 +73,7 @@ export function panelGlyph(kind: PanelKind, size: number = ICON_SIZE.iconButton)
       return <GlyphIcon d={MESSAGING_ICON} size={size} />;
     case "schedules":
       return <GlyphIcon d={SCHEDULE_ICON} size={size} />;
+    case "apiTracker":
+      return <GlyphIcon d={API_TRACKER_ICON} size={size} />;
   }
 }

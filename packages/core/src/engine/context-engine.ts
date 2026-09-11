@@ -84,6 +84,7 @@ import type {
   LLMOutcome,
   ThinkingLevelName,
 } from "../interfaces/index.js";
+import type { ApiKeyRotator } from "../llm/key-rotator.js";
 import { MergeQueue, pumpOpener } from "../internal/merge-queue.js";
 
 /** Trace sink: `write` a complete/event/meta message; `rotate` starts a new file (compaction splits files). */
@@ -570,6 +571,16 @@ export class ContextEngine {
   /** Moves the Session's thinking level mid-context (see the `thinkingLevel` field); applies from the next turn request. */
   setThinkingLevel(level: ThinkingLevelName): void {
     this.thinkingLevel = level;
+  }
+
+  /** Returns the key rotator managing the underlying model's API keys, if configured. */
+  getKeyRotator(): ApiKeyRotator | undefined {
+    return this.llm.keyRotator;
+  }
+
+  /** Advances/rotates the underlying model's API key to the next available candidate. */
+  rotateKey(): boolean {
+    return this.llm.rotateKey?.() ?? false;
   }
 
   /**

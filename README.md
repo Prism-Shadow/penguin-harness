@@ -108,6 +108,8 @@ Three plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills)
 
 Each family's latest generation only — the app's **Models** page lists every built-in preset, and any OpenAI-protocol endpoint works too: pick a preset, or point a custom endpoint at any of the 1000+ online and local models.
 
+A model can use several API keys. In **Models**, switch the API-key field to **Multi-key rotation** and paste one key per line, or separate keys with commas or semicolons. Requests rotate round-robin or via concurrency-aware subagent allocation strategies (`auto`, `least_busy`, `round_robin`, `dedicated`, `inherit`) with active lease tracking. HTTP 429 rate limits trigger automatic backoff retry and rotation to another healthy key while cooling the affected key for 60 seconds; HTTP 401 removes the key from rotation. Failed or interrupted subagents preserve their full state and can be resumed seamlessly (`resume: true` or via the Web UI). Track keys, active leases, error logs, and usage in real time using the built-in **API Tracker** dock panel. See the [model documentation](https://penguin.ooo/docs/models#multiple-api-keys-and-health) and [web app documentation](https://penguin.ooo/docs/web-app#api-tracker-panel) for details.
+
 ## Requirements
 
 | Requirement  | Supported                                                                  |

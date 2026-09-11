@@ -104,9 +104,10 @@ export function createInputSubagentTool(
 
       const prompt = typeof args["prompt"] === "string" ? (args["prompt"] as string) : "";
       const empty = prompt.trim().length === 0;
+      const resume = args["resume"] === true;
       const yieldMs = clampYield(
         args["yield_time_ms"],
-        empty ? DEFAULT_SUBAGENT_POLL_YIELD_MS : DEFAULT_SUBAGENT_YIELD_MS,
+        empty && !resume ? DEFAULT_SUBAGENT_POLL_YIELD_MS : DEFAULT_SUBAGENT_YIELD_MS,
         definition.timeoutMs,
       );
 
@@ -125,12 +126,26 @@ export function createInputSubagentTool(
         if (signal?.aborted) return { stopReason: "aborted" };
       }
 
-      // A non-empty prompt: steering while the child runs (the child's own steering queue —
-      // the same mechanism a user steers the main session with; sender "parent_agent" like
-      // the follow-up prompts), a follow-up run while it is idle. steer() itself answers
-      // false on an idle child, so the running/idle race settles on whichever side is true
-      // at delivery.
-      if (!empty) {
+      // Resume action: if resume is requested on an idle session, resume it (with or without prompt).
+      if (resume) {
+        if (session.running) {
+          yield delta(`[subagent ${subagentId} is currently running; cannot resume]\n`);
+        } else {
+          try {
+            session.startRun(empty ? [] : [userText(prompt, "parent_agent")]);
+            yield delta(`[resuming subagent ${subagentId}...]\n`);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            yield delta(`[input_subagent resume error: ${message}]`);
+            return { stopReason: "fatal" };
+          }
+        }
+      } else if (!empty) {
+        // A non-empty prompt: steering while the child runs (the child's own steering queue —
+        // the same mechanism a user steers the main session with; sender "parent_agent" like
+        // the follow-up prompts), a follow-up run while it is idle. steer() itself answers
+        // false on an idle child, so the running/idle race settles on whichever side is true
+        // at delivery.
         if (session.steer([userText(prompt, "parent_agent")])) {
           yield delta(`[steering message queued for subagent ${subagentId}]\n`);
         } else if (!session.running) {
@@ -176,7 +191,10 @@ export function createInputSubagentTool(
       }
       // This round of work has ended: report the end state; the session is kept (can be resumed), not removed from the registry.
       const result = resultForSubagentExit(session.exit);
-      const idleHint = `[subagent idle with subagent_id ${subagentId}; send a follow-up prompt to continue]`;
+      const isFailedOrInterrupted = session.exit?.status === "failed" || session.isInterrupted;
+      const idleHint = isFailedOrInterrupted
+        ? `[subagent failed/interrupted with subagent_id ${subagentId}; send input_subagent with resume=true to retry/resume]`
+        : `[subagent idle with subagent_id ${subagentId}; send a follow-up prompt to continue]`;
       return {
         ...result,
         note: result.note !== undefined ? `${result.note} ${idleHint}` : idleHint,

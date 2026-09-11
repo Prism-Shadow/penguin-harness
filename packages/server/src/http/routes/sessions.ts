@@ -1052,6 +1052,33 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.body(null, aborted ? 202 : 204);
   });
 
+  // Resume one subagent child: resumes an interrupted or failed run
+  app.post("/:sessionId/subagents/:childSessionId/resume", async (c) => {
+    const row = resolveSession(c);
+    const body: Record<string, unknown> = await readJson(c).catch(() => ({}));
+    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    const outcome = await deps.manager.sendToSubagent(
+      row.sessionId,
+      pathParam(c, "childSessionId"),
+      text ? [userText(text)] : [],
+    );
+    if (outcome === "gone") {
+      throw new HttpError(
+        404,
+        "subagent_gone",
+        "This subagent session no longer exists and could not be revived.",
+      );
+    }
+    if (outcome === "busy") {
+      throw new HttpError(
+        409,
+        "subagent_busy",
+        "This subagent cannot be resumed right now; it is currently running.",
+      );
+    }
+    return c.json({ outcome } satisfies SubagentMessageResponse);
+  });
+
   // Recall a queued follow-up task back to the composer (#287): removes it from the queue
   // before it auto-starts and returns its original content (with the thinking level it was
   // queued with). Every queued follow-up carries that content, whichever path queued it, so

@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { resolveShell } from "../src/environment/tools/command/shell.js";
+import { isWslExecutable, resolveShell } from "../src/environment/tools/command/shell.js";
 
 const POWERSHELL_ARGS = ["-NoLogo", "-NoProfile", "-Command"];
 
@@ -188,6 +188,59 @@ describe("resolveShell — win32 probing", () => {
     expect(shell).toEqual({ command: "pwsh", args: POWERSHELL_ARGS, name: "pwsh" });
   });
 
+  it("skips the WSL app execution alias in WindowsApps and falls through to pwsh", () => {
+    const shell = resolveShell({
+      platform: "win32",
+      env: { SystemRoot: "C:\\WINDOWS" },
+      whichAll: which({
+        bash: [
+          "C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\bash.exe",
+          "C:\\Windows\\System32\\bash.exe",
+        ],
+        pwsh: ["C:\\Program Files\\PowerShell\\7\\pwsh.exe"],
+      }),
+    });
+    expect(shell).toEqual({ command: "pwsh", args: POWERSHELL_ARGS, name: "pwsh" });
+  });
+
+  it("picks Git bash with its full path when WSL bash is earlier on PATH", () => {
+    const shell = resolveShell({
+      platform: "win32",
+      env: { SystemRoot: "C:\\WINDOWS" },
+      whichAll: which({
+        bash: [
+          "C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\bash.exe",
+          "C:\\Program Files\\Git\\bin\\bash.exe",
+        ],
+        pwsh: ["C:\\Program Files\\PowerShell\\7\\pwsh.exe"],
+      }),
+    });
+    // Must use the resolved full path so spawn does not run the first WSL match on PATH
+    expect(shell).toEqual({
+      command: "C:\\Program Files\\Git\\bin\\bash.exe",
+      args: ["-lc"],
+      name: "bash",
+    });
+  });
+
+  it("finds Git bash under Git install dir when only git.exe is in PATH", () => {
+    const shell = resolveShell({
+      platform: "win32",
+      env: { SystemRoot: "C:\\WINDOWS" },
+      whichAll: which({
+        bash: ["C:\\Windows\\System32\\bash.exe"],
+        git: ["C:\\Program Files\\Git\\cmd\\git.exe"],
+        pwsh: ["C:\\Program Files\\PowerShell\\7\\pwsh.exe"],
+      }),
+      exists: has("C:\\Program Files\\Git\\bin\\bash.exe"),
+    });
+    expect(shell).toEqual({
+      command: "C:\\Program Files\\Git\\bin\\bash.exe",
+      args: ["-lc"],
+      name: "bash",
+    });
+  });
+
   it("falls back to pwsh when bash is absent", () => {
     const shell = resolveShell({
       platform: "win32",
@@ -200,6 +253,35 @@ describe("resolveShell — win32 probing", () => {
   it("falls back to powershell when neither bash nor pwsh resolve", () => {
     const shell = resolveShell({ platform: "win32", env: {}, whichAll: which({}) });
     expect(shell).toEqual({ command: "powershell", args: POWERSHELL_ARGS, name: "powershell" });
+  });
+});
+
+describe("isWslExecutable", () => {
+  it("recognizes WSL launchers under SystemRoot, WindowsApps, and wsl.exe", () => {
+    expect(isWslExecutable("C:\\Windows\\System32\\bash.exe", "C:\\Windows")).toBe(true);
+    expect(isWslExecutable("C:\\Windows\\Sysnative\\bash.exe", "C:\\Windows")).toBe(true);
+    expect(isWslExecutable("C:\\Windows\\SysWOW64\\bash.exe", "C:\\Windows")).toBe(true);
+    expect(isWslExecutable("c:\\windows\\system32\\wsl.exe", "C:\\Windows")).toBe(true);
+    expect(
+      isWslExecutable(
+        "C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\bash.exe",
+        "C:\\Windows",
+      ),
+    ).toBe(true);
+    expect(
+      isWslExecutable("C:\\Program Files\\WindowsApps\\SomeDistro\\wsl.exe", "C:\\Windows"),
+    ).toBe(true);
+    // Trailing slashes or forward slashes in systemRoot must be normalized
+    expect(isWslExecutable("C:\\Windows\\System32\\bash.exe", "C:\\Windows\\")).toBe(true);
+    expect(isWslExecutable("C:\\Windows\\System32\\bash.exe", "C:/Windows/")).toBe(true);
+  });
+
+  it("returns false for genuine Git for Windows and MSYS bash", () => {
+    expect(isWslExecutable("C:\\Program Files\\Git\\bin\\bash.exe", "C:\\Windows")).toBe(false);
+    expect(isWslExecutable("C:\\Program Files\\Git\\usr\\bin\\bash.exe", "C:\\Windows")).toBe(
+      false,
+    );
+    expect(isWslExecutable("C:\\msys64\\usr\\bin\\bash.exe", "C:\\Windows")).toBe(false);
   });
 });
 
