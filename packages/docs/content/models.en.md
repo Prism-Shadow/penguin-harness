@@ -159,7 +159,7 @@ Whether a fast tier exists is decided by the AgentHub client a model routes to, 
 
 | Routed client | Fast mode |
 | --- | --- |
-| OpenAI protocol (`openai_chat`, `openai_responses`, `gpt5_6`, `minimax_m3`) | sent as `service_tier: "priority"` |
+| OpenAI protocol (`openai_chat`, `openai_responses`, `gpt6`, `minimax_m3`) | sent as `service_tier: "priority"` |
 | Anthropic protocol (`ant_messages`, `claude5`) | sent as `speed: "fast"` plus the beta header |
 | Gemini, GLM, Kimi, DeepSeek, OpenAI embeddings | rejected — no toggle |
 | Claude on Bedrock, or a Claude 4.6 id | rejected — no toggle |

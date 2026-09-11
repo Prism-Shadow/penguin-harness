@@ -1178,7 +1178,7 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
 });
 
 describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, and on which protocol)", () => {
-  it("OpenAI-protocol clients carry it: openai_chat / openai_responses / gpt5_6 / minimax_m3", () => {
+  it("OpenAI-protocol clients carry it: openai_chat / openai_responses / gpt6 / minimax_m3", () => {
     // Bare "openai" is the alias the web pins on custom, user-defined and gateway rows.
     expect(fastModeProtocol("anything-at-all", "openai")).toBe("openai");
     expect(fastModeProtocol("local-qwen", "openai-responses")).toBe("openai");

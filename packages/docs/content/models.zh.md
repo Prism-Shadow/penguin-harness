@@ -159,7 +159,7 @@ DeepSeek V4 只接受 `low`/`high`/`max`，服务端会把 `medium` 与 `xhigh` 
 
 | 路由到的 client | 快速模式 |
 | --- | --- |
-| OpenAI 协议（`openai_chat`、`openai_responses`、`gpt5_6`、`minimax_m3`） | 发送 `service_tier: "priority"` |
+| OpenAI 协议（`openai_chat`、`openai_responses`、`gpt6`、`minimax_m3`） | 发送 `service_tier: "priority"` |
 | Anthropic 协议（`ant_messages`、`claude5`） | 发送 `speed: "fast"` 并附带 beta 请求头 |
 | Gemini、GLM、Kimi、DeepSeek、OpenAI embedding | 拒绝——不提供开关 |
 | Bedrock 上的 Claude，或 Claude 4.6 系列 id | 拒绝——不提供开关 |
