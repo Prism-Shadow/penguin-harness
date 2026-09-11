@@ -9,10 +9,10 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins
 | Category | Plugins |
 | --- | --- |
 | Office Productivity | `data-analysis`, `use-firecrawl`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
-| Software Development | `software-development`, `use-claude-code` |
+| Software Development | `software-development`, `use-claude-code`, `use-spexcode` |
 | AI App Development | `agent-development`, `model-development`, `skill-porting`, `agent-tuning` |
 
-`humanizer`, `use-claude-code` and `continual-learning` carry `preinstall: false`, so `default_agent` does not get them at initialization — they are installed from the library on demand. `goal` is the stop hook behind goal mode: its `start.mjs` writes the Session's `GOAL.json` and composes round 1, its `stop.mjs` reads the Trace after every Task and injects the next round or ends the goal. `continual-learning` hands a long task's condensed excerpt to a background subagent that folds the findings into the agent's skills.
+`humanizer`, `use-claude-code`, `use-spexcode` and `continual-learning` carry `preinstall: false`, so `default_agent` does not get them at initialization — they are installed from the library on demand. `goal` is the stop hook behind goal mode: its `start.mjs` writes the Session's `GOAL.json` and composes round 1, its `stop.mjs` reads the Trace after every Task and injects the next round or ends the goal. `continual-learning` hands a long task's condensed excerpt to a background subagent that folds the findings into the agent's skills.
 
 `agent-tuning` powers the self-improvement loop: create the Target Agent, design a Benchmark, evaluate it, optimize it to version N+1 with a snapshot before every round.
 

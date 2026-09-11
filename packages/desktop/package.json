@@ -27,7 +27,8 @@
     "@penguinharness/software-development": "workspace:*",
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
-    "@penguinharness/use-claude-code": "workspace:*"
+    "@penguinharness/use-claude-code": "workspace:*",
+    "@penguinharness/use-spexcode": "workspace:*"
   },
   "devDependencies": {
     "@prismshadow/penguin-cli": "workspace:*",

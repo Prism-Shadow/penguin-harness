@@ -87,6 +87,9 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
+      '@penguinharness/use-spexcode':
+        specifier: workspace:*
+        version: link:../../plugins/use-spexcode
       '@prismshadow/agenthub':
         specifier: ^0.4.11
         version: 0.4.11(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
@@ -166,6 +169,9 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
+      '@penguinharness/use-spexcode':
+        specifier: workspace:*
+        version: link:../../plugins/use-spexcode
       '@prismshadow/agenthub':
         specifier: ^0.4.11
         version: 0.4.11(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
@@ -242,6 +248,9 @@ importers:
       '@penguinharness/use-firecrawl':
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
+      '@penguinharness/use-spexcode':
+        specifier: workspace:*
+        version: link:../../plugins/use-spexcode
     devDependencies:
       '@prismshadow/penguin-cli':
         specifier: workspace:*
@@ -623,6 +632,8 @@ importers:
   plugins/use-claude-code: {}
 
   plugins/use-firecrawl: {}
+
+  plugins/use-spexcode: {}
 
 packages:
 
@@ -1500,6 +1511,9 @@ packages:
 
   '@penguinharness/use-firecrawl@file:plugins/use-firecrawl':
     resolution: {directory: plugins/use-firecrawl, type: directory}
+
+  '@penguinharness/use-spexcode@file:plugins/use-spexcode':
+    resolution: {directory: plugins/use-spexcode, type: directory}
 
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
@@ -5404,6 +5418,8 @@ snapshots:
 
   '@penguinharness/use-firecrawl@file:plugins/use-firecrawl': {}
 
+  '@penguinharness/use-spexcode@file:plugins/use-spexcode': {}
+
   '@playwright/test@1.61.1':
     dependencies:
       playwright: 1.61.1
@@ -5453,6 +5469,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@penguinharness/use-spexcode': file:plugins/use-spexcode
       '@prismshadow/agenthub': 0.4.11(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
@@ -5484,6 +5501,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@penguinharness/use-spexcode': file:plugins/use-spexcode
       '@prismshadow/agenthub': 0.4.11(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.6.1
@@ -5511,6 +5529,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
+      '@penguinharness/use-spexcode': file:plugins/use-spexcode
       '@prismshadow/agenthub': 0.4.11(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype: 2.2.3
       smol-toml: 1.6.1
