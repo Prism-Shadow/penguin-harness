@@ -7,10 +7,10 @@
 
 [中文版](2026-09-11-control-size-scale.zh.md)
 
-The Web App's form controls spelled their font size in four places that had drifted apart, and six
-fields sat a tier above their neighbours because no call site had said which tier it wanted. The
-rung now comes from a single record, `sizeTextClass` in `components/ui/input.tsx`, and every control
-names the one it takes.
+The Web App's form controls spelled their font size in four places that had drifted apart, and four
+dialog fields sat a tier above their neighbours because no call site had said which tier it wanted.
+The rung now comes from a single record, `sizeTextClass` in `components/ui/input.tsx`, and every
+control names the one it takes.
 
 ## Details
 
@@ -25,7 +25,7 @@ names the one it takes.
   caller of that rung; its submit Button dropped a redundant `text-sm`.
 - `Input`, `Textarea`, `Select`, `OptionMenu` and `PasswordInput` default to `sm` instead of `base`,
   joining `FormPicker`, so a forgotten `size` lands on the rung its neighbours are already on rather
-  than the roomiest one — which is how the six fields above had drifted. Every call site names its
+  than the roomiest one — which is how the four fields above had drifted. Every call site names its
   rung regardless; the default only decides where the next omission lands.
 - `FormPicker` gained a `size` prop defaulting to `sm`, in place of a hard-coded tier, and
   `protocol-suffix.tsx`'s hand-rolled option menu imports `OptionMenu`'s row records rather than
@@ -44,7 +44,7 @@ names the one it takes.
 - `packages/web/test/control-size.test.ts` parses the JSX and fails, naming file and line, on a
   font-size class in a `className` passed to `Input`, `Textarea`, `Select`, `OptionMenu`,
   `PasswordInput` or `FormPicker` — such a class either does nothing or freezes the control against
-  the user's font-size setting, and neither shows up in review — and on a `Modal` footer button that
-  does not ask for `sm`.
+  the user's font-size setting, and neither shows up in review — on a `Modal` footer button that does
+  not ask for `sm`, and on a font size spelled in a control module outside the two records.
 - `.agents/skills/penguin-harness-frontend/SKILL.md` gained a "Control sizes" section recording the
   rungs, the stylesheet-order hazard behind the rule, and the one grandfathered bracket value.

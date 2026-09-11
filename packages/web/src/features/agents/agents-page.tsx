@@ -755,6 +755,7 @@ export function AgentsPage() {
               <div>
                 <FieldLabel>{S.agent.createPlugins}</FieldLabel>
                 <FormPicker
+                  size="sm"
                   open={pluginsOpen}
                   setOpen={setPluginsOpen}
                   label={
@@ -806,6 +807,7 @@ export function AgentsPage() {
                 {skillsDir && dirSkills !== null && dirSkills.length > 0 && (
                   <div className="mt-2">
                     <FormPicker
+                      size="sm"
                       open={dirSkillsOpen}
                       setOpen={setDirSkillsOpen}
                       label={

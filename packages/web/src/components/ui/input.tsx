@@ -20,7 +20,7 @@ const baseClass =
  *
  * Every control in the family defaults to sm, so a forgotten `size` lands on the rung its
  * neighbours are already on. The old default was base, which put a forgotten prop at the roomiest
- * rung in the densest place it could appear — that is how six dialog fields ended up a tier above
+ * rung in the densest place it could appear — that is how four dialog fields ended up a tier above
  * the controls beside them. The default is a safety net, not a licence: call sites still name
  * their rung.
  */

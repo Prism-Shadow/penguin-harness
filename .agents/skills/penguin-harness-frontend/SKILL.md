@@ -155,7 +155,7 @@ one step under a `text-xs` title, and there is no rung below `text-xs` to step d
 
 A form field takes `sm`: dense forms, dialogs and filter bars, which is near enough the whole app.
 `base` is for a standalone page holding two controls and nothing else, and is **passed by name** —
-the login card is its only caller, and an unopted `base` is what six dialog fields had drifted into.
+the login card is its only caller, and an unopted `base` is what four dialog fields had drifted into.
 Every control defaults to `sm` so a forgotten prop lands where its neighbours already are (the old
 `base` default put it at the roomiest rung in the densest place), but **name the rung anyway** — all
 112 call sites do, and the default is the safety net, not the habit. The two full-height typing
@@ -170,8 +170,10 @@ a dialog *body* takes `sm` too, next to the fields it belongs with.
 
 `test/control-size.test.ts` parses the JSX and fails, naming file and line, on a font-size class in
 a `className` passed to `Input` / `Textarea` / `Select` / `OptionMenu` / `PasswordInput` /
-`FormPicker`, on a `Modal` footer Button that does not ask for `sm`, and on a second bracket font
-size inside the control modules.
+`FormPicker`, on a `Modal` footer Button that does not ask for `sm`, and on a font size spelled in
+a control module outside the two records. Its reach is what a parser sees without types: a footer
+handed over as a component or built in a variable, and a Button in a dialog body, follow the same
+rule but are on you.
 
 ## Every user-facing string is bilingual
 

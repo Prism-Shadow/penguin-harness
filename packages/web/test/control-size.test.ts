@@ -78,6 +78,10 @@ function literalChunks(node: ts.Node, out: string[] = []): string[] {
  * `<Button>`s inside a `Modal`'s `footer={…}` that do not ask for the `sm` rung. `Modal` renders
  * only the footer's wrapper — the buttons come from each caller as an opaque node — so there is no
  * single place to set this and the rule has to be checked instead.
+ *
+ * The reach is what a parser can see without types: Buttons written inline in the `footer={…}`
+ * attribute. A footer handed over as a component (`footer={<Footer …/>}`) or built in a variable,
+ * and a Button in a dialog *body*, are on the same rule but out of this check's sight.
  */
 function findLooseFooterButtons(): string[] {
   const loose: string[] = [];
@@ -98,9 +102,15 @@ function findLooseFooterButtons(): string[] {
             const size = attrs.find(
               (attr) => ts.isJsxAttribute(attr) && attr.name.getText() === "size",
             );
-            if (size === undefined) {
+            // The rung has to be `sm`, not merely stated: `size="md"` in a footer is the
+            // very drift this check exists for, and a missing prop takes Button's md default.
+            const rung =
+              size !== undefined && ts.isJsxAttribute(size) && size.initializer !== undefined
+                ? size.initializer.getText()
+                : "<none>";
+            if (rung !== '"sm"') {
               const line = source.getLineAndCharacterOfPosition(inner.getStart(source)).line + 1;
-              loose.push(`${path.slice(SRC.length + 1).replaceAll(sep, "/")}:${line}`);
+              loose.push(`${path.slice(SRC.length + 1).replaceAll(sep, "/")}:${line} ${rung}`);
             }
           }
           ts.forEachChild(inner, walk);
@@ -212,25 +222,46 @@ describe("control font size", () => {
     ).toEqual([]);
   });
 
-  it("keeps the one grandfathered bracket font size in the record that owns it", () => {
+  it("spells a font size in the two records and nowhere else in the family", () => {
+    // The point of the refactor, stated as the only thing a reader has to check: every font-size
+    // class the control modules contain belongs to one of two records. `select.tsx` and
+    // `form-picker.tsx` name none at all — before this scale they each kept a private copy of the
+    // same two rungs, which is how they drifted.
+    //
     // text-[Npx] is fixed px: it ignores the root font size theme.tsx sets per tier, so a control
     // carrying one stops responding to the user's font-size setting. `rowDescClass.sm` is the sole
     // exception — an OptionMenu row's description has to sit one step under a text-xs title, and
     // there is no rung below text-xs to step down to.
     // String literals only: a comment naming the shape it forbids must not trip its own guard.
-    const homes = ["input.tsx", "select.tsx", "option-menu.tsx", "form-picker.tsx"]
-      .filter((name) => {
-        const path = join(SRC, "components/ui", name);
-        const source = ts.createSourceFile(
-          path,
-          readFileSync(path, "utf8"),
-          ts.ScriptTarget.Latest,
-          true,
-          ts.ScriptKind.TSX,
-        );
-        return literalChunks(source).some((chunk) => /text-\[[^\]]+]/.test(chunk));
-      })
-      .sort();
-    expect(homes).toEqual(["option-menu.tsx"]);
+    const spelled = (name: string): string[] => {
+      const path = join(SRC, "components/ui", name);
+      const source = ts.createSourceFile(
+        path,
+        readFileSync(path, "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
+      );
+      const found = new Set<string>();
+      for (const chunk of literalChunks(source)) {
+        for (const hit of chunk.matchAll(new RegExp(FONT_SIZE_CLASS, "g"))) found.add(hit[0]);
+      }
+      return [...found].sort();
+    };
+    expect(
+      Object.fromEntries(
+        ["input.tsx", "select.tsx", "option-menu.tsx", "form-picker.tsx"].map((name) => [
+          name,
+          spelled(name),
+        ]),
+      ),
+      "A font size inside the control family lives in input.tsx's `sizeTextClass` or " +
+        "option-menu.tsx's `rowDescClass`; a third copy is how the rungs drifted apart before.",
+    ).toEqual({
+      "input.tsx": ["text-base", "text-xs"], // sizeTextClass
+      "option-menu.tsx": ["text-[11px]", "text-xs"], // rowDescClass
+      "select.tsx": [],
+      "form-picker.tsx": [],
+    });
   });
 });

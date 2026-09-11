@@ -133,6 +133,7 @@ function SessionSelect({
 
   return (
     <FormPicker
+      size="sm"
       open={open}
       setOpen={setOpen}
       label={label}

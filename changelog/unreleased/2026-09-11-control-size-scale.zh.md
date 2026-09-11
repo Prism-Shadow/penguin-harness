@@ -7,7 +7,7 @@
 
 [English](2026-09-11-control-size-scale.md)
 
-Web App 的表单控件此前在四处各自书写字号，彼此已经走样；另有六个字段因为调用点没有声明档位，比相邻控件高出一档。
+Web App 的表单控件此前在四处各自书写字号，彼此已经走样；另有四个弹窗字段因为调用点没有声明档位，比相邻控件高出一档。
 字号现在统一来自 `components/ui/input.tsx` 中的 `sizeTextClass`，每个控件都显式声明自己所取的档位。
 
 ## 细节
@@ -20,7 +20,7 @@ Web App 的表单控件此前在四处各自书写字号，彼此已经走样；
 - 登录卡片保持 `text-base`，但改为显式声明（`size="base"`），是该档位唯一的有意调用方；其提交 Button 去掉了
   冗余的 `text-sm`。
 - `Input`、`Textarea`、`Select`、`OptionMenu` 与 `PasswordInput` 的默认档位由 `base` 改为 `sm`，与 `FormPicker`
-  看齐：漏写 `size` 时落在相邻控件已有的档位上，而不是最宽裕的那一档——上述六个字段正是这样走样的。所有调用点
+  看齐：漏写 `size` 时落在相邻控件已有的档位上，而不是最宽裕的那一档——上述四个字段正是这样走样的。所有调用点
   仍逐一声明档位，默认值只决定下一次遗漏落在哪里。
 - `FormPicker` 新增 `size` 属性（默认 `sm`），取代原先写死的档位；`protocol-suffix.tsx` 里手写的选项菜单改为
   引入 `OptionMenu` 的行记录，不再重复书写。
@@ -32,6 +32,7 @@ Web App 的表单控件此前在四处各自书写字号，彼此已经走样；
 - 对话输入区与 Workspace 文件编辑器仍在该字号族之外——一个承载散文，一个承载代码——现已在各自代码处写明缘由。
 - `packages/web/test/control-size.test.ts` 解析 JSX，一旦 `Input`、`Textarea`、`Select`、`OptionMenu`、
   `PasswordInput` 或 `FormPicker` 的 `className` 里出现字号类，即报出文件与行号并失败（这类类名要么毫无效果，
-  要么让控件不再跟随用户的字号设置，而两者在评审中都看不出来）；`Modal` 页脚按钮未声明 `sm` 时同样失败。
+  要么让控件不再跟随用户的字号设置，而两者在评审中都看不出来）；`Modal` 页脚按钮未声明 `sm`、或控件模块在
+  两份记录之外自行书写字号时，同样失败。
 - `.agents/skills/penguin-harness-frontend/SKILL.md` 新增「Control sizes」一节，记录各档位、规则背后的样式表
   顺序陷阱，以及唯一一处遗留的方括号字号。

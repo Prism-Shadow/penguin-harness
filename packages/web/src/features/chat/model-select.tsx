@@ -326,6 +326,7 @@ export function ModelSelect({
   if (variant === "form") {
     return (
       <FormPicker
+        size="sm"
         open={open}
         setOpen={setOpen}
         leading={logo}
