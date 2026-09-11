@@ -140,23 +140,30 @@ export const en: Strings = {
     proxyTitle: "Proxy options",
     proxyInfo:
       "Server-global, and in force the moment it is saved — nothing to restart. Loopback " +
-      "addresses always go direct. The reachability test sends one credential-free request to " +
-      "each provider's API address and measures this server's own outbound hop: any HTTP answer " +
-      "counts as reachable, 401 and 403 included — a refused credential still proves DNS, TCP " +
-      "and TLS all completed — while unreachable means the transport itself failed. It measures " +
-      "the saved settings, so save an edited address before testing.",
+      "addresses always go direct. The reachability test sends one credential-free GET to each " +
+      "address listed below and measures this server's own outbound hop: any HTTP answer counts " +
+      "as reachable, 401 and 403 included — a refused credential still proves DNS, TCP and TLS " +
+      "all completed — while unreachable means the transport itself failed. It measures the " +
+      "saved settings, since only a save rebuilds the outbound dispatcher; that is why the test " +
+      "sits below Save, and why an edited address has to be saved before testing. The path it " +
+      "travelled is named beside the test's heading. The bars compare the four targets of one " +
+      "run against each other, not against any absolute idea of fast or slow.",
     /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "Application uses the proxy",
     proxyForAgent: "Agent environment uses the proxy",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
-    /** Reachability test: the row it sits on, and its button at rest and while probing. */
+    /** Reachability test: the block's heading, and its button at rest and while probing. */
     proxyProbe: "Reachability test",
     proxyProbeRun: "Test",
     proxyProbeRunning: "Testing…",
-    /** A provider answered — any HTTP status counts — with the round trip in milliseconds. */
-    proxyProbeReachable: (ms: number): string => `Reachable · ${ms} ms`,
+    /** A provider answered: the latency IS the result, so this is the only visible text. */
+    proxyProbeLatency: (ms: number): string => `${ms} ms`,
+    /** The same verdict in words, read out beside the number — a bare figure does not say "reachable". */
+    proxyProbeReachableState: "Reachable",
+    /** Listed but not yet measured: an absence, not a verdict. */
+    proxyProbeIdle: "Not tested",
     /** A provider did not answer: the transport fault, each naming the state in words. */
     proxyProbeFailure: {
       timeout: "Timed out",
@@ -165,9 +172,8 @@ export const en: Strings = {
       tls: "TLS handshake failed",
       network: "Unreachable",
     },
-    /** Which configuration produced the results, and the three forms that configuration takes. */
-    proxyProbeMeasured: (config: string): string =>
-      `Measured against the saved settings: ${config}`,
+    /** The outbound path being measured, and the three forms it takes (the "?" explains why it is the saved one). */
+    proxyProbeVia: (config: string): string => `Outbound path: ${config}`,
     proxyProbeDirect: "direct, no proxy",
     proxyProbeEnvProxy: "the system proxy environment variables",
     /** Admin-only sub-page (server-global). */

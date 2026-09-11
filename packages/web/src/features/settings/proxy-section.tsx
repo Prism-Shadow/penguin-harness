@@ -13,28 +13,33 @@
  * baseline, including the address in the exact form the server stored, so the page reflects
  * what is on the server rather than what was typed at it.
  *
- * The reachability test is the one thing here that is not part of the form: it asks the server
- * to measure its own outbound path to the four provider hosts and reports each one's outcome
- * and round trip. It therefore carries its own busy flag rather than borrowing Save's — a
- * measurement is not an unsaved edit, and it must neither block Save nor be blocked by it.
+ * The reachability test sits BELOW the save row, in its own block, because it measures the
+ * SAVED configuration: only a PUT moves the server's outbound dispatcher, so a typed-but-unsaved
+ * address is not in the path the probes travel. Reading top to bottom — edit, save, then
+ * measure — is what makes that honest without a warning banner, and the block names the
+ * outbound path it measures beside its heading. A save clears results that now describe a
+ * superseded configuration.
  *
- * What it measures is the SAVED configuration: only a PUT moves the server's outbound
- * dispatcher, so a typed-but-unsaved address is not in the path. Rather than disabling the
- * button whenever the form is dirty — which reads as a broken control while the user is still
- * deciding about an unrelated switch — the answer names the configuration it travelled, and a
- * save clears results that now describe a superseded one.
+ * It carries its own busy flag rather than borrowing Save's: a measurement is not an unsaved
+ * edit, so it neither blocks Save nor is blocked by it.
+ *
+ * The targets — name and exact URL — come from the server and are listed before anyone presses
+ * the button, so the page shows concretely what will be requested and a reader can see that
+ * these are plain unauthenticated GETs. A frontend copy of that list could drift from the URLs
+ * the server really fetches, so it is fetched, not hard-coded.
  */
 import { useEffect, useState } from "react";
 import type {
+  ProxyProbeDto,
   ProxyProbeProvider,
-  ProxyProbeResponse,
+  ProxyProbeTargetDto,
   ServerSettings,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { toneInk } from "../../lib/tone";
+import { toneDot, toneInk } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
@@ -49,10 +54,25 @@ const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {
   deepseek: "DeepSeek",
 };
 
-/** How the measured configuration reads: the saved address, or the two states that have none. */
-function measuredLabel(result: ProxyProbeResponse): string {
-  if (!result.proxyForApp) return S.settings.proxyProbeDirect;
-  return result.proxyUrl ?? S.settings.proxyProbeEnvProxy;
+/** The fields that describe an outbound path — carried by the stored settings and echoed by a probe answer alike. */
+type OutboundPath = Pick<ServerSettings, "proxyForApp" | "proxyUrl">;
+
+/** How that path reads: the saved address, or the two states that have none. */
+function pathLabel(path: OutboundPath): string {
+  if (!path.proxyForApp) return S.settings.proxyProbeDirect;
+  return path.proxyUrl ?? S.settings.proxyProbeEnvProxy;
+}
+
+/**
+ * Bar width for one latency, as a percentage of the slowest result in the SAME run. A
+ * relative comparison is the only honest graphic here: "slow" for a network hop has no
+ * absolute threshold this app could defend, and inventing one would grade a 300 ms link as
+ * a problem on one network and a triumph on another. The floor keeps the fastest target's
+ * bar visible instead of collapsing it to nothing.
+ */
+function barPercent(ms: number, slowestMs: number): number {
+  if (slowestMs <= 0) return 100;
+  return Math.max(3, Math.round((ms / slowestMs) * 100));
 }
 
 export function ProxySection() {
@@ -65,8 +85,11 @@ export function ProxySection() {
   /** Inline error under the address input (the server's invalid_proxy_url rejection). */
   const [addressError, setAddressError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** The last measurement, and its own busy flag — deliberately not Save's (see the header). */
-  const [probe, setProbe] = useState<ProxyProbeResponse | null>(null);
+  /** What the probe would request, listed before it is run (null until it arrives). */
+  const [targets, setTargets] = useState<ProxyProbeTargetDto[] | null>(null);
+  /** Results by provider, the path they travelled, and the probe's own busy flag. */
+  const [results, setResults] = useState<Map<ProxyProbeProvider, ProxyProbeDto> | null>(null);
+  const [measured, setMeasured] = useState<OutboundPath | null>(null);
   const [probing, setProbing] = useState(false);
 
   /** Adopt server-side truth: the baseline and the drafts move together. */
@@ -75,8 +98,9 @@ export function ProxySection() {
     setProxyForApp(next.proxyForApp);
     setProxyForAgent(next.proxyForAgent);
     setProxyUrl(next.proxyUrl ?? "");
-    // Results describe the configuration they travelled; a save may have replaced it.
-    setProbe(null);
+    // Results describe the path they travelled; a save may have replaced it.
+    setResults(null);
+    setMeasured(null);
   };
 
   useEffect(() => {
@@ -90,6 +114,14 @@ export function ProxySection() {
         // Controls stay disabled; leaving and returning to the section retries the fetch.
         if (!cancelled) toastError(apiErrorText(e));
       });
+    // The target list is static server-side, so its failure is not worth a second toast on
+    // top of the settings one — the block simply stays empty until a retry succeeds.
+    void api
+      .adminGetProxyProbeTargets()
+      .then((res) => {
+        if (!cancelled) setTargets(res.targets);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -127,10 +159,16 @@ export function ProxySection() {
   const runProbe = async () => {
     if (settings === null || probing) return;
     setProbing(true);
+    // The previous run's numbers go now rather than lingering under a running test: the four
+    // answers land as one set, and a stale figure beside a live one cannot be told apart.
+    setResults(null);
+    setMeasured(null);
     try {
       // Every outcome, reachable or not, comes back inside the response; only the request
       // itself failing (a lost session, a dead server) lands here as a toast.
-      setProbe(await api.adminProbeProxy());
+      const res = await api.adminProbeProxy();
+      setResults(new Map(res.probes.map((p) => [p.provider, p])));
+      setMeasured({ proxyForApp: res.proxyForApp, proxyUrl: res.proxyUrl });
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -139,71 +177,127 @@ export function ProxySection() {
   };
 
   const hydrated = settings !== null;
+  // What the probes travelled, once a run has answered; before that, what they would travel.
+  const outbound = measured ?? settings;
+  // Longest round trip of the current run — the bar scale for every reachable row.
+  const slowestMs = Math.max(
+    0,
+    ...[...(results?.values() ?? [])].filter((p) => p.outcome === "reachable").map((p) => p.ms),
+  );
+
   return (
-    <SectionShell
-      actions={
-        <Button variant="primary" disabled={!hydrated || busy} onClick={() => void save()}>
-          {S.common.save}
-        </Button>
-      }
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium">{S.settings.proxyForApp}</span>
-        <Switch checked={proxyForApp} onChange={setProxyForApp} disabled={!hydrated} />
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium">{S.settings.proxyForAgent}</span>
-        <Switch checked={proxyForAgent} onChange={setProxyForAgent} disabled={!hydrated} />
-      </div>
-      <Input
-        label={S.settings.proxyAddress}
-        size="sm"
-        value={proxyUrl}
-        placeholder={S.settings.proxyAddressPlaceholder}
-        disabled={!hydrated}
-        {...(addressError !== null ? { error: addressError } : {})}
-        onChange={(e) => {
-          setProxyUrl(e.target.value);
-          if (addressError !== null) setAddressError(null);
-        }}
-      />
-      <div className="space-y-2">
+    <>
+      <SectionShell
+        actions={
+          <Button variant="primary" disabled={!hydrated || busy} onClick={() => void save()}>
+            {S.common.save}
+          </Button>
+        }
+      >
         <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-medium">{S.settings.proxyProbe}</span>
+          <span className="text-sm font-medium">{S.settings.proxyForApp}</span>
+          <Switch checked={proxyForApp} onChange={setProxyForApp} disabled={!hydrated} />
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium">{S.settings.proxyForAgent}</span>
+          <Switch checked={proxyForAgent} onChange={setProxyForAgent} disabled={!hydrated} />
+        </div>
+        <Input
+          label={S.settings.proxyAddress}
+          size="sm"
+          value={proxyUrl}
+          placeholder={S.settings.proxyAddressPlaceholder}
+          disabled={!hydrated}
+          {...(addressError !== null ? { error: addressError } : {})}
+          onChange={(e) => {
+            setProxyUrl(e.target.value);
+            if (addressError !== null) setAddressError(null);
+          }}
+        />
+      </SectionShell>
+      <section className="mt-6">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-medium">{S.settings.proxyProbe}</div>
+            {/* The path actually measured is live data, so it stays on screen; the "?" beside
+                the pane heading carries the standing explanation of why it is the saved one. */}
+            {outbound !== null && (
+              <div className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+                {S.settings.proxyProbeVia(pathLabel(outbound))}
+              </div>
+            )}
+          </div>
           <Button
             size="sm"
-            disabled={!hydrated || probing}
+            disabled={!hydrated || targets === null || probing}
             aria-busy={probing}
             onClick={() => void runProbe()}
           >
             {probing ? S.settings.proxyProbeRunning : S.settings.proxyProbeRun}
           </Button>
         </div>
-        {probe !== null && (
-          <>
-            <ul className="space-y-1">
-              {probe.probes.map((p) => (
-                <li key={p.provider} className="flex items-baseline justify-between gap-3 text-xs">
-                  <span className="text-gray-600 dark:text-gray-400">
-                    {PROVIDER_LABEL[p.provider]}
+        <ul className="mt-3 space-y-3">
+          {(targets ?? []).map((t) => {
+            const probe = probing ? undefined : results?.get(t.provider);
+            // Checked on `probe.outcome` itself rather than through a boolean, so the failure
+            // branch narrows to the kinds the dictionary actually has a word for.
+            const outcomeText =
+              probe === undefined
+                ? probing
+                  ? S.settings.proxyProbeRunning
+                  : S.settings.proxyProbeIdle
+                : probe.outcome === "reachable"
+                  ? S.settings.proxyProbeLatency(probe.ms)
+                  : S.settings.proxyProbeFailure[probe.outcome];
+            const reachable = probe !== undefined && probe.outcome === "reachable";
+            return (
+              <li key={t.provider}>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    {PROVIDER_LABEL[t.provider]}
                   </span>
-                  {/* The outcome is spelled out in words; the tone only reinforces it. */}
                   <span
-                    className={`tabular-nums ${p.outcome === "reachable" ? toneInk.success : toneInk.danger}`}
+                    className={`shrink-0 text-xs tabular-nums ${
+                      probe === undefined
+                        ? // No verdict yet: secondary text, not a status tone — an absence
+                          // is not a judgement about the target.
+                          "text-gray-500 dark:text-gray-400"
+                        : reachable
+                          ? toneInk.success
+                          : toneInk.danger
+                    }`}
                   >
-                    {p.outcome === "reachable"
-                      ? S.settings.proxyProbeReachable(p.ms)
-                      : S.settings.proxyProbeFailure[p.outcome]}
+                    {outcomeText}
+                    {/* A bare number does not say "reachable"; the word travels with it for
+                        anyone who cannot see the colour or the bar. */}
+                    {reachable && (
+                      <span className="sr-only"> · {S.settings.proxyProbeReachableState}</span>
+                    )}
                   </span>
-                </li>
-              ))}
-            </ul>
-            <p className="text-xs break-all text-gray-500 dark:text-gray-400">
-              {S.settings.proxyProbeMeasured(measuredLabel(probe))}
-            </p>
-          </>
-        )}
-      </div>
-    </SectionShell>
+                </div>
+                <div className="truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
+                  {t.url}
+                </div>
+                {/* Decorative: the figure above and the word beside it already carry the
+                    result, and a target with no answer has no bar to draw at all. The fill
+                    is toneDot's solid mark — a 6px band has no interior to read, exactly the
+                    case that map exists for. */}
+                {reachable && (
+                  <div
+                    aria-hidden
+                    className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
+                  >
+                    <div
+                      className={`h-full rounded-full transition-[width] duration-300 ${toneDot.success}`}
+                      style={{ width: `${barPercent(probe.ms, slowestMs)}%` }}
+                    />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    </>
   );
 }

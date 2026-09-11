@@ -11,18 +11,23 @@
  * every spawn). The upload limits need no push either, for the same reason: the
  * attachment validators and the request body cap both read the repo per request.
  *
- * POST /api/admin/settings/proxy-probe measures the server's outbound path to the four
- * model provider hosts, unauthenticated — see services/proxy-probe.ts.
+ * GET|POST /api/admin/settings/proxy-probe names the four model provider hosts the
+ * reachability probe would request, and runs it — unauthenticated, see
+ * services/proxy-probe.ts.
  */
 import { Hono } from "hono";
-import type { ProxyProbeResponse, ServerSettingsResponse } from "../../api/types.js";
+import type {
+  ProxyProbeResponse,
+  ProxyProbeTargetsResponse,
+  ServerSettingsResponse,
+} from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { optionalBoolean, readJson } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
 import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "../../services/attachment-limits.js";
-import { probeProxyReachability } from "../../services/proxy-probe.js";
+import { PROXY_PROBE_TARGETS, probeProxyReachability } from "../../services/proxy-probe.js";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the
@@ -129,6 +134,13 @@ export function adminSettingsRoutes(deps: AppDeps): Hono<AppEnv> {
     });
     return c.json(settings());
   });
+
+  // What the probe would request, without requesting it: the page lists the targets — name
+  // and exact URL — before anyone presses the button, so the list is served rather than
+  // copied into the frontend, where a second copy could drift from what is really fetched.
+  app.get("/proxy-probe", (c) =>
+    c.json({ targets: [...PROXY_PROBE_TARGETS] } satisfies ProxyProbeTargetsResponse),
+  );
 
   // Reachability and latency of the server's outbound path to the four provider hosts.
   // Admin-only through the router's guard above, like every other route here.

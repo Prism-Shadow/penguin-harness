@@ -262,11 +262,23 @@ export type ProxyProbeProvider = "openai" | "anthropic" | "gemini" | "deepseek";
  */
 export type ProxyProbeOutcome = "reachable" | "timeout" | "dns" | "refused" | "tls" | "network";
 
-/** One provider's probe result. */
-export interface ProxyProbeDto {
+/**
+ * One probe target. Served before any probe runs so the page can list what it is about to
+ * request — the URLs are the concrete answer to "what does no API key mean here".
+ */
+export interface ProxyProbeTargetDto {
   provider: ProxyProbeProvider;
-  /** The exact URL that was requested, unauthenticated. */
+  /** The exact URL a probe requests, unauthenticated. */
   url: string;
+}
+
+/** What the probe endpoint would request, without requesting it. */
+export interface ProxyProbeTargetsResponse {
+  targets: ProxyProbeTargetDto[];
+}
+
+/** One provider's probe result. */
+export interface ProxyProbeDto extends ProxyProbeTargetDto {
   outcome: ProxyProbeOutcome;
   /** Wall time in milliseconds until the answer's headers arrived, or until the attempt failed. */
   ms: number;

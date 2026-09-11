@@ -16,7 +16,11 @@
  * real provider would fail on an offline machine and turn CI into a network monitor.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProxyProbeResponse, ServerSettingsResponse } from "../src/api/types.js";
+import type {
+  ProxyProbeResponse,
+  ProxyProbeTargetsResponse,
+  ServerSettingsResponse,
+} from "../src/api/types.js";
 import { classifyProxyProbe } from "../src/services/proxy-probe.js";
 import {
   DEFAULT_ATTACHMENT_MAX_MB,
@@ -51,7 +55,9 @@ describe("admin server settings", () => {
     const api = apiClient(t.app, cookie);
     expect((await api.get("/api/admin/settings")).status).toBe(403);
     expect((await api.put("/api/admin/settings", { proxyForApp: false })).status).toBe(403);
-    // The probe reaches the network on the server's behalf, so it sits behind the same gate.
+    // The probe reaches the network on the server's behalf, so it sits behind the same gate,
+    // and so does the list of what it would reach.
+    expect((await api.get("/api/admin/settings/proxy-probe")).status).toBe(403);
     expect((await api.post("/api/admin/settings/proxy-probe")).status).toBe(403);
     // The failed PUT changed nothing.
     expect((await getSettings()).settings.proxyForApp).toBe(true);
@@ -323,6 +329,18 @@ describe("admin server settings", () => {
   });
 
   it("the probe reports every provider, sends no credential, and names what it measured", async () => {
+    // The page lists these before anyone presses the button, so they must be the very URLs
+    // the probes then request — asserted together at the end of this test.
+    const listed = (await (
+      await admin.get("/api/admin/settings/proxy-probe")
+    ).json()) as ProxyProbeTargetsResponse;
+    expect(listed.targets.map((t) => t.provider)).toEqual([
+      "openai",
+      "anthropic",
+      "gemini",
+      "deepseek",
+    ]);
+
     const requests: Array<{ url: string; init: RequestInit }> = [];
     vi.stubGlobal(
       "fetch",
@@ -353,6 +371,9 @@ describe("admin server settings", () => {
     for (const probe of body.probes) expect(probe.ms).toBeGreaterThanOrEqual(0);
     // The answer names the STORED configuration, which is the one the connections travelled.
     expect(body).toMatchObject({ proxyForApp: true, proxyUrl: "http://proxy.corp.example:8080" });
+    // What was listed is exactly what was fetched: a page that advertises one URL and probes
+    // another would be lying about what "no API key" applies to.
+    expect(requests.map((r) => r.url)).toEqual(listed.targets.map((t) => t.url));
     // Hard-coded https targets, and not one credential on any of them — the process
     // environment's provider keys must not leak into an unauthenticated probe.
     expect(requests).toHaveLength(4);

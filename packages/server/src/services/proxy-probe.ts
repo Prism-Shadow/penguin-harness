@@ -28,13 +28,7 @@
  * admin-triggered fetch of a caller-supplied address would be an SSRF surface, and this
  * feature has no use for one.
  */
-import type { ProxyProbeDto, ProxyProbeOutcome, ProxyProbeProvider } from "../api/types.js";
-
-/** One probe target: the provider it stands for and the URL a probe requests. */
-interface ProxyProbeTarget {
-  provider: ProxyProbeProvider;
-  url: string;
-}
+import type { ProxyProbeDto, ProxyProbeOutcome, ProxyProbeTargetDto } from "../api/types.js";
 
 /**
  * The four providers, with the cheapest request that still proves the path: each host's
@@ -45,7 +39,7 @@ interface ProxyProbeTarget {
  * and generativelanguage.googleapis.com 404, which would still prove reachability but
  * would measure a path the real traffic never takes.
  */
-export const PROXY_PROBE_TARGETS: readonly ProxyProbeTarget[] = [
+export const PROXY_PROBE_TARGETS: readonly ProxyProbeTargetDto[] = [
   { provider: "openai", url: "https://api.openai.com/v1/models" },
   { provider: "anthropic", url: "https://api.anthropic.com/v1/models" },
   { provider: "gemini", url: "https://generativelanguage.googleapis.com/v1beta/models" },
@@ -128,7 +122,7 @@ export function classifyProxyProbe(attempt: ProxyProbeAttempt): ProxyProbeOutcom
 }
 
 async function probeTarget(
-  target: ProxyProbeTarget,
+  target: ProxyProbeTargetDto,
   fetchImpl: typeof fetch,
   timeoutMs: number,
 ): Promise<ProxyProbeDto> {

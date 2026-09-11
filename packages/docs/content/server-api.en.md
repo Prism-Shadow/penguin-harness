@@ -92,6 +92,8 @@ In desktop mode (the server spawned by the desktop app) the whole surface answer
 | --- | --- | --- |
 | GET | /api/admin/settings | Server-global settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
 | PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
+| GET | /api/admin/settings/proxy-probe | The reachability probe's targets: `{targets: [{provider, url}]}` (no request is made) |
+| POST | /api/admin/settings/proxy-probe | Probe those targets over the server's outbound path, no credential sent: `{proxyForApp, proxyUrl, probes: [{provider, url, outcome, ms, status?}]}`; `outcome` is `reachable` for any HTTP answer, else `timeout` / `dns` / `refused` / `tls` / `network` |
 
 The proxy settings are two independent switches sharing one optional explicit address; changes take effect for newly initiated connections/spawns immediately — no restart:
 

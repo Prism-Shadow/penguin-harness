@@ -158,21 +158,27 @@ export const zh = {
     proxyTitle: "代理选项",
     proxyInfo:
       "服务器全局设置，保存后立即生效，无需重启。回环地址始终直连。" +
-      "「连通性测速」向各服务商的 API 地址各发一次不带凭据的请求，量的是本服务器出站这一跳：" +
+      "「连通性测速」向下方列出的地址各发一次不带凭据的 GET，量的是本服务器出站这一跳：" +
       "对方回了 HTTP 响应即算连通，401、403 同样算——它们说明域名解析、TCP 连接与 TLS 握手都已走通；" +
-      "连不通指的是传输本身失败。测的是已保存的设置，改过地址要先保存再测。",
+      "连不通指的是传输本身失败。测的是已保存的设置——只有保存才会重建出站 dispatcher，" +
+      "所以测速排在「保存」下方，改过地址要先保存再测；本次走的出站路径写在测速标题旁边。" +
+      "结果里的横条只在本次四个目标之间比快慢，不代表某个绝对的「快」或「慢」。",
     /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "应用程序使用代理",
     proxyForAgent: "Agent 环境使用代理",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
-    /** Reachability test: the row it sits on, and its button at rest and while probing. */
+    /** Reachability test: the block's heading, and its button at rest and while probing. */
     proxyProbe: "连通性测速",
     proxyProbeRun: "测速",
     proxyProbeRunning: "测速中…",
-    /** A provider answered — any HTTP status counts — with the round trip in milliseconds. */
-    proxyProbeReachable: (ms: number): string => `已连通 · ${ms} ms`,
+    /** A provider answered: the latency IS the result, so this is the only visible text. */
+    proxyProbeLatency: (ms: number): string => `${ms} ms`,
+    /** The same verdict in words, read out beside the number — a bare figure does not say "reachable". */
+    proxyProbeReachableState: "已连通",
+    /** Listed but not yet measured: an absence, not a verdict. */
+    proxyProbeIdle: "未测试",
     /** A provider did not answer: the transport fault, each naming the state in words. */
     proxyProbeFailure: {
       timeout: "连接超时",
@@ -181,8 +187,8 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
-    /** Which configuration produced the results, and the three forms that configuration takes. */
-    proxyProbeMeasured: (config: string): string => `测的是已保存的设置：${config}`,
+    /** The outbound path being measured, and the three forms it takes (the "?" explains why it is the saved one). */
+    proxyProbeVia: (config: string): string => `出站路径：${config}`,
     proxyProbeDirect: "不经代理，直连",
     proxyProbeEnvProxy: "跟随系统代理环境变量",
     /** Admin-only sub-page (server-global). */
