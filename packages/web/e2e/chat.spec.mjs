@@ -55,8 +55,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await ta.fill("Help me set up @theme");
   await page.getByRole("button", { name: "发送" }).click();
 
-  // Tool name is shown on the collapsed tool row + in the pending-approval block.
-  await expect(page.getByText("exec_command").first()).toBeVisible();
+  // The tool name is shown on the collapsed tool row + in the pending-approval block, as the
+  // short display name the Appearance switch turns on by default (`exec_command` itself stays
+  // in the tooltip of both, which is not text).
+  await expect(page.getByText("执行命令").first()).toBeVisible();
   // Thinking + tool calls are wrapped in a work group; header shows running/done status.
   await expect(page.getByText("运行中").first()).toBeVisible();
 
@@ -104,10 +106,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await runningGroup.click(); // toggle → marks the group user-toggled (open := false)
   await runningGroup.click(); // toggle back → the user is deliberately keeping it open
 
-  const toolCard = page
-    .locator("button[aria-expanded]")
-    .filter({ hasText: "exec_command" })
-    .first();
+  const toolCard = page.locator("button[aria-expanded]").filter({ hasText: "执行命令" }).first();
   await toolCard.click();
   await expect(toolCard).toHaveAttribute("aria-expanded", "true");
 
@@ -161,7 +160,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Turn is over and the stats line has landed. The card is still open — which also proves the
   // group did not collapse (a collapsed group unmounts its body, so the card would be gone).
   await expect(
-    page.locator("button[aria-expanded]").filter({ hasText: "exec_command" }).first(),
+    page.locator("button[aria-expanded]").filter({ hasText: "执行命令" }).first(),
   ).toHaveAttribute("aria-expanded", "true");
 
   // The stats line IS the AI reply's footer (bottom-left, mirroring the user footer's bottom-right):

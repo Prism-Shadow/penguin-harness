@@ -321,7 +321,7 @@ test("an approval inside the subagent stays discoverable via the chip badge and 
   // Open the panel from the chip and approve the child's tool call from inside it.
   await pendingChip.click();
   await expect(page.locator('[data-tab-id="agents"][data-active="true"]')).toBeVisible();
-  await expect(page.getByText("exec_command").first()).toBeVisible();
+  await expect(page.getByText("执行命令").first()).toBeVisible();
   await page.getByRole("button", { name: "允许" }).click();
 
   // The child completes inside the panel, and the parent's turn then runs to completion.

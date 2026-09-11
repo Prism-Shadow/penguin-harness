@@ -4,8 +4,13 @@
  * The table covers the built-in tools and nothing else — an MCP tool and the names only
  * older Traces still carry must survive both switch positions untouched, and turning the
  * switch off must hand back every name exactly as it came in.
+ *
+ * Which tools those are is taken from core's own registry rather than from a list repeated
+ * here, so registering an eighth built-in tool without giving it a short name fails this
+ * file instead of silently shipping one card that still reads as the model's wire name.
  */
 import { afterEach, describe, expect, it } from "vitest";
+import { BUILTIN_TOOL_FACTORIES } from "@prismshadow/penguin-core";
 import { setActiveStrings, zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { toolDisplayName } from "../src/lib/tool-alias";
@@ -71,8 +76,10 @@ describe("toolDisplayName", () => {
     }
   });
 
-  it("aliases exactly the same set of tools in both dictionaries", () => {
-    expect(Object.keys(zh.chat.toolAliases).sort()).toEqual(Object.keys(EN_ALIASES).sort());
-    expect(Object.keys(en.chat.toolAliases).sort()).toEqual(Object.keys(EN_ALIASES).sort());
+  it("aliases exactly core's built-in tools, in both dictionaries", () => {
+    const builtins = Object.keys(BUILTIN_TOOL_FACTORIES).sort();
+    expect(builtins).toEqual(Object.keys(EN_ALIASES).sort());
+    expect(Object.keys(zh.chat.toolAliases).sort()).toEqual(builtins);
+    expect(Object.keys(en.chat.toolAliases).sort()).toEqual(builtins);
   });
 });
