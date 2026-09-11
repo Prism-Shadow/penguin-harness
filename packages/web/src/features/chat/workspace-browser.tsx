@@ -1392,9 +1392,19 @@ export function WorkspaceBrowser({
    * collapse the live selection under it, and a selection read at the previous gesture may
    * since have been collapsed or belong to a file that is no longer open.
    */
+  /**
+   * Reads the selection the gesture landed on, and puts it back.
+   *
+   * Both halves are needed. Read, because focusing the menu can collapse the live selection,
+   * so what the menu acts on has to be captured before the panel opens. Put back, because
+   * that collapse is also visible: a right-click inside selected text would clear the
+   * highlight the user made, on a gesture that was only asking what could be done with it.
+   */
   const captureMenuSelection = (): void => {
     const host = previewBodyRef.current;
-    setMenuSelection(readSelection(host, sourceLines(host)));
+    const selection = readSelection(host, sourceLines(host));
+    setMenuSelection(selection);
+    if (selection !== null) restoreSelection(selection.range);
   };
 
   const openPreviewMenu = (e: ReactMouseEvent): void => {
@@ -1490,9 +1500,18 @@ export function WorkspaceBrowser({
     return filterTreeRows(flattenTree(listings, new Set(listings.keys())), filter);
   }, [listings, expanded, filter]);
   const rootListing = listings.get("");
+  /**
+   * What the path strip names: the open file, or the current directory when none is open.
+   * One strip rather than a directory row above a filename row — they are one fact, and the
+   * two rows spent a whole line of a panel that can be very narrow saying it twice.
+   *
+   * visibleCrumbSegments fits tail first, so the file's own name is the last thing to go and
+   * the leading directories collapse into a single "…" ahead of it.
+   */
+  const crumbTarget = selectedPath ?? currentDir;
   const crumbSegments =
-    currentDir === "" ? [S.files.root] : [S.files.root, ...currentDir.split("/")];
-  const crumbPath = currentDir === "" ? S.files.root : `${S.files.root}/${currentDir}`;
+    crumbTarget === "" ? [S.files.root] : [S.files.root, ...crumbTarget.split("/")];
+  const crumbPath = crumbTarget === "" ? S.files.root : `${S.files.root}/${crumbTarget}`;
   // An unmeasured strip (before the first ResizeObserver callback) shows the whole path:
   // the actions cannot be pushed off the row either way — they are shrink-0 and the strip
   // clips — and a "…" for one frame on a path that fits reads as a flicker.
@@ -1528,34 +1547,68 @@ export function WorkspaceBrowser({
       className={`flex min-h-0 flex-col ${narrow ? "flex-1" : "shrink-0 border-r border-gray-200 dark:border-gray-800"}`}
       style={narrow ? undefined : { width: treeWidth }}
     >
-      {/* Search: filters the rows already loaded. Esc clears it rather than reaching the
-          dock or a dialog above, which is what an Esc in a non-empty box means here. */}
-      <div className="relative shrink-0 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== "Escape" || query === "") return;
-            e.preventDefault();
-            e.stopPropagation();
-            setQuery("");
-          }}
-          placeholder={S.files.searchPlaceholder}
-          aria-label={S.files.searchPlaceholder}
-          {...noAutofill}
-          className="w-full rounded border border-gray-200 bg-transparent py-1 pl-2 pr-7 text-xs text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none dark:border-gray-700 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
-        />
-        {query !== "" && (
+      {/* The tree pane's header: the search box, and the two actions that belong to the panel
+          rather than to any one file — which is why they are here and not on the path row, where
+          everything names the open file. Esc in a non-empty box clears it rather than reaching
+          the dock or a dialog above, which is what that key means here. */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
+        <div className="relative min-w-0 flex-1">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape" || query === "") return;
+              e.preventDefault();
+              e.stopPropagation();
+              setQuery("");
+            }}
+            placeholder={S.files.searchPlaceholder}
+            aria-label={S.files.searchPlaceholder}
+            {...noAutofill}
+            className="w-full rounded border border-gray-200 bg-transparent py-1 pl-2 pr-7 text-xs text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none dark:border-gray-700 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
+          />
+          {query !== "" && (
+            <button
+              type="button"
+              aria-label={S.files.searchClear}
+              title={S.files.searchClear}
+              onClick={() => setQuery("")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            >
+              <CloseIcon size={12} />
+            </button>
+          )}
+        </div>
+        <Tooltip label={S.files.refresh} placement="bottom" className="shrink-0">
           <button
             type="button"
-            aria-label={S.files.searchClear}
-            title={S.files.searchClear}
-            onClick={() => setQuery("")}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            aria-label={S.files.refresh}
+            onClick={refreshAll}
+            className={iconActionClass}
           >
-            <CloseIcon size={12} />
+            <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.iconButton} />
           </button>
-        )}
+        </Tooltip>
+        {/* The picker's own input carries the name: a label with no text names nothing, and the
+            glyph inside it is aria-hidden. While an upload runs the count is all the tooltip has
+            left to say it with, so it goes there and the glyph becomes a spinner. */}
+        <Tooltip label={uploadLabel} placement="bottom" className="shrink-0">
+          <label
+            className={`${iconActionClass} cursor-pointer focus-within:ring-2 focus-within:ring-gray-400/30`}
+          >
+            <HiddenFileInput
+              multiple
+              onChange={onPick}
+              disabled={uploading !== null}
+              aria-label={uploadLabel}
+            />
+            {uploading !== null ? (
+              <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+            ) : (
+              <GlyphIcon d={UPLOAD_ICON} size={ICON_SIZE.iconButton} />
+            )}
+          </label>
+        </Tooltip>
       </div>
       {rootError !== null ? (
         <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{rootError}</p>
@@ -1594,7 +1647,7 @@ export function WorkspaceBrowser({
           // finds nothing: hand Escape back to the row itself.
           returnFocus={treeMenu.anchorOwner}
           className="contents"
-          menuClass="w-48"
+          menuClass="w-max min-w-36 max-w-[calc(100vw-2rem)]"
           button={null}
         >
           <WorkspaceFileMenuRows
@@ -1698,8 +1751,12 @@ export function WorkspaceBrowser({
    * screen, and Edit has no other way in from here.
    */
   const previewFloatingActions = preview !== null &&
-    (canEdit || (sourceShown && preview.content !== undefined)) && (
+    (wrapToggle !== false || canEdit || (sourceShown && preview.content !== undefined)) && (
       <div className="absolute right-4 top-2.5 z-10 flex items-center gap-0.5 rounded-md border border-gray-200 bg-white/85 p-0.5 shadow-sm backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/85">
+        {/* Soft wrap is a property of the surface under the pill, and the editor lays its
+            textarea over that same surface — so it rides here in both modes, which is also
+            the only place the editor can reach it from. */}
+        {wrapToggle}
         {/* Copies the text that was read, which is all of the file unless the preview was cut off. */}
         {sourceShown && preview.content !== undefined && (
           <>
@@ -1734,20 +1791,44 @@ export function WorkspaceBrowser({
             </button>
           </Tooltip>
         )}
+        {/* rel="noopener noreferrer" is load-bearing, not boilerplate: the preview must not
+            keep a handle back to this window, which is the whole point of serving it from a
+            separate origin.
+
+            Without a separate preview origin the page opens sandboxed, and the caveat joins
+            the name rather than riding a ⚠ beside it: the name is all an icon-only control
+            has, and the tooltip shows the same words so the two cannot disagree. The tint is
+            a second carrier, never the only one. */}
+        {/\.html?$/i.test(preview.name) && (
+          <Tooltip label={openInNewTabLabel} placement="bottom" className="shrink-0">
+            <a
+              href={api.workspaceFilePreviewUrl(sessionId, preview.path)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={openInNewTabLabel}
+              className={`${iconActionClass} ${previewIsolated ? "" : toneInk.attention}`}
+            >
+              <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.iconButton} />
+            </a>
+          </Tooltip>
+        )}
       </div>
     );
 
   const previewBody = (p: Preview) => {
     if (editor !== null && editor.path === p.path) {
       return (
-        <div className="min-h-0 flex-1">
-          <WorkspaceFileEditor
-            path={editor.path}
-            value={editor.draft}
-            wrap={wrapLines}
-            onChange={updateDraft}
-            onSave={requestSave}
-          />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1">
+            <WorkspaceFileEditor
+              path={editor.path}
+              value={editor.draft}
+              wrap={wrapLines}
+              onChange={updateDraft}
+              onSave={requestSave}
+            />
+          </div>
+          {previewFloatingActions}
         </div>
       );
     }
@@ -1971,7 +2052,7 @@ export function WorkspaceBrowser({
           anchorOwner={previewMenu.anchorOwner}
           returnFocus={previewMenu.anchorOwner}
           className="contents"
-          menuClass="w-48"
+          menuClass="w-max min-w-36 max-w-[calc(100vw-2rem)]"
           button={null}
         >
           <WorkspaceFileMenuRows
@@ -2003,6 +2084,57 @@ export function WorkspaceBrowser({
     );
   };
 
+  /**
+   * What the path row offers for the file it names. A draft takes the row over: its two
+   * decisions, and the state behind them, are the whole of what the row is for while one is
+   * open, and a view toggle would be offering a view the draft is not in. Everything that
+   * acts on the text rather than on the file rides the floating pill over it instead.
+   */
+  const fileRowActions =
+    preview !== null &&
+    preview.path === selectedPath &&
+    (editor !== null && editor.path === preview.path ? (
+      <>
+        {editor.changedOnDisk === true && (
+          <span
+            className={`shrink-0 text-xs ${toneInk.attention}`}
+            title={S.files.changedOnDiskHint}
+          >
+            {S.files.changedOnDisk}
+          </span>
+        )}
+        {dirty && (
+          <span className={`shrink-0 text-xs ${toneInk.attention}`}>{S.files.unsaved}</span>
+        )}
+        <Button size="sm" onClick={cancelEdit} disabled={saving}>
+          {S.common.cancel}
+        </Button>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={requestSave}
+          disabled={saving}
+          title={S.files.saveTitle}
+        >
+          {saving ? S.common.saving : S.common.save}
+        </Button>
+      </>
+    ) : (
+      <>
+        {richToggle}
+        <Tooltip label={S.files.download} placement="bottom" className="shrink-0">
+          <a
+            href={api.workspaceFileUrl(sessionId, preview.path, true)}
+            download={preview.name}
+            aria-label={S.files.download}
+            className={iconActionClass}
+          >
+            <GlyphIcon d={DOWNLOAD_ICON} size={ICON_SIZE.iconButton} />
+          </a>
+        </Tooltip>
+      </>
+    ));
+
   const previewPane = (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {selectedPath === null ? (
@@ -2019,98 +2151,7 @@ export function WorkspaceBrowser({
       ) : preview === null || preview.path !== selectedPath ? (
         <SkeletonList rows={6} />
       ) : (
-        <>
-          {/* flex-wrap: the preview can be as narrow as the dock allows, narrower than this
-              row's uncompressible content (view toggle + actions); without wrapping, the
-              panel's overflow-hidden would clip the right-side buttons off. */}
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800">
-            {narrow && (
-              <button
-                type="button"
-                onClick={backToTree}
-                title={S.files.backToList}
-                className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-              >
-                <GlyphIcon d={BACK_ICON} size={ICON_SIZE.rowLead} />
-                {S.files.backToList}
-              </button>
-            )}
-            {/* Shows only the filename (full path goes into the title hover tooltip): the
-                directory prefix is what the breadcrumbs above already say, and on a narrow
-                panel it would just crowd out the title space. */}
-            <span
-              className="min-w-0 flex-1 truncate font-mono text-sm font-semibold"
-              title={preview.path}
-            >
-              {preview.name}
-            </span>
-            {editor !== null && editor.path === preview.path ? (
-              <>
-                {editor.changedOnDisk === true && (
-                  <span
-                    className={`shrink-0 text-xs ${toneInk.attention}`}
-                    title={S.files.changedOnDiskHint}
-                  >
-                    {S.files.changedOnDisk}
-                  </span>
-                )}
-                {dirty && (
-                  <span className={`shrink-0 text-xs ${toneInk.attention}`}>{S.files.unsaved}</span>
-                )}
-                {wrapToggle}
-                <Button size="sm" onClick={cancelEdit} disabled={saving}>
-                  {S.common.cancel}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={requestSave}
-                  disabled={saving}
-                  title={S.files.saveTitle}
-                >
-                  {saving ? S.common.saving : S.common.save}
-                </Button>
-              </>
-            ) : (
-              <>
-                {richToggle}
-                {wrapToggle}
-                {/* rel="noopener noreferrer" is load-bearing, not boilerplate: the preview must
-                    not keep a handle back to this window, which is the whole point of serving
-                    it from a separate origin.
-
-                    Without a separate preview origin the page opens sandboxed, and the caveat
-                    joins the name rather than riding a ⚠ beside it: the name is all an
-                    icon-only control has, and the tooltip shows the same words so the two
-                    cannot disagree. The tint is a second carrier, never the only one. */}
-                {/\.html?$/i.test(preview.name) && (
-                  <Tooltip label={openInNewTabLabel} placement="bottom" className="shrink-0">
-                    <a
-                      href={api.workspaceFilePreviewUrl(sessionId, preview.path)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={openInNewTabLabel}
-                      className={`${iconActionClass} ${previewIsolated ? "" : toneInk.attention}`}
-                    >
-                      <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.iconButton} />
-                    </a>
-                  </Tooltip>
-                )}
-                <Tooltip label={S.files.download} placement="bottom" className="shrink-0">
-                  <a
-                    href={api.workspaceFileUrl(sessionId, preview.path, true)}
-                    download={preview.name}
-                    aria-label={S.files.download}
-                    className={iconActionClass}
-                  >
-                    <GlyphIcon d={DOWNLOAD_ICON} size={ICON_SIZE.iconButton} />
-                  </a>
-                </Tooltip>
-              </>
-            )}
-          </div>
-          {previewBody(preview)}
-        </>
+        previewBody(preview)
       )}
     </div>
   );
@@ -2123,10 +2164,25 @@ export function WorkspaceBrowser({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {/* Toolbar: tree toggle + the current directory's path + actions. One row that never
-          wraps — the path strip absorbs the pressure (it clips, and its leading segments
-          collapse), the actions keep their width. */}
+      {/* The panel's one header row: the way back or the tree toggle, the path of whatever is
+          open, and what that file offers. It never wraps — the path strip absorbs all of the
+          pressure, clipping and collapsing its leading segments, while the actions keep their
+          width. Everything that acts on the text rather than on the file is in the floating
+          pill over the body, and the panel's own actions (refresh, upload) sit in the tree
+          pane's header beside its search box. */}
       <div className="flex shrink-0 flex-nowrap items-center gap-1 border-b border-gray-200 px-2 py-1.5 dark:border-gray-800">
+        {narrow && !showTree && (
+          <Tooltip label={S.files.backToList} placement="bottom" className="shrink-0">
+            <button
+              type="button"
+              aria-label={S.files.backToList}
+              onClick={backToTree}
+              className={iconActionClass}
+            >
+              <GlyphIcon d={BACK_ICON} size={ICON_SIZE.iconButton} />
+            </button>
+          </Tooltip>
+        )}
         {!narrow && (
           // Static accessible name, state on aria-pressed alone: a name that swaps Show/Hide
           // beside it reads as "Hide file tree, pressed", saying the state twice and
@@ -2174,39 +2230,7 @@ export function WorkspaceBrowser({
             </Fragment>
           ))}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Tooltip label={S.files.refresh} placement="bottom" className="shrink-0">
-            <button
-              type="button"
-              aria-label={S.files.refresh}
-              onClick={refreshAll}
-              className={iconActionClass}
-            >
-              <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.iconButton} />
-            </button>
-          </Tooltip>
-          {/* The picker's own input carries the name: a label with no text names nothing, and
-              the glyph inside it is aria-hidden. While an upload runs the count is all the
-              tooltip has left to say it with, so it goes there and the glyph becomes a
-              spinner. */}
-          <Tooltip label={uploadLabel} placement="bottom" className="shrink-0">
-            <label
-              className={`${iconActionClass} cursor-pointer focus-within:ring-2 focus-within:ring-gray-400/30`}
-            >
-              <HiddenFileInput
-                multiple
-                onChange={onPick}
-                disabled={uploading !== null}
-                aria-label={uploadLabel}
-              />
-              {uploading !== null ? (
-                <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-              ) : (
-                <GlyphIcon d={UPLOAD_ICON} size={ICON_SIZE.iconButton} />
-              )}
-            </label>
-          </Tooltip>
-        </div>
+        {fileRowActions}
       </div>
 
       <div className="relative flex min-h-0 flex-1">
