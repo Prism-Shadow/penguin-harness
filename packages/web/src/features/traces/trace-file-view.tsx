@@ -111,20 +111,23 @@ const rowKeyOf = (taskIndex: number, i: number): string => `${taskIndex}-${i}`;
  * giving each group a full row would waste the right half of the space.
  *
  * `detail` is the breakdown behind the value: the row shows the total alone and keeps the
- * breakdown on hover, the same way the per-round chips do. The accessible name repeats the
- * value beside it, because aria-label replaces the row's own text rather than adding to it,
- * and an empty detail leaves both attributes off — a name repeating only the label says nothing.
+ * breakdown in its hover text, the same way the per-round chips do. A reader with no hover
+ * gets it from `sr-only` text rather than from an `aria-label`: this row is a bare `div`,
+ * whose role is `generic`, and ARIA prohibits naming that role — a label here would be
+ * dropped, while hidden text is read in place, right after the value it belongs to (the
+ * same way an update hint is folded into a button elsewhere in the app). An empty detail
+ * renders neither: a tooltip repeating only the visible label says nothing.
  */
 function SummaryRow({ label, value, detail }: { label: string; value: string; detail?: string }) {
   const hasDetail = detail !== undefined && detail !== "";
   return (
     <div
       title={hasDetail ? `${label}${detail}` : undefined}
-      aria-label={hasDetail ? `${label} ${value}${detail}` : undefined}
       className="flex items-baseline justify-between gap-3 py-0.5"
     >
       <span className="shrink-0 text-[11px] text-gray-400">{label}</span>
       <span className="truncate font-mono text-sm font-semibold tabular-nums">{value}</span>
+      {hasDetail && <span className="sr-only">{detail}</span>}
     </div>
   );
 }

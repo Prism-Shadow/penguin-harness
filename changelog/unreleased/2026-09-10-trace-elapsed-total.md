@@ -10,5 +10,5 @@
 A Trace file's overall summary printed the elapsed total and its API / tool breakdown on the same
 line, so the row carried three durations at rest. Elapsed now shows the total on its own and keeps
 the breakdown in its hover text — the reading the per-round chip beside it already gave, so both
-surfaces word it the same way. The hover text is the row's accessible name too, with the total kept
-beside the breakdown.
+surfaces word it the same way. A reader with no hover is not left without it: the row carries the
+breakdown beside the total as visually hidden text, which a screen reader reads out in place.
