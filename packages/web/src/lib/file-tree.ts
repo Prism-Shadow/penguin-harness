@@ -8,9 +8,6 @@
  * flat listing it already holds — so a row states everything the tree needs to draw it.
  */
 
-/** Indent per nesting level, in px. */
-export const TREE_INDENT_PX = 14;
-
 /** One rendered tree row: an entry, where it sits, and a directory's open/loaded state. */
 export interface FileTreeRow {
   path: string;

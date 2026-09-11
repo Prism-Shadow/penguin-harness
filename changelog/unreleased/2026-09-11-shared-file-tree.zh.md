@@ -15,9 +15,9 @@ Workspace 面板的目录树移入 `components/ui/file-tree.tsx`，插件详情 
 
 ## 细节
 
-- `FileTree` 负责行的标记、缩进刻度、图形、选中与 hover、focus 的表现，WAI-ARIA `tree` 语义
-  （`role`、`aria-level`、`aria-posinset`、`aria-setsize`、`aria-expanded`）、轮转式 tab 落点与方向键
-  行走，以及调用方用来在指针事件中定位行的 `data-tree-path` / `data-tree-kind` 属性。取数仍归调用方：
+- 行的标记、缩进刻度、图形、选中与 hover、focus 的表现，WAI-ARIA `tree` 语义（`role`、`aria-level`、
+  `aria-posinset`、`aria-setsize`、`aria-expanded`）、轮转式 tab 落点与方向键行走，以及调用方用来在指针
+  事件中定位行的 `data-tree-path` / `data-tree-kind` 属性，一并移入了 `FileTree`。取数仍归调用方：
   Workspace 面板每展开一层就列一次目录，插件浏览器则对已经拿到的那份清单做分组。
 - 行的形状、`subtreeEnd` 与 `treeKeyStep` 从 `lib/workspace-tree.ts` 移入 `lib/file-tree.ts`，其用例
   一并迁移。从一行向上退出时，父行改为取上方最近的更浅一层的行，而不再从路径推得，因此顶层行本身就是

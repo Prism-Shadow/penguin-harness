@@ -256,14 +256,19 @@ export function PluginDetailModal({
           <div className="max-h-40 overflow-y-auto md:max-h-[50vh]">
             {error && <p className="px-3 py-2 text-xs text-red-500">{error}</p>}
             {files === null && !error && <SkeletonList rows={3} />}
-            <FileTree
-              rows={rows}
-              label={S.files.treeLabel}
-              selectedPath={current}
-              toggled={toggled}
-              onToggleDir={toggleDir}
-              onOpenFile={setSelected}
-            />
+            {/* A `tree` with no `treeitem` in it is not one: while the listing is in flight, or
+                when it failed or held nothing, the aside carries the skeleton or the error and
+                no tree at all. */}
+            {rows.length > 0 && (
+              <FileTree
+                rows={rows}
+                label={S.files.treeLabel}
+                selectedPath={current}
+                toggled={toggled}
+                onToggleDir={toggleDir}
+                onOpenFile={setSelected}
+              />
+            )}
           </div>
         </aside>
 

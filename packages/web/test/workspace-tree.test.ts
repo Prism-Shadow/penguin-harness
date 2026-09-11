@@ -1,6 +1,7 @@
 /**
  * Files panel logic (lib/workspace-tree.ts): the tree's rows from lazily loaded listings,
- * the search box's filter over them, where a drop lands, the narrow-layout decision and the tree pane's width bounds, how much of a path the
+ * the search box's filter over them, where a drop lands, the narrow-layout
+ * decision and the tree pane's width bounds, how much of a path the
  * toolbar can show, which files count as text (by name, or by their bytes when the name says
  * nothing), the preferences' tolerant parses, and when leaving the editor has to ask.
  */

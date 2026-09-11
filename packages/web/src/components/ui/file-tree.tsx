@@ -27,7 +27,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { TREE_INDENT_PX, subtreeEnd, treeKeyStep } from "../../lib/file-tree";
+import { subtreeEnd, treeKeyStep } from "../../lib/file-tree";
 import type { FileTreeRow } from "../../lib/file-tree";
 import { Chevron } from "./chevron";
 import { GlyphIcon } from "./glyph-icon";
@@ -37,6 +37,9 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 
 /** Left padding of a depth-0 row, in px; deeper rows add `TREE_INDENT_PX` per level. */
 const TREE_PAD_PX = 6;
+
+/** Indent per nesting level, in px. */
+const TREE_INDENT_PX = 14;
 
 /** Width of the chevron column, in px — `w-3.5`, mirrored so an empty directory's line can clear it. */
 const CHEVRON_COL_PX = 14;
