@@ -32,3 +32,5 @@ process list with its Stop and Remove actions.
 - A call whose work went to the background is marked `[Background]` right of its duration, in
   the row's own mono type and the same bracketed shape the row uses for an outcome that needs a
   word. It is read from the note the call returned, so it survives a reload.
+- The chat header's background-task chip keeps its glyph and its count and moves from the
+  live-status green to the muted tone, so it reads the same as the session row's mark.

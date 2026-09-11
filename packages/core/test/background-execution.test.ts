@@ -855,6 +855,45 @@ describe("run_subagent run_in_background", () => {
     expect(tapped.some((m) => (m.payload as { type?: string }).type === "text")).toBe(true);
   });
 
+  it("a detached child with a queued approval is not reported as something to poll for", async () => {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const decisions: string[] = [];
+    const runner = runnerOf(async function* ({ approve }) {
+      const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
+      decisions.push(await approve!(tc as OmniMessage<ToolCallPayload>));
+      yield withHop(assistantText("child answer"));
+    });
+    const tool = createSubagentTool(SUB_DEF, {
+      subagentRunner: runner,
+      subagentSessions: manager,
+    });
+    // The user has not answered yet, so the request is still queued when the detach lands:
+    // pendingApprovals is 1 at the moment the note is written.
+    let asked = false;
+    let held = true;
+    const approveSpy: ApproveFn = async () => {
+      asked = true;
+      await waitFor(() => !held);
+      return "allow";
+    };
+    const detach = new AbortController();
+    void waitFor(() => asked).then(() => detach.abort());
+    const res = await drive(
+      tool,
+      { prompt: "long job", yield_time_ms: 60000 },
+      { ...CTX, approve: approveSpy, detachSignal: detach.signal },
+    );
+    expect(res.note).toContain(DETACHED_TOOL_NOTE_PREFIX);
+    // The standing sink attached at detach time carries that request to the user itself, so
+    // the note must not send the model off to poll for it (a run_in_background launch says
+    // nothing either; only the deadline promotion, which gets no standing sink, does).
+    expect(res.note).not.toContain("poll to review");
+    held = false;
+    await waitFor(() => decisions.length === 1);
+    expect(decisions[0]).toBe("allow");
+  });
+
   it("input_subagent fails on an id this conversation never allocated (nothing to resume)", async () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());

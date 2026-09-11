@@ -224,13 +224,16 @@ export function createSubagentTool(
             if (approve) session.setPersistentApprovalSink(approve);
             const forward = services?.backgroundForward;
             if (forward) session.setMessageTap(forward);
+            // No approval hint here, exactly as on a run_in_background launch: the standing
+            // sink just attached carries a queued request to the user itself, so "poll to
+            // review" would send the model after work it is not doing — the deadline
+            // promotion below keeps the hint because it has no such sink.
             return {
               stopReason: "completed",
               note:
                 `${DETACHED_TOOL_NOTE_PREFIX} with subagent_id ${id}; its completion will arrive ` +
                 `as a user message — no need to poll. Use input_subagent to interact ` +
-                `(abort: true stops its current run)]` +
-                approvalHint(session),
+                `(abort: true stops its current run)]`,
             };
           }
           return {

@@ -64,11 +64,12 @@ describe("sessionBackgroundTasks", () => {
 });
 
 /**
- * The background-task mark: one glyph in the `busy` tone for both of its placements — a
- * session row / the chat header, where it stands for a count, and a tool row, where it marks
- * the single call made with `run_in_background`. Rendered only when there is background work
- * to report (the caller's decision), and always naming what it means in the accessible name
- * and tooltip, so the glyph is never the only carrier.
+ * The background-task mark: one glyph in the `busy` tone, standing for a count on a session
+ * row and in the chat header. Rendered only when there is background work to report (the
+ * caller's decision), and always naming what it means in the accessible name and tooltip, so
+ * the glyph is never the only carrier. A tool row says the same thing in words instead
+ * (S.chat.backgroundCall, covered by tool-call-preview.test.ts), because there it marks one
+ * call rather than a count.
  */
 describe("BackgroundTasksMark", () => {
   const render = (label: string, size: number) =>
@@ -82,18 +83,9 @@ describe("BackgroundTasksMark", () => {
     expect(S.chat.backgroundTasks(3)).toContain("3");
   });
 
-  it("names one call where it marks one call, rather than a count of one", () => {
-    // The tool row marks a single run_in_background call: "1 background task" would be a
-    // count the row is not making, and would read as the conversation's total.
-    const markup = render(S.chat.backgroundCall, ICON_SIZE.inlineGlyph);
-    expect(markup).toContain(`aria-label="${S.chat.backgroundCall}"`);
-    expect(S.chat.backgroundCall).not.toBe(S.chat.backgroundTasks(1));
-    expect(S.chat.backgroundCall).not.toMatch(/\d/);
-  });
-
   it("draws the activity trace in the busy tone, at the rung its caller passes", () => {
-    expect(render(S.chat.backgroundCall, ICON_SIZE.rowMark)).toMatch(/width="12"/);
-    expect(render(S.chat.backgroundCall, ICON_SIZE.inlineGlyph)).toMatch(/width="13"/);
+    expect(render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark)).toMatch(/width="12"/);
+    expect(render(S.chat.backgroundTasks(1), ICON_SIZE.inlineGlyph)).toMatch(/width="13"/);
     const markup = render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark);
     expect(markup).toContain(`d="${BACKGROUND_TASKS_ICON}"`);
     expect(markup).toContain(toneInk.busy);

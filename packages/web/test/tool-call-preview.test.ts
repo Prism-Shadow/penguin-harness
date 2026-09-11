@@ -18,6 +18,7 @@ import {
   shortenPath,
   showsBackgroundAction,
 } from "../src/features/chat/tool-call-card";
+import { S } from "../src/lib/strings";
 
 describe("previewArguments", () => {
   it("renders exec_command as $ <cmd>", () => {
@@ -246,5 +247,14 @@ describe("showsBackgroundAction", () => {
         [],
       ),
     ).toBe(false);
+  });
+});
+
+describe("the tool row's background marker", () => {
+  it("marks one call rather than a count of one", () => {
+    // The row marks a single call whose work went to the background; "1 background task"
+    // would be a count the row is not making, and would read as the conversation's total.
+    expect(S.chat.backgroundCall).not.toBe(S.chat.backgroundTasks(1));
+    expect(S.chat.backgroundCall).not.toMatch(/\d/);
   });
 });

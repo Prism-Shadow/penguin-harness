@@ -1910,16 +1910,19 @@ export function ChatPage() {
                   />
                   {/* Right of the time, only while the conversation still owns background
                       work — command processes past their yield window, background subagents
-                      mid-round: their count, in the live-status green, the same figure and
-                      glyph as the session row's mark and read live off the row. A count is
-                      what this reading is, and a glyph beside a number is how every other
-                      chip in this row says what its number counts. Bare ink like the chips
-                      beside it, not a tinted pill: this is one more reading in the stat row,
-                      not a badge that should out-weigh them. */}
+                      mid-round: their count, in the same tone, figure and glyph as the
+                      session row's mark and read live off the row. A count is what this
+                      reading is, and a glyph beside a number is how every other chip in this
+                      row says what its number counts. Bare ink like the chips beside it, not
+                      a tinted pill: this is one more reading in the stat row, not a badge
+                      that should out-weigh them. Muted rather than the live-status green:
+                      background work is a fact about the conversation, not the live run this
+                      row is otherwise reporting — and `muted` may recede here because the
+                      title names the count in words, so the colour carries nothing alone. */}
                   {backgroundCount > 0 && (
                     <span
                       title={S.chat.backgroundTasks(backgroundCount)}
-                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
+                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.muted}`}
                     >
                       <GlyphIcon d={BACKGROUND_TASKS_ICON} />
                       {backgroundCount}
