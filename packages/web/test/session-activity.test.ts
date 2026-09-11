@@ -6,10 +6,11 @@ import type { SessionActivity } from "../src/lib/session-activity";
 import {
   ACTIVITY_GLYPH,
   BackgroundTasksMark,
+  ScheduleMark,
   SessionActivityIcon,
   sessionActivityLabel,
 } from "../src/components/ui/session-activity-icon";
-import { BACKGROUND_TASKS_ICON } from "../src/components/ui/icons";
+import { BACKGROUND_TASKS_ICON, SCHEDULE_ICON } from "../src/components/ui/icons";
 import { ICON_SIZE } from "../src/lib/icon-scale";
 import { S } from "../src/lib/strings";
 import { toneInk } from "../src/lib/tone";
@@ -64,12 +65,12 @@ describe("sessionBackgroundTasks", () => {
 });
 
 /**
- * The background-task mark: one glyph in the `busy` tone, standing for a count on a session
- * row and in the chat header. Rendered only when there is background work to report (the
- * caller's decision), and always naming what it means in the accessible name and tooltip, so
- * the glyph is never the only carrier. A tool row says the same thing in words instead
- * (S.chat.backgroundCall, covered by tool-call-preview.test.ts), because there it marks one
- * call rather than a count.
+ * The background-task mark: one glyph in the `muted` tone, standing for a count in both of
+ * its placements — a session row and the chat header. Rendered only when there is background
+ * work to report (the caller's decision), and always naming what it means in the accessible
+ * name and tooltip, so the glyph is never the only carrier. A tool row says the same thing in
+ * words instead (S.chat.backgroundCall, covered by tool-call-preview.test.ts), because there
+ * it marks one call rather than a count.
  */
 describe("BackgroundTasksMark", () => {
   const render = (label: string, size: number) =>
@@ -83,16 +84,36 @@ describe("BackgroundTasksMark", () => {
     expect(S.chat.backgroundTasks(3)).toContain("3");
   });
 
-  it("draws the activity trace in the busy tone, at the rung its caller passes", () => {
+  it("draws the activity trace in the muted tone, at the rung its caller passes", () => {
     expect(render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark)).toMatch(/width="12"/);
     expect(render(S.chat.backgroundTasks(1), ICON_SIZE.inlineGlyph)).toMatch(/width="13"/);
     const markup = render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark);
     expect(markup).toContain(`d="${BACKGROUND_TASKS_ICON}"`);
-    expect(markup).toContain(toneInk.busy);
-    // Not one of the activity glyphs, and no motion: it is a fact about the Session, not a
-    // live-progress indicator.
+    // Parked work is a fact about the Session, not a turn in progress: the mark recedes with
+    // the pin and the relay glyph instead of borrowing the tone the running hourglass wears.
+    expect(markup).toContain(toneInk.muted);
+    expect(markup).not.toContain(toneInk.busy);
+    // Not one of the activity glyphs, and no motion, for the same reason.
     expect(markup).not.toContain(ACTIVITY_GLYPH.running);
     expect(markup).not.toContain("hourglass-turn");
+  });
+});
+
+describe("ScheduleMark", () => {
+  const markup = () =>
+    renderToStaticMarkup(createElement(ScheduleMark, { size: ICON_SIZE.rowMark }));
+
+  it("recedes with the row's other standing marks instead of reading as live work", () => {
+    // A scheduled task is an arrangement, not something happening now: it takes the `muted` ink
+    // the pin and the messaging-relay glyph wear, and neither the busy nor the attention tone
+    // that the hourglass and the pending-approval badge own.
+    expect(markup()).toContain(toneInk.muted);
+    expect(markup()).not.toContain(toneInk.attention);
+    expect(markup()).not.toContain(toneInk.busy);
+    // Muted is the one tone allowed under 3:1, and only where the meaning is already in text.
+    expect(markup()).toContain(`aria-label="${S.chat.sessionScheduled}"`);
+    expect(markup()).toContain(`title="${S.chat.sessionScheduled}"`);
+    expect(markup()).toContain(`d="${SCHEDULE_ICON}"`);
   });
 });
 

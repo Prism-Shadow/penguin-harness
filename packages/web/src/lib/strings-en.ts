@@ -20,8 +20,10 @@ export const en: Strings = {
     usage: "Cost Center",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
-    // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "Last conversation",
+    // The rail avatar's tooltip says what the control does; who is signed in stays in its accessible name.
+    userSettings: "User settings",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     collapseGroup: "Collapse",
@@ -181,6 +183,9 @@ export const en: Strings = {
     launcher: "Shortcuts launcher",
     launcherInfo:
       "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
+    toolAliases: "Tool short names",
+    toolAliasesInfo:
+      'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
@@ -346,6 +351,8 @@ export const en: Strings = {
     edit: "Edit",
     settings: "Settings",
     confirm: "Confirm",
+    /** Sole button of a dialog that only informs: it has nothing to confirm or cancel, so the label acknowledges rather than agrees (and does not repeat the header X's "close"). */
+    gotIt: "Got it",
     loading: "Loading…",
     saved: "Saved",
     saving: "Saving…",
@@ -388,6 +395,14 @@ export const en: Strings = {
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
       "Forgot the admin password? Stop the server and run penguin server reset-admin-password to issue a fresh initial one",
+    /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
+    claimFailedTitle: "Sign-in link no longer works",
+    /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
+    claimFailedDesktop:
+      "This one-time sign-in link has already been used or has expired. Restart the PenguinHarness desktop app to get a fresh link and be signed in automatically, or sign in with your username and password below.",
+    /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
+    claimFailedServer:
+      "The first-login link stops working once the server has a password, and a restart replaces it with a new one. Sign in with your username and password below, or ask your administrator for a new sign-in link.",
   },
 
   account: {
@@ -2041,6 +2056,20 @@ Scenarios:
       return `failed${detail}, keeping current context`;
     },
     unknownTool: "(unknown tool)",
+    /**
+     * Short display names for the built-in tools, keyed by the name the model calls them
+     * by. The tool-call card shows these while the Appearance switch is on; a tool absent
+     * from this table (MCP tools, names only older Traces carry) renders as itself.
+     */
+    toolAliases: {
+      read_file: "read",
+      write_file: "write",
+      edit_file: "edit",
+      exec_command: "exec",
+      input_command: "follow",
+      run_subagent: "subagent",
+      input_subagent: "communicate",
+    } as Record<string, string>,
     workRunning: "Running",
     workDone: "Done",
     workGroupSteps: (n: number) => `${n} ${n === 1 ? "step" : "steps"}`,
@@ -2617,7 +2646,7 @@ Scenarios:
     taskOutput: "Output tokens this turn",
     cacheHit: "Cache hits",
     hitRate: "Hit rate",
-    compactions: "compactions",
+    avgToolCalls: "Avg tools / turn",
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,

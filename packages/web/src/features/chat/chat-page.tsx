@@ -721,10 +721,11 @@ export function ChatPage() {
     isSessionDeleted,
   ]);
 
-  // Auto-select the most recent conversation when the route doesn't select one (newest loaded
-  // active/schedule Session — archived rows are hidden by choice and subagent Sessions belong
-  // to their parent, so neither is auto-opened); if there is none, fall back to draft state
-  // (instead of auto-creating one).
+  // Auto-select the last conversation when the route doesn't select one: the most recently
+  // ACTIVE loaded active/schedule Session, the same rule the collapsed rail's entry follows —
+  // archived rows are hidden by choice and subagent Sessions belong to their parent, so
+  // neither is auto-opened. If there is none, fall back to draft state (instead of
+  // auto-creating one).
   useEffect(() => {
     if (sessionsLoading || draft) return;
     if (selected !== null) return;
@@ -2246,8 +2247,11 @@ export function ChatPage() {
         onClose={() => setCredentialGuide(false)}
         footer={
           <>
-            <Button onClick={() => setCredentialGuide(false)}>{S.project.later}</Button>
+            <Button size="sm" onClick={() => setCredentialGuide(false)}>
+              {S.project.later}
+            </Button>
             <Button
+              size="sm"
               variant="primary"
               onClick={() => {
                 setCredentialGuide(false);

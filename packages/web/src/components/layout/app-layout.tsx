@@ -4,7 +4,7 @@
  * - <md: top thin bar (hamburger -> sidebar drawer + brand name) + main content.
  * All chrome uses solid backgrounds and avoids stacking contexts (frosted-glass/transform would trap overlay z-index).
  */
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
@@ -16,9 +16,11 @@ import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
 import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
+import { Tooltip } from "../ui/tooltip";
 import { UpdateDot } from "../ui/update-dot";
 import { CloseIcon, NAV_ICONS } from "../ui/icons";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
+import { UserMenu } from "./user-menu";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
 import { parkActiveDraft } from "../../features/chat/draft-sessions";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
@@ -45,9 +47,13 @@ const railItemClass = (active: boolean) =>
 
 /**
  * Collapsed narrow rail: expand button on top; below it, in product-specified order, last
- * conversation / new chat / Agents / Skills / Models / Costs / Benchmark (every entry
- * carries a localized title + aria-label, so hover tooltips follow the UI language); user
- * avatar at the bottom. No Logo shown.
+ * conversation / new chat / Agents / Skills / Models / Costs / Benchmark; user avatar at the
+ * bottom, opening the same account menu the pinned sidebar's avatar does. No Logo shown.
+ *
+ * Every entry is an icon with no visible label, so each carries a localized aria-label and
+ * the same words in a styled Tooltip — never also a native `title`, which would put a second
+ * tooltip under the first. The entries' own names come from the same strings as the pinned
+ * nav's, so the rail follows the UI language with it.
  */
 function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
@@ -65,7 +71,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   /** On some conversation (any non-draft /chat/:id): the "you are here" state of the last-conversation entry. */
   const onConversation = activeSessionId !== null && activeSessionId !== DRAFT_SESSION_ID;
 
-  /** Newest loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). */
+  /** The most recently active loaded conversation across the current Project (active/schedule only — archived and subagent rows are never auto-opened; the flat list is only ordered per Agent). */
   const lastSession = useMemo(() => latestConversation(sessions), [sessions]);
 
   /** Mirrors Sidebar.openSession: the current Agent follows the opened Session's Agent. */
@@ -94,17 +100,55 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
   ];
 
+  /**
+   * The rail's avatar hangs its menu off the rail's OUTER edge rather than over the rail:
+   * measured at click time as a zero-size point at the avatar's bottom and the aside's right,
+   * so a 48px column cannot hold (or clip) a 224px panel. A virtual anchor is a position, not
+   * an element, so `anchorOwner` is what tells the panel which scrolls moved it.
+   */
+  const avatarRef = useRef<HTMLButtonElement>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  } | null>(null);
+  const measureMenuAnchor = () => {
+    const button = avatarRef.current;
+    if (!button) return null;
+    const rect = button.getBoundingClientRect();
+    const left = (button.closest("aside")?.getBoundingClientRect().right ?? rect.right) + 4;
+    return { top: rect.bottom, bottom: rect.bottom, left, right: left };
+  };
+
+  /**
+   * The avatar's accessible name keeps the signed-in id: the menu behind it shows no id of its
+   * own, so while the sidebar is collapsed this is the only place one appears. The visible
+   * tooltip names what the control does instead — an initial in a circle is not a name a reader
+   * needs read back. Both carry what the update trail is waiting on, which from this rail is the
+   * only route left to the update row.
+   */
+  const avatarName =
+    badges.softwareNote !== null
+      ? `${user?.userId ?? ""} · ${badges.softwareNote}`
+      : (user?.userId ?? S.auth.admin);
+  const avatarTooltip =
+    badges.softwareNote !== null
+      ? `${S.nav.userSettings} · ${badges.softwareNote}`
+      : S.nav.userSettings;
+
   return (
     <div className="flex h-full flex-col items-center gap-1 py-2.5">
-      <button
-        type="button"
-        title={S.nav.expandSidebar}
-        aria-label={S.nav.expandSidebar}
-        onClick={onExpand}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-      >
-        <GlyphIcon d="M9 6l6 6-6 6M20 4v16" size={18} />
-      </button>
+      <Tooltip label={S.nav.expandSidebar} className="shrink-0">
+        <button
+          type="button"
+          aria-label={S.nav.expandSidebar}
+          onClick={onExpand}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+        >
+          <GlyphIcon d="M9 6l6 6-6 6M20 4v16" size={18} />
+        </button>
+      </Tooltip>
       {/* The entries scroll as one block, like the pinned sidebar's nav + session list: the rail
           keeps only the expand control and the account avatar at fixed height, so a window too
           short for the icons scrolls them here instead of pushing them out of the rail and
@@ -116,30 +160,32 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
             Lit on any non-draft conversation. Dimmed/disabled (tooltip kept) only once the list
             has settled with no non-archived Session — while it is still loading the entry keeps
             its normal look (no flash) and a click is a graceful no-op. */}
-        <button
-          type="button"
-          title={S.nav.lastConversation}
-          aria-label={S.nav.lastConversation}
-          disabled={!lastSession && !loading}
-          onClick={openLastSession}
-          className={
-            lastSession || loading
-              ? railItemClass(onConversation)
-              : "flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-md text-gray-300 dark:text-gray-700"
-          }
-        >
-          <GlyphIcon d={HISTORY_ICON} size={18} />
-        </button>
+        <Tooltip label={S.nav.lastConversation}>
+          <button
+            type="button"
+            aria-label={S.nav.lastConversation}
+            disabled={!lastSession && !loading}
+            onClick={openLastSession}
+            className={
+              lastSession || loading
+                ? railItemClass(onConversation)
+                : "flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-md text-gray-300 dark:text-gray-700"
+            }
+          >
+            <GlyphIcon d={HISTORY_ICON} size={18} />
+          </button>
+        </Tooltip>
         {/* 2. New chat: shows the same gray active fill while on the draft page (pinned-sidebar convention). */}
-        <button
-          type="button"
-          title={S.chat.newSessionMenu}
-          aria-label={S.chat.newSessionMenu}
-          onClick={newChat}
-          className={railItemClass(activeSessionId === DRAFT_SESSION_ID)}
-        >
-          <GlyphIcon d={NEW_CHAT_ICON} size={18} />
-        </button>
+        <Tooltip label={S.chat.newSessionMenu}>
+          <button
+            type="button"
+            aria-label={S.chat.newSessionMenu}
+            onClick={newChat}
+            className={railItemClass(activeSessionId === DRAFT_SESSION_ID)}
+          >
+            <GlyphIcon d={NEW_CHAT_ICON} size={18} />
+          </button>
+        </Tooltip>
         {/* 3-8. Page entries */}
         {pages.map((item) => {
           /* Four entries sit on a badge trail — Agents (an outdated kernel), Skills, Models and
@@ -147,38 +193,61 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
              say what is waiting, and this rail's icons have no visible label, so they carry
              both the entry's name and that sentence. */
           const note = navNoteFor(badges, item.to);
+          const label = note !== null ? `${item.label} · ${note}` : item.label;
           return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              title={note !== null ? `${item.label} · ${note}` : item.label}
-              aria-label={note !== null ? `${item.label} · ${note}` : item.label}
-              className={({ isActive }) => railItemClass(isActive)}
-            >
-              <GlyphIcon d={item.icon} size={18} />
-              {note !== null && <UpdateDot />}
-            </NavLink>
+            <Tooltip key={item.to} label={label}>
+              <NavLink
+                to={item.to}
+                aria-label={label}
+                className={({ isActive }) => railItemClass(isActive)}
+              >
+                <GlyphIcon d={item.icon} size={18} />
+                {note !== null && <UpdateDot />}
+              </NavLink>
+            </Tooltip>
           );
         })}
       </nav>
-      <button
-        type="button"
-        title={[user?.userId ?? "", S.nav.expandSidebar]
-          .concat(badges.softwareNote !== null ? [badges.softwareNote] : [])
-          .join(" · ")}
-        aria-label={
-          badges.softwareNote !== null
-            ? `${user?.userId ?? ""} · ${badges.softwareNote}`
-            : (user?.userId ?? S.auth.admin)
-        }
-        onClick={onExpand}
-        className="relative mt-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
-      >
-        {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
-        {/* Update reminder, mirroring the pinned sidebar's avatar: expanding the rail is the
-            only way to the update row, so the title/aria-label above name what is waiting. */}
-        {badges.software !== null && <UpdateDot />}
-      </button>
+      {/* The account menu opens here, on the rail, instead of the avatar expanding the sidebar
+          first: appearance and System settings, the update row and signing out all stay one
+          click away while collapsed. Same component as the pinned sidebar's (user-menu.tsx). */}
+      <UserMenu
+        className="mt-auto shrink-0"
+        menuClass="w-56 origin-bottom-left"
+        portal={{ direction: "up", align: "left" }}
+        anchorRect={menuAnchor}
+        anchorOwner={() => avatarRef.current}
+        trigger={({ open, toggle }) => (
+          /* The tooltip names the same avatar the open menu hangs off, so it stands down while
+             the menu is up rather than covering it. */
+          <Tooltip label={avatarTooltip} suppressed={open}>
+            <button
+              ref={avatarRef}
+              type="button"
+              aria-label={avatarName}
+              aria-haspopup="menu"
+              aria-expanded={open}
+              onClick={() => {
+                setMenuAnchor(measureMenuAnchor());
+                toggle();
+              }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center"
+            >
+              {/* The tile is the pinned sidebar's avatar, at its size, inside a rail-sized hit
+                  box: the two states swap this element outright, so a tile that changed size
+                  between them would pop on every collapse while the box beside it animates
+                  smoothly. The button keeps the rail's 32px square, which is every other
+                  entry's target. */}
+              <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
+                {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
+                {/* Update reminder, mirroring the pinned sidebar's avatar: the update row sits in
+                    the menu this opens, and the label above names what is waiting. */}
+                {badges.software !== null && <UpdateDot />}
+              </span>
+            </button>
+          </Tooltip>
+        )}
+      />
     </div>
   );
 }
@@ -245,17 +314,30 @@ export function AppLayout() {
 
   return (
     <div className="flex h-full">
-      {/* Desktop: single-column sidebar (collapsible to a narrow rail) */}
+      {/* Desktop: single-column sidebar (collapsible to a narrow rail).
+          Collapsing animates the WIDTH, which is the one animation here that transform cannot
+          carry: the sidebar is in flow, so the main content reflows beside it rather than
+          being slid over. Width is also the only property this box may animate at all —
+          transform, will-change and any opacity below 1 each make it a stacking context and
+          would trap the z-40 menus the sidebar opens inside it (see the file header).
+          `prefers-reduced-motion` is answered globally in styles.css, which drops the
+          transition and leaves the resting width correct.
+          The panes do NOT cross-fade. Each is rendered at its own final width inside the box
+          and clipped by it, so neither is ever laid out against a width it will not keep: the
+          rail sits at its final 48px from the first frame while the box closes around it, and
+          the pinned sidebar is uncovered left to right instead of reflowing on every frame. */}
       <aside
-        className={`hidden shrink-0 border-r border-gray-200 bg-gray-50 md:block dark:border-gray-800 dark:bg-gray-900 ${
+        className={`hidden shrink-0 overflow-hidden border-r border-gray-200 bg-gray-50 transition-[width] duration-200 ease-out md:block dark:border-gray-800 dark:bg-gray-900 ${
           collapsed ? "w-12" : "w-64 lg:w-72"
         }`}
       >
-        {collapsed ? (
-          <CollapsedRail onExpand={toggleCollapsed} />
-        ) : (
-          <Sidebar onCollapse={toggleCollapsed} />
-        )}
+        <div className={`h-full ${collapsed ? "w-12" : "w-64 lg:w-72"}`}>
+          {collapsed ? (
+            <CollapsedRail onExpand={toggleCollapsed} />
+          ) : (
+            <Sidebar onCollapse={toggleCollapsed} />
+          )}
+        </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

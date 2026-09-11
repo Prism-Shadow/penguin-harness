@@ -9,7 +9,6 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AuthResponse } from "../../api/types.js";
-import { HttpError } from "../errors.js";
 import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
@@ -43,7 +42,7 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
    * Two proofs, expiring differently: the desktop shell's token is spent on first use, while
    * the first-login link keeps working until a password exists — a link a mail client may
    * prefetch cannot afford to be one-shot, and until then the account protects nothing.
-   * Both fail with the same 401, so a caller learns nothing about which it got wrong.
+   * Both fail with the same redirect, so a caller learns nothing about which it got wrong.
    */
   app.get("/claim", (c) => {
     const token = c.req.query("token") ?? "";
@@ -53,9 +52,17 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
       token !== "" && deps.desktop?.redeemLoginToken(token) === true
         ? deps.authService.loginDesktop().token
         : deps.authService.redeemFirstLogin(token);
-    if (session === null) {
-      throw new HttpError(401, "unauthorized", "Invalid or already-used sign-in link.");
-    }
+    // A browser is at the other end of this navigation, so the refusal answers a browser
+    // too: an error body would leave the visitor staring at raw JSON with nothing to act
+    // on. The login page takes it from here, form included. The advice it reads out of
+    // `claimFailed` describes the DEPLOYMENT, never the token: a desktop shell mints a fresh
+    // link on every start, so restarting the app is the way back in, while anywhere else the
+    // link has to come from whoever runs the server and restarting helps nobody. Every token
+    // a given server rejects yields the same value, so the refusal still says nothing about
+    // which kind was presented — only that a shell is attached, which is a property of how
+    // the server was started rather than of the credential.
+    if (session === null)
+      return c.redirect(`/login?claimFailed=${deps.desktop !== null ? "desktop" : "server"}`, 302);
     setCookie(
       c,
       SESSION_COOKIE,

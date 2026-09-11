@@ -164,18 +164,20 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
 
   // On coming to the front, and on a timer while it stays there. Focus and visibility are the
   // store's own business (it refreshes for the toolbar mark too); a hidden tab adds no poll.
+  // Every refresh names this conversation's agent: the store holds a list per agent, and the
+  // sidebar is reading another one whenever the current Agent has moved ahead of this panel.
   useEffect(() => {
     if (!active) return;
-    void refreshSchedules();
+    void refreshSchedules(projectId, session.agentId);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void refreshSchedules();
+      if (document.visibilityState === "visible") void refreshSchedules(projectId, session.agentId);
     }, REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [active]);
+  }, [active, projectId, session.agentId]);
 
   /** After a create or delete: the list, and the agent card's schedule count. */
   const changed = () => {
-    void refreshSchedules();
+    void refreshSchedules(projectId, session.agentId);
     void reloadAgents();
   };
 
@@ -191,7 +193,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
         toggleBody(item, !item.enabled),
       );
       toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
-      await refreshSchedules();
+      await refreshSchedules(projectId, session.agentId);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {

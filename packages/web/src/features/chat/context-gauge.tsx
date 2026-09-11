@@ -795,6 +795,7 @@ function ThresholdDialog({
       </p>
       <div className="mt-3">
         <Input
+          size="sm"
           label={S.chat.contextThresholdField}
           type="text"
           inputMode="numeric"

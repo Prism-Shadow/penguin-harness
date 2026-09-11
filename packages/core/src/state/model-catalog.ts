@@ -14,9 +14,10 @@
  * pre-registered deepseek-v4.1-flash row: 2026-09-09, from DeepSeek's release announcement;
  * the whole Gemini 3.x line-up, direct + OpenRouter — the 3.6 / 3.7 / 3.8 Flash launch
  * discounts declared, every other row re-read and unchanged: 2026-09-09; the direct DeepSeek
- * group (V4.1 Flash released as `deepseek-flash`, the two V4 Flash ids retired into it), the
- * OpenRouter and TokenDance V4.1 Flash rows, and TokenDance's running promotions plus its
- * Doubao Seed display names: 2026-09-10 — per each provider's docs).
+ * group (V4.1 Flash released as `deepseek-flash`, the two V4 Flash ids retired into it —
+ * `deepseek-v4-flash` text-only even so, AgentHub's DeepSeek client refusing image parts for
+ * that id), the OpenRouter and TokenDance V4.1 Flash rows, and TokenDance's running promotions
+ * plus its Doubao Seed display names: 2026-09-10 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -505,17 +506,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   {
     // Retired on 2026-09-10: DeepSeek still accepts the id and serves it from V4.1 Flash at
-    // the Flash price, so what answers here reads images — hence the flag. AgentHub 0.4.11's
-    // DeepSeek client still refuses image parts for this bare id (its text-only deny-list
-    // /^deepseek-v4-(flash|pro)(-\d{4})?$/ predates the retirement), so until AgentHub
-    // relaxes that list an image sent to this id is rejected by the client, not by DeepSeek.
+    // the Flash price. V4 Flash reads no images, and the retirement does not change that —
+    // `deepseek-flash` is the id to send an image to. AgentHub agrees rather than decides:
+    // 0.4.11's DeepSeek client matches this bare id against its text-only deny-list
+    // /^deepseek-v4-(flash|pro)(-\d{4})?$/ and rejects image parts before the request leaves
+    // the harness, so relaxing that list is not a reason to flip this flag.
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
     provider: "deepseek",
     contextWindow: 1000000,
     pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
-    supportsVision: true,
+    supportsVision: false,
   },
   {
     // The experimental vision revision of V4 Flash (added 2026-08-21), retired on the same

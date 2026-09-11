@@ -20,7 +20,7 @@
  * trailing slot shows the compact last-active time at rest and swaps to archive + delete
  * icon buttons on hover/focus; the full set (pin, rename, archive, delete) opens as a
  * context menu on right-click, Shift+F10, or a press-and-hold on touch
- * -> bottom user config (theme / language / System settings / logout).
+ * -> bottom user row, which opens the shared account menu (user-menu.tsx).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -106,7 +106,7 @@ import {
   orderGroups,
   saveGroupOrder,
 } from "../../lib/group-order";
-import { Dropdown } from "../ui/dropdown";
+import { Dropdown, menuItemClass } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
   HOVER_ROW_ACTIONS,
@@ -165,13 +165,12 @@ import {
 } from "../../features/chat/draft-sessions";
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
-import { UpdateRow } from "../account/update-row";
-import { openUpdateModal } from "../../lib/use-update-flow";
+import { UserMenu } from "./user-menu";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
-import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useAgentSchedules } from "../../features/schedules/schedule-store";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { toneInk } from "../../lib/tone";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
@@ -246,9 +245,6 @@ function AddBadgeIcon({ base, size = 15 }: { base: string; size?: number }) {
   );
 }
 
-const menuItemClass =
-  "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
-
 /** Section-header icon control (search / list settings / create): the grouping-toggle button look — active renders as a pressed fill. */
 const headerControlClass = (active: boolean) =>
   `flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
@@ -301,6 +297,9 @@ const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
 
+/** Standing "no Session is scheduled", so the first render has something to hold before any answer. */
+const NO_SCHEDULED_SESSIONS: ReadonlySet<string> = new Set();
+
 /**
  * Session status glyph: a turning hourglass while the Session is busy, a green dot once it has
  * finished with a reply the user has not seen, and nothing once that reply has been read — or
@@ -322,7 +321,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout, desktopMode, sessionVia } = useAuth();
+  const { user, sessionVia } = useAuth();
   const { locale } = useLocale();
   const {
     projects,
@@ -350,22 +349,21 @@ export function Sidebar({
   const activeSessionId = chatMatch?.params.sessionId ?? null;
 
   const [projectOpen, setProjectOpen] = useState(false);
-  const [userOpen, setUserOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   /** The badges over the update and to-do trails (use-update-badges.ts); the avatar's dot follows the update flow's offer / restart states. */
   const badges = useUpdateBadges();
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
   // The current Agent's scheduled tasks, shared with the dock's schedules panel through one
-  // store. The scope is the current Agent because that is the one the store can hold: the chat
-  // page keeps the current Agent in step with the open conversation, so the panel and these rows
-  // ask for the same list. In workspace or time grouping the list can also show OTHER Agents'
-  // Sessions, and those rows simply wear no mark — a row saying nothing is honest, a row
-  // answered from another Agent's list would not be. Re-read on every navigation: opening a
-  // conversation is the moment a task may just have been created or switched off.
+  // store, which caches a list per Agent so that neither surface's scope discards the other's.
+  // The scope is the current Agent: the chat page keeps it in step with the open conversation,
+  // so the panel and these rows ask for the same list. In workspace or time grouping the list
+  // can also show OTHER Agents' Sessions, and those rows simply wear no mark — a row saying
+  // nothing is honest, a row answered from another Agent's list would not be. Re-read on every
+  // navigation: opening a conversation is the moment a task may just have been created or
+  // switched off.
   const { items: agentSchedules } = useAgentSchedules(
     currentProjectId,
     currentAgent?.agentId ?? null,
@@ -375,7 +373,19 @@ export function Sidebar({
   // enough. The store re-renders these rows on every refresh (a navigation, a schedule event, a
   // turn ending, the panel's poll), and the server recomputes `nextFireAt` on each listing, so a
   // task that fired for the last time loses its mark at the next refresh.
-  const scheduledSessions = pendingScheduleSessions(agentSchedules ?? []);
+  const pendingScheduled = useMemo(
+    () => (agentSchedules === null ? null : pendingScheduleSessions(agentSchedules)),
+    [agentSchedules],
+  );
+  // A null list means "this Agent has not been read yet", never "this Agent has no tasks":
+  // reading it as the second blanks every alarm in the list for as long as a request takes. The
+  // marks on screen stand until a real answer replaces them, which is the standing the pin and
+  // the relay glyph get for free by being fields of the row itself.
+  const lastScheduledRef = useRef<ReadonlySet<string>>(NO_SCHEDULED_SESSIONS);
+  useEffect(() => {
+    if (pendingScheduled !== null) lastScheduledRef.current = pendingScheduled;
+  }, [pendingScheduled]);
+  const scheduledSessions = pendingScheduled ?? lastScheduledRef.current;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
@@ -2172,16 +2182,17 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Bottom user config */}
+      {/* Bottom user row: the trigger for the account menu both this sidebar and the
+          collapsed rail open (user-menu.tsx). */}
       <div className="shrink-0 border-t border-gray-200 p-2 dark:border-gray-800">
-        <Dropdown
-          open={userOpen}
-          setOpen={setUserOpen}
+        <UserMenu
           menuClass="bottom-full left-0 right-0 mb-1 origin-bottom"
-          button={
+          trigger={({ open, toggle }) => (
             <button
               type="button"
-              onClick={() => setUserOpen(!userOpen)}
+              onClick={toggle}
+              aria-haspopup="menu"
+              aria-expanded={open}
               {...(badges.softwareNote !== null
                 ? {
                     // The dot alone is mysterious: name what is waiting on the trigger (hover
@@ -2203,56 +2214,9 @@ export function Sidebar({
                 <span className="text-xs text-gray-400 dark:text-gray-500">{S.auth.admin}</span>
               )}
             </button>
-          }
-        >
-          <div className="py-1">
-            {/* System settings dialog: everyone gets the row — the dialog always has the
-                personal pages, and the server-global ones inside it stay gated by the
-                section registry rather than by this row. The preference rows that used to
-                stack here live on its pages now. */}
-            <button
-              type="button"
-              className={menuItemClass}
-              onClick={() => {
-                setUserOpen(false);
-                setSettingsOpen(true);
-              }}
-            >
-              {S.settings.systemSettings}
-            </button>
-            {/* Update entry, directly under the settings entry rather than on a page inside
-                it: one row for both backends (the server release here, the shell's own
-                updater in the desktop window), naming where the update flow stands and
-                opening the update modal — where the flow is explained and acted on. The
-                modal is mounted by the app layout, so it outlives this menu. Hidden where
-                this session can update nothing (a browser signed into a desktop-mode
-                server, see updateModeFor). */}
-            <UpdateRow
-              menuItemClass={menuItemClass}
-              onOpen={() => {
-                setUserOpen(false);
-                openUpdateModal();
-              }}
-            />
-            {/* Hidden in desktop mode: the window IS the session — logging out would
-                strand the user on a login page whose password was never shown. */}
-            {!desktopMode && (
-              <button
-                type="button"
-                className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-                onClick={() => {
-                  setUserOpen(false);
-                  void logout().then(() => navigate("/login"));
-                }}
-              >
-                {S.auth.logout}
-              </button>
-            )}
-          </div>
-        </Dropdown>
+          )}
+        />
       </div>
-
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <CreateProjectDialog
         open={createProjectOpen}
@@ -2275,10 +2239,11 @@ export function Sidebar({
         onClose={() => (renameBusy ? undefined : setRenamingSession(null))}
         footer={
           <>
-            <Button onClick={() => setRenamingSession(null)} disabled={renameBusy}>
+            <Button size="sm" onClick={() => setRenamingSession(null)} disabled={renameBusy}>
               {S.common.cancel}
             </Button>
             <Button
+              size="sm"
               variant="primary"
               disabled={renameBusy || !renameText.trim()}
               onClick={() => void confirmRename()}
@@ -2289,6 +2254,7 @@ export function Sidebar({
         }
       >
         <Input
+          size="sm"
           label={S.chat.renameSessionLabel}
           value={renameText}
           error={renameError ?? undefined}
@@ -2330,14 +2296,17 @@ export function Sidebar({
         onClose={() => setRenamingWorkspace(null)}
         footer={
           <>
-            <Button onClick={() => setRenamingWorkspace(null)}>{S.common.cancel}</Button>
-            <Button variant="primary" onClick={confirmRenameWorkspace}>
+            <Button size="sm" onClick={() => setRenamingWorkspace(null)}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" variant="primary" onClick={confirmRenameWorkspace}>
               {S.common.save}
             </Button>
           </>
         }
       >
         <Input
+          size="sm"
           label={S.chat.renameWorkspaceLabel}
           hint={S.chat.renameWorkspaceHint}
           value={workspaceAliasText}
@@ -2699,43 +2668,46 @@ function SessionRow({
                   : "text-gray-700 dark:text-gray-300"
             }`}
           />
-          {/* Pinned indicator: a dim pin after the title (tooltip + sr text; unpin lives in the row menu). */}
+          {/* Four marks for the row's STANDING arrangements, all in one dim cluster and all in
+              the `muted` ink: how the row is filed (pinned), where it can be reached from
+              (messaging relay), whether it runs on its own (a scheduled task) and whether it
+              owns work that outlives the turn (background tasks). None of them is live work, so
+              none competes with the status glyph that follows; each names itself in a tooltip
+              and in sr text, which is what lets them recede this far. */}
+          {/* Pinned indicator: a dim pin after the title (unpin lives in the row menu). */}
           {pinned && canPin && (
-            <span
-              title={S.chat.pinnedSession}
-              className="shrink-0 text-gray-400 dark:text-gray-500"
-            >
+            <span title={S.chat.pinnedSession} className={`shrink-0 ${toneInk.muted}`}>
               <Icon d={PIN_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
           {/* Enabled-messaging indicator: one glyph for every channel, the channel named in
-              the tooltip and sr text. Same dim treatment as the pin (saved-but-disabled
-              configs stay off the row; the binding dialog lives in the row menu). */}
+              the tooltip and sr text (saved-but-disabled configs stay off the row; the binding
+              dialog lives in the row menu). */}
           {s.messagingChannel !== undefined && (
             <span
               title={S.messaging.enabledIndicator[s.messagingChannel]}
-              className="shrink-0 text-gray-400 dark:text-gray-500"
+              className={`shrink-0 ${toneInk.muted}`}
             >
               <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
             </span>
           )}
-          {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
-          <StatusGlyph activity={activity} />
-          {/* Beside the glyph, not instead of it: an idle row can still own background work,
-              and the mark leaves with the last task (live via session_background). */}
+          {/* Scheduled-task indicator: the row says this conversation will run on its own, and
+              the schedules panel says how often and what. A paused task, or one past its end
+              time, draws nothing — nothing more will fire from it, and a mark would be noise. */}
+          {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
+          {/* Background work the conversation owns while sitting idle: parked, not running,
+              so it reads as an arrangement rather than as a turn in progress. The mark leaves
+              with the last task (live via session_background). */}
           {background > 0 && (
             <BackgroundTasksMark
               label={S.chat.backgroundTasks(background)}
               size={ICON_SIZE.rowMark}
             />
           )}
-          {/* Standing arrangement rather than live work: the row says this conversation will run
-              on its own, and the schedules panel says how often and what. A paused task, or one
-              past its end time, draws nothing — nothing more will fire from it, and a mark
-              would be noise. */}
-          {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
+          {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
+          <StatusGlyph activity={activity} />
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>

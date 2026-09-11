@@ -4,9 +4,12 @@
  * the form area, not the background graphics); top-right corner has language and theme settings (reuses
  * global preferences, defaults to following the device). No open registration: accounts are created by
  * admins in the user backend; first use logs in with the built-in admin account (hinted in the footer).
+ *
+ * It is also where a rejected sign-in link lands: the server redirects a spent or invalid claim here
+ * with `?claimFailed=`, and the page raises a dialog over the form saying how to get a working link.
  */
-import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { S } from "../lib/strings";
 import { apiErrorText } from "../lib/api-error";
 import { useDocumentTitle } from "../lib/use-document-title";
@@ -18,9 +21,18 @@ import type { ThemeMode } from "../state/theme";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { PasswordInput } from "../components/ui/password-input";
+import { Modal } from "../components/ui/modal";
 import { PenguinLogo } from "../components/ui/penguin-logo";
 import { Segmented } from "../components/ui/segmented";
 import { LoginCircuit } from "./login-circuit";
+
+/** Which advice a failed claim asks for; the server decides it from the deployment, not from the token. */
+type ClaimFailure = "desktop" | "server";
+
+/** Reads `?claimFailed=`; anything the server did not write is ignored rather than shown. */
+function parseClaimFailure(value: string | null): ClaimFailure | null {
+  return value === "desktop" || value === "server" ? value : null;
+}
 
 export function LoginPage() {
   useDocumentTitle(S.auth.login);
@@ -34,6 +46,18 @@ export function LoginPage() {
   const [errors, setErrors] = useState<{ userId?: string; password?: string; form?: string }>({});
   const [busy, setBusy] = useState(false);
   const clearErrors = () => setErrors((p) => (p.userId || p.password || p.form ? {} : p));
+
+  // Read once from the landing address, which the effect below then strips: the dialog answers
+  // the navigation that arrived here, so a reload must not raise it again and an address copied
+  // out of the bar must not raise it for someone who never followed a link.
+  const [searchParams] = useSearchParams();
+  const [claimFailure] = useState<ClaimFailure | null>(() =>
+    parseClaimFailure(searchParams.get("claimFailed")),
+  );
+  const [noticeOpen, setNoticeOpen] = useState(claimFailure !== null);
+  useEffect(() => {
+    if (claimFailure !== null) navigate("/login", { replace: true });
+  }, [claimFailure, navigate]);
 
   const submit = async () => {
     const next: { userId?: string; password?: string } = {};
@@ -94,7 +118,11 @@ export function LoginPage() {
               void submit();
             }}
           >
+            {/* The two fields ask for the base tier by name, the only place in the app that
+                does. This is a standalone page holding two controls and nothing else, so it is
+                deliberately roomier than the dense forms inside the app, where sm is the rung. */}
             <Input
+              size="base"
               label={S.common.username}
               required
               value={userId}
@@ -107,6 +135,7 @@ export function LoginPage() {
               autoFocus
             />
             <PasswordInput
+              size="base"
               label={S.auth.password}
               required
               value={password}
@@ -125,7 +154,7 @@ export function LoginPage() {
             <Button
               type="submit"
               variant="primary"
-              className="w-full justify-center py-2.5 text-sm font-semibold"
+              className="w-full justify-center py-2.5 font-semibold"
               disabled={busy}
             >
               {S.auth.login}
@@ -140,6 +169,22 @@ export function LoginPage() {
           </p>
         </div>
       </div>
+      {/* Over the form, never instead of it: the link is one way in and the password form is the
+          other, so the dialog explains and steps aside. */}
+      <Modal
+        open={noticeOpen}
+        title={S.auth.claimFailedTitle}
+        onClose={() => setNoticeOpen(false)}
+        footer={
+          <Button variant="primary" onClick={() => setNoticeOpen(false)}>
+            {S.common.gotIt}
+          </Button>
+        }
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {claimFailure === "desktop" ? S.auth.claimFailedDesktop : S.auth.claimFailedServer}
+        </p>
+      </Modal>
     </div>
   );
 }
