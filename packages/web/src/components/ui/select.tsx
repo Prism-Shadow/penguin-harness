@@ -52,7 +52,7 @@ export function Select({
   hint,
   error,
   required,
-  size = "base",
+  size = "sm",
   className,
   children,
   value,

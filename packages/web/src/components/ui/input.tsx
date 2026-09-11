@@ -17,6 +17,12 @@ const baseClass =
  * Size tier: sm is the form rung — dense forms, dialogs, filter bars, and what almost every
  * control in the app takes. base is a full standalone page (the login card), which is roomier
  * on purpose and asks for the tier by name.
+ *
+ * Every control in the family defaults to sm, so a forgotten `size` lands on the rung its
+ * neighbours are already on. The old default was base, which put a forgotten prop at the roomiest
+ * rung in the densest place it could appear — that is how six dialog fields ended up a tier above
+ * the controls beside them. The default is a safety net, not a licence: call sites still name
+ * their rung.
  */
 export type ControlSize = "base" | "sm";
 
@@ -111,7 +117,7 @@ export function Input({
   error,
   invalid,
   required,
-  size = "base",
+  size = "sm",
   className,
   autoComplete,
   id,
@@ -178,7 +184,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     invalid,
     required,
     mono,
-    size = "base",
+    size = "sm",
     className,
     autoComplete,
     id,

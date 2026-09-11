@@ -63,7 +63,7 @@ export function OptionMenu<T extends string>({
   error,
   required,
   fullWidth,
-  size = "base",
+  size = "sm",
   "aria-label": ariaLabel,
 }: {
   options: ReadonlyArray<OptionMenuChoice<T>>;

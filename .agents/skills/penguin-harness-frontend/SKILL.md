@@ -156,8 +156,11 @@ one step under a `text-xs` title, and there is no rung below `text-xs` to step d
 A form field takes `sm`: dense forms, dialogs and filter bars, which is near enough the whole app.
 `base` is for a standalone page holding two controls and nothing else, and is **passed by name** —
 the login card is its only caller, and an unopted `base` is what six dialog fields had drifted into.
-The two full-height typing surfaces are outside the family entirely: the chat composer is
-`text-base` because it holds prose, the file editor `font-mono text-xs` because it holds code.
+Every control defaults to `sm` so a forgotten prop lands where its neighbours already are (the old
+`base` default put it at the roomiest rung in the densest place), but **name the rung anyway** — all
+112 call sites do, and the default is the safety net, not the habit. The two full-height typing
+surfaces are outside the family entirely: the chat composer is `text-base` because it holds prose,
+the file editor `font-mono text-xs` because it holds code.
 
 **A dialog's fields and its buttons share the small rung.** `Button` defaults to `md`
 (`text-sm px-3 py-1.5`), which is the page rung — a header's "New model", an empty state's action —

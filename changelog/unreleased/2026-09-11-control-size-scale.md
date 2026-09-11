@@ -23,6 +23,10 @@ names the one it takes.
   `Textarea` at `text-xs` inside one stack.
 - The login card keeps `text-base` and now asks for it by name (`size="base"`), the sole deliberate
   caller of that rung; its submit Button dropped a redundant `text-sm`.
+- `Input`, `Textarea`, `Select`, `OptionMenu` and `PasswordInput` default to `sm` instead of `base`,
+  joining `FormPicker`, so a forgotten `size` lands on the rung its neighbours are already on rather
+  than the roomiest one — which is how the six fields above had drifted. Every call site names its
+  rung regardless; the default only decides where the next omission lands.
 - `FormPicker` gained a `size` prop defaulting to `sm`, in place of a hard-coded tier, and
   `protocol-suffix.tsx`'s hand-rolled option menu imports `OptionMenu`'s row records rather than
   duplicating them.

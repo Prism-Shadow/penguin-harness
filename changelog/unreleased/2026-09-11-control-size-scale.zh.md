@@ -19,6 +19,9 @@ Web App 的表单控件此前在四处各自书写字号，彼此已经走样；
   原本在同一个纵向栈里，`text-base` 的 `Input` 正压在 `text-xs` 的 `Textarea` 之上。
 - 登录卡片保持 `text-base`，但改为显式声明（`size="base"`），是该档位唯一的有意调用方；其提交 Button 去掉了
   冗余的 `text-sm`。
+- `Input`、`Textarea`、`Select`、`OptionMenu` 与 `PasswordInput` 的默认档位由 `base` 改为 `sm`，与 `FormPicker`
+  看齐：漏写 `size` 时落在相邻控件已有的档位上，而不是最宽裕的那一档——上述六个字段正是这样走样的。所有调用点
+  仍逐一声明档位，默认值只决定下一次遗漏落在哪里。
 - `FormPicker` 新增 `size` 属性（默认 `sm`），取代原先写死的档位；`protocol-suffix.tsx` 里手写的选项菜单改为
   引入 `OptionMenu` 的行记录，不再重复书写。
 - 四处原生元素归入该字号族：机器页的搜索框（并补上应用内其余四个搜索框都带的自动填充退出项）、对话输入区弹层
