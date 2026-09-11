@@ -20,26 +20,27 @@ and its tab strip all read from, so each moved on all four surfaces at once:
 
 - **Subagents** — two robot heads, a large one above-left and a small one below-right, in place of
   the three-circle spawn tree. It is the Agent's own robot head, twice.
-- **Memory** — a brain with its stem, in place of the open book. The Memory panel and the
-  memory-changes card had each carried their own hand-typed copy of the book; the brain is drawn
-  once, in `components/ui/icons.tsx`, and both surfaces import it.
+- **Memory** — a brain seen from above, its two hemispheres separated by a full-height fissure, in
+  place of the open book. The Memory panel, the memory-changes card and the agent cards' memory
+  count had each carried their own hand-typed memory mark; the brain is drawn once, in
+  `components/ui/icons.tsx`, and all three surfaces import it.
 - **Trace observation** — an open eye, in place of three stacked lines.
 - **Remote control** — the paper plane a session row already flies while it is relaying, in place
   of a chat bubble, so one feature wears one mark. The bubble had no other caller and was deleted.
 - **Hide launcher** — the same eye struck through corner to corner, in place of the close cross.
 
-The Workspace folder, the scheduled-tasks alarm clock, the terminal prompt and the ball's resting
-workbench tiles are unchanged.
+- **Scheduled tasks** — the alarm clock gained detail: domed bells on its shoulders and two splayed
+  feet, where it had two bare diagonal ticks and no base. Its smallest placement is the session
+  row's 12px trailing cluster, which is the size the detail is bounded by.
+
+The Workspace folder, the terminal prompt and the ball's resting workbench tiles are unchanged.
 
 ## The sidebar's Models mark
 
 The Models library in the sidebar nav and the collapsed rail had been drawing a brain of its own,
 which the Memory brain would have sat beside as a near-duplicate: at the sizes those rows render,
-both reduce to a round outline with a vertical line through it. Models is now a cube — one model,
-as a discrete thing picked off a shelf. It is deliberately not the stack of plates a library would
-otherwise suggest, because Machines is the next nav row down and is already two stacked server
-units.
-
-The agent cards' memory-count stat had a third hand-typed brain, with an inner fold that does not
-survive the 13px it renders at. It now draws the one `MEMORY_ICON` along with every other Memory
-surface.
+both reduce to a round outline with a vertical line through it. Models is now a chip — body, die
+and three pins a side. Three rather than the six a real package would show, because at the 16px
+those rows draw, six pins a side fuse into a serrated edge and stop reading as pins. The die is
+what keeps it clear of Machines, the next nav row down: a bare chip body with side ticks and a
+stack of server units both reduce to a rectangle with lines.

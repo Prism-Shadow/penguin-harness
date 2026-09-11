@@ -194,12 +194,16 @@ export const AGENTS_PAIR_ICON =
   "M7.3 4.2V2.2M3.8 4.2h7a2.2 2.2 0 0 1 2.2 2.2v5.8a2.2 2.2 0 0 1-2.2 2.2h-7a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2zM4.6 9.2h.01M10 9.2h.01M18.6 14.8v-1.7M16.5 14.8h4.2a1.7 1.7 0 0 1 1.7 1.7v3.8a1.7 1.7 0 0 1-1.7 1.7h-4.2a1.7 1.7 0 0 1-1.7-1.7v-3.8a1.7 1.7 0 0 1 1.7-1.7zM17.3 18.4h.01M20.5 18.4h.01";
 
 /**
- * A brain with its stem: the Memory panel's mark, and the memory-changes card's at the end of a
- * Task. Both surfaces draw it from here — a memory mark typed out a second time is how one thing
- * ends up with two pictures of itself.
+ * A brain seen from above — the two hemispheres, gyri along their outer edge, and the fissure
+ * between them — for the Memory panel, the memory-changes card and the agent cards' memory count.
+ * The fissure runs the full height rather than stopping short of the outline, because it is the
+ * feature carrying the whole mark once the gyri stop resolving, and a line that ends inside the
+ * shape closes up at these sizes. Three bumps a side is what survives with it. Every surface
+ * draws it from here — a memory mark typed out a second time is how one thing ends up with two
+ * pictures of itself.
  */
 export const MEMORY_ICON =
-  "M12 5.2a3.2 3.2 0 0 0-5.8 1.4A3.2 3.2 0 0 0 2.6 9.9a3.3 3.3 0 0 0 1.7 4.6 3.2 3.2 0 0 0 4.4 2.6M12 5.2a3.2 3.2 0 0 1 5.8 1.4 3.2 3.2 0 0 1 3.6 3.3 3.3 3.3 0 0 1-1.7 4.6 3.2 3.2 0 0 1-4.4 2.6M8.7 17.1h6.6M12 5.2v11.9M12 17.1v3.4";
+  "M12 2.6a3.4 3.4 0 0 0-5 1.6 3.6 3.6 0 0 0-3.3 4.4 3.6 3.6 0 0 0 .4 5.6 3.4 3.4 0 0 0 3.5 4.6 3.4 3.4 0 0 0 4.4 2.6M12 2.6a3.4 3.4 0 0 1 5 1.6 3.6 3.6 0 0 1 3.3 4.4 3.6 3.6 0 0 1-.4 5.6 3.4 3.4 0 0 1-3.5 4.6 3.4 3.4 0 0 1-4.4 2.6M12 2.6v18.8";
 
 /**
  * The eye's almond outline, shared by the two marks drawn from it — `NAV_ICONS.traces` (an open
@@ -286,26 +290,33 @@ export const HAND_ICON =
   "M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15";
 
 /**
- * Alarm clock (dial, hands and the twin bells): the mark of scheduled tasks wherever they are
- * counted, listed or created — the agents page's schedule count, the chat dock's scheduled-tasks
- * panel and the mark a session row wears while an enabled task is bound to it. Distinct from the
- * plain clock face that means "most recent" in the list options.
+ * Alarm clock — domed bells on its shoulders, a dial with hands, and two splayed feet: the mark
+ * of scheduled tasks wherever they are counted, listed or created — the agents page's schedule
+ * count, the chat dock's scheduled-tasks panel and the mark a session row wears while an enabled
+ * task is bound to it. Distinct from the plain clock face that means "most recent" in the list
+ * options.
+ *
+ * The smallest place it draws is the session row's 12px trailing cluster, which is what the
+ * detail is bounded by: bells, feet and the hands' right angle each hold a whole pixel there,
+ * while a second dial ring or ticks around the face would not, and the notch between the bells
+ * is what keeps them reading as two.
  */
 export const SCHEDULE_ICON =
-  "M12 21a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm0-10v3l2 1.5M5 3L2.5 5.5M19 3l2.5 2.5";
+  "M12 19.5a6.7 6.7 0 1 0 0-13.4 6.7 6.7 0 0 0 0 13.4zM12 8.9v3.9l2.6 1.8M3.1 7.7A3.5 3.5 0 0 1 7.7 4.3M16.3 4.3a3.5 3.5 0 0 1 4.6 3.4M7.8 18.8 5.4 21.6M16.2 18.8l2.4 2.8";
 
 export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,
   /** Plugin library (the puzzle piece). */
   plugins: PLUGIN_ICON,
   /**
-   * Model library (a cube: one model, as a discrete thing picked off a shelf). Not the stack of
-   * plates a library would otherwise want: `machines` is the next nav row down and is two stacked
-   * server units, and at the rail's size two stacked-band marks in adjacent rows read as one
-   * thing. Not a brain either — `MEMORY_ICON` is the brain, and a catalogue of entries is not the
-   * thinking part. The cube's hexagon is the only silhouette of its kind in this table.
+   * Model library (a chip: body, die and three pins a side). Three pins rather than the six a
+   * real package would show — at the 16px these rows draw, six pins a side fuse into a serrated
+   * edge and stop being pins. The die is what keeps the mark clear of `machines`, the next nav
+   * row down: a bare body with side ticks and a stack of server units both reduce to "a rectangle
+   * with lines", while concentric squares ringed with pins reduce to nothing else in this table.
    */
-  models: "M12 2.6 21 7.5v9L12 21.4 3 16.5v-9zM3 7.5 12 12.4l9-4.9M12 12.4v9",
+  models:
+    "M5 5h14v14H5zM9 9h6v6H9zM7.5 5V2.4M12 5V2.4M16.5 5V2.4M7.5 19v2.6M12 19v2.6M16.5 19v2.6M5 7.5H2.4M5 12H2.4M5 16.5H2.4M19 7.5h2.6M19 12h2.6M19 16.5h2.6",
   /** Machines (two stacked server units, each with its own status lamp). */
   machines: "M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01",
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",

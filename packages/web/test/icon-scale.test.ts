@@ -72,9 +72,10 @@ describe("one glyph, one home", () => {
   });
 
   it("draws the memory brain in exactly one place", () => {
-    // The Memory mark was hand-typed twice — the dock's panel table and the memory-changes
-    // card — so a redraw moved one surface and left the other on the old picture.
-    expect(occurrences("M8.7 17.1h6.6M12 5.2v11.9")).toEqual(["components/ui/icons.tsx"]);
+    // The Memory mark was hand-typed three times — the dock's panel table, the memory-changes
+    // card and the agent card's memory count — so a redraw moved one surface and left the others
+    // on the old picture.
+    expect(occurrences("3.4 3.4 0 0 1-4.4 2.6M12 2.6v18.8")).toEqual(["components/ui/icons.tsx"]);
   });
 
   it("draws the background-task trace in exactly one place", () => {
