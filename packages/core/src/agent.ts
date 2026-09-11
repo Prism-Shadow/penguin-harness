@@ -1284,14 +1284,12 @@ export class Agent {
     const buildLLM = (context: AssembledContext, tools: ToolDefinition[]): GenerativeModel => {
       const rotatorScope = `${this.state.projectId}/${modelEntry.provider}/${modelEntry.model_id}`;
       const effectiveKeys =
-        apiKeys && apiKeys.length > 0
-          ? apiKeys
-          : apiKey
-            ? parseApiKeys(apiKey)
-            : [];
+        apiKeys && apiKeys.length > 0 ? apiKeys : apiKey ? parseApiKeys(apiKey) : [];
       const keyRotator =
         spec.keyRotator ??
-        (effectiveKeys.length > 0 ? KeyRotatorRegistry.get(rotatorScope, effectiveKeys) : undefined);
+        (effectiveKeys.length > 0
+          ? KeyRotatorRegistry.get(rotatorScope, effectiveKeys)
+          : undefined);
 
       return new GenerativeModel({
         modelId: modelEntry.model_id,

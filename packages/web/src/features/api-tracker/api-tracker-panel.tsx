@@ -15,12 +15,7 @@ import { Input } from "../../components/ui/input";
 import { Segmented } from "../../components/ui/segmented";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { apiErrorText } from "../../lib/api-error";
-import {
-  formatDateTime,
-  formatMoney,
-  formatRelativeShort,
-  humanizeTokens,
-} from "../../lib/format";
+import { formatDateTime, formatMoney, formatRelativeShort, humanizeTokens } from "../../lib/format";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
@@ -433,7 +428,10 @@ export function ApiTrackerPanel({
                                   <span>{S.apiTracker.lastUsed}:</span>
                                   <span className="font-medium text-gray-700 dark:text-gray-300">
                                     {k.lastUsedAt
-                                      ? formatRelativeShort(new Date(k.lastUsedAt).toISOString(), locale)
+                                      ? formatRelativeShort(
+                                          new Date(k.lastUsedAt).toISOString(),
+                                          locale,
+                                        )
                                       : S.apiTracker.neverUsed}
                                   </span>
                                 </div>
@@ -460,9 +458,7 @@ export function ApiTrackerPanel({
                   <div key={`${log.ts}-${idx}`} className="p-3 text-xs">
                     <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <Badge tone={log.kind === "unexpected" ? "red" : "gray"}>
-                          {log.kind}
-                        </Badge>
+                        <Badge tone={log.kind === "unexpected" ? "red" : "gray"}>{log.kind}</Badge>
                         <span className="font-semibold text-gray-800 dark:text-gray-200">
                           {log.source} · {log.code}
                         </span>

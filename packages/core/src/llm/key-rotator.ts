@@ -384,7 +384,7 @@ export class ApiKeyRotator {
     switch (strategy) {
       case "partition":
       case "round_robin": {
-        const offset = (ApiKeyRotator.allocCounter++) % working.length;
+        const offset = ApiKeyRotator.allocCounter++ % working.length;
         const rotatedWorking = [...working.slice(offset), ...working.slice(0, offset)];
         const rotAvail = rotatedWorking.filter((k) => k.cooldownUntil <= now);
         const rotCool = rotatedWorking.filter((k) => k.cooldownUntil > now);
@@ -428,7 +428,7 @@ export class ApiKeyRotator {
           const minLeases = orderedAvailable[0]!.activeLeases ?? 0;
           const minGroup = orderedAvailable.filter((k) => (k.activeLeases ?? 0) === minLeases);
           if (minGroup.length > 1) {
-            const shift = (ApiKeyRotator.allocCounter++) % minGroup.length;
+            const shift = ApiKeyRotator.allocCounter++ % minGroup.length;
             const rotatedMin = [...minGroup.slice(shift), ...minGroup.slice(0, shift)];
             const rest = orderedAvailable.filter((k) => (k.activeLeases ?? 0) > minLeases);
             orderedAvailable = [...rotatedMin, ...rest];
@@ -442,10 +442,7 @@ export class ApiKeyRotator {
   /**
    * Returns ordered list of API key strings optimized for a subagent.
    */
-  allocateSubagentKeys(
-    strategy: SubagentKeyStrategy = "auto",
-    now: number = Date.now(),
-  ): string[] {
+  allocateSubagentKeys(strategy: SubagentKeyStrategy = "auto", now: number = Date.now()): string[] {
     return this.allocateSubagentOrderedStatuses(strategy, now).map((k) => k.key);
   }
 

@@ -23,13 +23,17 @@ describe("ModelKeyHealthService", () => {
     const report = service.getKeyHealth("proj-1", "deepseek/deepseek-chat");
     expect(report.modelRef).toBe("proj-1/deepseek/deepseek-chat");
     expect(report.keys).toHaveLength(1);
-    expect(report.keys[0].maskedKey).toBe("sk-...cdef");
-    expect(report.keys[0].status).toBe("healthy");
-    expect(report.keys[0].isFailed).toBe(false);
+    expect(report.keys[0]?.maskedKey).toBe("sk-...cdef");
+    expect(report.keys[0]?.status).toBe("healthy");
+    expect(report.keys[0]?.isFailed).toBe(false);
   });
 
   it("tracks cooldown and eviction in health report", () => {
-    const rotator = service.getRotator("proj-1", "deepseek/deepseek-chat", "sk-proj-key-1, sk-proj-key-2");
+    const rotator = service.getRotator(
+      "proj-1",
+      "deepseek/deepseek-chat",
+      "sk-proj-key-1, sk-proj-key-2",
+    );
 
     rotator.markRateLimited("sk-proj-key-1", 30_000);
     rotator.markFailed("sk-proj-key-2");
@@ -55,7 +59,11 @@ describe("ModelKeyHealthService", () => {
   });
 
   it("resets key health on demand", () => {
-    const rotator = service.getRotator("proj-1", "deepseek/deepseek-chat", "sk-proj-key-1, sk-proj-key-2");
+    const rotator = service.getRotator(
+      "proj-1",
+      "deepseek/deepseek-chat",
+      "sk-proj-key-1, sk-proj-key-2",
+    );
 
     rotator.markRateLimited("sk-proj-key-1", 60_000);
     rotator.markFailed("sk-proj-key-2");

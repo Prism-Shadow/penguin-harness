@@ -1055,7 +1055,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
   // Resume one subagent child: resumes an interrupted or failed run
   app.post("/:sessionId/subagents/:childSessionId/resume", async (c) => {
     const row = resolveSession(c);
-    const body = await readJson(c).catch(() => ({}));
+    const body: Record<string, unknown> = await readJson(c).catch(() => ({}));
     const text = typeof body?.text === "string" ? body.text.trim() : "";
     const outcome = await deps.manager.sendToSubagent(
       row.sessionId,

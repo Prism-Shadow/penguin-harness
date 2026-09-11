@@ -43,7 +43,10 @@ export class ModelKeyHealthService {
   /**
    * Normalizes a model reference string or object (provider/modelId) into a canonical key scoped by projectId.
    */
-  private normalizeRef(projectId: string, ref: string | { provider: string; modelId: string }): string {
+  private normalizeRef(
+    projectId: string,
+    ref: string | { provider: string; modelId: string },
+  ): string {
     const pId = projectId.trim();
     if (typeof ref === "string") {
       const trimmed = ref.trim();

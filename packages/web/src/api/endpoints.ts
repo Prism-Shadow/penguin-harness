@@ -1029,10 +1029,10 @@ export const resetModelKeyHealth = (
   projectId: string,
   body?: { provider?: string; modelId?: string; modelRef?: string },
 ) =>
-  apiFetch<{ ok: boolean }>(
-    `/api/projects/${encodeURIComponent(projectId)}/models/keys/reset`,
-    { method: "POST", body: body ?? {} },
-  );
+  apiFetch<{ ok: boolean }>(`/api/projects/${encodeURIComponent(projectId)}/models/keys/reset`, {
+    method: "POST",
+    body: body ?? {},
+  });
 
 // Agent deletion & Workspace files --------------------------------------------------
 

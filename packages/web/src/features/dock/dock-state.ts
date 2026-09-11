@@ -41,13 +41,7 @@ export type DockPosition = "right" | "bottom";
 
 /** The singleton panel kinds. Terminals are the one multi-instance tab kind. */
 export type PanelKind =
-  | "agents"
-  | "workspace"
-  | "memory"
-  | "trace"
-  | "messaging"
-  | "schedules"
-  | "apiTracker";
+  "agents" | "workspace" | "memory" | "trace" | "messaging" | "schedules" | "apiTracker";
 
 export const PANEL_KINDS: readonly PanelKind[] = [
   "agents",

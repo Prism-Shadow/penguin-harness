@@ -57,7 +57,7 @@ import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
 import { USD_TO_CNY, useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
-import { toneDot, toneSurface } from "../../lib/tone";
+import { toneDot, toneInk, toneStrip, toneSurface } from "../../lib/tone";
 import { keyHealthLabel, keyHealthTone } from "./model-keys-health";
 import type { ModelKeyHealthReportDto } from "./model-keys-health";
 import { Button } from "../../components/ui/button";
@@ -132,7 +132,6 @@ import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
-import { toneInk, toneStrip } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */

@@ -842,8 +842,7 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           api_keys: {
             type: "array",
             items: { type: "string" },
-            description:
-              "Optional list of API keys for the subagent to rotate across.",
+            description: "Optional list of API keys for the subagent to rotate across.",
           },
           key_strategy: {
             type: "string",

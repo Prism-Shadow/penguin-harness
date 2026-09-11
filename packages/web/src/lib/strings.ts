@@ -980,8 +980,7 @@ export const zh = {
     contextWindowInvalid: "必须为数字",
     multiKeySingle: "单 Key",
     multiKeyRotation: "多 Key 轮换",
-    multiKeyPlaceholder:
-      "填写多个 API key（每行一个或逗号分隔），支持轮换、429 退避与故障转移…",
+    multiKeyPlaceholder: "填写多个 API key（每行一个或逗号分隔），支持轮换、429 退避与故障转移…",
     keyHealthTitle: (healthy: number, total: number): string =>
       `API Key 健康度（${healthy}/${total} 正常）`,
     keyHealthActive: "正常",

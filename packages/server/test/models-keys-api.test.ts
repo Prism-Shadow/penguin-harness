@@ -2,6 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 import type { ProjectCreateResponse } from "../src/api/types.js";
+import type { ModelKeyHealthReport } from "../src/services/model-key-health.js";
+
+interface ModelKeyResetResponse {
+  ok: boolean;
+  report: ModelKeyHealthReport;
+}
 
 describe("models key health and reset HTTP routes", () => {
   let t: TestApp;
@@ -40,12 +46,12 @@ describe("models key health and reset HTTP routes", () => {
       `/api/projects/${projectId}/models/keys/health?provider=deepseek&modelId=deepseek-chat`,
     );
     expect(getRes.status).toBe(200);
-    const report = await getRes.json();
+    const report = (await getRes.json()) as ModelKeyHealthReport;
     expect(report.totalKeys).toBe(2);
     expect(report.healthyCount).toBe(2);
     expect(report.keys).toHaveLength(2);
-    expect(report.keys[0].status).toBe("healthy");
-    expect(report.keys[0].maskedKey).toContain("...");
+    expect(report.keys[0]?.status).toBe("healthy");
+    expect(report.keys[0]?.maskedKey).toContain("...");
   });
 
   it("POST /api/projects/:projectId/models/keys/reset clears cooldowns and evictions", async () => {
@@ -63,7 +69,7 @@ describe("models key health and reset HTTP routes", () => {
       `/api/projects/${projectId}/models/keys/health?provider=deepseek&modelId=deepseek-chat`,
     );
     expect(healthRes.status).toBe(200);
-    const reportBefore = await healthRes.json();
+    const reportBefore = (await healthRes.json()) as ModelKeyHealthReport;
     expect(reportBefore.cooldownCount).toBe(1);
     expect(reportBefore.evictedCount).toBe(1);
 
@@ -73,7 +79,7 @@ describe("models key health and reset HTTP routes", () => {
       modelId: "deepseek-chat",
     });
     expect(resetRes.status).toBe(200);
-    const resetBody = await resetRes.json();
+    const resetBody = (await resetRes.json()) as ModelKeyResetResponse;
     expect(resetBody.ok).toBe(true);
     expect(resetBody.report.healthyCount).toBe(2);
     expect(resetBody.report.cooldownCount).toBe(0);

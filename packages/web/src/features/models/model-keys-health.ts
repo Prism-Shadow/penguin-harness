@@ -86,10 +86,7 @@ export interface KeyHealthLabelOptions {
 /**
  * Returns user-facing status label for a key chip.
  */
-export function keyHealthLabel(
-  item: KeyHealthItemDto,
-  options?: KeyHealthLabelOptions,
-): string {
+export function keyHealthLabel(item: KeyHealthItemDto, options?: KeyHealthLabelOptions): string {
   if (item.status === "evicted") return options?.evicted ?? "Evicted (401)";
   if (item.status === "cooldown") {
     const cd = formatCooldown(item.cooldownRemainingMs);
