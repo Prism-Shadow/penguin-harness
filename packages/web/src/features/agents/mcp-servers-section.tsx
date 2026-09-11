@@ -382,8 +382,10 @@ export function McpServersSection({
         onClose={closeModal}
         footer={
           <>
-            <Button onClick={closeModal}>{S.common.cancel}</Button>
-            <Button variant="primary" disabled={busy} onClick={() => void submitModal()}>
+            <Button size="sm" onClick={closeModal}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" variant="primary" disabled={busy} onClick={() => void submitModal()}>
               {S.common.save}
             </Button>
           </>
@@ -555,8 +557,11 @@ export function McpServersSection({
         onClose={() => setTestAllOpen(false)}
         footer={
           <>
-            <Button onClick={() => setTestAllOpen(false)}>{S.common.cancel}</Button>
+            <Button size="sm" onClick={() => setTestAllOpen(false)}>
+              {S.common.cancel}
+            </Button>
             <Button
+              size="sm"
               variant="primary"
               onClick={() => {
                 setTestAllOpen(false);

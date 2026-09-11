@@ -182,10 +182,10 @@ function CreateUserDialog({
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={onClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
             {S.common.create}
           </Button>
         </>
@@ -264,10 +264,10 @@ function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={onClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
             {S.common.save}
           </Button>
         </>
@@ -334,15 +334,15 @@ function DeleteUserDialog({
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={onClose} disabled={busy}>
             {S.common.cancel}
           </Button>
           {confirmed ? (
-            <Button variant="danger" disabled={busy} onClick={() => void doDelete()}>
+            <Button size="sm" variant="danger" disabled={busy} onClick={() => void doDelete()}>
               {S.common.confirm}
             </Button>
           ) : (
-            <Button variant="danger" onClick={() => setConfirmed(true)}>
+            <Button size="sm" variant="danger" onClick={() => setConfirmed(true)}>
               {S.common.delete}
             </Button>
           )}

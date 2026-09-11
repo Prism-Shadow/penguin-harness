@@ -114,8 +114,10 @@ export function CreateProjectDialog({
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
-          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button size="sm" onClick={onClose}>
+            {S.common.cancel}
+          </Button>
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
             {S.common.create}
           </Button>
         </>

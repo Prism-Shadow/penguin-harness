@@ -2222,10 +2222,11 @@ export function Sidebar({
         onClose={() => (renameBusy ? undefined : setRenamingSession(null))}
         footer={
           <>
-            <Button onClick={() => setRenamingSession(null)} disabled={renameBusy}>
+            <Button size="sm" onClick={() => setRenamingSession(null)} disabled={renameBusy}>
               {S.common.cancel}
             </Button>
             <Button
+              size="sm"
               variant="primary"
               disabled={renameBusy || !renameText.trim()}
               onClick={() => void confirmRename()}
@@ -2236,6 +2237,7 @@ export function Sidebar({
         }
       >
         <Input
+          size="sm"
           label={S.chat.renameSessionLabel}
           value={renameText}
           error={renameError ?? undefined}
@@ -2277,14 +2279,17 @@ export function Sidebar({
         onClose={() => setRenamingWorkspace(null)}
         footer={
           <>
-            <Button onClick={() => setRenamingWorkspace(null)}>{S.common.cancel}</Button>
-            <Button variant="primary" onClick={confirmRenameWorkspace}>
+            <Button size="sm" onClick={() => setRenamingWorkspace(null)}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" variant="primary" onClick={confirmRenameWorkspace}>
               {S.common.save}
             </Button>
           </>
         }
       >
         <Input
+          size="sm"
           label={S.chat.renameWorkspaceLabel}
           hint={S.chat.renameWorkspaceHint}
           value={workspaceAliasText}

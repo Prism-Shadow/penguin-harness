@@ -2224,8 +2224,11 @@ export function ChatPage() {
         onClose={() => setCredentialGuide(false)}
         footer={
           <>
-            <Button onClick={() => setCredentialGuide(false)}>{S.project.later}</Button>
+            <Button size="sm" onClick={() => setCredentialGuide(false)}>
+              {S.project.later}
+            </Button>
             <Button
+              size="sm"
               variant="primary"
               onClick={() => {
                 setCredentialGuide(false);

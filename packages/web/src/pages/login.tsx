@@ -94,7 +94,11 @@ export function LoginPage() {
               void submit();
             }}
           >
+            {/* The two fields ask for the base tier by name, the only place in the app that
+                does. This is a standalone page holding two controls and nothing else, so it is
+                deliberately roomier than the dense forms inside the app, where sm is the rung. */}
             <Input
+              size="base"
               label={S.common.username}
               required
               value={userId}
@@ -107,6 +111,7 @@ export function LoginPage() {
               autoFocus
             />
             <PasswordInput
+              size="base"
               label={S.auth.password}
               required
               value={password}
@@ -125,7 +130,7 @@ export function LoginPage() {
             <Button
               type="submit"
               variant="primary"
-              className="w-full justify-center py-2.5 text-sm font-semibold"
+              className="w-full justify-center py-2.5 font-semibold"
               disabled={busy}
             >
               {S.auth.login}
