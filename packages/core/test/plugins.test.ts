@@ -135,7 +135,7 @@ describe("loadPreinstalledPlugins", () => {
     const preinstalled = loadPreinstalledPlugins().map((p) => p.name);
     expect(preinstalled).toContain("goal");
     expect(preinstalled).toContain("software-development");
-    for (const manual of ["agent-company", "continual-learning", "humanizer", "use-claude-code"]) {
+    for (const manual of ["agent-company", "continual-learning", "humanizer", "use-claude-code", "use-spexcode"]) {
       expect(all).toContain(manual);
       expect(preinstalled).not.toContain(manual);
     }
@@ -188,6 +188,11 @@ describe("groupPlugins / loadPluginGroups", () => {
       "humanizer",
       "use-bento-slides",
       "use-firecrawl",
+    ]);
+    expect(names("software-development")).toEqual([
+      "software-development",
+      "use-claude-code",
+      "use-spexcode",
     ]);
     expect(names("ai-app-development")).toEqual([
       "agent-development",
