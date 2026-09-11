@@ -356,5 +356,83 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json(await deps.projectConfigService.detectVision(projectId, req));
   });
 
+  /**
+   * Health report for API keys of a configured model (members may read).
+   */
+  app.get("/keys/health", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    const provider = c.req.query("provider");
+    const modelId = c.req.query("modelId");
+    const modelRefQuery = c.req.query("modelRef");
+
+    let targetRef: string | undefined;
+    if (provider && modelId) {
+      targetRef = `${provider}/${modelId}`;
+    } else if (modelRefQuery) {
+      targetRef = modelRefQuery;
+    }
+
+    if (targetRef) {
+      const raw = await deps.projectConfigService.readRaw(projectId);
+      const models = Array.isArray(raw.models) ? raw.models : [];
+      const entry = models.find((m: unknown) => {
+        if (typeof m !== "object" || m === null) return false;
+        const rec = m as Record<string, unknown>;
+        if (provider && modelId) {
+          return rec.provider === provider && rec.model_id === modelId;
+        }
+        return `${rec.provider}/${rec.model_id}` === targetRef;
+      }) as Record<string, unknown> | undefined;
+      if (entry && typeof entry.api_key === "string") {
+        deps.keyHealthService.getRotator(targetRef, entry.api_key);
+      }
+      return c.json(deps.keyHealthService.getKeyHealth(targetRef));
+    }
+
+    const raw = await deps.projectConfigService.readRaw(projectId);
+    const models = Array.isArray(raw.models) ? raw.models : [];
+    const reports = [];
+    for (const item of models) {
+      if (typeof item === "object" && item !== null) {
+        const rec = item as Record<string, unknown>;
+        if (typeof rec.provider === "string" && typeof rec.model_id === "string") {
+          const ref = `${rec.provider}/${rec.model_id}`;
+          if (typeof rec.api_key === "string") {
+            deps.keyHealthService.getRotator(ref, rec.api_key);
+          }
+          reports.push(deps.keyHealthService.getKeyHealth(ref));
+        }
+      }
+    }
+    return c.json({ reports });
+  });
+
+  /**
+   * Resets cooldown and eviction status for a model's keys.
+   */
+  app.post("/keys/reset", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    const body = (await readJson(c)) as Record<string, unknown>;
+    const provider = typeof body.provider === "string" ? body.provider : undefined;
+    const modelId = typeof body.modelId === "string" ? body.modelId : undefined;
+    const modelRef = typeof body.modelRef === "string" ? body.modelRef : undefined;
+
+    let targetRef: string | undefined;
+    if (provider && modelId) {
+      targetRef = `${provider}/${modelId}`;
+    } else if (modelRef) {
+      targetRef = modelRef;
+    }
+
+    if (targetRef) {
+      deps.keyHealthService.resetKeyHealth(targetRef);
+      return c.json({ ok: true, report: deps.keyHealthService.getKeyHealth(targetRef) });
+    }
+
+    return c.json({ ok: true });
+  });
+
   return app;
 }

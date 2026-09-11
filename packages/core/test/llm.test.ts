@@ -37,6 +37,9 @@ import {
   toolDefinitionsToSchemas,
   translateEvents,
   usageToTokenCounts,
+  isRateLimitError,
+  ApiKeyRotator,
+  parseApiKeys,
 } from "../src/llm/index.js";
 import {
   assistantText,
@@ -2408,5 +2411,136 @@ describe("tool_call_id uniquification (name-as-id providers, e.g. Gemini uses th
       res = await gen.next();
     }
     expect(callIdsOf(out)).toEqual(["get_time#2"]);
+  });
+});
+
+describe("GenerativeModel API key rotation & failover", () => {
+  class MockRotatingModel extends GenerativeModel {
+    public recordedKeys: (string | undefined)[] = [];
+    public failKeyWithAuth?: string;
+    public failKeyWithRateLimit?: string;
+
+    constructor(opts: { apiKeys?: string[]; apiKey?: string }) {
+      super({ modelId: "claude-sonnet-4-6", tools: [], ...opts });
+    }
+
+    protected override openStream(
+      _uni: UniMessage,
+      _signal: AbortSignal,
+      _cfg?: UniConfig,
+      activeKey?: string,
+    ): AsyncIterable<UniEvent> {
+      this.recordedKeys.push(activeKey);
+      if (this.failKeyWithAuth && activeKey === this.failKeyWithAuth) {
+        const err = new Error("401 Unauthorized: Invalid API key") as Error & { status: number };
+        err.status = 401;
+        throw err;
+      }
+      if (this.failKeyWithRateLimit && activeKey === this.failKeyWithRateLimit) {
+        const err = new Error("429 Rate Limit Exceeded") as Error & { status: number };
+        err.status = 429;
+        throw err;
+      }
+      return (async function* () {
+        yield ev({
+          event_type: "stop",
+          finish_reason: "stop",
+          content_items: [{ type: "text", text: `Response from ${activeKey}` }],
+          usage_metadata: {
+            cached_tokens: 0,
+            prompt_tokens: 10,
+            thoughts_tokens: 0,
+            response_tokens: 5,
+          },
+        });
+      })();
+    }
+  }
+
+  async function drain(gen: AsyncGenerator<OmniMessage, LLMOutcome | void>): Promise<LLMOutcome> {
+    let res = await gen.next();
+    while (!res.done) res = await gen.next();
+    return res.value as LLMOutcome;
+  }
+
+  it("rotates keys round-robin across consecutive requests", async () => {
+    const model = new MockRotatingModel({ apiKeys: ["key-1", "key-2", "key-3"] });
+    expect(model.getKeyRotator()?.totalKeys).toBe(3);
+
+    const out1 = await drain(model.streamGenerate({ newMessages: [userText("msg 1")] }));
+    const out2 = await drain(model.streamGenerate({ newMessages: [userText("msg 2")] }));
+    const out3 = await drain(model.streamGenerate({ newMessages: [userText("msg 3")] }));
+    const out4 = await drain(model.streamGenerate({ newMessages: [userText("msg 4")] }));
+
+    expect(out1.status).toBe("completed");
+    expect(out2.status).toBe("completed");
+    expect(out3.status).toBe("completed");
+    expect(out4.status).toBe("completed");
+    expect(model.recordedKeys).toEqual(["key-1", "key-2", "key-3", "key-1"]);
+  });
+
+  it("handles 401 auth failure by evicting bad key and returning retryable auth outcome when working keys remain", async () => {
+    const model = new MockRotatingModel({ apiKeys: ["bad-key", "good-key"] });
+    model.failKeyWithAuth = "bad-key";
+
+    // First request attempts bad-key
+    const outcome1 = await drain(model.streamGenerate({ newMessages: [userText("attempt 1")] }));
+    expect(outcome1.status).toBe("retryable");
+    expect(outcome1.errorCode).toBe("auth");
+
+    // Rotator marks bad-key as evicted, good-key is still working
+    const rotator = model.getKeyRotator();
+    expect(rotator?.workingKeysCount).toBe(1);
+    const badStatus = rotator?.getKeyStatuses().find((s) => s.key === "bad-key");
+    expect(badStatus?.status).toBe("evicted");
+
+    // Subsequent attempt rotates to good-key and succeeds
+    const outcome2 = await drain(model.streamGenerate({ newMessages: [userText("attempt 2")] }));
+    expect(outcome2.status).toBe("completed");
+    expect(model.recordedKeys).toEqual(["bad-key", "good-key"]);
+  });
+
+  it("returns fatal auth outcome when all keys fail authentication", async () => {
+    const model = new MockRotatingModel({ apiKeys: ["bad-1", "bad-2"] });
+    model.failKeyWithAuth = "bad-1";
+
+    const outcome1 = await drain(model.streamGenerate({ newMessages: [userText("try 1")] }));
+    expect(outcome1.status).toBe("retryable");
+
+    // Now make the second key also fail
+    model.failKeyWithAuth = "bad-2";
+    const outcome2 = await drain(model.streamGenerate({ newMessages: [userText("try 2")] }));
+    expect(outcome2.status).toBe("fatal");
+    expect(outcome2.errorCode).toBe("auth");
+  });
+
+  it("handles 429 rate limit failure by entering cooldown and rotating to backup key", async () => {
+    const model = new MockRotatingModel({ apiKeys: ["limited-key", "backup-key"] });
+    model.failKeyWithRateLimit = "limited-key";
+
+    // First request hits rate limit on limited-key
+    const outcome1 = await drain(model.streamGenerate({ newMessages: [userText("try 1")] }));
+    expect(outcome1.status).toBe("retryable");
+    expect(outcome1.errorCode).toBe("network");
+
+    // Key is in cooldown
+    const rotator = model.getKeyRotator();
+    const limitedStatus = rotator?.getKeyStatuses().find((s) => s.key === "limited-key");
+    expect(limitedStatus?.status).toBe("cooldown");
+
+    // Next request automatically picks backup-key and succeeds
+    const outcome2 = await drain(model.streamGenerate({ newMessages: [userText("try 2")] }));
+    expect(outcome2.status).toBe("completed");
+    expect(model.recordedKeys).toEqual(["limited-key", "backup-key"]);
+  });
+
+  it("parses delimited single apiKey string into multiple rotating keys", async () => {
+    const model = new MockRotatingModel({ apiKey: "key-x, key-y" });
+    const rotator = model.getKeyRotator();
+    expect(rotator?.totalKeys).toBe(2);
+
+    await drain(model.streamGenerate({ newMessages: [userText("1")] }));
+    await drain(model.streamGenerate({ newMessages: [userText("2")] }));
+    expect(model.recordedKeys).toEqual(["key-x", "key-y"]);
   });
 });

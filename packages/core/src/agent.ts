@@ -47,6 +47,7 @@ import {
   GenerativeModel,
   ToolCallIdAllocator,
   effectiveMaxContextLength,
+  parseApiKeys,
 } from "./llm/index.js";
 import { Environment } from "./environment/index.js";
 import {
@@ -216,6 +217,8 @@ export interface CreateSessionOptions {
   thinkingLevel?: ThinkingLevelName | null;
   /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
   apiKey?: string;
+  /** Multiple API keys for rotation/load balancing/failover. */
+  apiKeys?: string[];
   baseUrl?: string;
   /** Internal use: this Session's depth in the subagent spawn chain (0 at the top level), used to cap spawn depth. */
   subagentDepth?: number;
@@ -228,6 +231,8 @@ export interface ResumeSessionOptions {
   sessionId: string;
   /** Explicit credentials; if unspecified, falls back to credentials in the Project config, then to AgentHub reading environment variables. */
   apiKey?: string;
+  /** Multiple API keys for rotation/load balancing/failover. */
+  apiKeys?: string[];
   baseUrl?: string;
 }
 
@@ -242,6 +247,7 @@ interface SessionSpec {
   /** The Session's model entry as resolved from the Project config at creation (or recorded at resume): reference, credentials, window and per-model annotations. */
   modelEntry: ModelEntry;
   apiKey: string | undefined;
+  apiKeys?: string[];
   baseUrl: string | undefined;
   /**
    * The Session's thinking-level pin, the tri-state of {@link CreateSessionOptions.thinkingLevel}:
@@ -594,6 +600,8 @@ export class Agent {
     // explicit argument takes priority, falling back to AgentHub reading env vars
     // when both are absent.
     const apiKey = opts.apiKey ?? modelEntry.api_key;
+    const apiKeys =
+      opts.apiKeys ?? modelEntry.api_keys ?? (apiKey ? parseApiKeys(apiKey) : undefined);
     const baseUrl = opts.baseUrl ?? modelEntry.base_url;
 
     // An explicit Workspace must already exist as a directory: if it
@@ -626,6 +634,7 @@ export class Agent {
       workspaceDir,
       modelEntry,
       apiKey,
+      ...(apiKeys && apiKeys.length > 0 ? { apiKeys } : {}),
       baseUrl,
       thinkingLevel: opts.thinkingLevel,
       subagentDepth: opts.subagentDepth ?? 0,
@@ -711,6 +720,8 @@ export class Agent {
       );
     }
     const apiKey = opts.apiKey ?? modelEntry.api_key;
+    const apiKeys =
+      opts.apiKeys ?? modelEntry.api_keys ?? (apiKey ? parseApiKeys(apiKey) : undefined);
     const baseUrl = opts.baseUrl ?? modelEntry.base_url;
 
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
@@ -724,6 +735,7 @@ export class Agent {
       workspaceDir,
       modelEntry,
       apiKey,
+      ...(apiKeys && apiKeys.length > 0 ? { apiKeys } : {}),
       baseUrl,
       thinkingLevel: undefined,
       subagentDepth: 0,
@@ -914,7 +926,7 @@ export class Agent {
    * around the context it starts in — see {@link SessionRuntime} for what each part does.
    */
   private buildRuntime(spec: SessionSpec, initial: AssembledContext): SessionRuntime {
-    const { sessionId, workspaceDir, modelEntry, apiKey, baseUrl, subagentDepth } = spec;
+    const { sessionId, workspaceDir, modelEntry, apiKey, apiKeys, baseUrl, subagentDepth } = spec;
     // The context the Session is running: the initial one, then whatever `openNextContext` last
     // assembled.
     let current = initial;
@@ -1116,7 +1128,11 @@ export class Agent {
           createLLM: () =>
             new GenerativeModel({
               modelId: visionEntry.model_id,
-              ...(visionEntry.api_key !== undefined ? { apiKey: visionEntry.api_key } : {}),
+              ...(visionEntry.api_keys !== undefined && visionEntry.api_keys.length > 0
+                ? { apiKeys: visionEntry.api_keys }
+                : visionEntry.api_key !== undefined
+                  ? { apiKey: visionEntry.api_key }
+                  : {}),
               ...(visionEntry.base_url !== undefined ? { baseUrl: visionEntry.base_url } : {}),
               ...(visionEntry.client_type !== undefined
                 ? { clientType: visionEntry.client_type }
@@ -1190,7 +1206,11 @@ export class Agent {
       new GenerativeModel({
         modelId: modelEntry.model_id,
         toolCallIds,
-        ...(apiKey !== undefined ? { apiKey } : {}),
+        ...(apiKeys !== undefined && apiKeys.length > 0
+          ? { apiKeys }
+          : apiKey !== undefined
+            ? { apiKey }
+            : {}),
         ...(baseUrl !== undefined ? { baseUrl } : {}),
         ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
         tools,
@@ -1263,7 +1283,11 @@ export class Agent {
     const createBareLLM = (): GenerativeModel =>
       new GenerativeModel({
         modelId: modelEntry.model_id,
-        ...(apiKey !== undefined ? { apiKey } : {}),
+        ...(apiKeys !== undefined && apiKeys.length > 0
+          ? { apiKeys }
+          : apiKey !== undefined
+            ? { apiKey }
+            : {}),
         ...(baseUrl !== undefined ? { baseUrl } : {}),
         ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
         tools: [],

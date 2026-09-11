@@ -71,6 +71,7 @@ import type {
 } from "../interfaces/index.js";
 import { attributionHeaders } from "../state/model-catalog.js";
 import { ToolCallIdAllocator, stripToolCallIdSuffix } from "./tool-call-ids.js";
+import { ApiKeyRotator, parseApiKeys } from "./key-rotator.js";
 import {
   approximateMessagesTokens,
   approximateTokens,
@@ -874,6 +875,36 @@ export function isAuthenticationError(error: unknown): boolean {
   });
 }
 
+/** Known rate limit error codes and types (OpenAI / Anthropic / Gemini / provider error bodies). */
+const RATE_LIMIT_CODES: ReadonlySet<string> = new Set([
+  "rate_limit_exceeded",
+  "resource_exhausted",
+  "rate_limit",
+  "insufficient_quota",
+  "requests_exceeded",
+  "tokens_exceeded",
+]);
+
+/**
+ * Determines whether an error is a rate limit (HTTP 429) or quota exhaustion error.
+ * Signals: HTTP 429 status code, known rate-limit codes/types, or common error messages.
+ */
+export function isRateLimitError(error: unknown): boolean {
+  return anyInCauseChain(error, (level) => {
+    const err = level as { status?: unknown; statusCode?: unknown; message?: unknown };
+    const status = typeof err.status === "number" ? err.status : err.statusCode;
+    if (status === 429) return true;
+    if (providerSignals(level).some((c) => RATE_LIMIT_CODES.has(c))) return true;
+    const msg = typeof err.message === "string" ? err.message.toLowerCase() : "";
+    return (
+      msg.includes("rate limit") ||
+      msg.includes("too many requests") ||
+      msg.includes("resource has been exhausted") ||
+      msg.includes("quota exceeded")
+    );
+  });
+}
+
 /**
  * Determines whether an error is AgentHub's `UnsupportedParameterError` for `fast_mode`:
  * clients without a fast tier (and claude5 on Bedrock / Claude 4.6 ids) reject the
@@ -932,7 +963,10 @@ export function isFatalProviderRejection(error: unknown): boolean {
  * handled by `context_engine`.
  */
 export class GenerativeModel implements LLMInterface {
-  private readonly client: AutoLLMClient;
+  private readonly config: GenerativeModelConfig;
+  private readonly clients = new Map<string, AutoLLMClient>();
+  private readonly keyRotator?: ApiKeyRotator;
+  private committedHistory: UniMessage[] = [];
   private readonly uniConfig: UniConfig;
   /**
    * Construction-time default thinking level. Kept **out of the frozen uniConfig**: the
@@ -974,22 +1008,20 @@ export class GenerativeModel implements LLMInterface {
   private lastWarnedCap: number | undefined;
 
   constructor(config: GenerativeModelConfig) {
-    // Omit apiKey / baseUrl when undefined, letting AgentHub read them from environment
-    // variables. clientType determines which protocol to speak (`openai-chat` means OpenAI
-    // Chat Completions compatible; the bare `openai` spelling is a deprecated upstream alias);
-    // when omitted, AgentHub infers it from model_id, so it only needs to be specified
-    // explicitly for custom-named models. `defaultHeaders` carries the app attribution the
-    // configured endpoint reads (see attributionHeaders); AgentHub hands it to every request
-    // the routed client makes, and endpoints with no attribution scheme get no extra headers
-    // at all.
-    const headers = attributionHeaders(config.baseUrl);
-    this.client = new AutoLLMClient({
-      model: config.modelId,
-      ...(config.apiKey !== undefined ? { apiKey: config.apiKey } : {}),
-      ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
-      ...(config.clientType !== undefined ? { clientType: config.clientType } : {}),
-      ...(headers ? { defaultHeaders: headers } : {}),
-    });
+    this.config = config;
+    const keys =
+      config.apiKeys && config.apiKeys.length > 0
+        ? config.apiKeys
+        : config.apiKey
+          ? parseApiKeys(config.apiKey)
+          : [];
+    if (keys.length > 0) {
+      this.keyRotator = new ApiKeyRotator(keys);
+    }
+
+    // Initialize initial client to ensure credentials/configuration are validated at construction
+    const firstKey = keys.length > 0 ? keys[0] : config.apiKey;
+    this.getClient(firstKey);
 
     this.uniConfig = buildUniConfig(config);
     this.defaultThinkingLevel = config.thinkingLevel;
@@ -1001,6 +1033,42 @@ export class GenerativeModel implements LLMInterface {
       approximateTokens(config.systemPrompt ?? "") +
       approximateTokens(JSON.stringify(this.uniConfig.tools ?? []));
     this.lastRequestTotal = this.baseInputTokens;
+  }
+
+  /**
+   * Retrieves or instantiates an AutoLLMClient for the specified API key.
+   * Caches instances by key and syncs existing conversation history.
+   */
+  private getClient(apiKey?: string): AutoLLMClient {
+    const key = apiKey ?? this.config.apiKey ?? "";
+    let client = this.clients.get(key);
+    if (!client) {
+      const headers = attributionHeaders(this.config.baseUrl);
+      client = new AutoLLMClient({
+        model: this.config.modelId,
+        ...(key !== "" ? { apiKey: key } : {}),
+        ...(this.config.baseUrl !== undefined ? { baseUrl: this.config.baseUrl } : {}),
+        ...(this.config.clientType !== undefined ? { clientType: this.config.clientType } : {}),
+        ...(headers ? { defaultHeaders: headers } : {}),
+      });
+      if (this.committedHistory.length > 0) {
+        client.setHistory(this.committedHistory);
+      }
+      this.clients.set(key, client);
+    }
+    return client;
+  }
+
+  /** Returns the key rotator instance if multiple keys or key rotation is enabled. */
+  getKeyRotator(): ApiKeyRotator | undefined {
+    return this.keyRotator;
+  }
+
+  /**
+   * Primary or default client for testing, inspection, and single-client backwards compatibility.
+   */
+  get client(): AutoLLMClient {
+    return this.getClient();
   }
 
   /**
@@ -1120,6 +1188,22 @@ export class GenerativeModel implements LLMInterface {
       return { status: "fatal", errorCode: "invalid_input", errorMessage: describeError(err) };
     }
 
+    const activeKey = this.keyRotator ? this.keyRotator.nextKey() : this.config.apiKey;
+    if (this.keyRotator && !activeKey) {
+      return {
+        status: "fatal",
+        errorCode: "auth",
+        errorMessage: "All configured API keys have failed authentication or are unavailable.",
+      };
+    }
+
+    const client = this.getClient(activeKey);
+    if (this.committedHistory.length > 0) {
+      client.setHistory(this.committedHistory);
+    } else {
+      client.clearHistory();
+    }
+
     const translator = new EventTranslator(this.toolCallIds);
 
     // Merges "user interruption" and "idle timeout" into a single internal AbortController: either triggering aborts the underlying stream.
@@ -1172,6 +1256,7 @@ export class GenerativeModel implements LLMInterface {
         uniMessage,
         ac.signal,
         this.requestConfig(params.thinkingLevel, params.newMessages),
+        activeKey,
       )[Symbol.asyncIterator]();
       for (;;) {
         // The interruption check must happen **before pulling from upstream**: the user may
@@ -1234,11 +1319,31 @@ export class GenerativeModel implements LLMInterface {
           errorMessage: describeError(error),
         };
       } else if (isAuthenticationError(error)) {
-        // Credentials failure: fatal — no retry can turn a rejected credential into a
-        // working one. The errorMessage tells the user to update this model's API key
-        // (only the model reference is fixed at Session creation; the credential is read
-        // from the current Project config on load), after which the Session continues.
-        outcome = { status: "fatal", errorCode: "auth", errorMessage: describeError(error) };
+        if (this.keyRotator && activeKey) {
+          this.keyRotator.recordFailure(activeKey, "auth");
+          if (this.keyRotator.hasWorkingKeys()) {
+            outcome = {
+              status: "retryable",
+              errorCode: "auth",
+              errorMessage: `API key authentication failed; rotating to next available key: ${describeError(error)}`,
+            };
+          } else {
+            outcome = {
+              status: "fatal",
+              errorCode: "auth",
+              errorMessage: `All configured API keys failed authentication: ${describeError(error)}`,
+            };
+          }
+        } else {
+          outcome = { status: "fatal", errorCode: "auth", errorMessage: describeError(error) };
+        }
+      } else if (isRateLimitError(error)) {
+        this.keyRotator?.recordFailure(activeKey, "rate_limit");
+        outcome = {
+          status: "retryable",
+          errorCode: "network",
+          errorMessage: describeError(error),
+        };
       } else if (this.uniConfig.fast_mode === true && isFastModeUnsupportedError(error)) {
         // Fast mode rejected by a model without a fast tier: AgentHub throws its
         // UnsupportedParameterError before any network I/O, so with this object's frozen
@@ -1262,6 +1367,7 @@ export class GenerativeModel implements LLMInterface {
         // retries on the engine's ladder. The detail rides on the outcome so observability
         // (request_end -> the Cost center's errors panel) shows the real reason behind a
         // retried request.
+        this.keyRotator?.recordFailure(activeKey, "other");
         outcome = { status: "retryable", errorCode: "network", errorMessage: describeError(error) };
       }
     } finally {
@@ -1298,6 +1404,8 @@ export class GenerativeModel implements LLMInterface {
     // (see effectiveMaxTokens). Only a completed request updates it: an interrupted or
     // failed attempt was never committed, so the context did not grow.
     this.lastRequestTotal = requestTokens.total;
+    this.committedHistory = client.getHistory();
+    this.keyRotator?.recordSuccess(activeKey);
     // The session series is not this object's business (its lifetime is one model context):
     // the engine accumulates and stamps token_usage.session on every message it forwards.
     // The request counts stand in for consumers running a GenerativeModel without an engine.
@@ -1331,7 +1439,10 @@ export class GenerativeModel implements LLMInterface {
     // context on a resumed session. The first completed request replaces this with the
     // real total.
     this.lastRequestTotal = this.baseInputTokens + approximateMessagesTokens(history);
-    this.client.setHistory(groupHistoryToUniMessages(history));
+    this.committedHistory = groupHistoryToUniMessages(history);
+    for (const client of this.clients.values()) {
+      client.setHistory(this.committedHistory);
+    }
   }
 
   /**
@@ -1345,8 +1456,10 @@ export class GenerativeModel implements LLMInterface {
     uniMessage: UniMessage,
     signal: AbortSignal,
     config: UniConfig = this.uniConfig,
+    activeKey?: string,
   ): AsyncIterable<UniEvent> {
-    return this.client.streamingResponseStateful({
+    const client = this.getClient(activeKey);
+    return client.streamingResponseStateful({
       message: uniMessage,
       config,
       signal,

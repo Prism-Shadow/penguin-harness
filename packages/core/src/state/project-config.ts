@@ -36,6 +36,7 @@ import { atomicWriteFile } from "../internal/atomic-write.js";
 import { DEFAULT_COMMAND_POLICY_RULES } from "./command-policy-defaults.js";
 import { canonicalClientType, presetModelEntries } from "./model-catalog.js";
 import { projectConfigPath } from "./paths.js";
+import { parseApiKeys } from "../llm/key-rotator.js";
 
 /** Model reference: a `(provider, model_id)` pair (never string-concatenated anywhere). */
 export interface ModelRef {
@@ -121,6 +122,8 @@ export interface ModelEntry {
   pricing?: ModelPricing;
   /** API key (inlined credential); left empty falls back to the vendor's environment variable. */
   api_key?: string;
+  /** Multiple API keys for rotation, load balancing, and failover. */
+  api_keys?: string[];
   /** Custom base URL (inlined credential); preset for gateway models. */
   base_url?: string;
   /** api_key's write timestamp (ISO 8601; a display field maintained by the interface layer). */
@@ -265,6 +268,12 @@ function assertModelEntry(file: string, entry: unknown): ModelEntry {
     const canonical = canonicalClientType(m.client_type);
     if (canonical !== m.client_type) {
       return { ...(entry as ModelEntry), client_type: canonical };
+    }
+  }
+  const rawApiKeys = (m as { api_keys?: unknown }).api_keys;
+  if (rawApiKeys !== undefined) {
+    if (!Array.isArray(rawApiKeys) || !rawApiKeys.every((k) => typeof k === "string")) {
+      throw new Error(`api_keys in .project_config.toml must be an array of strings: ${file}.`);
     }
   }
   return entry as ModelEntry;
@@ -482,6 +491,7 @@ export async function addModel(
     /** Price input may cover only some buckets; merged and written as a complete `ModelPricing`. */
     pricing?: Partial<ModelPricing>;
     api_key?: string;
+    api_keys?: string[] | string;
     base_url?: string;
   },
   opts?: { setDefault?: boolean },
@@ -546,7 +556,26 @@ export async function addModel(
     };
   }
   // Inline credential entry: fields not provided keep their existing value.
-  const apiKey = entry.api_key ?? existing?.api_key;
+  const rawApiKeys = entry.api_keys ?? existing?.api_keys;
+  const parsedKeys = rawApiKeys
+    ? Array.isArray(rawApiKeys)
+      ? rawApiKeys
+      : parseApiKeys(rawApiKeys)
+    : entry.api_key &&
+        (entry.api_key.includes(",") || entry.api_key.includes("\n") || entry.api_key.includes(";"))
+      ? parseApiKeys(entry.api_key)
+      : undefined;
+
+  if (parsedKeys && parsedKeys.length > 0) {
+    modelEntry.api_keys = parsedKeys;
+  } else if (existing?.api_keys) {
+    modelEntry.api_keys = existing.api_keys;
+  }
+
+  const apiKey =
+    entry.api_key ??
+    (parsedKeys && parsedKeys.length > 0 ? parsedKeys[0] : undefined) ??
+    existing?.api_key;
   if (apiKey !== undefined) {
     modelEntry.api_key = apiKey;
   }

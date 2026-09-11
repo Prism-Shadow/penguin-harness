@@ -20,6 +20,8 @@ import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
 export interface GenerativeModelConfig {
   modelId: string;
   apiKey?: string;
+  /** Multiple API keys for rotation, load balancing, and failover. */
+  apiKeys?: string[];
   baseUrl?: string;
   /**
    * AgentHub client protocol (`openai-chat` / `openai-responses` / `claude-4-8` /

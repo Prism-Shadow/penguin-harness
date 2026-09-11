@@ -297,6 +297,22 @@ export const detectVision = (projectId: string, body: ModelVisionDetectRequest) 
     { method: "POST", body },
   );
 
+/** Fetches health telemetry for a model's configured API keys. */
+export const getModelKeyHealth = (projectId: string, provider: string, modelId: string) =>
+  apiFetch<import("../features/models/model-keys-health").ModelKeyHealthReportDto>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/keys/health?provider=${encodeURIComponent(provider)}&modelId=${encodeURIComponent(modelId)}`,
+  );
+
+/** Resets rate limits and eviction status for a model's API keys. */
+export const resetModelKeys = (projectId: string, provider: string, modelId: string) =>
+  apiFetch<{
+    ok: boolean;
+    report?: import("../features/models/model-keys-health").ModelKeyHealthReportDto;
+  }>(`/api/projects/${encodeURIComponent(projectId)}/models/keys/reset`, {
+    method: "POST",
+    body: { provider, modelId },
+  });
+
 // Provider key minting (owner) ----------------------------------------------------------
 
 /**

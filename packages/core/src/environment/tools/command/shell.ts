@@ -183,6 +183,27 @@ function defaultWhichAll(cmd: string): string[] {
 }
 
 /**
+ * Detects whether a path points to the Windows Subsystem for Linux (WSL) launcher or app execution alias.
+ * WSL launchers (System32\bash.exe, WindowsApps\bash.exe, wsl.exe) run commands inside a Linux distro
+ * with a Linux filesystem view, which cannot navigate native Windows drive paths like D:\... directly.
+ */
+export function isWslExecutable(filePath: string, systemRoot: string): boolean {
+  const norm = filePath.toLowerCase().replace(/\//g, "\\");
+  const sysRootNorm = systemRoot.toLowerCase().replace(/\//g, "\\");
+  if (norm.startsWith(sysRootNorm + "\\")) {
+    return true;
+  }
+  if (norm.includes("\\microsoft\\windowsapps\\") || norm.includes("\\windowsapps\\")) {
+    return true;
+  }
+  const base = path.win32.basename(norm);
+  if (base === "wsl.exe" || base === "wsl") {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Resolves the shell for command sessions (pure given its options; see the module comment
  * for the order). Exported for unit tests; runtime code uses the cached `sessionShell()`.
  */
@@ -203,18 +224,38 @@ export function resolveShell(opts: ResolveShellOptions = {}): ShellInvocation {
 
   const whichAll = opts.whichAll ?? defaultWhichAll;
   const systemRoot = opts.systemRoot ?? env.SystemRoot ?? "C:\\Windows";
-  // The WSL launcher lives in <SystemRoot>\System32 (or Sysnative under WOW64); a Git for
-  // Windows bash lives under the Git install dir. Only the first PATH match counts — that
-  // is the one spawn("bash") would run.
-  const bash = whichAll("bash")[0];
-  if (bash && !bash.toLowerCase().startsWith(systemRoot.toLowerCase() + path.win32.sep)) {
-    return { command: "bash", args: ["-lc"], name: "bash" };
+  // The WSL launcher lives in <SystemRoot>\System32 (or Sysnative under WOW64) and in
+  // %LOCALAPPDATA%\Microsoft\WindowsApps; a Git for Windows bash lives under the Git install dir.
+  // We probe all PATH matches for bash and filter out any WSL launchers.
+  const bashCandidates = whichAll("bash");
+  const validBash = bashCandidates.find((candidate) => !isWslExecutable(candidate, systemRoot));
+  if (validBash) {
+    // If the valid Git bash is the very first PATH match, bare "bash" is safe and spawns it directly.
+    // If a WSL launcher (or something else) was earlier on PATH, we MUST use the full path so spawn
+    // does not run the WSL launcher!
+    const cmd = validBash === bashCandidates[0] ? "bash" : validBash;
+    return { command: cmd, args: ["-lc"], name: "bash" };
   }
+
+  // Also check if Git for Windows is installed (e.g. git.exe is in PATH, but bash.exe is not)
+  const gitCandidates = whichAll("git");
+  for (const gitPath of gitCandidates) {
+    const gitDir = path.win32.dirname(gitPath);
+    const candidateBin = path.win32.resolve(gitDir, "..", "bin", "bash.exe");
+    if (exists(candidateBin) && !isWslExecutable(candidateBin, systemRoot)) {
+      return { command: candidateBin, args: ["-lc"], name: "bash" };
+    }
+    const candidateUsrBin = path.win32.resolve(gitDir, "..", "usr", "bin", "bash.exe");
+    if (exists(candidateUsrBin) && !isWslExecutable(candidateUsrBin, systemRoot)) {
+      return { command: candidateUsrBin, args: ["-lc"], name: "bash" };
+    }
+  }
+
   // The bundled MinGit bash (installed-package layout only; absent for npm installs). Reported
   // to the model as "bash" rather than its filename: MinGit installs GNU bash under the name
   // `sh`, and the Skill ecosystem targets bash, so "sh" would understate what it can run.
   const bundled = env.PENGUIN_BUNDLED_SHELL?.trim();
-  if (bundled && exists(bundled)) {
+  if (bundled && exists(bundled) && !isWslExecutable(bundled, systemRoot)) {
     return { command: bundled, args: ["-lc"], name: "bash" };
   }
   if (whichAll("pwsh").length > 0) {
