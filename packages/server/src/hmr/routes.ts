@@ -76,6 +76,8 @@ export function hmrRoutes(deps: HmrRouteDeps): Hono<AppEnv> {
   // pusher that gets a 404 here is talking to a generation older than the probe and sends
   // everything inline, as it always did. The answer is the mechanism's, like the push's.
   routes.post("/assets/probe", (c) => deps.control.endpoint(c.req.raw));
+  // One blob, raw, under its sha256; a push then names it instead of carrying it.
+  routes.put("/blobs/:sha", (c) => deps.control.endpoint(c.req.raw));
 
   // THE ONE upgrade endpoint: platform + cli + web move together, atomically — there is no
   // route that updates any of the three alone. The body and the answer are the mechanism's

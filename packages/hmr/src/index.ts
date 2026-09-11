@@ -22,7 +22,9 @@ export {
   HMR_ROUTE_PREFIX,
   HMR_UPGRADE_PATH,
   HMR_PROBE_PATH,
+  HMR_BLOBS_PATH,
   probeEndpoint,
+  blobEndpoint,
 } from "./main.js";
 export type { Hmr, Replace } from "./main.js";
 export { HmrHost } from "./host.js";

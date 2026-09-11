@@ -476,6 +476,102 @@ export const hotPlatform = { id: "boom", iface, impl, context: {} };
  */
 const BOOM_PLATFORM_PACKAGED_ID = BOOM_PLATFORM.replace('id: "boom"', 'id: "packaged"');
 
+describe("blobs are put one at a time, raw, and a push names its parts by hash", () => {
+  let t: TestApp | undefined;
+
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    t = undefined;
+  });
+
+  const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
+  const put = (app: Hono<AppEnv>, cookie: string, sha: string, bytes: Buffer) =>
+    app.request(`/api/hmr/blobs/${sha}`, {
+      method: "PUT",
+      headers: { cookie, "content-type": "application/octet-stream" },
+      body: bytes,
+    });
+  const probe = async (app: Hono<AppEnv>, cookie: string, hashes: string[]) =>
+    (await (
+      await app.request("/api/hmr/assets/probe", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ hashes }),
+      })
+    ).json()) as { missing: string[] };
+  const pushJson = (app: Hono<AppEnv>, cookie: string, body: unknown) =>
+    app.request("/api/hmr/upgrade", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/gzip" },
+      body: zlib.gzipSync(Buffer.from(JSON.stringify(body))),
+    });
+
+  it("a blob lands only under the hash of its bytes; a wrong name stores nothing", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const bytes = Buffer.from("\0native");
+    const sha = sha256(bytes);
+    const wrong = sha256(Buffer.from("other"));
+
+    const refused = await put(t.app, cookie, wrong, bytes);
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { error: { message: string } }).error.message).toMatch(
+      /does not hash/,
+    );
+    expect((await probe(t.app, cookie, [wrong, sha])).missing.sort()).toEqual([sha, wrong].sort());
+
+    const ok = await put(t.app, cookie, sha, bytes);
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ sha, size: bytes.length });
+    expect((await probe(t.app, cookie, [wrong, sha])).missing).toEqual([wrong]);
+    expect(await fs.readFile(path.join(t.root, "hmr", "store", "blobs", sha))).toEqual(bytes);
+    // No half-written temporaries beside it.
+    expect((await fs.readdir(path.join(t.root, "hmr", "store", "blobs"))).sort()).toEqual([sha]);
+
+    // Not a hash: refused before any byte is read.
+    expect((await put(t.app, cookie, "latest", bytes)).status).toBe(400);
+  });
+
+  it("a push naming every part by hash resolves from the store; a name the store lacks is refused with it", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const platform = Buffer.from(platformServing(["/api/demo/by-hash"], "by-hash"));
+    const cliBytes = Buffer.from(MINIMAL_CLI);
+    const index = Buffer.from("<html>by hash</html>");
+    const asset = Buffer.from("\0helper");
+    const parts = [platform, cliBytes, index, asset];
+    const body = {
+      platform: { sha: sha256(platform) },
+      cli: { sha: sha256(cliBytes) },
+      web: { manifest: { "index.html": { sha: sha256(index) } } },
+      assets: { manifest: { "bin/helper": { sha: sha256(asset) } } },
+    };
+
+    // Nothing put yet: the push names what the store does not hold, and says which.
+    const early = await pushJson(t.app, cookie, body);
+    expect(early.status).toBe(400);
+    expect(((await early.json()) as { error: { message: string } }).error.message).toMatch(
+      new RegExp(`platform.*${sha256(platform).slice(0, 12)}.*put it first`),
+    );
+
+    for (const bytes of parts)
+      expect((await put(t.app, cookie, sha256(bytes), bytes)).status).toBe(200);
+    const landed = await pushJson(t.app, cookie, body);
+    expect(landed.status).toBe(200);
+    expect(((await landed.json()) as { status: string }).status).toBe("ok");
+    // The generation, the web dist and the asset all came out of the blob store.
+    expect((await t.app.request("/api/demo/by-hash")).status).toBe(200);
+    expect(await (await t.app.request("/")).text()).toContain("by hash");
+    const assetsRoot = path.join(t.root, "hmr", "store", "assets");
+    const [set] = await fs.readdir(assetsRoot);
+    expect(await fs.readFile(path.join(assetsRoot, set!, "bin", "helper"))).toEqual(asset);
+    // The persisted version is the same shape an inline push commits: a restart reads it.
+    await expect(readHarnessInfo(t.root)).resolves.toMatchObject({
+      bundles: { cli: expect.stringContaining("store/cli/") },
+    });
+  });
+});
+
 describe("upgrade assets by manifest: only the blobs the store lacks travel, and nothing kept is collected", () => {
   let t: TestApp | undefined;
 
