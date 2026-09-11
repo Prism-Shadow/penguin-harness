@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-10
 - **Type:** feature
-- **Scope:** `web`
+- **Scope:** `web`, `docs`
 - **PR:** [#680](https://github.com/Prism-Shadow/penguin-harness/pull/680)
 
 [中文版](2026-09-10-dock-launcher-icons.zh.md)
@@ -29,9 +29,9 @@ and its tab strip all read from, so each moved on all four surfaces at once:
   of a chat bubble, so one feature wears one mark. The bubble had no other caller and was deleted.
 - **Hide launcher** — the same eye struck through corner to corner, in place of the close cross.
 
-- **Scheduled tasks** — the alarm clock gained detail: domed bells on its shoulders and two splayed
-  feet, where it had two bare diagonal ticks and no base. Its smallest placement is the session
-  row's 12px trailing cluster, which is the size the detail is bounded by.
+The scheduled-tasks alarm clock gained detail as well: domed bells on its shoulders and two splayed
+feet, where it had two bare diagonal ticks and no base. Its smallest placement is the session row's
+12px trailing cluster, which is the size the detail is bounded by.
 
 The Workspace folder, the terminal prompt and the ball's resting workbench tiles are unchanged.
 
