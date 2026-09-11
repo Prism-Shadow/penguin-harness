@@ -1,5 +1,5 @@
 /**
- * account-menu.ts unit tests: which sessions the sidebar user menu offers a
+ * account-menu.ts unit tests: which sessions the account menu offers a
  * change-password entry to.
  *
  * The rule is pinned by value in all four combinations rather than by shape, because the
@@ -75,9 +75,11 @@ describe("the settings section registry", () => {
   });
 });
 
-describe("the sidebar user menu", () => {
+describe("the account menu", () => {
+  // One menu, two anchors: the pinned sidebar's user row and the collapsed rail's avatar
+  // both render this component, so the rows below are asserted once, where they live.
   const source = readFileSync(
-    resolve(dirname(fileURLToPath(import.meta.url)), "../src/components/layout/sidebar.tsx"),
+    resolve(dirname(fileURLToPath(import.meta.url)), "../src/components/layout/user-menu.tsx"),
     "utf8",
   );
 

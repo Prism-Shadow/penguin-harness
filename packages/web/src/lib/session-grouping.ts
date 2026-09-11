@@ -229,12 +229,13 @@ export function aggregateWorkspaceCounts(
 
 /**
  * The Session the UI opens as "the last conversation" (the chat home's auto-select and
- * the collapsed rail's entry): the newest loaded row that is a conversation of the
- * user's own. Archived rows are hidden by choice and a subagent Session is a child of
- * some other conversation, so neither is ever auto-opened; schedule-created runs are
- * the user's conversations and qualify. Newest by createdAt (uniform ISO-8601 UTC, so
- * string comparison is chronological), ties broken by sessionId — the list's ordering
- * convention. Input order doesn't matter.
+ * the collapsed rail's entry): the loaded row the user was last IN — not the one created
+ * last, which on a revisited conversation is a different row. Archived rows are hidden by
+ * choice and a subagent Session is a child of some other conversation, so neither is ever
+ * auto-opened; schedule-created runs are the user's conversations and qualify. Newest by
+ * lastActiveAt (stamped from `Date#toISOString`, so uniform ISO-8601 UTC like createdAt and
+ * comparable as a string), ties broken by sessionId — the list's ordering convention. Input
+ * order doesn't matter.
  */
 export function latestConversation(sessions: readonly SessionInfo[]): SessionInfo | null {
   let best: SessionInfo | null = null;
@@ -243,8 +244,8 @@ export function latestConversation(sessions: readonly SessionInfo[]): SessionInf
     if (category !== "active" && category !== "schedule") continue;
     if (
       !best ||
-      s.createdAt > best.createdAt ||
-      (s.createdAt === best.createdAt && s.sessionId > best.sessionId)
+      s.lastActiveAt > best.lastActiveAt ||
+      (s.lastActiveAt === best.lastActiveAt && s.sessionId > best.sessionId)
     ) {
       best = s;
     }

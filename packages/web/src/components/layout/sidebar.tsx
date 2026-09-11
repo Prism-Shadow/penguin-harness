@@ -20,7 +20,7 @@
  * trailing slot shows the compact last-active time at rest and swaps to archive + delete
  * icon buttons on hover/focus; the full set (pin, rename, archive, delete) opens as a
  * context menu on right-click, Shift+F10, or a press-and-hold on touch
- * -> bottom user config (theme / language / System settings / logout).
+ * -> bottom user row, which opens the shared account menu (user-menu.tsx).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -106,7 +106,7 @@ import {
   orderGroups,
   saveGroupOrder,
 } from "../../lib/group-order";
-import { Dropdown } from "../ui/dropdown";
+import { Dropdown, menuItemClass } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
   HOVER_ROW_ACTIONS,
@@ -165,10 +165,8 @@ import {
 } from "../../features/chat/draft-sessions";
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
-import { UpdateRow } from "../account/update-row";
-import { openUpdateModal } from "../../lib/use-update-flow";
+import { UserMenu } from "./user-menu";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
-import { SettingsDialog } from "../../features/settings/settings-dialog";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
 import { useAgentSchedules } from "../../features/schedules/schedule-store";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -246,9 +244,6 @@ function AddBadgeIcon({ base, size = 15 }: { base: string; size?: number }) {
   );
 }
 
-const menuItemClass =
-  "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
-
 /** Section-header icon control (search / list settings / create): the grouping-toggle button look — active renders as a pressed fill. */
 const headerControlClass = (active: boolean) =>
   `flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
@@ -322,7 +317,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout, desktopMode, sessionVia } = useAuth();
+  const { user, sessionVia } = useAuth();
   const { locale } = useLocale();
   const {
     projects,
@@ -350,10 +345,8 @@ export function Sidebar({
   const activeSessionId = chatMatch?.params.sessionId ?? null;
 
   const [projectOpen, setProjectOpen] = useState(false);
-  const [userOpen, setUserOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   /** The badges over the update and to-do trails (use-update-badges.ts); the avatar's dot follows the update flow's offer / restart states. */
   const badges = useUpdateBadges();
   const currentProjectId = currentProject?.projectId ?? null;
@@ -2172,16 +2165,17 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Bottom user config */}
+      {/* Bottom user row: the trigger for the account menu both this sidebar and the
+          collapsed rail open (user-menu.tsx). */}
       <div className="shrink-0 border-t border-gray-200 p-2 dark:border-gray-800">
-        <Dropdown
-          open={userOpen}
-          setOpen={setUserOpen}
+        <UserMenu
           menuClass="bottom-full left-0 right-0 mb-1 origin-bottom"
-          button={
+          trigger={({ open, toggle }) => (
             <button
               type="button"
-              onClick={() => setUserOpen(!userOpen)}
+              onClick={toggle}
+              aria-haspopup="menu"
+              aria-expanded={open}
               {...(badges.softwareNote !== null
                 ? {
                     // The dot alone is mysterious: name what is waiting on the trigger (hover
@@ -2203,56 +2197,9 @@ export function Sidebar({
                 <span className="text-xs text-gray-400 dark:text-gray-500">{S.auth.admin}</span>
               )}
             </button>
-          }
-        >
-          <div className="py-1">
-            {/* System settings dialog: everyone gets the row — the dialog always has the
-                personal pages, and the server-global ones inside it stay gated by the
-                section registry rather than by this row. The preference rows that used to
-                stack here live on its pages now. */}
-            <button
-              type="button"
-              className={menuItemClass}
-              onClick={() => {
-                setUserOpen(false);
-                setSettingsOpen(true);
-              }}
-            >
-              {S.settings.systemSettings}
-            </button>
-            {/* Update entry, directly under the settings entry rather than on a page inside
-                it: one row for both backends (the server release here, the shell's own
-                updater in the desktop window), naming where the update flow stands and
-                opening the update modal — where the flow is explained and acted on. The
-                modal is mounted by the app layout, so it outlives this menu. Hidden where
-                this session can update nothing (a browser signed into a desktop-mode
-                server, see updateModeFor). */}
-            <UpdateRow
-              menuItemClass={menuItemClass}
-              onOpen={() => {
-                setUserOpen(false);
-                openUpdateModal();
-              }}
-            />
-            {/* Hidden in desktop mode: the window IS the session — logging out would
-                strand the user on a login page whose password was never shown. */}
-            {!desktopMode && (
-              <button
-                type="button"
-                className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-                onClick={() => {
-                  setUserOpen(false);
-                  void logout().then(() => navigate("/login"));
-                }}
-              >
-                {S.auth.logout}
-              </button>
-            )}
-          </div>
-        </Dropdown>
+          )}
+        />
       </div>
-
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <CreateProjectDialog
         open={createProjectOpen}
