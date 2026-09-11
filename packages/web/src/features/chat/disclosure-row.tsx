@@ -52,6 +52,18 @@ export const DISCLOSURE_OUTPUT_PRE_CLASS =
   "max-h-72 overflow-auto whitespace-pre-wrap border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300";
 
 /**
+ * Expanded Markdown body — the thinking and compaction sections. Same block as
+ * DISCLOSURE_OUTPUT_PRE_CLASS wears: full-bleed under its row, separated by the same
+ * divider, on the same type scale, so a thinking body reads as another kind of output
+ * rather than as a quotation inset inside the card. Markdown keeps rendering (these
+ * bodies are prose, not command output), hence no `whitespace-pre-wrap`, and no height
+ * cap either: both bodies stream, and a nested scrollbox would strand the live tail the
+ * transcript's own follow scrolls to.
+ */
+export const DISCLOSURE_BODY_MD_CLASS =
+  "md-body border-t border-gray-100 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-gray-800 dark:text-gray-300";
+
+/**
  * The card container a row (or group of rows) sits in — the work group's exact chrome.
  * A standalone disclosure row wraps itself in one so its width and framing match the
  * neighboring groups.
