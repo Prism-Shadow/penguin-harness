@@ -174,6 +174,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测并返回第一个被提供的协议：`{baseUrl, apiKey?, …}` → `{detected?, probes}` |
 | POST | /api/projects/:projectId/models/list | 新增分组导入所用的端点模型列表：按检测出的协议列出端点服务的全部模型 id：`{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
 | POST | /api/projects/:projectId/models/detect-vision | 视觉能力探测：用该模型的凭据发送一张 1x1 图片(一次真实计费的补全)：`{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported\|unsupported\|failed, message?}` |
+| GET | /api/projects/:projectId/models/keys/health | 进程内脱敏 key 健康注册表。带 `?provider=…&modelId=…`（或 `?modelRef=provider/model`）时返回单个 `{modelRef,totalKeys,healthyCount,cooldownCount,evictedCount,keys}`；不带选择器时返回已配置模型的 `{reports}` |
+| POST | /api/projects/:projectId/models/keys/reset | 用 `{provider,modelId}` 或 `{modelRef}` 重置一个注册表条目，返回 `{ok:true,report}`；不带选择器时为空操作并返回 `{ok:true}` |
 
 所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
 
