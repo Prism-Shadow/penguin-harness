@@ -1,17 +1,20 @@
 /**
  * Plugin detail Modal — opened by clicking a library card (the model library's card-detail
  * pattern): the plugin's icon, full description, metadata line and hook points, then a file
- * browser over everything it ships, in the benchmark case browser's shape — a tree on the left
- * (one collapsible group per skill and one for the hook package, any number open at once) and
- * a preview on the right. The header and the tree never leave: opening a file fills the
- * preview pane instead of replacing the view, so the summary and the other files stay in sight
- * while reading. The files arrive in one request (GET /api/plugins/:plugin/files) when the
- * Modal opens; a markdown file renders through the chat markdown component with its
- * frontmatter stripped, anything else as a code block.
+ * browser over everything it ships — the shared `FileTree` on the left (one directory per
+ * skill and one for the hook package, any number open at once) and a preview on the right.
+ * The header and the tree never leave: opening a file fills the preview pane instead of
+ * replacing the view, so the summary and the other files stay in sight while reading. The
+ * files arrive in one request (GET /api/plugins/:plugin/files) when the Modal opens; a
+ * markdown file renders through the chat markdown component with its frontmatter stripped,
+ * anything else as a code block.
  */
 import { useEffect, useState } from "react";
 import { Modal } from "../../components/ui/modal";
 import { Badge } from "../../components/ui/badge";
+import { FileTree } from "../../components/ui/file-tree";
+import type { TreeToggle } from "../../components/ui/file-tree";
+import type { FileTreeRow } from "../../lib/file-tree";
 import { PLUGIN_ICON } from "../../components/ui/icons";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { S } from "../../lib/strings";
@@ -97,6 +100,68 @@ export function groupPluginFiles(
   return groups;
 }
 
+/** A directory of the tree while it is being built: the files directly in it, and what nests under it. */
+interface TreeNode {
+  path: string;
+  name: string;
+  kind: "dir" | "file";
+  children: TreeNode[];
+}
+
+/**
+ * The tree's rows for `groups`: each group is a directory row holding its own files, and a
+ * file's remaining path segments nest under it — a skill's `reference/` is a directory of its
+ * own rather than a slash inside a name. Order is the group's (SKILL.md leads, the rest by
+ * path), with a directory appearing where its first file does. A collapsed directory
+ * contributes its row and no children.
+ */
+export function pluginTreeRows(
+  groups: readonly FileGroup[],
+  collapsed: ReadonlySet<string>,
+): FileTreeRow[] {
+  const roots: TreeNode[] = [];
+  for (const group of groups) {
+    const root: TreeNode = { path: group.id, name: group.label, kind: "dir", children: [] };
+    roots.push(root);
+    for (const path of group.paths) {
+      const segments = path.slice(group.id.length + 1).split("/");
+      let node = root;
+      for (const [index, segment] of segments.entries()) {
+        const childPath = `${node.path}/${segment}`;
+        const leaf = index === segments.length - 1;
+        let child = node.children.find((c) => c.path === childPath);
+        if (child === undefined) {
+          child = { path: childPath, name: segment, kind: leaf ? "file" : "dir", children: [] };
+          node.children.push(child);
+        }
+        node = child;
+      }
+    }
+  }
+
+  const rows: FileTreeRow[] = [];
+  const walk = (nodes: readonly TreeNode[], depth: number): void => {
+    for (const [index, node] of nodes.entries()) {
+      const expanded = node.kind === "dir" && !collapsed.has(node.path);
+      rows.push({
+        path: node.path,
+        name: node.name,
+        kind: node.kind,
+        depth,
+        posInSet: index + 1,
+        setSize: nodes.length,
+        expanded,
+        // Nothing here is fetched per directory: the whole listing arrived in one response.
+        loaded: true,
+        empty: node.kind === "dir" && node.children.length === 0,
+      });
+      if (expanded) walk(node.children, depth + 1);
+    }
+  };
+  walk(roots, 0);
+  return rows;
+}
+
 export function PluginDetailModal({
   plugin,
   meta,
@@ -110,9 +175,11 @@ export function PluginDetailModal({
   const { locale } = useLocale();
   const [files, setFiles] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** Collapsed groups: every group starts open, so the whole plugin is in view at once. */
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /** Collapsed directories: every one starts open, so the whole plugin is in view at once. */
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
+  /** The directory whose subtree the tree should animate — the one just clicked. */
+  const [toggled, setToggled] = useState<TreeToggle | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,18 +204,23 @@ export function PluginDetailModal({
           plugin.skills.map((s) => s.name),
           S.plugins.detailHooks,
         );
+  const rows = pluginTreeRows(groups, collapsed);
   // The first file of the first group opens on arrival (the benchmark browser's readme
   // auto-preview), so the pane is never empty while there is something to read.
   const current = selected ?? groups[0]?.paths[0] ?? null;
   const text = current !== null && files !== null ? files[current] : undefined;
 
-  const toggleGroup = (id: string) =>
+  const toggleDir = (dir: string): void => {
+    const open = collapsed.has(dir);
+    // The serial makes toggling the same directory again a new event for the tree to animate.
+    setToggled((last) => ({ dir, open, serial: (last?.serial ?? 0) + 1 }));
     setCollapsed((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (open) next.delete(dir);
+      else next.add(dir);
       return next;
     });
+  };
 
   return (
     <Modal open title={plugin.name} onClose={onClose} widthClass="sm:max-w-4xl">
@@ -184,50 +256,19 @@ export function PluginDetailModal({
           <div className="max-h-40 overflow-y-auto md:max-h-[50vh]">
             {error && <p className="px-3 py-2 text-xs text-red-500">{error}</p>}
             {files === null && !error && <SkeletonList rows={3} />}
-            {groups.map((group) => {
-              const open = !collapsed.has(group.id);
-              return (
-                <div
-                  key={group.id}
-                  className="border-b border-gray-200 last:border-b-0 dark:border-gray-800"
-                >
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() => toggleGroup(group.id)}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-800/60"
-                  >
-                    <span className="text-xs text-gray-400">{open ? "▾" : "▸"}</span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs font-semibold">
-                      {group.label}
-                    </span>
-                  </button>
-                  {open &&
-                    group.paths.map((path) => {
-                      const active = path === current;
-                      return (
-                        <button
-                          key={path}
-                          type="button"
-                          aria-current={active ? "true" : undefined}
-                          onClick={() => setSelected(path)}
-                          className={`flex w-full items-center gap-2 border-t border-gray-100 px-6 py-1.5 text-left text-xs hover:bg-gray-100 dark:border-gray-800/70 dark:hover:bg-gray-800/60 ${
-                            active
-                              ? "bg-gray-100 font-medium text-gray-900 dark:bg-gray-800/60 dark:text-gray-100"
-                              : "text-gray-600 dark:text-gray-400"
-                          }`}
-                        >
-                          <span className="text-gray-400">·</span>
-                          {/* The path inside its group: SKILL.md, reference/x.md, stop.mjs. */}
-                          <span className="min-w-0 flex-1 truncate">
-                            {path.slice(group.id.length + 1)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                </div>
-              );
-            })}
+            {/* A `tree` with no `treeitem` in it is not one: while the listing is in flight, or
+                when it failed or held nothing, the aside carries the skeleton or the error and
+                no tree at all. */}
+            {rows.length > 0 && (
+              <FileTree
+                rows={rows}
+                label={S.files.treeLabel}
+                selectedPath={current}
+                toggled={toggled}
+                onToggleDir={toggleDir}
+                onOpenFile={setSelected}
+              />
+            )}
           </div>
         </aside>
 

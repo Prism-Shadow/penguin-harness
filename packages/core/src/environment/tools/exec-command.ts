@@ -21,11 +21,12 @@
 import path from "node:path";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
+import { DETACHED_TOOL_NOTE_PREFIX } from "../../interfaces/index.js";
 import type { EnvironmentServices, ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { DEFAULT_EXEC_YIELD_MS, isStopSignal, resultForExit } from "./command/index.js";
 import type { ManagedSession } from "./command/index.js";
-import { clampYield, reportLabel, tailForReport } from "./background/index.js";
+import { clampYield, collectUntil, reportLabel, tailForReport } from "./background/index.js";
 import { describeArgumentError, stringArgument } from "./tool-arguments.js";
 
 /** Tool name constant (used only inside this tool module, not exposed to Environment). */
@@ -66,11 +67,12 @@ export function createExecCommandTool(
   return {
     name: definition.name,
     definition,
+    detachable: true,
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
     ): AsyncGenerator<OmniMessage, ToolResult | void> {
-      const { toolCallId, signal } = ctx;
+      const { toolCallId, signal, detachSignal } = ctx;
       const delta = (output: string): OmniMessage =>
         partialToolCallOutput({ eventType: "delta", output, toolCallId });
 
@@ -134,18 +136,36 @@ export function createExecCommandTool(
 
       // On interruption, kill the whole process group (background children included) to
       // avoid orphans; once the process moves to background this listener is removed in finally.
+      // Deliberately listens to `signal` only: a detach leaves the process running — it is the
+      // opposite request.
       const onAbort = (): void => session.kill();
       let registered = false;
       signal?.addEventListener("abort", onAbort, { once: true });
       try {
-        for await (const chunk of session.collect(yieldMs, signal)) yield delta(chunk);
+        // Either an interruption or a detach ends collection; which one fired is read below.
+        for await (const chunk of session.collect(yieldMs, collectUntil(signal, detachSignal))) {
+          yield delta(chunk);
+        }
 
         if (signal?.aborted) return { stopReason: "aborted" };
         if (session.running) {
-          // Still running at the deadline: register as a background process, returning
-          // process_id so input_command can continue accessing it.
+          // Still running: register as a background process, returning process_id so
+          // input_command can continue accessing it. Whatever was collected up to this point
+          // has already been yielded, so it stays in this call's output.
           const id = manager.register(session);
           registered = true;
+          if (detachSignal?.aborted) {
+            // Detached by the user rather than by the yield deadline: the model never chose
+            // to poll this one, so arm the completion report the way a run_in_background
+            // launch does — otherwise the command would finish with nobody told.
+            armCommandDoneReport(session, id, services);
+            return {
+              stopReason: "completed",
+              note:
+                `${DETACHED_TOOL_NOTE_PREFIX} with process_id ${id}; its completion will arrive ` +
+                `as a user message — no need to poll. Use input_command to interact (kill: true stops it)]`,
+            };
+          }
           return {
             stopReason: "completed",
             note: `[process running with process_id ${id}; use input_command to send input or poll for output]`,

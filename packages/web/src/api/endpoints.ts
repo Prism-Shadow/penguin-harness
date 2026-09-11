@@ -747,6 +747,17 @@ export const postApproval = (
     { method: "POST", body },
   );
 
+/**
+ * Hands one EXECUTING tool call back as a background task, so the turn closes and the
+ * conversation carries on (404 tool_call_not_found when the call already finished — a benign
+ * race the caller just ignores; 409 tool_not_detachable when the tool has no background form).
+ */
+export const postToolCallBackground = (sessionId: string, toolCallId: string) =>
+  apiFetch<void>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/tool-calls/${encodeURIComponent(toolCallId)}/background`,
+    { method: "POST", body: {} },
+  );
+
 export const postAbort = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, {
     method: "POST",

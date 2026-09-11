@@ -133,6 +133,7 @@ function SessionSelect({
 
   return (
     <FormPicker
+      size="sm"
       open={open}
       setOpen={setOpen}
       label={label}
@@ -347,8 +348,10 @@ function ScheduleFormDialog({
       widthClass="sm:max-w-lg"
       footer={
         <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
-          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button size="sm" onClick={onClose}>
+            {S.common.cancel}
+          </Button>
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
             {form.editing !== null ? S.common.save : S.common.create}
           </Button>
         </>

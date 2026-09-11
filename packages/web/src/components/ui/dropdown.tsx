@@ -43,6 +43,10 @@ import { scrollMovesAnchor } from "../../lib/context-menu";
 const PANEL_GAP = 4;
 const VIEWPORT_MARGIN = 8;
 
+/** The panel's plain row: full-width, left-aligned, hover-filled. Shared so menus opened from different anchors cannot drift apart on density. */
+export const menuItemClass =
+  "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
+
 /** Portal docking: which way the panel opens and which of its edges lines up with the trigger. */
 export interface DropdownPortal {
   direction: "up" | "down";

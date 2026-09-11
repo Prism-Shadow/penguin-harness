@@ -38,6 +38,7 @@ import { apiErrorText } from "../../lib/api-error";
 import {
   cacheHitRate,
   computeTps,
+  formatAverage,
   formatMoney,
   formatPercent,
   formatTps,
@@ -109,12 +110,25 @@ const rowKeyOf = (taskIndex: number, i: number): string => `${taskIndex}-${i}`;
  * Each item takes its own row, with three groups arranged side by side as
  * columns — laid out horizontally it would read as a blur of digits, while
  * giving each group a full row would waste the right half of the space.
+ *
+ * `detail` is the breakdown behind the value: the row shows the total alone and keeps the
+ * breakdown in its hover text, the same way the per-round chips do. A reader with no hover
+ * gets it from `sr-only` text rather than from an `aria-label`: this row is a bare `div`,
+ * whose role is `generic`, and ARIA prohibits naming that role — a label here would be
+ * dropped, while hidden text is read in place, right after the value it belongs to (the
+ * same way an update hint is folded into a button elsewhere in the app). An empty detail
+ * renders neither: a tooltip repeating only the visible label says nothing.
  */
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  const hasDetail = detail !== undefined && detail !== "";
   return (
-    <div className="flex items-baseline justify-between gap-3 py-0.5">
+    <div
+      title={hasDetail ? `${label}${detail}` : undefined}
+      className="flex items-baseline justify-between gap-3 py-0.5"
+    >
       <span className="shrink-0 text-[11px] text-gray-400">{label}</span>
       <span className="truncate font-mono text-sm font-semibold tabular-nums">{value}</span>
+      {hasDetail && <span className="sr-only">{detail}</span>}
     </div>
   );
 }
@@ -453,11 +467,17 @@ export function TraceFileView({
             {/* Rounds = number of cards below (a compaction round counts as
                 a round too): the global summary and the per-round display
                 below share **the same scope** — every figure is the sum
-                across rounds and must add up; how many of them are
-                compaction rounds is answered separately by "compaction count". */}
+                across rounds and must add up. The average is exactly the two
+                rows above it divided, tool calls ÷ rounds, so it holds that
+                same scope and a reader can check the division by eye — a
+                denominator that skipped compaction rounds would no longer
+                match the round count printed here. */}
             <SummaryRow label={S.traces.tasksLabel} value={String(analysis.tasks.length)} />
             <SummaryRow label={S.traces.toolCalls} value={String(global.toolCalls)} />
-            <SummaryRow label={S.traces.compactions} value={String(analysis.compactionCount)} />
+            <SummaryRow
+              label={S.traces.avgToolCalls}
+              value={formatAverage(global.toolCalls, analysis.tasks.length)}
+            />
           </div>
           {/* Token usage: broken down by category (input / of which cache hit + hit rate / output), never given as a lump sum. */}
           <div>
@@ -476,10 +496,8 @@ export function TraceFileView({
             />
             <SummaryRow
               label={S.chat.statElapsed}
-              value={`${humanizeDuration(Math.max(0, globalMs))}${durationSplit(
-                analysis.apiMs,
-                analysis.toolMs,
-              )}`}
+              value={humanizeDuration(Math.max(0, globalMs))}
+              detail={durationSplit(analysis.apiMs, analysis.toolMs)}
             />
             {/* Global TPS = the output of every round (including compaction
                 rounds) ÷ the sum of LLM generation time, same scope as the

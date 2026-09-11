@@ -131,12 +131,58 @@ banners, `card` (`gap-3`) for a card row led by an avatar.
 `test/icon-scale.test.ts` fails on a stroke weight outside the chosen set and on a second copy of
 the caret, the close cross or the collapse chevron.
 
+## Control sizes
+
+One record: `sizeTextClass` in `components/ui/input.tsx`. Two rungs — `sm` is `text-xs`, `base` is
+`text-base` — and `sizeClass` pairs each with its padding. `Select`'s menu rows, `OptionMenu`'s row
+titles, `Textarea` and `FormPicker` all read it, so a rung moves the whole family at once.
+
+The rungs are **relative, not the pixel values their names suggest**. `theme.tsx`'s `FONT_PX` sets
+the root font size per tier (16/18/20px, default 18) and `styles.css` overrides no `--text-*`, so
+`text-xs` is 13.5px at the default tier rather than 12px, and every rung tracks the user's setting.
+
+**A call site passes `size`; it never spells a `text-*` class.** The caller's class and the
+component's own rung are both single-class font-size utilities of equal specificity, so which one
+wins depends on the order the CSS was generated in, not the order of classes in the string: the
+built sheet emits `.text-base` before `.text-sm` before `.text-xs`, so a caller's `text-sm` silently
+loses to an `sm` control's `text-xs`, and a bracket value beats all three. (`input.tsx`'s
+`errorClass` meets the same hazard on border and background and forces past it with `!`. A font
+size has a `size` prop instead, so it does not need to.)
+
+**No `text-[Npx]` on a control**: fixed px opts it out of the user's font-size setting altogether.
+`rowDescClass.sm` (`option-menu.tsx`) is the single grandfathered exception — a row description sits
+one step under a `text-xs` title, and there is no rung below `text-xs` to step down to.
+
+A form field takes `sm`: dense forms, dialogs and filter bars, which is near enough the whole app.
+`base` is for a standalone page holding two controls and nothing else, and is **passed by name** —
+the login card is its only caller, and an unopted `base` is what four dialog fields had drifted into.
+Every control defaults to `sm` so a forgotten prop lands where its neighbours already are (the old
+`base` default put it at the roomiest rung in the densest place), but **name the rung anyway** — all
+112 call sites do, and the default is the safety net, not the habit. The two full-height typing
+surfaces are outside the family entirely: the chat composer is `text-base` because it holds prose,
+the file editor `font-mono text-xs` because it holds code.
+
+**A dialog's fields and its buttons share the small rung.** `Button` defaults to `md`
+(`text-sm px-3 py-1.5`), which is the page rung — a header's "New model", an empty state's action —
+so a `Modal` footer passes `size="sm"` on every button, as `ConfirmModal` always did. `Modal` owns
+the footer's wrapper but not the buttons inside it, so this cannot be set in one place; a Button in
+a dialog *body* takes `sm` too, next to the fields it belongs with.
+
+`test/control-size.test.ts` parses the JSX and fails, naming file and line, on a font-size class in
+a `className` passed to `Input` / `Textarea` / `Select` / `OptionMenu` / `PasswordInput` /
+`FormPicker`, on a `Modal` footer Button that does not ask for `sm`, and on a font size spelled in
+a control module outside the two records. Its reach is what a parser sees without types: a footer
+handed over as a component or built in a variable, and a Button in a dialog body, follow the same
+rule but are on you.
+
 ## Every user-facing string is bilingual
 
 Two dictionaries: `src/lib/strings.ts` is zh (and defines the `Strings` type), `src/lib/strings-en.ts`
-is en and is typed `const en: Strings`. Adding a key to one and not the other is a **type error**,
-not a runtime surprise — and `test/placeholders-parity.test.ts` checks that both sides interpolate
-the same placeholders. Add both, in the same shape, in the same PR.
+is en and is typed `const en: Strings`. That type is the whole guard: a key added to one and not
+the other, or a signature that changed on one side, is a **type error** rather than a runtime
+surprise. What it cannot see is whether a function-valued string uses the parameter it is handed —
+`(n: number) => "items"` typechecks while the other side interpolates `n`. Add both, in the same
+shape, in the same PR.
 
 `S` is a live binding swapped on locale change, so read it at render time; never hoist `S.x.y` into
 a module-level constant.

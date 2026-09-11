@@ -219,20 +219,27 @@ describe("partitionSessions (per-group user / subagent / scheduled / archived sp
 });
 
 describe("latestConversation (the auto-opened 'last conversation')", () => {
-  it("picks the newest active/schedule row regardless of input order; archived and subagent rows never win", () => {
-    const oldActive = session("/srv/a", "2026-07-01T10:00:00.000Z");
-    const newActive = session("/srv/a", "2026-07-03T10:00:00.000Z");
-    // Newer than every conversation, but never auto-opened:
-    const newerSub = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "subagent" });
-    const newerGone = session("/srv/a", "2026-07-09T10:00:00.000Z", { archived: true });
-    expect(latestConversation([newerSub, oldActive, newerGone, newActive])).toBe(newActive);
+  it("picks the most recently active active/schedule row regardless of input order; archived and subagent rows never win", () => {
+    // Created first but returned to since: this is the conversation the user was last in,
+    // and the one created last is not.
+    const revisited = session("/srv/a", "2026-07-01T10:00:00.000Z", {
+      lastActiveAt: "2026-07-06T10:00:00.000Z",
+    });
+    const newerUntouched = session("/srv/a", "2026-07-03T10:00:00.000Z");
+    // Active more recently than every conversation, but never auto-opened:
+    const subAfter = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "subagent" });
+    const goneAfter = session("/srv/a", "2026-07-09T10:00:00.000Z", { archived: true });
+    expect(latestConversation([subAfter, newerUntouched, goneAfter, revisited])).toBe(revisited);
 
-    // A schedule-created run is the user's conversation: the newest one qualifies.
-    const newerSched = session("/srv/a", "2026-07-05T10:00:00.000Z", { source: "schedule" });
-    expect(latestConversation([newActive, newerSched, newerSub])).toBe(newerSched);
+    // A schedule-created run is the user's conversation: the most recently active one qualifies.
+    const schedAfter = session("/srv/a", "2026-07-05T10:00:00.000Z", {
+      lastActiveAt: "2026-07-07T10:00:00.000Z",
+      source: "schedule",
+    });
+    expect(latestConversation([revisited, schedAfter, subAfter])).toBe(schedAfter);
   });
 
-  it("ties on createdAt break by sessionId, and no qualifying row yields null", () => {
+  it("ties on lastActiveAt break by sessionId, and no qualifying row yields null", () => {
     const at = "2026-07-02T10:00:00.000Z";
     const a = session("/srv/a", at, { sessionId: "session-a" });
     const b = session("/srv/a", at, { sessionId: "session-b" });

@@ -81,13 +81,15 @@ function AiCreateDialog({
       widthClass="sm:max-w-xl"
       footer={
         <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
+          <Button size="sm" onClick={onClose}>
+            {S.common.cancel}
+          </Button>
           {/*
             One exit, and its label says where the prompt goes rather than what happens to it:
             the wand marks it as the AI path, and pressing Send is still the user's own move on
             the next screen. Disabled until there is a prompt and an agent to take it.
           */}
-          <Button variant="primary" disabled={!ready} onClick={go}>
+          <Button size="sm" variant="primary" disabled={!ready} onClick={go}>
             <GlyphIcon d={MAGIC_WAND_ICON} />
             {S.aiCreate.editInChat}
           </Button>
