@@ -6,10 +6,11 @@ import type { SessionActivity } from "../src/lib/session-activity";
 import {
   ACTIVITY_GLYPH,
   BackgroundTasksMark,
+  ScheduleMark,
   SessionActivityIcon,
   sessionActivityLabel,
 } from "../src/components/ui/session-activity-icon";
-import { BACKGROUND_TASKS_ICON } from "../src/components/ui/icons";
+import { BACKGROUND_TASKS_ICON, SCHEDULE_ICON } from "../src/components/ui/icons";
 import { ICON_SIZE } from "../src/lib/icon-scale";
 import { S } from "../src/lib/strings";
 import { toneInk } from "../src/lib/tone";
@@ -101,6 +102,24 @@ describe("BackgroundTasksMark", () => {
     // live-progress indicator.
     expect(markup).not.toContain(ACTIVITY_GLYPH.running);
     expect(markup).not.toContain("hourglass-turn");
+  });
+});
+
+describe("ScheduleMark", () => {
+  const markup = () =>
+    renderToStaticMarkup(createElement(ScheduleMark, { size: ICON_SIZE.rowMark }));
+
+  it("recedes with the row's other standing marks instead of reading as live work", () => {
+    // A scheduled task is an arrangement, not something happening now: it takes the `muted` ink
+    // the pin and the messaging-relay glyph wear, and neither the busy nor the attention tone
+    // that the hourglass and the pending-approval badge own.
+    expect(markup()).toContain(toneInk.muted);
+    expect(markup()).not.toContain(toneInk.attention);
+    expect(markup()).not.toContain(toneInk.busy);
+    // Muted is the one tone allowed under 3:1, and only where the meaning is already in text.
+    expect(markup()).toContain(`aria-label="${S.chat.sessionScheduled}"`);
+    expect(markup()).toContain(`title="${S.chat.sessionScheduled}"`);
+    expect(markup()).toContain(`d="${SCHEDULE_ICON}"`);
   });
 });
 
