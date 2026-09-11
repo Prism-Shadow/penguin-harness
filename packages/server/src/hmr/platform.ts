@@ -458,9 +458,10 @@ async function createInner(
  * recovered onto the previous document, as a failed push is, and reported as false.
  *
  * Every member of the outer API forwards to the inner App of the moment. Re-assemblies are
- * serialized on `op`; a runtime-driven dispose (a push landing) lets an in-flight one finish
- * before disposing whatever it left, through `drained`, which the kernel awaits before
- * booting the successor. One window stays open by design: `park()` cannot wait, so a push
+ * serialized on `op`; a runtime-driven dispose (a push landing) disposes the inner App at
+ * once, as the App's own dispose always did, unless a re-assembly is mid-swap — then the
+ * dispose waits for it through `drained`, which the kernel awaits before booting the
+ * successor. One window stays open by design: `park()` cannot wait, so a push
  * that parks exactly while a re-assembly is mid-swap parks the tree being replaced.
  */
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
@@ -471,26 +472,33 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     let inner: Instance<PlatformApi>;
     let op: Promise<unknown> = Promise.resolve();
     let closed = false;
+    /** True while a re-assembly holds the inner instance mid-swap. */
+    let swapping = false;
     async function reassemble(): Promise<boolean> {
       const run = op.then(async () => {
         if (closed) return false;
-        const result = await upgrade({
-          current: inner,
-          impl: innerImpl,
-          iface: PlatformIface,
-          resources: ctx.resources,
-        });
-        if (result.status === "ok") {
-          inner = result.instance;
-          return true;
+        swapping = true;
+        try {
+          const result = await upgrade({
+            current: inner,
+            impl: innerImpl,
+            iface: PlatformIface,
+            resources: ctx.resources,
+          });
+          if (result.status === "ok") {
+            inner = result.instance;
+            return true;
+          }
+          if (result.status === "failed") {
+            inner = await boot(innerImpl, PlatformIface, result.doc, ctx.resources);
+            console.warn(
+              `[platform] the App failed to boot after a plugin change; the previous one was restored: ${result.error instanceof Error ? result.error.message : String(result.error)}`,
+            );
+          }
+          return false;
+        } finally {
+          swapping = false;
         }
-        if (result.status === "failed") {
-          inner = await boot(innerImpl, PlatformIface, result.doc, ctx.resources);
-          console.warn(
-            `[platform] the App failed to boot after a plugin change; the previous one was restored: ${result.error instanceof Error ? result.error.message : String(result.error)}`,
-          );
-        }
-        return false;
       });
       op = run.then(
         () => undefined,
@@ -506,6 +514,15 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     let drained: Promise<void> | undefined;
     ctx.effect(() => {
       closed = true;
+      // Synchronous in the ordinary case, exactly as the App's own dispose is: the runtime
+      // (and a test's cleanup) closes the database right after this returns, and every
+      // module's dispose effect must have run by then. Only a re-assembly caught mid-swap
+      // is let finish first — it holds the one handle on the tree it is booting.
+      if (!swapping) {
+        inner.dispose();
+        drained = inner.api.drained();
+        return;
+      }
       drained = op.then(() => {
         inner.dispose();
         return inner.api.drained();

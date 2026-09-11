@@ -25,7 +25,7 @@ import type { Dirent } from "node:fs";
 import { parse as parseToml } from "smol-toml";
 import { parsePluginTable, projectConfigPath } from "@prismshadow/penguin-core";
 import { findPackageJSON } from "node:module";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
@@ -172,10 +172,14 @@ export function resolvePluginPackage(
   specifier: string,
   bases: readonly PluginBase[],
 ): { dir: string; manifest: string; base: PluginBase } | null {
+  // A path names a file, not a package: the nearest package.json above it is the
+  // package (a dev checkout's plugin, written beside its manifest). As a URL, so that a
+  // Windows drive letter is not read as a URL scheme.
+  const lookup = path.isAbsolute(specifier) ? pathToFileURL(specifier).href : specifier;
   for (const base of bases) {
     let manifest: string | undefined;
     try {
-      manifest = findPackageJSON(specifier, base.file);
+      manifest = findPackageJSON(lookup, base.file);
     } catch {
       manifest = undefined;
     }
@@ -217,6 +221,13 @@ function resolvePlugin(
   specifier: string,
   bases: readonly PluginBase[],
 ): { file: string; base: PluginBase } | null {
+  // A path IS the entry: what the operator named is the file to import, whatever the
+  // package above it declares (the dev-checkout path).
+  if (path.isAbsolute(specifier)) {
+    return existsSync(specifier)
+      ? { file: specifier, base: { file: specifier, builtin: false } }
+      : null;
+  }
   const found = resolvePluginPackage(specifier, bases);
   if (found === null) return null;
   const file = packageEntry(found.dir, found.manifest);
