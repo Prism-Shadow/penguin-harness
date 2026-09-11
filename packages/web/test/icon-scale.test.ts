@@ -75,7 +75,7 @@ describe("one glyph, one home", () => {
     // The Memory mark was hand-typed three times — the dock's panel table, the memory-changes
     // card and the agent card's memory count — so a redraw moved one surface and left the others
     // on the old picture.
-    expect(occurrences("a3 3 0 1 0-5.997.125")).toEqual(["components/ui/icons.tsx"]);
+    expect(occurrences("M14.6 8.2a3.2 3.2 0 0 1 2.8 3.4")).toEqual(["components/ui/icons.tsx"]);
   });
 
   it("draws the background-task trace in exactly one place", () => {

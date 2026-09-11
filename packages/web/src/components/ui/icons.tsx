@@ -197,17 +197,18 @@ export const AGENTS_PAIR_ICON =
   "M7.3 4.2V2.2M3.8 4.2h7a2.2 2.2 0 0 1 2.2 2.2v5.8a2.2 2.2 0 0 1-2.2 2.2h-7a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2zM4.6 9.2h.01M10 9.2h.01M18.6 14.8v-1.7M16.5 14.8h4.2a1.7 1.7 0 0 1 1.7 1.7v3.8a1.7 1.7 0 0 1-1.7 1.7h-4.2a1.7 1.7 0 0 1-1.7-1.7v-3.8a1.7 1.7 0 0 1 1.7-1.7zM17.3 18.4h.01M20.5 18.4h.01";
 
 /**
- * The brain, two hemispheres seen from the front — for the Memory panel, the memory-changes card
- * and the agent cards' memory count.
+ * The brain as the emoji draws it — a gyrified mass in profile, its folds showing — for the
+ * Memory panel, the memory-changes card and the agent cards' memory count.
  *
- * This is the mark the Models library wore until it took the chip: the two closed lobes keep an
- * open midline between them, and that midline is what still resolves at the 13px the smallest of
- * those three surfaces draws at. Nothing else competes with it now that Models is a chip. Every
- * surface draws it from here — a memory mark typed out a second time is how one thing ends up
- * with two pictures of itself.
+ * Three strokes, and each earns its place at the 13px the smallest of those surfaces draws at:
+ * the lobed outline (a smooth one is a cloud), a fissure winding down the left of centre, and a
+ * second fold curling in the right half. Two interior strokes is what separates "brain" from
+ * "blob with a line in it"; a third reads as scribble by 16px, and the flat sulci a real cortex
+ * has read as a hamburger menu. Every surface draws it from here — a memory mark typed out a
+ * second time is how one thing ends up with two pictures of itself.
  */
 export const MEMORY_ICON =
-  "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z";
+  "M9.6 3.1a3.4 3.4 0 0 1 5.6 .6 3.2 3.2 0 0 1 4.2 3.4 3 3 0 0 1 1 4.3 2.8 2.8 0 0 1-2.2 3.5 2.4 2.4 0 0 1-2.6 3.4 3 3 0 0 1-4.6-.6 3.2 3.2 0 0 1-4.6-1.6 3.2 3.2 0 0 1-2.6-4.2 3.4 3.4 0 0 1 1.6-4.6 3.4 3.4 0 0 1 4.2-4.2ZM11.6 3.6a3 3 0 0 1-1 4.6 3.2 3.2 0 0 0-1 4.8 3 3 0 0 1-.6 4.6M14.6 8.2a3.2 3.2 0 0 1 2.8 3.4 3 3 0 0 1-2.2 3.2";
 
 /**
  * The eye's almond outline, shared by the two marks drawn from it — `NAV_ICONS.traces` (an open

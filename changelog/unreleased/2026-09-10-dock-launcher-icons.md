@@ -20,11 +20,11 @@ and its tab strip all read from, so each moved on all four surfaces at once:
 
 - **Subagents** — two robot heads, a large one above-left and a small one below-right, in place of
   the three-circle spawn tree. It is the Agent's own robot head, twice.
-- **Memory** — the brain, two hemispheres seen from the front, in place of the open book. It is the
-  mark the Models library wore until it took the chip below, so nothing competes with it any more.
-  The Memory panel, the memory-changes card and the agent cards' memory count had each carried
-  their own hand-typed memory mark; the brain is drawn once, in `components/ui/icons.tsx`, and all
-  three import it.
+- **Memory** — the brain as the emoji draws it: a gyrified mass in profile with its folds showing,
+  in place of the open book. Two interior strokes is what separates a brain from a blob with a line
+  in it, and a third reads as scribble by 16px. The Memory panel, the memory-changes card and the
+  agent cards' memory count had each carried their own hand-typed memory mark; the brain is drawn
+  once, in `components/ui/icons.tsx`, and all three import it.
 - **Trace observation** — an open eye, in place of three stacked lines.
 - **Remote control** — the paper plane a session row already flies while it is relaying, in place
   of a chat bubble, so one feature wears one mark. The bubble had no other caller and was deleted.
