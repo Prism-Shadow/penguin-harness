@@ -299,12 +299,13 @@ export const NAV_ICONS = {
   /** Plugin library (the puzzle piece). */
   plugins: PLUGIN_ICON,
   /**
-   * Model library (a brain: two lobes drawn as one path, closed across the midline). The chip
-   * this replaces named the hardware a model runs on; what the page actually lists is language
-   * models, and a brain is the mark that says so at a glance.
+   * Model library (a cube: one model, as a discrete thing picked off a shelf). Not the stack of
+   * plates a library would otherwise want: `machines` is the next nav row down and is two stacked
+   * server units, and at the rail's size two stacked-band marks in adjacent rows read as one
+   * thing. Not a brain either — `MEMORY_ICON` is the brain, and a catalogue of entries is not the
+   * thinking part. The cube's hexagon is the only silhouette of its kind in this table.
    */
-  models:
-    "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z",
+  models: "M12 2.6 21 7.5v9L12 21.4 3 16.5v-9zM3 7.5 12 12.4l9-4.9M12 12.4v9",
   /** Machines (two stacked server units, each with its own status lamp). */
   machines: "M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01",
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
