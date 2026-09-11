@@ -85,6 +85,9 @@ import type {
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
+  ProxyProbeProvider,
+  ProxyProbeResponse,
+  ProxyProbeTargetsResponse,
   ServerSettingsResponse,
   ServerSettingsUpdateRequest,
   SessionCategory,
@@ -193,6 +196,22 @@ export const adminGetSettings = () => apiFetch<ServerSettingsResponse>("/api/adm
 /** Omitted fields keep their current value; applies immediately (no restart). */
 export const adminPutSettings = (body: ServerSettingsUpdateRequest) =>
   apiFetch<ServerSettingsResponse>("/api/admin/settings", { method: "PUT", body });
+
+/**
+ * What the reachability probe would request — name and exact URL per provider — without
+ * requesting it. Served rather than held as a frontend constant so the listed URLs cannot
+ * drift from the ones actually fetched.
+ */
+export const adminGetProxyProbeTargets = () =>
+  apiFetch<ProxyProbeTargetsResponse>("/api/admin/settings/proxy-probe");
+
+/**
+ * Measures the server's own outbound path to ONE of those targets, unauthenticated. One
+ * request per provider so each row can be filled the moment its own answer arrives; the
+ * provider id is the only thing sent, and the server matches it against the same fixed list.
+ */
+export const adminProbeProxy = (provider: ProxyProbeProvider) =>
+  apiFetch<ProxyProbeResponse>(`/api/admin/settings/proxy-probe/${provider}`, { method: "POST" });
 
 // Project & members --------------------------------------------------------------
 
