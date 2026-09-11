@@ -481,10 +481,9 @@ export class ContextEngine {
   /**
    * The Session's current thinking level — the soft-limited runtime parameter as
    * engine-owned state: `setThinkingLevel` (fed by the `Session.thinkingLevel` setter) moves it
-   * mid-context, and every subsequent turn request carries it as the per-request override.
-   * Undefined = no pin: the LLM object's construction default (the context's opening base)
-   * applies. Compaction requests ignore it and keep the context's base — their prefix must
-   * stay byte-identical at the moment the context is largest.
+   * mid-context, and every subsequent request carries it as the per-request override — a
+   * turn and a compaction alike. Undefined = no pin: the LLM object's construction default
+   * (the context's opening base) applies.
    */
   private thinkingLevel?: ThinkingLevelName;
   /** Most recent token_usage's request.total, i.e. the current context usage figure. */
@@ -567,7 +566,7 @@ export class ContextEngine {
     }
   }
 
-  /** Moves the Session's thinking level mid-context (see the `thinkingLevel` field); applies from the next turn request. */
+  /** Moves the Session's thinking level mid-context (see the `thinkingLevel` field); applies from the next request, turn or compaction. */
   setThinkingLevel(level: ThinkingLevelName): void {
     this.thinkingLevel = level;
   }
@@ -1812,9 +1811,25 @@ export class ContextEngine {
     // written to the (old) Trace only, not pushed to the stream, keeping the compaction process
     // invisible to Human.
     await this.write(requestBegin());
+    // The Session's pinned thinking level, exactly as a turn carries it.
+    //
+    // This request was excepted on purpose until now, to hold its prefix identical to the
+    // context it summarises and so keep the provider's cache warm where a miss costs most.
+    // The exception, though, can only ever fire once the user has moved the pin — and by then
+    // every turn since has gone out at the new level and the cache has been rebuilt against
+    // it, so the compaction request was the one request that differed. It broke the very
+    // consistency it was protecting.
+    //
+    // What the split did cost is real: a Session ran its turns at one level and its compaction
+    // at another, and on a provider that reads the level as a thinking mode that is a mode
+    // changing mid-conversation — a turn produced under the quieter level carries no chain of
+    // thought, and replaying it back into a thinking-mode request is what DeepSeek rejects
+    // outright.
+    const level = this.thinkingLevel;
     const gen = this.llm.streamGenerate({
       newMessages: input,
       ...(signal ? { signal } : {}),
+      ...(level !== undefined ? { thinkingLevel: level } : {}),
     });
     let text = "";
     const toolCalls: OmniMessage<ToolCallPayload>[] = [];
