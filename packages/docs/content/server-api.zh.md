@@ -292,6 +292,9 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | GET | /files/preview-redirect?path= | html 的“新页面打开”：签发令牌并 302 跳转到独立预览源 |
 | POST | /files/stat | 批量存在性检查：`{paths}` |
 | PUT | /files/content?path= | 上传文件：`{dataBase64}`，上限 14MB |
+| POST | /files/move | 移动或重命名单个 Workspace 文件：`{from, to, ifVersion?}` → 204。**仅限文件**——目录没有单一的版本标记，无法为其表达保护该操作的前置条件，因此返回 400。`to` 的父目录缺失时自动创建。`from` 不存在时 404 `path_not_found`；`ifVersion` 与文件不再匹配时 409 `file_changed`（带标记时源文件消失同样算作已变化）；`to` 已被占用时 409 `target_exists`——目的地从未被读取过，因此只拒绝、不覆盖；移动到文件自身路径返回 400 |
+| DELETE | /files/content?path=&ifVersion= | 删除单个 Workspace 文件：204。仅限文件（目录返回 400）；文件不存在时 404 `path_not_found`，`ifVersion` 不再匹配时 409 `file_changed`。该标记在协议上可选——不带即为无条件删除——而 Files 面板总是回传其读取时拿到的那一枚 |
+| GET | /files/search?q= | 按条目**名称**搜索整个 Workspace（大小写不敏感的子串匹配，不匹配路径）→ `{hits: [{path, kind, sizeBytes, mtime}], truncated}`，每条命中携带的字段与目录列表中的条目一致。自根目录广度优先遍历，因此命中按层级由浅至深排列，被截断时留下的是最相关的命中，而不是最先遍历到的那个目录里的内容；`truncated` 表示遍历触及上限——200 条命中，或访问 20000 个目录条目。`q` 为空或超过 100 字符返回 400 |
 | GET | /traces | 本 Session 的 Trace 文件列表 |
 | GET | /traces/:index | 读取 Trace 事件（分页） |
 | GET | /traces/:index/analysis | Trace 性能分析结果 |

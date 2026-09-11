@@ -17,7 +17,7 @@
  *     the fenced block a preview selection becomes, and where each of them may be spliced
  *     into a draft that is already half typed.
  */
-import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
+import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import { joinWorkspacePath } from "./file-path";
 import type { FileTreeRow } from "./file-tree";
 
@@ -187,30 +187,32 @@ export function flattenTree(listings: Listings, expanded: ReadonlySet<string>): 
 }
 
 /**
- * The rows left by the search box, or all of them for an empty query. Matching is a
- * case-insensitive substring of the entry's own name; the panel hands in rows walked with
- * every LISTED directory open, so what can be searched is exactly what has been loaded.
+ * The rows a whole-Workspace search draws: one per hit the server returned, flat, each naming
+ * its full path rather than its base name.
  *
- * A kept row is one of three things: a match; an ancestor of a match, without which the
- * match would have nothing to hang under; or anything inside a directory that matched,
- * since a directory that matched is being shown as a directory, with its contents.
+ * Flat because there is no tree to place them in — a hit can sit in a directory the lazy tree
+ * has never listed, and the hits are already ordered shallowest first, so nesting them would
+ * mean loading every ancestor of every hit to draw scaffolding nobody asked for. The full path
+ * because the base name is the part the reader just typed; where the file *is* is the answer
+ * they are looking for.
+ *
+ * Every row is depth 0 and closed: a directory hit is somewhere to go, not something to unfold
+ * in a list that is not a tree.
  */
-export function filterTreeRows(rows: readonly TreeRow[], query: string): TreeRow[] {
-  const needle = query.trim().toLowerCase();
-  if (needle === "") return [...rows];
-  const matched = new Set<string>();
-  const keep = new Set<string>();
-  for (const row of rows) {
-    if (!row.name.toLowerCase().includes(needle)) continue;
-    matched.add(row.path);
-    keep.add(row.path);
-    for (const dir of ancestorDirs(row.path)) if (dir !== "") keep.add(dir);
-  }
-  if (matched.size === 0) return [];
-  return rows.filter(
-    (row) =>
-      keep.has(row.path) || ancestorDirs(row.path).some((dir) => dir !== "" && matched.has(dir)),
-  );
+export function searchRows(hits: readonly WorkspaceSearchHit[]): TreeRow[] {
+  return hits.map((hit, index) => ({
+    path: hit.path,
+    name: hit.path,
+    kind: hit.kind,
+    depth: 0,
+    posInSet: index + 1,
+    setSize: hits.length,
+    expanded: false,
+    loaded: hit.kind === "file",
+    empty: false,
+    sizeBytes: hit.sizeBytes,
+    mtime: hit.mtime,
+  }));
 }
 
 // -------------------------------------------------------------------------- breadcrumbs

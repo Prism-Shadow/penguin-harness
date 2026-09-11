@@ -41,6 +41,21 @@ wrapping, and no box around either.
   layers cannot drift apart. Files over 32KB are edited unhighlighted — the editor re-highlights
   every time the text settles, and past that size the catch-up stops reading as the colours
   arriving. Line numbers stay at any size.
+- The panel has one header row, not two. It names whatever is open — the directories and the
+  file's own name in one strip, fitted tail first, so the filename is the last thing to go and the
+  leading directories collapse into a single "…" ahead of it. The view toggle and download stay
+  there because they belong to the file; wrap, copy, edit and open-in-a-new-tab float over the body
+  because they act on the text; refresh and upload sit in the tree pane's header because they are
+  the panel's own.
+- The search box searches the **whole Workspace**, on the server, instead of filtering the rows the
+  lazy tree happened to have loaded — a match used to be reachable only if its ancestors were
+  already open. Results are a flat list naming each hit's full path, shallowest first, and the
+  walk stops at a cap and says so rather than running a very large Workspace dry.
+- A file can be renamed, moved or deleted from either context menu. Rename and move are one
+  action, because both are the same write of a new path. Both carry the same precondition the
+  editor's save does: the file's current version is read when the dialog opens, and the action is
+  refused if the Agent rewrites the file while the question is on screen. A directory has neither,
+  so neither is offered for one.
 - Every action in the panel — wrap, edit, copy, open in a new tab, download, refresh and upload —
   is an icon button rather than a word. Each carries its name in its accessible name and shows it
   in a tooltip under the button, which is where a horizontal row of them needs it: a panel to the

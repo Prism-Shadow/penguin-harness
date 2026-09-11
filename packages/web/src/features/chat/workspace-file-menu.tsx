@@ -15,8 +15,18 @@
  */
 import { S } from "../../lib/strings";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { ADD_TO_CHAT_ICON, DOWNLOAD_ICON, UPLOAD_ICON } from "../../components/ui/icons";
-import { overflowMenuGlyph, overflowMenuRowClass } from "../../components/ui/session-row-menu";
+import {
+  ADD_TO_CHAT_ICON,
+  DOWNLOAD_ICON,
+  FILE_EDIT_ICON,
+  UPLOAD_ICON,
+} from "../../components/ui/icons";
+import {
+  TRASH_ICON,
+  overflowMenuDangerClass,
+  overflowMenuGlyph,
+  overflowMenuRowClass,
+} from "../../components/ui/session-row-menu";
 
 /** The one Workspace entry a menu is acting on. */
 export interface FileMenuTarget {
@@ -32,6 +42,8 @@ export function WorkspaceFileMenuRows({
   onAddToChat,
   onUploadInto,
   onAddSelection,
+  onRename,
+  onDelete,
   onClose,
 }: {
   target: FileMenuTarget;
@@ -47,6 +59,15 @@ export function WorkspaceFileMenuRows({
    * selected to add.
    */
   onAddSelection?: () => void;
+  /**
+   * Renames or moves the file — one action, because both are the same write of a new path, and
+   * offering them separately would mean asking which one the user meant. Files only: a
+   * directory has no version marker, so the precondition that keeps this from overwriting the
+   * Agent's work cannot be stated for one.
+   */
+  onRename?: (target: FileMenuTarget) => void;
+  /** Deletes the file, behind a confirmation and the same precondition. */
+  onDelete?: (target: FileMenuTarget) => void;
   /** Dismisses the panel. The button rows close through their own handlers; the download link, which acts by navigating, has only this. */
   onClose: () => void;
 }) {
@@ -76,15 +97,36 @@ export function WorkspaceFileMenuRows({
           {S.files.uploadHere}
         </button>
       ) : (
-        <a
-          href={downloadHref(target.path)}
-          download={downloadName(target.path)}
-          onClick={onClose}
-          className={overflowMenuRowClass}
-        >
-          {overflowMenuGlyph(DOWNLOAD_ICON)}
-          {S.files.download}
-        </a>
+        <>
+          <a
+            href={downloadHref(target.path)}
+            download={downloadName(target.path)}
+            onClick={onClose}
+            className={overflowMenuRowClass}
+          >
+            {overflowMenuGlyph(DOWNLOAD_ICON)}
+            {S.files.download}
+          </a>
+          {/* The two that change the Workspace come last, after everything that only reads it,
+              and the destructive one is last of all — the furthest row from where the pointer
+              lands, in the red every other overflow menu gives a delete. */}
+          {onRename !== undefined && (
+            <button type="button" className={overflowMenuRowClass} onClick={() => onRename(target)}>
+              {overflowMenuGlyph(FILE_EDIT_ICON)}
+              {S.files.renameTitle}
+            </button>
+          )}
+          {onDelete !== undefined && (
+            <button
+              type="button"
+              className={overflowMenuDangerClass}
+              onClick={() => onDelete(target)}
+            >
+              {overflowMenuGlyph(TRASH_ICON)}
+              {S.common.delete}
+            </button>
+          )}
+        </>
       )}
     </>
   );

@@ -1,13 +1,20 @@
 /**
- * Workspace file browsing: list directory / read
- * file (preview & download) / write file (upload). Security: a relative path, once
- * resolved, must stay inside the Workspace — a logical prefix check plus a realpath
- * check against the nearest existing ancestor (guards against `..` and symlink escapes).
+ * Workspace file browsing: list directory / read file (preview & download) / write file
+ * (upload) / move, delete and search. Security: a relative path, once resolved, must stay
+ * inside the Workspace — a logical prefix check plus a realpath check against the nearest
+ * existing ancestor (guards against `..` and symlink escapes).
  */
 import fs from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { constants as fsc } from "node:fs";
+import type { Stats } from "node:fs";
 import path from "node:path";
-import type { WorkspaceFileEntry, WorkspaceFilesResponse } from "../api/types.js";
+import type {
+  WorkspaceFileEntry,
+  WorkspaceFilesResponse,
+  WorkspaceSearchHit,
+  WorkspaceSearchResponse,
+} from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 
@@ -15,6 +22,16 @@ import { badRequest } from "../http/validate.js";
 const MAX_READ_BYTES = 50 * 1024 * 1024;
 /** Upload cap (stays within the 20MB request body limit even after base64 encoding). */
 export const MAX_UPLOAD_BYTES = 14 * 1024 * 1024;
+
+/**
+ * Search caps. Both bound the work, not the relevance: the walk stops at whichever comes
+ * first and the response carries `truncated`, so a caller can tell "these are all the
+ * matches" from "these are the first matches".
+ */
+export const SEARCH_MAX_HITS = 200;
+export const SEARCH_MAX_ENTRIES = 20000;
+/** Longest accepted query: past this it is not a name any entry could carry, so refuse rather than walk the Workspace for it. */
+export const SEARCH_MAX_QUERY_LEN = 100;
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -79,6 +96,19 @@ function fileChanged(): HttpError {
     409,
     "file_changed",
     "File changed on disk since it was read; nothing was written.",
+  );
+}
+
+/**
+ * A move's destination is occupied. Unlike the source, the destination has no precondition —
+ * the caller never read it, so there is no marker it could have carried — which makes an
+ * overwrite here a silent destruction of a file nobody looked at. Refuse instead.
+ */
+function targetExists(): HttpError {
+  return new HttpError(
+    409,
+    "target_exists",
+    "Something already exists at the destination; nothing was moved.",
   );
 }
 
@@ -200,6 +230,99 @@ export class WorkspaceFilesService {
     }
     this.assertInside(canonicalParent, realBase);
     return { dir: canonicalParent, name };
+  }
+
+  /**
+   * Source resolution for an operation that mutates the entry ITSELF (move, delete) rather
+   * than its contents: the canonical parent is realpathed and checked — never created, since
+   * an operation on a file that must already exist has no business making directories — and
+   * the final segment is appended by name so the caller can open it with O_NOFOLLOW.
+   *
+   * Resolving the whole path the way {@link resolveRead} does would be wrong here: realpath
+   * follows a final-segment symlink, so the version marker would describe the link's target
+   * while the rename or unlink acted on the link. Returns null when the parent directory is
+   * itself missing — the file is gone, and the caller decides whether that is a 404 or a 409.
+   */
+  private async resolveMutableEntry(
+    workspace: string,
+    rel: string,
+  ): Promise<{ dir: string; name: string } | null> {
+    const realBase = await this.realBase(workspace);
+    const target = this.lexicalTarget(path.resolve(workspace), rel);
+    const name = path.basename(target);
+    if (name === "" || name === "." || name === "..") throw badRequest("path must be a file path.");
+    let canonicalParent: string;
+    try {
+      canonicalParent = await fs.realpath(path.dirname(target));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw err;
+    }
+    this.assertInside(canonicalParent, realBase);
+    return { dir: canonicalParent, name };
+  }
+
+  /**
+   * The file an operation named is not there. Without a precondition that is a plain 404;
+   * with one it is the same conflict a stale marker raises — a caller that passed a marker
+   * read the file and needs to hear that it moved on, which is the rule {@link write} already
+   * follows when a conditional write finds the file deleted.
+   */
+  private vanished(conditional: boolean): HttpError {
+    return conditional
+      ? fileChanged()
+      : new HttpError(404, "path_not_found", "File does not exist.");
+  }
+
+  /**
+   * Windows has no O_NOFOLLOW (the `?? 0` at every open erases it), so the atomic ELOOP guard
+   * never fires there — refuse a final-segment symlink via lstat instead. Best effort (a link
+   * created between this check and the open wins the race), but it closes the practical
+   * "Agent presets a symlink -> the operation is used as leverage to reach a file outside the
+   * sandbox" escape; POSIX keeps the atomic open-time guarantee.
+   */
+  private async assertNotSymlink(file: string): Promise<void> {
+    if (process.platform !== "win32") return;
+    const st = await fs.lstat(file).catch(() => null);
+    if (st?.isSymbolicLink()) throw badRequest("path must not be a symlink.");
+  }
+
+  /**
+   * The two things a move and a delete both demand of their subject: that it is a regular
+   * file, and that it still carries the caller's version marker. Both are read off an **open
+   * handle** — a handle names an inode, so what was inspected is the file the caller is about
+   * to move or remove — and the open uses O_NOFOLLOW, refusing a symlink at the final segment
+   * so a preset link cannot be used as leverage to rename or unlink a file outside the
+   * Workspace.
+   *
+   * The handle is closed before the operation runs. Holding it across the call would buy no
+   * atomicity — neither rename nor unlink has an fd-addressed form, and Node exposes none —
+   * so the check-then-act window is inherent here in a way it is not for {@link write}, which
+   * truncates the handle it checked. What the window cannot produce is an escape: rename and
+   * unlink never follow a final-segment symlink either, so a path swapped underneath acts on
+   * the link rather than on whatever it points at.
+   */
+  private async assertFileAndVersion(file: string, ifVersion: string | undefined): Promise<void> {
+    await this.assertNotSymlink(file);
+    let handle: FileHandle;
+    try {
+      handle = await fs.open(file, fsc.O_RDONLY | (fsc.O_NOFOLLOW ?? 0));
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ELOOP") throw badRequest("path must not be a symlink.");
+      // Opening a directory read-only succeeds on POSIX and fails with EISDIR on Windows;
+      // both land on the same refusal (the POSIX one below, on the handle's stat).
+      if (code === "EISDIR") throw badRequest("path is a directory.");
+      if (code === "ENOENT") throw this.vanished(ifVersion !== undefined);
+      throw err;
+    }
+    try {
+      const stat = await handle.stat();
+      if (stat.isDirectory()) throw badRequest("path is a directory.");
+      if (ifVersion !== undefined && fileVersion(stat) !== ifVersion) throw fileChanged();
+    } finally {
+      await handle.close();
+    }
   }
 
   /**
@@ -363,15 +486,7 @@ export class WorkspaceFilesService {
     }
     const { dir, name } = await this.resolveWriteParent(workspace, rel);
     const file = path.join(dir, name);
-    // Windows has no O_NOFOLLOW (the `?? 0` below erases it), so the atomic ELOOP guard never
-    // fires there — refuse a final-segment symlink via lstat instead. Best effort (a link
-    // created between this check and the open wins the race), but it closes the practical
-    // "preset a symlink, overwrite an outside file by upload" escape; POSIX keeps the atomic
-    // open-time guarantee.
-    if (process.platform === "win32") {
-      const st = await fs.lstat(file).catch(() => null);
-      if (st?.isSymbolicLink()) throw badRequest("path must not be a symlink.");
-    }
+    await this.assertNotSymlink(file);
     // O_NOFOLLOW: open reports ELOOP if the final segment is a symlink, refusing to use it as leverage to overwrite a file outside the sandbox.
     const conditional = ifVersion !== undefined;
     const flags =
@@ -400,5 +515,215 @@ export class WorkspaceFilesService {
     } finally {
       await handle.close();
     }
+  }
+
+  /**
+   * Move or rename one Workspace file.
+   *
+   * **Files only** — a directory `from` is a 400. A directory has no single version marker, so
+   * the precondition that protects this operation cannot be expressed for one, and moving a
+   * whole tree with no precondition at all is worse than refusing to move it.
+   *
+   * The source is resolved as a mutable entry (canonical parent, O_NOFOLLOW on the final
+   * segment, version marker read off the open handle); the destination is resolved as a write,
+   * so its parent is created when missing under the same checks an upload runs. An occupied
+   * destination is a 409 rather than an overwrite — see {@link targetExists} — and a move onto
+   * the file's own path is a 400 rather than a success that did nothing.
+   */
+  async move(workspace: string, from: string, to: string, ifVersion?: string): Promise<void> {
+    if (from === "" || from.endsWith("/")) throw badRequest("from must be a file path.");
+    if (to === "" || to.endsWith("/")) throw badRequest("to must be a file path.");
+    const conditional = ifVersion !== undefined;
+    const source = await this.resolveMutableEntry(workspace, from);
+    if (source === null) throw this.vanished(conditional);
+    const file = path.join(source.dir, source.name);
+    await this.assertFileAndVersion(file, ifVersion);
+
+    const { dir, name } = await this.resolveWriteParent(workspace, to);
+    const dest = path.join(dir, name);
+    // Both parents are canonical, so this compares the two real paths rather than the two
+    // spellings the caller happened to send.
+    if (dest === file) throw badRequest("to must differ from from.");
+    // The destination is never overwritten, and "never" has to hold against the Agent writing
+    // that exact path while this runs — the whole point of the precondition on the source.
+    // `link` is the primitive that says so in the kernel: it fails EEXIST rather than replacing,
+    // and it keeps the inode, so the file that lands is the file that was checked. `rename`
+    // would replace silently, and an lstat in front of it only narrows the window instead of
+    // closing it.
+    try {
+      await fs.link(file, dest);
+      await fs.unlink(file);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EEXIST") throw targetExists();
+      if (code === "EXDEV") {
+        // The two canonical parents are on different filesystems (a bind-mounted subdirectory,
+        // say), which neither link nor rename can cross. Copy, then drop the original.
+        // COPYFILE_EXCL refuses an existing destination in the kernel, so this path keeps the
+        // same guarantee.
+        try {
+          await fs.copyFile(file, dest, fsc.COPYFILE_EXCL);
+        } catch (copyErr) {
+          if ((copyErr as NodeJS.ErrnoException).code === "EEXIST") throw targetExists();
+          throw copyErr;
+        }
+        await fs.unlink(file);
+        return;
+      }
+      // Filesystems that have no hard links at all (FAT, some network and container mounts,
+      // and Windows outside NTFS) report one of these. There is nothing atomic left to reach
+      // for, so the check-then-act window comes back — narrowed to a single lstat, and only on
+      // the mounts that cannot do better. lstat, not stat: a dangling symlink at the
+      // destination is still something rename would replace.
+      if (code !== "EPERM" && code !== "ENOSYS" && code !== "EMLINK" && code !== "EOPNOTSUPP") {
+        throw err;
+      }
+    }
+    const occupied = await fs.lstat(dest).then(
+      () => true,
+      () => false,
+    );
+    if (occupied) throw targetExists();
+    await fs.rename(file, dest);
+  }
+
+  /**
+   * Delete one Workspace file. Files only, for the same reason {@link move} is: a directory
+   * carries no version marker, so nothing can protect a recursive delete from removing work
+   * the Agent did after the panel last looked.
+   *
+   * `ifVersion` is optional in the wire shape — the service will delete unconditionally
+   * without it — but the Files panel always sends the marker its read returned, so a file the
+   * Agent rewrote under the user's cursor is a 409 rather than a lost file.
+   */
+  async remove(workspace: string, rel: string, ifVersion?: string): Promise<void> {
+    if (rel === "" || rel.endsWith("/")) throw badRequest("path must be a file path.");
+    const conditional = ifVersion !== undefined;
+    const entry = await this.resolveMutableEntry(workspace, rel);
+    if (entry === null) throw this.vanished(conditional);
+    const file = path.join(entry.dir, entry.name);
+    await this.assertFileAndVersion(file, ifVersion);
+    try {
+      await fs.unlink(file);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") throw this.vanished(conditional);
+      throw err;
+    }
+  }
+
+  /**
+   * Search the whole Workspace: case-insensitive substring match on an entry's **name**, not
+   * on its path, so typing a directory the file happens to sit under does not turn every file
+   * under it into a hit.
+   *
+   * **Breadth-first from the Workspace root**, and that is load-bearing rather than an
+   * implementation detail: shallow matches are found first, so hitting a cap degrades the
+   * result into "the most relevant hits" instead of "whatever happened to be in the first
+   * directory the walk descended into". The sort keeps the same order the walk produced.
+   *
+   * Entries whose canonical path leaves the Workspace are skipped exactly as {@link list}
+   * skips them, and every directory is entered at most once by canonical path, so a symlink
+   * pointing back up cannot spin the walk in a cycle.
+   */
+  async search(workspace: string, q: string): Promise<WorkspaceSearchResponse> {
+    if (q.length > SEARCH_MAX_QUERY_LEN) {
+      throw badRequest(`q must be at most ${SEARCH_MAX_QUERY_LEN} characters.`);
+    }
+    const needle = q.trim().toLowerCase();
+    if (needle === "") throw badRequest("q must not be empty.");
+    const realBase = await this.realBase(workspace);
+
+    const hits: Array<WorkspaceSearchHit & { depth: number; name: string }> = [];
+    let truncated = false;
+    let visited = 0;
+    const seenDirs = new Set<string>([realBase]);
+    let level: Array<{ dir: string; rel: string; depth: number }> = [
+      { dir: realBase, rel: "", depth: 0 },
+    ];
+    walk: while (level.length > 0) {
+      const next: typeof level = [];
+      for (const node of level) {
+        let dirents;
+        try {
+          dirents = await fs.readdir(node.dir, { withFileTypes: true });
+        } catch {
+          continue; // Unreadable directory: skipped, the way `list` skips an entry it cannot stat.
+        }
+        for (const d of dirents) {
+          if (visited >= SEARCH_MAX_ENTRIES) {
+            truncated = true;
+            break walk;
+          }
+          visited += 1;
+          const rel = node.rel === "" ? d.name : `${node.rel}/${d.name}`;
+          let canonical = path.join(node.dir, d.name);
+          let isDir = d.isDirectory();
+          // A hit reports the size and mtime of the entry itself, the way `list` does, so a
+          // search result renders as the same row a tree entry does. Only a link and a match
+          // are statted: `kind` comes from the dirent for everything else, which keeps the
+          // per-entry cost of a 20000-entry walk at one readdir slot rather than one syscall.
+          let stat: Stats | null = null;
+          if (d.isSymbolicLink()) {
+            // Only a link needs the realpath round trip: node.dir is canonical, so any other
+            // child of it is canonical already and cannot name anything outside the Workspace.
+            try {
+              canonical = await fs.realpath(canonical);
+              this.assertInside(canonical, realBase);
+              stat = await fs.stat(canonical);
+              isDir = stat.isDirectory();
+            } catch {
+              continue; // Out of bounds or broken: omitted, the same way `list` omits it.
+            }
+          }
+          const kind = isDir ? "dir" : "file";
+          if (d.name.toLowerCase().includes(needle)) {
+            if (hits.length >= SEARCH_MAX_HITS) {
+              truncated = true;
+              break walk;
+            }
+            const found = stat ?? (await fs.stat(canonical).catch(() => null));
+            // Gone between the readdir and the stat: no row can be drawn for it, so it is
+            // omitted rather than reported with invented figures. A directory that is still
+            // there is descended into below regardless.
+            if (found) {
+              hits.push({
+                path: rel,
+                kind,
+                sizeBytes: found.size,
+                mtime: found.mtime.toISOString(),
+                depth: node.depth,
+                name: d.name,
+              });
+            }
+          }
+          if (isDir && !seenDirs.has(canonical)) {
+            seenDirs.add(canonical);
+            next.push({ dir: canonical, rel, depth: node.depth + 1 });
+          }
+        }
+      }
+      level = next;
+    }
+
+    // Shallow-first, then directories, then by name — the order the breadth-first walk
+    // produced, made total (the path breaks a tie between same-named entries in two
+    // directories) so the same Workspace always answers in the same order.
+    hits.sort(
+      (a, b) =>
+        a.depth - b.depth ||
+        (a.kind === b.kind ? 0 : a.kind === "dir" ? -1 : 1) ||
+        a.name.localeCompare(b.name) ||
+        a.path.localeCompare(b.path),
+    );
+    return {
+      hits: hits.map(({ path: rel, kind, sizeBytes, mtime }) => ({
+        path: rel,
+        kind,
+        sizeBytes,
+        mtime,
+      })),
+      truncated,
+    };
   }
 }

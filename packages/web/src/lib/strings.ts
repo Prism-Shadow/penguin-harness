@@ -2506,7 +2506,11 @@ Benchmark：
     /** The search box above the tree; it reaches only as far as the lazy tree has been loaded. */
     searchPlaceholder: "搜索文件",
     searchClear: "清除搜索",
-    searchNoMatch: "已加载的目录中没有匹配项",
+    searchNoMatch: "Workspace 中没有匹配项",
+    /** The walk is server-side and covers the whole Workspace, so it is not instant on a large one. */
+    searching: "搜索中…",
+    /** The server stopped at its cap: what is listed is the shallowest matches, not all of them. */
+    searchTruncated: (n: number): string => `匹配项过多，仅显示最靠前的 ${n} 条`,
     selectFile: "选择一个文件以预览",
     /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
     dropToUpload: (dir: string): string => `松开即上传到 ${dir}`,
@@ -2527,6 +2531,22 @@ Benchmark：
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "磁盘上已变更",
     changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
+    /** Rename and move are one action: both write the file to a new Workspace-relative path. */
+    renameTitle: "重命名 / 移动",
+    renameLabel: "新的路径",
+    renameHint: "相对 Workspace 根目录；路径中不存在的目录会自动创建",
+    renameConfirm: "移动",
+    renameTargetExists: (path: string): string => `${path} 已存在，未做改动。`,
+    renamed: (name: string): string => `已移动到 ${name}`,
+    deleteTitle: "删除文件",
+    deleteBody: (name: string): string => `删除 ${name}？该文件不会进入回收站。`,
+    deleted: (name: string): string => `已删除 ${name}`,
+    /** Both actions read the file's current version first; until it lands there is nothing to refuse an overwrite with. */
+    actionVersionReading: "正在读取该文件的当前版本…",
+    actionVersionFailed: "读不到该文件的当前版本，因此不执行此操作。",
+    /** The version precondition refused it: the Agent wrote the file while the question was on screen. */
+    changedBeforeAction: (name: string): string =>
+      `${name} 在你决定期间被改写（多半是 Agent 在本轮写入的），因此未做任何改动。刷新后可重试。`,
     conflictTitle: "文件在磁盘上已变更",
     conflictBody: (name: string): string =>
       `${name} 在你打开之后被重写（多半是 Agent 本轮写的），本次没有保存任何内容。可以用你的版本覆盖它，也可以继续编辑、先把需要的内容取出来——两种选择都会保留你的文本。`,

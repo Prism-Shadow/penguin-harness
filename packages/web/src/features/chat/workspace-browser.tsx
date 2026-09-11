@@ -48,7 +48,7 @@ import type {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../state/auth";
@@ -72,7 +72,7 @@ import {
   dropTargetDir,
   expandTo,
   extOf,
-  filterTreeRows,
+  searchRows,
   flattenTree,
   isDirty,
   isNarrowLayout,
@@ -118,7 +118,7 @@ import {
   UPLOAD_ICON,
   WRAP_TEXT_ICON,
 } from "../../components/ui/icons";
-import { noAutofill } from "../../components/ui/input";
+import { Input, noAutofill } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { Tooltip } from "../../components/ui/tooltip";
@@ -142,6 +142,8 @@ import type { TreeToggle } from "../../components/ui/file-tree";
 const HIGHLIGHT_LIMIT = 64 * 1024;
 /** Bytes examined to decide whether a file with an unknown extension is text. */
 const SNIFF_BYTES = 8 * 1024;
+/** How long the search box settles before the query is sent. A Workspace walk is not free, and nobody reads results for a prefix they are still typing. */
+const SEARCH_DEBOUNCE_MS = 250;
 /** Window with a left pane: the tree toggle. */
 const PANEL_LEFT_ICON = "M4 5h16v14H4zM10 5v14";
 /** Left-pointing chevron: the narrow layout's back-to-tree button. */
@@ -304,6 +306,31 @@ function hitRow(
   const kind = row.dataset.treeKind;
   const path = row.dataset.treePath;
   return (kind === "dir" || kind === "file") && path !== undefined ? { kind, path, el: row } : null;
+}
+
+/**
+ * Why the confirm button is not offered yet. The action needs the file's current version, and
+ * until that read lands there is nothing to refuse an overwrite with — so the dialog says which
+ * of the two it is rather than leaving a dead button with no explanation.
+ */
+function FileActionVersionNote({ target }: { target: FileActionTarget | null }) {
+  if (target === null || target.version !== null) return null;
+  return (
+    <p
+      className={`text-xs ${target.reading ? "text-gray-500 dark:text-gray-400" : toneInk.danger}`}
+    >
+      {target.reading ? S.files.actionVersionReading : S.files.actionVersionFailed}
+    </p>
+  );
+}
+
+/** A file a rename or a delete has been asked about, and how far the read of its version got. */
+interface FileActionTarget {
+  path: string;
+  /** Non-null once the version is known; the action is refused until then. */
+  version: string | null;
+  /** True while the read is still in flight — which is what tells "not yet" from "could not". */
+  reading: boolean;
 }
 
 /** A selection the preview offered to the conversation, with the source lines it covers when they could be resolved. */
@@ -486,8 +513,19 @@ export function WorkspaceBrowser({
   /** The file chosen in the tree; the preview follows it once loaded. */
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [scrollTo, setScrollTo] = useState<{ path: string } | null>(null);
-  /** The search box's text. Deliberately not persisted: a filter is a thing you are doing, not a setting. */
+  /** The search box's text. Deliberately not persisted: a search is a thing you are doing, not a setting. */
   const [query, setQuery] = useState("");
+  /**
+   * The server's answer for the query the box currently holds — null while none has arrived for
+   * it, which is also how the tree tells "still looking" from "nothing there".
+   */
+  const [searchResult, setSearchResult] = useState<{
+    hits: WorkspaceSearchHit[];
+    truncated: boolean;
+  } | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  /** Which search each in-flight answer belongs to; an older one must not overwrite a newer. */
+  const searchSeq = useRef(0);
   /** The directory last opened or closed, so the tree animates exactly that subtree once. */
   const [toggled, setToggled] = useState<TreeToggle | null>(null);
   // -------------------------------------------------------------------- preview / editor
@@ -502,6 +540,20 @@ export function WorkspaceBrowser({
   const [saveConfirm, setSaveConfirm] = useState(false);
   /** A save the server refused because the file had changed (non-null shows the conflict dialog). */
   const [conflict, setConflict] = useState<{ name: string } | null>(null);
+  /**
+   * The file a rename or a delete is being asked about, and the version it carried when the
+   * dialog opened.
+   *
+   * The version is read at the dialog rather than taken from whatever the preview last loaded:
+   * what it guards is the Agent rewriting the file while the question is on screen, and a
+   * marker from five minutes ago would refuse actions nobody needed warning about. Until it
+   * arrives the action is not offered at all — an unconditional move or delete is exactly the
+   * thing this is here to prevent.
+   */
+  const [renameTarget, setRenameTarget] = useState<FileActionTarget | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [removeTarget, setRemoveTarget] = useState<FileActionTarget | null>(null);
+  const [fileActionBusy, setFileActionBusy] = useState(false);
   /** The open "discard unsaved changes?" question, resolving with the answer. */
   const [discardPrompt, setDiscardPrompt] = useState<{ resolve: (ok: boolean) => void } | null>(
     null,
@@ -899,6 +951,99 @@ export function WorkspaceBrowser({
   );
 
   /**
+   * Puts one of the two file actions on screen and starts reading the file's current version.
+   *
+   * The dialog opens first and the version lands in it: waiting for a round trip before showing
+   * anything would make a menu click feel broken. A dirty editor is asked about before either,
+   * through the same guard navigation uses — both actions move the file out from under it.
+   */
+  const beginFileAction = useCallback(
+    (path: string, kind: "rename" | "delete") => {
+      void navigateGuarded(null, () => {
+        const opened: FileActionTarget = { path, version: null, reading: true };
+        if (kind === "rename") {
+          setRenameDraft(path);
+          setRenameTarget(opened);
+        } else {
+          setRemoveTarget(opened);
+        }
+        const settle = (version: string | null) => {
+          const next = (t: FileActionTarget | null): FileActionTarget | null =>
+            t !== null && t.path === path ? { path, version, reading: false } : t;
+          if (kind === "rename") setRenameTarget(next);
+          else setRemoveTarget(next);
+        };
+        void fetchFileVersion(api.workspaceFileUrl(sessionIdRef.current, path))
+          .then(settle)
+          .catch(() => settle(null));
+      });
+    },
+    [navigateGuarded],
+  );
+
+  /**
+   * Reports the one failure both actions share. Nothing was changed, so this is a toast and not
+   * a dialog: there is no decision left to take, only the same action again on the file as it
+   * now is.
+   */
+  const reportFileActionError = (err: unknown, path: string): void => {
+    if (err instanceof ApiError && err.code === "file_changed") {
+      toastError(S.files.changedBeforeAction(baseName(path)));
+    } else if (err instanceof ApiError && err.code === "target_exists") {
+      toastError(S.files.renameTargetExists(renameDraft.trim()));
+    } else {
+      toastError(apiErrorText(err));
+    }
+  };
+
+  const applyRename = async (): Promise<void> => {
+    const target = renameTarget;
+    const to = renameDraft.trim();
+    if (target === null || target.version === null || fileActionBusy) return;
+    if (to === "" || to === target.path) {
+      setRenameTarget(null);
+      return;
+    }
+    setFileActionBusy(true);
+    try {
+      await api.moveWorkspaceFile(sessionIdRef.current, {
+        from: target.path,
+        to,
+        ifVersion: target.version,
+      });
+      setRenameTarget(null);
+      // The file did not stop existing, it moved: the panel follows it rather than emptying.
+      if (selectedPath === target.path) {
+        setSelectedPath(to);
+        setCurrentDir(parentDir(to));
+      }
+      refreshAll();
+      toastSuccess(S.files.renamed(baseName(to)));
+    } catch (err) {
+      reportFileActionError(err, target.path);
+    } finally {
+      setFileActionBusy(false);
+    }
+  };
+
+  const applyDelete = async (): Promise<void> => {
+    const target = removeTarget;
+    if (target === null || target.version === null || fileActionBusy) return;
+    setFileActionBusy(true);
+    try {
+      await api.deleteWorkspaceFile(sessionIdRef.current, target.path, target.version);
+      setRemoveTarget(null);
+      if (selectedPath === target.path) setSelectedPath(null);
+      refreshAll();
+      toastSuccess(S.files.deleted(baseName(target.path)));
+    } catch (err) {
+      reportFileActionError(err, target.path);
+    } finally {
+      setFileActionBusy(false);
+    }
+  };
+
+  /**
    * Opens every directory above `path` and makes sure each is listed — the file's own
    * directory re-read, since a located file was most likely just written and its cached
    * listing predates it — then scrolls the row into view.
@@ -1036,6 +1181,38 @@ export function WorkspaceBrowser({
    * directory current and, when it has never been listed, lists it, which is how the search
    * is extended past what the tree has loaded so far.
    */
+  /**
+   * The search runs on the server, over the whole Workspace — not over the rows the lazy tree
+   * happens to have loaded, which made a match reachable only if its ancestors were already
+   * open. Debounced because every keystroke would otherwise walk the tree again, and sequenced
+   * because a slower answer for a shorter query must not land on top of a newer one.
+   */
+  useEffect(() => {
+    const needle = query.trim();
+    if (needle === "") {
+      searchSeq.current += 1;
+      setSearchResult(null);
+      setSearchError(null);
+      return;
+    }
+    const run = (searchSeq.current += 1);
+    const timer = setTimeout(() => {
+      void api
+        .searchWorkspaceFiles(sessionId, needle)
+        .then((res) => {
+          if (searchSeq.current !== run) return;
+          setSearchResult({ hits: res.hits, truncated: res.truncated });
+          setSearchError(null);
+        })
+        .catch((e: unknown) => {
+          if (searchSeq.current !== run) return;
+          setSearchResult(null);
+          setSearchError(apiErrorText(e));
+        });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, sessionId]);
+
   const openDirForFilter = useCallback(
     (dir: string) => {
       setCurrentDir(dir);
@@ -1043,6 +1220,15 @@ export function WorkspaceBrowser({
       if (!listingsRef.current.has(dir)) void loadDir(dir);
     },
     [loadDir],
+  );
+
+  /** A directory hit is somewhere to go, not something to unfold: opening one leaves the search behind and lands the tree there. */
+  const openDirFromSearch = useCallback(
+    (dir: string) => {
+      setQuery("");
+      openDirForFilter(dir);
+    },
+    [openDirForFilter],
   );
 
   const backToTree = (): void => {
@@ -1492,13 +1678,10 @@ export function WorkspaceBrowser({
   // ------------------------------------------------------------------------------ render
 
   const filter = query.trim();
-  const rows = useMemo(() => {
-    if (filter === "") return flattenTree(listings, expanded);
-    // A filter walks every LISTED directory, whatever the user left open: the search
-    // reaches exactly as far as the lazy tree has loaded, and a match is only reachable
-    // with its ancestors open above it.
-    return filterTreeRows(flattenTree(listings, new Set(listings.keys())), filter);
-  }, [listings, expanded, filter]);
+  const rows = useMemo(
+    () => (filter === "" ? flattenTree(listings, expanded) : searchRows(searchResult?.hits ?? [])),
+    [listings, expanded, filter, searchResult],
+  );
   const rootListing = listings.get("");
   /**
    * What the path strip names: the open file, or the current directory when none is open.
@@ -1614,20 +1797,33 @@ export function WorkspaceBrowser({
         <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{rootError}</p>
       ) : rootListing === undefined ? (
         <SkeletonList rows={6} />
+      ) : searchError !== null ? (
+        <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{searchError}</p>
+      ) : filter !== "" && searchResult === null ? (
+        // No answer for this query yet. An empty list here would read as "nothing matches",
+        // which is a different thing and the one answer that must not be guessed.
+        <p className="px-3 py-3 text-xs text-gray-400 dark:text-gray-500">{S.files.searching}</p>
       ) : (
-        <WorkspaceTreeView
-          rows={rows}
-          selectedPath={selectedPath}
-          currentDir={currentDir}
-          loadingDirs={loadingDirs}
-          dropTargetDir={drag.active ? drag.targetDir : null}
-          scrollTo={scrollTo}
-          rootEmpty={rootListing.length === 0}
-          filtering={filter !== ""}
-          toggled={filter === "" ? toggled : null}
-          onToggleDir={filter === "" ? toggleDir : openDirForFilter}
-          onOpenFile={openFile}
-        />
+        <>
+          <WorkspaceTreeView
+            rows={rows}
+            selectedPath={selectedPath}
+            currentDir={currentDir}
+            loadingDirs={loadingDirs}
+            dropTargetDir={drag.active ? drag.targetDir : null}
+            scrollTo={scrollTo}
+            rootEmpty={rootListing.length === 0}
+            filtering={filter !== ""}
+            toggled={filter === "" ? toggled : null}
+            onToggleDir={filter === "" ? toggleDir : openDirFromSearch}
+            onOpenFile={openFile}
+          />
+          {searchResult?.truncated === true && (
+            <p className="shrink-0 border-t border-gray-100 px-3 py-1.5 text-[11px] text-gray-400 dark:border-gray-800 dark:text-gray-500">
+              {S.files.searchTruncated(searchResult.hits.length)}
+            </p>
+          )}
+        </>
       )}
       {/* The row menu. `contents` keeps this wrapper out of the pane's column: it draws no box
           of its own, the panel is portaled, and the anchor is the point the gesture landed on
@@ -1665,6 +1861,14 @@ export function WorkspaceBrowser({
             onUploadInto={(dir) => {
               closeTreeMenu();
               uploadInto(dir);
+            }}
+            onRename={(t) => {
+              closeTreeMenu();
+              beginFileAction(t.path, "rename");
+            }}
+            onDelete={(t) => {
+              closeTreeMenu();
+              beginFileAction(t.path, "delete");
             }}
             onClose={closeTreeMenu}
           />
@@ -2077,6 +2281,14 @@ export function WorkspaceBrowser({
                     addSelectionToChat(p, selection);
                   }
             }
+            onRename={(t) => {
+              previewMenu.close();
+              beginFileAction(t.path, "rename");
+            }}
+            onDelete={(t) => {
+              previewMenu.close();
+              beginFileAction(t.path, "delete");
+            }}
             onClose={previewMenu.close}
           />
         </Dropdown>
@@ -2326,6 +2538,43 @@ export function WorkspaceBrowser({
         </p>
       </ConfirmModal>
 
+      {/* Rename or move: one field holding the whole Workspace-relative path, so a rename and a
+          move are one action rather than two that differ only in how much of the path changed. */}
+      <ConfirmModal
+        open={renameTarget !== null}
+        title={S.files.renameTitle}
+        confirmLabel={S.files.renameConfirm}
+        confirmDisabled={renameTarget?.version == null || renameDraft.trim() === ""}
+        busy={fileActionBusy}
+        tone="primary"
+        onClose={() => setRenameTarget(null)}
+        onConfirm={() => void applyRename()}
+      >
+        <Input
+          label={S.files.renameLabel}
+          size="sm"
+          value={renameDraft}
+          hint={S.files.renameHint}
+          autoFocus
+          {...noAutofill}
+          onChange={(e) => setRenameDraft(e.target.value)}
+        />
+        <FileActionVersionNote target={renameTarget} />
+      </ConfirmModal>
+      <ConfirmModal
+        open={removeTarget !== null}
+        title={S.files.deleteTitle}
+        confirmLabel={S.common.delete}
+        confirmDisabled={removeTarget?.version == null}
+        busy={fileActionBusy}
+        onClose={() => setRemoveTarget(null)}
+        onConfirm={() => void applyDelete()}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.files.deleteBody(removeTarget === null ? "" : baseName(removeTarget.path))}
+        </p>
+        <FileActionVersionNote target={removeTarget} />
+      </ConfirmModal>
       {/* Write-precondition conflict: the file changed after the editor opened it, so the
           save was refused with nothing written. Cancel keeps the draft and the editor. */}
       <ConfirmModal

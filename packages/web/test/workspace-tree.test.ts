@@ -1,13 +1,13 @@
 /**
  * Files panel logic (lib/workspace-tree.ts): the tree's rows from lazily loaded listings,
- * the search box's filter over them, where a drop lands, the narrow-layout
+ * the rows a whole-Workspace search draws, where a drop lands, the narrow-layout
  * decision and the tree pane's width bounds, how much of a path the
  * toolbar can show, which files count as text (by name, or by their bytes when the name says
  * nothing), the preferences' tolerant parses, when leaving the editor has to ask, and what
  * the panel's "add to conversation" puts in the composer.
  */
 import { describe, expect, it } from "vitest";
-import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
+import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import {
   PREVIEW_MIN_WIDTH,
   TREE_LAYOUT_MIN_WIDTH,
@@ -18,7 +18,7 @@ import {
   defaultTreeWidth,
   dropTargetDir,
   expandTo,
-  filterTreeRows,
+  searchRows,
   flattenTree,
   insertAtCaret,
   isDirty,
@@ -180,22 +180,34 @@ describe("layout", () => {
   });
 });
 
-describe("filterTreeRows", () => {
-  /** Every listed directory walked open, which is what the panel filters over. */
-  const all = flattenTree(LISTINGS, new Set(LISTINGS.keys()));
+describe("searchRows", () => {
+  const hits: WorkspaceSearchHit[] = [
+    { path: "notes.md", kind: "file", sizeBytes: 12, mtime: "2026-09-11T00:00:00.000Z" },
+    { path: "a/deep", kind: "dir", sizeBytes: 0, mtime: "2026-09-11T00:00:01.000Z" },
+    { path: "a/deep/notes.md", kind: "file", sizeBytes: 34, mtime: "2026-09-11T00:00:02.000Z" },
+  ];
 
-  it("keeps a match with the ancestors it hangs under, and nothing else", () => {
-    expect(filterTreeRows(all, "y").map((r) => r.path)).toEqual(["a", "a/y.md"]);
+  it("names each hit by its whole path, because where it is is the part the query did not say", () => {
+    // The base name is what the reader just typed; two hits called notes.md are told apart
+    // only by the directory in front of them.
+    expect(searchRows(hits).map((r) => r.name)).toEqual(["notes.md", "a/deep", "a/deep/notes.md"]);
+    expect(searchRows(hits).map((r) => r.path)).toEqual(["notes.md", "a/deep", "a/deep/notes.md"]);
   });
 
-  it("shows a matching directory with its loaded children", () => {
-    expect(filterTreeRows(all, "a").map((r) => r.path)).toEqual(["a", "a/b", "a/y.md"]);
+  it("draws a flat list, not a tree: every row is depth 0 and closed", () => {
+    // A hit can live in a directory the lazy tree never listed, so there is nothing to nest it
+    // under; an open directory row here would promise children the panel cannot draw.
+    const rows = searchRows(hits);
+    expect(rows.every((r) => r.depth === 0)).toBe(true);
+    expect(rows.every((r) => !r.expanded)).toBe(true);
+    expect(rows.map((r) => r.posInSet)).toEqual([1, 2, 3]);
+    expect(rows.every((r) => r.setSize === 3)).toBe(true);
   });
 
-  it("matches the name case-insensitively, keeps everything for an empty query, and drops everything for a miss", () => {
-    expect(filterTreeRows(all, "X.TXT").map((r) => r.path)).toEqual(["x.txt"]);
-    expect(filterTreeRows(all, "  ").map((r) => r.path)).toEqual(all.map((r) => r.path));
-    expect(filterTreeRows(all, "nothing-like-this")).toEqual([]);
+  it("carries the size and time the row renderer shows, so a hit reads like a tree entry", () => {
+    expect(searchRows(hits).map((r) => r.sizeBytes)).toEqual([12, 0, 34]);
+    expect(searchRows(hits)[2]?.mtime).toBe("2026-09-11T00:00:02.000Z");
+    expect(searchRows([])).toEqual([]);
   });
 });
 

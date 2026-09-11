@@ -2549,7 +2549,11 @@ Scenarios:
     /** The search box above the tree; it reaches only as far as the lazy tree has been loaded. */
     searchPlaceholder: "Search files",
     searchClear: "Clear search",
-    searchNoMatch: "Nothing loaded matches",
+    searchNoMatch: "No matches in the Workspace",
+    /** The walk is server-side and covers the whole Workspace, so it is not instant on a large one. */
+    searching: "Searching…",
+    /** The server stopped at its cap: what is listed is the shallowest matches, not all of them. */
+    searchTruncated: (n: number): string => `Too many matches — showing the first ${n}`,
     selectFile: "Select a file to preview",
     /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
     dropToUpload: (dir: string): string => `Drop to upload into ${dir}`,
@@ -2574,6 +2578,24 @@ Scenarios:
     changedOnDisk: "Changed on disk",
     changedOnDiskHint:
       "This file has been rewritten since you opened it — saving replaces that version with yours.",
+    /** Rename and move are one action: both write the file to a new Workspace-relative path. */
+    renameTitle: "Rename or move",
+    renameLabel: "New path",
+    renameHint:
+      "Relative to the Workspace root; a directory in the path that does not exist is created",
+    renameConfirm: "Move",
+    renameTargetExists: (path: string): string => `${path} already exists, so nothing was changed.`,
+    renamed: (name: string): string => `Moved to ${name}`,
+    deleteTitle: "Delete file",
+    deleteBody: (name: string): string => `Delete ${name}? It does not go to a trash folder.`,
+    deleted: (name: string): string => `Deleted ${name}`,
+    /** Both actions read the file's current version first; until it lands there is nothing to refuse an overwrite with. */
+    actionVersionReading: "Reading this file's current version…",
+    actionVersionFailed:
+      "This file's current version could not be read, so the action is not offered.",
+    /** The version precondition refused it: the Agent wrote the file while the question was on screen. */
+    changedBeforeAction: (name: string): string =>
+      `${name} was rewritten while you were deciding, most likely by the Agent during its turn, so nothing was changed. Refresh and try again.`,
     conflictTitle: "File changed on disk",
     conflictBody: (name: string): string =>
       `${name} was rewritten after you opened it, most likely by the Agent during its turn, so nothing was saved. Overwrite it with your version, or keep editing and copy what you need out first — either way your text is kept.`,
