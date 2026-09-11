@@ -97,6 +97,16 @@ Some gateways read a request header that files a call under the app that made it
 
 Every other endpoint — every direct vendor, and every gateway that reads no such header — receives no extra headers at all. The headers state the app's identity only; they carry nothing about the user, the Agent or the Session.
 
+## Multiple API keys and health
+
+A model entry may carry `api_keys`, an ordered array of credentials. The Web model dialog's **Multi-key rotation** mode accepts one key per line or keys separated by commas or semicolons; empty values are removed and duplicates keep their first position. For compatibility, the first parsed key is also retained as `api_key`. Programmatic callers may pass `apiKeys` to `createSession` / `resumeSession`; an explicit `apiKeys` array wins over the entry's `api_keys`, then the single `api_key` fallback is parsed.
+
+A Session creates its own in-memory rotator when its model runtime is built. Each request selects the next eligible key round-robin. A completed request increments that key's success count. HTTP 429 increments its failure count and places it in a 60-second cooldown; the engine's normal retry path can then select another eligible key. HTTP 401 increments the failure count and evicts that key from that runtime. If another non-evicted key exists the failure is retryable; if every key is evicted the request ends as an authentication failure. Other retryable failures increment the selected key's failure count without eviction or cooldown. When every non-evicted key is cooling down, the rotator selects the one whose cooldown expires first rather than waiting.
+
+The model dialog reads masked status from the server health registry and labels keys **Active**, **Cooldown**, or **Evicted (401)**. This registry is process-local: it is initialized from the saved model credential when queried, is lost on server restart, and is separate from the per-Session rotators that perform inference. Its counters and states are therefore registry telemetry, not a durable or authoritative view of requests made by live Sessions. **Reset Keys** clears that registry entry's eviction flags, cooldowns, success/failure counters, last-used timestamps, and round-robin position; it does not change saved credentials, rebuild a Session runtime, or reset a live Session's rotator. Editing and saving model credentials remains the way to rebuild cached runtimes for following Tasks.
+
+See [Server API](/server-api#models) for the health and reset routes.
+
 ## Authorizing a new API key
 
 A provider that publishes an authorization flow puts an extra action on its group header in the models page: **Authorize key**. TokenDance is the one built-in group that does. It creates a **new** key on your account — it does not read a key you already have — and writes it to every model in that group, replacing whatever key those entries carry.
