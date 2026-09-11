@@ -112,6 +112,7 @@ import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import {
   CloseIcon,
   DOWNLOAD_ICON,
+  EXTERNAL_LINK_ICON,
   FILE_EDIT_ICON,
   REFRESH_ICON,
   UPLOAD_ICON,
@@ -415,11 +416,8 @@ function crumbItemWidth(text: string): number {
   return CRUMB_ITEM_PX + cells * CRUMB_CHAR_PX;
 }
 
-const ghostActionClass =
-  "inline-flex shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
-
 /**
- * The same action with its name taken off it: a square the size of the tree toggle, drawn in
+ * The panel's actions, with their names taken off them: a square the size of the tree toggle, drawn in
  * the toolbar and in the preview header alike so the panel's two rows of marks line up. A
  * control with no visible text needs its name in two places to be readable at all — the
  * element's own `aria-label`, and the Tooltip it is wrapped in.
@@ -1505,6 +1503,10 @@ export function WorkspaceBrowser({
   /** The upload picker's one name — its accessible name and its tooltip both — carrying the running count while an upload is in flight. */
   const uploadLabel =
     uploading !== null ? S.files.uploading(uploading.done, uploading.total) : S.files.upload;
+  /** Likewise for the preview's external link, which folds the sandboxing caveat into its name when there is one. */
+  const openInNewTabLabel = previewIsolated
+    ? S.files.openInNewTab
+    : `${S.files.openInNewTab}: ${S.files.previewNotIsolatedHint}`;
   const dirLabel = (dir: string): string => (dir === "" ? S.files.root : dir);
 
   const tree = (
@@ -2021,25 +2023,24 @@ export function WorkspaceBrowser({
                 )}
                 {/* rel="noopener noreferrer" is load-bearing, not boilerplate: the preview must
                     not keep a handle back to this window, which is the whole point of serving
-                    it from a separate origin. */}
+                    it from a separate origin.
+
+                    Without a separate preview origin the page opens sandboxed, and the caveat
+                    joins the name rather than riding a ⚠ beside it: the name is all an
+                    icon-only control has, and the tooltip shows the same words so the two
+                    cannot disagree. The tint is a second carrier, never the only one. */}
                 {/\.html?$/i.test(preview.name) && (
-                  <a
-                    href={api.workspaceFilePreviewUrl(sessionId, preview.path)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={previewIsolated ? undefined : S.files.previewNotIsolatedHint}
-                    className={ghostActionClass}
-                  >
-                    {S.files.openInNewTab}
-                    {!previewIsolated && (
-                      <span
-                        aria-label={S.files.previewNotIsolatedHint}
-                        className={toneInk.attention}
-                      >
-                        ⚠
-                      </span>
-                    )}
-                  </a>
+                  <Tooltip label={openInNewTabLabel} placement="bottom" className="shrink-0">
+                    <a
+                      href={api.workspaceFilePreviewUrl(sessionId, preview.path)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={openInNewTabLabel}
+                      className={`${iconActionClass} ${previewIsolated ? "" : toneInk.attention}`}
+                    >
+                      <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.iconButton} />
+                    </a>
+                  </Tooltip>
                 )}
                 {/* Copy lived in the code block's own header bar; the source view no longer has
                     one, so it joins the file's other take-it-away actions here. It copies the
