@@ -701,8 +701,14 @@ html.dark .code-lines .line::before {
   outline: none;
   @apply caret-gray-900 dark:caret-gray-100;
 }
+/* The dark half is a rule of its own for the same reason as the gutter's above: a `dark:`
+   variant appends its `:where(.dark, .dark *)` to the END of the selector, which after a
+   pseudo-element is invalid CSS and is dropped from the build without a word. */
 .code-editor textarea::selection {
-  @apply bg-sky-200 dark:bg-sky-500/40;
+  @apply bg-sky-200;
+}
+html.dark .code-editor textarea::selection {
+  @apply bg-sky-500/40;
 }
 /* While an IME is composing, the candidate text lives only in the textarea's own rendering — it
    has not reached `value` on every platform — so the layers swap: the code layer steps aside and

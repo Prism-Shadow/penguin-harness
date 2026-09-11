@@ -1387,13 +1387,25 @@ export function WorkspaceBrowser({
 
   /**
    * The preview's context menu. Its target is always the file on screen, so the only thing to
-   * resolve is whether a selection sits inside the preview — read here, at the gesture, rather
-   * than when a row is clicked: focusing the menu can collapse the live selection under it.
+   * resolve is whether a selection sits inside the preview — read at the gesture, by every
+   * gesture that opens the menu, rather than when a row is clicked: focusing the menu can
+   * collapse the live selection under it, and a selection read at the previous gesture may
+   * since have been collapsed or belong to a file that is no longer open.
    */
-  const openPreviewMenu = (e: ReactMouseEvent): void => {
+  const captureMenuSelection = (): void => {
     const host = previewBodyRef.current;
     setMenuSelection(readSelection(host, sourceLines(host)));
+  };
+
+  const openPreviewMenu = (e: ReactMouseEvent): void => {
+    captureMenuSelection();
     previewMenu.rowProps.onContextMenu(e);
+  };
+
+  /** The keyboard's chord opens the same menu, so it re-reads the selection the same way. */
+  const previewMenuKeyDown = (e: ReactKeyboardEvent): void => {
+    if (isContextMenuKey(e)) captureMenuSelection();
+    previewMenu.rowProps.onKeyDown(e);
   };
 
   /** Same as the row menu's: the preview's own links must not fire on the click a hold replays. */
@@ -1706,15 +1718,11 @@ export function WorkspaceBrowser({
             previewMenu.rowRef(el);
           }}
           onContextMenu={openPreviewMenu}
-          onKeyDown={previewMenu.rowProps.onKeyDown}
+          onKeyDown={previewMenuKeyDown}
           onPointerDown={(e) => {
             // Only the press-and-hold path can open the menu from here, and only it is worth
             // walking the rendered lines for: an ordinary click would pay that on every click.
-            if (isLongPressPointer(e.pointerType)) {
-              setMenuSelection(
-                readSelection(previewBodyRef.current, sourceLines(previewBodyRef.current)),
-              );
-            }
+            if (isLongPressPointer(e.pointerType)) captureMenuSelection();
             previewMenu.rowProps.onPointerDown(e);
           }}
           onPointerMove={previewMenu.rowProps.onPointerMove}
