@@ -200,15 +200,17 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   with `exec_command` at 120000 (its empty-poll default became 110000): the tools tab
  *   moved.
  * - `2026-09-11` (current) — the default system prompt gained its guardrails against loops
- *   and unverified deliverables: "cannot resolve" means the same error after three different
+ *   and unverified deliverables ("cannot resolve" means the same error after three different
  *   fixes, ambiguity is asked about only after the files were checked, names are never
  *   guessed, independent tool calls go out together, commands run non-interactively,
- *   verification uses the project's own commands, a PLAN.md step is verified before the next
- *   and a web app is scaffolded by CLI and fetched before it is presented. The prompt tab
- *   moved.
+ *   verification uses the project's own commands, a PLAN.md step is verified before the next,
+ *   a web app is scaffolded by CLI and fetched before it is presented) and its interaction
+ *   rules (lead with the outcome, plain words rather than tool names, a final answer that
+ *   stands on its own, one specific question with options, do the work rather than pasting
+ *   it, git history is the user's). The prompt tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
-  prompt: "43706c1f9639816001128a22c5037aae928f5a7e9162cd7b3856e9efba72a7e1",
+  prompt: "437e698814f1aa72736732d83b8ca124a39fc88a38f67f587c99fc9abf311ab0",
   runtime: "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346",
   tools: "a5e067fe58899be651c3c0541f587b2d5999030dc3008a39737a8fe21f5f7a23",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
@@ -234,7 +236,7 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
   prompt: [
     "99b8babb72d95c636a2c2893b657ac9c92d60c270a2e04e346b35b1fb720c932", // the pre-toggles template, with the hardcoded # Vault / # Skills sections (before #257)
     "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254", // the toggles template, before the # File system search-scope rule
-    "f9576833f73192d69c962bf21bd2049d0c8f5389ba4b9700ca9bd95ea545d3b0", // the search-scope template, before the 2026-09-11 guardrails (bounded retries, batched tool calls, non-interactive commands, no guessed names)
+    "f9576833f73192d69c962bf21bd2049d0c8f5389ba4b9700ca9bd95ea545d3b0", // the search-scope template, before the 2026-09-11 guardrails and interaction rules
   ],
   runtime: [
     "808ae1d1b544f46daff4f59f1e62357b89a61f60803061e86b10635616e0102c", // compaction.max_context_length was 128000, before the rise to 256000
