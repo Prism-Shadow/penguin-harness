@@ -3,7 +3,7 @@
 - **Date:** 2026-09-11
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`
-- **PR:** [#679](https://github.com/Prism-Shadow/penguin-harness/pull/679)
+- **PR:** [#696](https://github.com/Prism-Shadow/penguin-harness/pull/696)
 
 [中文版](2026-09-11-key-rotation-and-shell-resolver.zh.md)
 
@@ -18,13 +18,13 @@ Added native API key rotation across healthy endpoints with rate-limit cooldowns
   - Permanently evicts invalid keys on HTTP 401 unauthorized errors until manually reset or reconfigured.
   - Tracks telemetry metrics including success count, failure count, cooldown expiration, and last used timestamps.
 - **Server Health Telemetry & Reset API:**
-  - In-memory `ModelKeyHealthService` aggregates masked key health reports per model.
+  - Process-local `ModelKeyHealthService` exposes a masked registry per model; it is separate from live Session rotators and is not durable across restart.
   - Exposed `GET /api/projects/:projectId/models/keys/health` and `POST /api/projects/:projectId/models/keys/reset` endpoints.
   - Raw API keys are never exposed in server logs or API responses; only safe prefixes and suffixes (`sk-...1234`) are transmitted.
 - **Web UI Multi-Key Configuration & Status Chips:**
   - Added multi-line / comma-delimited key configuration textarea in the model settings modal.
   - Rendered live status chips with semantic tones (`tone.ts`): Emerald for active healthy keys, Amber for keys cooling down with real-time countdown, and Red for evicted keys.
-  - Added a "Reset Keys" action to instantly clear cooldowns and re-enable evicted keys.
+  - Added a "Reset Keys" action that clears the server registry state and counters; it does not mutate live Session rotators or saved credentials.
 - **Windows Shell Resolver (`isWslExecutable`):**
   - Added proactive inspection against WSL bash (`System32\bash.exe`, `wsl.exe`) on Windows systems.
   - Probes Git for Windows `bash.exe` (`%ProgramFiles%\Git\bin\bash.exe` and `PATH`) to ensure Windows drive paths execute reliably without POSIX mount path collisions.
