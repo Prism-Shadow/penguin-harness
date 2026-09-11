@@ -13,6 +13,7 @@ export interface KeyHealthItemDto {
   successCount: number;
   failureCount: number;
   lastUsedAt?: number;
+  activeLeases?: number;
 }
 
 export interface ModelKeyHealthReportDto {
@@ -22,6 +23,7 @@ export interface ModelKeyHealthReportDto {
   cooldownCount: number;
   evictedCount: number;
   keys: KeyHealthItemDto[];
+  activeLeases?: number;
 }
 
 /**
@@ -75,14 +77,24 @@ export function parseMultiKeys(input?: string | string[]): string[] {
   return [...new Set(rawList)];
 }
 
+export interface KeyHealthLabelOptions {
+  active?: string;
+  cooldown?: string;
+  evicted?: string;
+}
+
 /**
  * Returns user-facing status label for a key chip.
  */
-export function keyHealthLabel(item: KeyHealthItemDto): string {
-  if (item.status === "evicted") return "Evicted (401)";
+export function keyHealthLabel(
+  item: KeyHealthItemDto,
+  options?: KeyHealthLabelOptions,
+): string {
+  if (item.status === "evicted") return options?.evicted ?? "Evicted (401)";
   if (item.status === "cooldown") {
     const cd = formatCooldown(item.cooldownRemainingMs);
-    return cd ? `Cooldown (${cd})` : "Cooldown";
+    const base = options?.cooldown ?? "Cooldown";
+    return cd ? `${base} (${cd})` : base;
   }
-  return "Active";
+  return options?.active ?? "Active";
 }

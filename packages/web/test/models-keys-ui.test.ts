@@ -79,6 +79,43 @@ describe("model-keys-health", () => {
         }),
       ).toBe("Evicted (401)");
     });
+
+    it("respects localized label options when provided", () => {
+      const activeItem = {
+        maskedKey: "sk-...1234",
+        status: "healthy" as const,
+        isFailed: false,
+        cooldownRemainingMs: 0,
+        successCount: 5,
+        failureCount: 0,
+      };
+      const cooldownItem = {
+        maskedKey: "sk-...1234",
+        status: "cooldown" as const,
+        isFailed: false,
+        cooldownRemainingMs: 45_000,
+        successCount: 1,
+        failureCount: 1,
+      };
+      const evictedItem = {
+        maskedKey: "sk-...1234",
+        status: "evicted" as const,
+        isFailed: true,
+        cooldownRemainingMs: 0,
+        successCount: 0,
+        failureCount: 1,
+      };
+
+      const zhLabels = {
+        active: "正常",
+        cooldown: "冷却中",
+        evicted: "已失效 (401)",
+      };
+
+      expect(keyHealthLabel(activeItem, zhLabels)).toBe("正常");
+      expect(keyHealthLabel(cooldownItem, zhLabels)).toBe("冷却中 (45s)");
+      expect(keyHealthLabel(evictedItem, zhLabels)).toBe("已失效 (401)");
+    });
   });
 
   describe("parseMultiKeys", () => {

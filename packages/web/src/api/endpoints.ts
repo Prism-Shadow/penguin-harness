@@ -297,20 +297,27 @@ export const detectVision = (projectId: string, body: ModelVisionDetectRequest) 
     { method: "POST", body },
   );
 
-/** Fetches health telemetry for a model's configured API keys. */
-export const getModelKeyHealth = (projectId: string, provider: string, modelId: string) =>
-  apiFetch<import("../features/models/model-keys-health").ModelKeyHealthReportDto>(
-    `/api/projects/${encodeURIComponent(projectId)}/models/keys/health?provider=${encodeURIComponent(provider)}&modelId=${encodeURIComponent(modelId)}`,
-  );
+/** Fetches health telemetry for a model's configured API keys (or all models if omitted). */
+export const getModelKeyHealth = (projectId: string, provider?: string, modelId?: string) => {
+  const query =
+    provider && modelId
+      ? `?provider=${encodeURIComponent(provider)}&modelId=${encodeURIComponent(modelId)}`
+      : "";
+  return apiFetch<
+    import("../features/models/model-keys-health").ModelKeyHealthReportDto & {
+      reports?: import("../features/models/model-keys-health").ModelKeyHealthReportDto[];
+    }
+  >(`/api/projects/${encodeURIComponent(projectId)}/models/keys/health${query}`);
+};
 
 /** Resets rate limits and eviction status for a model's API keys. */
-export const resetModelKeys = (projectId: string, provider: string, modelId: string) =>
+export const resetModelKeys = (projectId: string, provider?: string, modelId?: string) =>
   apiFetch<{
     ok: boolean;
     report?: import("../features/models/model-keys-health").ModelKeyHealthReportDto;
   }>(`/api/projects/${encodeURIComponent(projectId)}/models/keys/reset`, {
     method: "POST",
-    body: { provider, modelId },
+    body: provider && modelId ? { provider, modelId } : {},
   });
 
 // Provider key minting (owner) ----------------------------------------------------------
@@ -796,6 +803,13 @@ export const abortSubagent = (sessionId: string, childSessionId: string) =>
     { method: "POST", body: {} },
   );
 
+/** Resume an interrupted or failed subagent child: resumes the session carrying over state. */
+export const resumeSubagent = (sessionId: string, childSessionId: string, text?: string) =>
+  apiFetch<SubagentMessageResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(childSessionId)}/resume`,
+    { method: "POST", body: text ? { text } : {} },
+  );
+
 /** Recall an undelivered steering message back to the composer (#287): returns its original content; 409 not_pending once it was delivered to the model. */
 export const recallSteer = (sessionId: string, steerId: string) =>
   apiFetch<RecalledMessageResponse>(
@@ -985,6 +999,40 @@ export const getUsage = (
       modelId: params.modelId,
     },
   });
+
+export interface KeyHealthItem {
+  maskedKey: string;
+  status: "healthy" | "cooldown" | "evicted";
+  isFailed: boolean;
+  cooldownRemainingMs: number;
+  successCount: number;
+  failureCount: number;
+  lastUsedAt?: number;
+  activeLeases?: number;
+}
+
+export interface ModelKeyHealthReport {
+  modelRef: string;
+  totalKeys: number;
+  healthyCount: number;
+  cooldownCount: number;
+  evictedCount: number;
+  keys: KeyHealthItem[];
+}
+
+export interface ModelKeyHealthListResponse {
+  reports: ModelKeyHealthReport[];
+}
+
+/** Resets cooldown and eviction status for a model's keys. */
+export const resetModelKeyHealth = (
+  projectId: string,
+  body?: { provider?: string; modelId?: string; modelRef?: string },
+) =>
+  apiFetch<{ ok: boolean }>(
+    `/api/projects/${encodeURIComponent(projectId)}/models/keys/reset`,
+    { method: "POST", body: body ?? {} },
+  );
 
 // Agent deletion & Workspace files --------------------------------------------------
 

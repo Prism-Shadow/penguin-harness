@@ -965,7 +965,7 @@ export function isFatalProviderRejection(error: unknown): boolean {
 export class GenerativeModel implements LLMInterface {
   private readonly config: GenerativeModelConfig;
   private readonly clients = new Map<string, AutoLLMClient>();
-  private readonly keyRotator?: ApiKeyRotator;
+  readonly keyRotator?: ApiKeyRotator;
   private committedHistory: UniMessage[] = [];
   private readonly uniConfig: UniConfig;
   /**
@@ -1006,6 +1006,8 @@ export class GenerativeModel implements LLMInterface {
   private lastRequestTotal: number;
   /** Last hard-clamped cap already warned about on stderr (dedupe: retries reuse the same estimate and would repeat the identical line). */
   private lastWarnedCap: number | undefined;
+  /** Primary normalized API key used for single-client compatibility and default getClient calls. */
+  private readonly primaryKey: string;
 
   constructor(config: GenerativeModelConfig) {
     this.config = config;
@@ -1015,13 +1017,15 @@ export class GenerativeModel implements LLMInterface {
         : config.apiKey
           ? parseApiKeys(config.apiKey)
           : [];
-    if (keys.length > 0) {
+    this.primaryKey = keys[0] ?? "";
+    if (config.keyRotator) {
+      this.keyRotator = config.keyRotator;
+    } else if (keys.length > 0) {
       this.keyRotator = new ApiKeyRotator(keys);
     }
 
     // Initialize initial client to ensure credentials/configuration are validated at construction
-    const firstKey = keys.length > 0 ? keys[0] : config.apiKey;
-    this.getClient(firstKey);
+    this.getClient(this.primaryKey);
 
     this.uniConfig = buildUniConfig(config);
     this.defaultThinkingLevel = config.thinkingLevel;
@@ -1036,11 +1040,19 @@ export class GenerativeModel implements LLMInterface {
   }
 
   /**
+   * Advances/rotates the active API key to the next available candidate.
+   */
+  rotateKey(): boolean {
+    if (!this.keyRotator) return false;
+    return this.keyRotator.nextKey() !== undefined;
+  }
+
+  /**
    * Retrieves or instantiates an AutoLLMClient for the specified API key.
    * Caches instances by key and syncs existing conversation history.
    */
   private getClient(apiKey?: string): AutoLLMClient {
-    const key = apiKey ?? this.config.apiKey ?? "";
+    const key = apiKey ?? this.primaryKey;
     let client = this.clients.get(key);
     if (!client) {
       const headers = attributionHeaders(this.config.baseUrl);
@@ -1068,7 +1080,7 @@ export class GenerativeModel implements LLMInterface {
    * Primary or default client for testing, inspection, and single-client backwards compatibility.
    */
   get client(): AutoLLMClient {
-    return this.getClient();
+    return this.getClient(this.primaryKey);
   }
 
   /**
@@ -1190,6 +1202,14 @@ export class GenerativeModel implements LLMInterface {
 
     const activeKey = this.keyRotator ? this.keyRotator.nextKey() : this.config.apiKey;
     if (this.keyRotator && !activeKey) {
+      const cooldownMs = this.keyRotator.getEarliestCooldownMs();
+      if (cooldownMs !== undefined && cooldownMs > 0) {
+        return {
+          status: "retryable",
+          errorCode: "network",
+          errorMessage: `All configured API keys are cooling down due to rate limits. Earliest key available in ${Math.ceil(cooldownMs / 1000)}s.`,
+        };
+      }
       return {
         status: "fatal",
         errorCode: "auth",

@@ -49,6 +49,7 @@ import { vetoForToolCall, withCommandPolicy } from "./internal/command-policy.js
 import type { CommandPolicySource } from "./internal/command-policy.js";
 import { generateTitleWithLLM } from "./internal/session-title.js";
 import type { SessionTitleResult } from "./internal/session-title.js";
+import type { ApiKeyRotator } from "./llm/key-rotator.js";
 import { compactAvailability, ContextEngine } from "./engine/context-engine.js";
 import type {
   CompactAvailability,
@@ -138,6 +139,10 @@ export interface SessionConfig {
    * `{ enabled: false }` opts out. Docs: /docs/configuration § "Command policy".
    */
   commandPolicy?: CommandPolicySource;
+  /** Optional key rotator managing active keys for this session. */
+  keyRotator?: ApiKeyRotator;
+  /** Optional cleanup hook called when this session is disposed (e.g. to release subagent key leases). */
+  onDispose?: () => void;
 }
 
 /** `Session.run` options: the engine's per-call options. */
@@ -281,6 +286,8 @@ export class Session {
   private readonly userPromptHooks: readonly UserPromptHook[];
   private readonly spawnSubagent?: HookSubagentSpawner;
   private readonly commandPolicy?: CommandPolicySource;
+  private readonly keyRotator?: ApiKeyRotator;
+  private readonly onDispose?: () => void;
   private metaWritten = false;
   /**
    * The image fold, bound to this Session's scratchpad — Session is the layer that knows both
@@ -330,6 +337,8 @@ export class Session {
     this.userPromptHooks = config.hooks?.userPrompt ?? [];
     if (config.hooks?.spawnSubagent) this.spawnSubagent = config.hooks.spawnSubagent;
     if (config.commandPolicy) this.commandPolicy = config.commandPolicy;
+    this.keyRotator = config.keyRotator;
+    this.onDispose = config.onDispose;
     this.bootstrap = config.bootstrap;
     this.cancelBootstrap = config.cancelBootstrap;
     // The engine itself is built by ensureReady() on the first run, once the bootstrap has
@@ -977,6 +986,20 @@ export class Session {
     this.bgMessageListener = listener;
   }
 
+  /** Advances/rotates the session's active API key to the next working candidate in its pool. */
+  rotateKey(): boolean {
+    const rotator = this.getKeyRotator();
+    if (rotator) {
+      return rotator.nextKey() !== undefined;
+    }
+    return this.engine?.rotateKey() ?? false;
+  }
+
+  /** Returns the key rotator managing this session's API keys, if configured. */
+  getKeyRotator(): ApiKeyRotator | undefined {
+    return this.keyRotator ?? this.engine?.getKeyRotator();
+  }
+
   /**
    * Releases runtime resources held by the Session: kills long-running command sessions
    * managed by the Environment. The host calls this when the Session ends (CLI exit, Web
@@ -984,6 +1007,10 @@ export class Session {
    * Optional, idempotent.
    */
   dispose(): void {
-    this.environment.dispose?.();
+    try {
+      this.environment.dispose?.();
+    } finally {
+      this.onDispose?.();
+    }
   }
 }

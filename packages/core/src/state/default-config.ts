@@ -834,6 +834,23 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
             description:
               "Start the subagent in the background: return a subagent_id immediately without waiting. When it finishes, its answer arrives as an automatic user message — no polling needed. Good for dispatching parallel subtasks; message or steer it mid-run (and abort its current run) via input_subagent. Defaults to false.",
           },
+          api_key: {
+            type: "string",
+            description:
+              "Optional explicit API key (or delimited string of keys) for the subagent to use.",
+          },
+          api_keys: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Optional list of API keys for the subagent to rotate across.",
+          },
+          key_strategy: {
+            type: "string",
+            enum: ["auto", "round_robin", "least_busy", "random", "partition"],
+            description:
+              "Key allocation and balancing strategy among available keys for this subagent (defaults to auto).",
+          },
         },
         required: ["description", "prompt"],
       },
@@ -868,6 +885,11 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
             type: "boolean",
             description:
               "Abort the subagent's CURRENT run, like a user pressing stop: the run ends but the session stays available for steering and follow-up prompts. With a non-empty prompt, the aborted run settles first and the prompt then starts a fresh run — interrupt and redirect. Defaults to false; a no-op when the subagent is already idle.",
+          },
+          resume: {
+            type: "boolean",
+            description:
+              "Resume an interrupted or failed subagent run. Can be used without a prompt to continue directly from where it was cut off (carrying over turn state), or with a prompt to provide corrective guidance. Defaults to false.",
           },
           yield_time_ms: {
             type: "number",

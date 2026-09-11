@@ -271,6 +271,9 @@ describe("isWslExecutable", () => {
     expect(
       isWslExecutable("C:\\Program Files\\WindowsApps\\SomeDistro\\wsl.exe", "C:\\Windows"),
     ).toBe(true);
+    // Trailing slashes or forward slashes in systemRoot must be normalized
+    expect(isWslExecutable("C:\\Windows\\System32\\bash.exe", "C:\\Windows\\")).toBe(true);
+    expect(isWslExecutable("C:\\Windows\\System32\\bash.exe", "C:/Windows/")).toBe(true);
   });
 
   it("returns false for genuine Git for Windows and MSYS bash", () => {

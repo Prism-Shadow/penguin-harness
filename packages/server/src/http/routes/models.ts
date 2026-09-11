@@ -384,10 +384,13 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
         }
         return `${rec.provider}/${rec.model_id}` === targetRef;
       }) as Record<string, unknown> | undefined;
-      if (entry && typeof entry.api_key === "string") {
-        deps.keyHealthService.getRotator(targetRef, entry.api_key);
+      if (entry) {
+        const creds = entry.api_keys ?? entry.api_key;
+        if (creds) {
+          deps.keyHealthService.getRotator(projectId, targetRef, creds as string | string[]);
+        }
       }
-      return c.json(deps.keyHealthService.getKeyHealth(targetRef));
+      return c.json(deps.keyHealthService.getKeyHealth(projectId, targetRef));
     }
 
     const raw = await deps.projectConfigService.readRaw(projectId);
@@ -398,10 +401,11 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
         const rec = item as Record<string, unknown>;
         if (typeof rec.provider === "string" && typeof rec.model_id === "string") {
           const ref = `${rec.provider}/${rec.model_id}`;
-          if (typeof rec.api_key === "string") {
-            deps.keyHealthService.getRotator(ref, rec.api_key);
+          const creds = rec.api_keys ?? rec.api_key;
+          if (creds) {
+            deps.keyHealthService.getRotator(projectId, ref, creds as string | string[]);
           }
-          reports.push(deps.keyHealthService.getKeyHealth(ref));
+          reports.push(deps.keyHealthService.getKeyHealth(projectId, ref));
         }
       }
     }
@@ -409,11 +413,11 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
   });
 
   /**
-   * Resets cooldown and eviction status for a model's keys.
+   * Resets cooldown and eviction status for a model's keys. Requires project ownership.
    */
   app.post("/keys/reset", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
     const body = (await readJson(c)) as Record<string, unknown>;
     const provider = typeof body.provider === "string" ? body.provider : undefined;
     const modelId = typeof body.modelId === "string" ? body.modelId : undefined;
@@ -427,8 +431,8 @@ export function modelsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
 
     if (targetRef) {
-      deps.keyHealthService.resetKeyHealth(targetRef);
-      return c.json({ ok: true, report: deps.keyHealthService.getKeyHealth(targetRef) });
+      deps.keyHealthService.resetKeyHealth(projectId, targetRef);
+      return c.json({ ok: true, report: deps.keyHealthService.getKeyHealth(projectId, targetRef) });
     }
 
     return c.json({ ok: true });

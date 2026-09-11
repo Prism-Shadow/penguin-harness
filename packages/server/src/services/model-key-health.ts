@@ -3,6 +3,7 @@
  */
 import {
   ApiKeyRotator,
+  KeyRotatorRegistry,
   parseApiKeys,
   type KeyStatus,
   type KeyHealth,
@@ -16,6 +17,7 @@ export interface KeyHealthItem {
   successCount: number;
   failureCount: number;
   lastUsedAt?: number;
+  activeLeases?: number;
 }
 
 export interface ModelKeyHealthReport {
@@ -38,51 +40,43 @@ export function maskApiKey(key: string): string {
 }
 
 export class ModelKeyHealthService {
-  private readonly rotators = new Map<string, ApiKeyRotator>();
-
   /**
-   * Normalizes a model reference string or object (provider/modelId) into a canonical key.
+   * Normalizes a model reference string or object (provider/modelId) into a canonical key scoped by projectId.
    */
-  private normalizeRef(ref: string | { provider: string; modelId: string }): string {
+  private normalizeRef(projectId: string, ref: string | { provider: string; modelId: string }): string {
+    const pId = projectId.trim();
     if (typeof ref === "string") {
-      return ref.trim();
+      const trimmed = ref.trim();
+      return trimmed.startsWith(`${pId}/`) ? trimmed : `${pId}/${trimmed}`;
     }
-    return `${ref.provider}/${ref.modelId}`.trim();
+    return `${pId}/${ref.provider}/${ref.modelId}`.trim();
   }
 
   /**
-   * Retrieves or initializes an ApiKeyRotator for a given model.
+   * Retrieves or initializes an ApiKeyRotator for a given model scoped by project.
    * If rawKeys is provided, synchronizes the rotator's keys.
    */
   getRotator(
+    projectId: string,
     modelRef: string | { provider: string; modelId: string },
     rawKeys?: string | string[],
   ): ApiKeyRotator {
-    const key = this.normalizeRef(modelRef);
-    let rotator = this.rotators.get(key);
-
-    if (!rotator) {
-      const keys = parseApiKeys(rawKeys);
-      rotator = new ApiKeyRotator(keys);
-      this.rotators.set(key, rotator);
-    } else if (rawKeys !== undefined) {
-      const keys = parseApiKeys(rawKeys);
-      rotator.updateKeys(keys);
-    }
-
-    return rotator;
+    const scope = this.normalizeRef(projectId, modelRef);
+    const keys = rawKeys !== undefined ? parseApiKeys(rawKeys) : undefined;
+    return KeyRotatorRegistry.get(scope, keys);
   }
 
   /**
    * Generates a safe health report for a model, with all keys masked.
    */
-  getKeyHealth(modelRef: string | { provider: string; modelId: string }): ModelKeyHealthReport {
-    const key = this.normalizeRef(modelRef);
-    const rotator = this.rotators.get(key);
-
-    if (!rotator) {
+  getKeyHealth(
+    projectId: string,
+    modelRef: string | { provider: string; modelId: string },
+  ): ModelKeyHealthReport {
+    const scope = this.normalizeRef(projectId, modelRef);
+    if (!KeyRotatorRegistry.has(scope)) {
       return {
-        modelRef: key,
+        modelRef: scope,
         totalKeys: 0,
         healthyCount: 0,
         cooldownCount: 0,
@@ -91,6 +85,7 @@ export class ModelKeyHealthService {
       };
     }
 
+    const rotator = KeyRotatorRegistry.get(scope);
     const now = Date.now();
     const statuses = rotator.getStatus();
     let healthyCount = 0;
@@ -120,11 +115,12 @@ export class ModelKeyHealthService {
         successCount: s.successCount,
         failureCount: s.failureCount,
         lastUsedAt: s.lastUsedAt,
+        activeLeases: s.activeLeases ?? 0,
       };
     });
 
     return {
-      modelRef: key,
+      modelRef: scope,
       totalKeys: rotator.totalKeys,
       healthyCount,
       cooldownCount,
@@ -134,20 +130,20 @@ export class ModelKeyHealthService {
   }
 
   /**
-   * Resets failed and cooldown states for all keys of a model.
+   * Resets failed and cooldown states for all keys of a model within a project.
    */
-  resetKeyHealth(modelRef: string | { provider: string; modelId: string }): void {
-    const key = this.normalizeRef(modelRef);
-    const rotator = this.rotators.get(key);
-    if (rotator) {
-      rotator.resetFailed();
-    }
+  resetKeyHealth(
+    projectId: string,
+    modelRef: string | { provider: string; modelId: string },
+  ): void {
+    const scope = this.normalizeRef(projectId, modelRef);
+    KeyRotatorRegistry.reset(scope);
   }
 
   /**
    * Clears all in-memory rotators (e.g. for testing).
    */
   clear(): void {
-    this.rotators.clear();
+    KeyRotatorRegistry.clear();
   }
 }

@@ -23,7 +23,7 @@ export {
   toolDefinitionsToSchemas,
   buildUniConfig,
 } from "./generative-model.js";
-export { ApiKeyRotator, parseApiKeys } from "./key-rotator.js";
+export { ApiKeyRotator, parseApiKeys, KeyRotatorRegistry } from "./key-rotator.js";
 export type { KeyStatus, KeyHealth, ApiKeyRotatorOptions } from "./key-rotator.js";
 export { listEndpointModels } from "./list-models.js";
 export type { ListEndpointModelsOptions } from "./list-models.js";

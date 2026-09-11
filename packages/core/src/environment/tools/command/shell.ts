@@ -189,8 +189,8 @@ function defaultWhichAll(cmd: string): string[] {
  */
 export function isWslExecutable(filePath: string, systemRoot: string): boolean {
   const norm = filePath.toLowerCase().replace(/\//g, "\\");
-  const sysRootNorm = systemRoot.toLowerCase().replace(/\//g, "\\");
-  if (norm.startsWith(sysRootNorm + "\\")) {
+  const sysRootNorm = systemRoot.toLowerCase().replace(/\//g, "\\").replace(/\\+$/, "");
+  if (sysRootNorm && norm.startsWith(sysRootNorm + "\\")) {
     return true;
   }
   if (norm.includes("\\microsoft\\windowsapps\\") || norm.includes("\\windowsapps\\")) {

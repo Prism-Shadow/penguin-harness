@@ -2318,19 +2318,42 @@ function ModelDialog({
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
 
+  const keyHealthSeq = useRef(0);
+
   const loadKeyHealth = useCallback(async () => {
-    if (isNew || !form.provider || !form.modelId) return;
+    const seq = ++keyHealthSeq.current;
+    if (isNew || !form.provider || !form.modelId) {
+      setKeyHealth(null);
+      return;
+    }
     try {
       const res = await api.getModelKeyHealth(projectId, form.provider, form.modelId);
-      setKeyHealth(res);
+      if (keyHealthSeq.current === seq) {
+        setKeyHealth(res);
+      }
     } catch {
       // fail-soft
     }
   }, [isNew, projectId, form.provider, form.modelId]);
 
   useEffect(() => {
+    setKeyHealth(null);
     void loadKeyHealth();
   }, [loadKeyHealth]);
+
+  useEffect(() => {
+    if (!keyHealth || keyHealth.cooldownCount === 0) return;
+    const cooldownKeys = keyHealth.keys.filter(
+      (k) => k.status === "cooldown" && k.cooldownRemainingMs > 0,
+    );
+    if (cooldownKeys.length === 0) return;
+    const minCooldown = Math.min(...cooldownKeys.map((k) => k.cooldownRemainingMs));
+    const delay = Math.max(1000, Math.min(minCooldown + 200, 60_000));
+    const timer = setTimeout(() => {
+      void loadKeyHealth();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [keyHealth, loadKeyHealth]);
 
   // Read from the live form, not the saved row, so editing the upstream id, the protocol or
   // the base URL updates the answer as it is typed.
@@ -3030,7 +3053,7 @@ function ModelDialog({
                 onClick={() => setMultiKeyMode((prev) => !prev)}
                 className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               >
-                {multiKeyMode ? "Single key" : "Multi-key rotation"}
+                {multiKeyMode ? S.models.multiKeySingle : S.models.multiKeyRotation}
               </button>
             </div>
           </span>
@@ -3042,7 +3065,7 @@ function ModelDialog({
               disabled={!canEdit}
               onChange={(e) => set({ apiKeyInput: e.target.value, clearApiKey: false })}
               className="w-full rounded-md border border-gray-300 bg-white p-2 font-mono text-xs text-gray-900 shadow-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 disabled:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
-              placeholder="Enter multiple API keys (one per line or comma-separated) for round-robin rotation, 429 backoff, and failover..."
+              placeholder={S.models.multiKeyPlaceholder}
             />
           ) : (
             <PasswordInput
@@ -3063,7 +3086,7 @@ function ModelDialog({
           <div className="mt-2 space-y-1.5 rounded-lg border border-gray-200 bg-gray-50/50 p-2.5 dark:border-gray-800 dark:bg-gray-900/40">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                API Key Health ({keyHealth.healthyCount}/{keyHealth.totalKeys} healthy)
+                {S.models.keyHealthTitle(keyHealth.healthyCount, keyHealth.totalKeys)}
               </span>
               {canEdit && (
                 <Button
@@ -3074,7 +3097,7 @@ function ModelDialog({
                     setResettingKeys(true);
                     try {
                       await api.resetModelKeys(projectId, form.provider, form.modelId);
-                      toastSuccess("API keys reset successfully");
+                      toastSuccess(S.models.keysResetSuccess);
                       await loadKeyHealth();
                     } catch (err) {
                       toastError(apiErrorText(err));
@@ -3083,7 +3106,7 @@ function ModelDialog({
                     }
                   }}
                 >
-                  {resettingKeys ? "Resetting..." : "Reset Keys"}
+                  {resettingKeys ? S.models.resettingKeys : S.models.resetKeys}
                 </Button>
               )}
             </div>
@@ -3097,7 +3120,15 @@ function ModelDialog({
                   >
                     <span className={`h-1.5 w-1.5 rounded-full ${toneDot[tone]}`} />
                     <span>{k.maskedKey}</span>
-                    <span className="text-[10px] opacity-80">({keyHealthLabel(k)})</span>
+                    <span className="text-[10px] opacity-80">
+                      (
+                      {keyHealthLabel(k, {
+                        active: S.models.keyHealthActive,
+                        cooldown: S.models.keyHealthCooldown,
+                        evicted: S.models.keyHealthEvicted,
+                      })}
+                      )
+                    </span>
                   </span>
                 );
               })}

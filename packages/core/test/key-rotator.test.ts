@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiKeyRotator, parseApiKeys } from "../src/llm/key-rotator.js";
+import { ApiKeyRotator, parseApiKeys, KeyRotatorRegistry } from "../src/llm/key-rotator.js";
+import { upsertModel, type ProjectConfig } from "../src/state/project-config.js";
 
 describe("parseApiKeys", () => {
   it("returns empty array for undefined or empty string", () => {
@@ -160,21 +161,27 @@ describe("ApiKeyRotator", () => {
     expect(rotator.nextKey()).toBeUndefined();
   });
 
-  it("handles fallback to best available key when all are in cooldown", () => {
+  it("does not select keys while all are cooling down, but selects them after cooldown expires", () => {
     const rotator = new ApiKeyRotator(["key-1", "key-2"], {
       rateLimitCooldownMs: 30_000,
     });
 
     rotator.recordFailure("key-1", "rate_limit");
+    vi.advanceTimersByTime(5_000);
     rotator.recordFailure("key-2", "rate_limit");
 
     // hasWorkingKeys returns true because cooldown keys are recoverable (not evicted)
     expect(rotator.hasWorkingKeys()).toBe(true);
+    expect(rotator.hasAvailableKeys()).toBe(false);
 
-    // When all are in cooldown, nextKey picks the one whose cooldown expires earliest
-    const fallback = rotator.nextKey();
-    expect(fallback).toBeDefined();
-    expect(["key-1", "key-2"]).toContain(fallback);
+    // When all are in cooldown, nextKey must NOT return them prematurely
+    expect(rotator.nextKey()).toBeUndefined();
+    expect(rotator.getEarliestCooldownMs()).toBe(25_000); // 30s - 5s elapsed
+
+    // Advance time by 25s: key-1 expires from cooldown
+    vi.advanceTimersByTime(25_000);
+    expect(rotator.hasAvailableKeys()).toBe(true);
+    expect(rotator.nextKey()).toBe("key-1");
   });
 
   it("resets all key states and cooldowns on reset()", () => {
@@ -189,5 +196,81 @@ describe("ApiKeyRotator", () => {
     expect(statuses.every((s) => s.cooldownUntil === 0)).toBe(true);
     expect(rotator.hasWorkingKeys()).toBe(true);
     expect(rotator.nextKey()).toBe("key-1");
+  });
+});
+
+describe("KeyRotatorRegistry", () => {
+  beforeEach(() => {
+    KeyRotatorRegistry.clear();
+  });
+
+  it("returns singleton rotator per scope and allows resetting", () => {
+    const r1 = KeyRotatorRegistry.get("proj-1/openai/gpt-4o", ["k1", "k2"]);
+    const r2 = KeyRotatorRegistry.get("proj-1/openai/gpt-4o");
+    expect(r1).toBe(r2);
+
+    r1.recordFailure("k1", "auth");
+    expect(r2.getKeyStatuses().find((s) => s.key === "k1")?.isFailed).toBe(true);
+
+    KeyRotatorRegistry.reset("proj-1/openai/gpt-4o");
+    expect(r2.getKeyStatuses().find((s) => s.key === "k1")?.isFailed).toBe(false);
+  });
+});
+
+describe("upsertModel credential precedence", () => {
+  it("replaces existing api_keys when an explicit single api_key is supplied", () => {
+    const cfg: ProjectConfig = { models: [] };
+    upsertModel(cfg, {
+      provider: "openai",
+      model_id: "gpt-4o",
+      api_keys: ["key-1", "key-2"],
+    });
+
+    const m1 = cfg.models.find((m) => m.model_id === "gpt-4o");
+    expect(m1?.api_keys).toEqual(["key-1", "key-2"]);
+
+    // Update with a single new api_key
+    upsertModel(cfg, {
+      provider: "openai",
+      model_id: "gpt-4o",
+      api_key: "new-single-key",
+    });
+
+    const m2 = cfg.models.find((m) => m.model_id === "gpt-4o");
+    expect(m2?.api_key).toBe("new-single-key");
+    expect(m2?.api_keys).toBeUndefined();
+  });
+
+  it("parses comma-separated api_key into api_keys and sets primary api_key", () => {
+    const cfg: ProjectConfig = { models: [] };
+    upsertModel(cfg, {
+      provider: "openai",
+      model_id: "gpt-4o",
+      api_key: "key-a, key-b",
+    });
+
+    const m = cfg.models.find((m) => m.model_id === "gpt-4o");
+    expect(m?.api_key).toBe("key-a");
+    expect(m?.api_keys).toEqual(["key-a", "key-b"]);
+  });
+
+  it("preserves existing api_keys when neither api_key nor api_keys is supplied", () => {
+    const cfg: ProjectConfig = { models: [] };
+    upsertModel(cfg, {
+      provider: "openai",
+      model_id: "gpt-4o",
+      api_keys: ["key-1", "key-2"],
+    });
+
+    // Update only context window
+    upsertModel(cfg, {
+      provider: "openai",
+      model_id: "gpt-4o",
+      context_window: 128000,
+    });
+
+    const m = cfg.models.find((m) => m.model_id === "gpt-4o");
+    expect(m?.context_window).toBe(128000);
+    expect(m?.api_keys).toEqual(["key-1", "key-2"]);
   });
 });

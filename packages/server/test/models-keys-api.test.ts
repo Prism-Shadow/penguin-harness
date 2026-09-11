@@ -51,6 +51,7 @@ describe("models key health and reset HTTP routes", () => {
   it("POST /api/projects/:projectId/models/keys/reset clears cooldowns and evictions", async () => {
     // Populate rotator and mark keys in cooldown & evicted
     const rotator = t.deps.keyHealthService.getRotator(
+      projectId,
       "deepseek/deepseek-chat",
       "sk-proj-key-alpha, sk-proj-key-beta",
     );

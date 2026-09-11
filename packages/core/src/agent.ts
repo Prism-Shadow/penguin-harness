@@ -43,8 +43,10 @@ import {
   type SystemConfig,
 } from "./state/index.js";
 import {
+  ApiKeyRotator,
   DEFAULT_MAX_CONTEXT_LENGTH,
   GenerativeModel,
+  KeyRotatorRegistry,
   ToolCallIdAllocator,
   effectiveMaxContextLength,
   parseApiKeys,
@@ -96,6 +98,7 @@ import type {
   ProxyEnvPolicy,
   SpawnConfiner,
   SubagentHandle,
+  SubagentKeyStrategy,
   SubagentRunner,
   ThinkingLevelName,
   ToolConfig,
@@ -219,6 +222,12 @@ export interface CreateSessionOptions {
   apiKey?: string;
   /** Multiple API keys for rotation/load balancing/failover. */
   apiKeys?: string[];
+  /** Optional pre-allocated key rotator for this session. */
+  keyRotator?: ApiKeyRotator;
+  /** Key allocation strategy if derived from model pool. */
+  keyStrategy?: SubagentKeyStrategy;
+  /** Optional cleanup hook called when session is disposed. */
+  onDispose?: () => void;
   baseUrl?: string;
   /** Internal use: this Session's depth in the subagent spawn chain (0 at the top level), used to cap spawn depth. */
   subagentDepth?: number;
@@ -248,6 +257,8 @@ interface SessionSpec {
   modelEntry: ModelEntry;
   apiKey: string | undefined;
   apiKeys?: string[];
+  keyRotator?: ApiKeyRotator;
+  onDispose?: () => void;
   baseUrl: string | undefined;
   /**
    * The Session's thinking-level pin, the tri-state of {@link CreateSessionOptions.thinkingLevel}:
@@ -601,7 +612,10 @@ export class Agent {
     // when both are absent.
     const apiKey = opts.apiKey ?? modelEntry.api_key;
     const apiKeys =
-      opts.apiKeys ?? modelEntry.api_keys ?? (apiKey ? parseApiKeys(apiKey) : undefined);
+      opts.apiKeys ??
+      (opts.apiKey ? parseApiKeys(opts.apiKey) : undefined) ??
+      modelEntry.api_keys ??
+      (apiKey ? parseApiKeys(apiKey) : undefined);
     const baseUrl = opts.baseUrl ?? modelEntry.base_url;
 
     // An explicit Workspace must already exist as a directory: if it
@@ -638,6 +652,8 @@ export class Agent {
       baseUrl,
       thinkingLevel: opts.thinkingLevel,
       subagentDepth: opts.subagentDepth ?? 0,
+      ...(opts.keyRotator !== undefined ? { keyRotator: opts.keyRotator } : {}),
+      ...(opts.onDispose !== undefined ? { onDispose: opts.onDispose } : {}),
       ...(opts.source !== undefined ? { source: opts.source } : {}),
     };
     // The first context: assembled from the Agent State on disk now (never from this Agent
@@ -721,7 +737,10 @@ export class Agent {
     }
     const apiKey = opts.apiKey ?? modelEntry.api_key;
     const apiKeys =
-      opts.apiKeys ?? modelEntry.api_keys ?? (apiKey ? parseApiKeys(apiKey) : undefined);
+      opts.apiKeys ??
+      (opts.apiKey ? parseApiKeys(opts.apiKey) : undefined) ??
+      modelEntry.api_keys ??
+      (apiKey ? parseApiKeys(apiKey) : undefined);
     const baseUrl = opts.baseUrl ?? modelEntry.base_url;
 
     // No level at resume: the host re-applies its stored value (Session.thinkingLevel) when it holds one,
@@ -910,6 +929,8 @@ export class Agent {
       // set, on. Tool permissions need no seam of their own: Session.toolPermission
       // answers from the Environment's toolset, which each rotation re-equips.
       commandPolicy: rt.commandPolicy,
+      ...(spec.keyRotator ? { keyRotator: spec.keyRotator } : {}),
+      ...(spec.onDispose ? { onDispose: spec.onDispose } : {}),
       ...extras,
     });
   }
@@ -946,7 +967,15 @@ export class Agent {
       // Spawn and run are separate: the same child Session can run for multiple turns
       // (continuing via input_subagent appending a prompt); resource cleanup is
       // consolidated in handle.dispose (called by the managing ManagedSubagentSession).
-      async spawn({ agentId, modelId, provider, thinkingLevel: spawnThinkingLevel }) {
+      async spawn({
+        agentId,
+        modelId,
+        provider,
+        thinkingLevel: spawnThinkingLevel,
+        apiKey: spawnApiKey,
+        apiKeys: spawnApiKeys,
+        keyStrategy,
+      }) {
         if (subagentDepth >= MAX_SUBAGENT_DEPTH) {
           throw new Error(
             `subagent depth limit ${MAX_SUBAGENT_DEPTH} reached; not spawning another subagent`,
@@ -1000,12 +1029,56 @@ export class Agent {
         // state and is not inherited — the spawn argument exists for explicit control.
         const parentLevel =
           spec.thinkingLevel === undefined ? current.thinkingLevel : spec.thinkingLevel;
+
+        const explicitKeys =
+          spawnApiKeys && spawnApiKeys.length > 0
+            ? spawnApiKeys
+            : spawnApiKey
+              ? parseApiKeys(spawnApiKey)
+              : undefined;
+
+        let childModelRef: ModelRef | undefined;
+        if (childModel.modelId && childModel.provider) {
+          try {
+            childModelRef = resolveModelRef(
+              childAgent.projectConfig,
+              childModel.modelId,
+              childModel.provider,
+            );
+          } catch {
+            // Ignored; createSession will validate if invalid
+          }
+        }
+        const resolvedChildModelEntry = childModelRef
+          ? getModel(childAgent.projectConfig, childModelRef)
+          : undefined;
+
+        const effectiveChildModelEntry = resolvedChildModelEntry ?? modelEntry;
+        const poolKeys =
+          explicitKeys ??
+          (effectiveChildModelEntry.api_keys && effectiveChildModelEntry.api_keys.length > 0
+            ? effectiveChildModelEntry.api_keys
+            : effectiveChildModelEntry.api_key
+              ? parseApiKeys(effectiveChildModelEntry.api_key)
+              : []);
+
+        const childRotatorScope = `${projectId}/${effectiveChildModelEntry.provider}/${effectiveChildModelEntry.model_id}`;
+        const { rotator: subagentRotator, release: releaseLease } =
+          KeyRotatorRegistry.allocateSubagentRotator(
+            childRotatorScope,
+            poolKeys,
+            keyStrategy ?? "auto",
+          );
+
         const childSession = await childAgent.createSession({
           workspaceDir,
           ...childModel,
           thinkingLevel: spawnThinkingLevel ?? parentLevel ?? null,
           subagentDepth: subagentDepth + 1,
           source: "subagent",
+          ...(explicitKeys ? { apiKeys: explicitKeys } : {}),
+          keyRotator: subagentRotator,
+          onDispose: releaseLease,
         });
         return subagentHandleFor(childSession);
       },
@@ -1103,6 +1176,12 @@ export class Agent {
         },
         setThinkingLevel(level) {
           childSession.thinkingLevel = level;
+        },
+        rotateKey() {
+          return childSession.rotateKey();
+        },
+        getRotator() {
+          return childSession.getKeyRotator();
         },
         dispose() {
           childSession.dispose();
@@ -1202,8 +1281,19 @@ export class Agent {
     // the entry's upstream `model_id` (client_type inference/passing follows it);
     // session_meta, Trace, usage, pricing, and catalog matching all use the (provider,
     // model_id) pair as the primary key.
-    const buildLLM = (context: AssembledContext, tools: ToolDefinition[]): GenerativeModel =>
-      new GenerativeModel({
+    const buildLLM = (context: AssembledContext, tools: ToolDefinition[]): GenerativeModel => {
+      const rotatorScope = `${this.state.projectId}/${modelEntry.provider}/${modelEntry.model_id}`;
+      const effectiveKeys =
+        apiKeys && apiKeys.length > 0
+          ? apiKeys
+          : apiKey
+            ? parseApiKeys(apiKey)
+            : [];
+      const keyRotator =
+        spec.keyRotator ??
+        (effectiveKeys.length > 0 ? KeyRotatorRegistry.get(rotatorScope, effectiveKeys) : undefined);
+
+      return new GenerativeModel({
         modelId: modelEntry.model_id,
         toolCallIds,
         ...(apiKeys !== undefined && apiKeys.length > 0
@@ -1211,6 +1301,7 @@ export class Agent {
           : apiKey !== undefined
             ? { apiKey }
             : {}),
+        ...(keyRotator ? { keyRotator } : {}),
         ...(baseUrl !== undefined ? { baseUrl } : {}),
         ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
         tools,
@@ -1230,6 +1321,7 @@ export class Agent {
           ? { requestTimeoutMs: context.requestTimeoutMs }
           : {}),
       });
+    };
 
     // THE opening procedure — behind the first run's bootstrap and every post-compaction
     // openNextContext alike, so initialization and rotation cannot drift apart: connects

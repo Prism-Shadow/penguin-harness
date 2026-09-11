@@ -8,6 +8,7 @@
  * - Permanent key eviction on 401 (auth failure) with automatic rollover to remaining keys;
  * - Observability metrics (success/failure counts, last used timestamp).
  */
+import type { SubagentKeyStrategy } from "../interfaces/environment.js";
 
 export type KeyHealth = "healthy" | "cooldown" | "evicted";
 
@@ -22,6 +23,8 @@ export interface KeyStatus {
   successCount: number;
   failureCount: number;
   lastUsedAt?: number;
+  /** Number of active subagent sessions currently leasing this key. */
+  activeLeases?: number;
 }
 
 export interface ApiKeyRotatorOptions {
@@ -57,21 +60,34 @@ export function parseApiKeys(input?: string | string[]): string[] {
 }
 
 export class ApiKeyRotator {
+  private static allocCounter = 0;
   private readonly keys: KeyStatus[] = [];
   private currentIndex: number = -1;
   private readonly cooldownMs: number;
+  private leasedKey?: KeyStatus;
 
-  constructor(keys: string[] | string, opts: ApiKeyRotatorOptions = {}) {
+  constructor(keys: string[] | string | KeyStatus[], opts: ApiKeyRotatorOptions = {}) {
     this.cooldownMs = opts.cooldownMs ?? opts.rateLimitCooldownMs ?? 60_000;
-    const parsed = parseApiKeys(keys);
-    for (const key of parsed) {
-      this.keys.push({
-        key,
-        isFailed: false,
-        cooldownUntil: 0,
-        successCount: 0,
-        failureCount: 0,
-      });
+    if (
+      Array.isArray(keys) &&
+      keys.length > 0 &&
+      typeof keys[0] === "object" &&
+      keys[0] !== null &&
+      "key" in keys[0]
+    ) {
+      this.keys = (keys as KeyStatus[]).slice();
+    } else {
+      const parsed = parseApiKeys(keys as string | string[]);
+      for (const key of parsed) {
+        this.keys.push({
+          key,
+          isFailed: false,
+          cooldownUntil: 0,
+          successCount: 0,
+          failureCount: 0,
+          activeLeases: 0,
+        });
+      }
     }
   }
 
@@ -110,12 +126,11 @@ export class ApiKeyRotator {
    * 2. If all working keys are currently in cooldown, falls back to the one with the earliest cooldown expiry.
    * 3. Returns undefined if all keys have permanently failed or if no keys are configured.
    */
-  nextKey(): string | undefined {
+  nextKey(now: number = Date.now()): string | undefined {
     if (this.keys.length === 0) return undefined;
     const workingKeys = this.keys.filter((k) => !k.isFailed);
     if (workingKeys.length === 0) return undefined;
 
-    const now = Date.now();
     const len = this.keys.length;
 
     // Search round-robin starting from currentIndex + 1
@@ -125,41 +140,64 @@ export class ApiKeyRotator {
       if (candidate && !candidate.isFailed && candidate.cooldownUntil <= now) {
         this.currentIndex = idx;
         candidate.lastUsedAt = now;
+        if (this.leasedKey && this.leasedKey !== candidate) {
+          this.leasedKey.activeLeases = Math.max(0, (this.leasedKey.activeLeases ?? 0) - 1);
+          candidate.activeLeases = (candidate.activeLeases ?? 0) + 1;
+          this.leasedKey = candidate;
+        }
         return candidate.key;
       }
     }
 
-    // If all working keys are cooling down, select the one with the earliest cooldown
-    let bestCandidate: KeyStatus | undefined;
-    let bestIdx = -1;
-    for (let i = 0; i < len; i++) {
-      const candidate = this.keys[i];
-      if (candidate && !candidate.isFailed) {
-        if (!bestCandidate || candidate.cooldownUntil < bestCandidate.cooldownUntil) {
-          bestCandidate = candidate;
-          bestIdx = i;
+    // If all working keys are cooling down, return undefined so caller/engine can wait for cooldown
+    return undefined;
+  }
+
+  /**
+   * Returns whether at least one non-failed key is currently available (not on cooldown).
+   */
+  hasAvailableKeys(now: number = Date.now()): boolean {
+    return this.keys.some((k) => !k.isFailed && k.cooldownUntil <= now);
+  }
+
+  /**
+   * Returns the epoch timestamp when the earliest cooling-down key will become available.
+   * Returns undefined if no keys exist or all keys are permanently failed.
+   * Returns now if at least one key is already available.
+   */
+  getEarliestAvailableTime(now: number = Date.now()): number | undefined {
+    let earliest: number | undefined;
+    for (const k of this.keys) {
+      if (!k.isFailed) {
+        if (k.cooldownUntil <= now) return now;
+        if (earliest === undefined || k.cooldownUntil < earliest) {
+          earliest = k.cooldownUntil;
         }
       }
     }
+    return earliest;
+  }
 
-    if (bestCandidate && bestIdx >= 0) {
-      this.currentIndex = bestIdx;
-      bestCandidate.lastUsedAt = now;
-      return bestCandidate.key;
-    }
-
-    return undefined;
+  /**
+   * Returns milliseconds remaining until the earliest key becomes available.
+   * Returns 0 if a key is immediately available.
+   * Returns undefined if all keys are permanently failed or list is empty.
+   */
+  getEarliestCooldownMs(now: number = Date.now()): number | undefined {
+    const earliestTime = this.getEarliestAvailableTime(now);
+    if (earliestTime === undefined) return undefined;
+    return Math.max(0, earliestTime - now);
   }
 
   /**
    * Returns the currently selected key (or picks one if not yet selected).
    */
-  currentKey(): string | undefined {
+  currentKey(now: number = Date.now()): string | undefined {
     if (this.currentIndex >= 0 && this.currentIndex < this.keys.length) {
       const cur = this.keys[this.currentIndex];
-      if (cur && !cur.isFailed) return cur.key;
+      if (cur && !cur.isFailed && cur.cooldownUntil <= now) return cur.key;
     }
-    return this.nextKey();
+    return this.nextKey(now);
   }
 
   /**
@@ -291,5 +329,227 @@ export class ApiKeyRotator {
    */
   resetFailed(): void {
     this.reset();
+  }
+
+  /**
+   * Sets current selection index.
+   */
+  setCurrentIndex(index: number): void {
+    this.currentIndex = index;
+  }
+
+  /**
+   * Tracks an active subagent key lease.
+   */
+  trackLease(keyStatus: KeyStatus): void {
+    this.leasedKey = keyStatus;
+  }
+
+  /**
+   * Releases an active subagent key lease.
+   */
+  releaseLease(): void {
+    if (this.leasedKey) {
+      this.leasedKey.activeLeases = Math.max(0, (this.leasedKey.activeLeases ?? 0) - 1);
+      this.leasedKey = undefined;
+    }
+  }
+
+  /**
+   * Total number of active subagent leases across all keys.
+   */
+  get activeLeases(): number {
+    return this.keys.reduce((sum, k) => sum + (k.activeLeases ?? 0), 0);
+  }
+
+  /**
+   * Generates an ordered list of KeyStatus references optimized for a subagent according to `strategy`.
+   */
+  allocateSubagentOrderedStatuses(
+    strategy: SubagentKeyStrategy = "auto",
+    now: number = Date.now(),
+  ): KeyStatus[] {
+    if (this.keys.length === 0) return [];
+    const working = this.keys.filter((k) => !k.isFailed);
+    const evicted = this.keys.filter((k) => k.isFailed);
+    if (working.length === 0) return [...this.keys];
+
+    const available = working.filter((k) => k.cooldownUntil <= now);
+    const inCooldown = working.filter((k) => k.cooldownUntil > now);
+    // Sort cooldown keys by earliest expiry
+    inCooldown.sort((a, b) => a.cooldownUntil - b.cooldownUntil);
+
+    let orderedAvailable: KeyStatus[] = [];
+
+    switch (strategy) {
+      case "partition":
+      case "round_robin": {
+        const offset = (ApiKeyRotator.allocCounter++) % working.length;
+        const rotatedWorking = [...working.slice(offset), ...working.slice(0, offset)];
+        const rotAvail = rotatedWorking.filter((k) => k.cooldownUntil <= now);
+        const rotCool = rotatedWorking.filter((k) => k.cooldownUntil > now);
+        return [...rotAvail, ...rotCool, ...evicted];
+      }
+
+      case "random": {
+        orderedAvailable = [...available];
+        for (let i = orderedAvailable.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [orderedAvailable[i], orderedAvailable[j]] = [orderedAvailable[j]!, orderedAvailable[i]!];
+        }
+        return [...orderedAvailable, ...inCooldown, ...evicted];
+      }
+
+      case "least_busy": {
+        orderedAvailable = [...available].sort((a, b) => {
+          const leaseDiff = (a.activeLeases ?? 0) - (b.activeLeases ?? 0);
+          if (leaseDiff !== 0) return leaseDiff;
+          const failDiff = a.failureCount - b.failureCount;
+          if (failDiff !== 0) return failDiff;
+          return (a.lastUsedAt ?? 0) - (b.lastUsedAt ?? 0);
+        });
+        return [...orderedAvailable, ...inCooldown, ...evicted];
+      }
+
+      case "auto":
+      default: {
+        // Optimized algorithm:
+        // 1. Group available keys by active lease count.
+        // 2. For lowest-lease group, break ties with round-robin offset so distinct subagents distribute evenly.
+        orderedAvailable = [...available].sort((a, b) => {
+          const leaseDiff = (a.activeLeases ?? 0) - (b.activeLeases ?? 0);
+          if (leaseDiff !== 0) return leaseDiff;
+          const failDiff = a.failureCount - b.failureCount;
+          if (failDiff !== 0) return failDiff;
+          return (a.lastUsedAt ?? 0) - (b.lastUsedAt ?? 0);
+        });
+
+        if (orderedAvailable.length > 1) {
+          const minLeases = orderedAvailable[0]!.activeLeases ?? 0;
+          const minGroup = orderedAvailable.filter((k) => (k.activeLeases ?? 0) === minLeases);
+          if (minGroup.length > 1) {
+            const shift = (ApiKeyRotator.allocCounter++) % minGroup.length;
+            const rotatedMin = [...minGroup.slice(shift), ...minGroup.slice(0, shift)];
+            const rest = orderedAvailable.filter((k) => (k.activeLeases ?? 0) > minLeases);
+            orderedAvailable = [...rotatedMin, ...rest];
+          }
+        }
+        return [...orderedAvailable, ...inCooldown, ...evicted];
+      }
+    }
+  }
+
+  /**
+   * Returns ordered list of API key strings optimized for a subagent.
+   */
+  allocateSubagentKeys(
+    strategy: SubagentKeyStrategy = "auto",
+    now: number = Date.now(),
+  ): string[] {
+    return this.allocateSubagentOrderedStatuses(strategy, now).map((k) => k.key);
+  }
+
+  /**
+   * Allocates an isolated ApiKeyRotator instance for a subagent sharing underlying key statuses and tracking leases.
+   */
+  allocateSubagentRotator(
+    strategy: SubagentKeyStrategy = "auto",
+    now: number = Date.now(),
+  ): { rotator: ApiKeyRotator; release: () => void } {
+    const ordered = this.allocateSubagentOrderedStatuses(strategy, now);
+    const primary =
+      ordered.find((k) => !k.isFailed && k.cooldownUntil <= now) ??
+      ordered.find((k) => !k.isFailed) ??
+      ordered[0];
+
+    if (primary) {
+      primary.activeLeases = (primary.activeLeases ?? 0) + 1;
+    }
+
+    const childRotator = new ApiKeyRotator(ordered, { cooldownMs: this.cooldownMs });
+    if (primary) {
+      const idx = ordered.indexOf(primary);
+      childRotator.setCurrentIndex(idx >= 0 ? idx : 0);
+      childRotator.trackLease(primary);
+    }
+
+    let released = false;
+    return {
+      rotator: childRotator,
+      release: () => {
+        if (released) return;
+        released = true;
+        childRotator.releaseLease();
+      },
+    };
+  }
+}
+
+/**
+ * Process-wide registry for ApiKeyRotator instances, keyed by scope (e.g. `${projectId}/${provider}/${modelId}`).
+ * Allows GenerativeModel at runtime and server-side ModelKeyHealthService to operate on the same state.
+ */
+export class KeyRotatorRegistry {
+  private static readonly instances = new Map<string, ApiKeyRotator>();
+
+  /**
+   * Retrieves or creates an ApiKeyRotator for a given scope.
+   * If `keys` is provided and non-empty, updates the rotator's keys.
+   */
+  static get(scope: string, keys?: string[]): ApiKeyRotator {
+    let rotator = this.instances.get(scope);
+    if (!rotator) {
+      rotator = new ApiKeyRotator(keys ?? []);
+      this.instances.set(scope, rotator);
+    } else if (keys !== undefined && keys.length > 0) {
+      rotator.updateKeys(keys);
+    }
+    return rotator;
+  }
+
+  /**
+   * Sets or overrides an existing rotator instance for a given scope.
+   */
+  static set(scope: string, rotator: ApiKeyRotator): void {
+    this.instances.set(scope, rotator);
+  }
+
+  /**
+   * Returns whether a rotator exists for the given scope.
+   */
+  static has(scope: string): boolean {
+    return this.instances.has(scope);
+  }
+
+  /**
+   * Resets failed and cooldown states for the rotator at `scope`.
+   */
+  static reset(scope: string): void {
+    this.instances.get(scope)?.resetFailed();
+  }
+
+  /**
+   * Clears all registered rotators (used in tests or server reset).
+   */
+  static clear(): void {
+    this.instances.clear();
+  }
+
+  /**
+   * Allocates an isolated ApiKeyRotator for a subagent with lease tracking.
+   * If candidateKeys are provided, joins/updates the pool in scope.
+   */
+  static allocateSubagentRotator(
+    scope: string,
+    candidateKeys?: string[] | string,
+    strategy: SubagentKeyStrategy = "auto",
+  ): { rotator: ApiKeyRotator; release: () => void } {
+    const parsed = candidateKeys ? parseApiKeys(candidateKeys) : [];
+    if (parsed.length > 0) {
+      const rotator = this.get(scope, parsed);
+      return rotator.allocateSubagentRotator(strategy);
+    }
+    const rotator = this.get(scope);
+    return rotator.allocateSubagentRotator(strategy);
   }
 }

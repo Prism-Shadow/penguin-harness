@@ -472,36 +472,32 @@ export async function saveProjectConfig(
  * Reads the existing config (or the default), saves after the change, and returns the updated
  * config.
  */
-export async function addModel(
-  root: string,
-  projectId: string,
-  entry: {
-    /** provider group (required; never inferred — pass `"custom"` for a model outside the known groups). */
-    provider: string;
-    /** Upstream model id (sent to AgentHub unchanged). */
-    model_id: string;
-    context_window?: number;
-    client_type?: string;
-    /** Whether image input is supported (vision/multimodal); keeps the existing value by default (treated as supported if never set). */
-    vision?: boolean;
-    /** Per-model max output tokens (wins over the Agent config); keeps the existing value by default (unset = inherit the Agent value). */
-    max_tokens?: number;
-    /** Per-model fast mode; keeps the existing value by default. Only `true` is persisted: an explicit `false` clears the annotation (absent = off). */
-    fast_mode?: boolean;
-    /** Price input may cover only some buckets; merged and written as a complete `ModelPricing`. */
-    pricing?: Partial<ModelPricing>;
-    api_key?: string;
-    api_keys?: string[] | string;
-    base_url?: string;
-  },
-  opts?: { setDefault?: boolean },
-): Promise<ProjectConfig> {
-  const cfg = await loadProjectConfig(root, projectId);
+export type AddModelInput = {
+  /** provider group (required; never inferred — pass `"custom"` for a model outside the known groups). */
+  provider: string;
+  /** Upstream model id (sent to AgentHub unchanged). */
+  model_id: string;
+  context_window?: number;
+  client_type?: string;
+  /** Whether image input is supported (vision/multimodal); keeps the existing value by default (treated as supported if never set). */
+  vision?: boolean;
+  /** Per-model max output tokens (wins over the Agent config); keeps the existing value by default (unset = inherit the Agent value). */
+  max_tokens?: number;
+  /** Per-model fast mode; keeps the existing value by default. Only `true` is persisted: an explicit `false` clears the annotation (absent = off). */
+  fast_mode?: boolean;
+  /** Price input may cover only some buckets; merged and written as a complete `ModelPricing`. */
+  pricing?: Partial<ModelPricing>;
+  api_key?: string;
+  api_keys?: string[] | string;
+  base_url?: string;
+};
+
+/**
+ * Pure in-memory upsert of a model entry into a ProjectConfig.
+ */
+export function upsertModel(cfg: ProjectConfig, entry: AddModelInput): ModelEntry {
   const { provider } = entry;
 
-  // upsert: layers new fields on top of the existing entry; fields not explicitly provided
-  // (e.g. context_window) keep their existing value, so a call like "just add an api_key"
-  // doesn't wipe out the prior config.
   const idx = cfg.models.findIndex((m) => m.provider === provider && m.model_id === entry.model_id);
   const existing = idx >= 0 ? cfg.models[idx] : undefined;
   const modelEntry: ModelEntry = {
@@ -512,13 +508,10 @@ export async function addModel(
   if (contextWindow !== undefined) {
     modelEntry.context_window = contextWindow;
   }
-  // Normalized on write as well as on read (canonicalClientType), so a caller passing the
-  // pre-0.4.2 "openai" spelling still persists the canonical "openai-chat".
   const clientType = canonicalClientType(entry.client_type ?? existing?.client_type);
   if (clientType !== undefined) {
     modelEntry.client_type = clientType;
   }
-  // The display name and api_key write timestamp are not set by this function; kept as-is on upsert.
   if (existing?.display_name !== undefined) {
     modelEntry.display_name = existing.display_name;
   }
@@ -530,15 +523,10 @@ export async function addModel(
   if (maxTokens !== undefined) {
     modelEntry.max_tokens = maxTokens;
   }
-  // Only `true` is persisted (absent = off): an explicit `false` clears the stored annotation
-  // instead of writing `fast_mode = false`, and a hand-edited `false` normalizes to absent.
   const fastMode = entry.fast_mode ?? existing?.fast_mode;
   if (fastMode === true) {
     modelEntry.fast_mode = true;
   }
-  // The three price buckets are merged field by field: an unspecified bucket keeps its existing
-  // value (the same policy as context_window/credential); the unit is fixed to usd_per_mtok, and
-  // the complete pricing is written as long as any bucket is present.
   const mergedPricing: Partial<ModelPricing> = {
     ...existing?.pricing,
     ...entry.pricing,
@@ -555,29 +543,36 @@ export async function addModel(
       output: mergedPricing.output ?? 0,
     };
   }
-  // Inline credential entry: fields not provided keep their existing value.
-  const rawApiKeys = entry.api_keys ?? existing?.api_keys;
-  const parsedKeys = rawApiKeys
-    ? Array.isArray(rawApiKeys)
-      ? rawApiKeys
-      : parseApiKeys(rawApiKeys)
-    : entry.api_key &&
-        (entry.api_key.includes(",") || entry.api_key.includes("\n") || entry.api_key.includes(";"))
-      ? parseApiKeys(entry.api_key)
-      : undefined;
-
-  if (parsedKeys && parsedKeys.length > 0) {
-    modelEntry.api_keys = parsedKeys;
-  } else if (existing?.api_keys) {
-    modelEntry.api_keys = existing.api_keys;
-  }
-
-  const apiKey =
-    entry.api_key ??
-    (parsedKeys && parsedKeys.length > 0 ? parsedKeys[0] : undefined) ??
-    existing?.api_key;
-  if (apiKey !== undefined) {
-    modelEntry.api_key = apiKey;
+  // Inline credential entry: fields explicitly provided take priority; only retain existing credentials when neither is supplied.
+  if (entry.api_keys !== undefined) {
+    const parsed = Array.isArray(entry.api_keys) ? entry.api_keys : parseApiKeys(entry.api_keys);
+    if (parsed.length > 0) {
+      modelEntry.api_keys = parsed;
+      modelEntry.api_key = parsed[0];
+    } else {
+      delete modelEntry.api_keys;
+    }
+  } else if (entry.api_key !== undefined) {
+    const parsed = parseApiKeys(entry.api_key);
+    if (parsed.length > 1) {
+      modelEntry.api_keys = parsed;
+      modelEntry.api_key = parsed[0];
+    } else if (parsed.length === 1) {
+      modelEntry.api_key = parsed[0];
+      // Explicit single key replaces any previous multi-key array
+      delete modelEntry.api_keys;
+    } else {
+      delete modelEntry.api_key;
+      delete modelEntry.api_keys;
+    }
+  } else {
+    // Neither supplied in entry: preserve existing credentials
+    if (existing?.api_keys) {
+      modelEntry.api_keys = existing.api_keys;
+    }
+    if (existing?.api_key !== undefined) {
+      modelEntry.api_key = existing.api_key;
+    }
   }
   const baseUrl = entry.base_url ?? existing?.base_url;
   if (baseUrl !== undefined) {
@@ -591,9 +586,20 @@ export async function addModel(
   } else {
     cfg.models.push(modelEntry);
   }
+  return modelEntry;
+}
+
+export async function addModel(
+  root: string,
+  projectId: string,
+  entry: AddModelInput,
+  opts?: { setDefault?: boolean },
+): Promise<ProjectConfig> {
+  const cfg = await loadProjectConfig(root, projectId);
+  upsertModel(cfg, entry);
 
   if (opts?.setDefault) {
-    cfg.default_model = { provider, model_id: entry.model_id };
+    cfg.default_model = { provider: entry.provider, model_id: entry.model_id };
   }
 
   await saveProjectConfig(root, projectId, cfg);

@@ -32,6 +32,7 @@ import type { OmniMessage } from "../../omnimessage/index.js";
 import { SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
 import type {
   EnvironmentServices,
+  SubagentKeyStrategy,
   ThinkingLevelName,
   ToolDefinitionConfig,
 } from "../../interfaces/index.js";
@@ -134,6 +135,13 @@ export function createSubagentTool(
         return { stopReason: "fatal" };
       }
 
+      const apiKey = typeof args.api_key === "string" ? args.api_key : undefined;
+      const apiKeys = Array.isArray(args.api_keys)
+        ? (args.api_keys as unknown[]).filter((k): k is string => typeof k === "string")
+        : undefined;
+      const rawStrategy = typeof args.key_strategy === "string" ? args.key_strategy : undefined;
+      const keyStrategy = rawStrategy as SubagentKeyStrategy | undefined;
+
       // Spawn the child Session (precheck errors such as exceeding the depth limit or a
       // nonexistent agent are expressed as a throw).
       let session: ManagedSubagentSession;
@@ -143,6 +151,9 @@ export function createSubagentTool(
           ...(modelId !== undefined ? { modelId } : {}),
           ...(provider !== undefined ? { provider } : {}),
           ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
+          ...(apiKey !== undefined ? { apiKey } : {}),
+          ...(apiKeys !== undefined ? { apiKeys } : {}),
+          ...(keyStrategy !== undefined ? { keyStrategy } : {}),
         });
         session = new ManagedSubagentSession(handle, {
           // Spawn-time owner for the revival tombstone (undefined = a self-spawn of this Agent).
@@ -190,9 +201,10 @@ export function createSubagentTool(
         };
       }
 
-      // An interruption within the startup window kills the child session (consistent with
-      // exec_command); once switched to background, this listener is removed in `finally`.
-      const onAbort = (): void => session.kill();
+      // When interrupted, abort the run instead of killing the entire session so it remains resumable.
+      const onAbort = (): void => {
+        session.abortRun();
+      };
       let registered = false;
       signal?.addEventListener("abort", onAbort, { once: true });
       try {
@@ -204,7 +216,14 @@ export function createSubagentTool(
           ...(approve ? { approve } : {}),
         });
 
-        if (signal?.aborted) return { stopReason: "aborted" };
+        if (signal?.aborted) {
+          const id = manager.register(session);
+          registered = true;
+          return {
+            stopReason: "aborted",
+            note: `[subagent interrupted with subagent_id ${id}; use input_subagent with resume: true to resume]`,
+          };
+        }
         if (session.running) {
           // Still running once the window expires: register as a background session, returning
           // subagent_id for input_subagent to continue accessing it.
@@ -216,6 +235,15 @@ export function createSubagentTool(
               `[subagent running with subagent_id ${id}; use input_subagent to poll for progress ` +
               `or send a follow-up prompt]` +
               approvalHint(session),
+          };
+        }
+        if (session.exit?.status === "failed") {
+          // Failed within window: register so it can be inspected or resumed with input_subagent
+          const id = manager.register(session);
+          registered = true;
+          return {
+            stopReason: "fatal",
+            note: `[subagent failed with subagent_id ${id}; use input_subagent with resume: true to retry/resume] ${session.exit.note ?? ""}`,
           };
         }
         // Finished within the window: report the terminal state; releasing the child session is

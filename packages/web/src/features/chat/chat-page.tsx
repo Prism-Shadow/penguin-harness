@@ -112,6 +112,7 @@ import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { MessagingPanel } from "../messaging/messaging-panel";
 import { SchedulePanel } from "../schedules/schedule-panel";
+import { ApiTrackerPanel } from "../api-tracker/api-tracker-panel";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
 import { DockLauncher } from "../dock/dock-launcher";
@@ -1665,6 +1666,15 @@ export function ChatPage() {
             session={selected}
             active={active}
             onPrefillComposer={prefillComposer}
+          />
+        );
+      case "apiTracker":
+        return (
+          <ApiTrackerPanel
+            key={selected.sessionId}
+            session={selected}
+            active={active}
+            projectId={projectId ?? undefined}
           />
         );
     }
