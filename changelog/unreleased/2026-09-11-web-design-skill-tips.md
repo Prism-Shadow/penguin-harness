@@ -3,6 +3,7 @@
 - **Date:** 2026-09-11
 - **Type:** feature
 - **Scope:** `plugins`
+- **PR:** [#698](https://github.com/Prism-Shadow/penguin-harness/pull/698)
 
 [中文版](2026-09-11-web-design-skill-tips.zh.md)
 
