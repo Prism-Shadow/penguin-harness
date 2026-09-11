@@ -138,7 +138,7 @@ import { PanelsToolbar } from "./panels-toolbar";
 import { toneDot, toneInk } from "../../lib/tone";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
+import { INFO_ICON } from "../../components/ui/icons";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
@@ -1910,17 +1910,18 @@ export function ChatPage() {
                   />
                   {/* Right of the time, only while the conversation still owns background
                       work — command processes past their yield window, background subagents
-                      mid-round: their count, in the live-status green, the same figure and
-                      glyph as the session row's mark and read live off the row. Bare ink like
-                      the chips beside it, not a tinted pill: this is one more reading in the
-                      stat row, not a badge that should out-weigh them. */}
+                      mid-round — read live off the row. Spelled out in words rather than
+                      drawn as the glyph the session row wears: this reading is the one a
+                      number cannot carry on its own, and the row it sits in is otherwise all
+                      numbers. `muted` ink, the same answer the session row's mark gives: work
+                      parked behind the conversation is a standing arrangement, not a turn in
+                      progress, and `muted` is allowed to recede precisely because its meaning
+                      is already in text — which here it literally is. Bare ink like the chips
+                      beside it, not a tinted pill: this is one more reading in the stat row,
+                      not a badge that should out-weigh them. */}
                   {backgroundCount > 0 && (
-                    <span
-                      title={S.chat.backgroundTasks(backgroundCount)}
-                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
-                    >
-                      <GlyphIcon d={BACKGROUND_TASKS_ICON} />
-                      {backgroundCount}
+                    <span className={`shrink-0 font-mono text-xs ${toneInk.muted}`}>
+                      {S.chat.backgroundTasks(backgroundCount)}
                     </span>
                   )}
                 </span>

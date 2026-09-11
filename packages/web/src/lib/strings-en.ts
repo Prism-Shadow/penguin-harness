@@ -1744,11 +1744,11 @@ Scenarios:
     sessionScheduled: "Has a scheduled task still to fire",
     /** The same mark on a tool row, where it stands for the ONE call whose work went to the background — launched with `run_in_background`, or moved there by the user — rather than for a count. */
     backgroundCall: "Runs in the background",
-    /** Accessible name of the tool row's "move to background" button, shown while the call is executing. */
-    sendToBackground: "Move to background",
+    /** The tool row's inline text action, shown while the call is executing (also its accessible name). */
+    sendToBackground: "Send to background",
     /** Its tooltip: what the click does to the call and to the conversation. */
     sendToBackgroundHint:
-      "Move this call to the background now; the conversation carries on, and its completion arrives as a background notice.",
+      "Send this call to the background; the conversation carries on, and its completion arrives as a background notice.",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */

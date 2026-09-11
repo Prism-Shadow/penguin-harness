@@ -214,22 +214,37 @@ describe("isDetachedCall", () => {
 });
 
 describe("showsBackgroundAction", () => {
+  const EXEC = '{"cmd":"pnpm dev"}';
+
   it("offers the action while the two detachable tools execute on a main-session card", () => {
-    expect(showsBackgroundAction("exec_command", true, [])).toBe(true);
-    expect(showsBackgroundAction("run_subagent", true, [])).toBe(true);
+    expect(showsBackgroundAction("exec_command", EXEC, true, [])).toBe(true);
+    expect(showsBackgroundAction("run_subagent", '{"prompt":"go"}', true, [])).toBe(true);
   });
 
   it("hides it once the call is no longer executing", () => {
-    expect(showsBackgroundAction("exec_command", false, [])).toBe(false);
+    expect(showsBackgroundAction("exec_command", EXEC, false, [])).toBe(false);
   });
 
   it("hides it for tools with no background form", () => {
-    expect(showsBackgroundAction("read_file", true, [])).toBe(false);
-    expect(showsBackgroundAction("input_command", true, [])).toBe(false);
-    expect(showsBackgroundAction("mcp__docs__search", true, [])).toBe(false);
+    expect(showsBackgroundAction("read_file", '{"file_path":"a.txt"}', true, [])).toBe(false);
+    expect(showsBackgroundAction("input_command", '{"process_id":"proc-1"}', true, [])).toBe(false);
+    expect(showsBackgroundAction("mcp__docs__search", "{}", true, [])).toBe(false);
   });
 
   it("hides it on a subagent-nested card: that call lives in the child Session's environment", () => {
-    expect(showsBackgroundAction("exec_command", true, ["session-child-12ab34cd"])).toBe(false);
+    expect(showsBackgroundAction("exec_command", EXEC, true, ["session-child-12ab34cd"])).toBe(
+      false,
+    );
+  });
+
+  it("hides it on a call already launched with run_in_background: nothing left to hand over", () => {
+    expect(
+      showsBackgroundAction(
+        "exec_command",
+        '{"cmd":"pnpm dev","run_in_background":true}',
+        true,
+        [],
+      ),
+    ).toBe(false);
   });
 });

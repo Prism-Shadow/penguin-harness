@@ -1716,11 +1716,10 @@ Benchmark：
     sessionScheduled: "有待触发的定时任务",
     /** The same mark on a tool row, where it stands for the ONE call whose work went to the background — launched with `run_in_background`, or moved there by the user — rather than for a count. */
     backgroundCall: "在后台运行",
-    /** Accessible name of the tool row's "move to background" button, shown while the call is executing. */
-    sendToBackground: "转为后台任务",
+    /** The tool row's inline text action, shown while the call is executing (also its accessible name). */
+    sendToBackground: "转入后台执行",
     /** Its tooltip: what the click does to the call and to the conversation. */
-    sendToBackgroundHint:
-      "立即把这次调用转为后台任务，对话继续进行；它结束时会以后台任务通知送回。",
+    sendToBackgroundHint: "把这次调用转入后台执行，对话继续进行；它结束时会以后台任务通知送回。",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */

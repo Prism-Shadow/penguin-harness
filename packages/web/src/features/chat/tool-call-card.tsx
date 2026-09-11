@@ -30,9 +30,6 @@ import {
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { BackgroundTasksMark } from "../../components/ui/session-activity-icon";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { BACKGROUND_TASKS_ICON } from "../../components/ui/icons";
-import { toneInk } from "../../lib/tone";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
@@ -188,13 +185,20 @@ export function isDetachedCall(output: string): boolean {
  * (that is the whole window in which there is something to move), only for a tool that has a
  * background form, and only on a main-session card — a subagent's call lives in the child
  * Session's environment, which the route does not target.
+ *
+ * A call launched with `run_in_background` is excluded: its work is already back in the
+ * registry, so there is nothing left to hand over, and the row would briefly carry the
+ * background glyph twice — once as the action, once as the mark that call already wears.
  */
 export function showsBackgroundAction(
   name: string,
+  argsJson: string,
   executing: boolean,
   origin: readonly string[],
 ): boolean {
-  return executing && origin.length === 0 && DETACHABLE_TOOLS.has(name);
+  return (
+    executing && origin.length === 0 && DETACHABLE_TOOLS.has(name) && !isBackgroundCall(argsJson)
+  );
 }
 
 /**
@@ -277,9 +281,6 @@ function extractStringField(argsJson: string, field: string): PartialField | nul
 
 export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRenderContext }) {
   const [open, setOpen] = useState(false);
-  // Clicked "move to background": the button stays down until the call's output arrives and
-  // the action unmounts, so a second click cannot ask twice for the same call.
-  const [sentToBackground, setSentToBackground] = useState(false);
   const userToggled = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
@@ -425,31 +426,35 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
           )}
           <span className="min-w-0 flex-1" />
         </button>
-        {/* "Move to background" while the call executes: the tool hands its work back as a
+        {/* "Send to background" while the call executes: the tool hands its work back as a
           background task and the turn carries on. A sibling of the row button rather than a
-          child — a <button> cannot nest another — with the hover tint on the whole row, so
-          the two still read as one line. It wears the mark the call is about to earn. */}
-        {showsBackgroundAction(item.name, executing, ctx.origin) && ctx.onSendToBackground && (
-          <button
-            type="button"
-            title={S.chat.sendToBackgroundHint}
-            aria-label={S.chat.sendToBackground}
-            disabled={sentToBackground}
-            onClick={() => {
-              setSentToBackground(true);
-              void ctx.onSendToBackground?.(item.toolCallId);
-            }}
-            className={`shrink-0 rounded p-1 transition-colors duration-150 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-700 ${toneInk.busy}`}
-          >
-            <GlyphIcon d={BACKGROUND_TASKS_ICON} size={ICON_SIZE.iconButton} />
-          </button>
-        )}
+          child — a <button> cannot nest another — with the hover tint on the whole row, so the
+          two still read as one line. The app's inline text-action style: a real <button>
+          (it acts, it navigates nowhere) painted as a link. Text at the row's own size and
+          NO padding of its own, so a row carrying it measures exactly like one that does not
+          — an action that changed the row's height would break the rhythm of a list of calls.
+
+          No click guard: a second detach is a no-op on an already-fired controller, and once
+          the call closes the action unmounts on its own — which is also the feedback. */}
+        {showsBackgroundAction(item.name, item.argumentsText, executing, ctx.origin) &&
+          ctx.onSendToBackground && (
+            <button
+              type="button"
+              title={S.chat.sendToBackgroundHint}
+              onClick={() => void ctx.onSendToBackground?.(item.toolCallId)}
+              className="shrink-0 text-xs text-brand-600 underline-offset-2 hover:underline dark:text-brand-300"
+            >
+              {S.chat.sendToBackground}
+            </button>
+          )}
         {/* Expand indicator on the right; clicking it toggles too (it is its own button, so the
-          row's action above stays reachable). */}
+          row's action above stays reachable). Named for what it DOES, the way every other
+          chevron toggle here is: naming it after the tool would give the row two buttons under
+          one name, which no row-scoped query could then tell apart. */}
         <button
           type="button"
           aria-expanded={open}
-          aria-label={item.name || S.chat.unknownTool}
+          aria-label={open ? S.nav.collapseGroup : S.nav.expandGroup}
           onClick={toggleOpen}
           className="flex shrink-0 items-center self-stretch"
         >
