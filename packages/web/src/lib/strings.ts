@@ -161,9 +161,7 @@ export const zh = {
       "「连通性测速」向下方列出的地址各发一次不带凭据的 GET，量的是本服务器出站这一跳：" +
       "对方回了 HTTP 响应即算连通，401、403 同样算——它们说明域名解析、TCP 连接与 TLS 握手都已走通；" +
       "连不通指的是传输本身失败。测的是已保存的设置——只有保存才会重建出站 dispatcher，" +
-      "所以测速排在「保存」下方，改过地址要先保存再测。" +
-      "出站路径能确切说出时（直连，或已保存的代理地址）会写在测速标题旁边；" +
-      "开启代理但未填地址时由 HTTP_PROXY / HTTPS_PROXY 决定，服务器不声称它是什么。",
+      "所以测速排在「保存」下方，改过地址要先保存再测。结果先到先出，各自到达即显示。",
     /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "应用程序使用代理",
     proxyForAgent: "Agent 环境使用代理",
@@ -188,9 +186,6 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
-    /** The outbound path being measured, shown only where the server can name it exactly (see pathLabel). */
-    proxyProbeVia: (config: string): string => `出站路径：${config}`,
-    proxyProbeDirect: "不经代理，直连",
     /** Admin-only sub-page (server-global). */
     uploadLimitsTitle: "上传限制",
     /** Its two number fields, both in whole MB. */

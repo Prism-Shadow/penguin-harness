@@ -17,6 +17,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  ProxyProbeDto,
   ProxyProbeResponse,
   ProxyProbeTargetsResponse,
   ServerSettingsResponse,
@@ -58,7 +59,7 @@ describe("admin server settings", () => {
     // The probe reaches the network on the server's behalf, so it sits behind the same gate,
     // and so does the list of what it would reach.
     expect((await api.get("/api/admin/settings/proxy-probe")).status).toBe(403);
-    expect((await api.post("/api/admin/settings/proxy-probe")).status).toBe(403);
+    expect((await api.post("/api/admin/settings/proxy-probe/openai")).status).toBe(403);
     // The failed PUT changed nothing.
     expect((await getSettings()).settings.proxyForApp).toBe(true);
   });
@@ -328,7 +329,7 @@ describe("admin server settings", () => {
     expect(classifyProxyProbe({ error: tunnelRefused })).not.toBe("timeout");
   });
 
-  it("the probe reports every provider, sends no credential, and names what it measured", async () => {
+  it("one request per target: each is reported on its own, with no credential and the listed URL", async () => {
     // The page lists these before anyone presses the button, so they must be the very URLs
     // the probes then request — asserted together at the end of this test.
     const listed = (await (
@@ -339,6 +340,10 @@ describe("admin server settings", () => {
       "anthropic",
       "gemini",
       "deepseek",
+      // GLM is two hosts, not one: a proxy can carry the global endpoint and not the mainland
+      // one, which is the difference an admin choosing between the two keys needs to see.
+      "zai",
+      "bigmodel",
     ]);
 
     const requests: Array<{ url: string; init: RequestInit }> = [];
@@ -354,29 +359,30 @@ describe("admin server settings", () => {
     );
     await admin.put("/api/admin/settings", { proxyUrl: "proxy.corp.example:8080" });
 
-    const res = await admin.post("/api/admin/settings/proxy-probe");
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as ProxyProbeResponse;
-    expect(body.probes.map((p) => p.provider)).toEqual([
-      "openai",
-      "anthropic",
-      "gemini",
-      "deepseek",
+    // One call per provider, the way the page fires them — it renders each answer as it
+    // lands rather than waiting for a response carrying all of them.
+    const probes: ProxyProbeDto[] = [];
+    for (const target of listed.targets) {
+      const res = await admin.post(`/api/admin/settings/proxy-probe/${target.provider}`);
+      expect(res.status).toBe(200);
+      probes.push(((await res.json()) as ProxyProbeResponse).probe);
+    }
+
+    // Each answer names its own target, so a row cannot be filled from another's result.
+    expect(probes.map((p) => p.provider)).toEqual(listed.targets.map((t) => t.provider));
+    expect(probes.map((p) => p.url)).toEqual(listed.targets.map((t) => t.url));
+    expect(probes.filter((p) => p.outcome === "reachable").map((p) => p.status)).toEqual([
+      401, 401, 401, 401, 401,
     ]);
-    expect(body.probes.filter((p) => p.outcome === "reachable").map((p) => p.status)).toEqual([
-      401, 401, 401,
-    ]);
-    expect(body.probes.at(-1)).toMatchObject({ provider: "deepseek", outcome: "refused" });
+    expect(probes.find((p) => p.provider === "deepseek")).toMatchObject({ outcome: "refused" });
     // Every result is timed, the failed one included.
-    for (const probe of body.probes) expect(probe.ms).toBeGreaterThanOrEqual(0);
-    // The answer names the STORED configuration, which is the one the connections travelled.
-    expect(body).toMatchObject({ proxyForApp: true, proxyUrl: "http://proxy.corp.example:8080" });
+    for (const probe of probes) expect(probe.ms).toBeGreaterThanOrEqual(0);
     // What was listed is exactly what was fetched: a page that advertises one URL and probes
     // another would be lying about what "no API key" applies to.
     expect(requests.map((r) => r.url)).toEqual(listed.targets.map((t) => t.url));
     // Hard-coded https targets, and not one credential on any of them — the process
     // environment's provider keys must not leak into an unauthenticated probe.
-    expect(requests).toHaveLength(4);
+    expect(requests).toHaveLength(listed.targets.length);
     for (const { url, init } of requests) {
       expect(url.startsWith("https://")).toBe(true);
       const headers = new Headers(init.headers);
@@ -385,24 +391,17 @@ describe("admin server settings", () => {
     }
   });
 
-  it("the probe follows the saved switch, so a stored address with the proxy off is not the path", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("{}", { status: 401 })),
-    );
-    // An address survives the switch being turned off — it is remembered for the next time it
-    // is turned on — and the dispatcher is a plain direct Agent in that state
-    // (buildProxyDispatcher, proxy.test.ts). The answer therefore has to report the switch,
-    // not just echo the address back, or the page would name a proxy nothing travelled.
-    await admin.put("/api/admin/settings", {
-      proxyForApp: false,
-      proxyUrl: "proxy.corp.example:8080",
-    });
-
-    const body = (await (
-      await admin.post("/api/admin/settings/proxy-probe")
-    ).json()) as ProxyProbeResponse;
-    expect(body).toMatchObject({ proxyForApp: false, proxyUrl: "http://proxy.corp.example:8080" });
-    expect(body.probes.every((probe) => probe.outcome === "reachable")).toBe(true);
+  it("a provider id outside the fixed list is a 404 that reaches no network at all", async () => {
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    // The route takes an id and never a URL, so an id nobody put in the list must not become
+    // a fetch of anything — that is the whole reason this endpoint has no request body.
+    for (const provider of ["evil", "openai/../evil", "https://evil.example", "OPENAI", ""]) {
+      const res = await admin.post(
+        `/api/admin/settings/proxy-probe/${encodeURIComponent(provider)}`,
+      );
+      expect(res.status).toBe(404);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

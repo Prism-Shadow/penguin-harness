@@ -249,8 +249,16 @@ export interface ServerSettingsUpdateRequest {
   attachmentTotalMb?: number;
 }
 
-/** The providers the proxy reachability probe covers. A fixed list: the endpoint takes no URL. */
-export type ProxyProbeProvider = "openai" | "anthropic" | "gemini" | "deepseek";
+/**
+ * The endpoints the proxy reachability probe covers. A fixed list: the route takes a provider
+ * id from this set and never a URL, so nothing a caller sends decides what the server fetches.
+ *
+ * GLM is two entries rather than one because it is two hosts: Z.AI serves the global endpoint
+ * and BigModel the mainland one, they are reached over different routes, and a proxy can carry
+ * one and not the other.
+ */
+export type ProxyProbeProvider =
+  "openai" | "anthropic" | "gemini" | "deepseek" | "zai" | "bigmodel";
 
 /**
  * One probe's verdict. `reachable` means an HTTP answer arrived, whatever its status — a
@@ -287,15 +295,12 @@ export interface ProxyProbeDto extends ProxyProbeTargetDto {
 }
 
 /**
- * The probe endpoint's answer: the results, plus the proxy configuration they travelled.
- * The configuration is the STORED one — the outbound dispatcher only moves when settings
- * are saved — so it is echoed here for the page to name, rather than the page assuming its
- * own form fields describe what was measured.
+ * One probe's answer. The route measures a single target per call: the page asks for all of
+ * them at once and fills each row the moment its own answer lands, so one black-holed host
+ * cannot hold every other result behind its timeout.
  */
 export interface ProxyProbeResponse {
-  proxyForApp: boolean;
-  proxyUrl: string | null;
-  probes: ProxyProbeDto[];
+  probe: ProxyProbeDto;
 }
 
 /**

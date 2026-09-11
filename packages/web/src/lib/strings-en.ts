@@ -145,10 +145,8 @@ export const en: Strings = {
       "as reachable, 401 and 403 included — a refused credential still proves DNS, TCP and TLS " +
       "all completed — while unreachable means the transport itself failed. It measures the " +
       "saved settings, since only a save rebuilds the outbound dispatcher; that is why the test " +
-      "sits below Save, and why an edited address has to be saved before testing. Where that " +
-      "path can be named exactly — direct, or an address you saved — it is shown beside the " +
-      "test's heading; with the proxy on and no address stored, HTTP_PROXY / HTTPS_PROXY " +
-      "decide, and the server does not claim to know what they say.",
+      "sits below Save, and why an edited address has to be saved before testing. Results " +
+      "appear one by one, each as soon as its own answer arrives.",
     /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "Application uses the proxy",
     proxyForAgent: "Agent environment uses the proxy",
@@ -173,9 +171,6 @@ export const en: Strings = {
       tls: "TLS handshake failed",
       network: "Unreachable",
     },
-    /** The outbound path being measured, shown only where the server can name it exactly (see pathLabel). */
-    proxyProbeVia: (config: string): string => `Outbound path: ${config}`,
-    proxyProbeDirect: "direct, no proxy",
     /** Admin-only sub-page (server-global). */
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */

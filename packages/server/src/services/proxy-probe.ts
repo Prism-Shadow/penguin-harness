@@ -24,26 +24,37 @@
  * reachability improves with a key, and a probe the admin did not authenticate must not
  * quietly spend one.
  *
- * The target list is hard-coded and the endpoint takes no URL from anyone. An
- * admin-triggered fetch of a caller-supplied address would be an SSRF surface, and this
- * feature has no use for one.
+ * The target list is hard-coded and the endpoint takes no URL from anyone — only a provider
+ * id, matched against that list. An admin-triggered fetch of a caller-supplied address would
+ * be an SSRF surface, and this feature has no use for one.
+ *
+ * One target per call. The page asks for all of them at once and renders each answer as it
+ * arrives; probing them together behind a single response would hold every row blank until
+ * the slowest one landed, which for a black-holed host is the whole timeout.
  */
 import type { ProxyProbeDto, ProxyProbeOutcome, ProxyProbeTargetDto } from "../api/types.js";
 
 /**
- * The four providers, with the cheapest request that still proves the path: each host's
+ * The targets, with the cheapest request that still proves the path: each host's
  * model-listing endpoint, which answers an unauthenticated GET with a small
- * credential-rejection body (OpenAI 401, Anthropic 401, Gemini 403, DeepSeek 401 as of
- * this writing — the exact status is immaterial, an answer is an answer). GET rather than
- * HEAD because two of the four do not answer HEAD honestly: api.anthropic.com replies 405
- * and generativelanguage.googleapis.com 404, which would still prove reachability but
- * would measure a path the real traffic never takes.
+ * credential-rejection body (OpenAI 401, Anthropic 401, Gemini 403, DeepSeek 401, and both
+ * GLM hosts 401 as of this writing — the exact status is immaterial, an answer is an
+ * answer). GET rather than HEAD because two of them do not answer HEAD honestly:
+ * api.anthropic.com replies 405 and generativelanguage.googleapis.com 404, which would still
+ * prove reachability but would measure a path the real traffic never takes.
+ *
+ * GLM is listed twice because it is two hosts: api.z.ai is the global endpoint the catalog
+ * defaults to, open.bigmodel.cn the mainland one a bigmodel.cn key needs. They resolve and
+ * route differently, so one can be reachable while the other is not, and an admin choosing
+ * between the two keys is exactly the reader this page has.
  */
 export const PROXY_PROBE_TARGETS: readonly ProxyProbeTargetDto[] = [
   { provider: "openai", url: "https://api.openai.com/v1/models" },
   { provider: "anthropic", url: "https://api.anthropic.com/v1/models" },
   { provider: "gemini", url: "https://generativelanguage.googleapis.com/v1beta/models" },
   { provider: "deepseek", url: "https://api.deepseek.com/models" },
+  { provider: "zai", url: "https://api.z.ai/api/paas/v4/models" },
+  { provider: "bigmodel", url: "https://open.bigmodel.cn/api/paas/v4/models" },
 ];
 
 /**
@@ -160,19 +171,26 @@ async function probeTarget(
   }
 }
 
+/** The target a provider id names, or null when the id is not one of the fixed set. */
+export function proxyProbeTarget(provider: string): ProxyProbeTargetDto | null {
+  return PROXY_PROBE_TARGETS.find((t) => t.provider === provider) ?? null;
+}
+
 /**
- * Probes all four targets concurrently and returns one result each, in target order. Never
- * throws: every failure mode is an outcome. Concurrent because the targets are
- * independent — a host that is black-holed must not add its timeout to the other three.
+ * Probes one target. Never throws: every failure mode is an outcome, including the timeout,
+ * so a caller waiting on several of these always gets an answer from each.
  */
-export async function probeProxyReachability(
+export async function probeProxyReachabilityOf(
+  target: ProxyProbeTargetDto,
   options: {
     /** Injection point for tests; defaults to global fetch, which is the proxied path (see the module header). */
     fetchImpl?: typeof fetch;
     timeoutMs?: number;
   } = {},
-): Promise<ProxyProbeDto[]> {
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const timeoutMs = options.timeoutMs ?? PROXY_PROBE_TIMEOUT_MS;
-  return Promise.all(PROXY_PROBE_TARGETS.map((t) => probeTarget(t, fetchImpl, timeoutMs)));
+): Promise<ProxyProbeDto> {
+  return probeTarget(
+    target,
+    options.fetchImpl ?? fetch,
+    options.timeoutMs ?? PROXY_PROBE_TIMEOUT_MS,
+  );
 }

@@ -16,9 +16,12 @@
  * The reachability test sits BELOW the save row, in its own block, because it measures the
  * SAVED configuration: only a PUT moves the server's outbound dispatcher, so a typed-but-unsaved
  * address is not in the path the probes travel. Reading top to bottom — edit, save, then
- * measure — is what makes that honest without a warning banner, and the block names the
- * outbound path beside its heading wherever the server can name it exactly. A save clears
- * results that now describe a superseded configuration.
+ * measure — is what makes that honest without a warning banner. A save clears results that now
+ * describe a superseded configuration.
+ *
+ * One request per target, fired together and rendered as each lands. A single response carrying
+ * all of them would hold every row blank until the slowest answered, which for a host that
+ * black-holes connections is the full five-second timeout with five working results behind it.
  *
  * It carries its own busy flag rather than borrowing Save's: a measurement is not an unsaved
  * edit, so it neither blocks Save nor is blocked by it.
@@ -28,7 +31,7 @@
  * these are plain unauthenticated GETs. A frontend copy of that list could drift from the URLs
  * the server really fetches, so it is fetched, not hard-coded.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   ProxyProbeDto,
   ProxyProbeProvider,
@@ -52,25 +55,11 @@ const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {
   anthropic: "Anthropic",
   gemini: "Gemini",
   deepseek: "DeepSeek",
+  // GLM's two hosts, named by the one each key comes from: the global endpoint the catalog
+  // defaults to, and the mainland one a bigmodel.cn key needs.
+  zai: "Z.AI",
+  bigmodel: "BigModel",
 };
-
-/** The fields that describe an outbound path — carried by the stored settings and echoed by a probe answer alike. */
-type OutboundPath = Pick<ServerSettings, "proxyForApp" | "proxyUrl">;
-
-/**
- * How that path reads, or null where the server cannot say it exactly.
- *
- * Two states can be named: the switch off is a direct connection, and an explicit address is
- * itself the answer. The third — switch on, no address stored — hands the choice to
- * HTTP_PROXY / HTTPS_PROXY, which this server does not publish and which may not be set at
- * all: that same state connects directly when the environment is empty, so naming it after a
- * proxy would assert one that need not exist. Nothing is shown rather than something
- * unverifiable; the disclosed explanation at the pane heading covers the rule.
- */
-function pathLabel(path: OutboundPath): string | null {
-  if (!path.proxyForApp) return S.settings.proxyProbeDirect;
-  return path.proxyUrl;
-}
 
 export function ProxySection() {
   /** Stored settings as hydrated on mount (null until then) — the no-change baseline. */
@@ -84,10 +73,15 @@ export function ProxySection() {
   const [busy, setBusy] = useState(false);
   /** What the probe would request, listed before it is run (null until it arrives). */
   const [targets, setTargets] = useState<ProxyProbeTargetDto[] | null>(null);
-  /** Results by provider, the path they travelled, and the probe's own busy flag. */
+  /** Results by provider (null until a run starts, then filled one at a time), and the probe's own busy flag. */
   const [results, setResults] = useState<Map<ProxyProbeProvider, ProxyProbeDto> | null>(null);
-  const [measured, setMeasured] = useState<OutboundPath | null>(null);
   const [probing, setProbing] = useState(false);
+  /**
+   * Which run each in-flight answer belongs to. A result can land after its run stopped being
+   * the current one — a save adopts new settings mid-flight — and a row filled from a
+   * superseded run would report a path nothing travelled.
+   */
+  const runSeq = useRef(0);
 
   /** Adopt server-side truth: the baseline and the drafts move together. */
   const adopt = (next: ServerSettings) => {
@@ -95,9 +89,11 @@ export function ProxySection() {
     setProxyForApp(next.proxyForApp);
     setProxyForAgent(next.proxyForAgent);
     setProxyUrl(next.proxyUrl ?? "");
-    // Results describe the path they travelled; a save may have replaced it.
+    // Results describe the path they travelled; a save may have replaced it. Bumping the run
+    // counter also discards whatever is still in flight against the old one.
+    runSeq.current += 1;
     setResults(null);
-    setMeasured(null);
+    setProbing(false);
   };
 
   useEffect(() => {
@@ -153,30 +149,39 @@ export function ProxySection() {
     }
   };
 
-  const runProbe = async () => {
-    if (settings === null || probing) return;
+  const runProbe = () => {
+    if (settings === null || targets === null || probing) return;
+    const run = (runSeq.current += 1);
     setProbing(true);
-    // The previous run's numbers go now rather than lingering under a running test: the four
-    // answers land as one set, and a stale figure beside a live one cannot be told apart.
-    setResults(null);
-    setMeasured(null);
-    try {
-      // Every outcome, reachable or not, comes back inside the response; only the request
-      // itself failing (a lost session, a dead server) lands here as a toast.
-      const res = await api.adminProbeProxy();
-      setResults(new Map(res.probes.map((p) => [p.provider, p])));
-      setMeasured({ proxyForApp: res.proxyForApp, proxyUrl: res.proxyUrl });
-    } catch (e) {
-      toastError(apiErrorText(e));
-    } finally {
-      setProbing(false);
-    }
+    // The previous run's numbers go now rather than lingering under a running test: a stale
+    // figure beside a live one cannot be told apart. An empty map, not null — null is "never
+    // run", and the rows read it to tell "not tested" from "still measuring".
+    setResults(new Map());
+    // One toast per run, not one per target: a lost session fails every request identically,
+    // and six copies of the same sentence is not six pieces of information.
+    let reported = false;
+    void Promise.allSettled(
+      targets.map((t) =>
+        api
+          .adminProbeProxy(t.provider)
+          .then((res) => {
+            if (runSeq.current !== run) return;
+            setResults((prev) => new Map(prev ?? []).set(res.probe.provider, res.probe));
+          })
+          .catch((e: unknown) => {
+            // Every outcome the probe itself can have, reachable or not, comes back inside a
+            // 200; only the request failing (a lost session, a dead server) lands here.
+            if (runSeq.current !== run || reported) return;
+            reported = true;
+            toastError(apiErrorText(e));
+          }),
+      ),
+    ).finally(() => {
+      if (runSeq.current === run) setProbing(false);
+    });
   };
 
   const hydrated = settings !== null;
-  // What the probes travelled, once a run has answered; before that, what they would travel.
-  const outbound = measured ?? settings;
-  const outboundLabel = outbound === null ? null : pathLabel(outbound);
 
   return (
     <>
@@ -210,39 +215,30 @@ export function ProxySection() {
       </SectionShell>
       <section className="mt-6">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-sm font-medium">{S.settings.proxyProbe}</div>
-            {/* The path actually measured is live data, so it stays on screen; the "?" beside
-                the pane heading carries the standing explanation of why it is the saved one.
-                Absent where the path cannot be named exactly (see pathLabel). */}
-            {outboundLabel !== null && (
-              <div className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                {S.settings.proxyProbeVia(outboundLabel)}
-              </div>
-            )}
-          </div>
+          <div className="min-w-0 text-sm font-medium">{S.settings.proxyProbe}</div>
           <Button
             size="sm"
             disabled={!hydrated || targets === null || probing}
             aria-busy={probing}
-            onClick={() => void runProbe()}
+            onClick={runProbe}
           >
             {probing ? S.settings.proxyProbeRunning : S.settings.proxyProbeRun}
           </Button>
         </div>
         <ul className="mt-3 space-y-3">
           {(targets ?? []).map((t) => {
-            const probe = probing ? undefined : results?.get(t.provider);
-            // Checked on `probe.outcome` itself rather than through a boolean, so the failure
-            // branch narrows to the kinds the dictionary actually has a word for.
+            // This row's own answer, shown the moment it exists — the rows still waiting keep
+            // saying so beside it. Checked on `probe.outcome` itself rather than through a
+            // boolean, so the failure branch narrows to the kinds the dictionary has a word for.
+            const probe = results?.get(t.provider);
             const outcomeText =
-              probe === undefined
-                ? probing
-                  ? S.settings.proxyProbeRunning
-                  : S.settings.proxyProbeIdle
-                : probe.outcome === "reachable"
+              probe !== undefined
+                ? probe.outcome === "reachable"
                   ? S.settings.proxyProbeLatency(probe.ms)
-                  : S.settings.proxyProbeFailure[probe.outcome];
+                  : S.settings.proxyProbeFailure[probe.outcome]
+                : probing
+                  ? S.settings.proxyProbeRunning
+                  : S.settings.proxyProbeIdle;
             const reachable = probe !== undefined && probe.outcome === "reachable";
             return (
               <li key={t.provider}>

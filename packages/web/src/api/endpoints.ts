@@ -85,6 +85,7 @@ import type {
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
+  ProxyProbeProvider,
   ProxyProbeResponse,
   ProxyProbeTargetsResponse,
   ServerSettingsResponse,
@@ -205,12 +206,12 @@ export const adminGetProxyProbeTargets = () =>
   apiFetch<ProxyProbeTargetsResponse>("/api/admin/settings/proxy-probe");
 
 /**
- * Measures the server's own outbound path to those targets, unauthenticated. Takes no
- * arguments: the targets are fixed on the server, and the configuration measured is the
- * saved one, which the answer names.
+ * Measures the server's own outbound path to ONE of those targets, unauthenticated. One
+ * request per provider so each row can be filled the moment its own answer arrives; the
+ * provider id is the only thing sent, and the server matches it against the same fixed list.
  */
-export const adminProbeProxy = () =>
-  apiFetch<ProxyProbeResponse>("/api/admin/settings/proxy-probe", { method: "POST" });
+export const adminProbeProxy = (provider: ProxyProbeProvider) =>
+  apiFetch<ProxyProbeResponse>(`/api/admin/settings/proxy-probe/${provider}`, { method: "POST" });
 
 // Project & members --------------------------------------------------------------
 

@@ -11,8 +11,8 @@
  * every spawn). The upload limits need no push either, for the same reason: the
  * attachment validators and the request body cap both read the repo per request.
  *
- * GET|POST /api/admin/settings/proxy-probe names the four model provider hosts the
- * reachability probe would request, and runs it — unauthenticated, see
+ * GET /api/admin/settings/proxy-probe names the model provider hosts the reachability probe
+ * would request; POST .../proxy-probe/:provider measures one of them — unauthenticated, see
  * services/proxy-probe.ts.
  */
 import { Hono } from "hono";
@@ -27,7 +27,11 @@ import { optionalBoolean, readJson } from "../validate.js";
 import type { AppDeps } from "../../app.js";
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
 import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "../../services/attachment-limits.js";
-import { PROXY_PROBE_TARGETS, probeProxyReachability } from "../../services/proxy-probe.js";
+import {
+  PROXY_PROBE_TARGETS,
+  probeProxyReachabilityOf,
+  proxyProbeTarget,
+} from "../../services/proxy-probe.js";
 
 /**
  * proxyUrl update value -> stored value: null and empty/whitespace-only clear the
@@ -142,28 +146,28 @@ export function adminSettingsRoutes(deps: AppDeps): Hono<AppEnv> {
     c.json({ targets: [...PROXY_PROBE_TARGETS] } satisfies ProxyProbeTargetsResponse),
   );
 
-  // Reachability and latency of the server's outbound path to the four provider hosts.
-  // Admin-only through the router's guard above, like every other route here.
+  // Reachability and latency of the server's outbound path to ONE provider host, named by a
+  // path segment matched against the fixed target list. Admin-only through the router's guard
+  // above, like every other route here.
   //
-  // Takes no request body at all, deliberately: the target list is a constant in the
-  // service, so there is no address for a caller to supply and no server-side fetch of a
-  // caller-chosen host to arrange. Nothing is written, but it does reach the network, so
-  // it is a POST rather than a GET.
+  // Takes no request body and no URL: the only thing a caller supplies is a provider id, and
+  // an id that is not in the list is a 404 rather than a fetch. Nothing is written, but it
+  // does reach the network, so it is a POST rather than a GET.
   //
-  // The settings are read BEFORE the probes and echoed back: the process dispatcher
-  // follows the STORED values (a PUT is what moves it), so those are what the probes
-  // travel, and the page names that configuration instead of assuming its own form
-  // fields describe the measurement.
-  app.post("/proxy-probe", async (c) => {
-    const measured = {
-      proxyForApp: deps.serverSettingsRepo.getProxyForApp(),
-      proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
-    };
+  // One target per call because the page renders each answer as it arrives; the concurrency
+  // is the browser's, and a host that black-holes connections holds up only its own row.
+  // The path measured is whatever the process dispatcher currently is, which follows the
+  // STORED settings — a PUT is what moves it, which is why the page puts this below Save.
+  app.post("/proxy-probe/:provider", async (c) => {
+    const target = proxyProbeTarget(c.req.param("provider"));
+    if (target === null) {
+      throw new HttpError(404, "probe_target_not_found", "No probe target with that provider id.");
+    }
     // Plain global fetch on purpose — that is the undici fetch the startup entry installed,
     // and it resolves the proxy dispatcher per call. No credential is attached anywhere
     // below, including from the process environment (see services/proxy-probe.ts).
-    const probes = await probeProxyReachability();
-    return c.json({ ...measured, probes } satisfies ProxyProbeResponse);
+    const probe = await probeProxyReachabilityOf(target);
+    return c.json({ probe } satisfies ProxyProbeResponse);
   });
 
   return app;
