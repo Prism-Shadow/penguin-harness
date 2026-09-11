@@ -185,9 +185,7 @@ async function readWebManifest() {
   for (const entry of await fsp.readdir(WEB_DIST, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const abs = path.join(entry.parentPath, entry.name);
-    files[path.relative(WEB_DIST, abs).split(path.sep).join("/")] = (
-      await fsp.readFile(abs)
-    ).toString("base64");
+    files[path.relative(WEB_DIST, abs).split(path.sep).join("/")] = await fsp.readFile(abs);
   }
   return files;
 }
@@ -227,7 +225,7 @@ async function readNativeAssets() {
     const rel = path.relative(ptyDir, abs).split(path.sep).join("/");
     if (!wanted(rel)) continue;
     const target = `node_modules/node-pty/${rel}`;
-    files[target] = (await fsp.readFile(abs)).toString("base64");
+    files[target] = await fsp.readFile(abs);
     // node-pty ships its prebuilt spawn-helper as 0644; the runtime restores the bit from
     // this list, so push it regardless of how it looks on this machine.
     if (rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0) {
@@ -239,7 +237,7 @@ async function readNativeAssets() {
   // from its own assets directory, so a push that omits one leaves a server that cannot
   // install a machine at all. Same set the packaged build copies into dist/; see the module.
   for (const { name, from } of FAR_SIDE_SCRIPTS) {
-    files[name] = (await fsp.readFile(path.join(ROOT, from))).toString("base64");
+    files[name] = await fsp.readFile(path.join(ROOT, from));
   }
   return { files, exec };
 }
@@ -269,39 +267,33 @@ async function main() {
   const cookie = await login();
   const platform = await fsp.readFile(PLATFORM_BUNDLE);
   const cli = await fsp.readFile(CLI_BUNDLE);
-
+  const mapValues = (o, f) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
+  const body = (part) => ({
+    platform: part(platform, "utf8"),
+    cli: part(cli, "utf8"),
+    web: { files: mapValues(files, (b) => part(b, "base64")) },
+    assets: { files: mapValues(assets.files, (b) => part(b, "base64")), exec: assets.exec },
+    ...(source === null ? {} : { source }),
+  });
   // Content-addressed transfer, the way git pushes: name every part by its sha256, ask the
-  // target which blobs it lacks, PUT only those (raw, one request each), then push a body
-  // that names everything by hash. A target without the probe (an older runtime) answers
-  // 404 and gets every part inline, the way pushes always worked.
-  const blobs = new Map(); // sha → bytes
-  const ref = (bytes) => {
+  // target which blobs it lacks, PUT only those (raw), then push a body of names. A target
+  // without the probe (an older runtime) answers 404 and gets every part inline.
+  const blobs = new Map();
+  let payload = body((bytes) => {
     const sha = createHash("sha256").update(bytes).digest("hex");
     blobs.set(sha, bytes);
     return { sha };
-  };
-  const webManifest = Object.fromEntries(
-    Object.entries(files).map(([rel, b64]) => [rel, ref(Buffer.from(b64, "base64"))]),
-  );
-  const assetsManifest = Object.fromEntries(
-    Object.entries(assets.files).map(([rel, b64]) => [rel, ref(Buffer.from(b64, "base64"))]),
-  );
-  const platformRef = ref(platform);
-  const cliRef = ref(cli);
+  });
   const probe = await request(`${baseUrl}/api/hmr/assets/probe`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie },
     body: JSON.stringify({ hashes: [...blobs.keys()] }),
   });
-  let payload;
-  let transferNote;
   if (probe.status === 200) {
-    const missing = (JSON.parse(probe.body.toString("utf8")).missing ?? []).filter((sha) =>
-      blobs.has(sha),
-    );
     let sent = 0;
-    for (const sha of missing) {
+    for (const sha of JSON.parse(probe.body.toString("utf8")).missing) {
       const bytes = blobs.get(sha);
+      if (bytes === undefined) continue;
       const put = await request(`${baseUrl}/api/hmr/blobs/${sha}`, {
         method: "PUT",
         headers: { "content-type": "application/octet-stream", cookie },
@@ -312,28 +304,15 @@ async function main() {
       }
       sent += bytes.length;
     }
-    payload = {
-      platform: platformRef,
-      cli: cliRef,
-      web: { manifest: webManifest },
-      assets: { manifest: assetsManifest, exec: assets.exec },
-    };
-    transferNote = `${missing.length} of ${blobs.size} blobs new to the target (${(sent / 1048576).toFixed(1)} MB sent)`;
+    log(`${blobs.size} blobs; ${(sent / 1048576).toFixed(1)} MB were new to the target`);
   } else {
-    payload = {
-      platform: platform.toString("utf8"),
-      cli: cli.toString("utf8"),
-      web: { files },
-      assets,
-    };
-    transferNote = `everything inline (target has no probe)`;
+    log("target has no probe: pushing everything inline");
+    payload = body((bytes, encoding) => bytes.toString(encoding));
   }
-  const gz = zlib.gzipSync(
-    Buffer.from(JSON.stringify({ ...payload, ...(source === null ? {} : { source }) })),
-  );
+  const gz = zlib.gzipSync(Buffer.from(JSON.stringify(payload)));
   if (source !== null) log(`provenance: ${source.revision}`);
   log(
-    `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} assets + 2 bundles: ${transferNote}, push body ${(gz.length / 1048576).toFixed(1)} MB, to ${baseUrl}…`,
+    `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB body) to ${baseUrl}…`,
   );
 
   const started = Date.now();

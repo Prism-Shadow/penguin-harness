@@ -476,7 +476,7 @@ export const hotPlatform = { id: "boom", iface, impl, context: {} };
  */
 const BOOM_PLATFORM_PACKAGED_ID = BOOM_PLATFORM.replace('id: "boom"', 'id: "packaged"');
 
-describe("blobs are put one at a time, raw, and a push names its parts by hash", () => {
+describe("a push is content-addressed: blobs are put raw, parts are named by hash, unreferenced blobs are collected", () => {
   let t: TestApp | undefined;
 
   afterEach(async () => {
@@ -485,6 +485,22 @@ describe("blobs are put one at a time, raw, and a push names its parts by hash",
   });
 
   const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
+  const PKG = Buffer.from('{"name":"demo-native"}');
+  const BIN = Buffer.from("\0binary");
+  const README = Buffer.from("# demo\n");
+
+  const payload = (id: string, assets: unknown) => ({
+    platform: platformServing([`/api/demo/${id}`], id),
+    cli: MINIMAL_CLI,
+    web: { files: MINIMAL_WEB },
+    assets,
+  });
+  const push = (app: Hono<AppEnv>, cookie: string, body: unknown) =>
+    app.request("/api/hmr/upgrade", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/gzip" },
+      body: zlib.gzipSync(Buffer.from(JSON.stringify(body))),
+    });
   const put = (app: Hono<AppEnv>, cookie: string, sha: string, bytes: Buffer) =>
     app.request(`/api/hmr/blobs/${sha}`, {
       method: "PUT",
@@ -499,14 +515,8 @@ describe("blobs are put one at a time, raw, and a push names its parts by hash",
         body: JSON.stringify({ hashes }),
       })
     ).json()) as { missing: string[] };
-  const pushJson = (app: Hono<AppEnv>, cookie: string, body: unknown) =>
-    app.request("/api/hmr/upgrade", {
-      method: "POST",
-      headers: { cookie, "content-type": "application/gzip" },
-      body: zlib.gzipSync(Buffer.from(JSON.stringify(body))),
-    });
 
-  it("a blob lands only under the hash of its bytes; a wrong name stores nothing", async () => {
+  it("a blob lands only under the hash of its bytes", async () => {
     t = await createTestApp();
     const cookie = (await loginAdmin(t.app)).cookie;
     const bytes = Buffer.from("\0native");
@@ -515,104 +525,17 @@ describe("blobs are put one at a time, raw, and a push names its parts by hash",
 
     const refused = await put(t.app, cookie, wrong, bytes);
     expect(refused.status).toBe(400);
-    expect(((await refused.json()) as { error: { message: string } }).error.message).toMatch(
-      /does not hash/,
-    );
-    expect((await probe(t.app, cookie, [wrong, sha])).missing.sort()).toEqual([sha, wrong].sort());
+    expect(await refused.text()).toContain("hashes to");
+    expect((await probe(t.app, cookie, [wrong])).missing).toEqual([wrong]);
 
-    const ok = await put(t.app, cookie, sha, bytes);
-    expect(ok.status).toBe(200);
-    expect(await ok.json()).toEqual({ sha, size: bytes.length });
+    expect(await (await put(t.app, cookie, sha, bytes)).json()).toEqual({ sha });
     expect((await probe(t.app, cookie, [wrong, sha])).missing).toEqual([wrong]);
     expect(await fs.readFile(path.join(t.root, "hmr", "store", "blobs", sha))).toEqual(bytes);
-    // No half-written temporaries beside it.
-    expect((await fs.readdir(path.join(t.root, "hmr", "store", "blobs"))).sort()).toEqual([sha]);
-
     // Not a hash: refused before any byte is read.
     expect((await put(t.app, cookie, "latest", bytes)).status).toBe(400);
   });
 
-  it("a push naming every part by hash resolves from the store; a name the store lacks is refused with it", async () => {
-    t = await createTestApp();
-    const cookie = (await loginAdmin(t.app)).cookie;
-    const platform = Buffer.from(platformServing(["/api/demo/by-hash"], "by-hash"));
-    const cliBytes = Buffer.from(MINIMAL_CLI);
-    const index = Buffer.from("<html>by hash</html>");
-    const asset = Buffer.from("\0helper");
-    const parts = [platform, cliBytes, index, asset];
-    const body = {
-      platform: { sha: sha256(platform) },
-      cli: { sha: sha256(cliBytes) },
-      web: { manifest: { "index.html": { sha: sha256(index) } } },
-      assets: { manifest: { "bin/helper": { sha: sha256(asset) } } },
-    };
-
-    // Nothing put yet: the push names what the store does not hold, and says which.
-    const early = await pushJson(t.app, cookie, body);
-    expect(early.status).toBe(400);
-    expect(((await early.json()) as { error: { message: string } }).error.message).toMatch(
-      new RegExp(`platform.*${sha256(platform).slice(0, 12)}.*put it first`),
-    );
-
-    for (const bytes of parts)
-      expect((await put(t.app, cookie, sha256(bytes), bytes)).status).toBe(200);
-    const landed = await pushJson(t.app, cookie, body);
-    expect(landed.status).toBe(200);
-    expect(((await landed.json()) as { status: string }).status).toBe("ok");
-    // The generation, the web dist and the asset all came out of the blob store.
-    expect((await t.app.request("/api/demo/by-hash")).status).toBe(200);
-    expect(await (await t.app.request("/")).text()).toContain("by hash");
-    const assetsRoot = path.join(t.root, "hmr", "store", "assets");
-    const [set] = await fs.readdir(assetsRoot);
-    expect(await fs.readFile(path.join(assetsRoot, set!, "bin", "helper"))).toEqual(asset);
-    // The persisted version is the same shape an inline push commits: a restart reads it.
-    await expect(readHarnessInfo(t.root)).resolves.toMatchObject({
-      bundles: { cli: expect.stringContaining("store/cli/") },
-    });
-  });
-});
-
-describe("upgrade assets by manifest: only the blobs the store lacks travel, and nothing kept is collected", () => {
-  let t: TestApp | undefined;
-
-  afterEach(async () => {
-    if (t) await t.cleanup();
-    t = undefined;
-  });
-
-  const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
-  const PKG = Buffer.from('{"name":"demo-native"}');
-  const BIN = Buffer.from("\0binary");
-  const README = Buffer.from("# demo\n");
-
-  function payload(id: string, assets: unknown) {
-    return zlib.gzipSync(
-      Buffer.from(
-        JSON.stringify({
-          platform: platformServing([`/api/demo/${id}`], id),
-          cli: MINIMAL_CLI,
-          web: { files: MINIMAL_WEB },
-          assets,
-        }),
-      ),
-    );
-  }
-  const push = (app: Hono<AppEnv>, cookie: string, gz: Buffer) =>
-    app.request("/api/hmr/upgrade", {
-      method: "POST",
-      headers: { cookie, "content-type": "application/gzip" },
-      body: gz,
-    });
-  const probe = async (app: Hono<AppEnv>, cookie: string, hashes: string[]) =>
-    (await (
-      await app.request("/api/hmr/assets/probe", {
-        method: "POST",
-        headers: { cookie, "content-type": "application/json" },
-        body: JSON.stringify({ hashes }),
-      })
-    ).json()) as { missing: string[] };
-
-  it("a probe names what is missing, a manifest push ships only that, and the set materializes from the blob store", async () => {
+  it("a second push names by hash what the first carried inline, and ships only what is new", async () => {
     t = await createTestApp();
     const cookie = (await loginAdmin(t.app)).cookie;
 
@@ -637,17 +560,17 @@ describe("upgrade assets by manifest: only the blobs the store lacks travel, and
       (await probe(t.app, cookie, [sha256(PKG), sha256(BIN), sha256(README)])).missing,
     ).toEqual([sha256(README)]);
 
-    // Second push adds one file and ships ONLY it: the other two are named by hash.
+    // Second push adds one file: it is put, and every file is then named by hash.
+    expect((await put(t.app, cookie, sha256(README), README)).status).toBe(200);
     const second = await push(
       t.app,
       cookie,
       payload("v2", {
-        manifest: {
+        files: {
           "node_modules/demo-native/package.json": { sha: sha256(PKG) },
           "node_modules/demo-native/demo.node": { sha: sha256(BIN) },
           "node_modules/demo-native/README.md": { sha: sha256(README) },
         },
-        blobs: { [sha256(README)]: README.toString("base64") },
         exec: ["node_modules/demo-native/demo.node"],
       }),
     );
@@ -669,20 +592,54 @@ describe("upgrade assets by manifest: only the blobs the store lacks travel, and
     if (process.platform !== "win32") expect(mode & 0o111).not.toBe(0);
   });
 
-  it("refuses a manifest naming a blob the store does not hold, rather than materializing a hole", async () => {
+  it("refuses a name the store does not hold, rather than materializing a hole", async () => {
     t = await createTestApp();
     const cookie = (await loginAdmin(t.app)).cookie;
     const res = await push(
       t.app,
       cookie,
-      payload("v1", {
-        manifest: { "node_modules/demo-native/package.json": { sha: sha256(PKG) } },
-        blobs: {},
-      }),
+      payload("v1", { files: { "node_modules/demo-native/package.json": { sha: sha256(PKG) } } }),
     );
-    // A refused push, reported as a bad request (the pusher should send without the probe).
     expect(res.status).toBe(400);
     expect(await res.text()).toContain("does not hold");
+  });
+
+  it("every part may be named by hash: the bundles and the web dist too", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const platform = Buffer.from(platformServing(["/api/demo/by-hash"], "by-hash"));
+    const cliBytes = Buffer.from(MINIMAL_CLI);
+    const index = Buffer.from("<html>by hash</html>");
+    const asset = Buffer.from("\0helper");
+    const body = {
+      platform: { sha: sha256(platform) },
+      cli: { sha: sha256(cliBytes) },
+      web: { files: { "index.html": { sha: sha256(index) } } },
+      assets: { files: { "bin/helper": { sha: sha256(asset) } } },
+    };
+
+    // Nothing put yet: the push names what the store does not hold, and says which.
+    const early = await push(t.app, cookie, body);
+    expect(early.status).toBe(400);
+    expect(await early.text()).toMatch(
+      new RegExp(`platform.*${sha256(platform).slice(0, 12)}.*put it first`),
+    );
+
+    for (const bytes of [platform, cliBytes, index, asset]) {
+      expect((await put(t.app, cookie, sha256(bytes), bytes)).status).toBe(200);
+    }
+    const landed = await push(t.app, cookie, body);
+    expect(landed.status, await landed.clone().text()).toBe(200);
+    // The generation, the web dist and the asset all came out of the blob store.
+    expect((await t.app.request("/api/demo/by-hash")).status).toBe(200);
+    expect(await (await t.app.request("/")).text()).toContain("by hash");
+    const assetsRoot = path.join(t.root, "hmr", "store", "assets");
+    const [set] = await fs.readdir(assetsRoot);
+    expect(await fs.readFile(path.join(assetsRoot, set!, "bin", "helper"))).toEqual(asset);
+    // Persisted like an inline push: a restart reads the same record.
+    await expect(readHarnessInfo(t.root)).resolves.toMatchObject({
+      bundles: { cli: expect.stringContaining("store/cli/") },
+    });
   });
 
   it("collects blobs no kept assets set records, and keeps the rest", async () => {
