@@ -506,11 +506,11 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   {
     // Retired on 2026-09-10: DeepSeek still accepts the id and serves it from V4.1 Flash at
-    // the Flash price. The row is text-only all the same, because the client routing it never
-    // forwards the image — AgentHub 0.4.11's DeepSeek client matches this bare id against its
-    // text-only deny-list /^deepseek-v4-(flash|pro)(-\d{4})?$/ and rejects image parts before
-    // the request leaves the harness. `deepseek-flash` is the id to send images to; this flag
-    // can follow once AgentHub stops denying this one.
+    // the Flash price. V4 Flash reads no images, and the retirement does not change that —
+    // `deepseek-flash` is the id to send an image to. AgentHub agrees rather than decides:
+    // 0.4.11's DeepSeek client matches this bare id against its text-only deny-list
+    // /^deepseek-v4-(flash|pro)(-\d{4})?$/ and rejects image parts before the request leaves
+    // the harness, so relaxing that list is not a reason to flip this flag.
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
     provider: "deepseek",
