@@ -639,24 +639,37 @@ describe("model-reference rekeying and the connectivity test", () => {
     });
   });
 
-  it("clearing a preset model's display name sticks: it falls back to the id, not back to the catalog", async () => {
-    // Only provider and modelId are required, so an entry sent without a display name is the
-    // user having cleared it. Writing nothing would leave the field absent, which reads as
-    // "inherit from the catalog" — the deleted name would be handed straight back on reload.
+  it("an absent display name inherits the catalog's; only an empty one clears it", async () => {
+    // Two different requests, and reading them as one is how a client that simply has no name
+    // for a model — one built from the catalog, which stores no name of its own — destroys the
+    // name of every model it sends.
+    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
     await api.put(url(), { models: [{ provider: "openai", modelId: "gpt-5.5" }] });
+    const inherited = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(pick(inherited, "openai", "gpt-5.5").displayName).toBe("GPT-5.5");
+    expect(await readFile(cfgFile, "utf8")).not.toContain("display_name");
+
+    // Cleared: the empty string records the deletion, so the name does not come back on the
+    // next load, and the GET reports it as an empty name rather than as no name — the whole
+    // table comes back on the next PUT, where "no name" would ask for the catalog's again.
+    await api.put(url(), {
+      models: [{ provider: "openai", modelId: "gpt-5.5", displayName: "" }],
+    });
     const body = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(pick(body, "openai", "gpt-5.5").displayName).toBeUndefined();
-    // The empty string is what records the deletion, and it survives a second full-table PUT
-    // that likewise carries no name.
-    const toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
-    expect(toml).toContain('display_name = ""');
-    await api.put(url(), { models: [{ provider: "openai", modelId: "gpt-5.5" }] });
+    expect(pick(body, "openai", "gpt-5.5").displayName).toBe("");
+    expect(await readFile(cfgFile, "utf8")).toContain('display_name = ""');
+    // And it survives that round trip, exactly as the page performs it.
+    await api.put(url(), {
+      models: [{ provider: "openai", modelId: "gpt-5.5", displayName: "" }],
+    });
     const again = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(pick(again, "openai", "gpt-5.5").displayName).toBeUndefined();
+    expect(pick(again, "openai", "gpt-5.5").displayName).toBe("");
   });
 
   it("a cleared name is restorable, and clearing a model the catalog does not name writes nothing", async () => {
-    await api.put(url(), { models: [{ provider: "openai", modelId: "gpt-5.5" }] });
+    await api.put(url(), {
+      models: [{ provider: "openai", modelId: "gpt-5.5", displayName: "" }],
+    });
     // Naming it again drops the marker rather than leaving both on disk.
     await api.put(url(), {
       models: [{ provider: "openai", modelId: "gpt-5.5", displayName: "Renamed" }],
@@ -667,11 +680,11 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(toml).not.toContain('display_name = ""');
 
     // A model outside the catalog has no name to inherit, so absence already says "no name"
-    // and the marker would be noise in the file.
+    // and the marker would be noise in the file — an explicitly empty one included.
     await api.put(url(), {
       models: [
         { provider: "openai", modelId: "gpt-5.5", displayName: "Renamed" },
-        { provider: "custom", modelId: "my-own-model" },
+        { provider: "custom", modelId: "my-own-model", displayName: "" },
       ],
     });
     toml = await readFile(path.join(t.root, projectId, ".project_config.toml"), "utf8");
