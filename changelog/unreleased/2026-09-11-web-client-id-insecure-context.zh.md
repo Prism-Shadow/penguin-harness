@@ -3,6 +3,7 @@
 - **Date:** 2026-09-11
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#675](https://github.com/Prism-Shadow/penguin-harness/pull/675)
 
 [English](2026-09-11-web-client-id-insecure-context.md)
 
