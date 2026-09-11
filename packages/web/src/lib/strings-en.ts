@@ -1552,7 +1552,7 @@ export const en: Strings = {
     },
   },
 
-  /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on agents as a whole. */
+  /** Plugins page (features/plugins/plugins-page.tsx): the library's cards (one per library plugin, installed on agents as a whole) and the registry section. */
   plugins: {
     installedTitle: "Installed plugins",
     installedDesc:
@@ -1575,9 +1575,9 @@ export const en: Strings = {
     addLabel: "Add a plugin",
     fileHint: (file: string) =>
       `An npm package name; fetched unless this build ships it, then written to the Project's ${file}`,
-    pageTitle: "Plugin library",
+    pageTitle: "Plugins",
     pageDesc:
-      "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
+      "The plugin library this build ships — each plugin bundles skills and/or a hook package: browse, quick-start a chat, or install to agents — and below it the registry: the plugin packages this deployment can install for a Project.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
     searchPlaceholder: "Search plugins",
     /** Section labels of the plugin detail Modal. */
@@ -1661,6 +1661,8 @@ export const en: Strings = {
   },
 
   pluginRegistry: {
+    /** The registry section's group header on the Plugins page, under the library's categories. */
+    sectionTitle: "Registry",
     pageTitle: "Plugins",
     empty: "No plugins yet",
     specifierHint: "Package name, as a Project's plugin list names it",

@@ -1,6 +1,8 @@
 /**
- * Plugin library page: the built-in plugin library (loaded by core from the @penguinharness/* packages), shown sectioned by category.
- * A plugin ships skills and/or a hook package (scripts the harness runs at the loop's hook
+ * Plugins page: the built-in plugin library (loaded by core from the @penguinharness/* packages),
+ * shown sectioned by category, and below it the registry — what this deployment's plugin index
+ * lists — as one more section in the same shape (RegistrySection).
+ * A library plugin ships skills and/or a hook package (scripts the harness runs at the loop's hook
  * points, e.g. after every Task), and is installed on an Agent as a whole. Groups are
  * borderless — the group header (category name + plugin count, no icon) is collapsible,
  * highlights on hover, and animates height on expand/collapse; expanded by default. Cards
@@ -583,6 +585,11 @@ export function PluginsPage() {
             })}
           </div>
         )}
+        <RegistrySection
+          isAdmin={user?.isAdmin === true}
+          installedTick={installedTick}
+          projectId={projectId}
+        />
       </div>
 
       {/* Bulk update confirmation. Same warning as the per-plugin confirm — an update is an
@@ -612,11 +619,6 @@ export function PluginsPage() {
           </div>
         </ConfirmModal>
       )}
-      <RegistrySection
-        isAdmin={user?.isAdmin === true}
-        installedTick={installedTick}
-        projectId={projectId}
-      />
     </div>
   );
 }
@@ -939,9 +941,11 @@ function InstallRow({
 
 /**
  * The registry section: what this deployment's plugin index lists (GET
- * /api/plugins/registry), below the library this build ships. One column because the entry
- * that identifies a plugin is its package specifier — long, scoped and monospace, which
- * side-by-side columns would truncate exactly where an operator reads.
+ * /api/plugins/registry), below the library this build ships — the same collapsible group
+ * section the library's categories use, inside the same page column, so the two read as one
+ * list. One column because the entry that identifies a plugin is its package specifier — long,
+ * scoped and monospace, which side-by-side columns would truncate exactly where an operator
+ * reads.
  *
  * Asking for a plugin is a PROJECT's decision (its `plugins` list), so these rows act on the
  * Project in view; what the process runs is the union over its Projects.
@@ -1003,6 +1007,8 @@ function RegistrySection({
    * silently shorter list reads as "that plugin does not exist".
    */
   const [failures, setFailures] = useState<{ source: string; error: string }[]>([]);
+  /** Collapsed like a library group; expanded by default. */
+  const [open, setOpen] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -1022,60 +1028,90 @@ function RegistrySection({
     };
   }, []);
 
+  const rows =
+    error !== null ? (
+      <p className={`p-4 text-sm ${toneInk.danger}`}>{error}</p>
+    ) : plugins === null ? (
+      <div className="grid grid-cols-1 gap-2.5 p-2.5">
+        {Array.from({ length: 3 }, (_, i) => (
+          <SkeletonCard key={i} className="p-4">
+            <Skeleton className="h-4 w-56" />
+            <Skeleton className="mt-2 h-4 w-3/4" />
+          </SkeletonCard>
+        ))}
+      </div>
+    ) : plugins.length === 0 ? (
+      <p className="p-4 text-sm text-gray-400 dark:text-gray-500">{S.pluginRegistry.empty}</p>
+    ) : (
+      <div className="grid grid-cols-1 gap-2.5 p-2.5">
+        {plugins.map((plugin) => (
+          // Versions are distinct index entries (typst-style flat index), so the key needs both halves.
+          <RegistryRow
+            key={`${plugin.name}@${plugin.version}`}
+            plugin={plugin}
+            state={stateOf(plugin.name)}
+            shipped={isShipped(plugin.name)}
+            busy={pendingSpecifier === plugin.name}
+            blocked={pendingSpecifier !== null && pendingSpecifier !== plugin.name}
+            onInstall={isAdmin ? () => void runInstall(plugin.name, true) : null}
+            onRemove={isAdmin ? () => void runInstall(plugin.name, false) : null}
+          />
+        ))}
+      </div>
+    );
   return (
-    <section className="mt-10">
-      <h2 className="text-base font-semibold">{S.pluginRegistry.pageTitle}</h2>
-      {failures.length > 0 && (
-        <div className={`mt-4 rounded-md px-3 py-2 text-sm ${toneSurface.attention}`}>
-          {S.pluginRegistry.sourceUnavailable(failures.length)}
+    <section className="mt-3 overflow-hidden rounded-md bg-white dark:bg-gray-900">
+      {/* The library's group header, verbatim: name, count, the whole row toggles. */}
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2.5 bg-gray-50 px-3 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
+      >
+        <span className="min-w-0 truncate text-sm font-semibold">
+          {S.pluginRegistry.sectionTitle}
+        </span>
+        {plugins !== null && (
+          <span className="shrink-0 whitespace-nowrap font-mono text-xs text-gray-400">
+            {S.plugins.pluginCount(plugins.length)}
+          </span>
+        )}
+        <span className="min-w-0 flex-1" />
+        <Chevron open={open} className="text-gray-400" />
+      </button>
+      <div
+        className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+      >
+        <div className="overflow-hidden" inert={!open}>
+          <div className={`transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}`}>
+            {failures.length > 0 && (
+              <div
+                className={`mx-2.5 mt-2.5 rounded-md px-3 py-2 text-sm ${toneSurface.attention}`}
+              >
+                {S.pluginRegistry.sourceUnavailable(failures.length)}
+              </div>
+            )}
+            {rows}
+          </div>
         </div>
-      )}
-      {error ? (
-        <p className={`mt-4 text-sm ${toneInk.danger}`}>{error}</p>
-      ) : plugins === null ? (
-        <div className="mt-4 flex flex-col gap-2.5">
-          {Array.from({ length: 3 }, (_, i) => (
-            <SkeletonCard key={i} className="p-4">
-              <Skeleton className="h-4 w-56" />
-              <Skeleton className="mt-2 h-4 w-3/4" />
-            </SkeletonCard>
-          ))}
-        </div>
-      ) : plugins.length === 0 ? (
-        <p className="mt-4 text-sm text-gray-400 dark:text-gray-500">{S.pluginRegistry.empty}</p>
-      ) : (
-        <div className="mt-4 flex flex-col gap-2.5">
-          {plugins.map((plugin) => (
-            // Versions are distinct index entries (typst-style flat index), so the key needs both halves.
-            <RegistryRow
-              key={`${plugin.name}@${plugin.version}`}
-              plugin={plugin}
-              state={stateOf(plugin.name)}
-              shipped={isShipped(plugin.name)}
-              busy={pendingSpecifier === plugin.name}
-              blocked={pendingSpecifier !== null && pendingSpecifier !== plugin.name}
-              onInstall={isAdmin ? () => void runInstall(plugin.name, true) : null}
-              onRemove={isAdmin ? () => void runInstall(plugin.name, false) : null}
-            />
-          ))}
-        </div>
-      )}
+      </div>
     </section>
   );
 }
 
 /**
- * One index entry as a row: icon tile, specifier/version and description, a license +
- * keywords metadata line, and a trailing cluster where a list row's chevron would sit — the
- * app-store shape, so the action reads at a glance instead of riding a full-width footer bar.
- * The row itself is the link — a plugin has one destination — and the cluster sits BESIDE
- * that link rather than inside it: a button nested in an anchor is invalid markup, and the
- * click would have two meanings.
+ * One index entry as a row in the library card's shape: the same icon tile (the per-name
+ * palette, the puzzle piece drawn in it — an index entry carries no icon), specifier/version
+ * and description, then a tag line — license, a "built in" tag when this build ships the
+ * package, and its keywords — and a trailing cluster centered on the row where the library
+ * card keeps its actions. The row itself is the link — a plugin has one destination — and the
+ * cluster sits BESIDE that link rather than inside it: a button nested in an anchor is invalid
+ * markup, and the click would have two meanings.
  *
  * The cluster says what the deployment's own state is, not what the catalogue holds: not
  * installed → an Install pill, installed but not loaded → the restart it waits for, running →
- * a success chip; Remove is the quiet text action under a chip. Installing writes
- * plugins.json; it does not load anything (see installed-dialog).
+ * a success chip; Remove is the quiet text action under a chip. Installing writes the
+ * Project's plugin table; it does not load anything (see installed-dialog).
  */
 function RegistryRow({
   plugin,
@@ -1107,24 +1143,12 @@ function RegistryRow({
         {S.plugins.installedRestart}
       </span>
     ) : null;
-  const shippedTag = shipped ? (
-    <span
-      title={S.plugins.builtinHint}
-      className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-    >
-      {S.plugins.builtin}
-    </span>
-  ) : null;
+  const cluster = chip !== null || onInstall !== null;
   return (
-    <div className="flex items-stretch rounded-md border border-gray-200 bg-white transition-colors duration-150 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700">
-      <Link
-        to={`/plugins/registry/${plugin.name}`}
-        className="min-w-0 flex-1 rounded-l-md p-4 transition-colors duration-150 hover:bg-gray-50 dark:hover:bg-gray-800/60"
-      >
+    <div className="flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+      <Link to={`/plugins/registry/${plugin.name}`} className="min-w-0 flex-1">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-            <GlyphIcon d={NAV_ICONS.plugins} size={18} />
-          </div>
+          <SkillTile name={plugin.name} fallback={PLUGIN_ICON} size={36} glyph={20} />
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
               <span
@@ -1142,16 +1166,19 @@ function RegistryRow({
               {plugin.description}
             </p>
           </div>
-          {chip === null && onInstall === null && shippedTag === null && (
-            <GlyphIcon
-              d="M9 6l6 6-6 6"
-              size={14}
-              className="shrink-0 text-gray-300 dark:text-gray-600"
-            />
-          )}
         </div>
+        {/* Tag line: license first, then "built in" (a fact about this build, so it is set in
+            text rather than the keywords' monospace), then the entry's own keywords. */}
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
           <span className="text-gray-400 dark:text-gray-500">{plugin.license}</span>
+          {shipped && (
+            <span
+              title={S.plugins.builtinHint}
+              className="rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+            >
+              {S.plugins.builtin}
+            </span>
+          )}
           {(plugin.keywords ?? []).map((keyword) => (
             <span
               key={keyword}
@@ -1162,9 +1189,8 @@ function RegistryRow({
           ))}
         </div>
       </Link>
-      {(chip !== null || onInstall !== null || shippedTag !== null) && (
-        <div className="flex shrink-0 flex-col items-end justify-center gap-1 py-3 pr-4 pl-1">
-          {state === "none" && shippedTag}
+      {cluster ? (
+        <div className="flex shrink-0 flex-col items-end justify-center gap-1">
           {state === "none"
             ? onInstall !== null && (
                 <Button variant="primary" size="sm" disabled={busy || blocked} onClick={onInstall}>
@@ -1183,6 +1209,12 @@ function RegistryRow({
             </button>
           )}
         </div>
+      ) : (
+        <GlyphIcon
+          d="M9 6l6 6-6 6"
+          size={14}
+          className="shrink-0 text-gray-300 dark:text-gray-600"
+        />
       )}
     </div>
   );

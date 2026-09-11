@@ -1548,7 +1548,7 @@ export const zh = {
     },
   },
 
-  /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
+  /** Plugins page (features/plugins/plugins-page.tsx): the library's cards (one per library plugin, installed on Agents as a whole) and the registry section. */
   plugins: {
     installedTitle: "已安装的插件",
     installedDesc:
@@ -1568,8 +1568,9 @@ export const zh = {
     deploymentInstalledToast: (name: string) => `已安装 ${name}`,
     addLabel: "添加插件",
     fileHint: (file: string) => `npm 包名；构建未自带时先下载，再写入该 Project 的 ${file}`,
-    pageTitle: "插件库",
-    pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
+    pageTitle: "插件市场",
+    pageDesc:
+      "本次构建自带的插件库——每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent；其下是插件源：本部署可为 Project 安装的插件包。",
     /** Plugin count in the group header (small text to the right of the category name). */
     pluginCount: (n: number): string => `${n} 个插件`,
     /** Search box of the create dialog's plugin picker. */
@@ -1653,6 +1654,8 @@ export const zh = {
   },
 
   pluginRegistry: {
+    /** The registry section's group header on the Plugins page, under the library's categories. */
+    sectionTitle: "插件源",
     pageTitle: "插件市场",
     empty: "暂无插件",
     /** Card metadata: the entry's package specifier doubles as the install string. */
