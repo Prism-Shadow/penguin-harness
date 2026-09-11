@@ -69,7 +69,10 @@ export function sessionActivityLabel(activity: Activity): string {
  * The background-task mark: "work is going on behind this" wherever the app says so — a
  * session row and the chat header, where it stands for the conversation's whole set of
  * background command processes and subagents, and a tool row, where it marks the one call
- * that was made with `run_in_background`. `busy` ink, because that is what it means.
+ * that was made with `run_in_background`. `muted` ink: background work is parked, not a turn in
+ * progress, so it joins the row's dim cluster of standing arrangements rather than reading as
+ * the conversation being busy. `muted` may only mark a state already spelled out in text, which
+ * the required label below is.
  *
  * Both props are the caller's to decide, because the two placements genuinely differ: the
  * label names a count in one place and a single call in the other, and the size is the rung
@@ -84,7 +87,7 @@ export function BackgroundTasksMark({ label, size }: { label: string; size: numb
       role="img"
       aria-label={label}
       title={label}
-      className={`flex shrink-0 items-center ${toneInk.busy}`}
+      className={`flex shrink-0 items-center ${toneInk.muted}`}
     >
       <GlyphIcon d={BACKGROUND_TASKS_ICON} size={size} />
     </span>

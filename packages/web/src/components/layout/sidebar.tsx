@@ -2716,11 +2716,12 @@ function SessionRow({
                   : "text-gray-700 dark:text-gray-300"
             }`}
           />
-          {/* Three marks for the row's STANDING arrangements, all in one dim cluster and all in
+          {/* Four marks for the row's STANDING arrangements, all in one dim cluster and all in
               the `muted` ink: how the row is filed (pinned), where it can be reached from
-              (messaging relay), and whether it runs on its own (a scheduled task). None of them
-              is live work, so none competes with the status glyph that follows; each names
-              itself in a tooltip and in sr text, which is what lets them recede this far. */}
+              (messaging relay), whether it runs on its own (a scheduled task) and whether it
+              owns work that outlives the turn (background tasks). None of them is live work, so
+              none competes with the status glyph that follows; each names itself in a tooltip
+              and in sr text, which is what lets them recede this far. */}
           {/* Pinned indicator: a dim pin after the title (unpin lives in the row menu). */}
           {pinned && canPin && (
             <span title={S.chat.pinnedSession} className={`shrink-0 ${toneInk.muted}`}>
@@ -2744,16 +2745,17 @@ function SessionRow({
               the schedules panel says how often and what. A paused task, or one past its end
               time, draws nothing — nothing more will fire from it, and a mark would be noise. */}
           {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
-          {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
-          <StatusGlyph activity={activity} />
-          {/* Beside the glyph, not instead of it: an idle row can still own background work,
-              and the mark leaves with the last task (live via session_background). */}
+          {/* Background work the conversation owns while sitting idle: parked, not running,
+              so it reads as an arrangement rather than as a turn in progress. The mark leaves
+              with the last task (live via session_background). */}
           {background > 0 && (
             <BackgroundTasksMark
               label={S.chat.backgroundTasks(background)}
               size={ICON_SIZE.rowMark}
             />
           )}
+          {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
+          <StatusGlyph activity={activity} />
           {s.pendingApprovalCount > 0 && (
             <span title={S.chat.pendingApprovals(s.pendingApprovalCount)}>
               <Badge tone="amber">{s.pendingApprovalCount}</Badge>
