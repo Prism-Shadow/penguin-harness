@@ -603,6 +603,44 @@
   background: transparent !important;
   padding: 0.625rem 0.75rem;
 }
+/* Line numbers (CodeBlock's `lineNumbers`, drawn by the Files panel's source view): a counter
+   over the per-line spans both of its rendering paths produce — Shiki's own `.line` wrappers,
+   and the same wrappers the unhighlighted fallback splits into — so the highlighter's markup
+   needs no changes and the two paths cannot disagree.
+
+   The number is generated content and `user-select: none`, so dragging across the code selects
+   the code alone and the copy button is untouched either way (it copies the string prop, never
+   the DOM). Its box is `--code-gutter` wide (the file's digit count, set inline) plus an opaque
+   1rem of padding, and it sticks to the scroller's left edge: the padding is what hides the code
+   sliding under it, and `min-width: max-content` on the pre is what lets it stay there for the
+   whole scroll — a sticky box cannot travel past its containing block, which is otherwise only
+   as wide as the visible strip. */
+.code-lines pre {
+  min-width: max-content;
+  counter-reset: code-line;
+}
+.code-lines .line {
+  counter-increment: code-line;
+}
+.code-lines .line::before {
+  content: counter(code-line);
+  position: sticky;
+  left: 0;
+  display: inline-block;
+  width: calc(var(--code-gutter, 2ch) + 1rem);
+  padding-right: 1rem;
+  text-align: right;
+  user-select: none;
+  -webkit-user-select: none;
+  @apply bg-white text-gray-400;
+}
+/* The dark half is spelled out rather than applied as a `dark:` variant: that variant appends
+   its `:where(.dark, .dark *)` to the END of the selector, which for a pseudo-element is
+   invalid CSS and is dropped without a word — the same reason the Shiki theme overrides above
+   are written this way. */
+html.dark .code-lines .line::before {
+  @apply bg-gray-950 text-gray-600;
+}
 html.dark .shiki,
 html.dark .shiki span {
   color: var(--shiki-dark) !important;

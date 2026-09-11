@@ -1904,7 +1904,7 @@ Scenarios:
     removeImage: "Remove image",
     openAgents: "Agents panel",
     /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    workspacePanel: "Workspace",
+    workspacePanel: "Files",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -2453,6 +2453,11 @@ Scenarios:
     title: "Files",
     upload: "Upload",
     download: "Download",
+    /** Row / preview context menu: the two entries both kinds carry, then the kind-specific one. */
+    copyPath: "Copy relative path",
+    addToChat: "Add to conversation",
+    addSelectionToChat: "Add selection to conversation",
+    uploadHere: "Upload here",
     openInNewTab: "Open in new tab",
     previewNotIsolatedHint:
       "This address has no separate preview origin, so the page opens sandboxed: localStorage, cookies and third-party embeds will not work. Reach the app over 127.0.0.1 or localhost, or set PENGUIN_PREVIEW_ORIGIN.",

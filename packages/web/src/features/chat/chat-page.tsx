@@ -82,6 +82,7 @@ import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
+import type { InsertLayout } from "../../lib/workspace-tree";
 import {
   compactionTally,
   heldThinkingSwitch,
@@ -1270,6 +1271,15 @@ export function ChatPage() {
     // An empty pin list: a schedule prompt names no Skills, so the composer's own selection stands.
     composerRef.current?.fillPrompt(text, []);
   }, []);
+  /**
+   * The Files panel's exit into the conversation: a `@path` reference, or a fenced block
+   * around what was selected in a preview, spliced into the draft at the caret. Nothing is
+   * sent and nothing already typed is disturbed — the panel contributes a line to a message
+   * the user is writing.
+   */
+  const insertIntoComposer = useCallback((snippet: string, layout: InsertLayout) => {
+    composerRef.current?.insertAtCaret(snippet, layout);
+  }, []);
 
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
@@ -1629,6 +1639,7 @@ export function ChatPage() {
             openRequest={fileOpenRequest}
             active={active}
             reloadSignal={settledTurnSignal}
+            onInsertReference={insertIntoComposer}
           />
         );
       case "memory":

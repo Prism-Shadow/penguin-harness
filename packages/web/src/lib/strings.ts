@@ -1876,7 +1876,7 @@ Benchmark：
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openAgents: "智能体面板",
-    workspacePanel: "工作区",
+    workspacePanel: "文件浏览",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,
@@ -2414,6 +2414,11 @@ Benchmark：
     title: "文件",
     upload: "上传",
     download: "下载",
+    /** Row / preview context menu: the two entries both kinds carry, then the kind-specific one. */
+    copyPath: "复制相对路径",
+    addToChat: "添加到对话",
+    addSelectionToChat: "将选中内容添加到对话",
+    uploadHere: "上传到此文件夹",
     openInNewTab: "新页面打开",
     previewNotIsolatedHint:
       "当前访问地址无法提供独立预览源，页面将以沙箱模式打开：localStorage、Cookie 与第三方 embed 不可用。经 127.0.0.1 或 localhost 访问，或配置 PENGUIN_PREVIEW_ORIGIN 即可解除。",

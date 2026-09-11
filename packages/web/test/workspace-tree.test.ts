@@ -3,7 +3,8 @@
  * the search box's filter over them, the keyboard step over those rows, where a drop lands,
  * the narrow-layout decision and the tree pane's width bounds, how much of a path the
  * toolbar can show, which files count as text (by name, or by their bytes when the name says
- * nothing), the preferences' tolerant parses, and when leaving the editor has to ask.
+ * nothing), the preferences' tolerant parses, when leaving the editor has to ask, and what
+ * the panel's "add to conversation" puts in the composer.
  */
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
@@ -19,6 +20,7 @@ import {
   expandTo,
   filterTreeRows,
   flattenTree,
+  insertAtCaret,
   isDirty,
   isNarrowLayout,
   looksLikeText,
@@ -28,10 +30,12 @@ import {
   parseEditorWrap,
   parseTreeVisible,
   parseTreeWidth,
+  pathReference,
   previewKindFor,
   readEditorWrap,
   readTreeVisible,
   readTreeWidth,
+  selectionBlock,
   sortEntries,
   subtreeEnd,
   treeKeyStep,
@@ -417,5 +421,82 @@ describe("tree visibility preference", () => {
     expect(readTreeVisible(storage)).toBe(true);
     expect(readTreeVisible(brokenPreferences)).toBe(true);
     expect(() => writeTreeVisible(false, brokenPreferences)).not.toThrow();
+  });
+});
+
+describe("composer references", () => {
+  it("marks a directory with a trailing slash and leaves a file bare", () => {
+    expect(pathReference("src/lib/tree.ts", "file")).toBe("@src/lib/tree.ts");
+    expect(pathReference("src/lib", "dir")).toBe("@src/lib/");
+  });
+
+  it("keeps an inline reference off the word in front of it, and always leaves one behind", () => {
+    expect(insertAtCaret("", 0, "@a.txt", "inline")).toEqual({ text: "@a.txt ", caret: 7 });
+    expect(insertAtCaret("look at", 7, "@a.txt", "inline").text).toBe("look at @a.txt ");
+    expect(insertAtCaret("look at ", 8, "@a.txt", "inline").text).toBe("look at @a.txt ");
+    expect(insertAtCaret("line\n", 5, "@a.txt", "inline").text).toBe("line\n@a.txt ");
+  });
+
+  it("inserts inline at the caret without disturbing either side, and lands after the space", () => {
+    const out = insertAtCaret("read  then reply", 5, "@a.txt", "inline");
+    expect(out.text).toBe("read @a.txt  then reply");
+    expect(out.text.slice(out.caret)).toBe(" then reply");
+  });
+
+  it("opens a block on a line of its own, adding only the blank line it still needs", () => {
+    expect(insertAtCaret("", 0, "BLOCK", "block").text).toBe("BLOCK\n");
+    expect(insertAtCaret("why", 3, "BLOCK", "block").text).toBe("why\n\nBLOCK\n");
+    expect(insertAtCaret("why\n", 4, "BLOCK", "block").text).toBe("why\n\nBLOCK\n");
+    expect(insertAtCaret("why\n\n", 5, "BLOCK", "block").text).toBe("why\n\nBLOCK\n");
+  });
+
+  it("clamps a caret that is past the end of the draft", () => {
+    expect(insertAtCaret("hi", 99, "@a.txt", "inline").text).toBe("hi @a.txt ");
+  });
+
+  it("heads a selection block with the path and the lines it covers", () => {
+    expect(
+      selectionBlock({
+        path: "src/a.ts",
+        language: "typescript",
+        selection: "const a = 1;",
+        fromLine: 3,
+        toLine: 5,
+      }),
+    ).toBe("@src/a.ts (L3-L5)\n```typescript\nconst a = 1;\n```");
+  });
+
+  it("names a single line once, and drops the range when the lines are unknown", () => {
+    expect(
+      selectionBlock({ path: "a.ts", language: "ts", selection: "x", fromLine: 7, toLine: 7 }),
+    ).toContain("@a.ts (L7)\n");
+    expect(selectionBlock({ path: "a.md", language: "markdown", selection: "x" })).toContain(
+      "@a.md\n",
+    );
+  });
+
+  it("keeps the selection verbatim and closes it on its own line", () => {
+    const out = selectionBlock({
+      path: "a.txt",
+      language: "text",
+      selection: "  indented\n\n  still\n",
+    });
+    expect(out).toBe("@a.txt\n```text\n  indented\n\n  still\n```");
+  });
+
+  it("opens a longer fence when the selection carries one of its own", () => {
+    const out = selectionBlock({
+      path: "readme.md",
+      language: "markdown",
+      selection: "```js\ncode\n```",
+    });
+    expect(out).toBe("@readme.md\n````markdown\n```js\ncode\n```\n````");
+    const longer = selectionBlock({
+      path: "readme.md",
+      language: "markdown",
+      selection: "````\nnested\n````",
+    });
+    expect(longer.startsWith("@readme.md\n`````markdown\n")).toBe(true);
+    expect(longer.endsWith("\n`````")).toBe(true);
   });
 });

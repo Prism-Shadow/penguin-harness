@@ -129,6 +129,8 @@ import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { toneStrip } from "../../lib/tone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
+import { insertAtCaret } from "../../lib/workspace-tree";
+import type { InsertLayout } from "../../lib/workspace-tree";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -753,8 +755,9 @@ function appendAttachmentParts(
 
 /**
  * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
- * One entry so far: a surface that composes a prompt puts it in this composer instead of
- * submitting it on its own.
+ * Two entries: a surface that composes a whole prompt puts it in this composer instead of
+ * submitting it on its own, and a surface that contributes one reference splices it into
+ * whatever is already being typed.
  */
 export interface ComposerControl {
   /**
@@ -764,6 +767,13 @@ export interface ComposerControl {
    * leave the composer's own Skill selection untouched.
    */
   fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
+  /**
+   * Splice a reference in at the caret, leaving the rest of the draft as it was — the Files
+   * panel's "add to conversation", which contributes a line to a message the user is still
+   * writing rather than replacing it the way fillPrompt does. Focus and the caret end up
+   * after the inserted text, so typing carries on where the user expects.
+   */
+  insertAtCaret: (snippet: string, layout: InsertLayout) => void;
 }
 
 /**
@@ -1449,7 +1459,40 @@ export function ChatInput({
     },
     [skills, selectedSkills, onTextChange, onSkillsChange],
   );
-  useImperativeHandle(controlRef, () => ({ fillPrompt }), [fillPrompt]);
+  /**
+   * Insert at the caret (see ComposerControl.insertAtCaret). The caret is read off the live
+   * textarea rather than the `caret` state: the panel that calls this has had focus for as
+   * long as it took to open a menu and pick a row, and the state is only as fresh as the last
+   * change or selection event the composer saw.
+   */
+  const insertAtComposerCaret = useCallback(
+    (snippet: string, layout: InsertLayout) => {
+      const current = textRef.current;
+      const next = insertAtCaret(
+        current,
+        textareaRef.current?.selectionStart ?? current.length,
+        snippet,
+        layout,
+      );
+      setText(next.text);
+      // The draft cache rides on this callback, so the insertion is persisted like any keystroke.
+      onTextChange?.(next.text);
+      setCaret(next.caret);
+      // After the commit: the textarea is controlled, so the new value and height only exist
+      // once React has rendered them (same rAF convention as applyRecalled/applyHistory).
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(next.caret, next.caret);
+      });
+    },
+    [onTextChange],
+  );
+  useImperativeHandle(controlRef, () => ({ fillPrompt, insertAtCaret: insertAtComposerCaret }), [
+    fillPrompt,
+    insertAtComposerCaret,
+  ]);
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);

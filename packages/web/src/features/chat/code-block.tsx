@@ -12,7 +12,8 @@
  * the whole block each time would be O(n^2) main-thread cost, and an in-progress highlight can't
  * be canceled; once streaming settles, highlight flips true and a single final highlight is done.
  */
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { S } from "../../lib/strings";
 import { CopyButton } from "../../components/ui/copy-button";
 
@@ -20,12 +21,22 @@ export function CodeBlock({
   language,
   code,
   highlight = true,
+  lineNumbers = false,
 }: {
   language: string;
   code: string;
   highlight?: boolean;
+  /**
+   * Number the lines in a gutter (the Files panel's source view). Off for message code
+   * blocks, which is every other caller: a reply's fenced snippet is prose, and numbering
+   * it would invite a reader to cite a line that exists nowhere.
+   */
+  lineNumbers?: boolean;
 }) {
   const [html, setHtml] = useState<string>();
+  // Split once per code change, and only where a gutter needs it: the number of digits sizes
+  // the gutter on both paths, and the unhighlighted fallback renders the lines it returns.
+  const lines = useMemo(() => (lineNumbers ? code.split("\n") : null), [code, lineNumbers]);
 
   useEffect(() => {
     if (!highlight) {
@@ -56,12 +67,39 @@ export function CodeBlock({
         {/* Always visible — the header bar has no hover-gated container. */}
         <CopyButton text={code} label={S.chat.copyCode} />
       </div>
-      <div className="overflow-x-auto bg-white text-[13px] leading-relaxed dark:bg-gray-950">
+      {/* The gutter is drawn by styles.css from a counter on the per-line spans, which is why
+          the fallback below splits into the same `line` spans Shiki emits: one gutter, whichever
+          path rendered the code. Its width is the file's own digit count, so a three-digit line
+          number does not shove the code sideways halfway down the file. */}
+      <div
+        className={`overflow-x-auto bg-white text-[13px] leading-relaxed dark:bg-gray-950${
+          lines === null ? "" : " code-lines"
+        }`}
+        style={
+          lines === null
+            ? undefined
+            : ({
+                "--code-gutter": `${Math.max(2, String(lines.length).length)}ch`,
+              } as CSSProperties)
+        }
+      >
         {html ? (
           <div dangerouslySetInnerHTML={{ __html: html }} />
         ) : (
           <pre className="m-0 px-3 py-2.5 font-mono text-gray-800 dark:text-gray-200">
-            <code>{code}</code>
+            <code>
+              {lines === null
+                ? code
+                : lines.map((line, i) => (
+                    // The newline sits BETWEEN the spans, as Shiki writes it: inside them, a
+                    // selection of one whole line would carry a trailing break the file has
+                    // after it, not in it.
+                    <Fragment key={i}>
+                      <span className="line">{line}</span>
+                      {i < lines.length - 1 ? "\n" : ""}
+                    </Fragment>
+                  ))}
+            </code>
           </pre>
         )}
       </div>

@@ -186,6 +186,14 @@ export const FILE_WRITE_ICON = "M6 3h8l4 4v14H6zM12 11v6M9 14h6";
 export const FILE_EDIT_ICON = "M12 20h9M16.5 3.5a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z";
 
 /**
+ * Moving a file in or out of the Workspace: a tray with an arrow leaving it (upload) or
+ * landing in it (download). The same tray both ways, so the pair reads as one axis; the
+ * arrow's direction is the only difference, and each is labelled where it is drawn.
+ */
+export const UPLOAD_ICON = "M12 15V4m0 0L8 8m4-4 4 4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3";
+export const DOWNLOAD_ICON = "M12 4v11m0 0 4-4m-4 4-4-4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3";
+
+/**
  * Activity trace (a flat line with one tall beat in it): work still going on behind the
  * conversation — the background-task mark on a session row, the matching count in the chat
  * header, and the marker on a tool row whose call was made with `run_in_background`.
@@ -201,6 +209,15 @@ export const BACKGROUND_TASKS_ICON = "M2 12h4l3 9 6-18 3 9h4";
 
 /** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab). */
 export const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
+
+/**
+ * The same bubble with a plus in it: putting something into the conversation rather than
+ * sending it — the Files panel's "add to conversation" drops a reference in the composer
+ * and stops there. Bubble-plus-plus follows the file pair's own convention (FILE_ICON vs
+ * FILE_WRITE_ICON): the plus is what the action adds, drawn on the thing it adds to.
+ */
+export const ADD_TO_CHAT_ICON =
+  "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM12 7v6M9 10h6";
 
 /**
  * Paper plane: remote control — the session-row mark for a Session that is relaying through

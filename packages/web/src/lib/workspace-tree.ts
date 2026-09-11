@@ -13,7 +13,10 @@
  *   - which files count as text — by extension, or by looking at their first bytes when
  *     the extension says nothing — and so can be previewed as text and edited in place;
  *   - the persisted preferences (tree visibility, tree width, editor soft wrap) and the
- *     unsaved-changes decision.
+ *     unsaved-changes decision;
+ *   - what the panel's "add to conversation" puts in the composer — the `@path` reference,
+ *     the fenced block a preview selection becomes, and where each of them may be spliced
+ *     into a draft that is already half typed.
  */
 import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
 import { joinWorkspacePath } from "./file-path";
@@ -579,4 +582,102 @@ export function writeEditorWrap(wrap: boolean, storage?: TreePreferenceStorage):
   } catch {
     /* best-effort persistence (quota limits / private browsing) */
   }
+}
+
+// -------------------------------------------------------------- composer references
+
+/**
+ * How an inserted reference sits in the draft: `inline` keeps it inside the line being
+ * typed, `block` gives it lines of its own.
+ */
+export type InsertLayout = "inline" | "block";
+
+/** A composer insertion: the whole new draft text, and where the caret lands in it. */
+export interface ComposerInsertion {
+  text: string;
+  caret: number;
+}
+
+/**
+ * The `@`-prefixed reference a Workspace entry inserts into the composer. The trailing
+ * slash on a directory is the only thing in the string that says it is one; nothing parses
+ * these — the `@` is there for the reader, not for a mention mechanism.
+ */
+export function pathReference(path: string, kind: "dir" | "file"): string {
+  return kind === "dir" ? `@${path}/` : `@${path}`;
+}
+
+/** The longest run of backticks anywhere in `text`. */
+function longestBacktickRun(text: string): number {
+  let longest = 0;
+  let run = 0;
+  for (const ch of text) {
+    if (ch !== "`") {
+      run = 0;
+      continue;
+    }
+    run += 1;
+    if (run > longest) longest = run;
+  }
+  return longest;
+}
+
+/**
+ * The fenced block a preview selection inserts: a `@path` header carrying the line range,
+ * then the selection verbatim. The fence is opened one backtick longer than the longest run
+ * the selection itself contains, so a selection that carries fences still nests correctly.
+ * The selected text is neither trimmed nor re-indented — the block is what was on screen.
+ */
+export function selectionBlock({
+  path,
+  language,
+  selection,
+  fromLine,
+  toLine,
+}: {
+  path: string;
+  language: string;
+  selection: string;
+  /** 1-based and inclusive. Both are omitted where the selection's place in the file cannot be resolved — a guessed range would be a lie, so the header then carries the path alone. */
+  fromLine?: number;
+  toLine?: number;
+}): string {
+  const range =
+    fromLine === undefined || toLine === undefined
+      ? ""
+      : fromLine === toLine
+        ? ` (L${fromLine})`
+        : ` (L${fromLine}-L${toLine})`;
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(selection) + 1));
+  const body = selection.endsWith("\n") ? selection : `${selection}\n`;
+  return `@${path}${range}\n${fence}${language}\n${body}${fence}`;
+}
+
+/**
+ * `snippet` spliced into `text` at `caret`, with the whitespace its layout needs around it:
+ * an inline reference is kept off the word in front of it and leaves a trailing space to
+ * keep typing after; a block opens on a line of its own with a blank line above, unless the
+ * caret already sits on an empty one, and closes its own line. Whatever was already typed is
+ * left alone on both sides. The returned caret sits after everything inserted.
+ */
+export function insertAtCaret(
+  text: string,
+  caret: number,
+  snippet: string,
+  layout: InsertLayout,
+): ComposerInsertion {
+  const at = Math.max(0, Math.min(caret, text.length));
+  const before = text.slice(0, at);
+  const prefix =
+    layout === "inline"
+      ? before === "" || /\s$/.test(before)
+        ? ""
+        : " "
+      : before === "" || before.endsWith("\n\n")
+        ? ""
+        : before.endsWith("\n")
+          ? "\n"
+          : "\n\n";
+  const insert = `${prefix}${snippet}${layout === "inline" ? " " : "\n"}`;
+  return { text: `${before}${insert}${text.slice(at)}`, caret: at + insert.length };
 }
