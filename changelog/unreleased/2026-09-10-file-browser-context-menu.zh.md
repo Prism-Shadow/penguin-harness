@@ -3,7 +3,7 @@
 - **Date:** 2026-09-10
 - **Type:** feature
 - **Scope:** `web`
-- **PR:** [#PR](https://github.com/Prism-Shadow/penguin-harness/pull/PR)
+- **PR:** [#682](https://github.com/Prism-Shadow/penguin-harness/pull/682)
 
 [English](2026-09-10-file-browser-context-menu.md)
 
