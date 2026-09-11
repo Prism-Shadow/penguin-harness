@@ -134,9 +134,11 @@ the caret, the close cross or the collapse chevron.
 ## Every user-facing string is bilingual
 
 Two dictionaries: `src/lib/strings.ts` is zh (and defines the `Strings` type), `src/lib/strings-en.ts`
-is en and is typed `const en: Strings`. Adding a key to one and not the other is a **type error**,
-not a runtime surprise — and `test/placeholders-parity.test.ts` checks that both sides interpolate
-the same placeholders. Add both, in the same shape, in the same PR.
+is en and is typed `const en: Strings`. That type is the whole guard: a key added to one and not
+the other, or a signature that changed on one side, is a **type error** rather than a runtime
+surprise. What it cannot see is whether a function-valued string uses the parameter it is handed —
+`(n: number) => "items"` typechecks while the other side interpolates `n`. Add both, in the same
+shape, in the same PR.
 
 `S` is a live binding swapped on locale change, so read it at render time; never hoist `S.x.y` into
 a module-level constant.
