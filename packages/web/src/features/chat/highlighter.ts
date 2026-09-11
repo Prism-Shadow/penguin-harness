@@ -55,11 +55,29 @@ function loadGrammar(
 }
 
 /**
+ * Shiki separates its `<span class="line">` wrappers with a literal newline, which is what
+ * breaks the lines when they stay inline. A gutter needs them to be blocks instead — only a
+ * block takes the per-line padding and negative text-indent that keep a wrapped line's
+ * continuation rows clear of its number — and those separators would then each add a blank
+ * row of their own. Dropping them is this transformer's whole job; the line elements, and so
+ * the text a selection serialises out of them, are untouched.
+ */
+const BLOCK_LINES = {
+  code(node: { children: { type: string }[] }) {
+    node.children = node.children.filter((child) => child.type !== "text");
+  },
+};
+
+/**
  * Highlights `code` as `language`, returning Shiki's dual-theme HTML, or undefined when the
  * language isn't one this bundle carries. Rejects only on an unexpected failure (chunk fetch,
  * grammar error); callers fall back to unhighlighted text either way.
  */
-export async function highlightToHtml(code: string, language: string): Promise<string | undefined> {
+export async function highlightToHtml(
+  code: string,
+  language: string,
+  options?: { blockLines?: boolean },
+): Promise<string | undefined> {
   const id = resolveLanguage(language);
   if (!id) return undefined;
   const core = await getCore();
@@ -68,5 +86,6 @@ export async function highlightToHtml(code: string, language: string): Promise<s
   return core.codeToHtml(code, {
     lang: id,
     themes: { light: "github-light", dark: "github-dark" },
+    ...(options?.blockLines === true ? { transformers: [BLOCK_LINES] } : {}),
   });
 }

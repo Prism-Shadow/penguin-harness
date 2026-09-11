@@ -82,7 +82,7 @@ import {
   parentDir,
   pathReference,
   previewKindFor,
-  readEditorWrap,
+  readWrapLines,
   readTreeVisible,
   readTreeWidth,
   selectionBlock,
@@ -90,7 +90,7 @@ import {
   utf8Complete,
   visibleCrumbSegments,
   withExpanded,
-  writeEditorWrap,
+  writeWrapLines,
   writeTreeVisible,
   writeTreeWidth,
 } from "../../lib/workspace-tree";
@@ -99,7 +99,7 @@ import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import { writeClipboard } from "../../components/ui/copy-button";
+import { CopyButton, writeClipboard } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -116,7 +116,7 @@ import { tabKey } from "../dock/dock-state";
 import { DOCK_TRANSITION_MS } from "../dock/use-dock-mount";
 import { usePointerDrag } from "../dock/use-pointer-drag";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
-import { CodeBlock } from "./code-block";
+import { CodeSurface } from "./code-block";
 import { languageForExtension } from "./code-languages";
 import { WorkspaceFileEditor } from "./workspace-editor";
 import { WorkspaceFileMenuRows } from "./workspace-file-menu";
@@ -481,7 +481,8 @@ export function WorkspaceBrowser({
   /** The dragged tree width, or null while the user has never dragged it (the computed default stands). */
   const [treeWidthPref, setTreeWidthPref] = useState<number | null>(() => readTreeWidth());
   const [resizingTree, setResizingTree] = useState(false);
-  const [editorWrap, setEditorWrap] = useState(() => readEditorWrap());
+  /** Soft wrap, shared by the source view and the editor so Edit reflows nothing (see parseWrapLines). */
+  const [wrapLines, setWrapLines] = useState(() => readWrapLines());
   const [width, setWidth] = useState(0);
   /** The breadcrumb strip's own width: it is `flex-1` over a zero basis, so it measures the space left by the actions and never its own content — no feedback loop. */
   const [crumbsWidth, setCrumbsWidth] = useState(0);
@@ -1003,8 +1004,8 @@ export function WorkspaceBrowser({
   };
 
   const setWrap = (wrap: boolean): void => {
-    setEditorWrap(wrap);
-    writeEditorWrap(wrap);
+    setWrapLines(wrap);
+    writeWrapLines(wrap);
   };
 
   // ------------------------------------------------------------------------- tree width
@@ -1433,6 +1434,14 @@ export function WorkspaceBrowser({
   const showTree = narrow ? selectedPath === null : treeVisible;
   const showPreview = narrow ? selectedPath !== null : true;
   const canEdit = preview !== null && editor === null && canEditPreview(preview);
+  /** The source view is on screen: a text file, or Markdown/HTML with the toggle on Source. */
+  const sourceShown =
+    preview !== null &&
+    (preview.kind === "text" ||
+      ((preview.kind === "md" || preview.kind === "html") && richView === "source"));
+  /** The file's text is on screen to read or to edit. Both present it the same way, so both take the Wrap toggle. */
+  const textShown =
+    sourceShown || (preview !== null && editor !== null && editor.path === preview.path);
   const dirLabel = (dir: string): string => (dir === "" ? S.files.root : dir);
 
   const tree = (
@@ -1557,6 +1566,22 @@ export function WorkspaceBrowser({
     />
   );
 
+  /**
+   * Soft wrap. One toggle and one remembered answer for the source view and the editor alike —
+   * they are the same file seen two ways, and a second preference would let Edit reflow the
+   * file under the line the user was aiming at.
+   */
+  const wrapToggle = textShown && (
+    <button
+      type="button"
+      aria-pressed={wrapLines}
+      onClick={() => setWrap(!wrapLines)}
+      className={toggleActionClass(wrapLines)}
+    >
+      {S.files.wrapLines}
+    </button>
+  );
+
   const richToggle = preview !== null && (preview.kind === "html" || preview.kind === "md") && (
     <div className="flex shrink-0 rounded-md bg-gray-100 p-0.5 dark:bg-gray-800">
       {(
@@ -1589,7 +1614,7 @@ export function WorkspaceBrowser({
           <WorkspaceFileEditor
             path={editor.path}
             value={editor.draft}
-            wrap={editorWrap}
+            wrap={wrapLines}
             onChange={updateDraft}
             onSave={requestSave}
           />
@@ -1634,7 +1659,12 @@ export function WorkspaceBrowser({
           // of the tab order, and the outline is suppressed because the focus is a handover,
           // not a destination the user chose.
           tabIndex={-1}
-          className="min-h-0 flex-1 overflow-auto p-3 outline-none [scrollbar-gutter:stable]"
+          // The source view brings its own padding, and has to: the editor's textarea lies on
+          // top of it, and only padding the two layers share keeps the typed text over the
+          // highlighted text.
+          className={`min-h-0 flex-1 overflow-auto outline-none [scrollbar-gutter:stable] ${
+            sourceShown && preview?.content !== undefined ? "" : "p-3"
+          }`}
         >
           {p.kind === "image" ? (
             // Keyed on the nonce like the isolated HTML iframe: the src alone is unchanged
@@ -1772,18 +1802,22 @@ export function WorkspaceBrowser({
                 <SkeletonList rows={6} />
               )
             ) : (
-              // The source view reuses the message stream's CodeBlock: Shiki dual-theme
-              // highlighting + language label + copy button, no line wrapping, horizontal scroll
-              // instead (wrapping code is a disaster for readability, see the old mobile styling).
+              // The text itself, with no box around it — the same surface the editor lays its
+              // textarea over, so Edit changes what you can do and nothing about what you see.
+              // Wrapping is the Wrap toggle's business here; the message stream's own code
+              // blocks still scroll sideways rather than wrap, which is a transcript's answer
+              // and not a file viewer's.
               <>
-                <CodeBlock
+                <CodeSurface
                   language={languageForExtension(extOf(p.name))}
                   code={p.content}
                   highlight={p.content.length <= HIGHLIGHT_LIMIT}
                   lineNumbers
+                  wrap={wrapLines}
+                  className="text-xs leading-relaxed"
                 />
                 {p.truncated && (
-                  <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
+                  <p className="px-3 pb-2 text-xs text-gray-400">… {S.files.previewTruncated}</p>
                 )}
               </>
             )
@@ -1889,16 +1923,7 @@ export function WorkspaceBrowser({
                 {dirty && (
                   <span className={`shrink-0 text-xs ${toneInk.attention}`}>{S.files.unsaved}</span>
                 )}
-                {/* Soft wrap: off is the editor's own default — long lines scroll sideways,
-                    as code should — and the choice is remembered for every file after. */}
-                <button
-                  type="button"
-                  aria-pressed={editorWrap}
-                  onClick={() => setWrap(!editorWrap)}
-                  className={toggleActionClass(editorWrap)}
-                >
-                  {S.files.editorWrap}
-                </button>
+                {wrapToggle}
                 <Button size="sm" onClick={cancelEdit} disabled={saving}>
                   {S.common.cancel}
                 </Button>
@@ -1915,6 +1940,7 @@ export function WorkspaceBrowser({
             ) : (
               <>
                 {richToggle}
+                {wrapToggle}
                 {canEdit && (
                   <button
                     type="button"
@@ -1945,6 +1971,12 @@ export function WorkspaceBrowser({
                       </span>
                     )}
                   </a>
+                )}
+                {/* Copy lived in the code block's own header bar; the source view no longer has
+                    one, so it joins the file's other take-it-away actions here. It copies the
+                    text that was read, which is all of the file unless the preview was cut off. */}
+                {sourceShown && preview.content !== undefined && (
+                  <CopyButton text={preview.content} label={S.chat.copyCode} />
                 )}
                 <a
                   href={api.workspaceFileUrl(sessionId, preview.path, true)}

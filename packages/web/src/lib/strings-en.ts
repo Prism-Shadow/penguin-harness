@@ -2498,8 +2498,8 @@ Scenarios:
     dropToUpload: (dir: string): string => `Drop to upload into ${dir}`,
     /** In-place text editing. */
     editorLabel: (name: string): string => `Editing ${name}`,
-    /** Editor soft-wrap toggle: off means long lines scroll sideways. */
-    editorWrap: "Wrap",
+    /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
+    wrapLines: "Wrap",
     unsaved: "Unsaved changes",
     saveTitle: "Save (Ctrl+S / ⌘S)",
     saveConfirmTitle: "Save file",

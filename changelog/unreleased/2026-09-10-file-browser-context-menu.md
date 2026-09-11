@@ -1,4 +1,4 @@
-# The Files panel gets a context menu, and its source view gets line numbers
+# The Files panel gets a context menu, wrapping, and an editor that looks like the file
 
 - **Date:** 2026-09-10
 - **Type:** feature
@@ -7,11 +7,10 @@
 
 [中文版](2026-09-10-file-browser-context-menu.zh.md)
 
-The dock panel that browsed the Workspace is now called 文件浏览 / Files, and a secondary click
-on it carries the per-entry actions it had nowhere to put: copy an entry's Workspace-relative
-path, add a reference to it to the conversation, upload into a folder, download a file. The
-same menu opens on the preview body for the file on screen, where it can also hand the
-conversation the text currently selected rather than the whole file.
+The dock panel that browsed the Workspace is now called 文件浏览 / Files, a secondary click on it
+carries the per-entry actions it had nowhere to put, and its source view and its in-place editor
+became the same presentation of the file: numbered lines, the same highlighting, the same
+wrapping, and no box around either.
 
 ## Details
 
@@ -20,11 +19,30 @@ conversation the text currently selected rather than the whole file.
   from the row itself; a gesture that lands between rows keeps the browser's own menu, as does
   one inside the in-place editor, where the native menu is how text is pasted. A right-click
   inside the HTML or PDF preview goes to the iframe and never reaches the panel.
+- The menu copies an entry's Workspace-relative path, adds a reference to it to the conversation,
+  uploads into a folder and downloads a file.
 - "Add to conversation" splices a `@path` into the composer at the caret, leaving the rest of
   the draft where it was; a directory's reference keeps its trailing slash. Nothing is sent and
   nothing is parsed — the `@` is for the reader.
 - Adding a preview selection instead writes a fenced block headed by `@path (L3-L7)`, carrying
   the selection verbatim. The line range is given only where the source view can resolve it,
   and the fence is opened long enough to survive a selection that contains fences of its own.
-- The source view numbers its lines, gutter sticky at the left edge while the code scrolls
-  sideways. The numbers are not selectable and are not part of what the copy button copies.
+- The source view numbers its lines and lost its border, its language label and its header bar —
+  it presents the text the way the editor does. Copy moved to the preview header, beside Edit,
+  Open in new tab and Download.
+- The editor numbers its lines and highlights them too: it is now a transparent-text textarea
+  over the same code surface the source view shows, stacked in one scroll container so the two
+  layers cannot drift apart. Files over 32KB are edited unhighlighted — the editor re-highlights
+  every time the text settles, and past that size the catch-up stops reading as the colours
+  arriving. Line numbers stay at any size.
+- Soft wrap became a toggle in the source view as well, and the source view and the editor share
+  one remembered answer: they are the same file seen two ways, and pressing Edit must not reflow
+  the file under the line you were aiming at. Message code blocks still scroll sideways rather
+  than wrap, which is a transcript's answer and not a file viewer's.
+
+## Compatibility
+
+Soft wrap now defaults to ON, in the editor as well as in the new source-view toggle. The stored
+preference (`penguin.files.editorWrap`) is unchanged and still read: anyone who has ever used the
+editor's Wrap toggle keeps the answer they gave, and only a browser with no stored value picks up
+the new default. The key keeps its name because renaming it would silently discard those answers.

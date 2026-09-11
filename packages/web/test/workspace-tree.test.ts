@@ -27,12 +27,12 @@ import {
   maxTreeWidth,
   needsDiscardConfirm,
   parentDir,
-  parseEditorWrap,
+  parseWrapLines,
   parseTreeVisible,
   parseTreeWidth,
   pathReference,
   previewKindFor,
-  readEditorWrap,
+  readWrapLines,
   readTreeVisible,
   readTreeWidth,
   selectionBlock,
@@ -43,7 +43,7 @@ import {
   utf8Complete,
   visibleCrumbSegments,
   withExpanded,
-  writeEditorWrap,
+  writeWrapLines,
   writeTreeVisible,
   writeTreeWidth,
 } from "../src/lib/workspace-tree";
@@ -382,24 +382,24 @@ describe("tree width preference", () => {
   });
 });
 
-describe("editor wrap preference", () => {
-  it("wraps only on an explicit on value", () => {
-    expect(parseEditorWrap(null)).toBe(false);
-    expect(parseEditorWrap("0")).toBe(false);
-    expect(parseEditorWrap("garbage")).toBe(false);
-    expect(parseEditorWrap("1")).toBe(true);
-    expect(parseEditorWrap(" TRUE ")).toBe(true);
+describe("soft wrap preference", () => {
+  it("wraps unless an explicit off value is stored, so a stored answer survives the new default", () => {
+    expect(parseWrapLines(null)).toBe(true);
+    expect(parseWrapLines("garbage")).toBe(true);
+    expect(parseWrapLines("1")).toBe(true);
+    expect(parseWrapLines("0")).toBe(false);
+    expect(parseWrapLines(" FALSE ")).toBe(false);
   });
 
-  it("round-trips through storage and reads as off when storage throws", () => {
+  it("round-trips through storage and reads as on when storage throws", () => {
     const storage = memPreferences();
-    expect(readEditorWrap(storage)).toBe(false);
-    writeEditorWrap(true, storage);
-    expect(readEditorWrap(storage)).toBe(true);
-    writeEditorWrap(false, storage);
-    expect(readEditorWrap(storage)).toBe(false);
-    expect(readEditorWrap(brokenPreferences)).toBe(false);
-    expect(() => writeEditorWrap(true, brokenPreferences)).not.toThrow();
+    expect(readWrapLines(storage)).toBe(true);
+    writeWrapLines(false, storage);
+    expect(readWrapLines(storage)).toBe(false);
+    writeWrapLines(true, storage);
+    expect(readWrapLines(storage)).toBe(true);
+    expect(readWrapLines(brokenPreferences)).toBe(true);
+    expect(() => writeWrapLines(false, brokenPreferences)).not.toThrow();
   });
 });
 

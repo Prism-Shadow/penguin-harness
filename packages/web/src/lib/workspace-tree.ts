@@ -12,7 +12,7 @@
  *   - how many breadcrumb segments fit on the toolbar's single row;
  *   - which files count as text — by extension, or by looking at their first bytes when
  *     the extension says nothing — and so can be previewed as text and edited in place;
- *   - the persisted preferences (tree visibility, tree width, editor soft wrap) and the
+ *   - the persisted preferences (tree visibility, tree width, soft wrap) and the
  *     unsaved-changes decision;
  *   - what the panel's "add to conversation" puts in the composer — the `@path` reference,
  *     the fenced block a preview selection becomes, and where each of them may be spliced
@@ -507,6 +507,7 @@ export interface TreePreferenceStorage {
 /** Global preferences, not per Session: whether the tree pane is shown, how wide it is, and whether the editor soft-wraps. */
 export const TREE_VISIBLE_KEY = "penguin.files.treeVisible";
 export const TREE_WIDTH_KEY = "penguin.files.treeWidth";
+/** Soft wrap, shared by the source view and the editor (see parseWrapLines on why one value, and on the key's name). */
 export const EDITOR_WRAP_KEY = "penguin.files.editorWrap";
 
 /** Tolerant parse: only an explicit "off" spelling hides the tree; nothing stored or anything unrecognized shows it (the default). */
@@ -561,22 +562,32 @@ export function writeTreeWidth(width: number, storage?: TreePreferenceStorage): 
   }
 }
 
-/** Tolerant parse of the editor's soft-wrap preference: OFF unless an explicit on spelling is stored — long lines scrolling sideways is the default a code editor has. */
-export function parseEditorWrap(raw: string | null): boolean {
-  if (raw === null) return false;
+/**
+ * Tolerant parse of the soft-wrap preference: ON unless an explicit off spelling is stored.
+ * Wrapping is what a reader wants of a file — a line that runs off the right edge has to be
+ * chased to be read — and the same file being edited should not reflow on the way in.
+ *
+ * One value for both the source view and the editor, deliberately. They are the same file
+ * seen two ways, and Edit swaps them in place: a separate preference would let pressing Edit
+ * reflow the whole file and carry the line you were aiming at off the screen. The stored key
+ * still reads `editorWrap` because the editor had the toggle first and a rename would silently
+ * discard everyone's answer.
+ */
+export function parseWrapLines(raw: string | null): boolean {
+  if (raw === null) return true;
   const value = raw.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "on" || value === "yes";
+  return !(value === "0" || value === "false" || value === "off" || value === "no");
 }
 
-export function readEditorWrap(storage?: TreePreferenceStorage): boolean {
+export function readWrapLines(storage?: TreePreferenceStorage): boolean {
   try {
-    return parseEditorWrap((storage ?? localStorage).getItem(EDITOR_WRAP_KEY));
+    return parseWrapLines((storage ?? localStorage).getItem(EDITOR_WRAP_KEY));
   } catch {
-    return false;
+    return true;
   }
 }
 
-export function writeEditorWrap(wrap: boolean, storage?: TreePreferenceStorage): void {
+export function writeWrapLines(wrap: boolean, storage?: TreePreferenceStorage): void {
   try {
     (storage ?? localStorage).setItem(EDITOR_WRAP_KEY, wrap ? "1" : "0");
   } catch {

@@ -2458,8 +2458,8 @@ Benchmark：
     dropToUpload: (dir: string): string => `松开即上传到 ${dir}`,
     /** In-place text editing. */
     editorLabel: (name: string): string => `编辑 ${name}`,
-    /** Editor soft-wrap toggle: off means long lines scroll sideways. */
-    editorWrap: "自动换行",
+    /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
+    wrapLines: "自动换行",
     unsaved: "有未保存的修改",
     saveTitle: "保存（Ctrl+S / ⌘S）",
     saveConfirmTitle: "保存文件",
