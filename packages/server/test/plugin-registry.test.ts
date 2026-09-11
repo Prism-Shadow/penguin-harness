@@ -1,15 +1,19 @@
 /**
  * Plugin registry tests: the shared index format (strict whole-document validation —
  * one malformed row fails the artifact, unlike plugins.json's per-entry tolerance),
- * the builtin registry serving the embedded four sandbox backends, the HTTP registry
+ * the builtin registry serving the embedded four sandbox backends (readmes read from the
+ * packages as npm shipped them), the HTTP registry
  * running a fetched document through the same validator (fetch stubbed, no network),
  * and GET /api/plugins behind the auth gate.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PluginIndexEntry, PluginIndexResponse } from "../src/api/types.js";
-import { BUILTIN_READMES } from "../src/plugin/builtin-readmes.js";
+import type { PluginBase } from "../src/plugin/loader.js";
 import {
   BUILTIN_REGISTRY_SOURCE,
   builtinPluginRegistry,
@@ -129,22 +133,82 @@ describe("GET /api/plugins/registry", () => {
   });
 });
 
+/**
+ * The index asserts a name, version, description and license for four packages that live
+ * beside it in this workspace, and their readmes are those packages' own README.md files.
+ * None of that is enforced by anything the packages do, so it is asserted here: the listing
+ * is the string an operator copies into `plugins.json`, and a catalogue that describes
+ * its entries wrongly is worse than one that omits them.
+ */
+const PLUGINS_DIR = fileURLToPath(new URL("../../../plugins/", import.meta.url));
+
+interface PackageManifest {
+  name: string;
+  version: string;
+  description?: string;
+  license?: string;
+  files?: string[];
+}
+
+const packages = new Map<string, { dir: string; manifest: PackageManifest }>();
+for (const dir of readdirSync(PLUGINS_DIR)) {
+  // A worktree can hold a directory a build left behind; only a real package counts.
+  if (!existsSync(`${PLUGINS_DIR}${dir}/package.json`)) continue;
+  const manifest = JSON.parse(
+    readFileSync(`${PLUGINS_DIR}${dir}/package.json`, "utf8"),
+  ) as PackageManifest;
+  packages.set(manifest.name, { dir, manifest });
+}
+
+/**
+ * The packages as npm ships them, staged as a prefix a registry can read from: each listed
+ * package's own package.json and README.md under `node_modules/<name>/` — what
+ * scripts/build-plugins.mjs installs, minus the code, which a readme lookup never touches.
+ */
+async function shippedPrefix(
+  names: Iterable<string>,
+): Promise<{ dir: string; bases: PluginBase[] }> {
+  const dir = await mkdtemp(path.join(tmpdir(), "penguin-shipped-"));
+  await writeFile(
+    path.join(dir, "package.json"),
+    '{"name":"penguin-builtin-plugins","private":true}',
+  );
+  for (const name of names) {
+    const pkg = packages.get(name);
+    if (pkg === undefined) continue;
+    const dest = path.join(dir, "node_modules", ...name.split("/"));
+    await mkdir(dest, { recursive: true });
+    for (const file of ["package.json", "README.md"]) {
+      await cp(path.join(PLUGINS_DIR, pkg.dir, file), path.join(dest, file));
+    }
+  }
+  return { dir, bases: [{ file: path.join(dir, "package.json"), builtin: true }] };
+}
+
 describe("plugin readmes", () => {
   /**
    * The detail page's whole content. A listed entry with no readme renders an empty page,
    * which is a gap nobody sees until they click it — so the pairing is pinned here rather
    * than left to whoever adds the next backend.
    */
-  it("every builtin entry has one", async () => {
-    const registry = builtinPluginRegistry();
-    for (const entry of await registry.index()) {
-      const readme = await registry.readme(entry.name);
-      expect(readme, `${entry.name} has no readme`).not.toBeNull();
-      expect(readme).toContain("#");
+  it("every builtin entry has one, read from the package on this machine", async () => {
+    const index = await builtinPluginRegistry().index();
+    const shipped = await shippedPrefix(index.map((e) => e.name));
+    try {
+      const registry = builtinPluginRegistry(() => shipped.bases);
+      for (const entry of index) {
+        const readme = await registry.readme(entry.name);
+        expect(readme, `${entry.name} has no readme`).not.toBeNull();
+        expect(readme).toContain("#");
+      }
+    } finally {
+      await rm(shipped.dir, { recursive: true, force: true });
     }
   });
 
-  it("an unlisted name has none, rather than an invented one", async () => {
+  it("a listed package that is not on this machine has none, rather than an invented one", async () => {
+    const [first] = await builtinPluginRegistry().index();
+    expect(await builtinPluginRegistry().readme(first!.name)).toBeNull();
     expect(await builtinPluginRegistry().readme("@someone/not-listed")).toBeNull();
   });
 
@@ -158,33 +222,6 @@ describe("plugin readmes", () => {
 });
 
 describe("the builtin catalogue and the packages it lists", () => {
-  /**
-   * The index asserts a name, version, description and license for four packages that live
-   * beside it in this workspace, and their readmes are those packages' own README.md files.
-   * None of that is enforced by anything the packages do, so it is asserted here: the listing
-   * is the string an operator copies into `plugins.json`, and a catalogue that describes
-   * its entries wrongly is worse than one that omits them.
-   */
-  const PLUGINS_DIR = fileURLToPath(new URL("../../../plugins/", import.meta.url));
-
-  interface PackageManifest {
-    name: string;
-    version: string;
-    description?: string;
-    license?: string;
-    files?: string[];
-  }
-
-  const packages = new Map<string, { dir: string; manifest: PackageManifest }>();
-  for (const dir of readdirSync(PLUGINS_DIR)) {
-    // A worktree can hold a directory a build left behind; only a real package counts.
-    if (!existsSync(`${PLUGINS_DIR}${dir}/package.json`)) continue;
-    const manifest = JSON.parse(
-      readFileSync(`${PLUGINS_DIR}${dir}/package.json`, "utf8"),
-    ) as PackageManifest;
-    packages.set(manifest.name, { dir, manifest });
-  }
-
   it("names each package as that package names itself", async () => {
     for (const entry of await builtinPluginRegistry().index()) {
       const pkg = packages.get(entry.name);
@@ -195,22 +232,21 @@ describe("the builtin catalogue and the packages it lists", () => {
     }
   });
 
-  it("serves each package's own README.md, and ships it in the package", async () => {
-    const registry = builtinPluginRegistry();
-    for (const entry of await registry.index()) {
-      const pkg = packages.get(entry.name)!;
-      const own = readFileSync(`${PLUGINS_DIR}${pkg.dir}/README.md`, "utf8");
-      expect(await registry.readme(entry.name), entry.name).toBe(own);
-      expect(pkg.manifest.files, `${entry.name} would publish without its readme`).toContain(
-        "README.md",
-      );
-    }
-  });
-
-  it("carries no readme for anything it does not list", async () => {
-    const listed = new Set((await builtinPluginRegistry().index()).map((e) => e.name));
-    for (const name of Object.keys(BUILTIN_READMES)) {
-      expect(listed.has(name), `${name} has a readme but no listing`).toBe(true);
+  it("serves each package's own README.md, which the package ships", async () => {
+    const index = await builtinPluginRegistry().index();
+    const shipped = await shippedPrefix(index.map((e) => e.name));
+    try {
+      const registry = builtinPluginRegistry(() => shipped.bases);
+      for (const entry of index) {
+        const pkg = packages.get(entry.name)!;
+        const own = readFileSync(`${PLUGINS_DIR}${pkg.dir}/README.md`, "utf8");
+        expect(await registry.readme(entry.name), entry.name).toBe(own);
+        expect(pkg.manifest.files, `${entry.name} would publish without its readme`).toContain(
+          "README.md",
+        );
+      }
+    } finally {
+      await rm(shipped.dir, { recursive: true, force: true });
     }
   });
 });
@@ -224,13 +260,25 @@ describe("GET /api/plugins/registry/readme", () => {
     await t.cleanup();
   });
 
-  it("requires auth, then serves a listed entry's readme", async () => {
+  it("requires auth, then serves a listed entry's readme from the package on this machine", async () => {
     const name = "@prismshadow/penguin-plugin-sandbox-bwrap";
-    const path = `/api/plugins/registry/readme?name=${encodeURIComponent(name)}`;
-    expect((await t.app.request(path)).status).toBe(401);
+    const url = `/api/plugins/registry/readme?name=${encodeURIComponent(name)}`;
+    expect((await t.app.request(url)).status).toBe(401);
 
+    // The package as npm installs it into the data root's own prefix — the first base the
+    // lookup tries, ahead of the installation's (which, in a checkout, is the workspace).
     const admin = await loginAdmin(t.app);
-    const res = await apiClient(t.app, admin.cookie).get(path);
+    const pkg = packages.get(name)!;
+    const dest = path.join(t.root, "plugins", "node_modules", ...name.split("/"));
+    await mkdir(dest, { recursive: true });
+    await writeFile(
+      path.join(t.root, "plugins", "package.json"),
+      '{"name":"prefix","private":true}',
+    );
+    for (const file of ["package.json", "README.md"]) {
+      await cp(path.join(PLUGINS_DIR, pkg.dir, file), path.join(dest, file));
+    }
+    const res = await apiClient(t.app, admin.cookie).get(url);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { name: string; readme: string | null };
     expect(body.name).toBe(name);
