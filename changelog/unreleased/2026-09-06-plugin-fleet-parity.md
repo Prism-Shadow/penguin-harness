@@ -18,9 +18,7 @@ The routes move to `/api/projects/:projectId/plugins/installed`. A package is re
 
 ## Applied without a restart
 
-A write re-reads the closure into a fresh plugin host and asks the runtime to re-assemble the App from the same bundle — the swap a hot push already performs, so ptys and machine connections cross it exactly as they cross a push. No process restart.
-
-`Hmr.reload` is an optional **field** rather than a method, and that is load-bearing: the signature check tolerates a field a runtime does not declare, and refuses a platform whose required method is missing. A runtime older than this keeps taking pushes and simply reports that it is waiting for a restart, which is what every runtime did before.
+A write asks the App to re-assemble itself: the platform boots its inner tree again with the kernel's own `upgrade` — same bundle, same parked document, the swap a hot push already performs — so ptys and machine connections cross it exactly as they cross a push. No process restart, and nothing in the HMR layer is involved: the runtime keeps holding the same outer instance throughout, which is why this works on every runtime, old ones included. A boot that fails is recovered onto the previous App and reported as "did not take".
 
 ## The same list on a Project's machines
 
