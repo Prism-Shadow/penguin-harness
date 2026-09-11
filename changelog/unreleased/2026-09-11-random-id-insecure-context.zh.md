@@ -3,6 +3,7 @@
 - **Date:** 2026-09-11
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#687](https://github.com/Prism-Shadow/penguin-harness/pull/687)
 
 [English](2026-09-11-random-id-insecure-context.md)
 
