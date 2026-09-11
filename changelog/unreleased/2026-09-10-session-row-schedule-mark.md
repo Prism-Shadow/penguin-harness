@@ -27,3 +27,6 @@ belongs with.
   rather than reading "not loaded yet" as "no Session is scheduled".
 - The mark moved next to the pin and the messaging-relay glyph, ahead of the live-status glyph,
   and all three take `muted` from the shared tone tokens.
+- The background-tasks mark took `muted` as well, both on a session row and on the tool row of a
+  call made with `run_in_background`. The chat header's own background-tasks count is drawn
+  separately and kept the tone it had.

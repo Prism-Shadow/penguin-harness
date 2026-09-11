@@ -17,7 +17,9 @@ vi.mock("../src/api/endpoints", () => ({ listSchedules: vi.fn() }));
 
 import * as api from "../src/api/endpoints";
 import {
+  noteScheduleEvent,
   refreshSchedules,
+  retainSchedules,
   scheduleError,
   scheduleItems,
 } from "../src/features/schedules/schedule-store";
@@ -120,5 +122,63 @@ describe("refreshSchedules", () => {
     // mean a failure anywhere put an error message under every reader.
     expect(scheduleError("p4", "a1")).toBeNull();
     expect(names("p4", "a1")).toEqual(["nightly"]);
+  });
+});
+
+/**
+ * The reader count is what decides whether a `schedule_fired` / `schedule_queued` event costs a
+ * request: with a list per scope, the store can no longer tell "on screen" from "cached" by
+ * asking which scope it points at. Refreshing a scope nothing is showing would spend a request
+ * on an answer the next mount re-reads anyway, and skipping one a reader IS showing would leave
+ * a fired task's row stale until the next poll — so both directions are asserted here.
+ */
+describe("retainSchedules and noteScheduleEvent", () => {
+  it("re-reads a scope a reader is mounted on, and leaves a cached one nobody shows alone", async () => {
+    listSchedules.mockImplementation(async (_projectId, agentId) => response(agentId));
+
+    await refreshSchedules("p5", "a1");
+    // Loaded, but nothing on screen is reading it: the event costs nothing.
+    noteScheduleEvent("p5", "a1");
+    expect(listSchedules).toHaveBeenCalledTimes(1);
+
+    const release = retainSchedules("p5", "a1");
+    noteScheduleEvent("p5", "a1");
+    expect(listSchedules).toHaveBeenCalledTimes(2);
+    // Joins the request the event started rather than issuing a third.
+    await refreshSchedules("p5", "a1");
+    expect(listSchedules).toHaveBeenCalledTimes(2);
+
+    // Releasing the last reader keeps the list — that is exactly what the reader draws again on
+    // return — and stops the events nothing would display.
+    release();
+    noteScheduleEvent("p5", "a1");
+    expect(listSchedules).toHaveBeenCalledTimes(2);
+    expect(names("p5", "a1")).toEqual(["a1"]);
+  });
+
+  it("counts readers, so the panel unmounting does not silence the sidebar's refreshes", async () => {
+    listSchedules.mockImplementation(async (_projectId, agentId) => response(agentId));
+    // Both surfaces on one agent, which is the resting state: the sidebar's current Agent is
+    // the open conversation's. A flag rather than a count would let either release silence both.
+    const sidebar = retainSchedules("p6", "a1");
+    const panel = retainSchedules("p6", "a1");
+
+    panel();
+    noteScheduleEvent("p6", "a1");
+    // Read before settling: the request goes out synchronously, so a count of 0 here is the
+    // event having been dropped, not a request that has yet to be made.
+    expect(listSchedules).toHaveBeenCalledTimes(1);
+    // Joins the request the event started rather than issuing one of its own.
+    await refreshSchedules("p6", "a1");
+    expect(listSchedules).toHaveBeenCalledTimes(1);
+
+    sidebar();
+    noteScheduleEvent("p6", "a1");
+    expect(listSchedules).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores an event for a scope no reader has ever asked about", () => {
+    noteScheduleEvent("p7", "a1");
+    expect(listSchedules).not.toHaveBeenCalled();
   });
 });

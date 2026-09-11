@@ -29,11 +29,12 @@ type Activity = Exclude<SessionActivity, null>;
  * because it renders nothing, which is correct — there is no state to report.
  *
  * Background work is a separate mark, not a fourth state (BackgroundTasksMark below): an
- * activity trace in the `busy` tone, drawn beside whichever glyph the row wears — an idle, read
- * Session can still own a dev server or a background subagent, and the row says both. A standing
- * scheduled task is a mark of another kind again (ScheduleMark below): it says what the
- * conversation will do without anyone opening it, not what it is doing now, so it takes the
- * `muted` ink of the row's settled marks and sits with them, ahead of the live states.
+ * activity trace drawn beside whichever glyph the row wears — an idle, read Session can still
+ * own a dev server or a background subagent, and the row says both. A standing scheduled task is
+ * a mark of another kind again (ScheduleMark below): it says what the conversation will do
+ * without anyone opening it, not what it is doing now, and sits with the row's settled marks
+ * ahead of the live states. Each of the two names its own tone where it is defined, so a tone is
+ * spelled in one place and cannot go stale in another.
  *
  * Ink comes from the shared tone tokens (lib/tone.ts), which carry the measured contrast ratios
  * against the two surfaces these glyphs sit on: the sidebar (gray-50 / gray-900) and the chat
