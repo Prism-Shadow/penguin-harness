@@ -3,6 +3,7 @@
 - **Date:** 2026-09-11
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#690](https://github.com/Prism-Shadow/penguin-harness/pull/690)
 
 [中文版](2026-09-11-claim-link-failure.zh.md)
 
