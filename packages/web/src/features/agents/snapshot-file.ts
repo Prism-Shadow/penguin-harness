@@ -1,12 +1,11 @@
 /** Picking and reading Agent State snapshot packages (`<agentId>-v<n>.tar.gz`). */
-
-/**
- * <a download>/<label> version of the button look (matches Button secondary sm; the Button
- * component only renders <button>): the settings page's transfer actions and the create
- * dialog's snapshot picker.
- */
 import { labelButtonClass } from "../../components/ui/button";
 
+/**
+ * The button look on the `<a download>` / `<label>` the transfer actions and the snapshot picker
+ * need — the settings page's transfers and the create dialog's picker, neither of which can be a
+ * `<button>`.
+ */
 export const SNAPSHOT_BUTTON_CLASS = labelButtonClass("secondary", "sm");
 
 /**
