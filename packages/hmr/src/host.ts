@@ -69,8 +69,6 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import zlib from "node:zlib";
-import { Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
 import type { Instance, Json, AnyIface, AnyImpl, Park } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
@@ -106,20 +104,8 @@ export interface GitSource {
  * fails to load from a bundle placed outside the server's own module graph).
  */
 export interface UpgradeAssets {
-  /**
-   * relPath → base64 content: the whole set inline. The original shape, and what a pusher
-   * that never probed sends; every file arrives whether or not this store holds it.
-   */
-  files?: Record<string, string>;
-  /**
-   * relPath → the sha256 of its content, for a pusher that probed first (POST
-   * /api/hmr/assets/probe): only the blobs the store lacks travel in `blobs`, the rest are
-   * named and expected to be here already. A named blob that is neither is a refused push,
-   * not a silent hole in the assets.
-   */
-  manifest?: Record<string, { sha: string }>;
-  /** sha256 → base64 content, for the manifest entries this store was missing. */
-  blobs?: Record<string, string>;
+  /** relPath → base64 content. */
+  files: Record<string, string>;
   /** relPaths that must land executable (a helper binary the platform spawns). */
   exec?: string[];
 }
@@ -568,32 +554,12 @@ export class HmrHost<Api extends Park = Park> {
    * push interrupted halfway is repaired rather than trusted.
    */
   private async materializeAssets(assets: UpgradeAssets): Promise<string> {
-    // Both payload shapes become one map of relPath → sha256, with the bytes of any blob
-    // that arrived inline stored under its hash first. Inline files (the v1 shape) are
-    // hashed here; a manifest (v2) names its hashes and ships only what the probe said was
-    // missing. From here on the two are the same thing.
+    // Every file goes through the blob store first, so a set is one map of relPath → sha256
+    // whether its content arrived in this push or was already here.
     const files: Record<string, string> = {};
-    if (assets.files !== undefined) {
-      for (const [rel, b64] of Object.entries(assets.files)) {
-        if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
-        files[rel] = await this.storeBlob(Buffer.from(b64, "base64"));
-      }
-    }
-    if (assets.manifest !== undefined) {
-      for (const [sha, b64] of Object.entries(assets.blobs ?? {})) {
-        const stored = await this.storeBlob(Buffer.from(b64, "base64"));
-        if (stored !== sha) throw new Error(`blob ${sha} does not hash to its name`);
-      }
-      for (const [rel, entry] of Object.entries(assets.manifest)) {
-        if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
-        if (!isBlobName(entry.sha)) throw new Error(`bad blob name for ${rel}`);
-        if (!fs.existsSync(this.blobPath(entry.sha))) {
-          throw new Error(
-            `assets manifest names blob ${entry.sha.slice(0, 12)} for ${rel}, which this store does not hold — push again without the probe`,
-          );
-        }
-        files[rel] = entry.sha;
-      }
+    for (const [rel, b64] of Object.entries(assets.files)) {
+      if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
+      files[rel] = await this.storeBlob(Buffer.from(b64, "base64"));
     }
 
     const sha = recordDigest(files).slice(0, 16);
@@ -626,7 +592,7 @@ export class HmrHost<Api extends Park = Park> {
   }
 
   /** Writes a blob under its hash (a no-op when it is already there) and returns the hash. */
-  private async storeBlob(content: Buffer): Promise<string> {
+  async storeBlob(content: Buffer): Promise<string> {
     const sha = crypto.createHash("sha256").update(content).digest("hex");
     const file = this.blobPath(sha);
     if (!fs.existsSync(file)) {
@@ -638,41 +604,6 @@ export class HmrHost<Api extends Park = Park> {
       await fsp.rename(tmp, file);
     }
     return sha;
-  }
-
-  /**
-   * Stores one blob from a stream under the name the pusher claims for it, hashing as the
-   * bytes land: a body that does not hash to `sha` is dropped, never stored under a name that
-   * promises other content. Idempotent — a blob already held is left as it is. Returns the
-   * size stored.
-   */
-  async putBlob(sha: string, body: AsyncIterable<Uint8Array>): Promise<number> {
-    if (!isBlobName(sha)) throw new Error(`bad blob name: ${sha}`);
-    const file = this.blobPath(sha);
-    await fsp.mkdir(path.dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
-    const hash = crypto.createHash("sha256");
-    let size = 0;
-    try {
-      await pipeline(
-        body,
-        new Transform({
-          transform(chunk: Uint8Array, _encoding, callback) {
-            hash.update(chunk);
-            size += chunk.length;
-            callback(null, chunk);
-          },
-        }),
-        fs.createWriteStream(tmp),
-      );
-      if (hash.digest("hex") !== sha) throw new Error(`the body does not hash to ${sha}`);
-      if (fs.existsSync(file)) await fsp.rm(tmp, { force: true });
-      else await fsp.rename(tmp, file);
-    } catch (err) {
-      await fsp.rm(tmp, { force: true }).catch(() => undefined);
-      throw err;
-    }
-    return size;
   }
 
   /** The bytes of a blob the store holds, or null: what a push that names its parts by hash is resolved from. */

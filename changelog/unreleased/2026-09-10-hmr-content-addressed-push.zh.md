@@ -11,11 +11,11 @@
 
 ## blob 逐个、原样上传
 
-`store/blobs/<sha256>` 每份不同内容只存一次。`PUT /api/hmr/blobs/<sha256>` 以原始 body 收一个 blob，边落盘边算哈希：内容对不上名字的字节会被丢弃，绝不以一个承诺了别的内容的名字存下；已持有的 blob 原样保留。`POST /api/hmr/assets/probe { hashes }` 回答目标缺哪些 blob。两者和推送一样属于机制层：`HMR_PROBE_PATH`、`HMR_BLOBS_PATH`、`probeEndpoint` 与 `blobEndpoint` 在 `packages/hmr` 中，平台的路由把请求交给控制对象。
+`store/blobs/<sha256>` 每份不同内容只存一次。`PUT /api/hmr/blobs/<sha256>` 以原始 body 收一个 blob，只在字节的哈希等于名字时才存下。`POST /api/hmr/assets/probe { hashes }` 回答目标缺哪些 blob。两者和推送一样属于机制层：`HMR_PROBE_PATH`、`HMR_BLOBS_PATH`、`probeEndpoint` 与 `blobEndpoint` 在 `packages/hmr` 中，平台的路由把请求交给控制对象。
 
 ## 推送按哈希指名各部分
 
-`platform`、`cli`、`web.manifest` 与 `assets.manifest` 的每一项都可以写成 `{ sha }` 而不是内联内容；升级在任何东西启动之前先从存储解析它们，指名了存储里没有的 blob 会被拒绝并给出哈希和该做什么，绝不物化成一个洞。`scripts/deploy.mjs` 先探测、上传缺失的 blob，再推送一个只有名字的 body，于是一次推送只传上次之后变化的部分：配合 vite 带内容哈希的 chunk 名，改一行 web 代码只传一个 chunk。物化出的资产目录记录所用的 blob（`.manifest.json`）。没有探测端点的目标——比这更老的代际——回应 404，于是收到全部内联内容，和它一直以来收到的推送完全一样。
+推送 body 只有一种形状，其中每个内容值——`platform`、`cli`、`web.files` 与 `assets.files` 的每一项——都可以写成 `{ sha }` 而不是内联内容。升级在任何东西启动之前先从存储解析它们，指名了存储里没有的 blob 会被拒绝并给出哈希和该做什么，绝不物化成一个洞。`scripts/deploy.mjs` 先探测、上传缺失的 blob，再推送一个只有名字的 body，于是一次推送只传上次之后变化的部分：配合 vite 带内容哈希的 chunk 名，改一行 web 代码只传一个 chunk。物化出的资产目录记录所用的 blob（`.manifest.json`）。没有探测端点的目标——比这更老的代际——回应 404，于是收到全部内联内容，和它一直以来收到的推送完全一样。
 
 ## 清理未使用的资产
 
