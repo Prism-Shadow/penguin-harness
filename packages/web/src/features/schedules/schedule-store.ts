@@ -49,9 +49,10 @@ interface Entry {
  */
 const entries = new Map<string, Entry>();
 
-/** Cache key. Neither id can contain a space (both are `[A-Za-z0-9_-]`), so no pair collides. */
+/** Cache key. "\0" separates the pair, as it does elsewhere for keys built from ids, so no
+ * spelling of either id can make two pairs collide. */
 function keyOf(projectId: string, agentId: string): string {
-  return `${projectId} ${agentId}`;
+  return `${projectId}\0${agentId}`;
 }
 
 function entryFor(projectId: string, agentId: string): Entry {
