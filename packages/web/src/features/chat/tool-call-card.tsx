@@ -17,6 +17,7 @@
 import { useMemo, useRef, useState } from "react";
 import { S } from "../../lib/strings";
 import { humanizeDuration } from "../../lib/format";
+import { toolDisplayName } from "../../lib/tool-alias";
 import { stripAnsi } from "../../lib/strip-ansi";
 import { approvalKey } from "../../lib/omni/stream-model";
 import type { ToolCallItem } from "../../lib/omni/stream-model";
@@ -33,6 +34,7 @@ import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
 import { LiveDuration } from "./live-duration";
+import { useTheme } from "../../state/theme";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
 import { SubagentChip } from "./subagent-chip";
 import type { StreamRenderContext } from "./message-stream";
@@ -244,10 +246,19 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   const [open, setOpen] = useState(false);
   const userToggled = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { toolAliases } = useTheme();
   // Matched by the current origin chain + toolCallId: prevents parent/child session tool_call_id collisions from lighting each other up.
   const pending = ctx.pendingApprovals.get(approvalKey(ctx.origin, item.toolCallId));
 
   const preview = previewArguments(item.name, item.argumentsText);
+  // Display-only, and confined to the two render expressions below: every name-keyed
+  // decision on this card (DESCRIBED_TOOLS, FILE_TOOLS, the argument previews, the subagent
+  // chip) and everywhere else in the app (the tools config table, permission rules, the
+  // Trace viewer) keeps reading `item.name`, so an alias can never change what a call means.
+  const displayName = toolDisplayName(item.name, toolAliases);
+  // The tool's own name stays one hover away, for matching a Trace or writing a permission
+  // rule; when nothing was aliased the tooltip would only repeat the visible text.
+  const nameTitle = displayName === item.name ? undefined : item.name;
   // Escape sequences are stripped at render time only (the stored stream/trace data keeps its
   // raw bytes): hardened child envs should no longer produce any, but historical traces and
   // force-color programs still can (#102). Memoized — the aggregated output can be large and
@@ -344,8 +355,11 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
         className={`${DISCLOSURE_ROW_STICKY_CLASS} ${DISCLOSURE_ROW_CLASS}`}
       >
         <StatusIcon state={state} label={stateLabel} />
-        <span className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300">
-          {item.name || S.chat.unknownTool}
+        <span
+          title={nameTitle}
+          className="shrink-0 truncate font-mono text-xs font-semibold text-gray-700 dark:text-gray-300"
+        >
+          {displayName || S.chat.unknownTool}
         </span>
         {/* Human-readable subtitle: the model-written call description (command/subagent tools) or the file path (file tools). */}
         {subtitle && (
@@ -395,8 +409,11 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               this pending block unmounts and only the truncating header subtitle remains. At
               ≥sm the row stays one line (the desktop column is wide enough in practice). */}
           <div className="mb-2 flex items-start gap-2 sm:items-center">
-            <span className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300">
-              {item.name || S.chat.unknownTool}
+            <span
+              title={nameTitle}
+              className="shrink-0 rounded-md bg-white px-1.5 py-0.5 font-mono text-xs font-semibold text-gray-700 dark:bg-gray-900 dark:text-gray-300"
+            >
+              {displayName || S.chat.unknownTool}
             </span>
             <span className="min-w-0 flex-1 whitespace-pre-wrap break-all font-mono text-xs text-gray-600 sm:truncate dark:text-gray-400">
               {preview}

@@ -196,6 +196,9 @@ export const zh = {
     launcher: "快捷方式悬浮球",
     launcherInfo:
       "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
+    toolAliases: "工具短名",
+    toolAliasesInfo:
+      "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
     currencyInfo: "价格显示币种；存储始终为美元。",
     changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {
@@ -2012,6 +2015,20 @@ Benchmark：
       return `失败${detail}，保留当前上下文`;
     },
     unknownTool: "（未知工具）",
+    /**
+     * Short display names for the built-in tools, keyed by the name the model calls them
+     * by. The tool-call card shows these while the Appearance switch is on; a tool absent
+     * from this table (MCP tools, names only older Traces carry) renders as itself.
+     */
+    toolAliases: {
+      read_file: "读取",
+      write_file: "写入",
+      edit_file: "编辑",
+      exec_command: "执行命令",
+      input_command: "跟进命令",
+      run_subagent: "子智能体",
+      input_subagent: "交流",
+    } as Record<string, string>,
     workRunning: "运行中",
     workDone: "运行完毕",
     workGroupSteps: (n: number) => `${n} 步`,

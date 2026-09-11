@@ -181,6 +181,9 @@ export const en: Strings = {
     launcher: "Shortcuts launcher",
     launcherInfo:
       "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
+    toolAliases: "Tool short names",
+    toolAliasesInfo:
+      'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
@@ -2036,6 +2039,20 @@ Scenarios:
       return `failed${detail}, keeping current context`;
     },
     unknownTool: "(unknown tool)",
+    /**
+     * Short display names for the built-in tools, keyed by the name the model calls them
+     * by. The tool-call card shows these while the Appearance switch is on; a tool absent
+     * from this table (MCP tools, names only older Traces carry) renders as itself.
+     */
+    toolAliases: {
+      read_file: "read",
+      write_file: "write",
+      edit_file: "edit",
+      exec_command: "exec",
+      input_command: "follow",
+      run_subagent: "subagent",
+      input_subagent: "communicate",
+    } as Record<string, string>,
     workRunning: "Running",
     workDone: "Done",
     workGroupSteps: (n: number) => `${n} ${n === 1 ? "step" : "steps"}`,
