@@ -69,6 +69,8 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import zlib from "node:zlib";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
 import type { Instance, Json, AnyIface, AnyImpl, Park } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
@@ -584,7 +586,7 @@ export class HmrHost<Api extends Park = Park> {
       }
       for (const [rel, entry] of Object.entries(assets.manifest)) {
         if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
-        if (!/^[0-9a-f]{64}$/.test(entry.sha)) throw new Error(`bad blob name for ${rel}`);
+        if (!isBlobName(entry.sha)) throw new Error(`bad blob name for ${rel}`);
         if (!fs.existsSync(this.blobPath(entry.sha))) {
           throw new Error(
             `assets manifest names blob ${entry.sha.slice(0, 12)} for ${rel}, which this store does not hold — push again without the probe`,
@@ -639,13 +641,56 @@ export class HmrHost<Api extends Park = Park> {
   }
 
   /**
+   * Stores one blob from a stream under the name the pusher claims for it, hashing as the
+   * bytes land: a body that does not hash to `sha` is dropped, never stored under a name that
+   * promises other content. Idempotent — a blob already held is left as it is. Returns the
+   * size stored.
+   */
+  async putBlob(sha: string, body: AsyncIterable<Uint8Array>): Promise<number> {
+    if (!isBlobName(sha)) throw new Error(`bad blob name: ${sha}`);
+    const file = this.blobPath(sha);
+    await fsp.mkdir(path.dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
+    const hash = crypto.createHash("sha256");
+    let size = 0;
+    try {
+      await pipeline(
+        body,
+        new Transform({
+          transform(chunk: Uint8Array, _encoding, callback) {
+            hash.update(chunk);
+            size += chunk.length;
+            callback(null, chunk);
+          },
+        }),
+        fs.createWriteStream(tmp),
+      );
+      if (hash.digest("hex") !== sha) throw new Error(`the body does not hash to ${sha}`);
+      if (fs.existsSync(file)) await fsp.rm(tmp, { force: true });
+      else await fsp.rename(tmp, file);
+    } catch (err) {
+      await fsp.rm(tmp, { force: true }).catch(() => undefined);
+      throw err;
+    }
+    return size;
+  }
+
+  /** The bytes of a blob the store holds, or null: what a push that names its parts by hash is resolved from. */
+  readBlob(sha: string): Buffer | null {
+    if (!isBlobName(sha)) return null;
+    try {
+      return fs.readFileSync(this.blobPath(sha));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Which of these blobs the store does NOT hold — what a pusher asks before it sends, so
    * an unchanged native module or plugin never crosses the wire twice.
    */
   missingBlobs(hashes: readonly string[]): string[] {
-    return hashes.filter(
-      (sha) => !/^[0-9a-f]{64}$/.test(sha) || !fs.existsSync(this.blobPath(sha)),
-    );
+    return hashes.filter((sha) => !isBlobName(sha) || !fs.existsSync(this.blobPath(sha)));
   }
 
   /** Points the registry at this version's assets (or clears it when a push has none). */
@@ -849,6 +894,11 @@ export class HmrHost<Api extends Park = Park> {
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** A blob is named by the lowercase hex sha256 of its content, nothing else. */
+export function isBlobName(name: string): boolean {
+  return /^[0-9a-f]{64}$/.test(name);
 }
 
 function sha1(content: string): string {
