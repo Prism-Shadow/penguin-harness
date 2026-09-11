@@ -5,11 +5,9 @@
  * component only renders <button>): the settings page's transfer actions and the create
  * dialog's snapshot picker.
  */
-export const SNAPSHOT_BUTTON_CLASS =
-  "inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-gray-300 " +
-  "bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 " +
-  "hover:bg-gray-50 focus-within:ring-2 focus-within:ring-gray-400/30 " +
-  "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800";
+import { labelButtonClass } from "../../components/ui/button";
+
+export const SNAPSHOT_BUTTON_CLASS = labelButtonClass("secondary", "sm");
 
 /**
  * Accept list for the snapshot file pickers.

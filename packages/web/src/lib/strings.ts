@@ -548,6 +548,8 @@ export const zh = {
     /** Appended to an action's own toast (skill install / uninstall) — same timing statement. */
     takesEffectSuffix: "；新对话立即生效，进行中的对话在下一次压缩后生效",
     listTitle: "Agents",
+    searchPlaceholder: "搜索 Agent：id / 名称 / 描述",
+    searchEmpty: "没有匹配的 Agent",
     create: "创建 Agent",
     createTitle: "创建 Agent",
     id: "Agent id",
