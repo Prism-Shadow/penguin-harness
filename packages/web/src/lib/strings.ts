@@ -353,6 +353,8 @@ export const zh = {
     edit: "编辑",
     settings: "设置",
     confirm: "确认",
+    /** Sole button of a dialog that only informs: it has nothing to confirm or cancel, so the label acknowledges rather than agrees (and does not repeat the header X's "close"). */
+    gotIt: "知道了",
     loading: "加载中…",
     saved: "已保存",
     saving: "保存中…",
@@ -393,6 +395,14 @@ export const zh = {
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
       "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password 重置为新的初始密码",
+    /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
+    claimFailedTitle: "登录链接已失效",
+    /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
+    claimFailedDesktop:
+      "这个一次性登录链接已被使用或已失效。重启 PenguinHarness 桌面应用即可生成新的登录链接并自动登录；也可以在下方用账号密码登录。",
+    /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
+    claimFailedServer:
+      "这个一次性登录链接已被使用或已失效。请在下方用账号密码登录，或向管理员索取新的登录链接。",
   },
 
   account: {
