@@ -249,6 +249,43 @@ export interface ServerSettingsUpdateRequest {
   attachmentTotalMb?: number;
 }
 
+/** The providers the proxy reachability probe covers. A fixed list: the endpoint takes no URL. */
+export type ProxyProbeProvider = "openai" | "anthropic" | "gemini" | "deepseek";
+
+/**
+ * One probe's verdict. `reachable` means an HTTP answer arrived, whatever its status — a
+ * rejected credential still proves the whole path works. The rest are transport failures,
+ * named so a proxy that swallows connections can be told apart from one whose address does
+ * not resolve: `timeout` (no answer within the probe's window), `dns` (the name never
+ * became an address), `refused` (the connection was refused at the TCP level), `tls` (the
+ * handshake or the certificate failed) and `network` (anything else).
+ */
+export type ProxyProbeOutcome = "reachable" | "timeout" | "dns" | "refused" | "tls" | "network";
+
+/** One provider's probe result. */
+export interface ProxyProbeDto {
+  provider: ProxyProbeProvider;
+  /** The exact URL that was requested, unauthenticated. */
+  url: string;
+  outcome: ProxyProbeOutcome;
+  /** Wall time in milliseconds until the answer's headers arrived, or until the attempt failed. */
+  ms: number;
+  /** The HTTP status, present only when `outcome` is `reachable`. */
+  status?: number;
+}
+
+/**
+ * The probe endpoint's answer: the results, plus the proxy configuration they travelled.
+ * The configuration is the STORED one — the outbound dispatcher only moves when settings
+ * are saved — so it is echoed here for the page to name, rather than the page assuming its
+ * own form fields describe what was measured.
+ */
+export interface ProxyProbeResponse {
+  proxyForApp: boolean;
+  proxyUrl: string | null;
+  probes: ProxyProbeDto[];
+}
+
 /**
  * One draft-screen shortcut: a prompt the user wrote, filed under a name they chose. Clicking it
  * fills the composer exactly like a built-in example does, and sends nothing. Deliberately holds

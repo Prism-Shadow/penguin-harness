@@ -10,9 +10,14 @@
  * between the two — the total may not sit below the per-file cap, checked against the EFFECTIVE
  * post-write pair so a one-field PUT cannot create an unsendable configuration — and the same
  * atomicity guarantee the proxy fields have.
+ *
+ * The reachability probe rides the same route too: the rule that decides reachable from
+ * unreachable, and the endpoint around it. Its fetch is always stubbed — a test that reached a
+ * real provider would fail on an offline machine and turn CI into a network monitor.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ServerSettingsResponse } from "../src/api/types.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ProxyProbeResponse, ServerSettingsResponse } from "../src/api/types.js";
+import { classifyProxyProbe } from "../src/services/proxy-probe.js";
 import {
   DEFAULT_ATTACHMENT_MAX_MB,
   DEFAULT_ATTACHMENT_TOTAL_MB,
@@ -31,6 +36,7 @@ describe("admin server settings", () => {
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   });
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await t.cleanup();
   });
 
@@ -45,6 +51,8 @@ describe("admin server settings", () => {
     const api = apiClient(t.app, cookie);
     expect((await api.get("/api/admin/settings")).status).toBe(403);
     expect((await api.put("/api/admin/settings", { proxyForApp: false })).status).toBe(403);
+    // The probe reaches the network on the server's behalf, so it sits behind the same gate.
+    expect((await api.post("/api/admin/settings/proxy-probe")).status).toBe(403);
     // The failed PUT changed nothing.
     expect((await getSettings()).settings.proxyForApp).toBe(true);
   });
@@ -277,5 +285,82 @@ describe("admin server settings", () => {
     const { settings } = await getSettings();
     expect(settings.proxyForApp).toBe(true);
     expect(settings.attachmentMaxMb).toBe(DEFAULT_ATTACHMENT_MAX_MB);
+  });
+  // —— reachability probe ——
+
+  /** undici's shape for a transport failure: `TypeError: fetch failed` over the real error. */
+  const fetchFailed = (code: string) =>
+    new TypeError("fetch failed", { cause: Object.assign(new Error(code), { code }) });
+
+  it("probe classification: any HTTP answer is reachable", () => {
+    // The probe carries no credential, so a rejection is the expected answer — and an answer
+    // is the whole proof: the name resolved, TCP connected, TLS completed, the host replied.
+    expect(classifyProxyProbe({ status: 401 })).toBe("reachable");
+    expect(classifyProxyProbe({ status: 403 })).toBe("reachable");
+    expect(classifyProxyProbe({ status: 404 })).toBe("reachable");
+    expect(classifyProxyProbe({ status: 200 })).toBe("reachable");
+    expect(classifyProxyProbe({ status: 503 })).toBe("reachable");
+  });
+
+  it("probe classification: a transport failure is named by the cause underneath it", () => {
+    const timedOut = Object.assign(new Error("aborted due to timeout"), { name: "TimeoutError" });
+    expect(classifyProxyProbe({ error: timedOut })).toBe("timeout");
+    expect(classifyProxyProbe({ error: fetchFailed("ENOTFOUND") })).toBe("dns");
+    expect(classifyProxyProbe({ error: fetchFailed("ECONNREFUSED") })).toBe("refused");
+    expect(classifyProxyProbe({ error: fetchFailed("DEPTH_ZERO_SELF_SIGNED_CERT") })).toBe("tls");
+    expect(classifyProxyProbe({ error: fetchFailed("ERR_TLS_CERT_ALTNAME_INVALID") })).toBe("tls");
+    expect(classifyProxyProbe({ error: fetchFailed("ENETUNREACH") })).toBe("network");
+    // A proxy that refuses the CONNECT tunnel arrives as an AbortError NESTED under "fetch
+    // failed". That is a refusal to carry the request, not a host that took too long, so only
+    // an abort on the outermost error may read as a timeout.
+    const tunnelRefused = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("Proxy response (403) !== 200 when HTTP Tunneling"), {
+        name: "AbortError",
+        code: "UND_ERR_ABORTED",
+      }),
+    });
+    expect(classifyProxyProbe({ error: tunnelRefused })).not.toBe("timeout");
+  });
+
+  it("the probe reports every provider, sends no credential, and names what it measured", async () => {
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({ url, init });
+        // One dead target proves the others are reported independently rather than as a batch
+        // that fails whole.
+        if (url.includes("deepseek")) throw fetchFailed("ECONNREFUSED");
+        return new Response("{}", { status: 401 });
+      }),
+    );
+    await admin.put("/api/admin/settings", { proxyUrl: "proxy.corp.example:8080" });
+
+    const res = await admin.post("/api/admin/settings/proxy-probe");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ProxyProbeResponse;
+    expect(body.probes.map((p) => p.provider)).toEqual([
+      "openai",
+      "anthropic",
+      "gemini",
+      "deepseek",
+    ]);
+    expect(body.probes.filter((p) => p.outcome === "reachable").map((p) => p.status)).toEqual([
+      401, 401, 401,
+    ]);
+    expect(body.probes.at(-1)).toMatchObject({ provider: "deepseek", outcome: "refused" });
+    // Every result is timed, the failed one included.
+    for (const probe of body.probes) expect(probe.ms).toBeGreaterThanOrEqual(0);
+    // The answer names the STORED configuration, which is the one the connections travelled.
+    expect(body).toMatchObject({ proxyForApp: true, proxyUrl: "http://proxy.corp.example:8080" });
+    // Hard-coded https targets, and not one credential on any of them — the process
+    // environment's provider keys must not leak into an unauthenticated probe.
+    expect(requests).toHaveLength(4);
+    for (const { url, init } of requests) {
+      expect(url.startsWith("https://")).toBe(true);
+      const headers = new Headers(init.headers);
+      expect(headers.get("authorization")).toBeNull();
+      expect(headers.get("x-api-key")).toBeNull();
+    }
   });
 });

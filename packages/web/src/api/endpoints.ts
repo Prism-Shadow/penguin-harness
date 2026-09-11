@@ -85,6 +85,7 @@ import type {
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
+  ProxyProbeResponse,
   ServerSettingsResponse,
   ServerSettingsUpdateRequest,
   SessionCategory,
@@ -193,6 +194,14 @@ export const adminGetSettings = () => apiFetch<ServerSettingsResponse>("/api/adm
 /** Omitted fields keep their current value; applies immediately (no restart). */
 export const adminPutSettings = (body: ServerSettingsUpdateRequest) =>
   apiFetch<ServerSettingsResponse>("/api/admin/settings", { method: "PUT", body });
+
+/**
+ * Measures the server's own outbound path to the four provider hosts, unauthenticated. Takes
+ * no arguments: the targets are fixed on the server, and the configuration measured is the
+ * saved one, which the answer names.
+ */
+export const adminProbeProxy = () =>
+  apiFetch<ProxyProbeResponse>("/api/admin/settings/proxy-probe", { method: "POST" });
 
 // Project & members --------------------------------------------------------------
 

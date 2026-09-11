@@ -139,13 +139,37 @@ export const en: Strings = {
     /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
     proxyTitle: "Proxy options",
     proxyInfo:
-      "Server-global, and in force the moment it is saved — nothing to restart. Loopback addresses always go direct.",
+      "Server-global, and in force the moment it is saved — nothing to restart. Loopback " +
+      "addresses always go direct. The reachability test sends one credential-free request to " +
+      "each provider's API address and measures this server's own outbound hop: any HTTP answer " +
+      "counts as reachable, 401 and 403 included — a refused credential still proves DNS, TCP " +
+      "and TLS all completed — while unreachable means the transport itself failed. It measures " +
+      "the saved settings, so save an edited address before testing.",
     /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "Application uses the proxy",
     proxyForAgent: "Agent environment uses the proxy",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
+    /** Reachability test: the row it sits on, and its button at rest and while probing. */
+    proxyProbe: "Reachability test",
+    proxyProbeRun: "Test",
+    proxyProbeRunning: "Testing…",
+    /** A provider answered — any HTTP status counts — with the round trip in milliseconds. */
+    proxyProbeReachable: (ms: number): string => `Reachable · ${ms} ms`,
+    /** A provider did not answer: the transport fault, each naming the state in words. */
+    proxyProbeFailure: {
+      timeout: "Timed out",
+      dns: "DNS lookup failed",
+      refused: "Connection refused",
+      tls: "TLS handshake failed",
+      network: "Unreachable",
+    },
+    /** Which configuration produced the results, and the three forms that configuration takes. */
+    proxyProbeMeasured: (config: string): string =>
+      `Measured against the saved settings: ${config}`,
+    proxyProbeDirect: "direct, no proxy",
+    proxyProbeEnvProxy: "the system proxy environment variables",
     /** Admin-only sub-page (server-global). */
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
