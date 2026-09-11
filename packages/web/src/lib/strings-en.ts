@@ -2612,7 +2612,7 @@ Scenarios:
     taskOutput: "Output tokens this turn",
     cacheHit: "Cache hits",
     hitRate: "Hit rate",
-    compactions: "compactions",
+    avgToolCalls: "Avg tools / round",
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,

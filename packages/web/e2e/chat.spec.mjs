@@ -237,7 +237,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // gone — its label said "duration" while it actually rendered a count.
   await expect(main.getByText("全局统计")).toBeVisible();
   await expect(main.getByText("Request 耗时")).toHaveCount(0);
-  for (const label of ["轮次", "工具调用", "压缩次数", "输入 tokens", "输出 TPS"]) {
+  for (const label of ["轮次", "工具调用", "每轮平均工具调用", "输入 tokens", "输出 TPS"]) {
     await expect(main.getByText(label, { exact: true }).first()).toBeVisible();
   }
   // Time-axis zoom: Premiere-style scrubber (role=scrollbar) + −/＋ buttons.

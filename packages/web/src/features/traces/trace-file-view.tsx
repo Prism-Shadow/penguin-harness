@@ -38,6 +38,7 @@ import { apiErrorText } from "../../lib/api-error";
 import {
   cacheHitRate,
   computeTps,
+  formatAverage,
   formatMoney,
   formatPercent,
   formatTps,
@@ -453,11 +454,17 @@ export function TraceFileView({
             {/* Rounds = number of cards below (a compaction round counts as
                 a round too): the global summary and the per-round display
                 below share **the same scope** — every figure is the sum
-                across rounds and must add up; how many of them are
-                compaction rounds is answered separately by "compaction count". */}
+                across rounds and must add up. The average is exactly the two
+                rows above it divided, tool calls ÷ rounds, so it holds that
+                same scope and a reader can check the division by eye — a
+                denominator that skipped compaction rounds would no longer
+                match the round count printed here. */}
             <SummaryRow label={S.traces.tasksLabel} value={String(analysis.tasks.length)} />
             <SummaryRow label={S.traces.toolCalls} value={String(global.toolCalls)} />
-            <SummaryRow label={S.traces.compactions} value={String(analysis.compactionCount)} />
+            <SummaryRow
+              label={S.traces.avgToolCalls}
+              value={formatAverage(global.toolCalls, analysis.tasks.length)}
+            />
           </div>
           {/* Token usage: broken down by category (input / of which cache hit + hit rate / output), never given as a lump sum. */}
           <div>
