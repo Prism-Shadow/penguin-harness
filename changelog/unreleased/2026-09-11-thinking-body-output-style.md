@@ -7,14 +7,17 @@
 
 [中文版](2026-09-11-thinking-body-output-style.zh.md)
 
+An expanded thinking block, and both sections of a compaction banner, sat in an inset rounded box
+on a tinted ground — the shape the transcript uses for a quotation. Both now wear the block an
+expanded `exec_command` output wears.
+
 ## Details
 
-- An expanded thinking block, and both sections of a compaction banner, sat in an inset
-  rounded box on a tinted ground — the shape the transcript uses for a quotation. They now
-  wear the block an expanded `exec_command` output wears: full-bleed under their row,
-  separated from it by the same divider, inset by the same padding, in the same ink. The type
-  stays at prose size: the output block is monospace, and the app's sans at that size reads
-  visibly smaller beside it. Paragraph, list and heading spacing now lands on one rhythm, and
-  the body's own padding is the whole gap at each end. Both bodies still render Markdown, and
-  neither takes the output block's height cap: they stream, and a nested scrollbox would
-  strand the tail the transcript's own follow scrolls to.
+- The body runs full-bleed under its row, separated from it by the same divider, inset by the same
+  padding, in the same ink.
+- That padding is the whole gap at each end: the outermost paragraph, list or heading no longer
+  adds its own margin on top of it, and paragraph, list and heading spacing lands on one rhythm.
+- The type stays at prose size rather than the output block's, and both bodies still render
+  Markdown.
+- Neither body takes the output block's height cap: a long body grows the transcript instead of
+  scrolling inside itself.

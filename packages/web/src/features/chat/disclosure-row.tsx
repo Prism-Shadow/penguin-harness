@@ -62,15 +62,17 @@ export const DISCLOSURE_OUTPUT_PRE_CLASS =
  * size on screen: the output block is monospace, and the app's sans at that size reads
  * visibly smaller beside it. `leading-relaxed` is within a hair of the 1.7 `.md-body p`
  * applies, so paragraphs, list items and headings all land on one rhythm instead of two.
- * The outermost block's margin is dropped at each end, so the body's own `py-2` is the
- * whole gap — the same one the output block leaves.
+ * `md-body-flush` drops the outermost block's margin at each end, so the body's own `py-2`
+ * is the whole gap — the same one the output block leaves. It is a rule in styles.css and
+ * not a `[&>*:first-child]:mt-0` utility here: the `.md-body` margins it has to beat are
+ * unlayered, and an unlayered declaration wins over `@layer utilities` at any specificity.
  *
  * Markdown keeps rendering (these bodies are prose, not command output), hence no
  * `whitespace-pre-wrap`, and there is no height cap either: both bodies stream, and a
  * nested scrollbox would strand the live tail the transcript's own follow scrolls to.
  */
 export const DISCLOSURE_BODY_MD_CLASS =
-  "md-body border-t border-gray-100 px-3 py-2 text-sm leading-relaxed text-gray-600 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 dark:border-gray-800 dark:text-gray-300";
+  "md-body md-body-flush border-t border-gray-100 px-3 py-2 text-sm leading-relaxed text-gray-600 dark:border-gray-800 dark:text-gray-300";
 
 /**
  * The card container a row (or group of rows) sits in — the work group's exact chrome.
