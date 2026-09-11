@@ -2150,46 +2150,33 @@ const CONFIRM_BODY: Record<DialogAction, (name: string) => string> = {
 };
 
 /**
- * Live width of the currency symbol and the "/M tok" unit drawn inside the price inputs, so
- * the inputs can reserve exactly the room those two actually occupy. Both are rendered text:
- * their width follows the resolved font, the root font size (the appearance setting scales it)
- * and, for the symbol, the selected currency — none of which is known where the padding is
- * written, which is why it is measured rather than typed. The affixes are absolutely
- * positioned, so their size does not depend on the padding derived from it. One pair serves
- * all three price fields; they share one symbol and one unit string.
+ * Live width of one affix drawn inside an input — the currency symbol, the "/M tok" price unit,
+ * the "Token" unit — so the input can reserve exactly the room it actually occupies. An affix is
+ * rendered text: its width follows the resolved font, the root font size (the appearance setting
+ * scales it) and, for the currency symbol, the selected currency, none of which is known where
+ * the padding is written, which is why it is measured rather than typed. The affix is absolutely
+ * positioned, so its size does not depend on the padding derived from it. One call covers every
+ * field drawing the same string at the same size; fields whose affixes differ take one each.
  */
-function useAffixWidths(): {
-  prefixRef: RefObject<HTMLSpanElement | null>;
-  suffixRef: RefObject<HTMLSpanElement | null>;
-  prefixWidth: number;
-  suffixWidth: number;
-} {
-  const prefixRef = useRef<HTMLSpanElement>(null);
-  const suffixRef = useRef<HTMLSpanElement>(null);
-  const [widths, setWidths] = useState({ prefix: 0, suffix: 0 });
+function useAffixWidth(): [RefObject<HTMLSpanElement | null>, number] {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
-    const prefix = prefixRef.current;
-    const suffix = suffixRef.current;
-    if (!prefix || !suffix) return;
+    const el = ref.current;
+    if (!el) return;
     // The observer reports the box LAYOUT size, which is what has to be reserved. A rect read
     // off the element would be wrong here: the dialog pops in under `scale(0.96)`, so a
     // measurement taken while that animation runs comes back 4% short, and a transform never
     // notifies an observer that would correct it. Delivery is after layout and before paint,
     // so the unmeasured state is not painted; a currency switch, a language switch and a
-    // font-size change all resize the affixes and re-run this.
-    const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const width = entry.borderBoxSize[0]?.inlineSize ?? entry.contentRect.width;
-        setWidths((prev) =>
-          entry.target === prefix ? { ...prev, prefix: width } : { ...prev, suffix: width },
-        );
-      }
+    // font-size change all resize the affix and re-run this.
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(entry.borderBoxSize[0]?.inlineSize ?? entry.contentRect.width);
     });
-    ro.observe(prefix);
-    ro.observe(suffix);
+    ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  return { prefixRef, suffixRef, prefixWidth: widths.prefix, suffixWidth: widths.suffix };
+  return [ref, width];
 }
 
 /**
@@ -2314,8 +2301,12 @@ function ModelDialog({
   const [visionDetecting, setVisionDetecting] = useState(false);
   /** Single-flight guard for the vision probe: it bills the user, so never twice at once. */
   const visionInFlight = useRef<Promise<void> | null>(null);
-  /** Room the price inputs must leave for the currency symbol and the unit (see useAffixWidths). */
-  const { prefixRef, suffixRef, prefixWidth, suffixWidth } = useAffixWidths();
+  // Room each in-field affix needs (see useAffixWidth). The three price inputs share one
+  // currency symbol and one "/M tok" unit; the context-window and max-tokens inputs share the
+  // "Token" unit with each other, so each distinct string is measured once.
+  const [currencyRef, currencyWidth] = useAffixWidth();
+  const [priceUnitRef, priceUnitWidth] = useAffixWidth();
+  const [tokenUnitRef, tokenUnitWidth] = useAffixWidth();
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
 
@@ -3184,7 +3175,12 @@ function ModelDialog({
                 disabled={!canEdit}
                 invalid={Boolean(fieldErrors.contextWindow)}
                 onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
-                className="pr-12 font-mono"
+                // Half-width cell: the placeholder is wider than the box in English, and an
+                // input clips at its padding box, so an unclipped one runs past the value area
+                // and collides with the unit. `truncate` ends it in an ellipsis instead, which
+                // reads as "there is more" rather than as text colliding; the title has it in full.
+                className="truncate font-mono"
+                style={{ paddingRight: affixPadding(tokenUnitWidth) }}
                 // The title mirrors the placeholder: at half width the (EN) copy can clip, hover reveals it in full.
                 title={
                   preset
@@ -3197,7 +3193,12 @@ function ModelDialog({
                     : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
                 }
               />
-              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
+              <span
+                // Both fields in this row draw the same unit at the same size, so one
+                // measurement sizes the reserve for the pair.
+                ref={tokenUnitRef}
+                className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400"
+              >
                 {S.models.tokenUnit}
               </span>
             </span>
@@ -3213,7 +3214,9 @@ function ModelDialog({
                 disabled={!canEdit}
                 invalid={Boolean(fieldErrors.maxTokens)}
                 onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
-                className="pr-12 font-mono"
+                // Truncated for the same reason as the context window beside it.
+                className="truncate font-mono"
+                style={{ paddingRight: affixPadding(tokenUnitWidth) }}
                 // Short placeholder (fits the half-width box); the full explanation incl. the small-context advice is the hover title.
                 title={S.models.maxTokensTitle}
                 placeholder={S.models.maxTokensHint}
@@ -3244,7 +3247,7 @@ function ModelDialog({
                 <span
                   // The three fields draw the same symbol and the same unit at the same size,
                   // so only the first pair is measured and every field reserves from it.
-                  ref={i === 0 ? prefixRef : undefined}
+                  ref={i === 0 ? currencyRef : undefined}
                   className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400"
                 >
                   {CURRENCY_SYMBOL[currency]}
@@ -3258,12 +3261,12 @@ function ModelDialog({
                   onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
                   className="text-right font-mono"
                   style={{
-                    paddingLeft: affixPadding(prefixWidth),
-                    paddingRight: affixPadding(suffixWidth),
+                    paddingLeft: affixPadding(currencyWidth),
+                    paddingRight: affixPadding(priceUnitWidth),
                   }}
                 />
                 <span
-                  ref={i === 0 ? suffixRef : undefined}
+                  ref={i === 0 ? priceUnitRef : undefined}
                   className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400"
                 >
                   {S.models.priceUnitShort}
