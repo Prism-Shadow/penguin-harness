@@ -3,6 +3,7 @@
 - **Date:** 2026-09-11
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#699](https://github.com/Prism-Shadow/penguin-harness/pull/699)
 
 [中文版](2026-09-11-control-unification.zh.md)
 
