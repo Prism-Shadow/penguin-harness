@@ -3,7 +3,7 @@
 - **Date:** 2026-09-11
 - **Type:** feature
 - **Scope:** `web`
-- **PR:** [#PENDING](https://github.com/Prism-Shadow/penguin-harness/pull/PENDING)
+- **PR:** [#684](https://github.com/Prism-Shadow/penguin-harness/pull/684)
 
 [English](2026-09-11-sidebar-rail-behaviour.md)
 
