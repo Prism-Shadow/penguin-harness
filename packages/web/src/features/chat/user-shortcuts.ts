@@ -22,6 +22,7 @@
  * `test/user-shortcuts.test.ts` fails if the two copies drift apart.
  */
 import type { DraftShortcut } from "@prismshadow/penguin-server/api";
+import { randomUuid } from "../../lib/random-uuid";
 
 /** A saved shortcut, as stored and as rendered. Re-exported from the API type so the two cannot drift. */
 export type UserShortcut = DraftShortcut;
@@ -38,7 +39,7 @@ export const SHORTCUT_PROMPT_MAX = 4000;
  * opaque, and never derived from the title — a rename must not change what an edit addresses.
  */
 export function newShortcutId(): string {
-  return `sc-${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+  return `sc-${randomUuid().replace(/-/g, "").slice(0, 12)}`;
 }
 
 /** One trimmed, length-capped string field read back out of free-form JSON; null when unusable. */
