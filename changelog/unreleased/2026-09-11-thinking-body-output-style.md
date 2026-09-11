@@ -3,6 +3,7 @@
 - **Date:** 2026-09-11
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#694](https://github.com/Prism-Shadow/penguin-harness/pull/694)
 
 [中文版](2026-09-11-thinking-body-output-style.zh.md)
 
