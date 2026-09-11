@@ -5,7 +5,7 @@
  * than the boot failing.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import ts from "typescript";
@@ -20,6 +20,7 @@ import {
   readProjectPluginList,
   listProjectIds,
 } from "../src/plugin/loader.js";
+import { writeClassPackage } from "./plugin-fixtures.js";
 
 let root: string;
 
@@ -304,7 +305,13 @@ describe("builtin plugins", () => {
   async function writeBuiltin(prefix: string, name: string, moduleName: string): Promise<void> {
     const dir = path.join(prefix, "node_modules", ...name.split("/"));
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(prefix, "package.json"), '{"name":"prefix","private":true}', "utf8");
+    // The prefix manifest names what was shipped, the way build-plugins writes it.
+    const manifestFile = path.join(prefix, "package.json");
+    const manifest = JSON.parse(
+      await readFile(manifestFile, "utf8").catch(() => '{"name":"prefix","private":true}'),
+    ) as { dependencies?: Record<string, string> };
+    manifest.dependencies = { ...manifest.dependencies, [name]: "0.0.0" };
+    await writeFile(manifestFile, JSON.stringify(manifest), "utf8");
     await writeFile(
       path.join(dir, "package.json"),
       JSON.stringify({ name, main: "./index.js", type: "module" }),
@@ -374,6 +381,29 @@ describe("builtin plugins", () => {
     expect([...result.failed.entries()]).toEqual([]);
     expect(result.loaded.map((p) => p.specifier)).toEqual(["@acme/penguin-plugin-one"]);
     expect(result.loaded[0]!.modules.map((m) => m.manifest.name)).toEqual(["One"]);
+  });
+
+  it("resolves a package through its exports' import condition, as npm shipped it", async () => {
+    // The sandbox backends declare `exports: { ".": { types, import: "./dist/index.js" } }`
+    // and no `require` condition; the loader reads the entry an importer would, not what
+    // require.resolve would (it has none).
+    const assets = path.join(root, "hmr", "store", "assets", "abc");
+    const dir = path.join(assets, "plugins", "node_modules", "@acme", "exported");
+    await mkdir(path.join(assets, "plugins"), { recursive: true });
+    await writeFile(
+      path.join(assets, "plugins", "package.json"),
+      '{"name":"prefix","private":true}',
+    );
+    await writeClassPackage(dir, {
+      name: "@acme/exported",
+      module: "Exported",
+      main: "./dist/index.js",
+      exports: { ".": { types: "./dist/index.d.ts", import: "./dist/index.js" } },
+    });
+    await writeConfig({ plugins: ["@acme/exported"] });
+    const result = await loadPlugins(root, assets);
+    expect([...result.failed.entries()]).toEqual([]);
+    expect(result.loaded[0]!.file).toBe(path.join(dir, "dist", "index.js"));
   });
 
   it("reads a committed assets dir from harness.json, or null without one", async () => {

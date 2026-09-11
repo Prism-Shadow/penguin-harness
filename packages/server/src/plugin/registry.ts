@@ -16,7 +16,10 @@
  */
 import type { PluginIndexEntry } from "../api/types.js";
 import builtinIndex from "./builtin-index.json" with { type: "json" };
-import { BUILTIN_READMES } from "./builtin-readmes.js";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { resolvePluginPackage } from "./loader.js";
+import type { PluginBase } from "./loader.js";
 
 /** One source of plugin index entries; `source` identifies it for display and errors. */
 export interface PluginRegistry {
@@ -79,14 +82,30 @@ export function parsePluginIndex(data: unknown, source: string): PluginIndexEntr
 
 export const BUILTIN_REGISTRY_SOURCE = "builtin";
 
-/** The registry embedded in this package: the workspace's own plugin packages. */
-export function builtinPluginRegistry(): PluginRegistry {
+/**
+ * The registry embedded in this package: the workspace's own plugin packages. The index is
+ * the listing; a readme is the package's own README.md, read from wherever the package is on
+ * this machine (`bases`: the shipped prefix, the data root's, the installation) — the file
+ * npm shipped with it, never a second copy. A listed package that is not on this machine
+ * has none to show.
+ */
+export function builtinPluginRegistry(
+  bases: () => readonly PluginBase[] = () => [],
+): PluginRegistry {
   return {
     source: BUILTIN_REGISTRY_SOURCE,
     // Validated like any other source: a broken embedded index should fail loudly
     // in tests rather than serve garbage.
     index: () => Promise.resolve(parsePluginIndex(builtinIndex, BUILTIN_REGISTRY_SOURCE)),
-    readme: (name) => Promise.resolve(BUILTIN_READMES[name] ?? null),
+    readme: async (name) => {
+      const found = resolvePluginPackage(name, bases());
+      if (found === null) return null;
+      try {
+        return await fs.readFile(path.join(found.dir, "README.md"), "utf8");
+      } catch {
+        return null;
+      }
+    },
   };
 }
 

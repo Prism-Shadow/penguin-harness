@@ -3925,7 +3925,7 @@ export interface InstalledPlugin {
   /** Node names the package declares it stands in for. */
   replaces: string[];
   /**
-   * Why the package is not running: unresolvable, not a plugin package, or a load that
+   * Why the package is not running: unresolvable, or a load that
    * failed (an import that threw, a module name another plugin already took).
    */
   error?: string;

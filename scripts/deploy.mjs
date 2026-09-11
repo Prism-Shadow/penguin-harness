@@ -247,12 +247,12 @@ async function readNativeAssets() {
     files[name] = await fsp.readFile(path.join(ROOT, from));
   }
   // The builtin plugins, as the npm prefix the loader resolves from (`plugins/package.json`
-  // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs): bundled self-contained,
-  // from cache when unchanged, so a push carries the plugins of the revision it was built from.
+  // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs): the packages as npm
+  // publishes them, installed by npm, from cache when unchanged — so a push carries the
+  // plugins of the revision it was built from.
   const built = await buildBuiltinPlugins({ log });
   for (const [rel, source] of prefixLayout(built)) {
-    files[`plugins/${rel}`] =
-      source.text !== undefined ? Buffer.from(source.text) : await fsp.readFile(source.path);
+    files[`plugins/${rel}`] = await fsp.readFile(source.path);
   }
   return { files, exec };
 }

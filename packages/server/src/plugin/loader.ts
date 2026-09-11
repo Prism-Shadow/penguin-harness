@@ -24,7 +24,8 @@ import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { parse as parseToml } from "smol-toml";
 import { parsePluginTable, projectConfigPath } from "@prismshadow/penguin-core";
-import { createRequire } from "node:module";
+import { findPackageJSON } from "node:module";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -168,19 +169,64 @@ export async function committedAssetsDir(root: string): Promise<string | null> {
   return typeof dir === "string" ? path.join(root, "hmr", dir) : null;
 }
 
-/** Where a specifier resolves from — the file and the base that found it — or null. */
+/**
+ * The package a bare specifier names, looked up from a base the way Node looks up any
+ * package (`node_modules` upward from the base): its directory, its manifest, and the base
+ * that found it — or null. Nothing about the package is assumed: it is whatever npm put there.
+ */
+export function resolvePluginPackage(
+  specifier: string,
+  bases: readonly PluginBase[],
+): { dir: string; manifest: string; base: PluginBase } | null {
+  for (const base of bases) {
+    let manifest: string | undefined;
+    try {
+      manifest = findPackageJSON(specifier, base.file);
+    } catch {
+      manifest = undefined;
+    }
+    if (manifest !== undefined) return { dir: path.dirname(manifest), manifest, base };
+  }
+  return null;
+}
+
+/**
+ * The file an `import "<name>"` of the package would load: `exports["."]` — a string, or its
+ * `import` / `default` condition — else `main`, else `index.js`. The packages are ESM and
+ * name one entry, which is all this reads; anything richer is the package's own business
+ * once Node imports it.
+ */
+function packageEntry(dir: string, manifest: string): string | null {
+  let pkg: { exports?: unknown; main?: unknown };
+  try {
+    pkg = JSON.parse(readFileSync(manifest, "utf8")) as typeof pkg;
+  } catch {
+    return null;
+  }
+  const condition = (value: unknown): string | null => {
+    if (typeof value === "string") return value;
+    if (value === null || typeof value !== "object") return null;
+    const v = value as Record<string, unknown>;
+    return condition(v.import) ?? condition(v.default) ?? null;
+  };
+  let rel: string | null = null;
+  if (pkg.exports !== undefined) {
+    const exp = pkg.exports as Record<string, unknown>;
+    rel = condition("." in exp ? exp["."] : exp);
+  }
+  rel ??= typeof pkg.main === "string" ? pkg.main : "./index.js";
+  return path.resolve(dir, rel);
+}
+
+/** Where a specifier resolves from — the entry file and the base that found it — or null. */
 function resolvePlugin(
   specifier: string,
   bases: readonly PluginBase[],
 ): { file: string; base: PluginBase } | null {
-  for (const base of bases) {
-    try {
-      return { file: createRequire(base.file).resolve(specifier), base };
-    } catch {
-      // Try the next base; a dev checkout resolves the specifier directly (see importPlugin).
-    }
-  }
-  return null;
+  const found = resolvePluginPackage(specifier, bases);
+  if (found === null) return null;
+  const file = packageEntry(found.dir, found.manifest);
+  return file === null ? null : { file, base: found.base };
 }
 
 /**
@@ -193,32 +239,17 @@ export async function discoverBuiltinPlugins(bases: readonly PluginBase[]): Prom
   const names: string[] = [];
   for (const base of bases) {
     if (!base.builtin) continue;
-    const modules = path.join(path.dirname(base.file), "node_modules");
-    let top: string[];
+    // The prefix's own manifest names what the build shipped; what npm installed beside
+    // them (their dependencies) is not offered.
+    let manifest: { dependencies?: unknown };
     try {
-      top = await fs.readdir(modules);
+      manifest = JSON.parse(await fs.readFile(base.file, "utf8")) as { dependencies?: unknown };
     } catch {
       continue;
     }
-    const candidates: string[] = [];
-    for (const name of top) {
-      if (name.startsWith(".")) continue;
-      if (name.startsWith("@")) {
-        for (const inner of await fs.readdir(path.join(modules, name)).catch(() => [])) {
-          candidates.push(`${name}/${inner}`);
-        }
-      } else {
-        candidates.push(name);
-      }
-    }
-    for (const name of candidates) {
-      try {
-        await fs.access(path.join(modules, ...name.split("/"), "package.json"));
-        if (!names.includes(name)) names.push(name);
-      } catch {
-        // Not a package.
-      }
-    }
+    const deps = manifest.dependencies;
+    if (typeof deps !== "object" || deps === null) continue;
+    for (const name of Object.keys(deps)) if (!names.includes(name)) names.push(name);
   }
   return names.sort();
 }
