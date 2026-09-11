@@ -36,7 +36,6 @@ what the browser has no view of.
   chooses an address for the server to fetch. Each target is given 5 seconds, and the page asks
   for all of them at once, so one dead host holds up only its own row.
 - The measurement describes the saved settings, since only a save rebuilds the outbound
-  dispatcher. That is why the test sits below Save; the response carries the proxy configuration
-  the probes travelled, while the reason sits behind the page's existing "?". Saving clears
-  results that describe a superseded configuration.
+  dispatcher. That is why the test sits below Save, and why the reason sits behind the page's
+  existing "?". Saving clears results that describe a superseded configuration.
 - `packages/docs/content/server-api.{zh,en}.md` gained both routes.

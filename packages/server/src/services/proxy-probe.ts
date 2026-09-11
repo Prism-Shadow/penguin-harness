@@ -60,8 +60,8 @@ export const PROXY_PROBE_TARGETS: readonly ProxyProbeTargetDto[] = [
 /**
  * Per-target timeout, matching the protocol probes next door. A live host answers these in
  * tens of milliseconds even through a proxy, so five seconds is far past "slow" and well
- * short of the wait a black-holed connection would otherwise impose — and since the four
- * run concurrently, it is the whole feature's worst case, not four times over.
+ * short of the wait a black-holed connection would otherwise impose — and since a call
+ * measures one target, it is the wait a single row can impose, not the whole run's.
  */
 export const PROXY_PROBE_TIMEOUT_MS = 5_000;
 
@@ -157,7 +157,9 @@ async function probeTarget(
     return {
       provider: target.provider,
       url: target.url,
-      outcome: "reachable",
+      // Through the same rule the failure branch uses, so "any HTTP answer is reachable"
+      // is stated once and the exported classifier is the one production runs.
+      outcome: classifyProxyProbe({ status: res.status }),
       ms,
       status: res.status,
     };

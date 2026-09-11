@@ -42,6 +42,7 @@ describe("admin server settings", () => {
   });
   afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     await t.cleanup();
   });
 
@@ -346,6 +347,19 @@ describe("admin server settings", () => {
       "bigmodel",
     ]);
 
+    // Every provider key the process could reach for is present, so "no credential is sent"
+    // is a claim about the code rather than about an empty environment: a probe that fell
+    // back to these the way protocol detection does would now be caught.
+    for (const key of [
+      "OPENAI_API_KEY",
+      "ANTHROPIC_API_KEY",
+      "GEMINI_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "ZAI_API_KEY",
+    ]) {
+      vi.stubEnv(key, `secret-${key}`);
+    }
+
     const requests: Array<{ url: string; init: RequestInit }> = [];
     vi.stubGlobal(
       "fetch",
@@ -354,10 +368,12 @@ describe("admin server settings", () => {
         // One dead target proves the others are reported independently rather than as a batch
         // that fails whole.
         if (url.includes("deepseek")) throw fetchFailed("ECONNREFUSED");
+        // A 5xx is still an answer, so it is still reachable — the rule protocol detection
+        // next door deliberately does NOT share, since it reads the response and this does not.
+        if (url.includes("googleapis")) return new Response("nope", { status: 503 });
         return new Response("{}", { status: 401 });
       }),
     );
-    await admin.put("/api/admin/settings", { proxyUrl: "proxy.corp.example:8080" });
 
     // One call per provider, the way the page fires them — it renders each answer as it
     // lands rather than waiting for a response carrying all of them.
@@ -372,7 +388,7 @@ describe("admin server settings", () => {
     expect(probes.map((p) => p.provider)).toEqual(listed.targets.map((t) => t.provider));
     expect(probes.map((p) => p.url)).toEqual(listed.targets.map((t) => t.url));
     expect(probes.filter((p) => p.outcome === "reachable").map((p) => p.status)).toEqual([
-      401, 401, 401, 401, 401,
+      401, 401, 503, 401, 401,
     ]);
     expect(probes.find((p) => p.provider === "deepseek")).toMatchObject({ outcome: "refused" });
     // Every result is timed, the failed one included.
@@ -388,6 +404,9 @@ describe("admin server settings", () => {
       const headers = new Headers(init.headers);
       expect(headers.get("authorization")).toBeNull();
       expect(headers.get("x-api-key")).toBeNull();
+      // Not under any other header name either, and not smuggled into the query string.
+      const sent = `${url} ${[...headers].map(([k, v]) => `${k}: ${v}`).join(" ")}`;
+      expect(sent).not.toContain("secret-");
     }
   });
 
