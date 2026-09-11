@@ -109,10 +109,20 @@ const rowKeyOf = (taskIndex: number, i: number): string => `${taskIndex}-${i}`;
  * Each item takes its own row, with three groups arranged side by side as
  * columns — laid out horizontally it would read as a blur of digits, while
  * giving each group a full row would waste the right half of the space.
+ *
+ * `detail` is the breakdown behind the value: the row shows the total alone and keeps the
+ * breakdown on hover, the same way the per-round chips do. The accessible name repeats the
+ * value beside it, because aria-label replaces the row's own text rather than adding to it,
+ * and an empty detail leaves both attributes off — a name repeating only the label says nothing.
  */
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  const hasDetail = detail !== undefined && detail !== "";
   return (
-    <div className="flex items-baseline justify-between gap-3 py-0.5">
+    <div
+      title={hasDetail ? `${label}${detail}` : undefined}
+      aria-label={hasDetail ? `${label} ${value}${detail}` : undefined}
+      className="flex items-baseline justify-between gap-3 py-0.5"
+    >
       <span className="shrink-0 text-[11px] text-gray-400">{label}</span>
       <span className="truncate font-mono text-sm font-semibold tabular-nums">{value}</span>
     </div>
@@ -476,10 +486,8 @@ export function TraceFileView({
             />
             <SummaryRow
               label={S.chat.statElapsed}
-              value={`${humanizeDuration(Math.max(0, globalMs))}${durationSplit(
-                analysis.apiMs,
-                analysis.toolMs,
-              )}`}
+              value={humanizeDuration(Math.max(0, globalMs))}
+              detail={durationSplit(analysis.apiMs, analysis.toolMs)}
             />
             {/* Global TPS = the output of every round (including compaction
                 rounds) ÷ the sum of LLM generation time, same scope as the
