@@ -17,8 +17,8 @@
  * SAVED configuration: only a PUT moves the server's outbound dispatcher, so a typed-but-unsaved
  * address is not in the path the probes travel. Reading top to bottom — edit, save, then
  * measure — is what makes that honest without a warning banner, and the block names the
- * outbound path it measures beside its heading. A save clears results that now describe a
- * superseded configuration.
+ * outbound path beside its heading wherever the server can name it exactly. A save clears
+ * results that now describe a superseded configuration.
  *
  * It carries its own busy flag rather than borrowing Save's: a measurement is not an unsaved
  * edit, so it neither blocks Save nor is blocked by it.
@@ -39,7 +39,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { toneDot, toneInk } from "../../lib/tone";
+import { toneInk } from "../../lib/tone";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Switch } from "../../components/ui/switch";
@@ -57,22 +57,19 @@ const PROVIDER_LABEL: Record<ProxyProbeProvider, string> = {
 /** The fields that describe an outbound path — carried by the stored settings and echoed by a probe answer alike. */
 type OutboundPath = Pick<ServerSettings, "proxyForApp" | "proxyUrl">;
 
-/** How that path reads: the saved address, or the two states that have none. */
-function pathLabel(path: OutboundPath): string {
-  if (!path.proxyForApp) return S.settings.proxyProbeDirect;
-  return path.proxyUrl ?? S.settings.proxyProbeEnvProxy;
-}
-
 /**
- * Bar width for one latency, as a percentage of the slowest result in the SAME run. A
- * relative comparison is the only honest graphic here: "slow" for a network hop has no
- * absolute threshold this app could defend, and inventing one would grade a 300 ms link as
- * a problem on one network and a triumph on another. The floor keeps the fastest target's
- * bar visible instead of collapsing it to nothing.
+ * How that path reads, or null where the server cannot say it exactly.
+ *
+ * Two states can be named: the switch off is a direct connection, and an explicit address is
+ * itself the answer. The third — switch on, no address stored — hands the choice to
+ * HTTP_PROXY / HTTPS_PROXY, which this server does not publish and which may not be set at
+ * all: that same state connects directly when the environment is empty, so naming it after a
+ * proxy would assert one that need not exist. Nothing is shown rather than something
+ * unverifiable; the disclosed explanation at the pane heading covers the rule.
  */
-function barPercent(ms: number, slowestMs: number): number {
-  if (slowestMs <= 0) return 100;
-  return Math.max(3, Math.round((ms / slowestMs) * 100));
+function pathLabel(path: OutboundPath): string | null {
+  if (!path.proxyForApp) return S.settings.proxyProbeDirect;
+  return path.proxyUrl;
 }
 
 export function ProxySection() {
@@ -179,11 +176,7 @@ export function ProxySection() {
   const hydrated = settings !== null;
   // What the probes travelled, once a run has answered; before that, what they would travel.
   const outbound = measured ?? settings;
-  // Longest round trip of the current run — the bar scale for every reachable row.
-  const slowestMs = Math.max(
-    0,
-    ...[...(results?.values() ?? [])].filter((p) => p.outcome === "reachable").map((p) => p.ms),
-  );
+  const outboundLabel = outbound === null ? null : pathLabel(outbound);
 
   return (
     <>
@@ -220,10 +213,11 @@ export function ProxySection() {
           <div className="min-w-0">
             <div className="text-sm font-medium">{S.settings.proxyProbe}</div>
             {/* The path actually measured is live data, so it stays on screen; the "?" beside
-                the pane heading carries the standing explanation of why it is the saved one. */}
-            {outbound !== null && (
+                the pane heading carries the standing explanation of why it is the saved one.
+                Absent where the path cannot be named exactly (see pathLabel). */}
+            {outboundLabel !== null && (
               <div className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                {S.settings.proxyProbeVia(pathLabel(outbound))}
+                {S.settings.proxyProbeVia(outboundLabel)}
               </div>
             )}
           </div>
@@ -269,7 +263,7 @@ export function ProxySection() {
                   >
                     {outcomeText}
                     {/* A bare number does not say "reachable"; the word travels with it for
-                        anyone who cannot see the colour or the bar. */}
+                        anyone who cannot see the colour. */}
                     {reachable && (
                       <span className="sr-only"> · {S.settings.proxyProbeReachableState}</span>
                     )}
@@ -278,21 +272,6 @@ export function ProxySection() {
                 <div className="truncate font-mono text-[11px] text-gray-400 dark:text-gray-500">
                   {t.url}
                 </div>
-                {/* Decorative: the figure above and the word beside it already carry the
-                    result, and a target with no answer has no bar to draw at all. The fill
-                    is toneDot's solid mark — a 6px band has no interior to read, exactly the
-                    case that map exists for. */}
-                {reachable && (
-                  <div
-                    aria-hidden
-                    className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"
-                  >
-                    <div
-                      className={`h-full rounded-full transition-[width] duration-300 ${toneDot.success}`}
-                      style={{ width: `${barPercent(probe.ms, slowestMs)}%` }}
-                    />
-                  </div>
-                )}
               </li>
             );
           })}

@@ -384,4 +384,25 @@ describe("admin server settings", () => {
       expect(headers.get("x-api-key")).toBeNull();
     }
   });
+
+  it("the probe follows the saved switch, so a stored address with the proxy off is not the path", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 401 })),
+    );
+    // An address survives the switch being turned off — it is remembered for the next time it
+    // is turned on — and the dispatcher is a plain direct Agent in that state
+    // (buildProxyDispatcher, proxy.test.ts). The answer therefore has to report the switch,
+    // not just echo the address back, or the page would name a proxy nothing travelled.
+    await admin.put("/api/admin/settings", {
+      proxyForApp: false,
+      proxyUrl: "proxy.corp.example:8080",
+    });
+
+    const body = (await (
+      await admin.post("/api/admin/settings/proxy-probe")
+    ).json()) as ProxyProbeResponse;
+    expect(body).toMatchObject({ proxyForApp: false, proxyUrl: "http://proxy.corp.example:8080" });
+    expect(body.probes.every((probe) => probe.outcome === "reachable")).toBe(true);
+  });
 });
