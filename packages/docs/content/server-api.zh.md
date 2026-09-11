@@ -174,10 +174,12 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测并返回第一个被提供的协议：`{baseUrl, apiKey?, …}` → `{detected?, probes}` |
 | POST | /api/projects/:projectId/models/list | 新增分组导入所用的端点模型列表：按检测出的协议列出端点服务的全部模型 id：`{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
 | POST | /api/projects/:projectId/models/detect-vision | 视觉能力探测：用该模型的凭据发送一张 1x1 图片(一次真实计费的补全)：`{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported\|unsupported\|failed, message?}` |
-| GET | /api/projects/:projectId/models/keys/health | 进程内脱敏 key 健康注册表。带 `?provider=…&modelId=…`（或 `?modelRef=provider/model`）时返回单个 `{modelRef,totalKeys,healthyCount,cooldownCount,evictedCount,keys}`；不带选择器时返回已配置模型的 `{reports}` |
+| GET | /api/projects/:projectId/models/keys/health | 进程内脱敏 key 健康注册表。带 `?provider=…&modelId=…`（或 `?modelRef=provider/model`）时返回单个 `{modelRef,totalKeys,healthyCount,cooldownCount,evictedCount,keys}` 报表（包含各 key 的 `activeLeases`）；不带选择器时返回已配置模型的 `{reports}` |
 | POST | /api/projects/:projectId/models/keys/reset | 用 `{provider,modelId}` 或 `{modelRef}` 重置一个注册表条目，返回 `{ok:true,report}`；不带选择器时为空操作并返回 `{ok:true}` |
 
 所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
+
+两条 key 健康路由均要求 Project 成员权限。它们只暴露脱敏后的 key（8 位及以下为 `****`，其余保留前三位和后四位），并汇报活跃并发租约数（`activeLeases`）。该注册表保存在内存中，服务重启后重新建立，且与活跃 Session 运行时自有的轮换器相互独立。重置操作清除注册表中的冷却/剔除状态、计数器、最后使用时间、活跃租约与轮换位置；它既不修改 Project 配置，也不会重建或重置活跃运行时。
 
 `PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
 
@@ -281,6 +283,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | DELETE | /follow-ups/:followUpId | 撤回一条排队中的跟进消息（id 随 `task_state` 的 `pendingFollowUps` 下发）：在自动发出前移除 → 200，返回其原始内容 `{text, images, files}`——排队中的跟进消息一律带有该内容，与其入队路径无关；已自动发出则 409 `follow_up_started` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
+| POST | /subagents/:childSessionId/resume | 恢复中断或失败的子智能体运行：`{text?}`（可选恢复指引文本）→ `{outcome: "steered" \| "continued" \| "revived"}`；子会话不存在且无法复活时返回 404 `subagent_gone`，当前正在运行时返回 409 `subagent_busy` |
 | POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409，具体原因由 code 承载——`compaction_not_configured`（该 Agent 没有配置压缩）、`nothing_to_compact`（当前上下文尚未完成一轮对话）、`already_compacted`（上次压缩后还没有新的对话）。服务重启后恢复的 Session 依据 Trace 判断可压缩性，因此已有对话无需先跑一次 Task 即可压缩 |
 | GET | /processes | 对话启动的后台进程（超过 yield 窗口转入后台的 `exec_command`）。仅来自活跃运行时——被回收或从未装载的会话如实返回空列表。检测到进程所服务地址时行内附 `serviceUrl`（取输出打印的最后一个本机 URL，否则按进程组做监听端口探测，每次拉取时刷新） |

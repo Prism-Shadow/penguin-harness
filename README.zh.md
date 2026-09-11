@@ -108,7 +108,7 @@ https://github.com/user-attachments/assets/aec49ae9-b743-467b-b247-37bedfeaa36e
 
 上表每个系列只列最新一代，完整预置清单请在应用的**模型**页查看；只要是 OpenAI 协议的端点都可以接入：选择预置，或用自定义端点连接 1000+ 在线与本地模型。
 
-一个模型可以配置多个 API key。在**模型**页面把 API key 输入框切换为**多密钥轮换**，每行粘贴一个 key，也可用逗号或分号分隔。请求按轮询顺序选择 key；HTTP 429 会让该 key 冷却 60 秒，HTTP 401 会把它从该 Session 运行时的轮换中移除。对话框还提供进程内 key 健康状态与重置操作；生命周期细节见[模型文档](https://penguin.ooo/docs/models#多-api-key-与健康状态)。
+一个模型可以配置多个 API key。在**模型**页面把 API key 输入框切换为**多密钥轮换**，每行粘贴一个 key，也可用逗号或分号分隔。请求支持轮询及子代理并发分配策略（`auto`、`least_busy`、`round_robin`、`dedicated`、`inherit`），配合租约追踪（active leases）避免子代理并发撞限。遇到 HTTP 429 时会自动退避重试并无缝切换至下一个健康密钥（受限密钥进入 60 秒冷却）；HTTP 401 会把它从运行时中剔除。被中断或失败的子代理完整保留上下文，可通过 `resume: true` 或界面一键断点续跑。Web 端还内置了 **API 跟踪器**（API Tracker）侧边停靠面板，实时查看各密钥健康度、活跃租约、错误日志与用量统计。生命周期细节见[模型文档](https://penguin.ooo/docs/models#多-api-key-与健康状态)与[Web 应用文档](https://penguin.ooo/docs/web-app#api-跟踪器面板)。
 
 ## 系统需求
 

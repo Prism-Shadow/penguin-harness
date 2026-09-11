@@ -103,7 +103,20 @@ A model entry may carry `api_keys`, an ordered array of credentials. The Web mod
 
 A Session creates its own in-memory rotator when its model runtime is built. Each request selects the next eligible key round-robin. A completed request increments that key's success count. HTTP 429 increments its failure count and places it in a 60-second cooldown; the engine's normal retry path can then select another eligible key. HTTP 401 increments the failure count and evicts that key from that runtime. If another non-evicted key exists the failure is retryable; if every key is evicted the request ends as an authentication failure. Other retryable failures increment the selected key's failure count without eviction or cooldown. When every non-evicted key is cooling down, the rotator selects the one whose cooldown expires first rather than waiting.
 
-The model dialog reads masked status from the server health registry and labels keys **Active**, **Cooldown**, or **Evicted (401)**. This registry is process-local: it is initialized from the saved model credential when queried, is lost on server restart, and is separate from the per-Session rotators that perform inference. Its counters and states are therefore registry telemetry, not a durable or authoritative view of requests made by live Sessions. **Reset Keys** clears that registry entry's eviction flags, cooldowns, success/failure counters, last-used timestamps, and round-robin position; it does not change saved credentials, rebuild a Session runtime, or reset a live Session's rotator. Editing and saving model credentials remains the way to rebuild cached runtimes for following Tasks.
+The model dialog reads masked status from the server health registry and labels keys **Active**, **Cooldown**, or **Evicted (401)**. Each key entry in the health telemetry also reports its currently active subagent leases (`activeLeases`), success/failure counts, and last-used timestamp. This registry is process-local: it is initialized from the saved model credential when queried, is lost on server restart, and is separate from the per-Session rotators that perform inference. Its counters and states are therefore registry telemetry, not a durable or authoritative view of requests made by live Sessions. **Reset Keys** clears that registry entry's eviction flags, cooldowns, success/failure counters, last-used timestamps, active leases, and round-robin position; it does not change saved credentials, rebuild a Session runtime, or reset a live Session's rotator. Editing and saving model credentials remains the way to rebuild cached runtimes for following Tasks.
+
+### Subagent key allocation and concurrency leases
+
+When parent agents spawn concurrent subagents, multiple child runs hitting the same API key can quickly exhaust provider rate limits. PenguinHarness provides key allocation strategies and active lease management for subagent runtimes:
+
+- **Allocation strategies**:
+  - `auto`: Prioritizes non-cooling keys with the fewest active subagent leases, falling back to round-robin when lease counts are tied.
+  - `least_busy`: Selects the healthy key currently bound to the minimum number of concurrent subagent leases.
+  - `round_robin`: Cycles sequentially through eligible non-cooling credentials.
+  - `dedicated`: Allocates an exclusive, non-shared key for the subagent when surplus keys exist.
+  - `inherit`: Shares the parent session's active key rotator directly.
+- **Active lease tracking (`activeLeases`)**: When a subagent runtime initializes, it claims an active lease against its allocated key. Leases are reflected in key health reports and are automatically released when the subagent session completes, aborts, or is evicted.
+- **Rate-limit failover and backoff**: When an inference request encounters HTTP 429, the engine triggers jittered exponential backoff retry and immediately rotates to the next available healthy key, cooling the limited key for 60 seconds.
 
 See [Server API](/server-api#models) for the health and reset routes.
 
