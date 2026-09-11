@@ -1,0 +1,9 @@
+{
+  "description": "Draw a spec atlas for a repository: choose the spec nodes worth a picture and draw each one's diagram with SpexCode, checked until it passes, then hand over the whole tree as one page.",
+  "description_zh": "为仓库绘制规格图集：挑出值得配图的规格节点，用 SpexCode 为每个节点画出架构图并检查到通过，最后把整棵规格树交付成一个可浏览的网页。",
+  "short_description": "Spec atlas: architecture diagrams for a repository's spec tree.",
+  "short_description_zh": "规格图集：为仓库的规格树画架构图。",
+  "version": "2026.09.10.1",
+  "category": "software-development",
+  "preinstall": false
+}
