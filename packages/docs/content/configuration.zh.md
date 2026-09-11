@@ -28,6 +28,10 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 
 有一样东西是反向流动的：**本安装自己的 `penguin` 会排在 Agent 所执行的每一条命令的 PATH 最前面**。服务端启动时会在 `<root>/bin/penguin` 写下一个启动脚本——它用服务端自己的 Node 运行上表所指的 CLI 入口——并把该目录置于每条命令 PATH 的最前。于是命令里的 `penguin` 就是该 Agent 正运行其中的这套 harness，而不是机器上全局安装的那个版本。该目录既写进子进程环境，也在 shell 内部再前置一次：命令经由登录 shell 执行，而登录 profile 往往会在子进程环境设定之后重写 PATH；这同时意味着它也排在 [vault](#vault) 中设置的 `PATH` 之前——而 vault 里的 `PATH` 本身是整体替换继承值的。该脚本在每次启动时重写，因此安装位置变动会在下次启动被跟上；没有可指向的入口时则不写，`penguin` 的解析与此前无异。
 
+### 命令 Shell 解析
+
+`PENGUIN_SHELL` 始终拥有最高优先级。未设置时，POSIX 系统解析其常规 shell；Windows 命令运行器会枚举 `PATH` 上的全部 `bash`，排除 `%SystemRoot%`、`WindowsApps` 下的 WSL 启动器以及 `wsl.exe`。若可用的非 WSL bash 排在后面，则直接使用其绝对路径，避免 spawn 时被前面的 WSL 别名抢先。若 `PATH` 上没有可直接使用的 bash，会根据发现的每个 `git.exe` 探测 Git for Windows 的相邻位置 `..\\bin\\bash.exe` 与 `..\\usr\\bin\\bash.exe`；随后才尝试安装包提供的 `PENGUIN_BUNDLED_SHELL`、PowerShell 7（`pwsh`），最后是 Windows PowerShell。解析结果在服务进程内缓存，因此 PATH 或安装变化需重启后生效。这样 `D:/workspace` 等原生盘符路径会交给理解 Windows 路径的 shell，而不会误送进 WSL。
+
 `PENGUIN_PREVIEW_ORIGIN` 必须与应用源在**主机名**上不同，只换端口不行：Cookie 不区分端口，换端口仍然共用会话 Cookie。本地使用不必配置——App 固定在规范主机 `localhost`，预览用 `127.0.0.1`，既不需要配置也不需要 DNS。经 LAN 地址或真实域名访问时才需要设置，否则那里的预览会回退到同源沙箱，`localStorage`、Cookie 与第三方 embed 都不可用。在真实域名上设置时，会话 Cookie 必须保持 host-only（不带 `Domain=`），否则同注册域下的兄弟子域会共享它。取值无法解析时启动即报错，不会静默回退。
 
 ### Provider 凭证环境变量
