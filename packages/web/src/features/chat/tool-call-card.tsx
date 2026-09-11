@@ -28,8 +28,7 @@ import {
   DISCLOSURE_ROW_STICKY_CLASS,
 } from "./disclosure-row";
 import { ZoomableImage } from "../../components/ui/image-zoom";
-import { ICON_SIZE } from "../../lib/icon-scale";
-import { BackgroundTasksMark } from "../../components/ui/session-activity-icon";
+import { toneInk } from "../../lib/tone";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
@@ -416,13 +415,17 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               )
             ) : null}
           </span>
-          {/* Right of the duration, on a call made with run_in_background: the same mark the
-            session list draws on the conversation, so a backgrounded call and the row that
-            counts it read as one thing. It sits after the duration rather than beside the
-            name so it never competes with the truncating subtitle, and the row's own status
-            icon keeps saying what the CALL did — this says where its work went. */}
+          {/* Right of the duration, on a call made with run_in_background or moved there:
+            a bracketed marker in the row's own mono type, the shape this row already used
+            for an outcome that needs a word. A glyph here would be the session list's
+            count-of-many mark doing duty for a single call, and it would say nothing to a
+            reader who cannot spend a hover on it. It sits after the duration rather than
+            beside the name so it never competes with the truncating subtitle, and the row's
+            own status icon keeps saying what the CALL did — this says where its work went. */}
           {(isBackgroundCall(item.argumentsText) || isDetachedCall(item.output)) && (
-            <BackgroundTasksMark label={S.chat.backgroundCall} size={ICON_SIZE.inlineGlyph} />
+            <span className={`shrink-0 font-mono text-xs ${toneInk.muted}`}>
+              {S.chat.backgroundCall}
+            </span>
           )}
           <span className="min-w-0 flex-1" />
         </button>

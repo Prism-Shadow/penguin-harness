@@ -29,7 +29,6 @@ process list with its Stop and Remove actions.
   a row carrying it measures exactly like one that does not. It is offered only while the call
   is executing, only on a main-session card, and not on a call already launched with
   `run_in_background` — that one's work is already parked.
-- The tool card wears the background mark once a call has been moved there, read from the note
-  the call returned, so it survives a reload.
-- The chat header's background-task reading is now spelled in words ("2 background tasks")
-  instead of drawn as the activity glyph.
+- A call whose work went to the background is marked `[Background]` right of its duration, in
+  the row's own mono type and the same bracketed shape the row uses for an outcome that needs a
+  word. It is read from the note the call returned, so it survives a reload.

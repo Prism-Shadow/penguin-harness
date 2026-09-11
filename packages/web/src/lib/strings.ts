@@ -1714,8 +1714,8 @@ Benchmark：
     backgroundTasks: (n: number) => `${n} 个后台任务`,
     /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
     sessionScheduled: "有待触发的定时任务",
-    /** The same mark on a tool row, where it stands for the ONE call whose work went to the background — launched with `run_in_background`, or moved there by the user — rather than for a count. */
-    backgroundCall: "在后台运行",
+    /** The tool row's marker for the ONE call whose work went to the background — launched with `run_in_background`, or moved there by the user — rather than for a count. Bracketed, like the row's other outcome markers. */
+    backgroundCall: "[后台任务]",
     /** The tool row's inline text action, shown while the call is executing (also its accessible name). */
     sendToBackground: "转入后台执行",
     /** Its tooltip: what the click does to the call and to the conversation. */
