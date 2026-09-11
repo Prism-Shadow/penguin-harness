@@ -46,8 +46,8 @@ for (const required of [launcherModule, path.join(distDir, "pty-payload.js")]) {
 
 // The builtin plugins, as the npm prefix the bundled server resolves from
 // (`<app>/plugins/package.json` + `plugins/node_modules/<name>/…`; the server's
-// plugin/loader.ts looks one directory above `dist/`). Bundled
-// self-contained by scripts/build-plugins.mjs, from its content cache when unchanged.
+// plugin/loader.ts looks one directory above `dist/`). The packages as npm publishes
+// them, installed by npm (scripts/build-plugins.mjs), from its content cache when unchanged.
 const { buildBuiltinPlugins, stagePrefix } = await import(
   pathToFileURL(path.resolve(pkgDir, "..", "..", "scripts", "build-plugins.mjs")).href
 );
@@ -107,5 +107,5 @@ fs.chmodSync(path.join(binDir, "penguin"), 0o755);
 fs.writeFileSync(path.join(binDir, "penguin.cmd"), windowsLauncherScript());
 
 console.log(
-  `[build-assets] done: plugins/ (${builtPlugins.length} builtin plugins), dist/icon.png, dist/install.{sh,ps1}, bin/, ${NODE_PTY_RELDIR.join("/")} (${ptyFiles.length} files, bindings: ${bindings.join(", ")})`,
+  `[build-assets] done: plugins/ (${builtPlugins.plugins.length} builtin plugins), dist/icon.png, dist/install.{sh,ps1}, bin/, ${NODE_PTY_RELDIR.join("/")} (${ptyFiles.length} files, bindings: ${bindings.join(", ")})`,
 );

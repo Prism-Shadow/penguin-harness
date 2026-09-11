@@ -32,13 +32,15 @@ import type {
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
-import type { Config } from "../../hmr/capabilities.js";
+import type { Config, Hmr } from "../../hmr/capabilities.js";
 import type { AgentConfig } from "../../mechanisms/agents.js";
 import type { Access } from "../../mechanisms/projects.js";
 import type { Sessions as ManagerIface } from "../../runtime/session-manager.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import { agentHooksRoutes } from "./hooks.js";
 import { builtinPluginRegistry } from "../../plugin/registry.js";
+import { pluginBases } from "../../plugin/loader.js";
+import type { PluginBase } from "../../plugin/loader.js";
 
 /** What these route groups reach — bound by their component below. */
 export interface PluginsRouteDeps {
@@ -164,9 +166,9 @@ export class PluginRoutes {
   }
 }
 
-export function pluginRegistryRoutes(): Hono<AppEnv> {
+export function pluginRegistryRoutes(bases: () => readonly PluginBase[]): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
-  const registry = builtinPluginRegistry();
+  const registry = builtinPluginRegistry(bases);
   app.get("/", async (c) => {
     const body: PluginIndexResponse = { plugins: await registry.index() };
     return c.json(body);
@@ -207,8 +209,11 @@ export function pluginRegistryRoutes(): Hono<AppEnv> {
   },
 })
 export class PluginRegistryRoutes {
+  @Use() private readonly config!: Config;
+  @Use() private readonly hmr!: Hmr;
   @Bind("PluginRegistryRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
-    this.routes = pluginRegistryRoutes();
+    // Read per request: a push moves the shipped prefix to a new assets directory.
+    this.routes = pluginRegistryRoutes(() => pluginBases(this.config.root, this.hmr.assetsDir()));
   }
 }

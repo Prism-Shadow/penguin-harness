@@ -275,6 +275,41 @@ describe("builtin plugins", () => {
     expect(result.loaded[0]!.modules.map((m) => m.manifest.name)).toEqual(["One"]);
   });
 
+  it("resolves a package through its exports' import condition, as npm shipped it", async () => {
+    // The sandbox backends declare `exports: { ".": { types, import: "./dist/index.js" } }`
+    // and no `require` condition; the loader reads the entry an importer would, not what
+    // require.resolve would (it has none).
+    const assets = path.join(root, "hmr", "store", "assets", "abc");
+    const dir = path.join(assets, "plugins", "node_modules", "@acme", "exported");
+    await mkdir(path.join(dir, "dist"), { recursive: true });
+    await writeFile(
+      path.join(assets, "plugins", "package.json"),
+      '{"name":"prefix","private":true}',
+    );
+    await writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name: "@acme/exported",
+        type: "module",
+        main: "./dist/index.js",
+        exports: { ".": { types: "./dist/index.d.ts", import: "./dist/index.js" } },
+        penguin: {
+          modules: [
+            { name: "Exported", requires: {}, provides: {}, contributes: {}, children: [] },
+          ],
+        },
+      }),
+    );
+    await writeFile(
+      path.join(dir, "dist", "index.js"),
+      "export default { modules: { Exported: { create: () => ({ api: {} }) } } };",
+    );
+    await writeConfig({ plugins: ["@acme/exported"] });
+    const result = await loadPlugins(root, assets);
+    expect([...result.failed.entries()]).toEqual([]);
+    expect(result.loaded[0]!.file).toBe(path.join(dir, "dist", "index.js"));
+  });
+
   it("reads a committed assets dir from harness.json, or null without one", async () => {
     expect(await committedAssetsDir(root)).toBeNull();
     await mkdir(path.join(root, "hmr"), { recursive: true });
