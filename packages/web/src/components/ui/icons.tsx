@@ -183,6 +183,9 @@ export const WORKBENCH_ICON = "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3
  */
 export const EXPAND_ICON = "M9 3H3v6M15 3h6v6M15 21h6v-6M9 21H3v-6";
 
+/** The same four corner brackets turned inward: what the launcher ball offers while its fan stands open. */
+export const COLLAPSE_ICON = "M3 9h6V3M21 9h-6V3M21 15h-6v6M3 15h6v6";
+
 /**
  * Two robot heads, a large one above-left and a small one below-right: the subagents panel,
  * wherever the dock names it. The single robot head of `AGENT_GROUP_ICON` is the Agent itself;
@@ -194,16 +197,17 @@ export const AGENTS_PAIR_ICON =
   "M7.3 4.2V2.2M3.8 4.2h7a2.2 2.2 0 0 1 2.2 2.2v5.8a2.2 2.2 0 0 1-2.2 2.2h-7a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2zM4.6 9.2h.01M10 9.2h.01M18.6 14.8v-1.7M16.5 14.8h4.2a1.7 1.7 0 0 1 1.7 1.7v3.8a1.7 1.7 0 0 1-1.7 1.7h-4.2a1.7 1.7 0 0 1-1.7-1.7v-3.8a1.7 1.7 0 0 1 1.7-1.7zM17.3 18.4h.01M20.5 18.4h.01";
 
 /**
- * A brain seen from above — the two hemispheres, gyri along their outer edge, and the fissure
- * between them — for the Memory panel, the memory-changes card and the agent cards' memory count.
- * The fissure runs the full height rather than stopping short of the outline, because it is the
- * feature carrying the whole mark once the gyri stop resolving, and a line that ends inside the
- * shape closes up at these sizes. Three bumps a side is what survives with it. Every surface
- * draws it from here — a memory mark typed out a second time is how one thing ends up with two
- * pictures of itself.
+ * A brain in sagittal section — the lobed profile, cut open, with the fold spiralling inward —
+ * for the Memory panel, the memory-changes card and the agent cards' memory count.
+ *
+ * The spiral is the mark: a lobed outline on its own is a cloud, and the inward curl is both
+ * what says "cut open" and the last thing still resolving at the 13px the smallest of those
+ * three draws at. It curls in from the lower left rather than opening to the right, because an
+ * open C inside a ring reads as ©. Every surface draws it from here — a memory mark typed out
+ * a second time is how one thing ends up with two pictures of itself.
  */
 export const MEMORY_ICON =
-  "M12 2.6a3.4 3.4 0 0 0-5 1.6 3.6 3.6 0 0 0-3.3 4.4 3.6 3.6 0 0 0 .4 5.6 3.4 3.4 0 0 0 3.5 4.6 3.4 3.4 0 0 0 4.4 2.6M12 2.6a3.4 3.4 0 0 1 5 1.6 3.6 3.6 0 0 1 3.3 4.4 3.6 3.6 0 0 1-.4 5.6 3.4 3.4 0 0 1-3.5 4.6 3.4 3.4 0 0 1-4.4 2.6M12 2.6v18.8";
+  "M9.6 3.1a3.4 3.4 0 0 1 5.6 .6 3.2 3.2 0 0 1 4.2 3.4 3 3 0 0 1 1 4.3 2.8 2.8 0 0 1-2.2 3.5 2.4 2.4 0 0 1-2.6 3.4 3 3 0 0 1-4.6-.6 3.2 3.2 0 0 1-4.6-1.6 3.2 3.2 0 0 1-2.6-4.2 3.4 3.4 0 0 1 1.6-4.6 3.4 3.4 0 0 1 4.2-4.2ZM9.8 15.4a4.6 4.6 0 0 1 1-5.8 4.2 4.2 0 0 1 5.6.4 2.8 2.8 0 0 1-.2 4 2.2 2.2 0 0 1-3-.4";
 
 /**
  * The eye's almond outline, shared by the two marks drawn from it — `NAV_ICONS.traces` (an open

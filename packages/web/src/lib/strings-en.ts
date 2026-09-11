@@ -105,6 +105,7 @@ export const en: Strings = {
     launcher: "Shortcuts",
     launcherCaption: "Shortcuts",
     launcherOpen: "Open",
+    launcherClose: "Close",
     launcherPending: "a subagent awaits approval",
     launcherPanels: "Shortcuts",
     launcherHide: "Hide launcher",

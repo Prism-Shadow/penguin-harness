@@ -38,7 +38,13 @@ import type {
 } from "react";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { EXPAND_ICON, HIDDEN_ICON, NAV_ICONS, WORKBENCH_ICON } from "../../components/ui/icons";
+import {
+  COLLAPSE_ICON,
+  EXPAND_ICON,
+  HIDDEN_ICON,
+  NAV_ICONS,
+  WORKBENCH_ICON,
+} from "../../components/ui/icons";
 import { toastInfo } from "../../components/ui/toast";
 import { usePrefersReducedMotion } from "../../components/ui/use-reduced-motion";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -464,15 +470,20 @@ function LauncherBall({
     },
   });
 
-  // What the ball shows, in the one place the three states cannot contradict each other: an entry
-  // being pointed at wins, then the ball's own hover — which offers to open rather than naming
-  // what it is — and the resting workbench mark last. A fan merely standing open is not a hover.
+  // What the ball shows, in the one place the states cannot contradict each other: an entry being
+  // pointed at wins, then the ball's own hover — which names what the NEXT CLICK does, not what
+  // the ball is, so an open fan offers to close and a closed one offers to open — and the resting
+  // workbench mark last. A fan merely standing open is not a hover.
   const hovered = entries.find((entry) => entry.key === hoveredKey) ?? null;
-  const captionText = hovered?.label ?? (ballActive ? S.dock.launcherOpen : S.dock.launcherCaption);
+  const ballAction = fanOpen ? S.dock.launcherClose : S.dock.launcherOpen;
+  const captionText = hovered?.label ?? (ballActive ? ballAction : S.dock.launcherCaption);
   const ballGlyph = hovered ? (
     hovered.glyphAt(ICON_SIZE.sectionMark)
   ) : (
-    <GlyphIcon d={ballActive ? EXPAND_ICON : WORKBENCH_ICON} size={ICON_SIZE.sectionMark} />
+    <GlyphIcon
+      d={ballActive ? (fanOpen ? COLLAPSE_ICON : EXPAND_ICON) : WORKBENCH_ICON}
+      size={ICON_SIZE.sectionMark}
+    />
   );
 
   const label = agentsPending ? `${S.dock.launcher} · ${S.dock.launcherPending}` : S.dock.launcher;
