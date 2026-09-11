@@ -3,6 +3,7 @@
 - **Date:** 2026-09-11
 - **Type:** feature
 - **Scope:** `skills`, `core`, `docs`
+- **PR:** [#693](https://github.com/Prism-Shadow/penguin-harness/pull/693)
 
 [中文版](2026-09-11-use-spexcode.zh.md)
 
