@@ -71,6 +71,12 @@ describe("one glyph, one home", () => {
     expect(occurrences("M4 5h16v14H4zM14 5v14")).toEqual(["components/ui/icons.tsx"]);
   });
 
+  it("draws the memory brain in exactly one place", () => {
+    // The Memory mark was hand-typed twice — the dock's panel table and the memory-changes
+    // card — so a redraw moved one surface and left the other on the old picture.
+    expect(occurrences("M8.7 17.1h6.6M12 5.2v11.9")).toEqual(["components/ui/icons.tsx"]);
+  });
+
   it("draws the background-task trace in exactly one place", () => {
     // Three surfaces draw it now — a session row, the chat header pill and a backgrounded
     // tool row — which is how the paths above ended up hand-typed five times each.

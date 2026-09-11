@@ -176,6 +176,46 @@ export const PANEL_RIGHT_ICON = "M4 5h16v14H4zM14 5v14";
 export const WORKBENCH_ICON = "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z";
 
 /**
+ * Four corner brackets opening outward: the floating launcher's ball while the pointer or the
+ * keyboard is on it, in place of the workbench tiles it rests on. Brackets rather than an arrow
+ * or a chevron because the fan they announce opens up, left and down at once, and a mark with a
+ * direction in it would name the wrong one.
+ */
+export const EXPAND_ICON = "M9 3H3v6M15 3h6v6M15 21h6v-6M9 21H3v-6";
+
+/**
+ * Two robot heads, a large one above-left and a small one below-right: the subagents panel,
+ * wherever the dock names it. The single robot head of `AGENT_GROUP_ICON` is the Agent itself;
+ * the pair is what that Agent has going on underneath it. Reduced to antenna + head + two eye
+ * dots, because the ears and the smile the single head carries fall below a pixel on the dock's
+ * 13px tab strip.
+ */
+export const AGENTS_PAIR_ICON =
+  "M7.3 4.2V2.2M3.8 4.2h7a2.2 2.2 0 0 1 2.2 2.2v5.8a2.2 2.2 0 0 1-2.2 2.2h-7a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2zM4.6 9.2h.01M10 9.2h.01M18.6 14.8v-1.7M16.5 14.8h4.2a1.7 1.7 0 0 1 1.7 1.7v3.8a1.7 1.7 0 0 1-1.7 1.7h-4.2a1.7 1.7 0 0 1-1.7-1.7v-3.8a1.7 1.7 0 0 1 1.7-1.7zM17.3 18.4h.01M20.5 18.4h.01";
+
+/**
+ * A brain with its stem: the Memory panel's mark, and the memory-changes card's at the end of a
+ * Task. Both surfaces draw it from here — a memory mark typed out a second time is how one thing
+ * ends up with two pictures of itself.
+ */
+export const MEMORY_ICON =
+  "M12 5.2a3.2 3.2 0 0 0-5.8 1.4A3.2 3.2 0 0 0 2.6 9.9a3.3 3.3 0 0 0 1.7 4.6 3.2 3.2 0 0 0 4.4 2.6M12 5.2a3.2 3.2 0 0 1 5.8 1.4 3.2 3.2 0 0 1 3.6 3.3 3.3 3.3 0 0 1-1.7 4.6 3.2 3.2 0 0 1-4.4 2.6M8.7 17.1h6.6M12 5.2v11.9M12 17.1v3.4";
+
+/**
+ * The eye's almond outline, shared by the two marks drawn from it — `NAV_ICONS.traces` (an open
+ * eye: watching the run) and `HIDDEN_ICON` (the same eye struck through). Composed rather than
+ * typed twice so the pair cannot drift into looking unrelated.
+ */
+const EYE_OUTLINE = "M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z";
+
+/**
+ * The struck-through eye: the launcher fan's last entry, which puts the ball away. The slash runs
+ * corner to corner rather than across the eye alone, because the open eye a few entries above it
+ * in the same fan is the same outline, and the slash is the only thing telling the two apart.
+ */
+export const HIDDEN_ICON = `${EYE_OUTLINE}M3 3l18 18`;
+
+/**
  * File glyphs, shared by every place a file operation is marked — the file summary card, the
  * memory-changes card, the context panel's file ranking — so a read, an edit and a write look
  * the same everywhere: a page with a folded corner, the same page with a plus (a full write),
@@ -199,12 +239,10 @@ export const FILE_EDIT_ICON = "M12 20h9M16.5 3.5a2.85 2.85 0 1 1 4 4L7.5 20.5 2 
  */
 export const BACKGROUND_TASKS_ICON = "M2 12h4l3 9 6-18 3 9h4";
 
-/** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab). */
-export const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
-
 /**
  * Paper plane: remote control — the session-row mark for a Session that is relaying through
- * a messaging channel, and the row menu's action that sets one up. One shape for every
+ * a messaging channel, the row menu's action that sets one up, and the dock's remote-control
+ * panel, so the feature wears one mark wherever it appears. One shape for every
  * channel — shape alone is not the carrier, so the row pairs it with the channel's name in
  * a tooltip and in sr-only text, and the menu entry is labelled.
  */
@@ -270,7 +308,8 @@ export const NAV_ICONS = {
   /** Machines (two stacked server units, each with its own status lamp). */
   machines: "M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01",
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
-  traces: "M4 6h16M4 12h10M4 18h13",
+  /** Trace observation (an open eye with its pupil): watching what a run actually did. */
+  traces: `${EYE_OUTLINE}M14.7 12a2.7 2.7 0 1 1-5.4 0 2.7 2.7 0 0 1 5.4 0z`,
   /** Benchmark center (a trophy: cup + two handles + base). */
   benchmark:
     "M7 4h10v5a5 5 0 0 1-10 0V4zM7 5H4v1a3 3 0 0 0 3 3m10-4h3v1a3 3 0 0 1-3 3M12 14v4m-4 0h8",
