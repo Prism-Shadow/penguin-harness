@@ -204,13 +204,15 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   fixes, ambiguity is asked about only after the files were checked, names are never
  *   guessed, independent tool calls go out together, commands run non-interactively,
  *   verification uses the project's own commands, a PLAN.md step is verified before the next,
- *   a web app is scaffolded by CLI and fetched before it is presented) and its interaction
- *   rules (lead with the outcome, plain words rather than tool names, a final answer that
- *   stands on its own, one specific question with options, do the work rather than pasting
- *   it). The prompt tab moved.
+ *   a web app is scaffolded by CLI and fetched before it is presented), an # Output section
+ *   in the PRN-010 slot between # Constraints and # Stop rules (lead with the outcome, plain
+ *   words rather than tool names, files named by backticked workspace-relative path — moved
+ *   here from # File system — links never in code formatting, a final answer that stands on
+ *   its own, a one-sentence refusal), one specific question with options, and doing the work
+ *   rather than pasting it. The prompt tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
-  prompt: "ed3d868946bd14e110ec95b7d72058cde15098e88bdb9fe2549b53dbe2850cbf",
+  prompt: "9b2b54a241c7b8ac92faf7177d6f42c9c87b54f2e6d89411b37c53e5061ca515",
   runtime: "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346",
   tools: "a5e067fe58899be651c3c0541f587b2d5999030dc3008a39737a8fe21f5f7a23",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
