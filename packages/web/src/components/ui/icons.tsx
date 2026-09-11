@@ -194,6 +194,21 @@ export const UPLOAD_ICON = "M12 15V4m0 0L8 8m4-4 4 4M4 15v3a2 2 0 0 0 2 2h12a2 2
 export const DOWNLOAD_ICON = "M12 4v11m0 0 4-4m-4 4-4-4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3";
 
 /**
+ * Two arcs chasing each other round a circle: re-read what is on disk. The arc idiom is the
+ * app's existing one (see HISTORY_ICON in app-layout.tsx), so the mark sits in the same family
+ * as the other round-trip glyphs rather than introducing a second way to draw a turn.
+ */
+export const REFRESH_ICON =
+  "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M3 21v-5h5";
+
+/**
+ * Soft wrap: three lines of text where the middle one runs past the edge, turns back and
+ * returns with an arrow. The turn is the whole mark — a plain stack of lines would be any of
+ * a dozen list glyphs — so it keeps the full bulge rather than being tucked in to save room.
+ */
+export const WRAP_TEXT_ICON = "M4 6h16M4 12h12a3 3 0 1 1 0 6h-3m2-2-2 2 2 2M4 18h5";
+
+/**
  * Activity trace (a flat line with one tall beat in it): work still going on behind the
  * conversation — the background-task mark on a session row, the matching count in the chat
  * header, and the marker on a tool row whose call was made with `run_in_background`.

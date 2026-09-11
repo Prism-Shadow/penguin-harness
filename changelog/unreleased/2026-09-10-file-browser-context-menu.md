@@ -27,6 +27,8 @@ wrapping, and no box around either.
 - Adding a preview selection instead writes a fenced block headed by `@path (L3-L7)`, carrying
   the selection verbatim. The line range is given only where the source view can resolve it,
   and the fence is opened long enough to survive a selection that contains fences of its own.
+  The text stays selected afterwards: handing a quote to the composer focuses the composer, and
+  focusing a text field drops whatever the document had highlighted, so the range is put back.
 - The source view numbers its lines and lost its border, its language label and its header bar —
   it presents the text the way the editor does. Copy moved to the preview header, beside Edit,
   Open in new tab and Download.
@@ -35,6 +37,11 @@ wrapping, and no box around either.
   layers cannot drift apart. Files over 32KB are edited unhighlighted — the editor re-highlights
   every time the text settles, and past that size the catch-up stops reading as the colours
   arriving. Line numbers stay at any size.
+- The panel's six actions — wrap, edit, copy, download, refresh and upload — are icon buttons
+  rather than words. Each carries its name in its accessible name and shows it in a tooltip under
+  the button, which is where a horizontal row of them needs it: a panel to the side would cover
+  the buttons next to the one being asked about. While an upload runs the glyph becomes a spinner
+  and the count moves into the tooltip, which is the only place left to say it.
 - Soft wrap became a toggle in the source view as well, and the source view and the editor share
   one remembered answer: they are the same file seen two ways, and pressing Edit must not reflow
   the file under the line you were aiming at. Message code blocks still scroll sideways rather

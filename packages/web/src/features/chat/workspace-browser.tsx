@@ -99,15 +99,28 @@ import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useRowContextMenu } from "../../components/ui/context-menu";
-import { CopyButton, writeClipboard } from "../../components/ui/copy-button";
+import {
+  CopiedStatus,
+  CopyCheckGlyph,
+  useCopied,
+  writeClipboard,
+} from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { CloseIcon } from "../../components/ui/icons";
+import {
+  CloseIcon,
+  DOWNLOAD_ICON,
+  FILE_EDIT_ICON,
+  REFRESH_ICON,
+  UPLOAD_ICON,
+  WRAP_TEXT_ICON,
+} from "../../components/ui/icons";
 import { noAutofill } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { SkeletonList } from "../../components/ui/skeleton";
+import { Tooltip } from "../../components/ui/tooltip";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
@@ -297,6 +310,31 @@ interface PreviewSelection {
   text: string;
   fromLine?: number;
   toLine?: number;
+  /**
+   * The selected range itself, cloned at the gesture. Handing the block to the composer
+   * focuses its textarea, and focusing a text field drops whatever the document had
+   * selected — so the highlight has to be put back by hand afterwards (restoreSelection).
+   */
+  range: Range;
+}
+
+/**
+ * Puts `range` back as the document's one selection, a frame after the caller hands text to
+ * the composer: the composer focuses its textarea inside a requestAnimationFrame of its own,
+ * scheduled first, and that focus is what clears the selection this restores.
+ *
+ * A range whose ends have since left the document is dropped rather than re-applied — the
+ * preview it was read from is no longer on screen, and re-selecting detached nodes would
+ * either throw or select nothing.
+ */
+function restoreSelection(range: Range): void {
+  requestAnimationFrame(() => {
+    if (!range.startContainer.isConnected || !range.endContainer.isConnected) return;
+    const selection = window.getSelection();
+    if (selection === null) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
 }
 
 /**
@@ -316,6 +354,9 @@ function readSelection(
   if (!host.contains(range.commonAncestorContainer)) return null;
   const text = selection.toString();
   if (text.trim() === "") return null;
+  // Cloned, not held: the live range moves with the selection, and the selection is about to
+  // be cleared by the composer taking focus.
+  const captured = range.cloneRange();
   // Which lines the range actually touches, asked of the DOM rather than inferred from the
   // text: a selection that starts or ends on a line boundary lands on a node between the line
   // spans, where walking up from the boundary finds no line at all.
@@ -326,7 +367,9 @@ function readSelection(
     if (from < 0) from = i;
     to = i;
   }
-  return from < 0 ? { text } : { text, fromLine: from + 1, toLine: to + 1 };
+  return from < 0
+    ? { text, range: captured }
+    : { text, range: captured, fromLine: from + 1, toLine: to + 1 };
 }
 
 /**
@@ -375,13 +418,21 @@ function crumbItemWidth(text: string): number {
 const ghostActionClass =
   "inline-flex shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
 
-/** The same action, as a toggle: pressed is a filled resting state, not a hover that happens to stick. */
-const toggleActionClass = (on: boolean): string =>
-  `inline-flex shrink-0 items-center rounded-md border border-transparent px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
-    on
-      ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-      : "bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-  }`;
+/**
+ * The same action with its name taken off it: a square the size of the tree toggle, drawn in
+ * the toolbar and in the preview header alike so the panel's two rows of marks line up. A
+ * control with no visible text needs its name in two places to be readable at all — the
+ * element's own `aria-label`, and the Tooltip it is wrapped in.
+ */
+const iconActionBase =
+  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150";
+const iconActionIdle =
+  "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
+const iconActionClass = `${iconActionBase} ${iconActionIdle}`;
+
+/** The same square, as a toggle: pressed is a filled resting state, not a hover that happens to stick. */
+const iconToggleClass = (on: boolean): string =>
+  `${iconActionBase} ${on ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100" : iconActionIdle}`;
 
 export function WorkspaceBrowser({
   session,
@@ -483,6 +534,12 @@ export function WorkspaceBrowser({
   const [resizingTree, setResizingTree] = useState(false);
   /** Soft wrap, shared by the source view and the editor so Edit reflows nothing (see parseWrapLines). */
   const [wrapLines, setWrapLines] = useState(() => readWrapLines());
+  /**
+   * The preview header's copy action. Driven by the hook rather than a plain CopyButton
+   * because the tooltip is a Tooltip panel here, not a `title`, and a trigger may carry only
+   * one of the two — the glyph swap and the live region are the ones copy-button.tsx owns.
+   */
+  const { copied, flash: flashCopy } = useCopied();
   const [width, setWidth] = useState(0);
   /** The breadcrumb strip's own width: it is `flex-1` over a zero basis, so it measures the space left by the actions and never its own content — no feedback loop. */
   const [crumbsWidth, setCrumbsWidth] = useState(0);
@@ -1359,6 +1416,9 @@ export function WorkspaceBrowser({
       }),
       "block",
     );
+    // The text stays selected: contributing a quote to the conversation is not an edit to the
+    // preview, and losing the highlight would cost the reader their place in the file.
+    restoreSelection(selection.range);
   };
 
   // -------------------------------------------------------------------------------- drop
@@ -1442,6 +1502,9 @@ export function WorkspaceBrowser({
   /** The file's text is on screen to read or to edit. Both present it the same way, so both take the Wrap toggle. */
   const textShown =
     sourceShown || (preview !== null && editor !== null && editor.path === preview.path);
+  /** The upload picker's one name — its accessible name and its tooltip both — carrying the running count while an upload is in flight. */
+  const uploadLabel =
+    uploading !== null ? S.files.uploading(uploading.done, uploading.total) : S.files.upload;
   const dirLabel = (dir: string): string => (dir === "" ? S.files.root : dir);
 
   const tree = (
@@ -1572,14 +1635,17 @@ export function WorkspaceBrowser({
    * file under the line the user was aiming at.
    */
   const wrapToggle = textShown && (
-    <button
-      type="button"
-      aria-pressed={wrapLines}
-      onClick={() => setWrap(!wrapLines)}
-      className={toggleActionClass(wrapLines)}
-    >
-      {S.files.wrapLines}
-    </button>
+    <Tooltip label={S.files.wrapLines} placement="bottom" className="shrink-0">
+      <button
+        type="button"
+        aria-pressed={wrapLines}
+        aria-label={S.files.wrapLines}
+        onClick={() => setWrap(!wrapLines)}
+        className={iconToggleClass(wrapLines)}
+      >
+        <GlyphIcon d={WRAP_TEXT_ICON} size={ICON_SIZE.iconButton} />
+      </button>
+    </Tooltip>
   );
 
   const richToggle = preview !== null && (preview.kind === "html" || preview.kind === "md") && (
@@ -1942,13 +2008,16 @@ export function WorkspaceBrowser({
                 {richToggle}
                 {wrapToggle}
                 {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => void startEdit()}
-                    className={ghostActionClass}
-                  >
-                    {S.common.edit}
-                  </button>
+                  <Tooltip label={S.common.edit} placement="bottom" className="shrink-0">
+                    <button
+                      type="button"
+                      aria-label={S.common.edit}
+                      onClick={() => void startEdit()}
+                      className={iconActionClass}
+                    >
+                      <GlyphIcon d={FILE_EDIT_ICON} size={ICON_SIZE.iconButton} />
+                    </button>
+                  </Tooltip>
                 )}
                 {/* rel="noopener noreferrer" is load-bearing, not boilerplate: the preview must
                     not keep a handle back to this window, which is the whole point of serving
@@ -1976,15 +2045,36 @@ export function WorkspaceBrowser({
                     one, so it joins the file's other take-it-away actions here. It copies the
                     text that was read, which is all of the file unless the preview was cut off. */}
                 {sourceShown && preview.content !== undefined && (
-                  <CopyButton text={preview.content} label={S.chat.copyCode} />
+                  <>
+                    <Tooltip
+                      label={copied ? S.common.copied : S.chat.copyCode}
+                      placement="bottom"
+                      className="shrink-0"
+                    >
+                      <button
+                        type="button"
+                        aria-label={S.chat.copyCode}
+                        onClick={() => flashCopy(preview.content ?? "")}
+                        className={iconActionClass}
+                      >
+                        <CopyCheckGlyph copied={copied} size={ICON_SIZE.iconButton} />
+                      </button>
+                    </Tooltip>
+                    {/* Sibling, not a child: the button's accessible name stays the label, and
+                        the glyph swap is silent without this region. */}
+                    <CopiedStatus copied={copied} />
+                  </>
                 )}
-                <a
-                  href={api.workspaceFileUrl(sessionId, preview.path, true)}
-                  download={preview.name}
-                  className={ghostActionClass}
-                >
-                  {S.files.download}
-                </a>
+                <Tooltip label={S.files.download} placement="bottom" className="shrink-0">
+                  <a
+                    href={api.workspaceFileUrl(sessionId, preview.path, true)}
+                    download={preview.name}
+                    aria-label={S.files.download}
+                    className={iconActionClass}
+                  >
+                    <GlyphIcon d={DOWNLOAD_ICON} size={ICON_SIZE.iconButton} />
+                  </a>
+                </Tooltip>
               </>
             )}
           </div>
@@ -2054,16 +2144,37 @@ export function WorkspaceBrowser({
           ))}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={refreshAll}>
-            {S.files.refresh}
-          </Button>
-          {/* Matches the same visual style and font size (sm = text-xs) as the adjacent ghost Refresh Button: no border, light background on hover. */}
-          <label className="inline-flex cursor-pointer items-center rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 focus-within:ring-2 focus-within:ring-gray-400/30 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100">
-            <HiddenFileInput multiple onChange={onPick} disabled={uploading !== null} />
-            {uploading !== null
-              ? S.files.uploading(uploading.done, uploading.total)
-              : S.files.upload}
-          </label>
+          <Tooltip label={S.files.refresh} placement="bottom" className="shrink-0">
+            <button
+              type="button"
+              aria-label={S.files.refresh}
+              onClick={refreshAll}
+              className={iconActionClass}
+            >
+              <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.iconButton} />
+            </button>
+          </Tooltip>
+          {/* The picker's own input carries the name: a label with no text names nothing, and
+              the glyph inside it is aria-hidden. While an upload runs the count is all the
+              tooltip has left to say it with, so it goes there and the glyph becomes a
+              spinner. */}
+          <Tooltip label={uploadLabel} placement="bottom" className="shrink-0">
+            <label
+              className={`${iconActionClass} cursor-pointer focus-within:ring-2 focus-within:ring-gray-400/30`}
+            >
+              <HiddenFileInput
+                multiple
+                onChange={onPick}
+                disabled={uploading !== null}
+                aria-label={uploadLabel}
+              />
+              {uploading !== null ? (
+                <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              ) : (
+                <GlyphIcon d={UPLOAD_ICON} size={ICON_SIZE.iconButton} />
+              )}
+            </label>
+          </Tooltip>
         </div>
       </div>
 
