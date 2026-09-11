@@ -18,7 +18,6 @@
  */
 import zlib from "node:zlib";
 import type { Instance, Park } from "@prismshadow/penguin-core/kernel";
-import { Readable } from "node:stream";
 import type { HmrHost, UpgradeAllTarget, UpgradeOutcome } from "./host.js";
 import { isBlobName } from "./host.js";
 
@@ -53,7 +52,7 @@ export interface Hmr<Api extends Park> {
    * The channel's endpoints, framework-free: a Request in, a Response out — what the routes
    * the product declares under HMR_ROUTE_PREFIX answer with. HMR_PROBE_PATH names blobs and
    * answers which ones the store lacks; HMR_BLOBS_PATH takes one blob, raw; HMR_UPGRADE_PATH
-   * is the push, whose parts may be inline or named by hash and resolved from the store. Any
+   * is the push, each part of it inline or `{ sha }` resolved from the store. Any
    * generation may serve the routes by handing the request here, which is how one without a
    * platform of its own still carries the channel.
    */
@@ -134,36 +133,21 @@ export async function admitsUpgradeRoute<Api extends Park>(
   );
 }
 
-/** A part of a push named by the hash of a blob already in the store. */
-type BlobRef = { sha: string };
-const isRef = (value: unknown): value is BlobRef =>
-  typeof value === "object" &&
-  value !== null &&
-  typeof (value as BlobRef).sha === "string" &&
-  isBlobName((value as BlobRef).sha);
+const json = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+const bad = (message: string): Response => json(400, { error: { code: "bad_request", message } });
 
 /**
- * What a push's body is: `gzip(JSON.stringify({ platform, cli, web, assets?, source? }))`.
- * Each of `platform`, `cli` and a `web.manifest` entry may be inline or `{ sha }`, a blob
- * put in the store beforehand (HMR_BLOBS_PATH) and resolved here through `readBlob`. A
- * reference to a blob the store does not hold is refused, naming it. Throws with the reason
- * when the body is not a push.
+ * What a push's body is: `gzip(JSON.stringify({ platform, cli, web: { files }, assets?, source? }))`.
+ * Every content value — a bundle, a web file, an asset — is either inline (bundles as text,
+ * files as base64) or `{ sha }`: a blob put in the store beforehand (HMR_BLOBS_PATH), resolved
+ * here through `readBlob`. Throws with the reason when the body is not a push.
  */
 export function parseUpgradeTarget(
   contentType: string | null,
   body: Buffer,
   readBlob: (sha: string) => Buffer | null = () => null,
 ): UpgradeAllTarget {
-  const resolve = (what: string, value: unknown): Buffer | null => {
-    if (!isRef(value)) return null;
-    const blob = readBlob(value.sha);
-    if (blob === null) {
-      throw new Error(
-        `${what} names blob ${value.sha.slice(0, 12)}, which this store does not hold — put it first (${HMR_BLOBS_PATH}/<sha256>)`,
-      );
-    }
-    return blob;
-  };
   const type = (contentType ?? "").split(";")[0]!.trim().toLowerCase();
   if (type !== "application/gzip" && type !== "application/octet-stream") {
     throw new Error(
@@ -172,15 +156,10 @@ export function parseUpgradeTarget(
     );
   }
   let payload: {
-    platform?: string | BlobRef;
-    cli?: string | BlobRef;
-    web?: { files?: Record<string, string>; manifest?: Record<string, BlobRef> };
-    assets?: {
-      files?: Record<string, string>;
-      manifest?: Record<string, { sha: string }>;
-      blobs?: Record<string, string>;
-      exec?: string[];
-    };
+    platform?: unknown;
+    cli?: unknown;
+    web?: { files?: unknown };
+    assets?: { files?: unknown; exec?: string[] };
     source?: { repo: string; revision: string };
   };
   try {
@@ -190,37 +169,38 @@ export function parseUpgradeTarget(
       `invalid gzip upgrade payload: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-  const platform = resolve("`platform`", payload.platform)?.toString("utf8") ?? payload.platform;
-  if (typeof platform !== "string")
-    throw new Error("payload has no `platform` (string or { sha })");
-  const cli = resolve("`cli`", payload.cli)?.toString("utf8") ?? payload.cli;
-  if (typeof cli !== "string") throw new Error("payload has no `cli` (string or { sha })");
-  let web = payload.web?.files;
-  if (typeof payload.web?.manifest === "object" && payload.web.manifest !== null) {
-    web = { ...(web ?? {}) };
-    for (const [rel, ref] of Object.entries(payload.web.manifest)) {
-      const blob = resolve(`\`web.manifest\` entry ${rel}`, ref);
-      if (blob === null) throw new Error(`\`web.manifest\` entry ${rel} is not { sha }`);
-      web[rel] = blob.toString("base64");
+  const content = (what: string, value: unknown, encoding: "utf8" | "base64"): string => {
+    if (typeof value === "string") return value;
+    const sha = (value as { sha?: unknown } | null)?.sha;
+    if (typeof sha !== "string" || !isBlobName(sha)) {
+      throw new Error(`payload has no ${what} (content, or { sha } of a blob in the store)`);
     }
-  }
-  if (typeof web !== "object" || web === null) {
-    throw new Error("payload has no `web.files` (a { relPath: base64 } map) or `web.manifest`");
-  }
+    const blob = readBlob(sha);
+    if (blob === null) {
+      throw new Error(
+        `${what} names blob ${sha.slice(0, 12)}, which this store does not hold — put it first (PUT ${HMR_BLOBS_PATH}/<sha256>)`,
+      );
+    }
+    return blob.toString(encoding);
+  };
+  const files = (what: string, value: unknown): Record<string, string> => {
+    if (typeof value !== "object" || value === null) {
+      throw new Error(`payload has no ${what} (a { relPath: content } map)`);
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([rel, v]) => [rel, content(`${what} ${rel}`, v, "base64")]),
+    );
+  };
   return {
-    platform,
-    cli,
-    web,
+    platform: content("`platform`", payload.platform, "utf8"),
+    cli: content("`cli`", payload.cli, "utf8"),
+    web: files("`web.files`", payload.web?.files),
     // Optional: a push that needs no real files on disk (no native module, no helper
-    // binary) simply omits it, and older pushers keep working unchanged. Two shapes:
-    // every file inline (`files`), or a manifest of hashes plus only the blobs this
-    // store said it was missing (`manifest` + `blobs`, after HMR_PROBE_PATH).
-    ...(payload.assets?.files || payload.assets?.manifest
+    // binary) simply omits it.
+    ...(payload.assets?.files
       ? {
           assets: {
-            ...(payload.assets.files ? { files: payload.assets.files } : {}),
-            ...(payload.assets.manifest ? { manifest: payload.assets.manifest } : {}),
-            ...(payload.assets.blobs ? { blobs: payload.assets.blobs } : {}),
+            files: files("`assets.files`", payload.assets.files),
             ...(payload.assets.exec ? { exec: payload.assets.exec } : {}),
           },
         }
@@ -249,9 +229,6 @@ export async function probeEndpoint(
   host: Pick<HmrHost, "missingBlobs">,
   request: Request,
 ): Promise<Response> {
-  const json = (status: number, body: unknown) =>
-    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-  const bad = (message: string) => json(400, { error: { code: "bad_request", message } });
   const body = (await request.json().catch(() => null)) as { hashes?: unknown } | null;
   const hashes = body?.hashes;
   if (!Array.isArray(hashes) || hashes.some((h) => typeof h !== "string")) {
@@ -261,32 +238,15 @@ export async function probeEndpoint(
   return json(200, { missing: host.missingBlobs(hashes as string[]) });
 }
 
-/**
- * One blob in, raw: `PUT <HMR_BLOBS_PATH>/<sha256>` with the bytes as the body. Stored under
- * that name only if the bytes hash to it; the answer names the size stored. What a pusher
- * does for each blob the probe reported missing, before a push that names them.
- */
+/** One blob in, raw: `PUT <HMR_BLOBS_PATH>/<sha256>` with the bytes as the body, stored only if they hash to the name. */
 export async function blobEndpoint(
-  host: Pick<HmrHost, "putBlob">,
+  host: Pick<HmrHost, "storeBlob">,
   request: Request,
 ): Promise<Response> {
-  const json = (status: number, body: unknown) =>
-    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-  const bad = (status: number, message: string) =>
-    json(status, {
-      error: { code: status === 405 ? "method_not_allowed" : "bad_request", message },
-    });
-  if (request.method !== "PUT") return bad(405, `${HMR_BLOBS_PATH}/<sha256> takes PUT`);
   const sha = new URL(request.url).pathname.slice(HMR_BLOBS_PATH.length + 1);
-  if (!isBlobName(sha))
-    return bad(400, "a blob is named by the lowercase hex sha256 of its content");
-  const body = request.body === null ? Readable.from([]) : Readable.fromWeb(request.body as never);
-  try {
-    const size = await host.putBlob(sha, body);
-    return json(200, { sha, size });
-  } catch (err) {
-    return bad(400, err instanceof Error ? err.message : String(err));
-  }
+  if (!isBlobName(sha)) return bad("a blob is named by the lowercase hex sha256 of its content");
+  const stored = await host.storeBlob(Buffer.from(await request.arrayBuffer()));
+  return stored === sha ? json(200, { sha }) : bad(`the body hashes to ${stored}, not ${sha}`);
 }
 
 export async function upgradeEndpoint<Api extends Park>(
@@ -295,9 +255,6 @@ export async function upgradeEndpoint<Api extends Park>(
   onLanded?: (outcome: Extract<UpgradeOutcome, { status: "ok" }>) => void,
   readBlob?: (sha: string) => Buffer | null,
 ): Promise<Response> {
-  const json = (status: number, body: unknown) =>
-    new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-  const bad = (message: string) => json(400, { error: { code: "bad_request", message } });
   let target: UpgradeAllTarget;
   try {
     target = parseUpgradeTarget(
