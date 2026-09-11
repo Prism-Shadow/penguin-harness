@@ -108,6 +108,8 @@ Three plugin categories ship in the box ([docs](https://penguin.ooo/docs/skills)
 
 Each family's latest generation only — the app's **Models** page lists every built-in preset, and any OpenAI-protocol endpoint works too: pick a preset, or point a custom endpoint at any of the 1000+ online and local models.
 
+A model can use several API keys. In **Models**, switch the API-key field to **Multi-key rotation** and paste one key per line, or separate keys with commas or semicolons. Requests rotate round-robin; HTTP 429 cools a key for 60 seconds, while HTTP 401 removes it from that Session runtime's rotation. The dialog also exposes process-local key-health status and a reset action; see the [model documentation](https://penguin.ooo/docs/models#multiple-api-keys-and-health) for lifecycle details.
+
 ## Requirements
 
 | Requirement  | Supported                                                                  |
