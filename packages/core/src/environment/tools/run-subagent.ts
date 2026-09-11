@@ -29,7 +29,7 @@
  */
 import { partialToolCallOutput, userText } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
-import { SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
+import { DETACHED_TOOL_NOTE_PREFIX, SUBAGENT_THINKING_LEVELS } from "../../interfaces/index.js";
 import type {
   EnvironmentServices,
   ThinkingLevelName,
@@ -42,7 +42,7 @@ import {
   resultForSubagentExit,
 } from "./subagent/index.js";
 import { collectWindow } from "./subagent/collect.js";
-import { clampYield, reportLabel, tailForReport } from "./background/index.js";
+import { clampYield, collectUntil, reportLabel, tailForReport } from "./background/index.js";
 import { describeArgumentError } from "./tool-arguments.js";
 
 /** Tool name constant (used only within this tool module, never exposed to Environment). */
@@ -64,11 +64,12 @@ export function createSubagentTool(
   return {
     name: SUBAGENT_NAME,
     definition,
+    detachable: true,
     async *execute(
       args: Record<string, unknown>,
       ctx: ToolExecutionContext,
     ): AsyncGenerator<OmniMessage, ToolResult | void> {
-      const { toolCallId, signal, approve } = ctx;
+      const { toolCallId, signal, approve, detachSignal } = ctx;
       const fail = function* (msg: string): Generator<OmniMessage> {
         yield partialToolCallOutput({ eventType: "delta", output: msg, toolCallId });
       };
@@ -192,24 +193,46 @@ export function createSubagentTool(
 
       // An interruption within the startup window kills the child session (consistent with
       // exec_command); once switched to background, this listener is removed in `finally`.
+      // A detach is not on this listener: it leaves the child running, which is the point.
       const onAbort = (): void => session.kill();
       let registered = false;
       signal?.addEventListener("abort", onAbort, { once: true });
+      const windowSignal = collectUntil(signal, detachSignal);
       try {
         session.startRun([userText(prompt, "parent_agent")]);
         yield* collectWindow(session, {
           yieldMs,
           toolCallId,
-          ...(signal ? { signal } : {}),
+          ...(windowSignal ? { signal: windowSignal } : {}),
           ...(approve ? { approve } : {}),
         });
 
         if (signal?.aborted) return { stopReason: "aborted" };
         if (session.running) {
-          // Still running once the window expires: register as a background session, returning
-          // subagent_id for input_subagent to continue accessing it.
+          // Still running: register as a background session, returning subagent_id for
+          // input_subagent to continue accessing it.
           const id = manager.register(session);
           registered = true;
+          if (detachSignal?.aborted) {
+            // Detached by the user mid-window. The child now outlives this call, so it needs
+            // everything the collect window was giving it: a standing approval sink (without
+            // one its next read-write tool parks at the approval queue forever, since no
+            // window will ever attach another) and a live message tap, so it keeps streaming
+            // to the frontend past this turn's end. Its completion is reported like a
+            // run_in_background launch's — nobody is going to poll for it.
+            armSubagentDoneReport(session, id, prompt, services);
+            if (approve) session.setPersistentApprovalSink(approve);
+            const forward = services?.backgroundForward;
+            if (forward) session.setMessageTap(forward);
+            return {
+              stopReason: "completed",
+              note:
+                `${DETACHED_TOOL_NOTE_PREFIX} with subagent_id ${id}; its completion will arrive ` +
+                `as a user message — no need to poll. Use input_subagent to interact ` +
+                `(abort: true stops its current run)]` +
+                approvalHint(session),
+            };
+          }
           return {
             stopReason: "completed",
             note:

@@ -44,6 +44,7 @@ import type {
   ThinkingLevelName,
   ToolConfig,
   ToolDefinition,
+  ToolDetachResult,
   ToolExecutionRequest,
   ToolPermission,
 } from "../interfaces/index.js";
@@ -470,6 +471,30 @@ export class Environment implements EnvironmentInterface {
   }
 
   /**
+   * Detach channels of the calls currently executing, keyed by tool_call_id: the only handle
+   * a host has on one call. An entry lives exactly as long as its call — `executeTool`
+   * registers one on entry and deletes it in its finalization — so an id that is not here is
+   * a call that is not running. `detachable` is the tool's own declaration; a call whose tool
+   * has no background form still gets an entry, so the registry can tell "nothing is running"
+   * apart from "that tool cannot be detached".
+   */
+  private readonly inFlight = new Map<string, { detach: AbortController; detachable: boolean }>();
+
+  /**
+   * Asks one executing call to continue as a background task (see
+   * EnvironmentInterface.detachToolCall). Firing the controller is the whole action: the tool
+   * observes it, registers its work and returns a handle. Idempotent — a second click on a
+   * call still winding down fires an already-aborted controller and changes nothing.
+   */
+  detachToolCall(toolCallId: string): ToolDetachResult {
+    const entry = this.inFlight.get(toolCallId);
+    if (!entry) return "not_running";
+    if (!entry.detachable) return "not_detachable";
+    entry.detach.abort();
+    return "detached";
+  }
+
+  /**
    * Lists tools available to the current Session, for context_engine to initialize GenerativeModel.
    * Only lists tools that have been assembled (i.e. supported by the registry) — tool names
    * unrecognized in config are not exposed to the LLM (consistent with the constructor);
@@ -569,6 +594,11 @@ export class Environment implements EnvironmentInterface {
     if (signal?.aborted) ac.abort();
     const onAbort = (): void => ac.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
+    // Per-call detach channel, minted here so something outside the engine can reach ONE call
+    // (see detachToolCall). Kept separate from `ac`: that signal means "stop", this one means
+    // "hand your work back and let the turn close".
+    const detachCtrl = new AbortController();
+    this.inFlight.set(toolCallId, { detach: detachCtrl, detachable: tool.detachable === true });
     let timedOut = false;
     const timer =
       timeoutMs > 0
@@ -609,6 +639,7 @@ export class Environment implements EnvironmentInterface {
       workspaceDir: this.workspaceDir,
       toolCallId,
       signal: ac.signal,
+      detachSignal: detachCtrl.signal,
       // Pass through the parent's approve callback (run_subagent uses it so the child Session
       // inherits the parent's approval mode; other tools ignore it).
       ...(request.approve ? { approve: request.approve } : {}),
@@ -724,6 +755,9 @@ export class Environment implements EnvironmentInterface {
     } finally {
       if (timer) clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
+      // The call is over: a detach arriving from here on has nothing to act on and must
+      // answer "not running" rather than firing a controller nobody is listening to.
+      this.inFlight.delete(toolCallId);
     }
 
     // Uniform finalization. Content basis = the tool's self-produced full message (fallback

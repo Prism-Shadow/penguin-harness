@@ -1340,6 +1340,23 @@ export function ChatPage() {
     [selected, stream],
   );
 
+  // "Move to background" on an executing tool call: the call returns a background handle and
+  // the turn carries on. 404 means it finished in the click's race window and 409 that the
+  // tool has no background form — the card settles on its own either way, so neither is worth
+  // a toast; anything else is a real failure the user should see.
+  const onSendToBackground = useCallback(
+    async (toolCallId: string) => {
+      if (!selected) return;
+      try {
+        await api.postToolCallBackground(selected.sessionId, toolCallId);
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 409)) return;
+        toastError(apiErrorText(e));
+      }
+    },
+    [selected],
+  );
+
   const onChangeApprovalMode = useCallback(
     (mode: ApprovalMode) => {
       if (!selected || modeSaving) return;
@@ -1511,6 +1528,7 @@ export function ChatPage() {
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
     onApprove,
+    onSendToBackground,
     origin: [],
     // Any non-idle state (running / compacting) counts as "not yet stopped": compaction can
     // happen mid-turn, and if only running were checked, the trailing group would flash
