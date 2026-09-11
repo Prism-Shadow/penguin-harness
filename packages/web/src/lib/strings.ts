@@ -2634,7 +2634,6 @@ Benchmark：
 
   benchmark: {
     title: "评估中心",
-    subtitle: "为智能体出题、评测与优化",
     /** The novice guide under the title: the three-step loop and the Skill behind each step. */
     guideTitle: "三步闭环：出题、看分、优化",
     guideSteps: [
@@ -2670,7 +2669,9 @@ Benchmark：
       `确定删除「${title}」吗？它的全部题目与评估记录都会被删除，无法恢复。`,
     deleted: "Benchmark 已删除",
     backToList: "返回列表",
-    closeDetail: "关闭详情",
+    /** The Benchmark's own page when the pair in the address resolves to nothing. */
+    notFound: "找不到这个 Benchmark",
+    notFoundHint: "它可能已被删除，或者链接里的 id 不对。",
     /** Score-only chart title. */
     trendTitle: (metric: string): string => `${metric}随时间变化`,
     cases: "题目",

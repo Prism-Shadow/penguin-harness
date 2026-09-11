@@ -3,9 +3,9 @@
  * into series by each Evaluation's model ID and thinking level, and the evaluation table with
  * separate model ID and thinking-level columns. Rows expand to the evaluation summary and
  * per-case scores, and Case rows further expand to the raw results of each Run with its
- * Session id. A case opens the case browser in a dialog. The page decides where this sits
- * (a right pane or the whole width) and keys it by Benchmark, so expand state never lingers
- * across Benchmarks.
+ * Session id. A case opens the case browser in a dialog. This is the body of the Benchmark's
+ * own page, which mounts it once its Benchmark has been read, so no expand state ever lingers
+ * from the Benchmark before it.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -432,7 +432,7 @@ export function BenchmarkDetail({
       {/* Runtime belongs to each Evaluation and is shown in the detail table. */}
       <div>
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <h1 className="min-w-0 truncate text-lg font-semibold">{bm.title}</h1>
+          <h1 className="min-w-0 truncate text-xl font-semibold">{bm.title}</h1>
           <span className="text-xs text-gray-500">
             {S.benchmark.caseCount(bm.caseCount)} · {S.benchmark.runsPerCase(bm.runs ?? 1)}
           </span>

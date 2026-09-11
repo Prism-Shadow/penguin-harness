@@ -2680,7 +2680,6 @@ Scenarios:
 
   benchmark: {
     title: "Evaluation Center",
-    subtitle: "Set tasks for your agents, score them, improve them",
     guideTitle: "The loop in three steps: create, read, optimize",
     guideSteps: [
       "Let AI write a Benchmark for an agent and take its baseline score: the benchmark-design Skill writes the cases, and the agent-evaluation Skill trial-runs each one in an isolated Workspace to calibrate difficulty before the set is frozen.",
@@ -2713,7 +2712,9 @@ Scenarios:
       `Delete "${title}"? All of its cases and evaluation records will be removed; this cannot be undone.`,
     deleted: "Benchmark deleted",
     backToList: "Back to list",
-    closeDetail: "Close details",
+    /** The Benchmark's own page when the pair in the address resolves to nothing. */
+    notFound: "This Benchmark was not found",
+    notFoundHint: "It may have been deleted, or the link carries an id that no longer exists.",
     trendTitle: (metric: string): string => `${metric} over time`,
     cases: "Cases",
     viewCase: "View details",
