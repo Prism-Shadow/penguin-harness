@@ -64,10 +64,7 @@ async function openToolOutput(page) {
   } else if ((await group.getAttribute("aria-expanded")) !== "true") {
     await group.click(); // finished and collapsed: open it to reach the card
   }
-  const toolCard = page
-    .locator("button[aria-expanded]")
-    .filter({ hasText: "exec_command" })
-    .first();
+  const toolCard = page.locator("button[aria-expanded]").filter({ hasText: "执行命令" }).first();
   await expect(toolCard).toBeVisible();
   if ((await toolCard.getAttribute("aria-expanded")) !== "true") await toolCard.click();
   await expect(toolCard).toHaveAttribute("aria-expanded", "true");
@@ -83,7 +80,7 @@ async function startSlowToolRun(page, sessionId) {
   await ta.waitFor();
   await ta.fill("slow stream test");
   await page.getByRole("button", { name: "发送" }).click();
-  await expect(page.getByText("exec_command").first()).toBeVisible();
+  await expect(page.getByText("执行命令").first()).toBeVisible();
   await page.getByRole("button", { name: "允许" }).click();
   const outputPre = await openToolOutput(page);
   await expect(outputPre).toContainText("line 3");

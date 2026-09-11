@@ -44,6 +44,7 @@ import { InfoPopover } from "../../components/ui/info-popover";
 import { HelpFold } from "../../components/ui/help-fold";
 import { Modal } from "../../components/ui/modal";
 import { Textarea } from "../../components/ui/input";
+import { rowDescClass } from "../../components/ui/option-menu";
 import { Switch } from "../../components/ui/switch";
 import { Chevron } from "../../components/ui/chevron";
 import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
@@ -920,7 +921,7 @@ export function MemoryTab({
                   ["replace", S.memory.importModeReplace, S.memory.importModeReplaceHint],
                 ] as [MemoryImportMode, string, string][]
               ).map(([mode, label, hint]) => (
-                <label key={mode} className="flex cursor-pointer items-start gap-2 text-sm">
+                <label key={mode} className="flex cursor-pointer items-start gap-2 text-xs">
                   <input
                     type="radio"
                     name="memory-import-mode"
@@ -930,7 +931,10 @@ export function MemoryTab({
                   />
                   <span className="min-w-0">
                     <span className="text-gray-800 dark:text-gray-200">{label}</span>
-                    <span className="block text-xs text-gray-500 dark:text-gray-400">{hint}</span>
+                    {/* One step below the row title, the same pairing OptionMenu's rows use. */}
+                    <span className={`block ${rowDescClass.sm} text-gray-500 dark:text-gray-400`}>
+                      {hint}
+                    </span>
                   </span>
                 </label>
               ))}

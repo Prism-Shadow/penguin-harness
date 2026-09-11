@@ -252,12 +252,12 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("openrouter", "deepseek/deepseek-v4.1-flash")?.provider).toBe(
       "openrouter",
     );
-    // Vision is a per-row flag, not a property of the id's spelling. Every Flash row in the
-    // direct group reads images: deepseek-flash natively, and both V4 Flash ids because
-    // DeepSeek retired them on 2026-09-10 and now serves them from V4.1 Flash. deepseek-v4-pro
-    // is the group's one text-only row.
+    // Vision is a per-row flag, not a property of the id's spelling: it tracks what the client
+    // routing the row actually carries. AgentHub's DeepSeek client denies image parts to ids
+    // matching /^deepseek-v4-(flash|pro)(-\d{4})?$/, which covers deepseek-v4-flash and
+    // deepseek-v4-pro but neither the bare deepseek-flash nor the vision-exp revision.
     expect(catalogEntryFor("deepseek", "deepseek-flash")?.supportsVision).toBe(true);
-    expect(catalogEntryFor("deepseek", "deepseek-v4-flash")?.supportsVision).toBe(true);
+    expect(catalogEntryFor("deepseek", "deepseek-v4-flash")?.supportsVision).toBe(false);
     expect(catalogEntryFor("deepseek", "deepseek-v4-flash-vision-exp")?.supportsVision).toBe(true);
     expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.supportsVision).toBe(false);
     expect(
@@ -1178,7 +1178,7 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
 });
 
 describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, and on which protocol)", () => {
-  it("OpenAI-protocol clients carry it: openai_chat / openai_responses / gpt5_6 / minimax_m3", () => {
+  it("OpenAI-protocol clients carry it: openai_chat / openai_responses / gpt6 / minimax_m3", () => {
     // Bare "openai" is the alias the web pins on custom, user-defined and gateway rows.
     expect(fastModeProtocol("anything-at-all", "openai")).toBe("openai");
     expect(fastModeProtocol("local-qwen", "openai-responses")).toBe("openai");

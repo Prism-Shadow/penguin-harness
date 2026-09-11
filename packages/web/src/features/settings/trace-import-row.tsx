@@ -154,9 +154,10 @@ export function TraceImportRow() {
           </Select>
         </div>
         {/* The file pick doubles as the confirm action (button styling on a label, so the
-            native picker opens without a detour). */}
+            native picker opens without a detour). It sits in a row with the two Selects above,
+            so it carries their sm metrics rather than Button's md ones. */}
         <label
-          className={`inline-flex shrink-0 items-center justify-center gap-1 rounded-md border border-gray-300 px-3 py-1 text-sm font-medium transition-colors duration-150 dark:border-gray-700 ${
+          className={`inline-flex shrink-0 items-center justify-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium transition-colors duration-150 dark:border-gray-700 ${
             busy
               ? "pointer-events-none opacity-60"
               : "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"

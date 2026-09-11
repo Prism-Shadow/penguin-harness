@@ -387,6 +387,24 @@ export interface ToolExecutionRequest {
 }
 
 /**
+ * Outcome of a detach request (`EnvironmentInterface.detachToolCall`):
+ * - `detached` — the call was asked to hand its work back as a background task;
+ * - `not_running` — no call with that id is executing right now (unknown, or already finished);
+ * - `not_detachable` — the call is running, but its tool has no background form.
+ * The three are separate because a host answers them differently — the last one is a
+ * permanent property of the tool, while the first two describe a moment.
+ */
+export type ToolDetachResult = "detached" | "not_running" | "not_detachable";
+
+/**
+ * The opening phrase of the note a detached call returns. Shared because a render layer has
+ * to recognize a detached call from the stored output alone — the click that detached it is
+ * not in the Trace, and a reloaded page has nothing else to go on — so the sentence the tool
+ * writes and the string that matches it must be one value.
+ */
+export const DETACHED_TOOL_NOTE_PREFIX = "[moved to the background by the user";
+
+/**
  * One background command process owned by the environment (an exec_command promoted past
  * its yield window): the registry handle plus display metadata for a host UI's process
  * list. `pid` is the shell leading the process group (null when the spawn itself failed);
@@ -462,6 +480,14 @@ export interface EnvironmentInterface {
   listBackgroundCommands?(): BackgroundCommandInfo[];
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
+  /**
+   * Asks one EXECUTING tool call to hand its work back as a background task, so the turn can
+   * close and the conversation carry on (the Web App's per-card button). Addressed by
+   * tool_call_id, the only handle a host has on a single call. Not an abort: the call ends
+   * `completed` with a registry handle, nothing is killed, and the work's completion arrives
+   * later as the usual background report. Optional, like listBackgroundCommands.
+   */
+  detachToolCall?(toolCallId: string): ToolDetachResult;
   /**
    * Whether a background subagent session is mid-round. Hosts pin a Session's runtime entry
    * on it: a `run_in_background` child outlives the call that launched it, and evicting the

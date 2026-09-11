@@ -335,6 +335,7 @@ export function WorkspaceSelect({
   if (variant === "form") {
     return (
       <FormPicker
+        size="sm"
         open={open}
         setOpen={setFormOpen}
         leading={folderIcon("")}

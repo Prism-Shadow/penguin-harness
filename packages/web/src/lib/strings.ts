@@ -24,8 +24,10 @@ export const zh = {
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
-    // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "最近一次对话",
+    // The rail avatar's tooltip says what the control does; who is signed in stays in its accessible name.
+    userSettings: "用户设置",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
     collapseGroup: "折叠",
@@ -199,6 +201,9 @@ export const zh = {
     launcher: "快捷方式悬浮球",
     launcherInfo:
       "在对话正文右缘浮动的圆形按钮，展开后是工作台各块面板与终端的快捷方式；这里关掉后它就不再出现，展开里的「隐藏悬浮球」同样会关掉它。",
+    toolAliases: "工具短名",
+    toolAliasesInfo:
+      "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
     currencyInfo: "价格显示币种；存储始终为美元。",
     changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {
@@ -356,6 +361,8 @@ export const zh = {
     edit: "编辑",
     settings: "设置",
     confirm: "确认",
+    /** Sole button of a dialog that only informs: it has nothing to confirm or cancel, so the label acknowledges rather than agrees (and does not repeat the header X's "close"). */
+    gotIt: "知道了",
     loading: "加载中…",
     saved: "已保存",
     saving: "保存中…",
@@ -396,6 +403,14 @@ export const zh = {
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
       "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password 重置为新的初始密码",
+    /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
+    claimFailedTitle: "登录链接已失效",
+    /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
+    claimFailedDesktop:
+      "这个一次性登录链接已被使用或已失效。重启 PenguinHarness 桌面应用即可生成新的登录链接并自动登录；也可以在下方用账号密码登录。",
+    /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
+    claimFailedServer:
+      "首次登录链接在服务端设置密码后即失效，重启服务端也会换发新的链接。请在下方用账号密码登录，或向管理员索取新的登录链接。",
   },
 
   account: {
@@ -1717,8 +1732,12 @@ Benchmark：
     backgroundTasks: (n: number) => `${n} 个后台任务`,
     /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
     sessionScheduled: "有待触发的定时任务",
-    /** The same mark on a tool row, where it stands for the ONE call made with `run_in_background` rather than for a count. */
-    backgroundCall: "在后台运行",
+    /** The tool row's marker for the ONE call whose work went to the background — launched with `run_in_background`, or moved there by the user — rather than for a count. Bracketed, like the row's other outcome markers. */
+    backgroundCall: "[后台任务]",
+    /** The tool row's inline text action, shown while the call is executing (also its accessible name). */
+    sendToBackground: "转入后台执行",
+    /** Its tooltip: what the click does to the call and to the conversation. */
+    sendToBackgroundHint: "把这次调用转入后台执行，对话继续进行；它结束时会以后台任务通知送回。",
     pendingApprovals: (n: number) => `${n} 个待审批`,
     jumpToLatest: "回到最新消息",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
@@ -2015,6 +2034,20 @@ Benchmark：
       return `失败${detail}，保留当前上下文`;
     },
     unknownTool: "（未知工具）",
+    /**
+     * Short display names for the built-in tools, keyed by the name the model calls them
+     * by. The tool-call card shows these while the Appearance switch is on; a tool absent
+     * from this table (MCP tools, names only older Traces carry) renders as itself.
+     */
+    toolAliases: {
+      read_file: "读取",
+      write_file: "写入",
+      edit_file: "编辑",
+      exec_command: "执行命令",
+      input_command: "跟进命令",
+      run_subagent: "子智能体",
+      input_subagent: "交流",
+    } as Record<string, string>,
     workRunning: "运行中",
     workDone: "运行完毕",
     workGroupSteps: (n: number) => `${n} 步`,
@@ -2571,7 +2604,7 @@ Benchmark：
     taskOutput: "本轮输出 tokens",
     cacheHit: "命中缓存",
     hitRate: "命中率",
-    compactions: "压缩次数",
+    avgToolCalls: "每轮平均工具调用",
     /** The round-card badge reuses `chat.compactionTitle`, which names the mode (压缩 / 清空) and is the stem of the conversation row's state titles (压缩中 / 压缩完毕), so the Trace view and the conversation cannot drift apart; there is deliberately no Trace-local copy of that word. */
     inProgress: "进行中",
     systemPrompt: "系统提示词",

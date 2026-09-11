@@ -43,6 +43,7 @@ import type {
   EnvironmentInterface,
   LLMInterface,
   ThinkingLevelName,
+  ToolDetachResult,
   ToolPermission,
 } from "./interfaces/index.js";
 import { vetoForToolCall, withCommandPolicy } from "./internal/command-policy.js";
@@ -881,6 +882,16 @@ export class Session {
   /** Kills one of this Session's background command processes (whole process group); false when the id is unknown. */
   killBackgroundCommand(processId: string): boolean {
     return this.environment.killBackgroundCommand?.(processId) ?? false;
+  }
+
+  /**
+   * Asks one of this Session's EXECUTING tool calls to continue as a background task, so the
+   * turn can close (see EnvironmentInterface.detachToolCall). Not an abort: the call ends
+   * `completed` with a registry handle and its work keeps running. An environment without the
+   * method has no call to detach.
+   */
+  detachToolCall(toolCallId: string): ToolDetachResult {
+    return this.environment.detachToolCall?.(toolCallId) ?? "not_running";
   }
 
   /** Whether a background subagent of this Session is mid-round (see EnvironmentInterface.hasRunningBackgroundSubagents). */

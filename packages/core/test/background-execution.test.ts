@@ -1,8 +1,9 @@
 /**
  * Behavior tests for background execution: `run_in_background` on exec_command /
- * run_subagent, the completion-report pipeline (Environment listener → Session notice
- * queue → engine boundary delivery), input_command's kill termination, and the
- * `sender` marking on user texts.
+ * run_subagent, detaching a call that is already executing (the Web App's per-card button),
+ * the completion-report pipeline (Environment listener → Session notice queue → engine
+ * boundary delivery), input_command's kill termination, and the `sender` marking on user
+ * texts.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -49,7 +50,9 @@ import type {
   SubagentRunner,
   ToolConfig,
   ToolDefinitionConfig,
+  ToolDetachResult,
 } from "../src/interfaces/index.js";
+import { DETACHED_TOOL_NOTE_PREFIX } from "../src/interfaces/index.js";
 import type { ToolExecutionContext } from "../src/environment/tools/types.js";
 
 // ---------------------------------------------------------------------------
@@ -91,6 +94,37 @@ async function runTool(
   }
   const p = (last?.payload ?? {}) as { output?: string; stop_reason?: string };
   return { output: p.output ?? "", stopReason: p.stop_reason };
+}
+
+/**
+ * Runs a tool and detaches the call from outside the moment `when` holds against the output
+ * seen so far — the Web App's button, fired while the call is still executing.
+ */
+async function runToolDetachedOn(
+  env: Environment,
+  name: string,
+  args: Record<string, unknown>,
+  when: (seen: string) => boolean,
+): Promise<FinalOutput & { detach: ToolDetachResult | null; completeOutputs: number }> {
+  const toolCallId = `call_${name}_detach`;
+  let detach: ToolDetachResult | null = null;
+  let seen = "";
+  let completeOutputs = 0;
+  let last: OmniMessage | null = null;
+  for await (const msg of env.executeTool({
+    toolCall: toolCall({ name, arguments: JSON.stringify(args), toolCallId }),
+  })) {
+    const p = msg.payload as { type?: string; output?: string };
+    if (p.type === "tool_call_output") {
+      completeOutputs += 1;
+      last = msg;
+    } else {
+      seen += p.output ?? "";
+    }
+    if (detach === null && when(seen)) detach = env.detachToolCall(toolCallId);
+  }
+  const p = (last?.payload ?? {}) as { output?: string; stop_reason?: string };
+  return { output: p.output ?? "", stopReason: p.stop_reason, detach, completeOutputs };
 }
 
 function extractProcessId(output: string): string {
@@ -350,6 +384,78 @@ describe("exec_command run_in_background", () => {
     env.dispose(); // kills the process; its exit must not report
     await new Promise((r) => setTimeout(r, 400));
     expect(events).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Detaching an executing call (the Web App's per-card button)
+// ---------------------------------------------------------------------------
+
+describe("detaching an executing tool call", () => {
+  it("ends the call as completed with a process_id, kills nothing, and closes out exactly once", async () => {
+    const { env } = await makeEnv();
+    const res = await runToolDetachedOn(
+      env,
+      "exec_command",
+      // A yield window far longer than the test: the promotion below can only be the detach.
+      { cmd: "printf 'before\\n'; sleep 0.3; printf 'after\\n'; sleep 30", yield_time_ms: 60000 },
+      (seen) => seen.includes("before"),
+    );
+    expect(res.detach).toBe("detached");
+    // A detach is not an interruption: no aborted stop reason, no interruption marker.
+    expect(res.stopReason).toBe("completed");
+    expect(res.output).not.toContain("[interrupted");
+    expect(res.output).toContain(DETACHED_TOOL_NOTE_PREFIX);
+    // Exactly one complete tool_call_output, so the engine's loop closes normally.
+    expect(res.completeOutputs).toBe(1);
+    // Whatever had been collected stays in this call's output.
+    expect(res.output).toContain("before");
+
+    // The process was NOT killed: it is registered, running, and still producing output that
+    // a later input_command poll picks up.
+    const id = extractProcessId(res.output);
+    expect(env.listBackgroundCommands().find((p) => p.processId === id)?.running).toBe(true);
+    const polled = await runTool(env, "input_command", { process_id: id, yield_time_ms: 1500 });
+    expect(polled.output).toContain("after");
+  });
+
+  it("reports the detached command's completion as a background task", async () => {
+    const { env } = await makeEnv();
+    const events: BackgroundTaskDoneEvent[] = [];
+    env.setBackgroundTaskListener((e) => events.push(e));
+    const res = await runToolDetachedOn(
+      env,
+      "exec_command",
+      { cmd: "printf 'before\\n'; sleep 0.4; printf 'done\\n'; exit 0", yield_time_ms: 60000 },
+      (seen) => seen.includes("before"),
+    );
+    const id = extractProcessId(res.output);
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ kind: "command", id, status: "completed" });
+    expect(events[0]!.output).toContain("done");
+  });
+
+  it("answers not_running for an unknown or finished call, and not_detachable for a tool with no background form", async () => {
+    const { env } = await makeEnv();
+    expect(env.detachToolCall("call_nobody")).toBe("not_running");
+
+    const launched = await runTool(env, "exec_command", {
+      cmd: "printf 'poll me\\n'; sleep 30",
+      run_in_background: true,
+    });
+    const id = extractProcessId(launched.output);
+    // input_command only polls a process the registry already holds — there is nothing to
+    // hand back, so the call is refused rather than silently ending early.
+    const polled = await runToolDetachedOn(
+      env,
+      "input_command",
+      { process_id: id, yield_time_ms: 1500 },
+      (seen) => seen.includes("poll me"),
+    );
+    expect(polled.detach).toBe("not_detachable");
+    expect(polled.stopReason).toBe("completed");
+    // The call is over: its detach channel is gone with it.
+    expect(env.detachToolCall("call_input_command_detach")).toBe("not_running");
   });
 });
 
@@ -697,6 +803,95 @@ describe("run_subagent run_in_background", () => {
     expect(decisions[0]).toBe("allow");
     await waitFor(() => events.length === 1);
     expect(events[0]!.status).toBe("completed");
+  });
+
+  it("a detached child keeps running, inherits the call's approval sink and message tap, and reports on settle", async () => {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const decisions: string[] = [];
+    const gates = new Map<string, () => void>();
+    const runner = runnerOf(async function* ({ prompt, approve }) {
+      // Parked until the test releases it, so the detach lands mid-round.
+      await new Promise<void>((r) => gates.set(prompt, r));
+      const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
+      decisions.push(await approve!(tc as OmniMessage<ToolCallPayload>));
+      yield withHop(partialText("delta", "child answer"));
+      yield withHop(assistantText("child answer"));
+    });
+    const events: BackgroundTaskDoneEvent[] = [];
+    const tapped: OmniMessage[] = [];
+    const services = {
+      subagentRunner: runner,
+      subagentSessions: manager,
+      backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
+      backgroundForward: (m: OmniMessage) => tapped.push(m),
+    };
+    const tool = createSubagentTool(SUB_DEF, services);
+    const approveSpy: ApproveFn = async () => "allow";
+    const detach = new AbortController();
+    const timer = setTimeout(() => detach.abort(), 50);
+    const res = await drive(
+      tool,
+      // A yield window far longer than the test: the promotion can only be the detach.
+      { prompt: "long job", yield_time_ms: 60000 },
+      { ...CTX, approve: approveSpy, detachSignal: detach.signal },
+    );
+    clearTimeout(timer);
+    // Not an interruption: the call completes with a handle, and the child is still alive.
+    expect(res.stopReason).toBe("completed");
+    expect(res.note).toContain(DETACHED_TOOL_NOTE_PREFIX);
+    const id = extractSubagentId(res.note);
+    expect(manager.hasRunning()).toBe(true);
+
+    await waitFor(() => gates.has("long job"));
+    gates.get("long job")!();
+    // Without the standing sink handed over at detach time, this parks forever: no collect
+    // window will ever attach another one.
+    await waitFor(() => decisions.length === 1);
+    expect(decisions[0]).toBe("allow");
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ kind: "subagent", id, status: "completed" });
+    // And its messages keep streaming to the host past the launching turn's end.
+    expect(tapped.some((m) => (m.payload as { type?: string }).type === "text")).toBe(true);
+  });
+
+  it("a detached child with a queued approval is not reported as something to poll for", async () => {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const decisions: string[] = [];
+    const runner = runnerOf(async function* ({ approve }) {
+      const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
+      decisions.push(await approve!(tc as OmniMessage<ToolCallPayload>));
+      yield withHop(assistantText("child answer"));
+    });
+    const tool = createSubagentTool(SUB_DEF, {
+      subagentRunner: runner,
+      subagentSessions: manager,
+    });
+    // The user has not answered yet, so the request is still queued when the detach lands:
+    // pendingApprovals is 1 at the moment the note is written.
+    let asked = false;
+    let held = true;
+    const approveSpy: ApproveFn = async () => {
+      asked = true;
+      await waitFor(() => !held);
+      return "allow";
+    };
+    const detach = new AbortController();
+    void waitFor(() => asked).then(() => detach.abort());
+    const res = await drive(
+      tool,
+      { prompt: "long job", yield_time_ms: 60000 },
+      { ...CTX, approve: approveSpy, detachSignal: detach.signal },
+    );
+    expect(res.note).toContain(DETACHED_TOOL_NOTE_PREFIX);
+    // The standing sink attached at detach time carries that request to the user itself, so
+    // the note must not send the model off to poll for it (a run_in_background launch says
+    // nothing either; only the deadline promotion, which gets no standing sink, does).
+    expect(res.note).not.toContain("poll to review");
+    held = false;
+    await waitFor(() => decisions.length === 1);
+    expect(decisions[0]).toBe("allow");
   });
 
   it("input_subagent fails on an id this conversation never allocated (nothing to resume)", async () => {

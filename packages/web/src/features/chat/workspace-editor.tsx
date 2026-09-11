@@ -48,6 +48,9 @@ export function WorkspaceFileEditor({
       autoCapitalize="off"
       autoCorrect="off"
       wrap={wrap ? "soft" : "off"}
+      // font-mono text-xs, not the chat composer's text-base: this is a code surface, where
+      // fitting a long line without wrapping and seeing indentation line up matters more than
+      // reading comfort. The two full-height typing surfaces differ because prose and code do.
       className={`h-full w-full resize-none bg-transparent p-3 font-mono text-xs leading-relaxed text-gray-800 outline-none dark:text-gray-100 ${
         wrap ? "whitespace-pre-wrap" : ""
       }`}

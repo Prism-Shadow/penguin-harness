@@ -21,6 +21,15 @@ export interface ToolExecutionContext {
   toolCallId: string;
   /** Abort signal; the tool should close out and return as soon as possible once it fires. */
   signal?: AbortSignal;
+  /**
+   * Per-call detach request: the host asked for THIS call to continue as a background task so
+   * the conversation can move on. Deliberately a channel of its own rather than a second
+   * meaning for `signal`: Environment classifies any `signal.aborted` as `aborted` and appends
+   * the interruption note, and a detached call is not interrupted — it hands back a registry
+   * handle and its work keeps running. A tool that ignores this field behaves exactly as it
+   * did before; only tools with a background form (exec_command, run_subagent) observe it.
+   */
+  detachSignal?: AbortSignal;
   /** The parent Agent's approval callback; run_subagent passes it through to the child Session so it inherits the parent's approval mode (unused by most tools). */
   approve?: ApproveFn;
 }
@@ -71,6 +80,13 @@ export interface BuiltinTool {
   name: string;
   /** Tool definition handed to the LLM (including description / parameters / permission / maxOutputLength). */
   definition: ToolDefinitionConfig;
+  /**
+   * Whether this tool can hand a running call back as a background task when
+   * `ctx.detachSignal` fires (it registers the work and returns a handle instead of ending
+   * it). Missing = no background form: the detach channel is never armed for the call, and
+   * `Environment.detachToolCall` answers `not_detachable`.
+   */
+  detachable?: boolean;
   /** Executes one tool call: args is the already-parsed argument object, ctx is the runtime context. */
   execute(
     args: Record<string, unknown>,

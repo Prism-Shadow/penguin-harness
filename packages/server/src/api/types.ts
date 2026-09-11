@@ -388,7 +388,12 @@ export interface ModelInfo {
   provider: string;
   /** Upstream model id (the request id actually sent to AgentHub); paired with `provider` forms the entry's unique key. */
   modelId: string;
-  /** Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog; falls back to unset (frontend shows modelId). */
+  /**
+   * Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog;
+   * falls back to unset (frontend shows modelId). The empty string is reported as such and
+   * means the user cleared the name on a model the catalog does name — render it as modelId,
+   * and send it back unchanged, since absent would ask for the catalog's name instead.
+   */
   displayName?: string;
   contextWindow?: number;
   /** AgentHub client protocol (`openai-chat`, `openai-responses`, etc.); defaults to AgentHub inferring it from modelId. */
@@ -449,7 +454,11 @@ export interface ModelUpdateEntry {
   provider: string;
   /** Upstream model id (sent to AgentHub as-is). */
   modelId: string;
-  /** Display name; the server does not persist it when it matches the built-in catalog (keeps the config file clean). */
+  /**
+   * Display name; the server does not persist it when it matches the built-in catalog (keeps
+   * the config file clean). Absent and empty are different requests: absent inherits whatever
+   * the catalog calls the model, the empty string records that the user cleared the name.
+   */
   displayName?: string;
   /**
    * The pair reference this entry was renamed from (provided when either the group or the
