@@ -20,8 +20,10 @@ export const en: Strings = {
     usage: "Cost Center",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
-    // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "Last conversation",
+    // The rail avatar's tooltip says what the control does; who is signed in stays in its accessible name.
+    userSettings: "User settings",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     collapseGroup: "Collapse",

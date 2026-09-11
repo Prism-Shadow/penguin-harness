@@ -24,8 +24,10 @@ export const zh = {
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
-    // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "最近一次对话",
+    // The rail avatar's tooltip says what the control does; who is signed in stays in its accessible name.
+    userSettings: "用户设置",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
     collapseGroup: "折叠",

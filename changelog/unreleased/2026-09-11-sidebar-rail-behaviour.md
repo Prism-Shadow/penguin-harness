@@ -27,4 +27,6 @@ Four changes to the desktop sidebar and the narrow rail it collapses into.
   appeared for a keyboard user. Entries on an update trail keep showing what is waiting.
 - The rail's avatar opens the account menu — System settings, the update row, sign out —
   anchored on the rail, instead of expanding the sidebar first. Both avatars now render the
-  same menu component.
+  same menu component and the same-sized tile, so collapsing no longer makes the avatar jump
+  in size. Its tooltip reads "User settings"; the signed-in id stays in its accessible name,
+  which on a collapsed rail is the only place the id appears.

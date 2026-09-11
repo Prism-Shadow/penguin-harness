@@ -121,11 +121,21 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     return { top: rect.bottom, bottom: rect.bottom, left, right: left };
   };
 
-  /** The avatar's one name, shared by its accessible name and its tooltip: who is signed in, plus whatever the update trail is waiting on. */
-  const avatarLabel =
+  /**
+   * The avatar's accessible name keeps the signed-in id: the menu behind it shows no id of its
+   * own, so while the sidebar is collapsed this is the only place one appears. The visible
+   * tooltip names what the control does instead — an initial in a circle is not a name a reader
+   * needs read back. Both carry what the update trail is waiting on, which from this rail is the
+   * only route left to the update row.
+   */
+  const avatarName =
     badges.softwareNote !== null
       ? `${user?.userId ?? ""} · ${badges.softwareNote}`
       : (user?.userId ?? S.auth.admin);
+  const avatarTooltip =
+    badges.softwareNote !== null
+      ? `${S.nav.userSettings} · ${badges.softwareNote}`
+      : S.nav.userSettings;
 
   return (
     <div className="flex h-full flex-col items-center gap-1 py-2.5">
@@ -210,23 +220,30 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         trigger={({ open, toggle }) => (
           /* The tooltip names the same avatar the open menu hangs off, so it stands down while
              the menu is up rather than covering it. */
-          <Tooltip label={avatarLabel} suppressed={open}>
+          <Tooltip label={avatarTooltip} suppressed={open}>
             <button
               ref={avatarRef}
               type="button"
-              aria-label={avatarLabel}
+              aria-label={avatarName}
               aria-haspopup="menu"
               aria-expanded={open}
               onClick={() => {
                 setMenuAnchor(measureMenuAnchor());
                 toggle();
               }}
-              className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
+              className="flex h-8 w-8 shrink-0 items-center justify-center"
             >
-              {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
-              {/* Update reminder, mirroring the pinned sidebar's avatar: the update row sits in
-                  the menu this opens, and the label above names what is waiting. */}
-              {badges.software !== null && <UpdateDot />}
+              {/* The tile is the pinned sidebar's avatar, at its size, inside a rail-sized hit
+                  box: the two states swap this element outright, so a tile that changed size
+                  between them would pop on every collapse while the box beside it animates
+                  smoothly. The button keeps the rail's 32px square, which is every other
+                  entry's target. */}
+              <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
+                {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
+                {/* Update reminder, mirroring the pinned sidebar's avatar: the update row sits in
+                    the menu this opens, and the label above names what is waiting. */}
+                {badges.software !== null && <UpdateDot />}
+              </span>
             </button>
           </Tooltip>
         )}
