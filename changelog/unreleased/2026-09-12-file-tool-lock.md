@@ -17,9 +17,10 @@ won. One edit was silently lost while both calls reported success.
 
 - **The key is the file's real path**, so every name that reaches one file folds onto one key: a
   symlink and the file it points at, a path crossing a linked directory. A path that does not exist
-  yet keys on its real directory plus the name it will take, so a `write_file` that creates the file
-  and an `edit_file` that follows share one key. A path that cannot be resolved at all keys on
-  itself rather than raising, leaving the tool's own error wording intact.
+  yet keys on its deepest real ancestor plus the segments below it — `write_file` creates missing
+  parents, so the directory is often still absent too — and a `write_file` that creates the file and
+  an `edit_file` that follows therefore share one key. Resolution failures are absorbed rather than
+  raised, leaving the tool's own error wording intact.
 - **The lock spans the read and the write**: stat, read, match, atomic write. The diff rendering and
   the tool's output happen after it is released. A call interrupted while queued behind another
   writer ends as `aborted`, the same as one interrupted during its own read or write.
@@ -30,8 +31,3 @@ won. One edit was silently lost while both calls reported success.
   content or the new one, never a mix.
 - **The scope is one process.** No OS-level file lock is taken, so a separate CLI run, an editor or
   the user's own shell writing the same file is not serialized against these tools.
-- **Tests** cover the tools and the mutex separately: eight concurrent edits of one file losing
-  none, the same-`old_string` pair, a `write_file` racing an `edit_file` over content both match, and
-  edits arriving through a symlink and through its target; plus arrival order, a failing caller, an
-  interrupted caller that never runs, a queue that leaves no entry behind, and the key of a file that
-  does not exist yet.

@@ -883,11 +883,18 @@ describe("edit_file / write_file — one file, concurrent writers", () => {
     ]);
     expect(written.result?.stopReason).toBeUndefined();
     expect(edited.result?.stopReason).toBeUndefined();
-    // `shared` is in both contents, so the edit succeeds either way — but the result is one
-    // of the two sequential orders, never a mix of them.
-    expect(["fresh\nedited\nnew-tail\n", "fresh\nshared\nnew-tail\n"]).toContain(
-      await readFile(path.join(tmp, "both.txt"), "utf8"),
-    );
+    // `shared` is in both contents, so the edit succeeds either way and the file alone
+    // cannot tell the orders apart: unserialized, a write that renames last also leaves its
+    // own content behind. What separates them is what the SECOND call read — each renders
+    // its diff against the bytes it found, so the loser of the lock has to have seen the
+    // winner's result.
+    const final = await readFile(path.join(tmp, "both.txt"), "utf8");
+    if (final === "fresh\nedited\nnew-tail\n") {
+      expect(edited.text).toContain("\n fresh\n"); // The edit read what the write landed.
+    } else {
+      expect(final).toBe("fresh\nshared\nnew-tail\n");
+      expect(written.text).toContain("\n-edited\n"); // The write read what the edit landed.
+    }
   });
 
   it("serializes edits reaching one file through a symlink and through its target", async () => {

@@ -38,13 +38,17 @@ const chains = new Map<string, LockChain>();
  * folds onto one key — a symlink and the file it points at, a path crossing a linked
  * directory, `a/../a/x.txt` and `a/x.txt`.
  *
- * A path that does not exist yet keys on its real directory plus the name it will take, so a
- * `write_file` that creates the file and an `edit_file` that follows share one key. A
- * resolution failure is absorbed rather than raised: a lock key is no place to report an
- * errno — the tool's own stat, read or write reports it, in the wording the model reads — so
- * an unresolvable path (a link cycle, an unreadable directory) keys on itself. The worst
- * case is a key nothing else shares, which is exactly the unserialized behaviour that
- * preceded the lock.
+ * A path that does not exist yet keys on its deepest real ancestor plus the segments below
+ * it, so a `write_file` that creates the file and an `edit_file` that follows share one key.
+ * Stopping at the immediate parent is not enough: `write_file` creates missing parent
+ * directories, so the directory a file will live in is itself routinely still absent when the
+ * key is taken, and an unresolved name would put the creating call on a different key from
+ * every call that follows it wherever the Workspace is reached through a link (on macOS every
+ * temporary directory is, via `/var` → `/private/var`). A resolution failure is absorbed
+ * rather than raised: a lock key is no place to report an errno — the tool's own stat, read or
+ * write reports it, in the wording the model reads — so a path that cannot be resolved at all
+ * (a link cycle) still keys on the real directory holding it. The worst case is a key nothing
+ * else shares, which is exactly the unserialized behaviour that preceded the lock.
  */
 export async function fileLockKey(resolvedPath: string): Promise<string> {
   try {
@@ -52,12 +56,18 @@ export async function fileLockKey(resolvedPath: string): Promise<string> {
   } catch {
     // Nothing there yet (ENOENT/ENOTDIR), or a path that cannot be resolved at all.
   }
-  const dir = path.dirname(resolvedPath);
-  const base = path.basename(resolvedPath);
-  try {
-    return path.join(await realpath(dir), base);
-  } catch {
-    return path.join(path.resolve(dir), base);
+  const below = [path.basename(resolvedPath)];
+  let ancestor = path.dirname(resolvedPath);
+  for (;;) {
+    try {
+      return path.join(await realpath(ancestor), ...below);
+    } catch {
+      const parent = path.dirname(ancestor);
+      // dirname is a fixpoint at the root, where there is nothing left to fold onto.
+      if (parent === ancestor) return path.resolve(resolvedPath);
+      below.unshift(path.basename(ancestor));
+      ancestor = parent;
+    }
   }
 }
 

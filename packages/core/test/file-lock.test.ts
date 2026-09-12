@@ -6,7 +6,7 @@
  * and an edit_file following it have to share.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileLockKey, pendingFileLocks, withFileLock } from "../src/internal/file-lock.js";
@@ -105,6 +105,22 @@ describe("fileLockKey", () => {
     await writeFile(target, "created\n");
     expect(beforeCreation).toBe(await fileLockKey(target));
     expect(beforeCreation).toBe(await realpath(target));
+  });
+
+  it("gives a file under a directory that does not exist yet that same key", async () => {
+    // write_file creates the missing parents, so the whole directory is routinely still
+    // absent when the key is taken — and reaching it through a linked ancestor is the
+    // ordinary case, not an exotic one (macOS puts every temporary directory behind
+    // `/var` → `/private/var`). Keyed on the unresolved name, the call that creates the file
+    // and every call after it would take different locks.
+    await mkdir(path.join(dir, "real-root"));
+    await symlink(path.join(dir, "real-root"), path.join(dir, "linked-root"));
+    const target = path.join(dir, "linked-root", "created", "later.txt");
+    const beforeAnything = await fileLockKey(target);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, "created\n");
+    expect(beforeAnything).toBe(await fileLockKey(target));
+    expect(beforeAnything).toBe(await realpath(target));
   });
 
   it("folds a symlink onto the file it points at", async () => {
