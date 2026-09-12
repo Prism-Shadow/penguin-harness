@@ -29,6 +29,6 @@ file now, and no round of a loaded file shows an empty message list.
 - The footer below the message list changed from "showing first N" to a loading note
   (`Loaded 5 / 12 messages…`), and disappears once every message is on screen.
 - `test/trace-events-loader.test.ts` covers the walk against a fake endpoint: a 2500-event file
-  paged in three requests, a page shortened by the server's own limit, a file that grew mid-walk,
-  a truncated file whose pages run out before its `total`, cancellation between two pages, the
-  request cap, and the length the walk resolves with.
+  paged in three requests, a page that came back shorter than it was asked for, a file that grew
+  mid-walk, a truncated file whose pages run out before its `total`, cancellation both between
+  two pages and while one was in flight, the request cap, and the length the walk resolves with.

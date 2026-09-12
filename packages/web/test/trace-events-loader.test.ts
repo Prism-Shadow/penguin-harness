@@ -33,9 +33,10 @@ const expectedTexts = (from: number, count: number): string[] =>
  * A fake events endpoint over a file of `size` synthetic events.
  *
  * `state.size` is what the file can actually deliver and `state.total` what it reports, held
- * apart so a truncated file (a `total` above what comes back) can be staged. `serverLimit`
- * clamps a request the way the real endpoint does, and `onFetch` is the hook the growing-file,
- * truncation and cancellation cases use to change the file between two pages.
+ * apart so a truncated file (a `total` above what comes back) can be staged. `serverLimit` caps
+ * how many events a page comes back with — a server answering with fewer than were asked for —
+ * and `onFetch` is the hook the growing-file, truncation and cancellation cases use to change
+ * the file between two pages.
  */
 function fakeFile(
   size: number,
@@ -81,7 +82,8 @@ describe("loadTraceEventPages", () => {
   });
 
   it("advances by what a page delivered, not by the page size it asked for", async () => {
-    // A server that clamps `limit` below the asked-for page size must not leave a hole behind.
+    // Whatever cuts a page short, the next offset follows the events that arrived rather than
+    // the number asked for, so no event is skipped between two pages.
     const f = fakeFile(500, { serverLimit: 200 });
     await loadTraceEventPages(f.fetchPage, { pageSize: 1000, onPage: f.onPage });
 
@@ -136,6 +138,35 @@ describe("loadTraceEventPages", () => {
 
     expect(f.calls).toEqual([{ offset: 0, limit: 1000 }]);
     expect(f.pages).toHaveLength(1);
+  });
+
+  it("does not report a page that arrived after the walk was cancelled", async () => {
+    // The flag is flipped by a React effect's cleanup, which runs while a page is IN FLIGHT —
+    // not from inside `onPage`. Checked only before each request, the walk would still splice
+    // this page into a view that has already moved to another Trace file.
+    const signal = { cancelled: false };
+    const calls: number[] = [];
+    const pages: TraceEventsResponse[] = [];
+    let deliver!: (page: TraceEventsResponse) => void;
+    const walk = loadTraceEventPages(
+      (offset) => {
+        calls.push(offset);
+        return new Promise<TraceEventsResponse>((resolve) => {
+          deliver = resolve;
+        });
+      },
+      { pageSize: 1000, signal, onPage: (page) => pages.push(page) },
+    );
+
+    // The view switched files while the first page was still out; the page lands afterwards.
+    signal.cancelled = true;
+    deliver({ events: [event(0)], offset: 0, limit: 1000, total: 2500 });
+
+    // Nothing rendered, nothing requested beyond the page already out, and the 0 tells the
+    // caller it has no answer about the file's length.
+    await expect(walk).resolves.toBe(0);
+    expect(pages).toEqual([]);
+    expect(calls).toEqual([0]);
   });
 
   it("caps a walk that never finishes, rather than requesting for as long as the view is open", async () => {

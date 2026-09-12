@@ -34,7 +34,7 @@ export interface TraceEventsSignal {
 }
 
 export interface LoadTraceEventPagesOptions {
-  /** Events per request. The server caps `limit`, so a larger value comes back clamped. */
+  /** Events per request. The endpoint rejects a `limit` above its own maximum, so pass TRACE_EVENT_PAGE_SIZE. */
   pageSize: number;
   /** Called once per fetched page, in file order, for the caller to render. */
   onPage: (page: TraceEventsResponse) => void;
@@ -46,10 +46,11 @@ export interface LoadTraceEventPagesOptions {
  * Walk a Trace file's events from its start, reporting every page through `onPage`.
  *
  * The next offset is the end of what has actually been delivered (`offset + events.length`),
- * never `offset + pageSize`: a page clamped by the server's `limit` cap, or shortened by a line
- * the reader skipped, must not leave a hole. The walk ends when that offset reaches the LATEST
- * page's `total` — read per page, so a file appended to while the walk runs is followed to its
- * new end rather than cut at the length it had when the first page was served.
+ * never `offset + pageSize`: the last page of a file is short, and any page the server answers
+ * with fewer events than were asked for must not leave a hole behind it either. The walk ends
+ * when that offset reaches the LATEST page's `total` — read per page, so a file appended to
+ * while the walk runs is followed to its new end rather than cut at the length it had when the
+ * first page was served.
  *
  * A page carrying no events also ends the walk, whatever its `total` claims: a file truncated
  * under the reader cannot be paged any further, and continuing would re-request the same offset
