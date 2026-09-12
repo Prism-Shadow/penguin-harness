@@ -197,6 +197,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",
   },
+  {
+    kind: "exact",
+    key: "penguin.notifications",
+    scope: "browser",
+    why: "Whether task-completion notifications were asked for; it pairs with an OS permission that belongs to this browser rather than to any data root, and clearing it would silently stop notifications the user opted into.",
+  },
 
   // --------------------------------------------------------------- install-scoped state
   {

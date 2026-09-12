@@ -213,6 +213,14 @@ export const en: Strings = {
     toolAliases: "Tool short names",
     toolAliasesInfo:
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
+    notifications: "Task completion notifications",
+    notificationsInfo:
+      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
+    notificationsDenied:
+      "The system has denied notifications for this app. Allow them in your system notification settings, then turn this on again.",
+    notificationsDismissed:
+      "The permission prompt was closed without an answer, so notifications stay off. Turn this on again to ask once more.",
+    notificationsUnsupported: "This browser does not support system notifications.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
@@ -362,7 +370,7 @@ export const en: Strings = {
     listSeparator: ", ",
   },
 
-  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
