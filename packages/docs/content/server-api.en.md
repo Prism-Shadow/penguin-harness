@@ -72,6 +72,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | /api/install | Public: `{installId}` — an opaque id identifying the data root being served (`<root>/install-id`), minted the first time the root is used. The Web App compares it against the one it stored and clears the browser-side UI state that references server entities when it differs, so replacing the data root no longer leaves the old Workspace, drafts and pins in place. `null` means the server could not establish one; clients must then change nothing. |
 | GET | /api/me | Current user info |
 | PUT | /api/me/password | Change password: `{oldPassword, newPassword}`; a desktop or first-login session may omit `oldPassword` — its current password is random and was never shown |
+| PUT | /api/me/profile | Set the avatar and nickname: `{displayName?, avatar?}` → `{user}`. A patch — an absent field keeps its stored value, `null` clears it, and a body naming neither is a `400`. `displayName` must be 1–32 characters once trimmed (counted as characters, so a CJK name may be 32 of them) and carry no control characters; `avatar` must be a `data:image/(png|jpeg|webp);base64,…` URL of at most 131072 characters whose payload decodes. Open to every authenticated session, the desktop shell's token session included — unlike the password route above, a profile has no old credential to check |
 | GET | /api/me/prefs | Read UI preferences |
 | PUT | /api/me/prefs | Write UI preferences (shallow merge) |
 
@@ -79,7 +80,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/admin/users | List users |
+| GET | /api/admin/users | List users. Each row carries the account's nickname when it has one; avatars are deliberately left out, since the list is unpaged and one data URL per account would dwarf the rest of the response |
 | POST | /api/admin/users | Create a user: `{userId, password}` |
 | POST | /api/admin/users/:userId/password | Reset a password (invalidates all of that user's login sessions) |
 | DELETE | /api/admin/users/:userId | Delete a user |

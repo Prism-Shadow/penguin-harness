@@ -72,6 +72,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | /api/install | 公开：`{installId}`——标识当前所服务数据根的不透明 id（`<root>/install-id`），在该根首次被使用时铸造。Web App 将其与自己存下的值比较，不一致时清除浏览器侧那些引用服务端实体的 UI 状态，因此更换数据根后不会再留下旧的 Workspace、草稿与置顶。`null` 表示服务端无法确定该 id，此时客户端不应改动任何内容。 |
 | GET | /api/me | 当前用户信息 |
 | PUT | /api/me/password | 修改密码：`{oldPassword, newPassword}`；桌面会话与首次登录会话可省略 `oldPassword`——其当前密码是随机生成且从未展示过的 |
+| PUT | /api/me/profile | 设置头像与昵称：`{displayName?, avatar?}` → `{user}`。为补丁语义——字段缺省表示保持原值，`null` 表示清除，两个字段都未出现则返回 `400`。`displayName` 去除首尾空白后须为 1–32 个字符（按字符计，因此中文昵称可以有 32 个）且不含控制字符；`avatar` 须是 `data:image/(png|jpeg|webp);base64,…` 形式的 data URL，长度不超过 131072 个字符且载荷可解码。任何已认证会话均可调用，含桌面 shell 的 token 会话——与上面的密码路由不同，个人资料没有需要校验的旧凭据 |
 | GET | /api/me/prefs | 读取 UI 偏好 |
 | PUT | /api/me/prefs | 写入 UI 偏好（浅合并） |
 
@@ -79,7 +80,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/admin/users | 用户列表 |
+| GET | /api/admin/users | 用户列表。每行在账号设置了昵称时带上昵称；头像刻意不下发——该列表不分页，每个账号一份 data URL 会让响应体积远超这张表实际用到的内容 |
 | POST | /api/admin/users | 创建用户：`{userId, password}` |
 | POST | /api/admin/users/:userId/password | 重置密码（该用户全部登录会话失效） |
 | DELETE | /api/admin/users/:userId | 删除用户 |

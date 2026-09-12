@@ -20,6 +20,7 @@ import { PagedDialog } from "../../components/ui/paged-dialog";
 import type { PagedDialogGroup } from "../../components/ui/paged-dialog";
 import { Icon } from "../../components/ui/group-list";
 import { GEAR_ICON } from "../../components/ui/icons";
+import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
 import { AccountSection } from "./account-section";
@@ -29,6 +30,9 @@ import { AdminUsersSection } from "../admin/admin-users-page";
 
 /** Rail glyphs, on the shared 24x24 stroke grid (see NAV_ICONS' conventions). */
 const SECTION_ICONS: Record<SettingsSectionKey, string> = {
+  /** Person in a circle: the account's own identity, distinct from the bust used for credentials. */
+  profile:
+    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6.2 18.4a6 6 0 0 1 11.6 0",
   general: GEAR_ICON,
   /** Sun: appearance. */
   appearance:
@@ -67,6 +71,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
   // Read inside the component: after a language switch remount, these pick up the current dictionary.
   const sectionLabel: Record<SettingsSectionKey, string> = {
+    profile: S.settings.profile,
     general: S.settings.generalTitle,
     appearance: S.settings.appearanceTitle,
     account: S.settings.accountTitle,
@@ -109,6 +114,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       active={current}
       onSelect={setActive}
     >
+      {current === "profile" && <ProfileSection />}
       {current === "general" && <GeneralSection />}
       {current === "appearance" && <AppearanceSection />}
       {current === "account" && <AccountSection />}

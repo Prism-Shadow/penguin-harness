@@ -43,6 +43,8 @@ describe("resetAdminPassword", () => {
       passwordHash: await hashPassword("old-password-1"),
       isAdmin: true,
       passwordIsInitial: false,
+      displayName: null,
+      avatar: null,
       createdAt,
     });
     users.insert({
@@ -50,6 +52,8 @@ describe("resetAdminPassword", () => {
       passwordHash: await hashPassword("alice-password-1"),
       isAdmin: false,
       passwordIsInitial: false,
+      displayName: null,
+      avatar: null,
       createdAt,
     });
     const sessions = new AuthSessionsRepo(db);
