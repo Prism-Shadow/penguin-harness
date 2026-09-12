@@ -19,6 +19,7 @@ import {
   seriesValues,
   sparklineSeries,
 } from "../src/features/benchmark/benchmark-metrics";
+import type { EvaluationLabelLike } from "../src/features/benchmark/benchmark-metrics";
 
 const evaluations = [{ score: 60 }, { score: 75.25 }, { score: 85.5 }];
 
@@ -128,7 +129,9 @@ describe("evaluationLabel", () => {
 
 describe("labelSeries / seriesValues (curves split by label)", () => {
   const runtime = { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "xhigh" };
-  const mixed = [
+  // Annotated: an untagged `{ score }` shares no property with the all-optional label type,
+  // so the inferred union would trip the weak-type check when handed to labelSeries.
+  const mixed: Array<{ score: number } & EvaluationLabelLike> = [
     { score: 6, agentId: "report-writer", version: 1, ...runtime },
     { score: 7 }, // Defensive untagged input -> trailing gray series.
     { score: 7.5, agentId: "report-writer", version: 2, ...runtime },
