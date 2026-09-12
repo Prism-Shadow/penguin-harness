@@ -55,6 +55,10 @@ function open024(): DatabaseSync {
   db.exec("DROP TABLE messaging_bindings");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_user");
+  // No account had a profile before migration 5: the current declaration's two columns
+  // must come off, or a round trip through migration 5's down would land on a narrower
+  // `users` than this fixture and read as a rollback that lost something.
+  dropProfileColumns(db);
   db.exec(GOAL_STATE_DDL);
   return db;
 }
@@ -65,8 +69,10 @@ function open029(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec(GOAL_STATE_DDL);
   // SCHEMA_SQL declares the CURRENT shape, and a 0.2.9 database has no machines tables —
-  // migration 4 is what adds them. Without this the fixture is a database no release made.
+  // migration 4 is what adds them — and no profile columns, which migration 5 adds. Without
+  // both the fixture is a database no release made.
   db.exec("DROP TABLE machine_project; DROP TABLE machines; DROP TABLE machine;");
+  dropProfileColumns(db);
   db.exec("PRAGMA user_version = 2");
   return db;
 }
@@ -79,10 +85,15 @@ function open029(): DatabaseSync {
 function openPreProfile(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
-  db.exec("ALTER TABLE users DROP COLUMN avatar");
-  db.exec("ALTER TABLE users DROP COLUMN display_name");
+  dropProfileColumns(db);
   db.exec("PRAGMA user_version = 4");
   return db;
+}
+
+/** Takes migration 5's two columns off a database built from the current declaration. */
+function dropProfileColumns(db: DatabaseSync): void {
+  db.exec("ALTER TABLE users DROP COLUMN avatar");
+  db.exec("ALTER TABLE users DROP COLUMN display_name");
 }
 
 /** Column names of `users`, for the two cases that are about columns rather than whole shapes. */
