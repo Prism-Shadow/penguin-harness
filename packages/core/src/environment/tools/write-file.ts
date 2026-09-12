@@ -12,7 +12,10 @@
  * half-written; a symlinked path is followed to the file it names, so the link survives
  * and the content lands where it points. Relative paths resolve against the Workspace;
  * absolute paths are allowed (tools run with the user's full permissions, same as the
- * shell tool).
+ * shell tool). The write is serialized against edit_file and other write_file calls on the
+ * same file in this process (see internal/file-lock.ts), so a concurrent edit of that file
+ * applies either to the content this call replaced or to the content it wrote — never
+ * computed from the one and written over the other.
  * For surgical changes to an existing file, edit_file is the better tool — this one
  * replaces the whole content.
  *
@@ -26,6 +29,7 @@
 import path from "node:path";
 import { mkdir, readFile, stat } from "node:fs/promises";
 import { atomicWriteFile, resolveWriteTarget } from "../../internal/atomic-write.js";
+import { fileLockKey, withFileLock } from "../../internal/file-lock.js";
 import { buildLineDiffHunks, renderHunk } from "./diff.js";
 import { partialToolCallOutput } from "../../omnimessage/index.js";
 import type { OmniMessage } from "../../omnimessage/index.js";
@@ -53,6 +57,67 @@ function countLines(content: string): number {
   if (content === "") return 0;
   const lines = content.split("\n");
   return lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
+}
+
+/** What the locked section leaves for the generator to report once the file's lock is released. */
+type WriteOutcome =
+  | { kind: "fatal"; text: string }
+  | { kind: "aborted" }
+  | { kind: "ok"; existed: boolean; previous: string | null };
+
+/**
+ * The locked half of one write: decide created-vs-overwrote, read the previous content back
+ * for the diff, create the parent directory and write the content atomically. It returns an
+ * outcome instead of yielding because it runs while the file's mutex is held — the diff is
+ * rendered afterwards, against the content that was actually replaced.
+ */
+async function applyWrite(params: {
+  resolved: string;
+  filePath: string;
+  content: string;
+  signal?: AbortSignal;
+}): Promise<WriteOutcome> {
+  const { resolved, filePath, content, signal } = params;
+  // Determine created-vs-overwrote before writing; also reject directories up front
+  // (writeFile's raw EISDIR is not model-friendly).
+  let existed = false;
+  let fileMode: number | undefined;
+  let previous: string | null = null; // Previous content, for the overwrite diff
+  try {
+    const st = await stat(resolved);
+    if (st.isDirectory()) {
+      return { kind: "fatal", text: `Cannot write "${filePath}": it is a directory.` };
+    }
+    existed = true;
+    fileMode = st.mode & 0o777; // Preserved across the atomic temp-file + rename write
+    // Read the old content back for the diff — bounded: a huge or unreadable/binary
+    // previous file simply gets no diff (never a failure).
+    if (st.size <= DIFF_SOURCE_CAP_BYTES) {
+      const bytes = await readFile(resolved);
+      if (!bytes.includes(0)) previous = bytes.toString("utf8");
+    }
+  } catch {
+    // Missing file (or unstatable path): proceed to create; real write errors surface below.
+  }
+  if (signal?.aborted) return { kind: "aborted" };
+
+  try {
+    // The parent to create is the one holding the file that will actually be written:
+    // through a symlink that is the target's directory, not the link's (a link pointing
+    // into a directory that does not exist yet is created the way `>` would).
+    await mkdir(path.dirname(await resolveWriteTarget(resolved)), { recursive: true });
+    await atomicWriteFile(resolved, content, {
+      ...(fileMode !== undefined ? { mode: fileMode } : {}),
+      ...(signal ? { signal } : {}),
+      followSymlinks: true,
+    });
+  } catch (err) {
+    if (signal?.aborted) return { kind: "aborted" };
+    const message = err instanceof Error ? err.message : String(err);
+    return { kind: "fatal", text: `Failed to write "${filePath}": ${message}` };
+  }
+
+  return { kind: "ok", existed, previous };
 }
 
 /**
@@ -91,46 +156,28 @@ export function createWriteFileTool(definition: ToolDefinitionConfig): BuiltinTo
       }
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
-      // Determine created-vs-overwrote before writing; also reject directories up front
-      // (writeFile's raw EISDIR is not model-friendly).
-      let existed = false;
-      let fileMode: number | undefined;
-      let previous: string | null = null; // Previous content, for the overwrite diff
-      try {
-        const st = await stat(resolved);
-        if (st.isDirectory()) {
-          yield delta(`Cannot write "${filePath}": it is a directory.`);
-          return { stopReason: "fatal" };
+      // One file, one writer at a time: the previous content this call reads back and the
+      // content it writes are a single critical section, so a concurrent edit of the same
+      // file is applied either before this write or on top of it.
+      const key = await fileLockKey(resolved);
+      const outcome = await withFileLock(
+        key,
+        () => applyWrite({ resolved, filePath, content, signal }),
+        signal,
+      ).catch((err: unknown): WriteOutcome => {
+        // Interrupted while queued behind another writer on the same file — the same
+        // `aborted` the write itself reports, reached one step earlier.
+        if (signal?.aborted || (err as { name?: string } | null)?.name === "AbortError") {
+          return { kind: "aborted" };
         }
-        existed = true;
-        fileMode = st.mode & 0o777; // Preserved across the atomic temp-file + rename write
-        // Read the old content back for the diff — bounded: a huge or unreadable/binary
-        // previous file simply gets no diff (never a failure).
-        if (st.size <= DIFF_SOURCE_CAP_BYTES) {
-          const bytes = await readFile(resolved);
-          if (!bytes.includes(0)) previous = bytes.toString("utf8");
-        }
-      } catch {
-        // Missing file (or unstatable path): proceed to create; real write errors surface below.
-      }
-      if (signal?.aborted) return { stopReason: "aborted" };
-
-      try {
-        // The parent to create is the one holding the file that will actually be written:
-        // through a symlink that is the target's directory, not the link's (a link pointing
-        // into a directory that does not exist yet is created the way `>` would).
-        await mkdir(path.dirname(await resolveWriteTarget(resolved)), { recursive: true });
-        await atomicWriteFile(resolved, content, {
-          ...(fileMode !== undefined ? { mode: fileMode } : {}),
-          ...(signal ? { signal } : {}),
-          followSymlinks: true,
-        });
-      } catch (err) {
-        if (signal?.aborted) return { stopReason: "aborted" };
-        const message = err instanceof Error ? err.message : String(err);
-        yield delta(`Failed to write "${filePath}": ${message}`);
+        throw err;
+      });
+      if (outcome.kind === "aborted") return { stopReason: "aborted" };
+      if (outcome.kind === "fatal") {
+        yield delta(outcome.text);
         return { stopReason: "fatal" };
       }
+      const { existed, previous } = outcome;
 
       const lines = countLines(content);
       const bytes = Buffer.byteLength(content, "utf8");
