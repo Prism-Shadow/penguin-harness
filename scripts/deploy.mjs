@@ -164,6 +164,12 @@ async function compileEntry(entry, outfile) {
     bundle: true,
     format: "esm",
     platform: "node",
+    // The Node that runs it (package.json engines). Without a target esbuild compiles for
+    // `esnext`, where it takes standard decorators to be supported and emits them as they
+    // were written — and no Node parses those, so the pushed bundle fails to import with
+    // "Invalid or unexpected token" and the target keeps the generation it had. The
+    // packaged build does not hit this because tsup passes a target of its own.
+    target: "node24",
     outfile,
     logLevel: "silent",
     banner: { js: ESM_CJS_BANNER },
