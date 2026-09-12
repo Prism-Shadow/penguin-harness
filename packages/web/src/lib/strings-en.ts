@@ -2658,7 +2658,8 @@ Scenarios:
     globalSummary: "Overall",
     tasksLabel: "Turns",
     messages: "Messages",
-    truncatedNote: (shown: number, total: number) => `Showing first ${shown} / ${total} messages`,
+    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
+    loadingNote: (shown: number, total: number) => `Loaded ${shown} / ${total} messages…`,
     zoom: "Zoom",
     zoomReset: "Double-click to reset zoom",
     zoomOut: "Zoom out",

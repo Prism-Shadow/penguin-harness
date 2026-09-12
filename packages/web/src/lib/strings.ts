@@ -2611,7 +2611,8 @@ Benchmark：
     globalSummary: "全局统计",
     tasksLabel: "轮次",
     messages: "消息",
-    truncatedNote: (shown: number, total: number) => `仅展示前 ${shown} / ${total} 条消息`,
+    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
+    loadingNote: (shown: number, total: number) => `已载入 ${shown} / ${total} 条消息…`,
     zoom: "缩放",
     zoomReset: "双击复位缩放",
     zoomOut: "缩小",
