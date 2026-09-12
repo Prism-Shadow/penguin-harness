@@ -823,9 +823,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
-  // The openai/* rows below mirror the direct OpenAI group one-for-one, and are the only
-  // gateway rows on the Responses protocol (see the block comment). Their context windows
-  // are OpenRouter's published 1,050,000 / 400,000, matching the direct rows.
+  // The openai/* rows below mirror the direct OpenAI group one-for-one. Their context
+  // windows are OpenRouter's published 1,050,000 / 400,000, matching the direct rows.
   {
     // Read 2026-09-09 from the models API and the per-model endpoints API: the default
     // endpoint is OpenAI's own, listed at $10 input / $1 cached input / $12.5 cache write /

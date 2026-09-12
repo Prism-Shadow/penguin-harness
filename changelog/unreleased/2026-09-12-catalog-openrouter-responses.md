@@ -22,7 +22,9 @@ so a model added to that group by hand speaks it too.
 - The add-model dialog's protocol note separates a gateway that pins a protocol from a
   self-hosted group that pins one: for OpenRouter it says the base URL is already preset to the
   gateway's endpoint, instead of asking for the address of the user's own server.
-- The models documentation was rewritten in both languages.
+- The models documentation was rewritten in both languages, and the `unified-llm-api`
+  skill's OpenRouter note now covers every id that gateway resells rather than its
+  `openai/*` ids alone.
 - Existing Projects keep what they stored. Presets are copied into `.project_config.toml` when
   the Project is created and nothing rewrites them, so stored OpenRouter rows stay on
   `openai-chat` until their owner presses **sync presets** on the models page, which rewrites
