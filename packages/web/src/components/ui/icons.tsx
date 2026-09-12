@@ -197,18 +197,21 @@ export const AGENTS_PAIR_ICON =
   "M7.3 4.2V2.2M3.8 4.2h7a2.2 2.2 0 0 1 2.2 2.2v5.8a2.2 2.2 0 0 1-2.2 2.2h-7a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2zM4.6 9.2h.01M10 9.2h.01M18.6 14.8v-1.7M16.5 14.8h4.2a1.7 1.7 0 0 1 1.7 1.7v3.8a1.7 1.7 0 0 1-1.7 1.7h-4.2a1.7 1.7 0 0 1-1.7-1.7v-3.8a1.7 1.7 0 0 1 1.7-1.7zM17.3 18.4h.01M20.5 18.4h.01";
 
 /**
- * The brain in profile, seen from the side — for the Memory panel, the memory-changes card and
- * the agent cards' memory count.
+ * The brain in profile — for the Memory panel, the memory-changes card and the agent cards'
+ * memory count.
  *
- * One closed outline, with nothing inside it. Two features carry the reading, and both sit on the
- * silhouette because that is the only place a 13px render can still see them: three lobes across
- * the crown, and the cleft at the lower front where the temporal lobe hangs below the frontal one.
- * Interior folds are what a brain actually has and what this size cannot hold — drawn, they
- * reduce to texture. Every surface draws it from here — a memory mark typed out a second time is
- * how one thing ends up with two pictures of itself.
+ * One closed outline, with nothing inside it: the lobed crown, the frontal lobe at the left, and
+ * the brainstem dropping from the underside. Interior gyri are what a brain actually has and what
+ * 13px cannot hold, which is the smallest size these three surfaces draw it at — drawn, they
+ * reduce to texture, so the silhouette carries the whole reading.
+ *
+ * The outline has more points than the rest of this family because it is a real profile rather
+ * than a geometric figure; simplified much further it rounds off into a cloud. Every surface draws
+ * it from here — a memory mark typed out a second time is how one thing ends up with two pictures
+ * of itself.
  */
 export const MEMORY_ICON =
-  "M3.4 11.2A3.8 3.8 0 0 1 7 5.4A3.8 3.8 0 0 1 12.2 4A3.8 3.8 0 0 1 17.4 5.8A3.8 3.8 0 0 1 20.6 11A6 6 0 0 1 19.6 16A5 5 0 0 1 15 18.8A5 5 0 0 1 9.6 19.6A3.2 3.2 0 0 1 4.8 17.2A5.6 5.6 0 0 0 11 14A4.1 4.1 0 0 1 3.4 11.2Z";
+  "M10.8 2.6C11.1 2.6 11.5 3.3 11.8 3.3C12.1 3.3 11.9 2.8 12.5 2.8C13.1 2.8 14.4 2.9 15.5 3.2C16.6 3.5 17.9 3.8 18.9 4.6C19.9 5.4 20.8 6.9 21.4 8.2C22 9.5 22.6 10.9 22.7 12.2C22.8 13.5 22.6 14.7 22 15.8C21.4 16.9 20.2 18.3 19.1 18.9C18 19.5 16.3 19.1 15.6 19.5C14.9 19.9 15.1 20.8 14.7 21.1C14.3 21.4 13.6 21.9 13 21.4C12.4 20.8 11.9 18.6 11.4 17.8C10.9 17 11 16.7 10.1 16.3C9.2 16 7.1 16.1 6.2 15.7C5.3 15.2 5.3 14.1 4.6 13.6C3.9 13.1 2.8 13.1 2.2 12.6C1.7 12.1 1.4 11.3 1.3 10.4C1.2 9.5 1.2 8.2 1.6 7.3C2 6.4 2.3 5.7 3.6 4.9C4.9 4.2 8.1 3 9.2 2.8C10.3 2.5 9.7 3.4 10 3.4C10.3 3.4 10.5 2.6 10.8 2.6Z";
 
 /**
  * The eye's almond outline, shared by the two marks drawn from it — `NAV_ICONS.traces` (an open
