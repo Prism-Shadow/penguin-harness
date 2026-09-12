@@ -97,6 +97,14 @@ export function CodeSurface({
   const lines = useMemo(() => (lineNumbers ? code.split("\n") : null), [code, lineNumbers]);
   // Only the current text's own highlight may be shown (see settleMs).
   const html = highlighted?.code === code ? highlighted.html : undefined;
+  /**
+   * The `dangerouslySetInnerHTML` payload, held stable across renders that do not change the
+   * markup. React compares this prop by object identity and re-sets `innerHTML` whenever it
+   * differs, so a fresh `{ __html }` literal rebuilds every node in the block on every render
+   * of the surrounding component — discarding any selection the reader had made inside it, and
+   * re-parsing the whole highlighted body for nothing.
+   */
+  const htmlProp = useMemo(() => (html === undefined ? undefined : { __html: html }), [html]);
 
   return (
     <div
@@ -112,8 +120,8 @@ export function CodeSurface({
             ({ "--code-gutter": `${String(lines.length).length + 2}ch` } as CSSProperties)
       }
     >
-      {html !== undefined ? (
-        <div dangerouslySetInnerHTML={{ __html: html }} />
+      {htmlProp !== undefined ? (
+        <div dangerouslySetInnerHTML={htmlProp} />
       ) : (
         <pre>
           <code>

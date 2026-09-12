@@ -32,6 +32,11 @@ wrapping, and no box around either.
 - The source view numbers its lines and lost its border, its language label and its header bar —
   it presents the text the way the editor does. The toggle above it now reads **Preview / Source**:
   it names what you are looking at rather than how it was produced.
+- A selection inside a highlighted code block survives a re-render. The block handed React a fresh
+  `{ __html }` object on every render, and React compares that prop by object identity rather than
+  by the markup inside it — so every render rebuilt every node in the block, collapsing any
+  selection anchored to them and re-parsing markup that had not changed. Right-clicking selected
+  source text in this panel is where it showed; the message stream's code blocks had it too.
 - Copy and Edit float over the top-right of the file itself. Both act on the body under them,
   while the title row names the file and carries what leaves it — the view toggle, wrap, the
   external link and download. They are always drawn rather than revealed on hover: a hover-only
