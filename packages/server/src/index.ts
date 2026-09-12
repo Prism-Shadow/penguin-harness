@@ -72,6 +72,7 @@ async function main(): Promise<void> {
       await server.printFirstLoginNotice();
     },
   );
+  await server.announce();
 }
 
 /**
@@ -269,9 +270,9 @@ class PenguinServer {
    * ephemeral one) waits for onListening().
    */
   listen(): void {
-    // The listener's callback records this process as the root's server (the lock, the
-    // port file); the root has to exist for that, and the database that used to create it
-    // is now opened later, inside start.
+    // The listener's callback records this process as the root's server (the lock); the
+    // root has to exist for that, and the database that used to create it is now opened
+    // later, inside start.
     fs.mkdirSync(this.config.root, { recursive: true });
     this.bound = new Promise((resolve) => {
       this.resolveBound = resolve;
@@ -284,6 +285,18 @@ class PenguinServer {
       },
       (info) => this.onListening(info.port),
     );
+  }
+
+  /**
+   * Announces the port (PENGUIN_PORT_FILE), the last step of startup. The port is bound
+   * long before this — a client that arrives early is answered rather than refused — but
+   * the announcement means the App is up, because that is what a reader waits for: the
+   * desktop shell opens its window on it. Between the bind and here every request gets the
+   * starting response instead.
+   */
+  async announce(): Promise<void> {
+    if (this.config.portFile === null) return;
+    writePortFile(this.config.portFile, await this.bound);
   }
 
   /**
@@ -375,7 +388,6 @@ class PenguinServer {
       port,
       startedAt: new Date().toISOString(),
     });
-    if (this.config.portFile !== null) writePortFile(this.config.portFile, port);
     if (this.config.host === "127.0.0.1" || this.config.host === "localhost") {
       this.openIpv6Loopback(port);
     }
