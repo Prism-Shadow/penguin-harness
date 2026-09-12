@@ -65,7 +65,7 @@ export function platformHttpSeam(hmr: Hmr<PlatformApi>): MiddlewareHandler {
       // Not a decline: there is no generation to decline anything. Answering here rather
       // than falling through keeps "no platform" distinguishable from "the platform does
       // not serve this path", which is a 404 the platform itself gives.
-      return noPlatformResponse(c.req.raw, err instanceof Error ? err.message : String(err));
+      return noPlatformResponse(err instanceof Error ? err.message : String(err));
     }
     if (!handler) return next();
 

@@ -279,7 +279,7 @@ class PenguinServer {
     });
     this.httpServer = serve(
       {
-        fetch: (request: Request) => this.app?.fetch(request) ?? startingResponse(request),
+        fetch: (request: Request) => this.app?.fetch(request) ?? startingResponse(),
         hostname: this.config.host,
         port: this.config.port,
       },
@@ -440,7 +440,7 @@ class PenguinServer {
    */
   private openIpv6Loopback(port: number): void {
     const loopback = serve({
-      fetch: (request: Request) => this.app?.fetch(request) ?? startingResponse(request),
+      fetch: (request: Request) => this.app?.fetch(request) ?? startingResponse(),
       hostname: "::1",
       port,
     });

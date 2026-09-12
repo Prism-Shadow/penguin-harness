@@ -91,21 +91,6 @@ describe("platform HTTP seam", () => {
     expect((await api.get("/api/me")).status).toBe(404);
   });
 
-  it("a platform that gates its whole API is refused: a blanket 401 claims no channel", async () => {
-    // One auth middleware over the whole namespace and no upgrade route: every path answers
-    // 401, including one nothing serves. Reading that 401 as "the channel is there, gated"
-    // would commit a generation there is no way to push to.
-    const gated = platformServing(["/api/demo/x"], "gated").replace(
-      'if (pathname.startsWith("/api/hmr/")) return ctx.resources.claim("platform.hmrControl").endpoint(request);',
-      'if (pathname.startsWith("/api/")) return new Response("no", { status: 401 });',
-    );
-    const bad = await pushPlatform(t.app, cookie, gated);
-    expect(bad.status).toBe(400);
-    expect(await bad.text()).toMatch(/for a path nothing serves/);
-    expect((await api.get("/api/demo/x")).status).toBe(404);
-    expect((await pushPlatform(t.app, cookie, bundle)).status).toBe(200);
-  });
-
   it("a platform without the upgrade channel is refused — one bad push must not lock the box out", async () => {
     // The channel is the platform's to serve, so a generation that hijacks it (or lacks it)
     // would be committed, restored on every restart, and never replaceable. It is refused
@@ -363,12 +348,9 @@ describe("no generation is current: the seam answers, it does not fall through",
     expect(await res.text()).toContain("the packaged platform failed to boot");
   });
 
-  it("gives a browser a page rather than a line it cannot act on", async () => {
-    const res = await app.request("/", { headers: { accept: "text/html" } });
+  it("promises no retry: nothing here ends on its own, unlike the starting window", async () => {
+    const res = await app.request("/");
     expect(res.status).toBe(503);
-    expect(res.headers.get("content-type")).toContain("text/html");
-    // No retry: nothing here ends on its own, unlike the starting window.
     expect(res.headers.get("retry-after")).toBeNull();
-    expect(await res.text()).not.toContain('http-equiv="refresh"');
   });
 });

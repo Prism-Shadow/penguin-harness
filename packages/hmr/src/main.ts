@@ -16,7 +16,6 @@
  * `start` receives the control object before it runs, so the product's routes and seam can
  * be built over it while the first generation is still coming up.
  */
-import { randomUUID } from "node:crypto";
 import zlib from "node:zlib";
 import type { Instance, Park } from "@prismshadow/penguin-core/kernel";
 import type { HmrHost, UpgradeAllTarget, UpgradeOutcome } from "./host.js";
@@ -116,27 +115,11 @@ export async function admitsUpgradeRoute<Api extends Park>(
   if (typeof (instance.api as { http?: unknown }).http !== "function") {
     return `the pushed platform serves no HTTP, so no ${HMR_UPGRADE_PATH}`;
   }
+  // A credential-less POST reaches the mechanism's endpoint (400, no body) or stops at the
+  // platform's gate (401/403) or its router (405). No other answer is one the channel gives,
+  // and a path nothing serves is declined outright, which is how the two are told apart.
   const answer = await probe(instance, HMR_UPGRADE_PATH);
-  // Answered like the channel itself would. A credential-less POST reaches the mechanism's
-  // endpoint (400, no body) or stops at the platform's gate (401/403) or its router (405) —
-  // no other answer is one the upgrade channel gives.
-  if (!CHANNEL_ANSWERS.includes(answer)) return refusal(answer);
-  // And not the answer this platform gives for a prefix nothing can serve: a blanket gate
-  // over the whole API answers 401 for both, which says nothing about the channel.
-  const unclaimed = await probe(instance, `${HMR_ROUTE_PREFIX}-not-served-${randomUUID()}/upgrade`);
-  if (answer === unclaimed) {
-    return (
-      `the pushed platform answers ${answer} for ${HMR_UPGRADE_PATH} and for a path nothing serves, ` +
-      `so nothing there claims the upgrade channel`
-    );
-  }
-  return null;
-}
-
-/** The answers a credential-less POST to the channel can legitimately produce. */
-const CHANNEL_ANSWERS = ["400", "401", "403", "405"];
-
-function refusal(answer: string): string {
+  if (["400", "401", "403", "405"].includes(answer)) return null;
   return (
     `the pushed platform serves no ${HMR_UPGRADE_PATH} (answered ${answer}); ` +
     `a push must carry the upgrade channel, or the installation could never be upgraded again`

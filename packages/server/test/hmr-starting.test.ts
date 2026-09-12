@@ -1,34 +1,24 @@
 /**
- * The answer before the App exists. The entry binds the port first, so this is what every
- * client gets during startup — and the one thing it must not do is strand a browser on a
- * page that never asks again (the desktop shell's window did exactly that).
+ * What answers when there is no App: the entry's window before one exists, and the seam
+ * finding no generation current. The seam's own case is pinned in hmr-http-seam.test.ts.
  */
 import { describe, expect, it } from "vitest";
-import { startingResponse } from "../src/hmr/starting.js";
+import { noPlatformResponse, startingResponse } from "../src/hmr/starting.js";
 
-const ask = (accept?: string) =>
-  startingResponse(
-    new Request("http://localhost/", { headers: accept === undefined ? {} : { accept } }),
-  );
-
-describe("the starting response", () => {
-  it("tells a browser to come back, so a window opened during startup lands on the App", async () => {
-    const res = ask("text/html,application/xhtml+xml");
+describe("the answers with no App behind them", () => {
+  it("asks for a retry while starting, because that window ends by itself", async () => {
+    const res = startingResponse();
     expect(res.status).toBe(503);
-    expect(res.headers.get("content-type")).toContain("text/html");
-    const body = await res.text();
-    expect(body).toContain('http-equiv="refresh"');
-    expect(body).toContain("penguin-server is starting");
+    expect(res.headers.get("retry-after")).toBe("1");
+    // Never cached: the next request has to reach the App, not this answer.
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toBe("penguin-server is starting");
   });
 
-  it("stays a plain line for everything else, and asks every client to retry", async () => {
-    for (const res of [ask(), ask("application/json")]) {
-      expect(res.status).toBe(503);
-      expect(res.headers.get("content-type")).toContain("text/plain");
-      expect(res.headers.get("retry-after")).toBe("1");
-      // Never cached: the next request has to reach the App, not this answer.
-      expect(res.headers.get("cache-control")).toBe("no-store");
-      expect(await res.text()).toBe("penguin-server is starting");
-    }
+  it("names the fault and promises no retry when no platform is running", async () => {
+    const res = noPlatformResponse("the packaged platform failed to boot");
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBeNull();
+    expect(await res.text()).toContain("the packaged platform failed to boot");
   });
 });
