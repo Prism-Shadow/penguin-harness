@@ -65,6 +65,12 @@ export interface Manifest {
   source?: { repo: string; revision: string };
   /** When this version was committed to the store (ISO 8601). Absent on older records. */
   pushedAt?: string;
+  /**
+   * The sha256 of each part this version was pushed as (platform, cli, every web file):
+   * the blobs the store keeps alive so the next push need not carry an unchanged one.
+   * Absent on older records.
+   */
+  blobs?: string[];
 }
 
 /** A string field of an untrusted manifest, or null unless it is a non-empty string. */
