@@ -2669,6 +2669,50 @@ export interface FilesWriteRequest {
   ifVersion?: string;
 }
 
+/** Move or rename one Workspace file (the Files panel's context menu). */
+export interface FilesMoveRequest {
+  /** Source path, relative to the Workspace root. */
+  from: string;
+  /** Destination path, relative to the Workspace root. Its parent directory is created when missing. */
+  to: string;
+  /**
+   * Move precondition, read exactly like {@link FilesWriteRequest.ifVersion}: the marker the
+   * caller got from this file's `ETag` on `GET files/content`, which the file must still
+   * carry. It differs on only one point — the marker guards the **source**. The destination
+   * has none, because the caller never read it, which is why an occupied destination is
+   * refused with 409 `target_exists` rather than overwritten.
+   *
+   * A directory `from` is a 400 whatever this field says: a directory carries no single
+   * version marker, so the precondition that protects this operation cannot be expressed for
+   * one, and silently moving a tree without that protection is worse than refusing to move it.
+   */
+  ifVersion?: string;
+}
+
+/**
+ * One Workspace search match. `kind`, `sizeBytes` and `mtime` are named and typed exactly as
+ * {@link WorkspaceFileEntry} names them: a hit is drawn by the same row renderer as a tree
+ * entry, and it can only render identically if it carries the same fields.
+ */
+export interface WorkspaceSearchHit {
+  /** Workspace-relative, "/"-separated, with no leading "./" (a tree entry's `name` is only its last segment). */
+  path: string;
+  kind: "dir" | "file";
+  sizeBytes: number;
+  mtime: string;
+}
+
+export interface WorkspaceSearchResponse {
+  /** Shallowest first, then directories before files, then by name — the order the breadth-first walk produced. */
+  hits: WorkspaceSearchHit[];
+  /**
+   * A cap stopped the walk (200 hits, or 20000 directory entries visited), so this is a
+   * partial list. Breadth-first is what makes that degrade well: the hits that survive
+   * truncation are the shallowest ones, not the ones that happened to be enumerated first.
+   */
+  truncated: boolean;
+}
+
 /** Batch file existence check (message file cards only list files that actually exist). */
 export interface FilesStatRequest {
   /** Paths relative to the Workspace root (≤100 items, each ≤512 characters). */

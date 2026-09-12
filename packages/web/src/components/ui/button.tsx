@@ -29,6 +29,10 @@ const sizeClass: Record<Size, string> = {
   icon: "p-1.5 rounded-md",
 };
 
+/** Layout and type shared by a real button and the `<label>` that stands in for one. */
+const buttonBase =
+  "inline-flex items-center justify-center gap-1 font-medium transition-colors duration-150";
+
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
@@ -38,8 +42,22 @@ export function Button({ variant = "secondary", size = "md", className, ...rest 
   return (
     <button
       type="button"
-      className={`inline-flex items-center justify-center gap-1 font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60 ${variantClass[variant]} ${sizeClass[size]} ${className ?? ""}`}
+      className={`${buttonBase} disabled:cursor-not-allowed disabled:opacity-60 ${variantClass[variant]} ${sizeClass[size]} ${className ?? ""}`}
       {...rest}
     />
   );
+}
+
+/**
+ * The Button look on an element that cannot be a `<button>` — the `<label>` a file picker needs,
+ * since the hidden `<input type="file">` has to be labelled to be clickable. Built from the same
+ * two records `Button` reads, so a variant or a rung moves in one place; three call sites had each
+ * respelled the strings by hand, and two of them were byte-identical copies of the same one.
+ *
+ * Two deliberate differences from `Button`: the focus ring is `focus-within:`, because the thing
+ * that takes focus is the input inside the label rather than the label itself, and `cursor-pointer`
+ * is spelled out, which a `<button>` gets from the app's base rules and a `<label>` does not.
+ */
+export function labelButtonClass(variant: Variant, size: Exclude<Size, "icon">): string {
+  return `${buttonBase} cursor-pointer focus-within:ring-2 focus-within:ring-gray-400/30 ${variantClass[variant]} ${sizeClass[size]}`;
 }

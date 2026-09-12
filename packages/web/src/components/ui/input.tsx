@@ -109,6 +109,35 @@ export function autofillProps(autoComplete: string | undefined, secret: boolean)
  */
 export const noAutofill = autofillProps(undefined, false);
 
+/**
+ * The search box a menu or a side panel carries at its top — the one input in the app that does
+ * not go through `Input`, because it is not a form field: it owns the panel's keyboard while the
+ * panel is up, and it sits inside a container that already draws the border it would otherwise
+ * need. Four call sites had each written their own copy, and the copies had drifted apart on
+ * radius, padding, focus colour and whether the border transitions at all.
+ *
+ * Two shapes, because the containers differ:
+ *
+ * - `menuSearchClass` — the box sits directly under its menu's own divider and draws no border of
+ *   its own (a second line a pixel below the first reads as a mistake). The model picker and the
+ *   Skill picker.
+ * - `panelSearchClass` — the box stands inside a panel with room around it, so it draws its own.
+ *   The Workspace browser and the machines picker.
+ *
+ * Both take the `sm` rung, like every other control; padding is left to the caller, which is the
+ * one thing that legitimately differs (the Workspace browser reserves room on the right for its
+ * clear button, the way `Textarea` keeps its own padding over `sizeClass`'s).
+ */
+const searchSharedClass =
+  `w-full bg-transparent ${sizeTextClass.sm} text-gray-700 ` +
+  "placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500";
+
+export const menuSearchClass = `${searchSharedClass} rounded border border-transparent`;
+
+export const panelSearchClass =
+  `${searchSharedClass} rounded-md border border-gray-200 transition-colors ` +
+  "focus:border-gray-400 dark:border-gray-700 dark:focus:border-gray-500";
+
 export function Input({
   label,
   hint,

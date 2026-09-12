@@ -12,6 +12,10 @@
  * portaled-panel layer (z-[60]) and takes no pointer events, so it can never swallow a click
  * meant for what it covers.
  *
+ * Two geometries, chosen by the shape of the control strip rather than by taste: `right` for
+ * a vertical rail, `bottom` for a horizontal toolbar, where a panel to the side would cover
+ * the very buttons next to the one being asked about.
+ *
  * Deliberately NOT `role="tooltip"` + `aria-describedby`: its callers label their triggers
  * with the same words it shows, and a description repeating the accessible name makes a
  * screen reader say the entry twice. The panel is decorative here and hidden from the
@@ -36,14 +40,59 @@ const OPEN_DELAY_MS = 400;
 const PANEL_GAP = 8;
 const VIEWPORT_MARGIN = 8;
 
+/** Which side of its trigger the panel hangs off. */
+export type TooltipPlacement = "right" | "bottom";
+
+/**
+ * The viewport point the panel is pinned at. Exactly one horizontal edge is given: `left`
+ * grows the panel rightward from that point, `right` leftward. Anchoring by the far edge is
+ * what keeps a panel on screen without anyone measuring a width that does not exist until
+ * after it renders.
+ */
+interface PanelPosition {
+  top: number;
+  left?: number;
+  right?: number;
+}
+
+/**
+ * To the right of the trigger — an icon rail against the left edge of the window. Vertically
+ * centred on the trigger and clamped so a rail entry scrolled to the very top or bottom still
+ * gets a panel on screen.
+ */
+function besideTrigger(rect: DOMRect): PanelPosition {
+  return {
+    top: Math.min(
+      Math.max(rect.top + rect.height / 2, VIEWPORT_MARGIN),
+      window.innerHeight - VIEWPORT_MARGIN,
+    ),
+    left: rect.right + PANEL_GAP,
+  };
+}
+
+/**
+ * Under the trigger, aligned to whichever of its vertical edges faces the roomier half of the
+ * window, so the panel always grows inward. A toolbar button near the right edge of a docked
+ * panel is the case this exists for: left-aligned there, the panel would run off screen.
+ */
+function belowTrigger(rect: DOMRect): PanelPosition {
+  const top = rect.bottom + PANEL_GAP;
+  return rect.left + rect.width / 2 > window.innerWidth / 2
+    ? { top, right: Math.max(window.innerWidth - rect.right, VIEWPORT_MARGIN) }
+    : { top, left: Math.max(rect.left, VIEWPORT_MARGIN) };
+}
+
 export function Tooltip({
   label,
+  placement = "right",
   suppressed,
   className,
   children,
 }: {
   /** The words the panel shows — the trigger's own name, so the two cannot disagree. */
   label: string;
+  /** Which side of the trigger the panel hangs off; `right` suits a vertical rail, `bottom` a horizontal toolbar. */
+  placement?: TooltipPlacement;
   /**
    * Hold the panel closed and refuse to open it. For a trigger that owns something else on
    * screen while it is active: the rail avatar's open user menu hangs off the same corner,
@@ -56,8 +105,8 @@ export function Tooltip({
 }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Non-null only while the panel is up; the measured viewport point its left edge and vertical centre sit at. */
-  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+  /** Non-null only while the panel is up; the measured viewport point it hangs from. */
+  const [position, setPosition] = useState<PanelPosition | null>(null);
 
   const hide = useCallback(() => {
     if (timerRef.current !== null) {
@@ -73,16 +122,7 @@ export function Tooltip({
       timerRef.current = null;
       const rect = anchorRef.current?.getBoundingClientRect();
       if (!rect) return;
-      // Placed to the right of the trigger — the one geometry the callers need, an icon rail
-      // against the left edge of the window. Vertically centred on the trigger and clamped so
-      // a rail entry scrolled to the very top or bottom still gets a panel on screen.
-      setPosition({
-        top: Math.min(
-          Math.max(rect.top + rect.height / 2, VIEWPORT_MARGIN),
-          window.innerHeight - VIEWPORT_MARGIN,
-        ),
-        left: rect.right + PANEL_GAP,
-      });
+      setPosition(placement === "bottom" ? belowTrigger(rect) : besideTrigger(rect));
     }, OPEN_DELAY_MS);
   };
 
@@ -129,8 +169,13 @@ export function Tooltip({
           <div
             data-testid="tooltip"
             aria-hidden
-            style={{ position: "fixed", top: position.top, left: position.left }}
-            className="anim-fade pointer-events-none z-[60] w-max max-w-64 -translate-y-1/2 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+            style={{
+              position: "fixed",
+              top: position.top,
+              left: position.left,
+              right: position.right,
+            }}
+            className={`anim-fade pointer-events-none z-[60] w-max max-w-64 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${placement === "right" ? "-translate-y-1/2" : ""}`}
           >
             {label}
           </div>,

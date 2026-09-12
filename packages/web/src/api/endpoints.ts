@@ -44,6 +44,7 @@ import type {
   FeishuBindingResponse,
   FeishuTestRequest,
   FeishuTestResponse,
+  FilesMoveRequest,
   FilesStatRequest,
   FilesStatResponse,
   FilesWriteRequest,
@@ -149,6 +150,7 @@ import type {
   VaultUpdateRequest,
   VersionResponse,
   WorkspaceFilesResponse,
+  WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
@@ -1047,6 +1049,37 @@ export const uploadWorkspaceFile = (
     body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
     query: { path },
   });
+
+/**
+ * Moves or renames a Workspace file. `ifVersion` (see {@link uploadWorkspaceFile}) guards the
+ * SOURCE: pass it and the move is refused with 409 `file_changed` unless the file is still the
+ * one that was read. The destination has no such marker — nothing read it — so an occupied
+ * destination is 409 `target_exists` rather than an overwrite. Files only: a directory is a
+ * 400, since nothing could express a precondition over a whole tree. `to`'s parent directory
+ * is created when it is missing.
+ */
+export const moveWorkspaceFile = (sessionId: string, body: FilesMoveRequest) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/move`, { method: "POST", body });
+
+/**
+ * Deletes a Workspace file. `ifVersion` is the same marker a write carries: with it, a file
+ * the Agent rewrote since the panel read it is refused with 409 `file_changed` instead of
+ * being removed. Files only — a directory is a 400.
+ */
+export const deleteWorkspaceFile = (sessionId: string, path: string, ifVersion?: string) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {
+    method: "DELETE",
+    query: { path, ifVersion },
+  });
+
+/**
+ * Searches the whole Workspace by entry name (case-insensitive substring), breadth-first from
+ * the root so the shallowest matches come first. `truncated` says a cap stopped the walk: the
+ * hits are then the most relevant ones rather than all of them. An empty query is a 400 — the
+ * caller decides what an empty search box shows, and it is never "every file".
+ */
+export const searchWorkspaceFiles = (sessionId: string, q: string) =>
+  apiFetch<WorkspaceSearchResponse>(`/api/sessions/${sessionId}/files/search`, { query: { q } });
 
 /** Batch file-existence check (message file cards): both out-of-bounds and missing paths simply don't appear in `existing`; always returns 200. */
 export const statSessionFiles = (sessionId: string, paths: string[]) =>
