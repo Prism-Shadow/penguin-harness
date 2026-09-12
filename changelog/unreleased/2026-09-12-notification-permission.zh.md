@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#702](https://github.com/Prism-Shadow/penguin-harness/pull/702)
 - **Issue:** [#607](https://github.com/Prism-Shadow/penguin-harness/issues/607)
 
 [English](2026-09-12-notification-permission.md)
