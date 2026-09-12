@@ -603,18 +603,134 @@
   color: inherit;
   padding: 0;
 }
-/* Shiki code block (features/chat/code-block.tsx): the outer component provides its own chrome (rounded
-   border + language label header), so this resets the inner pre's border/background/radius — overriding
-   both .md-body pre's styles and Shiki's own inline background colors (!important beats inline style), with
-   the dark background left to the outer dark:bg-*. Not scoped to .md-body: the Files preview's source view
-   isn't inside a markdown container. Dark text is overridden via the dual-theme inline variable
-   --shiki-dark, so switching themes doesn't require re-highlighting. */
-.code-block pre {
+/* The code surface (features/chat/code-block.tsx's CodeSurface) — the code itself, with no box
+   around it. This resets the inner pre's border/background/radius, overriding both .md-body
+   pre's styles and Shiki's own inline background colours (!important beats inline style); the
+   background belongs to whatever the surface was dropped into. Not scoped to .md-body: the
+   Files panel's source view is not inside a markdown container. Dark text is overridden via
+   the dual-theme inline variable --shiki-dark, so switching themes never re-highlights.
+
+   The metrics are stated once, for the pre AND for a textarea laid over it: the Files panel's
+   editor is a transparent-text textarea on top of this very surface, and the two only stay in
+   register while every value that decides where a glyph lands — family, size, line height,
+   letter spacing, tab size, padding, wrap mode — is the same in both. Size and line height are
+   inherited so one wrapper sets them for both layers. */
+.code-surface :is(pre, textarea) {
   margin: 0;
   border: 0;
   border-radius: 0;
   background: transparent !important;
+  /* The message code block's own padding, kept to the pixel so this refactor leaves the
+     transcript exactly where it was; the Files panel's two layers only need to agree. */
   padding: 0.625rem 0.75rem;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: normal;
+  tab-size: 4;
+  @apply font-mono;
+}
+.code-surface pre {
+  @apply text-gray-800 dark:text-gray-200;
+}
+/* Wrapping is the file viewer's answer, never the message stream's: a transcript's code block
+   scrolls sideways (see CodeBlock), and only a caller that asked for `wrap` gets this. Both
+   layers need the textarea's own UA rule spelled out, because that is the one they must match. */
+.code-wrap :is(pre, textarea) {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.code-nowrap :is(pre, textarea) {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+/* Grown to its content so a horizontal scroll has something to scroll, and so the sticky gutter
+   below can travel the whole width — a sticky box cannot go past its containing block, which
+   would otherwise be only as wide as the visible strip. */
+.code-nowrap pre {
+  min-width: max-content;
+}
+
+/* Line numbers. A counter over the per-line elements both rendering paths produce — Shiki's own
+   `.line` wrappers and the same wrappers the unhighlighted fallback splits into — so the
+   highlighter needs no changes and the two paths cannot disagree.
+
+   The lines are blocks here (highlighter.ts strips the newlines Shiki puts between them), which
+   is what makes the gutter survive wrapping: `padding-left` reserves the gutter on every visual
+   row, and the negative `text-indent` pulls only the FIRST row back into it, so a wrapped line's
+   continuation rows line up under its own code instead of under its number. The code therefore
+   starts at exactly `--code-gutter` on every row, which is all an overlaid textarea has to
+   match — it indents by that much and needs no per-line rule of its own.
+
+   The number is generated content and `user-select: none`, so dragging across the code selects
+   the code alone; the copy affordances are unaffected either way, since they copy the string the
+   component was given and never the DOM. */
+.code-lines pre {
+  counter-reset: code-line;
+}
+.code-lines .line {
+  display: block;
+  counter-increment: code-line;
+  padding-left: var(--code-gutter, 4ch);
+  text-indent: calc(-1 * var(--code-gutter, 4ch));
+}
+.code-lines textarea {
+  padding-left: calc(0.75rem + var(--code-gutter, 4ch));
+}
+.code-lines .line::before {
+  content: counter(code-line);
+  position: sticky;
+  left: 0;
+  display: inline-block;
+  width: var(--code-gutter, 4ch);
+  padding-right: 1.25ch;
+  text-align: right;
+  text-indent: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  @apply bg-white text-gray-400;
+}
+/* The dark half is spelled out rather than applied as a `dark:` variant: that variant appends
+   its `:where(.dark, .dark *)` to the END of the selector, which for a pseudo-element is
+   invalid CSS and is dropped without a word — the same reason the Shiki theme overrides below
+   are written this way. */
+html.dark .code-lines .line::before {
+  @apply bg-gray-950 text-gray-600;
+}
+
+/* The editor's two layers, stacked in one grid cell so the taller of them sizes the box and a
+   single scroll container moves both — no scroll syncing in JS, and so nothing to drift. The
+   textarea keeps a visible caret over transparent text and must not scroll on its own. */
+.code-editor {
+  display: grid;
+  min-height: 100%;
+}
+.code-editor > * {
+  grid-area: 1 / 1;
+}
+.code-editor textarea {
+  overflow: hidden;
+  resize: none;
+  color: transparent;
+  outline: none;
+  @apply caret-gray-900 dark:caret-gray-100;
+}
+/* The dark half is a rule of its own for the same reason as the gutter's above: a `dark:`
+   variant appends its `:where(.dark, .dark *)` to the END of the selector, which after a
+   pseudo-element is invalid CSS and is dropped from the build without a word. */
+.code-editor textarea::selection {
+  @apply bg-sky-200;
+}
+html.dark .code-editor textarea::selection {
+  @apply bg-sky-500/40;
+}
+/* While an IME is composing, the candidate text lives only in the textarea's own rendering — it
+   has not reached `value` on every platform — so the layers swap: the code layer steps aside and
+   the textarea shows its own text, underline and all, until the composition commits. */
+.code-editor-host[data-composing="true"] textarea {
+  @apply text-gray-800 dark:text-gray-200;
+}
+.code-editor-host[data-composing="true"] .code-editor > :not(textarea) {
+  visibility: hidden;
 }
 html.dark .shiki,
 html.dark .shiki span {

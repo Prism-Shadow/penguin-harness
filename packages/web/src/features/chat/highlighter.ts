@@ -1,57 +1,54 @@
 /**
- * Shiki highlighter for code blocks — the chunk CodeBlock dynamically imports.
+ * The code viewer's highlighting entry point: the same call as before, answered on a worker.
  *
- * Assembled from `shiki/core` with the language list in code-languages.ts instead of importing
- * `shiki` (its full bundle): that entry point drags in the oniguruma WASM engine and a registry of
- * all 332 bundled grammars, and both land on the *first* code block a conversation renders — 230 KB
- * gzip of WASM before a single token is colored. The pure-JS regex engine replaces it for free:
- * every pattern in every bundled grammar translates to a JS RegExp, and its token output is
- * byte-identical to oniguruma's. Measured on this app: ~308 KB -> ~70 KB gzip for the first block.
+ * Tokenizing is linear in the size of the file — about four milliseconds per kilobyte of
+ * TypeScript, measured on this app's own sources — and it runs to completion once it starts. On
+ * the main thread that put a hard ceiling on what could be coloured at all, because half a
+ * megabyte meant two seconds of frozen page. A worker removes the ceiling rather than raising it:
+ * the code renders unhighlighted, the colours replace it when they land, and nothing blocks.
  *
- * The trade is coverage — a fence in a language not listed in code-languages.ts renders
- * unhighlighted instead of highlighted (`highlightToHtml` returns undefined and CodeBlock keeps its
- * plain <pre> fallback), where the full bundle would have known it.
- *
- * Both themes are baked into one pass as CSS variables (`--shiki-dark`, see styles.css), so
- * switching light/dark never re-highlights. Grammars load lazily and are cached per language, so a
- * conversation downloads only the languages it shows, once each.
+ * The worker is created on the first call and kept for the page's life, so a conversation pays for
+ * the engine and each grammar once. Where a worker cannot be had at all — a runtime without it, a
+ * CSP that forbids it, a construction that throws — the work falls back to this thread, which is
+ * exactly the old behaviour and still correct, only blocking.
  */
-import { createHighlighterCore, type HighlighterCore, type LanguageInput } from "shiki/core";
-import { createJavaScriptRegexEngine } from "shiki/engine/javascript";
-import { LANGUAGE_LOADERS, isPlainTextLanguage, resolveLanguage } from "./code-languages";
+import type { HighlightRequest, HighlightResponse } from "./highlighter.worker";
 
-let corePromise: Promise<HighlighterCore> | undefined;
-const grammarPromises = new Map<string, Promise<void>>();
+/** undefined: not tried yet. null: unavailable here, use the main thread. */
+let worker: Worker | null | undefined;
+let nextId = 0;
+const pending = new Map<number, (response: HighlightResponse) => void>();
 
-function getCore(): Promise<HighlighterCore> {
-  corePromise ??= createHighlighterCore({
-    themes: [import("@shikijs/themes/github-light"), import("@shikijs/themes/github-dark")],
-    langs: [],
-    engine: createJavaScriptRegexEngine(),
-  });
-  return corePromise;
+function settleAll(response: (id: number) => HighlightResponse): void {
+  for (const [id, resolve] of pending) resolve(response(id));
+  pending.clear();
 }
 
-/** Loads a grammar at most once, even when several code blocks of the same language settle together. */
-function loadGrammar(
-  core: HighlighterCore,
-  id: string,
-  load: () => Promise<unknown>,
-): Promise<void> {
-  let pending = grammarPromises.get(id);
-  if (!pending) {
-    pending = load()
-      .then((mod) => core.loadLanguage((mod as { default: LanguageInput }).default))
-      .then(() => undefined)
-      .catch((err: unknown) => {
-        // Don't cache a failed load: a transient chunk fetch failure shouldn't leave the language
-        // permanently unhighlighted for the rest of the session.
-        grammarPromises.delete(id);
-        throw err;
-      });
-    grammarPromises.set(id, pending);
+function getWorker(): Worker | null {
+  if (worker !== undefined) return worker;
+  try {
+    const created = new Worker(new URL("./highlighter.worker.ts", import.meta.url), {
+      type: "module",
+    });
+    created.onmessage = (event: MessageEvent<HighlightResponse>) => {
+      const resolve = pending.get(event.data.id);
+      if (resolve) {
+        pending.delete(event.data.id);
+        resolve(event.data);
+      }
+    };
+    // A worker that dies takes every request in flight with it. Answer them as "no highlight"
+    // rather than leaving their promises open forever, and send the next call to the main
+    // thread instead of a socket that is gone.
+    created.onerror = () => {
+      worker = null;
+      settleAll((id) => ({ id, error: "worker failed" }));
+    };
+    worker = created;
+  } catch {
+    worker = null;
   }
-  return pending;
+  return worker;
 }
 
 /**
@@ -59,14 +56,28 @@ function loadGrammar(
  * language isn't one this bundle carries. Rejects only on an unexpected failure (chunk fetch,
  * grammar error); callers fall back to unhighlighted text either way.
  */
-export async function highlightToHtml(code: string, language: string): Promise<string | undefined> {
-  const id = resolveLanguage(language);
-  if (!id) return undefined;
-  const core = await getCore();
-  const load = isPlainTextLanguage(id) ? undefined : LANGUAGE_LOADERS.get(id);
-  if (load) await loadGrammar(core, id, load);
-  return core.codeToHtml(code, {
-    lang: id,
-    themes: { light: "github-light", dark: "github-dark" },
+export async function highlightToHtml(
+  code: string,
+  language: string,
+  options?: { blockLines?: boolean },
+): Promise<string | undefined> {
+  const blockLines = options?.blockLines === true;
+  const w = getWorker();
+  if (w === null) {
+    // Imported here and not at the top: the engine is already in the worker's bundle, and a
+    // static import would put a second copy of it on the main thread for every reader whose
+    // worker works — which is all of them.
+    const { highlight } = await import("./highlighter-core");
+    return highlight(code, language, blockLines);
+  }
+  const id = (nextId += 1);
+  const request: HighlightRequest = { id, code, language, blockLines };
+  const answer = await new Promise<HighlightResponse>((resolve) => {
+    pending.set(id, resolve);
+    w.postMessage(request);
   });
+  // The worker reports a failure rather than throwing across the boundary; treat it the way the
+  // main-thread path treats one, so a caller sees the same unhighlighted fallback either way.
+  if (answer.error !== undefined) return undefined;
+  return answer.html;
 }

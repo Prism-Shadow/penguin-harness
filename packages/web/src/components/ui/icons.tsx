@@ -165,6 +165,18 @@ export function CloseButton({
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
 /**
+ * Opening quotation marks: a passage carried in from somewhere else. The composer's chip for a
+ * Workspace selection wears it, where a paperclip would have claimed the file was attached — the
+ * file is not; a few of its lines are quoted.
+ */
+export const QUOTE_ICON =
+  "M9.5 6.5C7 7.5 5.5 9.5 5.5 12.5v4h5v-5h-3c0-1.8.9-3.1 2.6-3.8zM19.5 6.5c-2.5 1-4 3-4 6v4h5v-5h-3c0-1.8.9-3.1 2.6-3.8z";
+
+/** A pane with an arrow leaving it: this opens somewhere outside the app, in a tab of its own. */
+export const EXTERNAL_LINK_ICON =
+  "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3";
+
+/**
  * Window with a bottom pane / a right pane: the two dock edges. Drawn by the chat toolbar's
  * pull-open buttons and the dock header's move-dock buttons, so one mark stands for one edge
  * everywhere.
@@ -239,6 +251,29 @@ export const FILE_WRITE_ICON = "M6 3h8l4 4v14H6zM12 11v6M9 14h6";
 export const FILE_EDIT_ICON = "M12 20h9M16.5 3.5a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z";
 
 /**
+ * Moving a file in or out of the Workspace: a tray with an arrow leaving it (upload) or
+ * landing in it (download). The same tray both ways, so the pair reads as one axis; the
+ * arrow's direction is the only difference, and each is labelled where it is drawn.
+ */
+export const UPLOAD_ICON = "M12 15V4m0 0L8 8m4-4 4 4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3";
+export const DOWNLOAD_ICON = "M12 4v11m0 0 4-4m-4 4-4-4M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3";
+
+/**
+ * Two arcs chasing each other round a circle: re-read what is on disk. The arc idiom is the
+ * app's existing one (see HISTORY_ICON in app-layout.tsx), so the mark sits in the same family
+ * as the other round-trip glyphs rather than introducing a second way to draw a turn.
+ */
+export const REFRESH_ICON =
+  "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M21 3v5h-5M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M3 21v-5h5";
+
+/**
+ * Soft wrap: three lines of text where the middle one runs past the edge, turns back and
+ * returns with an arrow. The turn is the whole mark — a plain stack of lines would be any of
+ * a dozen list glyphs — so it keeps the full bulge rather than being tucked in to save room.
+ */
+export const WRAP_TEXT_ICON = "M4 6h16M4 12h12a3 3 0 1 1 0 6h-3m2-2-2 2 2 2M4 18h5";
+
+/**
  * Activity trace (a flat line with one tall beat in it): work still going on behind the
  * conversation — the background-task mark on a session row, the matching count in the chat
  * header, and the marker on a tool row whose call was made with `run_in_background`.
@@ -251,6 +286,15 @@ export const FILE_EDIT_ICON = "M12 20h9M16.5 3.5a2.85 2.85 0 1 1 4 4L7.5 20.5 2 
  * (a tool row's own status), not the unread dot.
  */
 export const BACKGROUND_TASKS_ICON = "M2 12h4l3 9 6-18 3 9h4";
+
+/**
+ * The same bubble with a plus in it: putting something into the conversation rather than
+ * sending it — the Files panel's "add to conversation" drops a reference in the composer
+ * and stops there. Bubble-plus-plus follows the file pair's own convention (FILE_ICON vs
+ * FILE_WRITE_ICON): the plus is what the action adds, drawn on the thing it adds to.
+ */
+export const ADD_TO_CHAT_ICON =
+  "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM12 7v6M9 10h6";
 
 /**
  * Paper plane: remote control — the session-row mark for a Session that is relaying through
