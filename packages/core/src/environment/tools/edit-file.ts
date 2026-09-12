@@ -12,7 +12,9 @@
  * crash mid-write cannot leave the file half-edited; a symlinked path is followed to the
  * file it names, the same way the read that produced the diff was. Relative paths resolve
  * against the Workspace; absolute paths are allowed (tools run with the user's full
- * permissions, same as the shell tool).
+ * permissions, same as the shell tool). Read-modify-write on one file is serialized against
+ * write_file and against other edit_file calls in this process (see internal/file-lock.ts),
+ * so two concurrent edits of one file are applied one after the other.
  *
  * Division of responsibility with Environment (see environment.ts): non-streaming — yields
  * one final text delta; failures are explanatory text finalized as `failed`; anything
@@ -28,6 +30,7 @@ import type { OmniMessage } from "../../omnimessage/index.js";
 import type { ToolDefinitionConfig } from "../../interfaces/index.js";
 import type { BuiltinTool, ToolExecutionContext, ToolResult } from "./types.js";
 import { atomicWriteFile } from "../../internal/atomic-write.js";
+import { fileLockKey, withFileLock } from "../../internal/file-lock.js";
 import { buildReplacementHunks, renderHunk } from "./diff.js";
 import { missingPathHint } from "./path-hint.js";
 import { describeArgumentError } from "./tool-arguments.js";
@@ -53,6 +56,91 @@ function countOccurrences(haystack: string, needle: string): number {
     index = haystack.indexOf(needle, index + needle.length);
   }
   return count;
+}
+
+/** What the locked section leaves for the generator to report once the file's lock is released. */
+type EditOutcome =
+  | { kind: "fatal"; text: string }
+  | { kind: "aborted" }
+  | { kind: "ok"; content: string; replaced: number };
+
+/**
+ * The locked half of one edit: stat, read, match `old_string`, write the result back
+ * atomically. It returns an outcome instead of yielding because it runs while the file's
+ * mutex is held — the deltas go out afterwards, rendered from `content`, the bytes as this
+ * call found them (which, queued behind another edit of the same file, already include it).
+ */
+async function applyEdit(params: {
+  resolved: string;
+  filePath: string;
+  oldString: string;
+  newString: string;
+  replaceAll: boolean;
+  signal?: AbortSignal;
+}): Promise<EditOutcome> {
+  const { resolved, filePath, oldString, newString, replaceAll, signal } = params;
+  let content: string;
+  let fileMode: number | undefined;
+  try {
+    const st = await stat(resolved);
+    if (st.isDirectory()) {
+      return { kind: "fatal", text: `Cannot edit "${filePath}": it is a directory.` };
+    }
+    fileMode = st.mode & 0o777;
+    content = await readFile(resolved, { encoding: "utf8", ...(signal ? { signal } : {}) });
+  } catch (err) {
+    if (signal?.aborted) return { kind: "aborted" };
+    const code = (err as NodeJS.ErrnoException).code;
+    // ENOTDIR is the same mistake seen one segment later (a file used as a directory),
+    // so it gets the same diagnosis instead of a raw errno message.
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      const hint = await missingPathHint(resolved);
+      return {
+        kind: "fatal",
+        text: `File not found: "${filePath}". edit_file only edits existing files — check the path (absolute paths are supported), or use write_file to create it.${hint}`,
+      };
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return { kind: "fatal", text: `Failed to read "${filePath}": ${message}` };
+  }
+  if (signal?.aborted) return { kind: "aborted" };
+
+  const occurrences = countOccurrences(content, oldString);
+  if (occurrences === 0) {
+    // A CRLF file is the classic silent mismatch: text copied from read_file's display
+    // has bare \n while the file has \r\n — say so explicitly.
+    const crlfHint = content.includes("\r\n")
+      ? " Note: the file uses CRLF (\\r\\n) line endings — a multi-line old_string must include the \\r characters."
+      : "";
+    return {
+      kind: "fatal",
+      text: `old_string not found in "${filePath}". Make sure it matches the file content exactly, including whitespace and indentation.${crlfHint}`,
+    };
+  }
+  if (occurrences > 1 && !replaceAll) {
+    return {
+      kind: "fatal",
+      text: `old_string occurs ${occurrences} times in "${filePath}". Add surrounding context to make it unique, or set replace_all to true to replace every occurrence.`,
+    };
+  }
+
+  const replaceStart = content.indexOf(oldString);
+  const newContent = replaceAll
+    ? content.split(oldString).join(newString)
+    : content.slice(0, replaceStart) + newString + content.slice(replaceStart + oldString.length);
+  try {
+    await atomicWriteFile(resolved, newContent, {
+      ...(fileMode !== undefined ? { mode: fileMode } : {}),
+      ...(signal ? { signal } : {}),
+      followSymlinks: true,
+    });
+  } catch (err) {
+    if (signal?.aborted) return { kind: "aborted" };
+    const message = err instanceof Error ? err.message : String(err);
+    return { kind: "fatal", text: `Failed to write "${filePath}": ${message}` };
+  }
+
+  return { kind: "ok", content, replaced: replaceAll ? occurrences : 1 };
 }
 
 /**
@@ -116,73 +204,29 @@ export function createEditFileTool(definition: ToolDefinitionConfig): BuiltinToo
       const replaceAll = args["replace_all"] === true;
 
       const resolved = path.resolve(ctx.workspaceDir, filePath);
-      let content: string;
-      let fileMode: number | undefined;
-      try {
-        const st = await stat(resolved);
-        if (st.isDirectory()) {
-          yield delta(`Cannot edit "${filePath}": it is a directory.`);
-          return { stopReason: "fatal" };
+      // One file, one writer at a time: the read and the write that follows it are a single
+      // critical section, so a concurrent edit lands entirely before or entirely after this
+      // one instead of being overwritten by it.
+      const key = await fileLockKey(resolved);
+      const outcome = await withFileLock(
+        key,
+        () => applyEdit({ resolved, filePath, oldString, newString, replaceAll, signal }),
+        signal,
+      ).catch((err: unknown): EditOutcome => {
+        // Interrupted while queued behind another writer on the same file — the same
+        // `aborted` the read and the write report, reached one step earlier.
+        if (signal?.aborted || (err as { name?: string } | null)?.name === "AbortError") {
+          return { kind: "aborted" };
         }
-        fileMode = st.mode & 0o777;
-        content = await readFile(resolved, { encoding: "utf8", ...(signal ? { signal } : {}) });
-      } catch (err) {
-        if (signal?.aborted) return { stopReason: "aborted" };
-        const code = (err as NodeJS.ErrnoException).code;
-        // ENOTDIR is the same mistake seen one segment later (a file used as a directory),
-        // so it gets the same diagnosis instead of a raw errno message.
-        if (code === "ENOENT" || code === "ENOTDIR") {
-          const hint = await missingPathHint(resolved);
-          yield delta(
-            `File not found: "${filePath}". edit_file only edits existing files — check the path (absolute paths are supported), or use write_file to create it.${hint}`,
-          );
-        } else {
-          const message = err instanceof Error ? err.message : String(err);
-          yield delta(`Failed to read "${filePath}": ${message}`);
-        }
+        throw err;
+      });
+      if (outcome.kind === "aborted") return { stopReason: "aborted" };
+      if (outcome.kind === "fatal") {
+        yield delta(outcome.text);
         return { stopReason: "fatal" };
       }
-      if (signal?.aborted) return { stopReason: "aborted" };
+      const { content, replaced } = outcome;
 
-      const occurrences = countOccurrences(content, oldString);
-      if (occurrences === 0) {
-        // A CRLF file is the classic silent mismatch: text copied from read_file's display
-        // has bare \n while the file has \r\n — say so explicitly.
-        const crlfHint = content.includes("\r\n")
-          ? " Note: the file uses CRLF (\\r\\n) line endings — a multi-line old_string must include the \\r characters."
-          : "";
-        yield delta(
-          `old_string not found in "${filePath}". Make sure it matches the file content exactly, including whitespace and indentation.${crlfHint}`,
-        );
-        return { stopReason: "fatal" };
-      }
-      if (occurrences > 1 && !replaceAll) {
-        yield delta(
-          `old_string occurs ${occurrences} times in "${filePath}". Add surrounding context to make it unique, or set replace_all to true to replace every occurrence.`,
-        );
-        return { stopReason: "fatal" };
-      }
-
-      const replaceStart = content.indexOf(oldString);
-      const newContent = replaceAll
-        ? content.split(oldString).join(newString)
-        : content.slice(0, replaceStart) +
-          newString +
-          content.slice(replaceStart + oldString.length);
-      try {
-        await atomicWriteFile(resolved, newContent, {
-          ...(fileMode !== undefined ? { mode: fileMode } : {}),
-          ...(signal ? { signal } : {}),
-          followSymlinks: true,
-        });
-      } catch (err) {
-        if (signal?.aborted) return { stopReason: "aborted" };
-        const message = err instanceof Error ? err.message : String(err);
-        yield delta(`Failed to write "${filePath}": ${message}`);
-        return { stopReason: "fatal" };
-      }
-
-      const replaced = replaceAll ? occurrences : 1;
       // Git-style unified diff of the changed regions, self-budgeted below the tool's
       // output cap so the leading summary line (and the elision note) always survive
       // Environment's front-keep truncation.
