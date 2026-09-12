@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** process
 - **Scope:** `core`
+- **PR:** [#708](https://github.com/Prism-Shadow/penguin-harness/pull/708)
 - **Issue:** [#581](https://github.com/Prism-Shadow/penguin-harness/issues/581)
 
 [English](2026-09-12-sibling-subagents-survive-notice.md)
