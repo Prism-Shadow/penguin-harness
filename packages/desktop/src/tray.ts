@@ -11,7 +11,7 @@ import { Menu, nativeImage, Tray } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import { TRAY_NAV_PATHS, trayMenuTemplate } from "./tray-menu.js";
 import type { TrayMenuItem } from "./tray-menu.js";
-import { readTrayPrefs, writeTrayPrefs } from "./tray-prefs.js";
+import { readTrayPrefs, updateTrayPrefs } from "./tray-prefs.js";
 
 export interface TrayHandle {
   /** The live preference: the window's close handler asks at close time, not at install time. */
@@ -56,9 +56,12 @@ export function installTray(opts: TrayOptions): TrayHandle | null {
   tray.setToolTip(opts.appName);
 
   function setCloseToTray(next: boolean): void {
+    // Optimistic: the checkbox shows the click even when the write below fails.
     prefs = { ...prefs, closeToTray: next };
     try {
-      writeTrayPrefs(opts.userDataDir, prefs);
+      // Read-modify-write: the Appearance switch writes showTrayIcon into the same file,
+      // and this snapshot was taken when the tray was installed.
+      prefs = updateTrayPrefs(opts.userDataDir, { closeToTray: next });
     } catch (err) {
       opts.log(`the tray preference could not be saved: ${String(err)}`);
     }

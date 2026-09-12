@@ -16,7 +16,25 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { offersChangePassword, omitsOldPassword } from "../src/lib/account-menu";
+import {
+  isDesktopShellWindow,
+  offersChangePassword,
+  omitsOldPassword,
+} from "../src/lib/account-menu";
+
+describe("isDesktopShellWindow", () => {
+  it("is the shell's own window and nothing else", () => {
+    // The rule the shell-only controls share — the client-update row, and Appearance's
+    // tray switch, which reaches the chrome the page is drawn in. Both single-field
+    // simplifications are wrong: `desktopMode` alone lets a browser on another machine
+    // drive this one's GUI app, `sessionVia` alone matches a stale desktop cookie
+    // replayed against a plain `penguin server`, where no shell is listening.
+    expect(isDesktopShellWindow({ desktopMode: true, sessionVia: "desktop" })).toBe(true);
+    expect(isDesktopShellWindow({ desktopMode: true, sessionVia: "password" })).toBe(false);
+    expect(isDesktopShellWindow({ desktopMode: false, sessionVia: "desktop" })).toBe(false);
+    expect(isDesktopShellWindow({ desktopMode: false, sessionVia: "password" })).toBe(false);
+  });
+});
 
 describe("offersChangePassword", () => {
   it("hides it in the desktop shell's own window — no login form, seed password never shown", () => {

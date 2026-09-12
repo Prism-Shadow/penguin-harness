@@ -134,6 +134,7 @@ import type {
   UpdateCheckResponse,
   UpdateJobStatus,
   RestartResponse,
+  DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
   HookArchiveInstallRequest,
   UsageErrorKind,
@@ -1291,3 +1292,12 @@ export const desktopUpdateDownload = () =>
 
 export const desktopUpdateInstall = () =>
   apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });
+
+// Desktop tray icon (desktop-shell sessions only) --------------------------------------
+
+/** What the shell last pushed; `status` is null until that first push, which reads as on. */
+export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/desktop/tray");
+
+/** Relays Settings › Appearance's tray switch; the shell applies it and pushes back. */
+export const setDesktopTray = (showTrayIcon: boolean) =>
+  apiFetch<void>("/api/desktop/tray", { method: "PUT", body: { showTrayIcon } });

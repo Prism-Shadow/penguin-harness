@@ -211,6 +211,9 @@ export const en: Strings = {
     toolAliases: "Tool short names",
     toolAliasesInfo:
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
+    trayIcon: "Tray icon",
+    trayIconInfo:
+      "The desktop app keeps an icon in the system tray — the Windows notification area, the macOS menu bar, the Linux tray — for as long as it runs: click it to come back to the window, right-click it to start a session or quit. On by default; turning it off removes the icon at once, no restart, and closing the window then no longer hides it, so the app stays in the Dock on macOS and quits on Windows and Linux.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
