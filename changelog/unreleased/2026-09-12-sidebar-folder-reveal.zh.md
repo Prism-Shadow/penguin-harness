@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#712](https://github.com/Prism-Shadow/penguin-harness/pull/712)
 
 [English](2026-09-12-sidebar-folder-reveal.md)
 
