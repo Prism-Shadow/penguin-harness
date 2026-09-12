@@ -88,8 +88,8 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
       '@prismshadow/agenthub':
-        specifier: ^0.4.13
-        version: 0.4.13(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.4.14
+        version: 0.4.14(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -167,8 +167,8 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/use-firecrawl
       '@prismshadow/agenthub':
-        specifier: ^0.4.13
-        version: 0.4.13(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        specifier: ^0.4.14
+        version: 0.4.14(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -1506,8 +1506,8 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@prismshadow/agenthub@0.4.13':
-    resolution: {integrity: sha512-TePht0lWbO19i/nZmjKKJwSdG2se+Sj40rwcbo2CfZ1Rx5LWpGOwxYZgLikmSrG7hIy+QHzNL8Z4NZLel8svQw==}
+  '@prismshadow/agenthub@0.4.14':
+    resolution: {integrity: sha512-rxyymbF7QC+jMJf+BEZiPnOQQIkgSWZKIVAo+IOatGkTNGpUho/8Qu6hpAciSWG6LV0P2L7UxIVnfgPhRF86aw==}
 
   '@prismshadow/penguin-cli@file:packages/cli':
     resolution: {directory: packages/cli, type: directory}
@@ -5408,7 +5408,7 @@ snapshots:
     dependencies:
       playwright: 1.61.1
 
-  '@prismshadow/agenthub@0.4.13(supports-color@10.2.2)(ws@8.21.0)':
+  '@prismshadow/agenthub@0.4.14(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
@@ -5423,7 +5423,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/agenthub@0.4.13(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/agenthub@0.4.14(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
@@ -5453,7 +5453,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/agenthub': 0.4.13(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/agenthub': 0.4.14(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
       commander: 13.1.0
@@ -5484,7 +5484,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/agenthub': 0.4.13(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/agenthub': 0.4.14(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
@@ -5511,7 +5511,7 @@ snapshots:
       '@penguinharness/use-bento-slides': file:plugins/use-bento-slides
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/agenthub': 0.4.13(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/agenthub': 0.4.14(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
