@@ -1,13 +1,14 @@
 /**
  * Optimize one Benchmark: the dialog that hands the `agent-optimization` Skill its inputs. Two
  * entries open it, and each names its own way of filling them, so the dialog renders that one
- * body and never a mode switch: "Optimize manually" the form (the optimizer agent, its
- * conversation's model, runs per case, round limit, target score, an optional focus), and
- * "Optimize with AI" a free prompt over the same parameter tail. One way out either way — the
- * prompt lands in a new conversation with the optimizer agent, prefilled; pressing Send stays
- * the user's move. The evaluation runtime is not chosen here: the Skill reuses the provider,
- * model and thinking level the baseline recorded, so scores stay comparable. Mounted fresh per
- * Benchmark and per mode by the page.
+ * body and never a mode switch: "Optimize manually" the form (the tested agent, the optimizer
+ * agent, its conversation's model, runs per case, round limit, target score, an optional focus),
+ * and "Optimize with AI" a free prompt over the same parameter tail. One way out either way —
+ * the prompt lands in a new conversation with the optimizer agent, prefilled; pressing Send
+ * stays the user's move. A Benchmark can score several agents, so which one is under test is a
+ * choice here, and the baseline and the default target follow that choice. The evaluation
+ * runtime is not chosen: the Skill reuses the provider, model and thinking level that agent's
+ * baseline recorded, so scores stay comparable. Mounted fresh per Benchmark and per mode.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -34,7 +35,7 @@ import {
   pickDefaultAgent,
   useAiBridge,
 } from "../ai-create";
-import { defaultTargetScore, latestScore } from "./benchmark-metrics";
+import { defaultTargetScore, latestScoreOfAgent } from "./benchmark-metrics";
 import { MAX_RUNS, optimizeExamples, optimizeTail } from "./benchmark-prompts";
 import type { OptimizeParams } from "./benchmark-prompts";
 
@@ -61,27 +62,33 @@ export function OptimizeModal({
   open,
   onClose,
   projectId,
-  agentId,
   mode,
   benchmark,
   agents,
+  currentAgentId,
   models,
 }: {
   open: boolean;
   onClose: () => void;
   projectId: string;
-  /** The Test Agent: the one the Benchmark belongs to and the one the optimizer edits. */
-  agentId: string;
   /** Fixed by the entry the user pressed; the dialog renders only this body. */
   mode: OptimizeMode;
   benchmark: BenchmarkSummary;
   agents: readonly AgentSummary[];
+  /** The Agent the app is currently on: the fallback when this Benchmark has scored nobody yet. */
+  currentAgentId: string | null;
   /** The Project's models, for the optimizer conversation's model picker; null while unknown. */
   models: ModelsResponse | null;
 }) {
   const { openAiChat } = useAiBridge();
-  const target = agents.find((a) => a.agentId === agentId) ?? null;
-  const baseline = latestScore(benchmark.evaluations);
+  // Who was tested last here is the likeliest subject of the next round; with no evaluation at
+  // all, the Agent the user came from, and failing that the Project's default.
+  const lastTested =
+    [...benchmark.evaluations].reverse().find((e) => (e.agentId ?? "") !== "")?.agentId ?? null;
+  const [testAgentId, setTestAgentId] = useState(
+    lastTested ?? currentAgentId ?? pickDefaultAgent(agents)?.agentId ?? "",
+  );
+  const baseline = latestScoreOfAgent(benchmark.evaluations, testAgentId);
   const defaultTarget = defaultTargetScore(baseline?.score ?? null);
   const [optimizerId, setOptimizerId] = useState<string | null>(
     pickDefaultAgent(agents)?.agentId ?? null,
@@ -93,6 +100,8 @@ export function OptimizeModal({
   const [runs, setRuns] = useState(String(Math.min(benchmark.runs ?? 1, MAX_RUNS)));
   const [roundLimit, setRoundLimit] = useState("3");
   const [targetScore, setTargetScore] = useState(String(defaultTarget));
+  /** The target follows the tested agent's baseline until the field is edited by hand. */
+  const [targetTouched, setTargetTouched] = useState(false);
   const [focus, setFocus] = useState("");
   const [draft, setDraft] = useState("");
   const [skillsByAgent, setSkillsByAgent] = useState<Record<string, string[]>>({});
@@ -110,6 +119,10 @@ export function OptimizeModal({
       .catch(() => {});
   }, [projectId, optimizerId, skillsByAgent]);
 
+  useEffect(() => {
+    if (!targetTouched) setTargetScore(String(defaultTarget));
+  }, [defaultTarget, targetTouched]);
+
   const installed = optimizerId === null ? undefined : skillsByAgent[optimizerId];
   const missingSkill = installed !== undefined && !installed.includes(OPTIMIZATION_SKILL);
 
@@ -118,7 +131,7 @@ export function OptimizeModal({
   const targetValue = intIn(targetScore, 1, 100);
   const valid = runsValue !== null && roundsValue !== null && targetValue !== null;
   const params: OptimizeParams = {
-    targetAgentId: agentId,
+    targetAgentId: testAgentId,
     benchmarkId: benchmark.id,
     runs: runsValue ?? benchmark.runs ?? 1,
     roundLimit: roundsValue ?? 3,
@@ -126,7 +139,11 @@ export function OptimizeModal({
   };
   const tail = optimizeTail(params);
   const text = composeAiPrompt(mode === "manual" ? focus : draft, tail);
-  const ready = optimizerId !== null && valid && (mode === "manual" || draft.trim() !== "");
+  const ready =
+    optimizerId !== null &&
+    testAgentId !== "" &&
+    valid &&
+    (mode === "manual" || draft.trim() !== "");
 
   const pickedModel = (): ModelRefDto | undefined => {
     if (model === "") return models?.defaultModel;
@@ -196,6 +213,18 @@ export function OptimizeModal({
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Select
+                label={S.benchmark.testedAgent}
+                hint={S.benchmark.testedAgentHint}
+                value={testAgentId}
+                onChange={(e) => setTestAgentId(e.target.value)}
+              >
+                {agents.map((a) => (
+                  <option key={a.agentId} value={a.agentId}>
+                    {agentDisplayName(a)}
+                  </option>
+                ))}
+              </Select>
+              <Select
                 label={S.benchmark.optimizerAgent}
                 hint={S.benchmark.optimizerAgentHint}
                 value={optimizerId ?? ""}
@@ -226,10 +255,6 @@ export function OptimizeModal({
               </Select>
             </div>
             {missingSkillStrip}
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {S.benchmark.targetAgentFixed(target ? agentDisplayName(target) : agentId)}
-              <span className="ml-1.5 font-mono text-gray-400 dark:text-gray-500">{agentId}</span>
-            </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Input
                 label={S.benchmark.runsField}
@@ -252,7 +277,10 @@ export function OptimizeModal({
                 hint={S.benchmark.targetScoreHint}
                 inputMode="numeric"
                 value={targetScore}
-                onChange={(e) => setTargetScore(digits(e.target.value))}
+                onChange={(e) => {
+                  setTargetTouched(true);
+                  setTargetScore(digits(e.target.value));
+                }}
                 {...errorProp(targetValue === null ? S.benchmark.invalidScore : undefined)}
               />
             </div>

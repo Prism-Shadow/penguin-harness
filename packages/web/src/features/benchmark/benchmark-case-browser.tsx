@@ -60,7 +60,6 @@ interface Preview {
 
 interface Props {
   projectId: string;
-  agentId: string;
   benchmarkId: string;
   caseSummary: BenchmarkCaseSummary;
 }
@@ -126,7 +125,6 @@ function languageFor(name: string): string {
 
 function MaterialGroup({
   projectId,
-  agentId,
   benchmarkId,
   caseSummary,
   material,
@@ -153,7 +151,7 @@ function MaterialGroup({
     setListError(null);
     let cancelled = false;
     api
-      .listBenchmarkCaseFiles(projectId, agentId, benchmarkId, caseSummary.id, path, material)
+      .listBenchmarkCaseFiles(projectId, benchmarkId, caseSummary.id, path, material)
       .then((data) => {
         if (cancelled) return;
         setListing({ base: path, res: data });
@@ -171,17 +169,7 @@ function MaterialGroup({
     return () => {
       cancelled = true;
     };
-  }, [
-    projectId,
-    agentId,
-    benchmarkId,
-    caseSummary.id,
-    material,
-    autoPreviewReadme,
-    onPreview,
-    open,
-    path,
-  ]);
+  }, [projectId, benchmarkId, caseSummary.id, material, autoPreviewReadme, onPreview, open, path]);
 
   const crumbs = path === "" ? [] : path.split("/");
 
@@ -263,7 +251,7 @@ function MaterialGroup({
   );
 }
 
-export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSummary }: Props) {
+export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Props) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const previewRequest = useRef(0);
 
@@ -273,16 +261,8 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
       filePath: string,
       options?: { download?: boolean; preview?: boolean },
     ) =>
-      api.benchmarkCaseFileUrl(
-        projectId,
-        agentId,
-        benchmarkId,
-        caseSummary.id,
-        filePath,
-        material,
-        options,
-      ),
-    [projectId, agentId, benchmarkId, caseSummary.id],
+      api.benchmarkCaseFileUrl(projectId, benchmarkId, caseSummary.id, filePath, material, options),
+    [projectId, benchmarkId, caseSummary.id],
   );
 
   const previewPath = useCallback(
@@ -392,7 +372,6 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
         <div className="max-h-44 overflow-y-auto md:max-h-[53vh]">
           <MaterialGroup
             projectId={projectId}
-            agentId={agentId}
             benchmarkId={benchmarkId}
             caseSummary={caseSummary}
             material="statement"
@@ -403,7 +382,6 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
           />
           <MaterialGroup
             projectId={projectId}
-            agentId={agentId}
             benchmarkId={benchmarkId}
             caseSummary={caseSummary}
             material="rubric"

@@ -1,13 +1,14 @@
 /**
  * Benchmark API integration tests: benchmark_config.toml title/description and runs
  * pass-through (and a directory without one is not listed), scoreboard.yaml v2's
- * evaluations[] (summary pass-through, model-written Case/Evaluation averages and per-case
- * runs arrays), rejection of legacy Scoreboard entries, case count, empty when
- * unconfigured, permissions (members can read, outsiders get 404), and the owner-only
- * create (the on-disk layout the Skills read) and delete routes.
+ * evaluations[] (summary pass-through, the Agent each evaluation tested, model-written
+ * Case/Evaluation averages and per-case runs arrays), rejection of legacy Scoreboard entries,
+ * case count, empty when unconfigured, permissions (members can read, outsiders get 404), and
+ * the owner-only create (the on-disk layout the Skills read) and delete routes.
  *
- * Tested with a plain Agent (no sample Benchmark pre-installed); default_agent's sample
- * Benchmark assertions live in builtin-agents.test.ts.
+ * Benchmarks are Project-level, so a new Project arrives with default_agent's sample
+ * Benchmark; setup deletes it to isolate these cases. Its own assertions live in
+ * builtin-agents.test.ts.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -24,8 +25,6 @@ import type {
 } from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
-
-const AGENT = "bench_agent";
 
 describe("benchmarks api", () => {
   let t: TestApp;
@@ -47,11 +46,10 @@ describe("benchmarks api", () => {
       await owner.post("/api/projects", { projectId: "owner_a-bench", name: "Bench project" })
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
-    // A plain Agent has no sample Benchmark pre-installed (only default_agent provides one).
-    expect((await owner.post(`/api/projects/${projectId}/agents`, { agentId: AGENT })).status).toBe(
-      201,
-    );
-    base = `/api/projects/${projectId}/agents/${AGENT}/benchmarks`;
+    // Creating the Project seeded default_agent's sample Benchmark at the Project level; these
+    // cases start from an empty benchmarks directory.
+    await fs.rm(benchmarksDir(t.root, projectId), { recursive: true, force: true });
+    base = `/api/projects/${projectId}/benchmarks`;
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,
     ).toBe(201);
@@ -67,7 +65,7 @@ describe("benchmarks api", () => {
   });
 
   it("current scoreboard: model-written averages, runtime, and runs pass through", async () => {
-    const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "swe-bench-v2");
+    const dir = path.join(benchmarksDir(t.root, projectId), "swe-bench-v2");
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement", "assets"), {
       recursive: true,
@@ -129,6 +127,7 @@ describe("benchmarks api", () => {
       [
         "evaluations:",
         '  - time: "2026-07-16T10:00:00Z"',
+        '    agent_id: "default_agent"',
         "    version: 3",
         '    provider: "deepseek"',
         '    model_id: "deepseek-v4-pro"',
@@ -167,6 +166,46 @@ describe("benchmarks api", () => {
         "            cost: null",
         "            duration_ms: 40000",
         '            session_id: "session-run-4"',
+        // A second Agent evaluated by the same Benchmark: the two are peers, and one
+        // Benchmark measures as many Agents as it is pointed at.
+        '  - time: "2026-07-17T10:00:00Z"',
+        '    agent_id: "report_writer"',
+        "    version: 1",
+        '    provider: "deepseek"',
+        '    model_id: "deepseek-v4-pro"',
+        '    thinking_level: "medium"',
+        "    score: 55",
+        "    cost: null",
+        "    duration_ms: 30000",
+        "    cases:",
+        '      - case: "CASE-001-excel-task"',
+        "        score: 55",
+        "        cost: null",
+        "        duration_ms: 30000",
+        "        runs:",
+        "          - score: 55",
+        "            cost: null",
+        "            duration_ms: 30000",
+        '            session_id: "session-run-5"',
+        // Recorded before evaluations named an Agent: still listed, just unlabelled.
+        '  - time: "2026-07-18T10:00:00Z"',
+        "    version: 1",
+        '    provider: "deepseek"',
+        '    model_id: "deepseek-v4-pro"',
+        '    thinking_level: "medium"',
+        "    score: 60",
+        "    cost: null",
+        "    duration_ms: 31000",
+        "    cases:",
+        '      - case: "CASE-001-excel-task"',
+        "        score: 60",
+        "        cost: null",
+        "        duration_ms: 31000",
+        "        runs:",
+        "          - score: 60",
+        "            cost: null",
+        "            duration_ms: 31000",
+        '            session_id: "session-run-6"',
       ].join("\n"),
       "utf8",
     );
@@ -183,8 +222,14 @@ describe("benchmarks api", () => {
     // config carries no model reference (the model lives on each evaluation).
     expect("modelId" in bench).toBe(false);
     expect("provider" in bench).toBe(false);
+    // The Agents a Benchmark has evaluated come from its scoreboard, in first-seen order; an
+    // evaluation without an agent_id contributes none.
+    expect(bench.agentIds).toEqual(["default_agent", "report_writer"]);
+    expect(bench.evaluations[2]!.agentId).toBeNull();
     const evaluation = bench.evaluations[0]!;
-    // The evaluation entry carries this run's model (as a pair) and a summary title (curve series / title-body are displayed separately).
+    // The evaluation entry carries the Agent it tested, this run's model (as a pair) and a
+    // summary title (curve series / title-body are displayed separately).
+    expect(evaluation.agentId).toBe("default_agent");
     expect(evaluation.provider).toBe("deepseek");
     expect(evaluation.modelId).toBe("deepseek-v4-pro");
     expect(evaluation.thinkingLevel).toBe("medium");
@@ -304,7 +349,7 @@ describe("benchmarks api", () => {
   });
 
   it("does not migrate or backfill legacy Scoreboard entries", async () => {
-    const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "swe-bench-v1");
+    const dir = path.join(benchmarksDir(t.root, projectId), "swe-bench-v1");
     await fs.mkdir(path.join(dir, "CASE-001-excel-task", "statement"), { recursive: true });
     await fs.writeFile(path.join(dir, "benchmark_config.toml"), `title = "SWE Bench v1"\n`, "utf8");
     await fs.writeFile(
@@ -340,7 +385,7 @@ describe("benchmarks api", () => {
   });
 
   it("lists a Benchmark that has never run, but not a directory without a config", async () => {
-    const dir = benchmarksDir(t.root, projectId, AGENT);
+    const dir = benchmarksDir(t.root, projectId);
     // Deleted mid-evaluation: the run kept writing, so the directory is back with a case and
     // a scoreboard but no config. Not a Benchmark — it must not reach the Evaluation Center.
     await fs.mkdir(path.join(dir, "half-deleted", "CASE-001-excel-task", "statement"), {
@@ -410,9 +455,11 @@ describe("benchmarks api", () => {
       runs: 2,
       caseCount: 2,
       evaluations: [],
+      // A Benchmark names no Agent of its own: it has evaluated none until it is run.
+      agentIds: [],
     });
 
-    const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "report-writing-v1");
+    const dir = path.join(benchmarksDir(t.root, projectId), "report-writing-v1");
     expect(parseToml(await fs.readFile(path.join(dir, "benchmark_config.toml"), "utf8"))).toEqual({
       title: "Report writing",
       description: "Hard cases for the report writer",
@@ -472,16 +519,14 @@ describe("benchmarks api", () => {
     }
     expect((await member.post(base, createBody)).status).toBe(403);
     expect((await outsider.post(base, createBody)).status).toBe(404);
-    // A missing Agent is a 404 before any validation.
-    expect(
-      (await owner.post(`/api/projects/${projectId}/agents/nobody/benchmarks`, createBody)).status,
-    ).toBe(404);
+    // A missing Project is a 404 before any validation.
+    expect((await owner.post("/api/projects/nobody/benchmarks", createBody)).status).toBe(404);
     expect(((await (await owner.get(base)).json()) as BenchmarksResponse).benchmarks).toEqual([]);
   });
 
   it("owner deletes a Benchmark directory whole; members and outsiders cannot", async () => {
     expect((await owner.post(base, createBody)).status).toBe(201);
-    const dir = path.join(benchmarksDir(t.root, projectId, AGENT), "report-writing-v1");
+    const dir = path.join(benchmarksDir(t.root, projectId), "report-writing-v1");
     expect((await member.delete(`${base}/report-writing-v1`)).status).toBe(403);
     expect((await outsider.delete(`${base}/report-writing-v1`)).status).toBe(404);
     await expect(fs.access(dir)).resolves.toBeUndefined();

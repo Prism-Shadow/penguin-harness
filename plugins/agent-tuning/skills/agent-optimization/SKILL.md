@@ -30,10 +30,12 @@ PENGUIN_HOME = <parent_of_project_dir>
 TARGET = <app_data_dir>/agents/<test_agent_id>
 STATE = <target>/agent_state
 TRACES = <target>/traces
-BENCHMARK = <target>/benchmarks/<benchmark_id>
+BENCHMARK = <app_data_dir>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark>/scoreboard.yaml
 SNAPSHOTS = <target>/snapshots
 ```
+
+The Benchmark is Project-level rather than owned by the Test Agent: it sits beside `agents/` and may evaluate several Agents. `test_agent_id` names the one this Session optimizes, and every Evaluation records it. Use only the Evaluations whose `agent_id` is that Agent as a Reference or for diagnosis.
 
 Inspect only the requested Test Agent and Benchmark: the Agent State, public Statements, Scoreboard, and score-linked Test Traces or artifacts from the Baseline and this optimization, including rejected Candidates.
 
@@ -86,7 +88,7 @@ model_id: <model_id>
 
 Inspect the complete streamed and final worker response. Before reading `status`, `score`, or any other protocol field, verify that the worker-authored text is exactly one plain protocol YAML document. Narration, headings, code fences, summaries, or scoring details are not valid protocol. Ask the same Evaluator to resend only the clean YAML from its existing result; do not rerun the Test Agent for a formatting repair and do not extract YAML from the invalid response yourself. Transport metadata added by `run_subagent` is not worker-authored text. If private evaluation information appears, follow the contamination rule above.
 
-For every scored result, require its actual `provider`, `model_id`, and `thinking_level` to equal the Reference runtime. A mismatch invalidates the Candidate matrix and stops optimization; never compare or record scores produced under a different runtime.
+For every scored result, require its `agent_id` to equal the requested Test Agent and its actual `provider`, `model_id`, and `thinking_level` to equal the Reference runtime. A mismatch invalidates the Candidate matrix and stops optimization; never compare or record scores produced under a different runtime.
 
 Correct and resend an `invalid_request`. Stop on `version_changed` or `benchmark_invalid`.
 
@@ -94,10 +96,11 @@ For `evaluation_failed`, keep the same Candidate and incomplete matrix. Ask the 
 
 ## Record and report
 
-Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediately after acceptance and verify the stored version, score, matrix, and Session ids before continuing. Obtain the current UTC timestamp from the environment, for example with `date -u +"%Y-%m-%dT%H:%M:%SZ"`, rather than inferring UTC from a displayed local time. Use the same field names as the Baseline:
+Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediately after acceptance and verify the stored Agent id, version, score, matrix, and Session ids before continuing. Obtain the current UTC timestamp from the environment, for example with `date -u +"%Y-%m-%dT%H:%M:%SZ"`, rather than inferring UTC from a displayed local time. Use the same field names as the Baseline:
 
 ```yaml
 - time: <ISO-8601 timestamp>
+  agent_id: <test_agent_id>
   version: <Candidate version>
   provider: <provider>
   model_id: <model_id>
@@ -121,7 +124,7 @@ Append each complete accepted Candidate Evaluation to `scoreboard.yaml` immediat
           session_id: <Test Session id>
 ```
 
-After writing, parse the complete `scoreboard.yaml` and verify the appended Evaluation before reporting success or continuing.
+After writing, parse the complete `scoreboard.yaml` and verify the appended Evaluation, including its `agent_id`, before reporting success or continuing.
 
 Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`. Do not record rejected Candidates in the Scoreboard.
 

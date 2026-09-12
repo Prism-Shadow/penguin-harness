@@ -1,7 +1,8 @@
 /**
- * Benchmark score reading: walks `benchmarks/<id>/`, reads `benchmark_config.toml` (title,
- * description, per-case run count `runs`) and `scoreboard.yaml` (evaluations[], each case
- * carries its model-written averages and a runs array).
+ * Benchmark score reading: walks the Project's `benchmarks/<id>/`, reads
+ * `benchmark_config.toml` (title, description, per-case run count `runs`) and
+ * `scoreboard.yaml` (evaluations[], each carrying the Agent it tested, each case its
+ * model-written averages and a runs array).
  * Content is normally created and refined by the benchmark-design Skill; the server also
  * writes the same layout for a Benchmark created by hand (`create`) and removes a Benchmark
  * directory whole (`remove`), and never touches a scoreboard.
@@ -90,6 +91,15 @@ function stringOr(v: unknown): string | undefined {
   return typeof v === "string" && v !== "" ? v : undefined;
 }
 
+/**
+ * The Agent under test on one evaluation. Unlike the runtime fields it never invalidates a
+ * record: a scoreboard written before evaluations carried one still displays, unlabelled.
+ */
+function agentIdOr(v: unknown): string | null {
+  const value = typeof v === "string" ? v.trim() : "";
+  return value !== "" ? value : null;
+}
+
 function isWithin(parent: string, child: string): boolean {
   const relative = path.relative(parent, child);
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
@@ -160,6 +170,7 @@ function toCase(v: unknown): BenchmarkCaseScore | null {
 function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   const r = asRecord(v);
   const time = r.time instanceof Date ? r.time.toISOString() : r.time;
+  const agentId = agentIdOr(r.agent_id);
   const score = scoreOr(r.score);
   const cost = nullableCostOr(r.cost);
   const durationMs = nonNegativeIntegerOr(r.duration_ms);
@@ -192,6 +203,7 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
   const cases = parsedCases as BenchmarkCaseScore[];
   return {
     time,
+    agentId,
     ...(summaryTitle !== undefined ? { summaryTitle } : {}),
     ...(summary !== undefined ? { summary } : {}),
     modelId,
@@ -211,8 +223,8 @@ export class BenchmarkService {
     private readonly workspaceFiles: WorkspaceFilesService,
   ) {}
 
-  async list(projectId: string, agentId: string): Promise<BenchmarksResponse> {
-    const dir = benchmarksDir(this.root, projectId, agentId);
+  async list(projectId: string): Promise<BenchmarksResponse> {
+    const dir = benchmarksDir(this.root, projectId);
     let items: Array<{ name: string; isDir: boolean }>;
     try {
       const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -248,12 +260,8 @@ export class BenchmarkService {
    * comparable only while its cases are rewritten by nothing but the Skills. A half-written
    * directory is removed again when a later write fails.
    */
-  async create(
-    projectId: string,
-    agentId: string,
-    input: BenchmarkCreateInput,
-  ): Promise<BenchmarkSummary> {
-    const dir = benchmarksDir(this.root, projectId, agentId);
+  async create(projectId: string, input: BenchmarkCreateInput): Promise<BenchmarkSummary> {
+    const dir = benchmarksDir(this.root, projectId);
     const benchDir = path.join(dir, input.id);
     await fs.mkdir(dir, { recursive: true });
     try {
@@ -308,11 +316,11 @@ export class BenchmarkService {
 
   /**
    * Removes `benchmarks/<id>/` whole — cases, config and scoreboard. Only a real directory
-   * counts as existing: a symlink there is not followed, so nothing outside the Agent's own
+   * counts as existing: a symlink there is not followed, so nothing outside the Project's own
    * benchmarks directory can be deleted through this route.
    */
-  async remove(projectId: string, agentId: string, benchmarkId: string): Promise<void> {
-    const benchDir = path.join(benchmarksDir(this.root, projectId, agentId), benchmarkId);
+  async remove(projectId: string, benchmarkId: string): Promise<void> {
+    const benchDir = path.join(benchmarksDir(this.root, projectId), benchmarkId);
     let isDirectory = false;
     try {
       isDirectory = (await fs.lstat(benchDir)).isDirectory();
@@ -325,12 +333,8 @@ export class BenchmarkService {
     await fs.rm(benchDir, { recursive: true, force: true });
   }
 
-  async listCases(
-    projectId: string,
-    agentId: string,
-    benchmarkId: string,
-  ): Promise<BenchmarkCasesResponse> {
-    const baseDir = benchmarksDir(this.root, projectId, agentId);
+  async listCases(projectId: string, benchmarkId: string): Promise<BenchmarkCasesResponse> {
+    const baseDir = benchmarksDir(this.root, projectId);
     const benchDir = path.join(baseDir, benchmarkId);
     let entries: Array<{ name: string; isDirectory(): boolean }>;
     let realBaseDir: string;
@@ -354,7 +358,6 @@ export class BenchmarkService {
       try {
         const statementDir = await this.caseMaterialRoot(
           projectId,
-          agentId,
           benchmarkId,
           entry.name,
           "statement",
@@ -374,49 +377,34 @@ export class BenchmarkService {
 
   async listCaseFiles(
     projectId: string,
-    agentId: string,
     benchmarkId: string,
     caseId: string,
     rel: string,
     material: CaseMaterial,
   ): Promise<WorkspaceFilesResponse> {
-    const materialRoot = await this.caseMaterialRoot(
-      projectId,
-      agentId,
-      benchmarkId,
-      caseId,
-      material,
-    );
+    const materialRoot = await this.caseMaterialRoot(projectId, benchmarkId, caseId, material);
     return this.workspaceFiles.list(materialRoot, rel);
   }
 
   async readCaseFile(
     projectId: string,
-    agentId: string,
     benchmarkId: string,
     caseId: string,
     rel: string,
     material: CaseMaterial,
     options?: WorkspaceFileReadOptions,
   ): Promise<WorkspaceFileContent> {
-    const materialRoot = await this.caseMaterialRoot(
-      projectId,
-      agentId,
-      benchmarkId,
-      caseId,
-      material,
-    );
+    const materialRoot = await this.caseMaterialRoot(projectId, benchmarkId, caseId, material);
     return this.workspaceFiles.read(materialRoot, rel, options);
   }
 
   private async caseMaterialRoot(
     projectId: string,
-    agentId: string,
     benchmarkId: string,
     caseId: string,
     material: CaseMaterial,
   ): Promise<string> {
-    const benchDir = path.join(benchmarksDir(this.root, projectId, agentId), benchmarkId);
+    const benchDir = path.join(benchmarksDir(this.root, projectId), benchmarkId);
     const caseDir = path.join(benchDir, caseId);
     const materialRoot = path.join(caseDir, material);
     try {
@@ -492,6 +480,15 @@ export class BenchmarkService {
       ...(runs !== undefined ? { runs } : {}),
       caseCount,
       evaluations,
+      // Which Agents this Benchmark has evaluated is a fact of its scoreboard, not of its
+      // config: first-seen order, so the list reads in the order the Agents were tested.
+      agentIds: [
+        ...new Set(
+          evaluations
+            .map((evaluation) => evaluation.agentId)
+            .filter((agentId): agentId is string => agentId !== null),
+        ),
+      ],
     };
   }
 }

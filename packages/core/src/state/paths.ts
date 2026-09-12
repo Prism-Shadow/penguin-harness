@@ -144,9 +144,15 @@ export function scheduleDir(root: string, projectId: string, agentId: string): s
   return path.join(agentStateDir(root, projectId, agentId), "schedule");
 }
 
-/** `<agentDir>/benchmarks`, the capability-evaluation question bank and scores (doesn't exist when unconfigured). */
-export function benchmarksDir(root: string, projectId: string, agentId: string): string {
-  return path.join(agentDir(root, projectId, agentId), "benchmarks");
+/**
+ * `<projectDir>/benchmarks`, the Project's capability-evaluation question banks and scores, a
+ * sibling of `agents/` (doesn't exist when unconfigured). A Benchmark is a peer of an Agent, not
+ * something an Agent owns: one Benchmark can evaluate several Agents, and the Agent under test is
+ * recorded on each scoreboard evaluation. Benchmarks written under an Agent directory by an
+ * earlier version are not read from here.
+ */
+export function benchmarksDir(root: string, projectId: string): string {
+  return path.join(projectDir(root, projectId), "benchmarks");
 }
 
 /** `<agentDir>/snapshots`, Agent State version snapshots (doesn't exist when unconfigured). */

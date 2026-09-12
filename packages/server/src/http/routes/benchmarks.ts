@@ -1,14 +1,15 @@
 /**
- * Benchmark routes:
- *   GET /api/projects/:p/agents/:a/benchmarks (any member, read-only)
- *   POST /api/projects/:p/agents/:a/benchmarks (owner: create a Benchmark by hand)
- *   DELETE /api/projects/:p/agents/:a/benchmarks/:benchmarkId (owner: remove the directory whole)
- *   GET /api/projects/:p/agents/:a/benchmarks/:benchmarkId/cases
- *   GET /api/projects/:p/agents/:a/benchmarks/:benchmarkId/cases/:caseId/files
- *   GET /api/projects/:p/agents/:a/benchmarks/:benchmarkId/cases/:caseId/files/content
- *   GET /api/projects/:p/agents/:a/benchmarks/:benchmarkId/cases/:caseId/rubric/files
- *   GET /api/projects/:p/agents/:a/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content
- * Returns the Agent's Benchmark list (title/description from benchmark_config.toml)
+ * Benchmark routes, Project-level because a Benchmark is a peer of an Agent rather than
+ * something an Agent owns — which Agents it has evaluated comes from its scoreboard:
+ *   GET /api/projects/:p/benchmarks (any member, read-only)
+ *   POST /api/projects/:p/benchmarks (owner: create a Benchmark by hand)
+ *   DELETE /api/projects/:p/benchmarks/:benchmarkId (owner: remove the directory whole)
+ *   GET /api/projects/:p/benchmarks/:benchmarkId/cases
+ *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/files
+ *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/files/content
+ *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/rubric/files
+ *   GET /api/projects/:p/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content
+ * Returns the Project's Benchmark list (title/description from benchmark_config.toml)
  * along with the evaluations[] from scoreboard.yaml.
  */
 import { Hono, type Context } from "hono";
@@ -80,15 +81,12 @@ function requireCases(body: Record<string, unknown>): BenchmarkCaseInput[] {
 function listCaseFiles(deps: AppDeps, material: CaseMaterial) {
   return async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
-    const agentId = requireValidId(c, "agentId");
     const benchmarkId = requireValidId(c, "benchmarkId");
     const caseId = requireValidId(c, "caseId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
     return c.json(
       await deps.benchmarks.listCaseFiles(
         projectId,
-        agentId,
         benchmarkId,
         caseId,
         c.req.query("path") ?? "",
@@ -101,17 +99,14 @@ function listCaseFiles(deps: AppDeps, material: CaseMaterial) {
 function readCaseFile(deps: AppDeps, material: CaseMaterial) {
   return async (c: Context<AppEnv>) => {
     const projectId = requireValidId(c, "projectId");
-    const agentId = requireValidId(c, "agentId");
     const benchmarkId = requireValidId(c, "benchmarkId");
     const caseId = requireValidId(c, "caseId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
     const download = c.req.query("download") === "1";
     const boundedPreview = !download && c.req.query("preview") === "1";
     const { data, fileName, contentType, scriptable, truncated } =
       await deps.benchmarks.readCaseFile(
         projectId,
-        agentId,
         benchmarkId,
         caseId,
         c.req.query("path") ?? "",
@@ -140,19 +135,15 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.get("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
-    return c.json(await deps.benchmarks.list(projectId, agentId));
+    return c.json(await deps.benchmarks.list(projectId));
   });
 
   app.post("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    const agentId = requireValidId(c, "agentId");
-    // Writing into an Agent's benchmarks directory is Project management: owner only, like
+    // Writing into the Project's benchmarks directory is Project management: owner only, like
     // schedules and imports.
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
     const body = await readJson(c);
     const id = requireString(body, "id", { minLen: 1, maxLen: 100 });
     if (!isValidId(id)) throw badRequest('id may only contain letters, digits, "_" and "-".');
@@ -163,7 +154,7 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
       throw badRequest(`runs must be an integer between 1 and ${MAX_RUNS}.`);
     }
     const cases = requireCases(body);
-    const benchmark = await deps.benchmarks.create(projectId, agentId, {
+    const benchmark = await deps.benchmarks.create(projectId, {
       id,
       title,
       ...(description !== undefined ? { description } : {}),
@@ -175,21 +166,17 @@ export function benchmarksRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.delete("/:benchmarkId", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    const agentId = requireValidId(c, "agentId");
     const benchmarkId = requireValidId(c, "benchmarkId");
     deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
-    await deps.benchmarks.remove(projectId, agentId, benchmarkId);
+    await deps.benchmarks.remove(projectId, benchmarkId);
     return c.body(null, 204);
   });
 
   app.get("/:benchmarkId/cases", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    const agentId = requireValidId(c, "agentId");
     const benchmarkId = requireValidId(c, "benchmarkId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
-    await deps.agentConfigService.requireExists(projectId, agentId);
-    return c.json(await deps.benchmarks.listCases(projectId, agentId, benchmarkId));
+    return c.json(await deps.benchmarks.listCases(projectId, benchmarkId));
   });
 
   app.get("/:benchmarkId/cases/:caseId/files", listCaseFiles(deps, "statement"));

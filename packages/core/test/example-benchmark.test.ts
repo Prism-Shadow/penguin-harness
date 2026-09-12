@@ -1,8 +1,9 @@
 /**
  * Example Benchmark provisioning tests:
- * default_agent initialization pre-seeds benchmarks/example-benchmark/ (a parseable config,
- * runs=2, a scoreboard with three self-consistent evaluations); an ordinary Agent gets none;
- * provisioning is skipped idempotently when benchmarks/ already exists.
+ * default_agent initialization pre-seeds the Project-level benchmarks/example-benchmark/ (a
+ * parseable config, runs=2, a scoreboard with three self-consistent evaluations labelled with
+ * the Agent they tested); an ordinary Agent's creation seeds nothing; provisioning is skipped
+ * idempotently when the example Benchmark is already there.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -56,6 +57,7 @@ interface CaseScore extends Omit<RunScore, "session_id"> {
 }
 interface Evaluation extends Omit<CaseScore, "case" | "runs"> {
   time: string;
+  agent_id: string;
   version: number;
   provider: string;
   model_id: string;
@@ -68,10 +70,7 @@ interface Evaluation extends Omit<CaseScore, "case" | "runs"> {
 describe("example benchmark provisioning", () => {
   it("default_agent init creates a parseable example benchmark (config + scoreboard + cases)", async () => {
     await loadAgentState({ init: {} });
-    const dir = path.join(
-      benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
-      EXAMPLE_BENCHMARK_ID,
-    );
+    const dir = path.join(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID), EXAMPLE_BENCHMARK_ID);
 
     // benchmark_config.toml: title/description/runs=2; contains no model reference (the model
     // is recorded on each evaluation instead).
@@ -106,14 +105,16 @@ describe("example benchmark provisioning", () => {
     const scores = scoreboard.evaluations.map((e) => e.score);
     expect(scores[0]!).toBeLessThan(scores[1]!);
     expect(scores[1]!).toBeLessThan(scores[2]!);
-    // Each evaluation carries the actual model used for that run (as a pair) and a summary
-    // title; the example consistently uses deepseek-v4-pro.
+    // Each evaluation carries the Agent it tested, the actual model used for that run (as a
+    // pair) and a summary title; the example consistently evaluates default_agent on
+    // deepseek-v4-pro.
     expect(scoreboard.evaluations.map((e) => e.model_id)).toEqual([
       "deepseek-v4-pro",
       "deepseek-v4-pro",
       "deepseek-v4-pro",
     ]);
     for (const e of scoreboard.evaluations) {
+      expect(e.agent_id).toBe(DEFAULT_AGENT_ID);
       expect(e.provider).toBe("deepseek");
       expect(e.thinking_level).toBe("medium");
       expect(e.summary_title.length).toBeGreaterThan(0);
@@ -155,24 +156,26 @@ describe("example benchmark provisioning", () => {
     }
   });
 
-  it("provisionProjectAgents also seeds the example benchmark for default_agent", async () => {
+  it("provisionProjectAgents seeds the example benchmark at the Project level", async () => {
     await provisionProjectAgents({ root: tmpRoot, projectId: "proj_x" });
-    expect(
-      await exists(
-        path.join(benchmarksDir(tmpRoot, "proj_x", DEFAULT_AGENT_ID), EXAMPLE_BENCHMARK_ID),
-      ),
-    ).toBe(true);
+    expect(await exists(path.join(benchmarksDir(tmpRoot, "proj_x"), EXAMPLE_BENCHMARK_ID))).toBe(
+      true,
+    );
   });
 
-  it("does not create benchmarks for a non-default agent", async () => {
+  it("does not create benchmarks when a non-default agent is created", async () => {
     await loadAgentState({ init: {}, agentId: "worker" });
-    expect(await exists(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID, "worker"))).toBe(false);
+    expect(await exists(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID))).toBe(false);
   });
 
-  it("skips provisioning when benchmarks/ already exists (idempotent, no clobber)", async () => {
-    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID);
-    await fs.mkdir(dir, { recursive: true });
+  it("skips provisioning when the example benchmark already exists (no clobber)", async () => {
+    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
+    // A Project that already holds Benchmarks keeps them, and an example-benchmark directory
+    // that is already there is left exactly as the user left it.
+    await fs.mkdir(path.join(dir, EXAMPLE_BENCHMARK_ID), { recursive: true });
+    await fs.mkdir(path.join(dir, "swe-bench-v1"), { recursive: true });
     await loadAgentState({ init: {} });
-    expect(await fs.readdir(dir)).toEqual([]);
+    expect((await fs.readdir(dir)).sort()).toEqual([EXAMPLE_BENCHMARK_ID, "swe-bench-v1"]);
+    expect(await fs.readdir(path.join(dir, EXAMPLE_BENCHMARK_ID))).toEqual([]);
   });
 });

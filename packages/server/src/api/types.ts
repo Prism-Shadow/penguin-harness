@@ -3174,6 +3174,11 @@ export interface BenchmarkCaseScore {
 export interface BenchmarkEvaluation {
   /** Evaluation timestamp (ISO 8601). */
   time: string;
+  /**
+   * Agent under test in this round (the `agent_id` field), part of the record's label; `null`
+   * when the record carries none, as a Benchmark evaluates whichever Agents it is pointed at.
+   */
+  agentId: string | null;
   /** Evaluation summary title (a one-line conclusion; shown separately from the body summary; required when generating, tolerated as unset when displaying). */
   summaryTitle?: string;
   /** Evaluation summary body: how the score was derived, what optimizations were made to the Agent this round (required when generating, tolerated as unset when displaying). */
@@ -3207,6 +3212,12 @@ export interface BenchmarkSummary {
   caseCount: number;
   /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */
   evaluations: BenchmarkEvaluation[];
+  /**
+   * Agents this Benchmark has evaluated: the distinct non-null `agentId`s of `evaluations`, in
+   * first-seen order. Empty while nothing has been evaluated — a Benchmark names no Agent of its
+   * own.
+   */
+  agentIds: string[];
 }
 
 export interface BenchmarksResponse {
@@ -3227,7 +3238,7 @@ export interface BenchmarkCasesResponse {
 }
 
 /**
- * POST /api/projects/:p/agents/:a/benchmarks (owner only): create a Benchmark by hand. The
+ * POST /api/projects/:p/benchmarks (owner only): create a Benchmark by hand. The
  * server writes the on-disk layout the evaluation Skills read — `benchmark_config.toml`, a
  * `scoreboard.yaml` holding `evaluations: []`, and one `<case id>/` per case with
  * `statement/README.md` and `rubric/README.md`. 409 `benchmark_exists` when the directory is

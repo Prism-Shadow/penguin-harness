@@ -1,14 +1,20 @@
 /**
- * Evaluation Center: every Benchmark of the Project grouped by the Agent it tests, with the
- * loop a novice needs spelled out — create one (an AI prompt or a form), read its scores, hand
- * it to an optimizer. Each Benchmark is a card carrying the newest Score with its change, a
- * sparkline of the scoreboard, when it was last evaluated, and its actions; opening one enters
- * the Benchmark's own page (`/benchmark/:agentId/:benchmarkId`) instead of splitting this one
- * in two, the way an Agent's card enters its settings. `?agentId=` expands only that Agent.
+ * Evaluation Center: every Benchmark of the Project as one card, with the loop a novice needs
+ * spelled out — create one (an AI prompt or a form), read its scores, hand it to an optimizer.
+ * A Benchmark sits beside the agents rather than under one, so the page is a flat list and the
+ * agents a card names are the ones its scoreboard has tested. Each card carries the newest Score
+ * with its change against the previous record of the same label, a sparkline of the scoreboard,
+ * when it was last evaluated, and its actions; opening one enters the Benchmark's own page
+ * (`/benchmark/:benchmarkId`) instead of splitting this one in two, the way an Agent's card
+ * enters its settings. `?agentId=` narrows the list to the Benchmarks that tested that Agent.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import type { BenchmarkSummary, ModelsResponse } from "@prismshadow/penguin-server/api";
+import type {
+  AgentSummary,
+  BenchmarkSummary,
+  ModelsResponse,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -26,9 +32,7 @@ import { writeClipboard } from "../../components/ui/copy-button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { GroupHeader } from "../../components/ui/group-list";
 import { HelpFold } from "../../components/ui/help-fold";
-import { HAND_ICON, MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import {
@@ -41,7 +45,7 @@ import {
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { AiCreateModal, CreateButtons, pickDefaultAgent } from "../ai-create";
-import { latestScore, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
+import { latestWithDelta, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
 import { benchmarkCreateExamples, benchmarkCreateTail, benchmarkPath } from "./benchmark-prompts";
 import { benchmarkRoute } from "./benchmark-route";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
@@ -49,20 +53,14 @@ import { OptimizeModal } from "./optimize-modal";
 import type { OptimizeMode } from "./optimize-modal";
 import { ScoreSparkline } from "./score-sparkline";
 
-/** Where a Benchmark lives: the Agent it tests and its directory name. */
-interface BenchmarkRef {
-  agentId: string;
-  benchmarkId: string;
-}
-
 /** An open optimize dialog: which Benchmark, and which way the Skill's inputs get filled. */
-type OptimizeTarget = BenchmarkRef & { mode: OptimizeMode };
-
-/** One Agent's fetched list: null benchmarks with a null error means the fetch is in flight. */
-interface GroupState {
-  benchmarks: BenchmarkSummary[] | null;
-  error: string | null;
+interface OptimizeTarget {
+  benchmarkId: string;
+  mode: OptimizeMode;
 }
+
+/** How many tested Agents a card names before the rest fold into a "+n". */
+const AVATARS_SHOWN = 3;
 
 function deltaTone(delta: number | null): string {
   if (delta === null || delta === 0) return toneInk.muted;
@@ -134,14 +132,52 @@ function CardMenu({
 }
 
 /**
- * One Benchmark in its Agent's group, in the Agents list's card shape: an info column of title,
- * description and stats, then the sparkline, the newest Score with its change from the previous
- * one, and the actions. The info column is the card's main button — it enters the Benchmark's
- * page — so everything inside it is phrasing content rather than a nested block.
+ * The Agents a Benchmark has scored, newest scoreboard order first: three tiles and a "+n" for
+ * the rest. The names are in the group's tooltip rather than beside each tile — a card that
+ * tested five agents would otherwise be a list of names with a Benchmark somewhere in it.
+ */
+function TestedAgents({
+  agentIds,
+  nameOf,
+}: {
+  agentIds: readonly string[];
+  nameOf: (agentId: string) => string;
+}) {
+  if (agentIds.length === 0) return null;
+  const shown = agentIds.slice(0, AVATARS_SHOWN);
+  const rest = agentIds.length - shown.length;
+  return (
+    <div
+      className="hidden shrink-0 items-center gap-1 sm:flex"
+      title={`${S.benchmark.testedAgents}: ${agentIds.map(nameOf).join(", ")}`}
+    >
+      {shown.map((agentId) => (
+        <AgentAvatar
+          key={agentId}
+          id={agentId}
+          name={nameOf(agentId)}
+          size={ICON_SIZE.rowLead}
+          className="shrink-0 rounded"
+        />
+      ))}
+      {rest > 0 && (
+        <span className="text-[11px] tabular-nums text-gray-400 dark:text-gray-500">+{rest}</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One Benchmark in the Agents list's card shape: an info column of title, description and stats,
+ * then the Agents it has tested, the sparkline, the newest Score with its change from the
+ * previous record of the same label, and the actions. The info column is the card's main button
+ * — it enters the Benchmark's page — so everything inside it is phrasing content rather than a
+ * nested block.
  */
 function BenchmarkCard({
   benchmark,
   locale,
+  nameOf,
   canDelete,
   onOpen,
   onOptimize,
@@ -150,13 +186,14 @@ function BenchmarkCard({
 }: {
   benchmark: BenchmarkSummary;
   locale: "zh" | "en";
+  nameOf: (agentId: string) => string;
   canDelete: boolean;
   onOpen: () => void;
   onOptimize: () => void;
   onCopyPath: () => void;
   onDelete: () => void;
 }) {
-  const latest = latestScore(benchmark.evaluations);
+  const latest = latestWithDelta(benchmark.evaluations);
   const series = sparklineSeries(benchmark.evaluations);
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-gray-200 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900">
@@ -167,7 +204,7 @@ function BenchmarkCard({
             {benchmark.id}
           </span>
         </span>
-        {/* An empty description still takes its line, so cards of a group keep one height. */}
+        {/* An empty description still takes its line, so the cards keep one height. */}
         <span className="mt-1.5 block min-h-4 truncate text-xs text-gray-500 dark:text-gray-400">
           {benchmark.description ?? ""}
         </span>
@@ -185,6 +222,7 @@ function BenchmarkCard({
           )}
         </span>
       </button>
+      <TestedAgents agentIds={benchmark.agentIds} nameOf={nameOf} />
       {series.length > 0 && (
         <div className="hidden shrink-0 md:block">
           <ScoreSparkline values={series} label={S.benchmark.sparklineLabel(series.length)} />
@@ -213,17 +251,16 @@ function BenchmarkCard({
           </span>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1">
         {/*
-          A card holds one control, not the pair the wider surfaces offer, so this one takes the
-          manual path — the form, where every input is visible before anything is sent. The AI
-          path is one click away in the Benchmark's own page.
+          A card holds one optimize control, not the pair the wider surfaces offer, so this one
+          takes the manual path — the form, where every input is visible before anything is sent.
+          The AI path is one click away in the Benchmark's own page.
         */}
-        <Button size="sm" title={S.benchmark.optimizeManual} onClick={onOptimize}>
-          <GlyphIcon d={HAND_ICON} />
+        <Button size="sm" variant="ghost" title={S.benchmark.optimizeManual} onClick={onOptimize}>
           {S.benchmark.optimize}
         </Button>
-        <Button size="sm" onClick={onOpen}>
+        <Button size="sm" variant="ghost" onClick={onOpen}>
           {S.benchmark.view}
         </Button>
         <CardMenu canDelete={canDelete} onCopyPath={onCopyPath} onDelete={onDelete} />
@@ -232,7 +269,7 @@ function BenchmarkCard({
   );
 }
 
-/** Card-shaped placeholders, so nothing shifts when a group's fetch lands. */
+/** Card-shaped placeholders, so nothing shifts when the fetch lands. */
 function CardSkeletons({ rows }: { rows: number }) {
   return (
     <div className="space-y-3">
@@ -254,72 +291,44 @@ function CardSkeletons({ rows }: { rows: number }) {
 export function BenchmarkPage() {
   useDocumentTitle(S.benchmark.title);
   const navigate = useNavigate();
-  const { currentProject, currentAgent, agents, agentsLoading } = useProject();
+  const { currentProject, currentAgent, agents } = useProject();
   const { locale } = useLocale();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
-  // ?agentId= (entered from an Agent's settings): only that Agent's group starts expanded.
-  const [searchParams] = useSearchParams();
-  const focusAgentId = searchParams.get("agentId");
+  // ?agentId= (entered from an Agent): the list narrows to the Benchmarks that tested it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const filterAgentId = searchParams.get("agentId");
 
-  const [groups, setGroups] = useState<Record<string, GroupState>>({});
-  // Agents whose group is in the opposite state from its default (all open, or only the focused one).
-  const [toggled, setToggled] = useState<Set<string>>(() => new Set());
+  const [benchmarks, setBenchmarks] = useState<BenchmarkSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [models, setModels] = useState<ModelsResponse | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiTarget, setAiTarget] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
-  const [manualAgent, setManualAgent] = useState<string | null>(null);
   const [optimizing, setOptimizing] = useState<OptimizeTarget | null>(null);
-  const [deleting, setDeleting] = useState<BenchmarkRef | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
-  const defaultOpen = useCallback(
-    (agentId: string) => focusAgentId === null || focusAgentId === agentId,
-    [focusAgentId],
-  );
-  const isOpen = (agentId: string) => defaultOpen(agentId) !== toggled.has(agentId);
-  const toggle = (agentId: string) =>
-    setToggled((prev) => {
-      const next = new Set(prev);
-      if (next.has(agentId)) next.delete(agentId);
-      else next.add(agentId);
-      return next;
-    });
-
-  // A Project change starts everything over.
+  // Benchmarks belong to the Project, so the page reads one list — and a Project change starts
+  // it over rather than showing the previous Project's cards while the next list is in flight.
   useEffect(() => {
-    setGroups({});
-    setToggled(new Set());
-    setModels(null);
-  }, [projectId]);
-
-  // Every Agent's list is fetched up front: the search box and the counts need them all. The
-  // join keeps the effect keyed on the set of ids, not the array identity the provider hands
-  // out on every reload.
-  const agentIds = agents.map((a) => a.agentId).join(" ");
-  useEffect(() => {
-    if (!projectId || agentIds === "") return;
+    if (!projectId) return;
     let cancelled = false;
-    for (const agentId of agentIds.split(" ")) {
-      api
-        .listBenchmarks(projectId, agentId)
-        .then((data) => {
-          if (!cancelled) {
-            setGroups((g) => ({ ...g, [agentId]: { benchmarks: data.benchmarks, error: null } }));
-          }
-        })
-        .catch((e: unknown) => {
-          if (!cancelled) {
-            setGroups((g) => ({ ...g, [agentId]: { benchmarks: null, error: apiErrorText(e) } }));
-          }
-        });
-    }
+    setBenchmarks(null);
+    setError(null);
+    api
+      .listBenchmarks(projectId)
+      .then((data) => {
+        if (!cancelled) setBenchmarks(data.benchmarks);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(apiErrorText(e));
+      });
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentIds]);
+  }, [projectId]);
 
   // The Project's models, for the Optimize dialog's session-model picker; a failure just
   // leaves the picker at the Project default.
@@ -339,41 +348,47 @@ export function BenchmarkPage() {
 
   if (!projectId) return null;
 
+  const agentOf = (agentId: string): AgentSummary | undefined =>
+    agents.find((a) => a.agentId === agentId);
+  const nameOf = (agentId: string): string => {
+    const agent = agentOf(agentId);
+    return agent ? agentDisplayName(agent) : agentId;
+  };
+
   const fallbackAgent = currentAgent?.agentId ?? pickDefaultAgent(agents)?.agentId ?? "";
-  const openAi = (agentId: string | null) => {
-    setAiTarget(agentId ?? fallbackAgent);
+  const openAi = () => {
+    setAiTarget(filterAgentId ?? fallbackAgent);
     setAiOpen(true);
   };
-  const openManual = (agentId: string | null) => {
-    setManualAgent(agentId ?? (fallbackAgent === "" ? null : fallbackAgent));
-    setManualOpen(true);
-  };
-  const open = (ref: BenchmarkRef) => navigate(benchmarkRoute(ref.agentId, ref.benchmarkId));
+  const open = (benchmarkId: string) => navigate(benchmarkRoute(benchmarkId));
+  const clearAgentFilter = () =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("agentId");
+        return next;
+      },
+      { replace: true },
+    );
 
-  const benchmarkOf = (ref: BenchmarkRef | null): BenchmarkSummary | null =>
-    ref ? (groups[ref.agentId]?.benchmarks?.find((b) => b.id === ref.benchmarkId) ?? null) : null;
-  const optimizingBenchmark = benchmarkOf(optimizing);
+  const benchmarkOf = (benchmarkId: string | null): BenchmarkSummary | null =>
+    benchmarkId === null ? null : (benchmarks?.find((b) => b.id === benchmarkId) ?? null);
+  const optimizingBenchmark = benchmarkOf(optimizing?.benchmarkId ?? null);
   const deletingBenchmark = benchmarkOf(deleting);
 
-  const copyPath = (ref: BenchmarkRef) => {
-    writeClipboard(benchmarkPath(ref.agentId, ref.benchmarkId));
+  const copyPath = (benchmarkId: string) => {
+    writeClipboard(benchmarkPath(benchmarkId));
     toastSuccess(S.benchmark.pathCopied);
   };
 
   const confirmDelete = async () => {
-    if (!deleting) return;
-    const ref = deleting;
+    if (deleting === null) return;
+    const benchmarkId = deleting;
     setDeleteBusy(true);
     try {
-      await api.deleteBenchmark(projectId, ref.agentId, ref.benchmarkId);
+      await api.deleteBenchmark(projectId, benchmarkId);
       toastSuccess(S.benchmark.deleted);
-      setGroups((g) => ({
-        ...g,
-        [ref.agentId]: {
-          benchmarks: (g[ref.agentId]?.benchmarks ?? []).filter((b) => b.id !== ref.benchmarkId),
-          error: null,
-        },
-      }));
+      setBenchmarks((prev) => (prev ?? []).filter((b) => b.id !== benchmarkId));
       setDeleting(null);
     } catch (e) {
       toastError(apiErrorText(e));
@@ -382,116 +397,42 @@ export function BenchmarkPage() {
     }
   };
 
-  // A Benchmark that was just written is the one the user is about to read: go straight into it.
-  const onCreated = (agentId: string, benchmark: BenchmarkSummary) =>
-    open({ agentId, benchmarkId: benchmark.id });
-
-  const searching = query.trim() !== "";
-  const settled = agents.every((a) => {
-    const g = groups[a.agentId];
-    return g !== undefined && (g.benchmarks !== null || g.error !== null);
-  });
-  const total = agents.reduce((n, a) => n + (groups[a.agentId]?.benchmarks?.length ?? 0), 0);
-  const anyError = agents.some((a) => (groups[a.agentId]?.error ?? null) !== null);
-  const visible = agents
-    .map((agent) => ({
-      agent,
-      group: groups[agent.agentId],
-      rows: (groups[agent.agentId]?.benchmarks ?? []).filter((b) =>
-        matchesBenchmarkQuery(b, agent, query),
-      ),
-    }))
-    .filter(({ rows }) => !searching || rows.length > 0);
+  const rows = (benchmarks ?? [])
+    .filter((b) => filterAgentId === null || b.agentIds.includes(filterAgentId))
+    .filter((b) => matchesBenchmarkQuery(b, agents, query));
 
   let body;
-  if (agentsLoading) {
+  if (error !== null) {
+    body = <p className={`px-1 text-xs ${toneInk.danger}`}>{error}</p>;
+  } else if (benchmarks === null) {
     body = <CardSkeletons rows={4} />;
-  } else if (agents.length === 0) {
-    body = <EmptyState title={S.aiCreate.noAgent} />;
-  } else if (settled && total === 0 && !anyError) {
+  } else if (benchmarks.length === 0) {
     body = (
       <EmptyState
         title={S.benchmark.emptyTitle}
         description={S.benchmark.emptyDescription}
-        action={<CreateButtons onAi={() => openAi(null)} onManual={() => openManual(null)} />}
+        action={<CreateButtons size="sm" onAi={openAi} onManual={() => setManualOpen(true)} />}
       />
     );
-  } else if (searching && visible.length === 0) {
+  } else if (rows.length === 0) {
     body = <EmptyState title={S.benchmark.noMatches} />;
   } else {
     body = (
-      <ul className="space-y-5">
-        {visible.map(({ agent, group, rows }) => {
-          const groupOpen = isOpen(agent.agentId);
-          const name = agentDisplayName(agent);
-          return (
-            <li key={agent.agentId}>
-              <GroupHeader
-                open={groupOpen}
-                onToggle={() => toggle(agent.agentId)}
-                icon={
-                  <AgentAvatar
-                    id={agent.agentId}
-                    name={name}
-                    size={ICON_SIZE.groupHeaderAvatar}
-                    className="shrink-0 rounded"
-                  />
-                }
-                label={name}
-                uppercase
-                {...(group?.benchmarks ? { count: group.benchmarks.length } : {})}
-                actions={
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    title={S.benchmark.createForAgent}
-                    aria-label={S.benchmark.createForAgent}
-                    onClick={() => openAi(agent.agentId)}
-                  >
-                    <GlyphIcon d={MAGIC_WAND_ICON} size={ICON_SIZE.groupHeaderAction} />
-                  </Button>
-                }
-              />
-              {groupOpen && (
-                <div className="mt-2">
-                  {group === undefined || (group.benchmarks === null && group.error === null) ? (
-                    <CardSkeletons rows={2} />
-                  ) : group.error !== null ? (
-                    <p className={`px-1 text-xs ${toneInk.danger}`}>{group.error}</p>
-                  ) : rows.length === 0 ? (
-                    <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-gray-200 px-5 py-4 text-xs text-gray-400 dark:border-gray-800 dark:text-gray-500">
-                      <span>{S.benchmark.emptyAgent}</span>
-                      <CreateButtons
-                        size="sm"
-                        onAi={() => openAi(agent.agentId)}
-                        onManual={() => openManual(agent.agentId)}
-                      />
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {rows.map((b) => {
-                        const ref = { agentId: agent.agentId, benchmarkId: b.id };
-                        return (
-                          <BenchmarkCard
-                            key={b.id}
-                            benchmark={b}
-                            locale={locale}
-                            canDelete={isOwner}
-                            onOpen={() => open(ref)}
-                            onOptimize={() => setOptimizing({ ...ref, mode: "manual" })}
-                            onCopyPath={() => copyPath(ref)}
-                            onDelete={() => setDeleting(ref)}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      <div className="space-y-3">
+        {rows.map((b) => (
+          <BenchmarkCard
+            key={b.id}
+            benchmark={b}
+            locale={locale}
+            nameOf={nameOf}
+            canDelete={isOwner}
+            onOpen={() => open(b.id)}
+            onOptimize={() => setOptimizing({ benchmarkId: b.id, mode: "manual" })}
+            onCopyPath={() => copyPath(b.id)}
+            onDelete={() => setDeleting(b.id)}
+          />
+        ))}
+      </div>
     );
   }
 
@@ -517,11 +458,7 @@ export function BenchmarkPage() {
                   onChange={(e) => setQuery(e.target.value)}
                 />
               </div>
-              <CreateButtons
-                size="sm"
-                onAi={() => openAi(null)}
-                onManual={() => openManual(null)}
-              />
+              <CreateButtons size="sm" onAi={openAi} onManual={() => setManualOpen(true)} />
             </div>
           </div>
           <HelpFold title={S.benchmark.guideTitle} className="mt-2">
@@ -533,6 +470,25 @@ export function BenchmarkPage() {
             <p className="mt-1.5">{S.benchmark.guideNote}</p>
           </HelpFold>
         </div>
+
+        {/* What the address is filtering by, and the way out of it: the list is narrowed by a
+            query parameter, which nothing else on the page would otherwise account for. */}
+        {filterAgentId !== null && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <AgentAvatar
+              id={filterAgentId}
+              name={nameOf(filterAgentId)}
+              size={ICON_SIZE.rowLead}
+              className="shrink-0 rounded"
+            />
+            <span className="min-w-0 truncate" title={nameOf(filterAgentId)}>
+              {S.benchmark.filterByAgent(filterAgentId)}
+            </span>
+            <Button size="sm" variant="ghost" onClick={clearAgentFilter}>
+              {S.benchmark.clearFilter}
+            </Button>
+          </div>
+        )}
 
         {body}
       </div>
@@ -565,20 +521,18 @@ export function BenchmarkPage() {
         open={manualOpen}
         onClose={() => setManualOpen(false)}
         projectId={projectId}
-        agents={agents}
-        initialAgentId={manualAgent}
-        onCreated={onCreated}
+        onCreated={(benchmark) => open(benchmark.id)}
       />
       {optimizing && optimizingBenchmark && (
         <OptimizeModal
-          key={`${optimizing.agentId}/${optimizing.benchmarkId}/${optimizing.mode}`}
+          key={`${optimizing.benchmarkId}/${optimizing.mode}`}
           open
           onClose={() => setOptimizing(null)}
           projectId={projectId}
-          agentId={optimizing.agentId}
           mode={optimizing.mode}
           benchmark={optimizingBenchmark}
           agents={agents}
+          currentAgentId={currentAgent?.agentId ?? null}
           models={models}
         />
       )}
@@ -591,7 +545,7 @@ export function BenchmarkPage() {
         busy={deleteBusy}
       >
         <p className="text-sm text-gray-700 dark:text-gray-200">
-          {S.benchmark.deleteConfirm(deletingBenchmark?.title ?? deleting?.benchmarkId ?? "")}
+          {S.benchmark.deleteConfirm(deletingBenchmark?.title ?? deleting ?? "")}
         </p>
       </ConfirmModal>
     </div>

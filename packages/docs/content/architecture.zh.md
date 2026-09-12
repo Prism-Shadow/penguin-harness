@@ -63,7 +63,7 @@ PenguinHarness 是一个 pnpm monorepo，核心是 `@prismshadow/penguin-core` �
 | 密钥 | 文件层 | Vault:`agent_state/.vault.toml`；模型凭据：`.project_config.toml`(均 0600) |
 | 模型表与默认模型 | 文件层 | `<project>/.project_config.toml` |
 | 运行历史(恢复的唯一事实来源) | 文件层 | `traces/<date>/<session>_<index>.jsonl`，见 [Session 与 Trace](/sessions-and-traces) |
-| Benchmark 题库与评分 | 文件层 | `benchmarks/<id>/`，见[自我进化](/self-improvement) |
+| Benchmark 题库与评分 | 文件层 | `<project>/benchmarks/<id>/`，见[自我进化](/self-improvement) |
 | 快照 | 文件层 | `snapshots/v<version>.tar.gz`；导入导出服务在 Server |
 | 流式渲染、审批 UI、统计图表 | CLI / Web | `cli/src`、`web/src`(纯渲染，不含引擎逻辑) |
 

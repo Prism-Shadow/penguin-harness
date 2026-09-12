@@ -40,14 +40,14 @@ Builder 和 Optimizer 在各自的顶层 Session 中直接遵循对应 Skill。E
 
 ## 从评估中心发起
 
-Web App 的评估中心不需要手写提示词就能启动同样的两个 Session。**用 AI 创建**选定被测 Agent 并描述需求后，把 `benchmark-design` 请求——Agent id、期望基线分、Pilot 迭代上限——预填进与 Project 默认 Agent 的新对话；**手动创建**则按下文的目录结构从表单写出一个 Benchmark，可直接评测。**用 AI 优化**与**手动优化**同样以两个按钮给出，把 `agent-optimization` 请求——被测 Agent、Benchmark id、每题运行次数、最多轮数、目标分数——预填进与所选优化 Agent 的新对话。两处都只做预填：发送由用户在对话里决定。评测 Runtime 从不在那里选择：Optimizer 沿用基线记录的模型对与推理强度。
+Web App 的评估中心不需要手写提示词就能启动同样的两个 Session。**用 AI 创建**选定被测 Agent 并描述需求后，把 `benchmark-design` 请求——Agent id、期望基线分、Pilot 迭代上限——预填进与 Project 默认 Agent 的新对话；**手动创建**则按下文的目录结构从表单写出一个 Benchmark，可直接评测，且不要求指定所属 Agent。**用 AI 优化**与**手动优化**同样以两个按钮给出，把 `agent-optimization` 请求——在表单中选择的被测 Agent、Benchmark id、每题运行次数、最多轮数、目标分数——预填进与所选优化 Agent 的新对话。两处都只做预填：发送由用户在对话里决定。评测 Runtime 从不在那里选择：Optimizer 沿用基线记录的模型对与推理强度。
 
 ## Benchmark 存储
 
-Benchmark 按 Agent 存放在 `benchmarks/<id>/` 下：
+Benchmark 属于 Project，存放在与 `agents/` 平级的 `<root>/<project>/benchmarks/<id>/` 下。Benchmark 与 Agent 是平级关系而非从属：一个 Benchmark 可以评测多个 Agent，一个 Agent 也可以被多个 Benchmark 评测，因此 `benchmark_config.toml` 不记录任何 Agent——被测 Agent 记录在每条 evaluation 上。
 
 ```text
-benchmarks/<id>/
+<project>/benchmarks/<id>/
 ├── benchmark_config.toml       # Benchmark 配置（Builder 的 runs 固定为 1）
 ├── <case-id>/
 │   ├── statement/              # 交给 Target Agent 的任务描述
@@ -61,6 +61,7 @@ benchmarks/<id>/
 
 `scoreboard.yaml` 中的每条评测记录带时间戳，并记录：
 
+- `agent_id`，本轮评测的被测 Agent。它与 Agent State `version`、`(provider, model_id)` 成对值以及 `thinking_level` 合成该条记录的**标签**：走势图以时间为横轴、分数为纵轴，按标签分系列，只有同一标签下的分数才可比。评估记录写于 evaluation 尚未携带 Agent 之前时归为未标注，落在图表的灰色系列；
 - 本轮 Runtime：用户显式指定的 `(provider, model_id)` 成对值优先，否则继承 Builder Session；`thinking_level` 从 Target Agent 配置读取，不依赖 Trace 元数据；
 - `summary_title` 与 `summary`（本轮结论与下一轮假设）；
 - 由模型写入的 Score、成本与耗时平均值——Case 级对 Runs 求平均，Evaluation 级对 Cases 求平均；单次 Run 成本保留记录中的原始精度，成本平均值忽略 `null`，全部未知时才为 `null`；Score 保留两位小数，成本平均值保留六位小数，`duration_ms` 取整；
@@ -68,7 +69,7 @@ benchmarks/<id>/
 
 每个 Run 和每个 Case 都固定满分 100，因此 Scoreboard 不再记录 `max_score`。服务端与 Web UI 直接信任已写入的聚合值，不重算、不交叉校验；旧 Scoreboard 不迁移、不回填。
 
-内置的 `default_agent` 预置了一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`），评测页面开箱即有数据；整个目录可随时删除或替换。
+初始化 Project 的 `default_agent` 时会在 Project 层级预置一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`），三条示例评估都标注 `agent_id: default_agent`，评测页面开箱即有数据；整个目录可随时删除或替换。
 
 ## Snapshot 与版本
 
@@ -78,7 +79,7 @@ benchmarks/<id>/
 
 - 每次 Evaluator 运行都是一个普通的 Session，留有完整 Trace；
 - scoreboard 记录通过 `session_id` 链接回这些 Session，见 [Session 与 Trace](/sessions-and-traces)；
-- Web 的评测页面是这些文件的只读视图；折线图只展示 Score，明细表将模型 ID 与推理强度分列显示。见 [Web App 指南](/web-app)。
+- Web 的评测页面是这些文件的只读视图；折线图只展示 Score，明细表将被测 Agent、模型 ID 与推理强度分列显示。见 [Web App 指南](/web-app)。
 
 分数不是黑盒输出：任何一个数字都可以回溯到产生它的那次运行。
 

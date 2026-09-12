@@ -27,6 +27,8 @@ The data root is the `PENGUIN_HOME` environment variable, defaulting to `~/.peng
 ```text
 <root>/<project>/
 ├── .project_config.toml          # Project-level models & credentials (hidden file, 0600)
+├── benchmarks/                   # capability Benchmark cases and scores, one directory per
+│                                 # Benchmark — a peer of the Agents, evaluating any of them
 └── agents/
     └── <agent>/
         ├── agent_state/              # system_config.yaml, AGENTS.md, .vault.toml,
@@ -42,7 +44,6 @@ The data root is the `PENGUIN_HOME` environment variable, defaulting to `~/.peng
         │                             # installed once for any task; project dependencies stay
         │                             # in the project
         ├── workspaces/               # temporary Workspaces (tmp-<8hex>)
-        ├── benchmarks/               # capability Benchmark cases and scores
         └── snapshots/                # Agent State version snapshots
 ```
 

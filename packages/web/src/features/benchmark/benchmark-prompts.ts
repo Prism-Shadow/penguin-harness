@@ -26,7 +26,7 @@ export function isValidRuns(raw: string): boolean {
   return n >= 1 && n <= MAX_RUNS;
 }
 
-/** What the New Benchmark dialog's tail asks the `benchmark-design` Skill to do for a Test Agent. */
+/** What the New Benchmark dialog's tail asks the `benchmark-design` Skill to do for a tested Agent. */
 export function benchmarkCreateTail(targetAgentId: string): string {
   return S.benchmark.aiCreateTail(targetAgentId);
 }
@@ -42,6 +42,7 @@ export function benchmarkCreateExamples(): AiExample[] {
 
 /** The parameters the `agent-optimization` Skill requires, as the Optimize dialog collects them. */
 export interface OptimizeParams {
+  /** The Agent under test: the one the optimizer edits, picked in the dialog. */
   targetAgentId: string;
   benchmarkId: string;
   /** Runs per case for every Candidate. */
@@ -70,9 +71,9 @@ export function optimizeExamples(): AiExample[] {
   }));
 }
 
-/** A Benchmark's directory relative to the Project's App Data Dir — what a prompt or a shell needs to name it. */
-export function benchmarkPath(agentId: string, benchmarkId: string): string {
-  return `agents/${agentId}/benchmarks/${benchmarkId}`;
+/** A Benchmark's directory relative to the Project's App Data Dir — beside `agents/`, not under one. */
+export function benchmarkPath(benchmarkId: string): string {
+  return `benchmarks/${benchmarkId}`;
 }
 
 /**

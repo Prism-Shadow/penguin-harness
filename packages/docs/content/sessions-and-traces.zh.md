@@ -27,6 +27,8 @@ PenguinHarness 的全部运行数据都落在本地文件系统：配置是可�
 ```text
 <root>/<project>/
 ├── .project_config.toml          # Project 级模型与凭证（隐藏文件，0600）
+├── benchmarks/                   # 能力评测题库与得分，每个 Benchmark 一个目录——与各 Agent
+│                                 # 平级，可评测其中任意一个
 └── agents/
     └── <agent>/
         ├── agent_state/              # system_config.yaml、AGENTS.md、.vault.toml、
@@ -40,7 +42,6 @@ PenguinHarness 的全部运行数据都落在本地文件系统：配置是可�
         │                             # 按需创建——属于系统提示词约定而非代码创建的路径，使工具在任何
         │                             # 任务中都只装一次；项目自身的依赖仍留在项目内
         ├── workspaces/               # 临时 Workspace（tmp-<8hex>）
-        ├── benchmarks/               # 能力评测题库与得分
         └── snapshots/                # Agent State 版本快照
 ```
 

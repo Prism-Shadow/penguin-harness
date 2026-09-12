@@ -1,8 +1,8 @@
 /**
  * The Evaluation Center's prompts and id helpers (src/features/benchmark/benchmark-prompts.ts):
- * the Create-with-AI tail hands the benchmark-design Skill its Test Agent and layout, the
- * Optimize tail carries every input the agent-optimization Skill requires, and the manual
- * form's directory names follow the id alphabet.
+ * the Create-with-AI tail hands the benchmark-design Skill its tested Agent and the Project-level
+ * layout, the Optimize tail carries every input the agent-optimization Skill requires, and the
+ * manual form's directory names follow the id alphabet.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -19,7 +19,7 @@ import {
 } from "../src/features/benchmark/benchmark-prompts";
 
 describe("benchmarkCreateTail", () => {
-  it("names the Skill, the Test Agent and the layout the Skill writes", () => {
+  it("names the Skill, the tested Agent and the layout the Skill writes", () => {
     const tail = benchmarkCreateTail("report-writer");
     expect(tail).toContain("`benchmark-design`");
     expect(tail).toContain("`report-writer`");
@@ -29,6 +29,13 @@ describe("benchmarkCreateTail", () => {
     // Benchmark design calibrates with one run per case; the tail never asks for another count.
     expect(tail).toContain("runs = 1");
     expect(tail).toContain("pilot_iteration_limit");
+  });
+
+  it("places the Benchmark at the Project level and has every evaluation record its tested Agent", () => {
+    const tail = benchmarkCreateTail("report-writer");
+    expect(tail).toContain("`benchmarks/<benchmark_id>/`");
+    expect(tail).not.toContain("agents/report-writer");
+    expect(tail).toContain("`agent_id`");
   });
 
   it("offers examples with unique keys and non-empty prompts", () => {
@@ -60,6 +67,9 @@ describe("optimizeTail / buildOptimizePrompt", () => {
     expect(tail).toMatch(/desired_score[：:] ?`>=85`/);
     expect(tail).toMatch(/candidate_round_limit[：:] ?`3`/);
     expect(tail).toContain("scoreboard.yaml");
+    // The Benchmark sits beside the agents, and the appended evaluation names the tested one.
+    expect(tail).toContain("`benchmarks/report-writing-v1/`");
+    expect(tail).toContain("`agent_id`");
   });
 
   it("puts the focus text before the tail, and sends the tail alone when the focus is blank", () => {
@@ -89,8 +99,8 @@ describe("id helpers", () => {
     expect(caseId(12, "x")).toBe("CASE-012-x");
   });
 
-  it("benchmarkPath is the directory relative to the App Data Dir", () => {
-    expect(benchmarkPath("report-writer", "v1")).toBe("agents/report-writer/benchmarks/v1");
+  it("benchmarkPath is the Project-level directory relative to the App Data Dir", () => {
+    expect(benchmarkPath("v1")).toBe("benchmarks/v1");
   });
 
   // The create route enforces the same bound, so a Benchmark can never be created with a runs

@@ -2643,16 +2643,19 @@ Benchmark：
     ],
     guideNote:
       "三个技能都在 agent-tuning 插件里，默认智能体已自带；新建的智能体可以在插件库里安装。",
-    searchPlaceholder: "搜索标题、描述或智能体",
+    searchPlaceholder: "搜索标题、描述或被测智能体",
     noMatches: "没有匹配的 Benchmark",
+    /** The chip shown when the address filters the list to one Agent's Benchmarks. */
+    filterByAgent: (agentId: string): string => `只看评测过 ${agentId} 的 Benchmark`,
+    clearFilter: "显示全部",
     emptyTitle: "还没有 Benchmark",
     emptyDescription:
       "先让 AI 为一个智能体出题并取得基线分；之后这里会显示分数曲线与逐题明细，并可一键发起优化。",
-    emptyAgent: "该 Agent 暂无 Benchmark",
-    createForAgent: "为此智能体出题",
     caseCount: (n: number): string => `${n} 题`,
     runsPerCase: (n: number): string => `每题 ${n} 次运行`,
     notEvaluated: "尚未评测",
+    /** The avatars on a card: which Agents this Benchmark has scored so far. */
+    testedAgents: "被测过的智能体",
     lastEvaluated: (when: string): string => `最近评估 ${when}`,
     /** Accessible name of the row sparkline. */
     sparklineLabel: (n: number): string => `${n} 次评估的分数走势`,
@@ -2669,7 +2672,7 @@ Benchmark：
       `确定删除「${title}」吗？它的全部题目与评估记录都会被删除，无法恢复。`,
     deleted: "Benchmark 已删除",
     backToList: "返回列表",
-    /** The Benchmark's own page when the pair in the address resolves to nothing. */
+    /** The Benchmark's own page when the id in the address resolves to nothing. */
     notFound: "找不到这个 Benchmark",
     notFoundHint: "它可能已被删除，或者链接里的 id 不对。",
     /** Score-only chart title. */
@@ -2685,8 +2688,9 @@ Benchmark：
     noEvaluationsHint: "取得基线分后，这里会出现分数曲线与评估明细。",
     /** Evaluation notes (scoreboard's summary: score source and notes on this round's changes). */
     summaryLabel: "评估说明",
-    /** Chart legend: older evaluation records with no model label (gray series). */
-    legendUnlabeled: "未标注模型",
+    /** Chart legend: evaluation records missing the tested Agent or the model (gray series). */
+    unlabeled: "未标注",
+    agentColumn: "被测 Agent",
     colVersion: "版本",
     colModel: "模型 ID",
     colThinkingLevel: "推理强度",
@@ -2735,15 +2739,16 @@ Benchmark：
       "- benchmark_id：上文已指定则沿用，否则按场景取一个简短的语义化 id（仅字母、数字、`_` 和 `-`）\n" +
       "- desired_baseline_score：`<70`（上文另有要求时以上文为准）\n" +
       "- pilot_iteration_limit：`3`\n\n" +
-      "在被测智能体目录的 `benchmarks/<benchmark_id>/` 下创建 `benchmark_config.toml`（title、description、runs = 1）、" +
+      "Benchmark 与 Agent 平级：在 Project 的 `benchmarks/<benchmark_id>/` 下（不在被测智能体目录内）创建 `benchmark_config.toml`" +
+      "（title、description、runs = 1；不记录被测智能体）、" +
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
-      "以及 `scoreboard.yaml`（初始为 `evaluations: []`）。通过 `run_subagent` 委派 `agent-evaluation` 逐题试测以校准难度，" +
+      "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
+      "通过 `run_subagent` 委派 `agent-evaluation` 逐题试测以校准难度，" +
       "定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题得分。",
     // New Benchmark, manual mode: the form.
     manualCreateTitle: "手动创建 Benchmark",
     manualCreateIntro:
-      "填好标题、题干与评分细则后，目录结构会按技能约定写入被测智能体的 benchmarks/ 下，之后可以直接评测或优化。",
-    agentField: "所属智能体",
+      "填好标题、题干与评分细则后，目录结构会按技能约定写入 Project 的 benchmarks/ 下；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
     idField: "Benchmark id",
     idHint: "目录名即标识：仅字母、数字、_ 和 -，例如 report-writing-v1",
     idExists: "已有同名 Benchmark，请换一个 id",
@@ -2783,7 +2788,8 @@ Benchmark：
     optimizerAgentHint: "读分数与 Trace、修改被测智能体的一方；需要装有 agent-optimization 技能",
     optimizerMissingSkill:
       "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
-    targetAgentFixed: (name: string): string => `被测智能体：${name}`,
+    testedAgent: "被测智能体",
+    testedAgentHint: "优化改的是它的 Agent State；分数记在它名下，只与它自己同标签的历史分数比较",
     sessionModel: "优化会话使用的模型",
     sessionModelHint: "做分析与改动的模型；评测被测智能体时沿用基线记录的模型，不在这里改",
     projectDefaultModel: (name: string): string => `Project 默认（${name}）`,
@@ -2796,7 +2802,7 @@ Benchmark：
     focusField: "优化重点",
     focusPlaceholder: "例如：重点优化引用规范与格式合规，不要改动写作风格",
     noBaseline:
-      "这套 Benchmark 还没有基线分。优化需要一条完整的基线评估作为比较起点——可以先让 AI 出题时取得基线，或在对话里让它先完成一次完整评测。",
+      "所选被测智能体在这套 Benchmark 上还没有基线分。优化需要一条完整的基线评估作为比较起点——可以先让 AI 出题时取得基线，或在对话里让它先完成一次完整评测。",
     baselineLine: (score: string, target: number): string => `当前基线 ${score} · 目标 ${target}`,
     optimizeExamples: {
       citations: {
@@ -2825,12 +2831,13 @@ Benchmark：
     }): string =>
       "请使用 `agent-optimization` Skill，针对已冻结的 Benchmark 优化被测智能体。\n\n" +
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
-      `- benchmark_id：\`${p.benchmarkId}\`\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
       `- runs：\`${p.runs}\`\n` +
       `- desired_score：\`>=${p.targetScore}\`\n` +
       `- candidate_round_limit：\`${p.roundLimit}\`\n\n` +
       "每轮从当前 Reference 出发提出一个可证伪的假设、只做一个有界改动；通过 `run_subagent` 委派 `agent-evaluation` 评测完整的 Case × runs 矩阵，" +
-      "评测沿用基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本并把 evaluation 追加到 scoreboard.yaml，否则回滚。" +
+      "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
+      "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
   },
 

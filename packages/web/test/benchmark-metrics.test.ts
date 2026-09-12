@@ -1,14 +1,18 @@
 /**
  * Unit tests for the Evaluation center's Score-only chart helpers: Score extraction,
- * dynamic y-axis range, and runtime grouping. The gap segmentation these series are drawn
- * with is shared chart geometry (chart-geom's lineSegments, covered in usage-charts.test.ts).
+ * dynamic y-axis range, and label grouping — the tested Agent, its Agent State version, the
+ * model and the thinking level, which is also what a score change is measured within. The gap
+ * segmentation these series are drawn with is shared chart geometry (chart-geom's lineSegments,
+ * covered in usage-charts.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import {
   defaultTargetScore,
-  latestScore,
+  evaluationLabel,
+  labelSeries,
+  latestScoreOfAgent,
+  latestWithDelta,
   matchesBenchmarkQuery,
-  modelSeries,
   scoreScale,
   scoreValues,
   seriesValues,
@@ -65,10 +69,61 @@ describe("scoreScale (dynamic padded Score axis)", () => {
   });
 });
 
-describe("modelSeries / seriesValues (curves split by model ID and thinking level)", () => {
+describe("evaluationLabel", () => {
+  const full = {
+    agentId: "report-writer",
+    version: 3,
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
+    thinkingLevel: "xhigh",
+  };
+
+  it("spells the four parts a reader sees and leaves the provider out of the text", () => {
+    const label = evaluationLabel(full);
+    expect(label.text).toBe("report-writer · v3 · deepseek-v4-pro · xhigh");
+    expect(label.unlabeled).toBe(false);
+    expect(label.key).not.toBe("");
+  });
+
+  it("omits an empty part from the text", () => {
+    expect(evaluationLabel({ ...full, thinkingLevel: "" }).text).toBe(
+      "report-writer · v3 · deepseek-v4-pro",
+    );
+  });
+
+  it("keeps the provider in the key: the same model id at two providers is not one runtime", () => {
+    expect(evaluationLabel({ ...full, provider: "siliconflow" }).key).not.toBe(
+      evaluationLabel(full).key,
+    );
+    expect(evaluationLabel({ ...full, provider: "siliconflow" }).text).toBe(
+      evaluationLabel(full).text,
+    );
+  });
+
+  it("separates Agent State versions and tested Agents", () => {
+    expect(evaluationLabel({ ...full, version: 4 }).key).not.toBe(evaluationLabel(full).key);
+    expect(evaluationLabel({ ...full, agentId: "support" }).key).not.toBe(
+      evaluationLabel(full).key,
+    );
+  });
+
+  it("a record missing the tested Agent or the model is unlabeled", () => {
+    expect(evaluationLabel({ ...full, agentId: null })).toEqual({
+      key: "",
+      text: "",
+      unlabeled: true,
+    });
+    expect(evaluationLabel({ ...full, modelId: "" }).unlabeled).toBe(true);
+    expect(evaluationLabel({}).unlabeled).toBe(true);
+  });
+});
+
+describe("labelSeries / seriesValues (curves split by label)", () => {
   const mixed = [
     {
       score: 6,
+      agentId: "report-writer",
+      version: 1,
       provider: "deepseek",
       modelId: "deepseek-v4-flash",
       thinkingLevel: "medium",
@@ -76,86 +131,94 @@ describe("modelSeries / seriesValues (curves split by model ID and thinking leve
     { score: 7 }, // Defensive untagged input -> trailing gray series.
     {
       score: 7.5,
+      agentId: "report-writer",
+      version: 2,
       provider: "deepseek",
       modelId: "deepseek-v4-pro",
       thinkingLevel: "xhigh",
     },
     {
       score: 8.5,
+      agentId: "report-writer",
+      version: 2,
       provider: "deepseek",
       modelId: "deepseek-v4-pro",
       thinkingLevel: "xhigh",
     },
   ];
 
-  it("groups by (modelId, thinkingLevel) in first-appearance order; untagged records go to a trailing unnamed series", () => {
-    const series = modelSeries(mixed);
-    expect(series.map((s) => s.modelId)).toEqual([
-      "deepseek-v4-flash",
-      "deepseek-v4-pro",
-      undefined,
+  it("groups by label in first-appearance order; unlabeled records go to a trailing series", () => {
+    const series = labelSeries(mixed);
+    expect(series.map((x) => x.text)).toEqual([
+      "report-writer · v1 · deepseek-v4-flash · medium",
+      "report-writer · v2 · deepseek-v4-pro · xhigh",
+      "",
     ]);
-    expect(series.map((s) => s.thinkingLevel)).toEqual(["medium", "xhigh", undefined]);
-    expect(series.map((s) => s.indices)).toEqual([[0], [2, 3], [1]]);
+    expect(series.map((x) => x.indices)).toEqual([[0], [2, 3], [1]]);
+    expect(series.map((x) => x.unlabeled)).toEqual([false, false, true]);
     expect(series[2]!.key).toBe("");
   });
 
-  it("the same model ID and thinking level across providers stays in one series", () => {
-    const sameRuntime = [
-      {
-        score: 1,
-        provider: "moonshot",
-        modelId: "kimi-k2.6",
-        thinkingLevel: "medium",
-      },
-      {
-        score: 2,
-        provider: "siliconflow",
-        modelId: "kimi-k2.6",
-        thinkingLevel: "medium",
-      },
-    ];
-    const series = modelSeries(sameRuntime);
-    expect(series).toHaveLength(1);
-    expect(series[0]!.indices).toEqual([0, 1]);
-  });
-
-  it("the same model ID at different thinking levels forms separate series", () => {
-    const levels = [
-      { score: 1, modelId: "deepseek-v4-pro", thinkingLevel: "medium" },
-      { score: 2, modelId: "deepseek-v4-pro", thinkingLevel: "xhigh" },
-    ];
-    const series = modelSeries(levels);
+  it("the same runtime under two tested Agents forms separate series", () => {
+    const series = labelSeries([
+      { agentId: "report-writer", version: 1, modelId: "kimi-k2.6" },
+      { agentId: "support", version: 1, modelId: "kimi-k2.6" },
+    ]);
     expect(series).toHaveLength(2);
-    expect(series.map((s) => s.thinkingLevel)).toEqual(["medium", "xhigh"]);
+    expect(series.map((x) => x.indices)).toEqual([[0], [1]]);
   });
 
   it("seriesValues: indexes outside the series are null (skipped points), keeping the global time axis", () => {
-    const series = modelSeries(mixed);
+    const series = labelSeries(mixed);
     expect(seriesValues(mixed, series[1]!)).toEqual([null, null, 7.5, 8.5]);
     expect(seriesValues(mixed, series[2]!)).toEqual([null, 7, null, null]);
   });
 
   it("all untagged defensive input forms one unnamed series", () => {
-    const series = modelSeries([{}, {}]);
+    const series = labelSeries([{}, {}]);
     expect(series).toHaveLength(1);
     expect(series[0]!.key).toBe("");
     expect(series[0]!.indices).toEqual([0, 1]);
   });
 });
 
-describe("row helpers: latestScore / sparklineSeries / defaultTargetScore", () => {
+describe("row helpers: latestWithDelta / latestScoreOfAgent / sparklineSeries / defaultTargetScore", () => {
+  const label = { agentId: "report-writer", version: 1, provider: "deepseek", modelId: "m" };
   const timed = [
-    { time: "2026-07-14T09:30:00Z", score: 60 },
-    { time: "2026-07-15T09:30:00Z", score: Number.NaN },
-    { time: "2026-07-16T09:30:00Z", score: 72.35 },
+    { time: "2026-07-14T09:30:00Z", score: 60, ...label },
+    { time: "2026-07-15T09:30:00Z", score: Number.NaN, ...label },
+    { time: "2026-07-16T09:30:00Z", score: 72.35, ...label },
   ];
 
-  it("latestScore reports the newest finite Score, its change from the previous finite one, and its time", () => {
-    expect(latestScore(timed)).toEqual({ score: 72.35, delta: 72.35 - 60, time: timed[2]!.time });
-    expect(latestScore([timed[0]!])).toEqual({ score: 60, delta: null, time: timed[0]!.time });
-    expect(latestScore([])).toBeNull();
-    expect(latestScore([timed[1]!])).toBeNull();
+  it("latestWithDelta reports the newest finite Score, its change from the previous finite one of the same label, and its time", () => {
+    expect(latestWithDelta(timed)).toEqual({
+      score: 72.35,
+      delta: 72.35 - 60,
+      time: timed[2]!.time,
+    });
+    expect(latestWithDelta([timed[0]!])).toEqual({ score: 60, delta: null, time: timed[0]!.time });
+    expect(latestWithDelta([])).toBeNull();
+    expect(latestWithDelta([timed[1]!])).toBeNull();
+  });
+
+  it("a newest record whose label appears for the first time reports no change", () => {
+    const switched = [timed[0]!, { ...timed[2]!, version: 2 }];
+    expect(latestWithDelta(switched)!.delta).toBeNull();
+    // The label from two records back is the one it is comparable to.
+    const back = [timed[0]!, { ...timed[2]!, agentId: "support" }, timed[2]!];
+    expect(latestWithDelta(back)!.delta).toBe(72.35 - 60);
+  });
+
+  it("latestScoreOfAgent narrows to one tested Agent, and reports nothing when it has no score here", () => {
+    const twoAgents = [timed[0]!, { ...timed[2]!, agentId: "support", score: 90 }];
+    expect(latestScoreOfAgent(twoAgents, "report-writer")).toEqual({
+      score: 60,
+      delta: null,
+      time: timed[0]!.time,
+    });
+    expect(latestScoreOfAgent(twoAgents, "support")!.score).toBe(90);
+    expect(latestScoreOfAgent(twoAgents, "reviewer")).toBeNull();
+    expect(latestScoreOfAgent(twoAgents, "")).toBeNull();
   });
 
   it("sparklineSeries keeps finite Scores in scoreboard order and skips malformed ones", () => {
@@ -171,18 +234,35 @@ describe("row helpers: latestScore / sparklineSeries / defaultTargetScore", () =
 });
 
 describe("matchesBenchmarkQuery", () => {
-  const benchmark = { id: "report-writing-v1", title: "Report writing", description: "Hard cases" };
-  const agent = { agentId: "report-writer", name: "Report Writer" };
+  const benchmark = {
+    id: "report-writing-v1",
+    title: "Report writing",
+    description: "Hard cases",
+    agentIds: ["report-writer", "support"],
+  };
+  const agents = [
+    { agentId: "report-writer", name: "Report Writer" },
+    { agentId: "support", name: "Support" },
+    { agentId: "reviewer", name: "Reviewer" },
+  ];
 
-  it("matches case-insensitively on the title, description, id, and the agent's name or id", () => {
-    expect(matchesBenchmarkQuery(benchmark, agent, "WRITING")).toBe(true);
-    expect(matchesBenchmarkQuery(benchmark, agent, "hard")).toBe(true);
-    expect(matchesBenchmarkQuery(benchmark, agent, "-v1")).toBe(true);
-    expect(matchesBenchmarkQuery(benchmark, agent, "report writer")).toBe(true);
-    expect(matchesBenchmarkQuery(benchmark, agent, "customer")).toBe(false);
+  it("matches case-insensitively on the title, description, id, and any tested agent's name or id", () => {
+    expect(matchesBenchmarkQuery(benchmark, agents, "WRITING")).toBe(true);
+    expect(matchesBenchmarkQuery(benchmark, agents, "hard")).toBe(true);
+    expect(matchesBenchmarkQuery(benchmark, agents, "-v1")).toBe(true);
+    expect(matchesBenchmarkQuery(benchmark, agents, "report writer")).toBe(true);
+    expect(matchesBenchmarkQuery(benchmark, agents, "support")).toBe(true);
+    // An agent that never ran this Benchmark is not a match, even though the Project has it.
+    expect(matchesBenchmarkQuery(benchmark, agents, "reviewer")).toBe(false);
+  });
+
+  it("an id evaluated by a since-deleted agent still matches on the id itself", () => {
+    expect(matchesBenchmarkQuery({ ...benchmark, agentIds: ["gone-agent"] }, agents, "gone")).toBe(
+      true,
+    );
   });
 
   it("a blank query matches everything", () => {
-    expect(matchesBenchmarkQuery({ id: "x", title: "x" }, { agentId: "a" }, "   ")).toBe(true);
+    expect(matchesBenchmarkQuery({ id: "x", title: "x" }, agents, "   ")).toBe(true);
   });
 });

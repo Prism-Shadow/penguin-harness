@@ -2688,16 +2688,17 @@ Scenarios:
     ],
     guideNote:
       "All three Skills ship in the agent-tuning plugin, which the default agent already carries; install it on a new agent from the plugin library.",
-    searchPlaceholder: "Search titles, descriptions or agents",
+    searchPlaceholder: "Search titles, descriptions or tested agents",
     noMatches: "No Benchmark matches",
+    filterByAgent: (agentId: string): string => `Benchmarks that evaluated ${agentId}`,
+    clearFilter: "Show all",
     emptyTitle: "No Benchmarks yet",
     emptyDescription:
       "Start by letting AI write cases for an agent and take a baseline. Score curves and per-case detail appear here afterwards, with optimization one click away.",
-    emptyAgent: "No Benchmarks for this agent",
-    createForAgent: "Create for this agent",
     caseCount: (n: number): string => `${n} case${n === 1 ? "" : "s"}`,
     runsPerCase: (n: number): string => `${n} run${n === 1 ? "" : "s"} per case`,
     notEvaluated: "Not evaluated yet",
+    testedAgents: "Tested agents",
     lastEvaluated: (when: string): string => `last evaluated ${when}`,
     sparklineLabel: (n: number): string => `Score trend over ${n} evaluation${n === 1 ? "" : "s"}`,
     latestScoreLabel: "Latest score",
@@ -2712,7 +2713,7 @@ Scenarios:
       `Delete "${title}"? All of its cases and evaluation records will be removed; this cannot be undone.`,
     deleted: "Benchmark deleted",
     backToList: "Back to list",
-    /** The Benchmark's own page when the pair in the address resolves to nothing. */
+    /** The Benchmark's own page when the id in the address resolves to nothing. */
     notFound: "This Benchmark was not found",
     notFoundHint: "It may have been deleted, or the link carries an id that no longer exists.",
     trendTitle: (metric: string): string => `${metric} over time`,
@@ -2727,7 +2728,8 @@ Scenarios:
     noEvaluationsHint:
       "The score curve and evaluation detail appear here once a baseline is taken.",
     summaryLabel: "Summary",
-    legendUnlabeled: "unlabeled model",
+    unlabeled: "Unlabeled",
+    agentColumn: "Tested agent",
     colVersion: "Version",
     colModel: "Model ID",
     colThinkingLevel: "Thinking level",
@@ -2777,14 +2779,15 @@ Scenarios:
       "- benchmark_id: keep the one named above if any; otherwise derive a short semantic id (letters, digits, `_` and `-` only)\n" +
       "- desired_baseline_score: `<70` (unless the text above says otherwise)\n" +
       "- pilot_iteration_limit: `3`\n\n" +
-      "Create `benchmarks/<benchmark_id>/` under the Test Agent's directory: `benchmark_config.toml` (title, description, runs = 1), " +
+      "A Benchmark sits beside agents, not under one: create `benchmarks/<benchmark_id>/` under the Project (never inside the tested agent's directory) with " +
+      "`benchmark_config.toml` (title, description, runs = 1; it records no agent), " +
       "one `CASE-NNN-<slug>/` per case (`statement/README.md` is the statement, `rubric/README.md` the scoring rubric, 100 points per case, nothing from the rubric leaking into the statement) " +
-      "and `scoreboard.yaml` (initially `evaluations: []`). Delegate one `agent-evaluation` run per case through `run_subagent` to calibrate difficulty, " +
+      "and `scoreboard.yaml` (initially `evaluations: []`; every evaluation records the tested `agent_id`, its `version`, the paired `provider` / `model_id` and the `thinking_level`). " +
+      "Delegate one `agent-evaluation` run per case through `run_subagent` to calibrate difficulty, " +
       "freeze the final revision, append the Formal Baseline to scoreboard.yaml, and finish by reporting the Benchmark id, the baseline score and the per-case scores.",
     manualCreateTitle: "Create a Benchmark manually",
     manualCreateIntro:
-      "Fill in the title, the statements and the rubrics; the directory layout the Skills expect is written under the Test Agent's benchmarks/, ready to evaluate or optimize.",
-    agentField: "Agent",
+      "Fill in the title, the statements and the rubrics; the directory layout the Skills expect is written under the Project's benchmarks/. A Benchmark sits beside agents, so it can then evaluate any of them.",
     idField: "Benchmark id",
     idHint:
       "The directory name is the identifier: letters, digits, _ and - only, e.g. report-writing-v1",
@@ -2829,7 +2832,9 @@ Scenarios:
       "The one that reads the scores and Traces and edits the Test Agent; needs the agent-optimization Skill",
     optimizerMissingSkill:
       "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the agent-tuning plugin on it first.",
-    targetAgentFixed: (name: string): string => `Test Agent: ${name}`,
+    testedAgent: "Tested agent",
+    testedAgentHint:
+      "The agent whose Agent State is edited; its scores are recorded under it and compared only against its own same-label history",
     sessionModel: "Model of the optimizer's conversation",
     sessionModelHint:
       "The model that analyzes and edits; evaluations of the Test Agent keep the model the baseline recorded, which is not changed here",
@@ -2844,7 +2849,7 @@ Scenarios:
     focusPlaceholder:
       "e.g. Focus on citation rules and format compliance; leave the writing style alone",
     noBaseline:
-      "This Benchmark has no baseline score yet. Optimization needs one complete baseline evaluation to compare against — take it while letting AI create the Benchmark, or ask for a full evaluation first in the conversation.",
+      "The selected tested agent has no baseline score in this Benchmark yet. Optimization needs one complete baseline evaluation to compare against — take it while letting AI create the Benchmark, or ask for a full evaluation first in the conversation.",
     baselineLine: (score: string, target: number): string =>
       `Current baseline ${score} · target ${target}`,
     optimizeExamples: {
@@ -2875,12 +2880,13 @@ Scenarios:
     }): string =>
       "Use the `agent-optimization` Skill to improve the Test Agent against its frozen Benchmark.\n\n" +
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
-      `- benchmark_id: \`${p.benchmarkId}\`\n` +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
       `- runs: \`${p.runs}\`\n` +
       `- desired_score: \`>=${p.targetScore}\`\n` +
       `- candidate_round_limit: \`${p.roundLimit}\`\n\n` +
       "Each round, state one falsifiable hypothesis from the current Reference and make one bounded change; evaluate the full Case × runs matrix through `run_subagent` with `agent-evaluation`, " +
-      "keeping the provider / model_id / thinking_level the baseline recorded; keep the version and append its evaluation to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
+      "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
+      "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
       "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
   },
 

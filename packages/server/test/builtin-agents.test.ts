@@ -101,10 +101,10 @@ describe("built-in Agent provisioning", () => {
     await expectBuiltinAgents(created.project.projectId);
   });
 
-  it("default_agent ships a sample Benchmark readable via GET /benchmarks", async () => {
+  it("default_agent seeds the Project's sample Benchmark, readable via GET /benchmarks", async () => {
     const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
     const projectId = projects.projects[0]!.projectId;
-    const res = await owner.get(`/api/projects/${projectId}/agents/default_agent/benchmarks`);
+    const res = await owner.get(`/api/projects/${projectId}/benchmarks`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as BenchmarksResponse;
     const bench = body.benchmarks.find((b) => b.id === "example-benchmark")!;
@@ -115,7 +115,10 @@ describe("built-in Agent provisioning", () => {
     expect(bench.runs).toBe(2);
     expect(bench.caseCount).toBe(2);
     expect(bench.evaluations).toHaveLength(3);
+    // The sample evaluations all test default_agent, so the Benchmark reports exactly it.
+    expect(bench.agentIds).toEqual(["default_agent"]);
     for (const evaluation of bench.evaluations) {
+      expect(evaluation.agentId).toBe("default_agent");
       expect(evaluation.thinkingLevel).toBe("medium");
       expect(evaluation.summary).toBeTruthy();
       expect(evaluation.cases).toHaveLength(2);

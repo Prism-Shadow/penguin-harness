@@ -1,12 +1,13 @@
 /**
  * Provisioning of the example Benchmark.
  *
- * When default_agent is initialized, it preprovisions `benchmarks/example-benchmark/`: two
- * sample cases (each with statement/ and rubric/ indexed by a README.md),
- * benchmark_config.toml (runs = 2), and a scoreboard.yaml with three sample evaluations —
- * so the evaluation center has data out of the box. Its description states plainly that this
- * is a built-in example and the whole directory can be deleted or replaced. Only
- * default_agent gets this; ordinary Agents do not.
+ * When default_agent is initialized, it preprovisions the Project-level
+ * `benchmarks/example-benchmark/`: two sample cases (each with statement/ and rubric/ indexed
+ * by a README.md), benchmark_config.toml (runs = 2), and a scoreboard.yaml with three sample
+ * evaluations, each labelled with default_agent as the Agent it tested — so the evaluation
+ * center has data out of the box. Its description states plainly that this is a built-in
+ * example and the whole directory can be deleted or replaced. Provisioning rides on
+ * default_agent's initialization only; creating an ordinary Agent provisions nothing.
  *
  * Scoring numbers follow the current Scoreboard contract: every Case is scored out of 100;
  * Case metrics are model-written Run averages and Evaluation metrics are model-written Case
@@ -18,7 +19,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { stringify as stringifyToml } from "smol-toml";
 import { stringify as stringifyYaml } from "yaml";
-import { benchmarksDir } from "./paths.js";
+import { DEFAULT_AGENT_ID, benchmarksDir } from "./paths.js";
 
 /** Directory name of the example Benchmark (the directory name is also its identifier). */
 export const EXAMPLE_BENCHMARK_ID = "example-benchmark";
@@ -81,11 +82,13 @@ interface ExampleRun {
 
 /**
  * Raw runs for the three sample evaluations (case-level and evaluation-level metrics are
- * computed from these, keeping the numbers self-consistent). Each carries the model actually
- * used for that round; the examples all use deepseek-v4-pro at medium thinking.
+ * computed from these, keeping the numbers self-consistent). Each carries the Agent it tested
+ * and the model actually used for that round; the examples all evaluate default_agent on
+ * deepseek-v4-pro at medium thinking, so they share one chart series.
  */
 const EXAMPLE_EVALUATIONS: Array<{
   time: string;
+  agent_id: string;
   version: number;
   provider: string;
   model_id: string;
@@ -96,6 +99,7 @@ const EXAMPLE_EVALUATIONS: Array<{
 }> = [
   {
     time: "2026-07-14T09:30:00Z",
+    agent_id: DEFAULT_AGENT_ID,
     version: 1,
     provider: "deepseek",
     model_id: "deepseek-v4-pro",
@@ -144,6 +148,7 @@ const EXAMPLE_EVALUATIONS: Array<{
   },
   {
     time: "2026-07-15T09:30:00Z",
+    agent_id: DEFAULT_AGENT_ID,
     version: 2,
     provider: "deepseek",
     model_id: "deepseek-v4-pro",
@@ -192,6 +197,7 @@ const EXAMPLE_EVALUATIONS: Array<{
   },
   {
     time: "2026-07-16T09:30:00Z",
+    agent_id: DEFAULT_AGENT_ID,
     version: 3,
     provider: "deepseek",
     model_id: "deepseek-v4-pro",
@@ -270,6 +276,7 @@ function averageKnownCost(values: Array<number | null>): number | null {
 export function buildExampleScoreboard(): {
   evaluations: Array<{
     time: string;
+    agent_id: string;
     version: number;
     provider: string;
     model_id: string;
@@ -299,6 +306,7 @@ export function buildExampleScoreboard(): {
       }));
       return {
         time: e.time,
+        agent_id: e.agent_id,
         version: e.version,
         provider: e.provider,
         model_id: e.model_id,
@@ -315,24 +323,20 @@ export function buildExampleScoreboard(): {
 }
 
 /**
- * Provisions the example Benchmark: if `benchmarks/` already exists (the user already has a
- * case library), does nothing; otherwise creates `benchmarks/example-benchmark/` (config, the
- * two sample cases, and the scoreboard). Callers are restricted to the default_agent
- * initialization path (see agent-state.ts).
+ * Provisions the example Benchmark into the Project's `benchmarks/`: if
+ * `benchmarks/example-benchmark/` is already there, does nothing; otherwise creates it (config,
+ * the two sample cases, and the scoreboard) beside whatever other Benchmarks the Project holds.
+ * Callers are restricted to the default_agent initialization path (see agent-state.ts).
  */
-export async function provisionExampleBenchmark(
-  root: string,
-  projectId: string,
-  agentId: string,
-): Promise<void> {
-  const dir = benchmarksDir(root, projectId, agentId);
+export async function provisionExampleBenchmark(root: string, projectId: string): Promise<void> {
+  const dir = benchmarksDir(root, projectId);
+  const benchDir = path.join(dir, EXAMPLE_BENCHMARK_ID);
   try {
-    await fs.access(dir);
+    await fs.access(benchDir);
     return;
   } catch {
-    // benchmarks/ does not exist: proceed with provisioning.
+    // The example Benchmark is not there: proceed with provisioning.
   }
-  const benchDir = path.join(dir, EXAMPLE_BENCHMARK_ID);
   await Promise.all(
     EXAMPLE_CASES.flatMap((c) => [
       fs.mkdir(path.join(benchDir, c.id, "statement"), { recursive: true }),

@@ -1,11 +1,12 @@
 /**
- * One Benchmark's detail: title and description, the case list, a Score-only chart grouped
- * into series by each Evaluation's model ID and thinking level, and the evaluation table with
- * separate model ID and thinking-level columns. Rows expand to the evaluation summary and
+ * One Benchmark's detail: case counts and description, the case list, a Score-only chart grouped
+ * into series by each Evaluation's label — the tested Agent, its Agent State version, the model
+ * and the thinking level — and the evaluation table, which spells that label out across its
+ * Agent, version, model and thinking-level columns. Rows expand to the evaluation summary and
  * per-case scores, and Case rows further expand to the raw results of each Run with its
  * Session id. A case opens the case browser in a dialog. This is the body of the Benchmark's
- * own page, which mounts it once its Benchmark has been read, so no expand state ever lingers
- * from the Benchmark before it.
+ * own page (the title lives in that page's header), which mounts it once its Benchmark has been
+ * read, so no expand state ever lingers from the Benchmark before it.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -18,23 +19,26 @@ import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { formatDateTime, formatMoney, formatScore, humanizeDuration } from "../../lib/format";
+import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
+import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Chevron } from "../../components/ui/chevron";
 import { EmptyState } from "../../components/ui/empty-state";
 import { Modal } from "../../components/ui/modal";
 import { NEUTRAL_SERIES, seriesColor } from "../../lib/category-colors";
 import { lineSegments, makeRangeGeom, segmentPath } from "../usage/chart-geom";
 import { ChartFrame, useChartWidth } from "../usage/chart-svg";
-import { modelSeries, scoreScale, scoreValues, seriesValues } from "./benchmark-metrics";
+import { labelSeries, scoreScale, scoreValues, seriesValues } from "./benchmark-metrics";
 import type { EvaluationSeries } from "./benchmark-metrics";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
 
 /**
- * Score-over-time line chart. Scores remain valid on 0..100, while the visible y-axis is padded
- * around the observed range and clamped to those limits. Evaluations remain grouped by model ID
- * and thinking level so a runtime change stays visible without adding other metric modes.
+ * Score-over-time line chart: one x slot per evaluation in scoreboard order, labeled with its
+ * timestamp. Scores remain valid on 0..100, while the visible y-axis is padded around the
+ * observed range and clamped to those limits. Evaluations are grouped by label, so a change of
+ * tested Agent, Agent State version or runtime starts its own series instead of bending one.
  */
 function ScoreTrendChart({
   evaluations,
@@ -74,7 +78,7 @@ function ScoreTrendChart({
                   )}
                 </p>
                 <p className="font-mono text-gray-400">
-                  {e.modelId} · {e.thinkingLevel}
+                  {e.agentId ?? "—"} · {e.modelId} · {e.thinkingLevel}
                 </p>
               </>
             );
@@ -84,8 +88,8 @@ function ScoreTrendChart({
             const segments = lineSegments(seriesValues(evaluations, s));
             return (
               <g
-                key={s.key === "" ? "unlabeled" : s.key}
-                className={(s.modelId ? seriesColor(si) : NEUTRAL_SERIES).text}
+                key={s.unlabeled ? "unlabeled" : s.key}
+                className={(s.unlabeled ? NEUTRAL_SERIES : seriesColor(si)).text}
               >
                 {segments.map((seg, k) => {
                   return (
@@ -122,14 +126,13 @@ function ScoreTrendChart({
 }
 
 /**
- * Score chart + runtime legend. Provider is deliberately not part of chart identity.
+ * Score chart + label legend. The legend prints the tested Agent, the Agent State version, the
+ * model and the thinking level; the provider is part of the grouping key but not of the text,
+ * since the model id is what a reader recognizes.
  */
 function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
-  const series = modelSeries(evaluations);
-  const labelOf = (s: EvaluationSeries): string => {
-    if (!s.modelId) return S.benchmark.legendUnlabeled;
-    return s.thinkingLevel ? `${s.modelId} · ${s.thinkingLevel}` : s.modelId;
-  };
+  const series = labelSeries(evaluations);
+  const labelOf = (s: EvaluationSeries): string => (s.unlabeled ? S.benchmark.unlabeled : s.text);
   return (
     <div>
       <p className="mb-1 text-xs font-semibold text-gray-500">
@@ -139,11 +142,11 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
         <div className="mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
           {series.map((s, i) => (
             <span
-              key={s.key === "" ? "unlabeled" : s.key}
+              key={s.unlabeled ? "unlabeled" : s.key}
               className="flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400"
             >
               <span
-                className={`inline-block h-2 w-2 shrink-0 rounded-sm ${(s.modelId ? seriesColor(i) : NEUTRAL_SERIES).swatch}`}
+                className={`inline-block h-2 w-2 shrink-0 rounded-sm ${(s.unlabeled ? NEUTRAL_SERIES : seriesColor(i)).swatch}`}
               />
               <span className="font-mono">{labelOf(s)}</span>
             </span>
@@ -182,6 +185,20 @@ function EvaluationRow({
             {formatDateTime(evaluation.time)}
           </span>
         </td>
+        <td className={`${CELL} text-xs text-gray-500 dark:text-gray-400`}>
+          {evaluation.agentId ? (
+            <span className="flex items-center gap-1.5">
+              <AgentAvatar
+                id={evaluation.agentId}
+                size={ICON_SIZE.rowLead}
+                className="shrink-0 rounded"
+              />
+              <span className="min-w-0 truncate font-mono">{evaluation.agentId}</span>
+            </span>
+          ) : (
+            <span className="text-gray-400">—</span>
+          )}
+        </td>
         <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
           {evaluation.version !== undefined ? `v${evaluation.version}` : "—"}
         </td>
@@ -206,7 +223,7 @@ function EvaluationRow({
       </tr>
       {open && (
         <tr className="border-b border-gray-100 last:border-b-0 dark:border-gray-800/60">
-          <td colSpan={7} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
+          <td colSpan={8} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
             {/* Evaluation summary title and body are displayed separately when present. */}
             {(evaluation.summaryTitle || evaluation.summary) && (
               <div className="mb-2">
@@ -391,11 +408,9 @@ function CasesSection({
 
 export function BenchmarkDetail({
   projectId,
-  agentId,
   benchmark: bm,
 }: {
   projectId: string;
-  agentId: string;
   benchmark: BenchmarkSummary;
 }) {
   const { currency } = useTheme();
@@ -409,7 +424,7 @@ export function BenchmarkDetail({
     setOpenCaseId(null);
     let cancelled = false;
     api
-      .listBenchmarkCases(projectId, agentId, bm.id)
+      .listBenchmarkCases(projectId, bm.id)
       .then((data) => {
         if (!cancelled) setCaseStatements(data.cases);
       })
@@ -419,7 +434,7 @@ export function BenchmarkDetail({
     return () => {
       cancelled = true;
     };
-  }, [projectId, agentId, bm.id]);
+  }, [projectId, bm.id]);
 
   // The Scoreboard append order is the evaluation sequence. Preserve it even when a malformed
   // timestamp would otherwise reorder Agent versions; the detail table shows that sequence newest first.
@@ -429,14 +444,12 @@ export function BenchmarkDetail({
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
-      {/* Runtime belongs to each Evaluation and is shown in the detail table. */}
+      {/* The tested Agent and the runtime belong to each Evaluation and are shown in the detail
+          table, not here: this Benchmark's cases are the same set whoever is being scored. */}
       <div>
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <h1 className="min-w-0 truncate text-xl font-semibold">{bm.title}</h1>
-          <span className="text-xs text-gray-500">
-            {S.benchmark.caseCount(bm.caseCount)} · {S.benchmark.runsPerCase(bm.runs ?? 1)}
-          </span>
-        </div>
+        <p className="text-xs text-gray-500">
+          {S.benchmark.caseCount(bm.caseCount)} · {S.benchmark.runsPerCase(bm.runs ?? 1)}
+        </p>
         {bm.description && (
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{bm.description}</p>
         )}
@@ -453,10 +466,11 @@ export function BenchmarkDetail({
           <div>
             <p className="mb-1 text-xs font-semibold text-gray-500">{S.benchmark.evaluations}</p>
             <div className="overflow-x-auto overflow-y-clip rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-              <table className="w-full min-w-[720px] text-left text-sm">
+              <table className="w-full min-w-[820px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50/80 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900">
                     <th className="px-3 py-2.5">{S.common.time}</th>
+                    <th className="px-3 py-2.5">{S.benchmark.agentColumn}</th>
                     <th className="px-3 py-2.5">{S.benchmark.colVersion}</th>
                     <th className="px-3 py-2.5">{S.benchmark.colModel}</th>
                     <th className="px-3 py-2.5">{S.benchmark.colThinkingLevel}</th>
@@ -488,12 +502,7 @@ export function BenchmarkDetail({
           widthClass="sm:max-w-6xl"
           onClose={() => setOpenCaseId(null)}
         >
-          <BenchmarkCaseBrowser
-            projectId={projectId}
-            agentId={agentId}
-            benchmarkId={bm.id}
-            caseSummary={openCase}
-          />
+          <BenchmarkCaseBrowser projectId={projectId} benchmarkId={bm.id} caseSummary={openCase} />
         </Modal>
       )}
     </div>

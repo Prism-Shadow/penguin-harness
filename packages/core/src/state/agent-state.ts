@@ -230,9 +230,10 @@ export async function loadAgentState(opts?: {
     atomicWriteFile(agentsMdPath(root, projectId, agentId), agentsMd, { followSymlinks: true }),
     ...plugins.map((plugin) => installPlugin(root, projectId, agentId, plugin)),
     // The example Benchmark is only provisioned alongside default_agent (so the evaluation
-    // center has data out of the box): idempotently skipped if benchmarks/ already exists,
-    // and not created for plain Agents.
-    ...(agentId === DEFAULT_AGENT_ID ? [provisionExampleBenchmark(root, projectId, agentId)] : []),
+    // center has data out of the box). It lands in the Project's benchmarks/, a sibling of
+    // agents/: idempotently skipped when it is already there, and never written for a plain
+    // Agent, whose creation is not a Project's first day.
+    ...(agentId === DEFAULT_AGENT_ID ? [provisionExampleBenchmark(root, projectId)] : []),
   ]);
   // system_config.yaml is written last: its existence is the "initialization complete" marker
   // (the load/init decision point). If this fails partway (disk full / crash), the next run

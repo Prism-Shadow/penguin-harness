@@ -1,19 +1,19 @@
 /**
- * The manual New Benchmark form: the Agent it tests, title, id, description, runs per case and
- * a list of cases, each a statement and a rubric. The server writes the on-disk layout; the
- * form keeps a first-timer on the rails — format hints stay visible while typing, and the
- * semantics (what a rubric is, why it never reaches the Test Agent, what makes one
+ * The manual New Benchmark form: title, id, description, runs per case and a list of cases, each
+ * a statement and a rubric. No Agent is chosen here — a Benchmark belongs to the Project and
+ * records the Agent it tested on each evaluation instead. The server writes the on-disk layout;
+ * the form keeps a first-timer on the rails — format hints stay visible while typing, and the
+ * semantics (what a rubric is, why it never reaches the tested agent, what makes one
  * discriminating) sit behind the "?" marks. Mounted fresh on every open.
  */
 import { useRef, useState } from "react";
-import type { AgentSummary, BenchmarkSummary } from "@prismshadow/penguin-server/api";
+import type { BenchmarkSummary } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
-import { agentDisplayName } from "../../state/project";
 import { Button } from "../../components/ui/button";
 import { FieldLabel } from "../../components/ui/field";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -21,10 +21,8 @@ import { PlusIcon } from "../../components/ui/icons";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
-import { Select } from "../../components/ui/select";
 import { TRASH_ICON } from "../../components/ui/session-row-menu";
 import { toastSuccess } from "../../components/ui/toast";
-import { pickDefaultAgent } from "../ai-create";
 import { ID_PATTERN, caseId, isValidRuns, slugFromTitle } from "./benchmark-prompts";
 
 interface CaseDraft {
@@ -39,7 +37,6 @@ interface CaseDraft {
 type CaseErrors = Partial<Record<"slug" | "title" | "statement" | "rubric", string>>;
 
 interface FormErrors {
-  agentId?: string;
   id?: string;
   title?: string;
   runs?: string;
@@ -51,10 +48,7 @@ export interface CreateBenchmarkModalProps {
   open: boolean;
   onClose: () => void;
   projectId: string;
-  agents: readonly AgentSummary[];
-  /** The Agent preselected as the Benchmark's owner; null falls back to the Project's default agent. */
-  initialAgentId: string | null;
-  onCreated: (agentId: string, benchmark: BenchmarkSummary) => void;
+  onCreated: (benchmark: BenchmarkSummary) => void;
 }
 
 export function CreateBenchmarkModal(props: CreateBenchmarkModalProps) {
@@ -66,13 +60,7 @@ const digits = (v: string) => v.replace(/[^\d]/g, "");
 const errorProp = (message: string | undefined) =>
   message !== undefined ? { error: message } : {};
 
-function CreateBenchmarkDialog({
-  onClose,
-  projectId,
-  agents,
-  initialAgentId,
-  onCreated,
-}: CreateBenchmarkModalProps) {
+function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmarkModalProps) {
   const keyRef = useRef(0);
   const newCase = (): CaseDraft => ({
     key: keyRef.current++,
@@ -81,7 +69,6 @@ function CreateBenchmarkDialog({
     statement: "",
     rubric: "",
   });
-  const [agentId, setAgentId] = useState(initialAgentId ?? pickDefaultAgent(agents)?.agentId ?? "");
   const [title, setTitle] = useState("");
   const [id, setId] = useState("");
   // The id follows the title until it is edited by hand.
@@ -98,7 +85,6 @@ function CreateBenchmarkDialog({
 
   const validate = (): FormErrors => {
     const next: FormErrors = { cases: {} };
-    if (agentId === "") next.agentId = S.common.requiredField;
     if (title.trim() === "") next.title = S.common.requiredField;
     if (id.trim() === "") next.id = S.common.requiredField;
     else if (!ID_PATTERN.test(id.trim())) next.id = S.benchmark.invalidId;
@@ -115,7 +101,6 @@ function CreateBenchmarkDialog({
     return next;
   };
   const hasErrors = (e: FormErrors) =>
-    e.agentId !== undefined ||
     e.id !== undefined ||
     e.title !== undefined ||
     e.runs !== undefined ||
@@ -129,7 +114,7 @@ function CreateBenchmarkDialog({
     setSubmitError(null);
     try {
       const trimmedDescription = description.trim();
-      const res = await api.createBenchmark(projectId, agentId, {
+      const res = await api.createBenchmark(projectId, {
         id: id.trim(),
         title: title.trim(),
         ...(trimmedDescription !== "" ? { description: trimmedDescription } : {}),
@@ -142,7 +127,7 @@ function CreateBenchmarkDialog({
         })),
       });
       toastSuccess(S.benchmark.created);
-      onCreated(agentId, res.benchmark);
+      onCreated(res.benchmark);
       onClose();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -174,30 +159,6 @@ function CreateBenchmarkDialog({
     >
       <div className="space-y-4">
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.benchmark.manualCreateIntro}</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Select
-            label={S.benchmark.agentField}
-            value={agentId}
-            onChange={(e) => setAgentId(e.target.value)}
-            {...errorProp(errors.agentId)}
-          >
-            {agents.map((a) => (
-              <option key={a.agentId} value={a.agentId}>
-                {agentDisplayName(a)}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label={S.benchmark.runsField}
-            hint={S.benchmark.runsHint}
-            info={S.benchmark.runsInfo}
-            infoLabel={S.benchmark.runsField}
-            inputMode="numeric"
-            value={runs}
-            onChange={(e) => setRuns(digits(e.target.value))}
-            {...errorProp(errors.runs)}
-          />
-        </div>
         <Input
           label={S.benchmark.titleField}
           required
@@ -226,6 +187,16 @@ function CreateBenchmarkDialog({
           rows={2}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
+        />
+        <Input
+          label={S.benchmark.runsField}
+          hint={S.benchmark.runsHint}
+          info={S.benchmark.runsInfo}
+          infoLabel={S.benchmark.runsField}
+          inputMode="numeric"
+          value={runs}
+          onChange={(e) => setRuns(digits(e.target.value))}
+          {...errorProp(errors.runs)}
         />
 
         <div>

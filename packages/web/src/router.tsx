@@ -76,9 +76,7 @@ export function AppRouter() {
               everyone else, so a member only ever reaches this by typing the URL. */}
           <Route path="/usage" element={<UsagePage />} />
           <Route path="/benchmark" element={<BenchmarkPage />} />
-          {/* A Benchmark is identified by a pair — the Agent it tests and its directory
-              name — so its own page carries both segments. */}
-          <Route path="/benchmark/:agentId/:benchmarkId" element={<BenchmarkDetailPage />} />
+          <Route path="/benchmark/:benchmarkId" element={<BenchmarkDetailPage />} />
           {/* System settings and user management live in the settings dialog now (see
               SettingsDialog); their old routes fall through to the catch-all. */}
           <Route path="*" element={<Navigate to="/chat" replace />} />
