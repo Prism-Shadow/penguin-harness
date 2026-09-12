@@ -54,6 +54,7 @@ import {
   aggregateWorkspaceLatest,
   clampGroupPage,
   completeWorkspaceGroups,
+  folderRevealPlan,
   groupPageCount,
   groupPageOf,
   groupPageSlice,
@@ -468,6 +469,7 @@ export function Sidebar({
     setGroupPage(0);
     // The other Project's groups are gone, and so is any meaning their reveal state had.
     setGroupCaps(new Map());
+    setFolderCaps(new Map());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapseStoreKey, pinStoreKey, currentProjectId]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
@@ -476,6 +478,8 @@ export function Sidebar({
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
   /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
+  /** The same display cap per folder (keyed by folderKey; absent = SIDEBAR_PAGE_SIZE), so an expanded folder reveals a page at a time instead of everything a fetch returned. */
+  const [folderCaps, setFolderCaps] = useState<ReadonlyMap<string, number>>(new Map());
   /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
   const [groupPage, setGroupPage] = useState(0);
   /** Session pending delete confirmation (null = none). */
@@ -504,6 +508,7 @@ export function Sidebar({
     setGroupOrder(loadGroupOrder(currentProjectId, mode));
     setGroupPage(0);
     setGroupCaps(new Map());
+    setFolderCaps(new Map());
   };
 
   /** Collapse/expand the page-nav group (same store-then-set convention as setGroupMode). */
@@ -1290,17 +1295,57 @@ export function Sidebar({
   );
 
   /**
+   * A folder's "Show N more chats": reveal one more page of the rows it already holds,
+   * and fetch its next server page only when the reveal actually runs past them and
+   * somewhere is left to fetch from. Mirrors the active list's showMore — a page already
+   * in memory spends no request, which in time mode is a fan-out across every
+   * contributing Agent.
+   */
+  const revealFolderMore = (
+    groupKey: string,
+    category: FolderCategory,
+    agentIds: string[],
+    loaded: number,
+  ) => {
+    const key = folderKey(groupKey, category);
+    const nextCap = (folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE;
+    setFolderCaps((prev) => {
+      const next = new Map(prev);
+      next.set(key, nextCap);
+      return next;
+    });
+    if (loaded < nextCap && agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)))) {
+      trackedLoadMore(groupKey, category, agentIds);
+    }
+  };
+
+  /** A folder's "show less": back to the first page (rows already fetched stay in memory). */
+  const collapseFolder = (key: string) => {
+    setFolderCaps((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  /**
    * Collapsed-by-default lazy folder (subagent / scheduled / archived): nothing is
-   * fetched until the first expand, and once open the folder pages independently with
-   * its own "More" row. Everything is driven by the group's **own** exact server share
-   * (`totals` — the Agent's counts in agent mode, the per-Workspace fold in workspace
-   * mode): the folder exists only while its share is non-zero, the label shows that
-   * share, and "More" shows only while loaded rows fall short of it — an Agent's
-   * content in *other* Workspaces can never surface a folder here. The folder's "More"
-   * pages independently of the active list's; in workspace mode a fetched page can land
-   * rows in other groups' folders too, so one click may grow this folder by fewer than
-   * a full page — the row shows a loading state while the fetch runs and stays until
-   * this group's share is fully loaded.
+   * fetched until the first expand, and once open the folder reveals and pages
+   * independently with its own "More" and "show less" rows. Everything is driven by the
+   * group's **own** exact server share (`totals` — the Agent's counts in agent mode, the
+   * per-Workspace fold in workspace mode): the folder exists only while its share is
+   * non-zero, the label shows that share, and "More" shows only while something of that
+   * share is still hidden — an Agent's content in *other* Workspaces can never surface a
+   * folder here.
+   *
+   * The folder obeys the active list's display rule (folderRevealPlan): one page of rows
+   * shows at a time and "More" reveals one page more, spending a fetch only when the
+   * reveal runs past what is in memory. In time mode the folders span every contributing
+   * Agent, so one fetch can return several pages at once; they stay in memory under the
+   * cap rather than all landing on screen. In workspace mode a fetched page can land rows
+   * in other groups' folders too, so one click may grow this folder by fewer than a full
+   * page — the row shows a loading state while the fetch runs.
    */
   const renderFolder = (
     groupKey: string,
@@ -1315,32 +1360,40 @@ export function Sidebar({
     // While searching the folder speaks for its loaded MATCHES only: a match hidden
     // behind a collapsed folder would look like a missing result (the models page's
     // search-forces-open rationale), so the folder is forced open, labelled by the
-    // match count, hidden when nothing matches, and never offers "More" (the server
-    // cannot search unloaded rows).
+    // match count, hidden when nothing matches, and never offers "More" or "show less"
+    // (the server cannot search unloaded rows, and every match is already on screen).
     if (searching && rows.length === 0) return null;
     // Loaded rows win a disagreement with the totals (counts refresh only on reload).
     const total = searching ? rows.length : Math.max(totals?.[category] ?? 0, rows.length);
     if (total === 0) return null;
-    // More while the group's share isn't fully loaded AND somewhere is left to fetch from
-    // (counts drifting above reality would otherwise leave a dead button until reload).
-    const more =
-      !searching &&
-      rows.length < total &&
-      agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
+    const key = folderKey(groupKey, category);
+    const cap = folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE;
+    // The folder's whole share is in memory (every Agent that could hold a row of it is
+    // fetched out), which is when the loaded rows become the truth — the same clause the
+    // active list applies, and what keeps a count drifting above reality from leaving a
+    // reveal row with nothing behind it.
+    const fullyLoaded =
+      agentIds.length > 0 && !agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
+    const plan = folderRevealPlan({ cap, loaded: rows.length, total, fullyLoaded });
+    const shown = searching ? rows : rows.slice(0, plan.shown);
+    const hidden = searching ? 0 : plan.hidden;
     return (
       <FolderSection
         key={category}
         label={S.chat.folderGroups[category](total)}
-        open={searching || openFolders.has(folderKey(groupKey, category))}
+        open={searching || openFolders.has(key)}
         onToggle={() => toggleFolder(groupKey, category, agentIds)}
-        more={more}
-        // The folder shows every row it has loaded, so its remainder is its own share
-        // minus those — the same count the active list's reveal row names one level up.
-        moreLabel={S.chat.expandRestSessions(Math.max(total - rows.length, 0))}
+        more={hidden > 0}
+        // The rows past the cap plus the unfetched remainder of this folder's own share —
+        // the same count, and the same wording, the active list's reveal row names one
+        // level up.
+        moreLabel={S.chat.expandRestSessions(hidden)}
         pending={pendingLoads.has(loadKey(groupKey, category))}
-        onMore={() => trackedLoadMore(groupKey, category, agentIds)}
+        onMore={() => revealFolderMore(groupKey, category, agentIds, rows.length)}
+        less={!searching && plan.canCollapse}
+        onLess={() => collapseFolder(key)}
       >
-        {renderRows(rows, withAgentHint)}
+        {renderRows(shown, withAgentHint)}
       </FolderSection>
     );
   };
