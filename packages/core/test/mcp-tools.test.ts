@@ -9,6 +9,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import { z } from "zod";
 import { Environment } from "../src/environment/index.js";
+import { rmEventually } from "./rm-eventually.js";
 import { McpToolProvider, renderCallToolResult } from "../src/environment/mcp/provider.js";
 import { Session } from "../src/session.js";
 import {
@@ -28,27 +29,6 @@ const FIXTURE = fileURLToPath(new URL("./fixtures/mcp-stdio-server.mjs", import.
 /** A `tools.mcpServers` entry spawning the stdio fixture, with optional extra config fields. */
 function fixtureEntry(extra: Record<string, unknown> = {}): MCPServerConfig {
   return { name: "fx", config: { command: process.execPath, args: [FIXTURE], ...extra } };
-}
-
-/**
- * Removes a test dir, retrying transient Windows locks: the dir is the stdio server child's
- * cwd, `dispose()` kills that child fire-and-forget, and Windows keeps a directory locked
- * (EBUSY/EPERM on rmdir) while it is any live process's working directory — the lock lifts
- * once the child finishes exiting. A genuinely stuck dir still fails, one deadline later.
- */
-async function rmEventually(dir: string, timeoutMs = 20_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    try {
-      await rm(dir, { recursive: true, force: true });
-      return;
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      const transient = code === "EBUSY" || code === "ENOTEMPTY" || code === "EPERM";
-      if (!transient || Date.now() > deadline) throw err;
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-  }
 }
 
 async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]> {
