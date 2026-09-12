@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** feature
 - **Scope:** `desktop`
+- **PR:** [#707](https://github.com/Prism-Shadow/penguin-harness/pull/707)
 - **Issue:** [#569](https://github.com/Prism-Shadow/penguin-harness/issues/569)
 
 [English](2026-09-12-desktop-tray.md)
