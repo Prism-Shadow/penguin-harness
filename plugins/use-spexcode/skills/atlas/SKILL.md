@@ -11,11 +11,13 @@ This skill draws with SpexCode's command line and needs nothing installed or con
 
 - Run SpexCode through npx: `npx -y -p spexcode@next spex <command>` (Node 22 or newer). Wherever a step below says
   `spex …`, run it that way; a `spex` already on the PATH works the same.
-- A diagram draws one node of the repository's spec tree, the `.spec/` folder. If the repository has none, write
-  only what the drawing needs: `.spec/<project>/spec.md` describing the project, and one folder beside it per part
-  worth a box, each with its own `spec.md` — a `title:` and a `code:` line naming the file it is about in the
-  frontmatter, a sentence or two below. That is the whole setup: no `spex init`, no hooks, no agent configuration.
-  `spex guide spec` has the full file format if you need more.
+- A diagram draws one node of the repository's spec tree, the `.spec/` folder. If the repository has none,
+  `spex init --pure` plants one and stops there: `.spec/spexcode.json` and a root `.spec/<project>/spec.md`, no
+  hooks, no agent configuration, nothing outside `.spec/`. Then rewrite that root to describe THIS project and add
+  one folder beside it per part worth a box, each with its own `spec.md` — a `title:` and a `code:` line naming
+  the file it is about in the frontmatter, a sentence or two below. `spex guide spec` has the full file format.
+  Use `--pure`, not a bare `spex init`: a bare one adopts the repository into SpexCode's whole workflow, which is
+  not what drawing a picture asks for.
 - `spex guide diagram` is the manual for the diagram format and the loop; read it once.
 
 Draw the spec tree's pictures: one `diagram.json` beside each node's `spec.md` that is worth one.
