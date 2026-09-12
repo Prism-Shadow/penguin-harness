@@ -52,6 +52,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { TokenDonut } from "../../components/ui/token-donut";
+import { TRACE_EVENT_PAGE_SIZE, loadTraceEventPages } from "./trace-events-loader";
 import { TimelineChart } from "./timeline-chart";
 import type { TraceHighlight } from "./timeline-chart";
 import { EventRow } from "./trace-event-row";
@@ -225,8 +226,6 @@ export function TraceFileView({
   const { currency } = useTheme();
   const [analysis, setAnalysis] = useState<TraceAnalysisResponse | null>(null);
   const [events, setEvents] = useState<OmniMessage[]>([]);
-  /** events' starting index within the file (pagination offset): used to align with analysis.tasks' index ranges. */
-  const [eventsOffset, setEventsOffset] = useState(0);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set());
@@ -262,25 +261,68 @@ export function TraceFileView({
   // Load the file, and re-load it whenever the panel's signal moves. Results overwrite what is
   // on screen in place — an in-flight refresh keeps the current content readable, and its
   // outcome is what clears or sets the error, since nothing was cleared up front.
+  //
+  // The events are paged through to the END of the file, not fetched once: the analysis
+  // describes every round by index range, so a round whose messages sit past the first page
+  // would render an empty message list. Each page lands at its own offset, so a long file is
+  // readable from its start while the rest of it arrives, and a REFRESH of a file already on
+  // screen updates the list in place instead of shrinking it back to one page per settled turn.
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      api.getAgentTraceAnalysis(projectId, agentId, sessionId, index),
-      api.getAgentTraceEvents(projectId, agentId, sessionId, index, 0, 1000),
-    ])
-      .then(([a, e]) => {
-        if (cancelled) return;
+    const signal = { cancelled: false };
+    const fail = (err: unknown) => {
+      if (!signal.cancelled) setError(apiErrorText(err));
+    };
+    // The error is cleared only once BOTH halves of the first load have landed: cleared on
+    // either one alone, a failure on one side would be wiped by the other side's success.
+    let haveAnalysis = false;
+    let haveFirstPage = false;
+    const clearErrorWhenBothLanded = () => {
+      if (haveAnalysis && haveFirstPage) setError(null);
+    };
+    api
+      .getAgentTraceAnalysis(projectId, agentId, sessionId, index)
+      .then((a) => {
+        if (signal.cancelled) return;
         setAnalysis(a);
-        setEvents(e.events);
-        setEventsOffset(e.offset);
-        setTotal(e.total);
-        setError(null);
+        haveAnalysis = true;
+        clearErrorWhenBothLanded();
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(apiErrorText(err));
-      });
+      .catch(fail);
+    loadTraceEventPages(
+      (offset, limit) =>
+        api.getAgentTraceEvents(projectId, agentId, sessionId, index, offset, limit),
+      {
+        pageSize: TRACE_EVENT_PAGE_SIZE,
+        signal,
+        onPage: (page) => {
+          // `total` comes from the latest page: the file is appended to while the Session runs.
+          setTotal(page.total);
+          // The page is spliced in AT ITS OFFSET rather than replacing or appending: a refresh
+          // re-walks a file already on screen (the panel re-reads on every settled turn), and
+          // a first page that replaced the list would drop a 2500-event file back to 1000 rows
+          // and empty its later rounds for a moment, once per turn. A file SWITCH starts from
+          // an empty list instead — the renderedFileKey reset above — so nothing is spliced
+          // into another file's rows.
+          setEvents((prev) => {
+            const next = prev.slice();
+            next.splice(page.offset, page.events.length, ...page.events);
+            return next;
+          });
+          haveFirstPage = true;
+          clearErrorWhenBothLanded();
+        },
+      },
+    )
+      .then((loaded) => {
+        // The completed walk's last word on the file's length: rows past it are an earlier
+        // walk's leftovers, from a file that came back shorter than it was read as before.
+        if (!signal.cancelled) {
+          setEvents((prev) => (prev.length > loaded ? prev.slice(0, loaded) : prev));
+        }
+      })
+      .catch(fail);
     return () => {
-      cancelled = true;
+      signal.cancelled = true;
     };
   }, [projectId, agentId, sessionId, index, reloadSignal]);
 
@@ -360,9 +402,9 @@ export function TraceFileView({
     // round (the server already knows this message-by-message from its
     // sequential scan, no need to re-guess it here).
     // events is only used to populate the message list (a list view that
-    // truthfully indicates truncation at the bottom); no **numeric value**
-    // is ever derived from it: events is paginated (limit=1000, not
-    // continued), so using it for aggregation would undercount Token/cost for a long Trace.
+    // names its loading progress at the bottom); no **numeric value** is ever
+    // derived from it: the pages arrive one after another, so aggregating over
+    // events would undercount Token/cost for as long as a long Trace is still loading.
     const taskOfIndex = (k: number): number | null => {
       for (const t of analysis.tasks) {
         if (k >= t.messageFrom && k <= t.messageTo) return t.taskIndex;
@@ -372,7 +414,7 @@ export function TraceFileView({
     for (let i = 0; i < events.length; i++) {
       const msg = events[i]!;
       if (msg.origin && msg.origin.length > 0) continue; // sub-session messages don't enter this file's grouping
-      const ti = taskOfIndex(eventsOffset + i); // events is fetched starting at offset; recover the global index within the file
+      const ti = taskOfIndex(i); // events is paged from the file's start, so i IS the index within the file
       if (ti !== null) ensure(ti).messages.push(msg);
     }
     g.toolCalls = analysis.toolSpans.length;
@@ -394,7 +436,7 @@ export function TraceFileView({
     const gLlm = analysis.tasks.reduce((s, t) => s + t.llmMs, 0);
     const tasks = [...map.values()].sort((a, b) => a.taskIndex - b.taskIndex);
     return { tasks, global: g, statsByTask, globalLlmMs: gLlm };
-  }, [analysis, events, eventsOffset]);
+  }, [analysis, events]);
 
   // The error takes the whole view only while there is nothing to take it from: this re-reads
   // on every settled turn now, so a blip mid-read would otherwise blank a file the user is in
@@ -651,7 +693,7 @@ export function TraceFileView({
       })}
 
       {events.length < total && (
-        <p className="text-xs text-gray-400">{S.traces.truncatedNote(events.length, total)}</p>
+        <p className="text-xs text-gray-400">{S.traces.loadingNote(events.length, total)}</p>
       )}
     </div>
   );
