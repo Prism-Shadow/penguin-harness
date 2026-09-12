@@ -451,7 +451,11 @@ export function AgentsPage() {
         <div className="mb-4">
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-            <CreateButtons onAi={() => openCreate("ai")} onManual={() => openCreate("manual")} />
+            <CreateButtons
+              size="sm"
+              onAi={() => openCreate("ai")}
+              onManual={() => openCreate("manual")}
+            />
           </div>
 
           {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
@@ -703,6 +707,7 @@ export function AgentsPage() {
                 description={S.agent.firstAgentDesc}
                 action={
                   <CreateButtons
+                    size="sm"
                     onAi={() => openCreate("ai")}
                     onManual={() => openCreate("manual")}
                   />
