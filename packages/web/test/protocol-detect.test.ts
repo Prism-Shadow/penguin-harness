@@ -107,6 +107,10 @@ describe("clientTypeAfterProviderChange (protocol family kept on move to Custom)
     expect(clientTypeAfterProviderChange("vllm", "openai-chat")).toBe("openai-chat-vllm-adapter");
     expect(clientTypeAfterProviderChange("vllm", "ant-messages")).toBe("openai-chat-vllm-adapter");
     expect(clientTypeAfterProviderChange("vllm", "deepseek-v4")).toBe("openai-chat-vllm-adapter");
+    // A gateway can pin too: OpenRouter speaks the Responses API for every upstream it
+    // serves, so an entry dragged in is rewritten off whatever it carried before.
+    expect(clientTypeAfterProviderChange("openrouter", "")).toBe("openai-responses");
+    expect(clientTypeAfterProviderChange("openrouter", "openai-chat")).toBe("openai-responses");
     // And moving back out of it does not carry the pin along.
     expect(clientTypeAfterProviderChange("custom", "openai-chat-vllm-adapter")).toBe("openai-chat");
   });

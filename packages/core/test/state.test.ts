@@ -1343,8 +1343,8 @@ describe("project-config round trip", () => {
       // every priced catalog entry stores USD pricing.
       if (cat.pricing === undefined) expect(entry.pricing).toBeUndefined();
       else expect(entry.pricing?.unit).toBe("usd_per_mtok");
-      // A model that auto-routes leaves client_type unset; a gateway model (OpenRouter)
-      // explicitly sets it to openai.
+      // A model that auto-routes leaves client_type unset; a gateway model pins one
+      // explicitly (OpenRouter pins openai-responses, the other gateways openai-chat).
       expect(entry.client_type).toBe(cat.clientType);
       // A gateway model has its base URL preset inline (no key included); other models have
       // no credential.

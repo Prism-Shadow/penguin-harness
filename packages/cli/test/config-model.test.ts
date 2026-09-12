@@ -175,7 +175,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(list.out.split("\n").some((l) => /anthropic\s+claude-sonnet-4-6/.test(l))).toBe(true);
   });
 
-  it("client_type defaults by grouping semantics (PRN-021): custom / self-hosted / gateway get openai-chat, first-party providers get none", async () => {
+  it("client_type defaults by grouping semantics (PRN-021): custom / self-hosted / gateway get openai-chat unless the group pins another protocol, first-party providers get none", async () => {
     // The custom group and self-hosted groups (--provider not a catalog value): default to client_type=openai.
     await runModel([
       "add",
@@ -197,7 +197,9 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       "--root",
       tmpRoot,
     ]);
-    // Gateway group: openai-chat + the gateway's endpoint base URL pre-filled.
+    // Gateway group: the gateway's endpoint base URL pre-filled, and the protocol the group
+    // pins — OpenRouter speaks the Responses API for every model it serves, so an id added by
+    // hand gets openai-responses rather than the openai-chat the other gateways default to.
     await runModel([
       "add",
       "--model-id",
@@ -228,7 +230,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     expect(by("custom", "my-openai-proxy").client_type).toBe("openai-chat");
     expect(by("mylab", "in-house-1").client_type).toBe("openai-chat");
     expect(by("deepseek", "my-fine-tune").client_type).toBeUndefined();
-    expect(by("openrouter", "acme/some-model").client_type).toBe("openai-chat");
+    expect(by("openrouter", "acme/some-model").client_type).toBe("openai-responses");
     expect(by("openrouter", "acme/some-model").base_url).toBe("https://openrouter.ai/api/v1");
     expect(by("mylab", "special-1").client_type).toBe("verbatim-type");
   });
@@ -257,7 +259,8 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       tmpRoot,
     ]);
     // The same id under a group that does not sell it has no catalog row, so the group rule
-    // still decides: a gateway gets openai-chat and its own endpoint, not DeepSeek's.
+    // still decides: OpenRouter gives it the openai-responses its group pins and its own
+    // endpoint, not DeepSeek's client and vendor endpoint.
     await runModel([
       "add",
       "--model-id",
@@ -298,7 +301,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
       parsed.models.find((m) => m.provider === p && m.model_id === id)!;
     expect(by("deepseek", "deepseek-flash").client_type).toBe("deepseek-v4");
     expect(by("deepseek", "deepseek-flash").base_url).toBe("https://api.deepseek.com");
-    expect(by("openrouter", "deepseek-flash").client_type).toBe("openai-chat");
+    expect(by("openrouter", "deepseek-flash").client_type).toBe("openai-responses");
     expect(by("openrouter", "deepseek-flash").base_url).toBe("https://openrouter.ai/api/v1");
     expect(by("minimax", "MiniMax-M3").client_type).toBe("openai-chat");
     expect(by("minimax", "MiniMax-M3").base_url).toBe("https://proxy.example/v1");

@@ -10,7 +10,8 @@
  * - OpenAI direct (gpt-* clients): the Responses API, POST {base}/responses (the SDK's
  *   default base URL https://api.openai.com/v1 already ends in /v1, and a custom base
  *   URL replaces it whole). The generic Responses protocol client
- *   (`client_type: "openai-responses"`) serves the same shape.
+ *   (`client_type: "openai-responses"`) serves the same shape — and it is what every
+ *   OpenRouter row pins, OpenRouter serving the Responses API for all of its upstreams.
  * - Google direct (gemini-* clients, `@google/genai`): {base}/v1beta/models/<id>:… —
  *   the SDK joins base URL + API version (v1beta) + the models path.
  * - MiniMax direct (minimax-m3 client): MiniMax's Responses API, POST {base}/responses
@@ -19,8 +20,8 @@
  *   (agenthub 0.4.6 moved this client off Chat Completions; its default base URL
  *   https://api.deepseek.com carries no /v1, and the request path adds none).
  * - Every OpenAI Chat Completions compatible client — explicit
- *   `client_type: "openai-chat"` (gateways, custom and user-defined groups; the bare
- *   "openai" spelling is a deprecated pre-0.4.2 alias),
+ *   `client_type: "openai-chat"` (the gateways other than OpenRouter, custom and
+ *   user-defined groups; the bare "openai" spelling is a deprecated pre-0.4.2 alias),
  *   `client_type: "openai-chat-vllm-adapter"` (the vLLM group; an openai-chat subclass that
  *   differs only in the thinking switch it sends), plus the GLM / Kimi direct clients —
  *   POST {base}/chat/completions.
