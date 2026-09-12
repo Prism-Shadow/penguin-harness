@@ -277,11 +277,29 @@ export class HmrHost<Api extends Park = Park> {
    * restart always resumes the pushed CODE with a clean slate, never last run's doc.
    */
   private async restore(): Promise<void> {
+    // No file is the only silent case: nothing has ever been pushed to this root. A file
+    // that cannot be read or parsed is a FAULT — this root does hold a committed version
+    // and it is now unreachable — so it is named rather than served as "nothing pushed",
+    // which would boot the packaged platform and let the next push overwrite the record
+    // with no one ever having been told.
+    let raw: string;
+    try {
+      raw = await fsp.readFile(this.manifestPath, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.warn(`harness.json could not be read (${errMsg(err)}); booting the packaged platform`);
+      }
+      return;
+    }
     let manifest: Manifest;
     try {
-      manifest = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
-    } catch {
-      return; // nothing committed yet
+      manifest = JSON.parse(raw) as Manifest;
+    } catch (err) {
+      this.warn(
+        `harness.json is not readable JSON (${errMsg(err)}); booting the packaged platform. ` +
+          `The committed version stays on disk but cannot be resumed until a push rewrites the record.`,
+      );
+      return;
     }
     if (manifest.platform === undefined && manifest.web === undefined) {
       return; // nothing committed yet
