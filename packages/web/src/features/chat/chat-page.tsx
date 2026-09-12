@@ -1928,14 +1928,14 @@ export function ChatPage() {
                       reading is, and a glyph beside a number is how every other chip in this
                       row says what its number counts. Bare ink like the chips beside it, not
                       a tinted pill: this is one more reading in the stat row, not a badge
-                      that should out-weigh them. Muted rather than the live-status green:
-                      background work is a fact about the conversation, not the live run this
-                      row is otherwise reporting — and `muted` may recede here because the
-                      title names the count in words, so the colour carries nothing alone. */}
+                      that should out-weigh them. In the live-status green (`busy`), the same
+                      tone as the session row's mark: background work is work still running
+                      behind this conversation, and glyph and number wear that colour together
+                      wherever they appear; the title still names the count in words. */}
                   {backgroundCount > 0 && (
                     <span
                       title={S.chat.backgroundTasks(backgroundCount)}
-                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.muted}`}
+                      className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
                       <GlyphIcon d={BACKGROUND_TASKS_ICON} />
                       {backgroundCount}

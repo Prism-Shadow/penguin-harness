@@ -84,15 +84,15 @@ describe("BackgroundTasksMark", () => {
     expect(S.chat.backgroundTasks(3)).toContain("3");
   });
 
-  it("draws the activity trace in the muted tone, at the rung its caller passes", () => {
+  it("draws the activity trace in the busy emerald, at the rung its caller passes", () => {
     expect(render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark)).toMatch(/width="12"/);
     expect(render(S.chat.backgroundTasks(1), ICON_SIZE.inlineGlyph)).toMatch(/width="13"/);
     const markup = render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark);
     expect(markup).toContain(`d="${BACKGROUND_TASKS_ICON}"`);
     // Parked work is a fact about the Session, not a turn in progress: the mark recedes with
     // the pin and the relay glyph instead of borrowing the tone the running hourglass wears.
-    expect(markup).toContain(toneInk.muted);
-    expect(markup).not.toContain(toneInk.busy);
+    expect(markup).toContain(toneInk.busy);
+    expect(markup).not.toContain(toneInk.muted);
     // Not one of the activity glyphs, and no motion, for the same reason.
     expect(markup).not.toContain(ACTIVITY_GLYPH.running);
     expect(markup).not.toContain("hourglass-turn");
