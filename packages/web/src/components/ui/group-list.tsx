@@ -217,7 +217,9 @@ export function GroupPager({
 /**
  * Collapsed-by-default lazy folder (subagent / scheduled / archived): the toggle row
  * shows the label (typically with the group's exact server share), the body renders only
- * while open, and an optional "More" row pages the folder independently.
+ * while open, and an optional "More" row reveals and pages the folder independently. The
+ * "show less" row below it folds the folder back to its first page; the two can stand at
+ * once, since a folder revealed part-way still has rows to show AND rows to fold away.
  */
 export function FolderSection({
   label,
@@ -227,6 +229,8 @@ export function FolderSection({
   moreLabel,
   pending = false,
   onMore,
+  less = false,
+  onLess,
   children,
 }: {
   label: string;
@@ -243,6 +247,9 @@ export function FolderSection({
   /** The folder's "More" fetch in flight. */
   pending?: boolean;
   onMore?: () => void;
+  /** Show the folder's "show less" row (it is revealed past its first page and has rows to fold away). */
+  less?: boolean;
+  onLess?: () => void;
   children?: ReactNode;
 }) {
   return (
@@ -259,6 +266,9 @@ export function FolderSection({
           pending={pending}
           onClick={() => onMore?.()}
         />
+      )}
+      {open && less && (
+        <MoreRow label={S.chat.showLess} ariaLabel={S.chat.showLess} onClick={() => onLess?.()} />
       )}
     </div>
   );
