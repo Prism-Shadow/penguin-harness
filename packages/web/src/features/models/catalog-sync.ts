@@ -6,8 +6,11 @@
  * pricing the catalog doesn't carry); locally added models (including user-defined groups)
  * are kept untouched. Credentials are never touched: merged rows carry no apiKey input (the
  * PUT keeps the stored key) and existing rows keep their credential display state.
+ *
+ * The display name is the one catalog field that is filled but never overwritten — see
+ * {@link displayNameFill}.
  */
-import { presetModelEntries } from "@prismshadow/penguin-core/model-catalog";
+import { catalogEntryFor, presetModelEntries } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import type { RowState } from "./models-page";
 
@@ -32,13 +35,40 @@ function presetFields(p: PresetEntry) {
   };
 }
 
+/**
+ * The name a sync writes onto an entry that currently shows `current`, or undefined to leave it
+ * alone (`undefined` for `current` is a brand-new row, which shows nothing yet).
+ *
+ * Fill-only, unlike every field in `presetFields`: a stored name may be the user's own rename,
+ * which the catalog has no claim to, while a blank one (never set, or cleared on disk and
+ * reported as "") leaves the row labelled by its raw model id and is worth repairing. The cost
+ * of that trade is that a deliberately cleared name comes back on the next sync.
+ *
+ * The name comes from the catalog rather than from `p`: `presetModelEntries` emits the
+ * PERSISTED entry shape, whose `display_name` is only written when it differs from the
+ * catalog, so a preset entry never carries one. Every catalog entry is named
+ * (`ModelCatalogEntry.displayName` is required), so the undefined result means the pair is not
+ * in the catalog at all — unreachable for the default preset list, which the catalog produces,
+ * and the answer for a caller that passes a list of its own.
+ */
+function displayNameFill(p: PresetEntry, current: string | undefined): string | undefined {
+  if (current?.trim()) return undefined;
+  return catalogEntryFor(p.provider, p.model_id)?.displayName;
+}
+
 /** A brand-new row for a catalog entry not configured locally (original: null -> added on PUT). */
 function presetToRow(p: PresetEntry): RowState {
+  const displayName = displayNameFill(p, undefined);
   return {
     provider: p.provider,
     modelId: p.model_id,
     original: null,
     ...presetFields(p),
+    // The catalog's name, looked up rather than left for the server to infer: the merged rows
+    // are what the page renders and what it submits, so a row that shows a name must carry one.
+    // Deliberately outside presetFields, which the catalog owns outright — on an existing row
+    // the same lookup is fill-only (see displayNameFill).
+    ...(displayName !== undefined ? { displayName } : {}),
     // The output cap and fast mode are user-owned, not catalog-owned (deliberately outside
     // presetFields, so a sync never clobbers them on existing rows): fresh rows inherit the
     // Agent setting / default to off.
@@ -84,9 +114,10 @@ export interface CatalogDelta {
  *
  * The same union `syncRowsWithCatalog` applies, so the two cannot disagree about whether there
  * is anything to do: catalog entries the table does not carry are additions, entries it does
- * carry whose catalog-owned fields differ are updates, and locally added models are invisible
- * to both. `refs` is what a dismissal is stamped against, so a later catalog release touching a
- * different model raises the badge again (see `lib/todo-badges.ts`).
+ * carry whose catalog-owned fields differ — or whose display name is blank — are updates, and
+ * locally added models are invisible to both. `refs` is what a dismissal is stamped against, so
+ * a later catalog release touching a different model raises the badge again (see
+ * `lib/todo-badges.ts`).
  */
 export function catalogDelta(
   models: readonly ModelDto[],
@@ -103,7 +134,12 @@ export function catalogDelta(
     }
     const fields = savedFields(entry);
     const target = presetFields(p);
-    if ((Object.keys(target) as (keyof CatalogFields)[]).some((k) => fields[k] !== target[k])) {
+    // The name counts as an update on the same fill-only rule the merge applies, or a Project
+    // carrying rows with no name would hold a badge the button answers "already up to date".
+    if (
+      displayNameFill(p, entry.displayName) !== undefined ||
+      (Object.keys(target) as (keyof CatalogFields)[]).some((k) => fields[k] !== target[k])
+    ) {
       delta.updated += 1;
       delta.refs.push(`${p.provider}/${p.model_id}`);
     }
@@ -115,7 +151,7 @@ export function catalogDelta(
  * Merges the current rows with the built-in catalog. Existing rows keep their identity,
  * credential state, and list position (fields are updated in place); catalog-only entries
  * are appended in catalog order. Returns the merged rows plus added/updated counts for the
- * success toast (updated counts only rows whose catalog-owned fields actually changed).
+ * success toast (updated counts only rows the merge actually rewrote).
  */
 export function syncRowsWithCatalog(
   rows: RowState[],
@@ -135,11 +171,12 @@ export function syncRowsWithCatalog(
     }
     const row = next[i]!;
     const fields = presetFields(p);
-    const changed = (Object.keys(fields) as (keyof typeof fields)[]).some(
-      (k) => row[k] !== fields[k],
-    );
+    const fill = displayNameFill(p, row.displayName);
+    const changed =
+      fill !== undefined ||
+      (Object.keys(fields) as (keyof typeof fields)[]).some((k) => row[k] !== fields[k]);
     if (changed) {
-      next[i] = { ...row, ...fields };
+      next[i] = { ...row, ...fields, ...(fill !== undefined ? { displayName: fill } : {}) };
       updated += 1;
     }
   }

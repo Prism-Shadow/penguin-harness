@@ -176,6 +176,59 @@ export const PANEL_RIGHT_ICON = "M4 5h16v14H4zM14 5v14";
 export const WORKBENCH_ICON = "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z";
 
 /**
+ * Four corner brackets opening outward: the floating launcher's ball while the pointer or the
+ * keyboard is on it, in place of the workbench tiles it rests on. Brackets rather than an arrow
+ * or a chevron because the fan they announce opens up, left and down at once, and a mark with a
+ * direction in it would name the wrong one.
+ */
+export const EXPAND_ICON = "M9 3H3v6M15 3h6v6M15 21h6v-6M9 21H3v-6";
+
+/** The same four corner brackets turned inward: what the launcher ball offers while its fan stands open. */
+export const COLLAPSE_ICON = "M3 9h6V3M21 9h-6V3M21 15h-6v6M3 15h6v6";
+
+/**
+ * Two robot heads, a large one above-left and a small one below-right: the subagents panel,
+ * wherever the dock names it. The single robot head of `AGENT_GROUP_ICON` is the Agent itself;
+ * the pair is what that Agent has going on underneath it. Reduced to antenna + head + two eye
+ * dots, because the ears and the smile the single head carries fall below a pixel on the dock's
+ * 13px tab strip.
+ */
+export const AGENTS_PAIR_ICON =
+  "M7.3 4.2V2.2M3.8 4.2h7a2.2 2.2 0 0 1 2.2 2.2v5.8a2.2 2.2 0 0 1-2.2 2.2h-7a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2zM4.6 9.2h.01M10 9.2h.01M18.6 14.8v-1.7M16.5 14.8h4.2a1.7 1.7 0 0 1 1.7 1.7v3.8a1.7 1.7 0 0 1-1.7 1.7h-4.2a1.7 1.7 0 0 1-1.7-1.7v-3.8a1.7 1.7 0 0 1 1.7-1.7zM17.3 18.4h.01M20.5 18.4h.01";
+
+/**
+ * The cerebrum from the side — for the Memory panel, the memory-changes card and the agent cards'
+ * memory count.
+ *
+ * Two subpaths in one string, because `GlyphIcon` draws a single `<path>`: the lobed outline, then
+ * the gyri inside it. The drawing was authored with the whole figure shifted a little down the box;
+ * that shift is baked into the coordinates here rather than carried as a transform, since a
+ * transform is an attribute the shared renderer has nowhere to put.
+ *
+ * It is stroked at the family's 1.7 like every other glyph, not at the 1.6 it was drawn at — the
+ * weight belongs to the set, not to the mark.
+ *
+ * Every surface draws it from here: a memory mark typed out a second time is how one thing ends up
+ * with two pictures of itself.
+ */
+export const MEMORY_ICON =
+  "M5.1 17.9c-1.4 0 -2.5 -1.05 -2.5 -2.45 -1.1 -1 -.95 -2.75 .25 -3.6 -.5 -1.75 .6 -3.5 2.3 -3.8 .2 -1.85 1.95 -3.15 3.75 -2.7 1.3 -1.3 3.5 -1.45 4.95 -.25 2 -.35 3.8 .8 4.35 2.6 2 .1 3.45 1.9 3.05 3.85 .9 1.2 .5 2.95 -.75 3.7 .2 1.6 -1.1 2.9 -2.7 2.75 -1.15 1.15 -2.85 1.3 -4.15 .5 -1.6 1.55 -4.4 1.4 -5.45 -.8 -.85 .75 -2.1 .85 -3.1 .2ZM5.15 8.05C5.05 9.75 6.4 10.8 8 10.55m5.85 -5.45c-1.1 .65 -1.8 1.9 -1.6 3.25m5.95 -.65c-1.7 -.2 -2.8 1.2 -2.6 2.65M8.2 17.7c-1.2 -1.1 -.85 -3 .55 -3.65 1.7 -.8 3.3 -.45 4.5 -2.1m4.55 6.05c-1.35 -.45 -1.9 -1.65 -1.45 -2.85";
+
+/**
+ * The eye's almond outline, shared by the two marks drawn from it — `NAV_ICONS.traces` (an open
+ * eye: watching the run) and `HIDDEN_ICON` (the same eye struck through). Composed rather than
+ * typed twice so the pair cannot drift into looking unrelated.
+ */
+const EYE_OUTLINE = "M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z";
+
+/**
+ * The struck-through eye: the launcher fan's last entry, which puts the ball away. The slash runs
+ * corner to corner rather than across the eye alone, because the open eye a few entries above it
+ * in the same fan is the same outline, and the slash is the only thing telling the two apart.
+ */
+export const HIDDEN_ICON = `${EYE_OUTLINE}M3 3l18 18`;
+
+/**
  * File glyphs, shared by every place a file operation is marked — the file summary card, the
  * memory-changes card, the context panel's file ranking — so a read, an edit and a write look
  * the same everywhere: a page with a folded corner, the same page with a plus (a full write),
@@ -199,12 +252,10 @@ export const FILE_EDIT_ICON = "M12 20h9M16.5 3.5a2.85 2.85 0 1 1 4 4L7.5 20.5 2 
  */
 export const BACKGROUND_TASKS_ICON = "M2 12h4l3 9 6-18 3 9h4";
 
-/** Chat bubble: the messaging binding's channel-neutral mark (dock panel tab). */
-export const MESSAGING_ICON = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
-
 /**
  * Paper plane: remote control — the session-row mark for a Session that is relaying through
- * a messaging channel, and the row menu's action that sets one up. One shape for every
+ * a messaging channel, the row menu's action that sets one up, and the dock's remote-control
+ * panel, so the feature wears one mark wherever it appears. One shape for every
  * channel — shape alone is not the carrier, so the row pairs it with the channel's name in
  * a tooltip and in sr-only text, and the menu entry is labelled.
  */
@@ -248,29 +299,38 @@ export const HAND_ICON =
   "M18 11V6a2 2 0 0 0-4 0M14 10V4a2 2 0 0 0-4 0v2M10 10.5V6a2 2 0 0 0-4 0v8M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15";
 
 /**
- * Alarm clock (dial, hands and the twin bells): the mark of scheduled tasks wherever they are
- * counted, listed or created — the agents page's schedule count, the chat dock's scheduled-tasks
- * panel and the mark a session row wears while an enabled task is bound to it. Distinct from the
- * plain clock face that means "most recent" in the list options.
+ * Alarm clock — domed bells on its shoulders, a dial with hands, and two splayed feet: the mark
+ * of scheduled tasks wherever they are counted, listed or created — the agents page's schedule
+ * count, the chat dock's scheduled-tasks panel and the mark a session row wears while an enabled
+ * task is bound to it. Distinct from the plain clock face that means "most recent" in the list
+ * options.
+ *
+ * The smallest place it draws is the session row's 12px trailing cluster, which is what the
+ * detail is bounded by: bells, feet and the hands' right angle each hold a whole pixel there,
+ * while a second dial ring or ticks around the face would not, and the notch between the bells
+ * is what keeps them reading as two.
  */
 export const SCHEDULE_ICON =
-  "M12 21a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm0-10v3l2 1.5M5 3L2.5 5.5M19 3l2.5 2.5";
+  "M12 19.5a6.7 6.7 0 1 0 0-13.4 6.7 6.7 0 0 0 0 13.4zM12 8.9v3.9l2.6 1.8M3.1 7.7A3.5 3.5 0 0 1 7.7 4.3M16.3 4.3a3.5 3.5 0 0 1 4.6 3.4M7.8 18.8 5.4 21.6M16.2 18.8l2.4 2.8";
 
 export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,
   /** Plugin library (the puzzle piece). */
   plugins: PLUGIN_ICON,
   /**
-   * Model library (a brain: two lobes drawn as one path, closed across the midline). The chip
-   * this replaces named the hardware a model runs on; what the page actually lists is language
-   * models, and a brain is the mark that says so at a glance.
+   * Model library (a chip: body, die and three pins a side). Three pins rather than the six a
+   * real package would show — at the 16px these rows draw, six pins a side fuse into a serrated
+   * edge and stop being pins. The die is what keeps the mark clear of `machines`, the next nav
+   * row down: a bare body with side ticks and a stack of server units both reduce to "a rectangle
+   * with lines", while concentric squares ringed with pins reduce to nothing else in this table.
    */
   models:
-    "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z",
+    "M5 5h14v14H5zM9 9h6v6H9zM7.5 5V2.4M12 5V2.4M16.5 5V2.4M7.5 19v2.6M12 19v2.6M16.5 19v2.6M5 7.5H2.4M5 12H2.4M5 16.5H2.4M19 7.5h2.6M19 12h2.6M19 16.5h2.6",
   /** Machines (two stacked server units, each with its own status lamp). */
   machines: "M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01",
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
-  traces: "M4 6h16M4 12h10M4 18h13",
+  /** Trace observation (an open eye with its pupil): watching what a run actually did. */
+  traces: `${EYE_OUTLINE}M14.7 12a2.7 2.7 0 1 1-5.4 0 2.7 2.7 0 0 1 5.4 0z`,
   /** Benchmark center (a trophy: cup + two handles + base). */
   benchmark:
     "M7 4h10v5a5 5 0 0 1-10 0V4zM7 5H4v1a3 3 0 0 0 3 3m10-4h3v1a3 3 0 0 1-3 3M12 14v4m-4 0h8",

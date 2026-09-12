@@ -104,6 +104,19 @@ export function formatPercent(ratio: number | null | undefined): string {
 }
 
 /**
+ * Average display for a "total ÷ count" figure (the Trace summary's tool calls
+ * per round): one decimal place, kept even when it is `.0`, so an average is
+ * never mistaken for the whole count printed beside it. A count of 0 leaves the
+ * average undefined → `—`, the same mark formatMoney and formatTps use for a
+ * figure that is not available, so an empty Trace reads the same way in every
+ * column.
+ */
+export function formatAverage(total: number, count: number): string {
+  const avg = total / count;
+  return count > 0 && Number.isFinite(avg) ? avg.toFixed(1) : "—";
+}
+
+/**
  * Cost display (converted to the selected currency; prices are stored in
  * USD): null/undefined → `—`; 1 USD ≈ 7 CNY; decimal places scale with
  * magnitude (≥100 rounds to an integer, ≥1 uses two places, otherwise four).

@@ -94,7 +94,10 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
       if (typeof m.displayName !== "string" || m.displayName.length > 100) {
         throw badRequest(`models[${i}].displayName must be a string of at most 100 characters.`);
       }
-      if (m.displayName) entry.displayName = m.displayName;
+      // The empty string is carried through rather than dropped: an absent field means
+      // "inherit the built-in catalog's name" and an empty one means "the user cleared it",
+      // and the service cannot tell those apart if the validator collapses them here.
+      entry.displayName = m.displayName;
     }
     // A key change (either the provider group or the upstream id) goes through renamedFrom's paired old reference; unknown fields are ignored.
     if (m.renamedFrom !== undefined) {

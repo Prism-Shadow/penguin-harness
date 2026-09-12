@@ -269,7 +269,12 @@ export interface RowState {
    * server uses to migrate the credential and pointers. null for a new entry.
    */
   original: ModelRefDto | null;
-  /** Display name from the built-in catalog; absent for custom models. */
+  /**
+   * What the model is called: the user's own name, or the built-in catalog's. Absent means the
+   * model has no name (a custom one, or a catalog row loaded before the name was filled in) and
+   * asks the server to inherit the catalog's; the empty string means a name the user cleared,
+   * which is a different request — see rowToEntry.
+   */
   displayName?: string;
   /**
    * Whether to treat this as a vision model (effective semantics): the server already
@@ -568,8 +573,11 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   if (row.original && !sameModelRef(row.original, rowRef(row))) {
     entry.renamedFrom = row.original;
   }
-  // Display name: the server only persists it when it differs from the built-in catalog (keeps preset model configs clean).
-  if (row.displayName?.trim()) entry.displayName = row.displayName.trim();
+  // Display name: submitted whenever the row carries one at all, the empty string included —
+  // absent means "inherit whatever the catalog calls this model" and empty means "the user
+  // cleared it", so a row that simply has no name must not travel as a deletion. The server
+  // only persists a name that differs from the built-in catalog (keeps preset configs clean).
+  if (row.displayName !== undefined) entry.displayName = row.displayName.trim();
   const cw = Number(row.contextWindow.trim());
   if (row.contextWindow.trim() && Number.isFinite(cw)) entry.contextWindow = cw;
   // Never persists an empty protocol for a custom-like entry (that entry could not start —
@@ -1491,9 +1499,14 @@ export function ModelsPage() {
           <p className="text-sm text-gray-600 dark:text-gray-300">
             {S.models.speedTestConfirm(rows?.filter((r) => r.provider === speedFor).length ?? 0)}
           </p>
+          {/* This dialog builds its action row in the body rather than through Modal's
+              `footer`, so it carries the footer's sm rung itself. */}
           <div className="mt-4 flex justify-end gap-2">
-            <Button onClick={() => setSpeedFor(null)}>{S.common.cancel}</Button>
+            <Button size="sm" onClick={() => setSpeedFor(null)}>
+              {S.common.cancel}
+            </Button>
             <Button
+              size="sm"
               variant="primary"
               onClick={() => {
                 const id = speedFor;
@@ -1741,18 +1754,18 @@ function AddGroupDialog({
       widthClass="sm:max-w-sm"
       footer={
         <>
-          <Button disabled={busy} onClick={onClose}>
+          <Button size="sm" disabled={busy} onClick={onClose}>
             {S.common.cancel}
           </Button>
           {mode === "create" ? (
-            <Button variant="primary" onClick={confirmCreate}>
+            <Button size="sm" variant="primary" onClick={confirmCreate}>
               {S.common.confirm}
             </Button>
           ) : (
             // The import action exists only once the protocol is determined (detected or
             // hand-picked): before that there is nothing meaningful to run.
             clientType !== null && (
-              <Button variant="primary" disabled={busy} onClick={() => void runImport()}>
+              <Button size="sm" variant="primary" disabled={busy} onClick={() => void runImport()}>
                 {S.models.groupImportAll}
               </Button>
             )
@@ -2833,9 +2846,12 @@ function ModelDialog({
       widthClass="sm:max-w-lg"
       footer={
         <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
+          <Button size="sm" onClick={onClose}>
+            {S.common.cancel}
+          </Button>
           {canEdit && (
             <Button
+              size="sm"
               variant="primary"
               // Saving may have to probe the endpoint first (protocol still unset), which
               // is a network round-trip: the label says so and the button locks, matching
@@ -3485,8 +3501,15 @@ function GroupKeyDialog({
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
-          <Button variant="primary" disabled={!key.trim()} onClick={() => onSubmit(key.trim())}>
+          <Button size="sm" onClick={onClose}>
+            {S.common.cancel}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!key.trim()}
+            onClick={() => onSubmit(key.trim())}
+          >
             {S.common.confirm}
           </Button>
         </>
@@ -3681,11 +3704,12 @@ function ModelOAuthDialog({
 
   const primary =
     phase === "failed" ? (
-      <Button variant="primary" onClick={() => setAttempt((n) => n + 1)}>
+      <Button size="sm" variant="primary" onClick={() => setAttempt((n) => n + 1)}>
         {S.models.oauthRetry}
       </Button>
     ) : manual ? (
       <Button
+        size="sm"
         variant="primary"
         disabled={flow === null || phase === "waiting" || !code.trim()}
         onClick={() => void submitCode()}
@@ -3693,7 +3717,7 @@ function ModelOAuthDialog({
         {S.models.oauthSubmitCode}
       </Button>
     ) : (
-      <Button variant="primary" disabled={flow === null} onClick={openAuthorizePage}>
+      <Button size="sm" variant="primary" disabled={flow === null} onClick={openAuthorizePage}>
         {S.models.oauthAuthorize}
       </Button>
     );
@@ -3707,10 +3731,14 @@ function ModelOAuthDialog({
         // Done is an outcome, not a choice: a "cancel" beside it would offer to undo a key that
         // is already written.
         phase === "done" ? (
-          <Button onClick={onClose}>{S.common.close}</Button>
+          <Button size="sm" onClick={onClose}>
+            {S.common.close}
+          </Button>
         ) : (
           <>
-            <Button onClick={onClose}>{S.common.cancel}</Button>
+            <Button size="sm" onClick={onClose}>
+              {S.common.cancel}
+            </Button>
             {primary}
           </>
         )
@@ -3728,7 +3756,9 @@ function ModelOAuthDialog({
         )}
         {phase !== "done" && manual && (
           <>
-            <Button variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
+            {/* In the dialog body, directly above the code Input: it takes the same rung the
+                field does, not the page-level md. */}
+            <Button size="sm" variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
               <GlyphIcon d={SIGN_IN_ICON} size={13} />
               {S.models.oauthAuthorize}
             </Button>

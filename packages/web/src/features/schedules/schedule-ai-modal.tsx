@@ -61,13 +61,15 @@ function ScheduleAiDialog({
       widthClass="sm:max-w-xl"
       footer={
         <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
+          <Button size="sm" onClick={onClose}>
+            {S.common.cancel}
+          </Button>
           {/*
             One exit, and its label says where the prompt goes rather than what happens to it.
             Copying lives on the prompt fold's own CopyButton (AiCreatePanel), which flips its
             glyph in place; a second copy control here would answer with a toast instead.
           */}
-          <Button variant="primary" disabled={!filled} onClick={go}>
+          <Button size="sm" variant="primary" disabled={!filled} onClick={go}>
             <GlyphIcon d={MAGIC_WAND_ICON} />
             {S.schedule.editInSession}
           </Button>

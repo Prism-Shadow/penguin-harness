@@ -28,7 +28,7 @@ import {
   dispatchChatDefaultsChanged,
   type ChatDefaultsChangedDetail,
 } from "../../features/chat/chat-defaults-event";
-import { ModelSelect } from "../../features/chat/model-select";
+import { ModelSelect, modelLabel } from "../../features/chat/model-select";
 import { SELECTABLE_THINKING_LEVELS } from "../../features/chat/thinking-level";
 import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { sameModelRef } from "../../features/models/model-grouping";
@@ -114,8 +114,10 @@ export function CreateProjectDialog({
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
-          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button size="sm" onClick={onClose}>
+            {S.common.cancel}
+          </Button>
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
             {S.common.create}
           </Button>
         </>
@@ -813,9 +815,7 @@ function ChatDefaultsSection({ projectId, isOwner }: { projectId: string; isOwne
               ],
               [
                 S.chat.model,
-                defaultModelInfo
-                  ? (defaultModelInfo.displayName ?? defaultModelInfo.modelId)
-                  : S.project.chatDefaultsNotSet,
+                defaultModelInfo ? modelLabel(defaultModelInfo) : S.project.chatDefaultsNotSet,
               ],
             ] as const
           ).map(([label, value]) => (

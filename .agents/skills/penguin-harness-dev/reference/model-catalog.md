@@ -58,4 +58,6 @@ and the `[[models]]` row it names (a default naming no entry is rejected on load
 Existing Projects never migrate automatically: presets are copied into `.project_config.toml` at
 creation and nothing rewrites them. Users pick changes up through the models page's explicit "sync
 presets", which appends and updates catalog-owned fields but never deletes and never touches the
-stored default. Say so in the entry.
+stored default. `display_name` is the one catalog-owned field a sync fills rather than overwrites —
+a stored name may be the user's own rename — so a name the user cleared is filled back in, while a
+rename survives. Say so in the entry.
