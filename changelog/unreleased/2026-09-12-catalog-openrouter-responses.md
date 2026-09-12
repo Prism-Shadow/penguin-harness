@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** feature
 - **Scope:** `core`, `web`, `cli`, `docs`, `model-catalog`
+- **PR:** [#705](https://github.com/Prism-Shadow/penguin-harness/pull/705)
 
 [中文版](2026-09-12-catalog-openrouter-responses.zh.md)
 
