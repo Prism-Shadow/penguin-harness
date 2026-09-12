@@ -21,6 +21,6 @@
 
 **冻结的操作是 `hmrMain`，在包里。** 请求交给哪一代（含等待进行中的 swap）、推送如何落地、启动失败时怎么办、一代成为当前之后产品要刷新什么（新的一代，或失败后重新启动的上一代）——这些都在 `packages/hmr` 的 `main.ts`。server 的入口把 host、自己的刷新（解析节点用的那棵树）和启动交给它；接缝与升级路由只驱动控制对象，不再直接驱动 host。
 
-**推送的做法和 `git push` 一样。** 推送原本每次都把所有部分内联带上——两个 bundle、整个 web dist、全部原生资产，以 base64 塞进一个 gzip JSON body——不管目标是否已经持有。现在存储按内容寻址（`store/blobs/<sha256>`，每份不同内容只存一次）：`POST /api/hmr/assets/probe { hashes }` 回答目标缺哪些 blob，`PUT /api/hmr/blobs/<sha256>` 以原始 body 收一个 blob、哈希对上名字才存，推送 body 形状不变，其中每个内容值——`platform`、`cli`、`web.files` 与 `assets.files` 的每一项——都可以写成 `{ sha }` 而不是内联，升级在任何东西启动之前先从存储解析；指名了存储里没有的 blob 会被拒绝并给出哈希，绝不物化成一个洞。`scripts/deploy.mjs` 先探测、只上传缺失的 blob，再推送一个只有名字的 body，于是一次推送只传上次之后变化的部分。没有探测端点的目标回应 404，收到全部内联内容，和它一直以来收到的推送一样。任何留存的资产集合都未记录的 blob 随旧集合一起清扫。
+**推送的做法和 `git push` 一样。** 推送原本每次都把所有部分内联带上——两个 bundle、整个 web dist、全部原生资产，以 base64 塞进一个 gzip JSON body——不管目标是否已经持有。现在存储按内容寻址（`store/blobs/<sha256>`，每份不同内容只存一次）：`POST /api/hmr/assets/probe { hashes }` 回答目标缺哪些 blob，`PUT /api/hmr/blobs/<sha256>` 以原始 body 收一个 blob、哈希对上名字才存，推送 body 形状不变，其中每个内容值——`platform`、`cli`、`web.files` 与 `assets.files` 的每一项——都可以写成 `{ sha }` 而不是内联，升级在任何东西启动之前先从存储解析；指名了存储里没有的 blob 会被拒绝并给出哈希，绝不物化成一个洞。`scripts/deploy.mjs` 先探测、只上传缺失的 blob，再推送一个只有名字的 body，于是一次推送只传上次之后变化的部分。没有探测端点的目标回应 404，收到全部内联内容，和它一直以来收到的推送一样。已提交版本与留存的资产集合都未记录的 blob 随旧集合一起清扫。
 
 **registry 里的是平台的状态，id 也这么说。** 每个条目都是 `platform.<name>`。registry 是内存状态，改名即硬升级：带此改动的平台需要带此改动的层，反之亦然。
