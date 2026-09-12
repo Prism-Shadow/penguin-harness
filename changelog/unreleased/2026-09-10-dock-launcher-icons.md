@@ -21,10 +21,11 @@ and its tab strip all read from, so each moved on all four surfaces at once:
 - **Subagents** — two robot heads, a large one above-left and a small one below-right, in place of
   the three-circle spawn tree. It is the Agent's own robot head, twice.
 - **Memory** — the brain in profile, in place of the open book: the lobed crown, the frontal lobe
-  at the left, the brainstem dropping from the underside, and twelve gyri inside. The gyri do not
-  resolve one by one at 13px, the smallest size these surfaces draw it at, but they read there as
-  the texture of a brain, which is what separates it from a cloud; at 18px and above each is its
-  own mark. The Memory panel, the memory-changes card and the agent cards' memory count had each
+  at the left, the brainstem dropping from the underside, and six gyri inside, kept longest-first
+  with a minimum separation so no one lobe fills up while the rest stays empty. They do not resolve
+  one by one at 13px, the smallest size these surfaces draw it at, but they read there as the
+  texture of a brain, which is what separates it from a cloud; at 18px and above each is its own
+  mark. The Memory panel, the memory-changes card and the agent cards' memory count had each
   carried their own hand-typed memory mark; the brain is drawn once, in
   `components/ui/icons.tsx`, and all three import it.
 - **Trace observation** — an open eye, in place of three stacked lines.
