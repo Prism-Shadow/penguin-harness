@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** process
 - **Scope:** `docs`
+- **PR:** [#704](https://github.com/Prism-Shadow/penguin-harness/pull/704)
 
 [中文版](2026-09-12-code-of-conduct-3-0.zh.md)
 
@@ -28,4 +29,8 @@
   process, so the ladder is the policy, and a bracketed note to ourselves does not belong in a
   document the community is held to.
 - Attribution changes with the version: 3.0 is stewarded by the Organization for Ethical Source
-  under CC BY-SA 4.0, so 2.1's Mozilla enforcement-ladder credit and FAQ link retire with it.
+  under CC BY-SA 4.0, so 2.1's Creative Commons attribution replaces the old one. The link to the
+  licence text is kept, because CC BY-SA 4.0 asks an adaptation that cites it to carry it. The FAQ
+  and resources links and the Mozilla enforcement-ladder credit are dropped: 3.0 still carries all
+  three, and they are pointers to the Covenant's own material rather than terms a reader here is
+  held to.

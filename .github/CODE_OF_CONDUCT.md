@@ -83,4 +83,4 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 This Code of Conduct is adapted from the Contributor Covenant, version 3.0, permanently available at [https://www.contributor-covenant.org/version/3/0/](https://www.contributor-covenant.org/version/3/0/).
 
-Contributor Covenant is stewarded by the Organization for Ethical Source and licensed under CC BY-SA 4.0. Translations are available at [https://www.contributor-covenant.org/translations](https://www.contributor-covenant.org/translations).
+Contributor Covenant is stewarded by the Organization for Ethical Source and licensed under CC BY-SA 4.0. To view a copy of this license, visit [https://creativecommons.org/licenses/by-sa/4.0/](https://creativecommons.org/licenses/by-sa/4.0/). Translations are available at [https://www.contributor-covenant.org/translations](https://www.contributor-covenant.org/translations).

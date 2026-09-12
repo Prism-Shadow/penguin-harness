@@ -83,4 +83,4 @@
 
 本行为准则改编自贡献者公约 3.0 版，该公约永久可在 [https://www.contributor-covenant.org/version/3/0/](https://www.contributor-covenant.org/version/3/0/) 查阅。
 
-贡献者公约由 Organization for Ethical Source 负责维护，并以 CC BY-SA 4.0 许可协议发布。其他语言的译本见 [https://www.contributor-covenant.org/translations](https://www.contributor-covenant.org/translations)。
+贡献者公约由 Organization for Ethical Source 负责维护，并以 CC BY-SA 4.0 许可协议发布。查看该许可协议请访问 [https://creativecommons.org/licenses/by-sa/4.0/](https://creativecommons.org/licenses/by-sa/4.0/)。其他语言的译本见 [https://www.contributor-covenant.org/translations](https://www.contributor-covenant.org/translations)。
