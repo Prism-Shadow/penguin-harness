@@ -66,6 +66,7 @@ import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Segmented } from "../../components/ui/segmented";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
+import { AiCreateModal, CreateButtons } from "../ai-create";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -634,7 +635,7 @@ const DRAG_POINTER_QUERY = "(hover: hover) and (pointer: fine)";
 
 export function ModelsPage() {
   useDocumentTitle(S.models.title);
-  const { currentProject } = useProject();
+  const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const isOwner = currentProject?.role === "owner";
   /** The Models trail's raised badge, or undefined — the header's two marks appear with it. */
@@ -710,6 +711,8 @@ export function ModelsPage() {
   const [deleteGroupFor, setDeleteGroupFor] = useState<string | null>(null);
   /** "Add group" popup (user-defined group): create-only hands off to that group's add-model dialog, import mode fills the group from its endpoint (see AddGroupDialog). */
   const [addGroupOpen, setAddGroupOpen] = useState(false);
+  /** "Add models with AI" dialog: the prompt goes to the Project's default agent. */
+  const [aiAddOpen, setAiAddOpen] = useState(false);
   /** Initial load failure: shown inline only when the whole page has no content (there's no context to pop a toast against). */
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1027,9 +1030,10 @@ export function ModelsPage() {
                 <InfoPopover label={S.models.title}>{S.models.readOnlyHint}</InfoPopover>
               )}
             </h1>
-            {/* The header holds search plus the owner-only "sync presets" action (add-model
-                entry points live in each group header); on narrow screens (flex-wrap wraps it
-                to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
+            {/* The header holds search, the owner-only "sync presets" action and the pair of
+                create buttons — the AI path and the group form, offered side by side (per-model
+                entry points still live in each group header); on narrow screens (flex-wrap wraps
+                it to its own line) the search box shrinks flexibly, fixed width at >=sm. */}
             <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
               <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
                 <Input
@@ -1057,6 +1061,14 @@ export function ModelsPage() {
                   {S.models.syncCatalog}
                   <span className="sr-only"> · {syncNote}</span>
                 </Button>
+              )}
+              {isOwner && (
+                <CreateButtons
+                  size="sm"
+                  disabled={rows === null}
+                  onAi={() => setAiAddOpen(true)}
+                  onManual={() => setAddGroupOpen(true)}
+                />
               )}
             </div>
           </div>
@@ -1508,6 +1520,22 @@ export function ModelsPage() {
           </div>
         </Modal>
       )}
+      {/* The AI path for what the group import cannot read: a listing page that is not an
+          OpenAI-compatible /models endpoint, or a service described in words. The table reloads
+          on every mount, so the group the agent adds is there when the page is next visited. */}
+      {projectId !== null && (
+        <AiCreateModal
+          open={aiAddOpen}
+          onClose={() => setAiAddOpen(false)}
+          title={S.models.aiAddTitle}
+          description={S.models.aiAddIntro}
+          placeholder={S.models.aiAddPlaceholder}
+          examples={S.models.aiAddExamples}
+          tail={S.models.aiAddTail(projectId)}
+          agents={agents}
+        />
+      )}
+
       {rows && addGroupOpen && (
         <AddGroupDialog
           projectId={projectId}
