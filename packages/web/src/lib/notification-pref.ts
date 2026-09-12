@@ -138,3 +138,19 @@ export async function enableNotifications(
   if (access === "granted") writeNotificationsEnabled(true, storage);
   return access;
 }
+
+/** What the settings row has to say under the switch, or null when it has nothing to add. */
+export type NotificationHint = "unsupported" | "denied" | "dismissed" | null;
+
+/**
+ * The hint for a platform state. `asked` is whether a request has answered in this session,
+ * and it is what separates the two meanings of "default": a platform that was never asked —
+ * where every first visit starts, and nothing to report — from a prompt closed without an
+ * answer, which is a request that failed and has to say so. Without that line the switch
+ * springs back to off with no explanation, which reads as a control that does nothing.
+ */
+export function notificationHintFor(access: NotificationAccess, asked: boolean): NotificationHint {
+  if (access === "unsupported") return "unsupported";
+  if (access === "denied") return "denied";
+  return access === "default" && asked ? "dismissed" : null;
+}

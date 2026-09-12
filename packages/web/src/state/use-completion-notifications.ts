@@ -42,12 +42,14 @@ export function useCompletionNotifications(): void {
   useSyncExternalStore(subscribeNotificationsEnabled, notificationsEnabledVersion);
   const enabled = readNotificationsEnabled();
   useEffect(() => {
-    if (!enabled) return;
-    // The tracker must see every snapshot (also while focused): completions the user
-    // watched happen are consumed silently instead of surfacing on a later blur.
+    // The tracker must see every snapshot — also while focused, and also while the
+    // preference is off: completions the user watched happen, or that happened while
+    // notifications were switched off, are consumed silently here instead of surfacing on
+    // a later blur or replaying the moment the preference is switched back on.
     const completed = trackerRef.current.observe(
       sessions.map((s) => ({ sessionId: s.sessionId, status: s.status })),
     );
+    if (!enabled) return;
     if (completed.length === 0) return;
     if (!document.hidden && document.hasFocus()) return;
     if (notificationPermission() !== "granted") return;

@@ -216,6 +216,8 @@ export const en: Strings = {
       "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
     notificationsDenied:
       "The system has denied notifications for this app. Allow them in your system notification settings, then turn this on again.",
+    notificationsDismissed:
+      "The permission prompt was closed without an answer, so notifications stay off. Turn this on again to ask once more.",
     notificationsUnsupported: "This browser does not support system notifications.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",

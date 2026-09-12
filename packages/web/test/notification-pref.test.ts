@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   NOTIFICATIONS_KEY,
   enableNotifications,
+  notificationHintFor,
   notificationPermission,
   notificationsEnabledVersion,
   readNotificationsEnabled,
@@ -151,5 +152,46 @@ describe("turning the preference on", () => {
 
     await expect(enableNotifications(storage)).resolves.toBe("unsupported");
     expect(readNotificationsEnabled(storage)).toBe(false);
+  });
+
+  it("takes the answer the request gave, not the permission it started from", async () => {
+    // The real sequence, which a stub answering with a fixed permission cannot express:
+    // the permission is "default" until the prompt is answered, and only the request
+    // reports what the user chose.
+    const storage = fakeStorage();
+    let permission: NotificationPermission = "default";
+    vi.stubGlobal("Notification", {
+      get permission() {
+        return permission;
+      },
+      requestPermission: async () => {
+        permission = "granted";
+        return permission;
+      },
+    });
+
+    await expect(enableNotifications(storage)).resolves.toBe("granted");
+    expect(readNotificationsEnabled(storage)).toBe(true);
+  });
+});
+
+describe("what the row says under the switch", () => {
+  it("says nothing to a platform that has simply not been asked yet", () => {
+    expect(notificationHintFor("default", false)).toBeNull();
+    expect(notificationHintFor("granted", false)).toBeNull();
+    expect(notificationHintFor("granted", true)).toBeNull();
+  });
+
+  it("names a prompt closed without an answer, which is the switch springing back", () => {
+    // A dismissal leaves the permission at "default", so nothing is stored and the switch
+    // reverts. With no line under it that click reads as a control that does nothing.
+    expect(notificationHintFor("default", true)).toBe("dismissed");
+  });
+
+  it("keeps a refusal and a missing API on screen whether or not this session asked", () => {
+    expect(notificationHintFor("denied", false)).toBe("denied");
+    expect(notificationHintFor("denied", true)).toBe("denied");
+    expect(notificationHintFor("unsupported", false)).toBe("unsupported");
+    expect(notificationHintFor("unsupported", true)).toBe("unsupported");
   });
 });

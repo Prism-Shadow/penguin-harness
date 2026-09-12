@@ -201,7 +201,7 @@ export const KEY_RULES: readonly KeyRule[] = [
     kind: "exact",
     key: "penguin.notifications",
     scope: "browser",
-    why: "Whether task-completion notifications were asked for; the OS permission behind it belongs to this browser, not to any data root, and clearing it would make the app prompt for permission all over again.",
+    why: "Whether task-completion notifications were asked for; it pairs with an OS permission that belongs to this browser rather than to any data root, and clearing it would silently stop notifications the user opted into.",
   },
 
   // --------------------------------------------------------------- install-scoped state

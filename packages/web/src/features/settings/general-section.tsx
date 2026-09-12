@@ -15,6 +15,7 @@ import { Segmented } from "../../components/ui/segmented";
 import { Switch } from "../../components/ui/switch";
 import {
   enableNotifications,
+  notificationHintFor,
   notificationPermission,
   notificationsEnabledVersion,
   readNotificationsEnabled,
@@ -35,9 +36,11 @@ export function GeneralSection() {
 
   useSyncExternalStore(subscribeNotificationsEnabled, notificationsEnabledVersion);
   const notificationsOn = readNotificationsEnabled();
-  // What the platform last answered: its own state, because a denial has to stay on screen
-  // as a hint after the click that produced it.
+  // What the platform last answered: its own state, because a refusal has to stay on screen
+  // as a hint after the click that produced it. `asked` goes with it, so a prompt closed
+  // without an answer is told apart from a browser that was simply never asked.
   const [access, setAccess] = useState<NotificationAccess>(notificationPermission);
+  const [asked, setAsked] = useState(false);
 
   const langOptions: ReadonlyArray<{ value: LangPref; label: string }> = [
     { value: "en", label: S.settings.langEn },
@@ -49,12 +52,15 @@ export function GeneralSection() {
     { value: "CNY", label: S.models.currencyCny },
   ];
 
+  const hint = notificationHintFor(access, asked);
   const notificationHint =
-    access === "unsupported"
+    hint === "unsupported"
       ? S.settings.notificationsUnsupported
-      : access === "denied"
+      : hint === "denied"
         ? S.settings.notificationsDenied
-        : undefined;
+        : hint === "dismissed"
+          ? S.settings.notificationsDismissed
+          : undefined;
 
   return (
     <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
@@ -77,9 +83,12 @@ export function GeneralSection() {
               writeNotificationsEnabled(false);
               return;
             }
-            // Only a granted request stores the preference, so a denial leaves the switch
-            // where it was and turns the hint on instead.
-            void enableNotifications().then(setAccess);
+            // Only a granted request stores the preference, so anything else leaves the
+            // switch where it was and turns the hint on instead.
+            void enableNotifications().then((answer) => {
+              setAccess(answer);
+              setAsked(true);
+            });
           }}
         />
       </PrefRow>
