@@ -14,14 +14,15 @@ import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
 import type { ServerConfig } from "../../config.js";
-import type { DesktopService } from "../../services/desktop-service.js";
 import type { Auth } from "../../mechanisms/identity.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import { Config, Desktop } from "../../hmr/capabilities.js";
+import type { DesktopApi } from "../../hmr/capabilities.js";
 
-/** What this route group reaches — bound by its module (src/modules). */
 export interface AuthRouteDeps {
   authService: Auth;
   config: ServerConfig;
-  desktop: DesktopService | null;
+  desktop: Pick<DesktopApi, "redeemLoginToken"> | null;
 }
 
 export function authRoutes(deps: AuthRouteDeps): Hono<AppEnv> {
@@ -74,5 +75,34 @@ export function authRoutes(deps: AuthRouteDeps): Hono<AppEnv> {
     return c.redirect("/", 302);
   });
 
+  // The group owns its prefix: an unknown path here is not found, never a 401 from the
+  // cookie gate behind it (there is no register endpoint, and a probe learns nothing).
+  app.all("/*", () => {
+    throw new HttpError(404, "not_found", "Not found.");
+  });
+
   return app;
+}
+
+/**
+ * Platform code: who may sign in and how is policy. The HMR layer mounts a copy of these
+ * routes below its seam for a platform older than this move, which declines the prefix.
+ */
+@Component({
+  contributes: {
+    "HttpModule.routes": [{ id: "AuthRoutes.routes", prefix: "/api/auth", auth: "none", order: 5 }],
+  },
+})
+export class AuthRoutes {
+  @Use() private readonly auth!: Auth;
+  @Use() private readonly config!: Config;
+  @Use() private readonly desktop!: Desktop;
+  @Bind("AuthRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = authRoutes({
+      authService: this.auth,
+      config: this.config,
+      desktop: this.desktop.current(),
+    });
+  }
 }

@@ -80,7 +80,8 @@ async function waitForHttp(origin: string, exited: () => boolean): Promise<void>
     if (exited()) throw new Error("The embedded server exited during startup.");
     try {
       // Any HTTP answer counts (the root may 302 on the preview host); manual redirect
-      // keeps the probe from chasing hosts.
+      // keeps the probe from chasing hosts. The announcement this follows is made once the
+      // App is up, so an answer here is the App's.
       const res = await fetch(`${origin}/`, {
         redirect: "manual",
         signal: AbortSignal.timeout(1000),

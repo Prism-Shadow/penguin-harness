@@ -1,7 +1,7 @@
 /**
  * HmrHost: the runtime side of the stop-the-world hot-update protocol.
  *
- * RUNTIME LAYER — MECHANISM ONLY. Nothing here may encode what the product
+ * HMR LAYER — MECHANISM ONLY. Nothing here may encode what the product
  * does; policy belongs in the platform, which ships by HTTP push in seconds
  * while every line in this file costs a rebuild and a redeploy of every
  * installation. Before adding anything, read ./README.md — in particular the
@@ -70,19 +70,17 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import zlib from "node:zlib";
 import { pathToFileURL } from "node:url";
-import type { Instance, Json, AnyIface, AnyImpl } from "@prismshadow/penguin-core/kernel";
+import type { Instance, Json, AnyIface, AnyImpl, Park } from "@prismshadow/penguin-core/kernel";
 import { boot, initialDoc, upgrade } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "./resources.js";
 import type { Manifest } from "./manifest.js";
 import { MATERIALIZED } from "./manifest.js";
-import type { PlatformApi } from "./platform.js";
-import { packagedPlatform } from "./platform.js";
 
 /**
  * The contract every platform bundle must satisfy — packaged or pushed. `context` is the
  * initial context a fresh boot creates the tree with (see initialDoc): the runtime never
  * hardcodes a business value of its own, so this is where a business platform's own
- * starting state belongs (see platform/platform.ts's packagedPlatform).
+ * starting state belongs (the server's hmr/platform.ts calls its own `packagedPlatform`).
  */
 export interface PlatformBundle {
   id: string;
@@ -118,6 +116,13 @@ export interface UpgradeAssets {
  * manifest. All three travel in the SAME request — there is no partial-target
  * upgrade.
  */
+/** One materialized assets directory's own record of what it was built from. */
+interface AssetsRecord {
+  /** relPath → sha256, the same map the pusher named (or the one derived from inline files). */
+  files: Record<string, string>;
+}
+const ASSETS_RECORD = ".manifest.json";
+
 export interface UpgradeAllTarget {
   platform: string;
   cli: string;
@@ -153,20 +158,20 @@ export type UpgradeOutcome =
  */
 const STORE_KEEP = 2;
 
-export class HmrHost {
+export class HmrHost<Api extends Park = Park> {
   readonly resources = new HotResources();
 
-  private instance: Instance<PlatformApi> | null = null;
+  private instance: Instance<Api> | null = null;
   /**
    * The bundle behind the RUNNING instance, held as the loaded object rather than a
    * pointer to re-read: it is what boot-failure recovery re-boots (see recoverPrevious).
    * A bundle's `id` cannot stand in for this — the packaged export IS what a push
-   * delivers (hmr/entry.ts re-exports `packagedPlatform` as `hotPlatform`), so every
+   * delivers (the server's hmr/entry.ts re-exports its packaged platform as `hotPlatform`), so every
    * pushed bundle carries the packaged id and comparing ids cannot tell a pushed version
    * from the compiled-in default. Nor can the manifest: a push whose disk commit failed
    * (`persisted: false`) is running a version harness.json does not name.
    */
-  private current: PlatformBundle = packagedPlatform;
+  private current: PlatformBundle;
   /** Current version's materialized native assets dir (see assetsDir()). */
   private assets: string | null = null;
   private readonly hmrDir: string;
@@ -178,11 +183,21 @@ export class HmrHost {
    * fallback can never run twice and race each other into assigning `this.instance` (a double
    * boot, or a restored version clobbered by a concurrently-booted packaged default).
    */
-  private initPromise: Promise<Instance<PlatformApi>> | null = null;
+  private initPromise: Promise<Instance<Api>> | null = null;
   /** The freeze, as a queue: everything the HTTP layer gates on chains here. */
   private opQueue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly root: string) {
+  /**
+   * `packaged` is the bundle compiled INTO the program — the starting state, and the
+   * fallback a failed restore lands on. Passed in rather than imported: this package is the
+   * mechanism, and it must not know what a platform is or what this product's default one
+   * contains. The server hands it its own (hmr/platform.ts's `packagedPlatform`).
+   */
+  constructor(
+    private readonly root: string,
+    private readonly packaged: PlatformBundle,
+  ) {
+    this.current = packaged;
     this.hmrDir = path.join(root, "hmr");
     this.storeDir = path.join(this.hmrDir, "store");
     this.manifestPath = path.join(this.hmrDir, "harness.json");
@@ -215,24 +230,24 @@ export class HmrHost {
    * in-flight promise (see `initPromise`) rather than each racing their own
    * restore()/packaged-boot.
    */
-  ensure(): Promise<Instance<PlatformApi>> {
+  ensure(): Promise<Instance<Api>> {
     if (this.instance !== null) return Promise.resolve(this.instance);
     this.initPromise ??= this.initialize();
     return this.initPromise;
   }
 
   /** Runs exactly once per process (guarded by `initPromise` in ensure()). */
-  private async initialize(): Promise<Instance<PlatformApi>> {
+  private async initialize(): Promise<Instance<Api>> {
     try {
       await this.restore();
       if (this.instance === null) {
-        const bundle = packagedPlatform;
+        const bundle = this.packaged;
         this.instance = (await boot(
           bundle.impl,
           bundle.iface,
           initialDoc(bundle.iface, bundle.context),
           this.resources,
-        )) as Instance<PlatformApi>;
+        )) as Instance<Api>;
         this.current = bundle;
       }
       return this.instance;
@@ -262,11 +277,29 @@ export class HmrHost {
    * restart always resumes the pushed CODE with a clean slate, never last run's doc.
    */
   private async restore(): Promise<void> {
+    // No file is the only silent case: nothing has ever been pushed to this root. A file
+    // that cannot be read or parsed is a FAULT — this root does hold a committed version
+    // and it is now unreachable — so it is named rather than served as "nothing pushed",
+    // which would boot the packaged platform and let the next push overwrite the record
+    // with no one ever having been told.
+    let raw: string;
+    try {
+      raw = await fsp.readFile(this.manifestPath, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.warn(`harness.json could not be read (${errMsg(err)}); booting the packaged platform`);
+      }
+      return;
+    }
     let manifest: Manifest;
     try {
-      manifest = JSON.parse(await fsp.readFile(this.manifestPath, "utf8")) as Manifest;
-    } catch {
-      return; // nothing committed yet
+      manifest = JSON.parse(raw) as Manifest;
+    } catch (err) {
+      this.warn(
+        `harness.json is not readable JSON (${errMsg(err)}); booting the packaged platform. ` +
+          `The committed version stays on disk but cannot be resumed until a push rewrites the record.`,
+      );
+      return;
     }
     if (manifest.platform === undefined && manifest.web === undefined) {
       return; // nothing committed yet
@@ -311,7 +344,7 @@ export class HmrHost {
         bundle.iface,
         initialDoc(bundle.iface, bundle.context),
         this.resources,
-      )) as Instance<PlatformApi>;
+      )) as Instance<Api>;
       this.instance = instance;
       this.current = bundle;
       this.webMem = webMem;
@@ -324,8 +357,11 @@ export class HmrHost {
   }
 
   /** Strictly request-driven; serialized on the op queue (never auto-triggered). */
-  upgradeAll(target: UpgradeAllTarget): Promise<UpgradeOutcome> {
-    const run = this.opQueue.then(() => this.doUpgradeAll(target));
+  upgradeAll(
+    target: UpgradeAllTarget,
+    admit?: (instance: Instance<Api>) => Promise<string | null> | string | null,
+  ): Promise<UpgradeOutcome> {
+    const run = this.opQueue.then(() => this.doUpgradeAll(target, admit));
     // The queue must survive a failed upgrade: swallow for chaining only.
     this.opQueue = run.then(
       () => undefined,
@@ -334,7 +370,10 @@ export class HmrHost {
     return run;
   }
 
-  private async doUpgradeAll(target: UpgradeAllTarget): Promise<UpgradeOutcome> {
+  private async doUpgradeAll(
+    target: UpgradeAllTarget,
+    admit?: (instance: Instance<Api>) => Promise<string | null> | string | null,
+  ): Promise<UpgradeOutcome> {
     const current = await this.ensure();
 
     if (typeof target.web["index.html"] !== "string") {
@@ -366,6 +405,7 @@ export class HmrHost {
         impl: bundle.impl,
         iface: bundle.iface,
         resources: this.resources,
+        ...(admit !== undefined ? { admit: admit as never } : {}),
       });
     } catch (err) {
       this.publishAssets(previousAssets);
@@ -402,12 +442,19 @@ export class HmrHost {
     // as one atomic version — never a platform that's newer (or older) than the
     // web or cli it's paired with. `result.doc` (the swap's parked+migrated state)
     // is never written to disk — see the module doc: code persists, state does not.
-    this.instance = result.instance as Instance<PlatformApi>;
+    this.instance = result.instance as Instance<Api>;
     this.current = bundle;
     this.webMem = webMem;
 
     const digest = filesDigest(target.web);
     const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: target.web })));
+    // The parts by the names a pusher gives them (HMR_BLOBS_PATH), whether or not this push
+    // named them: what the sweep keeps alive so an unchanged part is never uploaded twice.
+    const blobs = [
+      sha256(Buffer.from(target.platform, "utf8")),
+      sha256(Buffer.from(target.cli, "utf8")),
+      ...[...webMem.values()].map(sha256),
+    ];
     const persisted = await this.persistVersion(
       platformSha,
       target.cli,
@@ -415,6 +462,7 @@ export class HmrHost {
       digest.slice(0, 16),
       assetsDir,
       source,
+      blobs,
     );
 
     return {
@@ -441,12 +489,7 @@ export class HmrHost {
   private async recoverPrevious(doc: Json): Promise<void> {
     try {
       const bundle = this.current;
-      this.instance = (await boot(
-        bundle.impl,
-        bundle.iface,
-        doc,
-        this.resources,
-      )) as Instance<PlatformApi>;
+      this.instance = (await boot(bundle.impl, bundle.iface, doc, this.resources)) as Instance<Api>;
       // `current` unchanged: the previous version is the running version again.
     } catch (err) {
       this.warn(
@@ -537,26 +580,74 @@ export class HmrHost {
    * push interrupted halfway is repaired rather than trusted.
    */
   private async materializeAssets(assets: UpgradeAssets): Promise<string> {
-    const sha = filesDigest(assets.files).slice(0, 16);
+    // Every file goes through the blob store first, so a set is one map of relPath → sha256
+    // whether its content arrived in this push or was already here.
+    const files: Record<string, string> = {};
+    for (const [rel, b64] of Object.entries(assets.files)) {
+      if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
+      files[rel] = await this.storeBlob(Buffer.from(b64, "base64"));
+    }
+
+    const sha = recordDigest(files).slice(0, 16);
     const dir = path.join(this.storeDir, "assets", sha);
     const marker = path.join(dir, MATERIALIZED);
     if (fs.existsSync(marker)) return dir;
 
     const exec = new Set(assets.exec ?? []);
-    for (const [rel, b64] of Object.entries(assets.files)) {
-      if (!isSafeRelPath(rel)) throw new Error(`unsafe path in assets manifest: ${rel}`);
+    for (const [rel, blob] of Object.entries(files)) {
       const file = path.join(dir, rel);
-      const content = Buffer.from(b64, "base64");
       await fsp.mkdir(path.dirname(file), { recursive: true });
-      // Repairing an incomplete directory: whatever already matches is left alone, for the
-      // same reason the whole directory is skipped above.
+      // Repairing an incomplete directory: whatever already matches is left alone. The
+      // content comes from the blob store, never from the payload — after the first push
+      // of a given file the payload does not carry it any more.
+      const content = await fsp.readFile(this.blobPath(blob));
       if (!(await sameFileContent(file, content))) await fsp.writeFile(file, content);
       // Explicit chmod: writeFile's mode is masked by umask, and ignored outright when
       // the file already exists (a reused, content-addressed directory).
       await fsp.chmod(file, exec.has(rel) ? 0o755 : 0o644);
     }
+    const record: AssetsRecord = { files };
+    await fsp.writeFile(path.join(dir, ASSETS_RECORD), JSON.stringify(record));
     await fsp.writeFile(marker, sha);
     return dir;
+  }
+
+  /** `store/blobs/<sha256>`: one file per distinct content, shared by every assets set. */
+  private blobPath(sha: string): string {
+    return path.join(this.storeDir, "blobs", sha);
+  }
+
+  /** Writes a blob under its hash (a no-op when it is already there) and returns the hash. */
+  async storeBlob(content: Buffer): Promise<string> {
+    const sha = sha256(content);
+    const file = this.blobPath(sha);
+    if (!fs.existsSync(file)) {
+      await fsp.mkdir(path.dirname(file), { recursive: true });
+      // Written beside and renamed in: a crash mid-write must not leave a blob whose name
+      // promises content it does not have.
+      const tmp = `${file}.${process.pid}.tmp`;
+      await fsp.writeFile(tmp, content);
+      await fsp.rename(tmp, file);
+    }
+    return sha;
+  }
+
+  /** The bytes of a blob the store holds, or null: what a push that names its parts by hash is resolved from. */
+  readBlob(sha: string): Buffer | null {
+    if (!isBlobName(sha)) return null;
+    try {
+      return fs.readFileSync(this.blobPath(sha));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Which of these blobs the store does NOT hold — what a pusher asks before it sends, so
+   * an unchanged native module or plugin never crosses the wire twice.
+   */
+  missingBlobs(hashes: readonly string[]): string[] {
+    return hashes.filter((sha) => !isBlobName(sha) || !fs.existsSync(this.blobPath(sha)));
   }
 
   /** Points the registry at this version's assets (or clears it when a push has none). */
@@ -566,7 +657,7 @@ export class HmrHost {
 
   /**
    * Where the current version's native-module assets live, or null when none were
-   * pushed. A declared member of the hmr capability (see RUNTIME_INTERFACES), read by
+   * pushed. A declared member of the hmr capability (see HMR_INTERFACES), read by
    * the bundle's pty loader — not a registry key: the host is already the claimed
    * object, so its per-push state belongs on it.
    */
@@ -595,6 +686,7 @@ export class HmrHost {
     webSha: string,
     assetsDir: string | null,
     source: GitSource | null,
+    blobs: string[],
   ): Promise<boolean> {
     try {
       // The platform bundle is already in the store: storePlatformBundle put it at its
@@ -621,6 +713,7 @@ export class HmrHost {
         // content-addressed and say nothing about their origin on their own.
         ...(source === null ? {} : { source }),
         pushedAt: new Date().toISOString(),
+        blobs,
       }));
       return true;
     } catch (err) {
@@ -724,6 +817,31 @@ export class HmrHost {
       assetsRef,
       (sha) => fsp.rm(path.join(assetsRoot, sha), { recursive: true, force: true }),
     );
+
+    // Blobs are shared by every assets set and by the committed version's own parts, so
+    // they are collected LAST, against what the sweep above left: a blob neither a
+    // remaining set nor the version records is unreachable. A set without a record
+    // (materialized before records existed) keeps nothing alive through the blob store
+    // because it never read from it, and its own files stay untouched.
+    const live = new Set<string>(manifest.blobs ?? []);
+    for (const name of await fsp.readdir(assetsRoot).catch(() => [] as string[])) {
+      try {
+        const record = JSON.parse(
+          await fsp.readFile(path.join(assetsRoot, name, ASSETS_RECORD), "utf8"),
+        ) as AssetsRecord;
+        for (const sha of Object.values(record.files)) live.add(sha);
+      } catch {
+        // No record, or an unreadable one: nothing to keep alive from here.
+      }
+    }
+    const blobsDir = path.join(this.storeDir, "blobs");
+    for (const name of await fsp.readdir(blobsDir).catch(() => [] as string[])) {
+      if (/^[0-9a-f]{64}$/.test(name) && !live.has(name)) {
+        await fsp.rm(path.join(blobsDir, name), { force: true }).catch(() => undefined);
+      } else if (name.endsWith(".tmp")) {
+        await fsp.rm(path.join(blobsDir, name), { force: true }).catch(() => undefined);
+      }
+    }
   }
 
   /** Process-exit sweep only; never part of an upgrade. */
@@ -738,8 +856,28 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** A blob is named by the lowercase hex sha256 of its content, nothing else. */
+export function isBlobName(name: string): boolean {
+  return /^[0-9a-f]{64}$/.test(name);
+}
+
+function sha256(content: Buffer): string {
+  return crypto.createHash("sha256").update(content).digest("hex");
+}
+
 function sha1(content: string): string {
   return crypto.createHash("sha1").update(content).digest("hex");
+}
+
+/**
+ * The name of a materialized assets directory: a hash over relPath → sha256, so the same
+ * files name the same directory whether they arrived inline or by manifest, and a set is
+ * never written twice.
+ */
+function recordDigest(files: Record<string, string>): string {
+  const hash = crypto.createHash("sha1");
+  for (const rel of Object.keys(files).sort()) hash.update(rel).update("\0").update(files[rel]!);
+  return hash.digest("hex");
 }
 
 /** Content hash over a web dist manifest: stable across re-pushes of identical content. */

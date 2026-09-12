@@ -323,6 +323,19 @@ importers:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
 
+  packages/hmr:
+    dependencies:
+      '@prismshadow/penguin-core':
+        specifier: workspace:*
+        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+    devDependencies:
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
   packages/landing:
     dependencies:
       react:
@@ -386,6 +399,9 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-hmr':
+        specifier: workspace:*
+        version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -1517,6 +1533,9 @@ packages:
   '@prismshadow/penguin-core@file:packages/core':
     resolution: {directory: packages/core, type: directory}
     engines: {node: '>=24'}
+
+  '@prismshadow/penguin-hmr@file:packages/hmr':
+    resolution: {directory: packages/hmr, type: directory}
 
   '@prismshadow/penguin-server@file:packages/server':
     resolution: {directory: packages/server, type: directory}
@@ -5523,11 +5542,34 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-hmr@file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
+  '@prismshadow/penguin-hmr@file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+    dependencies:
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+    transitivePeerDependencies:
+      - '@modelcontextprotocol/sdk'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - ws
+      - zod
+
   '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-hmr': file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -5554,6 +5596,7 @@ snapshots:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/penguin-hmr': file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
       fflate: 0.8.3

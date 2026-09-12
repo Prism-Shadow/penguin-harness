@@ -1,20 +1,17 @@
 /**
- * App assembly, both halves of it.
+ * The HMR layer's app assembly.
  *
- * The RUNTIME shell — `createRuntimeApp(deps)` — mounts the mechanism surface: the network
- * guards, `/api/auth`, `/api/desktop`, `/api/hmr`, the platform seam, and static hosting.
- * `bootAppDeps(config)` builds the shell's own core (database, auth, channels, HmrHost),
- * publishes its capabilities into the resource registry (see hmr/capabilities.ts), boots the
- * platform — which builds the business surface over those capabilities — and returns that
- * App's deps, read off the booted instance. Neither app listens on a port: tests inject
- * requests via `app.request()`, and the startup entry point is index.ts.
+ * `bootAppDeps(config)` builds the process's core (database, channels, HmrHost), publishes
+ * it into the resource registry (see hmr/capabilities.ts), boots the platform — which builds
+ * the business surface over what it claims there — and returns the boot. `createApp(boot)`
+ * mounts the layer's HTTP surface: the network guards, `/api/hmr`, the platform seam, and
+ * static hosting. Neither listens on a port: tests inject requests via `app.request()`, and
+ * the startup entry point is index.ts.
  *
- * The BUSINESS surface — `buildAppDeps` + `createApp`, at the bottom of this
- * file — is what a hot push replaces. Both are called from `platformImpl.create`
- * (hmr/platform.ts) at every App creation, over the capabilities claimed from the
- * registry, so every business service and route travels with the platform version rather
- * than with this build. Swap semantics for anything they hold that is not parked is a
- * HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
+ * Every other route is the platform's (http/app.ts, `HttpModule`), assembled at every App
+ * creation from `platformImpl.create` (hmr/platform.ts), so it travels with the platform
+ * version rather than with this build. Swap semantics for anything the platform holds that
+ * is not parked is a HARD STOP: approvals deny, runs abort, the scheduler dies with its App.
  */
 import { createHash } from "node:crypto";
 import zlib from "node:zlib";
@@ -30,19 +27,20 @@ import type { ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
 import { applyProxySettings, mergedNoProxy } from "./net/proxy.js";
 import {
-  RUNTIME_INTERFACES,
-  RUNTIME_INTERFACES_RESOURCE_ID,
-  RUNTIME_AUTH_STATE_RESOURCE_ID,
-  RUNTIME_CHANNELS_RESOURCE_ID,
-  RUNTIME_CONFIG_RESOURCE_ID,
-  RUNTIME_DB_RESOURCE_ID,
-  RUNTIME_DESKTOP_RESOURCE_ID,
-  RUNTIME_LIFECYCLE_RESOURCE_ID,
-  RUNTIME_HMR_RESOURCE_ID,
-  RUNTIME_OVERRIDES_RESOURCE_ID,
+  HMR_INTERFACES,
+  HMR_INTERFACES_RESOURCE_ID,
+  HMR_AUTH_STATE_RESOURCE_ID,
+  HMR_CHANNELS_RESOURCE_ID,
+  HMR_CONFIG_RESOURCE_ID,
+  HMR_DB_RESOURCE_ID,
+  HMR_DESKTOP_RESOURCE_ID,
+  HMR_LIFECYCLE_RESOURCE_ID,
+  HMR_HOST_RESOURCE_ID,
+  HMR_CONTROL_RESOURCE_ID,
+  HMR_OVERRIDES_RESOURCE_ID,
   type Replacements,
-  RUNTIME_PROXY_RESOURCE_ID,
-  RuntimeCapabilities,
+  HMR_PROXY_RESOURCE_ID,
+  HmrCapabilities,
   ConsoleLog,
   type Log,
   type ProxyControl,
@@ -59,7 +57,7 @@ import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { authMiddleware, jsonOnlyWrites } from "./auth/middleware.js";
+import { jsonOnlyWrites } from "./auth/middleware.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
@@ -72,7 +70,6 @@ import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { ensureInstallId } from "./install-id.js";
 import { handleError, HttpError, errorBody } from "./http/errors.js";
 import { attributedProjectId } from "./http/attribution.js";
-import { authRoutes } from "./http/routes/auth.js";
 import { installRoutes } from "./http/routes/install.js";
 import { ChannelHub } from "./runtime/channel.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
@@ -104,7 +101,6 @@ import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
 import { LifecycleService } from "./services/lifecycle-service.js";
-import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -120,8 +116,10 @@ import { UpdateCheckService } from "./services/update-check-service.js";
 import { UpdateJobService } from "./services/update-job.js";
 import { UsageService } from "./services/usage-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
-import { HmrHost } from "./hmr/host.js";
-import { hmrRoutes } from "./hmr/routes.js";
+import { HmrHost, hmrControl } from "@prismshadow/penguin-hmr";
+import type { Hmr } from "@prismshadow/penguin-hmr";
+import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
+import { packagedPlatform } from "./hmr/platform.js";
 import { platformHttpSeam } from "./hmr/http-seam.js";
 import {
   createPreviewTokenSigner,
@@ -185,7 +183,9 @@ export interface ServerBoot {
   config: ServerConfig;
   db: DatabaseSync;
   channels: ChannelHub;
-  hmr: HmrHost;
+  hmr: ServerHmrHost;
+  /** The frozen operations over `hmr` (packages/hmr's main.ts): the seam and the upgrade route drive it, nothing drives the host directly. */
+  control: Hmr<PlatformApi>;
   desktop: DesktopService | null;
   /** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger (the "restart to update" step). */
   lifecycle: LifecycleService;
@@ -206,14 +206,26 @@ export async function bootAppDeps(
   config: ServerConfig,
   replacements: Replacements = [],
   plugins?: PluginHost,
+  host?: ServerHmrHost,
+  control?: Hmr<PlatformApi>,
 ): Promise<ServerBoot> {
   const db = openDatabase(config.dbPath);
 
   const usersRepo = wire(UsersRepo, { db: db });
 
   // Hoisted above the services so its registry can be populated before anything boots
-  // against it.
-  const hmr = new HmrHost(config.root);
+  // against it. index.ts builds both and hands them in (hmrMain owns them there); a test
+  // that boots without an entry gets the same pair here.
+  const hmr = host ?? new HmrHost<PlatformApi>(config.root, packagedPlatform);
+  // The default replace does what index.ts's does: point the boot's tree at the new
+  // generation, so what createApp resolves from it is the current generation's.
+  let booted: ServerBoot | null = null;
+  const ctl =
+    control ??
+    hmrControl(hmr, (instance) => {
+      const next = typeof instance.api.business === "function" ? instance.api.business() : null;
+      if (next !== null && booted !== null) booted.tree = next;
+    });
 
   // Channel idle reclamation must skip active Sessions, but "is this session busy" is a
   // business question: the App installs the answer itself via setActivityProbe at every
@@ -262,21 +274,22 @@ export async function bootAppDeps(
     console.warn(`[server] could not write the penguin CLI shim: ${shim.reason}`);
   }
 
-  // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
-  // entry must be in place before ensure() below performs the first boot. The interface
-  // descriptor leads: it is what a bundle's handshake reads before trusting any of the rest.
-  hmr.resources.register(RUNTIME_INTERFACES_RESOURCE_ID, RUNTIME_INTERFACES);
-  hmr.resources.register(RUNTIME_CONFIG_RESOURCE_ID, config);
-  hmr.resources.register(RUNTIME_DB_RESOURCE_ID, db);
-  hmr.resources.register(RUNTIME_AUTH_STATE_RESOURCE_ID, authState);
-  hmr.resources.register(RUNTIME_CHANNELS_RESOURCE_ID, channels);
-  hmr.resources.register(RUNTIME_PROXY_RESOURCE_ID, applyProxySettings);
-  hmr.resources.register(RUNTIME_HMR_RESOURCE_ID, hmr);
-  hmr.resources.register(RUNTIME_OVERRIDES_RESOURCE_ID, replacements);
+  // What buildAppDeps claims (see hmr/capabilities.ts) — every entry must be in place before
+  // ensure() below performs the first boot. The interface descriptor leads: it is what a
+  // bundle's handshake reads before trusting any of the rest.
+  hmr.resources.register(HMR_INTERFACES_RESOURCE_ID, HMR_INTERFACES);
+  hmr.resources.register(HMR_CONFIG_RESOURCE_ID, config);
+  hmr.resources.register(HMR_DB_RESOURCE_ID, db);
+  hmr.resources.register(HMR_AUTH_STATE_RESOURCE_ID, authState);
+  hmr.resources.register(HMR_CHANNELS_RESOURCE_ID, channels);
+  hmr.resources.register(HMR_PROXY_RESOURCE_ID, applyProxySettings);
+  hmr.resources.register(HMR_HOST_RESOURCE_ID, hmr);
+  hmr.resources.register(HMR_CONTROL_RESOURCE_ID, ctl);
+  hmr.resources.register(HMR_OVERRIDES_RESOURCE_ID, replacements);
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
-  hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
+  hmr.resources.register(HMR_DESKTOP_RESOURCE_ID, desktop);
   const lifecycle = new LifecycleService(config.supervised);
-  hmr.resources.register(RUNTIME_LIFECYCLE_RESOURCE_ID, lifecycle);
+  hmr.resources.register(HMR_LIFECYCLE_RESOURCE_ID, lifecycle);
   // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
@@ -295,22 +308,57 @@ export async function bootAppDeps(
   // Callers that outlive swaps (index.ts, the runtime app) may only touch the swap-stable
   // members: the runtime singletons published above. The tree is THIS generation's and
   // goes stale at the next push — per-request business dispatch rides the seam.
-  return { config, db, channels, hmr, desktop, lifecycle, tree };
+  booted = { config, db, channels, hmr, control: ctl, desktop, lifecycle, tree };
+  return booted;
+}
+
+/**
+ * The layer's log handle: whichever platform is current writes the line, and the console
+ * does before there is one. Resolved per line through the host, so a swap changes where the
+ * lines go without the layer holding any generation's object.
+ */
+export function platformLog(hmr: ServerHmrHost): (line: string) => void {
+  return (line) => {
+    void hmr
+      .ensure()
+      .then((instance) => {
+        if (typeof instance.api.log === "function") instance.api.log(line);
+        else console.log(line);
+      })
+      .catch(() => console.log(line));
+  };
 }
 
 /** Assembles the Hono app (does not listen on a port). */
-export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
-  const { tree } = boot;
-  const errors = tree.api<Errors>("ObservabilityModule", "Errors");
-  const log = tree.api<{ line(text: string): void }>("RuntimeModule", "Log");
-  const settings = tree.api<Settings>("SettingsModule", "Settings");
-  const access = tree.api<Access>("ProjectsModule", "Access");
-  const authService = tree.api<Auth>("IdentityModule", "Auth");
+export function createApp(boot: ServerBoot): Hono<AppEnv> {
+  // Resolved on use, from the CURRENT generation's tree — the entry's replace hook points
+  // `boot.tree` at each new one — so a node is never the first generation's for the life
+  // of the process. A generation that has no tree to resolve from (a pushed fixture, a
+  // bare kernel, a tree mid-dispose) keeps the last one resolved, as a captured node did.
+  const current = <T>(resolve: () => T): (() => T) => {
+    let last = resolve();
+    return () => {
+      try {
+        last = resolve();
+      } catch {
+        // The tree is mid-swap or belongs to a generation without one: the last node stands.
+      }
+      return last;
+    };
+  };
+  const errors = current(() => boot.tree.api<Errors>("ObservabilityModule", "Errors"));
+  const log = platformLog(boot.hmr);
+  const settings = current(() => boot.tree.api<Settings>("SettingsModule", "Settings"));
+  const access = current(() => boot.tree.api<Access>("ProjectsModule", "Access"));
+  const authService = current(() => boot.tree.api<Auth>("IdentityModule", "Auth"));
   const deps = {
     config: boot.config,
     desktop: boot.desktop,
-    authService,
+    get authService() {
+      return authService();
+    },
     hmr: boot.hmr,
+    control: boot.control,
     channels: boot.channels,
   };
   const app = new Hono<AppEnv>();
@@ -320,8 +368,8 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   // exceptions are logged with a stack trace and collapsed to 500), and recording
   // to the DB is just a side-effect layered on top.
   app.onError((err, c) => {
-    const projectId = attributedProjectId(c, { access });
-    errors.record({
+    const projectId = attributedProjectId(c, { access: access() });
+    errors().record({
       source: "http",
       err,
       ...(projectId !== undefined ? { ctx: { projectId } } : {}),
@@ -335,7 +383,7 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
     const start = performance.now();
     await next();
     const ms = Math.round(performance.now() - start);
-    log.line(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
+    log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
   });
 
   // Canonical-host guard (loopback binds only): the App is served on one loopback name and
@@ -381,7 +429,7 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   // size so the steady state allocates nothing.
   let capped: { size: number; mw: MiddlewareHandler } | null = null;
   app.use("/api/*", (c, next) => {
-    const size = bodyLimitBytes(settings.getAttachmentLimitsMb());
+    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
     if (capped === null || capped.size !== size) {
       capped = {
         size,
@@ -403,38 +451,15 @@ export function createRuntimeApp(boot: ServerBoot): Hono<AppEnv> {
   });
   app.use("/api/*", jsonOnlyWrites);
 
-  // Public routes (no login required).
-  app.route("/api/auth", authRoutes(deps));
-  // Desktop shutdown authenticates with the shell's Bearer token, not the cookie
-  // session, so it mounts outside authMiddleware (and only in desktop mode).
-  if (deps.desktop) {
-    app.route("/api/desktop", desktopRoutes(deps));
-    // The client-update surface is runtime-owned like the rest of /api/desktop (the
-    // platform declines that whole prefix): it reads the updater snapshot the shell
-    // pushes over the parentPort this process wires at startup, and forwards
-    // check/install back. Cookie-authed, unlike the Bearer-token shutdown above, so it
-    // carries the auth middleware on its own subtree — the routes then gate on
-    // `sessionVia === "desktop"`, i.e. the shell's own window.
-    app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
-    app.route("/api/desktop/update", desktopUpdateRoutes(deps));
-  }
-  // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
-  // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin
-  // cookie session) with an admin check on top; see hmr/routes.ts. That is why they mount
-  // above the blanket /api/* middleware rather than under it.
-  app.route("/api/hmr", hmrRoutes(deps));
+  // THE seam: every route is one the platform may take over by push — the upgrade channel
+  // included, which the platform declares and contributes like any other group
+  // (hmr/routes.ts; a generation without it is refused before commit, see packages/hmr's
+  // admitsUpgradeRoute). Declining costs one property read and lands on the layer's own
+  // tail below, which is what a platform without an `http` handler does.
+  app.use("*", platformHttpSeam(deps.control));
 
-  // THE seam: from here down, every route is one the platform may take over by push. Mounted
-  // after /api/hmr (which stays runtime-owned — see http-seam.ts) and before both the auth
-  // gate and the built-in routes, so a pushed platform can add endpoints, replace existing
-  // ones, and decide its own authentication. Declining costs one property read and lands on
-  // the runtime's own routes below, which is what a platform without an `http` handler does.
-  app.use("*", platformHttpSeam(deps.hmr));
-
-  // Every protected business route — /api/me through /api/sessions, and /preview — is
-  // served by the platform through the seam above (see app.ts). What
-  // follows is the runtime's own tail: static hosting and the SPA fallback.
+  // Every route but /api/hmr is the platform's, served through the seam above. What follows
+  // is the layer's own tail: static hosting and the SPA fallback.
 
   // Static hosting (production): serves the frontend build output with SPA fallback to
   // index.html. The source resolves per request — the hot host can point it at a

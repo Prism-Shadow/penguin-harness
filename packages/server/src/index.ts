@@ -20,7 +20,13 @@ import type { Server as HttpServer } from "node:http";
 import { config as loadDotenv } from "dotenv";
 import { serve } from "@hono/node-server";
 import { SERVER_RESTART_EXIT_CODE } from "@prismshadow/penguin-core";
-import { bootAppDeps, createRuntimeApp } from "./app.js";
+import { bootAppDeps, createApp } from "./app.js";
+import { HmrHost, hmrMain } from "@prismshadow/penguin-hmr";
+import type { Hmr } from "@prismshadow/penguin-hmr";
+import type { Instance } from "@prismshadow/penguin-core/kernel";
+import { packagedPlatform } from "./hmr/platform.js";
+import { startingResponse } from "./hmr/starting.js";
+import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import type { ServerBoot } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
 import { resolveServerConfig, type ServerConfig } from "./config.js";
@@ -48,13 +54,25 @@ async function main(): Promise<void> {
   server.installProxy();
   server.readConfig();
   await server.ensureSoleInstance();
-  await server.loadPlugins();
-  await server.buildDeps();
-  server.applyPersistedProxy();
-  server.buildApp();
-  await server.seedAdmin();
   server.listen();
-  server.installProcessHandlers();
+  // The HMR layer's entry (packages/hmr's main.ts) owns the frozen operations: which
+  // generation a request goes to, how a push lands, what happens when one fails. The
+  // product hands it the host, what to refresh once a generation is current, and its own
+  // start — everything the platform is comes up inside it.
+  await hmrMain(
+    server.createHost(),
+    (instance) => server.replace(instance),
+    async (hmr) => {
+      await server.loadPlugins();
+      await server.buildDeps(hmr);
+      server.applyPersistedProxy();
+      server.buildApp();
+      await server.seedAdmin();
+      server.installProcessHandlers();
+      await server.printFirstLoginNotice();
+    },
+  );
+  await server.announce();
 }
 
 /**
@@ -72,12 +90,17 @@ class PenguinServer {
   private config!: ServerConfig;
   /** Assigned by loadPlugins(); published to the platform tree by buildDeps(). */
   private plugins!: PluginHost;
+  /** Assigned by createHost(): the store and the swap, built over the packaged platform. */
+  private host!: ServerHmrHost;
   /** Assigned by buildDeps(); the merged runtime + business view (see app.ts). */
   private deps!: ServerBoot;
   /** Assigned by buildApp(). */
-  private app!: ReturnType<typeof createRuntimeApp>;
+  private app!: ReturnType<typeof createApp>;
   /** Assigned by listen(). */
   private httpServer!: ReturnType<typeof serve>;
+  /** Resolves with the port the OS actually bound, once the listener is up. */
+  private bound!: Promise<number>;
+  private resolveBound!: (port: number) => void;
 
   /** The `::1` companion listener, when one was opened — see openIpv6Loopback(). */
   private ipv6Loopback: ReturnType<typeof serve> | null = null;
@@ -162,8 +185,24 @@ class PenguinServer {
    * registry is the only way a pushed bundle — compiled standalone — can reach these
    * plugin objects at all (see plugin/index.ts's pluginHostFrom).
    */
-  async buildDeps(): Promise<void> {
-    this.deps = await bootAppDeps(this.config, [], this.plugins);
+  /** The store and the swap, ahead of everything that boots against them (hmrMain takes it first). */
+  createHost(): ServerHmrHost {
+    this.host = new HmrHost<PlatformApi>(this.config.root, packagedPlatform);
+    return this.host;
+  }
+
+  async buildDeps(hmr: Hmr<PlatformApi>): Promise<void> {
+    this.deps = await bootAppDeps(this.config, [], this.plugins, this.host, hmr);
+  }
+
+  /**
+   * What the layer refreshes once a generation is current (hmrMain's replace): the tree it
+   * resolves nodes from. Everything read through `deps.tree` — the auth for the socket and
+   * the hot-update gate, the settings, the error recorder — is the new generation's from here.
+   */
+  replace(instance: Instance<PlatformApi>): void {
+    const tree = typeof instance.api.business === "function" ? instance.api.business() : null;
+    if (tree !== null && this.deps !== undefined) this.deps.tree = tree;
   }
 
   /**
@@ -180,9 +219,20 @@ class PenguinServer {
     });
   }
 
-  /** Assembles the runtime shell's middleware and routes. Nothing is listening yet. */
+  /**
+   * Assembles the layer's middleware and routes; from here the listening port answers
+   * with them. The terminal stream is a WebSocket upgrade, which never reaches the fetch
+   * handler — it is bound on each Node listener here, once the platform it asks exists.
+   */
   buildApp(): void {
-    this.app = createRuntimeApp(this.deps);
+    this.app = createApp(this.deps);
+    attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
+    if (this.ipv6Loopback !== null) {
+      attachTerminalWebSocket(
+        this.ipv6Loopback as unknown as HttpServer,
+        this.terminalWebSocketDeps(),
+      );
+    }
   }
 
   /**
@@ -213,15 +263,40 @@ class PenguinServer {
   }
 
   /**
-   * Opens the HTTP listener. Everything that needs the port the OS actually handed out
-   * (PORT=0 asks for an ephemeral one) waits for onListening().
+   * Opens the HTTP listener. The port is bound before the platform exists: until buildApp()
+   * it answers the starting response, so a client that arrives early sees "starting" —
+   * and, if it is a browser, comes back on its own — rather than a refused connection.
+   * Everything that needs the port the OS actually handed out (PORT=0 asks for an
+   * ephemeral one) waits for onListening().
    */
   listen(): void {
+    // The listener's callback records this process as the root's server (the lock); the
+    // root has to exist for that, and the database that used to create it is now opened
+    // later, inside start.
+    fs.mkdirSync(this.config.root, { recursive: true });
+    this.bound = new Promise((resolve) => {
+      this.resolveBound = resolve;
+    });
     this.httpServer = serve(
-      { fetch: this.app.fetch, hostname: this.config.host, port: this.config.port },
+      {
+        fetch: (request: Request) => this.app?.fetch(request) ?? startingResponse(),
+        hostname: this.config.host,
+        port: this.config.port,
+      },
       (info) => this.onListening(info.port),
     );
-    attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
+  }
+
+  /**
+   * Announces the port (PENGUIN_PORT_FILE), the last step of startup. The port is bound
+   * long before this — a client that arrives early is answered rather than refused — but
+   * the announcement means the App is up, because that is what a reader waits for: the
+   * desktop shell opens its window on it. Between the bind and here every request gets the
+   * starting response instead.
+   */
+  async announce(): Promise<void> {
+    if (this.config.portFile === null) return;
+    writePortFile(this.config.portFile, await this.bound);
   }
 
   /**
@@ -313,24 +388,28 @@ class PenguinServer {
       port,
       startedAt: new Date().toISOString(),
     });
-    if (this.config.portFile !== null) writePortFile(this.config.portFile, port);
     if (this.config.host === "127.0.0.1" || this.config.host === "localhost") {
       this.openIpv6Loopback(port);
     }
-    // Last, so the link is what a console is left showing rather than something scrolled
-    // past — and here rather than in seedAdmin() because the URL needs the port the OS
-    // actually handed out, which PORT=0 only settles at this point.
-    if (this.pendingFirstLoginNotice) {
-      // Minting here rather than at seed time is what keeps "exists" and "was printed" the
-      // same thing for a setup session: the modes that decline to print never ask for one.
-      const link = this.auth().mintFirstLogin();
-      if (link !== null) {
-        const token = encodeURIComponent(link);
-        console.log(
-          renderFirstLoginNotice(`http://${this.appHost()}:${port}/api/auth/claim?token=${token}`),
-        );
-      }
-    }
+    this.resolveBound(port);
+  }
+
+  /**
+   * The one-time sign-in link, last in the startup sequence so it is what a console is
+   * left showing rather than something scrolled past. Minting here rather than at seed
+   * time is what keeps "exists" and "was printed" the same thing for a setup session: the
+   * modes that decline to print never ask for one. The URL needs the port the OS actually
+   * handed out, which PORT=0 only settles once the listener is up.
+   */
+  async printFirstLoginNotice(): Promise<void> {
+    if (!this.pendingFirstLoginNotice) return;
+    const port = await this.bound;
+    const link = this.auth().mintFirstLogin();
+    if (link === null) return;
+    const token = encodeURIComponent(link);
+    console.log(
+      renderFirstLoginNotice(`http://${this.appHost()}:${port}/api/auth/claim?token=${token}`),
+    );
   }
 
   /**
@@ -360,24 +439,34 @@ class PenguinServer {
    * every preview URL (same port, counterpart host) would refuse connections.
    */
   private openIpv6Loopback(port: number): void {
-    const loopback = serve({ fetch: this.app.fetch, hostname: "::1", port });
+    const loopback = serve({
+      fetch: (request: Request) => this.app?.fetch(request) ?? startingResponse(),
+      hostname: "::1",
+      port,
+    });
     this.ipv6Loopback = loopback;
     loopback.on("error", (err: NodeJS.ErrnoException) => {
       console.warn(
         `[server] IPv6 loopback listener unavailable (${err.code ?? err.message}); previews via localhost may not resolve.`,
       );
     });
-    // The terminal stream is a WebSocket upgrade, which never reaches the Hono fetch
-    // handler — it has to be bound on each Node listener, this one included, or the
-    // terminal only works on whichever address the browser happened to resolve.
-    attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
+    // The terminal stream is bound on every listener in buildApp(), this one included, or
+    // the terminal only works on whichever address the browser happened to resolve; a
+    // loopback opened after buildApp() (never in practice — binding is quick) gets it here.
+    if (this.app !== undefined) {
+      attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
+    }
   }
 
   /** Terminal WebSocket wiring, shared by every listener this process opens. */
   private terminalWebSocketDeps() {
+    const auth = () => this.auth();
     return {
       hmr: this.deps.hmr,
-      authService: this.auth(),
+      // A getter: the upgrade handler asks per handshake, and gets the current generation's.
+      get authService() {
+        return auth();
+      },
       log: (line: string) => console.log(line),
     };
   }

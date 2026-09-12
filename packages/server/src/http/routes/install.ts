@@ -7,7 +7,7 @@
  * for, a wiped data root, is precisely the case where nobody is. See install-id.ts for why
  * publishing the id discloses nothing.
  *
- * Mounted in the PLATFORM, above its auth gate (app.ts's createApp). A hot push carries
+ * Mounted in the PLATFORM, above its auth gate (http/app.ts's HttpModule). A hot push carries
  * platform + cli + web dist as one version and never the runtime, so putting the route where
  * the platform is puts it where the web bundle that calls it is: the two can never arrive on
  * an installation separately. The data root is still the runtime's — `deps.config.root` comes

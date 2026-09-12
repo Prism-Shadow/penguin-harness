@@ -9,10 +9,13 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
-import { HmrHost } from "../src/hmr/host.js";
+import { HmrHost } from "@prismshadow/penguin-hmr";
+import type { PlatformApi } from "../src/hmr/platform.js";
+import { packagedPlatform } from "../src/hmr/platform.js";
 import { readHarnessInfo } from "../src/hmr/manifest.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -35,12 +38,14 @@ const iface = {
 };
 const SERVED = ${JSON.stringify(paths)};
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     return {
       park: () => context,
       info: () => ({ impl: ${JSON.stringify(id)} }),
       http(request) {
         const { pathname } = new URL(request.url);
+        // The upgrade channel every generation must carry (admitsUpgradeRoute): the mechanism's endpoint, claimed.
+        if (pathname.startsWith("/api/hmr/")) return ctx.resources.claim("platform.hmrControl").endpoint(request);
         if (!SERVED.includes(pathname)) return null;
         return new Response(JSON.stringify({ servedBy: ${JSON.stringify(id)}, pathname }), {
           status: 200,
@@ -84,12 +89,14 @@ const iface = {
   migrations: {},
 };
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     return {
       park: () => context,
       info: () => ({ impl: ${JSON.stringify(id)}, n: context.n }),
       http(request) {
         const { pathname } = new URL(request.url);
+        // The upgrade channel every generation must carry (admitsUpgradeRoute): the mechanism's endpoint, claimed.
+        if (pathname.startsWith("/api/hmr/")) return ctx.resources.claim("platform.hmrControl").endpoint(request);
         if (pathname !== "/api/demo/bump") return null;
         context.n += 1;
         return new Response(JSON.stringify({ n: context.n }), {
@@ -121,7 +128,7 @@ const iface = {
   migrations: {},
 };
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     return { park: () => context, info: () => ({ impl: ${JSON.stringify(id)} }) };
   },
 };
@@ -186,7 +193,7 @@ describe("HmrHost.ensure(): single-flight first boot", () => {
       warnings.push(String(chunk));
       return true;
     }) as typeof process.stderr.write);
-    const fresh = new HmrHost(root);
+    const fresh = new HmrHost<PlatformApi>(root, packagedPlatform);
     try {
       // Restore refused, the host goes on to boot the packaged default — which this bare
       // host cannot (it publishes no runtime resources). That rejection is the fixture's,
@@ -217,7 +224,7 @@ describe("HmrHost.ensure(): single-flight first boot", () => {
     t = undefined; // already torn down by hand; skip the normal cleanup() (it would rm(root))
 
     // A brand-new HmrHost over the SAME root: nothing has called ensure() yet.
-    const fresh = new HmrHost(root);
+    const fresh = new HmrHost<PlatformApi>(root, packagedPlatform);
     try {
       const [a, b, c] = await Promise.all([fresh.ensure(), fresh.ensure(), fresh.ensure()]);
       // Same object: only one restore()/boot ever ran.
@@ -282,7 +289,7 @@ describe("HmrHost: code persists across a restart, state does not", () => {
     t.deps.db.close();
     t = undefined; // torn down by hand; skip cleanup() (it would rm(root))
 
-    const fresh = new HmrHost(root);
+    const fresh = new HmrHost<PlatformApi>(root, packagedPlatform);
     try {
       const instance = await fresh.ensure();
       const restored = (instance.api as unknown as { info(): { impl: string; n: number } }).info();
@@ -468,6 +475,201 @@ export const hotPlatform = { id: "boom", iface, impl, context: {} };
  * indistinguishable from the compiled-in default by id alone.
  */
 const BOOM_PLATFORM_PACKAGED_ID = BOOM_PLATFORM.replace('id: "boom"', 'id: "packaged"');
+
+describe("a push is content-addressed: blobs are put raw, parts are named by hash, unreferenced blobs are collected", () => {
+  let t: TestApp | undefined;
+
+  afterEach(async () => {
+    if (t) await t.cleanup();
+    t = undefined;
+  });
+
+  const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
+  const PKG = Buffer.from('{"name":"demo-native"}');
+  const BIN = Buffer.from("\0binary");
+  const README = Buffer.from("# demo\n");
+
+  const payload = (id: string, assets: unknown) => ({
+    platform: platformServing([`/api/demo/${id}`], id),
+    cli: MINIMAL_CLI,
+    web: { files: MINIMAL_WEB },
+    assets,
+  });
+  const push = (app: Hono<AppEnv>, cookie: string, body: unknown) =>
+    app.request("/api/hmr/upgrade", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/gzip" },
+      body: zlib.gzipSync(Buffer.from(JSON.stringify(body))),
+    });
+  const put = (app: Hono<AppEnv>, cookie: string, sha: string, bytes: Buffer) =>
+    app.request(`/api/hmr/blobs/${sha}`, {
+      method: "PUT",
+      headers: { cookie, "content-type": "application/octet-stream" },
+      body: bytes,
+    });
+  const probe = async (app: Hono<AppEnv>, cookie: string, hashes: string[]) =>
+    (await (
+      await app.request("/api/hmr/assets/probe", {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ hashes }),
+      })
+    ).json()) as { missing: string[] };
+
+  it("a blob lands only under the hash of its bytes", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const bytes = Buffer.from("\0native");
+    const sha = sha256(bytes);
+    const wrong = sha256(Buffer.from("other"));
+
+    const refused = await put(t.app, cookie, wrong, bytes);
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toContain("hashes to");
+    expect((await probe(t.app, cookie, [wrong])).missing).toEqual([wrong]);
+
+    expect(await (await put(t.app, cookie, sha, bytes)).json()).toEqual({ sha });
+    expect((await probe(t.app, cookie, [wrong, sha])).missing).toEqual([wrong]);
+    expect(await fs.readFile(path.join(t.root, "hmr", "store", "blobs", sha))).toEqual(bytes);
+    // Not a hash: refused before any byte is read.
+    expect((await put(t.app, cookie, "latest", bytes)).status).toBe(400);
+  });
+
+  it("a second push names by hash what the first carried inline, and ships only what is new", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+
+    // Nothing pushed yet: everything is missing.
+    const before = await probe(t.app, cookie, [sha256(PKG), sha256(BIN)]);
+    expect(before.missing.sort()).toEqual([sha256(PKG), sha256(BIN)].sort());
+
+    // First push, inline (what a pusher without the probe sends): the blobs land in the store.
+    const first = await push(
+      t.app,
+      cookie,
+      payload("v1", {
+        files: {
+          "node_modules/demo-native/package.json": PKG.toString("base64"),
+          "node_modules/demo-native/demo.node": BIN.toString("base64"),
+        },
+        exec: ["node_modules/demo-native/demo.node"],
+      }),
+    );
+    expect(first.status).toBe(200);
+    expect(
+      (await probe(t.app, cookie, [sha256(PKG), sha256(BIN), sha256(README)])).missing,
+    ).toEqual([sha256(README)]);
+
+    // Second push adds one file: it is put, and every file is then named by hash.
+    expect((await put(t.app, cookie, sha256(README), README)).status).toBe(200);
+    const second = await push(
+      t.app,
+      cookie,
+      payload("v2", {
+        files: {
+          "node_modules/demo-native/package.json": { sha: sha256(PKG) },
+          "node_modules/demo-native/demo.node": { sha: sha256(BIN) },
+          "node_modules/demo-native/README.md": { sha: sha256(README) },
+        },
+        exec: ["node_modules/demo-native/demo.node"],
+      }),
+    );
+    expect(second.status, await second.clone().text()).toBe(200);
+    const assetsRoot = path.join(t.root, "hmr", "store", "assets");
+    const sets = await fs.readdir(assetsRoot);
+    expect(sets).toHaveLength(2);
+    const withReadme = sets.find((s) =>
+      fsSync.existsSync(path.join(assetsRoot, s, "node_modules/demo-native/README.md")),
+    )!;
+    expect(
+      await fs.readFile(path.join(assetsRoot, withReadme, "node_modules/demo-native/demo.node")),
+    ).toEqual(BIN);
+    // The exec bit survives a materialization that read from the blob store — a POSIX
+    // contract, guarded like the inline-push case above: Windows has no such bit to restore.
+    const mode = (
+      await fs.stat(path.join(assetsRoot, withReadme, "node_modules/demo-native/demo.node"))
+    ).mode;
+    if (process.platform !== "win32") expect(mode & 0o111).not.toBe(0);
+  });
+
+  it("refuses a name the store does not hold, rather than materializing a hole", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const res = await push(
+      t.app,
+      cookie,
+      payload("v1", { files: { "node_modules/demo-native/package.json": { sha: sha256(PKG) } } }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("does not hold");
+  });
+
+  it("every part may be named by hash: the bundles and the web dist too", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const platform = Buffer.from(platformServing(["/api/demo/by-hash"], "by-hash"));
+    const cliBytes = Buffer.from(MINIMAL_CLI);
+    const index = Buffer.from("<html>by hash</html>");
+    const asset = Buffer.from("\0helper");
+    const body = {
+      platform: { sha: sha256(platform) },
+      cli: { sha: sha256(cliBytes) },
+      web: { files: { "index.html": { sha: sha256(index) } } },
+      assets: { files: { "bin/helper": { sha: sha256(asset) } } },
+    };
+
+    // Nothing put yet: the push names what the store does not hold, and says which.
+    const early = await push(t.app, cookie, body);
+    expect(early.status).toBe(400);
+    expect(await early.text()).toMatch(
+      new RegExp(`platform.*${sha256(platform).slice(0, 12)}.*put it first`),
+    );
+
+    for (const bytes of [platform, cliBytes, index, asset]) {
+      expect((await put(t.app, cookie, sha256(bytes), bytes)).status).toBe(200);
+    }
+    const landed = await push(t.app, cookie, body);
+    expect(landed.status, await landed.clone().text()).toBe(200);
+    // The generation, the web dist and the asset all came out of the blob store.
+    expect((await t.app.request("/api/demo/by-hash")).status).toBe(200);
+    expect(await (await t.app.request("/")).text()).toContain("by hash");
+    const assetsRoot = path.join(t.root, "hmr", "store", "assets");
+    const [set] = await fs.readdir(assetsRoot);
+    expect(await fs.readFile(path.join(assetsRoot, set!, "bin", "helper"))).toEqual(asset);
+    // Persisted like an inline push: a restart reads the same record.
+    await expect(readHarnessInfo(t.root)).resolves.toMatchObject({
+      bundles: { cli: expect.stringContaining("store/cli/") },
+    });
+    // The commit's sweep keeps the parts it was pushed as: the next identical push carries
+    // nothing and needs no put. (This was the bug that re-sent every bundle every time.)
+    const shas = [platform, cliBytes, index, asset].map(sha256);
+    expect((await probe(t.app, cookie, shas)).missing).toEqual([]);
+    const again = await push(t.app, cookie, body);
+    expect(again.status, await again.clone().text()).toBe(200);
+  });
+
+  it("collects blobs no kept assets set records, and keeps the rest", async () => {
+    t = await createTestApp();
+    const cookie = (await loginAdmin(t.app)).cookie;
+    const blobsDir = path.join(t.root, "hmr", "store", "blobs");
+    // Four pushes with four distinct files: the store keeps current + one rollback, so the
+    // two oldest sets go, and with them the blobs only they referenced.
+    const contents = ["a", "b", "c", "d"].map((x) => Buffer.from(`file ${x}`));
+    for (const [i, content] of contents.entries()) {
+      const res = await push(
+        t.app,
+        cookie,
+        payload(`v${i}`, { files: { "node_modules/x/f": content.toString("base64") } }),
+      );
+      expect(res.status).toBe(200);
+    }
+    const kept = (await fs.readdir(blobsDir)).sort();
+    expect(kept).toContain(sha256(contents[3]!));
+    expect(kept).toContain(sha256(contents[2]!));
+    expect(kept).not.toContain(sha256(contents[0]!));
+    expect(kept).not.toContain(sha256(contents[1]!));
+  });
+});
 
 describe("upgrade boot failure: the previous version is re-booted, not left half-dead", () => {
   let t: TestApp | undefined;
@@ -716,7 +918,7 @@ const iface = {
   migrations: {},
 };
 const impl = {
-  create(_ctx, context) {
+  create(ctx, context) {
     globalThis.__doubleFaultBoots = (globalThis.__doubleFaultBoots ?? 0) + 1;
     if (globalThis.__doubleFaultBoots > 1) throw new Error("re-boot refused");
     return {
@@ -724,6 +926,8 @@ const impl = {
       info: () => ({ impl: ${JSON.stringify(id)} }),
       http(request) {
         const { pathname } = new URL(request.url);
+        // The upgrade channel every generation must carry (admitsUpgradeRoute): the mechanism's endpoint, claimed.
+        if (pathname.startsWith("/api/hmr/")) return ctx.resources.claim("platform.hmrControl").endpoint(request);
         if (pathname !== ${JSON.stringify(path)}) return null;
         return new Response(JSON.stringify({ servedBy: ${JSON.stringify(id)} }), {
           status: 200,
@@ -784,8 +988,10 @@ describe("double fault: the upgrade channel survives a failed push whose recover
     expect(JSON.stringify(await bad.json())).toMatch(/failed to boot.*boom/);
     expect(warnings.join("")).toMatch(/boot-failure recovery failed too/);
 
-    // The claim under test: /api/hmr is runtime-owned, so it answers out of the runtime's
-    // own routes no matter what state the platform tree is in, and a good push repairs the
+    // The claim under test: the upgrade channel is the platform's now, but a platform whose
+    // recovery failed is left in place, disposed, and its routes still answer out of their
+    // closures — the half-dead state this warning names. The channel needs nothing of the
+    // stopped App (the control object is the layer's), so a good push repairs the
     // installation without a restart.
     const good = await pushPlatform(
       t.app,
@@ -827,7 +1033,7 @@ describe("double fault: the upgrade channel survives a failed push whose recover
     // A real restart is a fresh process, so the bundle's module state starts over.
     faultGlobals.__doubleFaultBoots = 0;
 
-    const fresh = new HmrHost(root);
+    const fresh = new HmrHost<PlatformApi>(root, packagedPlatform);
     try {
       const instance = await fresh.ensure();
       expect((instance.api as unknown as { info(): { impl: string } }).info().impl).toBe("brittle");

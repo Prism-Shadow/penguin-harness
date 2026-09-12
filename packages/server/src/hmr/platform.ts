@@ -13,7 +13,7 @@
  * instead of a rebuild. Worth remembering when something looks like it must
  * live in the shell: this code runs INSIDE the server process, so in-process
  * effects (e.g. extending process.env for the shells agents spawn) are
- * deliverable from boot() with no runtime change. See ../hmr/README.md.
+ * deliverable from boot() with no runtime change. See packages/hmr/README.md.
  *
  * This packaged platform carries the WHOLE business surface (see app.ts):
  * every business service and route is assembled inside create() over the runtime's
@@ -39,7 +39,7 @@ import {
   bootModules,
   moduleDefOf,
 } from "@prismshadow/penguin-core/kernel";
-import type { PlatformBundle } from "./host.js";
+import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
 import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
@@ -56,15 +56,25 @@ import { declined, seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
-  claimRuntimeCapabilities,
+  claimHmrCapabilities,
+  Log,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import { pluginHostFrom } from "../plugin/host.js";
 import { migrate } from "../db/migrations.js";
 import type { Auth } from "../mechanisms/identity.js";
 
+/**
+ * This server's hot host: the mechanism (@prismshadow/penguin-hmr) with the api ITS platforms
+ * expose. The mechanism is generic on purpose — it cannot name a route or a service — so the
+ * product supplies the type here, once, and everything that holds a host uses this alias.
+ */
+export type ServerHmrHost = HmrHost<PlatformApi>;
+
 export interface PlatformApi extends Park {
   info(): Json;
+  /** The platform's log. The layer writes its request lines through it while there is one. */
+  log(line: string): void;
   /**
    * The HTTP seam (hmr/http-seam.ts): every request is offered here first, and null
    * declines it to the runtime's own routes. This is how a business API ships by push
@@ -131,7 +141,7 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
       "modules?": { "[string]": "unknown" },
     }) as never,
   ),
-  methods: ["park", "info", "http", "terminals", "attachStream"],
+  methods: ["park", "info", "http", "terminals", "attachStream", "log"],
 });
 
 /** The node names the two parking modules were keyed by before nodes were named by class. */
@@ -217,12 +227,12 @@ const DRAIN_GRACE_MS = 5000;
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
     // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
-    // throw — what each outcome means and why lives on RuntimeClaim (capabilities.ts).
+    // throw — what each outcome means and why lives on HmrClaim (capabilities.ts).
     // The check sits HERE, in the bundle, because the runtime that needs it is by
     // definition too old to receive it; failing this early costs nothing — doUpgradeAll
     // rolls the whole upgrade back, and a hot upgrade cannot land what a fresh start
     // would refuse (bootAppDeps treats a business-less platform as fatal too).
-    const claim = claimRuntimeCapabilities(ctx.resources);
+    const claim = claimHmrCapabilities(ctx.resources);
     if (claim.kind === "refused") {
       throw new Error(
         `this runtime publishes no business capabilities this platform can claim ` +
@@ -366,8 +376,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       "http",
     );
     const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
+    const logNode = business?.api<Log>("RuntimeModule", "Log") ?? null;
 
     return {
+      log: (line) => (logNode !== null ? logNode.line(line) : console.log(line)),
       park: () => {
         const modules = tree.park();
         // The top-level fields are written for every platform that reads them: a bare

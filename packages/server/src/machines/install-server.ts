@@ -1,6 +1,6 @@
 /**
  * Installing THIS server's build onto another machine, from inside the server process —
- * platform code, so the whole capability travels by hot push (see ../hmr/README.md).
+ * platform code, so the whole capability travels by hot push (see packages/hmr/README.md).
  *
  * Nothing installable is produced here. The far side runs the ordinary release installer
  * ONLINE, pinned to this server's own base release, so the program tree — launchers, libs,

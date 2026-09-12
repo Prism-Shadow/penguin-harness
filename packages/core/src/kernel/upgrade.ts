@@ -137,6 +137,12 @@ export async function upgrade<A extends Park, C extends Json>(opts: {
   impl: Impl<A, C>;
   iface: Iface<A, C>;
   resources: Resources;
+  /**
+   * A last word on a successor that booted: a reason it may not become current, or null.
+   * A refusal is a boot failure in every respect — the successor is disposed and the
+   * caller gets the parked document to recover the predecessor from.
+   */
+  admit?: (instance: Instance<A>) => Promise<string | null> | string | null;
 }): Promise<UpgradeResult<A>> {
   const parked = opts.current.park();
   const state: ReconcileState = { dropped: [], missing: [], invalid: [], migrated: false };
@@ -164,6 +170,11 @@ export async function upgrade<A extends Park, C extends Json>(opts: {
     // is what makes a successor never race its predecessor.
     await (opts.current.api as { drained?: () => Promise<void> | undefined }).drained?.();
     instance = await boot(opts.impl, opts.iface, doc, opts.resources);
+    const refusal = opts.admit === undefined ? null : await opts.admit(instance);
+    if (refusal !== null) {
+      instance.dispose();
+      throw new Error(refusal);
+    }
   } catch (error) {
     return { status: "failed", error, doc: parked };
   }
