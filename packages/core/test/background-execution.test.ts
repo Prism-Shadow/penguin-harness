@@ -1122,10 +1122,13 @@ function gatedRunner(gates: Map<string, () => void>): SubagentRunner {
             payload: { session_id: hop },
           } as unknown as OmniMessage);
         },
-        async *run({ messages }) {
+        // Typed like the contract: a round's return value is its cutoff, and these rounds
+        // always run to completion.
+        async *run({ messages }): AsyncGenerator<OmniMessage, null> {
           const prompt = promptOf(messages);
           await new Promise<void>((resolve) => gates.set(prompt, resolve));
           yield tag(assistantText(`answer to: ${prompt}`));
+          return null;
         },
         dispose() {},
       };
