@@ -20,13 +20,10 @@ and its tab strip all read from, so each moved on all four surfaces at once:
 
 - **Subagents** — two robot heads, a large one above-left and a small one below-right, in place of
   the three-circle spawn tree. It is the Agent's own robot head, twice.
-- **Memory** — the brain in profile, in place of the open book: the lobed crown, the frontal lobe
-  at the left and the brainstem dropping from the underside. It is one line with nothing inside it —
-  the cortex is drawn on the perimeter as nine outward arcs, so the edge carries the reading an
-  interior used to. The folds are sized for the 5mm this is worn at: at 13 to 18px a grid unit is
-  about three quarters of a pixel, so anything shallower than a full unit is sub-pixel and invisible.
-  The brainstem and the notch under the temporal lobe stay smooth: they are too short to ripple
-  without being destroyed, and they are what make the silhouette a brain rather than a cloud. The Memory panel,
+- **Memory** — the cerebrum seen from the side, in place of the open book: a lobed outline with the
+  gyri drawn inside it. It ships as one path string because the shared glyph renderer draws a single
+  `<path>`, and it is stroked at the family's 1.7 rather than the 1.6 it was drawn at, because that
+  weight belongs to the set rather than to any one mark. The Memory panel,
   the memory-changes card and the agent cards' memory count had each carried their own hand-typed
   memory mark; the brain is drawn once, in `components/ui/icons.tsx`, and all three import it.
 - **Trace observation** — an open eye, in place of three stacked lines.

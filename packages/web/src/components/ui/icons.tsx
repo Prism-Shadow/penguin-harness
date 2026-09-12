@@ -197,27 +197,22 @@ export const AGENTS_PAIR_ICON =
   "M7.3 4.2V2.2M3.8 4.2h7a2.2 2.2 0 0 1 2.2 2.2v5.8a2.2 2.2 0 0 1-2.2 2.2h-7a2.2 2.2 0 0 1-2.2-2.2V6.4a2.2 2.2 0 0 1 2.2-2.2zM4.6 9.2h.01M10 9.2h.01M18.6 14.8v-1.7M16.5 14.8h4.2a1.7 1.7 0 0 1 1.7 1.7v3.8a1.7 1.7 0 0 1-1.7 1.7h-4.2a1.7 1.7 0 0 1-1.7-1.7v-3.8a1.7 1.7 0 0 1 1.7-1.7zM17.3 18.4h.01M20.5 18.4h.01";
 
 /**
- * The brain in profile — for the Memory panel, the memory-changes card and the agent cards'
+ * The cerebrum from the side — for the Memory panel, the memory-changes card and the agent cards'
  * memory count.
  *
- * One line, nothing inside it: the cortex is on the perimeter, so the edge does the work an
- * interior used to. Nine gyri, each a real outward arc rather than a displaced point — a point
- * pulled out far enough to be seen comes to a tooth, and cortex is round.
+ * Two subpaths in one string, because `GlyphIcon` draws a single `<path>`: the lobed outline, then
+ * the gyri inside it. The drawing was authored with the whole figure shifted a little down the box;
+ * that shift is baked into the coordinates here rather than carried as a transform, since a
+ * transform is an attribute the shared renderer has nowhere to put.
  *
- * They are as large as they are because of the size this is worn at, not for taste. The mark draws
- * about 5mm across, which is 13 to 18px, so one grid unit is around three quarters of a pixel: a
- * fold shallower than a full unit is sub-pixel and simply is not there. Each gyrus spans 5.5 units
- * and stands 1.3 out, which is the smallest that still reads at 13px.
- *
- * The folds go only where a stretch is long enough to carry one. The brainstem and the notch
- * beneath the temporal lobe stay smooth, because rippling a feature that short destroys it, and
- * those two are what make the silhouette a brain rather than a cloud.
+ * It is stroked at the family's 1.7 like every other glyph, not at the 1.6 it was drawn at — the
+ * weight belongs to the set, not to the mark.
  *
  * Every surface draws it from here: a memory mark typed out a second time is how one thing ends up
  * with two pictures of itself.
  */
 export const MEMORY_ICON =
-  "M11.0 4.1L11.9 4.7L12.4 4.2L15.0 4.6A1.6 1.6 0 0 1 17.8 5.8A2.0 2.0 0 0 1 19.9 8.8A1.8 1.8 0 0 1 21.0 12.2A1.6 1.6 0 0 1 20.4 15.2A1.8 1.8 0 0 1 18.0 17.8A1.5 1.5 0 0 1 15.0 18.3L14.3 19.7L12.8 19.9A1.7 1.7 0 0 1 11.5 16.9L10.4 15.6A1.7 1.7 0 0 1 7.1 15.1L5.8 13.4L3.7 12.5L3.0 10.7L3.3 8.1L5.0 6.1A3.0 3.0 0 0 1 9.6 4.3L10.3 4.7L11.0 4.1Z";
+  "M5.1 17.9c-1.4 0 -2.5 -1.05 -2.5 -2.45 -1.1 -1 -.95 -2.75 .25 -3.6 -.5 -1.75 .6 -3.5 2.3 -3.8 .2 -1.85 1.95 -3.15 3.75 -2.7 1.3 -1.3 3.5 -1.45 4.95 -.25 2 -.35 3.8 .8 4.35 2.6 2 .1 3.45 1.9 3.05 3.85 .9 1.2 .5 2.95 -.75 3.7 .2 1.6 -1.1 2.9 -2.7 2.75 -1.15 1.15 -2.85 1.3 -4.15 .5 -1.6 1.55 -4.4 1.4 -5.45 -.8 -.85 .75 -2.1 .85 -3.1 .2ZM5.15 8.05C5.05 9.75 6.4 10.8 8 10.55m5.85 -5.45c-1.1 .65 -1.8 1.9 -1.6 3.25m5.95 -.65c-1.7 -.2 -2.8 1.2 -2.6 2.65M8.2 17.7c-1.2 -1.1 -.85 -3 .55 -3.65 1.7 -.8 3.3 -.45 4.5 -2.1m4.55 6.05c-1.35 -.45 -1.9 -1.65 -1.45 -2.85";
 
 /**
  * The eye's almond outline, shared by the two marks drawn from it — `NAV_ICONS.traces` (an open
