@@ -12,6 +12,7 @@
  * rendered inline once it passes sanitizeSkillIcon (stroke uses currentColor, following text
  * color).
  */
+import { useMemo } from "react";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { BOOK_ICON } from "../chat/skill-use";
 import { sanitizeSkillIcon } from "./skill-icon";
@@ -65,13 +66,17 @@ export function SkillIcon({
   className?: string;
 }) {
   const safe = sanitizeSkillIcon(icon);
-  if (!safe) return <GlyphIcon d={fallback} size={size} className={className} />;
+  // Held stable across renders: React compares this prop by object identity and re-sets
+  // `innerHTML` whenever it differs, so a literal in the JSX rebuilds the markup on every render
+  // (see test/inner-html-stability.test.ts).
+  const markup = useMemo(() => (safe ? { __html: safe } : undefined), [safe]);
+  if (markup === undefined) return <GlyphIcon d={fallback} size={size} className={className} />;
   return (
     <span
       aria-hidden
       style={{ width: size, height: size }}
       className={`block shrink-0 [&>svg]:block [&>svg]:h-full [&>svg]:w-full ${className}`}
-      dangerouslySetInnerHTML={{ __html: safe }}
+      dangerouslySetInnerHTML={markup}
     />
   );
 }

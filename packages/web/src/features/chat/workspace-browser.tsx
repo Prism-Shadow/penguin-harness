@@ -21,6 +21,14 @@
  * The toolbar is one row that never wraps: the breadcrumbs read the current path (the tree
  * beside them is what navigates), and when the path outgrows the space its leading segments
  * collapse into a single "…" so Refresh and Upload keep their places.
+ *
+ * A secondary click carries the panel's per-entry actions — copy the relative path, add a
+ * `@path` reference to the conversation, upload into a folder, download a file — on the tree
+ * rows and again on the preview body, where the file it acts on is the one being previewed
+ * and a selection inside it can be added as a fenced block instead of the whole file. Two
+ * gestures reach nothing and are left to the browser on purpose: inside the HTML and PDF
+ * previews, which are iframes no handler on this side can hear, and inside the in-place
+ * editor, where the native menu is how text gets pasted.
  */
 import {
   Fragment,
@@ -35,10 +43,12 @@ import type {
   ChangeEvent,
   DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
 } from "react";
 import ReactMarkdown from "react-markdown";
 import { REHYPE_PLUGINS, REMARK_PLUGINS } from "../../lib/markdown-plugins";
-import type { SessionInfo } from "@prismshadow/penguin-server/api";
+import type { SessionInfo, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../state/auth";
@@ -62,7 +72,7 @@ import {
   dropTargetDir,
   expandTo,
   extOf,
-  filterTreeRows,
+  searchRows,
   flattenTree,
   isDirty,
   isNarrowLayout,
@@ -70,46 +80,78 @@ import {
   maxTreeWidth,
   needsDiscardConfirm,
   parentDir,
+  pathReference,
   previewKindFor,
-  readEditorWrap,
+  readWrapLines,
   readTreeVisible,
   readTreeWidth,
+  selectionBlock,
+  splitFileName,
   upsertEntry,
   utf8Complete,
   visibleCrumbSegments,
   withExpanded,
-  writeEditorWrap,
+  writeWrapLines,
   writeTreeVisible,
   writeTreeWidth,
 } from "../../lib/workspace-tree";
-import type { EditorState, Listings } from "../../lib/workspace-tree";
+import type { ComposerReference, EditorState, Listings } from "../../lib/workspace-tree";
+import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import { useRowContextMenu } from "../../components/ui/context-menu";
+import {
+  CopiedStatus,
+  CopyCheckGlyph,
+  useCopied,
+  writeClipboard,
+} from "../../components/ui/copy-button";
+import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
-import { CloseIcon } from "../../components/ui/icons";
-import { noAutofill, panelSearchClass } from "../../components/ui/input";
+import {
+  CloseIcon,
+  DOWNLOAD_ICON,
+  EXTERNAL_LINK_ICON,
+  FILE_EDIT_ICON,
+  REFRESH_ICON,
+  UPLOAD_ICON,
+  WRAP_TEXT_ICON,
+} from "../../components/ui/icons";
+import { Input, noAutofill, panelSearchClass } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { SkeletonList } from "../../components/ui/skeleton";
+import { Tooltip } from "../../components/ui/tooltip";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
 import { tabKey } from "../dock/dock-state";
 import { DOCK_TRANSITION_MS } from "../dock/use-dock-mount";
 import { usePointerDrag } from "../dock/use-pointer-drag";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
-import { CodeBlock } from "./code-block";
+import { CodeSurface } from "./code-block";
 import { languageForExtension } from "./code-languages";
 import { WorkspaceFileEditor } from "./workspace-editor";
+import { WorkspaceFileMenuRows } from "./workspace-file-menu";
+import type { FileMenuTarget } from "./workspace-file-menu";
 import { WorkspaceTreeView } from "./workspace-tree-view";
 import type { TreeToggle } from "../../components/ui/file-tree";
 
-/** Source highlighting cap: tokenizing the full preview cap's worth of content in one go would block the main thread, so beyond this it falls back to unhighlighted. */
-const HIGHLIGHT_LIMIT = 64 * 1024;
+/**
+ * Above this, a Markdown file opens in the source view rather than rendered. Highlighting moved to
+ * a worker and no longer needs a ceiling, but rendering Markdown is remark parsing plus a React
+ * tree, both on the main thread — so this one is still a real cost and still has to be bounded.
+ * The reader can switch to the rendered view themselves, which makes it their informed choice.
+ */
+const MD_RENDER_LIMIT = 64 * 1024;
+
 /** Bytes examined to decide whether a file with an unknown extension is text. */
 const SNIFF_BYTES = 8 * 1024;
+/** How long the search box settles before the query is sent. A Workspace walk is not free, and nobody reads results for a prefix they are still typing. */
+const SEARCH_DEBOUNCE_MS = 250;
 /** Window with a left pane: the tree toggle. */
 const PANEL_LEFT_ICON = "M4 5h16v14H4zM10 5v14";
 /** Left-pointing chevron: the narrow layout's back-to-tree button. */
@@ -257,14 +299,113 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-/** The tree row under a pointer, read off the row's data attributes. */
-function hitRow(target: EventTarget | null): { kind: "dir" | "file"; path: string } | null {
+/**
+ * The tree row under a pointer, read off the row's data attributes — the drop hit test and
+ * the context menu both resolve their target this way rather than through a handler per row,
+ * which a tree of hundreds of rows cannot afford. The element travels with the answer because
+ * the menu anchors and returns focus to it.
+ */
+function hitRow(
+  target: EventTarget | null,
+): { kind: "dir" | "file"; path: string; el: HTMLElement } | null {
   if (!(target instanceof Element)) return null;
   const row = target.closest<HTMLElement>("[data-tree-path]");
   if (row === null) return null;
   const kind = row.dataset.treeKind;
   const path = row.dataset.treePath;
-  return (kind === "dir" || kind === "file") && path !== undefined ? { kind, path } : null;
+  return (kind === "dir" || kind === "file") && path !== undefined ? { kind, path, el: row } : null;
+}
+
+/**
+ * Why the confirm button is not offered yet. The action needs the file's current version, and
+ * until that read lands there is nothing to refuse an overwrite with — so the dialog says which
+ * of the two it is rather than leaving a dead button with no explanation.
+ */
+function FileActionVersionNote({ target }: { target: FileActionTarget | null }) {
+  if (target === null || target.version !== null) return null;
+  return (
+    <p
+      className={`text-xs ${target.reading ? "text-gray-500 dark:text-gray-400" : toneInk.danger}`}
+    >
+      {target.reading ? S.files.actionVersionReading : S.files.actionVersionFailed}
+    </p>
+  );
+}
+
+/** A file a rename or a delete has been asked about, and how far the read of its version got. */
+interface FileActionTarget {
+  path: string;
+  /** Non-null once the version is known; the action is refused until then. */
+  version: string | null;
+  /** True while the read is still in flight — which is what tells "not yet" from "could not". */
+  reading: boolean;
+}
+
+/** A selection the preview offered to the conversation, with the source lines it covers when they could be resolved. */
+interface PreviewSelection {
+  text: string;
+  fromLine?: number;
+  toLine?: number;
+  /**
+   * The selected range itself, cloned at the gesture. Handing the block to the composer
+   * focuses its textarea, and focusing a text field drops whatever the document had
+   * selected — so the highlight has to be put back by hand afterwards (restoreSelection).
+   */
+  range: Range;
+}
+
+/**
+ * Puts `range` back as the document's one selection, a frame after the caller hands text to
+ * the composer: the composer focuses its textarea inside a requestAnimationFrame of its own,
+ * scheduled first, and that focus is what clears the selection this restores.
+ *
+ * A range whose ends have since left the document is dropped rather than re-applied — the
+ * preview it was read from is no longer on screen, and re-selecting detached nodes would
+ * either throw or select nothing.
+ */
+function restoreSelection(range: Range): void {
+  requestAnimationFrame(() => {
+    if (!range.startContainer.isConnected || !range.endContainer.isConnected) return;
+    const selection = window.getSelection();
+    if (selection === null) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+}
+
+/**
+ * The text selected inside `host`, or null when there is none, when it lies elsewhere on the
+ * page, or when it is only whitespace. `lines` are the rendered source lines to measure the
+ * range against — empty for the rendered Markdown and HTML views, which have no line
+ * structure to honestly report, so those give up the range and keep the text.
+ */
+function readSelection(
+  host: HTMLElement | null,
+  lines: readonly HTMLElement[],
+): PreviewSelection | null {
+  if (host === null) return null;
+  const selection = window.getSelection();
+  if (selection === null || selection.isCollapsed || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  if (!host.contains(range.commonAncestorContainer)) return null;
+  const text = selection.toString();
+  if (text.trim() === "") return null;
+  // Cloned, not held: the live range moves with the selection, and the selection is about to
+  // be cleared by the composer taking focus.
+  const captured = range.cloneRange();
+  // Which lines the range actually touches, asked of the DOM rather than inferred from the
+  // text: a selection that starts or ends on a line boundary lands on a node between the line
+  // spans, where walking up from the boundary finds no line at all.
+  let from = -1;
+  let to = -1;
+  for (const [i, line] of lines.entries()) {
+    if (!range.intersectsNode(line)) continue;
+    if (from < 0) from = i;
+    to = i;
+  }
+  return from < 0
+    ? { text, range: captured }
+    : { text, range: captured, fromLine: from + 1, toLine: to + 1 };
 }
 
 /**
@@ -310,22 +451,28 @@ function crumbItemWidth(text: string): number {
   return CRUMB_ITEM_PX + cells * CRUMB_CHAR_PX;
 }
 
-const ghostActionClass =
-  "inline-flex shrink-0 items-center gap-1 rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
+/**
+ * The panel's actions, with their names taken off them: a square the size of the tree toggle, drawn in
+ * the toolbar and in the preview header alike so the panel's two rows of marks line up. A
+ * control with no visible text needs its name in two places to be readable at all — the
+ * element's own `aria-label`, and the Tooltip it is wrapped in.
+ */
+const iconActionBase =
+  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150";
+const iconActionIdle =
+  "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
+const iconActionClass = `${iconActionBase} ${iconActionIdle}`;
 
-/** The same action, as a toggle: pressed is a filled resting state, not a hover that happens to stick. */
-const toggleActionClass = (on: boolean): string =>
-  `inline-flex shrink-0 items-center rounded-md border border-transparent px-2.5 py-1 text-xs font-medium transition-colors duration-150 ${
-    on
-      ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
-      : "bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-  }`;
+/** The same square, as a toggle: pressed is a filled resting state, not a hover that happens to stick. */
+const iconToggleClass = (on: boolean): string =>
+  `${iconActionBase} ${on ? "bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100" : iconActionIdle}`;
 
 export function WorkspaceBrowser({
   session,
   openRequest,
   active,
   reloadSignal,
+  onAddReference,
 }: {
   session: SessionInfo;
   /** External navigation command (from clicking a file chip in a message): opens the tree
@@ -344,6 +491,18 @@ export function WorkspaceBrowser({
    * so the initial value is irrelevant and no edge tracking is needed.
    */
   reloadSignal?: number;
+  /**
+   * Puts a Workspace reference into the conversation's composer at its caret — the context
+   * menu's "add to conversation". The panel composes the text (a `@path`, or a fenced block
+   * around a preview selection) and says how it should sit; where the caret is, and what is
+   * already typed around it, are the composer's own business.
+   */
+  /**
+   * Stages what the panel contributes in the composer as a chip: a file, a directory, or a
+   * quoted range. All three are whole things rather than words in a sentence, so none of them
+   * is spliced into the draft the user is writing.
+   */
+  onAddReference: (reference: ComposerReference) => void;
 }) {
   // Whether the HTML preview lands on a separate origin. True routes both the in-app
   // rendered view and "open in new tab" through the preview origin; false downgrades
@@ -367,8 +526,19 @@ export function WorkspaceBrowser({
   /** The file chosen in the tree; the preview follows it once loaded. */
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [scrollTo, setScrollTo] = useState<{ path: string } | null>(null);
-  /** The search box's text. Deliberately not persisted: a filter is a thing you are doing, not a setting. */
+  /** The search box's text. Deliberately not persisted: a search is a thing you are doing, not a setting. */
   const [query, setQuery] = useState("");
+  /**
+   * The server's answer for the query the box currently holds — null while none has arrived for
+   * it, which is also how the tree tells "still looking" from "nothing there".
+   */
+  const [searchResult, setSearchResult] = useState<{
+    hits: WorkspaceSearchHit[];
+    truncated: boolean;
+  } | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  /** Which search each in-flight answer belongs to; an older one must not overwrite a newer. */
+  const searchSeq = useRef(0);
   /** The directory last opened or closed, so the tree animates exactly that subtree once. */
   const [toggled, setToggled] = useState<TreeToggle | null>(null);
   // -------------------------------------------------------------------- preview / editor
@@ -383,6 +553,20 @@ export function WorkspaceBrowser({
   const [saveConfirm, setSaveConfirm] = useState(false);
   /** A save the server refused because the file had changed (non-null shows the conflict dialog). */
   const [conflict, setConflict] = useState<{ name: string } | null>(null);
+  /**
+   * The file a rename or a delete is being asked about, and the version it carried when the
+   * dialog opened.
+   *
+   * The version is read at the dialog rather than taken from whatever the preview last loaded:
+   * what it guards is the Agent rewriting the file while the question is on screen, and a
+   * marker from five minutes ago would refuse actions nobody needed warning about. Until it
+   * arrives the action is not offered at all — an unconditional move or delete is exactly the
+   * thing this is here to prevent.
+   */
+  const [renameTarget, setRenameTarget] = useState<FileActionTarget | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [removeTarget, setRemoveTarget] = useState<FileActionTarget | null>(null);
+  const [fileActionBusy, setFileActionBusy] = useState(false);
   /** The open "discard unsaved changes?" question, resolving with the answer. */
   const [discardPrompt, setDiscardPrompt] = useState<{ resolve: (ok: boolean) => void } | null>(
     null,
@@ -411,13 +595,33 @@ export function WorkspaceBrowser({
   /** The dragged tree width, or null while the user has never dragged it (the computed default stands). */
   const [treeWidthPref, setTreeWidthPref] = useState<number | null>(() => readTreeWidth());
   const [resizingTree, setResizingTree] = useState(false);
-  const [editorWrap, setEditorWrap] = useState(() => readEditorWrap());
+  /** Soft wrap, shared by the source view and the editor so Edit reflows nothing (see parseWrapLines). */
+  const [wrapLines, setWrapLines] = useState(() => readWrapLines());
+  /**
+   * The preview header's copy action. Driven by the hook rather than a plain CopyButton
+   * because the tooltip is a Tooltip panel here, not a `title`, and a trigger may carry only
+   * one of the two — the glyph swap and the live region are the ones copy-button.tsx owns.
+   */
+  const { copied, flash: flashCopy } = useCopied();
   const [width, setWidth] = useState(0);
   /** The breadcrumb strip's own width: it is `flex-1` over a zero basis, so it measures the space left by the actions and never its own content — no feedback loop. */
   const [crumbsWidth, setCrumbsWidth] = useState(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const treePaneRef = useRef<HTMLDivElement | null>(null);
   const crumbsRef = useRef<HTMLDivElement | null>(null);
+  // ----------------------------------------------------------------------- context menus
+  // One hook per surface, not per row: each carries a long-press timer, and the tree draws
+  // hundreds of rows — twice over while a closing subtree animates out. The row a gesture
+  // landed on is resolved from the event instead, and held here for as long as its menu is up.
+  const treeMenu = useRowContextMenu();
+  const [treeMenuTarget, setTreeMenuTarget] = useState<FileMenuTarget | null>(null);
+  const previewMenu = useRowContextMenu();
+  /** The selection the preview's menu was opened over; null when there was none inside it. */
+  const [menuSelection, setMenuSelection] = useState<PreviewSelection | null>(null);
+  const previewBodyRef = useRef<HTMLDivElement | null>(null);
+  /** The directory the menu's own picker uploads into (the toolbar's picker always means the current one). */
+  const menuUploadDir = useRef("");
+  const menuUploadRef = useRef<HTMLInputElement | null>(null);
 
   // Mirrors for the async flows and stable callbacks below, which must read the latest
   // value without re-creating themselves on every change.
@@ -431,6 +635,8 @@ export function WorkspaceBrowser({
   currentDirRef.current = currentDir;
   const previewRef = useRef(preview);
   previewRef.current = preview;
+  const richViewRef = useRef(richView);
+  richViewRef.current = richView;
   const uploadingRef = useRef(uploading);
   uploadingRef.current = uploading;
   /** Newest request per directory: only it may publish, so a slow older listing cannot overwrite a newer one. */
@@ -469,6 +675,12 @@ export function WorkspaceBrowser({
     setUploading(null);
     setPendingUpload(null);
     setSaving(false);
+    // An open menu points at a path in the Session that just left; its actions would run
+    // against this one.
+    treeMenu.close();
+    previewMenu.close();
+    setTreeMenuTarget(null);
+    setMenuSelection(null);
     previewSeq++;
   }
 
@@ -641,10 +853,10 @@ export function WorkspaceBrowser({
           return;
         }
         const { content, truncated, version } = result;
-        // Oversized Markdown defaults to the source view (benefiting from the unhighlighted
-        // highlight=false path): feeding the whole block to remark for parsing is a one-time
-        // main-thread cost; the user can still manually switch to "rendered view" as an informed choice.
-        if (!refresh && kind === "md" && content.length > HIGHLIGHT_LIMIT && nonce === previewSeq) {
+        // Oversized Markdown defaults to the source view: feeding the whole block to remark is a
+        // main-thread cost the highlighting worker does nothing about (see MD_RENDER_LIMIT). The
+        // reader can still switch to the rendered view, which makes it their informed choice.
+        if (!refresh && kind === "md" && content.length > MD_RENDER_LIMIT && nonce === previewSeq) {
           setRichView("source");
         }
         present({
@@ -750,6 +962,99 @@ export function WorkspaceBrowser({
     },
     [promptDiscard, discardEditor],
   );
+
+  /**
+   * Puts one of the two file actions on screen and starts reading the file's current version.
+   *
+   * The dialog opens first and the version lands in it: waiting for a round trip before showing
+   * anything would make a menu click feel broken. A dirty editor is asked about before either,
+   * through the same guard navigation uses — both actions move the file out from under it.
+   */
+  const beginFileAction = useCallback(
+    (path: string, kind: "rename" | "delete") => {
+      void navigateGuarded(null, () => {
+        const opened: FileActionTarget = { path, version: null, reading: true };
+        if (kind === "rename") {
+          setRenameDraft(path);
+          setRenameTarget(opened);
+        } else {
+          setRemoveTarget(opened);
+        }
+        const settle = (version: string | null) => {
+          const next = (t: FileActionTarget | null): FileActionTarget | null =>
+            t !== null && t.path === path ? { path, version, reading: false } : t;
+          if (kind === "rename") setRenameTarget(next);
+          else setRemoveTarget(next);
+        };
+        void fetchFileVersion(api.workspaceFileUrl(sessionIdRef.current, path))
+          .then(settle)
+          .catch(() => settle(null));
+      });
+    },
+    [navigateGuarded],
+  );
+
+  /**
+   * Reports the one failure both actions share. Nothing was changed, so this is a toast and not
+   * a dialog: there is no decision left to take, only the same action again on the file as it
+   * now is.
+   */
+  const reportFileActionError = (err: unknown, path: string): void => {
+    if (err instanceof ApiError && err.code === "file_changed") {
+      toastError(S.files.changedBeforeAction(baseName(path)));
+    } else if (err instanceof ApiError && err.code === "target_exists") {
+      toastError(S.files.renameTargetExists(renameDraft.trim()));
+    } else {
+      toastError(apiErrorText(err));
+    }
+  };
+
+  const applyRename = async (): Promise<void> => {
+    const target = renameTarget;
+    const to = renameDraft.trim();
+    if (target === null || target.version === null || fileActionBusy) return;
+    if (to === "" || to === target.path) {
+      setRenameTarget(null);
+      return;
+    }
+    setFileActionBusy(true);
+    try {
+      await api.moveWorkspaceFile(sessionIdRef.current, {
+        from: target.path,
+        to,
+        ifVersion: target.version,
+      });
+      setRenameTarget(null);
+      // The file did not stop existing, it moved: the panel follows it rather than emptying.
+      if (selectedPath === target.path) {
+        setSelectedPath(to);
+        setCurrentDir(parentDir(to));
+      }
+      refreshAll();
+      toastSuccess(S.files.renamed(baseName(to)));
+    } catch (err) {
+      reportFileActionError(err, target.path);
+    } finally {
+      setFileActionBusy(false);
+    }
+  };
+
+  const applyDelete = async (): Promise<void> => {
+    const target = removeTarget;
+    if (target === null || target.version === null || fileActionBusy) return;
+    setFileActionBusy(true);
+    try {
+      await api.deleteWorkspaceFile(sessionIdRef.current, target.path, target.version);
+      setRemoveTarget(null);
+      if (selectedPath === target.path) setSelectedPath(null);
+      refreshAll();
+      toastSuccess(S.files.deleted(baseName(target.path)));
+    } catch (err) {
+      reportFileActionError(err, target.path);
+    } finally {
+      setFileActionBusy(false);
+    }
+  };
 
   /**
    * Opens every directory above `path` and makes sure each is listed — the file's own
@@ -889,6 +1194,38 @@ export function WorkspaceBrowser({
    * directory current and, when it has never been listed, lists it, which is how the search
    * is extended past what the tree has loaded so far.
    */
+  /**
+   * The search runs on the server, over the whole Workspace — not over the rows the lazy tree
+   * happens to have loaded, which made a match reachable only if its ancestors were already
+   * open. Debounced because every keystroke would otherwise walk the tree again, and sequenced
+   * because a slower answer for a shorter query must not land on top of a newer one.
+   */
+  useEffect(() => {
+    const needle = query.trim();
+    if (needle === "") {
+      searchSeq.current += 1;
+      setSearchResult(null);
+      setSearchError(null);
+      return;
+    }
+    const run = (searchSeq.current += 1);
+    const timer = setTimeout(() => {
+      void api
+        .searchWorkspaceFiles(sessionId, needle)
+        .then((res) => {
+          if (searchSeq.current !== run) return;
+          setSearchResult({ hits: res.hits, truncated: res.truncated });
+          setSearchError(null);
+        })
+        .catch((e: unknown) => {
+          if (searchSeq.current !== run) return;
+          setSearchResult(null);
+          setSearchError(apiErrorText(e));
+        });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, sessionId]);
+
   const openDirForFilter = useCallback(
     (dir: string) => {
       setCurrentDir(dir);
@@ -896,6 +1233,15 @@ export function WorkspaceBrowser({
       if (!listingsRef.current.has(dir)) void loadDir(dir);
     },
     [loadDir],
+  );
+
+  /** A directory hit is somewhere to go, not something to unfold: opening one leaves the search behind and lands the tree there. */
+  const openDirFromSearch = useCallback(
+    (dir: string) => {
+      setQuery("");
+      openDirForFilter(dir);
+    },
+    [openDirForFilter],
   );
 
   const backToTree = (): void => {
@@ -912,8 +1258,8 @@ export function WorkspaceBrowser({
   };
 
   const setWrap = (wrap: boolean): void => {
-    setEditorWrap(wrap);
-    writeEditorWrap(wrap);
+    setWrapLines(wrap);
+    writeWrapLines(wrap);
   };
 
   // ------------------------------------------------------------------------- tree width
@@ -1143,6 +1489,165 @@ export function WorkspaceBrowser({
     if (files.length > 0) void stageUpload(files, currentDirRef.current);
   };
 
+  /** The menu's own picker: same staging, but into the folder that was right-clicked. */
+  const onMenuPick = (e: ChangeEvent<HTMLInputElement>): void => {
+    const files = e.target.files ? [...e.target.files] : [];
+    e.target.value = "";
+    if (files.length > 0) void stageUpload(files, menuUploadDir.current);
+  };
+
+  // ------------------------------------------------------------------------ context menus
+
+  const copyPath = (target: FileMenuTarget): void => {
+    // A menu row cannot carry the copy button's own at-the-control feedback: the row acts and
+    // the panel closes out from under it. A toast is the confirmation that survives that, and
+    // it says the same word (sidebar.tsx's copy-id row does the same).
+    writeClipboard(target.path);
+    toastSuccess(S.common.copied);
+  };
+
+  const addToChat = (target: FileMenuTarget): void => {
+    onAddReference({
+      kind: target.kind,
+      path: target.path,
+      text: pathReference(target.path, target.kind),
+    });
+  };
+
+  const uploadInto = (dir: string): void => {
+    menuUploadDir.current = dir;
+    menuUploadRef.current?.click();
+  };
+
+  /** Dismisses the row menu. Every action closes it first, so nothing runs under a panel still on screen. */
+  const closeTreeMenu = (): void => {
+    treeMenu.close();
+    setTreeMenuTarget(null);
+  };
+
+  /**
+   * The tree's context menu, hung on the whole pane. A gesture that lands between rows — the
+   * search box, the empty space below the last row — resolves no target, so nothing is
+   * suppressed and the browser's own menu stands, which is what the search box needs to be
+   * pasteable into.
+   */
+  const treeMenuProps = {
+    onContextMenu: (e: ReactMouseEvent) => {
+      const row = hitRow(e.target);
+      if (row === null) return;
+      // Before the hook reads it: the anchor for a keyboard-synthesized contextmenu is the
+      // row's own box, and the hook measures whatever `rowRef` currently points at.
+      treeMenu.rowRef(row.el);
+      setTreeMenuTarget({ path: row.path, kind: row.kind });
+      treeMenu.rowProps.onContextMenu(e);
+    },
+    onKeyDown: (e: ReactKeyboardEvent) => {
+      if (!isContextMenuKey(e)) return;
+      // The roving tab stop is what has focus, so the event's own target is the row the
+      // keyboard means — no separate lookup of "the focused row" is needed.
+      const row = hitRow(e.target);
+      if (row === null) return;
+      e.preventDefault();
+      treeMenu.rowRef(row.el);
+      setTreeMenuTarget({ path: row.path, kind: row.kind });
+      const r = row.el.getBoundingClientRect();
+      treeMenu.openAt({ top: r.top, bottom: r.bottom, left: r.left, right: r.right });
+    },
+    onPointerDown: (e: ReactPointerEvent) => {
+      // Only a press-and-hold opens from here; a mouse arrives through onContextMenu instead,
+      // and running this for every click would re-render the panel on each one.
+      if (!isLongPressPointer(e.pointerType)) return;
+      const row = hitRow(e.target);
+      if (row === null) return;
+      treeMenu.rowRef(row.el);
+      setTreeMenuTarget({ path: row.path, kind: row.kind });
+      treeMenu.rowProps.onPointerDown(e);
+    },
+    onPointerMove: treeMenu.rowProps.onPointerMove,
+    onPointerUp: treeMenu.rowProps.onPointerUp,
+    onPointerCancel: treeMenu.rowProps.onPointerCancel,
+    // A touch screen replays the held press as a click once the finger lifts, and a tree row's
+    // click opens the file or the folder. Swallowed in the capture phase so the row never hears
+    // it — the rows themselves know nothing about this menu.
+    onClickCapture: (e: ReactMouseEvent) => {
+      if (!treeMenu.consumeLongPressClick()) return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+  };
+
+  /**
+   * The rendered source lines a preview selection can be measured against — the source view's
+   * own, and deliberately none in the rendered Markdown and HTML views. A Markdown body draws
+   * code blocks of its own, whose line spans would answer with a line number belonging to some
+   * other file; no range at all is the honest reading there.
+   */
+  const sourceLines = (host: HTMLElement | null): HTMLElement[] => {
+    const p = previewRef.current;
+    const source = p !== null && (p.kind === "text" || richViewRef.current === "source");
+    return source && host !== null ? [...host.querySelectorAll<HTMLElement>(".line")] : [];
+  };
+
+  /**
+   * The preview's context menu. Its target is always the file on screen, so the only thing to
+   * resolve is whether a selection sits inside the preview — read at the gesture, by every
+   * gesture that opens the menu, rather than when a row is clicked: focusing the menu can
+   * collapse the live selection under it, and a selection read at the previous gesture may
+   * since have been collapsed or belong to a file that is no longer open.
+   */
+  /**
+   * Reads the selection the gesture landed on, and puts it back.
+   *
+   * Both halves are needed. Read, because focusing the menu can collapse the live selection,
+   * so what the menu acts on has to be captured before the panel opens. Put back, because
+   * that collapse is also visible: a right-click inside selected text would clear the
+   * highlight the user made, on a gesture that was only asking what could be done with it.
+   */
+  const captureMenuSelection = (): void => {
+    const host = previewBodyRef.current;
+    const selection = readSelection(host, sourceLines(host));
+    setMenuSelection(selection);
+    if (selection !== null) restoreSelection(selection.range);
+  };
+
+  const openPreviewMenu = (e: ReactMouseEvent): void => {
+    captureMenuSelection();
+    previewMenu.rowProps.onContextMenu(e);
+  };
+
+  /** The keyboard's chord opens the same menu, so it re-reads the selection the same way. */
+  const previewMenuKeyDown = (e: ReactKeyboardEvent): void => {
+    if (isContextMenuKey(e)) captureMenuSelection();
+    previewMenu.rowProps.onKeyDown(e);
+  };
+
+  /** Same as the row menu's: the preview's own links must not fire on the click a hold replays. */
+  const previewMenuClickCapture = (e: ReactMouseEvent): void => {
+    if (!previewMenu.consumeLongPressClick()) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const addSelectionToChat = (p: Preview, selection: PreviewSelection): void => {
+    onAddReference({
+      path: p.path,
+      text: selectionBlock({
+        path: p.path,
+        language: languageForExtension(extOf(p.name)),
+        selection: selection.text,
+        fromLine: selection.fromLine,
+        toLine: selection.toLine,
+      }),
+      kind: "quote",
+      ...(selection.fromLine === undefined || selection.toLine === undefined
+        ? {}
+        : { fromLine: selection.fromLine, toLine: selection.toLine }),
+    });
+    // The text stays selected: contributing a quote to the conversation is not an edit to the
+    // preview, and losing the highlight would cost the reader their place in the file.
+    restoreSelection(selection.range);
+  };
+
   // -------------------------------------------------------------------------------- drop
   // The panel is its own drop region, decided by the same stateless rule as the chat
   // area's (dropRegionAction): every event re-derives whether a file drag is over the panel,
@@ -1194,17 +1699,23 @@ export function WorkspaceBrowser({
   // ------------------------------------------------------------------------------ render
 
   const filter = query.trim();
-  const rows = useMemo(() => {
-    if (filter === "") return flattenTree(listings, expanded);
-    // A filter walks every LISTED directory, whatever the user left open: the search
-    // reaches exactly as far as the lazy tree has loaded, and a match is only reachable
-    // with its ancestors open above it.
-    return filterTreeRows(flattenTree(listings, new Set(listings.keys())), filter);
-  }, [listings, expanded, filter]);
+  const rows = useMemo(
+    () => (filter === "" ? flattenTree(listings, expanded) : searchRows(searchResult?.hits ?? [])),
+    [listings, expanded, filter, searchResult],
+  );
   const rootListing = listings.get("");
+  /**
+   * What the path strip names: the open file, or the current directory when none is open.
+   * One strip rather than a directory row above a filename row — they are one fact, and the
+   * two rows spent a whole line of a panel that can be very narrow saying it twice.
+   *
+   * visibleCrumbSegments fits tail first, so the file's own name is the last thing to go and
+   * the leading directories collapse into a single "…" ahead of it.
+   */
+  const crumbTarget = selectedPath ?? currentDir;
   const crumbSegments =
-    currentDir === "" ? [S.files.root] : [S.files.root, ...currentDir.split("/")];
-  const crumbPath = currentDir === "" ? S.files.root : `${S.files.root}/${currentDir}`;
+    crumbTarget === "" ? [S.files.root] : [S.files.root, ...crumbTarget.split("/")];
+  const crumbPath = crumbTarget === "" ? S.files.root : `${S.files.root}/${crumbTarget}`;
   // An unmeasured strip (before the first ResizeObserver callback) shows the whole path:
   // the actions cannot be pushed off the row either way — they are shrink-0 and the strip
   // clips — and a "…" for one frame on a path that fits reads as a flicker.
@@ -1216,61 +1727,173 @@ export function WorkspaceBrowser({
   const showTree = narrow ? selectedPath === null : treeVisible;
   const showPreview = narrow ? selectedPath !== null : true;
   const canEdit = preview !== null && editor === null && canEditPreview(preview);
+  /** The source view is on screen: a text file, or Markdown/HTML with the toggle on Source. */
+  const sourceShown =
+    preview !== null &&
+    (preview.kind === "text" ||
+      ((preview.kind === "md" || preview.kind === "html") && richView === "source"));
+  /** The file's text is on screen to read or to edit. Both present it the same way, so both take the Wrap toggle. */
+  const textShown =
+    sourceShown || (preview !== null && editor !== null && editor.path === preview.path);
+  /** The upload picker's one name — its accessible name and its tooltip both — carrying the running count while an upload is in flight. */
+  const uploadLabel =
+    uploading !== null ? S.files.uploading(uploading.done, uploading.total) : S.files.upload;
+  /** Likewise for the preview's external link, which folds the sandboxing caveat into its name when there is one. */
+  const openInNewTabLabel = previewIsolated
+    ? S.files.openInNewTab
+    : `${S.files.openInNewTab}: ${S.files.previewNotIsolatedHint}`;
   const dirLabel = (dir: string): string => (dir === "" ? S.files.root : dir);
 
   const tree = (
     <div
       ref={treePaneRef}
+      {...treeMenuProps}
       className={`flex min-h-0 flex-col ${narrow ? "flex-1" : "shrink-0 border-r border-gray-200 dark:border-gray-800"}`}
       style={narrow ? undefined : { width: treeWidth }}
     >
-      {/* Search: filters the rows already loaded. Esc clears it rather than reaching the
-          dock or a dialog above, which is what an Esc in a non-empty box means here. */}
-      <div className="relative shrink-0 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== "Escape" || query === "") return;
-            e.preventDefault();
-            e.stopPropagation();
-            setQuery("");
-          }}
-          placeholder={S.files.searchPlaceholder}
-          aria-label={S.files.searchPlaceholder}
-          {...noAutofill}
-          className={`${panelSearchClass} py-1 pl-2 pr-7`}
-        />
-        {query !== "" && (
+      {/* The tree pane's header: the search box, and the two actions that belong to the panel
+          rather than to any one file — which is why they are here and not on the path row, where
+          everything names the open file. Esc in a non-empty box clears it rather than reaching
+          the dock or a dialog above, which is what that key means here. */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-gray-100 px-2 py-1.5 dark:border-gray-800">
+        <div className="relative min-w-0 flex-1">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape" || query === "") return;
+              e.preventDefault();
+              e.stopPropagation();
+              setQuery("");
+            }}
+            placeholder={S.files.searchPlaceholder}
+            aria-label={S.files.searchPlaceholder}
+            {...noAutofill}
+            className={`${panelSearchClass} py-1 pl-2 pr-7`}
+          />
+          {query !== "" && (
+            <button
+              type="button"
+              aria-label={S.files.searchClear}
+              title={S.files.searchClear}
+              onClick={() => setQuery("")}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            >
+              <CloseIcon size={12} />
+            </button>
+          )}
+        </div>
+        <Tooltip label={S.files.refresh} placement="bottom" className="shrink-0">
           <button
             type="button"
-            aria-label={S.files.searchClear}
-            title={S.files.searchClear}
-            onClick={() => setQuery("")}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            aria-label={S.files.refresh}
+            onClick={refreshAll}
+            className={iconActionClass}
           >
-            <CloseIcon size={12} />
+            <GlyphIcon d={REFRESH_ICON} size={ICON_SIZE.iconButton} />
           </button>
-        )}
+        </Tooltip>
+        {/* The picker's own input carries the name: a label with no text names nothing, and the
+            glyph inside it is aria-hidden. While an upload runs the count is all the tooltip has
+            left to say it with, so it goes there and the glyph becomes a spinner. */}
+        <Tooltip label={uploadLabel} placement="bottom" className="shrink-0">
+          <label
+            className={`${iconActionClass} cursor-pointer focus-within:ring-2 focus-within:ring-gray-400/30`}
+          >
+            <HiddenFileInput
+              multiple
+              onChange={onPick}
+              disabled={uploading !== null}
+              aria-label={uploadLabel}
+            />
+            {uploading !== null ? (
+              <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+            ) : (
+              <GlyphIcon d={UPLOAD_ICON} size={ICON_SIZE.iconButton} />
+            )}
+          </label>
+        </Tooltip>
       </div>
       {rootError !== null ? (
         <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{rootError}</p>
       ) : rootListing === undefined ? (
         <SkeletonList rows={6} />
+      ) : searchError !== null ? (
+        <p className="px-3 py-3 text-sm text-red-600 dark:text-red-400">{searchError}</p>
+      ) : filter !== "" && searchResult === null ? (
+        // No answer for this query yet. An empty list here would read as "nothing matches",
+        // which is a different thing and the one answer that must not be guessed.
+        <p className="px-3 py-3 text-xs text-gray-400 dark:text-gray-500">{S.files.searching}</p>
       ) : (
-        <WorkspaceTreeView
-          rows={rows}
-          selectedPath={selectedPath}
-          currentDir={currentDir}
-          loadingDirs={loadingDirs}
-          dropTargetDir={drag.active ? drag.targetDir : null}
-          scrollTo={scrollTo}
-          rootEmpty={rootListing.length === 0}
-          filtering={filter !== ""}
-          toggled={filter === "" ? toggled : null}
-          onToggleDir={filter === "" ? toggleDir : openDirForFilter}
-          onOpenFile={openFile}
-        />
+        <>
+          <WorkspaceTreeView
+            rows={rows}
+            selectedPath={selectedPath}
+            currentDir={currentDir}
+            loadingDirs={loadingDirs}
+            dropTargetDir={drag.active ? drag.targetDir : null}
+            scrollTo={scrollTo}
+            rootEmpty={rootListing.length === 0}
+            filtering={filter !== ""}
+            toggled={filter === "" ? toggled : null}
+            onToggleDir={filter === "" ? toggleDir : openDirFromSearch}
+            onOpenFile={openFile}
+          />
+          {searchResult?.truncated === true && (
+            <p className="shrink-0 border-t border-gray-100 px-3 py-1.5 text-[11px] text-gray-400 dark:border-gray-800 dark:text-gray-500">
+              {S.files.searchTruncated(searchResult.hits.length)}
+            </p>
+          )}
+        </>
+      )}
+      {/* The row menu. `contents` keeps this wrapper out of the pane's column: it draws no box
+          of its own, the panel is portaled, and the anchor is the point the gesture landed on
+          rather than this element (the same shape the sidebar's session row uses). */}
+      {treeMenuTarget !== null && (
+        <Dropdown
+          open={treeMenu.open}
+          // The target is not cleared here: a dismiss is not always believed (a touch screen
+          // replays the held press as an outside click on the menu that gesture just opened),
+          // and unmounting the panel on a dismiss the hook refused would close it anyway. It
+          // is cleared where the menu really closes — an action, or the Session switching.
+          setOpen={treeMenu.setOpen}
+          portal={{ direction: "down", align: "left" }}
+          anchorRect={treeMenu.anchor}
+          anchorOwner={treeMenu.anchorOwner}
+          // A tree row carries no button of its own, so the Dropdown's default return target
+          // finds nothing: hand Escape back to the row itself.
+          returnFocus={treeMenu.anchorOwner}
+          className="contents"
+          menuClass="w-max min-w-36 max-w-[calc(100vw-2rem)]"
+          button={null}
+        >
+          <WorkspaceFileMenuRows
+            target={treeMenuTarget}
+            downloadHref={(path) => api.workspaceFileUrl(sessionId, path, true)}
+            downloadName={baseName}
+            onCopyPath={(t) => {
+              closeTreeMenu();
+              copyPath(t);
+            }}
+            onAddToChat={(t) => {
+              closeTreeMenu();
+              addToChat(t);
+            }}
+            onUploadInto={(dir) => {
+              closeTreeMenu();
+              uploadInto(dir);
+            }}
+            onRename={(t) => {
+              closeTreeMenu();
+              beginFileAction(t.path, "rename");
+            }}
+            onDelete={(t) => {
+              closeTreeMenu();
+              beginFileAction(t.path, "delete");
+            }}
+            onClose={closeTreeMenu}
+          />
+        </Dropdown>
       )}
     </div>
   );
@@ -1298,6 +1921,25 @@ export function WorkspaceBrowser({
     />
   );
 
+  /**
+   * Soft wrap. One toggle and one remembered answer for the source view and the editor alike —
+   * they are the same file seen two ways, and a second preference would let Edit reflow the
+   * file under the line the user was aiming at.
+   */
+  const wrapToggle = textShown && (
+    <Tooltip label={S.files.wrapLines} placement="bottom" className="shrink-0">
+      <button
+        type="button"
+        aria-pressed={wrapLines}
+        aria-label={S.files.wrapLines}
+        onClick={() => setWrap(!wrapLines)}
+        className={iconToggleClass(wrapLines)}
+      >
+        <GlyphIcon d={WRAP_TEXT_ICON} size={ICON_SIZE.iconButton} />
+      </button>
+    </Tooltip>
+  );
+
   const richToggle = preview !== null && (preview.kind === "html" || preview.kind === "md") && (
     <div className="flex shrink-0 rounded-md bg-gray-100 p-0.5 dark:bg-gray-800">
       {(
@@ -1323,184 +1965,430 @@ export function WorkspaceBrowser({
     </div>
   );
 
-  const previewBody = (p: Preview) => {
-    if (editor !== null && editor.path === p.path) {
-      return (
-        <div className="min-h-0 flex-1">
-          <WorkspaceFileEditor
-            path={editor.path}
-            value={editor.draft}
-            wrap={editorWrap}
-            onChange={updateDraft}
-            onSave={requestSave}
-          />
-        </div>
-      );
-    }
-    return (
-      // scrollbar-gutter: an SVG carries no pixel size, so its height is whatever its width
-      // divides to — which makes the content height a function of the scrollbar's presence.
-      // Without a reserved gutter that closes a loop: content overflows -> scrollbar takes
-      // width -> the image shrinks -> content fits -> scrollbar goes -> repeat, forever, as
-      // a visible shake. Reserving it always breaks the feedback path (and is inert where
-      // scrollbars are overlays).
-      <div className="min-h-0 flex-1 overflow-auto p-3 [scrollbar-gutter:stable]">
-        {p.kind === "image" ? (
-          // Keyed on the nonce like the isolated HTML iframe: the src alone is unchanged
-          // when the same file is re-read, so only a remount re-requests the bytes the
-          // Agent just rewrote.
-          <ZoomableImage
-            key={p.nonce}
-            src={api.workspaceFileUrl(sessionId, p.path)}
-            alt={p.name}
-            className="max-w-full rounded-md border border-gray-200 dark:border-gray-800"
-          />
-        ) : p.kind === "pdf" ? (
-          <iframe
-            key={p.nonce}
-            src={api.workspaceFileUrl(sessionId, p.path)}
-            title={p.name}
-            className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 dark:border-gray-800"
-          />
-        ) : p.kind === "html" && richView === "rendered" ? (
-          previewIsolated ? (
-            // Same URL and serving path as "open in new tab": the app-origin redirect mints
-            // a token and 302s to the separate preview origin, where the document has a real
-            // base URL — relative subresources (<img src="foo.png">, app.js, style.css)
-            // resolve and load, and storage works, exactly as in the new-page preview.
-            // allow-same-origin is safe here precisely because the document IS on a separate
-            // origin: it grants the preview origin's identity, not the app's, so the frame
-            // still can't reach the app's cookies or DOM. Popups stay sandboxed (no
-            // allow-popups-to-escape-sandbox); allow-downloads keeps download links inside
-            // the page working, as they do in the new tab. The key remounts the iframe on
-            // every previewPath call — its src alone wouldn't change when the same file is
-            // re-opened after the Agent rewrote it.
-            <iframe
-              key={p.nonce}
-              src={api.workspaceFilePreviewUrl(sessionId, p.path)}
-              title={p.name}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
-              className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
-            />
-          ) : p.content === undefined ? (
-            // Only reachable when previewIsolated flipped to false after an isolated
-            // preview mounted without content: the lazy source effect is already fetching
-            // it, and the srcDoc fallback renders once it lands.
-            sourceError !== null ? (
-              <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
-            ) : (
-              <SkeletonList rows={6} />
-            )
-          ) : (
-            // No separate preview origin: srcDoc fallback. sandbox allows scripts but
-            // **without allow-same-origin**: the iframe has an opaque origin, so scripts can
-            // run to fully render the page, yet can't read the app's same-origin cookies /
-            // DOM (an XSS defense). The storage shim is injected to avoid a SecurityError
-            // when a script accesses localStorage from an opaque origin. srcdoc has no real
-            // base URL, so relative subresources cannot resolve here — that's what the
-            // isolated branch above fixes.
-            <iframe
-              srcDoc={withStorageShim(p.content)}
-              title={p.name}
-              sandbox="allow-scripts"
-              className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
-            />
-          )
-        ) : p.kind === "md" && richView === "rendered" ? (
-          // Markdown's default rendered view: uses the same md-body layout as message bodies
-          // (ReactMarkdown outputs pure static HTML with no script execution surface, so no iframe sandbox is needed).
+  /**
+   * Copy and Edit, floated over the top-right of the file rather than parked in the title row.
+   * Both act on the body underneath them — the text on screen — while the row above names the
+   * file and carries what leaves it: the view toggle, wrap, the external link and download. The
+   * pill keeps its own ground so two glyphs stay legible over whatever is beneath them, and it
+   * sits clear of the reserved scrollbar gutter.
+   *
+   * Always drawn, never hover-revealed: a hover-only control is no control at all on a touch
+   * screen, and Edit has no other way in from here.
+   */
+  const previewFloatingActions = preview !== null &&
+    (wrapToggle !== false || canEdit || (sourceShown && preview.content !== undefined)) && (
+      <div className="absolute right-4 top-2.5 z-10 flex items-center gap-0.5 rounded-md border border-gray-200 bg-white/85 p-0.5 shadow-sm backdrop-blur-sm dark:border-gray-700 dark:bg-gray-900/85">
+        {/* Soft wrap is a property of the surface under the pill, and the editor lays its
+            textarea over that same surface — so it rides here in both modes, which is also
+            the only place the editor can reach it from. */}
+        {wrapToggle}
+        {/* Copies the text that was read, which is all of the file unless the preview was cut off. */}
+        {sourceShown && preview.content !== undefined && (
           <>
-            <div className="md-body text-base leading-relaxed text-gray-800 dark:text-gray-100">
-              <ReactMarkdown
-                remarkPlugins={REMARK_PLUGINS}
-                rehypePlugins={REHYPE_PLUGINS}
-                components={{
-                  // Relative images are resolved against the md file's directory into the file API (otherwise resolving against the app's origin would always 404).
-                  // `v` is the read nonce, not a cache-buster for its own sake: a
-                  // Workspace image is rewritten under the same path, and without it a
-                  // re-read of the Markdown would keep painting the previous bytes from
-                  // the browser's image cache.
-                  img: ({ src, alt }) => (
-                    <img
-                      src={
-                        typeof src === "string" && !EXTERNAL_REF_RE.test(src)
-                          ? `${api.workspaceFileUrl(
-                              sessionId,
-                              resolveRelative(parentDir(p.path), src),
-                            )}&v=${p.nonce}`
-                          : src
-                      }
-                      alt={alt ?? ""}
-                      loading="lazy"
-                      className="max-w-full"
-                    />
-                  ),
-                  // External links open in a new tab; relative links point to a Workspace
-                  // file, clicking opens it in the tree and the preview; in-page anchors keep default behavior.
-                  a: ({ href, children }) => {
-                    if (typeof href !== "string" || href.startsWith("#")) {
-                      return <a href={href}>{children}</a>;
-                    }
-                    if (EXTERNAL_REF_RE.test(href)) {
-                      return (
-                        <a href={href} target="_blank" rel="noreferrer">
-                          {children}
-                        </a>
-                      );
-                    }
-                    const target = resolveRelative(parentDir(p.path), href);
-                    return (
-                      <a
-                        href={api.workspaceFileUrl(sessionId, target)}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          openFile(target, { locate: true });
-                        }}
-                      >
-                        {children}
-                      </a>
-                    );
-                  },
-                }}
+            <Tooltip
+              label={copied ? S.common.copied : S.chat.copyCode}
+              placement="bottom"
+              className="shrink-0"
+            >
+              <button
+                type="button"
+                aria-label={S.chat.copyCode}
+                onClick={() => flashCopy(preview.content ?? "")}
+                className={iconActionClass}
               >
-                {p.content ?? ""}
-              </ReactMarkdown>
-            </div>
-            {p.truncated && (
-              <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
-            )}
+                <CopyCheckGlyph copied={copied} size={ICON_SIZE.iconButton} />
+              </button>
+            </Tooltip>
+            {/* Sibling, not a child: the button's accessible name stays the label, and the
+                glyph swap is silent without this region. */}
+            <CopiedStatus copied={copied} />
           </>
-        ) : p.kind === "text" || p.kind === "html" || p.kind === "md" ? (
-          p.content === undefined ? (
-            // Isolated HTML reaches the Source view before its lazy fetch lands: show a
-            // skeleton (or the fetch's own error) — toggling back to Rendered is
-            // unaffected, and re-entering Source retries the fetch.
-            sourceError !== null ? (
-              <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
-            ) : (
-              <SkeletonList rows={6} />
-            )
-          ) : (
-            // The source view reuses the message stream's CodeBlock: Shiki dual-theme
-            // highlighting + language label + copy button, no line wrapping, horizontal scroll
-            // instead (wrapping code is a disaster for readability, see the old mobile styling).
-            <>
-              <CodeBlock
-                language={languageForExtension(extOf(p.name))}
-                code={p.content}
-                highlight={p.content.length <= HIGHLIGHT_LIMIT}
-              />
-              {p.truncated && (
-                <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
-              )}
-            </>
-          )
-        ) : (
-          <p className="text-sm text-gray-500 dark:text-gray-400">{S.files.previewUnsupported}</p>
+        )}
+        {canEdit && (
+          <Tooltip label={S.common.edit} placement="bottom" className="shrink-0">
+            <button
+              type="button"
+              aria-label={S.common.edit}
+              onClick={() => void startEdit()}
+              className={iconActionClass}
+            >
+              <GlyphIcon d={FILE_EDIT_ICON} size={ICON_SIZE.iconButton} />
+            </button>
+          </Tooltip>
+        )}
+        {/* rel="noopener noreferrer" is load-bearing, not boilerplate: the preview must not
+            keep a handle back to this window, which is the whole point of serving it from a
+            separate origin.
+
+            Without a separate preview origin the page opens sandboxed, and the caveat joins
+            the name rather than riding a ⚠ beside it: the name is all an icon-only control
+            has, and the tooltip shows the same words so the two cannot disagree. The tint is
+            a second carrier, never the only one. */}
+        {/\.html?$/i.test(preview.name) && (
+          <Tooltip label={openInNewTabLabel} placement="bottom" className="shrink-0">
+            <a
+              href={api.workspaceFilePreviewUrl(sessionId, preview.path)}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={openInNewTabLabel}
+              className={`${iconActionClass} ${previewIsolated ? "" : toneInk.attention}`}
+            >
+              <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.iconButton} />
+            </a>
+          </Tooltip>
         )}
       </div>
     );
+
+  const previewBody = (p: Preview) => {
+    if (editor !== null && editor.path === p.path) {
+      return (
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1">
+            <WorkspaceFileEditor
+              path={editor.path}
+              value={editor.draft}
+              wrap={wrapLines}
+              onChange={updateDraft}
+              onSave={requestSave}
+            />
+          </div>
+          {previewFloatingActions}
+        </div>
+      );
+    }
+    const selection = menuSelection;
+    return (
+      <>
+        {/* The floating actions' containing block. A positioned ancestor is required here and
+            not optional: an absolute box inside a `static` scroller escapes to the initial
+            containing block and gives the whole shell a second scrollbar (styles.css). */}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {/* scrollbar-gutter: an SVG carries no pixel size, so its height is whatever its width
+          divides to — which makes the content height a function of the scrollbar's presence.
+          Without a reserved gutter that closes a loop: content overflows -> scrollbar takes
+          width -> the image shrinks -> content fits -> scrollbar goes -> repeat, forever, as
+          a visible shake. Reserving it always breaks the feedback path (and is inert where
+          scrollbars are overlays). */}
+          <div
+            ref={(el) => {
+              previewBodyRef.current = el;
+              // The same element is the menu's keyboard anchor and its scroll owner: a scroll of
+              // this box moves the point the panel hangs off.
+              previewMenu.rowRef(el);
+            }}
+            onContextMenu={openPreviewMenu}
+            onKeyDown={previewMenuKeyDown}
+            onPointerDown={(e) => {
+              // Only the press-and-hold path can open the menu from here, and only it is worth
+              // walking the rendered lines for: an ordinary click would pay that on every click.
+              if (isLongPressPointer(e.pointerType)) captureMenuSelection();
+              previewMenu.rowProps.onPointerDown(e);
+            }}
+            onPointerMove={previewMenu.rowProps.onPointerMove}
+            onPointerUp={previewMenu.rowProps.onPointerUp}
+            onPointerCancel={previewMenu.rowProps.onPointerCancel}
+            onClickCapture={previewMenuClickCapture}
+            // Focusable only programmatically, and only so Escape has somewhere to hand focus
+            // back to: the menu is anchored at this box, and a div with no tabindex would take
+            // none, leaving focus on the body when the panel it was in unmounts. -1 keeps it out
+            // of the tab order, and the outline is suppressed because the focus is a handover,
+            // not a destination the user chose.
+            tabIndex={-1}
+            // The source view brings its own padding, and has to: the editor's textarea lies on
+            // top of it, and only padding the two layers share keeps the typed text over the
+            // highlighted text.
+            className={`min-h-0 flex-1 overflow-auto outline-none [scrollbar-gutter:stable] ${
+              sourceShown && preview?.content !== undefined ? "" : "p-3"
+            }`}
+          >
+            {p.kind === "image" ? (
+              // Keyed on the nonce like the isolated HTML iframe: the src alone is unchanged
+              // when the same file is re-read, so only a remount re-requests the bytes the
+              // Agent just rewrote.
+              <ZoomableImage
+                key={p.nonce}
+                src={api.workspaceFileUrl(sessionId, p.path)}
+                alt={p.name}
+                className="max-w-full rounded-md border border-gray-200 dark:border-gray-800"
+              />
+            ) : p.kind === "pdf" ? (
+              <iframe
+                key={p.nonce}
+                src={api.workspaceFileUrl(sessionId, p.path)}
+                title={p.name}
+                className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 dark:border-gray-800"
+              />
+            ) : p.kind === "html" && richView === "rendered" ? (
+              previewIsolated ? (
+                // Same URL and serving path as "open in new tab": the app-origin redirect mints
+                // a token and 302s to the separate preview origin, where the document has a real
+                // base URL — relative subresources (<img src="foo.png">, app.js, style.css)
+                // resolve and load, and storage works, exactly as in the new-page preview.
+                // allow-same-origin is safe here precisely because the document IS on a separate
+                // origin: it grants the preview origin's identity, not the app's, so the frame
+                // still can't reach the app's cookies or DOM. Popups stay sandboxed (no
+                // allow-popups-to-escape-sandbox); allow-downloads keeps download links inside
+                // the page working, as they do in the new tab. The key remounts the iframe on
+                // every previewPath call — its src alone wouldn't change when the same file is
+                // re-opened after the Agent rewrote it.
+                <iframe
+                  key={p.nonce}
+                  src={api.workspaceFilePreviewUrl(sessionId, p.path)}
+                  title={p.name}
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
+                  className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
+                />
+              ) : p.content === undefined ? (
+                // Only reachable when previewIsolated flipped to false after an isolated
+                // preview mounted without content: the lazy source effect is already fetching
+                // it, and the srcDoc fallback renders once it lands.
+                sourceError !== null ? (
+                  <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
+                ) : (
+                  <SkeletonList rows={6} />
+                )
+              ) : (
+                // No separate preview origin: srcDoc fallback. sandbox allows scripts but
+                // **without allow-same-origin**: the iframe has an opaque origin, so scripts can
+                // run to fully render the page, yet can't read the app's same-origin cookies /
+                // DOM (an XSS defense). The storage shim is injected to avoid a SecurityError
+                // when a script accesses localStorage from an opaque origin. srcdoc has no real
+                // base URL, so relative subresources cannot resolve here — that's what the
+                // isolated branch above fixes.
+                <iframe
+                  srcDoc={withStorageShim(p.content)}
+                  title={p.name}
+                  sandbox="allow-scripts"
+                  className="h-full min-h-[60vh] w-full rounded-md border border-gray-200 bg-white dark:border-gray-800"
+                />
+              )
+            ) : p.kind === "md" && richView === "rendered" ? (
+              // Markdown's default rendered view: uses the same md-body layout as message bodies
+              // (ReactMarkdown outputs pure static HTML with no script execution surface, so no iframe sandbox is needed).
+              <>
+                <div className="md-body text-base leading-relaxed text-gray-800 dark:text-gray-100">
+                  <ReactMarkdown
+                    remarkPlugins={REMARK_PLUGINS}
+                    rehypePlugins={REHYPE_PLUGINS}
+                    components={{
+                      // Relative images are resolved against the md file's directory into the file API (otherwise resolving against the app's origin would always 404).
+                      // `v` is the read nonce, not a cache-buster for its own sake: a
+                      // Workspace image is rewritten under the same path, and without it a
+                      // re-read of the Markdown would keep painting the previous bytes from
+                      // the browser's image cache.
+                      img: ({ src, alt }) => (
+                        <img
+                          src={
+                            typeof src === "string" && !EXTERNAL_REF_RE.test(src)
+                              ? `${api.workspaceFileUrl(
+                                  sessionId,
+                                  resolveRelative(parentDir(p.path), src),
+                                )}&v=${p.nonce}`
+                              : src
+                          }
+                          alt={alt ?? ""}
+                          loading="lazy"
+                          className="max-w-full"
+                        />
+                      ),
+                      // External links open in a new tab; relative links point to a Workspace
+                      // file, clicking opens it in the tree and the preview; in-page anchors keep default behavior.
+                      a: ({ href, children }) => {
+                        if (typeof href !== "string" || href.startsWith("#")) {
+                          return <a href={href}>{children}</a>;
+                        }
+                        if (EXTERNAL_REF_RE.test(href)) {
+                          return (
+                            <a href={href} target="_blank" rel="noreferrer">
+                              {children}
+                            </a>
+                          );
+                        }
+                        const target = resolveRelative(parentDir(p.path), href);
+                        return (
+                          <a
+                            href={api.workspaceFileUrl(sessionId, target)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              openFile(target, { locate: true });
+                            }}
+                          >
+                            {children}
+                          </a>
+                        );
+                      },
+                    }}
+                  >
+                    {p.content ?? ""}
+                  </ReactMarkdown>
+                </div>
+                {p.truncated && (
+                  <p className="mt-1 text-xs text-gray-400">… {S.files.previewTruncated}</p>
+                )}
+              </>
+            ) : p.kind === "text" || p.kind === "html" || p.kind === "md" ? (
+              p.content === undefined ? (
+                // Isolated HTML reaches the Source view before its lazy fetch lands: show a
+                // skeleton (or the fetch's own error) — toggling back to Rendered is
+                // unaffected, and re-entering Source retries the fetch.
+                sourceError !== null ? (
+                  <p className="text-sm text-red-600 dark:text-red-400">{sourceError}</p>
+                ) : (
+                  <SkeletonList rows={6} />
+                )
+              ) : (
+                // The text itself, with no box around it — the same surface the editor lays its
+                // textarea over, so Edit changes what you can do and nothing about what you see.
+                // Wrapping is the Wrap toggle's business here; the message stream's own code
+                // blocks still scroll sideways rather than wrap, which is a transcript's answer
+                // and not a file viewer's.
+                <>
+                  <CodeSurface
+                    language={languageForExtension(extOf(p.name))}
+                    code={p.content}
+                    highlight
+                    lineNumbers
+                    wrap={wrapLines}
+                    className="text-xs leading-relaxed"
+                  />
+                  {p.truncated && (
+                    <p className="px-3 pb-2 text-xs text-gray-400">… {S.files.previewTruncated}</p>
+                  )}
+                </>
+              )
+            ) : (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {S.files.previewUnsupported}
+              </p>
+            )}
+          </div>
+          {previewFloatingActions}
+        </div>
+        {/* The same menu the file's own tree row offers, plus the selection entry while there is
+          one. A right-click inside the HTML or PDF preview never arrives here — those are
+          iframes, and nothing on this side of them can hear it — so the menu is what the
+          surrounding preview chrome offers. */}
+        <Dropdown
+          open={previewMenu.open}
+          setOpen={previewMenu.setOpen}
+          portal={{ direction: "down", align: "left" }}
+          anchorRect={previewMenu.anchor}
+          anchorOwner={previewMenu.anchorOwner}
+          returnFocus={previewMenu.anchorOwner}
+          className="contents"
+          menuClass="w-max min-w-36 max-w-[calc(100vw-2rem)]"
+          button={null}
+        >
+          <WorkspaceFileMenuRows
+            target={{ path: p.path, kind: "file" }}
+            downloadHref={(path) => api.workspaceFileUrl(sessionId, path, true)}
+            downloadName={baseName}
+            onCopyPath={(t) => {
+              previewMenu.close();
+              copyPath(t);
+            }}
+            onAddToChat={(t) => {
+              previewMenu.close();
+              addToChat(t);
+            }}
+            // Never reached: a preview is always a file, so the upload row is never drawn here.
+            onUploadInto={uploadInto}
+            onAddSelection={
+              selection === null
+                ? undefined
+                : () => {
+                    previewMenu.close();
+                    addSelectionToChat(p, selection);
+                  }
+            }
+            onRename={(t) => {
+              previewMenu.close();
+              beginFileAction(t.path, "rename");
+            }}
+            onDelete={(t) => {
+              previewMenu.close();
+              beginFileAction(t.path, "delete");
+            }}
+            onClose={previewMenu.close}
+          />
+        </Dropdown>
+      </>
+    );
   };
+
+  /**
+   * What the path row offers for the file it names. A draft takes the row over: its two
+   * decisions, and the state behind them, are the whole of what the row is for while one is
+   * open, and a view toggle would be offering a view the draft is not in. Everything that
+   * acts on the text rather than on the file rides the floating pill over it instead.
+   */
+  const fileRowActions =
+    preview !== null &&
+    preview.path === selectedPath &&
+    (editor !== null && editor.path === preview.path ? (
+      <>
+        {editor.changedOnDisk === true && (
+          <span
+            className={`shrink-0 text-xs ${toneInk.attention}`}
+            title={S.files.changedOnDiskHint}
+          >
+            {S.files.changedOnDisk}
+          </span>
+        )}
+        {dirty && (
+          <span className={`shrink-0 text-xs ${toneInk.attention}`}>{S.files.unsaved}</span>
+        )}
+        {/* Icon buttons, not text ones, so the row is the same height whether or not a draft
+            is open: a `Button size="sm"` stands 29px against these 27px, and the header would
+            grow by two pixels the moment Edit was pressed. The save keeps no primary tint —
+            it opens a confirmation whose own button carries that weight. */}
+        <Tooltip label={S.common.cancel} placement="bottom" className="shrink-0">
+          <button
+            type="button"
+            aria-label={S.common.cancel}
+            onClick={cancelEdit}
+            disabled={saving}
+            className={`${iconActionClass} disabled:opacity-40`}
+          >
+            <CloseIcon size={ICON_SIZE.iconButton} />
+          </button>
+        </Tooltip>
+        <Tooltip
+          label={saving ? S.common.saving : S.files.saveTitle}
+          placement="bottom"
+          className="shrink-0"
+        >
+          <button
+            type="button"
+            aria-label={S.common.save}
+            onClick={requestSave}
+            disabled={saving}
+            className={`${iconActionClass} disabled:opacity-40`}
+          >
+            {saving ? (
+              <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+            ) : (
+              <GlyphIcon d={STAT_ICONS.check} size={ICON_SIZE.iconButton} />
+            )}
+          </button>
+        </Tooltip>
+      </>
+    ) : (
+      <>
+        {richToggle}
+        <Tooltip label={S.files.download} placement="bottom" className="shrink-0">
+          <a
+            href={api.workspaceFileUrl(sessionId, preview.path, true)}
+            download={preview.name}
+            aria-label={S.files.download}
+            className={iconActionClass}
+          >
+            <GlyphIcon d={DOWNLOAD_ICON} size={ICON_SIZE.iconButton} />
+          </a>
+        </Tooltip>
+      </>
+    ));
 
   const previewPane = (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1518,113 +2406,7 @@ export function WorkspaceBrowser({
       ) : preview === null || preview.path !== selectedPath ? (
         <SkeletonList rows={6} />
       ) : (
-        <>
-          {/* flex-wrap: the preview can be as narrow as the dock allows, narrower than this
-              row's uncompressible content (view toggle + actions); without wrapping, the
-              panel's overflow-hidden would clip the right-side buttons off. */}
-          <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-800">
-            {narrow && (
-              <button
-                type="button"
-                onClick={backToTree}
-                title={S.files.backToList}
-                className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-sm text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-              >
-                <GlyphIcon d={BACK_ICON} size={ICON_SIZE.rowLead} />
-                {S.files.backToList}
-              </button>
-            )}
-            {/* Shows only the filename (full path goes into the title hover tooltip): the
-                directory prefix is what the breadcrumbs above already say, and on a narrow
-                panel it would just crowd out the title space. */}
-            <span
-              className="min-w-0 flex-1 truncate font-mono text-sm font-semibold"
-              title={preview.path}
-            >
-              {preview.name}
-            </span>
-            {editor !== null && editor.path === preview.path ? (
-              <>
-                {editor.changedOnDisk === true && (
-                  <span
-                    className={`shrink-0 text-xs ${toneInk.attention}`}
-                    title={S.files.changedOnDiskHint}
-                  >
-                    {S.files.changedOnDisk}
-                  </span>
-                )}
-                {dirty && (
-                  <span className={`shrink-0 text-xs ${toneInk.attention}`}>{S.files.unsaved}</span>
-                )}
-                {/* Soft wrap: off is the editor's own default — long lines scroll sideways,
-                    as code should — and the choice is remembered for every file after. */}
-                <button
-                  type="button"
-                  aria-pressed={editorWrap}
-                  onClick={() => setWrap(!editorWrap)}
-                  className={toggleActionClass(editorWrap)}
-                >
-                  {S.files.editorWrap}
-                </button>
-                <Button size="sm" onClick={cancelEdit} disabled={saving}>
-                  {S.common.cancel}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  onClick={requestSave}
-                  disabled={saving}
-                  title={S.files.saveTitle}
-                >
-                  {saving ? S.common.saving : S.common.save}
-                </Button>
-              </>
-            ) : (
-              <>
-                {richToggle}
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={() => void startEdit()}
-                    className={ghostActionClass}
-                  >
-                    {S.common.edit}
-                  </button>
-                )}
-                {/* rel="noopener noreferrer" is load-bearing, not boilerplate: the preview must
-                    not keep a handle back to this window, which is the whole point of serving
-                    it from a separate origin. */}
-                {/\.html?$/i.test(preview.name) && (
-                  <a
-                    href={api.workspaceFilePreviewUrl(sessionId, preview.path)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={previewIsolated ? undefined : S.files.previewNotIsolatedHint}
-                    className={ghostActionClass}
-                  >
-                    {S.files.openInNewTab}
-                    {!previewIsolated && (
-                      <span
-                        aria-label={S.files.previewNotIsolatedHint}
-                        className={toneInk.attention}
-                      >
-                        ⚠
-                      </span>
-                    )}
-                  </a>
-                )}
-                <a
-                  href={api.workspaceFileUrl(sessionId, preview.path, true)}
-                  download={preview.name}
-                  className={ghostActionClass}
-                >
-                  {S.files.download}
-                </a>
-              </>
-            )}
-          </div>
-          {previewBody(preview)}
-        </>
+        previewBody(preview)
       )}
     </div>
   );
@@ -1637,10 +2419,25 @@ export function WorkspaceBrowser({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      {/* Toolbar: tree toggle + the current directory's path + actions. One row that never
-          wraps — the path strip absorbs the pressure (it clips, and its leading segments
-          collapse), the actions keep their width. */}
+      {/* The panel's one header row: the way back or the tree toggle, the path of whatever is
+          open, and what that file offers. It never wraps — the path strip absorbs all of the
+          pressure, clipping and collapsing its leading segments, while the actions keep their
+          width. Everything that acts on the text rather than on the file is in the floating
+          pill over the body, and the panel's own actions (refresh, upload) sit in the tree
+          pane's header beside its search box. */}
       <div className="flex shrink-0 flex-nowrap items-center gap-1 border-b border-gray-200 px-2 py-1.5 dark:border-gray-800">
+        {narrow && !showTree && (
+          <Tooltip label={S.files.backToList} placement="bottom" className="shrink-0">
+            <button
+              type="button"
+              aria-label={S.files.backToList}
+              onClick={backToTree}
+              className={iconActionClass}
+            >
+              <GlyphIcon d={BACK_ICON} size={ICON_SIZE.iconButton} />
+            </button>
+          </Tooltip>
+        )}
         {!narrow && (
           // Static accessible name, state on aria-pressed alone: a name that swaps Show/Hide
           // beside it reads as "Hide file tree, pressed", saying the state twice and
@@ -1671,35 +2468,34 @@ export function WorkspaceBrowser({
           {crumbFit.collapsed && (
             <span className="shrink-0 text-gray-400 dark:text-gray-500">{CRUMB_ELLIPSIS}</span>
           )}
-          {crumbFit.visible.map((seg, i) => (
-            <Fragment key={`${i}-${seg}`}>
-              {(crumbFit.collapsed || i > 0) && (
-                <span className="shrink-0 text-gray-300 dark:text-gray-700">/</span>
-              )}
-              <span
-                className={
-                  i === crumbFit.visible.length - 1
-                    ? "min-w-0 truncate font-medium text-gray-700 dark:text-gray-200"
-                    : "shrink-0 whitespace-nowrap text-gray-500 dark:text-gray-400"
-                }
-              >
-                {seg}
-              </span>
-            </Fragment>
-          ))}
+          {crumbFit.visible.map((seg, i) => {
+            const last = i === crumbFit.visible.length - 1;
+            const { stem, ext } = splitFileName(seg);
+            return (
+              <Fragment key={`${i}-${seg}`}>
+                {(crumbFit.collapsed || i > 0) && (
+                  <span className="shrink-0 text-gray-300 dark:text-gray-700">/</span>
+                )}
+                {last ? (
+                  // The name outranks everything else on the row. It does not shrink, so the
+                  // directories give way before it does — visibleCrumbSegments only estimates
+                  // their width, and whatever it gets wrong used to be paid by the name. When
+                  // the name alone outruns the strip it is the STEM that ellipsizes: the
+                  // extension is three characters that say what kind of file this is.
+                  <span className="flex min-w-0 max-w-full shrink-0 items-center font-medium text-gray-700 dark:text-gray-200">
+                    <span className="min-w-0 truncate">{stem}</span>
+                    <span className="shrink-0">{ext}</span>
+                  </span>
+                ) : (
+                  <span className="min-w-0 shrink truncate text-gray-500 dark:text-gray-400">
+                    {seg}
+                  </span>
+                )}
+              </Fragment>
+            );
+          })}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={refreshAll}>
-            {S.files.refresh}
-          </Button>
-          {/* Matches the same visual style and font size (sm = text-xs) as the adjacent ghost Refresh Button: no border, light background on hover. */}
-          <label className="inline-flex cursor-pointer items-center rounded-md border border-transparent bg-transparent px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 focus-within:ring-2 focus-within:ring-gray-400/30 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100">
-            <HiddenFileInput multiple onChange={onPick} disabled={uploading !== null} />
-            {uploading !== null
-              ? S.files.uploading(uploading.done, uploading.total)
-              : S.files.upload}
-          </label>
-        </div>
+        {fileRowActions}
       </div>
 
       <div className="relative flex min-h-0 flex-1">
@@ -1740,6 +2536,19 @@ export function WorkspaceBrowser({
           </div>
         )}
       </div>
+
+      {/* The menu's picker. Not the app's HiddenFileInput: that one stays Tab-focusable because
+          a <label> wraps and names it, and this one has no label — it is opened by a menu row
+          and must not sit in the tab order as an unnamed control. */}
+      <input
+        ref={menuUploadRef}
+        type="file"
+        multiple
+        tabIndex={-1}
+        aria-hidden
+        className="hidden"
+        onChange={onMenuPick}
+      />
 
       {/* Upload-overwrite confirmation: same-name files in the target directory get replaced. */}
       <ConfirmModal
@@ -1782,6 +2591,43 @@ export function WorkspaceBrowser({
         </p>
       </ConfirmModal>
 
+      {/* Rename or move: one field holding the whole Workspace-relative path, so a rename and a
+          move are one action rather than two that differ only in how much of the path changed. */}
+      <ConfirmModal
+        open={renameTarget !== null}
+        title={S.files.renameTitle}
+        confirmLabel={S.files.renameConfirm}
+        confirmDisabled={renameTarget?.version == null || renameDraft.trim() === ""}
+        busy={fileActionBusy}
+        tone="primary"
+        onClose={() => setRenameTarget(null)}
+        onConfirm={() => void applyRename()}
+      >
+        <Input
+          label={S.files.renameLabel}
+          size="sm"
+          value={renameDraft}
+          hint={S.files.renameHint}
+          autoFocus
+          {...noAutofill}
+          onChange={(e) => setRenameDraft(e.target.value)}
+        />
+        <FileActionVersionNote target={renameTarget} />
+      </ConfirmModal>
+      <ConfirmModal
+        open={removeTarget !== null}
+        title={S.files.deleteTitle}
+        confirmLabel={S.common.delete}
+        confirmDisabled={removeTarget?.version == null}
+        busy={fileActionBusy}
+        onClose={() => setRemoveTarget(null)}
+        onConfirm={() => void applyDelete()}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {S.files.deleteBody(removeTarget === null ? "" : baseName(removeTarget.path))}
+        </p>
+        <FileActionVersionNote target={removeTarget} />
+      </ConfirmModal>
       {/* Write-precondition conflict: the file changed after the editor opened it, so the
           save was refused with nothing written. Cancel keeps the draft and the editor. */}
       <ConfirmModal

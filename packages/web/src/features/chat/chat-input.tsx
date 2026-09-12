@@ -96,7 +96,8 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CheckIcon, ChevronDown } from "../../components/ui/icons";
+import { CheckIcon, ChevronDown, FILE_ICON, QUOTE_ICON } from "../../components/ui/icons";
+import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { noAutofill } from "../../components/ui/input";
 import { toastError, toastInfo } from "../../components/ui/toast";
@@ -129,6 +130,8 @@ import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { toneStrip } from "../../lib/tone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
+import { lineSuffix } from "../../lib/workspace-tree";
+import type { ComposerReference } from "../../lib/workspace-tree";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -752,9 +755,49 @@ function appendAttachmentParts(
 }
 
 /**
+ * The message body: the staged quotations, then what was typed. Blank parts are dropped so a
+ * quotation sent with no sentence after it does not trail an empty line.
+ */
+function withReferences(references: readonly ComposerReference[], typed: string): string {
+  if (references.length === 0) return typed;
+  return [...references.map((r) => r.text), typed].filter((part) => part !== "").join("\n\n");
+}
+
+/**
+ * A staged reference, split for display: the entry's own name, and the quoted lines as a
+ * `:from-to` suffix. The `file:line` form rather than a worded one — it is the shape every editor
+ * and stack trace already uses, it needs no translating, and a chip has no room for a sentence.
+ *
+ * Returned in two pieces because the chip draws them differently: a long name ellipsizes, and the
+ * line numbers must not go with it. They are the smaller half and the half the name does not
+ * already say.
+ */
+function referenceParts(reference: ComposerReference): { name: string; lines: string } {
+  const name = reference.path.split("/").pop() ?? reference.path;
+  const lines =
+    reference.fromLine === undefined || reference.toLine === undefined
+      ? ""
+      : lineSuffix(reference.fromLine, reference.toLine);
+  return { name, lines };
+}
+
+/** The whole of what a chip stands for, for its tooltip and its accessible name: path and lines. */
+function referenceTitle(reference: ComposerReference): string {
+  return `${reference.path}${referenceParts(reference).lines}`;
+}
+
+/** A directory, a file, or a passage carried in from one — each says what the chip stands for. */
+const REFERENCE_ICON: Record<ComposerReference["kind"], string> = {
+  dir: FOLDER_ICON,
+  file: FILE_ICON,
+  quote: QUOTE_ICON,
+};
+
+/**
  * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
- * One entry so far: a surface that composes a prompt puts it in this composer instead of
- * submitting it on its own.
+ * Two entries: a surface that composes a whole prompt puts it in this composer instead of
+ * submitting it on its own, and a surface that contributes one reference splices it into
+ * whatever is already being typed.
  */
 export interface ComposerControl {
   /**
@@ -764,6 +807,12 @@ export interface ComposerControl {
    * leave the composer's own Skill selection untouched.
    */
   fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
+  /**
+   * Stage what the Files panel contributes as a chip rather than typing it into the draft — a
+   * file, a directory, or a quoted range. The text rides the message when it is sent; what the
+   * composer shows is the thing it points at.
+   */
+  addReference: (reference: ComposerReference) => void;
 }
 
 /**
@@ -1059,6 +1108,12 @@ export function ChatInput({
   // like images — a draft has no Session yet, so there is nothing to upload them to ahead of
   // time; they travel with the task request and the server files them into the scratchpad.
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  /**
+   * Quotations staged from the Files panel. Held here rather than in the draft cache, exactly
+   * like attachments: what they quote is a file on disk that may have moved on by the time a
+   * stale draft is reopened, so they belong to this composer's life and not to the text's.
+   */
+  const [references, setReferences] = useState<ComposerReference[]>([]);
   const [busy, setBusy] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   // Slash token start where Escape closed the menu: it stays shut for that one token.
@@ -1100,6 +1155,7 @@ export function ChatInput({
     text.trim().length > 0 ||
     images.length > 0 ||
     attachments.length > 0 ||
+    references.length > 0 ||
     target !== null ||
     pendingModel !== null ||
     selectedSkills.length > 0;
@@ -1449,7 +1505,13 @@ export function ChatInput({
     },
     [skills, selectedSkills, onTextChange, onSkillsChange],
   );
-  useImperativeHandle(controlRef, () => ({ fillPrompt }), [fillPrompt]);
+  const addReference = useCallback((reference: ComposerReference) => {
+    setReferences((prev) => [...prev, reference]);
+    // The chip is above the text body, so the caret stays where it was; focus follows the
+    // gesture back to the composer, which is where the sentence about it gets typed.
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+  useImperativeHandle(controlRef, () => ({ fillPrompt, addReference }), [fillPrompt, addReference]);
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
@@ -1829,14 +1891,17 @@ export function ChatInput({
     // skills invocation when skills are selected, otherwise the model-switch line for a staged
     // switch. A handoff needs no fallback: its first message may legitimately be nothing but
     // the [handoff_from] source block.
+    // Staged quotations go in front of what was typed: they are what the message is about, and
+    // the sentence after them reads as being about them.
+    const quoted = withReferences(references, t);
     const bodyText =
-      t !== ""
-        ? t
+      quoted !== ""
+        ? quoted
         : selectedSkills.length > 0
           ? S.chat.skillsAutoMessage(selectedSkills)
           : switchModel
             ? S.chat.modelSwitchAutoMessage
-            : t;
+            : quoted;
     // With non-empty selected skills: the text body is replaced with a [use_skills] block + the text (every branch wraps its body the same way).
     const body = buildSkillsMessage(selectedSkills, bodyText);
     const input: TaskInputPart[] = [];
@@ -1857,6 +1922,7 @@ export function ChatInput({
         setText("");
         setImages([]);
         setAttachments([]);
+        setReferences([]);
         setTarget(null);
         setPendingModel(null);
         setSelectedSkills([]);
@@ -1883,7 +1949,7 @@ export function ChatInput({
       // for the running agent; all are sent and cleared together — selected skills stay for
       // a normal send (a staged switch chip blocks this branch outright, see midRunAction).
       if (!steerAction) return;
-      const steerText = text.trim();
+      const steerText = withReferences(references, text.trim());
       const steerImages = images;
       const steerFiles = attachments.map((f) => ({ fileName: f.name, dataUrl: f.dataUrl }));
       setBusy(true);
@@ -1898,6 +1964,7 @@ export function ChatInput({
           setText("");
           setImages([]);
           setAttachments([]);
+          setReferences([]);
         }
       } finally {
         setBusy(false);
@@ -2349,14 +2416,19 @@ export function ChatInput({
           breakpoints wouldn't judge it accurately. */}
       <div className="@container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400">
         {/* Chip row above the text body: the staged switch target (an /agent handoff or a
-            /model fork — never both) followed by the selected skills, all sharing the same
-            chip look. Remove buttons recolor the x on hover (no background wash). */}
-        {(target !== null || pendingModel !== null || selectedSkills.length > 0 || goalOn) && (
+            /model fork — never both), the selected skills, and whatever the Files panel has
+            contributed, all sharing the same chip look. Remove buttons recolor the x on hover
+            (no background wash). */}
+        {(target !== null ||
+          pendingModel !== null ||
+          selectedSkills.length > 0 ||
+          references.length > 0 ||
+          goalOn) && (
           <div className="mb-1 flex flex-wrap items-center gap-1">
             {/* Goal-mode chip: the budget stays compact as a value button; its editor is a
                 fixed upward popover so it never covers the objective textarea below. */}
             {goalOn && (
-              <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+              <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200">
                 <span className="flex shrink-0 items-center gap-1" title={S.chat.goalModeDesc}>
                   <GlyphIcon d={GOAL_ICON} size={13} className="text-gray-500 dark:text-gray-400" />
                   <span>{S.chat.goalMode}</span>
@@ -2459,7 +2531,7 @@ export function ChatInput({
             {target !== null && (
               <span
                 title={S.chat.handoffTargetTitle(agentDisplayName(target))}
-                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
               >
                 <AgentAvatar
                   id={target.agentId}
@@ -2487,7 +2559,7 @@ export function ChatInput({
             {pendingModel !== null && (
               <span
                 title={S.chat.modelSwitchTargetTitle(modelLabel(pendingModel))}
-                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
               >
                 <ProviderLogo provider={pendingModel.provider} className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{modelLabel(pendingModel)}</span>
@@ -2509,7 +2581,7 @@ export function ChatInput({
               return (
                 <span
                   key={name}
-                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
                   {...(meta ? { title: localizedShortText(locale, meta) } : {})}
                 >
                   <SkillIcon
@@ -2522,6 +2594,42 @@ export function ChatInput({
                     type="button"
                     aria-label={`${S.chat.skillRemove} ${name}`}
                     onClick={() => toggleSkill(name)}
+                    className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {/* Staged from the Files panel: a file, a directory, or a quoted range. The text
+                itself never enters the draft — the chip names what it points at, and the
+                message carries it on send. */}
+            {references.map((reference, i) => {
+              const { name, lines } = referenceParts(reference);
+              const title = referenceTitle(reference);
+              return (
+                <span
+                  key={i}
+                  title={title}
+                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                >
+                  <GlyphIcon
+                    d={REFERENCE_ICON[reference.kind]}
+                    size={13}
+                    className="shrink-0 text-gray-500 dark:text-gray-400"
+                  />
+                  {/* The name gives way, the line numbers do not: they are four characters, and
+                      they are the half the truncated name cannot tell you. The tooltip carries
+                      the whole path and the range together. */}
+                  <span className="min-w-0 truncate">{name}</span>
+                  {lines !== "" && <span className="shrink-0">{lines}</span>}
+                  <button
+                    type="button"
+                    aria-label={`${S.files.removeReference} ${title}`}
+                    onClick={() => {
+                      setReferences((prev) => prev.filter((_, j) => j !== i));
+                      textareaRef.current?.focus();
+                    }}
                     className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
                   >
                     ×
