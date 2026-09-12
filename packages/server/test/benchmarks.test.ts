@@ -7,8 +7,8 @@
  * the owner-only create (the on-disk layout the Skills read) and delete routes.
  *
  * Benchmarks are Project-level, so a new Project arrives with default_agent's sample
- * Benchmark; setup deletes it to isolate these cases. Its own assertions live in
- * builtin-agents.test.ts.
+ * Benchmark; setup deletes that one directory to isolate these cases, keeping `benchmarks/`
+ * itself. Its own assertions live in builtin-agents.test.ts.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -47,8 +47,12 @@ describe("benchmarks api", () => {
     ).json()) as ProjectCreateResponse;
     projectId = created.project.projectId;
     // Creating the Project seeded default_agent's sample Benchmark at the Project level; these
-    // cases start from an empty benchmarks directory.
-    await fs.rm(benchmarksDir(t.root, projectId), { recursive: true, force: true });
+    // cases start from an empty benchmarks directory. Only the example goes — the directory
+    // itself stays, because its absence is what asks for the example to be provisioned again.
+    await fs.rm(path.join(benchmarksDir(t.root, projectId), "example-benchmark"), {
+      recursive: true,
+      force: true,
+    });
     base = `/api/projects/${projectId}/benchmarks`;
     expect(
       (await owner.post(`/api/projects/${projectId}/members`, { userId: "member_b" })).status,

@@ -2634,13 +2634,27 @@ Benchmark：
 
   benchmark: {
     title: "评估中心",
-    /** The novice guide under the title: the three-step loop and the Skill behind each step. */
-    guideTitle: "三步闭环：出题、看分、优化",
-    guideSteps: [
-      "让 AI 为某个智能体出一套 Benchmark 并取得基线分：出题由 benchmark-design 技能完成，每道题由 agent-evaluation 技能在隔离的 Workspace 里试测、校准难度后冻结。",
-      "在这里查看分数曲线与逐题明细，确认题目能把「真正做对」和「看起来做对」区分开。",
-      "让 AI 针对这套 Benchmark 优化智能体：agent-optimization 技能每轮只做一个可证伪的改动并重新评测，分数严格提升才保留新版本，否则回滚。",
+    /** The standing flow block under the title: three steps, each with the Skill it rests on. */
+    guideFlow: [
+      {
+        title: "出题",
+        skill: "benchmark-design",
+        text: "让 AI 为某个智能体出一套题，agent-evaluation 在隔离的 Workspace 里逐题试测、校准难度，定稿即取得基线分。",
+      },
+      {
+        title: "评估",
+        skill: "agent-evaluation",
+        text: "把任一智能体放到这套 Benchmark 上跑完整的 Case × runs 矩阵，结果作为一条带标签的评估追加进记分。",
+      },
+      {
+        title: "优化",
+        skill: "agent-optimization",
+        text: "针对这套 Benchmark 改进智能体，每轮只做一个可证伪的改动，分数严格提升才保留新版本。",
+      },
     ],
+    /** The one line under the three steps: the order a first-timer walks them in. */
+    guideHowTo:
+      "怎么用：先用 AI 出题或手动创建 → 在 Benchmark 上按「使用」发起评估或优化 → 在分数曲线上按标签对比系列。",
     guideNote:
       "三个技能都在 agent-tuning 插件里，默认智能体已自带；新建的智能体可以在插件库里安装。",
     searchPlaceholder: "搜索标题、描述或被测智能体",
@@ -2662,11 +2676,13 @@ Benchmark：
     latestScoreLabel: "最新分数",
     /** The change column when there is nothing earlier to compare against. */
     firstEvaluation: "首次评估",
+    /** Card and Benchmark-page action: opens the Use dialog. */
+    use: "使用",
+    /** The Use dialog's two tabs. */
+    evaluate: "评估",
     optimize: "优化",
     view: "查看",
-    moreActions: "更多操作",
     copyPath: "复制目录路径",
-    pathCopied: "已复制 Benchmark 的目录路径",
     deleteBenchmark: "删除 Benchmark",
     deleteConfirm: (title: string): string =>
       `确定删除「${title}」吗？它的全部题目与评估记录都会被删除，无法恢复。`,
@@ -2779,21 +2795,47 @@ Benchmark：
     invalidId: "仅允许字母、数字、_ 和 -",
     invalidRuns: "必须是 1–1000 的整数",
     invalidScore: "必须是 1–100 的整数",
-    // Optimize: the dialog's two modes over one parameter tail.
-    optimizeTitle: (title: string): string => `优化：${title}`,
+    // Use: one dialog with an Evaluate tab and an Optimize tab, over a single exit.
+    useTitle: (title: string): string => `使用：${title}`,
+    // Shared by both tabs.
+    testedAgent: "被测智能体",
+    projectDefaultModel: (name: string): string => `Project 默认（${name}）`,
+    projectDefaultModelUnset: "Project 默认",
+    // Evaluate tab.
+    evaluateDescription:
+      "AI 会把被测智能体放到这套 Benchmark 上跑完整的 Case × runs 矩阵，并把结果作为一条带标签的评估追加进记分。",
+    evaluateTestedAgentHint:
+      "评估的是它当下的 Agent State；分数记在它名下，标签含其版本号、模型与思考等级",
+    evaluatorAgent: "执行评估的智能体",
+    evaluatorAgentHint:
+      "派发评测子会话、按评分细则打分并写入记分的一方；需要装有 agent-evaluation 技能",
+    evaluatorMissingSkill:
+      "该智能体没有安装 agent-evaluation 技能，多半无法完成评估——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
+    evaluateSessionModel: "评估会话使用的模型",
+    evaluateSessionModelHint: "派发与汇总评测的模型；被测智能体用的是它自己配置的模型，不在这里改",
+    evaluateRunsHint: "每道题跑几次取平均；缺省为 Benchmark 配置的次数",
+    evaluateNoteField: "说明",
+    evaluateNotePlaceholder: "例如：这一轮用来确认上次优化的效果，重点看引用规范那两道题",
+    /** The fixed tail: the `agent-evaluation` inputs, the label check and the single append. */
+    evaluateTail: (p: { targetAgentId: string; benchmarkId: string; runs: number }): string =>
+      "请使用 `agent-evaluation` Skill，在这套已冻结的 Benchmark 上评估被测智能体。\n\n" +
+      `- test_agent_id：\`${p.targetAgentId}\`\n` +
+      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
+      `- runs：\`${p.runs}\`\n\n` +
+      "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的 `agent-evaluation` 子会话（省略 `agent_id`）；" +
+      "评测 Runtime 取被测智能体当前配置的模型与思考等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
+      "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
+      "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
+      "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题得分与本条记录的标签。",
+    // Optimize tab.
     optimizeDescription: "AI 会按可证伪的假设修改被测智能体并重新评测，分数严格提升才保留新版本。",
-    optimizeWithAi: "用 AI 优化",
-    optimizeManual: "手动优化",
     optimizerAgent: "执行优化的智能体",
     optimizerAgentHint: "读分数与 Trace、修改被测智能体的一方；需要装有 agent-optimization 技能",
     optimizerMissingSkill:
       "该智能体没有安装 agent-optimization 技能，多半无法完成优化——建议换用默认智能体，或先为它安装 agent-tuning 插件。",
-    testedAgent: "被测智能体",
     testedAgentHint: "优化改的是它的 Agent State；分数记在它名下，只与它自己同标签的历史分数比较",
     sessionModel: "优化会话使用的模型",
     sessionModelHint: "做分析与改动的模型；评测被测智能体时沿用基线记录的模型，不在这里改",
-    projectDefaultModel: (name: string): string => `Project 默认（${name}）`,
-    projectDefaultModelUnset: "Project 默认",
     optimizeRunsHint: "每个候选版本每道题跑几次取平均",
     roundLimitField: "最多轮数",
     roundLimitHint: "每轮一个改动；评测完整才算一轮",
@@ -2802,25 +2844,8 @@ Benchmark：
     focusField: "优化重点",
     focusPlaceholder: "例如：重点优化引用规范与格式合规，不要改动写作风格",
     noBaseline:
-      "所选被测智能体在这套 Benchmark 上还没有基线分。优化需要一条完整的基线评估作为比较起点——可以先让 AI 出题时取得基线，或在对话里让它先完成一次完整评测。",
+      "所选被测智能体在这套 Benchmark 上还没有基线分。优化需要一条完整的基线评估作为比较起点——先到「评估」跑一次完整评测取得基线。",
     baselineLine: (score: string, target: number): string => `当前基线 ${score} · 目标 ${target}`,
-    optimizeExamples: {
-      citations: {
-        label: "只改引用与格式",
-        description: "保留写作风格，专攻引用规范与格式合规",
-        prompt: "重点优化引用规范与格式合规，不要改动写作风格。",
-      },
-      promptOnly: {
-        label: "只改行为指引",
-        description: "只动 AGENTS.md 里的指引，不装新技能",
-        prompt: "只允许修改系统提示词（AGENTS.md 里的行为指引），不要安装新技能。",
-      },
-      traceFirst: {
-        label: "先看最低分的 Trace",
-        description: "从最差的两道题找共同原因再改",
-        prompt: "先分析最低分的两道题的 Trace，找出共同原因再改。",
-      },
-    },
     /** The fixed tail: the `agent-optimization` inputs, the acceptance rule and the report. */
     optimizeTail: (p: {
       targetAgentId: string;

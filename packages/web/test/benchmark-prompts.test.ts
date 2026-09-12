@@ -1,8 +1,9 @@
 /**
  * The Evaluation Center's prompts and id helpers (src/features/benchmark/benchmark-prompts.ts):
  * the Create-with-AI tail hands the benchmark-design Skill its tested Agent and the Project-level
- * layout, the Optimize tail carries every input the agent-optimization Skill requires, and the
- * manual form's directory names follow the id alphabet.
+ * layout, the Evaluate and Optimize tails carry every input the agent-evaluation and
+ * agent-optimization Skills require, and the manual form's directory names follow the id
+ * alphabet.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -10,10 +11,11 @@ import {
   benchmarkCreateExamples,
   benchmarkCreateTail,
   benchmarkPath,
+  buildEvaluatePrompt,
   buildOptimizePrompt,
   caseId,
+  evaluateTail,
   isValidRuns,
-  optimizeExamples,
   optimizeTail,
   slugFromTitle,
 } from "../src/features/benchmark/benchmark-prompts";
@@ -49,6 +51,44 @@ describe("benchmarkCreateTail", () => {
   });
 });
 
+describe("evaluateTail / buildEvaluatePrompt", () => {
+  const params = {
+    targetAgentId: "report-writer",
+    benchmarkId: "report-writing-v1",
+    runs: 2,
+  };
+
+  it("carries every input the agent-evaluation Skill requires", () => {
+    const tail = evaluateTail(params);
+    expect(tail).toContain("`agent-evaluation`");
+    expect(tail).toContain("`report-writer`");
+    expect(tail).toContain("`report-writing-v1`");
+    expect(tail).toMatch(/runs[：:] ?`2`/);
+    // The Benchmark sits beside the agents, and the appended evaluation names the tested one
+    // together with the rest of its label.
+    expect(tail).toContain("`benchmarks/report-writing-v1/`");
+    expect(tail).toContain("scoreboard.yaml");
+    for (const field of ["`agent_id`", "`version`", "`provider`", "`model_id`", "`thinking_level`"])
+      expect(tail).toContain(field);
+  });
+
+  it("asks for the full matrix through self-spawned subagents and a single appended record", () => {
+    const tail = evaluateTail(params);
+    expect(tail).toContain("run_subagent");
+    expect(tail).toContain("Case × runs");
+    // The tail must not offer an optimization: this request only measures.
+    expect(tail).not.toContain("agent-optimization");
+    expect(tail).not.toContain("desired_score");
+  });
+
+  it("puts the note before the tail, and sends the tail alone when the note is blank", () => {
+    expect(buildEvaluatePrompt("Watch the citation cases.", params)).toBe(
+      `Watch the citation cases.\n\n${evaluateTail(params)}`,
+    );
+    expect(buildEvaluatePrompt("   ", params)).toBe(evaluateTail(params));
+  });
+});
+
 describe("optimizeTail / buildOptimizePrompt", () => {
   const params = {
     targetAgentId: "report-writer",
@@ -77,13 +117,6 @@ describe("optimizeTail / buildOptimizePrompt", () => {
       `Focus on citations.\n\n${optimizeTail(params)}`,
     );
     expect(buildOptimizePrompt("   ", params)).toBe(optimizeTail(params));
-  });
-
-  it("offers examples with unique keys and non-empty prompts", () => {
-    const examples = optimizeExamples();
-    expect(examples.length).toBeGreaterThanOrEqual(3);
-    expect(new Set(examples.map((e) => e.key)).size).toBe(examples.length);
-    for (const e of examples) expect(e.prompt.trim()).not.toBe("");
   });
 });
 

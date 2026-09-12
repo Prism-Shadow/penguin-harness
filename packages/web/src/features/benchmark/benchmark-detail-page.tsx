@@ -1,9 +1,9 @@
 /**
- * One Benchmark's own page (`/benchmark/:benchmarkId`): its title, the pair of optimize entry
- * points, and the detail itself — chart, evaluation table, case browser. Opening a Benchmark
- * enters this page the way an Agent's card enters its settings, so the back button is the way
- * out rather than a close cross. An id that no longer resolves — a deleted Benchmark or a stale
- * link — says so in place of the detail and keeps that way out.
+ * One Benchmark's own page (`/benchmark/:benchmarkId`): its title with the directory the files
+ * live in, the Use entry point, and the detail itself — chart, evaluation table, case browser.
+ * Opening a Benchmark enters this page the way an Agent's card enters its settings, so the back
+ * button is the way out rather than a close cross. An id that no longer resolves — a deleted
+ * Benchmark or a stale link — says so in place of the detail and keeps that way out.
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
@@ -15,13 +15,13 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
+import { CopyButton, ROW_COPY_CLASS } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Skeleton } from "../../components/ui/skeleton";
-import { CreateButtons } from "../ai-create";
 import { BenchmarkDetail } from "./benchmark-detail";
-import { OptimizeModal } from "./optimize-modal";
-import type { OptimizeMode } from "./optimize-modal";
+import { benchmarkPath } from "./benchmark-prompts";
+import { UseBenchmarkModal } from "./use-benchmark-modal";
 
 /** Back to the list: the arrow-left every detail page's back button carries. */
 const BACK_ICON = "M15 18l-6-6 6-6M9 12h12";
@@ -30,7 +30,7 @@ export function BenchmarkDetailPage() {
   const params = useParams<{ benchmarkId: string }>();
   const benchmarkId = params.benchmarkId ?? "";
   const navigate = useNavigate();
-  const { currentProject, currentAgent, agents } = useProject();
+  const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
 
   const [benchmark, setBenchmark] = useState<BenchmarkSummary | null>(null);
@@ -38,7 +38,7 @@ export function BenchmarkDetailPage() {
   /** The Project's list came back without this id: the Benchmark was deleted, or the link is stale. */
   const [missing, setMissing] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
-  const [optimizing, setOptimizing] = useState<OptimizeMode | null>(null);
+  const [using, setUsing] = useState(false);
 
   useDocumentTitle(benchmark?.title ?? S.benchmark.title);
 
@@ -66,7 +66,7 @@ export function BenchmarkDetailPage() {
     };
   }, [projectId, benchmarkId]);
 
-  // The Project's models, for the Optimize dialog's session-model picker; a failure just leaves
+  // The Project's models, for the Use dialog's conversation-model picker; a failure just leaves
   // the picker at the Project default.
   useEffect(() => {
     if (!projectId) return;
@@ -112,37 +112,46 @@ export function BenchmarkDetailPage() {
           <GlyphIcon d={BACK_ICON} size={ICON_SIZE.rowLead} />
           {S.benchmark.backToList}
         </Button>
-        {/* The Benchmark's name, and the pair of optimize entry points beside it. The case
-            counts and the description are the detail's own, one block below. A Benchmark tests
-            whichever Agents its scoreboard names, so no single Agent is named up here. */}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <h1 className="min-w-0 flex-1 truncate text-xl font-semibold">
+        {/* The Benchmark's name, the directory its files live in, and the Use entry point. The
+            case counts and the description are the detail's own, one block below. A Benchmark
+            tests whichever Agents its scoreboard names, so no single Agent is named up here. */}
+        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h1 className="min-w-0 truncate text-xl font-semibold">
             {benchmark?.title ?? benchmarkId}
           </h1>
+          {/* A Benchmark that no longer resolves has no directory to name and nothing to use:
+              the title and the way back are all this row keeps. */}
           {benchmark && (
-            <CreateButtons
-              size="sm"
-              aiLabel={S.benchmark.optimizeWithAi}
-              manualLabel={S.benchmark.optimizeManual}
-              onAi={() => setOptimizing("prompt")}
-              onManual={() => setOptimizing("manual")}
-            />
+            <>
+              <span className="flex min-w-0 flex-1 items-center gap-1">
+                <span className="min-w-0 truncate font-mono text-xs text-gray-400 dark:text-gray-500">
+                  {benchmarkPath(benchmark.id)}
+                </span>
+                <CopyButton
+                  text={benchmarkPath(benchmark.id)}
+                  label={S.benchmark.copyPath}
+                  className={ROW_COPY_CLASS}
+                />
+              </span>
+              <Button size="sm" variant="primary" onClick={() => setUsing(true)}>
+                {S.benchmark.use}
+              </Button>
+            </>
           )}
         </div>
         {body}
       </div>
 
-      {optimizing !== null && benchmark !== null && (
-        <OptimizeModal
-          key={optimizing}
+      {using && benchmark !== null && (
+        <UseBenchmarkModal
+          key={benchmark.id}
           open
-          onClose={() => setOptimizing(null)}
+          onClose={() => setUsing(false)}
           projectId={projectId}
-          mode={optimizing}
           benchmark={benchmark}
           agents={agents}
-          currentAgentId={currentAgent?.agentId ?? null}
           models={models}
+          initialTab="evaluate"
         />
       )}
     </div>

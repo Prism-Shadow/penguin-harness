@@ -1,14 +1,15 @@
 /**
  * Evaluation Center: every Benchmark of the Project as one card, with the loop a novice needs
- * spelled out — create one (an AI prompt or a form), read its scores, hand it to an optimizer.
- * A Benchmark sits beside the agents rather than under one, so the page is a flat list and the
- * agents a card names are the ones its scoreboard has tested. Each card carries the newest Score
- * with its change against the previous record of the same label, a sparkline of the scoreboard,
- * when it was last evaluated, and its actions; opening one enters the Benchmark's own page
- * (`/benchmark/:benchmarkId`) instead of splitting this one in two, the way an Agent's card
- * enters its settings. `?agentId=` narrows the list to the Benchmarks that tested that Agent.
+ * spelled out in a standing block under the title — write the cases, evaluate an agent on them,
+ * optimize it against the scores. A Benchmark sits beside the agents rather than under one, so
+ * the page is a flat list and the agents a card names are the ones its scoreboard has tested.
+ * Each card carries the newest Score with its change against the previous record of the same
+ * label, a sparkline of the scoreboard, when it was last evaluated, and its actions; opening one
+ * enters the Benchmark's own page (`/benchmark/:benchmarkId`) instead of splitting this one in
+ * two, the way an Agent's card enters its settings. `?agentId=` narrows the list to the
+ * Benchmarks that tested that Agent.
  */
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import type {
   AgentSummary,
@@ -28,36 +29,23 @@ import { useLocale } from "../../state/locale";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import { writeClipboard } from "../../components/ui/copy-button";
-import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { HelpFold } from "../../components/ui/help-fold";
 import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
-import {
-  ELLIPSIS_ICON,
-  TRASH_ICON,
-  overflowMenuDangerClass,
-  overflowMenuGlyph,
-  overflowMenuRowClass,
-} from "../../components/ui/session-row-menu";
 import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { AiCreateModal, CreateButtons, pickDefaultAgent } from "../ai-create";
 import { latestWithDelta, matchesBenchmarkQuery, sparklineSeries } from "./benchmark-metrics";
-import { benchmarkCreateExamples, benchmarkCreateTail, benchmarkPath } from "./benchmark-prompts";
+import { benchmarkCreateExamples, benchmarkCreateTail } from "./benchmark-prompts";
 import { benchmarkRoute } from "./benchmark-route";
 import { CreateBenchmarkModal } from "./create-benchmark-modal";
-import { OptimizeModal } from "./optimize-modal";
-import type { OptimizeMode } from "./optimize-modal";
 import { ScoreSparkline } from "./score-sparkline";
+import { UseBenchmarkModal } from "./use-benchmark-modal";
 
-/** An open optimize dialog: which Benchmark, and which way the Skill's inputs get filled. */
-interface OptimizeTarget {
-  benchmarkId: string;
-  mode: OptimizeMode;
-}
+/** Delete (trash can), the same card-row mark the Agents list carries. */
+const TRASH_ICON =
+  "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
 
 /** How many tested Agents a card names before the rest fold into a "+n". */
 const AVATARS_SHOWN = 3;
@@ -67,67 +55,49 @@ function deltaTone(delta: number | null): string {
   return delta > 0 ? toneInk.success : toneInk.danger;
 }
 
-/** The card's overflow menu: copy the directory path, and — for the owner — delete. */
-function CardMenu({
-  canDelete,
-  onCopyPath,
-  onDelete,
-}: {
-  canDelete: boolean;
-  onCopyPath: () => void;
-  onDelete: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const run = (action: () => void) => {
-    setOpen(false);
-    action();
-  };
+/**
+ * The loop, standing under the title: three steps side by side (stacked on a narrow screen),
+ * each naming the Skill it rests on, then one line on the order to walk them in. It does not
+ * collapse and cannot be dismissed — evaluating an agent is something a user does a few times
+ * a year, and a disclosure that has to be found again every time is worse than four calm lines.
+ */
+function GuideFlow() {
   return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      className="inline-block"
-      portal={{ direction: "down", align: "right" }}
-      menuClass="w-48"
-      button={
-        <Button
-          size="icon"
-          variant="ghost"
-          title={S.benchmark.moreActions}
-          aria-label={S.benchmark.moreActions}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-        >
-          <GlyphIcon d={ELLIPSIS_ICON} size={ICON_SIZE.iconButton} filled />
-        </Button>
-      }
-    >
-      <div role="menu" className="py-1">
-        <button
-          type="button"
-          role="menuitem"
-          className={overflowMenuRowClass}
-          onClick={() => run(onCopyPath)}
-        >
-          {overflowMenuGlyph(STAT_ICONS.copy)}
-          {S.benchmark.copyPath}
-        </button>
-        {canDelete && (
-          <button
-            type="button"
-            role="menuitem"
-            className={overflowMenuDangerClass}
-            onClick={() => run(onDelete)}
-          >
-            <span className="shrink-0">
-              <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.inlineGlyph} />
-            </span>
-            {S.benchmark.deleteBenchmark}
-          </button>
-        )}
+    <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-400">
+      <div className="flex flex-col gap-2 md:flex-row md:gap-3">
+        {S.benchmark.guideFlow.map((step, i) => (
+          <Fragment key={step.skill}>
+            {/* The order is already in the numbers, so the arrow is decoration: it points
+                along the axis the steps are laid out on and is hidden from the reader. */}
+            {i > 0 && (
+              <span
+                aria-hidden="true"
+                className="shrink-0 self-start text-gray-300 md:self-center dark:text-gray-600"
+              >
+                <span className="hidden md:inline">{"\u2192"}</span>
+                <span className="md:hidden">{"\u2193"}</span>
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-baseline gap-x-1.5">
+                <span className="font-mono tabular-nums text-gray-400 dark:text-gray-500">
+                  {i + 1}
+                </span>
+                <span className="font-semibold text-gray-900 dark:text-gray-100">{step.title}</span>
+                <code className="min-w-0 truncate font-mono text-gray-400 dark:text-gray-500">
+                  {step.skill}
+                </code>
+              </span>
+              <p className="mt-1 leading-relaxed">{step.text}</p>
+            </div>
+          </Fragment>
+        ))}
       </div>
-    </Dropdown>
+      <p className="mt-3 border-t border-gray-200 pt-2 leading-relaxed dark:border-gray-800">
+        {S.benchmark.guideHowTo}
+      </p>
+      <p className="mt-1 leading-relaxed">{S.benchmark.guideNote}</p>
+    </div>
   );
 }
 
@@ -180,8 +150,7 @@ function BenchmarkCard({
   nameOf,
   canDelete,
   onOpen,
-  onOptimize,
-  onCopyPath,
+  onUse,
   onDelete,
 }: {
   benchmark: BenchmarkSummary;
@@ -189,8 +158,7 @@ function BenchmarkCard({
   nameOf: (agentId: string) => string;
   canDelete: boolean;
   onOpen: () => void;
-  onOptimize: () => void;
-  onCopyPath: () => void;
+  onUse: () => void;
   onDelete: () => void;
 }) {
   const latest = latestWithDelta(benchmark.evaluations);
@@ -252,18 +220,25 @@ function BenchmarkCard({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {/*
-          A card holds one optimize control, not the pair the wider surfaces offer, so this one
-          takes the manual path — the form, where every input is visible before anything is sent.
-          The AI path is one click away in the Benchmark's own page.
-        */}
-        <Button size="sm" variant="ghost" title={S.benchmark.optimizeManual} onClick={onOptimize}>
-          {S.benchmark.optimize}
+        {/* One dialog behind "Use", opened on its Evaluate tab: evaluating an agent is what a
+            Benchmark is for, and optimizing it is the tab next door. */}
+        <Button size="sm" variant="primary" onClick={onUse}>
+          {S.benchmark.use}
         </Button>
         <Button size="sm" variant="ghost" onClick={onOpen}>
           {S.benchmark.view}
         </Button>
-        <CardMenu canDelete={canDelete} onCopyPath={onCopyPath} onDelete={onDelete} />
+        {canDelete && (
+          <Button
+            size="icon"
+            variant="danger"
+            title={S.benchmark.deleteBenchmark}
+            aria-label={S.benchmark.deleteBenchmark}
+            onClick={onDelete}
+          >
+            <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.iconButton} />
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -306,7 +281,8 @@ export function BenchmarkPage() {
   const [aiOpen, setAiOpen] = useState(false);
   const [aiTarget, setAiTarget] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
-  const [optimizing, setOptimizing] = useState<OptimizeTarget | null>(null);
+  /** The Benchmark whose Use dialog is open, if any. */
+  const [using, setUsing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
@@ -330,7 +306,7 @@ export function BenchmarkPage() {
     };
   }, [projectId]);
 
-  // The Project's models, for the Optimize dialog's session-model picker; a failure just
+  // The Project's models, for the Use dialog's conversation-model picker; a failure just
   // leaves the picker at the Project default.
   useEffect(() => {
     if (!projectId) return;
@@ -373,13 +349,8 @@ export function BenchmarkPage() {
 
   const benchmarkOf = (benchmarkId: string | null): BenchmarkSummary | null =>
     benchmarkId === null ? null : (benchmarks?.find((b) => b.id === benchmarkId) ?? null);
-  const optimizingBenchmark = benchmarkOf(optimizing?.benchmarkId ?? null);
+  const usingBenchmark = benchmarkOf(using);
   const deletingBenchmark = benchmarkOf(deleting);
-
-  const copyPath = (benchmarkId: string) => {
-    writeClipboard(benchmarkPath(benchmarkId));
-    toastSuccess(S.benchmark.pathCopied);
-  };
 
   const confirmDelete = async () => {
     if (deleting === null) return;
@@ -427,8 +398,7 @@ export function BenchmarkPage() {
             nameOf={nameOf}
             canDelete={isOwner}
             onOpen={() => open(b.id)}
-            onOptimize={() => setOptimizing({ benchmarkId: b.id, mode: "manual" })}
-            onCopyPath={() => copyPath(b.id)}
+            onUse={() => setUsing(b.id)}
             onDelete={() => setDeleting(b.id)}
           />
         ))}
@@ -439,9 +409,8 @@ export function BenchmarkPage() {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
-        {/* The title row and the guide under it share one block, so the gap below the block is
-            the same whether or not the guide is unfolded — the Agents and Models headers have
-            the same shape. */}
+        {/* The title row and the flow block under it share one block, so the gap below stays
+            one gap — the Agents and Models headers have the same shape. */}
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.benchmark.title}</h1>
@@ -461,14 +430,7 @@ export function BenchmarkPage() {
               <CreateButtons size="sm" onAi={openAi} onManual={() => setManualOpen(true)} />
             </div>
           </div>
-          <HelpFold title={S.benchmark.guideTitle} className="mt-2">
-            <ol className="list-decimal space-y-1 pl-4">
-              {S.benchmark.guideSteps.map((step, i) => (
-                <li key={i}>{step}</li>
-              ))}
-            </ol>
-            <p className="mt-1.5">{S.benchmark.guideNote}</p>
-          </HelpFold>
+          <GuideFlow />
         </div>
 
         {/* What the address is filtering by, and the way out of it: the list is narrowed by a
@@ -523,17 +485,16 @@ export function BenchmarkPage() {
         projectId={projectId}
         onCreated={(benchmark) => open(benchmark.id)}
       />
-      {optimizing && optimizingBenchmark && (
-        <OptimizeModal
-          key={`${optimizing.benchmarkId}/${optimizing.mode}`}
+      {usingBenchmark && (
+        <UseBenchmarkModal
+          key={usingBenchmark.id}
           open
-          onClose={() => setOptimizing(null)}
+          onClose={() => setUsing(null)}
           projectId={projectId}
-          mode={optimizing.mode}
-          benchmark={optimizingBenchmark}
+          benchmark={usingBenchmark}
           agents={agents}
-          currentAgentId={currentAgent?.agentId ?? null}
           models={models}
+          initialTab="evaluate"
         />
       )}
       <ConfirmModal

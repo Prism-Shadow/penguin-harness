@@ -2680,12 +2680,25 @@ Scenarios:
 
   benchmark: {
     title: "Evaluation Center",
-    guideTitle: "The loop in three steps: create, read, optimize",
-    guideSteps: [
-      "Let AI write a Benchmark for an agent and take its baseline score: the benchmark-design Skill writes the cases, and the agent-evaluation Skill trial-runs each one in an isolated Workspace to calibrate difficulty before the set is frozen.",
-      "Read the score curve and the per-case detail here, and check that the cases tell a real solution from one that merely looks right.",
-      "Let AI optimize the agent against that Benchmark: the agent-optimization Skill makes one falsifiable change per round and re-evaluates; a new version is kept only when the score strictly improves, otherwise rolled back.",
+    guideFlow: [
+      {
+        title: "Create",
+        skill: "benchmark-design",
+        text: "Let AI write a set of cases for an agent; agent-evaluation trial-runs each one in an isolated Workspace to calibrate difficulty, and the frozen set arrives with a baseline score.",
+      },
+      {
+        title: "Evaluate",
+        skill: "agent-evaluation",
+        text: "Put any agent on that Benchmark for the full Case × runs matrix; the result is appended to the scoreboard as one labelled evaluation.",
+      },
+      {
+        title: "Optimize",
+        skill: "agent-optimization",
+        text: "Improve an agent against that Benchmark, one falsifiable change per round; a new version is kept only when the score strictly improves.",
+      },
     ],
+    guideHowTo:
+      "How to use it: create with AI or by hand → press Use on a Benchmark to evaluate or optimize → compare series by label on the score chart.",
     guideNote:
       "All three Skills ship in the agent-tuning plugin, which the default agent already carries; install it on a new agent from the plugin library.",
     searchPlaceholder: "Search titles, descriptions or tested agents",
@@ -2703,11 +2716,11 @@ Scenarios:
     sparklineLabel: (n: number): string => `Score trend over ${n} evaluation${n === 1 ? "" : "s"}`,
     latestScoreLabel: "Latest score",
     firstEvaluation: "first evaluation",
+    use: "Use",
+    evaluate: "Evaluate",
     optimize: "Optimize",
     view: "View",
-    moreActions: "More actions",
     copyPath: "Copy directory path",
-    pathCopied: "Benchmark directory path copied",
     deleteBenchmark: "Delete Benchmark",
     deleteConfirm: (title: string): string =>
       `Delete "${title}"? All of its cases and evaluation records will be removed; this cannot be undone.`,
@@ -2822,24 +2835,50 @@ Scenarios:
     invalidId: "Letters, digits, _ and - only",
     invalidRuns: "Must be an integer from 1 to 1000",
     invalidScore: "Must be an integer from 1 to 100",
-    optimizeTitle: (title: string): string => `Optimize: ${title}`,
+    useTitle: (title: string): string => `Use: ${title}`,
+    testedAgent: "Tested agent",
+    projectDefaultModel: (name: string): string => `Project default (${name})`,
+    projectDefaultModelUnset: "Project default",
+    evaluateDescription:
+      "AI puts the tested agent on this Benchmark for the full Case × runs matrix and appends the result to the scoreboard as one labelled evaluation.",
+    evaluateTestedAgentHint:
+      "Evaluated as its Agent State stands right now; the score is recorded under it, labelled with its version, model and thinking level",
+    evaluatorAgent: "Evaluator agent",
+    evaluatorAgentHint:
+      "The one that spawns the evaluation subagents, scores against the rubric and writes the scoreboard; needs the agent-evaluation Skill",
+    evaluatorMissingSkill:
+      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
+    evaluateSessionModel: "Model of the evaluation conversation",
+    evaluateSessionModelHint:
+      "The model that dispatches and totals the runs; the tested agent uses the model it is configured with, which is not changed here",
+    evaluateRunsHint:
+      "How many times every case runs, averaged; defaults to the Benchmark's configured count",
+    evaluateNoteField: "Note",
+    evaluateNotePlaceholder:
+      "e.g. This round checks what the last optimization actually changed; watch the two citation cases",
+    evaluateTail: (p: { targetAgentId: string; benchmarkId: string; runs: number }): string =>
+      "Use the `agent-evaluation` Skill to evaluate the Test Agent on this frozen Benchmark.\n\n" +
+      `- test_agent_id: \`${p.targetAgentId}\`\n` +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
+      `- runs: \`${p.runs}\`\n\n` +
+      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned `agent-evaluation` subagent per matrix cell (omit `agent_id`); " +
+      "the evaluation runtime is the model and thinking level that tested agent is configured with right now. Require every returned result to agree on " +
+      "`agent_id`, `provider`, `model_id` and `thinking_level`, and stop rather than merge two labels into one record. Average the runs per case and the cases " +
+      "per evaluation as the scoreboard contract specifies, then append exactly ONE evaluation to `scoreboard.yaml`, labelled with `agent_id`, `version`, " +
+      "`provider` / `model_id` and `thinking_level`. Change neither the tested agent nor the Benchmark. " +
+      "Finish by reporting the total score, the per-case scores and the label the evaluation was recorded under.",
     optimizeDescription:
       "AI changes the Test Agent under a falsifiable hypothesis and re-evaluates; a new version is kept only when the score strictly improves.",
-    optimizeWithAi: "Optimize with AI",
-    optimizeManual: "Optimize manually",
     optimizerAgent: "Optimizer agent",
     optimizerAgentHint:
       "The one that reads the scores and Traces and edits the Test Agent; needs the agent-optimization Skill",
     optimizerMissingSkill:
       "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the agent-tuning plugin on it first.",
-    testedAgent: "Tested agent",
     testedAgentHint:
       "The agent whose Agent State is edited; its scores are recorded under it and compared only against its own same-label history",
     sessionModel: "Model of the optimizer's conversation",
     sessionModelHint:
       "The model that analyzes and edits; evaluations of the Test Agent keep the model the baseline recorded, which is not changed here",
-    projectDefaultModel: (name: string): string => `Project default (${name})`,
-    projectDefaultModelUnset: "Project default",
     optimizeRunsHint: "How many times every case runs per candidate version, averaged",
     roundLimitField: "Round limit",
     roundLimitHint: "One change per round; a round counts once its evaluation is complete",
@@ -2849,28 +2888,9 @@ Scenarios:
     focusPlaceholder:
       "e.g. Focus on citation rules and format compliance; leave the writing style alone",
     noBaseline:
-      "The selected tested agent has no baseline score in this Benchmark yet. Optimization needs one complete baseline evaluation to compare against — take it while letting AI create the Benchmark, or ask for a full evaluation first in the conversation.",
+      "The selected tested agent has no baseline score in this Benchmark yet. Optimization needs one complete baseline evaluation to compare against — take it on the Evaluate tab first.",
     baselineLine: (score: string, target: number): string =>
       `Current baseline ${score} · target ${target}`,
-    optimizeExamples: {
-      citations: {
-        label: "Citations and format only",
-        description: "Keep the writing style; work on citation rules and format compliance",
-        prompt: "Focus on citation rules and format compliance; leave the writing style alone.",
-      },
-      promptOnly: {
-        label: "Behavioral guidance only",
-        description: "Edit only the guidance in AGENTS.md; install no new Skills",
-        prompt:
-          "Only change the system-level guidance (the behavioral rules in AGENTS.md); do not install any new Skills.",
-      },
-      traceFirst: {
-        label: "Read the lowest Traces first",
-        description: "Find what the two worst cases share before changing anything",
-        prompt:
-          "First analyze the Traces of the two lowest-scoring cases and find their common cause, then make the change.",
-      },
-    },
     optimizeTail: (p: {
       targetAgentId: string;
       benchmarkId: string;

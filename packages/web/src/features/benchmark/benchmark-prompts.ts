@@ -1,6 +1,6 @@
 /**
  * The prompts the Evaluation Center sends through the "Create with AI" bridge, and the small
- * id helpers of its manual form. Both prompts end in a fixed tail that names the Skill to use
+ * id helpers of its manual form. Every prompt ends in a fixed tail that names the Skill to use
  * and the parameters it requires — the Test Agent, the Benchmark id, run and round counts, the
  * target score — so a novice's one-line wish arrives as a request the Skill can act on without
  * asking anything back. The wording lives in the dictionaries; this module only assembles it.
@@ -14,8 +14,8 @@ export const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 /**
  * Upper bound on runs per case, matched by the create route: every run is one evaluation of the
- * Test Agent, so the count multiplies the cost of each optimization round. The Optimize dialog
- * refuses anything beyond it, so a Benchmark must not be created above it either.
+ * Test Agent, so the count multiplies the cost of each evaluation and optimization round. The
+ * Use dialog refuses anything beyond it, so a Benchmark must not be created above it either.
  */
 export const MAX_RUNS = 1000;
 
@@ -40,7 +40,25 @@ export function benchmarkCreateExamples(): AiExample[] {
   }));
 }
 
-/** The parameters the `agent-optimization` Skill requires, as the Optimize dialog collects them. */
+/** The parameters the `agent-evaluation` Skill requires, as the Evaluate tab collects them. */
+export interface EvaluateParams {
+  /** The Agent under test: the one the matrix is run against, picked in the dialog. */
+  targetAgentId: string;
+  benchmarkId: string;
+  /** Runs per case; the matrix is Case x runs. */
+  runs: number;
+}
+
+export function evaluateTail(params: EvaluateParams): string {
+  return S.benchmark.evaluateTail(params);
+}
+
+/** The whole Evaluate prompt: the optional note first, then the parameter tail. */
+export function buildEvaluatePrompt(note: string, params: EvaluateParams): string {
+  return composeAiPrompt(note, evaluateTail(params));
+}
+
+/** The parameters the `agent-optimization` Skill requires, as the Optimize tab collects them. */
 export interface OptimizeParams {
   /** The Agent under test: the one the optimizer edits, picked in the dialog. */
   targetAgentId: string;
@@ -60,15 +78,6 @@ export function optimizeTail(params: OptimizeParams): string {
 /** The whole Optimize prompt: the optional focus text first, then the parameter tail. */
 export function buildOptimizePrompt(focus: string, params: OptimizeParams): string {
   return composeAiPrompt(focus, optimizeTail(params));
-}
-
-export function optimizeExamples(): AiExample[] {
-  return Object.entries(S.benchmark.optimizeExamples).map(([key, ex]) => ({
-    key,
-    label: ex.label,
-    description: ex.description,
-    prompt: ex.prompt,
-  }));
 }
 
 /** A Benchmark's directory relative to the Project's App Data Dir — beside `agents/`, not under one. */

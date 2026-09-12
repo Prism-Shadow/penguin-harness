@@ -1,13 +1,20 @@
 /**
  * Provisioning of the example Benchmark.
  *
- * When default_agent is initialized, it preprovisions the Project-level
+ * A Project whose `benchmarks/` directory does not exist yet gets the Project-level
  * `benchmarks/example-benchmark/`: two sample cases (each with statement/ and rubric/ indexed
  * by a README.md), benchmark_config.toml (runs = 2), and a scoreboard.yaml with three sample
  * evaluations, each labelled with default_agent as the Agent it tested — so the evaluation
  * center has data out of the box. Its description states plainly that this is a built-in
  * example and the whole directory can be deleted or replaced. Provisioning rides on
- * default_agent's initialization only; creating an ordinary Agent provisions nothing.
+ * default_agent alone, on both its initialization and every later load; creating or loading an
+ * ordinary Agent provisions nothing.
+ *
+ * The check is on the DIRECTORY, not on the example inside it: deleting the example while
+ * keeping `benchmarks/` (which is what deleting it through the Evaluation Center leaves behind,
+ * and what a Project holding Benchmarks of its own looks like) is a decision, and writing the
+ * example back on the next load would undo it. Removing `benchmarks/` whole asks for the
+ * example again, which is also how a data root that predates this provisioning gets one.
  *
  * Scoring numbers follow the current Scoreboard contract: every Case is scored out of 100;
  * Case metrics are model-written Run averages and Evaluation metrics are model-written Case
@@ -323,19 +330,19 @@ export function buildExampleScoreboard(): {
 }
 
 /**
- * Provisions the example Benchmark into the Project's `benchmarks/`: if
- * `benchmarks/example-benchmark/` is already there, does nothing; otherwise creates it (config,
- * the two sample cases, and the scoreboard) beside whatever other Benchmarks the Project holds.
- * Callers are restricted to the default_agent initialization path (see agent-state.ts).
+ * Provisions the example Benchmark into the Project's `benchmarks/`: if that directory exists at
+ * all — holding the example, the user's own Benchmarks, or nothing — does nothing; otherwise
+ * creates `benchmarks/example-benchmark/` (config, the two sample cases, and the scoreboard).
+ * Callers are restricted to default_agent's initialization and load paths (see agent-state.ts).
  */
 export async function provisionExampleBenchmark(root: string, projectId: string): Promise<void> {
   const dir = benchmarksDir(root, projectId);
   const benchDir = path.join(dir, EXAMPLE_BENCHMARK_ID);
   try {
-    await fs.access(benchDir);
+    await fs.access(dir);
     return;
   } catch {
-    // The example Benchmark is not there: proceed with provisioning.
+    // The Project has no benchmarks/ at all: proceed with provisioning.
   }
   await Promise.all(
     EXAMPLE_CASES.flatMap((c) => [
