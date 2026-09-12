@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** fix
 - **Scope:** `core`, `docs`
+- **PR:** [#709](https://github.com/Prism-Shadow/penguin-harness/pull/709)
 
 [English](2026-09-12-file-tool-lock.md)
 
