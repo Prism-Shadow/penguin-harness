@@ -17,9 +17,17 @@ export interface TrayMenuItem {
   checked?: boolean;
 }
 
-/** In-window destinations of the navigation entries, relative to the app origin. */
+/**
+ * In-window destinations of the navigation entries, relative to the app origin.
+ *
+ * "New Session" is the draft route and not `/chat`: the chat page with no session in the path
+ * redirects to the most recent conversation, so a bare `/chat` reopens the last session rather
+ * than starting one. `new` is the Web App's draft sentinel (`DRAFT_SESSION_ID` in
+ * features/chat/chat-page.tsx), repeated here because this package does not depend on the Web
+ * App — the test pins the two together.
+ */
 export const TRAY_NAV_PATHS: Record<"new-session" | "models", string> = {
-  "new-session": "/chat",
+  "new-session": "/chat/new",
   models: "/models",
 };
 

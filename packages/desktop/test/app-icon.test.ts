@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { colouredPixels, inkCoverage, readPixels } from "./png-pixels.js";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   resolveTrayIcon,
@@ -98,5 +99,20 @@ describe("committed tray masters", () => {
     ["trayTemplate@2x.png", 32],
   ])("ships %s at %ipx for scripts/build-assets.mjs to stage", (name, size) => {
     expect(pngSize(path.join(pkgDir, "build", "tray", name))).toEqual([size, size]);
+  });
+
+  it.each(["trayTemplate.png", "trayTemplate@2x.png"])("draws %s as a template image", (name) => {
+    // A template image is a mask: the menu bar paints every non-transparent pixel in its own
+    // colour and throws the original away. Colour in one is not merely ignored, it is a sign the
+    // file was rendered down the wrong path — and the result on screen is a black blob.
+    expect(colouredPixels(readPixels(path.join(pkgDir, "build", "tray", name)))).toBe(0);
+  });
+
+  it.each(["trayTemplate.png", "trayTemplate@2x.png"])("gives %s enough weight to read", (name) => {
+    // The first menu bar mark here was the brand illustration flattened and shrunk to 16px. It
+    // covered 19% of the canvas, nearly all of it antialiasing, and read as a smear beside the
+    // solid marks around it. 40% is the weight those neighbours carry; the mark drawn for this
+    // size (scripts/menu-bar-glyph.svg) sits just above it.
+    expect(inkCoverage(readPixels(path.join(pkgDir, "build", "tray", name)))).toBeGreaterThan(0.4);
   });
 });

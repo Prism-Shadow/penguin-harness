@@ -12,8 +12,8 @@
 
 ## 细节
 
-- 图标由 `scripts/render-icon.mjs` 从应用自身的品牌图形渲染，并入库到 `build/tray/`：Windows 与 Linux 用 32px 彩色图（另有 64px `@2x`），macOS 用 16px 单色 Template 图（另有 32px `@2x`），由菜单栏随明暗自动反色。`scripts/build-assets.mjs` 将整套复制进 `dist/tray/`，壳按应用目录的相对路径查找，源码运行与打包应用读同一套布局。提示文字为应用名，含开发实例的 dev 后缀。
-- 左键点击图标把主窗口带到前台：隐藏则显示、最小化则还原、已关闭则重建。右键（macOS 亦可 Ctrl + 点击）弹出菜单：**Open PenguinHarness**；**New Session** 与 **Models**，在主窗口内导航到 `/chat` 与 `/models`；**Keep running in the tray when the window closes** 复选项；以及 **Quit**，走既有的优雅停止 server 的退出路径。
+- 图标由 `scripts/render-icon.mjs` 渲染并入库到 `build/tray/`：Windows 与 Linux 用 32px 彩色图（另有 64px `@2x`），取自应用自身的品牌图形；macOS 用 16px 单色 Template 图（另有 32px `@2x`），由菜单栏随明暗自动反色。菜单栏那张不再取自品牌图形，而是按其尺寸另行绘制于 `scripts/menu-bar-glyph.svg`：带渐变、分离的鳍肢与喙的插画，内容多于 16 像素所能承载，缩小后所得的图案只占画布 19%，且几乎全是抗锯齿的灰边，摆在周围那些实心图标旁边只是一团模糊。重绘的这张只保留头部、下溜的肩线与足部的缺口，占比 45%。两条断言守住这一点：Template 图中不得含有颜色，且占比不得低于 40%。`scripts/build-assets.mjs` 将整套复制进 `dist/tray/`，壳按应用目录的相对路径查找，源码运行与打包应用读同一套布局。提示文字为应用名，含开发实例的 dev 后缀。
+- 左键点击图标把主窗口带到前台：隐藏则显示、最小化则还原、已关闭则重建。右键（macOS 亦可 Ctrl + 点击）弹出菜单：**Open PenguinHarness**；**New Session** 与 **Models**，在主窗口内导航到 `/chat/new` 与 `/models`；**Keep running in the tray when the window closes** 复选项；以及 **Quit**，走既有的优雅停止 server 的退出路径。
 - 两种点击各按平台的支持程度落地：Linux 上菜单直接挂在图标上，由桌面环境决定哪一种点击打开它；macOS 与 Windows 上则是左键显示窗口、右键弹出菜单。
 - **Keep running in the tray when the window closes** 默认开启，三平台关窗都只隐藏窗口。关掉它则恢复原有行为：macOS 关窗后应用保留在 Dock，Windows 与 Linux 关窗即退出。关掉托盘图标同理——托盘里没有图标可以把隐藏的窗口唤回来，关窗就直接放行，不再隐藏。
 - **设置 › 外观** 新增 **托盘图标** 开关，默认开启，无需重启即时生效：关掉图标立刻从托盘消失，打开同样立刻回来。该行只在桌面应用自己的窗口里出现，浏览器登录同一个 server 时没有。开关经由客户端更新已有的消息通道抵达壳（`GET` / `PUT /api/desktop/tray`），窗口仍是纯浏览器，不引入自己的 IPC 通道。

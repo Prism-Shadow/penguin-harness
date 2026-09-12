@@ -16,8 +16,9 @@
  * - build/tray/trayTemplate.png
  *                             16×16 (+ @2x 32×32) macOS menu bar image: a black silhouette
  *                             on transparency, which the menu bar inverts with its own
- *                             appearance. The artwork's white backdrop is dropped for it —
- *                             flattened to black it would be a filled square, not a mark.
+ *                             appearance. Rendered from scripts/menu-bar-glyph.svg rather
+ *                             than from the brand mark, which has more detail than 16 pixels
+ *                             can hold.
  *
  * Regenerate: node packages/desktop/scripts/render-icon.mjs
  * Rasterizes via the Playwright chromium already installed for packages/landing (no new
@@ -47,27 +48,15 @@ const svgSource = readFileSync(SVG_PATH, "utf8");
 const dataUrl = (svg) => `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
 const svgDataUrl = dataUrl(svgSource);
 
-/**
- * The full-canvas white shape behind the mark. A template image is a mask — every opaque
- * pixel is drawn in the menu bar's own colour — so this one has to go before the rest is
- * flattened to black. Matched literally so a reworked logo fails the render loudly instead
- * of shipping a black square.
- */
-const BACKDROP_PATH = '<path fill="#fefefe" d="M0 0h1254v1254H0Z"/>';
-if (!svgSource.includes(BACKDROP_PATH)) {
-  console.error(
-    `[render-icon] ${path.relative(REPO_ROOT, SVG_PATH)} no longer has the backdrop shape the ` +
-      `macOS template icon strips — check the artwork and update BACKDROP_PATH.`,
-  );
-  process.exit(1);
-}
 // A CSS rule outranks a presentation attribute, so this flattens the gradients and the
 // literal fills alike.
-const templateDataUrl = dataUrl(
-  svgSource
-    .replace(BACKDROP_PATH, "")
-    .replace("</defs>", "</defs><style>*{fill:#000!important;stroke:#000!important}</style>"),
-);
+/**
+ * The macOS menu bar image comes from its own artwork, not from the brand mark: see the
+ * comment in menu-bar-glyph.svg for why 16 pixels cannot carry the illustration. It is
+ * already a black-on-transparent silhouette, which is exactly what a template image is.
+ */
+const GLYPH_PATH = path.join(HERE, "menu-bar-glyph.svg");
+const templateDataUrl = dataUrl(readFileSync(GLYPH_PATH, "utf8"));
 
 /**
  * Apple's 1024px app-icon template keeps the full rounded-square artwork inside an
