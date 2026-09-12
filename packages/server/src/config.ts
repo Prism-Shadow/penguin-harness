@@ -69,7 +69,7 @@ export interface ServerConfig {
    */
   supervised: boolean;
   /**
-   * Port announcement file (PENGUIN_PORT_FILE): after the listener is up, the actual
+   * Port announcement file (PENGUIN_PORT_FILE): once the App is up, the actual
    * bound port is written here — the supervising process's way to learn the port when
    * it starts the server with PORT=0.
    */
