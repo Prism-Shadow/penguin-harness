@@ -21,7 +21,7 @@ import type { SkillMetadataItem } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
 import { useLocale } from "../../state/locale";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { noAutofill } from "../../components/ui/input";
+import { menuSearchClass, noAutofill } from "../../components/ui/input";
 import { filterSkills, localizedShortText } from "../chat/skill-use";
 import { SkillIcon } from "./skill-icon-view";
 
@@ -70,7 +70,7 @@ export function SkillPickList({
           placeholder={searchLabel}
           aria-label={searchLabel}
           {...noAutofill}
-          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
+          className={`${menuSearchClass} px-1 py-0.5`}
         />
       </div>
       {bulk && skills.length > 0 && (
