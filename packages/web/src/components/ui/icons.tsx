@@ -200,18 +200,21 @@ export const AGENTS_PAIR_ICON =
  * The brain in profile — for the Memory panel, the memory-changes card and the agent cards'
  * memory count.
  *
- * A closed outline (the lobed crown, the frontal lobe at the left, the brainstem dropping from the
- * underside) and six gyri inside it. Six, and spread out: the gyri are chosen longest-first with a
- * minimum separation between them, because the count is not what makes an interior too heavy — a
- * cluster in one lobe is, and it fills to a smudge while the rest of the shape stays empty.
+ * One line, and nothing inside it: the cortex is drawn on the perimeter itself, so the edge does
+ * the work an interior used to. The profile is the reference's — the lobed crown, the frontal lobe
+ * at the left, the brainstem dropping from the underside — with a fold added along each of its long
+ * stretches: a gyrus pushed out about 0.65 units, and the joins between them pulled in to read as
+ * the sulci.
  *
- * They do not resolve individually at 13px, the smallest size these three surfaces draw it at, but
- * they are not wasted there either: they read as the texture of a brain, which is what separates
- * this from a cloud. At 18px and above each one is its own mark. Every surface draws it from here:
- * a memory mark typed out a second time is how one thing ends up with two pictures of itself.
+ * The folds are added only where a stretch is long enough to carry one. The brainstem and the notch
+ * beneath the temporal lobe are left smooth, because rippling a feature that short destroys it —
+ * and those two are what make the silhouette a brain rather than a cloud in the first place.
+ *
+ * Every surface draws it from here: a memory mark typed out a second time is how one thing ends up
+ * with two pictures of itself.
  */
 export const MEMORY_ICON =
-  "M10.8 2.6C11.1 2.6 11.5 3.3 11.8 3.3C12.1 3.3 11.9 2.8 12.5 2.8C13.1 2.8 14.4 2.9 15.5 3.2C16.6 3.5 17.9 3.8 18.9 4.6C19.9 5.4 20.8 6.9 21.4 8.2C22 9.5 22.6 10.9 22.7 12.2C22.8 13.5 22.6 14.7 22 15.8C21.4 16.9 20.2 18.3 19.1 18.9C18 19.5 16.3 19.1 15.6 19.5C14.9 19.9 15.1 20.8 14.7 21.1C14.3 21.4 13.6 21.9 13 21.4C12.4 20.8 11.9 18.6 11.4 17.8C10.9 17 11 16.7 10.1 16.3C9.2 16 7.1 16.1 6.2 15.7C5.3 15.2 5.3 14.1 4.6 13.6C3.9 13.1 2.8 13.1 2.2 12.6C1.7 12.1 1.4 11.3 1.3 10.4C1.2 9.5 1.2 8.2 1.6 7.3C2 6.4 2.3 5.7 3.6 4.9C4.9 4.2 8.1 3 9.2 2.8C10.3 2.5 9.7 3.4 10 3.4C10.3 3.4 10.5 2.6 10.8 2.6ZM21.9 14.4C21.8 14.6 21.7 15.5 21.3 15.9C20.9 16.3 20 16.5 19.6 16.9C19.2 17.3 19.2 18 18.9 18.3C18.6 18.7 17.9 18.9 17.7 19M13.5 15.6C13.1 15.7 11.2 15.4 11 16.1C10.8 16.8 12.3 18.9 12.6 19.5M9.1 3.4C9 3.5 8.4 3.6 8.3 3.9C8.2 4.2 8.3 4.7 8.6 4.9C8.9 5.1 9.8 4.8 10.2 4.9C10.6 5 10.7 5.4 10.8 5.5M4.7 13.1C4.9 13.2 5.4 13.2 5.7 13.6C6 14 6.3 15 6.6 15.3C6.9 15.6 7.4 15.6 7.6 15.7M15.2 8.7C15.4 8.9 16.2 9.5 16.3 10.1C16.4 10.7 16 11.8 16 12.1M4.5 7.3C4.5 7.6 4.3 8.6 4.6 8.8C4.9 9 6.2 8.7 6.5 8.7";
+  "M10.9 3.4C11.2 3.4 11.7 4.1 11.9 4.1C12.2 4.1 12.1 3.8 12.4 3.6C12.8 3.4 13.5 2.9 14 2.9C14.5 2.9 14.7 3.8 15.2 3.9C15.7 4 16.6 3.6 17.1 3.8C17.6 4 17.8 4.8 18.3 5.2C18.8 5.6 19.7 5.9 20.1 6.4C20.5 7 20.3 7.9 20.6 8.5C20.9 9.1 21.8 9.5 22 10.1C22.2 10.7 21.8 11.5 21.8 12.2C21.9 12.8 22.4 13.5 22.3 14C22.2 14.5 21.4 14.8 21.1 15.4C20.8 16 20.9 16.9 20.5 17.4C20.1 17.9 19.1 18 18.5 18.3C17.9 18.6 17.6 19.3 17.1 19.4C16.6 19.5 15.6 18.8 15.3 18.9C15 19 15.6 19.9 15.5 20.1C15.4 20.3 14.8 20.1 14.5 20.3C14.2 20.5 14.1 21.2 13.8 21.3C13.5 21.4 13.3 20.9 12.9 20.6C12.5 20.3 11.8 19.9 11.6 19.3C11.4 18.7 11.7 17.6 11.5 17.2C11.3 16.8 10.5 17.3 10.3 17.1C10.1 16.9 10.6 15.9 10.3 15.8C10 15.7 8.9 16.5 8.3 16.4C7.7 16.3 7.3 15.6 6.8 15.3C6.3 15.1 5.5 15.2 5.3 14.9C5 14.6 5.6 13.6 5.3 13.4C5 13.2 4.1 13.8 3.7 13.7C3.3 13.5 3.3 12.8 3 12.5C2.7 12.2 1.9 12.1 1.8 11.8C1.7 11.5 2.2 11 2.2 10.5C2.2 10 1.4 9.5 1.5 9C1.6 8.5 2.3 8.2 2.5 7.7C2.7 7.2 2.5 6.5 2.8 6.1C3.1 5.7 3.9 5.8 4.3 5.5C4.7 5.2 4.8 4.5 5.2 4.3C5.6 4.1 6.4 4.8 6.8 4.6C7.2 4.4 7.4 3.5 7.8 3.3C8.2 3.1 9 3.5 9.4 3.6C9.8 3.7 9.9 4.1 10.2 4.1C10.4 4.1 10.6 3.4 10.9 3.4Z";
 
 /**
  * The eye's almond outline, shared by the two marks drawn from it — `NAV_ICONS.traces` (an open
