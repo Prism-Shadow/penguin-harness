@@ -13,8 +13,9 @@
  *   run, and core's bundled loader resolves them by name from the bundle's own location. The
  *   server's web-dist lookup is likewise satisfied by electron-builder's file mapping when
  *   packaging; a source run falls back to packages/web/dist on its own.)
- * - `dist/icon.png` — the runtime window icon, read app-path-relative (see src/app-icon.ts).
- *   build/ is electron-builder's buildResources directory and does not ship inside the app.
+ * - `dist/icon.png`, `dist/tray/*.png` — the runtime window and tray icons, read
+ *   app-path-relative (see src/app-icon.ts). build/ is electron-builder's buildResources
+ *   directory and does not ship inside the app.
  * - `bin/penguin`, `bin/penguin.cmd` — the CLI launchers, whose script text lives in
  *   src/launcher.ts so it is unit-tested with the rest of the shell.
  * - `dist/install.sh`, `dist/install.ps1` — the release installers, which the Machines page
@@ -61,6 +62,22 @@ if (!fs.existsSync(iconSrc)) {
 }
 fs.copyFileSync(iconSrc, path.join(distDir, "icon.png"));
 
+// The tray set travels whole: each icon has an @2x sibling the image loader picks up on a
+// high-DPI display, and macOS takes the template variant instead of the colour one.
+const traySrcDir = path.join(pkgDir, "build", "tray");
+const trayIcons = fs.existsSync(traySrcDir)
+  ? fs.readdirSync(traySrcDir).filter((name) => name.endsWith(".png"))
+  : [];
+if (trayIcons.length === 0) {
+  console.error("[build-assets] build/tray/ has no icons — run `node scripts/render-icon.mjs`.");
+  process.exit(1);
+}
+const trayDistDir = path.join(distDir, "tray");
+fs.mkdirSync(trayDistDir, { recursive: true });
+for (const name of trayIcons) {
+  fs.copyFileSync(path.join(traySrcDir, name), path.join(trayDistDir, name));
+}
+
 // node-pty, resolved from the package that depends on it: under pnpm it is installed into
 // packages/server/node_modules, out of reach of any lookup anchored in this package.
 const serverRequire = createRequire(path.resolve(pkgDir, "..", "server", "package.json"));
@@ -97,5 +114,5 @@ fs.chmodSync(path.join(binDir, "penguin"), 0o755);
 fs.writeFileSync(path.join(binDir, "penguin.cmd"), windowsLauncherScript());
 
 console.log(
-  `[build-assets] done: dist/icon.png, dist/install.{sh,ps1}, bin/, ${NODE_PTY_RELDIR.join("/")} (${ptyFiles.length} files, bindings: ${bindings.join(", ")})`,
+  `[build-assets] done: dist/icon.png, dist/tray/ (${trayIcons.length} icons), dist/install.{sh,ps1}, bin/, ${NODE_PTY_RELDIR.join("/")} (${ptyFiles.length} files, bindings: ${bindings.join(", ")})`,
 );

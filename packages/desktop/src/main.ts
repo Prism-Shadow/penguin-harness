@@ -19,6 +19,10 @@
  * Attach mode: when a live server (e.g. `penguin web`) already owns the data root, the
  * window loads that instance instead — normal login page, deliberate degradation.
  *
+ * Tray: a system-tray icon is the way back to the window, and by default closing the window
+ * only hides it, so the server and its background tasks keep running (see tray.ts; the
+ * preference lives in userData/tray.json and Quit still goes through the graceful stop).
+ *
  * Dev isolation: an unpackaged run takes a dev-suffixed identity (own userData, and with
  * it the single-instance lock and sticky port) and defaults to the ~/.penguin/dev-data
  * root, so it runs beside an installed release build (see app-identity.ts).
@@ -36,12 +40,14 @@ import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import { appIdentity, desktopDataRoot } from "./app-identity.js";
 import { embeddedCliEntry } from "./launcher.js";
 import { webDistEntry, webDistFor } from "./web-dist.js";
-import { resolveWindowIcon } from "./app-icon.js";
+import { resolveTrayIcon, resolveWindowIcon } from "./app-icon.js";
 import { installCliCommand, ensureCliCommand, currentCliInstallKind } from "./cli-install.js";
 import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
+import { installTray } from "./tray.js";
+import type { TrayHandle } from "./tray.js";
 import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
 import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
 import {
@@ -65,6 +71,7 @@ app.setName(identity.name);
 if (process.platform === "win32") app.setAppUserModelId(identity.appUserModelId);
 
 let win: BrowserWindow | null = null;
+let tray: TrayHandle | null = null;
 let server: EmbeddedServer | null = null;
 /** App origin (embedded or attached); null until boot resolves. */
 let appOrigin: string | null = null;
@@ -98,6 +105,15 @@ function createWindow(url: string): void {
     },
   });
   win.once("ready-to-show", () => win?.show());
+  // Close-to-tray: the window goes away, the app and its embedded server stay, and the tray
+  // icon is the way back. Every real exit — the tray's Quit, the app menu's, an OS logout —
+  // passes through before-quit first, which is what `quitting` reports.
+  win.on("close", (event) => {
+    if (!quitting && tray?.closeToTray() === true) {
+      event.preventDefault();
+      win?.hide();
+    }
+  });
   win.on("closed", () => {
     win = null;
   });
@@ -149,6 +165,32 @@ function createWindow(url: string): void {
   win.webContents.on("render-process-gone", () => win?.webContents.reload());
   armSmokeProbe(win);
   void win.loadURL(url);
+}
+
+/**
+ * Bring the main window forward, whatever state it is in: hidden by close-to-tray, minimized,
+ * or gone entirely (a closed window with close-to-tray off). Used by the tray icon, a second
+ * launch, and the macOS Dock.
+ */
+function showMainWindow(): void {
+  if (win === null) {
+    if (appOrigin !== null) createWindow(`${appOrigin}/`);
+    return;
+  }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+/**
+ * Tray navigation. The window is a plain browser, so a destination is just a URL to load —
+ * no IPC channel into the Web App. Before boot resolves an origin there is nowhere to go, and
+ * showing the window is the whole action.
+ */
+function navigateMainWindow(target: string): void {
+  showMainWindow();
+  if (win === null || appOrigin === null) return;
+  void win.loadURL(`${appOrigin}${target}`);
 }
 
 /**
@@ -260,26 +302,25 @@ async function boot(): Promise<void> {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (win !== null) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
-    }
-  });
+  app.on("second-instance", () => showMainWindow());
 
   app.on("window-all-closed", () => {
     // macOS keeps the app alive in the Dock; elsewhere closing the window quits.
     if (process.platform !== "darwin") app.quit();
   });
 
-  app.on("activate", () => {
-    if (win === null && appOrigin !== null) createWindow(`${appOrigin}/`);
-  });
+  // Dock click: the window may be hidden in the tray rather than gone, so show before recreate.
+  app.on("activate", () => showMainWindow());
 
   // Quit path: stop the embedded server gracefully first (shutdown endpoint → kill),
   // then let the quit proceed. Attach mode has no child to stop.
   app.on("before-quit", (event) => {
     quitting = true;
+    // The icon goes as soon as the app is on its way out, rather than lingering through the
+    // graceful server stop; nulling it keeps the second pass (after the stop) from destroying
+    // an already destroyed tray.
+    tray?.dispose();
+    tray = null;
     if (server !== null && stopPromise === null) {
       event.preventDefault();
       const running = server;
@@ -304,6 +345,18 @@ if (!app.requestSingleInstanceLock()) {
       installAppMenu({
         includeCliInstall: currentCliInstallKind() !== null,
         onInstallCli: () => void installCliCommand(win),
+      });
+      // Before boot: the menu's navigation entries tolerate an origin that is not resolved
+      // yet, and the close-to-tray preference has to be in hand before the first window
+      // close can happen.
+      tray = installTray({
+        userDataDir: app.getPath("userData"),
+        iconPath: resolveTrayIcon(app.getAppPath(), process.platform),
+        appName: app.name,
+        onShowWindow: showMainWindow,
+        onNavigate: navigateMainWindow,
+        onQuit: () => app.quit(),
+        log: (line) => process.stdout.write(`[shell] ${line}\n`),
       });
       initUpdater(() => win);
       await boot();
