@@ -543,6 +543,19 @@
   font-weight: 600;
   margin: 0.75rem 0 0.5rem;
 }
+/* A body that provides its own inset — the disclosure rows' expanded thinking and compaction
+   text (features/chat/disclosure-row.tsx) — drops the outermost block's margin, so the gap at
+   each end is that padding alone rather than the padding plus whatever margin the first and
+   last blocks carry. It has to be a rule here rather than a `[&>*:first-child]:mt-0` utility at
+   the call site: every rule in this file is unlayered, and an unlayered declaration beats
+   anything in `@layer utilities` whatever its specificity, so the utility would be inert
+   against the margins set above. */
+.md-body-flush > :first-child {
+  margin-top: 0;
+}
+.md-body-flush > :last-child {
+  margin-bottom: 0;
+}
 .md-body h1 {
   font-size: 1.25rem;
 }
