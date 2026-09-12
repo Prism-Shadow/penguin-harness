@@ -965,7 +965,7 @@ describe("ContextEngine ReAct loop (mock LLM, approve callback)", () => {
 });
 
 describe("ContextEngine live thinking level (the soft-limited runtime parameter)", () => {
-  it("applies setThinkingLevel to every turn request — reconnects included — while compaction requests keep the context default", async () => {
+  it("applies setThinkingLevel to every request of the Session — reconnects and the compaction request included", async () => {
     const levels: (string | undefined)[] = [];
     let calls = 0;
     const llm: LLMInterface = {
@@ -979,8 +979,10 @@ describe("ContextEngine live thinking level (the soft-limited runtime parameter)
         }
         if (calls === 2) {
           // Retry completes with usage above the compaction threshold → a Task-boundary
-          // summarize compaction issues one more request (the engine's, not a turn): it
-          // must NOT carry the live override — its prefix stays the context's own.
+          // summarize compaction issues one more request (the engine's, not a turn). It
+          // carries the live override like any other: a pin only ever differs from the
+          // context's base once the user has moved it, and by then the turns since have
+          // already gone out at the new level.
           yield assistantText("recovered");
           yield tokenUsage(emptyTokenCounts(), {
             cache_read: 0,
@@ -1023,8 +1025,8 @@ describe("ContextEngine live thinking level (the soft-limited runtime parameter)
     engine.setThinkingLevel("high");
     await collectRun(engine, [userText("go")], allowAll);
     expect(calls).toBe(3);
-    // Turn attempt + reconnect retry carry the live level; the compaction request does not.
-    expect(levels).toEqual(["high", "high", undefined]);
+    // Turn attempt, reconnect retry and the compaction request all carry the live level.
+    expect(levels).toEqual(["high", "high", "high"]);
 
     // A re-pin between runs is picked up by the next request without any rotation.
     engine.setThinkingLevel("low");

@@ -481,10 +481,9 @@ export class ContextEngine {
   /**
    * The Session's current thinking level — the soft-limited runtime parameter as
    * engine-owned state: `setThinkingLevel` (fed by the `Session.thinkingLevel` setter) moves it
-   * mid-context, and every subsequent turn request carries it as the per-request override.
-   * Undefined = no pin: the LLM object's construction default (the context's opening base)
-   * applies. Compaction requests ignore it and keep the context's base — their prefix must
-   * stay byte-identical at the moment the context is largest.
+   * mid-context, and every subsequent request carries it as the per-request override — a
+   * turn and a compaction alike. Undefined = no pin: the LLM object's construction default
+   * (the context's opening base) applies.
    */
   private thinkingLevel?: ThinkingLevelName;
   /** Most recent token_usage's request.total, i.e. the current context usage figure. */
@@ -567,7 +566,7 @@ export class ContextEngine {
     }
   }
 
-  /** Moves the Session's thinking level mid-context (see the `thinkingLevel` field); applies from the next turn request. */
+  /** Moves the Session's thinking level mid-context (see the `thinkingLevel` field); applies from the next request, turn or compaction. */
   setThinkingLevel(level: ThinkingLevelName): void {
     this.thinkingLevel = level;
   }
@@ -1812,9 +1811,19 @@ export class ContextEngine {
     // written to the (old) Trace only, not pushed to the stream, keeping the compaction process
     // invisible to Human.
     await this.write(requestBegin());
+    // The Session's pinned thinking level, read live and carried exactly as a turn carries it
+    // (see the `thinkingLevel` field): the level is the soft-limited per-request parameter, so
+    // one Session never has two levels in flight at once. Were this request left on the level
+    // the context opened at while the turns around it run on the pin, a provider that reads the
+    // level as a thinking mode would see the mode change mid-conversation — and DeepSeek
+    // rejects a request whose current tool-call chain replays a turn that carries no chain of
+    // thought. The strict-tier prefix this request does hold identical to a turn's is its
+    // system prompt and toolset; the level is a request parameter, not part of either.
+    const level = this.thinkingLevel;
     const gen = this.llm.streamGenerate({
       newMessages: input,
       ...(signal ? { signal } : {}),
+      ...(level !== undefined ? { thinkingLevel: level } : {}),
     });
     let text = "";
     const toolCalls: OmniMessage<ToolCallPayload>[] = [];
