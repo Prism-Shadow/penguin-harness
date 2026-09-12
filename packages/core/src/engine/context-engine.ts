@@ -1811,20 +1811,14 @@ export class ContextEngine {
     // written to the (old) Trace only, not pushed to the stream, keeping the compaction process
     // invisible to Human.
     await this.write(requestBegin());
-    // The Session's pinned thinking level, exactly as a turn carries it.
-    //
-    // This request was excepted on purpose until now, to hold its prefix identical to the
-    // context it summarises and so keep the provider's cache warm where a miss costs most.
-    // The exception, though, can only ever fire once the user has moved the pin — and by then
-    // every turn since has gone out at the new level and the cache has been rebuilt against
-    // it, so the compaction request was the one request that differed. It broke the very
-    // consistency it was protecting.
-    //
-    // What the split did cost is real: a Session ran its turns at one level and its compaction
-    // at another, and on a provider that reads the level as a thinking mode that is a mode
-    // changing mid-conversation — a turn produced under the quieter level carries no chain of
-    // thought, and replaying it back into a thinking-mode request is what DeepSeek rejects
-    // outright.
+    // The Session's pinned thinking level, read live and carried exactly as a turn carries it
+    // (see the `thinkingLevel` field): the level is the soft-limited per-request parameter, so
+    // one Session never has two levels in flight at once. Were this request left on the level
+    // the context opened at while the turns around it run on the pin, a provider that reads the
+    // level as a thinking mode would see the mode change mid-conversation — and DeepSeek
+    // rejects a request whose current tool-call chain replays a turn that carries no chain of
+    // thought. The strict-tier prefix this request does hold identical to a turn's is its
+    // system prompt and toolset; the level is a request parameter, not part of either.
     const level = this.thinkingLevel;
     const gen = this.llm.streamGenerate({
       newMessages: input,

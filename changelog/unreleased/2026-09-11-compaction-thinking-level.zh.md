@@ -7,7 +7,7 @@
 
 [English](2026-09-11-compaction-thinking-level.md)
 
-## 详情
+## 细节
 
 - 思考等级是每请求参数，每次 LLM 请求都取 Session 钉住的等级——对话工具条的选择器、CLI 的
   `--thinking` / `/thinking`、SDK 的 `session.thinkingLevel`——未钉住时才回退到上下文开启时读到的
