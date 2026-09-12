@@ -16,6 +16,7 @@
  * `start` receives the control object before it runs, so the product's routes and seam can
  * be built over it while the first generation is still coming up.
  */
+import { randomUUID } from "node:crypto";
 import zlib from "node:zlib";
 import type { Instance, Park } from "@prismshadow/penguin-core/kernel";
 import type { HmrHost, UpgradeAllTarget, UpgradeOutcome } from "./host.js";
@@ -112,25 +113,50 @@ export async function hmrMain<Api extends Park>(
 export async function admitsUpgradeRoute<Api extends Park>(
   instance: Instance<Api>,
 ): Promise<string | null> {
+  if (typeof (instance.api as { http?: unknown }).http !== "function") {
+    return `the pushed platform serves no HTTP, so no ${HMR_UPGRADE_PATH}`;
+  }
+  const answer = await probe(instance, HMR_UPGRADE_PATH);
+  // Answered like the channel itself would. A credential-less POST reaches the mechanism's
+  // endpoint (400, no body) or stops at the platform's gate (401/403) or its router (405) —
+  // no other answer is one the upgrade channel gives.
+  if (!CHANNEL_ANSWERS.includes(answer)) return refusal(answer);
+  // And not the answer this platform gives for a prefix nothing can serve: a blanket gate
+  // over the whole API answers 401 for both, which says nothing about the channel.
+  const unclaimed = await probe(instance, `${HMR_ROUTE_PREFIX}-not-served-${randomUUID()}/upgrade`);
+  if (answer === unclaimed) {
+    return (
+      `the pushed platform answers ${answer} for ${HMR_UPGRADE_PATH} and for a path nothing serves, ` +
+      `so nothing there claims the upgrade channel`
+    );
+  }
+  return null;
+}
+
+/** The answers a credential-less POST to the channel can legitimately produce. */
+const CHANNEL_ANSWERS = ["400", "401", "403", "405"];
+
+function refusal(answer: string): string {
+  return (
+    `the pushed platform serves no ${HMR_UPGRADE_PATH} (answered ${answer}); ` +
+    `a push must carry the upgrade channel, or the installation could never be upgraded again`
+  );
+}
+
+/** One probe, as a comparable string: a status, `none` for a declined path, or the throw. */
+async function probe<Api extends Park>(instance: Instance<Api>, path: string): Promise<string> {
   const api = instance.api as {
     http?: (request: Request) => Promise<Response | null> | Response | null;
   };
-  if (typeof api.http !== "function")
-    return `the pushed platform serves no HTTP, so no ${HMR_UPGRADE_PATH}`;
-  let response: Response | null;
   try {
-    response = await api.http.call(
+    const response = await api.http?.call(
       api,
-      new Request(`http://localhost${HMR_UPGRADE_PATH}`, { method: "POST" }),
+      new Request(`http://localhost${path}`, { method: "POST" }),
     );
+    return response === null || response === undefined ? "none" : String(response.status);
   } catch (err) {
-    return `probing ${HMR_UPGRADE_PATH} on the pushed platform threw: ${err instanceof Error ? err.message : String(err)}`;
+    return `a throw (${err instanceof Error ? err.message : String(err)})`;
   }
-  if (response !== null && [400, 401, 403, 405].includes(response.status)) return null;
-  return (
-    `the pushed platform serves no ${HMR_UPGRADE_PATH} (answered ${response === null ? "nothing" : response.status}); ` +
-    `a push must carry the upgrade channel, or the installation could never be upgraded again`
-  );
 }
 
 const json = (status: number, body: unknown): Response =>

@@ -13,8 +13,11 @@ import zlib from "node:zlib";
 import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Hono } from "hono";
+import { Hono } from "hono";
 import type { AppEnv } from "../src/auth/middleware.js";
+import type { Hmr } from "@prismshadow/penguin-hmr";
+import { platformHttpSeam } from "../src/hmr/http-seam.js";
+import type { PlatformApi } from "../src/hmr/platform.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -86,6 +89,21 @@ describe("platform HTTP seam", () => {
     const shutdown = await t.app.request("/api/desktop/shutdown", { method: "POST" });
     expect(shutdown.status).toBe(404);
     expect((await api.get("/api/me")).status).toBe(404);
+  });
+
+  it("a platform that gates its whole API is refused: a blanket 401 claims no channel", async () => {
+    // One auth middleware over the whole namespace and no upgrade route: every path answers
+    // 401, including one nothing serves. Reading that 401 as "the channel is there, gated"
+    // would commit a generation there is no way to push to.
+    const gated = platformServing(["/api/demo/x"], "gated").replace(
+      'if (pathname.startsWith("/api/hmr/")) return ctx.resources.claim("platform.hmrControl").endpoint(request);',
+      'if (pathname.startsWith("/api/")) return new Response("no", { status: 401 });',
+    );
+    const bad = await pushPlatform(t.app, cookie, gated);
+    expect(bad.status).toBe(400);
+    expect(await bad.text()).toMatch(/for a path nothing serves/);
+    expect((await api.get("/api/demo/x")).status).toBe(404);
+    expect((await pushPlatform(t.app, cookie, bundle)).status).toBe(200);
   });
 
   it("a platform without the upgrade channel is refused — one bad push must not lock the box out", async () => {
@@ -324,5 +342,33 @@ describe("platform HTTP seam: a request racing an in-flight swap", () => {
     // Must observe latency (the seam awaited the swap), never the disposed v1 nor an error.
     expect(raced.status).toBe(200);
     expect(await raced.json()).toEqual({ impl: "v2" });
+  });
+});
+
+describe("no generation is current: the seam answers, it does not fall through", () => {
+  /** A control object whose current() always throws, as it does when nothing can boot. */
+  const dead = {
+    current: () => Promise.reject(new Error("the packaged platform failed to boot")),
+    upgrade: () => Promise.reject(new Error("not used here")),
+    endpoint: () => Promise.reject(new Error("not used here")),
+  } as unknown as Hmr<PlatformApi>;
+
+  const app = new Hono();
+  app.use("*", platformHttpSeam(dead));
+  app.get("/api/anything", (c) => c.json({ from: "the tail" }));
+
+  it("says so instead of letting the static tail answer for it", async () => {
+    const res = await app.request("/api/anything");
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain("the packaged platform failed to boot");
+  });
+
+  it("gives a browser a page rather than a line it cannot act on", async () => {
+    const res = await app.request("/", { headers: { accept: "text/html" } });
+    expect(res.status).toBe(503);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    // No retry: nothing here ends on its own, unlike the starting window.
+    expect(res.headers.get("retry-after")).toBeNull();
+    expect(await res.text()).not.toContain('http-equiv="refresh"');
   });
 });
