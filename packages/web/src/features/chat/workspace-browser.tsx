@@ -124,6 +124,7 @@ import { SkeletonList } from "../../components/ui/skeleton";
 import { Tooltip } from "../../components/ui/tooltip";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { STAT_ICONS } from "../../lib/stat-icons";
 import { toneInk } from "../../lib/tone";
 import { setCloseGuard } from "../dock/close-guard";
 import { tabKey } from "../dock/dock-state";
@@ -2318,18 +2319,40 @@ export function WorkspaceBrowser({
         {dirty && (
           <span className={`shrink-0 text-xs ${toneInk.attention}`}>{S.files.unsaved}</span>
         )}
-        <Button size="sm" onClick={cancelEdit} disabled={saving}>
-          {S.common.cancel}
-        </Button>
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={requestSave}
-          disabled={saving}
-          title={S.files.saveTitle}
+        {/* Icon buttons, not text ones, so the row is the same height whether or not a draft
+            is open: a `Button size="sm"` stands 29px against these 27px, and the header would
+            grow by two pixels the moment Edit was pressed. The save keeps no primary tint —
+            it opens a confirmation whose own button carries that weight. */}
+        <Tooltip label={S.common.cancel} placement="bottom" className="shrink-0">
+          <button
+            type="button"
+            aria-label={S.common.cancel}
+            onClick={cancelEdit}
+            disabled={saving}
+            className={`${iconActionClass} disabled:opacity-40`}
+          >
+            <CloseIcon size={ICON_SIZE.iconButton} />
+          </button>
+        </Tooltip>
+        <Tooltip
+          label={saving ? S.common.saving : S.files.saveTitle}
+          placement="bottom"
+          className="shrink-0"
         >
-          {saving ? S.common.saving : S.common.save}
-        </Button>
+          <button
+            type="button"
+            aria-label={S.common.save}
+            onClick={requestSave}
+            disabled={saving}
+            className={`${iconActionClass} disabled:opacity-40`}
+          >
+            {saving ? (
+              <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+            ) : (
+              <GlyphIcon d={STAT_ICONS.check} size={ICON_SIZE.iconButton} />
+            )}
+          </button>
+        </Tooltip>
       </>
     ) : (
       <>

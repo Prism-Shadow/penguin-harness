@@ -61,8 +61,10 @@ wrapping, and no box around either.
   editor's save does: the file's current version is read when the dialog opens, and the action is
   refused if the Agent rewrites the file while the question is on screen. A directory has neither,
   so neither is offered for one.
-- Every action in the panel — wrap, edit, copy, open in a new tab, download, refresh and upload —
-  is an icon button rather than a word. Each carries its name in its accessible name and shows it
+- Every action in the panel — wrap, edit, copy, open in a new tab, download, refresh and upload,
+  and the editor's own cancel and save — is an icon button rather than a word. That keeps the header
+  one height in both states: a text button stands 29px against an icon button's 27px, so opening a
+  draft used to push the row down by two pixels and closing it pulled the row back up. Each carries its name in its accessible name and shows it
   in a tooltip under the button, which is where a horizontal row of them needs it: a panel to the
   side would cover the buttons next to the one being asked about. While an upload runs the glyph
   becomes a spinner and the count moves into the tooltip, which is the only place left to say it;
