@@ -94,12 +94,7 @@ import {
   writeTreeVisible,
   writeTreeWidth,
 } from "../../lib/workspace-tree";
-import type {
-  ComposerReference,
-  EditorState,
-  InsertLayout,
-  Listings,
-} from "../../lib/workspace-tree";
+import type { ComposerReference, EditorState, Listings } from "../../lib/workspace-tree";
 import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -470,7 +465,6 @@ export function WorkspaceBrowser({
   openRequest,
   active,
   reloadSignal,
-  onInsertReference,
   onAddReference,
 }: {
   session: SessionInfo;
@@ -496,11 +490,10 @@ export function WorkspaceBrowser({
    * around a preview selection) and says how it should sit; where the caret is, and what is
    * already typed around it, are the composer's own business.
    */
-  onInsertReference: (snippet: string, layout: InsertLayout) => void;
   /**
-   * Stages a quotation in the composer as a chip. A `@path` mention is spliced into the draft
-   * (onInsertReference) because it is a word in a sentence; a quoted selection is not — it is a
-   * block of the file, and burying the draft under it is what this avoids.
+   * Stages what the panel contributes in the composer as a chip: a file, a directory, or a
+   * quoted range. All three are whole things rather than words in a sentence, so none of them
+   * is spliced into the draft the user is writing.
    */
   onAddReference: (reference: ComposerReference) => void;
 }) {
@@ -1507,7 +1500,11 @@ export function WorkspaceBrowser({
   };
 
   const addToChat = (target: FileMenuTarget): void => {
-    onInsertReference(pathReference(target.path, target.kind), "inline");
+    onAddReference({
+      kind: target.kind,
+      path: target.path,
+      text: pathReference(target.path, target.kind),
+    });
   };
 
   const uploadInto = (dir: string): void => {
@@ -1634,6 +1631,7 @@ export function WorkspaceBrowser({
         fromLine: selection.fromLine,
         toLine: selection.toLine,
       }),
+      kind: "quote",
       ...(selection.fromLine === undefined || selection.toLine === undefined
         ? {}
         : { fromLine: selection.fromLine, toLine: selection.toLine }),

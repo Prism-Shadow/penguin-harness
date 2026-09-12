@@ -21,17 +21,16 @@ wrapping, and no box around either.
   inside the HTML or PDF preview goes to the iframe and never reaches the panel.
 - The menu copies an entry's Workspace-relative path, adds a reference to it to the conversation,
   uploads into a folder and downloads a file.
-- "Add to conversation" splices a `@path` into the composer at the caret, leaving the rest of
-  the draft where it was; a directory's reference keeps its trailing slash. Nothing is sent and
-  nothing is parsed — the `@` is for the reader.
-- Adding a preview selection stages it in the composer as a **chip** naming the file and the lines
-  it covers, the way `/agent` and `/skill` stage their picks. The quoted text is not put in the
-  draft: it is a block of somebody else's file, and pasting it there buries the sentence being
-  written under the thing it points at. The chip is removable, and the message carries the
-  quotation in front of the typed text when it is sent — a fenced block headed by `@path (L3-L7)`,
-  verbatim, with the fence opened long enough to survive a selection containing fences of its own.
-  The line range is given only where the source view can resolve it. A `@path` mention is still
-  spliced inline, because that one is a word in a sentence rather than a block.
+- "Add to conversation" stages the entry in the composer as a **chip**, in the same row `/agent`,
+  `/model` and the selected skills already stage their picks in. A directory's reference keeps its
+  trailing slash. Nothing is sent and nothing is parsed — the `@` is for the reader.
+- A preview selection is staged the same way, its chip naming the file and the lines it covers.
+  Nothing the panel contributes is written into the draft: a file, a directory and a quoted range
+  are all whole things, and splicing one into a half-written sentence buries the sentence under
+  what it points at. Chips are removable, and on send the message carries what they stand for in
+  front of the typed text — for a selection, a fenced block headed by `@path (L3-L7)`, verbatim,
+  with the fence opened long enough to survive a selection containing fences of its own. The line
+  range is given only where the source view can resolve it.
   The text stays selected afterwards: handing a quote to the composer focuses the composer, and
   focusing a text field drops whatever the document had highlighted, so the range is put back.
 - The source view numbers its lines and lost its border, its language label and its header bar —

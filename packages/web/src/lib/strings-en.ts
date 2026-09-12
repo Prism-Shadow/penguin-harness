@@ -2581,7 +2581,7 @@ Scenarios:
     /** Rename and move are one action: both write the file to a new Workspace-relative path. */
     /** The composer chip for a quoted selection: the lines it covers, and its remove button. */
     lineRange: (from: number, to: number): string => (from === to ? `L${from}` : `L${from}-L${to}`),
-    removeReference: "Remove quotation",
+    removeReference: "Remove reference",
     renameTitle: "Rename or move",
     renameLabel: "New path",
     renameHint:

@@ -82,7 +82,7 @@ import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
-import type { ComposerReference, InsertLayout } from "../../lib/workspace-tree";
+import type { ComposerReference } from "../../lib/workspace-tree";
 import {
   compactionTally,
   heldThinkingSwitch,
@@ -1277,11 +1277,7 @@ export function ChatPage() {
    * sent and nothing already typed is disturbed — the panel contributes a line to a message
    * the user is writing.
    */
-  const insertIntoComposer = useCallback((snippet: string, layout: InsertLayout) => {
-    composerRef.current?.insertAtCaret(snippet, layout);
-  }, []);
-
-  /** A quoted selection is staged as a chip instead, so the draft keeps what the user was writing. */
+  /** Staged as a chip, so the draft keeps whatever the user was in the middle of writing. */
   const addComposerReference = useCallback((reference: ComposerReference) => {
     composerRef.current?.addReference(reference);
   }, []);
@@ -1662,7 +1658,6 @@ export function ChatPage() {
             openRequest={fileOpenRequest}
             active={active}
             reloadSignal={settledTurnSignal}
-            onInsertReference={insertIntoComposer}
             onAddReference={addComposerReference}
           />
         );

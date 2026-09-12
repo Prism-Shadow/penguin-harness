@@ -8,8 +8,9 @@
  */
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
-import type { ComposerReference } from "../src/lib/workspace-tree";
 import {
+  type ComposerReference,
+  type Listings,
   PREVIEW_MIN_WIDTH,
   TREE_LAYOUT_MIN_WIDTH,
   TREE_MIN_WIDTH,
@@ -21,7 +22,6 @@ import {
   expandTo,
   searchRows,
   flattenTree,
-  insertAtCaret,
   isDirty,
   isNarrowLayout,
   looksLikeText,
@@ -46,7 +46,6 @@ import {
   writeTreeVisible,
   writeTreeWidth,
 } from "../src/lib/workspace-tree";
-import type { Listings } from "../src/lib/workspace-tree";
 
 const MTIME = "2026-09-02T00:00:00.000Z";
 const dir = (name: string): WorkspaceFileEntry => ({
@@ -392,79 +391,9 @@ describe("composer references", () => {
     expect(pathReference("src/lib/tree.ts", "file")).toBe("@src/lib/tree.ts");
     expect(pathReference("src/lib", "dir")).toBe("@src/lib/");
   });
-
-  it("keeps an inline reference off the word in front of it, and always leaves one behind", () => {
-    expect(insertAtCaret("", 0, "@a.txt", "inline")).toEqual({ text: "@a.txt ", caret: 7 });
-    expect(insertAtCaret("look at", 7, "@a.txt", "inline").text).toBe("look at @a.txt ");
-    expect(insertAtCaret("look at ", 8, "@a.txt", "inline").text).toBe("look at @a.txt ");
-    expect(insertAtCaret("line\n", 5, "@a.txt", "inline").text).toBe("line\n@a.txt ");
-  });
-
-  it("inserts inline at the caret without disturbing either side, and lands after the space", () => {
-    const out = insertAtCaret("read  then reply", 5, "@a.txt", "inline");
-    expect(out.text).toBe("read @a.txt  then reply");
-    expect(out.text.slice(out.caret)).toBe(" then reply");
-  });
-
-  it("opens a block on a line of its own, adding only the blank line it still needs", () => {
-    expect(insertAtCaret("", 0, "BLOCK", "block").text).toBe("BLOCK\n");
-    expect(insertAtCaret("why", 3, "BLOCK", "block").text).toBe("why\n\nBLOCK\n");
-    expect(insertAtCaret("why\n", 4, "BLOCK", "block").text).toBe("why\n\nBLOCK\n");
-    expect(insertAtCaret("why\n\n", 5, "BLOCK", "block").text).toBe("why\n\nBLOCK\n");
-  });
-
-  it("clamps a caret that is past the end of the draft", () => {
-    expect(insertAtCaret("hi", 99, "@a.txt", "inline").text).toBe("hi @a.txt ");
-  });
-
-  it("heads a selection block with the path and the lines it covers", () => {
-    expect(
-      selectionBlock({
-        path: "src/a.ts",
-        language: "typescript",
-        selection: "const a = 1;",
-        fromLine: 3,
-        toLine: 5,
-      }),
-    ).toBe("@src/a.ts (L3-L5)\n```typescript\nconst a = 1;\n```");
-  });
-
-  it("names a single line once, and drops the range when the lines are unknown", () => {
-    expect(
-      selectionBlock({ path: "a.ts", language: "ts", selection: "x", fromLine: 7, toLine: 7 }),
-    ).toContain("@a.ts (L7)\n");
-    expect(selectionBlock({ path: "a.md", language: "markdown", selection: "x" })).toContain(
-      "@a.md\n",
-    );
-  });
-
-  it("keeps the selection verbatim and closes it on its own line", () => {
-    const out = selectionBlock({
-      path: "a.txt",
-      language: "text",
-      selection: "  indented\n\n  still\n",
-    });
-    expect(out).toBe("@a.txt\n```text\n  indented\n\n  still\n```");
-  });
-
-  it("opens a longer fence when the selection carries one of its own", () => {
-    const out = selectionBlock({
-      path: "readme.md",
-      language: "markdown",
-      selection: "```js\ncode\n```",
-    });
-    expect(out).toBe("@readme.md\n````markdown\n```js\ncode\n```\n````");
-    const longer = selectionBlock({
-      path: "readme.md",
-      language: "markdown",
-      selection: "````\nnested\n````",
-    });
-    expect(longer.startsWith("@readme.md\n`````markdown\n")).toBe(true);
-    expect(longer.endsWith("\n`````")).toBe(true);
-  });
 });
 
-describe("a quoted selection reaches the composer as a reference, not as text", () => {
+describe("what the panel hands the composer is a reference, not text for the draft", () => {
   const block = selectionBlock({
     path: "src/app.ts",
     language: "ts",
@@ -477,6 +406,7 @@ describe("a quoted selection reaches the composer as a reference, not as text", 
     // The chip shows the path; the block is what the message carries. Keeping the two on one
     // object is what lets the composer show one and send the other.
     const reference: ComposerReference = {
+      kind: "quote",
       path: "src/app.ts",
       text: block,
       fromLine: 3,
@@ -492,5 +422,26 @@ describe("a quoted selection reaches the composer as a reference, not as text", 
     // block into a half-typed sentence buries the sentence.
     expect(block.split("\n").length).toBeGreaterThan(2);
     expect(block).toMatch(/```/);
+  });
+
+  it("carries a file and a directory the same way, each naming its own kind", () => {
+    // All three kinds go through one channel, so the composer has one chip to draw and the
+    // panel has no second path that could put text in the draft again.
+    const file: ComposerReference = {
+      kind: "file",
+      path: "src/app.ts",
+      text: pathReference("src/app.ts", "file"),
+    };
+    const dir: ComposerReference = {
+      kind: "dir",
+      path: "src/lib",
+      text: pathReference("src/lib", "dir"),
+    };
+    expect(file.text).toBe("@src/app.ts");
+    expect(dir.text).toBe("@src/lib/");
+    expect([file.kind, dir.kind]).toEqual(["file", "dir"]);
+    // Neither carries a line range: a whole entry has no lines to name.
+    expect(file.fromLine).toBeUndefined();
+    expect(dir.fromLine).toBeUndefined();
   });
 });

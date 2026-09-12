@@ -96,7 +96,8 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CheckIcon, ChevronDown, QUOTE_ICON } from "../../components/ui/icons";
+import { CheckIcon, ChevronDown, FILE_ICON, QUOTE_ICON } from "../../components/ui/icons";
+import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { noAutofill } from "../../components/ui/input";
 import { toastError, toastInfo } from "../../components/ui/toast";
@@ -129,8 +130,7 @@ import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { toneStrip } from "../../lib/tone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
-import { insertAtCaret } from "../../lib/workspace-tree";
-import type { ComposerReference, InsertLayout } from "../../lib/workspace-tree";
+import type { ComposerReference } from "../../lib/workspace-tree";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -762,13 +762,20 @@ function withReferences(references: readonly ComposerReference[], typed: string)
   return [...references.map((r) => r.text), typed].filter((part) => part !== "").join("\n\n");
 }
 
-/** A staged quotation's chip label: the file's name, and the lines when it quotes a range. */
+/** A staged reference's chip label: the entry's own name, and the lines when it quotes a range. */
 function referenceLabel(reference: ComposerReference): string {
   const name = reference.path.split("/").pop() ?? reference.path;
   return reference.fromLine === undefined || reference.toLine === undefined
     ? name
     : `${name} ${S.files.lineRange(reference.fromLine, reference.toLine)}`;
 }
+
+/** A directory, a file, or a passage carried in from one — each says what the chip stands for. */
+const REFERENCE_ICON: Record<ComposerReference["kind"], string> = {
+  dir: FOLDER_ICON,
+  file: FILE_ICON,
+  quote: QUOTE_ICON,
+};
 
 /**
  * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
@@ -785,16 +792,9 @@ export interface ComposerControl {
    */
   fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
   /**
-   * Splice a reference in at the caret, leaving the rest of the draft as it was — the Files
-   * panel's "add to conversation", which contributes a line to a message the user is still
-   * writing rather than replacing it the way fillPrompt does. Focus and the caret end up
-   * after the inserted text, so typing carries on where the user expects.
-   */
-  insertAtCaret: (snippet: string, layout: InsertLayout) => void;
-  /**
-   * Stage a quotation as a chip instead of typing it into the draft — the Files panel's "add
-   * selection to conversation". The text rides the message when it is sent; what the composer
-   * shows is the file it came from.
+   * Stage what the Files panel contributes as a chip rather than typing it into the draft — a
+   * file, a directory, or a quoted range. The text rides the message when it is sent; what the
+   * composer shows is the thing it points at.
    */
   addReference: (reference: ComposerReference) => void;
 }
@@ -1489,47 +1489,13 @@ export function ChatInput({
     },
     [skills, selectedSkills, onTextChange, onSkillsChange],
   );
-  /**
-   * Insert at the caret (see ComposerControl.insertAtCaret). The caret is read off the live
-   * textarea rather than the `caret` state: the panel that calls this has had focus for as
-   * long as it took to open a menu and pick a row, and the state is only as fresh as the last
-   * change or selection event the composer saw.
-   */
-  const insertAtComposerCaret = useCallback(
-    (snippet: string, layout: InsertLayout) => {
-      const current = textRef.current;
-      const next = insertAtCaret(
-        current,
-        textareaRef.current?.selectionStart ?? current.length,
-        snippet,
-        layout,
-      );
-      setText(next.text);
-      // The draft cache rides on this callback, so the insertion is persisted like any keystroke.
-      onTextChange?.(next.text);
-      setCaret(next.caret);
-      // After the commit: the textarea is controlled, so the new value and height only exist
-      // once React has rendered them (same rAF convention as applyRecalled/applyHistory).
-      requestAnimationFrame(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(next.caret, next.caret);
-      });
-    },
-    [onTextChange],
-  );
   const addReference = useCallback((reference: ComposerReference) => {
     setReferences((prev) => [...prev, reference]);
     // The chip is above the text body, so the caret stays where it was; focus follows the
-    // gesture back to the composer, which is where the sentence about the quotation gets typed.
+    // gesture back to the composer, which is where the sentence about it gets typed.
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
-  useImperativeHandle(
-    controlRef,
-    () => ({ fillPrompt, insertAtCaret: insertAtComposerCaret, addReference }),
-    [fillPrompt, insertAtComposerCaret, addReference],
-  );
+  useImperativeHandle(controlRef, () => ({ fillPrompt, addReference }), [fillPrompt, addReference]);
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
@@ -2320,37 +2286,6 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Quotations staged from the Files panel: one removable chip each, naming the file and the
-          lines it covers. The quoted text is not shown — it goes into the message on send. Same
-          shape as the attachment chips above, because both are "this rides along with what I
-          type" rather than part of the text. */}
-      {references.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {references.map((reference, i) => (
-            <span
-              key={i}
-              title={reference.path}
-              className={`anim-pop flex max-w-56 items-center ${ICON_GAP.tight} rounded-md border border-gray-200 bg-gray-50 py-1 pl-2 pr-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200`}
-            >
-              <GlyphIcon
-                d={QUOTE_ICON}
-                size={13}
-                className="shrink-0 text-gray-400 dark:text-gray-500"
-              />
-              <span className="min-w-0 truncate">{referenceLabel(reference)}</span>
-              <button
-                type="button"
-                aria-label={`${S.files.removeReference} ${referenceLabel(reference)}`}
-                onClick={() => setReferences((prev) => prev.filter((_, j) => j !== i))}
-                className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-
       {/* The Agent's compaction threshold is above what this model can hold, so compaction fires
           at the window's edge instead of at the number the user set. Amber rather than muted
           body text like the notices below it: the other two describe what the composer is about
@@ -2465,9 +2400,14 @@ export function ChatInput({
           breakpoints wouldn't judge it accurately. */}
       <div className="@container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400">
         {/* Chip row above the text body: the staged switch target (an /agent handoff or a
-            /model fork — never both) followed by the selected skills, all sharing the same
-            chip look. Remove buttons recolor the x on hover (no background wash). */}
-        {(target !== null || pendingModel !== null || selectedSkills.length > 0 || goalOn) && (
+            /model fork — never both), the selected skills, and whatever the Files panel has
+            contributed, all sharing the same chip look. Remove buttons recolor the x on hover
+            (no background wash). */}
+        {(target !== null ||
+          pendingModel !== null ||
+          selectedSkills.length > 0 ||
+          references.length > 0 ||
+          goalOn) && (
           <div className="mb-1 flex flex-wrap items-center gap-1">
             {/* Goal-mode chip: the budget stays compact as a value button; its editor is a
                 fixed upward popover so it never covers the objective textarea below. */}
@@ -2645,6 +2585,34 @@ export function ChatInput({
                 </span>
               );
             })}
+            {/* Staged from the Files panel: a file, a directory, or a quoted range. The text
+                itself never enters the draft — the chip names what it points at, and the
+                message carries it on send. */}
+            {references.map((reference, i) => (
+              <span
+                key={i}
+                title={reference.path}
+                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+              >
+                <GlyphIcon
+                  d={REFERENCE_ICON[reference.kind]}
+                  size={13}
+                  className="shrink-0 text-gray-500 dark:text-gray-400"
+                />
+                <span className="truncate">{referenceLabel(reference)}</span>
+                <button
+                  type="button"
+                  aria-label={`${S.files.removeReference} ${referenceLabel(reference)}`}
+                  onClick={() => {
+                    setReferences((prev) => prev.filter((_, j) => j !== i));
+                    textareaRef.current?.focus();
+                  }}
+                  className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
           </div>
         )}
 

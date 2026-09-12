@@ -522,34 +522,25 @@ export function writeWrapLines(wrap: boolean, storage?: TreePreferenceStorage): 
 // -------------------------------------------------------------- composer references
 
 /**
- * How an inserted reference sits in the draft: `inline` keeps it inside the line being
- * typed, `block` gives it lines of its own.
- */
-export type InsertLayout = "inline" | "block";
-
-/**
- * A quotation staged in the composer rather than typed into it: what it points at, and the text
- * the message carries once it is sent.
+ * Something the Files panel hands the composer: what it points at, and the text the message
+ * carries once it is sent.
  *
- * The text is deliberately kept out of the textarea. A quoted selection is a block of somebody
- * else's file, and the draft is where the person is writing — pasting the one into the other
- * buries what they were saying under what they were pointing at. The composer shows a chip
- * naming the file instead, the same shape `/agent` and `/skill` already stage their picks in.
+ * The text is deliberately kept out of the textarea. What the panel contributes is a whole
+ * thing — a file, a directory, a quoted range — and the draft is where the person is writing;
+ * splicing the one into the other buries what they were saying under what they were pointing
+ * at. The composer shows a chip naming it instead, the same shape `/agent` and `/skill` already
+ * stage their picks in.
  */
 export interface ComposerReference {
+  /** Which glyph the chip wears, and what its label means. */
+  kind: "file" | "dir" | "quote";
   /** Workspace-relative path: the chip's label comes from its last segment, its tooltip from the whole. */
   path: string;
   /** What goes into the message. */
   text: string;
-  /** 1-based and inclusive, when the selection's place in the file could be resolved. */
+  /** 1-based and inclusive, on a `quote` whose place in the file could be resolved. */
   fromLine?: number;
   toLine?: number;
-}
-
-/** A composer insertion: the whole new draft text, and where the caret lands in it. */
-export interface ComposerInsertion {
-  text: string;
-  caret: number;
 }
 
 /**
@@ -605,33 +596,4 @@ export function selectionBlock({
   const fence = "`".repeat(Math.max(3, longestBacktickRun(selection) + 1));
   const body = selection.endsWith("\n") ? selection : `${selection}\n`;
   return `@${path}${range}\n${fence}${language}\n${body}${fence}`;
-}
-
-/**
- * `snippet` spliced into `text` at `caret`, with the whitespace its layout needs around it:
- * an inline reference is kept off the word in front of it and leaves a trailing space to
- * keep typing after; a block opens on a line of its own with a blank line above, unless the
- * caret already sits on an empty one, and closes its own line. Whatever was already typed is
- * left alone on both sides. The returned caret sits after everything inserted.
- */
-export function insertAtCaret(
-  text: string,
-  caret: number,
-  snippet: string,
-  layout: InsertLayout,
-): ComposerInsertion {
-  const at = Math.max(0, Math.min(caret, text.length));
-  const before = text.slice(0, at);
-  const prefix =
-    layout === "inline"
-      ? before === "" || /\s$/.test(before)
-        ? ""
-        : " "
-      : before === "" || before.endsWith("\n\n")
-        ? ""
-        : before.endsWith("\n")
-          ? "\n"
-          : "\n\n";
-  const insert = `${prefix}${snippet}${layout === "inline" ? " " : "\n"}`;
-  return { text: `${before}${insert}${text.slice(at)}`, caret: at + insert.length };
 }
