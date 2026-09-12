@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#713](https://github.com/Prism-Shadow/penguin-harness/pull/713)
 
 [English](2026-09-12-background-mark-green.md)
 
