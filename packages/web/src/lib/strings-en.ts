@@ -2698,9 +2698,9 @@ Scenarios:
       },
     ],
     guideHowTo:
-      "How to use it: create with AI or by hand → press Use on a Benchmark to evaluate or optimize → compare series by label on the score chart.",
+      "How to use: create a Benchmark with AI or by hand → press Use on a Benchmark to evaluate or optimize → compare series by label on the score chart.",
     guideNote:
-      "All three Skills ship in the agent-tuning plugin, which the default agent already carries; install it on a new agent from the plugin library.",
+      "All three skills ship in the agent-tuning plugin; the default agent already has them, and a new agent can install them from the plugin library.",
     searchPlaceholder: "Search titles, descriptions or tested agents",
     noMatches: "No Benchmark matches",
     filterByAgent: (agentId: string): string => `Benchmarks that evaluated ${agentId}`,

@@ -9,7 +9,7 @@
  * two, the way an Agent's card enters its settings. `?agentId=` narrows the list to the
  * Benchmarks that tested that Agent.
  */
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import type {
   AgentSummary,
@@ -56,47 +56,44 @@ function deltaTone(delta: number | null): string {
 }
 
 /**
- * The loop, standing under the title: three steps side by side (stacked on a narrow screen),
- * each naming the Skill it rests on, then one line on the order to walk them in. It does not
- * collapse and cannot be dismissed — evaluating an agent is something a user does a few times
- * a year, and a disclosure that has to be found again every time is worse than four calm lines.
+ * The two standing lines under the title: the order to walk the loop in, then where the three
+ * Skills come from. It does not collapse and cannot be dismissed — evaluating an agent is
+ * something a user does a few times a year, and a disclosure that has to be found again every
+ * time is worse than two calm lines.
  */
-function GuideFlow() {
+function GuideIntro() {
   return (
     <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-400">
-      <div className="flex flex-col gap-2 md:flex-row md:gap-3">
-        {S.benchmark.guideFlow.map((step, i) => (
-          <Fragment key={step.skill}>
-            {/* The order is already in the numbers, so the arrow is decoration: it points
-                along the axis the steps are laid out on and is hidden from the reader. */}
-            {i > 0 && (
-              <span
-                aria-hidden="true"
-                className="shrink-0 self-start text-gray-300 md:self-center dark:text-gray-600"
-              >
-                <span className="hidden md:inline">{"\u2192"}</span>
-                <span className="md:hidden">{"\u2193"}</span>
-              </span>
-            )}
-            <div className="min-w-0 flex-1">
-              <span className="flex flex-wrap items-baseline gap-x-1.5">
-                <span className="font-mono tabular-nums text-gray-400 dark:text-gray-500">
-                  {i + 1}
-                </span>
-                <span className="font-semibold text-gray-900 dark:text-gray-100">{step.title}</span>
-                <code className="min-w-0 truncate font-mono text-gray-400 dark:text-gray-500">
-                  {step.skill}
-                </code>
-              </span>
-              <p className="mt-1 leading-relaxed">{step.text}</p>
-            </div>
-          </Fragment>
-        ))}
-      </div>
-      <p className="mt-3 border-t border-gray-200 pt-2 leading-relaxed dark:border-gray-800">
-        {S.benchmark.guideHowTo}
-      </p>
+      <p className="leading-relaxed">{S.benchmark.guideHowTo}</p>
       <p className="mt-1 leading-relaxed">{S.benchmark.guideNote}</p>
+    </div>
+  );
+}
+
+/**
+ * The three steps of the loop, a card each: three across from `md` up, stacked below. Every card
+ * names its step, the Skill that step rests on and what it does. Nothing is drawn between the
+ * cards — the numbers already carry the order, and an arrow would only survive one of the two
+ * layouts.
+ */
+function GuideSteps() {
+  return (
+    <div className="mt-3 grid md:grid-cols-3 gap-3">
+      {S.benchmark.guideFlow.map((step, i) => (
+        <div
+          key={step.skill}
+          className="min-w-0 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-400"
+        >
+          <span className="flex flex-wrap items-baseline gap-x-1.5">
+            <span className="font-mono tabular-nums text-gray-400 dark:text-gray-500">{i + 1}</span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">{step.title}</span>
+            <code className="min-w-0 truncate font-mono text-gray-400 dark:text-gray-500">
+              {step.skill}
+            </code>
+          </span>
+          <p className="mt-1 leading-relaxed">{step.text}</p>
+        </div>
+      ))}
     </div>
   );
 }
@@ -409,8 +406,8 @@ export function BenchmarkPage() {
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
-        {/* The title row and the flow block under it share one block, so the gap below stays
-            one gap — the Agents and Models headers have the same shape. */}
+        {/* The title row, the intro block and the step cards share one block, so the gap below
+            stays one gap — the Agents and Models headers have the same shape. */}
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.benchmark.title}</h1>
@@ -430,7 +427,8 @@ export function BenchmarkPage() {
               <CreateButtons size="sm" onAi={openAi} onManual={() => setManualOpen(true)} />
             </div>
           </div>
-          <GuideFlow />
+          <GuideIntro />
+          <GuideSteps />
         </div>
 
         {/* What the address is filtering by, and the way out of it: the list is narrowed by a

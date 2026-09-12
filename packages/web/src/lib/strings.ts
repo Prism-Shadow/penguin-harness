@@ -2634,7 +2634,7 @@ Benchmark：
 
   benchmark: {
     title: "评估中心",
-    /** The standing flow block under the title: three steps, each with the Skill it rests on. */
+    /** The three step cards under the intro block, each with the Skill that step rests on. */
     guideFlow: [
       {
         title: "出题",
@@ -2652,7 +2652,7 @@ Benchmark：
         text: "针对这套 Benchmark 改进智能体，每轮只做一个可证伪的改动，分数严格提升才保留新版本。",
       },
     ],
-    /** The one line under the three steps: the order a first-timer walks them in. */
+    /** The intro block's first line: the order a first-timer walks the three steps in. */
     guideHowTo:
       "怎么用：先用 AI 出题或手动创建 → 在 Benchmark 上按「使用」发起评估或优化 → 在分数曲线上按标签对比系列。",
     guideNote:

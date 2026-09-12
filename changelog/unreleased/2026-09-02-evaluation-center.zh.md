@@ -13,10 +13,10 @@ Benchmark 从属于 Agent 变成与 Agent 平级：它移到 Project 层级，�
 
 - Benchmark 从 `agents/<agent>/benchmarks/<id>/` 移到 Project 的 `benchmarks/<id>/`，与 `agents/` 平级。`benchmark_config.toml`（title、description、runs）不记录任何 Agent；`scoreboard.yaml` 的每条 evaluation 以 `agent_id` 记录本轮被测的 Agent，位置紧接 `time`。磁盘文件仍是唯一真相来源。
 - `agent_id`、Agent State `version`、`(provider, model_id)` 成对值与 `thinking_level` 合成一条 evaluation 的**标签**。Benchmark 曲线以时间为横轴、分数为纵轴，按标签分系列，只有可比的分数才落在同一条线上；没有标签的记录归入灰色系列。评估明细表另有一列写明被测 Agent，卡片上的分数增减也以同标签的上一条评估为基准。
-- 页面：单层平铺列表，不再按 Agent 分组。标题旁并排搜索框（按标题、描述与评测过的 Agent 过滤）与两个创建按钮，其下是一个常驻的流程块；每个 Benchmark 一张卡片，显示标题与目录名、题数与运行次数、最近评估时间、评测过的 Agent、最新分数与增减、分数走势小折线——列宽、页头与卡片都取智能体页面的形制。
+- 页面：单层平铺列表，不再按 Agent 分组。标题旁并排搜索框（按标题、描述与评测过的 Agent 过滤）与两个创建按钮，其下是常驻的引言块与三张步骤卡片；每个 Benchmark 一张卡片，显示标题与目录名、题数与运行次数、最近评估时间、评测过的 Agent、最新分数与增减、分数走势小折线——列宽、页头与卡片都取智能体页面的形制。
 - 打开 Benchmark 是**进入**它。点击卡片或其**查看**按钮进入该 Benchmark 自己的页面 `/benchmark/:benchmarkId`——原有的详情（图表、评估明细表、题目浏览器）与一个返回列表的按钮——不再在列表旁展开第二个窗格。地址里的 id 指不到东西时（Benchmark 已删除、链接过期）页面说明情况并留着返回的路。空态带指南与同样的两个按钮；`?agentId=` 把列表收窄为评测过该 Agent 的 Benchmark。
 - **用 AI 创建**与**手动创建**是套件提供的两个并排按钮，与定时任务页是同一对，各自打开一条路径。「用 AI 创建」在提示词上方加了被测 Agent 选择、四个场景示例，以及一段固定尾部——把 Agent id、期望基线分、Pilot 迭代上限与要写出的目录结构交给 `benchmark-design` 技能；写好的提示词预填进新对话，发送由用户决定。「手动创建」是一张表单——标题、随标题拟定的 id、描述、每题运行次数，以及每道题的目录名后缀、标题、题干与评分细则，格式提示常驻、「什么样的评分细则有区分度」折叠在旁——不再询问 Benchmark 属于哪个 Agent。
-- 标题下的流程块不折叠、也不可关闭：三步并排（窄屏改为纵向堆叠）、以箭头相连，每步写出标题、所依赖的技能（`benchmark-design`、`agent-evaluation`、`agent-optimization`）与一句话说明；块尾一行交代走的顺序，并注明三个技能都在 agent-tuning 插件里、默认 Agent 已自带。
+- 标题下是一个不折叠、也不可关闭的引言块，只有两行：走的顺序，以及三个技能都在 agent-tuning 插件里、默认 Agent 已自带。其下是三张独立的步骤卡片——宽屏三列并排，窄屏纵向堆叠——每张写出序号、标题、所依赖的技能（`benchmark-design`、`agent-evaluation`、`agent-optimization`）与一句话说明；卡片之间不画任何东西，顺序由序号交代。
 - 卡片与 Benchmark 页头的**使用**打开同一个弹窗：顶部分段控件，「评估」tab 与「优化」tab 并列。「评估」是表单（被测 Agent，缺省为最近一条评估的那个；执行评估的 Agent，未装 `agent-evaluation` 技能时提示；评估会话使用的模型；每题运行次数；可选说明），其新增的提示词尾部要求经自调用的 `agent-evaluation` 子会话跑完整的 Case × runs 矩阵，校验每条结果的 `agent_id` / `provider` / `model_id` / `thinking_level` 一致，按记分契约求各题与整体平均，并只向 `scoreboard.yaml` 追加一条带标签的 evaluation，不修改被测 Agent 与 Benchmark。「优化」保留原有的表单与尾部，所选被测 Agent 尚无基线时改为提示先到「评估」取得。两个 tab 都可折叠展开完整提示词，并共用一个出口——预填进新对话，交由用户过目后发送。
 - 两个 tab 都只有表单，没有并列的「用 AI」自由文本形态：唯一的出口本就把拼好的提示词开在可编辑的输入框里，再加一条参数相同的自由提示词路径只会把入口劈成两半。
 - 卡片上的动作是**使用**、**查看**，以及 owner 才有的、与智能体列表相同的删除图标——确认后整目录删除。卡片没有溢出菜单：本该放在其中的目录路径改列在 Benchmark 自己页面的标题旁，以等宽字体显示并附一个复制按钮。
