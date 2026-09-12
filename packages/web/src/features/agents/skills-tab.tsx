@@ -26,7 +26,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
+import { Button, labelButtonClass } from "../../components/ui/button";
 import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { Input, Textarea } from "../../components/ui/input";
@@ -45,12 +45,8 @@ import { buildImportPrompt } from "./skill-import-source";
 import { usePromptInjection } from "./prompt-injection-controls";
 import { HelpFold } from "../../components/ui/help-fold";
 
-/** <label> version of the button look (matches Button secondary sm; the Button component only renders <button>) — same as the Overview tab's snapshot-import label; the Hooks tab's upload label borrows it. */
-export const UPLOAD_LABEL_CLASS =
-  "inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-gray-300 " +
-  "bg-white px-2.5 py-1 text-xs font-medium text-gray-800 transition-colors duration-150 " +
-  "hover:bg-gray-50 focus-within:ring-2 focus-within:ring-gray-400/30 " +
-  "dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800";
+/** The Button look on the upload `<label>`; the Hooks tab's upload label borrows it. */
+export const UPLOAD_LABEL_CLASS = labelButtonClass("secondary", "sm");
 
 /** Delete (trash can) icon path — the same glyph as the agents page card delete; the Hooks tab's row delete borrows it. */
 export const TRASH_ICON =

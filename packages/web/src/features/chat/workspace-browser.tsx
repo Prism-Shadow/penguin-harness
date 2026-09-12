@@ -119,7 +119,7 @@ import {
   UPLOAD_ICON,
   WRAP_TEXT_ICON,
 } from "../../components/ui/icons";
-import { Input, noAutofill } from "../../components/ui/input";
+import { Input, noAutofill, panelSearchClass } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { Tooltip } from "../../components/ui/tooltip";
@@ -1769,7 +1769,7 @@ export function WorkspaceBrowser({
             placeholder={S.files.searchPlaceholder}
             aria-label={S.files.searchPlaceholder}
             {...noAutofill}
-            className="w-full rounded border border-gray-200 bg-transparent py-1 pl-2 pr-7 text-xs text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none dark:border-gray-700 dark:text-gray-200 dark:placeholder:text-gray-500 dark:focus:border-gray-500"
+            className={`${panelSearchClass} py-1 pl-2 pr-7`}
           />
           {query !== "" && (
             <button

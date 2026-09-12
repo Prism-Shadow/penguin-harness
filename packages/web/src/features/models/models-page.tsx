@@ -125,7 +125,6 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { noticeCounts } from "../../lib/bulk-update";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { UpdateDot } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
@@ -1040,32 +1039,23 @@ export function ModelsPage() {
                   placeholder={S.models.searchPlaceholder}
                 />
               </div>
-              {/* The dot stays on the control that ACTS, not on the notice below: it marks the
-                  button the trail ends at, and a mark that moved off it would point at nothing.
-                  Owner-only, like the button — the gate never raises this for a member. The dot
-                  straddles the button's top-right corner (update-dot.tsx's rule for a button)
-                  and is decorative: the sr-only sentence folds what is waiting into the button's
-                  accessible name, in the wording the trail carried down. */}
-              {isOwner && (
+              {/* The action appears only while a sync is actually waiting, and the accent says so
+                  — a preset sync with nothing to sync is a no-op, and a permanent button spent the
+                  header's width on one. That is also why the dot is gone: it marked this button as
+                  the end of the models trail, and on a button that exists only when the trail does,
+                  it would be lit every time it was seen. The sr-only sentence stays, folding what is
+                  waiting into the accessible name in the wording the trail carried down.
+                  Owner-only — the gate never raises this for a member. */}
+              {isOwner && todo && (
                 <Button
                   size="sm"
-                  className="relative"
+                  variant="primary"
                   onClick={() => void syncPresets()}
                   disabled={busy || rows === null}
-                  title={
-                    todo ? `${S.models.syncCatalogHint} · ${syncNote}` : S.models.syncCatalogHint
-                  }
+                  title={`${S.models.syncCatalogHint} · ${syncNote}`}
                 >
                   {S.models.syncCatalog}
-                  {todo && (
-                    <>
-                      <UpdateDot
-                        size="inline"
-                        position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
-                      />
-                      <span className="sr-only"> · {syncNote}</span>
-                    </>
-                  )}
+                  <span className="sr-only"> · {syncNote}</span>
                 </Button>
               )}
             </div>

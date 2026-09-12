@@ -37,7 +37,7 @@ import { toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
+import { Button, labelButtonClass } from "../../components/ui/button";
 import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { InfoPopover } from "../../components/ui/info-popover";
@@ -84,11 +84,7 @@ const PLUS_ICON = "M12 5v14M5 12h14";
  * and the import control has to wrap a file input (the Agent State section's transfer label does
  * the same for its own size). Mirrors Button's `ghost` variant at `sm`, icon + text.
  */
-const GHOST_LABEL_CLASS =
-  "inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-transparent " +
-  "px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 " +
-  "focus-within:ring-2 focus-within:ring-gray-400/30 " +
-  "dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
+const GHOST_LABEL_CLASS = labelButtonClass("ghost", "sm");
 
 /**
  * Collapsed scope keys, persisted per user \u00d7 Project \u00d7 Agent (localStorage, same conventions as

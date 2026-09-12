@@ -18,7 +18,7 @@
  * dropdowns over the shared multi-select panel, with select all / select none. A plain new Agent
  * otherwise starts with none.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
@@ -125,6 +125,17 @@ export function AgentsPage() {
   const { locale } = useLocale();
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
+  /** Header search, the Models page's shape: name, id and description, case-insensitive. */
+  const [query, setQuery] = useState("");
+  const shownAgents = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (needle === "") return agents;
+    return agents.filter((a) =>
+      [agentDisplayName(a), a.agentId, a.description ?? ""].some((field) =>
+        field.toLowerCase().includes(needle),
+      ),
+    );
+  }, [agents, query]);
   /** The kernel trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
   const kernelTodo = useUpdateBadges().todos.agents;
   /** The bulk kernel update's confirmation is open. */
@@ -413,11 +424,25 @@ export function AgentsPage() {
             (to the list) is the same whether or not the notice is showing — the models page's
             header has the same shape. */}
         <div className="mb-4">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-            <Button variant="primary" onClick={openCreate}>
-              {S.agent.create}
-            </Button>
+            {/* Search plus the create action, in the Models page header's shape: on a narrow
+                screen flex-wrap drops the pair onto its own line and the box shrinks with it,
+                fixed width from sm up. Both controls take the form rung, so the button reads at
+                the size of the box beside it rather than a step above it. */}
+            <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
+              <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+                <Input
+                  size="sm"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={S.agent.searchPlaceholder}
+                />
+              </div>
+              <Button size="sm" variant="primary" onClick={openCreate}>
+                {S.agent.create}
+              </Button>
+            </div>
           </div>
 
           {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
@@ -457,15 +482,15 @@ export function AgentsPage() {
               </SkeletonCard>
             ))}
           </div>
-        ) : agents.length === 0 ? (
-          <EmptyState title={S.common.none} />
+        ) : shownAgents.length === 0 ? (
+          <EmptyState title={query.trim() === "" ? S.common.none : S.agent.searchEmpty} />
         ) : (
           /* GitHub-repo-list-style single column: separate cards with row spacing; each row is
              one horizontal band of "info | sparkline | button group", with the info column
              compressed to two lines of text (name line + combined description/stats line) to
              minimize row height */
           <div className="space-y-3">
-            {agents.map((a) => {
+            {shownAgents.map((a) => {
               const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
               return (
                 <div

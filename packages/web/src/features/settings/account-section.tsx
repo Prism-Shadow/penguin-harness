@@ -15,7 +15,7 @@ export function AccountSection() {
   return (
     <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
       <PrefRow label={S.account.changePassword} info={S.settings.changePasswordInfo}>
-        <Button variant="secondary" onClick={() => setChangePasswordOpen(true)}>
+        <Button size="sm" variant="secondary" onClick={() => setChangePasswordOpen(true)}>
           {S.account.changePassword}
         </Button>
       </PrefRow>

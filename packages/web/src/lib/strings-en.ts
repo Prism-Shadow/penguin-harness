@@ -550,6 +550,8 @@ export const en: Strings = {
     takesEffectSuffix:
       " — new conversations pick it up right away, running ones after their next compaction",
     listTitle: "Agents",
+    searchPlaceholder: "Search agents: id / name / description",
+    searchEmpty: "No agent matches that.",
     create: "Create agent",
     createTitle: "Create agent",
     id: "Agent id",
