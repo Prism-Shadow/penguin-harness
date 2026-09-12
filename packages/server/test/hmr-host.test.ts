@@ -640,6 +640,12 @@ describe("a push is content-addressed: blobs are put raw, parts are named by has
     await expect(readHarnessInfo(t.root)).resolves.toMatchObject({
       bundles: { cli: expect.stringContaining("store/cli/") },
     });
+    // The commit's sweep keeps the parts it was pushed as: the next identical push carries
+    // nothing and needs no put. (This was the bug that re-sent every bundle every time.)
+    const shas = [platform, cliBytes, index, asset].map(sha256);
+    expect((await probe(t.app, cookie, shas)).missing).toEqual([]);
+    const again = await push(t.app, cookie, body);
+    expect(again.status, await again.clone().text()).toBe(200);
   });
 
   it("collects blobs no kept assets set records, and keeps the rest", async () => {

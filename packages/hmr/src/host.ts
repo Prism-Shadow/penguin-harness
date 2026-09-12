@@ -430,6 +430,13 @@ export class HmrHost<Api extends Park = Park> {
 
     const digest = filesDigest(target.web);
     const gz = zlib.gzipSync(Buffer.from(JSON.stringify({ files: target.web })));
+    // The parts by the names a pusher gives them (HMR_BLOBS_PATH), whether or not this push
+    // named them: what the sweep keeps alive so an unchanged part is never uploaded twice.
+    const blobs = [
+      sha256(Buffer.from(target.platform, "utf8")),
+      sha256(Buffer.from(target.cli, "utf8")),
+      ...[...webMem.values()].map(sha256),
+    ];
     const persisted = await this.persistVersion(
       platformSha,
       target.cli,
@@ -437,6 +444,7 @@ export class HmrHost<Api extends Park = Park> {
       digest.slice(0, 16),
       assetsDir,
       source,
+      blobs,
     );
 
     return {
@@ -593,7 +601,7 @@ export class HmrHost<Api extends Park = Park> {
 
   /** Writes a blob under its hash (a no-op when it is already there) and returns the hash. */
   async storeBlob(content: Buffer): Promise<string> {
-    const sha = crypto.createHash("sha256").update(content).digest("hex");
+    const sha = sha256(content);
     const file = this.blobPath(sha);
     if (!fs.existsSync(file)) {
       await fsp.mkdir(path.dirname(file), { recursive: true });
@@ -660,6 +668,7 @@ export class HmrHost<Api extends Park = Park> {
     webSha: string,
     assetsDir: string | null,
     source: GitSource | null,
+    blobs: string[],
   ): Promise<boolean> {
     try {
       // The platform bundle is already in the store: storePlatformBundle put it at its
@@ -686,6 +695,7 @@ export class HmrHost<Api extends Park = Park> {
         // content-addressed and say nothing about their origin on their own.
         ...(source === null ? {} : { source }),
         pushedAt: new Date().toISOString(),
+        blobs,
       }));
       return true;
     } catch (err) {
@@ -790,11 +800,12 @@ export class HmrHost<Api extends Park = Park> {
       (sha) => fsp.rm(path.join(assetsRoot, sha), { recursive: true, force: true }),
     );
 
-    // Blobs are shared by every assets set, so they are collected LAST, against what the
-    // sweep above left: a blob no remaining set records is unreachable. A set without a
-    // record (materialized before records existed) keeps nothing alive through the blob
-    // store because it never read from it, and its own files stay untouched.
-    const live = new Set<string>();
+    // Blobs are shared by every assets set and by the committed version's own parts, so
+    // they are collected LAST, against what the sweep above left: a blob neither a
+    // remaining set nor the version records is unreachable. A set without a record
+    // (materialized before records existed) keeps nothing alive through the blob store
+    // because it never read from it, and its own files stay untouched.
+    const live = new Set<string>(manifest.blobs ?? []);
     for (const name of await fsp.readdir(assetsRoot).catch(() => [] as string[])) {
       try {
         const record = JSON.parse(
@@ -830,6 +841,10 @@ function errMsg(err: unknown): string {
 /** A blob is named by the lowercase hex sha256 of its content, nothing else. */
 export function isBlobName(name: string): boolean {
   return /^[0-9a-f]{64}$/.test(name);
+}
+
+function sha256(content: Buffer): string {
+  return crypto.createHash("sha256").update(content).digest("hex");
 }
 
 function sha1(content: string): string {
