@@ -250,6 +250,60 @@ export interface ServerSettingsUpdateRequest {
 }
 
 /**
+ * The endpoints the proxy reachability probe covers. A fixed list: the route takes a provider
+ * id from this set and never a URL, so nothing a caller sends decides what the server fetches.
+ *
+ * GLM is two entries rather than one because it is two hosts: Z.AI serves the global endpoint
+ * and BigModel the mainland one, they are reached over different routes, and a proxy can carry
+ * one and not the other.
+ */
+export type ProxyProbeProvider =
+  "openai" | "anthropic" | "gemini" | "deepseek" | "zai" | "bigmodel";
+
+/**
+ * One probe's verdict. `reachable` means an HTTP answer arrived, whatever its status — a
+ * rejected credential still proves the whole path works. The rest are transport failures,
+ * named so a proxy that swallows connections can be told apart from one whose address does
+ * not resolve: `timeout` (no answer within the probe's window), `dns` (the name never
+ * became an address), `refused` (the connection was refused at the TCP level), `tls` (the
+ * handshake or the certificate failed) and `network` (anything else).
+ */
+export type ProxyProbeOutcome = "reachable" | "timeout" | "dns" | "refused" | "tls" | "network";
+
+/**
+ * One probe target. Served before any probe runs so the page can list what it is about to
+ * request — the URLs are the concrete answer to "what does no API key mean here".
+ */
+export interface ProxyProbeTargetDto {
+  provider: ProxyProbeProvider;
+  /** The exact URL a probe requests, unauthenticated. */
+  url: string;
+}
+
+/** What the probe endpoint would request, without requesting it. */
+export interface ProxyProbeTargetsResponse {
+  targets: ProxyProbeTargetDto[];
+}
+
+/** One provider's probe result. */
+export interface ProxyProbeDto extends ProxyProbeTargetDto {
+  outcome: ProxyProbeOutcome;
+  /** Wall time in milliseconds until the answer's headers arrived, or until the attempt failed. */
+  ms: number;
+  /** The HTTP status, present only when `outcome` is `reachable`. */
+  status?: number;
+}
+
+/**
+ * One probe's answer. The route measures a single target per call: the page asks for all of
+ * them at once and fills each row the moment its own answer lands, so one black-holed host
+ * cannot hold every other result behind its timeout.
+ */
+export interface ProxyProbeResponse {
+  probe: ProxyProbeDto;
+}
+
+/**
  * One draft-screen shortcut: a prompt the user wrote, filed under a name they chose. Clicking it
  * fills the composer exactly like a built-in example does, and sends nothing. Deliberately holds
  * no Skill list — a saved prompt is not authored against a known Skill catalog the way a shipped

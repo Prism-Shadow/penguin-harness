@@ -92,6 +92,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | --- | --- | --- |
 | GET | /api/admin/settings | 服务端全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
 | PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
+| GET | /api/admin/settings/proxy-probe | 连通性测速的目标列表：`{targets: [{provider, url}]}`（不发起任何请求） |
+| POST | /api/admin/settings/proxy-probe/:provider | 沿服务端出站链路探测其中一个目标，不携带任何凭据：`{probe: {provider, url, outcome, ms, status?}}`；`outcome` 在收到任意 HTTP 响应时为 `reachable`，否则为 `timeout` / `dns` / `refused` / `tls` / `network`；列表之外的 id 返回 404 `probe_target_not_found` |
 
 代理设置为两个独立开关共享一个可选的显式地址；修改即时生效（对新发起的连接与新派生的子进程），无需重启：
 

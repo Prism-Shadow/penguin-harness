@@ -6,10 +6,12 @@
  * tight ring centred on it and opening leftward. The entries are glyphs alone; the caption
  * under the ball is where their names are read — it shows the hovered or focused entry's
  * name — because seven name pills floating around the ball is what pushed the ring far
- * enough out to stop reading as one object. Nothing carries a tooltip: every name is already
- * on screen. Picking an entry opens its panel: in the right dock on a wide window, in the
- * merged bottom surface on a narrow one, which makes that surface visible and unmounts the
- * launcher. The arc's last entry puts the launcher away for good, remembered as a global
+ * enough out to stop reading as one object. The ball is that readout's other half: it draws
+ * the pointed-at entry's glyph, an expand mark while the pointer or focus is on the ball
+ * itself, and the workbench tiles the rest of the time. Nothing carries a tooltip: every name
+ * is already on screen. Picking an entry opens its panel: in the right dock on a wide window,
+ * in the merged bottom surface on a narrow one, which makes that surface visible and unmounts
+ * the launcher. The arc's last entry puts the launcher away for good, remembered as a global
  * preference and turned back on from Appearance settings. The ball drags along the edge —
  * another global preference, a ratio of the body's height — and springs back onto it when
  * let go; Esc, a press elsewhere or a scroll folds the fan.
@@ -36,7 +38,13 @@ import type {
 } from "react";
 import { S } from "../../lib/strings";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CloseIcon, NAV_ICONS, WORKBENCH_ICON } from "../../components/ui/icons";
+import {
+  COLLAPSE_ICON,
+  EXPAND_ICON,
+  HIDDEN_ICON,
+  NAV_ICONS,
+  WORKBENCH_ICON,
+} from "../../components/ui/icons";
 import { toastInfo } from "../../components/ui/toast";
 import { usePrefersReducedMotion } from "../../components/ui/use-reduced-motion";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -132,7 +140,8 @@ interface FanState {
 interface FanEntry {
   key: string;
   label: string;
-  glyph: ReactNode;
+  /** Drawn twice at two sizes: 15px in the fan, 18px in the ball while this entry is pointed at. */
+  glyphAt: (size: number) => ReactNode;
   badge: boolean;
   testId: string;
   choose: () => void;
@@ -202,10 +211,13 @@ function LauncherBall({
   // --------------------------------------------------------------------------------- fan
   const [fan, setFanState] = useState<FanState | null>(null);
   /**
-   * The entry the pointer or focus is on, read out by the caption under the ball. Null is
-   * nothing pointed at, and the caption falls back to the launcher's own word.
+   * The entry the pointer or focus is on: the caption under the ball reads out its name and the
+   * ball draws its glyph. The key rather than the label, because the ball redraws the same mark
+   * one rung larger than the fan does. Null is nothing pointed at.
    */
-  const [hoveredName, setHoveredName] = useState<string | null>(null);
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  /** The pointer or focus is on the ball itself: it offers to open rather than naming itself. */
+  const [ballActive, setBallActive] = useState(false);
   // Mirrored in a ref so event handlers that fire before the next render read the latest.
   const fanNow = useRef<FanState | null>(null);
   const exitTimer = useRef(0);
@@ -227,7 +239,7 @@ function LauncherBall({
   /** Folds the fan; `refocus` returns focus to the ball (Esc) so a keyboard user is not stranded. */
   const closeFan = useCallback(
     (refocus: boolean) => {
-      setHoveredName(null);
+      setHoveredKey(null);
       const current = fanNow.current;
       if (current !== null && current.phase === "open") {
         if (reducedMotionRef.current) {
@@ -280,9 +292,6 @@ function LauncherBall({
       window.removeEventListener("scroll", onScroll, true);
     };
   }, [fanOpen, closeFan]);
-
-  // ----------------------------------------------------------------------------- caption
-  const captionText = hoveredName ?? S.dock.launcherCaption;
 
   // The body's height bounds the travel: measured on mount and on every resize, and the
   // ball re-placed from its stored ratio (unless a drag is holding it) — a taller or
@@ -423,7 +432,7 @@ function LauncherBall({
   const entries: FanEntry[] = PANEL_KINDS.map((kind) => ({
     key: kind,
     label: panelLabel(kind),
-    glyph: panelGlyph(kind, ICON_SIZE.iconButton),
+    glyphAt: (size) => panelGlyph(kind, size),
     badge: kind === "agents" && agentsPending,
     testId: `dock-launcher-open-${kind}`,
     // The dock becomes visible with the tab, and the launcher unmounts with it.
@@ -433,7 +442,7 @@ function LauncherBall({
     entries.push({
       key: "terminal",
       label: S.terminal.title,
-      glyph: <GlyphIcon d={NAV_ICONS.terminal} size={ICON_SIZE.iconButton} />,
+      glyphAt: (size) => <GlyphIcon d={NAV_ICONS.terminal} size={size} />,
       badge: false,
       testId: "dock-launcher-open-terminal",
       // The dock picker's terminal action: adopt a live shell no conversation holds, or
@@ -447,9 +456,9 @@ function LauncherBall({
   entries.push({
     key: "hide",
     label: S.dock.launcherHide,
-    // The close cross at its own 14px grid — a two-stroke mark aliases when scaled off it —
-    // in the muted ink, so it reads as a lesser thing than the panels above it.
-    glyph: <CloseIcon className={toneInk.muted} />,
+    // The struck-through eye, in the muted ink so it reads as a lesser thing than the panels
+    // above it — and keeps reading that way when the ball mirrors it.
+    glyphAt: (size) => <GlyphIcon d={HIDDEN_ICON} size={size} className={toneInk.muted} />,
     badge: false,
     testId: "dock-launcher-hide",
     // Writing the preference unmounts the launcher under its own click, so the toast is
@@ -460,6 +469,22 @@ function LauncherBall({
       toastInfo(S.dock.launcherHiddenToast);
     },
   });
+
+  // What the ball shows, in the one place the states cannot contradict each other: an entry being
+  // pointed at wins, then the ball's own hover — which names what the NEXT CLICK does, not what
+  // the ball is, so an open fan offers to close and a closed one offers to open — and the resting
+  // workbench mark last. A fan merely standing open is not a hover.
+  const hovered = entries.find((entry) => entry.key === hoveredKey) ?? null;
+  const ballAction = fanOpen ? S.dock.launcherClose : S.dock.launcherOpen;
+  const captionText = hovered?.label ?? (ballActive ? ballAction : S.dock.launcherCaption);
+  const ballGlyph = hovered ? (
+    hovered.glyphAt(ICON_SIZE.sectionMark)
+  ) : (
+    <GlyphIcon
+      d={ballActive ? (fanOpen ? COLLAPSE_ICON : EXPAND_ICON) : WORKBENCH_ICON}
+      size={ICON_SIZE.sectionMark}
+    />
+  );
 
   const label = agentsPending ? `${S.dock.launcher} · ${S.dock.launcherPending}` : S.dock.launcher;
   // Where each entry sits on the arc, for the geometry the fan opened with. The count is
@@ -500,10 +525,10 @@ function LauncherBall({
                 // tooltip: it would only repeat the caption a few pixels away.
                 aria-label={entry.label}
                 onClick={entry.choose}
-                onMouseEnter={() => setHoveredName(entry.label)}
-                onMouseLeave={() => setHoveredName((name) => (name === entry.label ? null : name))}
-                onFocus={() => setHoveredName(entry.label)}
-                onBlur={() => setHoveredName((name) => (name === entry.label ? null : name))}
+                onMouseEnter={() => setHoveredKey(entry.key)}
+                onMouseLeave={() => setHoveredKey((key) => (key === entry.key ? null : key))}
+                onFocus={() => setHoveredKey(entry.key)}
+                onBlur={() => setHoveredKey((key) => (key === entry.key ? null : key))}
                 className={`${ENTRY_CLASS} ${
                   fan.phase === "closing" ? "launcher-fan-out" : "launcher-fan-in"
                 }`}
@@ -521,7 +546,7 @@ function LauncherBall({
                   } as CSSProperties
                 }
               >
-                {entry.glyph}
+                {entry.glyphAt(ICON_SIZE.iconButton)}
                 {entry.badge && (
                   <span
                     aria-hidden
@@ -538,6 +563,10 @@ function LauncherBall({
         type="button"
         {...dragProps}
         onClick={onBallClick}
+        onMouseEnter={() => setBallActive(true)}
+        onMouseLeave={() => setBallActive(false)}
+        onFocus={() => setBallActive(true)}
+        onBlur={() => setBallActive(false)}
         // No tooltip: the caption under the ball already says what it opens, and the drag is
         // discovered by dragging.
         aria-label={label}
@@ -550,9 +579,10 @@ function LauncherBall({
             : "bg-white/75 opacity-80 dark:bg-gray-900/75"
         } ${dragging ? "cursor-grabbing" : "cursor-pointer"}`}
       >
-        <GlyphIcon d={WORKBENCH_ICON} size={ICON_SIZE.sectionMark} />
-        {/* The caption hangs below the ball's circle: the launcher's own word at rest, the
-            pointed-at entry's name while the fan is open. It is the visible readout only —
+        {ballGlyph}
+        {/* The caption hangs below the ball's circle: the launcher's own word at rest, "open"
+            while the ball itself is pointed at, and the pointed-at entry's name while the fan
+            is open — the ball drawing that entry's mark meanwhile. It is the visible readout —
             every button carries its own accessible name — so it is hidden from assistive
             technology and never folded into the ball's. Its height is spelled from the
             constant the vertical clamp reserves, so the two cannot drift apart. */}
