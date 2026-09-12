@@ -61,4 +61,4 @@ minimumReleaseAgeExclude:
   - "@deepseek-ai/dsh-timeout@0.1.0-rc.7"
   - "@deepseek-ai/dsh-typert-protocol@0.1.0-rc.7"
   - "@microsoft/mxc-sdk@0.7.0"
-  - "@prismshadow/agenthub@0.4.12"
+  - "@prismshadow/agenthub@0.4.13"
