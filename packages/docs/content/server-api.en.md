@@ -203,7 +203,7 @@ What that route may do is bounded a second time: it stores the code on the flow 
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/plugins/registry | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[]}` — the merged index of every configured registry (currently the builtin one) |
+| GET | /api/plugins/registry | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[], failures: {source, error}[]}` — the builtin index merged with the published one; `failures` names any source that could not be read |
 | GET | /api/plugins/registry/readme?name=… | One listed entry's readme: `{name, readme}` (`readme` null when the registry has none); 404 for a name the index does not list |
 | GET | /api/projects/:projectId/plugins/installed | What this Project asks for, joined with what the process runs: `{plugins: [{specifier, active, builtin, modules, replaces, error?}], shipped, file, restartPending}` (any member) |
 | POST | /api/projects/:projectId/plugins/installed | `{specifier}` — ask this Project for a plugin the build ships (400 `plugin_not_shipped` otherwise), applied without a restart — the App re-assembles itself (admin) |
@@ -211,6 +211,17 @@ What that route may do is bounded a second time: it stores the code on the flow 
 | DELETE | /api/projects/:projectId/plugins/installed?specifier=… | Drop it from this Project's list and apply; nothing on disk changes (admin) |
 
 The index format follows typst/packages' `index.json` schema: a flat array of per-version entries (`name`, `version`, `description`, `authors`, `license`, plus optional `repository` / `homepage` / `keywords` / `categories` / `updatedAt`). The registry is discovery only and never imports plugin code; a Project asks for an entry through the routes above, and its list lives in its own `.project_config.toml` as the `[plugins]` table — package name → requirement, in the shape of Cargo's `[dependencies]` (`"@scope/name" = "*"`, a version string, or `{ version = "…" }`). The process runs the union over every Project's table.
+
+Two sources are merged: the index embedded in the server package, and the one published by the index repository — a release asset on a fixed tag (`releases/download/nightly/index.json`), fetched at most every 30 minutes, whose content a six-hourly workflow replaces. A source that cannot be read shortens the listing rather than emptying it and is named in `failures`; within one document, though, a single malformed entry still fails the whole index. `PENGUIN_PLUGIN_INDEX=off` disables the published lookup (no outbound request); any other value replaces its URL.
+
+### Extension-contributed languages
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/languages | Languages this App's extensions registered: `{languages: [{id, displayName, aliases?, extensions?}]}` — no grammars |
+| GET | /api/languages/:id/grammar | One language's TextMate grammar, in the shape Shiki's `loadLanguage` takes; `404` for an id nothing registered |
+
+The listing carries no grammars because one is tens to hundreds of kilobytes and only the languages a conversation shows are worth fetching; the grammar response is cached for an hour, since it cannot change without a new App and a new App is a new page load. The aliases and file extensions have to arrive *before* the grammar: Shiki registers a grammar's own aliases only once it is loaded, and the fence info string is what decides whether to load it. A grammar is data, not code — nothing on this path evaluates anything an extension ships.
 
 ### Agents
 

@@ -1,0 +1,108 @@
+{
+  "name": "@prismshadow/penguin-plugin-languages",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Syntax highlighting for Typst, Swift, Kotlin, C# and Dart in PenguinHarness.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/languages"
+  },
+  "homepage": "https://github.com/Prism-Shadow/penguin-harness/tree/main/plugins/languages",
+  "keywords": [
+    "penguin-harness-plugin",
+    "syntax-highlighting",
+    "typst",
+    "swift",
+    "kotlin",
+    "csharp",
+    "dart"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@shikijs/langs": "^4.3.1"
+  },
+  "devDependencies": {
+    "@prismshadow/penguin-core": "workspace:*",
+    "tsup": "^8.3.0",
+    "vitest": "^3.2.6"
+  },
+  "penguin": {
+    "modules": [
+      {
+        "name": "Languages",
+        "requires": {},
+        "provides": {},
+        "contributes": {
+          "LanguagesModule.grammars": [
+            {
+              "id": "languages.typst",
+              "language": "typst",
+              "displayName": "Typst",
+              "extensions": [
+                "typ"
+              ]
+            },
+            {
+              "id": "languages.swift",
+              "language": "swift",
+              "displayName": "Swift"
+            },
+            {
+              "id": "languages.kotlin",
+              "language": "kotlin",
+              "displayName": "Kotlin",
+              "aliases": [
+                "kt",
+                "kts"
+              ],
+              "extensions": [
+                "kt",
+                "kts"
+              ]
+            },
+            {
+              "id": "languages.csharp",
+              "language": "csharp",
+              "displayName": "C#",
+              "aliases": [
+                "cs",
+                "c#"
+              ],
+              "extensions": [
+                "cs",
+                "csx"
+              ]
+            },
+            {
+              "id": "languages.dart",
+              "language": "dart",
+              "displayName": "Dart",
+              "extensions": [
+                "dart"
+              ]
+            }
+          ]
+        },
+        "children": []
+      }
+    ]
+  }
+}

@@ -203,7 +203,7 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/plugins/registry | 插件市场页的插件索引：`{plugins: PluginIndexEntry[]}`——所有已配置注册表（当前仅内置注册表）合并后的索引 |
+| GET | /api/plugins/registry | 插件市场页的插件索引：`{plugins: PluginIndexEntry[], failures: {source, error}[]}`——内置索引与已发布索引合并的结果；`failures` 列出读不到的来源 |
 | GET | /api/plugins/registry/readme?name=… | 某个已列出条目的说明文档：`{name, readme}`（注册表没有时 `readme` 为 null）；索引未列出的名字返回 404 |
 | GET | /api/projects/:projectId/plugins/installed | 该 Project 要求的插件，并联上进程实际在跑的状态：`{plugins: [{specifier, active, builtin, modules, replaces, error?}], shipped, file, restartPending}`（成员即可） |
 | POST | /api/projects/:projectId/plugins/installed | `{specifier}`——为该 Project 要求一个随构建发布的插件（否则 400 `plugin_not_shipped`），无需重启即生效，App 自行重组（管理员） |
@@ -211,6 +211,17 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | DELETE | /api/projects/:projectId/plugins/installed?specifier=… | 从该 Project 的列表中去掉并应用；磁盘上什么都不变（管理员） |
 
 索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。注册表仅用于发现，不会导入任何插件代码；Project 通过上面的路由要求某个条目，其列表存在自己的 `.project_config.toml` 的 `[plugins]` 表里——包名 → 要求，形状同 Cargo 的 `[dependencies]`（`"@scope/name" = "*"`、版本字符串，或 `{ version = "…" }`）。进程运行的是所有 Project 表的并集。
+
+合并两个来源：内嵌在 server 包中的索引，以及索引仓库发布的那份——固定 tag 上的 release 附件（`releases/download/nightly/index.json`），最多每 30 分钟抓取一次，其内容由每 6 小时运行一次的工作流替换。读不到的来源只会让列表变短、不会让它变空，并会列入 `failures`；但在单个文档**内部**，一行格式错误仍会让整份索引失败。`PENGUIN_PLUGIN_INDEX=off` 可关闭已发布索引的查询（不发起任何出网请求），填其他值则替换其 URL。
+
+### 扩展提供的语言
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | /api/languages | 当前 App 的扩展注册的语言：`{languages: [{id, displayName, aliases?, extensions?}]}`——不含语法本体 |
+| GET | /api/languages/:id/grammar | 某个语言的 TextMate 语法，形态即 Shiki `loadLanguage` 所接受的；未注册的 id 返回 `404` |
+
+列表不带语法本体，是因为单份语法有几十到上百 KB，只有对话真正出现过的语言才值得取回；语法响应缓存一小时——它不会在同一个 App 内改变，而新的 App 就是一次新的页面加载。别名与文件扩展名必须在语法**之前**到达：Shiki 只有在语法载入之后才会注册它自带的别名，而围栏信息串恰恰是决定要不要载入它的东西。语法是数据而不是代码——这条路径上没有任何环节会执行扩展所携带的内容。
 
 ### Agent
 

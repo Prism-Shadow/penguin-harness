@@ -12,9 +12,10 @@
  * the whole block each time would be O(n^2) main-thread cost, and an in-progress highlight can't
  * be canceled; once streaming settles, highlight flips true and a single final highlight is done.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { S } from "../../lib/strings";
 import { CopyButton } from "../../components/ui/copy-button";
+import { runtimeLanguageGeneration, subscribeToRuntimeLanguages } from "./code-languages";
 
 export function CodeBlock({
   language,
@@ -26,6 +27,14 @@ export function CodeBlock({
   highlight?: boolean;
 }) {
   const [html, setHtml] = useState<string>();
+  // An extension's languages arrive after the first paint, so a block rendered before them
+  // resolved to "no grammar" and would stay unhighlighted for the life of the page. The
+  // generation is part of the effect's deps, so a registration re-runs the highlight once.
+  const languageGeneration = useSyncExternalStore(
+    subscribeToRuntimeLanguages,
+    runtimeLanguageGeneration,
+    runtimeLanguageGeneration,
+  );
 
   useEffect(() => {
     if (!highlight) {
@@ -45,7 +54,7 @@ export function CodeBlock({
     return () => {
       alive = false;
     };
-  }, [code, language, highlight]);
+  }, [code, language, highlight, languageGeneration]);
 
   return (
     <div className="code-block my-2 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800">
