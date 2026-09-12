@@ -227,7 +227,6 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | GET | `/api/plugins`（全局） | 按分类列出插件库——每个插件带其 Skill 元数据与钩子点（任意已登录用户） |
 | GET | `/api/plugins/:plugin/files`（全局） | 单个库内插件携带的全部文件，按路径键入的文本——各 Skill 的可安装 SKILL.md 与参考文件在 `skills/<name>/` 下，钩子脚本在 `hooks/` 下——供插件详情弹窗的文件浏览器使用（任意已登录用户） |
 | DELETE | /agents/:agentId/hooks/:name | 卸载钩子包 |
-| GET | /agents/:agentId/benchmarks | Benchmark 评分数据（只读） |
 
 ### Schedule
 
@@ -237,6 +236,19 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | GET / PUT / DELETE | /agents/:agentId/schedules/:name | 读取 / 更新 / 删除单个任务 |
 
 Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 `provider` 要么成对给出、要么都不给；该二元组会在任务保存时以及调度器对账时对照 Project 模型表校验。
+
+### Benchmark
+
+Benchmark 挂在 Project 上而非某个 Agent 上：一个 Benchmark 评测过哪些 Agent 由使用者决定，每条 evaluation 记录本轮被测的 Agent（`agentId`，记录中没有时为 `null`）。汇总项的 `agentIds` 按首次出现顺序列出这些 Agent。以下路径同样省略前缀 `/api/projects/:projectId`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | /benchmarks | Benchmark 评分数据——只返回带 `benchmark_config.toml` 的目录；缺少该文件的目录（评测运行期间删除 Benchmark 所留下的残留）会被跳过 |
+| POST | /benchmarks | 手动新建 Benchmark（仅 owner）：`{ id, title, description?, runs?, cases: [{ id, title, statement, rubric }] }` → 201 `{ benchmark }`。服务端写入 `benchmark_config.toml`、内容为 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（标题为其一级标题）与 `rubric/README.md`；id 沿用 Agent id 的字符规则，题目 id 以 `CASE-` 开头；目录已存在时返回 409 `benchmark_exists` |
+| DELETE | /benchmarks/:benchmarkId | 整目录删除一个 Benchmark——题目、配置与记分板（仅 owner；204，不存在返回 404） |
+| GET | /benchmarks/:benchmarkId/cases | 单个 Benchmark 的题目列表：题目 id 与题干 README 的一级标题；评分细则永不返回 |
+| GET | /benchmarks/:benchmarkId/cases/:caseId/files | 浏览某道题的 `statement/`；在 `/files` 前加 `/rubric` 即评分细则一侧 |
+| GET | /benchmarks/:benchmarkId/cases/:caseId/files/content | 读取该材料下的单个文件（`?path=`、`?preview=1`、`?download=1`），内联渲染的加固规则与 Workspace 文件一致 |
 
 ### Session 创建与目录浏览
 

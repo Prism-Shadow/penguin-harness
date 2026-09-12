@@ -34,7 +34,7 @@ One request represents one Test Agent execution. The `run` value identifies that
 
 Return a **scored result** when the Test Agent ran and the Rubric could be applied. Wrong, malformed, or missing Test Agent output is still a scored result. Return an **evaluation failure** when the request, Benchmark, launch, version check, Trace binding, or scoring process prevents a valid score.
 
-Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent. Never read a Project configuration file, credential, or vault.
+Resolve the Project, Test Agent, Benchmark, and Case only from the explicit request and Environment App Data Dir. Reject traversal, symlink escape, or any path outside the requested Test Agent and Benchmark. Never read a Project configuration file, credential, or vault.
 
 ## Prepare
 
@@ -42,10 +42,12 @@ Use the `App Data Dir` from the Environment:
 
 ```text
 TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
-BENCHMARK_DIR = <test_agent_dir>/benchmarks/<benchmark_id>
+BENCHMARK_DIR = <app_data_dir>/benchmarks/<benchmark_id>
 ```
 
-Reject path traversal, symlink escape, or any resolved path outside the requested Test Agent. Inspect only the requested Agent State, Benchmark config and Case, isolated Test Workspace, and Traces needed to verify this execution. Do not inspect another Agent, Project secrets, hidden configuration, or unrelated Workspaces or Traces.
+The Benchmark is Project-level and is not owned by the Test Agent: it sits beside `agents/` and may evaluate several Agents. `test_agent_id` names the Agent this request evaluates; return it as `agent_id`.
+
+Reject path traversal, symlink escape, or any resolved path outside the requested Test Agent and Benchmark. Inspect only the requested Agent State, Benchmark config and Case, isolated Test Workspace, and Traces needed to verify this execution. Do not inspect another Agent, Project secrets, hidden configuration, or unrelated Workspaces or Traces.
 
 Require `agent_state/system_config.yaml`, `benchmark_config.toml`, `<case_id>/statement/README.md`, and `<case_id>/rubric/README.md`. Treat `run` only as the caller-owned label for this evaluation and return it unchanged; do not read or validate the total Run count. The top-level Agent State `version`, defaulting to 1, must equal `expected_version`; otherwise return `version_changed`. Read and snapshot `model.thinking_level` from this Target Agent config, using the normal Agent-config default `medium` only when the field is absent. This configured value is the evaluation `thinking_level`; do not require or read thinking metadata from a Trace.
 
@@ -99,6 +101,7 @@ protocol_version: 1
 status: ok
 case_id: <case_id>
 run: <run>
+agent_id: <test_agent_id>
 expected_version: <version>
 provider: <actual_provider>
 model_id: <actual_model_id>
@@ -116,6 +119,7 @@ protocol_version: 1
 status: failed
 case_id: <case_id_or_null>
 run: <run_or_null>
+agent_id: <test_agent_id_or_null>
 expected_version: <version_or_null>
 provider: <provider_or_null>
 model_id: <model_id_or_null>

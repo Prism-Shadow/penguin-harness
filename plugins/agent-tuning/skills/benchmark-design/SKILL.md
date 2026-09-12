@@ -39,9 +39,11 @@ Use the Environment's `App Data Dir` and the explicit Test Agent id:
 
 ```text
 TEST_AGENT_DIR = <app_data_dir>/agents/<test_agent_id>
-BENCHMARK_DIR = <app_data_dir>/agents/<test_agent_id>/benchmarks/<benchmark_id>
+BENCHMARK_DIR = <app_data_dir>/benchmarks/<benchmark_id>
 SCOREBOARD = <benchmark_dir>/scoreboard.yaml
 ```
+
+A Benchmark lives beside `agents/`, not inside one: it belongs to the Project and may evaluate several Agents. `test_agent_id` names the one this request evaluates, and every Evaluation records it.
 
 Access only the specified Test Agent and Benchmark: the Agent State, complete Benchmark, and Test Traces or artifacts from valid evaluations. Do not access other Agents, Project secrets, or Evaluator State, Workspace, or Trace.
 
@@ -117,7 +119,7 @@ model_id: <model_id>
 
 Inspect the complete streamed and final worker response. Before reading `status`, `score`, or any other protocol field, verify that the worker-authored text is exactly one plain protocol YAML document. Narration, headings, code fences, summaries, or scoring details are not valid protocol. Ask the same Evaluator to resend only the clean YAML from its existing result; do not rerun the Test Agent for a formatting repair and do not extract YAML from the invalid response yourself. Transport metadata added by `run_subagent` is not worker-authored text. A wrong or missing Test Agent artifact is a valid scored result and must not be retried.
 
-For every scored result, require non-empty `provider`, `model_id`, and `thinking_level`. Require the model pair to equal the explicitly resolved pair and the thinking level to equal the Test Agent configuration read before dispatch. Reject a Pilot result whose cells report mixed or mismatched runtimes. The Evaluator verifies provider/model from the root Trace and reports thinking from the unchanged Target Agent configuration; it does not require Trace metadata for thinking.
+For every scored result, require non-empty `agent_id`, `provider`, `model_id`, and `thinking_level`. Require `agent_id` to equal the requested Test Agent. Require the model pair to equal the explicitly resolved pair and the thinking level to equal the Test Agent configuration read before dispatch. Reject a Pilot result whose cells report mixed or mismatched runtimes. The Evaluator verifies provider/model from the root Trace and reports thinking from the unchanged Target Agent configuration; it does not require Trace metadata for thinking.
 
 Correct and resend an `invalid_request`. For `benchmark_invalid`, repair and rerun the affected Case during Pilot. For `version_changed`, discard the current Pilot result and restart after the Agent version is stable.
 
@@ -127,7 +129,7 @@ For `evaluation_failed`, keep the same Benchmark revision and cell. Diagnose the
 
 Treat the first draft as a hypothesis. The first valid result from every planned Case together forms Pilot iteration 1. A later iteration starts after a difficulty refinement and completes when every affected Case has a valid new result. Request corrections, validity repairs, and evaluation reruns stay in the current iteration and do not consume the requested iteration budget. Use the recorded Agent State version and fixed evaluation runtime.
 
-Keep unselected Pilot results out of the Scoreboard. During calibration, retain only one temporary restorable copy: the lowest-scoring complete valid revision seen so far, including its one-Run-per-Case result. Store it outside `benchmarks/`, replace it only when a lower valid revision completes, and never retain invalid revisions.
+Keep unselected Pilot results out of the Scoreboard. During calibration, retain only one temporary restorable copy: the lowest-scoring complete valid revision seen so far, including its one-Run-per-Case result. Store it outside the Project's `benchmarks/`, replace it only when a lower valid revision completes, and never retain invalid revisions.
 
 Use the Pilot to find the current Test Agent's capability boundary.
 
@@ -167,6 +169,7 @@ After validation, obtain the current UTC timestamp from the environment, for exa
 ```yaml
 evaluations:
   - time: <ISO-8601 timestamp>
+    agent_id: <test_agent_id>
     version: <Agent State version>
     provider: <provider>
     model_id: <model_id>
@@ -190,7 +193,7 @@ evaluations:
             session_id: <Test Session id>
 ```
 
-After writing, parse the complete `scoreboard.yaml` and verify the appended Evaluation before reporting success or continuing.
+After writing, parse the complete `scoreboard.yaml` and verify the appended Evaluation, including its `agent_id`, before reporting success or continuing.
 
 Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`.
 

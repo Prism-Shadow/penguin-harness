@@ -17,6 +17,15 @@ describe("buildAiDraft", () => {
     expect(draft.text).toBe("prompt");
   });
 
+  it("replaces the cached model only when the request pins one", () => {
+    const cached = { modelRef: { provider: "p", modelId: "m" } };
+    expect(buildAiDraft(cached, { agentId: "a", text: "t" }).modelRef).toEqual(cached.modelRef);
+    expect(
+      buildAiDraft(cached, { agentId: "a", text: "t", modelRef: { provider: "q", modelId: "n" } })
+        .modelRef,
+    ).toEqual({ provider: "q", modelId: "n" });
+  });
+
   it("resets the skill selection unless the request pins one", () => {
     expect(buildAiDraft({ skills: ["old"] }, { agentId: "a", text: "t" }).skills).toEqual([]);
     expect(buildAiDraft({}, { agentId: "a", text: "t", skills: ["s"] }).skills).toEqual(["s"]);

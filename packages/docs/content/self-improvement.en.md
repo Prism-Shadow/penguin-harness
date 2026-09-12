@@ -38,12 +38,16 @@ Invalid evaluations and correction reruns do not count toward the round limit. O
 
 Every accepted Candidate is appended to and verified in the Scoreboard immediately. A strictly higher Evaluation score decides acceptance; the first comparison directly compares the Candidate's multi-Run average with the Formal Baseline's one-Run score without backfilling the Baseline. Whether the predicted Case behavior changed is reported separately so unrelated single-run variation is not presented as causal evidence. Agent optimization requires a complete Formal Baseline in the Scoreboard — without one there is no improvement to compare against.
 
+## From the Evaluation Center
+
+The Web App's Evaluation Center starts the same two Sessions without a hand-written prompt. **Create with AI** takes the Test Agent and a description and prefills the `benchmark-design` request — agent id, a desired baseline score, a pilot-iteration limit — into a new conversation with the Project's default agent; **Create manually** writes a Benchmark from a form in the layout below, ready for evaluation, and asks for no owning Agent. **Use** opens one dialog with two tabs: **Evaluate** prefills the `agent-evaluation` request — Test Agent picked in the form, Benchmark id, runs per case — into a new conversation with the evaluator agent of your choice, and **Optimize** prefills the `agent-optimization` request — the same Test Agent and Benchmark id plus round limit and target score — into one with the optimizer agent. Every entry only prefills: sending is the user's decision in that conversation. The evaluation runtime is never chosen there: an evaluation takes the Test Agent's own configured model and thinking level, and the Optimizer reuses the pair and thinking level the baseline recorded.
+
 ## Benchmark storage
 
-Benchmarks are stored per Agent under `benchmarks/<id>/`:
+Benchmarks belong to the Project, stored in `<root>/<project>/benchmarks/<id>/`, a sibling of `agents/`. A Benchmark and an Agent are peers rather than one owning the other: a Benchmark can evaluate several Agents and an Agent can be evaluated by several Benchmarks, so `benchmark_config.toml` names no Agent — the Agent under test is recorded on each evaluation instead.
 
 ```text
-benchmarks/<id>/
+<project>/benchmarks/<id>/
 ├── benchmark_config.toml       # Benchmark configuration (Builder runs is fixed at 1)
 ├── <case-id>/
 │   ├── statement/              # the task given to the Target Agent
@@ -53,8 +57,11 @@ benchmarks/<id>/
 
 The separation of `rubric/` from `statement/` is deliberate: the Target Agent sees only the task statement and never touches the scoring rubric.
 
+`benchmark_config.toml` is what makes a directory a Benchmark: a directory under `benchmarks/` without one is not listed. Deleting a Benchmark while an evaluation is still running leaves such a directory behind, because the running evaluation keeps writing to the paths it was deleted from. A Benchmark that has simply never been evaluated still has its config and is listed as usual; a leftover directory is safe to delete by hand.
+
 Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 
+- `agent_id`, the Agent that round evaluated. Together with `model_id` and `thinking_level` it forms the record's **label**: the trend chart plots time against score and draws one series per label, and only scores under the same label are comparable. The Agent State `version` is not part of it — successive versions of one Agent on one runtime are the trend the chart exists to show, so they share a line and each point names its version on hover. A record written before evaluations carried an Agent reads as unlabelled and falls into the chart's grey series;
 - the evaluation runtime: a user-specified `(provider, model_id)` pair takes priority, otherwise the pair is inherited from the Builder Session; `thinking_level` is read from the Target Agent config and does not depend on Trace metadata;
 - `summary_title` and `summary` (the round's conclusion and the hypothesis for the next one);
 - Score, cost, and duration averages written by the model — Case-level values average Runs and Evaluation-level values average Cases; Run cost preserves its recorded precision, cost averages ignore `null` inputs and remain `null` only when every contributing cost is unknown; Score uses two decimals, cost averages use six decimals, and `duration_ms` is an integer;
@@ -62,7 +69,7 @@ Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 
 Every Run and every Case has a fixed maximum Score of 100, so Scoreboard entries do not carry `max_score`. The server and Web UI trust the stored aggregate values and do not recompute or cross-check them. Old Scoreboard formats are not migrated or backfilled.
 
-The built-in `default_agent` ships with an example Benchmark (`packages/core/src/state/example-benchmark.ts`) so the evaluation pages have data out of the box; the whole directory can be deleted or replaced at any time.
+Initializing a Project's `default_agent` seeds an example Benchmark at the Project level (`packages/core/src/state/example-benchmark.ts`), its three sample evaluations labelled `agent_id: default_agent`, so the evaluation pages have data out of the box; the whole directory can be deleted or replaced at any time.
 
 ## Snapshots and versions
 
@@ -72,7 +79,7 @@ Before each optimization round, the Agent State is packed into `snapshots/v<vers
 
 - Every Evaluator run is an ordinary Session with a full Trace;
 - Scoreboard records link back to those Sessions via `session_id`; see [Sessions & Traces](/sessions-and-traces);
-- The Web evaluation pages are read-only views of these files; the trend chart shows Score only, while the detail table shows model ID and thinking level as separate columns. See the [Web App Guide](/web-app).
+- The Web evaluation pages are read-only views of these files; the trend chart shows Score only, while the detail table shows the Agent under test, model ID and thinking level as separate columns. See the [Web App Guide](/web-app).
 
 Scores are not black-box output: every number can be traced back to the run that produced it.
 

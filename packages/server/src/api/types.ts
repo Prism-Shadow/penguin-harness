@@ -3190,7 +3190,7 @@ export interface AgentImportResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Benchmark scoring (read-only display)
+// Benchmark scoring (display), manual creation and deletion
 // ---------------------------------------------------------------------------
 
 /** Raw result of a single run (a scoreboard per-case runs[] entry). */
@@ -3218,6 +3218,11 @@ export interface BenchmarkCaseScore {
 export interface BenchmarkEvaluation {
   /** Evaluation timestamp (ISO 8601). */
   time: string;
+  /**
+   * Agent under test in this round (the `agent_id` field), part of the record's label; `null`
+   * when the record carries none, as a Benchmark evaluates whichever Agents it is pointed at.
+   */
+  agentId: string | null;
   /** Evaluation summary title (a one-line conclusion; shown separately from the body summary; required when generating, tolerated as unset when displaying). */
   summaryTitle?: string;
   /** Evaluation summary body: how the score was derived, what optimizations were made to the Agent this round (required when generating, tolerated as unset when displaying). */
@@ -3251,6 +3256,12 @@ export interface BenchmarkSummary {
   caseCount: number;
   /** Time-ordered evaluation records (the evaluations[] in scoreboard.yaml). */
   evaluations: BenchmarkEvaluation[];
+  /**
+   * Agents this Benchmark has evaluated: the distinct non-null `agentId`s of `evaluations`, in
+   * first-seen order. Empty while nothing has been evaluated — a Benchmark names no Agent of its
+   * own.
+   */
+  agentIds: string[];
 }
 
 export interface BenchmarksResponse {
@@ -3268,6 +3279,39 @@ export interface BenchmarkCaseSummary {
 
 export interface BenchmarkCasesResponse {
   cases: BenchmarkCaseSummary[];
+}
+
+/**
+ * POST /api/projects/:p/benchmarks (owner only): create a Benchmark by hand. The
+ * server writes the on-disk layout the evaluation Skills read — `benchmark_config.toml`, a
+ * `scoreboard.yaml` holding `evaluations: []`, and one `<case id>/` per case with
+ * `statement/README.md` and `rubric/README.md`. 409 `benchmark_exists` when the directory is
+ * already there; nothing is merged into an existing Benchmark.
+ */
+export interface BenchmarkCreateRequest {
+  /** Directory name, which is the identifier: letters, digits, `_` and `-` only. */
+  id: string;
+  title: string;
+  description?: string;
+  /** Runs per case for the optimization loop (integer ≥ 1; default 1). */
+  runs?: number;
+  /** At least one case; ids must be unique within the request. */
+  cases: BenchmarkCreateCase[];
+}
+
+export interface BenchmarkCreateCase {
+  /** Case directory name: `CASE-` followed by letters, digits, `_` and `-` (for example `CASE-001-excel-task`). */
+  id: string;
+  /** Written as the statement README's first heading, which the case list reads back as the case title. */
+  title: string;
+  /** Statement body (Markdown), written after that heading; the Target Agent sees only this side. */
+  statement: string;
+  /** Scoring rubric (Markdown, items totalling 100 points), written verbatim as `rubric/README.md`. */
+  rubric: string;
+}
+
+export interface BenchmarkCreateResponse {
+  benchmark: BenchmarkSummary;
 }
 
 // ---------------------------------------------------------------------------

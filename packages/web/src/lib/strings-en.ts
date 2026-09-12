@@ -2713,9 +2713,55 @@ Scenarios:
 
   benchmark: {
     title: "Evaluation Center",
-    selectBenchmark: "Select a Benchmark on the left",
-    emptyAgent: "No Benchmarks for this agent",
+    guideFlow: [
+      {
+        title: "Create",
+        skill: "benchmark-design",
+        text: "Let AI write a set of cases for an agent; agent-evaluation trial-runs each one in an isolated Workspace to calibrate difficulty, and the frozen set arrives with a baseline score.",
+      },
+      {
+        title: "Evaluate",
+        skill: "agent-evaluation",
+        text: "Put any agent on that Benchmark for the full Case × runs matrix; the result is appended to the scoreboard as one labelled evaluation.",
+      },
+      {
+        title: "Optimize",
+        skill: "agent-optimization",
+        text: "Improve an agent against that Benchmark, one falsifiable change per round; a new version is kept only when the score strictly improves.",
+      },
+    ],
+    guideHowTo:
+      "How to use: create a Benchmark with AI or by hand → press Use on a Benchmark to evaluate or optimize → compare series by label on the score chart.",
+    guideNote:
+      "All three skills ship in the agent-tuning plugin; the default agent already has them, and a new agent can install them from the plugin library.",
+    searchPlaceholder: "Search titles, descriptions or tested agents",
+    noMatches: "No Benchmark matches",
+    filterByAgent: (agentId: string): string => `Benchmarks that evaluated ${agentId}`,
+    clearFilter: "Show all",
+    emptyTitle: "No Benchmarks yet",
+    emptyDescription:
+      "Start by letting AI write cases for an agent and take a baseline. Score curves and per-case detail appear here afterwards, with optimization one click away.",
     caseCount: (n: number): string => `${n} case${n === 1 ? "" : "s"}`,
+    runsPerCase: (n: number): string => `${n} run${n === 1 ? "" : "s"} per case`,
+    notEvaluated: "Not evaluated yet",
+    testedAgents: "Tested agents",
+    lastEvaluated: (when: string): string => `last evaluated ${when}`,
+    sparklineLabel: (n: number): string => `Score trend over ${n} evaluation${n === 1 ? "" : "s"}`,
+    latestScoreLabel: "Latest score",
+    firstEvaluation: "first evaluation",
+    use: "Use",
+    evaluate: "Evaluate",
+    optimize: "Optimize",
+    view: "View",
+    copyPath: "Copy directory path",
+    deleteBenchmark: "Delete Benchmark",
+    deleteConfirm: (title: string): string =>
+      `Delete "${title}"? All of its cases and evaluation records will be removed; this cannot be undone.`,
+    deleted: "Benchmark deleted",
+    backToList: "Back to list",
+    /** The Benchmark's own page when the id in the address resolves to nothing. */
+    notFound: "This Benchmark was not found",
+    notFoundHint: "It may have been deleted, or the link carries an id that no longer exists.",
     trendTitle: (metric: string): string => `${metric} over time`,
     cases: "Cases",
     viewCase: "View details",
@@ -2725,8 +2771,11 @@ Scenarios:
     caseFileUnavailable: "Case files are unavailable",
     evaluations: "Evaluations",
     noEvaluations: "No evaluations yet",
+    noEvaluationsHint:
+      "The score curve and evaluation detail appear here once a baseline is taken.",
     summaryLabel: "Summary",
-    legendUnlabeled: "unlabeled model",
+    unlabeled: "Unlabeled",
+    agentColumn: "Tested agent",
     colVersion: "Version",
     colModel: "Model ID",
     colThinkingLevel: "Thinking level",
@@ -2735,6 +2784,261 @@ Scenarios:
     colCase: "Case",
     colRun: "Run",
     colSession: "Session",
+    askAi: "Ask AI",
+    evaluationDetailTitle: (time: string): string => `Evaluation · ${time}`,
+    askEvaluationTitle: "Ask AI about this evaluation",
+    askEvaluationDescription:
+      "The total score, the per-case results and every run's Session id go along with your question; the agent reads the scoreboard and the matching Traces before answering. The prompt stays editable.",
+    askEvaluationDefault: "Explain this evaluation's result.",
+    askEvaluationExamples: {
+      whyLow: {
+        label: "Why is the score low?",
+        prompt:
+          "Why did this evaluation score so low? Use the per-case scores and the runs to say where the points were actually lost.",
+      },
+      weakest: {
+        label: "Which cases are weakest, and what should change?",
+        prompt:
+          "Which cases scored worst? For each, what caused it, and what single change to the tested agent has a chance of lifting it?",
+      },
+      againstPrevious: {
+        label: "What changed against the previous evaluation?",
+        prompt:
+          "Compared with this series' previous evaluation, which cases went up and which went down? What most likely caused those changes?",
+      },
+    },
+    askEvaluationTail: (p: {
+      benchmarkId: string;
+      time: string;
+      label: string;
+      version: number;
+      provider: string;
+      modelId: string;
+      thinkingLevel: string;
+      score: string;
+      cost: string;
+      duration: string;
+      summaryTitle: string;
+      summary: string;
+      cases: { id: string; score: string; cost: string; duration: string; sessionIds: string[] }[];
+    }): string =>
+      "Explain the result of the Benchmark evaluation below. Read and analyze only: change neither this Benchmark nor the tested agent.\n\n" +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`; the scoreboard is \`benchmarks/${p.benchmarkId}/scoreboard.yaml\`)\n` +
+      `- Evaluated at: ${p.time}\n` +
+      `- Series label: ${p.label}\n` +
+      `- Tested version: v${p.version}\n` +
+      `- Evaluation runtime: provider \`${p.provider}\` / model_id \`${p.modelId}\` / thinking_level \`${p.thinkingLevel}\`\n` +
+      `- Total score ${p.score}; cost ${p.cost}; duration ${p.duration}\n` +
+      (p.summaryTitle !== "" ? `- Summary title: ${p.summaryTitle}\n` : "") +
+      (p.summary !== "" ? `- Summary: ${p.summary}\n` : "") +
+      "- Per-case scores (score, cost, duration, and the Session id of every run):\n" +
+      p.cases
+        .map(
+          (c) =>
+            `  - \`${c.id}\`: ${c.score}; ${c.cost}; ${c.duration}; Session ` +
+            (c.sessionIds.length > 0
+              ? c.sessionIds.map((id) => `\`${id}\``).join(", ")
+              : "not recorded"),
+        )
+        .join("\n") +
+      "\n\nRead this record in scoreboard.yaml, and the Traces of the Sessions listed above as far as you need them. Then say how these scores came about, " +
+      "which cases are weakest and exactly why, and what to do next (which part of the tested agent to change, or which evidence to gather first).",
+    askCaseTitle: "Ask AI about this case",
+    askCaseDescription:
+      "The paths to the statement and the rubric go along with your question, so the agent can say what this case tests and what answering it well takes. The case is frozen: it reads, it does not edit.",
+    askCaseDefault: "Explain what this case tests and what a strong answer looks like.",
+    askCaseExamples: {
+      rubricRewards: {
+        label: "What does the rubric reward?",
+        prompt:
+          "Where does this case's rubric put its points? Which items do the most to separate excellent work from merely passing work?",
+      },
+      whyRunLow: {
+        label: "Why did a run score low here?",
+        prompt:
+          "The latest evaluation did not score well on this case. Which step is the tested agent most likely losing it at?",
+      },
+      clearerStatement: {
+        label: "How could the statement be clearer?",
+        prompt:
+          "Is anything in this statement ambiguous or easy to misread? The case is frozen and cannot be edited, so say how to write it more clearly in the next Benchmark instead.",
+      },
+    },
+    askCaseTail: (p: {
+      benchmarkId: string;
+      caseId: string;
+      latest: { time: string; score: string; runs: { score: string; sessionId: string }[] } | null;
+    }): string =>
+      "Explain what the Benchmark case below tests and what a strong answer looks like. A case is frozen once it exists: read and analyze only, and do not change this Benchmark.\n\n" +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
+      `- case_id: \`${p.caseId}\`\n` +
+      `- Statement: \`benchmarks/${p.benchmarkId}/${p.caseId}/statement/README.md\`\n` +
+      `- Rubric: \`benchmarks/${p.benchmarkId}/${p.caseId}/rubric/README.md\`\n` +
+      (p.latest === null
+        ? "- This Benchmark has no evaluations yet.\n"
+        : `- The latest evaluation (${p.latest.time}) averaged ${p.latest.score} on this case\n` +
+          p.latest.runs
+            .map((r, i) => `  - Run #${i + 1}: ${r.score}; Session \`${r.sessionId}\`\n`)
+            .join("")) +
+      "\nRead both READMEs above (and the Traces of the Sessions listed, if there are any). Then say what capability this case actually tests, " +
+      "what a strong answer looks like (the decisions and the artifact it takes), and which rubric items separate excellent work from merely passing work.",
+    aiCreateTitle: "Create a Benchmark with AI",
+    aiCreateDescription:
+      "Describe the capability and the scenarios to test. AI writes the cases for the Test Agent, trial-runs each one to calibrate difficulty, and takes a baseline score.",
+    targetAgent: "Test Agent",
+    targetAgentHint:
+      "The agent the cases are written for and scored under; the writing itself is done by the agent named below, in a new conversation",
+    aiCreateExamples: {
+      reportWriter: {
+        label: "A hard set for a report-writing agent",
+        description:
+          "5 cases: contradicting sources, strict format, cross-language, length and citations",
+        prompt:
+          "Design a hard Benchmark for a report-writing agent: 5 cases covering self-contradicting sources, strict formatting requirements, cross-language material, length limits and citation rules. " +
+          "The rubrics must separate excellent from merely passing work. Then take the baseline score.",
+      },
+      customerService: {
+        label: "Multi-turn cases for a support agent",
+        description: "8 cases: upset users, policy edges, questions that need a lookup",
+        prompt:
+          "Design 8 multi-turn conversation cases for a customer-support agent: upset users, policy boundaries, and questions that cannot be answered without looking something up. Score accuracy, tone and whether the agent promises more than it may.",
+      },
+      codeReview: {
+        label: "Defect cases for a code-review agent",
+        description: "6 cases with 2–3 real defects each; score recall and false positives",
+        prompt:
+          "Write 6 cases for a code-review agent: each gives a code snippet with 2–3 real defects (security, concurrency, boundaries). Score whether every defect is found and whether anything is flagged falsely.",
+      },
+      dataAnalysis: {
+        label: "CSV cases for a data-analysis agent",
+        description:
+          "5 cases with a CSV and a business question; score conclusions and definitions",
+        prompt:
+          "Write 5 cases for a data-analysis agent: each comes with a CSV file and a business question. Score the correctness of the conclusion, the charts, and how clearly metrics are defined.",
+      },
+    },
+    aiCreateTail: (targetAgentId: string): string =>
+      "Use the `benchmark-design` Skill: as the Builder, design and calibrate a Benchmark for the Test Agent below without changing that agent itself.\n\n" +
+      `- test_agent_id: \`${targetAgentId}\`\n` +
+      "- benchmark_id: keep the one named above if any; otherwise derive a short semantic id (letters, digits, `_` and `-` only)\n" +
+      "- desired_baseline_score: `<70` (unless the text above says otherwise)\n" +
+      "- pilot_iteration_limit: `3`\n\n" +
+      "A Benchmark sits beside agents, not under one: create `benchmarks/<benchmark_id>/` under the Project (never inside the tested agent's directory) with " +
+      "`benchmark_config.toml` (title, description, runs = 1; it records no agent), " +
+      "one `CASE-NNN-<slug>/` per case (`statement/README.md` is the statement, `rubric/README.md` the scoring rubric, 100 points per case, nothing from the rubric leaking into the statement) " +
+      "and `scoreboard.yaml` (initially `evaluations: []`; every evaluation records the tested `agent_id`, its `version`, the paired `provider` / `model_id` and the `thinking_level`). " +
+      "Delegate one `agent-evaluation` run per case through `run_subagent` to calibrate difficulty, " +
+      "freeze the final revision, append the Formal Baseline to scoreboard.yaml, and finish by reporting the Benchmark id, the baseline score and the per-case scores.",
+    manualCreateTitle: "Create a Benchmark manually",
+    manualCreateIntro:
+      "Fill in the title, the statements and the rubrics; the directory layout the Skills expect is written under the Project's benchmarks/. A Benchmark sits beside agents, so it can then evaluate any of them.",
+    idField: "Benchmark id",
+    idHint:
+      "The directory name is the identifier: letters, digits, _ and - only, e.g. report-writing-v1",
+    idExists: "A Benchmark with this id already exists; pick another",
+    titleField: "Title",
+    descriptionField: "Description",
+    descriptionHint: "One line on what capability is tested and what makes the cases hard",
+    runsField: "Runs per case",
+    runsHint:
+      "An integer from 1 to 1000; optimization runs every case this many times and averages",
+    runsInfo:
+      "Repeated runs separate a stable capability gap from chance, at a cost that scales with the count. AI calibration always uses one run per case; this value is for the optimization that follows.",
+    casesTitle: "Cases",
+    casesInfo:
+      "Every case has two halves: the statement goes to the Test Agent; the rubric is seen only by the evaluator and never enters the Test Agent's Workspace.",
+    rubricInfo:
+      "A discriminating rubric has observable items totalling 100 points, and puts most of the points on decisions or artifacts where doing it right and merely looking right diverge — never a high floor for format compliance.",
+    caseHeading: (n: number): string => `Case ${n}`,
+    caseSlugField: "Directory suffix",
+    caseSlugHint: (id: string): string => `Directory ${id}: letters, digits, _ and - only`,
+    caseTitleField: "Case title",
+    caseStatementField: "Statement",
+    caseStatementHint:
+      "Markdown; state the objective, the given materials, the required artifact and its format — never hint at the solution or the scoring",
+    caseRubricField: "Scoring rubric",
+    caseRubricHint:
+      'Markdown; one item per line with its points, totalling 100, e.g. "- 40 pts: …"',
+    addCase: "Add case",
+    removeCase: "Remove this case",
+    createSubmit: "Create Benchmark",
+    created: "Benchmark created",
+    invalidId: "Letters, digits, _ and - only",
+    invalidRuns: "Must be an integer from 1 to 1000",
+    invalidScore: "Must be an integer from 1 to 100",
+    useTitle: (title: string): string => `Use: ${title}`,
+    testedAgent: "Tested agent",
+    projectDefaultModel: (name: string): string => `Project default (${name})`,
+    projectDefaultModelUnset: "Project default",
+    evaluateDescription:
+      "AI puts the tested agent on this Benchmark for the full Case × runs matrix and appends the result to the scoreboard as one labelled evaluation.",
+    evaluateTestedAgentHint:
+      "Evaluated as its Agent State stands right now; the score is recorded under it, labelled with its version, model and thinking level",
+    evaluatorAgent: "Evaluator agent",
+    evaluatorAgentHint:
+      "The one that spawns the evaluation subagents, scores against the rubric and writes the scoreboard; needs the agent-evaluation Skill",
+    evaluatorMissingSkill:
+      "This agent does not have the agent-evaluation Skill installed and will most likely not complete the evaluation — switch to the default agent, or install the agent-tuning plugin on it first.",
+    evaluateSessionModel: "Model of the evaluation conversation",
+    evaluateSessionModelHint:
+      "The model that dispatches and totals the runs; the tested agent uses the model it is configured with, which is not changed here",
+    evaluateRunsHint:
+      "How many times every case runs, averaged; defaults to the Benchmark's configured count",
+    evaluateNoteField: "Note",
+    evaluateNotePlaceholder:
+      "e.g. This round checks what the last optimization actually changed; watch the two citation cases",
+    evaluateTail: (p: { targetAgentId: string; benchmarkId: string; runs: number }): string =>
+      "Use the `agent-evaluation` Skill to evaluate the Test Agent on this frozen Benchmark.\n\n" +
+      `- test_agent_id: \`${p.targetAgentId}\`\n` +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
+      `- runs: \`${p.runs}\`\n\n` +
+      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned `agent-evaluation` subagent per matrix cell (omit `agent_id`); " +
+      "the evaluation runtime is the model and thinking level that tested agent is configured with right now. Require every returned result to agree on " +
+      "`agent_id`, `provider`, `model_id` and `thinking_level`, and stop rather than merge two labels into one record. Average the runs per case and the cases " +
+      "per evaluation as the scoreboard contract specifies, then append exactly ONE evaluation to `scoreboard.yaml`, labelled with `agent_id`, `version`, " +
+      "`provider` / `model_id` and `thinking_level`. Change neither the tested agent nor the Benchmark. " +
+      "Finish by reporting the total score, the per-case scores and the label the evaluation was recorded under.",
+    optimizeDescription:
+      "AI changes the Test Agent under a falsifiable hypothesis and re-evaluates; a new version is kept only when the score strictly improves.",
+    optimizerAgent: "Optimizer agent",
+    optimizerAgentHint:
+      "The one that reads the scores and Traces and edits the Test Agent; needs the agent-optimization Skill",
+    optimizerMissingSkill:
+      "This agent does not have the agent-optimization Skill installed and will most likely not complete the optimization — switch to the default agent, or install the agent-tuning plugin on it first.",
+    testedAgentHint:
+      "The agent whose Agent State is edited; its scores are recorded under it and compared only against its own same-label history",
+    sessionModel: "Model of the optimizer's conversation",
+    sessionModelHint:
+      "The model that analyzes and edits; evaluations of the Test Agent keep the model the baseline recorded, which is not changed here",
+    optimizeRunsHint: "How many times every case runs per candidate version, averaged",
+    roundLimitField: "Round limit",
+    roundLimitHint: "One change per round; a round counts once its evaluation is complete",
+    targetScoreField: "Target score",
+    targetScoreHint: "Reaching it ends the loop early; defaults to ten points above the baseline",
+    focusField: "Focus",
+    focusPlaceholder:
+      "e.g. Focus on citation rules and format compliance; leave the writing style alone",
+    noBaseline:
+      "The selected tested agent has no baseline score in this Benchmark yet. Optimization needs one complete baseline evaluation to compare against — take it on the Evaluate tab first.",
+    baselineLine: (score: string, target: number): string =>
+      `Current baseline ${score} · target ${target}`,
+    optimizeTail: (p: {
+      targetAgentId: string;
+      benchmarkId: string;
+      runs: number;
+      roundLimit: number;
+      targetScore: number;
+    }): string =>
+      "Use the `agent-optimization` Skill to improve the Test Agent against its frozen Benchmark.\n\n" +
+      `- test_agent_id: \`${p.targetAgentId}\`\n` +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
+      `- runs: \`${p.runs}\`\n` +
+      `- desired_score: \`>=${p.targetScore}\`\n` +
+      `- candidate_round_limit: \`${p.roundLimit}\`\n\n` +
+      "Each round, state one falsifiable hypothesis from the current Reference and make one bounded change; evaluate the full Case × runs matrix through `run_subagent` with `agent-evaluation`, " +
+      "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
+      "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
+      "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
   },
 
   errors: {

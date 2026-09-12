@@ -27,6 +27,8 @@ import type {
   AuthLoginRequest,
   AuthResponse,
   BenchmarkCasesResponse,
+  BenchmarkCreateRequest,
+  BenchmarkCreateResponse,
   BenchmarksResponse,
   CaseMaterial,
   ChatDefaultsDto,
@@ -1201,46 +1203,59 @@ export const removeAgentSkill = (projectId: string, agentId: string, name: strin
     { method: "DELETE" },
   );
 
-// Benchmark scoring (read-only display) -------------------------------------------------------
+// Benchmarks (scores, manual creation and deletion) -------------------------------------------
+// Benchmarks sit at the Project level, beside agents rather than under one: a Benchmark can
+// evaluate many agents, so no agent id travels in these paths.
 
-export const listBenchmarks = (projectId: string, agentId: string) =>
-  apiFetch<BenchmarksResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/benchmarks`,
+export const listBenchmarks = (projectId: string) =>
+  apiFetch<BenchmarksResponse>(`/api/projects/${encodeURIComponent(projectId)}/benchmarks`);
+
+export const listBenchmarkCases = (projectId: string, benchmarkId: string) =>
+  apiFetch<BenchmarkCasesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}` +
+      `/cases`,
   );
 
-export const listBenchmarkCases = (projectId: string, agentId: string, benchmarkId: string) =>
-  apiFetch<BenchmarkCasesResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-      `/benchmarks/${encodeURIComponent(benchmarkId)}/cases`,
+/** Creates a Benchmark by hand (owner only); the server writes the on-disk layout. 409 `benchmark_exists` on a taken id. */
+export const createBenchmark = (projectId: string, body: BenchmarkCreateRequest) =>
+  apiFetch<BenchmarkCreateResponse>(`/api/projects/${encodeURIComponent(projectId)}/benchmarks`, {
+    method: "POST",
+    body,
+  });
+
+/** Removes a Benchmark directory whole — cases, config and scoreboard (owner only; 204). */
+export const deleteBenchmark = (projectId: string, benchmarkId: string) =>
+  apiFetch<void>(
+    `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}`,
+    { method: "DELETE" },
   );
 
 const benchmarkCaseFilesPath = (
   projectId: string,
-  agentId: string,
   benchmarkId: string,
   caseId: string,
   material: CaseMaterial,
 ) =>
-  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
-  `/benchmarks/${encodeURIComponent(benchmarkId)}/cases/${encodeURIComponent(caseId)}` +
+  `/api/projects/${encodeURIComponent(projectId)}/benchmarks/${encodeURIComponent(benchmarkId)}` +
+  `/cases/${encodeURIComponent(caseId)}` +
   `${material === "rubric" ? "/rubric" : ""}/files`;
 
 export const listBenchmarkCaseFiles = (
   projectId: string,
-  agentId: string,
   benchmarkId: string,
   caseId: string,
   path: string,
   material: CaseMaterial,
 ) =>
   apiFetch<WorkspaceFilesResponse>(
-    benchmarkCaseFilesPath(projectId, agentId, benchmarkId, caseId, material),
-    { query: { path } },
+    benchmarkCaseFilesPath(projectId, benchmarkId, caseId, material),
+    {
+      query: { path },
+    },
   );
 
 export const benchmarkCaseFileUrl = (
   projectId: string,
-  agentId: string,
   benchmarkId: string,
   caseId: string,
   path: string,
@@ -1249,7 +1264,6 @@ export const benchmarkCaseFileUrl = (
 ): string => {
   const base = `${benchmarkCaseFilesPath(
     projectId,
-    agentId,
     benchmarkId,
     caseId,
     material,
