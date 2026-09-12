@@ -57,6 +57,7 @@ import {
   GEAR_ICON,
   HOOK_ICON,
   MAGIC_WAND_ICON,
+  MEMORY_ICON,
   PLUGIN_ICON,
   SCHEDULE_ICON,
 } from "../../components/ui/icons";
@@ -105,9 +106,8 @@ const CARD_ICONS = {
     "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
   /** Usage (bar chart, same as sidebar "Usage Center") */
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
-  /** Memory (brain: two hemispheres + inner fold, lucide simplified), opens the settings tab */
-  memory:
-    "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18ZM15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4",
+  /** Memory count: the brain every Memory surface wears; opens the settings tab. */
+  memory: MEMORY_ICON,
 } as const;
 
 /**
