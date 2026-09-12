@@ -15,21 +15,21 @@
  * hover/focus ends. The animation itself is pure CSS (styles.css
  * `title-scroll-reveal` keyframes) driven by the two custom properties set here:
  * this component only measures and publishes numbers. There are no timers, and
- * the one subscription — the reduced-motion media query the hook watches — is
- * dropped on unmount.
+ * the reduced-motion query is one app-wide subscription shared by every row
+ * (use-reduced-motion.ts), not one per row.
  *
- * The tooltip is the fallback for text the scroll cannot reveal: callers without
- * `scrollReveal`, and scroll-reveal rows under reduced motion, where the global
- * `animation: none !important` block in styles.css disables the keyframes
- * outright and leaves the plain ellipsis. While the reveal is active the scroll
- * is the disclosure and no `title` is attached — having both put a tooltip over
- * the very text sliding past underneath it (#570). The full text also always
- * stays in the DOM, so screen readers announce it regardless of the visual
- * clipping.
+ * Which of the two discloses the tail is `titleDisclosure` (title-reveal.ts), and
+ * they are alternatives: the tooltip covers the text the scroll cannot reach —
+ * callers without `scrollReveal`, and scroll-reveal rows under reduced motion,
+ * where the global `animation: none !important` block in styles.css disables the
+ * keyframes outright and leaves the plain ellipsis. Where the reveal does run, no
+ * `title` is attached: having both put a tooltip over the very text sliding past
+ * underneath it (#570). The full text always stays in the DOM either way, so the
+ * accessible name carries it whole no matter how much of it is visually clipped.
  */
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { revealDistancePx, revealDurationMs } from "../../lib/title-reveal";
+import { revealDistancePx, revealDurationMs, titleDisclosure } from "../../lib/title-reveal";
 import { usePrefersReducedMotion } from "./use-reduced-motion";
 
 export function Truncated({
@@ -68,16 +68,20 @@ export function Truncated({
     return () => ro.disconnect();
   }, [text, className]);
 
-  const overflowing = overflowPx > 0;
-  // The scroll class and variables are attached only while there is something to
-  // scroll: without them the styles.css rules match nothing, leaving exactly the
-  // pre-#309 rendering (native ellipsis + conditional title) for titles that fit.
-  const scrolling = scrollReveal && overflowing;
+  // One decision drives all three: the scroll class and its variables are attached
+  // only where the reveal will actually run, so anywhere else the styles.css rules
+  // match nothing and the row renders exactly as it did pre-#309 (native ellipsis
+  // plus the conditional title).
+  const disclosure = titleDisclosure({
+    overflowing: overflowPx > 0,
+    scrollReveal,
+    reducedMotion,
+  });
   return (
     <span
       ref={ref}
-      className={`truncate ${className}${scrolling ? " title-scroll" : ""}`}
-      {...(scrolling
+      className={`truncate ${className}${disclosure === "scroll" ? " title-scroll" : ""}`}
+      {...(disclosure === "scroll"
         ? {
             style: {
               "--title-scroll-shift": `-${overflowPx}px`,
@@ -85,7 +89,7 @@ export function Truncated({
             } as CSSProperties,
           }
         : {})}
-      {...(overflowing && (!scrollReveal || reducedMotion) ? { title: text } : {})}
+      {...(disclosure === "tooltip" ? { title: text } : {})}
     >
       {/* The scroll needs a child the keyframes can turn into an inline-block and
           transform; at rest it renders inline, i.e. exactly like the bare text node
