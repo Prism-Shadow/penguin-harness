@@ -235,8 +235,8 @@ export function decimalOnly(v: string): string {
  * Custom keeps a generic protocol client type (protocol detection / the in-field picker
  * manage those) and otherwise switches to the generic OpenAI Chat Completions client — an
  * unroutable or vendor-pinned type must not leak into a custom group. Every other group
- * keeps the current value: a first-party group auto-routes by id, and a gateway's rows
- * carry the pin their preset already gave them.
+ * keeps the current value: a first-party group auto-routes by id, and the gateways that
+ * pin nothing at group level leave their rows on the pin their preset already gave them.
  */
 export function clientTypeAfterProviderChange(provider: string, current: string): string {
   const pinned = providerClientType(provider);
@@ -2238,13 +2238,14 @@ function ModelDialog({
         output: usdToInput(row.output, currency),
       };
     }
-    // New model: protocol follows group semantics — a group that pins one (vLLM) hands it
-    // to the new entry outright; a first-party vendor group doesn't persist client_type
-    // (AgentHub auto-routes by upstream id, with env fallback resolved live from the id);
-    // custom / user-defined groups / gateways use a fixed openai-chat protocol (env fallback
-    // OPENAI_*), and gateways additionally pre-fill their endpoint base URL. provider keeps
-    // the entry point's original value (a user-defined group must not collapse into custom),
-    // stored as a separate field from model_id, with no concatenation on save.
+    // New model: protocol follows group semantics — a group that pins one (OpenRouter,
+    // vLLM) hands it to the new entry outright; a first-party vendor group doesn't persist
+    // client_type (AgentHub auto-routes by upstream id, with env fallback resolved live from
+    // the id); custom / user-defined groups and the remaining gateways use a fixed
+    // openai-chat protocol (env fallback OPENAI_*), and gateways additionally pre-fill their
+    // endpoint base URL. provider keeps the entry point's original value (a user-defined
+    // group must not collapse into custom), stored as a separate field from model_id, with
+    // no concatenation on save.
     const info = providerInfo(addProvider);
     const pinnedClientType = providerClientType(addProvider);
     const vendorAdd =
@@ -2265,7 +2266,8 @@ function ModelDialog({
       fastMode: false,
       // No protocol is preselected for a custom / user-defined group: it is detected from
       // the endpoint (on demand, or on save while still unset) or picked by hand. Vendor
-      // groups auto-route by model id, and gateways keep their preset Chat Completions pin.
+      // groups auto-route by model id; a gateway takes the protocol its group pins, or the
+      // preset Chat Completions pin where the group pins nothing.
       clientType:
         pinnedClientType ?? (vendorAdd || isCustomLikeGroup(addProvider) ? "" : "openai-chat"),
       cacheRead: "",
@@ -2683,8 +2685,9 @@ function ModelDialog({
     form.modelId.trim(),
     envHintClientType(form.provider, form.clientType),
   )?.envKey;
-  // The protocol this group pins on every entry, user-added ones included (vLLM); undefined
-  // for every group that leaves the protocol to auto-routing, a gateway preset, or detection.
+  // The protocol this group pins on every entry, user-added ones included (OpenRouter,
+  // vLLM); undefined for every group that leaves the protocol to auto-routing, a gateway
+  // preset, or detection.
   const pinnedGroupClientType = providerClientType(form.provider);
   // First-party provider group (built-in, non-gateway, non-custom, no group-level pin):
   // adding goes through auto-routing — show a hint when the id can't be routed
@@ -2945,9 +2948,10 @@ function ModelDialog({
         {/* Adding a model: protocol note first (preset direct-vendor group = only the
             vendor's official protocol, named via the group label — the in-field suffix
             on the base URL below says which path; a group that pins a protocol = that
-            protocol, named outright, plus its own endpoint; custom / self-defined group /
-            gateway = fixed OpenAI protocol), then the identity fields ("get model id /
-            API key" links next to the respective inputs; fill in the id to test
+            protocol, named outright, with the endpoint the user's own for a self-hosted
+            group and already filled in for a gateway; custom / self-defined group / an
+            unpinned gateway = fixed OpenAI protocol), then the identity fields ("get model
+            id / API key" links next to the respective inputs; fill in the id to test
             connectivity — verify before saving). */}
         {isNew && (
           <>
@@ -2955,7 +2959,9 @@ function ModelDialog({
               {vendorGroup && dialogProvider
                 ? S.models.vendorProtocolHint(dialogProvider.label)
                 : pinnedGroupClientType !== undefined
-                  ? S.models.addProtocolHintPinned(pinnedGroupClientType)
+                  ? dialogProvider?.gatewayBaseUrl !== undefined
+                    ? S.models.addProtocolHintPinnedGateway(pinnedGroupClientType)
+                    : S.models.addProtocolHintPinned(pinnedGroupClientType)
                   : customLikeGroup
                     ? S.models.addProtocolHintDetect
                     : S.models.addProtocolHint}

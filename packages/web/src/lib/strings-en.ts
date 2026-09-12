@@ -810,6 +810,8 @@ export const en: Strings = {
       `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     addProtocolHintPinned: (protocol: string): string =>
       `Models in this group always use the ${protocol} protocol; set the base URL to your own server`,
+    addProtocolHintPinnedGateway: (protocol: string): string =>
+      `Models in this group always use the ${protocol} protocol; the base URL is preset to the gateway's endpoint`,
     autoRouteNone:
       "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",

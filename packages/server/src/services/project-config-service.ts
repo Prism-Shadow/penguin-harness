@@ -102,8 +102,8 @@ export function maskApiKey(key: string): string {
  * official endpoint, so consulting the vendor variable (ANTHROPIC_API_KEY, …) is the intended
  * configuration and its value may be previewed masked. Excluded — no detection, no preview:
  *
- * - gateway groups and any group pinning a protocol, e.g. vLLM (both reach a generic
- *   OpenAI-protocol client whose fallback is OPENAI_API_KEY, the *official OpenAI*
+ * - gateway groups and any group pinning a protocol, e.g. OpenRouter or vLLM (both reach a
+ *   generic OpenAI-protocol client whose fallback is OPENAI_API_KEY, the *official OpenAI*
  *   variable; steering it to a reseller or to the user's own server is exactly the
  *   misconfiguration the preview must not encourage), and the custom group;
  * - user-defined groups (not in MODEL_PROVIDERS at all);

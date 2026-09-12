@@ -126,9 +126,9 @@ describe("models preset & catalog enrichment", () => {
     expect(pick(body, "deepseek", "deepseek-flash").isDefault).toBe(true);
 
     // OpenRouter gateway model: the upstream id contains `/`, but under column storage it's just a
-    // plain string; openai-chat protocol + a preset base URL inlined on the entry (no secret).
+    // plain string; openai-responses protocol + a preset base URL inlined on the entry (no secret).
     const mimo = pick(body, "openrouter", "xiaomi/mimo-v2.5");
-    expect(mimo.clientType).toBe("openai-chat");
+    expect(mimo.clientType).toBe("openai-responses");
     expect(mimo.credential?.baseUrl).toBe("https://openrouter.ai/api/v1");
     expect(mimo.credential?.apiKeyMasked).toBeUndefined();
 

@@ -788,6 +788,9 @@ export const zh = {
     /** Add-dialog note for a group that pins one protocol on every entry (fed the client type): the protocol is not a choice here, and the endpoint is the user's own. */
     addProtocolHintPinned: (protocol: string): string =>
       `本分组的模型固定使用 ${protocol} 协议，base URL 填你自己的服务地址`,
+    /** The same note for a gateway group that pins a protocol: the endpoint is the gateway's, already filled in. */
+    addProtocolHintPinnedGateway: (protocol: string): string =>
+      `本分组的模型固定使用 ${protocol} 协议，base URL 已预填网关端点`,
     autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
     useCustomGroup: "转为自定义模型",
     addGroup: "新增分组",
