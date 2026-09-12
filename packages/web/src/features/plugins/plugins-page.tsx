@@ -969,8 +969,9 @@ function RegistrySection({
   useEffect(reloadInstalled, [reloadInstalled, installedTick]);
 
   /**
-   * Asks this Project for a plugin the build ships (or drops it); the server lists it and
-   * re-assembles the App, so the row's state is what the running process has afterwards.
+   * Installs the package into the data root and then lists it — writing the list alone would
+   * name a package that is not on the machine, which is exactly the state the row would then
+   * have to report as broken. The running process is untouched until it restarts.
    */
   const runInstall = async (specifier: string, install: boolean) => {
     if (pendingSpecifier !== null || projectId === null) return;

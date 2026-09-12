@@ -1288,7 +1288,7 @@ export const zh = {
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `已安装 ${name}`,
     addLabel: "添加插件",
-    fileHint: (file: string) => `仅限随本次构建发布的插件；写入该 Project 的 ${file}`,
+    fileHint: (file: string) => `npm 包名；构建未自带时先下载，再写入该 Project 的 ${file}`,
     pageTitle: "插件库",
     pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
     /** Plugin count in the group header (small text to the right of the category name). */
