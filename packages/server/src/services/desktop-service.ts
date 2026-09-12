@@ -13,14 +13,19 @@
  *
  * Comparisons hash both sides first so timingSafeEqual gets equal-length buffers.
  *
- * The service is also the shell↔web relay for client updates: the shell pushes its
- * updater snapshot over the utilityProcess message channel (index.ts wires the port),
- * the web reads it at GET /api/desktop/update and posts check/download/install commands
- * that are forwarded back to the shell. The window itself stays a plain browser — every
- * capability flows through this HTTP surface, never a renderer IPC bridge.
+ * The service is also the shell↔web relay for two shell-owned surfaces: client updates
+ * and the tray icon. In both directions it is the same utilityProcess message channel
+ * (index.ts wires the port) — the shell pushes its current state, the web reads it at
+ * GET /api/desktop/update or /api/desktop/tray and writes back a command that is
+ * forwarded to the shell. The window itself stays a plain browser — every capability
+ * flows through this HTTP surface, never a renderer IPC bridge.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { DesktopUpdateStatus, DesktopUpdaterCommandMessage } from "../api/types.js";
+import type {
+  DesktopTrayStatus,
+  DesktopUpdateStatus,
+  DesktopUpdaterCommandMessage,
+} from "../api/types.js";
 
 /** What the page may ask the shell's updater to do (the relayed command's `action`). */
 export type UpdaterCommand = DesktopUpdaterCommandMessage["action"];
@@ -86,6 +91,33 @@ export class DesktopService {
   requestUpdateCommand(action: UpdaterCommand): boolean {
     if (!this.updateCommandSender) return false;
     this.updateCommandSender(action);
+    return true;
+  }
+
+  // --- tray-icon relay -------------------------------------------------------
+
+  private trayStatus: DesktopTrayStatus | null = null;
+  private trayCommandSender: ((showTrayIcon: boolean) => void) | null = null;
+
+  /** Latest shell push; null until the shell's first one lands (the page then reads it as on). */
+  getTrayStatus(): DesktopTrayStatus | null {
+    return this.trayStatus;
+  }
+
+  /** index.ts stores each shell push here (already validated at the message port). */
+  setTrayStatus(status: DesktopTrayStatus): void {
+    this.trayStatus = status;
+  }
+
+  /** index.ts registers the message-port sender; absent outside a shell-forked process. */
+  onTrayCommand(sender: (showTrayIcon: boolean) => void): void {
+    this.trayCommandSender = sender;
+  }
+
+  /** Invoked by the tray route; false when no shell port is wired (tests, plain runs). */
+  requestTrayCommand(showTrayIcon: boolean): boolean {
+    if (!this.trayCommandSender) return false;
+    this.trayCommandSender(showTrayIcon);
     return true;
   }
 }

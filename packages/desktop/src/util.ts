@@ -66,3 +66,21 @@ export const MAX_SERVER_RESTARTS = 3;
 export function restartDelayMs(attempt: number): number {
   return Math.min(1000 * 2 ** attempt, 8000);
 }
+
+/**
+ * Whether closing the main window hides it into the tray instead of destroying it.
+ *
+ * All three conditions are load-bearing. A quit already under way never hides — the close
+ * that Electron runs on the way out has to complete. `trayShown` matters because without
+ * an icon there is no way back to a hidden window: the close must proceed instead, which
+ * leaves the app in the Dock on macOS and quits it on Windows and Linux through
+ * window-all-closed. A running app with no window and no tray icon is a state the user
+ * cannot escape, so it is one this must never produce.
+ */
+export function hidesOnClose(state: {
+  quitting: boolean;
+  trayShown: boolean;
+  closeToTray: boolean;
+}): boolean {
+  return !state.quitting && state.trayShown && state.closeToTray;
+}

@@ -1,18 +1,18 @@
 /**
  * Desktop-mode routes: POST /api/desktop/shutdown, the client-update relay under
- * /api/desktop/update, plus the shared desktop-mode guard that turns off multi-user
- * surfaces (see rejectInDesktopMode).
+ * /api/desktop/update, the tray-icon preference at /api/desktop/tray, plus the shared
+ * desktop-mode guard that turns off multi-user surfaces (see rejectInDesktopMode).
  *
  * The shutdown route is authenticated by the shell's Bearer token, not the cookie
  * session (the shell holds no cookie), so it mounts OUTSIDE authMiddleware and only
  * when desktop mode is enabled. Responds 202 first, then triggers the graceful
  * shutdown a beat later so the response isn't cut off by the closing listener.
- * The update routes are called by the page instead, so they mount INSIDE authMiddleware
- * (see desktopUpdateRoutes).
+ * The other two are called by the page instead, so they mount INSIDE authMiddleware
+ * (see desktopUpdateRoutes and desktopTrayRoutes).
  */
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
-import type { DesktopUpdateStatusResponse } from "../../api/types.js";
+import type { DesktopTrayStatusResponse, DesktopUpdateStatusResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
@@ -60,6 +60,20 @@ export function desktopRoutes(deps: AppDeps): Hono {
 }
 
 /**
+ * The shared gate for the two page-facing desktop surfaces: they exist only in desktop
+ * mode, and only for the shell's own window (`sessionVia === "desktop"`, the same
+ * two-field rule as the change-password gate, inverted). A browser signed into the same
+ * desktop-mode server must not read the machine's updater state, restart its GUI app, or
+ * reach into the chrome of a window it is not looking at.
+ */
+function shellSessionOf(deps: AppDeps, c: Context<AppEnv>, refusal: string): DesktopService {
+  const desktop = deps.desktop;
+  if (!desktop) throw new HttpError(404, "not_found", "Desktop mode is not enabled.");
+  if (c.var.sessionVia !== "desktop") throw new HttpError(403, "desktop_shell_only", refusal);
+  return desktop;
+}
+
+/**
  * Client-update relay routes (mounted INSIDE authMiddleware at /api/desktop/update, and
  * only in desktop mode). Restricted to the shell's own window (`sessionVia === "desktop"`,
  * the same two-field rule as the change-password gate, inverted): a browser signed into
@@ -71,18 +85,8 @@ export function desktopRoutes(deps: AppDeps): Hono {
 export function desktopUpdateRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
-  const requireShellSession = (c: Context<AppEnv>): DesktopService => {
-    const desktop = deps.desktop;
-    if (!desktop) throw new HttpError(404, "not_found", "Desktop mode is not enabled.");
-    if (c.var.sessionVia !== "desktop") {
-      throw new HttpError(
-        403,
-        "desktop_shell_only",
-        "Client updates are managed from the desktop app's own window.",
-      );
-    }
-    return desktop;
-  };
+  const requireShellSession = (c: Context<AppEnv>): DesktopService =>
+    shellSessionOf(deps, c, "Client updates are managed from the desktop app's own window.");
 
   app.get("/", (c) => {
     const desktop = requireShellSession(c);
@@ -108,6 +112,37 @@ export function desktopUpdateRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/install", (c) => {
     const desktop = requireShellSession(c);
     if (!desktop.requestUpdateCommand("install")) {
+      throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
+    }
+    return c.body(null, 202);
+  });
+
+  return app;
+}
+
+/**
+ * The tray-icon preference (mounted INSIDE authMiddleware at /api/desktop/tray, and only
+ * in desktop mode). GET reads what the shell last pushed — null until that first push,
+ * which the page reads as on, the shell's own default. PUT relays the switch; the shell
+ * applies it, persists it and pushes the new state straight back, so the answer here is
+ * an acknowledgement and the GET is what tells the truth.
+ */
+export function desktopTrayRoutes(deps: AppDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+  const refusal = "The tray icon is managed from the desktop app's own window.";
+
+  app.get("/", (c) => {
+    const desktop = shellSessionOf(deps, c, refusal);
+    return c.json({ status: desktop.getTrayStatus() } satisfies DesktopTrayStatusResponse);
+  });
+
+  app.put("/", async (c) => {
+    const desktop = shellSessionOf(deps, c, refusal);
+    const body = (await c.req.json().catch(() => null)) as { showTrayIcon?: unknown } | null;
+    if (typeof body?.showTrayIcon !== "boolean") {
+      throw new HttpError(400, "invalid_show_tray_icon", "showTrayIcon must be a boolean.");
+    }
+    if (!desktop.requestTrayCommand(body.showTrayIcon)) {
       throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
     }
     return c.body(null, 202);

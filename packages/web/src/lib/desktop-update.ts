@@ -5,18 +5,16 @@
  * pure (vitest runs node-only here, so nothing renders — same split as account-menu.ts).
  */
 import type { DesktopUpdateStatus } from "@prismshadow/penguin-server/api";
+import { isDesktopShellWindow } from "./account-menu";
 import type { AccountMenuSession } from "./account-menu";
 
 /**
- * Whether to offer the client-update row at all: only the shell's own window. Both
- * halves matter, mirroring offersChangePassword's reasoning inverted — `desktopMode`
- * alone would let a browser signed into the same desktop-mode server read this
- * machine's updater state and restart its GUI app; `sessionVia` alone would offer the
- * row to a stale desktop cookie replayed against a plain `penguin server`, where no
- * shell is listening. The server enforces the same pair on the routes.
+ * Whether to offer the client-update row at all: only the shell's own window, because
+ * only there is there an updater to drive — see isDesktopShellWindow for why both halves
+ * of that are required. The server enforces the same pair on the routes.
  */
 export function offersClientUpdate(session: AccountMenuSession): boolean {
-  return session.desktopMode && session.sessionVia === "desktop";
+  return isDesktopShellWindow(session);
 }
 
 /** How one row-initiated check ended, for exactly one report per outcome (in the modal when it is open, a toast otherwise). */

@@ -1,0 +1,32 @@
+<!--
+  The macOS menu bar penguin: a mark drawn for 16 pixels, not a shrunk brand logo.
+
+  The brand artwork (packages/web/public/penguin-logo.svg) is an illustration — gradients, a
+  rounded-square backdrop, a penguin with separate flippers, beak and feet. Flattened to a
+  silhouette and rasterized at 16px it lost every one of those parts to antialiasing and came
+  out an unreadable smear: 19% alpha-weighted coverage, of which only 6% was a solid pixel.
+  A menu bar image cannot carry that much detail, so this one carries none of it.
+
+  What is left is the outline alone: a head, sloping shoulders, and a notch for the feet. The
+  viewBox is 16 units so one unit is one pixel of the 1x image and every edge can be placed
+  against the pixel grid deliberately. It reaches 45% coverage with 38% of the canvas fully
+  opaque, which is the weight the rest of the menu bar's icons carry.
+
+  Two things were tried and dropped, so they are not tried again: flipper slots thinner than a
+  pixel never become transparent at 16px — they render as grey lobes that read as headphones —
+  and a knocked-out belly turns the figure into a ring at this size.
+
+  Drawn as a mask because the foot notch is a subtraction, and the head and body must union
+  rather than XOR where they overlap (which is what a single evenodd path would do).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <mask id="penguin">
+    <rect width="16" height="16" fill="#000"/>
+    <g fill="#fff">
+      <ellipse cx="8" cy="3.6" rx="3.4" ry="3.2"/>
+      <ellipse cx="8" cy="10.3" rx="5.5" ry="5.3"/>
+    </g>
+    <path fill="#000" d="M8 13.6 9.6 16 6.4 16Z"/>
+  </mask>
+  <rect width="16" height="16" fill="#000" mask="url(#penguin)"/>
+</svg>

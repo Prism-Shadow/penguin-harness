@@ -3504,6 +3504,41 @@ export interface DesktopUpdaterCommandMessage {
   action: "check" | "download" | "install";
 }
 
+// Desktop tray icon (desktop mode only)
+//
+// The shell keeps an icon in the system tray for as long as the app runs, and Settings ›
+// Appearance is where it is turned off and on. The switch rides the same utilityProcess
+// message channel as the client updater above: the shell pushes what it currently shows,
+// the page reads it at GET /api/desktop/tray and writes through PUT, which is relayed
+// back. The window stays a plain browser — no renderer IPC bridge.
+
+/** What the shell is currently doing about its tray icon. */
+export interface DesktopTrayStatus {
+  /** Whether an icon is shown in the system tray while the app runs. */
+  showTrayIcon: boolean;
+}
+
+/**
+ * GET / PUT /api/desktop/tray (desktop-shell sessions only): the tray preference.
+ * `status` is null until the shell's first push lands (a beat after server start); a
+ * client that finds null reads it as on, which is the shell's own default.
+ */
+export interface DesktopTrayStatusResponse {
+  status: DesktopTrayStatus | null;
+}
+
+/** Shell → server push over the utilityProcess message channel. */
+export interface DesktopTrayStatusMessage {
+  type: "desktop-tray-status";
+  status: DesktopTrayStatus;
+}
+
+/** Server → shell command over the utilityProcess message channel (relayed from PUT /api/desktop/tray). */
+export interface DesktopTrayCommandMessage {
+  type: "desktop-tray-command";
+  showTrayIcon: boolean;
+}
+
 /**
  * The outcome of one self-update run (`penguin update --yes` on the server host), carried
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
