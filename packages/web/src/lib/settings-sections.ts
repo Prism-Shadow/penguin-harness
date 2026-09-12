@@ -5,12 +5,13 @@
  * belong to admins alone; the personal pages are per-user preferences every signed-in user
  * owns. Two pages additionally depend on how this session runs: the account page only
  * exists where a password can be changed (see offersChangePassword), and user management
- * disappears in desktop mode, where the app is single-user. Updating is not a page here at
- * all — both the server check and the desktop client's live in the sidebar user menu, under
- * the entry that opens this dialog. The rules live here rather than inside the dialog
- * because this package's vitest runs in Node with no DOM — a pure function is the only
- * thing a test can pin directly — and because rail and content have to apply the same rule
- * to avoid a visible-but-forbidden entry.
+ * disappears in desktop mode, where the app is single-user. The profile page is neither — an
+ * avatar and a nickname are display data, so every signed-in session may set them. Updating
+ * is not a page here at all — both the server check and the desktop client's live in the
+ * sidebar user menu, under the entry that opens this dialog. The rules live here rather than
+ * inside the dialog because this package's vitest runs in Node with no DOM — a pure function
+ * is the only thing a test can pin directly — and because rail and content have to apply the
+ * same rule to avoid a visible-but-forbidden entry.
  *
  * A page the viewer may not open is dropped from the list entirely rather than rendered
  * disabled: a greyed-out "Proxy" row still tells a non-admin the setting exists and that
@@ -24,7 +25,7 @@ import type { AccountMenuSession } from "./account-menu";
 
 /** A page of the System settings dialog. */
 export type SettingsSectionKey =
-  "general" | "appearance" | "account" | "proxy" | "uploads" | "users";
+  "profile" | "general" | "appearance" | "account" | "proxy" | "uploads" | "users";
 
 /** Rail heading a page sits under: the viewer's own preferences vs. the whole server's. */
 export type SettingsGroupKey = "personal" | "server";
@@ -45,6 +46,10 @@ export interface SettingsViewer extends AccountMenuSession {
  */
 const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsViewer): boolean }> =
   [
+    // Heads the personal group, and unlike the account page below it is visible in every
+    // session: a nickname and an avatar need no password to change, so the desktop shell's
+    // own window — which for some installs is the only session there is — keeps it.
+    { key: "profile", group: "personal", visible: () => true },
     { key: "general", group: "personal", visible: () => true },
     { key: "appearance", group: "personal", visible: () => true },
     // The desktop shell's own window has no password to change; a password-established

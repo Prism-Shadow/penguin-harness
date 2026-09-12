@@ -9,13 +9,19 @@
  *
  * The settings dialog is mounted OUTSIDE the panel: the panel's children unmount the moment
  * the menu closes, and the settings row closes the menu as it opens the dialog.
+ *
+ * The panel heads itself with the account it belongs to — avatar, nickname, and the id under
+ * it once a nickname stands in for it. Both anchors are avatars, and the rail's is nothing but
+ * an avatar, so without the header the menu never says whose account its rows act on.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { S } from "../../lib/strings";
+import { ICON_GAP } from "../../lib/icon-scale";
 import { useAuth } from "../../state/auth";
 import { Dropdown, menuItemClass } from "../ui/dropdown";
+import { UserAvatar } from "../ui/user-avatar";
 import type { DropdownPortal } from "../ui/dropdown";
 import { UpdateRow } from "../account/update-row";
 import { openUpdateModal } from "../../lib/use-update-flow";
@@ -43,7 +49,7 @@ export function UserMenu({
   className?: string;
 }) {
   const navigate = useNavigate();
-  const { logout, desktopMode } = useAuth();
+  const { user, logout, desktopMode } = useAuth();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -60,6 +66,27 @@ export function UserMenu({
         {...(anchorOwner !== undefined ? { anchorOwner } : {})}
       >
         <div className="py-1">
+          {/* Whose account this is. Not a row: nothing here is actionable, and the avatar plus
+              the name is what makes the rows below unambiguous on the collapsed rail, where the
+              anchor carries no text at all. The id shows under the nickname only when one is
+              set — otherwise the two lines would repeat each other. */}
+          {user && (
+            <div
+              className={`mb-1 flex items-center ${ICON_GAP.menu} border-b border-gray-100 px-3.5 pb-2.5 dark:border-gray-800`}
+            >
+              <UserAvatar
+                userId={user.userId}
+                {...(user.displayName !== undefined ? { displayName: user.displayName } : {})}
+                {...(user.avatar !== undefined ? { avatar: user.avatar } : {})}
+              />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{user.displayName ?? user.userId}</p>
+                {user.displayName !== undefined && (
+                  <p className="truncate text-xs text-gray-500 dark:text-gray-400">{user.userId}</p>
+                )}
+              </div>
+            </div>
+          )}
           {/* System settings dialog: everyone gets the row — the dialog always has the
               personal pages, and the server-global ones inside it stay gated by the
               section registry rather than by this row. The preference rows that used to

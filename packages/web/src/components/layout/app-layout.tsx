@@ -18,6 +18,7 @@ import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
 import { Tooltip } from "../ui/tooltip";
 import { UpdateDot } from "../ui/update-dot";
+import { UserAvatar } from "../ui/user-avatar";
 import { CloseIcon, NAV_ICONS } from "../ui/icons";
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { UserMenu } from "./user-menu";
@@ -122,16 +123,18 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   };
 
   /**
-   * The avatar's accessible name keeps the signed-in id: the menu behind it shows no id of its
-   * own, so while the sidebar is collapsed this is the only place one appears. The visible
-   * tooltip names what the control does instead — an initial in a circle is not a name a reader
-   * needs read back. Both carry what the update trail is waiting on, which from this rail is the
-   * only route left to the update row.
+   * The avatar's accessible name names the signed-in account — its nickname once there is one,
+   * since that is the name the account chose to be called. The trigger itself is nothing but an
+   * avatar, so without this the collapsed rail offers a control with no name at all; the visible
+   * tooltip says what the control does instead, because neither an initial in a circle nor a
+   * photograph is a name a reader needs read back. Both carry what the update trail is waiting
+   * on, which from this rail is the only route left to the update row.
    */
+  const accountName = user?.displayName ?? user?.userId;
   const avatarName =
     badges.softwareNote !== null
-      ? `${user?.userId ?? ""} · ${badges.softwareNote}`
-      : (user?.userId ?? S.auth.admin);
+      ? `${accountName ?? ""} · ${badges.softwareNote}`
+      : (accountName ?? S.auth.admin);
   const avatarTooltip =
     badges.softwareNote !== null
       ? `${S.nav.userSettings} · ${badges.softwareNote}`
@@ -238,12 +241,15 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
                   between them would pop on every collapse while the box beside it animates
                   smoothly. The button keeps the rail's 32px square, which is every other
                   entry's target. */}
-              <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
-                {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
+              <UserAvatar
+                userId={user?.userId ?? "?"}
+                {...(user?.displayName !== undefined ? { displayName: user.displayName } : {})}
+                {...(user?.avatar !== undefined ? { avatar: user.avatar } : {})}
+              >
                 {/* Update reminder, mirroring the pinned sidebar's avatar: the update row sits in
                     the menu this opens, and the label above names what is waiting. */}
                 {badges.software !== null && <UpdateDot />}
-              </span>
+              </UserAvatar>
             </button>
           </Tooltip>
         )}

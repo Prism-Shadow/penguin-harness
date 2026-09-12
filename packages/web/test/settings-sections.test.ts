@@ -52,6 +52,7 @@ const desktopBrowser = visibleSettingsSections({
 describe("visibleSettingsSections", () => {
   it("gives a web admin every page, in rail order", () => {
     expect(admin.map((s) => s.key)).toEqual([
+      "profile",
       "general",
       "appearance",
       "account",
@@ -66,19 +67,27 @@ describe("visibleSettingsSections", () => {
     // admin surfaces, and the whole point of dropping them is that a non-admin is never
     // told they exist. Updating is not among them either way: it lives in the sidebar user
     // menu, outside this dialog, for every account.
-    expect(plain.map((s) => s.key)).toEqual(["general", "appearance", "account"]);
+    expect(plain.map((s) => s.key)).toEqual(["profile", "general", "appearance", "account"]);
   });
 
   it("strips the desktop shell's window down to what a token session can use", () => {
     // No account page (no password to change — see offersChangePassword), no user
-    // management (single-user server).
-    expect(shell.map((s) => s.key)).toEqual(["general", "appearance", "proxy", "uploads"]);
+    // management (single-user server). The profile page stays: an avatar and a nickname need
+    // no password, and this window is the only session a desktop install has.
+    expect(shell.map((s) => s.key)).toEqual([
+      "profile",
+      "general",
+      "appearance",
+      "proxy",
+      "uploads",
+    ]);
   });
 
   it("keeps the account page for a password session against a desktop-mode server", () => {
     // Mirrors the old menu row's two-field rule: that session typed a real password and
     // can still change it, while user management stays desktop-hidden.
     expect(desktopBrowser.map((s) => s.key)).toEqual([
+      "profile",
       "general",
       "appearance",
       "account",
@@ -104,19 +113,20 @@ describe("resolveSettingsSection", () => {
   it("passes through a page the viewer may open", () => {
     expect(resolveSettingsSection("proxy", admin)).toBe("proxy");
     expect(resolveSettingsSection("appearance", plain)).toBe("appearance");
+    expect(resolveSettingsSection("profile", plain)).toBe("profile");
   });
 
   it("sends a non-admin asking for an admin page to their own first page", () => {
     // Answering identically to an unknown request is the point: a requested key cannot be
     // used to find out that "users" is a real page.
-    expect(resolveSettingsSection("users", plain)).toBe("general");
-    expect(resolveSettingsSection("proxy", plain)).toBe("general");
-    expect(resolveSettingsSection("no-such-section", plain)).toBe("general");
+    expect(resolveSettingsSection("users", plain)).toBe("profile");
+    expect(resolveSettingsSection("proxy", plain)).toBe("profile");
+    expect(resolveSettingsSection("no-such-section", plain)).toBe("profile");
   });
 
   it("falls back to the first visible page for a missing request", () => {
-    expect(resolveSettingsSection(null, admin)).toBe("general");
-    expect(resolveSettingsSection(undefined, admin)).toBe("general");
+    expect(resolveSettingsSection(null, admin)).toBe("profile");
+    expect(resolveSettingsSection(undefined, admin)).toBe("profile");
   });
 
   it("returns null when nothing is visible, rather than inventing a page", () => {

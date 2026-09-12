@@ -1,6 +1,7 @@
 /**
- * The ordered-migration mechanism, the 0.2.4 → 0.2.7 migration that is its first entry, and
- * the 0.2.9 → 0.2.10 drop that is its first restart-only one.
+ * The ordered-migration mechanism, the 0.2.4 → 0.2.7 migration that is its first entry, the
+ * 0.2.9 → 0.2.10 drop that is its first restart-only one, and the additive column pair that
+ * the user profile added to `users`.
  *
  * Two properties carry everything else: a real 0.2.4 database reaches exactly the shape a
  * fresh one is created with (so a runtime older than the platform pushed onto it becomes
@@ -54,6 +55,10 @@ function open024(): DatabaseSync {
   db.exec("DROP TABLE messaging_bindings");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_user");
+  // No account had a profile before migration 5: the current declaration's two columns
+  // must come off, or a round trip through migration 5's down would land on a narrower
+  // `users` than this fixture and read as a rollback that lost something.
+  dropProfileColumns(db);
   db.exec(GOAL_STATE_DDL);
   return db;
 }
@@ -64,10 +69,37 @@ function open029(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec(GOAL_STATE_DDL);
   // SCHEMA_SQL declares the CURRENT shape, and a 0.2.9 database has no machines tables —
-  // migration 4 is what adds them. Without this the fixture is a database no release made.
+  // migration 4 is what adds them — and no profile columns, which migration 5 adds. Without
+  // both the fixture is a database no release made.
   db.exec("DROP TABLE machine_project; DROP TABLE machines; DROP TABLE machine;");
+  dropProfileColumns(db);
   db.exec("PRAGMA user_version = 2");
   return db;
+}
+
+/**
+ * A database from before the user profile: today's declaration minus exactly the two columns
+ * migration 5 adds, stamped at the version before it. Derived from SCHEMA_SQL for the reason
+ * open024 is — a hand-copied `users` table would fork from reality.
+ */
+function openPreProfile(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  dropProfileColumns(db);
+  db.exec("PRAGMA user_version = 4");
+  return db;
+}
+
+/** Takes migration 5's two columns off a database built from the current declaration. */
+function dropProfileColumns(db: DatabaseSync): void {
+  db.exec("ALTER TABLE users DROP COLUMN avatar");
+  db.exec("ALTER TABLE users DROP COLUMN display_name");
+}
+
+/** Column names of `users`, for the two cases that are about columns rather than whole shapes. */
+function userColumns(db: DatabaseSync): string[] {
+  const rows = db.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+  return rows.map((r) => r.name);
 }
 
 /** Runs `fn` with the restart-only migration taken off the list, so a swap-path case can see swap-safe ones apply. */
@@ -146,6 +178,7 @@ describe("migration mechanism", () => {
         "messaging-delivery-flags",
         "drop-goal-state",
         "machines",
+        "user-profile",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
@@ -205,6 +238,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
         "messaging-bindings",
         "messaging-delivery-flags",
         "machines",
+        "user-profile",
       ]);
     } finally {
       db.close();
@@ -225,6 +259,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
         "messaging-delivery-flags",
         "drop-goal-state",
         "machines",
+        "user-profile",
       ]);
     } finally {
       db.close();
@@ -248,12 +283,12 @@ describe("0.2.9 → current: drop-goal-state", () => {
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       fresh.exec(SCHEMA_SQL);
-      expect(migrate(db).applied).toEqual(["drop-goal-state", "machines"]);
+      expect(migrate(db).applied).toEqual(["drop-goal-state", "machines", "user-profile"]);
       expect(shape(db)).toBe(shape(fresh));
       // IF EXISTS: a database this build created, stamped 2 by an older mechanism, has no
       // goal_state to drop and must not fail on it.
       fresh.exec("PRAGMA user_version = 2");
-      expect(migrate(fresh).applied).toEqual(["drop-goal-state", "machines"]);
+      expect(migrate(fresh).applied).toEqual(["drop-goal-state", "machines", "user-profile"]);
     } finally {
       db.close();
       fresh.close();
@@ -272,6 +307,51 @@ describe("0.2.9 → current: drop-goal-state", () => {
       rollbackTo(db, 2);
       expect(shape(db)).toBe(before);
       expect(db.prepare("SELECT COUNT(*) AS n FROM goal_state").get()).toEqual({ n: 0 });
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("pre-profile → current: user-profile", () => {
+  it("adds both columns, and a database that already has them migrates the same", () => {
+    const db = openPreProfile();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      fresh.exec(SCHEMA_SQL);
+      expect(userColumns(db)).not.toContain("display_name");
+      expect(migrate(db).applied).toEqual(["user-profile"]);
+      expect(userColumns(db)).toContain("display_name");
+      expect(userColumns(db)).toContain("avatar");
+      expect(shape(db)).toBe(shape(fresh));
+
+      // ADOPTION: on a database this build created, the declarative track already added both,
+      // so the migration must find its work done, add nothing twice, and stamp anyway.
+      fresh.exec("PRAGMA user_version = 4");
+      expect(migrate(fresh).applied).toEqual(["user-profile"]);
+      expect(userColumns(fresh).filter((c) => c === "avatar")).toEqual(["avatar"]);
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+
+  it("down removes both columns, taking every nickname and avatar with them", () => {
+    const db = openPreProfile();
+    try {
+      db.exec(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('bob', 'h', 0, '2026-01-01T00:00:00Z')",
+      );
+      const before = shape(db);
+      migrate(db);
+      db.exec("UPDATE users SET display_name = 'Bob', avatar = 'data:image/png;base64,AAAA'");
+
+      rollbackTo(db, 4);
+      expect(shape(db)).toBe(before);
+      expect(userColumns(db)).not.toContain("display_name");
+      expect(userColumns(db)).not.toContain("avatar");
+      // The account itself survives; only what the two columns held is gone.
+      expect(db.prepare("SELECT user_id FROM users").all()).toEqual([{ user_id: "bob" }]);
     } finally {
       db.close();
     }
@@ -339,11 +419,11 @@ describe("rollbackTo", () => {
       migrate(db);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
 
-      const r = rollbackTo(db, LATEST_VERSION - 2);
+      const r = rollbackTo(db, 2);
       expect(r.from).toBe(LATEST_VERSION);
-      expect(r.to).toBe(LATEST_VERSION - 2);
-      // Newest first: the machines tables go, then goal_state comes back.
-      expect(r.reverted).toEqual(["machines", "drop-goal-state"]);
+      expect(r.to).toBe(2);
+      // Newest first: the profile columns go, then the machines tables, then goal_state returns.
+      expect(r.reverted).toEqual(["user-profile", "machines", "drop-goal-state"]);
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
           name: string;
@@ -382,6 +462,7 @@ describe("rollbackTo", () => {
       migrate(db);
       const r = rollbackTo(db, 0);
       expect(r.reverted).toEqual([
+        "user-profile",
         "machines",
         "drop-goal-state",
         "messaging-delivery-flags",

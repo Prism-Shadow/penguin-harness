@@ -55,7 +55,32 @@ export interface UserInfo {
   isAdmin: boolean;
   /** Still using the initial password (seeded/set by admin): frontend prompts the user to change it soon. */
   passwordIsInitial: boolean;
+  /**
+   * Nickname the account chose (1-32 characters), shown wherever the id would otherwise be.
+   * Omitted when unset — every account that predates the Profile page starts without one, and
+   * a surface with no value falls back to `userId`.
+   */
+  displayName?: string;
+  /**
+   * Avatar as a `data:image/...;base64,` URL, at most 131072 characters. Omitted when unset,
+   * and a surface with no value draws the letter placeholder instead.
+   */
+  avatar?: string;
   createdAt: string;
+}
+
+/**
+ * PUT /api/me/profile — a patch, not a replacement: an absent field keeps what is stored,
+ * `null` clears it, a string sets it. A body naming neither field is a 400, since it can only
+ * be a mistake.
+ */
+export interface UpdateProfileRequest {
+  displayName?: string | null;
+  avatar?: string | null;
+}
+
+export interface UpdateProfileResponse {
+  user: UserInfo;
 }
 
 export interface AuthLoginRequest {

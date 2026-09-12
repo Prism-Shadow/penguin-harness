@@ -147,6 +147,7 @@ export const zh = {
     groupPersonal: "个人",
     groupServer: "服务器",
     /** Personal pages of the settings dialog. */
+    profile: "个人资料",
     generalTitle: "通用",
     appearanceTitle: "外观",
     accountTitle: "账户",
@@ -435,6 +436,25 @@ export const zh = {
     /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
     claimFailedServer:
       "首次登录链接在服务端设置密码后即失效，重启服务端也会换发新的链接。请在下方用账号密码登录，或向管理员索取新的登录链接。",
+  },
+
+  /**
+   * The Profile page of System settings, and the avatar/nickname it writes. Visible in every
+   * session, the desktop shell's own window included: a profile needs no password to change.
+   */
+  profile: {
+    /** Avatar row: its label, and the two actions beside the preview. */
+    avatar: "头像",
+    changeAvatar: "更换头像",
+    removeAvatar: "移除头像",
+    /** The picked image could not be brought under the size limit even as JPEG. */
+    avatarTooLarge: "图片过大，请换一张尺寸更小的图片。",
+    /** The picked file could not be decoded as an image at all. */
+    avatarUnreadable: "无法读取这张图片，请换一个文件。",
+    /** Nickname row: the field, and the shape rule that stays on screen while typing. */
+    displayName: "昵称",
+    displayNameHint: "1–32 个字符，留空即清除",
+    displayNamePlaceholder: "留空则显示用户名",
   },
 
   account: {

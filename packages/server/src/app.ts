@@ -172,6 +172,8 @@ export interface AppDeps {
   config: ServerConfig;
   db: DatabaseSync;
   sessionsRepo: SessionsRepo;
+  /** The `users` table itself, for the one route that writes a column no service owns (PUT /api/me/profile). */
+  usersRepo: UsersRepo;
   prefsRepo: UiPrefsRepo;
   /** Admin-level server-global settings (currently the proxy switches and address). */
   serverSettingsRepo: ServerSettingsRepo;
@@ -1112,6 +1114,7 @@ export function buildAppDeps(
     config,
     db,
     sessionsRepo,
+    usersRepo,
     prefsRepo,
     serverSettingsRepo,
     authService,

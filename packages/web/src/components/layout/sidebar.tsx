@@ -122,6 +122,7 @@ import {
 } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { AgentAvatar } from "../ui/agent-avatar";
+import { UserAvatar } from "../ui/user-avatar";
 import { CheckIcon, ChevronDown, GEAR_ICON, MESSAGING_RELAY_ICON, NAV_ICONS } from "../ui/icons";
 import {
   FOLDER_ICON,
@@ -2198,18 +2199,23 @@ export function Sidebar({
                     // The dot alone is mysterious: name what is waiting on the trigger (hover
                     // tooltip + accessible name), in the update row's own wording.
                     title: badges.softwareNote,
-                    "aria-label": `${user?.userId ?? ""} · ${badges.softwareNote}`,
+                    "aria-label": `${user?.displayName ?? user?.userId ?? ""} · ${badges.softwareNote}`,
                   }
                 : {})}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
             >
-              <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
-                {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
+              <UserAvatar
+                userId={user?.userId ?? "?"}
+                {...(user?.displayName !== undefined ? { displayName: user.displayName } : {})}
+                {...(user?.avatar !== undefined ? { avatar: user.avatar } : {})}
+              >
                 {/* Update reminder: the menu behind this trigger holds the row that acts on
                     it, and the trigger's tooltip/label above say what it is. */}
                 {badges.software !== null && <UpdateDot />}
+              </UserAvatar>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                {user?.displayName ?? user?.userId}
               </span>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">{user?.userId}</span>
               {user?.isAdmin && (
                 <span className="text-xs text-gray-400 dark:text-gray-500">{S.auth.admin}</span>
               )}

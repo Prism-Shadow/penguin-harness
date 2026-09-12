@@ -79,6 +79,14 @@ export function AdminUsersSection() {
                         <Badge tone="gray">{S.admin.initialPasswordFlag}</Badge>
                       </span>
                     )}
+                    {/* The nickname under the id, not instead of it: every other control on the
+                        row acts on the id, and a list that showed only the chosen name would
+                        leave an admin guessing which account they are resetting. */}
+                    {u.displayName !== undefined && (
+                      <p className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                        {u.displayName}
+                      </p>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
                     <Badge tone="gray">{u.isAdmin ? S.admin.roleAdmin : S.admin.roleUser}</Badge>
