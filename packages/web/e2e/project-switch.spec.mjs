@@ -98,7 +98,7 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await byName.first().click();
   await page.getByRole("button", { name: U }).first().click();
   await expect(generalAgent).toBeVisible();
-  await page.getByRole("link", { name: "插件库" }).click();
+  await page.getByRole("link", { name: "插件市场" }).click();
   await expect(page).toHaveURL(/\/plugins$/);
   await page.getByRole("button", { name: "管理安装 agent-initialization" }).click();
   await expect(page.getByRole("button", { name: "卸载 default_agent" })).toBeVisible();

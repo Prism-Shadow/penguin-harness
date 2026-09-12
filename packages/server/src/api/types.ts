@@ -3293,6 +3293,49 @@ export interface SkillArchiveInstallRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Plugin registry index
+// ---------------------------------------------------------------------------
+
+/**
+ * One published version of a plugin — the index entry format every plugin registry
+ * speaks (modeled on the typst/packages `index.json` schema: a flat array of
+ * per-version entries; a plugin published at several versions appears once per
+ * version). Installation is out of scope here: an entry's `name` is the package
+ * specifier a Project's plugin list names.
+ */
+export interface PluginIndexEntry {
+  /** Package specifier — the string a Project's plugin list names. */
+  name: string;
+  /** Semantic version of this entry. */
+  version: string;
+  description: string;
+  authors: string[];
+  /** SPDX license identifier. */
+  license: string;
+  /** Source repository URL. */
+  repository?: string;
+  homepage?: string;
+  /** Free-form searchable terms; the Web App renders them as chips (e.g. the target OS). */
+  keywords?: string[];
+  /** Capability floor(s) the plugin provides on (e.g. "sandbox"). */
+  categories?: string[];
+  /** Unix timestamp (seconds) of the entry's last update. */
+  updatedAt?: number;
+}
+
+/** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
+export interface PluginIndexResponse {
+  plugins: PluginIndexEntry[];
+}
+
+/** GET /api/plugins/registry/readme — long-form docs for one entry; `readme` is null when none exists. */
+export interface PluginReadmeResponse {
+  name: string;
+  /** Markdown, rendered by the Web App. Null when this entry has no readme. */
+  readme: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Version and self-update
 // ---------------------------------------------------------------------------
 
@@ -3602,4 +3645,40 @@ export interface ContributionsResponse {
   pages: WebContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+}
+
+/** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
+export interface InstalledPlugin {
+  /** The package specifier as written in the file. */
+  specifier: string;
+  /** Whether the running process holds this package — its modules are in the tree. */
+  active: boolean;
+  /**
+   * Where the package came from: shipped with the build (a hot push's assets, or the
+   * installation's own `plugins/`) rather than fetched from npm. A tag on an installed
+   * plugin — being shipped is not being installed.
+   */
+  builtin: boolean;
+  /** Module names the package declares it adds. */
+  modules: string[];
+  /** Node names the package declares it stands in for. */
+  replaces: string[];
+  /**
+   * Why the package is not running: unresolvable, not a plugin package, or a load that
+   * failed (an import that threw, a module name another plugin already took).
+   */
+  error?: string;
+}
+
+export interface InstalledPluginsResponse {
+  plugins: InstalledPlugin[];
+  /**
+   * Specifiers this build SHIPS (the hot push's assets, or the installation's own
+   * `plugins/`): installable without a download, and not installed until listed.
+   */
+  shipped: string[];
+  /** The file the list lives in, named for the page that explains where to edit it by hand. */
+  file: string;
+  /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
+  restartPending: boolean;
 }

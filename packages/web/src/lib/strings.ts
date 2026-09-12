@@ -18,9 +18,9 @@ export const zh = {
     chat: "对话",
     newChat: "新对话",
     agents: "智能体",
-    plugins: "插件库",
     models: "模型库",
     machines: "机器",
+    plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
@@ -163,7 +163,6 @@ export const zh = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
-    /** Admin-only sub-page (server-global). */
     uploadLimitsTitle: "上传限制",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
@@ -1260,6 +1259,24 @@ export const zh = {
 
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
+    installedTitle: "已安装的插件",
+    installedDesc:
+      "当前 Project 要求的插件，以及其中哪些正在被本进程运行。服务器能自行重组时，改动无需重启即可生效。",
+    installedEmpty: "还没有安装任何插件。",
+    stateActive: "运行中",
+    builtin: "内置",
+    builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
+    installedRestart: "待重启",
+    stateInactive: "未加载",
+    replacesLabel: "替换",
+    restartPending: "有已列出但未运行的插件，且本服务器无法免重启应用：重启服务器后加载。",
+    uninstall: "移除",
+    install: "安装",
+    installing: "安装中…",
+    /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
+    deploymentInstalledToast: (name: string) => `已安装 ${name}`,
+    addLabel: "添加插件",
+    fileHint: (file: string) => `仅限随本次构建发布的插件；写入该 Project 的 ${file}`,
     pageTitle: "插件库",
     pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
     /** Plugin count in the group header (small text to the right of the category name). */
@@ -1342,6 +1359,23 @@ export const zh = {
         "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置。",
       savedToast: "已保存，自下一轮对话起生效",
     },
+  },
+
+  pluginRegistry: {
+    pageTitle: "插件市场",
+    empty: "暂无插件",
+    /** Card metadata: the entry's package specifier doubles as the install string. */
+    specifierHint: "包名，即 Project 插件列表里写的那串",
+    back: "返回插件市场",
+    readme: "说明文档",
+    noReadme: "该插件暂无说明文档。",
+    notFound: "找不到这个插件。",
+    repository: "源码仓库",
+    homepage: "主页",
+    authors: "作者",
+    license: "许可证",
+    copySpecifier: "复制包名",
+    installHint: "在插件市场页安装：该行的「安装」按钮会为当前 Project 要求它。",
   },
 
   skills: {

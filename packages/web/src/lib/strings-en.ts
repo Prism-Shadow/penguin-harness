@@ -14,9 +14,9 @@ export const en: Strings = {
     chat: "Chat",
     newChat: "New chat",
     agents: "Agents",
-    plugins: "Plugin library",
     models: "Models",
     machines: "Machines",
+    plugins: "Plugins",
     usage: "Cost Center",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
@@ -146,7 +146,6 @@ export const en: Strings = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
-    /** Admin-only sub-page (server-global). */
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
@@ -1285,6 +1284,26 @@ export const en: Strings = {
 
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on agents as a whole. */
   plugins: {
+    installedTitle: "Installed plugins",
+    installedDesc:
+      "What this Project asks for, and which of those this process is running. A change applies without a restart where the server can re-assemble itself.",
+    installedEmpty: "No plugins installed yet.",
+    stateActive: "running",
+    builtin: "built in",
+    builtinHint:
+      "Ships with this build: installing it downloads nothing, and it loads only once you install it.",
+    installedRestart: "restart to load",
+    stateInactive: "not loaded",
+    replacesLabel: "replaces",
+    restartPending:
+      "A listed plugin is not running and this server could not apply it without a restart: restart the server to load it.",
+    uninstall: "Remove",
+    install: "Install",
+    installing: "Installing…",
+    /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
+    deploymentInstalledToast: (name: string) => `Installed ${name}`,
+    addLabel: "Add a plugin",
+    fileHint: (file: string) => `Only a plugin this build ships; written to the Project's ${file}`,
     pageTitle: "Plugin library",
     pageDesc:
       "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
@@ -1368,6 +1387,23 @@ export const en: Strings = {
         "With it on, every Session this agent starts runs all installed hook packages at the loop's hook points. With it off, a new Session runs no hooks at all and the installed packages stay on disk. A Task already running keeps the setting it started with.",
       savedToast: "Saved — takes effect from the next turn",
     },
+  },
+
+  pluginRegistry: {
+    pageTitle: "Plugins",
+    empty: "No plugins yet",
+    specifierHint: "Package name, as a Project's plugin list names it",
+    back: "Back to Plugins",
+    readme: "Documentation",
+    noReadme: "This plugin has no documentation yet.",
+    notFound: "No such plugin.",
+    repository: "Repository",
+    homepage: "Homepage",
+    authors: "Authors",
+    license: "License",
+    copySpecifier: "Copy specifier",
+    installHint:
+      "Install from the Plugins page: the row's Install button asks the current Project for it.",
   },
 
   skills: {

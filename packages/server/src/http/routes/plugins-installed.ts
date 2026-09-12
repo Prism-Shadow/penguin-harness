@@ -1,0 +1,234 @@
+/**
+ * The plugins a PROJECT asks for, and which of them this process is actually running:
+ *
+ *   GET    /                      this Project's list, joined with what the process runs,
+ *                                 plus which plugins the build ships (any member)
+ *   POST   / { specifier }        add a plugin the build ships to this Project's list, and
+ *                                 apply (admin); nothing is fetched from anywhere
+ *   PUT    / { plugins }          rewrite this Project's list, and apply (admin)
+ *   DELETE /?specifier=…          drop it from this Project's list, and apply (admin)
+ *
+ * WHERE THE LIST LIVES. In the Project's own config (the `[plugins]` table of `.project_config.toml`,
+ * package name → requirement, Cargo's `[dependencies]` shape),
+ * beside its models — because machines are lent to Projects, so a Project's list is what
+ * says which machines a plugin has to reach (PRFC-0010). The data root's old `plugins.json`
+ * is not read any more, deliberately without a migration: a deployment that had one starts
+ * with no plugins until each Project asks again.
+ *
+ * WHAT ACTUALLY RUNS is the CLOSURE — the union over this root's Projects — because loading
+ * is per process: there is one module tree. So a plugin any Project asks for is in the tree,
+ * and what it contributes is visible to all of them. A row here is therefore "this Project
+ * asked for it" joined with "the process has it", which are two different facts.
+ *
+ * APPLYING. A write asks the App to re-assemble itself (the platform's own `Reassembly`,
+ * hmr/platform.ts): the new create() reads the closure and imports what it names — no
+ * process restart, ptys and connections delivered across it exactly as a push delivers
+ * them. A boot that fails is recovered onto the previous App and answered as "did not
+ * take", which the list reports as `restartPending` rather than as plugins that run.
+ */
+import { Hono } from "hono";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { AppEnv } from "../../auth/middleware.js";
+import type { InstalledPlugin, InstalledPluginsResponse } from "../../api/types.js";
+import { HttpError } from "../errors.js";
+import { readJson, requireValidId } from "../validate.js";
+import type { Config, Hmr, Reassembly } from "../../hmr/capabilities.js";
+import {
+  discoverBuiltinPlugins,
+  PLUGINS_FILE,
+  pluginBases,
+  readPluginDeclaration,
+} from "../../plugin/loader.js";
+import { pluginHostFrom } from "../../plugin/host.js";
+import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
+
+export interface InstalledPluginsDeps {
+  root: string;
+  /** The current version's assets, where the builtin plugins a push carried live. */
+  assetsDir: () => string | null;
+  /** What the process's plugin host holds, by specifier, and what it could not load, with why. */
+  running: () => { loaded: ReadonlySet<string>; skipped: ReadonlyMap<string, string> };
+  projectConfig: ProjectConfigStore;
+  access: Access;
+  /**
+   * Re-reads the closure into a fresh plugin host and re-assembles the App. Answers whether
+   * the running tree is the new one; false when the runtime cannot re-assemble at all.
+   */
+  apply: () => Promise<boolean>;
+}
+
+export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  const scope = (c: {
+    req: { param(n: string): string | undefined };
+    var: AppEnv["Variables"];
+  }) => {
+    const projectId = requireValidId(c as never, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    return projectId;
+  };
+
+  const view = async (projectId: string): Promise<InstalledPluginsResponse> => {
+    const listed = await deps.projectConfig.getPlugins(projectId).catch((err: unknown) => {
+      // A Project whose config will not parse cannot be answered for — its models are just
+      // as unreadable — and saying "no plugins" would read as a healthy empty deployment.
+      throw new HttpError(
+        400,
+        "invalid_plugins_file",
+        `${projectId}: ${PLUGINS_FILE} could not be read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+    const { loaded, skipped } = deps.running();
+    const bases = pluginBases(deps.root, deps.assetsDir());
+    // Exactly what this Project lists: a plugin the build ships is not asked for until a
+    // Project says so. `builtin` on a row is where the package CAME FROM, a tag, not a
+    // second way of being asked for. What the package declares is read from its files;
+    // whether the process holds it, and why not, is the host's — a load that failed says
+    // so, rather than passing as a restart that would not help.
+    const plugins: InstalledPlugin[] = [];
+    for (const specifier of Object.keys(listed)) {
+      const declared = await readPluginDeclaration(specifier, bases);
+      if ("error" in declared) {
+        plugins.push({
+          specifier,
+          active: false,
+          builtin: false,
+          modules: [],
+          replaces: [],
+          error: declared.error,
+        });
+        continue;
+      }
+      const active = loaded.has(specifier);
+      const failure = skipped.get(specifier);
+      plugins.push({
+        specifier,
+        active,
+        builtin: declared.builtin,
+        modules: declared.modules,
+        replaces: declared.replaces,
+        ...(!active && failure !== undefined ? { error: failure } : {}),
+      });
+    }
+    return {
+      plugins,
+      // What the build ships, asked for or not: the catalogue marks these rows "built in",
+      // and asking for one is a list edit rather than a download.
+      shipped: await discoverBuiltinPlugins(bases),
+      file: PLUGINS_FILE,
+      // A listed plugin that neither runs nor failed is waiting for a runtime that can
+      // re-assemble the App — otherwise applying already loaded it.
+      restartPending: plugins.some((p) => !p.active && p.error === undefined),
+    };
+  };
+
+  app.get("/", async (c) => c.json(await view(scope(c))));
+
+  const requireAdmin = (c: { var: AppEnv["Variables"] }) => {
+    if (!c.var.user.isAdmin) {
+      throw new HttpError(403, "admin_required", "Only an admin can perform this operation.");
+    }
+  };
+
+  /** A package name (scoped or not) — never a path, a URL or a version range. */
+  const specifierOf = (value: unknown): string => {
+    const s = typeof value === "string" ? value.trim() : "";
+    if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/.test(s)) {
+      throw new HttpError(400, "bad_request", "specifier must be a package name.");
+    }
+    return s;
+  };
+
+  app.post("/", async (c) => {
+    requireAdmin(c);
+    const projectId = scope(c);
+    const specifier = specifierOf((await readJson(c)).specifier);
+    // Only a plugin the build ships can be asked for here: it is already on the machine, so
+    // asking is consent, not a download. Nothing is fetched from a registry — a listed plugin
+    // that is not on disk is exactly the state this route exists to avoid.
+    const shipped = await discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
+    if (!shipped.includes(specifier)) {
+      throw new HttpError(
+        400,
+        "plugin_not_shipped",
+        `'${specifier}' does not ship with this build; only builtin plugins can be installed.`,
+      );
+    }
+    const listed = await deps.projectConfig.getPlugins(projectId);
+    if (!(specifier in listed)) {
+      await deps.projectConfig.setPlugins(projectId, { ...listed, [specifier]: {} });
+    }
+    await deps.apply();
+    return c.json(await view(projectId));
+  });
+
+  app.delete("/", async (c) => {
+    requireAdmin(c);
+    const projectId = scope(c);
+    const specifier = specifierOf(c.req.query("specifier"));
+    const kept = { ...(await deps.projectConfig.getPlugins(projectId)) };
+    delete kept[specifier];
+    await deps.projectConfig.setPlugins(projectId, kept);
+    await deps.apply();
+    return c.json(await view(projectId));
+  });
+
+  app.put("/", async (c) => {
+    requireAdmin(c);
+    const projectId = scope(c);
+    const body = await readJson(c);
+    const list = body.plugins;
+    if (!Array.isArray(list) || list.some((s) => typeof s !== "string" || s.trim() === "")) {
+      throw new HttpError(400, "bad_request", "plugins must be an array of package specifiers.");
+    }
+    // Names only, over the wire; a name that stays keeps what the file asked of it.
+    const listed = await deps.projectConfig.getPlugins(projectId);
+    await deps.projectConfig.setPlugins(
+      projectId,
+      Object.fromEntries((list as string[]).map((s) => s.trim()).map((s) => [s, listed[s] ?? {}])),
+    );
+    await deps.apply();
+    return c.json(await view(projectId));
+  });
+
+  return app;
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "InstalledPluginRoutes.routes",
+        prefix: "/api/projects/:projectId/plugins/installed",
+        auth: "user",
+        // Ahead of the catalogue group, whose "/" would otherwise answer here.
+        order: 60,
+      },
+    ],
+  },
+})
+export class InstalledPluginRoutes {
+  @Use() private readonly config!: Config;
+  @Use() private readonly hmr!: Hmr;
+  @Use() private readonly reassembly!: Reassembly;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly access!: Access;
+  @Bind("InstalledPluginRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    const hmr = this.hmr;
+    this.routes = installedPluginRoutes({
+      root: this.config.root,
+      assetsDir: () => hmr.assetsDir(),
+      // Claimed per call rather than captured: the host belongs to the process, and a hot
+      // swap hands the same one to the next platform.
+      running: () => {
+        const host = pluginHostFrom(hmr.resources);
+        return { loaded: new Set(host.entries().keys()), skipped: host.skipped() };
+      },
+      projectConfig: this.projectConfig,
+      access: this.access,
+      apply: () => this.reassembly.reassemble(),
+    });
+  }
+}

@@ -194,6 +194,23 @@ export interface ProjectConfig {
    * key, and dropping `enabled` falls back to on.
    */
   command_policy?: CommandPolicyConfig;
+  /**
+   * The plugin packages this Project asks its deployment to run: the `[plugins]` table,
+   * keyed by package name, in the shape of Cargo's `[dependencies]` —
+   *
+   *   [plugins]
+   *   "@scope/name" = "*"                  # whatever the deployment ships
+   *   "@scope/other" = "1.2.3"             # a version requirement
+   *   "@scope/third" = { version = "1.2" } # the table form, where later fields go
+   *
+   * A table rather than a list so an entry can grow fields without a format change.
+   *
+   * Project-scoped because machines are lent to Projects, so this is what says which
+   * machines a plugin has to reach. LOADING is per process, though — there is one module
+   * tree — so a deployment runs the CLOSURE: the union over its Projects. A plugin any
+   * Project asks for is in the tree, and what it contributes is visible to all of them.
+   */
+  plugins?: PluginTable;
   models: ModelEntry[];
 }
 
@@ -312,6 +329,51 @@ function parseDefaultChat(value: unknown): ProjectChatDefaults | undefined {
  * file — the same sharing rule as projectConfigFromTable, so the two paths can never
  * narrow the block differently.
  */
+/** What a Project asks of one plugin. `version` absent (or `"*"` in the file) means whatever the deployment ships. */
+export interface PluginRequirement {
+  version?: string;
+}
+
+/** The `[plugins]` table: package name → what is asked of it, in the file's order. */
+export type PluginTable = Record<string, PluginRequirement>;
+
+/**
+ * Leniently parses the `[plugins]` table. An entry's value is a version requirement string
+ * (`"*"` for any) or a table with an optional `version`; an entry of any other shape is
+ * dropped rather than failing the load — a config whose plugin table is malformed still has
+ * to open, or a typo there would take the Project's models with it. A value that is not a
+ * table at all (the list form this key had before it was a table) reads as undefined:
+ * such a Project asks for no plugins until it is written again.
+ */
+export function parsePluginTable(value: unknown): PluginTable | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const out: PluginTable = {};
+  for (const [rawName, spec] of Object.entries(value as Record<string, unknown>)) {
+    const name = rawName.trim();
+    if (name === "") continue;
+    if (typeof spec === "string") {
+      const version = spec.trim();
+      out[name] = version === "" || version === "*" ? {} : { version };
+      continue;
+    }
+    if (spec === null || typeof spec !== "object" || Array.isArray(spec)) continue;
+    const version = (spec as { version?: unknown }).version;
+    if (version !== undefined && typeof version !== "string") continue;
+    out[name] =
+      version === undefined || version.trim() === "" || version.trim() === "*"
+        ? {}
+        : { version: version.trim() };
+  }
+  return out;
+}
+
+/** The `[plugins]` table as it is written: the string form wherever only a version is asked. */
+export function pluginTableToToml(
+  table: PluginTable,
+): Record<string, string | { version?: string }> {
+  return Object.fromEntries(Object.entries(table).map(([name, req]) => [name, req.version ?? "*"]));
+}
+
 export function parseCommandPolicy(value: unknown): CommandPolicyConfig | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   const t = value as Record<string, unknown>;
@@ -356,12 +418,14 @@ export function projectConfigFromTable(
   const visionModel = parseRefField(file, "vision_model", parsed.vision_model);
   const defaultChat = parseDefaultChat(parsed.default_chat);
   const commandPolicy = parseCommandPolicy(parsed.command_policy);
+  const plugins = parsePluginTable(parsed.plugins);
   return {
     ...(parsed.name !== undefined ? { name: parsed.name as string } : {}),
     ...(defaultModel !== undefined ? { default_model: defaultModel } : {}),
     ...(visionModel !== undefined ? { vision_model: visionModel } : {}),
     ...(defaultChat !== undefined ? { default_chat: defaultChat } : {}),
     ...(commandPolicy !== undefined ? { command_policy: commandPolicy } : {}),
+    ...(plugins !== undefined ? { plugins } : {}),
     models: ((parsed.models as unknown[] | undefined) ?? []).map((m) => assertModelEntry(file, m)),
   };
 }

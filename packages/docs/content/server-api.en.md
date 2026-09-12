@@ -197,6 +197,18 @@ The PKCE verifier is generated server-side, held in memory for ten minutes, and 
 What that route may do is bounded a second time: it stores the code on the flow and nothing else. The exchange with the provider and the write into the Project's models both run on `GET /:flowId`, the owner's own poll, behind the session gate — so no key reaches a Project without its owner asking for its flow's status, and a failed exchange is reported there as `{status: error, error}` rather than on the redirect page. Nothing adjacent is exempt either: a longer path, any other method (`HEAD` on the literal path answers 405), and the three sibling routes all still require the session.
 
 `mode: manual` omits the callback so the authorization page shows a one-time code to carry back by hand, for deployments the redirect cannot reach. Whichever route redeems the code, a completed flow invalidates cached runtimes and publishes `credentials_updated`, exactly as `PUT /models` does.
+### Plugin Registry
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/plugins/registry | Plugin index for the Plugins page: `{plugins: PluginIndexEntry[]}` — the merged index of every configured registry (currently the builtin one) |
+| GET | /api/plugins/registry/readme?name=… | One listed entry's readme: `{name, readme}` (`readme` null when the registry has none); 404 for a name the index does not list |
+| GET | /api/projects/:projectId/plugins/installed | What this Project asks for, joined with what the process runs: `{plugins: [{specifier, active, builtin, modules, replaces, error?}], shipped, file, restartPending}` (any member) |
+| POST | /api/projects/:projectId/plugins/installed | `{specifier}` — ask this Project for a plugin the build ships (400 `plugin_not_shipped` otherwise), applied without a restart — the App re-assembles itself (admin) |
+| PUT | /api/projects/:projectId/plugins/installed | `{plugins}` — rewrite this Project's list and apply (admin) |
+| DELETE | /api/projects/:projectId/plugins/installed?specifier=… | Drop it from this Project's list and apply; nothing on disk changes (admin) |
+
+The index format follows typst/packages' `index.json` schema: a flat array of per-version entries (`name`, `version`, `description`, `authors`, `license`, plus optional `repository` / `homepage` / `keywords` / `categories` / `updatedAt`). The registry is discovery only and never imports plugin code; a Project asks for an entry through the routes above, and its list lives in its own `.project_config.toml` as the `[plugins]` table — package name → requirement, in the shape of Cargo's `[dependencies]` (`"@scope/name" = "*"`, a version string, or `{ version = "…" }`). The process runs the union over every Project's table.
 
 ### Agents
 

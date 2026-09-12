@@ -201,6 +201,13 @@ export const HMR_AUTH_STATE_RESOURCE_ID = "platform.authState";
 export const HMR_OVERRIDES_RESOURCE_ID = "platform.overrides";
 
 /**
+ * Test-only: plugin entries a test stands up in process, unioned into the host the platform
+ * builds from the closure. Its own id, not the host's: the closure is read from disk, so a
+ * plugin that exists only as an object in a test has no specifier anyone could import.
+ */
+export const HMR_TEST_PLUGINS_RESOURCE_ID = "platform.pluginsInjected";
+
+/**
  * The {@link Interfaces} descriptor each App leaves for its successor, naming the
  * live-object contracts it parks by ID-prefix group (`terminal` covers every `terminal:*`
  * entry). The NEXT App's create() compares it against its own compiled-in declaration and
@@ -507,6 +514,25 @@ export class RuntimeHmrControl {
   constructor(private readonly caps: HmrCapabilities) {}
   setup() {
     this.hmrControl = this.caps.hmrControl;
+  }
+}
+
+/**
+ * The App re-assembling itself from the same bundle — how a plugin change applies without
+ * a process restart. The PLATFORM's own, above the seam: it re-boots its inner tree with
+ * the kernel's upgrade, and the runtime holds the same outer instance throughout (see
+ * hmr/platform.ts). Nothing here is a runtime capability, so it works on every runtime.
+ */
+export abstract class Reassembly extends Interface<{
+  /** Whether the re-assembled tree is the one now running; false when its boot failed and the previous one was restored. */
+  reassemble(): Promise<boolean>;
+}>() {}
+@Module()
+export class AppReassembly {
+  @Provide() reassembly!: Reassembly;
+  constructor(private readonly run: () => Promise<boolean>) {}
+  setup() {
+    this.reassembly = { reassemble: this.run };
   }
 }
 @Module()

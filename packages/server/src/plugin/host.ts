@@ -8,6 +8,15 @@ import type { ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
 /** One loaded plugin: the package, and its modules with manifests paired to code. */
 export interface LoadedPlugin {
   specifier: string;
+  /**
+   * The entry file this was imported from, when there was one to resolve. It is what makes a
+   * REUSE safe: the specifier alone does not say which bytes are behind it, and a hot push
+   * moves the builtin plugins to a new assets directory — so an entry held from before the
+   * push resolves to a different file, and must be imported again rather than kept. Absent on
+   * an entry from a generation older than this field (re-imported, which is correct for it)
+   * and on a bare specifier the installation itself resolves.
+   */
+  file?: string | null;
   /** Nodes the plugin adds under the root. */
   modules: ModuleDef[];
   /** Nodes the plugin stands in for, by the replaced node's name. */
@@ -17,6 +26,8 @@ export interface LoadedPlugin {
 /** One host per server process; load order is the order the modules join the tree. */
 export class PluginHost {
   private readonly plugins: LoadedPlugin[] = [];
+  /** specifier → why a listed plugin is not here; what a surface reports beside its row. */
+  private readonly failures = new Map<string, string>();
 
   /** Registers a plugin; a module name already taken by an earlier plugin is refused. */
   use(plugin: LoadedPlugin): void {
@@ -49,6 +60,21 @@ export class PluginHost {
     return new Map(this.plugins.flatMap((e) => e.replaces.map((m) => [m.manifest.name, m])));
   }
 
+  /** What is loaded, by specifier — how the next App reuses these objects instead of importing again. */
+  entries(): ReadonlyMap<string, LoadedPlugin> {
+    return new Map(this.plugins.map((e) => [e.specifier, e]));
+  }
+
+  /** Records why a listed plugin could not be loaded into this host. */
+  skip(specifier: string, reason: string): void {
+    this.failures.set(specifier, reason);
+  }
+
+  /** The listed plugins this host could not load, each with its reason. */
+  skipped(): ReadonlyMap<string, string> {
+    return this.failures;
+  }
+
   /** Nothing to release at process exit: modules dispose with the App that created them. */
   dispose(): void {}
 }
@@ -62,9 +88,8 @@ export class PluginHost {
  * is parked only because the imported objects must survive a swap — a re-import would give
  * the successor different module instances.
  *
- * That the runtime still LOADS it at process start (index.ts) is the misfiling this note
- * exists to flag: it is why a machine whose program is older cannot learn a new loading rule
- * from a push, and had to be restarted to pick up a plugin list.
+ * The platform builds it, at its own boot (plugin/loader.ts's loadPluginHost). The runtime
+ * keeps a load of its own only as a shim for platforms older than that move.
  */
 export const PLUGINS_RESOURCE_ID = "platform.plugins";
 
