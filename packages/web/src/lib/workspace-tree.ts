@@ -544,6 +544,27 @@ export interface ComposerReference {
 }
 
 /**
+ * A file name split for display: the stem, and the extension with its dot still on it.
+ *
+ * Only a real extension counts. A leading dot is part of the name — `.gitignore` is all stem —
+ * and a name with no dot has no extension at all. Splitting it lets the stem ellipsize while the
+ * extension stays: the extension is the shortest part and says what kind of thing this is, so it
+ * is the last thing worth losing when the row runs out of room.
+ */
+export function splitFileName(name: string): { stem: string; ext: string } {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? { stem: name.slice(0, dot), ext: name.slice(dot) } : { stem: name, ext: "" };
+}
+
+/**
+ * A line range as `:12` or `:12-18` — the `file:line` form every editor and stack trace uses, which
+ * is why it is written the same way in both languages and read the same way by the model.
+ */
+export function lineSuffix(fromLine: number, toLine: number): string {
+  return fromLine === toLine ? `:${fromLine}` : `:${fromLine}-${toLine}`;
+}
+
+/**
  * The `@`-prefixed reference a Workspace entry inserts into the composer. The trailing
  * slash on a directory is the only thing in the string that says it is one; nothing parses
  * these — the `@` is there for the reader, not for a mention mechanism.
@@ -587,12 +608,7 @@ export function selectionBlock({
   fromLine?: number;
   toLine?: number;
 }): string {
-  const range =
-    fromLine === undefined || toLine === undefined
-      ? ""
-      : fromLine === toLine
-        ? ` (L${fromLine})`
-        : ` (L${fromLine}-L${toLine})`;
+  const range = fromLine === undefined || toLine === undefined ? "" : lineSuffix(fromLine, toLine);
   const fence = "`".repeat(Math.max(3, longestBacktickRun(selection) + 1));
   const body = selection.endsWith("\n") ? selection : `${selection}\n`;
   return `@${path}${range}\n${fence}${language}\n${body}${fence}`;

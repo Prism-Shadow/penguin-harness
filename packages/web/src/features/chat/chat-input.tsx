@@ -130,6 +130,7 @@ import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { toneStrip } from "../../lib/tone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
+import { lineSuffix } from "../../lib/workspace-tree";
 import type { ComposerReference } from "../../lib/workspace-tree";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
@@ -762,12 +763,16 @@ function withReferences(references: readonly ComposerReference[], typed: string)
   return [...references.map((r) => r.text), typed].filter((part) => part !== "").join("\n\n");
 }
 
-/** A staged reference's chip label: the entry's own name, and the lines when it quotes a range. */
+/**
+ * A staged reference's chip label: the entry's own name, with the quoted lines appended as a
+ * `:from-to` suffix. The `file:line` form rather than a worded one — it is the shape every editor
+ * and stack trace already uses, it needs no translating, and a chip has no room for a sentence.
+ */
 function referenceLabel(reference: ComposerReference): string {
   const name = reference.path.split("/").pop() ?? reference.path;
   return reference.fromLine === undefined || reference.toLine === undefined
     ? name
-    : `${name} ${S.files.lineRange(reference.fromLine, reference.toLine)}`;
+    : `${name}${lineSuffix(reference.fromLine, reference.toLine)}`;
 }
 
 /** A directory, a file, or a passage carried in from one — each says what the chip stands for. */
@@ -2412,7 +2417,7 @@ export function ChatInput({
             {/* Goal-mode chip: the budget stays compact as a value button; its editor is a
                 fixed upward popover so it never covers the objective textarea below. */}
             {goalOn && (
-              <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+              <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200">
                 <span className="flex shrink-0 items-center gap-1" title={S.chat.goalModeDesc}>
                   <GlyphIcon d={GOAL_ICON} size={13} className="text-gray-500 dark:text-gray-400" />
                   <span>{S.chat.goalMode}</span>
@@ -2515,7 +2520,7 @@ export function ChatInput({
             {target !== null && (
               <span
                 title={S.chat.handoffTargetTitle(agentDisplayName(target))}
-                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
               >
                 <AgentAvatar
                   id={target.agentId}
@@ -2543,7 +2548,7 @@ export function ChatInput({
             {pendingModel !== null && (
               <span
                 title={S.chat.modelSwitchTargetTitle(modelLabel(pendingModel))}
-                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
               >
                 <ProviderLogo provider={pendingModel.provider} className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{modelLabel(pendingModel)}</span>
@@ -2565,7 +2570,7 @@ export function ChatInput({
               return (
                 <span
                   key={name}
-                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
                   {...(meta ? { title: localizedShortText(locale, meta) } : {})}
                 >
                   <SkillIcon
@@ -2592,7 +2597,7 @@ export function ChatInput({
               <span
                 key={i}
                 title={reference.path}
-                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
               >
                 <GlyphIcon
                   d={REFERENCE_ICON[reference.kind]}

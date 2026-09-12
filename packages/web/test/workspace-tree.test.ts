@@ -37,6 +37,8 @@ import {
   readTreeVisible,
   readTreeWidth,
   selectionBlock,
+  splitFileName,
+  lineSuffix,
   sortEntries,
   upsertEntry,
   utf8Complete,
@@ -386,6 +388,31 @@ describe("tree visibility preference", () => {
   });
 });
 
+describe("splitFileName", () => {
+  it("keeps the extension whole so it can outlive a truncated stem", () => {
+    expect(splitFileName("workspace-browser.tsx")).toEqual({
+      stem: "workspace-browser",
+      ext: ".tsx",
+    });
+    expect(splitFileName("archive.tar.gz")).toEqual({ stem: "archive.tar", ext: ".gz" });
+  });
+
+  it("treats a leading dot as part of the name, and a name with no dot as all stem", () => {
+    // `.gitignore` is not an extension on an empty name: splitting it there would ellipsize to
+    // nothing and leave the row showing only a dot.
+    expect(splitFileName(".gitignore")).toEqual({ stem: ".gitignore", ext: "" });
+    expect(splitFileName("Makefile")).toEqual({ stem: "Makefile", ext: "" });
+    expect(splitFileName("src")).toEqual({ stem: "src", ext: "" });
+  });
+});
+
+describe("lineSuffix", () => {
+  it("writes a range the way an editor and a stack trace do", () => {
+    expect(lineSuffix(12, 18)).toBe(":12-18");
+    expect(lineSuffix(7, 7)).toBe(":7");
+  });
+});
+
 describe("composer references", () => {
   it("marks a directory with a trailing slash and leaves a file bare", () => {
     expect(pathReference("src/lib/tree.ts", "file")).toBe("@src/lib/tree.ts");
@@ -412,7 +439,7 @@ describe("what the panel hands the composer is a reference, not text for the dra
       fromLine: 3,
       toLine: 3,
     };
-    expect(reference.text).toContain("@src/app.ts (L3)");
+    expect(reference.text).toContain("@src/app.ts:3");
     expect(reference.text).toContain("const x = 1;");
     expect(reference.path).toBe("src/app.ts");
   });

@@ -2532,9 +2532,7 @@ Benchmark：
     changedOnDisk: "磁盘上已变更",
     changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
     /** Rename and move are one action: both write the file to a new Workspace-relative path. */
-    /** The composer chip for a quoted selection: the lines it covers, and its remove button. */
-    lineRange: (from: number, to: number): string =>
-      from === to ? `第 ${from} 行` : `第 ${from}-${to} 行`,
+    /** The composer chip's remove button, for whatever the Files panel staged there. */
     removeReference: "移除引用",
     renameTitle: "重命名 / 移动",
     renameLabel: "新的路径",

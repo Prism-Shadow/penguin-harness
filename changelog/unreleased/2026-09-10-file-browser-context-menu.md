@@ -28,7 +28,7 @@ wrapping, and no box around either.
   Nothing the panel contributes is written into the draft: a file, a directory and a quoted range
   are all whole things, and splicing one into a half-written sentence buries the sentence under
   what it points at. Chips are removable, and on send the message carries what they stand for in
-  front of the typed text — for a selection, a fenced block headed by `@path (L3-L7)`, verbatim,
+  front of the typed text — for a selection, a fenced block headed by `@path:3-7`, verbatim,
   with the fence opened long enough to survive a selection containing fences of its own. The line
   range is given only where the source view can resolve it.
   The text stays selected afterwards: handing a quote to the composer focuses the composer, and
@@ -65,6 +65,11 @@ wrapping, and no box around either.
   editor's save does: the file's current version is read when the dialog opens, and the action is
   refused if the Agent rewrites the file while the question is on screen. A directory has neither,
   so neither is offered for one.
+- The path row puts the file's own name first. The directories give way before it does, and when
+  the name alone outruns the row it is the stem that ellipsizes, so the extension survives — the
+  view toggle beside it can no longer squeeze the name into an ellipsis. Line ranges read as
+  `app.ts:10-12`, the form an editor and a stack trace already use, in the chip and in the quoted
+  block alike.
 - Every action in the panel — wrap, edit, copy, open in a new tab, download, refresh and upload,
   and the editor's own cancel and save — is an icon button rather than a word. That keeps the header
   one height in both states: a text button stands 29px against an icon button's 27px, so opening a

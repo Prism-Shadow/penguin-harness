@@ -86,6 +86,7 @@ import {
   readTreeVisible,
   readTreeWidth,
   selectionBlock,
+  splitFileName,
   upsertEntry,
   utf8Complete,
   visibleCrumbSegments,
@@ -2461,22 +2462,32 @@ export function WorkspaceBrowser({
           {crumbFit.collapsed && (
             <span className="shrink-0 text-gray-400 dark:text-gray-500">{CRUMB_ELLIPSIS}</span>
           )}
-          {crumbFit.visible.map((seg, i) => (
-            <Fragment key={`${i}-${seg}`}>
-              {(crumbFit.collapsed || i > 0) && (
-                <span className="shrink-0 text-gray-300 dark:text-gray-700">/</span>
-              )}
-              <span
-                className={
-                  i === crumbFit.visible.length - 1
-                    ? "min-w-0 truncate font-medium text-gray-700 dark:text-gray-200"
-                    : "shrink-0 whitespace-nowrap text-gray-500 dark:text-gray-400"
-                }
-              >
-                {seg}
-              </span>
-            </Fragment>
-          ))}
+          {crumbFit.visible.map((seg, i) => {
+            const last = i === crumbFit.visible.length - 1;
+            const { stem, ext } = splitFileName(seg);
+            return (
+              <Fragment key={`${i}-${seg}`}>
+                {(crumbFit.collapsed || i > 0) && (
+                  <span className="shrink-0 text-gray-300 dark:text-gray-700">/</span>
+                )}
+                {last ? (
+                  // The name outranks everything else on the row. It does not shrink, so the
+                  // directories give way before it does — visibleCrumbSegments only estimates
+                  // their width, and whatever it gets wrong used to be paid by the name. When
+                  // the name alone outruns the strip it is the STEM that ellipsizes: the
+                  // extension is three characters that say what kind of file this is.
+                  <span className="flex min-w-0 max-w-full shrink-0 items-center font-medium text-gray-700 dark:text-gray-200">
+                    <span className="min-w-0 truncate">{stem}</span>
+                    <span className="shrink-0">{ext}</span>
+                  </span>
+                ) : (
+                  <span className="min-w-0 shrink truncate text-gray-500 dark:text-gray-400">
+                    {seg}
+                  </span>
+                )}
+              </Fragment>
+            );
+          })}
         </div>
         {fileRowActions}
       </div>
