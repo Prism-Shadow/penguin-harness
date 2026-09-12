@@ -163,6 +163,18 @@ export const zh = {
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "代理地址",
     proxyAddressPlaceholder: "留空 = 跟随系统代理",
+    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
+    pluginsTitle: "插件",
+    pluginsInfo:
+      "各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。",
+    pluginsNone: "没有已装载的插件声明选项。",
+    /** A secret field with a stored value: submitting it empty keeps the stored one. */
+    pluginSecretKeepHint: "留空保持已保存的值不变",
+    pluginSecretClear: "清除已存值",
+    /** The Project picker's empty choice. */
+    pluginProjectNone: "选择一个 Project",
+    /** Under a number field whose box does not parse; the save is not sent. */
+    pluginFieldNotNumber: "必须是数字",
     uploadLimitsTitle: "上传限制",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
