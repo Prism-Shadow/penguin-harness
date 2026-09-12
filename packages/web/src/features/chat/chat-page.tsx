@@ -82,7 +82,7 @@ import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
-import type { InsertLayout } from "../../lib/workspace-tree";
+import type { ComposerReference, InsertLayout } from "../../lib/workspace-tree";
 import {
   compactionTally,
   heldThinkingSwitch,
@@ -1281,6 +1281,11 @@ export function ChatPage() {
     composerRef.current?.insertAtCaret(snippet, layout);
   }, []);
 
+  /** A quoted selection is staged as a chip instead, so the draft keeps what the user was writing. */
+  const addComposerReference = useCallback((reference: ComposerReference) => {
+    composerRef.current?.addReference(reference);
+  }, []);
+
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
   // from the next LLM request (the picker's menu advises compacting first). Modeled on
@@ -1658,6 +1663,7 @@ export function ChatPage() {
             active={active}
             reloadSignal={settledTurnSignal}
             onInsertReference={insertIntoComposer}
+            onAddReference={addComposerReference}
           />
         );
       case "memory":

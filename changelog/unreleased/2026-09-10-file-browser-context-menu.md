@@ -24,9 +24,14 @@ wrapping, and no box around either.
 - "Add to conversation" splices a `@path` into the composer at the caret, leaving the rest of
   the draft where it was; a directory's reference keeps its trailing slash. Nothing is sent and
   nothing is parsed — the `@` is for the reader.
-- Adding a preview selection instead writes a fenced block headed by `@path (L3-L7)`, carrying
-  the selection verbatim. The line range is given only where the source view can resolve it,
-  and the fence is opened long enough to survive a selection that contains fences of its own.
+- Adding a preview selection stages it in the composer as a **chip** naming the file and the lines
+  it covers, the way `/agent` and `/skill` stage their picks. The quoted text is not put in the
+  draft: it is a block of somebody else's file, and pasting it there buries the sentence being
+  written under the thing it points at. The chip is removable, and the message carries the
+  quotation in front of the typed text when it is sent — a fenced block headed by `@path (L3-L7)`,
+  verbatim, with the fence opened long enough to survive a selection containing fences of its own.
+  The line range is given only where the source view can resolve it. A `@path` mention is still
+  spliced inline, because that one is a word in a sentence rather than a block.
   The text stays selected afterwards: handing a quote to the composer focuses the composer, and
   focusing a text field drops whatever the document had highlighted, so the range is put back.
 - The source view numbers its lines and lost its border, its language label and its header bar —

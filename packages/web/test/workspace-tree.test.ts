@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
+import type { ComposerReference } from "../src/lib/workspace-tree";
 import {
   PREVIEW_MIN_WIDTH,
   TREE_LAYOUT_MIN_WIDTH,
@@ -460,5 +461,36 @@ describe("composer references", () => {
     });
     expect(longer.startsWith("@readme.md\n`````markdown\n")).toBe(true);
     expect(longer.endsWith("\n`````")).toBe(true);
+  });
+});
+
+describe("a quoted selection reaches the composer as a reference, not as text", () => {
+  const block = selectionBlock({
+    path: "src/app.ts",
+    language: "ts",
+    selection: "const x = 1;",
+    fromLine: 3,
+    toLine: 3,
+  });
+
+  it("carries the text it will send and the file it came from", () => {
+    // The chip shows the path; the block is what the message carries. Keeping the two on one
+    // object is what lets the composer show one and send the other.
+    const reference: ComposerReference = {
+      path: "src/app.ts",
+      text: block,
+      fromLine: 3,
+      toLine: 3,
+    };
+    expect(reference.text).toContain("@src/app.ts (L3)");
+    expect(reference.text).toContain("const x = 1;");
+    expect(reference.path).toBe("src/app.ts");
+  });
+
+  it("still fences the quotation, so the composer could not have shown it as a line of the draft", () => {
+    // The reason this is a chip at all: what it carries is a multi-line block, and splicing a
+    // block into a half-typed sentence buries the sentence.
+    expect(block.split("\n").length).toBeGreaterThan(2);
+    expect(block).toMatch(/```/);
   });
 });

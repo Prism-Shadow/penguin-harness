@@ -164,6 +164,14 @@ export function CloseButton({
 /** Info circle: the app's 9-radius status circle with a bar and a dot inside it. */
 export const INFO_ICON = "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5m0-8h.01";
 
+/**
+ * Opening quotation marks: a passage carried in from somewhere else. The composer's chip for a
+ * Workspace selection wears it, where a paperclip would have claimed the file was attached — the
+ * file is not; a few of its lines are quoted.
+ */
+export const QUOTE_ICON =
+  "M9.5 6.5C7 7.5 5.5 9.5 5.5 12.5v4h5v-5h-3c0-1.8.9-3.1 2.6-3.8zM19.5 6.5c-2.5 1-4 3-4 6v4h5v-5h-3c0-1.8.9-3.1 2.6-3.8z";
+
 /** A pane with an arrow leaving it: this opens somewhere outside the app, in a tab of its own. */
 export const EXTERNAL_LINK_ICON =
   "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3";

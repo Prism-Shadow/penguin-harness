@@ -94,7 +94,12 @@ import {
   writeTreeVisible,
   writeTreeWidth,
 } from "../../lib/workspace-tree";
-import type { EditorState, InsertLayout, Listings } from "../../lib/workspace-tree";
+import type {
+  ComposerReference,
+  EditorState,
+  InsertLayout,
+  Listings,
+} from "../../lib/workspace-tree";
 import { isContextMenuKey, isLongPressPointer } from "../../lib/context-menu";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -466,6 +471,7 @@ export function WorkspaceBrowser({
   active,
   reloadSignal,
   onInsertReference,
+  onAddReference,
 }: {
   session: SessionInfo;
   /** External navigation command (from clicking a file chip in a message): opens the tree
@@ -491,6 +497,12 @@ export function WorkspaceBrowser({
    * already typed around it, are the composer's own business.
    */
   onInsertReference: (snippet: string, layout: InsertLayout) => void;
+  /**
+   * Stages a quotation in the composer as a chip. A `@path` mention is spliced into the draft
+   * (onInsertReference) because it is a word in a sentence; a quoted selection is not — it is a
+   * block of the file, and burying the draft under it is what this avoids.
+   */
+  onAddReference: (reference: ComposerReference) => void;
 }) {
   // Whether the HTML preview lands on a separate origin. True routes both the in-app
   // rendered view and "open in new tab" through the preview origin; false downgrades
@@ -1613,16 +1625,19 @@ export function WorkspaceBrowser({
   };
 
   const addSelectionToChat = (p: Preview, selection: PreviewSelection): void => {
-    onInsertReference(
-      selectionBlock({
+    onAddReference({
+      path: p.path,
+      text: selectionBlock({
         path: p.path,
         language: languageForExtension(extOf(p.name)),
         selection: selection.text,
         fromLine: selection.fromLine,
         toLine: selection.toLine,
       }),
-      "block",
-    );
+      ...(selection.fromLine === undefined || selection.toLine === undefined
+        ? {}
+        : { fromLine: selection.fromLine, toLine: selection.toLine }),
+    });
     // The text stays selected: contributing a quote to the conversation is not an edit to the
     // preview, and losing the highlight would cost the reader their place in the file.
     restoreSelection(selection.range);

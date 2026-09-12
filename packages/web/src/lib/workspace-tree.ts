@@ -527,6 +527,25 @@ export function writeWrapLines(wrap: boolean, storage?: TreePreferenceStorage): 
  */
 export type InsertLayout = "inline" | "block";
 
+/**
+ * A quotation staged in the composer rather than typed into it: what it points at, and the text
+ * the message carries once it is sent.
+ *
+ * The text is deliberately kept out of the textarea. A quoted selection is a block of somebody
+ * else's file, and the draft is where the person is writing — pasting the one into the other
+ * buries what they were saying under what they were pointing at. The composer shows a chip
+ * naming the file instead, the same shape `/agent` and `/skill` already stage their picks in.
+ */
+export interface ComposerReference {
+  /** Workspace-relative path: the chip's label comes from its last segment, its tooltip from the whole. */
+  path: string;
+  /** What goes into the message. */
+  text: string;
+  /** 1-based and inclusive, when the selection's place in the file could be resolved. */
+  fromLine?: number;
+  toLine?: number;
+}
+
 /** A composer insertion: the whole new draft text, and where the caret lands in it. */
 export interface ComposerInsertion {
   text: string;
