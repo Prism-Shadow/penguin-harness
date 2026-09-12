@@ -74,6 +74,8 @@ describe("revealDurationMs", () => {
 const src = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
 const read = (rel: string) => readFileSync(resolve(src, rel), "utf8");
 const truncated = read("components/ui/truncated.tsx");
+/** truncated.tsx with whitespace collapsed, so an assertion survives a reflowed line. */
+const truncatedFlat = truncated.replace(/\s+/g, " ");
 const sidebar = read("components/layout/sidebar.tsx");
 /** styles.css with comments stripped and whitespace collapsed, so the assertions survive reformatting. */
 const css = read("styles.css")
@@ -130,5 +132,15 @@ describe("the truncated-title reveal's CSS contract", () => {
 
   it("holds the revealed tail with a forwards fill after a start delay", () => {
     expect(trigger).toMatch(/animation:[^;}]*\blinear\b[^;}]*\b0\.3s\b[^;}]*\bforwards\b/);
+  });
+});
+
+describe("the truncated-title reveal's tooltip rule", () => {
+  it("hands the disclosure to whichever of the two can actually run", () => {
+    // The scroll and a `title` are alternatives, never a pair: a tooltip raised over a row
+    // that is already scrolling repeats the text sliding past under the pointer (#570). The
+    // reduced-motion arm is what keeps the tail reachable once the keyframes are disabled.
+    expect(truncatedFlat).toContain("overflowing && (!scrollReveal || reducedMotion)");
+    expect(truncated).toContain("usePrefersReducedMotion()");
   });
 });
