@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#710](https://github.com/Prism-Shadow/penguin-harness/pull/710)
 
 [English](2026-09-12-trace-view-all-events.md)
 
