@@ -25,7 +25,13 @@ export interface EmbeddedServer {
 
 /** How long the server gets to announce its port / answer HTTP before startup fails. */
 const PORT_FILE_TIMEOUT_MS = 30_000;
-const HTTP_READY_TIMEOUT_MS = 10_000;
+/**
+ * Readiness is the App answering, not the port accepting — the server binds first and
+ * answers 503 while it builds — so this budget covers the whole build: reading a pushed
+ * plugin tree cold, through a virus scanner, is tens of seconds on Windows. A server that
+ * dies instead is caught by `exited()` on the next turn of the loop, not by this deadline.
+ */
+const HTTP_READY_TIMEOUT_MS = 120_000;
 /** Grace period after the shutdown request (matches the server's own ≤5s wrap-up). */
 const SHUTDOWN_GRACE_MS = 6_000;
 
@@ -74,19 +80,21 @@ async function waitForPortFile(file: string, exited: () => boolean): Promise<num
   }
 }
 
-async function waitForHttp(origin: string, exited: () => boolean): Promise<void> {
+export async function waitForHttp(origin: string, exited: () => boolean): Promise<void> {
   const deadline = Date.now() + HTTP_READY_TIMEOUT_MS;
   for (;;) {
     if (exited()) throw new Error("The embedded server exited during startup.");
     try {
-      // Any HTTP answer counts (the root may 302 on the preview host); manual redirect
-      // keeps the probe from chasing hosts.
+      // Any HTTP answer counts (the root may 302 on the preview host) EXCEPT the server's
+      // own 503: it binds the port before the App exists, and a window loaded against that
+      // answer would sit on the "starting" page. Manual redirect keeps the probe from
+      // chasing hosts.
       const res = await fetch(`${origin}/`, {
         redirect: "manual",
         signal: AbortSignal.timeout(1000),
       });
       void res.body?.cancel();
-      return;
+      if (res.status !== 503) return;
     } catch {
       // Not accepting yet.
     }

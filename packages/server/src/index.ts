@@ -25,6 +25,7 @@ import { HmrHost, hmrMain } from "@prismshadow/penguin-hmr";
 import type { Hmr } from "@prismshadow/penguin-hmr";
 import type { Instance } from "@prismshadow/penguin-core/kernel";
 import { packagedPlatform } from "./hmr/platform.js";
+import { startingResponse } from "./hmr/starting.js";
 import type { PlatformApi, ServerHmrHost } from "./hmr/platform.js";
 import type { ServerBoot } from "./app.js";
 import { ADMIN_USER_ID } from "./auth/service.js";
@@ -262,9 +263,10 @@ class PenguinServer {
 
   /**
    * Opens the HTTP listener. The port is bound before the platform exists: until buildApp()
-   * it answers 503, so a client that arrives early sees "starting" rather than a refused
-   * connection. Everything that needs the port the OS
-   * actually handed out (PORT=0 asks for an ephemeral one) waits for onListening().
+   * it answers the starting response, so a client that arrives early sees "starting" —
+   * and, if it is a browser, comes back on its own — rather than a refused connection.
+   * Everything that needs the port the OS actually handed out (PORT=0 asks for an
+   * ephemeral one) waits for onListening().
    */
   listen(): void {
     // The listener's callback records this process as the root's server (the lock, the
@@ -276,10 +278,7 @@ class PenguinServer {
     });
     this.httpServer = serve(
       {
-        fetch: (request: Request) =>
-          this.app === undefined
-            ? new Response("penguin-server is starting", { status: 503 })
-            : this.app.fetch(request),
+        fetch: (request: Request) => this.app?.fetch(request) ?? startingResponse(request),
         hostname: this.config.host,
         port: this.config.port,
       },
@@ -429,10 +428,7 @@ class PenguinServer {
    */
   private openIpv6Loopback(port: number): void {
     const loopback = serve({
-      fetch: (request: Request) =>
-        this.app === undefined
-          ? new Response("penguin-server is starting", { status: 503 })
-          : this.app.fetch(request),
+      fetch: (request: Request) => this.app?.fetch(request) ?? startingResponse(request),
       hostname: "::1",
       port,
     });
