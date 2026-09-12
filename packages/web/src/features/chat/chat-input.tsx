@@ -764,15 +764,26 @@ function withReferences(references: readonly ComposerReference[], typed: string)
 }
 
 /**
- * A staged reference's chip label: the entry's own name, with the quoted lines appended as a
+ * A staged reference, split for display: the entry's own name, and the quoted lines as a
  * `:from-to` suffix. The `file:line` form rather than a worded one — it is the shape every editor
  * and stack trace already uses, it needs no translating, and a chip has no room for a sentence.
+ *
+ * Returned in two pieces because the chip draws them differently: a long name ellipsizes, and the
+ * line numbers must not go with it. They are the smaller half and the half the name does not
+ * already say.
  */
-function referenceLabel(reference: ComposerReference): string {
+function referenceParts(reference: ComposerReference): { name: string; lines: string } {
   const name = reference.path.split("/").pop() ?? reference.path;
-  return reference.fromLine === undefined || reference.toLine === undefined
-    ? name
-    : `${name}${lineSuffix(reference.fromLine, reference.toLine)}`;
+  const lines =
+    reference.fromLine === undefined || reference.toLine === undefined
+      ? ""
+      : lineSuffix(reference.fromLine, reference.toLine);
+  return { name, lines };
+}
+
+/** The whole of what a chip stands for, for its tooltip and its accessible name: path and lines. */
+function referenceTitle(reference: ComposerReference): string {
+  return `${reference.path}${referenceParts(reference).lines}`;
 }
 
 /** A directory, a file, or a passage carried in from one — each says what the chip stands for. */
@@ -2593,31 +2604,39 @@ export function ChatInput({
             {/* Staged from the Files panel: a file, a directory, or a quoted range. The text
                 itself never enters the draft — the chip names what it points at, and the
                 message carries it on send. */}
-            {references.map((reference, i) => (
-              <span
-                key={i}
-                title={reference.path}
-                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-              >
-                <GlyphIcon
-                  d={REFERENCE_ICON[reference.kind]}
-                  size={13}
-                  className="shrink-0 text-gray-500 dark:text-gray-400"
-                />
-                <span className="truncate">{referenceLabel(reference)}</span>
-                <button
-                  type="button"
-                  aria-label={`${S.files.removeReference} ${referenceLabel(reference)}`}
-                  onClick={() => {
-                    setReferences((prev) => prev.filter((_, j) => j !== i));
-                    textareaRef.current?.focus();
-                  }}
-                  className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+            {references.map((reference, i) => {
+              const { name, lines } = referenceParts(reference);
+              const title = referenceTitle(reference);
+              return (
+                <span
+                  key={i}
+                  title={title}
+                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
                 >
-                  ×
-                </button>
-              </span>
-            ))}
+                  <GlyphIcon
+                    d={REFERENCE_ICON[reference.kind]}
+                    size={13}
+                    className="shrink-0 text-gray-500 dark:text-gray-400"
+                  />
+                  {/* The name gives way, the line numbers do not: they are four characters, and
+                      they are the half the truncated name cannot tell you. The tooltip carries
+                      the whole path and the range together. */}
+                  <span className="min-w-0 truncate">{name}</span>
+                  {lines !== "" && <span className="shrink-0">{lines}</span>}
+                  <button
+                    type="button"
+                    aria-label={`${S.files.removeReference} ${title}`}
+                    onClick={() => {
+                      setReferences((prev) => prev.filter((_, j) => j !== i));
+                      textareaRef.current?.focus();
+                    }}
+                    className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
           </div>
         )}
 

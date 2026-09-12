@@ -140,8 +140,14 @@ import type { FileMenuTarget } from "./workspace-file-menu";
 import { WorkspaceTreeView } from "./workspace-tree-view";
 import type { TreeToggle } from "../../components/ui/file-tree";
 
-/** Source highlighting cap: tokenizing the full preview cap's worth of content in one go would block the main thread, so beyond this it falls back to unhighlighted. */
-const HIGHLIGHT_LIMIT = 64 * 1024;
+/**
+ * Above this, a Markdown file opens in the source view rather than rendered. Highlighting moved to
+ * a worker and no longer needs a ceiling, but rendering Markdown is remark parsing plus a React
+ * tree, both on the main thread — so this one is still a real cost and still has to be bounded.
+ * The reader can switch to the rendered view themselves, which makes it their informed choice.
+ */
+const MD_RENDER_LIMIT = 64 * 1024;
+
 /** Bytes examined to decide whether a file with an unknown extension is text. */
 const SNIFF_BYTES = 8 * 1024;
 /** How long the search box settles before the query is sent. A Workspace walk is not free, and nobody reads results for a prefix they are still typing. */
@@ -847,10 +853,10 @@ export function WorkspaceBrowser({
           return;
         }
         const { content, truncated, version } = result;
-        // Oversized Markdown defaults to the source view (benefiting from the unhighlighted
-        // highlight=false path): feeding the whole block to remark for parsing is a one-time
-        // main-thread cost; the user can still manually switch to "rendered view" as an informed choice.
-        if (!refresh && kind === "md" && content.length > HIGHLIGHT_LIMIT && nonce === previewSeq) {
+        // Oversized Markdown defaults to the source view: feeding the whole block to remark is a
+        // main-thread cost the highlighting worker does nothing about (see MD_RENDER_LIMIT). The
+        // reader can still switch to the rendered view, which makes it their informed choice.
+        if (!refresh && kind === "md" && content.length > MD_RENDER_LIMIT && nonce === previewSeq) {
           setRichView("source");
         }
         present({
@@ -2241,7 +2247,7 @@ export function WorkspaceBrowser({
                   <CodeSurface
                     language={languageForExtension(extOf(p.name))}
                     code={p.content}
-                    highlight={p.content.length <= HIGHLIGHT_LIMIT}
+                    highlight
                     lineNumbers
                     wrap={wrapLines}
                     className="text-xs leading-relaxed"

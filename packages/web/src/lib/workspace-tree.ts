@@ -377,7 +377,7 @@ export function looksLikeText(bytes: Uint8Array): boolean {
 // ------------------------------------------------------------------------------ editing
 
 /** Bytes a text preview reads before it is cut off; a longer file previews truncated and cannot be edited in place. */
-export const TEXT_PREVIEW_LIMIT = 256 * 1024;
+export const TEXT_PREVIEW_LIMIT = 1024 * 1024;
 
 /** Per-file ceiling of the content write endpoint, in whole MB — the server's `MAX_UPLOAD_BYTES`, mirrored so an oversize save or upload is refused before any bytes travel. */
 export const WORKSPACE_UPLOAD_LIMIT_MB = 14;

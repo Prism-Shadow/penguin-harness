@@ -20,19 +20,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { S } from "../../lib/strings";
-import { baseName, extOf } from "../../lib/workspace-tree";
+import { TEXT_PREVIEW_LIMIT, baseName, extOf } from "../../lib/workspace-tree";
 import { CodeSurface } from "./code-block";
 import { languageForExtension } from "./code-languages";
-
-/**
- * Highlighting ceiling for the editor, below the source view's: the source view pays for one
- * highlight, the editor pays for one every time the text settles. Measured on this bundle's JS
- * regex engine over TypeScript — 4KB ~11ms, 16KB ~148ms, 32KB ~367ms, 64KB ~936ms — so the
- * ceiling is where the catch-up after a burst of typing still reads as the colours arriving
- * rather than as the editor stalling. Past it a file is edited unhighlighted, which is what it
- * was before; the line numbers stay either way, being drawn by CSS at no cost.
- */
-const EDIT_HIGHLIGHT_LIMIT = 32 * 1024;
 
 /** Quiet period before re-highlighting, so a keystroke costs a re-render and not a tokenize. */
 const EDIT_HIGHLIGHT_SETTLE_MS = 200;
@@ -76,7 +66,12 @@ export function WorkspaceFileEditor({
       <CodeSurface
         language={languageForExtension(extOf(baseName(path)))}
         code={value}
-        highlight={value.length <= EDIT_HIGHLIGHT_LIMIT}
+        // The editor colours whatever it can hold: tokenizing runs on a worker, so a large
+        // file costs latency on the colours rather than a stalled editor, and a ceiling of its
+        // own would only refuse to colour a file for no gain. The bound left is the preview
+        // cap, which is all a load can put here; the settle delay keeps a burst of typing from
+        // queueing a pass per keystroke.
+        highlight={value.length <= TEXT_PREVIEW_LIMIT}
         settleMs={EDIT_HIGHLIGHT_SETTLE_MS}
         lineNumbers
         wrap={wrap}

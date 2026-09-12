@@ -47,9 +47,18 @@ wrapping, and no box around either.
   control is no control at all on a touch screen, and Edit has no other way in from here.
 - The editor numbers its lines and highlights them too: it is now a transparent-text textarea
   over the same code surface the source view shows, stacked in one scroll container so the two
-  layers cannot drift apart. Files over 32KB are edited unhighlighted — the editor re-highlights
-  every time the text settles, and past that size the catch-up stops reading as the colours
-  arriving. Line numbers stay at any size.
+  layers cannot drift apart. It re-highlights whenever the text settles, at any size it can open.
+- Highlighting runs on a **worker**, so the size of a file no longer costs the page its
+  responsiveness. Tokenizing is linear in the input and runs to completion once it starts — about
+  four milliseconds per kilobyte of TypeScript — which is why the source view gave up above 64KB
+  and the editor above 32KB. Off the main thread there is nothing to give up on: the text appears
+  at once, unhighlighted, and the colours replace it when they land. Over a 400KB file the page
+  held a full 60 frames a second for the whole pass. Both ceilings are gone, and a text preview
+  now reads up to 1MB rather than 256KB. Where a worker cannot be had at all, the work falls back
+  to this thread, which is what it did before.
+- Markdown **rendering** keeps its 64KB ceiling, because remark and the React tree it produces are
+  main-thread work that a highlighting worker does nothing about. A larger file opens in the source
+  view, and the reader can still switch.
 - The panel has one header row, not two. It names whatever is open — the directories and the
   file's own name in one strip, fitted tail first, so the filename is the last thing to go and the
   leading directories collapse into a single "…" ahead of it. The view toggle and download stay
@@ -69,7 +78,8 @@ wrapping, and no box around either.
   the name alone outruns the row it is the stem that ellipsizes, so the extension survives — the
   view toggle beside it can no longer squeeze the name into an ellipsis. Line ranges read as
   `app.ts:10-12`, the form an editor and a stack trace already use, in the chip and in the quoted
-  block alike.
+  block alike. On a chip it is the name that ellipsizes and never the range — four characters, and
+  the half a shortened name cannot tell you — with the whole path and range together in the tooltip.
 - Every action in the panel — wrap, edit, copy, open in a new tab, download, refresh and upload,
   and the editor's own cancel and save — is an icon button rather than a word. That keeps the header
   one height in both states: a text button stands 29px against an icon button's 27px, so opening a
