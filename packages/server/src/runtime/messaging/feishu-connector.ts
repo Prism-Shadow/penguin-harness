@@ -19,12 +19,9 @@ import type {
 } from "./connector.js";
 import { feishuCardOf } from "./feishu-card.js";
 import type { FeishuApiClient, FeishuCredentials, FeishuMention, FeishuSdk } from "./feishu-sdk.js";
-import { FeishuApiError } from "./feishu-sdk.js";
-import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Overrides } from "../../hmr/capabilities.js";
-import { RuntimeModule } from "../../hmr/capabilities.js";
-import { createLarkSdk } from "./feishu-sdk.js";
+import { FeishuApiError, createLarkSdk } from "./feishu-sdk.js";
+import { Bind, Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 
 /** Default Feishu open-platform domain (Lark tenants override it in the form). */
 export const FEISHU_DEFAULT_DOMAIN = "https://open.feishu.cn";
@@ -329,10 +326,21 @@ export class FeishuConnector implements MessagingChannelConnector {
   },
 })
 export class FeishuMessaging {
-  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Use() private readonly feishu!: FeishuSdkHandle;
   @Bind("messaging-feishu.connector") connector!: MessagingChannelConnector;
   setup() {
-    const overrides = this.overrides.value();
-    this.connector = new FeishuConnector(overrides.feishuSdk ?? createLarkSdk());
+    this.connector = new FeishuConnector(this.feishu.sdk);
+  }
+}
+
+/** The Lark SDK as a node, so a test stands in a fake for the network. */
+export abstract class FeishuSdkHandle extends Interface<{
+  sdk: Opaque<"FeishuSdk", FeishuSdk>;
+}>() {}
+@Module()
+export class FeishuSdkProvider {
+  @Provide() feishuSdk!: FeishuSdkHandle;
+  setup() {
+    this.feishuSdk = { sdk: createLarkSdk() };
   }
 }

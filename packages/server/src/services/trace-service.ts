@@ -54,10 +54,9 @@ import type { SessionRow } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
-import type { SessionSources } from "../runtime/session-sources.js";
 import { ratesAt, requestCostUsd } from "./usage-service.js";
 import type { PricingLookup, TieredRates } from "./usage-service.js";
-import type { ProjectConfigService } from "./project-config-service.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import {
   cloneScanState,
   deserializePrefix,
@@ -78,8 +77,9 @@ import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdow
 import { sessionIdCreatedAt } from "./session-service.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
-import type { SessionsRepo } from "../db/repos/sessions.js";
+import type { Paths } from "../hmr/capabilities.js";
+import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
+import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -253,17 +253,18 @@ interface TraceSessionFacts {
 }
 
 @Component()
-export class TraceService {
-  @Use() private readonly config!: Config;
+export class TraceService implements Traces {
+  @Use() private readonly paths!: Paths;
   private get root(): string {
-    return this.config.root;
+    return this.paths.root;
   }
-  @Use() private readonly index!: TraceIndexService;
+  @Use() private readonly index!: TraceIndex;
+  @Use() private readonly store!: TraceIndexStore;
   /** DB rows supplying titles / archived / workspace / client (narrow tests may omit). */
-  @Use() private readonly sessions?: SessionsRepo;
+  @Use() private readonly sessions?: SessionIndex;
   /** The shared in-process Session-origin registry, single source of truth for `source` (narrow tests may omit). */
-  @Use() private readonly sources?: SessionSources;
-  @Use() private readonly projectConfig?: ProjectConfigService;
+  @Use() private readonly sources?: SessionOrigins;
+  @Use() private readonly projectConfig?: ProjectConfigStore;
   /**
    * The Project's current price for a paired reference — the same lookup the cost center
    * prices `usage_records` with, so the analysis' per-turn cost and the toolbar's figure come
@@ -293,10 +294,10 @@ export class TraceService {
     sessionId: string,
   ): Promise<LocatedFile[]> {
     await this.index.reconcileAgent(projectId, agentId);
-    let rows = this.index.repo.listFilesBySession(projectId, agentId, sessionId);
+    let rows = this.store.listFilesBySession(projectId, agentId, sessionId);
     if (rows.length === 0) {
       await this.index.reconcileAgent(projectId, agentId, { force: true });
-      rows = this.index.repo.listFilesBySession(projectId, agentId, sessionId);
+      rows = this.store.listFilesBySession(projectId, agentId, sessionId);
     }
     return rows.map((r) => ({
       path: traceFilePath(this.root, r),
@@ -369,11 +370,11 @@ export class TraceService {
     childSid: string,
     ctx: { projectScanned: boolean },
   ): Promise<string | null> {
-    const hit = this.index.repo.findAgentBySession(projectId, childSid);
+    const hit = this.store.findAgentBySession(projectId, childSid);
     if (hit !== null || ctx.projectScanned) return hit;
     ctx.projectScanned = true;
     await this.index.reconcileProject(projectId, { force: true });
-    return this.index.repo.findAgentBySession(projectId, childSid);
+    return this.store.findAgentBySession(projectId, childSid);
   }
 
   /** A child session's concatenated raw shard messages, memoized per request; null = no Trace located. */
@@ -497,7 +498,7 @@ export class TraceService {
     for (let j = 0; j <= upto; j++) {
       const file = files[j]!;
       const cached = deserializePrefix(
-        this.index.repo.getPageStats(projectId, agentId, sessionId, file.index),
+        this.store.getPageStats(projectId, agentId, sessionId, file.index),
       );
       if (cached !== null) {
         states.push(cached);
@@ -511,7 +512,7 @@ export class TraceService {
         () => {},
         (sid) => this.aggregateChild(projectId, sid, ctx),
       );
-      this.index.repo.setPageStats(
+      this.store.setPageStats(
         projectId,
         agentId,
         sessionId,
@@ -1458,7 +1459,7 @@ export class TraceService {
     opts: { category?: SessionCategory } = {},
   ): Promise<AgentTracesResponse> {
     await this.index.reconcileAgent(projectId, agentId);
-    const files = this.index.repo.listFilesByAgent(projectId, agentId);
+    const files = this.store.listFilesByAgent(projectId, agentId);
     if (paging) return this.agentTracesPage(projectId, agentId, files, paging, opts);
     const byDate = new Map<string, Map<string, { index: number; sizeBytes: number }[]>>();
     for (const f of files) {
@@ -1530,7 +1531,7 @@ export class TraceService {
       (this.sessions?.listByAgent(projectId, agentId) ?? []).map((r) => [r.sessionId, r]),
     );
     const factsBySession = new Map(
-      this.index.repo.listSessionsByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
+      this.store.listSessionsByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
     const ids = [...bySession.keys()].sort((a, b) => b.localeCompare(a));
     // Classify every group once; the same result drives the category filter, the
@@ -1569,7 +1570,7 @@ export class TraceService {
           try {
             sizeBytes = (await fs.stat(traceFilePath(this.root, f))).size;
             if (sizeBytes !== f.sizeBytes) {
-              this.index.repo.updateFileSize(projectId, agentId, sessionId, f.fileIndex, sizeBytes);
+              this.store.updateFileSize(projectId, agentId, sessionId, f.fileIndex, sizeBytes);
             }
           } catch {
             /* Vanished mid-request: serve the last observed size; the next reconcile settles the rows. */
@@ -1731,7 +1732,7 @@ export class TraceService {
   private indexImportedSession(projectId: string, agentId: string, sessionId: string): void {
     const sessions = this.sessions;
     if (!sessions) return;
-    const facts = this.index.repo.getSession(sessionId);
+    const facts = this.store.getSession(sessionId);
     if (!facts?.metaRead || facts.provider === null || facts.modelId === null) return;
     if (facts.source !== null) this.sources?.set(sessionId, facts.source);
     const createdAt = sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString();

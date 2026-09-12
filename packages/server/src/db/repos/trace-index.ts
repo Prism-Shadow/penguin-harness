@@ -6,6 +6,7 @@
 import type { SessionSource } from "../../api/types.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { TraceIndexStore } from "../../mechanisms/traces.js";
 
 /** One indexed Trace shard. */
 export interface TraceFileRow {
@@ -60,7 +61,7 @@ function mapSession(r: Record<string, unknown>): TraceSessionRow {
 }
 
 @Component()
-export class TraceIndexRepo {
+export class TraceIndexRepo implements TraceIndexStore {
   @Use() private readonly db!: Db;
 
   upsertFile(row: TraceFileRow): void {

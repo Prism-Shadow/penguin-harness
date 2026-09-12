@@ -8,17 +8,16 @@
  */
 import type { ProjectRole, ProjectSummary } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
-import type { MembersRepo } from "../db/repos/members.js";
-import type { ProjectRow, ProjectsRepo } from "../db/repos/projects.js";
+import type { ProjectRow } from "../db/repos/projects.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { ProjectConfigService } from "./project-config-service.js";
+import type { Access, Members, ProjectConfigStore, Projects } from "../mechanisms/projects.js";
 
 @Component()
-export class ProjectAccess {
-  @Use() private readonly projects!: ProjectsRepo;
-  @Use() private readonly members!: MembersRepo;
+export class ProjectAccess implements Access {
+  @Use() private readonly projects!: Projects;
+  @Use() private readonly members!: Members;
   /** Display names come from each project's own config file. */
-  @Use() private readonly projectConfig!: ProjectConfigService;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
 
   /**
    * The sole implementation of the owner / member check: the row with a role when

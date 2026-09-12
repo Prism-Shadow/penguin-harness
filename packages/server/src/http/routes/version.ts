@@ -26,16 +26,16 @@ import type { RestartResponse, UpdateJobStatus, VersionResponse } from "../../ap
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
-import type { UpdateCheckService } from "../../services/update-check-service.js";
-import type { UpdateJobService } from "../../services/update-job.js";
+import type { UpdateCheck } from "../../services/update-check-service.js";
+import type { UpdateJob } from "../../services/update-job.js";
 import type { Lifecycle } from "../../hmr/capabilities.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface VersionRouteDeps {
   config: ServerConfig;
-  updateCheck: UpdateCheckService;
+  updateCheck: UpdateCheck;
   /** The admin self-update run in the background (`penguin update --yes`), with its progress for the update modal. */
-  updateJob: UpdateJobService;
+  updateJob: UpdateJob;
   /** Whether a supervisor relaunches this process, and the restart trigger the update flow pulls. */
   lifecycle: Lifecycle;
 }

@@ -26,6 +26,7 @@ import {
 import { classifyUpdateRun } from "../src/http/routes/version.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 /** Counting fetch stub; the handler decides the outcome per call. */
 function makeFetch(handler: () => Response | Promise<Response>): {
@@ -118,7 +119,13 @@ describe("GET /api/version/update-check", () => {
 
   it("reports a newer release with its URL and publish date", async () => {
     const { impl } = makeFetch(() => releaseResponse("v99.0.0"));
-    t = await createTestApp({ updateCheck: new UpdateCheckService({ fetchImpl: impl, env: {} }) });
+    t = await createTestApp({
+      updateCheck: wire(UpdateCheckService, {
+        http: { fetch: impl },
+        env: {},
+        clock: { now: () => new Date() },
+      }),
+    });
     const admin = await loginAdmin(t.app);
     const res = await apiClient(t.app, admin.cookie).get("/api/version/update-check");
     expect(res.status).toBe(200);
@@ -138,7 +145,13 @@ describe("GET /api/version/update-check", () => {
     const { impl } = makeFetch(() => {
       throw new Error("getaddrinfo ENOTFOUND api.github.com");
     });
-    t = await createTestApp({ updateCheck: new UpdateCheckService({ fetchImpl: impl, env: {} }) });
+    t = await createTestApp({
+      updateCheck: wire(UpdateCheckService, {
+        http: { fetch: impl },
+        env: {},
+        clock: { now: () => new Date() },
+      }),
+    });
     const admin = await loginAdmin(t.app);
     const res = await apiClient(t.app, admin.cookie).get("/api/version/update-check");
     expect(res.status).toBe(200);
@@ -151,7 +164,13 @@ describe("GET /api/version/update-check", () => {
 
   it("?force=1 (the manual check) reaches the service as a cache bypass", async () => {
     const { impl, state } = makeFetch(() => releaseResponse("v99.0.0"));
-    t = await createTestApp({ updateCheck: new UpdateCheckService({ fetchImpl: impl, env: {} }) });
+    t = await createTestApp({
+      updateCheck: wire(UpdateCheckService, {
+        http: { fetch: impl },
+        env: {},
+        clock: { now: () => new Date() },
+      }),
+    });
     const admin = await loginAdmin(t.app);
     const client = apiClient(t.app, admin.cookie);
 
@@ -176,7 +195,11 @@ describe("UpdateCheckService", () => {
       [() => new Response("not json", { status: 200 }), "bad_response"],
       [() => new Response(JSON.stringify({ name: "no tag" }), { status: 200 }), "bad_response"],
     ] as const) {
-      const service = new UpdateCheckService({ fetchImpl: makeFetch(make).impl, env: {} });
+      const service = wire(UpdateCheckService, {
+        http: { fetch: makeFetch(make).impl },
+        env: {},
+        clock: { now: () => new Date() },
+      });
       const result = await service.check();
       expect(result.error).toBe(expected);
       expect(result.updateAvailable).toBe(false);
@@ -186,7 +209,11 @@ describe("UpdateCheckService", () => {
 
   it("updateAvailable is false when the latest release is not newer", async () => {
     const { impl } = makeFetch(() => releaseResponse(`v${VERSION}`));
-    const service = new UpdateCheckService({ fetchImpl: impl, env: {} });
+    const service = wire(UpdateCheckService, {
+      http: { fetch: impl },
+      env: {},
+      clock: { now: () => new Date() },
+    });
     const result = await service.check();
     expect(result.error).toBeUndefined();
     expect(result.latestVersion).toBe(VERSION);
@@ -195,9 +222,10 @@ describe("UpdateCheckService", () => {
 
   it("PENGUIN_UPDATE_CHECK=off disables the lookup without any network call", async () => {
     const { impl, state } = makeFetch(() => releaseResponse("v99.0.0"));
-    const service = new UpdateCheckService({
-      fetchImpl: impl,
+    const service = wire(UpdateCheckService, {
+      http: { fetch: impl },
       env: { PENGUIN_UPDATE_CHECK: "off" },
+      clock: { now: () => new Date() },
     });
     const result = await service.check();
     expect(result.disabled).toBe(true);
@@ -213,10 +241,10 @@ describe("UpdateCheckService", () => {
       if (fail) throw new Error("down");
       return releaseResponse("v99.0.0");
     });
-    const service = new UpdateCheckService({
-      fetchImpl: impl,
+    const service = wire(UpdateCheckService, {
+      http: { fetch: impl },
       env: {},
-      now: () => new Date(nowMs),
+      clock: { now: () => new Date(nowMs) },
     });
 
     const first = await service.check();
@@ -251,7 +279,11 @@ describe("UpdateCheckService", () => {
   it("force bypasses a warm cache and recaches the fresh outcome", async () => {
     let tag = "v99.0.0";
     const { impl, state } = makeFetch(() => releaseResponse(tag));
-    const service = new UpdateCheckService({ fetchImpl: impl, env: {} });
+    const service = wire(UpdateCheckService, {
+      http: { fetch: impl },
+      env: {},
+      clock: { now: () => new Date() },
+    });
 
     // Warm the cache; a passive check is then served from it.
     expect((await service.check()).latestVersion).toBe("99.0.0");
@@ -270,9 +302,10 @@ describe("UpdateCheckService", () => {
 
   it("force never dials out when PENGUIN_UPDATE_CHECK=off (the opt-out stays authoritative)", async () => {
     const { impl, state } = makeFetch(() => releaseResponse("v99.0.0"));
-    const service = new UpdateCheckService({
-      fetchImpl: impl,
+    const service = wire(UpdateCheckService, {
+      http: { fetch: impl },
       env: { PENGUIN_UPDATE_CHECK: "off" },
+      clock: { now: () => new Date() },
     });
     const result = await service.check(true);
     expect(result.disabled).toBe(true);

@@ -10,12 +10,12 @@ import type { AppEnv } from "../../auth/middleware.js";
 import { rejectInDesktopMode } from "./desktop.js";
 import type { DesktopService } from "../../services/desktop-service.js";
 import { pathParam, readJson, requireString, requireValidId } from "../validate.js";
-import type { ProjectService } from "../../services/project-service.js";
+import type { ProjectLifecycle } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MembersRouteDeps {
   desktop: DesktopService | null;
-  projectService: ProjectService;
+  projectService: ProjectLifecycle;
 }
 
 export function membersRoutes(deps: MembersRouteDeps): Hono<AppEnv> {

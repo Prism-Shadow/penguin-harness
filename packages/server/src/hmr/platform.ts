@@ -23,29 +23,34 @@
  * adding or changing an endpoint or a service needs no runtime change.
  */
 import type { WebSocket } from "ws";
-import type { Impl, Json, Park } from "@prismshadow/penguin-core/kernel";
-import { defineIface, schema, type } from "@prismshadow/penguin-core/kernel";
-import type { PlatformBundle } from "./host.js";
-import { TerminalManager } from "../terminal/manager.js";
-import type { TerminalSession } from "../terminal/session.js";
-import { identityFrom } from "../terminal/identity.js";
-import { bindTerminalStream } from "../terminal/stream.js";
 import type {
+  Impl,
+  Json,
+  Park,
   IfaceTable,
   ManifestTable,
   ModuleDef,
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
-import { bootModules } from "@prismshadow/penguin-core/kernel";
+import {
+  defineIface,
+  schema,
+  type,
+  bootModules,
+  moduleDefOf,
+} from "@prismshadow/penguin-core/kernel";
+import type { PlatformBundle } from "./host.js";
+import { TerminalManager } from "../terminal/manager.js";
+import type { TerminalSession } from "../terminal/session.js";
+import { identityFrom } from "../terminal/identity.js";
+import { bindTerminalStream } from "../terminal/stream.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
-import type { AuthService } from "../auth/service.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { terminalRoutes } from "../terminal/routes.js";
 import type { Identity } from "../terminal/identity.js";
 import { platformDef } from "../platform.js";
 import { SandboxModule } from "../sandbox/service.js";
-import { moduleDefOf } from "@prismshadow/penguin-core/kernel";
 import ifaceTable from "../ifaces.json" with { type: "json" };
 import { declined, seamHttp } from "./hono-seam.js";
 import {
@@ -55,6 +60,8 @@ import {
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import { pluginHostFrom } from "../plugin/host.js";
+import { migrate } from "../db/migrations.js";
+import type { Auth } from "../mechanisms/identity.js";
 
 export interface PlatformApi extends Park {
   info(): Json;
@@ -224,6 +231,12 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       );
     }
     const caps = claim.kind === "claimed" ? claim.caps : null;
+    // A pushed platform carries its own migrations, which is the only way the tables its
+    // business needs can reach a runtime older than they are — that runtime will never grow
+    // them by restarting, because it does not have them. swapPath: this boot can be rolled
+    // back, so a restart-only migration is refused here instead of being left behind. Before
+    // any node is created: every repo below prepares its statements against this schema.
+    if (caps !== null) migrate(caps.db, { swapPath: true });
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
     // the predecessor declared at the version this build also declares, hard-stop the
     // rest — a version bump or a dropped group means this create() does not speak the
@@ -265,7 +278,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       console.warn("[platform] bare kernel: terminals only, no business surface");
       terminals = new TerminalManager(ctx.resources, { assets: () => null });
       terminals.adopt(adoptable("TerminalModule") ? (context.terminals ?? []) : []);
-      tree = await bootModules(bareTree([...plugins.modules()]), {
+      tree = await bootModules(bareTree([...plugins.modules()], plugins.replacements()), {
         ifaces: ifaceTable as unknown as IfaceTable,
         resources: ctx.resources,
         parked: parkedModules(context),
@@ -275,19 +288,22 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // group and the terminal manager are modules wired by their manifests — checked as
       // data before any create() runs, created in dependency order. Sandbox backends the
       // plugin host registered enter the same tree as one contributing module.
-      tree = await bootModules(platformDef(caps, adoptable, [...plugins.modules()]), {
-        ifaces: ifaceTable as unknown as IfaceTable,
-        resources: ctx.resources,
-        parked: parkedModules(context),
-      });
+      tree = await bootModules(
+        platformDef(caps, adoptable, [...plugins.modules()], plugins.replacements()),
+        {
+          ifaces: ifaceTable as unknown as IfaceTable,
+          resources: ctx.resources,
+          parked: parkedModules(context),
+        },
+      );
       business = tree;
       terminals = tree.api<TerminalManager>("TerminalModule", "terminals");
     }
     // Ordinary code over this App's own auth: the same object the business routes
     // authenticate with. A bare kernel has none — terminals stay fail-closed.
-    const auth = business?.api<AuthService>("AuthService", "AuthService") ?? null;
+    const auth = business?.api<Auth>("IdentityModule", "Auth") ?? null;
     const identity = identityFrom(auth);
-    const manager = business?.api<SessionManager>("SessionsModule", "manager") ?? null;
+    const manager = business?.api<SessionManager>("SessionRuntimeModule", "Sessions") ?? null;
     // The runtime's one mid-request need of the CURRENT App is a hook installed over a
     // claimed capability — overwrite-only across swaps, so a dead generation's hook is
     // replaced and never removed: "is this session busy" for the channel sweep.
@@ -390,7 +406,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
 };
 
 /** A bare kernel's tree: the sandbox floor and whatever contributes to it, nothing that needs a capability. */
-function bareTree(plugins: ModuleDef[]): ModuleDef {
+function bareTree(
+  plugins: ModuleDef[],
+  replace: ReadonlyMap<string, ModuleDef> = new Map(),
+): ModuleDef {
   return {
     manifest: {
       name: "platform",
@@ -400,7 +419,7 @@ function bareTree(plugins: ModuleDef[]): ModuleDef {
       children: ["SandboxModule", "*"],
     },
     children: [
-      moduleDefOf(SandboxModule, { manifests: ifaceTable.modules as ManifestTable }),
+      moduleDefOf(SandboxModule, { manifests: ifaceTable.modules as ManifestTable, replace }),
       ...plugins,
     ],
     create: () => ({ api: {} }),

@@ -5,11 +5,9 @@
  */
 import { Hono } from "hono";
 import type { AppEnv } from "../../auth/middleware.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { ContributionsResponse, RendererRef } from "../../api/types.js";
-import { Bind, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import { Interface, Bind, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import type { ContributionsResponse, RendererRef, WebContribution } from "../../api/types.js";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import type { WebContribution } from "../../api/types.js";
 
 export interface ContributionsRouteDeps {
   web: WebShell;

@@ -141,6 +141,8 @@ export interface ModuleMeta {
   >;
   readonly context?: ContextDecl;
   readonly children?: ReadonlyArray<ModuleClass>;
+  /** Interfaces this module forwards from its children — what the subtree offers outside. */
+  readonly exports?: ReadonlyArray<IfaceClass>;
 }
 
 /** What a @Component declares: a module's meta minus children — a component exports itself. */
@@ -282,15 +284,47 @@ export function moduleDefOf(
     manifests: ManifestTable;
     instances?: ReadonlyMap<ModuleClass, object>;
     extra?: ModuleDef[];
+    /**
+     * Definitions standing in for nodes, by name — an extension's replacements. A
+     * replaced class is not looked at (its table entry, its fields): the definition is
+     * taken as it is, and the assembled tree is what gets checked.
+     */
+    replace?: ReadonlyMap<string, ModuleDef>;
   },
 ): ModuleDef {
   const meta = moduleMetaOf(cls);
+  const replacement = opts.replace?.get(meta.name);
+  if (replacement !== undefined) {
+    if (replacement.manifest.name !== meta.name) {
+      throw new ModuleBootError(
+        `replacement for '${meta.name}' is named '${replacement.manifest.name}' — a replacement keeps the name of the node it stands in for`,
+      );
+    }
+    return replacement;
+  }
   const manifest = opts.manifests[meta.name];
   if (manifest === undefined) {
     throw new ModuleBootError(`${meta.name}: not in the generated manifest table — run gen:ifaces`);
   }
-  const instance = (opts.instances?.get(cls) ??
-    new (cls as unknown as new () => object)()) as Record<string, unknown> & {
+  // The field decorators record a class's @Use / @Provide / @Bind fields when an instance
+  // is constructed. A replacement (a test double standing in for the class) is not one,
+  // so the class is probed once to learn its fields before the double is checked against
+  // them; the node classes' constructors only store what they are given.
+  const supplied = opts.instances?.get(cls);
+  if (
+    supplied !== undefined &&
+    fieldsOf(cls).use.size + fieldsOf(cls).provide.size + fieldsOf(cls).bind.size === 0
+  ) {
+    try {
+      new (cls as unknown as new () => object)();
+    } catch {
+      // A class that cannot be built without arguments keeps whatever was recorded.
+    }
+  }
+  const instance = (supplied ?? new (cls as unknown as new () => object)()) as Record<
+    string,
+    unknown
+  > & {
     setup?: (ctx: ClassCtx, context: Json) => void | Promise<void>;
     park?: () => Json;
     migrations?: Record<number, (old: Json) => Json>;
@@ -314,15 +348,18 @@ export function moduleDefOf(
   for (const field of Object.keys(manifest.requires)) {
     if (!f.use.has(field)) throw stale(`requirement '${field}' in the table has no @Use field`);
   }
-  const selfAlias = meta.kind === "component" ? meta.name : null;
-  if (selfAlias !== null && manifest.provides[selfAlias] === undefined)
-    throw stale(`component '${meta.name}' does not provide itself in the table`);
+  // A component's provisions are all the instance: itself, and every interface it
+  // `implements` (the generator records both).
+  const selfAliases = meta.kind === "component" ? Object.keys(manifest.provides) : [];
+  if (meta.kind === "component" && manifest.provides[cls.name] === undefined)
+    throw stale(`component '${cls.name}' does not provide itself in the table`);
   for (const field of f.provide) {
     if (manifest.provides[field] === undefined)
       throw stale(`@Provide field '${field}' is not a provision in the table`);
   }
+  const forwarded = new Set(manifest.exports ?? []);
   for (const field of Object.keys(manifest.provides)) {
-    if (field === selfAlias) continue;
+    if (selfAliases.includes(field) || forwarded.has(field)) continue;
     if (!f.provide.has(field))
       throw stale(`provision '${field}' in the table has no @Provide field`);
   }
@@ -342,11 +379,14 @@ export function moduleDefOf(
       children: [...manifest.children.filter((c) => c !== "*"), ...(extra.length > 0 ? ["*"] : [])],
     },
     async create(ctx, context) {
+      // A supplied instance (a double) keeps the fields it came with; the tree fills the
+      // rest, so a double may be partial.
       for (const field of f.use.keys())
-        instance[field] = (ctx.use as Record<string, unknown>)[field];
+        if (supplied === undefined || instance[field] === undefined)
+          instance[field] = (ctx.use as Record<string, unknown>)[field];
       if (typeof instance.setup === "function") await instance.setup(ctx, context);
       const api: Record<string, unknown> = {};
-      if (selfAlias !== null) api[selfAlias] = instance;
+      for (const alias of selfAliases) api[alias] = instance;
       for (const field of f.provide) {
         if (instance[field] === undefined) {
           throw new ModuleBootError(
@@ -411,12 +451,19 @@ interface Flat {
   def: ModuleDef;
   parent: Flat | null;
   childrenDefs: ModuleDef[];
+  /** Module names above this one; a node never wires to an ancestor (its exports are for outsiders). */
+  ancestors: Set<string>;
 }
 
 function flatten(root: ModuleDef): { nodes: Flat[]; tree: ManifestNode } {
   const nodes: Flat[] = [];
   const walk = (def: ModuleDef, parent: Flat | null): ManifestNode => {
-    const flat: Flat = { def, parent, childrenDefs: def.children ?? [] };
+    const flat: Flat = {
+      def,
+      parent,
+      childrenDefs: def.children ?? [],
+      ancestors: new Set(parent ? [...parent.ancestors, parent.def.manifest.name] : []),
+    };
     nodes.push(flat);
     return { manifest: def.manifest, children: flat.childrenDefs.map((c) => walk(c, flat)) };
   };
@@ -429,6 +476,7 @@ function wiring(
   manifest: Manifest,
   provides: Record<string, Record<string, IfaceDecl>>,
   ifaces: TableLike,
+  ancestors: ReadonlySet<string> = new Set(),
 ): Record<string, { from: string; alias: string }> {
   const out: Record<string, { from: string; alias: string }> = {};
   for (const [alias, need] of Object.entries(manifest.requires)) {
@@ -437,14 +485,18 @@ function wiring(
         need.iface.includes("#") ? need.iface : `${manifest.name}#${need.iface}`
       ]!;
     const candidates = need.from !== undefined ? [need.from] : Object.keys(provides);
-    for (const from of candidates) {
-      if (from === manifest.name) continue;
-      for (const [pAlias, decl] of Object.entries(provides[from] ?? {})) {
-        // checkTree already established satisfaction; pick the first satisfying alias.
-        if (satisfiesQuick(decl, required, ifaces)) {
-          out[alias] = { from, alias: pAlias };
-          break;
+    // checkTree already established a unique satisfier — a provision DECLARING the very
+    // interface (the same table entry) wins over one that merely has the shape.
+    for (const exact of [true, false]) {
+      for (const from of candidates) {
+        if (from === manifest.name || ancestors.has(from)) continue;
+        for (const [pAlias, decl] of Object.entries(provides[from] ?? {})) {
+          if (exact ? decl === required : satisfiesQuick(decl, required, ifaces)) {
+            out[alias] = { from, alias: pAlias };
+            break;
+          }
         }
+        if (out[alias] !== undefined) break;
       }
       if (out[alias] !== undefined) break;
     }
@@ -522,16 +574,49 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
   const byName = new Map(nodes.map((n) => [n.def.manifest.name, n]));
   const wires = new Map<string, Record<string, { from: string; alias: string }>>();
   for (const n of nodes)
-    wires.set(n.def.manifest.name, wiring(n.def.manifest, provides, opts.ifaces));
+    wires.set(n.def.manifest.name, wiring(n.def.manifest, provides, opts.ifaces, n.ancestors));
 
-  // Edges: a module comes after what it requires, after what contributes to it, and
-  // after its children (a parent reaches its children's apis).
+  /**
+   * Where an exported alias actually comes from: the child declaring the interface (else
+   * the one child whose provision satisfies it), followed through nested exports. A
+   * module's exports are a scope's outward face, not a gate — a consumer waits for the
+   * child, never for the whole group, which is what keeps two groups that need one
+   * another's children from being a cycle.
+   */
+  const exportTarget = (module: string, alias: string): { module: string; alias: string } => {
+    const n = byName.get(module);
+    if (n === undefined || !(n.def.manifest.exports ?? []).includes(alias))
+      return { module, alias };
+    const wanted = provides[module]![alias]!;
+    const found: Array<{ module: string; alias: string }> = [];
+    for (const exact of [true, false]) {
+      for (const child of n.childrenDefs) {
+        const name = child.manifest.name;
+        for (const [cAlias, decl] of Object.entries(provides[name] ?? {})) {
+          if (exact ? decl === wanted : satisfiesQuick(decl, wanted, opts.ifaces)) {
+            found.push({ module: name, alias: cAlias });
+            break;
+          }
+        }
+      }
+      if (found.length > 0) break;
+    }
+    if (found.length !== 1) {
+      throw new ModuleBootError(
+        `${module}: exports '${alias}' but ${found.length === 0 ? "no child provides it" : `${found.map((f) => f.module).join(", ")} all do`}`,
+      );
+    }
+    return exportTarget(found[0]!.module, found[0]!.alias);
+  };
+
+  // Edges: a module comes after what it requires (resolved through exports to the node
+  // that provides it), after what contributes to it, and after its children.
   const after = new Map<string, Set<string>>();
   for (const n of nodes) after.set(n.def.manifest.name, new Set());
   for (const n of nodes) {
     const name = n.def.manifest.name;
     for (const w of Object.values(wires.get(name)!)) {
-      if (byName.has(w.from)) after.get(name)!.add(w.from);
+      if (byName.has(w.from)) after.get(name)!.add(exportTarget(w.from, w.alias).module);
     }
     for (const slotKey of Object.keys(n.def.manifest.contributes)) {
       const target = splitSlotKey(slotKey)!.module;
@@ -593,8 +678,10 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
     for (const n of order) {
       const mf = n.def.manifest;
       const use: Record<string, unknown> = {};
-      for (const [alias, w] of Object.entries(wires.get(mf.name)!))
-        use[alias] = apiOf(w.from, w.alias);
+      for (const [alias, w] of Object.entries(wires.get(mf.name)!)) {
+        const t = exportTarget(w.from, w.alias);
+        use[alias] = apiOf(t.module, t.alias);
+      }
       const contributions: Record<string, Contributed[]> = {};
       for (const other of nodes) {
         for (const [slotKey, entries] of Object.entries(other.def.manifest.contributes)) {
@@ -637,6 +724,12 @@ export async function bootModules(root: ModuleDef, opts: BootModulesOptions): Pr
       } catch (err) {
         drain(disposers);
         throw err;
+      }
+      // Exports: the alias is forwarded from the child that declares the interface — else
+      // from the one child whose provision satisfies it — so the subtree offers it as one.
+      for (const alias of mf.exports ?? []) {
+        const t = exportTarget(mf.name, alias);
+        inst.api[alias] = apiOf(t.module, t.alias);
       }
       const validate = () => {
         for (const alias of Object.keys(mf.provides)) {

@@ -4,6 +4,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { Users } from "../../mechanisms/identity.js";
 
 export interface UserRow {
   userId: string;
@@ -25,7 +26,7 @@ function mapRow(r: Record<string, unknown>): UserRow {
 }
 
 @Component()
-export class UsersRepo {
+export class UsersRepo implements Users {
   @Use() private readonly db!: Db;
 
   insert(row: UserRow): void {

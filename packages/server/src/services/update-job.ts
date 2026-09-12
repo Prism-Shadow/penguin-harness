@@ -32,6 +32,7 @@
  * A platform hot-swap while a run is in flight builds a fresh service that knows nothing of
  * it; the child finishes on its own and only its status is lost. Rare enough to accept.
  */
+import { Component, Interface } from "@prismshadow/penguin-core/kernel";
 import { spawn } from "node:child_process";
 import type { UpdateJobPhase, UpdateJobStatus, UpdateRunResponse } from "../api/types.js";
 
@@ -153,11 +154,16 @@ export const spawnUpdateRunner: UpdateRunner = (cliEntry, onOutput) =>
     });
   });
 
-export class UpdateJobService {
+/** The self-update run as a node, so a test stands in a scripted runner for the real spawn. */
+export abstract class UpdateJob extends Interface<Pick<UpdateJobService, "status" | "start">>() {}
+
+@Component()
+export class UpdateJobService implements UpdateJob {
   private current: UpdateJobStatus = { state: "idle", targetVersion: null, output: "" };
   private progress: UpdateProgress = INITIAL_PROGRESS;
 
-  constructor(private readonly runner: UpdateRunner = spawnUpdateRunner) {}
+  /** The spawn a run goes through; a replacement supplies its own. */
+  private readonly runner: UpdateRunner = spawnUpdateRunner;
 
   /** The job as it stands (idle / running with progress / done with its result). */
   status(): UpdateJobStatus {

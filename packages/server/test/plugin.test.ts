@@ -5,8 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
-import { parseManifest } from "@prismshadow/penguin-core/kernel";
-import { boot, initialDoc } from "@prismshadow/penguin-core/kernel";
+import { parseManifest, boot, initialDoc } from "@prismshadow/penguin-core/kernel";
 import { HotResources } from "../src/hmr/resources.js";
 import { PluginHost, PLUGINS_RESOURCE_ID, pluginHostFrom } from "../src/plugin/host.js";
 import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
@@ -45,15 +44,15 @@ function backend(name: string, onCreate?: () => void): ModuleDef {
 describe("plugin host", () => {
   it("holds every plugin's modules in load order", () => {
     const host = new PluginHost();
-    host.use({ specifier: "a", modules: [backend("a1"), backend("a2")] });
-    host.use({ specifier: "b", modules: [backend("b1")] });
+    host.use({ specifier: "a", modules: [backend("a1"), backend("a2")], replaces: [] });
+    host.use({ specifier: "b", modules: [backend("b1")], replaces: [] });
     expect(host.modules().map((m) => m.manifest.name)).toEqual(["ext-a1", "ext-a2", "ext-b1"]);
   });
 
   it("refuses a module name another plugin already loaded, naming both", () => {
     const host = new PluginHost();
-    host.use({ specifier: "a", modules: [backend("x")] });
-    expect(() => host.use({ specifier: "b", modules: [backend("x")] })).toThrow(
+    host.use({ specifier: "a", modules: [backend("x")], replaces: [] });
+    expect(() => host.use({ specifier: "b", modules: [backend("x")], replaces: [] })).toThrow(
       /plugin 'b': module 'ext-x' is already loaded/,
     );
   });
@@ -78,7 +77,7 @@ describe("plugin modules on the real platform", () => {
     const resources = new HotResources();
     resources.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
     const host = new PluginHost();
-    host.use({ specifier: "test", modules });
+    host.use({ specifier: "test", modules, replaces: [] });
     resources.register(PLUGINS_RESOURCE_ID, host);
     return boot(
       packagedPlatform.impl,

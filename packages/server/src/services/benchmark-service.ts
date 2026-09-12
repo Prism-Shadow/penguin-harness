@@ -28,14 +28,12 @@ import type {
   CaseMaterial,
   WorkspaceFilesResponse,
 } from "../api/types.js";
-import type {
-  WorkspaceFileContent,
-  WorkspaceFileReadOptions,
-  WorkspaceFilesService,
-} from "./workspace-files-service.js";
+import type { WorkspaceFileContent, WorkspaceFileReadOptions } from "./workspace-files-service.js";
 import { HttpError } from "../http/errors.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { Paths } from "../hmr/capabilities.js";
+import type { Benchmarks } from "../mechanisms/agents.js";
+import type { WorkspaceFiles } from "../mechanisms/workspace.js";
 
 const STATEMENT_TITLE_READ_BYTES = 64 * 1024;
 
@@ -190,12 +188,12 @@ function toEvaluation(v: unknown): BenchmarkEvaluation | null {
 }
 
 @Component()
-export class BenchmarkService {
-  @Use() private readonly config!: Config;
+export class BenchmarkService implements Benchmarks {
+  @Use() private readonly paths!: Paths;
   private get root(): string {
-    return this.config.root;
+    return this.paths.root;
   }
-  @Use() private readonly workspaceFiles!: WorkspaceFilesService;
+  @Use() private readonly workspaceFiles!: WorkspaceFiles;
 
   async list(projectId: string, agentId: string): Promise<BenchmarksResponse> {
     const dir = benchmarksDir(this.root, projectId, agentId);

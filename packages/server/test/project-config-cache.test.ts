@@ -36,7 +36,7 @@ describe("project-config read cache", () => {
 
   beforeEach(async () => {
     root = await makeTempRoot();
-    svc = wire(ProjectConfigService, { config: { root } });
+    svc = wire(ProjectConfigService, { paths: { root } });
     file = projectConfigPath(root, P);
     await svc.writeRaw(P, { name: "cached", models: [PRICED] });
     await backdate(file, "2026-01-01T00:00:00Z");

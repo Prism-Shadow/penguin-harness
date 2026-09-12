@@ -13,31 +13,22 @@
 import type { UserInfo } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { ADMIN_USER_ID, MIN_PASSWORD_LENGTH, toUserInfo } from "../auth/service.js";
-import { SCRYPT_COST, hashPassword } from "../auth/password.js";
-import type { ProjectsRepo } from "../db/repos/projects.js";
-import type { AuthSessionsRepo } from "../db/repos/auth-sessions.js";
-import type { UserRow, UsersRepo } from "../db/repos/users.js";
+import type { PasswordHasher } from "../auth/password.js";
+import type { UserRow } from "../db/repos/users.js";
 import { SEMANTIC_ID_RULE, USERNAME_PATTERN } from "./ids.js";
-import type { ProjectService } from "./project-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Overrides } from "../hmr/capabilities.js";
+import type { Clock } from "../hmr/capabilities.js";
+import type { Admin, AuthSessions, Users } from "../mechanisms/identity.js";
+import type { ProjectLifecycle, Projects } from "../mechanisms/projects.js";
 
 @Component()
-export class AdminService {
-  @Use() private readonly users!: UsersRepo;
-  @Use() private readonly authSessions!: AuthSessionsRepo;
-  @Use() private readonly projects!: ProjectsRepo;
-  @Use() private readonly projectService!: ProjectService;
-  @Use() private readonly overrides!: Overrides;
-  private now: () => Date = () => new Date();
-  /** scrypt work factor for hashes this service writes; a test double lowers it. */
-  private hashCost: number = SCRYPT_COST;
-
-  setup(): void {
-    const overrides = this.overrides.value();
-    this.now = overrides.now ?? this.now;
-    this.hashCost = overrides.passwordHashCost ?? SCRYPT_COST;
-  }
+export class AdminService implements Admin {
+  @Use() private readonly users!: Users;
+  @Use() private readonly authSessions!: AuthSessions;
+  @Use() private readonly projects!: Projects;
+  @Use() private readonly projectService!: ProjectLifecycle;
+  @Use() private readonly clock!: Clock;
+  @Use() private readonly hasher!: PasswordHasher;
 
   listUsers(): UserInfo[] {
     return this.users.list().map(toUserInfo);
@@ -59,10 +50,10 @@ export class AdminService {
     }
     const user: UserRow = {
       userId,
-      passwordHash: await hashPassword(password, this.hashCost),
+      passwordHash: await this.hasher.hash(password),
       isAdmin: false,
       passwordIsInitial: true,
-      createdAt: this.now().toISOString(),
+      createdAt: this.clock.now().toISOString(),
     };
     this.users.insert(user);
     try {
@@ -90,11 +81,7 @@ export class AdminService {
       throw new HttpError(400, "invalid_password", "Password must be at least 8 characters.");
     }
     const isSelfAdminReset = userId === ADMIN_USER_ID;
-    this.users.updatePassword(
-      userId,
-      await hashPassword(password, this.hashCost),
-      !isSelfAdminReset,
-    );
+    this.users.updatePassword(userId, await this.hasher.hash(password), !isSelfAdminReset);
     // Force re-login: delete every session row for this user.
     this.authSessions.deleteByUser(userId);
   }

@@ -10,14 +10,14 @@ import type { VaultEntryUpdate, VaultUpdateRequest } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString, requireValidId } from "../validate.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface VaultRouteDeps {
-  agentConfigService: AgentConfigService;
+  agentConfigService: AgentConfig;
   manager: SessionManager;
-  access: ProjectAccess;
+  access: Access;
 }
 
 /** Validate the PUT request body and shape it into a VaultUpdateRequest (semantic checks like key-name rules live in the service layer). */
