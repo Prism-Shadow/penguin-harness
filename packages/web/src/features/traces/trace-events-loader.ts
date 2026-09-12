@@ -71,10 +71,14 @@ export async function loadTraceEventPages(
 ): Promise<number> {
   let offset = 0;
   let total = 0;
+  // Read through a call, not inline: the flag flips while a page is in flight, and an inline
+  // check narrows it to `false` for the rest of the loop body, so the post-await check would
+  // compare a type the checker believes cannot be `true`.
+  const cancelled = (): boolean => opts.signal?.cancelled === true;
   for (let page = 0; page < MAX_TRACE_EVENT_PAGES; page++) {
-    if (opts.signal?.cancelled === true) return total;
+    if (cancelled()) return total;
     const res = await fetchPage(offset, opts.pageSize);
-    if (opts.signal?.cancelled === true) return total;
+    if (cancelled()) return total;
     opts.onPage(res);
     total = res.total;
     if (res.events.length === 0) return total;
