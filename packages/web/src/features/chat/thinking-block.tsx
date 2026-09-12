@@ -10,7 +10,7 @@ import { humanizeDuration } from "../../lib/format";
 import type { ThinkingItem } from "../../lib/omni/stream-model";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
-import { DisclosureRow } from "./disclosure-row";
+import { DISCLOSURE_BODY_MD_CLASS, DisclosureRow } from "./disclosure-row";
 import { LiveDuration } from "./live-duration";
 import { Md } from "./md";
 
@@ -41,7 +41,7 @@ export function ThinkingBlock({ item }: { item: ThinkingItem }) {
         </>
       }
     >
-      <div className="md-body anim-fade mx-3 mb-2 rounded-md bg-gray-50 px-3 py-2 text-sm leading-relaxed text-gray-600 dark:bg-gray-900/60 dark:text-gray-400">
+      <div className={`anim-fade ${DISCLOSURE_BODY_MD_CLASS}`}>
         <Md text={item.thinking} streaming={item.streaming} />
       </div>
     </DisclosureRow>
