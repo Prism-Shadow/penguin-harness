@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#714](https://github.com/Prism-Shadow/penguin-harness/pull/714)
 
 [English](2026-09-12-user-profile.md)
 
