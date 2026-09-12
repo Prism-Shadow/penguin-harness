@@ -104,6 +104,8 @@ export const en: Strings = {
       `This ends the shell "${name}" — it cannot be restored.`,
     launcher: "Shortcuts",
     launcherCaption: "Shortcuts",
+    launcherOpen: "Open",
+    launcherClose: "Close",
     launcherPending: "a subagent awaits approval",
     launcherPanels: "Shortcuts",
     launcherHide: "Hide launcher",

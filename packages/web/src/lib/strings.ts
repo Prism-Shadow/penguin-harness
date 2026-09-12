@@ -114,10 +114,14 @@ export const zh = {
     /**
      * The floating launcher on the chat body's right edge while the right dock is hidden.
      * `launcherCaption` is printed under the ball at rest — the same words as the ball's
-     * accessible name — and gives way to the pointed-at entry's name while the fan is open.
+     * accessible name — gives way to `launcherOpen` while the ball itself is pointed at, and
+     * to the pointed-at entry's name while the fan is open.
      */
     launcher: "快捷方式",
     launcherCaption: "快捷方式",
+    /** Replaces `launcherCaption` while the pointer or focus is on the ball and no entry is: what the next click does, so the pair swaps with the fan's state. */
+    launcherOpen: "打开",
+    launcherClose: "关闭",
     /** Appended to the launcher's accessible name while its amber dot shows. */
     launcherPending: "子智能体有待审批",
     /** The fan of entries the launcher opens (its accessible group name). */
