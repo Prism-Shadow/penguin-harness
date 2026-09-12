@@ -2,12 +2,18 @@
  * The Evaluation Center's prompts and id helpers (src/features/benchmark/benchmark-prompts.ts):
  * the Create-with-AI tail hands the benchmark-design Skill its tested Agent and the Project-level
  * layout, the Evaluate and Optimize tails carry every input the agent-evaluation and
- * agent-optimization Skills require, and the manual form's directory names follow the id
- * alphabet.
+ * agent-optimization Skills require, the two Ask AI tails carry the facts on screen and the
+ * files they were read from, and the manual form's directory names follow the id alphabet.
+ * Assertions on a tail's wording are language-agnostic: the ids, paths and Session ids it must
+ * name, never the sentences around them, which differ per dictionary.
  */
 import { describe, expect, it } from "vitest";
 import {
   MAX_RUNS,
+  askCaseExamples,
+  askCaseTail,
+  askEvaluationExamples,
+  askEvaluationTail,
   benchmarkCreateExamples,
   benchmarkCreateTail,
   benchmarkPath,
@@ -117,6 +123,142 @@ describe("optimizeTail / buildOptimizePrompt", () => {
       `Focus on citations.\n\n${optimizeTail(params)}`,
     );
     expect(buildOptimizePrompt("   ", params)).toBe(optimizeTail(params));
+  });
+});
+
+describe("askEvaluationTail (the evaluation dialog's Ask AI question)", () => {
+  const params = {
+    benchmarkId: "report-writing-v1",
+    time: "2026-07-16 09:30",
+    label: "report-writer · deepseek-v4-pro · xhigh",
+    version: 3,
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
+    thinkingLevel: "xhigh",
+    score: "72.35",
+    cost: "$0.42",
+    duration: "3m20s",
+    summaryTitle: "Citations still weak",
+    summary: "Two cases lost points on citation format.",
+    cases: [
+      {
+        id: "CASE-001-contradictions",
+        score: "80",
+        cost: "$0.21",
+        duration: "1m40s",
+        sessionIds: ["ses-a1", "ses-a2"],
+      },
+      {
+        id: "CASE-002-citations",
+        score: "64.7",
+        cost: "$0.21",
+        duration: "1m40s",
+        sessionIds: ["ses-b1"],
+      },
+    ],
+  };
+
+  it("names the Benchmark, its scoreboard and the label facts of this record", () => {
+    const tail = askEvaluationTail(params);
+    expect(tail).toContain("`report-writing-v1`");
+    expect(tail).toContain("`benchmarks/report-writing-v1/`");
+    expect(tail).toContain("`benchmarks/report-writing-v1/scoreboard.yaml`");
+    expect(tail).toContain("2026-07-16 09:30");
+    expect(tail).toContain("report-writer · deepseek-v4-pro · xhigh");
+    expect(tail).toContain("v3");
+    expect(tail).toContain("`deepseek`");
+    expect(tail).toContain("`deepseek-v4-pro`");
+    expect(tail).toContain("`xhigh`");
+    expect(tail).toContain("72.35");
+    expect(tail).toContain("$0.42");
+    expect(tail).toContain("3m20s");
+    expect(tail).toContain("Citations still weak");
+    expect(tail).toContain("Two cases lost points on citation format.");
+  });
+
+  it("lists every case with its score and the Session id of every run", () => {
+    const tail = askEvaluationTail(params);
+    for (const c of params.cases) {
+      expect(tail).toContain(`\`${c.id}\``);
+      expect(tail).toContain(c.score);
+      for (const sessionId of c.sessionIds) expect(tail).toContain(`\`${sessionId}\``);
+    }
+  });
+
+  it("omits a summary the record does not carry, and says so when no run recorded a Session", () => {
+    const tail = askEvaluationTail({
+      ...params,
+      summaryTitle: "",
+      summary: "",
+      cases: [{ ...params.cases[0]!, sessionIds: [] }],
+    });
+    expect(tail).not.toContain("Citations still weak");
+    expect(tail).not.toContain("Two cases lost points on citation format.");
+    expect(tail).toContain("`CASE-001-contradictions`");
+    expect(tail).not.toContain("ses-a1");
+  });
+
+  // It asks for an explanation of scores already recorded: no Skill to run, nothing to change.
+  it("names no Skill and no subagent to spawn", () => {
+    const tail = askEvaluationTail(params);
+    expect(tail).not.toContain("agent-evaluation");
+    expect(tail).not.toContain("agent-optimization");
+    expect(tail).not.toContain("run_subagent");
+  });
+
+  it("offers examples with unique keys and non-empty prompts", () => {
+    const examples = askEvaluationExamples();
+    expect(examples).toHaveLength(3);
+    expect(new Set(examples.map((e) => e.key)).size).toBe(examples.length);
+    for (const e of examples) {
+      expect(e.label).not.toBe("");
+      expect(e.prompt.trim()).not.toBe("");
+    }
+  });
+});
+
+describe("askCaseTail (the case dialog's Ask AI question)", () => {
+  const params = {
+    benchmarkId: "report-writing-v1",
+    caseId: "CASE-002-citations",
+    latest: {
+      time: "2026-07-16 09:30",
+      score: "64.7",
+      runs: [
+        { score: "70", sessionId: "ses-b1" },
+        { score: "59.4", sessionId: "ses-b2" },
+      ],
+    },
+  };
+
+  it("names both material paths and the latest evaluation's runs with their Sessions", () => {
+    const tail = askCaseTail(params);
+    expect(tail).toContain("`report-writing-v1`");
+    expect(tail).toContain("`CASE-002-citations`");
+    expect(tail).toContain("`benchmarks/report-writing-v1/CASE-002-citations/statement/README.md`");
+    expect(tail).toContain("`benchmarks/report-writing-v1/CASE-002-citations/rubric/README.md`");
+    expect(tail).toContain("2026-07-16 09:30");
+    expect(tail).toContain("64.7");
+    expect(tail).toContain("`ses-b1`");
+    expect(tail).toContain("`ses-b2`");
+  });
+
+  it("keeps the paths and carries no run results when the Benchmark has no evaluations", () => {
+    const tail = askCaseTail({ ...params, latest: null });
+    expect(tail).toContain("`benchmarks/report-writing-v1/CASE-002-citations/statement/README.md`");
+    expect(tail).toContain("`benchmarks/report-writing-v1/CASE-002-citations/rubric/README.md`");
+    expect(tail).not.toContain("ses-b1");
+    expect(tail).not.toContain("64.7");
+  });
+
+  it("offers examples with unique keys and non-empty prompts", () => {
+    const examples = askCaseExamples();
+    expect(examples).toHaveLength(3);
+    expect(new Set(examples.map((e) => e.key)).size).toBe(examples.length);
+    for (const e of examples) {
+      expect(e.label).not.toBe("");
+      expect(e.prompt.trim()).not.toBe("");
+    }
   });
 });
 

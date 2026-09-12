@@ -61,7 +61,7 @@ Benchmark 属于 Project，存放在与 `agents/` 平级的 `<root>/<project>/be
 
 `scoreboard.yaml` 中的每条评测记录带时间戳，并记录：
 
-- `agent_id`，本轮评测的被测 Agent。它与 Agent State `version`、`(provider, model_id)` 成对值以及 `thinking_level` 合成该条记录的**标签**：走势图以时间为横轴、分数为纵轴，按标签分系列，只有同一标签下的分数才可比。评估记录写于 evaluation 尚未携带 Agent 之前时归为未标注，落在图表的灰色系列；
+- `agent_id`，本轮评测的被测 Agent。它与 `model_id`、`thinking_level` 合成该条记录的**标签**：走势图以时间为横轴、分数为纵轴，按标签分系列，只有同一标签下的分数才可比。Agent State `version` 不进标签——同一被测 Agent 在同一 Runtime 下的历次版本正是走势图要显示的东西，因此它们连成一条线，版本号标在每个点的悬停提示里。评估记录写于 evaluation 尚未携带 Agent 之前时归为未标注，落在图表的灰色系列；
 - 本轮 Runtime：用户显式指定的 `(provider, model_id)` 成对值优先，否则继承 Builder Session；`thinking_level` 从 Target Agent 配置读取，不依赖 Trace 元数据；
 - `summary_title` 与 `summary`（本轮结论与下一轮假设）；
 - 由模型写入的 Score、成本与耗时平均值——Case 级对 Runs 求平均，Evaluation 级对 Cases 求平均；单次 Run 成本保留记录中的原始精度，成本平均值忽略 `null`，全部未知时才为 `null`；Score 保留两位小数，成本平均值保留六位小数，`duration_ms` 取整；

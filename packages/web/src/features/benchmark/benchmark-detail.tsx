@@ -1,16 +1,14 @@
 /**
  * One Benchmark's detail: case counts and description, the case list, a Score-only chart grouped
- * into series by each Evaluation's label — the tested Agent, its Agent State version, the model
- * and the thinking level — and the evaluation table, which spells that label out across its
- * Agent, version, model and thinking-level columns. Rows expand to the evaluation summary and
- * per-case scores, and Case rows further expand to the raw results of each Run with its
- * Session id. A case opens the case browser in a dialog. This is the body of the Benchmark's
- * own page (the title lives in that page's header), which mounts it once its Benchmark has been
- * read, so no expand state ever lingers from the Benchmark before it.
+ * into series by each Evaluation's label — the tested Agent, the model and the thinking level —
+ * and the evaluation table, which spells that label out across its Agent, version, model and
+ * thinking-level columns. A row there opens that evaluation in a dialog, a case opens the case
+ * browser in another, and either dialog can hand what it shows to an agent as a question. This
+ * is the body of the Benchmark's own page (the title lives in that page's header), which mounts
+ * it once its Benchmark has been read, so nothing stays open from the Benchmark before it.
  */
 import { useEffect, useState } from "react";
 import type {
-  BenchmarkCaseScore,
   BenchmarkCaseSummary,
   BenchmarkEvaluation,
   BenchmarkSummary,
@@ -24,21 +22,34 @@ import { toneInk } from "../../lib/tone";
 import { useTheme } from "../../state/theme";
 import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Chevron } from "../../components/ui/chevron";
+import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
+import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { NEUTRAL_SERIES, seriesColor } from "../../lib/category-colors";
 import { lineSegments, makeRangeGeom, segmentPath } from "../usage/chart-geom";
 import { ChartFrame, useChartWidth } from "../usage/chart-svg";
-import { labelSeries, scoreScale, scoreValues, seriesValues } from "./benchmark-metrics";
-import type { EvaluationSeries } from "./benchmark-metrics";
+import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
+import {
+  evaluationLabel,
+  labelSeries,
+  scoreScale,
+  scoreValues,
+  seriesValues,
+} from "./benchmark-metrics";
+import type { EvaluationSeries } from "./benchmark-metrics";
+import { askCaseExamples, askCaseTail } from "./benchmark-prompts";
+import type { AskCaseParams } from "./benchmark-prompts";
+import { EvaluationDetailModal } from "./evaluation-detail-modal";
 
 /**
  * Score-over-time line chart: one x slot per evaluation in scoreboard order, labeled with its
  * timestamp. Scores remain valid on 0..100, while the visible y-axis is padded around the
  * observed range and clamped to those limits. Evaluations are grouped by label, so a change of
- * tested Agent, Agent State version or runtime starts its own series instead of bending one.
+ * tested Agent or of runtime starts its own series instead of bending one, while a new Agent
+ * State version of the same agent continues the line and names its version in the bubble.
  */
 function ScoreTrendChart({
   evaluations,
@@ -68,6 +79,10 @@ function ScoreTrendChart({
           bubble={(i) => {
             const e = evaluations[i]!;
             const v = values[i] ?? null;
+            // Time, then the score with the Agent State version that earned it, then the series
+            // label, spelled by the same helper the legend reads. A version is a point on a
+            // series rather than a series of its own, so this bubble is where it is read.
+            const label = evaluationLabel(e);
             return (
               <>
                 <p className="text-gray-400">{formatDateTime(e.time)}</p>
@@ -78,7 +93,7 @@ function ScoreTrendChart({
                   )}
                 </p>
                 <p className="font-mono text-gray-400">
-                  {e.agentId ?? "—"} · {e.modelId} · {e.thinkingLevel}
+                  {label.unlabeled ? S.benchmark.unlabeled : label.text}
                 </p>
               </>
             );
@@ -126,9 +141,9 @@ function ScoreTrendChart({
 }
 
 /**
- * Score chart + label legend. The legend prints the tested Agent, the Agent State version, the
- * model and the thinking level; the provider is part of the grouping key but not of the text,
- * since the model id is what a reader recognizes.
+ * Score chart + label legend. The legend prints the three parts a series is keyed by: the
+ * tested Agent, the model and the thinking level. The version a point tested is not one of
+ * them — it stands in that point's bubble and in the evaluation table's own column.
  */
 function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
   const series = labelSeries(evaluations);
@@ -160,205 +175,102 @@ function TrendSection({ evaluations }: { evaluations: BenchmarkEvaluation[] }) {
 
 const CELL = "px-3 py-2";
 
-/** One evaluation record: main row + a sub-table of per-Case scores that expands on click. */
+/** One evaluation record: a clickable row; the detail it used to unfold is a dialog of its own. */
 function EvaluationRow({
   evaluation,
-  caseTitles,
-  onOpenCase,
+  onOpen,
   currency,
 }: {
   evaluation: BenchmarkEvaluation;
-  caseTitles: ReadonlyMap<string, string>;
-  onOpenCase: (caseId: string) => void;
+  onOpen: () => void;
   currency: Currency;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <>
-      <tr
-        onClick={() => setOpen((v) => !v)}
-        className="cursor-pointer border-b border-gray-100 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
-      >
-        <td className={CELL}>
-          <span className="flex items-center gap-1.5 text-xs">
-            <Chevron open={open} size={12} className="text-gray-400" />
-            {formatDateTime(evaluation.time)}
-          </span>
-        </td>
-        <td className={`${CELL} text-xs text-gray-500 dark:text-gray-400`}>
-          {evaluation.agentId ? (
-            <span className="flex items-center gap-1.5">
-              <AgentAvatar
-                id={evaluation.agentId}
-                size={ICON_SIZE.rowLead}
-                className="shrink-0 rounded"
-              />
-              <span className="min-w-0 truncate font-mono">{evaluation.agentId}</span>
-            </span>
-          ) : (
-            <span className="text-gray-400">—</span>
-          )}
-        </td>
-        <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
-          {evaluation.version !== undefined ? `v${evaluation.version}` : "—"}
-        </td>
-        <td
-          className={`${CELL} max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400`}
-          title={evaluation.provider}
+    <tr
+      onClick={onOpen}
+      className="cursor-pointer border-b border-gray-100 transition-colors duration-150 last:border-b-0 hover:bg-gray-50 dark:border-gray-800/60 dark:hover:bg-gray-800/40"
+    >
+      <td className={CELL}>
+        {/* The row is what a mouse clicks, and this is the same target for a keyboard: a table
+            row cannot be a button, so the cell that names the record carries the real one. */}
+        <button
+          type="button"
+          className="text-xs hover:underline"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen();
+          }}
         >
-          {evaluation.modelId}
-        </td>
-        <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
-          {evaluation.thinkingLevel}
-        </td>
-        <td className={`${CELL} font-mono text-xs font-semibold tabular-nums`}>
-          {formatScore(evaluation.score)}
-        </td>
-        <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
-          {formatMoney(evaluation.cost, currency)}
-        </td>
-        <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
-          {evaluation.durationMs !== undefined ? humanizeDuration(evaluation.durationMs) : "—"}
-        </td>
-      </tr>
-      {open && (
-        <tr className="border-b border-gray-100 last:border-b-0 dark:border-gray-800/60">
-          <td colSpan={8} className="bg-gray-50/80 px-3 py-2 dark:bg-gray-950/40">
-            {/* Evaluation summary title and body are displayed separately when present. */}
-            {(evaluation.summaryTitle || evaluation.summary) && (
-              <div className="mb-2">
-                {evaluation.summaryTitle ? (
-                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
-                    {evaluation.summaryTitle}
-                  </p>
-                ) : (
-                  <p className="text-xs font-semibold text-gray-500">{S.benchmark.summaryLabel}</p>
-                )}
-                {evaluation.summary && (
-                  <p className="mt-0.5 whitespace-pre-wrap text-xs text-gray-600 dark:text-gray-300">
-                    {evaluation.summary}
-                  </p>
-                )}
-              </div>
-            )}
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-xs text-gray-500">
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colCase}</th>
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colScore}</th>
-                  <th className="px-2 py-1 font-medium">{S.common.cost}</th>
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colDuration}</th>
-                  <th className="px-2 py-1 font-medium">{S.benchmark.colSession}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {evaluation.cases.map((c) => (
-                  <CaseRow
-                    key={c.case}
-                    caseScore={c}
-                    title={caseTitles.get(c.case)}
-                    onOpenCase={caseTitles.has(c.case) ? onOpenCase : undefined}
-                    currency={currency}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-/** Session id, for correlating a Run with what the side panel shows: identification only, reading a Trace is the side panel's job. */
-function SessionCell({ sessionId }: { sessionId?: string }) {
-  if (!sessionId) return <span className="text-gray-400">—</span>;
-  return (
-    <span className="font-mono text-gray-600 dark:text-gray-300" title={sessionId}>
-      {sessionId}
-    </span>
+          {formatDateTime(evaluation.time)}
+        </button>
+      </td>
+      <td className={`${CELL} text-xs text-gray-500 dark:text-gray-400`}>
+        {evaluation.agentId ? (
+          <span className="flex items-center gap-1.5">
+            <AgentAvatar
+              id={evaluation.agentId}
+              size={ICON_SIZE.rowLead}
+              className="shrink-0 rounded"
+            />
+            <span className="min-w-0 truncate font-mono">{evaluation.agentId}</span>
+          </span>
+        ) : (
+          <span className="text-gray-400">—</span>
+        )}
+      </td>
+      <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
+        {evaluation.version !== undefined ? `v${evaluation.version}` : "—"}
+      </td>
+      <td
+        className={`${CELL} max-w-40 truncate font-mono text-xs text-gray-500 dark:text-gray-400`}
+        title={evaluation.provider}
+      >
+        {evaluation.modelId}
+      </td>
+      <td className={`${CELL} font-mono text-xs text-gray-500 dark:text-gray-400`}>
+        {evaluation.thinkingLevel}
+      </td>
+      <td className={`${CELL} font-mono text-xs font-semibold tabular-nums`}>
+        {formatScore(evaluation.score)}
+      </td>
+      <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
+        {formatMoney(evaluation.cost, currency)}
+      </td>
+      <td className={`${CELL} font-mono text-xs tabular-nums text-gray-500 dark:text-gray-400`}>
+        {evaluation.durationMs !== undefined ? humanizeDuration(evaluation.durationMs) : "—"}
+      </td>
+    </tr>
   );
 }
 
 /**
- * Score row for one Case: stored Case averages are authoritative. Expanding shows raw Run
- * results; the UI never recomputes averages.
+ * What the case question carries beyond the ids: the two material paths follow from the ids
+ * themselves, so all this adds is how the newest evaluation scored this case and which Session
+ * each of its runs ran in. Null when no evaluation has scored it — a Benchmark can be read
+ * before it has ever been run.
  */
-function CaseRow({
-  caseScore: c,
-  title,
-  onOpenCase,
-  currency,
-}: {
-  caseScore: BenchmarkCaseScore;
-  title?: string;
-  onOpenCase?: (caseId: string) => void;
-  currency: Currency;
-}) {
-  const [open, setOpen] = useState(false);
-  const runs = c.runs;
-  return (
-    <>
-      <tr
-        onClick={() => setOpen((v) => !v)}
-        className="cursor-pointer text-xs transition-colors duration-150 hover:bg-gray-100/70 dark:hover:bg-gray-800/40"
-      >
-        <td className="px-2 py-1">
-          <span className="flex items-start gap-1.5">
-            <Chevron open={open} size={12} className="text-gray-400" />
-            <span className="min-w-0">
-              {onOpenCase ? (
-                <button
-                  type="button"
-                  className="block text-left font-medium text-gray-800 hover:underline dark:text-gray-200"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenCase(c.case);
-                  }}
-                >
-                  {title ?? c.case}
-                </button>
-              ) : (
-                <span className="block font-medium text-gray-800 dark:text-gray-200">
-                  {title ?? c.case}
-                </span>
-              )}
-              {title && title !== c.case && (
-                <span className="block font-mono text-[11px] text-gray-400">{c.case}</span>
-              )}
-            </span>
-          </span>
-        </td>
-        <td className="px-2 py-1 font-mono tabular-nums">{formatScore(c.score)}</td>
-        <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
-          {formatMoney(c.cost, currency)}
-        </td>
-        <td className="px-2 py-1 font-mono tabular-nums text-gray-500 dark:text-gray-400">
-          {c.durationMs !== undefined ? humanizeDuration(c.durationMs) : "—"}
-        </td>
-        <td className="px-2 py-1">
-          <span className="text-gray-400">—</span>
-        </td>
-      </tr>
-      {open &&
-        runs.map((run, i) => (
-          <tr key={i} className="text-xs text-gray-500 dark:text-gray-400">
-            {/* Indented run index row: #1, #2, ... (case-level metrics are their average) */}
-            <td className="py-1 pl-7 pr-2 font-mono">
-              {S.benchmark.colRun} #{i + 1}
-            </td>
-            <td className="px-2 py-1 font-mono tabular-nums">{formatScore(run.score)}</td>
-            <td className="px-2 py-1 font-mono tabular-nums">{formatMoney(run.cost, currency)}</td>
-            <td className="px-2 py-1 font-mono tabular-nums">
-              {run.durationMs !== undefined ? humanizeDuration(run.durationMs) : "—"}
-            </td>
-            <td className="px-2 py-1">
-              <SessionCell {...(run.sessionId ? { sessionId: run.sessionId } : {})} />
-            </td>
-          </tr>
-        ))}
-    </>
-  );
+function caseAskParams(
+  benchmarkId: string,
+  caseId: string,
+  evaluations: readonly BenchmarkEvaluation[],
+): AskCaseParams {
+  const newest = evaluations[evaluations.length - 1];
+  const scored = newest?.cases.find((c) => c.case === caseId);
+  return {
+    benchmarkId,
+    caseId,
+    latest:
+      newest !== undefined && scored !== undefined
+        ? {
+            time: formatDateTime(newest.time),
+            score: formatScore(scored.score),
+            runs: scored.runs.map((run) => ({
+              score: formatScore(run.score),
+              sessionId: run.sessionId,
+            })),
+          }
+        : null,
+  };
 }
 
 function CasesSection({
@@ -417,11 +329,17 @@ export function BenchmarkDetail({
   const [caseStatements, setCaseStatements] = useState<BenchmarkCaseSummary[] | null>(null);
   const [caseError, setCaseError] = useState<string | null>(null);
   const [openCaseId, setOpenCaseId] = useState<string | null>(null);
+  /** Which evaluation's dialog is open, as a position in scoreboard order. */
+  const [openEvaluationIndex, setOpenEvaluationIndex] = useState<number | null>(null);
+  /** The case whose Ask AI dialog is open; kept as an id so it cannot outlive its case dialog. */
+  const [askingCaseId, setAskingCaseId] = useState<string | null>(null);
 
   useEffect(() => {
     setCaseStatements(null);
     setCaseError(null);
     setOpenCaseId(null);
+    setOpenEvaluationIndex(null);
+    setAskingCaseId(null);
     let cancelled = false;
     api
       .listBenchmarkCases(projectId, bm.id)
@@ -441,6 +359,8 @@ export function BenchmarkDetail({
   const evaluations = [...bm.evaluations];
   const caseTitles = new Map(caseStatements?.map((item) => [item.id, item.title]) ?? []);
   const openCase = caseStatements?.find((item) => item.id === openCaseId) ?? null;
+  const openEvaluation =
+    openEvaluationIndex === null ? null : (evaluations[openEvaluationIndex] ?? null);
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
@@ -480,30 +400,64 @@ export function BenchmarkDetail({
                   </tr>
                 </thead>
                 <tbody>
-                  {[...evaluations].reverse().map((ev, i) => (
-                    <EvaluationRow
-                      key={i}
-                      evaluation={ev}
-                      caseTitles={caseTitles}
-                      onOpenCase={setOpenCaseId}
-                      currency={currency}
-                    />
-                  ))}
+                  {/* Newest first on screen, while the index stays the scoreboard position the
+                      dialog is opened by. */}
+                  {evaluations
+                    .map((ev, index) => ({ ev, index }))
+                    .reverse()
+                    .map(({ ev, index }) => (
+                      <EvaluationRow
+                        key={index}
+                        evaluation={ev}
+                        onOpen={() => setOpenEvaluationIndex(index)}
+                        currency={currency}
+                      />
+                    ))}
                 </tbody>
               </table>
             </div>
           </div>
         </>
       )}
+      {openEvaluation && (
+        <EvaluationDetailModal
+          benchmarkId={bm.id}
+          evaluation={openEvaluation}
+          caseTitles={caseTitles}
+          onOpenCase={setOpenCaseId}
+          currency={currency}
+          onClose={() => setOpenEvaluationIndex(null)}
+        />
+      )}
       {openCase && (
         <Modal
           open
           title={openCase.title}
           widthClass="sm:max-w-6xl"
-          onClose={() => setOpenCaseId(null)}
+          onClose={() => {
+            setOpenCaseId(null);
+            setAskingCaseId(null);
+          }}
+          footer={
+            <Button size="sm" variant="secondary" onClick={() => setAskingCaseId(openCase.id)}>
+              <GlyphIcon d={MAGIC_WAND_ICON} />
+              {S.benchmark.askAi}
+            </Button>
+          }
         >
           <BenchmarkCaseBrowser projectId={projectId} benchmarkId={bm.id} caseSummary={openCase} />
         </Modal>
+      )}
+      {openCase && askingCaseId === openCase.id && (
+        <AskAiModal
+          open
+          onClose={() => setAskingCaseId(null)}
+          title={S.benchmark.askCaseTitle}
+          description={S.benchmark.askCaseDescription}
+          question={S.benchmark.askCaseDefault}
+          examples={askCaseExamples()}
+          tail={askCaseTail(caseAskParams(bm.id, openCase.id, evaluations))}
+        />
       )}
     </div>
   );

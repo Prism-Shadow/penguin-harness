@@ -2715,6 +2715,100 @@ Benchmark：
     colCase: "题目",
     colRun: "运行",
     colSession: "Session",
+    // The evaluation detail dialog, and the Ask AI dialog both detail dialogs open.
+    askAi: "问 AI",
+    evaluationDetailTitle: (time: string): string => `评估 · ${time}`,
+    askEvaluationTitle: "问 AI：这次评估",
+    askEvaluationDescription:
+      "这次评估的总分、逐题得分与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
+    askEvaluationDefault: "解释这次评估的结果。",
+    askEvaluationExamples: {
+      whyLow: {
+        label: "为什么这次分数低？",
+        prompt: "为什么这次评估的分数偏低？请结合逐题得分与运行记录说明主要失分在哪里。",
+      },
+      weakest: {
+        label: "哪些题最弱、该改什么？",
+        prompt: "哪几道题得分最弱？分别是什么原因，被测智能体改哪一处才有机会提上去？",
+      },
+      againstPrevious: {
+        label: "与上一次评估相比变化在哪？",
+        prompt: "与这个系列上一次评估相比，哪些题涨了、哪些题掉了？这些变化最可能来自什么？",
+      },
+    },
+    /** The evaluation dialog's Ask AI tail: this evaluation's facts, and what to read before answering. */
+    askEvaluationTail: (p: {
+      benchmarkId: string;
+      time: string;
+      label: string;
+      version: number;
+      provider: string;
+      modelId: string;
+      thinkingLevel: string;
+      score: string;
+      cost: string;
+      duration: string;
+      summaryTitle: string;
+      summary: string;
+      cases: { id: string; score: string; cost: string; duration: string; sessionIds: string[] }[];
+    }): string =>
+      "请解释下面这次 Benchmark 评估的结果。只做阅读与分析：不要修改这套 Benchmark，也不要修改被测智能体。\n\n" +
+      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，记分板为 \`benchmarks/${p.benchmarkId}/scoreboard.yaml\`）\n` +
+      `- 评估时间：${p.time}\n` +
+      `- 系列标签：${p.label}\n` +
+      `- 被测版本：v${p.version}\n` +
+      `- 评测 Runtime：provider \`${p.provider}\` / model_id \`${p.modelId}\` / thinking_level \`${p.thinkingLevel}\`\n` +
+      `- 总分 ${p.score}；成本 ${p.cost}；耗时 ${p.duration}\n` +
+      (p.summaryTitle !== "" ? `- 评估说明标题：${p.summaryTitle}\n` : "") +
+      (p.summary !== "" ? `- 评估说明：${p.summary}\n` : "") +
+      "- 逐题得分（分数、成本、耗时，以及逐次运行的 Session id）：\n" +
+      p.cases
+        .map(
+          (c) =>
+            `  - \`${c.id}\`：${c.score}；${c.cost}；${c.duration}；Session ` +
+            (c.sessionIds.length > 0 ? c.sessionIds.map((id) => `\`${id}\``).join("、") : "未记录"),
+        )
+        .join("\n") +
+      "\n\n请读取 scoreboard.yaml 里这条记录，并按需读取上列 Session 的 Trace，然后说明：这些分数是怎么来的、" +
+      "哪几道题最薄弱及其具体原因，以及下一步建议（改被测智能体的哪一处，或先补哪一类证据）。",
+    askCaseTitle: "问 AI：这道题",
+    askCaseDescription:
+      "题干与评分细则的路径会交给智能体，请它讲清这道题考什么、怎样才算答好；题目已冻结，它只读不改。",
+    askCaseDefault: "解释这道题考什么、怎样才算答好。",
+    askCaseExamples: {
+      rubricRewards: {
+        label: "评分细则在奖励什么？",
+        prompt: "这道题的评分细则把分数主要放在哪些地方？哪些条目最能把优秀与及格区分开？",
+      },
+      whyRunLow: {
+        label: "为什么有的运行在这道题上得分低？",
+        prompt: "最近一次评估在这道题上得分不高，可能是被测智能体在哪一步做丢了？",
+      },
+      clearerStatement: {
+        label: "题干怎样才能更清楚？",
+        prompt:
+          "这道题的题干有没有含糊或容易误读的地方？题目已冻结不能改，请说明如果下次新建 Benchmark 该怎么写得更清楚。",
+      },
+    },
+    /** The case dialog's Ask AI tail: the two READMEs to read, and this case's latest run results. */
+    askCaseTail: (p: {
+      benchmarkId: string;
+      caseId: string;
+      latest: { time: string; score: string; runs: { score: string; sessionId: string }[] } | null;
+    }): string =>
+      "请解释下面这道 Benchmark 题目考的是什么、怎样才算答好。题目创建即冻结，只做阅读与分析，不要修改这套 Benchmark。\n\n" +
+      `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`）\n` +
+      `- case_id：\`${p.caseId}\`\n` +
+      `- 题干：\`benchmarks/${p.benchmarkId}/${p.caseId}/statement/README.md\`\n` +
+      `- 评分细则：\`benchmarks/${p.benchmarkId}/${p.caseId}/rubric/README.md\`\n` +
+      (p.latest === null
+        ? "- 这套 Benchmark 还没有评估记录。\n"
+        : `- 最近一次评估（${p.latest.time}）在这道题上的平均分 ${p.latest.score}\n` +
+          p.latest.runs
+            .map((r, i) => `  - 第 ${i + 1} 次运行：${r.score}；Session \`${r.sessionId}\`\n`)
+            .join("")) +
+      "\n请读取上面两个 README（以及上列 Session 的 Trace，如果有），然后说明：这道题实际考察什么能力、" +
+      "一份好答案长什么样（关键决定与产物），以及评分细则靠哪些条目把优秀与及格区分开。",
     // New Benchmark, AI mode: the target picker, the examples and the fixed tail.
     aiCreateTitle: "让 AI 创建 Benchmark",
     aiCreateDescription:

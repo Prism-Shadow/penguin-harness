@@ -2751,6 +2751,104 @@ Scenarios:
     colCase: "Case",
     colRun: "Run",
     colSession: "Session",
+    askAi: "Ask AI",
+    evaluationDetailTitle: (time: string): string => `Evaluation · ${time}`,
+    askEvaluationTitle: "Ask AI about this evaluation",
+    askEvaluationDescription:
+      "The total score, the per-case results and every run's Session id go along with your question; the agent reads the scoreboard and the matching Traces before answering. The prompt stays editable.",
+    askEvaluationDefault: "Explain this evaluation's result.",
+    askEvaluationExamples: {
+      whyLow: {
+        label: "Why is the score low?",
+        prompt:
+          "Why did this evaluation score so low? Use the per-case scores and the runs to say where the points were actually lost.",
+      },
+      weakest: {
+        label: "Which cases are weakest, and what should change?",
+        prompt:
+          "Which cases scored worst? For each, what caused it, and what single change to the tested agent has a chance of lifting it?",
+      },
+      againstPrevious: {
+        label: "What changed against the previous evaluation?",
+        prompt:
+          "Compared with this series' previous evaluation, which cases went up and which went down? What most likely caused those changes?",
+      },
+    },
+    askEvaluationTail: (p: {
+      benchmarkId: string;
+      time: string;
+      label: string;
+      version: number;
+      provider: string;
+      modelId: string;
+      thinkingLevel: string;
+      score: string;
+      cost: string;
+      duration: string;
+      summaryTitle: string;
+      summary: string;
+      cases: { id: string; score: string; cost: string; duration: string; sessionIds: string[] }[];
+    }): string =>
+      "Explain the result of the Benchmark evaluation below. Read and analyze only: change neither this Benchmark nor the tested agent.\n\n" +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`; the scoreboard is \`benchmarks/${p.benchmarkId}/scoreboard.yaml\`)\n` +
+      `- Evaluated at: ${p.time}\n` +
+      `- Series label: ${p.label}\n` +
+      `- Tested version: v${p.version}\n` +
+      `- Evaluation runtime: provider \`${p.provider}\` / model_id \`${p.modelId}\` / thinking_level \`${p.thinkingLevel}\`\n` +
+      `- Total score ${p.score}; cost ${p.cost}; duration ${p.duration}\n` +
+      (p.summaryTitle !== "" ? `- Summary title: ${p.summaryTitle}\n` : "") +
+      (p.summary !== "" ? `- Summary: ${p.summary}\n` : "") +
+      "- Per-case scores (score, cost, duration, and the Session id of every run):\n" +
+      p.cases
+        .map(
+          (c) =>
+            `  - \`${c.id}\`: ${c.score}; ${c.cost}; ${c.duration}; Session ` +
+            (c.sessionIds.length > 0
+              ? c.sessionIds.map((id) => `\`${id}\``).join(", ")
+              : "not recorded"),
+        )
+        .join("\n") +
+      "\n\nRead this record in scoreboard.yaml, and the Traces of the Sessions listed above as far as you need them. Then say how these scores came about, " +
+      "which cases are weakest and exactly why, and what to do next (which part of the tested agent to change, or which evidence to gather first).",
+    askCaseTitle: "Ask AI about this case",
+    askCaseDescription:
+      "The paths to the statement and the rubric go along with your question, so the agent can say what this case tests and what answering it well takes. The case is frozen: it reads, it does not edit.",
+    askCaseDefault: "Explain what this case tests and what a strong answer looks like.",
+    askCaseExamples: {
+      rubricRewards: {
+        label: "What does the rubric reward?",
+        prompt:
+          "Where does this case's rubric put its points? Which items do the most to separate excellent work from merely passing work?",
+      },
+      whyRunLow: {
+        label: "Why did a run score low here?",
+        prompt:
+          "The latest evaluation did not score well on this case. Which step is the tested agent most likely losing it at?",
+      },
+      clearerStatement: {
+        label: "How could the statement be clearer?",
+        prompt:
+          "Is anything in this statement ambiguous or easy to misread? The case is frozen and cannot be edited, so say how to write it more clearly in the next Benchmark instead.",
+      },
+    },
+    askCaseTail: (p: {
+      benchmarkId: string;
+      caseId: string;
+      latest: { time: string; score: string; runs: { score: string; sessionId: string }[] } | null;
+    }): string =>
+      "Explain what the Benchmark case below tests and what a strong answer looks like. A case is frozen once it exists: read and analyze only, and do not change this Benchmark.\n\n" +
+      `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`)\n` +
+      `- case_id: \`${p.caseId}\`\n` +
+      `- Statement: \`benchmarks/${p.benchmarkId}/${p.caseId}/statement/README.md\`\n` +
+      `- Rubric: \`benchmarks/${p.benchmarkId}/${p.caseId}/rubric/README.md\`\n` +
+      (p.latest === null
+        ? "- This Benchmark has no evaluations yet.\n"
+        : `- The latest evaluation (${p.latest.time}) averaged ${p.latest.score} on this case\n` +
+          p.latest.runs
+            .map((r, i) => `  - Run #${i + 1}: ${r.score}; Session \`${r.sessionId}\`\n`)
+            .join("")) +
+      "\nRead both READMEs above (and the Traces of the Sessions listed, if there are any). Then say what capability this case actually tests, " +
+      "what a strong answer looks like (the decisions and the artifact it takes), and which rubric items separate excellent work from merely passing work.",
     aiCreateTitle: "Create a Benchmark with AI",
     aiCreateDescription:
       "Describe the capability and the scenarios to test. AI writes the cases for the Test Agent, trial-runs each one to calibrate difficulty, and takes a baseline score.",

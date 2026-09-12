@@ -1,9 +1,11 @@
 /**
  * Score-only data helpers and per-label series grouping for the Benchmark center chart.
  * Series share one time axis and use each Evaluation's authoritative stored Score. A record's
- * label — the tested Agent, its Agent State version, the model it ran on and the thinking
- * level — is what makes two scores comparable, so it is what a series is keyed by and what a
- * score change is measured within.
+ * label — the tested Agent, the model it ran on and the thinking level — is what makes two
+ * scores comparable, so it is what a series is keyed by and what a score change is measured
+ * within. The Agent State version is not part of it: successive versions of one agent on one
+ * runtime are the trend the loop exists to show, so they stay on one line, and each point
+ * carries its version in the chart's hover label and in the evaluation table's own column.
  */
 
 /** Minimal Evaluation shape needed to read Score (BenchmarkEvaluation is a superset). */
@@ -59,7 +61,9 @@ export function scoreScale(values: readonly (number | null)[]): ScoreScale {
 export interface EvaluationLabelLike {
   /** The Agent under test; null or absent on records written before Benchmarks left the Agent. */
   agentId?: string | null;
+  /** On the record and deliberately outside the key: a version is a point on a series, not a series. */
   version?: number;
+  /** On the record and deliberately outside the key — see evaluationLabel. */
   provider?: string;
   modelId?: string;
   thinkingLevel?: string;
@@ -75,23 +79,23 @@ export interface EvaluationLabel {
 }
 
 /**
- * The label of one evaluation. The key carries the provider as well, because a model id is only
- * half of a model reference and the same id at two providers is not the same runtime; the text
- * leaves it out, since the id is what a reader recognizes. A record with no tested Agent or no
- * model cannot be placed on either axis of comparison, so it is unlabeled and shares one series.
+ * The label of one evaluation: the tested Agent, the model and the thinking level, keyed and
+ * printed as the same three parts. Two fields the record also carries stay outside the key. The
+ * Agent State version is what a series is watched across — keying on it would cut the line into
+ * one point per version, exactly where an improvement is meant to become visible. The provider
+ * is outside it because a series has to be identifiable from its legend text, and that text
+ * prints the model id a reader recognizes rather than the group it is served from. A record
+ * with no tested Agent or no model cannot be placed on either axis of comparison, so it is
+ * unlabeled and shares one series.
  */
 export function evaluationLabel(e: EvaluationLabelLike): EvaluationLabel {
   const agentId = e.agentId ?? "";
   const modelId = e.modelId ?? "";
   if (agentId === "" || modelId === "") return { key: "", text: "", unlabeled: true };
-  const version =
-    typeof e.version === "number" && Number.isFinite(e.version) ? `v${e.version}` : "";
-  const thinkingLevel = e.thinkingLevel ?? "";
+  const parts = [agentId, modelId, e.thinkingLevel ?? ""];
   return {
-    key: [agentId, String(e.version ?? ""), e.provider ?? "", modelId, thinkingLevel].join(
-      "\u0000",
-    ),
-    text: [agentId, version, modelId, thinkingLevel].filter((part) => part !== "").join(" · "),
+    key: parts.join("\u0000"),
+    text: parts.filter((part) => part !== "").join(" · "),
     unlabeled: false,
   };
 }
@@ -155,9 +159,11 @@ export interface LatestScore {
 
 /**
  * The newest finite Score, its time, and its change from the previous score of the same label.
- * Only same-label scores are comparable — another agent, another Agent State version or another
- * model is a different measurement — so a newest record whose label appears for the first time
- * reports no change at all rather than a difference against something else.
+ * Only same-label scores are comparable — another agent, another model or another thinking
+ * level is a different measurement — so a newest record whose label appears for the first time
+ * reports no change at all rather than a difference against something else. A new Agent State
+ * version of the same agent on the same runtime is the comparison this number exists for, and
+ * is measured, not excluded.
  */
 export function latestWithDelta(
   evaluations: readonly (TrendSourceLike & EvaluationLabelLike)[],

@@ -1,9 +1,10 @@
 /**
  * Unit tests for the Evaluation center's Score-only chart helpers: Score extraction,
- * dynamic y-axis range, and label grouping — the tested Agent, its Agent State version, the
- * model and the thinking level, which is also what a score change is measured within. The gap
- * segmentation these series are drawn with is shared chart geometry (chart-geom's lineSegments,
- * covered in usage-charts.test.ts).
+ * dynamic y-axis range, and label grouping — the tested Agent, the model and the thinking
+ * level, which is also what a score change is measured within. The Agent State version and the
+ * provider are on the record and outside the key, so successive versions of one agent stay on
+ * one line. The gap segmentation these series are drawn with is shared chart geometry
+ * (chart-geom's lineSegments, covered in usage-charts.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -78,31 +79,38 @@ describe("evaluationLabel", () => {
     thinkingLevel: "xhigh",
   };
 
-  it("spells the four parts a reader sees and leaves the provider out of the text", () => {
+  it("spells the three parts a reader compares scores across", () => {
     const label = evaluationLabel(full);
-    expect(label.text).toBe("report-writer · v3 · deepseek-v4-pro · xhigh");
+    expect(label.text).toBe("report-writer · deepseek-v4-pro · xhigh");
     expect(label.unlabeled).toBe(false);
     expect(label.key).not.toBe("");
   });
 
   it("omits an empty part from the text", () => {
     expect(evaluationLabel({ ...full, thinkingLevel: "" }).text).toBe(
-      "report-writer · v3 · deepseek-v4-pro",
+      "report-writer · deepseek-v4-pro",
     );
   });
 
-  it("keeps the provider in the key: the same model id at two providers is not one runtime", () => {
-    expect(evaluationLabel({ ...full, provider: "siliconflow" }).key).not.toBe(
+  it("the Agent State version is outside the key: a new version of one agent keeps its label", () => {
+    expect(evaluationLabel({ ...full, version: 4 }).key).toBe(evaluationLabel(full).key);
+    expect(evaluationLabel({ ...full, version: 4 }).text).toBe(evaluationLabel(full).text);
+  });
+
+  it("the provider is outside the key too: a series has to be readable from its legend text", () => {
+    expect(evaluationLabel({ ...full, provider: "siliconflow" }).key).toBe(
       evaluationLabel(full).key,
     );
-    expect(evaluationLabel({ ...full, provider: "siliconflow" }).text).toBe(
-      evaluationLabel(full).text,
-    );
   });
 
-  it("separates Agent State versions and tested Agents", () => {
-    expect(evaluationLabel({ ...full, version: 4 }).key).not.toBe(evaluationLabel(full).key);
+  it("separates tested Agents, models and thinking levels", () => {
     expect(evaluationLabel({ ...full, agentId: "support" }).key).not.toBe(
+      evaluationLabel(full).key,
+    );
+    expect(evaluationLabel({ ...full, modelId: "kimi-k2.6" }).key).not.toBe(
+      evaluationLabel(full).key,
+    );
+    expect(evaluationLabel({ ...full, thinkingLevel: "medium" }).key).not.toBe(
       evaluationLabel(full).key,
     );
   });
@@ -119,42 +127,23 @@ describe("evaluationLabel", () => {
 });
 
 describe("labelSeries / seriesValues (curves split by label)", () => {
+  const runtime = { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "xhigh" };
   const mixed = [
-    {
-      score: 6,
-      agentId: "report-writer",
-      version: 1,
-      provider: "deepseek",
-      modelId: "deepseek-v4-flash",
-      thinkingLevel: "medium",
-    },
+    { score: 6, agentId: "report-writer", version: 1, ...runtime },
     { score: 7 }, // Defensive untagged input -> trailing gray series.
-    {
-      score: 7.5,
-      agentId: "report-writer",
-      version: 2,
-      provider: "deepseek",
-      modelId: "deepseek-v4-pro",
-      thinkingLevel: "xhigh",
-    },
-    {
-      score: 8.5,
-      agentId: "report-writer",
-      version: 2,
-      provider: "deepseek",
-      modelId: "deepseek-v4-pro",
-      thinkingLevel: "xhigh",
-    },
+    { score: 7.5, agentId: "report-writer", version: 2, ...runtime },
+    { score: 8.5, agentId: "report-writer", version: 3, ...runtime },
+    { score: 5, agentId: "report-writer", version: 3, ...runtime, thinkingLevel: "medium" },
   ];
 
-  it("groups by label in first-appearance order; unlabeled records go to a trailing series", () => {
+  it("one agent's successive versions on one runtime are a single series; unlabeled records trail it", () => {
     const series = labelSeries(mixed);
     expect(series.map((x) => x.text)).toEqual([
-      "report-writer · v1 · deepseek-v4-flash · medium",
-      "report-writer · v2 · deepseek-v4-pro · xhigh",
+      "report-writer · deepseek-v4-pro · xhigh",
+      "report-writer · deepseek-v4-pro · medium",
       "",
     ]);
-    expect(series.map((x) => x.indices)).toEqual([[0], [2, 3], [1]]);
+    expect(series.map((x) => x.indices)).toEqual([[0, 2, 3], [4], [1]]);
     expect(series.map((x) => x.unlabeled)).toEqual([false, false, true]);
     expect(series[2]!.key).toBe("");
   });
@@ -168,10 +157,24 @@ describe("labelSeries / seriesValues (curves split by label)", () => {
     expect(series.map((x) => x.indices)).toEqual([[0], [1]]);
   });
 
+  it("the provider a model is served from does not start a second series", () => {
+    const series = labelSeries([
+      { agentId: "report-writer", version: 1, provider: "deepseek", modelId: "deepseek-v4-pro" },
+      {
+        agentId: "report-writer",
+        version: 2,
+        provider: "siliconflow",
+        modelId: "deepseek-v4-pro",
+      },
+    ]);
+    expect(series).toHaveLength(1);
+    expect(series[0]!.indices).toEqual([0, 1]);
+  });
+
   it("seriesValues: indexes outside the series are null (skipped points), keeping the global time axis", () => {
     const series = labelSeries(mixed);
-    expect(seriesValues(mixed, series[1]!)).toEqual([null, null, 7.5, 8.5]);
-    expect(seriesValues(mixed, series[2]!)).toEqual([null, 7, null, null]);
+    expect(seriesValues(mixed, series[0]!)).toEqual([6, null, 7.5, 8.5, null]);
+    expect(seriesValues(mixed, series[2]!)).toEqual([null, 7, null, null, null]);
   });
 
   it("all untagged defensive input forms one unnamed series", () => {
@@ -202,11 +205,16 @@ describe("row helpers: latestWithDelta / latestScoreOfAgent / sparklineSeries / 
   });
 
   it("a newest record whose label appears for the first time reports no change", () => {
-    const switched = [timed[0]!, { ...timed[2]!, version: 2 }];
+    const switched = [timed[0]!, { ...timed[2]!, modelId: "n" }];
     expect(latestWithDelta(switched)!.delta).toBeNull();
     // The label from two records back is the one it is comparable to.
     const back = [timed[0]!, { ...timed[2]!, agentId: "support" }, timed[2]!];
     expect(latestWithDelta(back)!.delta).toBe(72.35 - 60);
+  });
+
+  it("a new Agent State version is the comparison, not a new label", () => {
+    const nextVersion = [timed[0]!, { ...timed[2]!, version: 2 }];
+    expect(latestWithDelta(nextVersion)!.delta).toBe(72.35 - 60);
   });
 
   it("latestScoreOfAgent narrows to one tested Agent, and reports nothing when it has no score here", () => {
