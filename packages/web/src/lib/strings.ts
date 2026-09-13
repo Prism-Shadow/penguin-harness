@@ -927,6 +927,8 @@ export const zh = {
       `确认删除 MCP Server「${name}」？其工具自下次 Session 起不再可用。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
+    /** An Agent whose state directory is on a machine: what this server cannot act on, and where it can be. */
+    livesOnMachine: (machine: string) => `该 Agent 在 ${machine} 上，请到那台机器上管理`,
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
     deleteConfirm: (name: string): string =>
@@ -1776,6 +1778,10 @@ export const zh = {
     deleteWorkspaceConfirm: (name: string) =>
       `确定移除「${name}」？仅从侧边栏移除该工作区分组，不影响磁盘目录与已有会话，可随时重新添加。`,
     tempWorkspaces: "临时工作区",
+    /** A name that only means something on another machine, written with the ssh alias that reaches it. */
+    onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
+    /** The same mark on its own, for a row that is attributed to a machine rather than named after one. */
+    machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
     /** Collapsed group names for the home-page examples (bookmark style; only one open at a time). */

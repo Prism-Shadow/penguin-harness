@@ -63,6 +63,13 @@ interface Props {
   agentId: string;
   benchmarkId: string;
   caseSummary: BenchmarkCaseSummary;
+  /**
+   * The machine whose disk holds this Case's files; null for this server. A Benchmark's Cases
+   * can be read off any machine that has them, and the listing this browser was opened from
+   * recorded which one — asking a different server for the same path is asking about a
+   * directory it may not have.
+   */
+  machineId: string | null;
 }
 
 interface MaterialGroupProps extends Props {
@@ -129,6 +136,7 @@ function MaterialGroup({
   agentId,
   benchmarkId,
   caseSummary,
+  machineId,
   material,
   label,
   hiddenLabel,
@@ -153,7 +161,15 @@ function MaterialGroup({
     setListError(null);
     let cancelled = false;
     api
-      .listBenchmarkCaseFiles(projectId, agentId, benchmarkId, caseSummary.id, path, material)
+      .listBenchmarkCaseFiles(
+        projectId,
+        agentId,
+        benchmarkId,
+        caseSummary.id,
+        path,
+        material,
+        machineId,
+      )
       .then((data) => {
         if (cancelled) return;
         setListing({ base: path, res: data });
@@ -176,6 +192,7 @@ function MaterialGroup({
     agentId,
     benchmarkId,
     caseSummary.id,
+    machineId,
     material,
     autoPreviewReadme,
     onPreview,
@@ -263,7 +280,13 @@ function MaterialGroup({
   );
 }
 
-export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSummary }: Props) {
+export function BenchmarkCaseBrowser({
+  projectId,
+  agentId,
+  benchmarkId,
+  caseSummary,
+  machineId,
+}: Props) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const previewRequest = useRef(0);
 
@@ -280,9 +303,12 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
         caseSummary.id,
         filePath,
         material,
-        options,
+        {
+          ...options,
+          machineId,
+        },
       ),
-    [projectId, agentId, benchmarkId, caseSummary.id],
+    [projectId, agentId, benchmarkId, caseSummary.id, machineId],
   );
 
   const previewPath = useCallback(
@@ -395,6 +421,7 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
             agentId={agentId}
             benchmarkId={benchmarkId}
             caseSummary={caseSummary}
+            machineId={machineId}
             material="statement"
             label={S.benchmark.taskMaterials}
             defaultOpen
@@ -406,6 +433,7 @@ export function BenchmarkCaseBrowser({ projectId, agentId, benchmarkId, caseSumm
             agentId={agentId}
             benchmarkId={benchmarkId}
             caseSummary={caseSummary}
+            machineId={machineId}
             material="rubric"
             label={S.benchmark.rubric}
             hiddenLabel={S.benchmark.agentHidden}

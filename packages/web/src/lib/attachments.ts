@@ -17,6 +17,8 @@
  * left displayed as-is in the text (e.g. a "could not be saved" note, a path outside this
  * system, or a marker-shaped line a user simply typed).
  */
+import { apiUrl } from "./server-context";
+import { machineForSession } from "./session-machines";
 import {
   ATTACHED_FILE_PREFIX,
   ATTACHED_IMAGE_PREFIX,
@@ -41,12 +43,22 @@ export interface ParsedAttachments {
  */
 const SCRATCHPAD_PATH = /[/\\]scratchpad[/\\]([^/\\]+)[/\\]([^/\\]+)$/;
 
-/** Resolves a single image line's address; returns null if unrecognized (the line is kept in the text). */
+/**
+ * Resolves a single image line's address; returns null if unrecognized (the line is kept in
+ * the text). A scratchpad address names its own Session, so it carries the routing rule with
+ * it: an attachment on a Session that lives on a machine has to be fetched from THERE, and
+ * this is a URL rather than a call, so nothing else would apply the rule for it.
+ */
 function resolveAttachment(value: string): string | null {
   if (/^https?:\/\//i.test(value)) return value;
   const m = SCRATCHPAD_PATH.exec(value);
-  if (m)
-    return `/api/sessions/${encodeURIComponent(m[1]!)}/scratchpad/${encodeURIComponent(m[2]!)}`;
+  if (m) {
+    const sessionId = m[1]!;
+    return apiUrl(
+      `/api/sessions/${encodeURIComponent(sessionId)}/scratchpad/${encodeURIComponent(m[2]!)}`,
+      machineForSession(sessionId),
+    );
+  }
   return null;
 }
 
