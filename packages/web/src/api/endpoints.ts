@@ -69,6 +69,9 @@ import type {
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   MachinesResponse,
+  MachinesUseResponse,
+  SshHostRequest,
+  SshHostResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   ModelTestRequest,
@@ -522,10 +525,19 @@ export const listSessions = (
 };
 
 /** Server directory browsing: `path` is an absolute path; empty means start from the server's home directory. */
-export const listDirs = (projectId: string, path = "") =>
-  apiFetch<DirListResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
-  );
+/**
+ * Browses directories. With no machine, this server's own filesystem; with one, THAT
+ * machine's — listed by this server over ssh, so picking a workspace on another machine
+ * needs no second login to that machine's own server.
+ */
+export const listDirs = (projectId: string, path = "", machineId?: string | null) =>
+  machineId === undefined || machineId === null
+    ? apiFetch<DirListResponse>(
+        `/api/projects/${encodeURIComponent(projectId)}/dirs?path=${encodeURIComponent(path)}`,
+      )
+    : apiFetch<DirListResponse>(
+        `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/dirs?path=${encodeURIComponent(path)}`,
+      );
 
 /**
  * Skills a directory carries under `.agents/skills` / `.claude/skills`: what picking it at Agent
@@ -1255,12 +1267,96 @@ export const getMachines = (projectId: string) =>
   apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines`);
 
 /**
- * Starts an install (202, long-running) and gives the machine to this Project; the returned
- * body already carries the new job.
+ * Re-probes the installed machines' servers (one ssh round trip each, server-side) and
+ * answers the refreshed list. A POST because it spends those round trips — a GET that
+ * spawns processes is one a prefetch or a proxy may fire on its own.
  */
-export const installOnMachine = (projectId: string, machineId: string) =>
+export const probeMachines = (projectId: string) =>
+  apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/probe`, {
+    method: "POST",
+    body: {},
+  });
+
+/**
+ * Starts an install on a machine and gives it to this Project; answers the list with the
+ * running job. `replaceProgram` answers a job that came back asking for it — installing the
+ * program over there even though its version already matches, and restarting it.
+ */
+/**
+ * Brings machines into use — install or update if needed, start, connect, sync — as one
+ * queued batch (202). `refused` names the ones that could be turned down without any ssh.
+ * `replaceProgram` answers a job that came back asking for it.
+ */
+export const useMachines = (projectId: string, machineIds: string[], replaceProgram = false) =>
+  apiFetch<MachinesUseResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/use`, {
+    method: "POST",
+    body: replaceProgram
+      ? { machines: machineIds, replaceProgram: true }
+      : { machines: machineIds },
+  });
+
+/** Appends a host block to this server's ~/.ssh/config; answers the machines list, which now names it (201). */
+export const addSshHost = (projectId: string, host: SshHostRequest) =>
+  apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts`, {
+    method: "POST",
+    body: host,
+  });
+
+/** A host's ssh block read back, and whether this app wrote it (only then may it be rewritten). */
+export const getSshHost = (projectId: string, alias: string) =>
+  apiFetch<SshHostResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts/${encodeURIComponent(alias)}`,
+  );
+
+/** Rewrites a block this app wrote; answers the machines list. */
+export const updateSshHost = (
+  projectId: string,
+  alias: string,
+  host: Omit<SshHostRequest, "alias">,
+) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/ssh-hosts/${encodeURIComponent(alias)}`,
+    { method: "PUT", body: host },
+  );
+
+/** Lets machines go: connections dropped, Project membership released; the install stays. */
+export const stopUsingMachines = (projectId: string, machineIds: string[]) =>
+  apiFetch<MachinesResponse>(`/api/projects/${encodeURIComponent(projectId)}/machines/stop-using`, {
+    method: "POST",
+    body: { machines: machineIds },
+  });
+
+export const installOnMachine = (projectId: string, machineId: string, replaceProgram = false) =>
   apiFetch<MachinesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/install`,
+    { method: "POST", body: replaceProgram ? { replaceProgram: true } : {} },
+  );
+
+/** Brings that machine's server up and holds a tunnel to it (202, long-running). */
+export const connectMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/connect`,
+    { method: "POST", body: {} },
+  );
+
+/** Drops a machine from this Project. The install stays — another Project may be using it. */
+export const releaseMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/release`,
+    { method: "POST", body: {} },
+  );
+
+/** Drops the tunnel; the remote server keeps running. */
+/** Restarts that machine's server so what runs there matches what is on its disk. */
+export const restartMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/restart`,
+    { method: "POST", body: {} },
+  );
+
+export const disconnectMachine = (projectId: string, machineId: string) =>
+  apiFetch<MachinesResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/machines/${encodeURIComponent(machineId)}/disconnect`,
     { method: "POST", body: {} },
   );
 

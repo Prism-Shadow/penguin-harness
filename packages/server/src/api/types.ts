@@ -3645,6 +3645,15 @@ export interface MachineInfo {
    * since each probe is an ssh round trip while the list is only the config's text.
    */
   status: MachineServerStatus | null;
+  /**
+   * The data root the server there runs on (`PENGUIN_HOME`). This instance's PROFILE decides
+   * it — a dev instance names the machine's dev root and never the release one beside it
+   * (machines/layout.ts) — which is exactly what a reader looking at two instances of this
+   * page needs to tell them apart. Written in that machine's own spelling once its platform
+   * is known, and in the POSIX one before that; for `local` it is this process's own root,
+   * already resolved to an absolute path.
+   */
+  root: string;
 }
 
 /**
@@ -3669,10 +3678,18 @@ export interface MachineServerStatus {
  * refused key or an unusable Node than a paraphrase would.
  */
 export interface MachineJob {
-  kind: "install" | "connect" | "restart";
+  /** `use` is the whole pipeline — install if needed, hand over, connect, sync — as one job. */
+  kind: "install" | "connect" | "restart" | "use";
   machineId: string;
   alias: string;
+  /** Waiting its turn: a few machines are worked on at once, and a batch queues the rest. */
+  queued: boolean;
   running: boolean;
+  /**
+   * Which step of the pipeline the job is on, in `MACHINE_PHASES` order — what the page draws
+   * as a stepper. Null until the first step is named; a finished job keeps its last phase.
+   */
+  phase: MachinePhase | null;
   log: string[];
   result:
     | null
@@ -3684,12 +3701,13 @@ export interface MachineJob {
         message: string;
         /**
          * The failure has a next step this side can take, and it needs saying yes to:
-         * installing the PROGRAM over there and restarting it. Set when a hot update could
-         * not be handed over — the machine's store holds no CLI this server can talk to, and
-         * installing is what replicates one. Offered rather than done, because it restarts a
-         * server this Project does not own alone.
+         * installing the PROGRAM over there and restarting it. Every failed install or
+         * connect offers it — a failure that leaves no next step leaves a person stuck —
+         * except a run that was itself that install, and one this server could not act on
+         * (no build of its own to send), which says `false`. Offered rather than done,
+         * because it restarts a server this Project does not own alone.
          */
-        canReplaceProgram?: true;
+        canReplaceProgram?: boolean;
       };
 }
 
@@ -3702,7 +3720,68 @@ export interface MachinesResponse {
    * checkout, which stands on no release the remote could download.
    */
   imageVersion: string | null;
+  /** The most recently started job, running or finished. */
   job: MachineJob | null;
+  /**
+   * Every job worth showing this generation: the queued ones, the running one, and the last
+   * finished one per machine — so a batch reads as a list of rows each saying where it is.
+   */
+  jobs: MachineJob[];
+}
+
+/** The steps of bringing a machine into use, in the order a `use` job runs them. A step not needed is skipped, never revisited. */
+export const MACHINE_PHASES = [
+  "check",
+  "install",
+  "handover",
+  "restart",
+  "connect",
+  "sync",
+] as const;
+export type MachinePhase = (typeof MACHINE_PHASES)[number];
+
+/**
+ * `POST /api/projects/:projectId/machines/ssh-hosts`: append a host block to this server's
+ * `~/.ssh/config`. Answers the machines list (201), or 400 `ssh_host_invalid` naming the
+ * field, or 409 `ssh_host_exists`.
+ */
+export interface SshHostRequest {
+  /** The alias — what `ssh <alias>` will take, and the machine's name everywhere here. */
+  alias: string;
+  hostName: string;
+  user?: string;
+  port?: number;
+  identityFile?: string;
+}
+
+/**
+ * `GET /api/projects/:projectId/machines/ssh-hosts/:alias`: a host's block read back, and
+ * whether this app wrote it. Only a block this app wrote may be rewritten
+ * (`PUT …/ssh-hosts/:alias`, the same fields less the alias): a hand-written one may carry
+ * options this app does not know, and rewriting it would drop them.
+ */
+export interface SshHostResponse extends SshHostRequest {
+  editable: boolean;
+}
+
+/** `POST /api/projects/:projectId/machines/use`: bring these machines into use, as one queued batch. */
+export interface MachinesUseRequest {
+  /** Machine ids (`ssh:<alias>`). Every one is queued; refusals come back by id. */
+  machines: string[];
+  /** Install the program even where its version matches, and restart there — the answer to a job that asked for it. */
+  replaceProgram?: boolean;
+}
+
+/** Why one machine of a batch was not queued; the rest were. */
+export type MachineUseRefusal = "unknown-machine" | "self" | "no-image";
+
+export interface MachinesUseResponse extends MachinesResponse {
+  refused: { machineId: string; why: MachineUseRefusal }[];
+}
+
+/** `POST /api/projects/:projectId/machines/stop-using`: let go of these machines — connection dropped, Project membership released; the install stays. */
+export interface MachinesStopUsingRequest {
+  machines: string[];
 }
 
 // ---------------------------------------------------------------------------
