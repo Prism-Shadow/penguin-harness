@@ -271,7 +271,7 @@ export async function bootAppDeps(
   // test hands the tree) is honoured here too, and the process's own console otherwise.
   const logDouble = replacements.find(([cls]) => cls === ConsoleLog)?.[1] as Log | undefined;
   const shimLog = (line: string): void => (logDouble ?? new ConsoleLog()).line(line);
-  const shim = ensureCliShim(config.root, config.cliEntry);
+  const shim = ensureCliShim(config.root, config.cliEntry ?? null);
   if (shim.kind === "written") {
     shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${shim.entry}`);
   } else if (shim.kind === "absent") {

@@ -66,8 +66,12 @@ export interface ServerConfig {
    * Whether `penguin server|web` supervises this process (PENGUIN_SUPERVISED=1) and relaunches
    * it when it exits with core's SERVER_RESTART_EXIT_CODE — what makes the web UI's "restart
    * to update" possible. False under a direct server start, a dev run, or the desktop shell.
+   *
+   * OPTIONAL because the config a RUNTIME publishes is whatever its own build knew: a runtime
+   * older than this field publishes a config without it, and a pushed platform still has to
+   * boot there. Absent reads as false.
    */
-  supervised: boolean;
+  supervised?: boolean;
   /**
    * Port announcement file (PENGUIN_PORT_FILE): once the App is up, the actual
    * bound port is written here — the supervising process's way to learn the port when
@@ -97,8 +101,11 @@ export interface ServerConfig {
    * (http/routes/version.ts), which accepts only an INSTALLED entry it can re-run as
    * `penguin update`: a checkout has no release to update to, but its CLI is exactly the
    * one an Agent working on that checkout should be running.
+   *
+   * OPTIONAL for the same reason: absent — a runtime older than this field — reads as null,
+   * no CLI to offer and no shim written.
    */
-  cliEntry: string | null;
+  cliEntry?: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
