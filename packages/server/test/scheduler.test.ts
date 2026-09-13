@@ -22,10 +22,13 @@ import { SchedulesRepo } from "../src/db/repos/schedules.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import { UsersRepo } from "../src/db/repos/users.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
+import type { ScheduleSessionCreator, ScheduleTaskRunner } from "../src/runtime/scheduler.js";
+import type { OmniMessage } from "@prismshadow/penguin-core";
 import { Scheduler } from "../src/runtime/scheduler.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import type { ScheduleServerEvent } from "../src/api/types.js";
 import { makeTempRoot } from "./helpers.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 const P = "p1";
 const A = "agent_x";
@@ -62,7 +65,7 @@ describe("scheduler", () => {
       models: [{ provider: "custom", model_id: "m-bench" }],
     });
     db = openDatabase(":memory:");
-    const users = new UsersRepo(db);
+    const users = wire(UsersRepo, { db: db });
     users.insert({
       userId: "owner_a",
       passwordHash: "x",
@@ -70,10 +73,10 @@ describe("scheduler", () => {
       passwordIsInitial: false,
       createdAt: "2026-07-16T00:00:00Z",
     });
-    const projects = new ProjectsRepo(db);
+    const projects = wire(ProjectsRepo, { db: db });
     projects.insert({ projectId: P, ownerUserId: "owner_a", createdAt: "2026-07-16T00:00:00Z" });
-    repo = new SchedulesRepo(db);
-    sessions = new SessionsRepo(db);
+    repo = wire(SchedulesRepo, { db: db });
+    sessions = wire(SessionsRepo, { db: db });
     nowMs = T0;
     busy = new Set();
     started = [];
@@ -81,29 +84,29 @@ describe("scheduler", () => {
     events = [];
     errors = [];
     let seq = 0;
-    scheduler = new Scheduler({
-      root,
+    scheduler = wire(Scheduler, {
+      config: { root },
       repo,
       projects,
       sessions,
       runner: {
-        statusOf: (id) => (busy.has(id) ? "running" : "idle"),
-        startTask: async (sessionId, input) => {
+        statusOf: (id: string) => (busy.has(id) ? "running" : "idle"),
+        startTask: async (sessionId: string, input: OmniMessage[]) => {
           started.push({ sessionId, text: JSON.stringify(input[0]?.payload ?? "") });
           return { sessionId };
         },
-      },
+      } satisfies ScheduleTaskRunner,
       sessionCreator: {
-        createSession: async (args) => {
+        createSession: async (args: Parameters<ScheduleSessionCreator["createSession"]>[0]) => {
           created.push(args);
           const sessionId = `session-new-${++seq}`;
           insertSession(sessionId);
           return { sessionId };
         },
       },
-      projectConfig: new ProjectConfigService(root),
-      errors: { record: (args) => void errors.push(args) },
-      notify: (userId, event) => void events.push({ userId, event }),
+      projectConfig: wire(ProjectConfigService, { config: { root } }),
+      errors: { record: (args: ErrorRecordArgs) => void errors.push(args) },
+      notify: (userId: string, event: ScheduleServerEvent) => void events.push({ userId, event }),
       now: () => nowMs,
     });
     await fs.mkdir(scheduleDir(root, P, A), { recursive: true });

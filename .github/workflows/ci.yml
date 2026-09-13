@@ -64,7 +64,7 @@ jobs:
       # files read skills' emitted types, for one.
       - uses: ./.github/actions/setup
         with:
-          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-server...,@prismshadow/penguin-cli...,@prismshadow/penguin-web..."
+          build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-landing...,@prismshadow/penguin-docs...,@prismshadow/penguin-server...,@prismshadow/penguin-cli...,@prismshadow/penguin-web...,@prismshadow/penguin-plugin-claude-code..."
       - name: Typecheck (tsc)
         run: pnpm typecheck
 
@@ -82,7 +82,7 @@ jobs:
             build: "@prismshadow/penguin-core..."
             tests: pnpm --filter @prismshadow/penguin-core test
           - shard: server
-            build: "@prismshadow/penguin-core..."
+            build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server test
           - shard: web-cli
             build: "@prismshadow/penguin-core...,@prismshadow/penguin-web..."
@@ -143,11 +143,11 @@ jobs:
             tests: pnpm --filter @prismshadow/penguin-core test
             smoke: false
           - shard: server
-            build: "@prismshadow/penguin-core..."
+            build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server test
             smoke: false
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/penguin-plugin-claude-code..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
             smoke: true
@@ -185,16 +185,16 @@ jobs:
             build: "@prismshadow/penguin-core..."
             tests: pnpm --filter @prismshadow/penguin-core test
           - shard: server-1
-            build: "@prismshadow/penguin-core..."
+            build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=1/3
           - shard: server-2
-            build: "@prismshadow/penguin-core..."
+            build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=2/3
           - shard: server-3
-            build: "@prismshadow/penguin-core..."
+            build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/3
           - shard: rest
-            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
+            build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli...,@prismshadow/penguin-plugin-claude-code..."
             tests: >-
               pnpm -r --filter '!@prismshadow/penguin-core' --filter '!@prismshadow/penguin-server' test
     steps:
@@ -202,6 +202,15 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           build: ${{ matrix.build }}
+
+      # The server's own `test` script runs `gen:ifaces` first, because src/ifaces.json is
+      # generated and not committed and src/platform.ts imports it at load. The server
+      # shards here call `exec vitest` instead — the script cannot take `--shard` — so they
+      # skip that half and every file that reaches platform.ts fails to resolve it. The
+      # other platforms run the script and never notice.
+      - name: Generate the interface table
+        if: startsWith(matrix.shard, 'server')
+        run: pnpm --filter @prismshadow/penguin-server gen:ifaces
 
       # One retry, and only here. Per-test flakes are already absorbed inside vitest
       # (`retry` in core's and the server's configs, Windows only); what this covers is the
@@ -311,6 +320,61 @@ jobs:
             packages/desktop/out/mac
             packages/desktop/out/mac-arm64
             packages/desktop/out/mac-x64
+
+  # The interface table as a page: the module tree, every node's requires / provides /
+  # contributes and every interface at signature level, rendered from the same
+  # ifaces.json the typecheck gate generates (its sha256 is the page's title). Uploaded as
+  # a workflow artifact named by the commit's sha and linked from the job summary — so a
+  # reviewer opens the tree this exact commit builds. An artifact lives in the run and
+  # expires with it: nothing accumulates in the repository, runs never contend for a
+  # shared branch, and a fork's run uploads like any other.
+  ifaces-page:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # On a pull request the default checkout is the synthetic merge commit; the page is
+          # named by the head sha and described as that commit, so build that commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: ./.github/actions/setup
+        with:
+          build: "@prismshadow/penguin-core..."
+      - name: Render the interface page
+        run: pnpm ifaces:page
+      - name: Hash the table
+        id: table
+        run: |
+          hash=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("dist-ifaces/ifaces.json","utf8")).hash)')
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+      - name: Upload the page
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ifaces-page-${{ github.event.pull_request.head.sha || github.sha }}
+          path: dist-ifaces
+          if-no-files-found: error
+          # Long enough to outlive a review; the table is regenerated by every later commit.
+          retention-days: 14
+      # Written whether or not the upload succeeded, so the run still says which table it
+      # built; the link is there only when there is one.
+      - name: Job summary
+        if: always()
+        env:
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HASH: ${{ steps.table.outputs.hash }}
+          URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          {
+            echo "### Module tree"
+            echo
+            if [ -n "$URL" ]; then
+              echo "[$SHA]($URL) — interface table \`$HASH\` (unzip, open \`index.html\`)"
+            else
+              echo "$SHA — interface table \`$HASH\` (page not uploaded)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # The aggregate gate: green only when every job above is. Mark THIS one required in
   # branch protection — it survives the shard list changing, which the individual job

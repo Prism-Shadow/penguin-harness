@@ -11,6 +11,7 @@ import type { EndpointModelListResponse, ProjectCreateResponse } from "../src/ap
 import { ProjectConfigService } from "../src/services/project-config-service.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 describe("ProjectConfigService.listEndpointModels", () => {
   let root: string;
@@ -18,7 +19,7 @@ describe("ProjectConfigService.listEndpointModels", () => {
 
   beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), "penguin-models-list-"));
-    service = new ProjectConfigService(root);
+    service = wire(ProjectConfigService, { config: { root } });
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });

@@ -40,7 +40,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import type {
   ConfinedArgv,
-  PluginContext,
+  Plugin,
   SandboxPolicy,
   SandboxProvider,
 } from "@prismshadow/penguin-core/plugin";
@@ -186,11 +186,16 @@ export function createMxcProvider(
   };
 }
 
-/** The plugin: registered per App creation, like every other backend. Default export = the plugin. */
-export function activate(ctx: PluginContext): void {
-  // Backends register per App creation — a hot swap re-registers them into the fresh
-  // registry — so the subscription is to the event, not a one-time registration here.
-  ctx.on("initialize", (iface) => {
-    iface.sandbox.registerProvider("penguin-mxc", loadMxcProvider());
-  });
-}
+/**
+ * The plugin: one module, whose manifest is package.json#penguin.modules[0] (one
+ * provider on the sandbox.providers slot); this default export binds the provider by
+ * that contribution id. Created per App, so a hot swap gets a fresh provider.
+ */
+const plugin: Plugin = {
+  modules: {
+    SandboxMxc: {
+      create: () => ({ api: {}, bind: { "sandbox-mxc.provider": loadMxcProvider() } }),
+    },
+  },
+};
+export default plugin;

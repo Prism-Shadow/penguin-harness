@@ -51,6 +51,8 @@ export type {
 export { Session } from "./session.js";
 export type { SessionConfig } from "./session.js";
 export type { AgentAssembly, PromptSection } from "./agent.js";
+export type { BuiltinTool, ToolExecutionContext, ToolResult } from "./environment/tools/types.js";
+export type { BuiltinToolFactory } from "./environment/tools/registry.js";
 // Session-title generation lives in internal/ (an assembly detail of Session.generateTitle);
 // only its narrow public surface is re-exported: the result type (part of
 // Session.generateTitle's signature) and the two cleaners, sanitizeTitle and truncateTitle,

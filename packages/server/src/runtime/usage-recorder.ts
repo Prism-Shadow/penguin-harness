@@ -17,6 +17,8 @@ import { isEventMessage, isSessionMeta } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { formatLocalDate } from "../internal/dates.js";
 import type { UsageRepo } from "../db/repos/usage.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Overrides } from "../hmr/capabilities.js";
 
 /** Attribution context for one record (top-level Session scope). */
 export interface UsageContext {
@@ -33,14 +35,18 @@ export interface UsageContext {
 /** Cap on the subagent attribution mapping: over the limit, evicts the oldest by insertion order (an evicted entry falls back to the main Session's Model attribution). */
 export const ORIGIN_MODELS_MAX = 1000;
 
+@Component()
 export class UsageRecorder {
   /** Subagent model attribution mapping: origin's last session_id → paired reference (session_id is globally unique). */
   private readonly originModels = new Map<string, { provider: string; modelId: string }>();
 
-  constructor(
-    private readonly usage: UsageRepo,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+  @Use() private readonly usage!: UsageRepo;
+  @Use() private readonly overrides!: Overrides;
+  private now: () => Date = () => new Date();
+
+  setup(): void {
+    this.now = this.overrides.value().now ?? this.now;
+  }
 
   /** Consume one outgoing message; messages other than session_meta / token_usage are a no-op. */
   async record(ctx: UsageContext, msg: OmniMessage): Promise<void> {

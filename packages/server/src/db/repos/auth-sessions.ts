@@ -4,7 +4,8 @@
  * so a CLI-minted row cannot drift from one the server issues itself.
  */
 import { createHash, randomBytes } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
 
 /** How a session was established, as stored. NULL on rows formed before the column existed. */
 export type SessionViaValue = "password" | "desktop" | "setup" | "cli";
@@ -22,8 +23,9 @@ export function sessionTokenHash(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+@Component()
 export class AuthSessionsRepo {
-  constructor(private readonly db: DatabaseSync) {}
+  @Use() private readonly db!: Db;
 
   /**
    * Mints a session and returns the raw token for a cookie or the terminal. `maxTtlMs` caps a
