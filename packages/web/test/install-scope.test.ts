@@ -123,6 +123,9 @@ const UNCLASSIFIED_ON_PURPOSE: Record<string, string> = {
   "penguin.installId": "the marker itself — it is what the comparison reads, never swept",
   "penguin.chatRouteApplied.":
     "sessionStorage: scoped to one tab's history, so it cannot outlive a data root",
+  // The scan's character class stops at the hyphen, so what it sees is the stem.
+  "penguin.ui":
+    "features/workbench/element-payload.ts: `penguin.ui-element-ref` is the workbench payload's discriminator — a message field, never a stored key",
 };
 
 /**

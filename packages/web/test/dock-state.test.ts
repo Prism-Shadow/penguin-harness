@@ -68,6 +68,13 @@ describe("panel tabs", () => {
     expect(dock.dockActiveKey("right")).toBe("schedules");
   });
 
+  it("lists the UI workbench panel as a kind and opens it like any other", () => {
+    expect(dock.PANEL_KINDS).toContain("workbench");
+    dock.openPanel("workbench", "right");
+    expect(dock.panelDock("workbench")).toBe("right");
+    expect(dock.dockActiveKey("right")).toBe("workbench");
+  });
+
   it("closing a panel tab removes it; closing the last one puts the dock away", () => {
     dock.openPanel("workspace", "right");
     dock.openPanel("memory", "right");

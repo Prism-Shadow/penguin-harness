@@ -2608,6 +2608,163 @@ Scenarios:
     overwriteAnyway: "Overwrite",
   },
 
+  /** UI design workbench panel: points at a running dev server, picks an element, sends it to the conversation. */
+  workbench: {
+    panelTitle: "UI workbench",
+    addressLabel: "Preview address",
+    addressPlaceholder: "http://localhost:5173",
+    load: "Load",
+    reload: "Reload",
+    foundPorts: "Running here:",
+    noneFound: "nothing answered on the usual ports",
+    probing: "probing…",
+    probeWeb: "web",
+    probeOpaque: "listening, not readable",
+    noDevServer:
+      "No dev server found. Start it in your project first (npm run dev or pnpm dev in most), then come back and press Load.",
+    badAddress: "That is not an address that can be opened — use http://host:port",
+    loading: "Loading…",
+    connected: "Connected",
+    tierPrecise: "the page carries a source map: pick an element to see whether it reaches a line",
+    tierDegraded:
+      "degraded only: no source map can be read on this page, so a picked element cannot name its source line",
+    tierOpaque: "the page refuses to be read cross-origin, so the tier cannot be judged",
+    tierUnknown: "the tier has not been judged yet",
+    /** §9.4's support matrix — see the zh dictionary for why it is a fold and where the rows come from. */
+    support: {
+      title: "What it supports (L1)",
+      line: "It works against a dev server only: the page has to carry a source map for a source line to be possible at all.",
+      exact: "Exact file, line and column: React 19 / React 18 / Svelte 5 (measured on Vite)",
+      fileOnly: "File only: Vue 3 (the framework names the file and no line, so none is invented)",
+      degraded:
+        "Degraded — selectable, but with no source location: builds nobody has measured yet, such as webpack / Next.js, and every production build",
+      unreachable:
+        "Out of reach: elements inside a shadow root, and elements inside an iframe (L1 enters neither)",
+      thirdParty:
+        "Nodes a third-party library made: a location is given, in the dependency's own file — editing it changes nothing for this project, so pass a prop or wrap it",
+    },
+    failure: {
+      refused: "nothing is listening on that port",
+      timeout: "connected but no answer — the page may be stuck or too slow",
+      dns: "the host name does not resolve; check the spelling",
+      blocked: "the site refuses to be embedded (X-Frame-Options / frame-ancestors)",
+      httpError: "the server answered with an error page",
+      crashed: "the preview process crashed",
+      aborted: "the load was cancelled",
+      other: "could not load",
+    },
+    guestUnavailable:
+      "This app shell has no webview support (packages/desktop needs webviewTag: true), so the preview cannot be shown.",
+    desktopOnly: "The UI workbench needs the desktop app",
+    desktopOnlyDetail:
+      "The preview embeds the dev server you are running and reads elements out of its page, which only the desktop shell (pnpm desktop) can do. The app opened in a browser tab gets the other panels.",
+    pickStart: "Start picking",
+    pickStop: "Stop picking",
+    pickPause: "Stand down",
+    pickResume: "Pick again",
+    candidate: "Candidate",
+    picked: "Selected",
+    pickHint:
+      "Hover to highlight, click to select — that click never reaches the page. Esc clears the selection, and a second Esc leaves pick mode. For something you cannot reach yet, Stand down hands the page back to you; Pick again resumes.",
+    pausedHint:
+      "Standing down: the page is entirely yours — open dropdowns, modals and hover layers, then Pick again to keep going (L1 will not open them for you).",
+    pickOffHint: "Picking is off: the page behaves exactly as it normally does.",
+    pickedNext: "The payload is assembled above; Add to conversation stages it in the composer.",
+    addToChat: "Add to conversation",
+    /** One element a send-time re-resolution could not find (AC-8), and which way it went. */
+    goneElement: (label: string, reason: "missing" | "replaced" | "page-changed") =>
+      reason === "missing"
+        ? `Gone: ${label} is no longer in the page`
+        : reason === "replaced"
+          ? `No longer that element: something else is at ${label}'s place`
+          : `Page changed: ${label} was picked on another page`,
+    goneElementDetail:
+      "This one will not be sent — pick it again, or drop the chip from the composer.",
+    /** The chip itself, when its element is not in the page any more. */
+    goneChip: "gone",
+    /** The composer is held rather than send a chip the page has already contradicted. */
+    sendHeld: (detail: string) => `Not sent: ${detail}`,
+    /** The line above the payload in the message: what was picked, and on which page. */
+    elementLead: (name: string, page: string, note?: string) =>
+      `Picked UI element: ${name} (on ${page})${note === undefined ? "" : ` — ${note}`}`,
+    /**
+     * The one thing the payload cannot say about an element the picker could not reach into (M4.4,
+     * PRD §9.4): the panel says it in full below, and the message says it in one clause so the Agent
+     * knows the element it is handed is a host or a frame rather than the thing under the cursor.
+     */
+    domContextMessage: {
+      shadow:
+        "this is the Shadow DOM host; the part you clicked lives in its shadow root (L1 does not pierce it)",
+      frame:
+        "this is the iframe element itself; inside it is another document (L1 does not enter frames)",
+    },
+    /** §9.4's standing limits, spelled out where they apply rather than in a manual nobody reads. */
+    domContext: {
+      shadow: (host: string) =>
+        `Inside Shadow DOM: L1 does not pierce the shadow root, so this is the outer host ${host} — style the host, or pass a prop into the component.`,
+      frame:
+        "This is the iframe element itself and inside it is another document: L1 does not enter frames — open that page on its own and preview it there.",
+    },
+    /** Why the element the panel is holding cannot be seen — read off its own facts, not guessed. */
+    notVisible: {
+      "display-none":
+        "The element you picked is display:none right now, so the page cannot show it.",
+      "visibility-hidden": "The element you picked is visibility:hidden right now.",
+      "opacity-zero":
+        "The element you picked is opacity:0 — it takes up space but is fully transparent.",
+      "zero-size": "The element you picked measures 0×0: it has no visible area on the page.",
+    },
+    notVisibleDetail:
+      "Use Stand down to get the page into a state where it shows (open the dropdown, open the modal), then Pick again and select it — L1 will not open it for you.",
+    /** The page embeds frames; said while picking, before the user hunts for what is inside one. */
+    framesInPage: (count: number) =>
+      `This page embeds ${count} iframe(s): L1 does not enter frames, so nothing inside them can be picked.`,
+    payload: {
+      title: "Payload (§6 v1)",
+      refId: "refId",
+      selector: "Selector",
+      tag: "Tag",
+      role: "Role",
+      name: "Name",
+      text: "Text",
+      testId: "testId",
+      rect: "Box",
+      parentChain: "Ancestors",
+      classes: "Classes",
+      project: "Project",
+      page: "Page",
+      source: "Source",
+      json: "Payload JSON (v1)",
+    },
+    /**
+     * The `source` row, said as the tier it landed in (FR-07's four levels), with the reason spelled
+     * out when there is no location. These are the words a user reads to decide whether to keep
+     * working with this page at all, so they name the cause rather than the symptom.
+     */
+    sourceTier: {
+      locating: "locating the source…",
+      exact: (where: string) => `precise ${where}`,
+      fileOnly: (file: string) => `file only ${file} (this framework names the file, not a line)`,
+      ambiguous: (where: string, candidates: number) =>
+        `ambiguous ${where} (${candidates} candidates at that site — may be a sibling)`,
+      none: {
+        "page-no-map":
+          "no source location: no source map can be read on this page (usually a production build)",
+        "dependency-runtime":
+          "no source location: this element is created by a framework or library runtime, not by your project",
+        "no-evidence":
+          "no source location: this page's framework reports no position (an unsupported framework or build)",
+        unresolved:
+          "no source location: evidence was found, but this position did not map back to source",
+      },
+      /**
+       * What a located-but-not-ours element adds to its row: the location is right and editing it
+       * changes nothing for this project, so the row says which file family it landed in (§9.4).
+       */
+      thirdParty:
+        "inside a library (a dependency's own file — edit it and nothing changes: pass a prop or wrap it)",
+    },
+  },
   usage: {
     title: "Costs & usage",
     today: "Today",

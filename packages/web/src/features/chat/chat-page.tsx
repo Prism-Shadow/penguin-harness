@@ -113,6 +113,7 @@ import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { MessagingPanel } from "../messaging/messaging-panel";
 import { SchedulePanel } from "../schedules/schedule-panel";
+import { WorkbenchPanel } from "../workbench/workbench-panel";
 import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
 import { DockLauncher } from "../dock/dock-launcher";
@@ -1696,6 +1697,17 @@ export function ChatPage() {
             active={active}
             onPrefillComposer={prefillComposer}
           />
+        );
+      case "workbench":
+        // No `key`: unlike the session-scoped panels, the workbench holds no server state of its
+        // own, so switching conversations must not throw away where the preview was pointed.
+        // The Session's workspace does travel with it, as a prop rather than a key: it is the
+        // project being previewed (PRD:142), and it is what makes the payload's relative source
+        // paths unambiguous — a new conversation in another project must change it without
+        // remounting the panel and losing the address. `onAddReference` is the same exit the Files
+        // panel uses: a picked element becomes a chip in the composer, and nothing is sent here.
+        return (
+          <WorkbenchPanel workspace={selected.workspace} onAddReference={addComposerReference} />
         );
     }
   };

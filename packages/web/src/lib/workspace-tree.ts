@@ -522,25 +522,74 @@ export function writeWrapLines(wrap: boolean, storage?: TreePreferenceStorage): 
 // -------------------------------------------------------------- composer references
 
 /**
- * Something the Files panel hands the composer: what it points at, and the text the message
- * carries once it is sent.
+ * Something a panel hands the composer: what it points at, and the text the message carries once it
+ * is sent.
  *
- * The text is deliberately kept out of the textarea. What the panel contributes is a whole
- * thing — a file, a directory, a quoted range — and the draft is where the person is writing;
- * splicing the one into the other buries what they were saying under what they were pointing
- * at. The composer shows a chip naming it instead, the same shape `/agent` and `/skill` already
- * stage their picks in.
+ * The text is deliberately kept out of the textarea. What the panel contributes is a whole thing — a
+ * file, a directory, a quoted range, an element picked out of a preview — and the draft is where the
+ * person is writing; splicing the one into the other buries what they were saying under what they
+ * were pointing at. The composer shows a chip naming it instead, the same shape `/agent` and
+ * `/skill` already stage their picks in.
  */
 export interface ComposerReference {
   /** Which glyph the chip wears, and what its label means. */
-  kind: "file" | "dir" | "quote";
-  /** Workspace-relative path: the chip's label comes from its last segment, its tooltip from the whole. */
-  path: string;
+  kind: "file" | "dir" | "quote" | "element";
+  /**
+   * Workspace-relative path: the chip's label comes from its last segment, its tooltip from the
+   * whole. Absent for an `element` until something resolves the file it was written in (M3) — an
+   * element names itself by its `label` in the meantime.
+   */
+  path?: string;
+  /**
+   * What the chip is called when there is no path to call it by: an element's own description
+   * (`span.badge "hello"`), which is what a person recognises from the preview. A `label` wins over
+   * the path's last segment, so a future element reference can carry both its file and its name.
+   */
+  label?: string;
   /** What goes into the message. */
   text: string;
   /** 1-based and inclusive, on a `quote` whose place in the file could be resolved. */
   fromLine?: number;
   toLine?: number;
+  /**
+   * An element payload's identity (`refId`, FR-06). Two references carrying the same one are the same
+   * element, which is what makes staging it twice an update rather than a second copy (see
+   * `stageReference`).
+   */
+  refId?: string;
+  /**
+   * The element this chip stands for is no longer in the page it was picked from. Set when the chip
+   * is re-resolved at send time and the page does not have it (M4.1 / AC-8) — the message is held
+   * rather than sent with a location the page has already contradicted, so this is the user's cue to
+   * re-pick or drop the chip.
+   */
+  stale?: boolean;
+}
+
+/**
+ * Stage a reference in the composer: append it, or — when it is an element already staged — replace
+ * the chip it already has.
+ *
+ * The `refId` is what makes this a rule rather than a guess. It identifies the element across rounds
+ * (FR-06), so staging the same element again is the user asking for that element again: two chips
+ * would put one element into the conversation twice, each with whatever numbers it happened to be
+ * built from. The replacement keeps the chip where the user staged it, so the composer's order — the
+ * order the message will carry — does not rearrange itself under them.
+ *
+ * A reference with no `refId` is always appended: there is nothing to match it by, and quoting the
+ * same file twice at two ranges is a normal thing to do.
+ */
+export function stageReference(
+  staged: readonly ComposerReference[],
+  reference: ComposerReference,
+): ComposerReference[] {
+  const refId = reference.refId;
+  if (refId === undefined) return [...staged, reference];
+  const at = staged.findIndex((entry) => entry.refId === refId);
+  if (at === -1) return [...staged, reference];
+  const next = [...staged];
+  next[at] = reference;
+  return next;
 }
 
 /**

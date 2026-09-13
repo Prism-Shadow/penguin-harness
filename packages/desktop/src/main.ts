@@ -95,6 +95,14 @@ function createWindow(url: string): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // The UI workbench panel embeds the user's own dev server (`http://localhost:5173`) in a
+      // `<webview>` so an element can be picked out of the running page. The tag is off by
+      // default and this is the only window that turns it on. It is a presentation capability
+      // the server cannot deliver — the page is the user's, cross-origin, and never passes
+      // through our HTTP API — and it adds no Node and no preload to either side: the panel
+      // reaches the guest only through its DOM events and `executeJavaScript`. The web side
+      // degrades with an explicit notice when it is not running in this shell.
+      webviewTag: true,
     },
   });
   win.once("ready-to-show", () => win?.show());

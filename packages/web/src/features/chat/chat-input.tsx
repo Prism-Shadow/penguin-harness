@@ -96,7 +96,13 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CheckIcon, ChevronDown, FILE_ICON, QUOTE_ICON } from "../../components/ui/icons";
+import {
+  ELEMENT_PICKER_ICON,
+  CheckIcon,
+  ChevronDown,
+  FILE_ICON,
+  QUOTE_ICON,
+} from "../../components/ui/icons";
 import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { noAutofill } from "../../components/ui/input";
@@ -130,8 +136,9 @@ import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { toneStrip } from "../../lib/tone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
-import { lineSuffix } from "../../lib/workspace-tree";
+import { lineSuffix, stageReference } from "../../lib/workspace-tree";
 import type { ComposerReference } from "../../lib/workspace-tree";
+import { refreshElementReferences } from "../workbench/element-references";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -771,9 +778,13 @@ function withReferences(references: readonly ComposerReference[], typed: string)
  * Returned in two pieces because the chip draws them differently: a long name ellipsizes, and the
  * line numbers must not go with it. They are the smaller half and the half the name does not
  * already say.
+ *
+ * The name is the reference's own `label` when it has one — an element picked out of a preview is
+ * named by its description, not by a path it does not have yet — and otherwise the last segment of
+ * its path, which is how a file or a directory has always been named here.
  */
 function referenceParts(reference: ComposerReference): { name: string; lines: string } {
-  const name = reference.path.split("/").pop() ?? reference.path;
+  const name = reference.label ?? reference.path?.split("/").pop() ?? "";
   const lines =
     reference.fromLine === undefined || reference.toLine === undefined
       ? ""
@@ -781,16 +792,28 @@ function referenceParts(reference: ComposerReference): { name: string; lines: st
   return { name, lines };
 }
 
-/** The whole of what a chip stands for, for its tooltip and its accessible name: path and lines. */
+/**
+ * The whole of what a chip stands for, for its tooltip and its accessible name: what it names, where
+ * in the file, and — for an element — the `refId` that says which element it is. Two elements can
+ * share a description and a path; only the id tells them apart.
+ */
 function referenceTitle(reference: ComposerReference): string {
-  return `${reference.path}${referenceParts(reference).lines}`;
+  const named = reference.label ?? reference.path ?? "";
+  const id = reference.refId === undefined ? "" : ` · ${reference.refId}`;
+  return `${named}${referenceParts(reference).lines}${id}`;
 }
 
-/** A directory, a file, or a passage carried in from one — each says what the chip stands for. */
+/**
+ * A directory, a file, a passage carried in from one, or an element picked out of a preview — each
+ * says what the chip stands for. An element wears the workbench's own mark rather than the file
+ * mark: what it points at is not yet a file, and pretending otherwise is the one thing the payload
+ * deliberately does not do.
+ */
 const REFERENCE_ICON: Record<ComposerReference["kind"], string> = {
   dir: FOLDER_ICON,
   file: FILE_ICON,
   quote: QUOTE_ICON,
+  element: ELEMENT_PICKER_ICON,
 };
 
 /**
@@ -1506,7 +1529,9 @@ export function ChatInput({
     [skills, selectedSkills, onTextChange, onSkillsChange],
   );
   const addReference = useCallback((reference: ComposerReference) => {
-    setReferences((prev) => [...prev, reference]);
+    // An element reference carries its element's `refId`, so staging the same element again updates
+    // the chip it already has instead of stacking a second copy of its payload (`stageReference`).
+    setReferences((prev) => stageReference(prev, reference));
     // The chip is above the text body, so the caret stays where it was; focus follows the
     // gesture back to the composer, which is where the sentence about it gets typed.
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -1836,6 +1861,35 @@ export function ChatInput({
   }, [models, initialPendingModelRef, modelRef, onSwitchModel, staged]);
 
   /**
+   * Re-resolve every element chip against the preview before a message is composed (M4.1 / AC-8).
+   *
+   * A chip carries the payload as the page was when the element was picked; a dev server reloads on
+   * every save, so that snapshot can be a lie by the time the user finishes typing. What the message
+   * carries is therefore the page's *current* answer, asked for here — one last time, where the
+   * message is actually built.
+   *
+   * When the page no longer has an element the message is **held** instead of sent: a payload the
+   * page has already contradicted is exactly the stale data this milestone exists to stop, and the
+   * user is one click from fixing it (re-pick, or drop the chip). File, directory and quote chips are
+   * untouched — a path means the same thing at send time as it did when it was staged.
+   *
+   * Returns the references to compose from, or `null` when the send must not happen.
+   */
+  const prepareReferences = async (
+    current: readonly ComposerReference[],
+  ): Promise<ComposerReference[] | null> => {
+    const prepared = await refreshElementReferences(current);
+    if (prepared.refreshed > 0 || prepared.gone.length > 0) setReferences(prepared.references);
+    if (prepared.gone.length === 0) return prepared.references;
+    toastError(
+      S.workbench.sendHeld(
+        prepared.gone.map((entry) => S.workbench.goneElement(entry.label, entry.reason)).join("；"),
+      ),
+    );
+    return null;
+  };
+
+  /**
    * The full normal send path (task / handoff / model switch), also the follow-up queue path
    * and the fallback target when a steer hits the completion race: assembles the [use_skills]
    * block, the attachments (images and files) and the staged switch from the whole draft; `post`
@@ -1850,6 +1904,10 @@ export function ChatInput({
     post: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean> = onSend,
   ) => {
     const t = text.trim();
+    // Element chips are re-resolved against the preview before anything is composed (M4.1 / AC-8);
+    // a message whose element the page no longer has is held here, not sent.
+    const fresh = await prepareReferences(references);
+    if (fresh === null) return;
     // Goal mode: the trimmed text is the objective (no images, no staged switch — both are
     // cleared when the chip goes on). Selected skills prefix the round-1 message as a
     // [use_skills] block, exactly like a normal send — the server strips leading marker blocks
@@ -1893,7 +1951,7 @@ export function ChatInput({
     // the [handoff_from] source block.
     // Staged quotations go in front of what was typed: they are what the message is about, and
     // the sentence after them reads as being about them.
-    const quoted = withReferences(references, t);
+    const quoted = withReferences(fresh, t);
     const bodyText =
       quoted !== ""
         ? quoted
@@ -1949,7 +2007,10 @@ export function ChatInput({
       // for the running agent; all are sent and cleared together — selected skills stay for
       // a normal send (a staged switch chip blocks this branch outright, see midRunAction).
       if (!steerAction) return;
-      const steerText = withReferences(references, text.trim());
+      // Steering carries the same chips, so it gets the same last look at the page (M4.1 / AC-8).
+      const freshSteer = await prepareReferences(references);
+      if (freshSteer === null) return;
+      const steerText = withReferences(freshSteer, text.trim());
       const steerImages = images;
       const steerFiles = attachments.map((f) => ({ fileName: f.name, dataUrl: f.dataUrl }));
       setBusy(true);
@@ -2601,9 +2662,9 @@ export function ChatInput({
                 </span>
               );
             })}
-            {/* Staged from the Files panel: a file, a directory, or a quoted range. The text
-                itself never enters the draft — the chip names what it points at, and the
-                message carries it on send. */}
+            {/* Staged from a panel: a file, a directory, a quoted range, or an element picked out of
+                a preview. The text itself never enters the draft — the chip names what it points at,
+                and the message carries it on send. */}
             {references.map((reference, i) => {
               const { name, lines } = referenceParts(reference);
               const title = referenceTitle(reference);
@@ -2611,7 +2672,11 @@ export function ChatInput({
                 <span
                   key={i}
                   title={title}
-                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                  className={`anim-pop flex max-w-48 items-center gap-1 rounded-md py-0.5 pl-2 pr-1 font-mono text-xs ${
+                    reference.stale === true
+                      ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                      : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                  }`}
                 >
                   <GlyphIcon
                     d={REFERENCE_ICON[reference.kind]}
@@ -2623,6 +2688,11 @@ export function ChatInput({
                       the whole path and the range together. */}
                   <span className="min-w-0 truncate">{name}</span>
                   {lines !== "" && <span className="shrink-0">{lines}</span>}
+                  {/* An element chip the page no longer has says so on the chip itself: the send is
+                      held on it (M4.1 / AC-8), and this is where the user sees which one. */}
+                  {reference.stale === true && (
+                    <span className="shrink-0">{S.workbench.goneChip}</span>
+                  )}
                   <button
                     type="button"
                     aria-label={`${S.files.removeReference} ${title}`}

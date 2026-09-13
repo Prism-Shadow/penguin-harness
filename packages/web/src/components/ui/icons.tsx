@@ -357,6 +357,15 @@ export const HAND_ICON =
 export const SCHEDULE_ICON =
   "M12 19.5a6.7 6.7 0 1 0 0-13.4 6.7 6.7 0 0 0 0 13.4zM12 8.9v3.9l2.6 1.8M3.1 7.7A3.5 3.5 0 0 1 7.7 4.3M16.3 4.3a3.5 3.5 0 0 1 4.6 3.4M7.8 18.8 5.4 21.6M16.2 18.8l2.4 2.8";
 
+/**
+ * A page with a pointer resting on it: the UI design workbench panel, where you pick an element
+ * in a running page instead of reading code. The page is the subject and the pointer is what the
+ * panel does to it. Both have to hold at the 13px a dock tab or launcher row draws them, so the
+ * page is a bare rectangle and the pointer is four straight segments with one notch — an arrow
+ * with a curved back or a second inner line fuses into a blob at that size.
+ */
+export const ELEMENT_PICKER_ICON = "M4 4h16v12H4zM10 10l7 4-3 1-1 3z";
+
 export const NAV_ICONS = {
   agents: AGENT_GROUP_ICON,
   /** Plugin library (the puzzle piece). */
