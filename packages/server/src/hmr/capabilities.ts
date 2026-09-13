@@ -33,7 +33,6 @@ import type { PlatformApi } from "./platform.js";
 /** The control object the entry built (hmrMain): `current()` and `upgrade()`. */
 export type HmrControlApi = HmrControlOf<PlatformApi>;
 import type { DesktopService } from "../services/desktop-service.js";
-import type { LifecycleService } from "../services/lifecycle-service.js";
 import { Interface, Component, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 
 /**
@@ -95,7 +94,6 @@ interface HmrInterfaces extends Interfaces {
   proxy: MembersOf<ProxyControl>;
   hmr: MembersOf<HmrHost>;
   desktop: MembersOf<DesktopService>;
-  lifecycle: MembersOf<LifecycleService>;
 }
 
 export const HMR_INTERFACES: HmrInterfaces = {
@@ -113,7 +111,6 @@ export const HMR_INTERFACES: HmrInterfaces = {
     "desktopToken",
     "portFile",
     "trustProxy",
-    "supervised",
   ],
   db: ["prepare", "exec", "close"],
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
@@ -124,7 +121,6 @@ export const HMR_INTERFACES: HmrInterfaces = {
   // they stand in for. Presence-only — a list has no members to verify.
   overrides: [],
   desktop: ["onShutdownRequest", "requestShutdown", "verifyToken", "redeemLoginToken"],
-  lifecycle: ["supervised", "onRestartRequest", "requestRestart"],
 };
 
 export const HMR_INTERFACES_RESOURCE_ID = "platform.interfaces";
@@ -188,8 +184,6 @@ export const HMR_CONTROL_RESOURCE_ID = "platform.hmrControl";
  * claim must distinguish "not desktop" from "not published".
  */
 export const HMR_DESKTOP_RESOURCE_ID = "platform.desktop";
-/** Whether a supervisor relaunches this process, and the restart trigger. Always published. */
-export const HMR_LIFECYCLE_RESOURCE_ID = "platform.lifecycle";
 
 /**
  * Process-scoped auth values (auth/runtime-state.ts), not an auth service. Claimed
@@ -246,7 +240,6 @@ export interface HmrCapabilities {
   hmrControl: HmrControlApi;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
-  lifecycle: LifecycleService;
   /** Nodes a test stands in for (see Replacements); [] outside tests. */
   replacements: Replacements;
 }
@@ -296,8 +289,7 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
   const proxyControl = resources.claim<ProxyControl>(HMR_PROXY_RESOURCE_ID);
   const hmr = resources.claim<HmrHost>(HMR_HOST_RESOURCE_ID);
   const hmrControl = resources.claim<HmrControlApi>(HMR_CONTROL_RESOURCE_ID);
-  const lifecycle = resources.claim<LifecycleService>(HMR_LIFECYCLE_RESOURCE_ID);
-  if (!config || !db || !channels || !proxyControl || !hmr || !hmrControl || !lifecycle) {
+  if (!config || !db || !channels || !proxyControl || !hmr || !hmrControl) {
     return { kind: "refused", reason: "a declared capability was not actually published" };
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
@@ -327,7 +319,6 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
     ["proxy", proxyControl],
     ["hmr", hmr],
     ["hmrControl", hmrControl],
-    ["lifecycle", lifecycle],
     ...(desktop === null ? [] : ([["desktop", desktop]] as Array<[string, unknown]>)),
   ];
   for (const [name, value] of live) {
@@ -349,7 +340,6 @@ export function claimHmrCapabilities(resources: Resources): HmrClaim {
       hmr,
       hmrControl,
       desktop,
-      lifecycle,
       replacements,
     },
   };
@@ -434,11 +424,6 @@ export abstract class Desktop extends Interface<{
 }>() {}
 
 export abstract class AuthState extends Interface<AuthRuntimeState>() {}
-
-/** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger. */
-export abstract class Lifecycle extends Interface<
-  Pick<LifecycleService, "supervised" | "onRestartRequest" | "requestRestart">
->() {}
 
 export abstract class Log extends Interface<{
   line(text: string): void;
@@ -547,14 +532,6 @@ export class RuntimeDesktop {
   setup() {
     const { desktop } = this.caps;
     this.desktop = { current: () => desktop };
-  }
-}
-@Module()
-export class RuntimeLifecycle {
-  @Provide() lifecycle!: Lifecycle;
-  constructor(private readonly caps: HmrCapabilities) {}
-  setup() {
-    this.lifecycle = this.caps.lifecycle;
   }
 }
 @Module()
