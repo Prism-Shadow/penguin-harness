@@ -26,6 +26,7 @@ import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
 import { SandboxSection } from "./sandbox-section";
+import { SharingSection } from "./sharing-section";
 import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
@@ -44,6 +45,9 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   uploads: "M12 15V4m0 0L7 9m5-5l5 5M4 20h16",
   /** Shield: confinement. */
   sandbox: "M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z",
+  /** Three linked nodes: sharing. */
+  sharing:
+    "M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4",
   /** Puzzle piece: plugins. */
   plugins:
     "M10 4a2 2 0 1 1 4 0v2h3a1 1 0 0 1 1 1v3h-2a2 2 0 1 0 0 4h2v3a1 1 0 0 1-1 1h-3v-2a2 2 0 1 0-4 0v2H7a1 1 0 0 1-1-1v-3h2a2 2 0 1 0 0-4H6V7a1 1 0 0 1 1-1h3V4z",
@@ -80,6 +84,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
     sandbox: S.settings.sandboxTitle,
+    sharing: S.settings.sharingTitle,
     plugins: S.settings.pluginsTitle,
     users: S.admin.users,
   };
@@ -93,6 +98,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     sandbox: S.settings.sandboxInfo,
+    sharing: S.settings.sharingInfo,
     plugins: S.settings.pluginsInfo,
   };
 
@@ -126,6 +132,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
       {current === "sandbox" && <SandboxSection />}
+      {current === "sharing" && <SharingSection />}
       {current === "plugins" && <PluginsSection />}
       {current === "users" && <AdminUsersSection />}
     </PagedDialog>

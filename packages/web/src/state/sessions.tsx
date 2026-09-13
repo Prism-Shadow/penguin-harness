@@ -37,6 +37,7 @@ import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { openUserEvents } from "../api/sse";
+import { WORKFLOW_UPDATED_EVENT } from "../lib/workflow-tabs";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
@@ -641,6 +642,16 @@ export function applyUserEvent(
   // Refetch once, on the event that says so, rather than polling for it.
   if (ev.type === "resync_required") {
     void store.getState().reload();
+    return;
+  }
+  // A workflow of some Agent was (re)loaded: the chat page's tab strip owns that list and
+  // listens on window (it is mounted per page, this provider per app).
+  if (ev.type === "workflow_updated" || ev.type === "workflow_removed") {
+    window.dispatchEvent(
+      new CustomEvent(WORKFLOW_UPDATED_EVENT, {
+        detail: { projectId: ev.projectId, agentId: ev.agentId },
+      }),
+    );
     return;
   }
   // Either schedule event moves a task's state — nextFireAt, lastFiredAt, the queued flag, or a

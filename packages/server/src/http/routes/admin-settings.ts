@@ -78,6 +78,7 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
       proxyForApp: deps.serverSettingsRepo.getProxyForApp(),
       proxyForAgent: deps.serverSettingsRepo.getProxyForAgent(),
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
+      githubTokenSet: deps.serverSettingsRepo.hasGithubToken(),
       ...deps.serverSettingsRepo.getAttachmentLimitsMb(),
     },
   });
@@ -114,9 +115,16 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
         `attachmentTotalMb (${effectiveTotal}) must not be below attachmentMaxMb (${effectiveMax}).`,
       );
     }
+    // A GitHub token is write-only: the response says whether one is stored, never what it
+    // is, and an empty string clears it.
+    const githubToken = body.githubToken;
+    if (githubToken !== undefined && typeof githubToken !== "string") {
+      throw new HttpError(400, "bad_request", "githubToken must be a string (empty clears it).");
+    }
     if (proxyForApp !== undefined) deps.serverSettingsRepo.setProxyForApp(proxyForApp);
     if (proxyForAgent !== undefined) deps.serverSettingsRepo.setProxyForAgent(proxyForAgent);
     if (proxyUrlProvided) deps.serverSettingsRepo.setProxyUrl(proxyUrl);
+    if (typeof githubToken === "string") deps.serverSettingsRepo.setGithubToken(githubToken.trim());
     if (attachmentMaxMb !== undefined) deps.serverSettingsRepo.setAttachmentMaxMb(attachmentMaxMb);
     if (attachmentTotalMb !== undefined) {
       deps.serverSettingsRepo.setAttachmentTotalMb(attachmentTotalMb);

@@ -100,6 +100,14 @@ export interface HarnessInfo {
   };
 }
 
+/** What a stored interface table says about itself, without reading it. */
+export interface IfacesSummary {
+  hash: string;
+  nodes: number;
+  interfaces: number;
+  types: number;
+}
+
 /**
  * What `penguin version --json` prints and what GET /api/version returns: the running
  * build's identity, plus the harness this machine has in its HMR store.
@@ -109,6 +117,34 @@ export interface HarnessInfo {
  * `harness` describes the data root's store, so only a caller that knows which root is in
  * play can fill it.
  */
+/**
+ * One harness version, as the platform that WAS that version recorded it at its boot: the
+ * runtime's commit record (provenance, commit time, bundles) plus the interface table the
+ * platform was built from. The runtime only commits; what was pushed is written by the
+ * pushed code itself, so the record is complete on any runtime that can boot it.
+ */
+export interface HarnessHistoryEntry {
+  /** The version's identity in the history: derived from its bundles (or its table, for a packaged boot). */
+  id: string;
+  /** Whether the platform kept this version's artifacts, so it can be pushed back. */
+  rollbackable: boolean;
+  source: HarnessSource | null;
+  /** When the version was committed (ISO 8601); null for a commit that predates the record. */
+  pushedAt: string | null;
+  bundles: HarnessInfo["bundles"];
+  ifaces: IfacesSummary | null;
+}
+
+/**
+ * The harness versions that have booted on this data root, newest first, and the one the
+ * runtime currently has committed. Kept by the platform under `<root>/harness-history/`,
+ * apart from the runtime's store.
+ */
+export interface HarnessHistory {
+  current: HarnessInfo | null;
+  entries: HarnessHistoryEntry[];
+}
+
 export interface VersionReport extends BuildInfo {
   harness: HarnessInfo | null;
 }

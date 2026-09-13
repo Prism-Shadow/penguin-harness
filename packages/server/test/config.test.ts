@@ -86,6 +86,6 @@ describe("resolveServerConfig: PENGUIN_CLI_ENTRY parsing", () => {
     // for checkoutCliEntry itself).
     const blank = resolveServerConfig({ ...base, PENGUIN_CLI_ENTRY: "   " }).cliEntry;
     expect(blank).toBe(resolveServerConfig({ ...base }).cliEntry);
-    expect(blank === null || blank.endsWith(`${path.sep}penguin.js`)).toBe(true);
+    expect(blank === null || blank?.endsWith(`${path.sep}penguin.js`)).toBe(true);
   });
 });
