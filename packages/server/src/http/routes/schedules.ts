@@ -13,7 +13,7 @@ import { isValidId } from "@prismshadow/penguin-core";
 import type { ScheduleItem, ScheduleStatus, SchedulesResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
-import type { SchedulesRepo } from "../../db/repos/schedules.js";
+import type { SchedulesRepo, ScheduleStateRow } from "../../db/repos/schedules.js";
 import type { Scheduler } from "../../runtime/scheduler.js";
 import type { AgentConfigService } from "../../services/agent-config-service.js";
 import type { ProjectAccess } from "../../services/project-access.js";
@@ -43,7 +43,6 @@ import {
   parseScheduleFile,
   slotInWindow,
 } from "../../runtime/schedule-file.js";
-import type { ScheduleStateRow } from "../../db/repos/schedules.js";
 import {
   deleteScheduleFile,
   readScheduleFile,

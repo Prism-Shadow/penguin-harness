@@ -15,9 +15,8 @@ import { sessionTokenHash } from "../db/repos/auth-sessions.js";
 import type { SessionViaValue, AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { AuthRuntimeState } from "./runtime-state.js";
 import { SCRYPT_COST, hashPassword, verifyPassword } from "./password.js";
-import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { AuthState, Config, Overrides } from "../hmr/capabilities.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
 
 export const MIN_PASSWORD_LENGTH = 8;
 

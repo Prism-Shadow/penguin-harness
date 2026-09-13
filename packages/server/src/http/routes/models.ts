@@ -26,10 +26,13 @@ import type { SessionsRepo } from "../../db/repos/sessions.js";
 import type { ChannelHub } from "../../runtime/channel.js";
 import type { SessionManager } from "../../runtime/session-manager.js";
 import type { ProjectAccess } from "../../services/project-access.js";
+import type { Machines } from "../../machines/service.js";
 import type { ProjectConfigService } from "../../services/project-config-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ModelsRouteDeps {
+  /** The machines this Project uses receive a credential change too (machines/service.ts). */
+  machines: Machines;
   channels: ChannelHub;
   manager: SessionManager;
   projectConfigService: ProjectConfigService;
@@ -65,7 +68,7 @@ export function publishCredentialsUpdated(deps: ModelsRouteDeps, projectId: stri
  *   reach them or their Sessions keep failing on the old one — or start on the wrong default.
  *   Not awaited: the person editing is not the one who should wait for a set of ssh tunnels.
  */
-export function modelConfigChanged(deps: AppDeps, projectId: string): void {
+export function modelConfigChanged(deps: ModelsRouteDeps, projectId: string): void {
   deps.manager.invalidateProjectRuntimes(projectId);
   publishCredentialsUpdated(deps, projectId);
   void deps.machines.syncModelsEverywhere(projectId);

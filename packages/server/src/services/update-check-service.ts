@@ -18,14 +18,12 @@
  */
 import { BUILD_DATE, VERSION, compareVersions, normalizeVersion } from "@prismshadow/penguin-core";
 import type { UpdateCheckResponse } from "../api/types.js";
-import { Interface } from "@prismshadow/penguin-core/kernel";
-import { Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { Interface, Bind, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Config, Lifecycle, Overrides } from "../hmr/capabilities.js";
+import { Config, Lifecycle, Overrides, RuntimeModule } from "../hmr/capabilities.js";
 import { UpdateJobService } from "./update-job.js";
-import { RuntimeModule } from "../hmr/capabilities.js";
 import { versionRoutes } from "../http/routes/version.js";
 
 /** Repository the released artifacts come from (same slug as cli/update.ts's REPO_SLUG). */

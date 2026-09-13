@@ -52,8 +52,7 @@ import {
 } from "../../services/attachment-limits.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Config, Desktop } from "../../hmr/capabilities.js";
-import { RuntimeModule } from "../../hmr/capabilities.js";
+import { Config, Desktop, RuntimeModule } from "../../hmr/capabilities.js";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;
