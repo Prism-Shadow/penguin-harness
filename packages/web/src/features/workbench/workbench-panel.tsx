@@ -928,7 +928,11 @@ export function WorkbenchPanel({
           mark may only sit beside a title, and this has none). It is shown exactly while no page is
           loaded, which is when the question it answers ("can this work on my project at all") is
           asked; once a page is up the tier line above says that page's own answer instead, and the
-          preview keeps its height (the m25 pitfall: an expanded block left the preview 91px tall). */}
+          preview keeps its height (the m25 pitfall: an expanded block left the preview 91px tall).
+          Under the matrix sit the four limits a location comes with (5.4, D30) — the JSX-not-CSS
+          distinction, the stylesheet short-circuit, the wrapping element behind `ambiguous`, and the
+          unauthenticated return channel — because they are read at the same moment, before the panel
+          is trusted with anything. */}
       {guestState.kind !== "ready" && (
         <details
           data-workbench-support="1"
@@ -942,6 +946,13 @@ export function WorkbenchPanel({
             <li>{S.workbench.support.degraded}</li>
             <li>{S.workbench.support.unreachable}</li>
             <li>{S.workbench.support.thirdParty}</li>
+          </ul>
+          <p className="mt-1">{S.workbench.support.boundaries.lead}</p>
+          <ul className="mt-0.5 space-y-0.5">
+            <li>{S.workbench.support.boundaries.rows.jsx}</li>
+            <li>{S.workbench.support.boundaries.rows.styles}</li>
+            <li>{S.workbench.support.boundaries.rows.ambiguous}</li>
+            <li>{S.workbench.support.boundaries.rows.channel}</li>
           </ul>
         </details>
       )}

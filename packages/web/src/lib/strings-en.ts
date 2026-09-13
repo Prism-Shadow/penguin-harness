@@ -2642,6 +2642,19 @@ Scenarios:
         "Out of reach: elements inside a shadow root, and elements inside an iframe (L1 enters neither)",
       thirdParty:
         "Nodes a third-party library made: a location is given, in the dependency's own file — editing it changes nothing for this project, so pass a prop or wrap it",
+      /** M5.4: the same four measured limits as `strings.ts` — worded, not softened. */
+      boundaries: {
+        lead: "Known limits (none of them block you — you just have to know):",
+        rows: {
+          jsx: "A location is where this piece of JSX is written (file:line:column), not where a CSS rule lives",
+          styles:
+            "When the change is a style one, the Agent may edit the stylesheet instead — that is its call, not a wrong location",
+          ambiguous:
+            "Under “ambiguous”, the location given may be the element wrapping it (several sibling nodes share that one place in the source)",
+          channel:
+            "Picks come back through the previewed page's own console: a page could in principle forge one, so the payload is shown to you first and only leaves when you click “Add to conversation”; closing that completely would mean touching the app's security boundary, which L1 does not do",
+        },
+      },
     },
     failure: {
       refused: "nothing is listening on that port",

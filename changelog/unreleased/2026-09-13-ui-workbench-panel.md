@@ -353,6 +353,34 @@ hands over a neighbour. Each of the four now has its own sentence, said at the m
   Every pick now reads fresh, so the card and the message say the same thing (the same assertion went
   from "the card is still on the old line" to "the card followed the new one").
 
+## The four things a location comes with
+
+A source location sounds like one fact and is really several. Before the panel is pointed anywhere it
+now lists what it can tell you, and — under the matrix of frameworks — the four limits that come with
+every location it gives:
+
+- **A location is where the JSX is written, not where a CSS rule lives.** The payload points at the
+  file, line and column of the element in your source; when the change you ask for is a style change,
+  the CSS may live somewhere else entirely.
+- **A style change may land in the stylesheet, and that is not a wrong location.** Measured four runs
+  out of four on a blind edit test: asked to change a colour, the agent edited the stylesheet rule
+  rather than the JSX — the page changed as asked. The line you are handed is the element's own JSX;
+  where the fix belongs is the agent's call.
+- **An "ambiguous" pick may point at the element wrapping yours.** Somewhere in the source several
+  sibling nodes share one place, so the location that survives is the enclosing one (measured: 24 of 33
+  such picks on a real project). The row says so rather than pretending to be exact.
+- **The return channel is the page's own console, and a page can forge a message on it.** Picks come
+  back the cheap, preload-free way: a line on the console with our prefix. A page could write that line
+  itself — so the payload is shown to you first and nothing leaves until you click "Add to
+  conversation". Closing that completely would mean changing the app's security boundary, which this
+  first cut deliberately does not do; the wording says exactly that instead of implying the channel is
+  authenticated.
+
+All four sit in the same fold as the framework matrix, and all four are pinned by tests, so a later
+edit cannot quietly soften them.
+
+---
+
 ## Leaving the user's project alone
 
 - **The user's project is read, never written.** Measured on a project that is a real git repository:

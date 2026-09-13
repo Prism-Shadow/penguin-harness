@@ -24,6 +24,8 @@ describe("workbench support matrix", () => {
     expect(Object.keys(en.workbench.support)).toEqual(Object.keys(zh.workbench.support));
     for (const matrix of Object.values(dictionaries)) {
       for (const [row, text] of Object.entries(matrix)) {
+        // `boundaries` is a block of its own, pinned in the suite below; the rows here are strings.
+        if (typeof text !== "string") continue;
         expect(text.trim(), `${row} is empty`).not.toBe("");
       }
     }
@@ -69,5 +71,54 @@ describe("workbench support matrix", () => {
         expect(count, `${locale}: ${name} placed in ${count} rows`).toBe(1);
       }
     }
+  });
+});
+
+/**
+ * The four limits under the matrix (M5.4, D30). The matrix answers "which frameworks work"; these
+ * answer "what the location I get actually means, and who can put one in front of me". Both are the
+ * panel telling the truth before it is trusted with anything, and both are pinned for the same
+ * reason: they are the sentences most likely to be quietly softened by a later edit.
+ */
+describe("workbench boundary copy", () => {
+  const both = [zh.workbench.support.boundaries, en.workbench.support.boundaries];
+
+  it("carries the same four limits, in both dictionaries, none of them empty", () => {
+    expect(Object.keys(en.workbench.support.boundaries.rows)).toEqual([
+      "jsx",
+      "styles",
+      "ambiguous",
+      "channel",
+    ]);
+    expect(Object.keys(en.workbench.support.boundaries.rows)).toEqual(
+      Object.keys(zh.workbench.support.boundaries.rows),
+    );
+    for (const boundaries of both) {
+      expect(boundaries.lead.trim()).not.toBe("");
+      for (const [row, text] of Object.entries(boundaries.rows)) {
+        expect(text.trim(), `${row} is empty`).not.toBe("");
+      }
+    }
+  });
+
+  it("names the unauthenticated channel instead of only the page's own limits", () => {
+    // Q6 was decided as "keep the console channel and say what it costs" (D30) — the copy has to
+    // carry it, or the decision exists only in the decision log.
+    for (const boundaries of both) {
+      expect(boundaries.rows.channel).toContain("console");
+    }
+    expect(zh.workbench.support.boundaries.rows.channel).toContain("伪造");
+    expect(en.workbench.support.boundaries.rows.channel).toMatch(/forge/i);
+  });
+
+  it("keeps the three measured reading habits: JSX not CSS, stylesheet short-circuit, wrapping element", () => {
+    // m53 (D23): agents may land a style change in the stylesheet — the page is still right.
+    expect(zh.workbench.support.boundaries.rows.styles).toContain("样式表");
+    expect(en.workbench.support.boundaries.rows.styles).toMatch(/stylesheet/i);
+    // m51 (D22): 24 of 33 `ambiguous` picks landed on the element wrapping the target.
+    expect(zh.workbench.support.boundaries.rows.ambiguous).toContain("包着");
+    expect(en.workbench.support.boundaries.rows.ambiguous).toMatch(/wrapping/i);
+    expect(zh.workbench.support.boundaries.rows.jsx).toContain("JSX");
+    expect(en.workbench.support.boundaries.rows.jsx).toContain("JSX");
   });
 });

@@ -2600,6 +2600,23 @@ Benchmark：
         "降级档（选得中，但没有源码位置）：webpack / Next.js 这类还没实测的构建，以及任何生产构建",
       unreachable: "选不到：shadow DOM 内部的元素、iframe 里面的元素（L1 不进入这两个）",
       thirdParty: "第三方库造的节点：位置照给，但在依赖自己的文件里——改它不算数，要传参或包一层",
+      /**
+       * The four limits a user has to know before trusting what the panel says (M5.4). They sit in the
+       * same fold as the matrix because they answer the same question — "what can this thing actually
+       * tell me" — and each one is a measurement, not a hedge: the JSX-vs-stylesheet split and the
+       * `ambiguous` landing point come from m51/m53 (D22/D23), and the unauthenticated return channel
+       * is what m27 read off the wire (D15), kept as-is by D30's answer to Q6.
+       */
+      boundaries: {
+        lead: "已知边界（都不阻断，只是你得知道）：",
+        rows: {
+          jsx: "位置指的是这段 JSX 写在哪儿（文件:行:列），不是某条 CSS 规则在哪儿",
+          styles: "改样式时 Agent 可能直接改样式表 —— 那是它的判断，不是位置给错了",
+          ambiguous: "「有歧义」时给的位置可能是包着它的那层元素（同一处写法有多个兄弟节点）",
+          channel:
+            "拾取结果走预览页自己的 console 回传：页面理论上能伪造一条，所以载荷要先摆给你看、由你点「加入对话」才发得出去；要彻底堵住得动应用的安全边界，L1 不做",
+        },
+      },
     },
     failure: {
       refused: "这个端口上没有服务在听",
