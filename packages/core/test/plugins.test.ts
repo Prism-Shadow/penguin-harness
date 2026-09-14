@@ -4,7 +4,9 @@
  * category grouping, the preinstall filter, the name lookups, the doc conventions every
  * shipped skill follows, and the README tables that repeat the library for human readers.
  */
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -18,6 +20,7 @@ import {
   loadPluginGroups,
   loadPreinstalledPlugins,
   parseSkillFrontmatter,
+  workspacePluginRoot,
   type LibraryPlugin,
   type PluginCategory,
 } from "../src/plugins/index.js";
@@ -293,4 +296,65 @@ describe("README category tables", () => {
       }
     });
   }
+});
+
+describe("workspacePluginRoot (a checkout reads plugins from the repo's plugins/ directory)", () => {
+  /** A workspace checkout as pnpm lays it out: the repo root, its plugins/, and an injected copy of a plugin under .pnpm. */
+  async function checkout(opts: { workspaceFile: boolean; packageName: string }) {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-plugin-root-"));
+    if (opts.workspaceFile)
+      await fs.writeFile(path.join(root, "pnpm-workspace.yaml"), "packages:\n");
+    const source = path.join(root, "plugins", "sample");
+    await fs.mkdir(source, { recursive: true });
+    await fs.writeFile(
+      path.join(source, "package.json"),
+      JSON.stringify({ name: opts.packageName }),
+    );
+    const injected = path.join(
+      root,
+      "node_modules/.pnpm/@penguinharness+sample@file+plugins+sample/node_modules/@penguinharness/sample",
+    );
+    await fs.mkdir(injected, { recursive: true });
+    // Where core itself sits in that checkout: its own injected copy, deep under .pnpm.
+    const core = path.join(
+      root,
+      "node_modules/.pnpm/@prismshadow+penguin-core@file+packages+core/node_modules/@prismshadow/penguin-core",
+    );
+    await fs.mkdir(core, { recursive: true });
+    return { root, source, injected, core };
+  }
+
+  it("prefers the repo's plugins/<name>/ over pnpm's injected copy inside a workspace checkout", async () => {
+    const c = await checkout({ workspaceFile: true, packageName: "@penguinharness/sample" });
+    try {
+      expect(workspacePluginRoot("sample", c.injected, c.core)).toBe(c.source);
+    } finally {
+      await fs.rm(c.root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the resolved copy outside a workspace: an npm install and the packed app have no workspace file", async () => {
+    const c = await checkout({ workspaceFile: false, packageName: "@penguinharness/sample" });
+    try {
+      expect(workspacePluginRoot("sample", c.injected, c.core)).toBe(c.injected);
+    } finally {
+      await fs.rm(c.root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the resolved copy when the workspace directory is not that package", async () => {
+    const c = await checkout({ workspaceFile: true, packageName: "@penguinharness/other" });
+    try {
+      expect(workspacePluginRoot("sample", c.injected, c.core)).toBe(c.injected);
+    } finally {
+      await fs.rm(c.root, { recursive: true, force: true });
+    }
+  });
+
+  it("the live loader reads this checkout's plugins/ directories, not copies under node_modules", () => {
+    // The whole point, on the real tree: every library plugin's files come from the repo.
+    for (const plugin of loadLibraryPlugins()) {
+      expect(existsSync(path.join(pluginsRoot, plugin.name, "plugin.json"))).toBe(true);
+    }
+  });
 });

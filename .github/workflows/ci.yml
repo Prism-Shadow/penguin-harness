@@ -54,6 +54,19 @@ jobs:
           # workflows this change does not touch are a separate conversation.
           ./actionlint -shellcheck=
 
+  # A plugin's files changed without its plugin.json version moving: installed copies would
+  # never learn about the change (the update flag reads the version). Compared against the
+  # pull request's base; a push has no base and the script passes on an empty one.
+  plugin-versions:
+    name: plugin versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Changed plugins carry a new version
+        run: node scripts/check-plugin-versions.mjs '${{ github.event.pull_request.base.sha }}'
+
   # tsc over every package, so this one does need the whole build. Results are
   # platform-independent, which is why neither macOS nor Windows repeats it.
   typecheck:
@@ -318,7 +331,17 @@ jobs:
   ci:
     if: always()
     needs:
-      [style, typecheck, test, installer-e2e, test-macos, test-windows, installer-windows, runtime]
+      [
+        style,
+        plugin-versions,
+        typecheck,
+        test,
+        installer-e2e,
+        test-macos,
+        test-windows,
+        installer-windows,
+        runtime,
+      ]
     runs-on: ubuntu-latest
     steps:
       - name: Every gate passed

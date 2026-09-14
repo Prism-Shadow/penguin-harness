@@ -221,14 +221,61 @@ const PKG_ROOT = packageRoot();
 const PLUGIN_PKG_PREFIX = "@penguinharness/";
 
 /**
+ * The pnpm workspace root above `from`, or null outside a workspace checkout: the directory
+ * holding `pnpm-workspace.yaml`. An npm install and the packed desktop app have none above
+ * them, which is what keeps the workspace preference below out of their way.
+ */
+function workspaceRootAbove(from: string): string | null {
+  let dir = from;
+  for (;;) {
+    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * The directory a plugin is read from, given where Node resolved its package: in a workspace
+ * checkout, the repo's own `plugins/<name>/` whenever it holds that package; the resolved
+ * directory otherwise.
+ *
+ * The workspace installs every `workspace:*` package as an injected copy (a snapshot pnpm
+ * takes at install time and refreshes only after the package's `build` script runs — which
+ * plugins have none of), so `require.resolve` lands on a copy that misses every file added
+ * since the last install, and an edited `plugin.json` version stays invisible to a running
+ * `pnpm dev`. The plugin directory itself is the source of truth in a checkout, so that is
+ * what a checkout reads; nothing changes for an npm install or the packed desktop app,
+ * which have no workspace file above them and keep resolving their own copy.
+ */
+export function workspacePluginRoot(
+  name: string,
+  resolvedDir: string,
+  packageRoot: string = PKG_ROOT,
+): string {
+  const workspace = workspaceRootAbove(packageRoot);
+  if (workspace === null) return resolvedDir;
+  const candidate = path.join(workspace, "plugins", name);
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(candidate, "package.json"), "utf8")) as {
+      name?: unknown;
+    };
+    return manifest.name === `${PLUGIN_PKG_PREFIX}${name}` ? candidate : resolvedDir;
+  } catch {
+    return resolvedDir;
+  }
+}
+
+/**
  * Where the plugin directories live, name → absolute root. Each plugin is its own npm package
  * (`@penguinharness/<name>`, `plugins/<name>/` in the repo): the host package's `dependencies`
  * name them (core, the CLI, and the desktop app — whose packaged manifest keeps that field
  * and nothing else, so `devDependencies` would not survive into an installer), and each is
  * resolved through Node from this module's own location, so the lookup walks the same
- * `node_modules` chain a `require` from here would: the workspace, an npm install and the
- * packed desktop app (electron-builder collects the declared packages into its node_modules)
- * all land on their own copy. Read fresh on every call, like the plugin files themselves.
+ * `node_modules` chain a `require` from here would: an npm install and the packed desktop
+ * app (electron-builder collects the declared packages into its node_modules) each land on
+ * their own copy, and a workspace checkout is redirected to its `plugins/<name>/` directory
+ * (see workspacePluginRoot). Read fresh on every call, like the plugin files themselves.
  */
 function pluginRoots(): Map<string, string> {
   const roots = new Map<string, string>();
@@ -248,7 +295,8 @@ function pluginRoots(): Map<string, string> {
         `Plugin package ${dep} is declared in ${PKG_ROOT}/package.json but cannot be resolved: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    roots.set(dep.slice(PLUGIN_PKG_PREFIX.length), path.dirname(manifest));
+    const name = dep.slice(PLUGIN_PKG_PREFIX.length);
+    roots.set(name, workspacePluginRoot(name, path.dirname(manifest)));
   }
   return roots;
 }

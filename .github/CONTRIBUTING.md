@@ -59,6 +59,14 @@ that only re-sync when the package's `build` script runs via pnpm
 cache — on the old build; if a running dev web app still serves stale core after a manual
 rebuild, delete `packages/web/node_modules/.vite` and restart.
 
+Plugins are the exception to the snapshot rule: in a workspace checkout core's loader reads
+the repo's `plugins/<name>/` directories directly, not pnpm's injected copies (plugins have
+no `build` script, so those copies would never re-sync), so an edit under `plugins/` — a new
+skill, a changed SKILL.md, a bumped `plugin.json` — is live in `pnpm dev` and in the test
+suites at once. Any content change under a plugin must bump its `plugin.json` date version
+(`YYYY.MM.DD.N`): that version is how installed copies learn they are behind, and CI fails a
+pull request whose plugin files changed without it (`scripts/check-plugin-versions.mjs`).
+
 Dev entry points that touch data default to separate data roots, kept apart from the
 installed CLI/server's `~/.penguin/data` — hacking on the repo never mixes state with
 your real agents. `pnpm dev`, `pnpm dev:server` and `pnpm desktop` share
