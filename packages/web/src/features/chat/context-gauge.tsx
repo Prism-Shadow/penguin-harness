@@ -758,7 +758,7 @@ function ThresholdCutter({
           style={
             fraction > 0.5 ? { right: `${(1 - fraction) * 100}%` } : { left: `${fraction * 100}%` }
           }
-          className="absolute -bottom-6 rounded bg-gray-900 px-1.5 py-0.5 font-mono text-xs font-semibold whitespace-nowrap text-white dark:bg-gray-100 dark:text-gray-900"
+          className="absolute -bottom-6 rounded bg-gray-900 px-1.5 py-0.5 font-mono text-xs whitespace-nowrap text-white dark:bg-gray-100 dark:text-gray-900"
         >
           {humanizeTokens(shown)}
         </span>
