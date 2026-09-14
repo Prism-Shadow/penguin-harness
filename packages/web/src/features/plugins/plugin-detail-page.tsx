@@ -66,8 +66,10 @@ export function PluginDetailPage() {
   }, [name]);
 
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-3xl">
+    // The list's frame exactly — same column, same reserved gutter — so the content's edges stay
+    // put when a row is opened and closed again.
+    <div className="h-full overflow-y-auto p-4 [scrollbar-gutter:stable] md:p-6">
+      <div className="mx-auto max-w-5xl">
         <Link
           to="/plugins"
           className="inline-flex items-center gap-1.5 text-xs text-gray-500 transition-colors duration-150 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
