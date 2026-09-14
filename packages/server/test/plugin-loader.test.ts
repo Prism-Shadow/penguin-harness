@@ -4,7 +4,7 @@
  * non-fatal — the capability a plugin would have provided stays unavailable rather
  * than the boot failing.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -100,13 +100,20 @@ describe("plugin list", () => {
     expect(await readPluginClosure(root)).toEqual(["a"]);
   });
 
-  it("a config that exists but cannot be read is an error, not 'no plugins'", async () => {
+  it("a config that exists but cannot be read is skipped like one that will not parse", async () => {
     // A directory in its place stands in for every non-ENOENT read failure (EACCES,
-    // EPERM, EISDIR, an I/O fault): something was configured and cannot be honored, and
-    // a Project whose config cannot be READ AT ALL is not the same as one that parsed
-    // to nothing.
+    // EPERM, EISDIR, an I/O fault). It is that Project's fault to report (its list view
+    // does), not a reason to keep every other Project's deployment from coming up.
+    await writeProject("p2", 'models = []\n[plugins]\n"@acme/two" = "*"\n');
     await mkdir(path.join(root, "p1", PLUGINS_FILE), { recursive: true });
-    await expect(readProjectPluginList(root, "p1")).rejects.toThrow(/could not be read/);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(readProjectPluginList(root, "p1")).resolves.toEqual([]);
+      expect(await readPluginClosure(root)).toEqual(["@acme/two"]);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/p1: .*could not be read/));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("entries that are not requirements are dropped, not fatal", async () => {
