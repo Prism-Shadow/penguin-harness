@@ -64,7 +64,7 @@ import {
   claimHmrCapabilities,
   Log,
 } from "./capabilities.js";
-import type { Interfaces, MembersOf } from "./capabilities.js";
+import type { Interfaces, MembersOf, ReassemblyChange } from "./capabilities.js";
 import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
 import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost } from "../plugin/loader.js";
@@ -241,7 +241,7 @@ type CreateCtx = Parameters<Impl<PlatformApi, PlatformCtx>["create"]>[0];
 async function createInner(
   ctx: CreateCtx,
   context: PlatformCtx,
-  reassemble: () => Promise<boolean>,
+  reassemble: (change?: ReassemblyChange) => Promise<boolean>,
 ): Promise<PlatformApi> {
   // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
   // throw — what each outcome means and why lives on HmrClaim (capabilities.ts).
@@ -474,9 +474,12 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
     let closed = false;
     /** True while a re-assembly holds the inner instance mid-swap. */
     let swapping = false;
-    async function reassemble(): Promise<boolean> {
+    async function reassemble(change?: ReassemblyChange): Promise<boolean> {
       const run = op.then(async () => {
         if (closed) return false;
+        // The change is written HERE, in the queue: two edits of one Project's file never
+        // interleave, and each re-assembly reads exactly what was written for it.
+        await change?.write();
         swapping = true;
         try {
           const result = await upgrade({
@@ -490,9 +493,16 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
             return true;
           }
           if (result.status === "failed") {
+            // The kernel has disposed the previous tree; the restore boot reads the
+            // configuration again, so the change is undone first — with it in place, a
+            // plugin that broke the boot once would break the restore too and leave the
+            // process forwarding to a disposed tree.
+            const reason =
+              result.error instanceof Error ? result.error.message : String(result.error);
+            await change?.undo();
             inner = await boot(innerImpl, PlatformIface, result.doc, ctx.resources);
             console.warn(
-              `[platform] the App failed to boot after a plugin change; the previous one was restored: ${result.error instanceof Error ? result.error.message : String(result.error)}`,
+              `[platform] the App failed to boot after a plugin change; the change was undone and the previous App restored: ${reason}`,
             );
           }
           return false;

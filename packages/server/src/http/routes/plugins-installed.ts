@@ -23,8 +23,12 @@
  * APPLYING. A write asks the App to re-assemble itself (the platform's own `Reassembly`,
  * hmr/platform.ts): the new create() reads the closure and imports what it names — no
  * process restart, ptys and connections delivered across it exactly as a push delivers
- * them. A boot that fails is recovered onto the previous App and answered as "did not
- * take", which the list reports as `restartPending` rather than as plugins that run.
+ * them. What a push does not deliver, this does not either: agent runs in flight are
+ * stopped and pending approvals denied, in EVERY Project, because there is one tree. The
+ * page says so before an admin applies a change. The edit itself travels with the
+ * re-assembly (ReassemblyChange): written in its queue, so two admins' edits of one file
+ * never interleave, and undone when the new tree fails to boot — the previous App is
+ * restored on the previous list, and the answer is "did not take".
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -32,9 +36,10 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { InstalledPlugin, InstalledPluginsResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
-import type { Config, Hmr, Reassembly } from "../../hmr/capabilities.js";
+import type { Config, Hmr, Reassembly, ReassemblyChange } from "../../hmr/capabilities.js";
 import {
   discoverBuiltinPlugins,
+  PACKAGE_NAME,
   PLUGINS_FILE,
   pluginBases,
   readPluginDeclaration,
@@ -51,10 +56,12 @@ export interface InstalledPluginsDeps {
   projectConfig: ProjectConfigStore;
   access: Access;
   /**
-   * Re-reads the closure into a fresh plugin host and re-assembles the App. Answers whether
-   * the running tree is the new one; false when the runtime cannot re-assemble at all.
+   * Writes the change and re-assembles the App on it. Answers whether the running tree is
+   * the new one; false when its boot failed (the change is then undone and the previous
+   * App restored) or when the runtime cannot re-assemble at all (the change stays written,
+   * for the restart that will read it).
    */
-  apply: () => Promise<boolean>;
+  apply: (change: ReassemblyChange) => Promise<boolean>;
 }
 
 export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> {
@@ -134,32 +141,60 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
   /** A package name (scoped or not) — never a path, a URL or a version range. */
   const specifierOf = (value: unknown): string => {
     const s = typeof value === "string" ? value.trim() : "";
-    if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/.test(s)) {
+    if (!PACKAGE_NAME.test(s)) {
       throw new HttpError(400, "bad_request", "specifier must be a package name.");
     }
     return s;
+  };
+
+  /**
+   * Only a plugin the build ships can be asked for: it is already on the machine, so asking
+   * is consent, not a download. Nothing is fetched from a registry — a listed plugin that is
+   * not on disk is exactly the state these routes exist to avoid. One gate for every verb
+   * that adds a name, so a list rewrite cannot name what a single add could not.
+   */
+  const requireShipped = async (specifiers: readonly string[]) => {
+    if (specifiers.length === 0) return;
+    const shipped = await discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
+    for (const specifier of specifiers) {
+      if (!shipped.includes(specifier)) {
+        throw new HttpError(
+          400,
+          "plugin_not_shipped",
+          `'${specifier}' does not ship with this build; only builtin plugins can be installed.`,
+        );
+      }
+    }
+  };
+
+  type PluginTable = Awaited<ReturnType<ProjectConfigStore["getPlugins"]>>;
+  /**
+   * An edit of this Project's table as a re-assembly change: read and written inside the
+   * re-assembly's queue, so two edits never interleave, and undone — the table as it was —
+   * when the new tree fails to boot.
+   */
+  const edit = (projectId: string, next: (listed: PluginTable) => PluginTable) => {
+    let previous: PluginTable | null = null;
+    const change: ReassemblyChange = {
+      write: async () => {
+        previous = await deps.projectConfig.getPlugins(projectId);
+        await deps.projectConfig.setPlugins(projectId, next(previous));
+      },
+      undo: async () => {
+        if (previous !== null) await deps.projectConfig.setPlugins(projectId, previous);
+      },
+    };
+    return change;
   };
 
   app.post("/", async (c) => {
     requireAdmin(c);
     const projectId = scope(c);
     const specifier = specifierOf((await readJson(c)).specifier);
-    // Only a plugin the build ships can be asked for here: it is already on the machine, so
-    // asking is consent, not a download. Nothing is fetched from a registry — a listed plugin
-    // that is not on disk is exactly the state this route exists to avoid.
-    const shipped = await discoverBuiltinPlugins(pluginBases(deps.root, deps.assetsDir()));
-    if (!shipped.includes(specifier)) {
-      throw new HttpError(
-        400,
-        "plugin_not_shipped",
-        `'${specifier}' does not ship with this build; only builtin plugins can be installed.`,
-      );
-    }
-    const listed = await deps.projectConfig.getPlugins(projectId);
-    if (!(specifier in listed)) {
-      await deps.projectConfig.setPlugins(projectId, { ...listed, [specifier]: {} });
-    }
-    await deps.apply();
+    await requireShipped([specifier]);
+    await deps.apply(
+      edit(projectId, (listed) => (specifier in listed ? listed : { ...listed, [specifier]: {} })),
+    );
     return c.json(await view(projectId));
   });
 
@@ -167,10 +202,13 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     requireAdmin(c);
     const projectId = scope(c);
     const specifier = specifierOf(c.req.query("specifier"));
-    const kept = { ...(await deps.projectConfig.getPlugins(projectId)) };
-    delete kept[specifier];
-    await deps.projectConfig.setPlugins(projectId, kept);
-    await deps.apply();
+    await deps.apply(
+      edit(projectId, (listed) => {
+        const kept = { ...listed };
+        delete kept[specifier];
+        return kept;
+      }),
+    );
     return c.json(await view(projectId));
   });
 
@@ -179,16 +217,18 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     const projectId = scope(c);
     const body = await readJson(c);
     const list = body.plugins;
-    if (!Array.isArray(list) || list.some((s) => typeof s !== "string" || s.trim() === "")) {
+    if (!Array.isArray(list)) {
       throw new HttpError(400, "bad_request", "plugins must be an array of package specifiers.");
     }
-    // Names only, over the wire; a name that stays keeps what the file asked of it.
-    const listed = await deps.projectConfig.getPlugins(projectId);
-    await deps.projectConfig.setPlugins(
-      projectId,
-      Object.fromEntries((list as string[]).map((s) => s.trim()).map((s) => [s, listed[s] ?? {}])),
+    // Names only, over the wire — the same names POST accepts. A name the list already
+    // carries was consented to when it was written; a NEW one is gated exactly as POST
+    // gates it. A name that stays keeps what the file asked of it.
+    const names = list.map(specifierOf);
+    const already = await deps.projectConfig.getPlugins(projectId).catch(() => ({}));
+    await requireShipped(names.filter((s) => !(s in already)));
+    await deps.apply(
+      edit(projectId, (listed) => Object.fromEntries(names.map((s) => [s, listed[s] ?? {}]))),
     );
-    await deps.apply();
     return c.json(await view(projectId));
   });
 
@@ -228,7 +268,7 @@ export class InstalledPluginRoutes {
       },
       projectConfig: this.projectConfig,
       access: this.access,
-      apply: () => this.reassembly.reassemble(),
+      apply: (change) => this.reassembly.reassemble(change),
     });
   }
 }

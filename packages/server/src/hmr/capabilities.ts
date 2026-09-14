@@ -527,14 +527,25 @@ export class RuntimeHmrControl {
  * the kernel's upgrade, and the runtime holds the same outer instance throughout (see
  * hmr/platform.ts). Nothing here is a runtime capability, so it works on every runtime.
  */
+/**
+ * A configuration change that a re-assembly applies: written just before the new tree
+ * boots, in the same queue as every other re-assembly (so two edits of one file never
+ * interleave), and undone before the previous tree is restored when that boot fails — the
+ * restore boot reads the same configuration, and a change that broke the tree once would
+ * break it again.
+ */
+export interface ReassemblyChange {
+  write(): Promise<void>;
+  undo(): Promise<void>;
+}
 export abstract class Reassembly extends Interface<{
   /** Whether the re-assembled tree is the one now running; false when its boot failed and the previous one was restored. */
-  reassemble(): Promise<boolean>;
+  reassemble(change?: ReassemblyChange): Promise<boolean>;
 }>() {}
 @Module()
 export class AppReassembly {
   @Provide() reassembly!: Reassembly;
-  constructor(private readonly run: () => Promise<boolean>) {}
+  constructor(private readonly run: (change?: ReassemblyChange) => Promise<boolean>) {}
   setup() {
     this.reassembly = { reassemble: this.run };
   }

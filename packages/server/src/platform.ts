@@ -1,7 +1,7 @@
 import { Component, Module, moduleDefOf, Use } from "@prismshadow/penguin-core/kernel";
 import type { ManifestTable, ModuleClass, ModuleDef } from "@prismshadow/penguin-core/kernel";
 import table from "./ifaces.json" with { type: "json" };
-import type { HmrCapabilities } from "./hmr/capabilities.js";
+import type { HmrCapabilities, ReassemblyChange } from "./hmr/capabilities.js";
 import {
   ConfigPaths,
   ConsoleLog,
@@ -421,8 +421,11 @@ export function platformDef(
   adoptable: (group: string) => boolean,
   plugins: ModuleDef[] = [],
   replace: ReadonlyMap<string, ModuleDef> = new Map(),
-  /** The platform's own re-assembly (hmr/platform.ts); a test tree that never re-assembles answers false. */
-  reassemble: () => Promise<boolean> = () => Promise.resolve(false),
+  /** The platform's own re-assembly (hmr/platform.ts); a test tree that never re-assembles writes the change and answers false. */
+  reassemble: (change?: ReassemblyChange) => Promise<boolean> = async (change) => {
+    await change?.write();
+    return false;
+  },
 ): ModuleDef {
   const instances = new Map<ModuleClass, object>([
     [RuntimeConfig, new RuntimeConfig(caps)],
