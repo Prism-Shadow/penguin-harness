@@ -1,7 +1,7 @@
 /**
  * Plugin configuration: the options a plugin package DECLARES (`package.json#penguin
  * .configuration`, a small schema of typed fields) and the values an admin gives them on the
- * System settings dialog's Plugins page, stored server-wide and handed to the plugin's
+ * Settings dialog's Plugins page, stored server-wide and handed to the plugin's
  * modules through the `PluginConfig` mechanism (a module `requires` it from `PluginConfigModule`).
  *
  * The shape is VS Code's `contributes.configuration` cut down to what a settings page can

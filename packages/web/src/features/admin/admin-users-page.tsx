@@ -1,6 +1,6 @@
 /**
  * User management (admin only): user list + create / reset password / delete. Rendered as
- * a page of the System settings dialog rather than a routed page of its own.
+ * a page of the Settings dialog rather than a routed page of its own.
  * Registration is closed: new users are created here, with the initial password set by the admin and
  * communicated offline; deleting a user also deletes all their Projects (including data directories),
  * with a confirmation dialog.

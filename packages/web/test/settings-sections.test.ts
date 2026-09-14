@@ -1,5 +1,5 @@
 /**
- * settings-sections.ts unit tests: which System settings pages each viewer gets.
+ * settings-sections.ts unit tests: which Settings pages each viewer gets.
  *
  * The rule is pinned by value rather than by shape because both halves of it can fail
  * silently and separately: a rail that shows a forbidden entry leaks that the setting
@@ -143,7 +143,7 @@ describe("resolveSettingsSection", () => {
   });
 });
 
-describe("the System settings dialog", () => {
+describe("the Settings dialog", () => {
   const source = readFileSync(
     resolve(
       dirname(fileURLToPath(import.meta.url)),

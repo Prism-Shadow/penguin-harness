@@ -4729,7 +4729,7 @@ export interface ContributionsResponse {
 
 /**
  * One field of a plugin's declared configuration (`package.json#penguin.configuration
- * .properties.<name>`): what the System settings dialog draws for it. `project` is a
+ * .properties.<name>`): what the Settings dialog draws for it. `project` is a
  * Project picker whose value is the Project's id; `secret` is drawn as a password field and
  * masked on the way out.
  */
