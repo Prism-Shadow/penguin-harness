@@ -10,10 +10,10 @@
  * before it: nodes of the tree that appeared, vanished or rewired; interfaces whose
  * members changed. A push is shown as what it changed, not as a hash.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CloseIcon } from "../../components/ui/icons";
-import { isTopEscLayer, popEscLayer, pushEscLayer } from "../../components/ui/modal";
+import { useDialogLayer } from "../../components/ui/modal";
 import type {
   HarnessHistoryEntry,
   IfaceChange,
@@ -131,13 +131,14 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
   const [diff, setDiff] = useState<DiffLoad>({ state: "idle" });
   // What the detail pane shows for the selected version: its changes, or its whole tree.
   const [view, setView] = useState<"changes" | "tree">("changes");
-  // Rollback: armed by the first click, sent by the second; then the history is polled
-  // until the runtime's current commit is the target (the swap happens under us).
+  // Rollback: armed by the first click, sent by the second. A push that lands replaces the
+  // platform and the runtime tells every tab to reload (`web_updated`, state/sessions.tsx),
+  // so success never reports here; the history is polled only for a refusal, which the
+  // platform that asked keeps as `lastRollback` because it is the one still running.
   const [rollback, setRollback] = useState<
     | { state: "idle" }
     | { state: "armed"; id: string }
     | { state: "pushing"; id: string }
-    | { state: "done"; id: string }
     | { state: "error"; message: string }
   >({ state: "idle" });
 
@@ -161,19 +162,10 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
   }, [open]);
 
   // Escape closes it only while it is the topmost esc-consuming layer (shared with Modal /
-  // Dropdown / the palette, see modal.tsx).
-  useEffect(() => {
-    if (!open) return;
-    const id = pushEscLayer();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isTopEscLayer(id)) onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      popEscLayer(id);
-    };
-  }, [open, onClose]);
+  // Dropdown / the palette, see modal.tsx); Tab stays inside the panel, and closing hands
+  // focus back to where it was.
+  const panelRef = useRef<HTMLElement>(null);
+  const { onKeyDown: onPanelKeyDown } = useDialogLayer(open, panelRef, onClose);
 
   const reload = () =>
     api
@@ -185,15 +177,14 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
     setRollback({ state: "pushing", id });
     try {
       await api.rollbackVersion(id);
-      // The swap replaces this platform; the runtime answers /history again once the new one is up.
+      // The swap, if it comes, reloads this tab; what can arrive here is the refusal.
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 1500));
         try {
           const h = await api.getVersionHistory();
-          const cur = h.entries.find((e) => isCurrent(e, h.current));
-          if (cur?.id === id) {
+          if (h.lastRollback?.id === id) {
+            setRollback({ state: "error", message: h.lastRollback.error });
             setHistory(h);
-            setRollback({ state: "done", id });
             return;
           }
         } catch {
@@ -238,16 +229,20 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
 
   return createPortal(
     <div
-      className="anim-fade fixed inset-0 z-[70] bg-black/45"
+      // z-50 like Modal's overlay: a portaled menu or tooltip (z-[60]) opened from inside still paints above it.
+      className="anim-fade fixed inset-0 z-50 bg-black/45"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       {/* 12px off every edge: enough to read as a layer over the app, not a page of it. */}
       <section
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={t.title}
+        tabIndex={-1}
+        onKeyDown={onPanelKeyDown}
         className="anim-pop absolute inset-3 flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
       >
         <header className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-3 dark:border-gray-800">
@@ -366,10 +361,6 @@ export function HarnessHistoryOverlay({ open, onClose }: { open: boolean; onClos
                         ) : rollback.state === "pushing" && rollback.id === entry.id ? (
                           <span className="text-gray-700 dark:text-gray-300">
                             {t.rollbackPushing}
-                          </span>
-                        ) : rollback.state === "done" && rollback.id === entry.id ? (
-                          <span className="text-green-700 dark:text-green-400">
-                            {t.rollbackDone}
                           </span>
                         ) : (
                           <button

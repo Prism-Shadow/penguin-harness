@@ -8,9 +8,9 @@
  * closes through the shared esc-layer stack (modal.tsx), and the shortcut that opened it
  * toggles it closed. Filtering is filterPaletteActions (lib/command-palette.ts).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { isTopEscLayer, popEscLayer, pushEscLayer } from "../../components/ui/modal";
+import { useDialogLayer } from "../../components/ui/modal";
 import {
   filterPaletteActions,
   isCommandPaletteShortcut,
@@ -44,19 +44,10 @@ export function CommandPalette({ actions }: { actions: readonly PaletteAction[] 
   }, []);
 
   // Escape closes it only while it is the topmost esc-consuming layer (shared with Modal /
-  // Dropdown, see modal.tsx), so an action's own dialog above it gets its Escape first.
-  useEffect(() => {
-    if (!open) return;
-    const id = pushEscLayer();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isTopEscLayer(id)) setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      popEscLayer(id);
-    };
-  }, [open]);
+  // Dropdown, see modal.tsx), so an action's own dialog above it gets its Escape first; Tab
+  // stays inside the panel, and closing hands focus back to where it was.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const { onKeyDown: onPanelKeyDown } = useDialogLayer(open, panelRef, () => setOpen(false));
 
   if (!open) return null;
 
@@ -84,14 +75,19 @@ export function CommandPalette({ actions }: { actions: readonly PaletteAction[] 
 
   return createPortal(
     <div
-      className="anim-fade fixed inset-0 z-[70] flex justify-center bg-black/45 px-4 pt-[10vh]"
+      // z-50 like Modal's overlay: a portaled menu or tooltip (z-[60]) opened from inside still paints above it.
+      className="anim-fade fixed inset-0 z-50 flex justify-center bg-black/45 px-4 pt-[10vh]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) setOpen(false);
       }}
     >
       <div
+        ref={panelRef}
         role="dialog"
+        aria-modal="true"
         aria-label={S.commandPalette.title}
+        tabIndex={-1}
+        onKeyDown={onPanelKeyDown}
         className="anim-pop h-fit w-full max-w-md overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900"
       >
         <input

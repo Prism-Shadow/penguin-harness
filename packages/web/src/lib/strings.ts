@@ -302,7 +302,6 @@ export const zh = {
     rollbackConfirm: "把这个版本推回去并立即切换？",
     rollbackYes: "回滚",
     rollbackPushing: "推送中……到达后服务器会切换。",
-    rollbackDone: "已回滚——这个版本现在是当前版本。",
     rollbackTimeout: "服务器没有及时报告切换；请查看历史。",
     notKept: "这个版本的产物没有保留，无法推回。",
     viewChanges: "变化",
