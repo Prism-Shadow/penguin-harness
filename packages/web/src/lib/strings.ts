@@ -433,6 +433,9 @@ export const zh = {
     hidePassword: "隐藏密码",
     login: "登录",
     logout: "登出",
+    /** The sign-out confirmation: dialog name and body. */
+    logoutConfirmTitle: "登出？",
+    logoutConfirmBody: "将退出当前账号并回到登录页；进行中的对话会在服务端继续运行。",
     admin: "管理员",
     defaultAdminNote:
       "首次使用请打开服务端启动输出中的首次登录链接，认领内置管理员 admin 并设置密码。这里没有可输入的初始密码",

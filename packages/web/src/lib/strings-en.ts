@@ -428,6 +428,10 @@ export const en: Strings = {
     hidePassword: "Hide password",
     login: "Sign in",
     logout: "Sign out",
+    /** The sign-out confirmation: dialog name and body. */
+    logoutConfirmTitle: "Sign out?",
+    logoutConfirmBody:
+      "This ends your session here and returns to the login page; running conversations carry on on the server.",
     admin: "Admin",
     defaultAdminNote:
       "First run: the server prints a first-login link in its startup output — open it to claim the built-in admin “admin” and set a password. No initial password exists to type here",
