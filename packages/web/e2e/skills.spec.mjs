@@ -145,18 +145,17 @@ test("skills: library list and cards -> manage-install Modal -> quick-invoke pre
   await expect(creationCard.locator("span[aria-hidden] > svg")).toHaveCount(1);
   await expect(creationCard.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
 
-  // Clicking the group header collapses it: aria-expanded flips, and the group's content
-  // becomes inert (a zero-height card can't be interacted with); clicking again expands it back.
-  // The collapsed content is still in the DOM (a grid-rows 0fr height transition), so assert
+  // Clicking the section header folds it: aria-expanded flips, and the section's content
+  // becomes inert (a zero-height card can't be interacted with); clicking again unfolds it.
+  // The folded content is still in the DOM (a grid-rows 0fr height transition), so assert
   // inert rather than visibility.
-  const firstHeader = page.getByRole("button", { name: GROUPS[0] });
-  const firstGroup = page.locator("section").filter({ has: firstHeader });
-  await firstHeader.click();
-  await expect(firstHeader).toHaveAttribute("aria-expanded", "false");
-  await expect(firstGroup.locator("[inert]")).toHaveCount(1);
-  await firstHeader.click();
-  await expect(firstHeader).toHaveAttribute("aria-expanded", "true");
-  await expect(firstGroup.locator("[inert]")).toHaveCount(0);
+  const installedSection = page.locator("section").filter({ has: installedHeader });
+  await installedHeader.click();
+  await expect(installedHeader).toHaveAttribute("aria-expanded", "false");
+  await expect(installedSection.locator("[inert]")).toHaveCount(1);
+  await installedHeader.click();
+  await expect(installedHeader).toHaveAttribute("aria-expanded", "true");
+  await expect(installedSection.locator("[inert]")).toHaveCount(0);
 
   // —— Manage installation Modal: an Agent row + Install/Installed (clicking Installed uninstalls) ——
   await page.getByRole("button", { name: "管理安装 data-analysis" }).click();
