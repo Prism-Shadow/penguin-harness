@@ -9,4 +9,4 @@
 
 ## What changed
 
-- **Sign out** in the user menu now opens a confirmation before ending the session. The row sits in a menu of harmless entries, and one slip used to land the user on the login page; the dialog names what happens (the session here ends, running conversations carry on on the server) and Cancel keeps everything as it was.
+- **Sign out** in the user menu now opens a confirmation before ending the session. The row sits in a menu of harmless entries, and one slip used to land the user on the login page; the dialog names what happens (the session here ends, running conversations keep going on the server) and Cancel keeps everything as it was.
