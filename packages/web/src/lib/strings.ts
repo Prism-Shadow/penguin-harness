@@ -1239,7 +1239,7 @@ export const zh = {
       next: (when: string): string => `下次 ${when}`,
       today: (time: string): string => `今天 ${time}`,
       tomorrow: (time: string): string => `明天 ${time}`,
-      /** `monthDay` is formatMonthDay's output (9 月 3 日 / Sep 3). */
+      /** `monthDay` is formatMonthDay's output (9月3日 / Sep 3). */
       onDate: (monthDay: string, time: string): string => `${monthDay} ${time}`,
       onDateWithYear: (year: number, monthDay: string, time: string): string =>
         `${year} 年 ${monthDay} ${time}`,

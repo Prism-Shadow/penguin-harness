@@ -292,7 +292,7 @@ describe("formatRelativeShort", () => {
   });
 
   it("a week or older — and future times (clock skew) — fall back to the absolute month-day", () => {
-    expect(formatRelativeShort("2026-07-01T00:00:00.000Z", "zh")).toBe("7 月 1 日");
+    expect(formatRelativeShort("2026-07-01T00:00:00.000Z", "zh")).toBe("7月1日");
     expect(formatRelativeShort("2026-01-02T00:00:00.000Z", "en")).toBe("Jan 2");
     expect(formatRelativeShort("2026-07-20T00:00:00.000Z", "en")).toBe("Jul 20");
   });
@@ -344,14 +344,14 @@ describe("formatRelativeDate (semantic update time on Skill cards)", () => {
 describe("formatMonthDay (version-line 'last updated' date)", () => {
   it("formats a date-only string per locale, matching the owner-specified wording", () => {
     expect(formatMonthDay("2026-07-26", "en")).toBe("Jul 26");
-    expect(formatMonthDay("2026-07-26", "zh")).toBe("7 月 26 日");
+    expect(formatMonthDay("2026-07-26", "zh")).toBe("7月26日");
     expect(formatMonthDay("2026-01-05", "en")).toBe("Jan 5");
-    expect(formatMonthDay("2026-12-31", "zh")).toBe("12 月 31 日");
+    expect(formatMonthDay("2026-12-31", "zh")).toBe("12月31日");
   });
 
   it("reads only the date part of a full ISO timestamp — no timezone round-trip that could shift a day", () => {
     expect(formatMonthDay("2026-07-01T00:00:00Z", "en")).toBe("Jul 1");
-    expect(formatMonthDay("2026-05-05T12:00:00Z", "zh")).toBe("5 月 5 日");
+    expect(formatMonthDay("2026-05-05T12:00:00Z", "zh")).toBe("5月5日");
   });
 
   it("returns unparsable or out-of-range input unchanged", () => {

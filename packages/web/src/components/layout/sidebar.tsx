@@ -1271,6 +1271,7 @@ export function Sidebar({
             // "active right now"). CLI-adopted and subagent rows are not
             // driven by this server, so theirs stays at createdAt.
             lastActive={formatRelativeShort(s.lastActiveAt, locale)}
+            locale={locale}
             {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
             {...drag}
             onOpen={openSession}
@@ -2521,6 +2522,7 @@ function SessionRow({
   pinned,
   canPin = false,
   lastActive,
+  locale,
   agentHint,
   draggable = false,
   dropEdge = null,
@@ -2550,6 +2552,8 @@ function SessionRow({
   canPin?: boolean;
   /** Preformatted compact last-active time ("" hides the slot's resting text). */
   lastActive: string;
+  /** Interface language: decides the fixed width the time slot reserves (see the slot's comment). */
+  locale: "zh" | "en";
   /** Agent display name; when set (workspace mode) a small avatar keeps the Agent context visible on the row. */
   agentHint?: string;
   /** Manual sort: the row can be drag-reordered (the sidebar wires the handlers below). */
@@ -2721,12 +2725,21 @@ function SessionRow({
             NOT a whole-slot overlay: the slot's width rides the time string (2 分钟前 vs
             31 分钟前), and slot-centered glyphs landed at a different x per row, so the
             icons never formed a vertical column (the user saw them shift with the time's
-            character count). Right-anchored, every row's icons share one x. min-w-12
-            reserves the pair's own width, so on a row with no time they still don't
-            overhang the title. The swap stays a pure opacity handoff: the time hides on
-            row hover (group-hover) and while a button holds focus (peer-focus-within; the
-            group precedes the time span so the peer combinator can reach it). */}
-        <div className="relative flex h-6 min-w-12 shrink-0 items-center justify-end">
+            character count). Right-anchored, every row's icons share one x. The slot's
+            width is FIXED per language rather than riding the time string: the marks that
+            end the title button (glyph, background, schedule, approvals) sit against this
+            slot, so a slot that grew with 「31 分钟前」 and shrank with 「刚刚」 moved them
+            row by row. Sized for the widest string each language produces — 「12月31日」
+            and 「59 分钟前」 in zh, "Dec 31" in en — and never below the hover pair's own
+            width, so on a row with no time the buttons still don't overhang the title.
+            The swap stays a pure opacity handoff: the time hides on row hover
+            (group-hover) and while a button holds focus (peer-focus-within; the group
+            precedes the time span so the peer combinator can reach it). */}
+        <div
+          className={`relative flex h-6 shrink-0 items-center justify-end ${
+            locale === "zh" ? "w-[4.5rem]" : "w-12"
+          }`}
+        >
           {/* No hover pill on these (a fill as wide as the date read ugly); feedback is
               the glyph color deepening — red for delete. */}
           <div className="peer absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
@@ -2740,7 +2753,7 @@ function SessionRow({
           {lastActive !== "" && (
             <span
               aria-hidden
-              className="pointer-events-none px-1 text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 dark:text-gray-500"
+              className="pointer-events-none whitespace-nowrap px-1 text-right text-[11px] tabular-nums text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 dark:text-gray-500"
             >
               {lastActive}
             </span>

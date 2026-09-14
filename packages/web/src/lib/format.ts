@@ -191,7 +191,7 @@ const EN_MONTHS = [
 
 /**
  * `yyyy-mm-dd` (or a full ISO timestamp — only the date part is read) → localized
- * month + day, no year: en `Jul 26`, zh `7 月 26 日` (the version footer's "last
+ * month + day, no year: en `Jul 26`, zh `7月26日` (the version footer's "last
  * updated" date, product-specified wording — the zh form keeps the CJK/numeral
  * spacing the owner asked for, which `Intl` would drop). The fields are read
  * straight from the string rather than via `new Date()` + local-zone formatting:
@@ -206,7 +206,9 @@ export function formatMonthDay(iso: string, locale: "zh" | "en"): string {
   const month = Number(m[1]);
   const day = Number(m[2]);
   if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
-  return locale === "en" ? `${EN_MONTHS[month - 1]} ${day}` : `${month} 月 ${day} 日`;
+  // zh writes the date without spaces (8月30日), the way the message-time format does;
+  // en keeps the abbreviated month (Aug 30).
+  return locale === "en" ? `${EN_MONTHS[month - 1]} ${day}` : `${month}月${day}日`;
 }
 
 /**
