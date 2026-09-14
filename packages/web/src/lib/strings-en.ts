@@ -1631,6 +1631,8 @@ export const en: Strings = {
     applyConfirmRemove: (name: string) => `Remove ${name}?`,
     applyConfirmBody: "Agent runs in progress in every Project will be stopped.",
     pageTitle: "Plugins",
+    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    openSettings: "Plugin settings",
     pageDesc:
       "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",
     /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */

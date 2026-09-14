@@ -1625,6 +1625,8 @@ export const zh = {
     applyConfirmRemove: (name: string) => `移除 ${name}？`,
     applyConfirmBody: "所有 Project 中正在进行的 Agent 运行都会被中止。",
     pageTitle: "插件",
+    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    openSettings: "插件设置",
     pageDesc:
       "所有插件在一个列表里。插件库里的随本次构建自带（技能和／或钩子包——快捷调用，或安装到 Agent）；当前 Project 要求的模块插件在服务端运行，市场里其余的可以为它安装。",
     /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
