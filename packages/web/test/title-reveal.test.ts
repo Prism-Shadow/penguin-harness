@@ -5,9 +5,11 @@
  * must be exactly 0. Duration: proportional to the distance (constant reading
  * speed), clamped between a floor (a sub-350ms hop reads as a glitch) and a
  * ceiling (a huge title speeds up instead of holding the hover hostage), and 0
- * when there is nothing to scroll.
+ * when there is nothing to scroll. Disclosure: which of the scroll and the `title`
+ * tooltip reaches the tail (#570) — a rule rather than a number, but pure in the
+ * same way, so it is tested the same way.
  *
- * The second half pins the CSS contract. The arithmetic was never the fragile
+ * The rest pins the CSS contract. The arithmetic was never the fragile
  * part: the reveal only works while three files agree on four names, and nothing
  * else in the suite notices if one side is renamed. vitest runs node-only here
  * (`environment: "node"`, no jsdom), so these assert against the source text
@@ -24,6 +26,7 @@ import {
   REVEAL_SPEED_PX_PER_S,
   revealDistancePx,
   revealDurationMs,
+  titleDisclosure,
 } from "../src/lib/title-reveal";
 
 describe("revealDistancePx", () => {
@@ -105,9 +108,10 @@ describe("the truncated-title reveal's CSS contract", () => {
   });
 
   it("moves the text with an animation, which is what reduced motion disables", () => {
-    // The reduced-motion guarantee is the global `animation: none !important` block —
-    // it does not gate on any JS state, but it only reaches animations. Rewriting this
-    // as a transition would keep the visuals and silently lose reduced-motion support.
+    // The reduced-motion guarantee is the global `animation: none !important` block, and
+    // it only reaches animations: rewriting this as a transition would keep the visuals and
+    // silently lose reduced-motion support. JS reads the same preference, but only to decide
+    // which disclosure is live (titleDisclosure below) — never to start or stop the motion.
     expect(trigger).toMatch(/animation: title-scroll-reveal var\(--title-scroll-ms/);
     expect(trigger).not.toContain("transition:");
     expect(css).toMatch(
@@ -130,5 +134,45 @@ describe("the truncated-title reveal's CSS contract", () => {
 
   it("holds the revealed tail with a forwards fill after a start delay", () => {
     expect(trigger).toMatch(/animation:[^;}]*\blinear\b[^;}]*\b0\.3s\b[^;}]*\bforwards\b/);
+  });
+});
+
+describe("titleDisclosure", () => {
+  it("discloses nothing for a title that fits", () => {
+    for (const scrollReveal of [false, true]) {
+      for (const reducedMotion of [false, true]) {
+        expect(titleDisclosure({ overflowing: false, scrollReveal, reducedMotion })).toBe("none");
+      }
+    }
+  });
+
+  it("gives a scrolling row the scroll alone", () => {
+    // The pair is what #570 reported: a tooltip raised over a row that is already scrolling
+    // repeats the text sliding past under the pointer.
+    expect(titleDisclosure({ overflowing: true, scrollReveal: true, reducedMotion: false })).toBe(
+      "scroll",
+    );
+  });
+
+  it("falls back to the tooltip once reduced motion stops the scroll", () => {
+    // styles.css disables the keyframes outright there, so the scroll is not an option and
+    // the tooltip is the only thing left that reaches the tail with a pointer.
+    expect(titleDisclosure({ overflowing: true, scrollReveal: true, reducedMotion: true })).toBe(
+      "tooltip",
+    );
+  });
+
+  it("leaves a caller that never asked for the scroll with its tooltip", () => {
+    for (const reducedMotion of [false, true]) {
+      expect(titleDisclosure({ overflowing: true, scrollReveal: false, reducedMotion })).toBe(
+        "tooltip",
+      );
+    }
+  });
+
+  it("is the one rule the component asks", () => {
+    // The cases above only bind the rendering while truncated.tsx routes through this rule
+    // instead of re-deriving it inline, where the two could drift apart.
+    expect(truncated).toContain("titleDisclosure({");
   });
 });

@@ -14,6 +14,7 @@ import { useAuth } from "../../state/auth";
 import { useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
 import { useCompletionNotifications } from "../../state/use-completion-notifications";
+import { useTrayLocale } from "../../state/use-tray-locale";
 import { Drawer } from "../ui/drawer";
 import { GlyphIcon } from "../ui/glyph-icon";
 import { Tooltip } from "../ui/tooltip";
@@ -273,6 +274,8 @@ export function AppLayout() {
   // Desktop shell only (gated inside): system notification when a task finishes while
   // the window is unfocused.
   useCompletionNotifications();
+  // Desktop shell only: keeps the tray menu in the language this window is in.
+  useTrayLocale();
   // The single eager owner of the update checks (use-update-badges.ts): one request per
   // browser session, so a dot can be there on a fresh load instead of waiting for someone to
   // open the sidebar menu. Every other anchor reads the same caches passively.
