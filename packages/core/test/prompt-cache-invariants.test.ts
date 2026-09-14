@@ -24,6 +24,7 @@ import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 import {
   COMPACTION_PROMPT,
   META,
+  NON_PREFIX_CONFIG_KEYS,
   SESSION_ID,
   allowAll,
   blockTypes,
@@ -54,7 +55,7 @@ const metaMessage = sessionMeta(META);
 /** Everything in a request's config that takes part in the cached prefix. */
 function configFingerprint(request: RecordedRequest): string {
   const copy: Record<string, unknown> = { ...request.wireConfig };
-  delete copy.max_tokens;
+  for (const key of NON_PREFIX_CONFIG_KEYS) delete copy[key];
   return JSON.stringify(copy);
 }
 

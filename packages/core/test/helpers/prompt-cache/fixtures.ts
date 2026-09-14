@@ -270,14 +270,6 @@ export function replay(order: RecordedRequest[], sim = new PromptCacheSim()): Ca
   return order.map((request) => sim.request(request));
 }
 
-/** Named once: the two flows below are measured under both breakpoint policies. */
-export const THINKING_MOVE_REASON =
-  "the thinking level moved and no breakpoint sits after the system prompt, so nothing " +
-  "behind the moved parameter is addressable";
-export const CONTEXT_REOPENED_REASON =
-  "the context reopened and no breakpoint sits after the system prompt, so the fixed prefix " +
-  "the new context resends is not addressable either";
-
 // ---- The assertion every lifecycle scenario shares -------------------------
 
 /**
@@ -285,6 +277,10 @@ export const CONTEXT_REOPENED_REASON =
  * context's previous request. An index named in `allowed` is exempted with a stated reason —
  * the scenario then bounds its loss itself — and a context opening anywhere but at the very
  * first request must be named too, so a fresh cache line can never appear unremarked.
+ *
+ * An exemption has to earn itself: the named request must actually fall short of the prefix it
+ * would otherwise be held to, so a reason left behind by a flow that has since started hitting
+ * fails here rather than quietly weakening the suite.
  */
 export function expectHits(
   requests: RecordedRequest[],
@@ -299,10 +295,18 @@ export function expectHits(
   expect(toolsAndSystemTokens(requests[0]!), report).toBeGreaterThanOrEqual(
     DEFAULT_MIN_CACHEABLE_TOKENS,
   );
-  for (const index of allowed.keys()) {
+  for (const [index, reason] of allowed) {
     expect(index, `allowed miss #${index} names no request\n${report}`).toBeLessThan(
       requests.length,
     );
+    // A request that opens a context is held to its own prefix: it may not arrive fully read.
+    const before = previousInContext(requests, index);
+    const whole = prefixTokens(requests[before < 0 ? index : before]!);
+    expect(
+      usages[index]!.cache_read_input_tokens,
+      `#${index} is exempted as "${reason}", but it reads that whole prefix back — ` +
+        `drop the exemption\n${report}`,
+    ).toBeLessThan(whole);
   }
   for (let i = 0; i < requests.length; i += 1) {
     const previous = previousInContext(requests, i);

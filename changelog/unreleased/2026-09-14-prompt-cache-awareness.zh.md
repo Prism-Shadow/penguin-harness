@@ -28,11 +28,15 @@
   `index.ts` 统一再导出。录制与诊断只度量 harness 这一半：缓存有效期、断点回溯范围与最小可缓存
   长度属于供应商——由模拟器在离线状态下建模，但只有真实 endpoint 才能证明某个实际部署确实如此。
 - `packages/core/test/helpers/prompt-cache/simulator.ts` 以规则引擎的形式补上供应商这一半，输入仍是
-  同一批录制请求：一个 Anthropic 形态的 Prompt 缓存，把每次请求读成 block 列表（每个工具一个 block、
-  system prompt 一个、承载影响 Prompt 的参数的虚拟 block 一个，随后是每条消息的每个内容 block），
-  再归并成 position（连续的 `tool_use` 或 `tool_result` 合并为一个），**只在断点处写入**，读取时每个
-  断点最多检查二十个 position（断点本身算第一个），拒绝缓存不足 1024 Token 的前缀，并按可注入的时钟
-  在最后一次使用后五分钟过期。默认建模的就是 AgentHub 的 Claude 客户端当前发出的形态：最后一个
+  同一批录制请求：一个 Anthropic 形态的 Prompt 缓存，把每次请求读成 block 列表（Model id 一个 block、
+  每个工具一个、承载 fast mode 参数的虚拟 block 一个、system prompt 一个、承载其余影响 Prompt 的参数
+  的虚拟 block 一个，随后是每条消息的每个内容 block），再归并成 position（连续的 `tool_use` 或
+  `tool_result` 合并为一个），**只在断点处写入**，读取时每个断点都从自己所在的 position 往前回溯，最多
+  检查二十个 position（断点本身算第一个），拒绝缓存不足 1024 Token 的前缀，并按可注入的时钟在最后一次
+  使用后五分钟过期。这个 block 顺序正是文档所述失效层级的还原，也包括缓存按 Model 隔离这一条：切换
+  Model 会丢掉全部前缀，且没有任何断点能排在它前面；切换 fast mode 保住工具、丢掉 system prompt；调整
+  thinking 级别两者都保住——这一条只在把 thinking 配置渲染在它们之后的 Model 上成立，文档本身就标注为
+  因 Model 而异。默认建模的就是 AgentHub 的 Claude 客户端当前发出的形态：最后一个
   block 上只有一个自动断点，因此缓存中的条目全都以「整个请求」结尾，断点之后的内容永远不可单独寻址。
   `breakpoints: "tools-system-automatic"` 选项建模 API 允许的另一种布局——在最后一个工具 block 与
   system block 上各加一个显式断点，与自动断点并存。它的输出就是供应商上报的那几个数：
@@ -45,9 +49,10 @@
   与上下文压缩。
   每一种按设计无法命中的情形都写明原因并给出损失上界：中断回退到它前一次请求所封闭的那个断点；调整
   thinking 级别、压缩重开上下文、子 Agent 的首个请求三者都读到 0——哪怕工具与 system prompt 逐字节相同
-  也如此，因为断点只在请求末尾，从来没有条目以 system block 结尾；超过五分钟有效期的恢复读到 0，而诊断
-  显示根本不存在分歧。
-- 另有一个测试在 `breakpoints: "tools-system-automatic"` 下重跑调整 thinking 级别与上下文压缩这两条
-  流程，两处读回的都是 tools 加 system prompt（命中率 96.3% 与 96.8%，而今天是 0%）。于是「在 AgentHub
-  中补上这两个断点」这条建议是被测出来的，而不是被论证出来的——同一组数据还显示 system 断点之后的参数
-  block 仍然读不回来，因此调整 thinking 级别依旧要付出全部消息的代价。
+  也如此，因为断点只在请求末尾，从来没有条目以 system block 结尾。
+- 多加两个断点能挽回多少，是被测出来而不是被论证出来的；而且测在手工构造的请求上，既不占用一次场景
+  驱动，也不会随 AgentHub 的变化而漂移：在 `breakpoints: "tools-system-automatic"` 下，改 system
+  prompt 仍能读回 tools，切换 fast mode 仍能读回 tools，调整 thinking 级别仍能读回 tools 加 system
+  prompt，消息数远超回溯窗口的对话也仍能从紧邻的那个断点读回固定前缀——而 harness 今天只发一个自动
+  断点，以上每一种情形都读到 0。两种布局下 system 断点之后的参数 block 都读不回来，因此调整 thinking
+  级别依旧要付出全部消息的代价。

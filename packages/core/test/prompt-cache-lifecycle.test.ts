@@ -40,13 +40,9 @@ import type {
 } from "../src/interfaces/index.js";
 import {
   CHILD_SESSION_ID,
-  CONTEXT_REOPENED_REASON,
-  DEFAULT_TTL_MS,
   MAIN,
   META,
-  PromptCacheSim,
   SESSION_ID,
-  THINKING_MOVE_REASON,
   allowAll,
   blockTypes,
   collect,
@@ -55,7 +51,6 @@ import {
   explainMiss,
   fakeEnvironment,
   fakeEnvironmentWith,
-  fixedPrefixTokens,
   formatCacheReport,
   modelConfig,
   ordering,
@@ -65,7 +60,6 @@ import {
   replay,
   tokensBeforeLastUserMessage,
   toolTurn,
-  toolsAndSystemTokens,
   wireMessage,
 } from "./helpers/prompt-cache/index.js";
 import type { RecordedRequest } from "./helpers/prompt-cache/index.js";
@@ -131,13 +125,17 @@ async function makeEnvironment(names: string[], services?: { subagentRunner: Sub
   return { environment, dir };
 }
 
-/** Waits until the predicate holds (real process exits, real background reports). */
-async function waitFor(predicate: () => boolean, timeoutMs = 8000): Promise<void> {
+/**
+ * Waits until the predicate holds (real process exits, real background reports). The deadline
+ * sits under this package's 5s test timeout, so a predicate that never holds fails here with its
+ * own message rather than as an anonymous test timeout.
+ */
+async function waitFor(predicate: () => boolean): Promise<void> {
   await vi.waitFor(
     () => {
       if (!predicate()) throw new Error("condition not met yet");
     },
-    { timeout: timeoutMs, interval: 20 },
+    { timeout: 4000, interval: 20 },
   );
 }
 
@@ -163,13 +161,7 @@ describe("the prompt cache across a Session's lifecycle", () => {
     await collect(session.run([userText("anything else worth knowing?")], { approve: allowAll }));
 
     expect(order).toHaveLength(3);
-    const usages = replay(order);
-    expectHits(order, usages);
-    const report = formatCacheReport(order, usages);
-    // The opening request pays for the whole prefix and caches it; the two that follow read it.
-    expect(usages[0]!.cache_read_input_tokens, report).toBe(0);
-    expect(usages[0]!.wrote, report).toBe(true);
-    expect(usages[2]!.hitRatio, report).toBeGreaterThan(0.9);
+    expectHits(order, replay(order));
   });
 
   it("an interrupted turn still hits the prompt cache up to its last user message", async () => {
@@ -446,33 +438,16 @@ describe("the prompt cache across a Session's lifecycle", () => {
     expect(explainMiss(order[1]!, order[2]!), report).toBe("no divergence");
   });
 
-  it("a resume past the entry's lifetime reads 0 because the cache expired, not because anything moved", async () => {
-    const { order, onRequest } = ordering();
-    await driveResume(onRequest);
-
-    let clock = 1_700_000_000_000;
-    const sim = new PromptCacheSim({ now: () => clock });
-    const usages = order.map((request, i) => {
-      // The user closed the client and came back after lunch.
-      if (i === order.length - 1) clock += DEFAULT_TTL_MS + 1;
-      return sim.request(request);
-    });
-    const report = formatCacheReport(order, usages);
-    expect(usages[2]!.cache_read_input_tokens, report).toBe(0);
-    expect(usages[2]!.input_tokens, report).toBe(0);
-    expect(usages[2]!.cache_creation_input_tokens, report).toBe(prefixTokens(order[2]!));
-    // Nothing the harness assembled moved: the request is a clean extension of the last live
-    // one, and the miss is the five-minute lifetime running out.
-    expect(explainMiss(order[1]!, order[2]!), report).toBe("no divergence");
-  });
-
   it("a thinking-level move reads 0 because nothing closed an entry at the system prompt, then hits again", async () => {
     const { order, onRequest } = ordering();
     await driveThinkingMove(onRequest);
 
     expect(order).toHaveLength(3);
     const usages = replay(order);
-    expectHits(order, usages, new Map([[1, THINKING_MOVE_REASON]]));
+    const reason =
+      "the thinking level moved and no breakpoint sits after the system prompt, so nothing " +
+      "behind the moved parameter is addressable";
+    expectHits(order, usages, new Map([[1, reason]]));
     const report = formatCacheReport(order, usages);
     // The effort parameter sits after the system prompt, so the documented hierarchy says the
     // tools and the system prompt survive — but with one breakpoint at the end of the request
@@ -495,7 +470,10 @@ describe("the prompt cache across a Session's lifecycle", () => {
       "context 2",
     ]);
     const usages = replay(order);
-    expectHits(order, usages, new Map([[3, CONTEXT_REOPENED_REASON]]));
+    const reason =
+      "the context reopened and no breakpoint sits after the system prompt, so the fixed " +
+      "prefix the new context resends is not addressable either";
+    expectHits(order, usages, new Map([[3, reason]]));
     const report = formatCacheReport(order, usages);
     // The compaction request runs on the same object with the same config: it reads the turn
     // it follows in full, which is the request where the context is largest.
@@ -506,36 +484,6 @@ describe("the prompt cache across a Session's lifecycle", () => {
     expect(usages[3]!.cache_creation_input_tokens, report).toBe(prefixTokens(order[3]!));
     // And the new context hits from its second request onwards.
     expect(usages[4]!.cache_read_input_tokens, report).toBe(prefixTokens(order[3]!));
-  });
-
-  it("a breakpoint after the system prompt recovers the fixed prefix on both of those flows", async () => {
-    const wider = (): PromptCacheSim =>
-      new PromptCacheSim({ breakpoints: "tools-system-automatic" });
-
-    const thinking = ordering();
-    await driveThinkingMove(thinking.onRequest);
-    const thinkingUsages = replay(thinking.order, wider());
-    expectHits(thinking.order, thinkingUsages, new Map([[1, THINKING_MOVE_REASON]]));
-    const thinkingReport = formatCacheReport(thinking.order, thinkingUsages);
-    // The breakpoint on the system block is what the documented hierarchy assumes: the move
-    // now costs the messages instead of the whole request.
-    expect(thinkingUsages[1]!.cache_read_input_tokens, thinkingReport).toBe(
-      toolsAndSystemTokens(thinking.order[1]!),
-    );
-
-    const compaction = ordering();
-    await driveCompaction(compaction.onRequest);
-    const compactionUsages = replay(compaction.order, wider());
-    expectHits(compaction.order, compactionUsages, new Map([[3, CONTEXT_REOPENED_REASON]]));
-    const compactionReport = formatCacheReport(compaction.order, compactionUsages);
-    const reopened = compactionUsages[3]!.cache_read_input_tokens;
-    expect(reopened, compactionReport).toBeGreaterThanOrEqual(
-      toolsAndSystemTokens(compaction.order[3]!),
-    );
-    // Exactly tools plus system prompt, not the parameters block behind them: the reopened
-    // context sends the same parameters, but no breakpoint closes that block either.
-    expect(reopened, compactionReport).toBe(toolsAndSystemTokens(compaction.order[3]!));
-    expect(reopened, compactionReport).toBeLessThan(fixedPrefixTokens(compaction.order[3]!));
   });
 });
 

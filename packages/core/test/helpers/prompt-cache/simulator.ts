@@ -10,13 +10,19 @@
  *
  * The rules modelled, from Anthropic's prompt-caching documentation:
  *
- *   - **Blocks.** A request is one ordered block list: a block per tool definition, one system
- *     block, one virtual "parameters" block holding the prompt-affecting request parameters
- *     (`thinking`, `output_config`, `tool_choice`, `speed`, `betas` — never `max_tokens`,
- *     `stream` or `cache_control`, none of which take part in the cache key), then every
- *     content block of every message in order. That order is what reproduces the documented
- *     invalidation hierarchy: a tool change invalidates everything, a system change everything
- *     after the tools, a thinking/effort change the messages but neither tools nor system.
+ *   - **Blocks.** A request is one ordered block list: the model id, a block per tool
+ *     definition, one virtual "speed" block holding the fast-mode parameters (`speed`,
+ *     `betas`), one system block, one virtual "parameters" block holding the remaining
+ *     prompt-affecting request parameters (`thinking`, `output_config`, `tool_choice`), then
+ *     every content block of every message in order. `max_tokens`, `stream` and `cache_control`
+ *     take part in none of it. That order is what reproduces the documented invalidation
+ *     hierarchy: a model switch invalidates everything — the cache is scoped to one model, and
+ *     no breakpoint can be placed in front of the model id — a tool change everything behind
+ *     the tools, a fast-mode toggle the system prompt and the messages but not the tools, a
+ *     system change the messages, and a thinking/effort or `tool_choice` change the messages
+ *     alone. That last row is the optimistic case: the documentation marks it model-specific,
+ *     and a model that renders the thinking configuration ahead of the tools and the system
+ *     prompt invalidates those tiers too.
  *   - **Positions.** A run of consecutive `tool_use` blocks counts as one position, and so does
  *     a run of consecutive `tool_result` blocks; every other block is a position of its own.
  *   - **Writes happen only at a breakpoint.** A completed request writes one entry per
@@ -29,13 +35,13 @@
  *     (four breakpoints in all): explicit ones on the last tool block and on the system block,
  *     plus the automatic one. That second policy is not what the harness sends today; it is
  *     here so a test can measure what the extra breakpoints would recover.
- *   - **Reads.** A request hashes its prefix at the breakpoint and, failing an exact match,
- *     walks back one position at a time, taking the first prior write it finds. At most
- *     `lookbackPositions` positions are checked per breakpoint, the breakpoint counting as the
- *     first of them — so a request that appends nineteen positions at once still hits the
- *     previous write and one that appends twenty does not.
- *   - **TTL.** An entry expires `ttlMs` after it was last written or read; a read refreshes it.
- *     The clock is injected, so a test can advance it and show an expiry.
+ *   - **Reads.** Every breakpoint the request carries does its own lookback: it hashes the
+ *     prefix ending at that breakpoint and, failing an exact match, walks back one position at
+ *     a time over at most {@link DEFAULT_LOOKBACK_POSITIONS} positions of its own — never from
+ *     the request's last position. The longest live match across the breakpoints is what the
+ *     request reads, and reading refreshes that entry.
+ *   - **TTL.** An entry expires {@link DEFAULT_TTL_MS} after it was last written or read; a
+ *     read refreshes it. The clock is injected, so a test can advance it and show an expiry.
  *
  * What it is not: a token counter (blocks are estimated at four characters per token, the ratio
  * the harness's own estimator uses for ASCII), a billing model, or a promise about any
@@ -50,24 +56,44 @@ import type { RecordedRequest } from "./recording.js";
 export const DEFAULT_MIN_CACHEABLE_TOKENS = 1024;
 /** Lifetime of an ephemeral cache entry (five minutes, AgentHub's default). */
 export const DEFAULT_TTL_MS = 5 * 60 * 1000;
-/** Positions checked per breakpoint, the breakpoint itself counting as the first of them. */
-export const DEFAULT_LOOKBACK_POSITIONS = 20;
+/**
+ * Positions checked per breakpoint. The documented wording is "up to 20 positions before the
+ * breakpoint", which leaves the breakpoint's own position ambiguous; what is encoded here is the
+ * conservative reading — the breakpoint counts as the first of the twenty, so nineteen appended
+ * positions still reach the previous write and twenty do not. Nothing measured in these suites
+ * sits near that boundary, so the off-by-one is a statement about the rule's precision rather
+ * than about any scenario's result.
+ */
+const DEFAULT_LOOKBACK_POSITIONS = 20;
 /** Characters per token, the ratio the harness's own estimator uses for ASCII. */
 const CHARS_PER_TOKEN = 4;
 
 /**
- * The request parameters that take part in the cached prefix, in the order the virtual
- * parameters block renders them. `max_tokens` is deliberately absent: it varies per request
- * (the window-derived clamp) and is not part of the cache key. So are `stream` and
- * `cache_control`, which describe the transport and the breakpoint rather than the prompt.
+ * Prompt-affecting parameters rendered *ahead* of the system block, so that changing one keeps
+ * the tool definitions and loses everything behind them. AgentHub sets exactly this pair for
+ * fast mode.
  */
-const PARAMETER_KEYS = ["thinking", "output_config", "tool_choice", "speed", "betas"] as const;
+const SPEED_KEYS = ["speed", "betas"] as const;
 
-/** What a block came from — the four sections of the prefix. */
-export type CacheBlockKind = "tool" | "system" | "parameters" | "message";
+/**
+ * Prompt-affecting parameters rendered *after* the system block, in the order the virtual
+ * parameters block renders them, so that changing one keeps the tools and the system prompt.
+ * `max_tokens` is deliberately absent: it varies per request (the window-derived clamp) and is
+ * not part of the cache key. So are `stream` and `cache_control`, which describe the transport
+ * and the breakpoint rather than the prompt.
+ */
+const PARAMETER_KEYS = ["thinking", "output_config", "tool_choice"] as const;
+
+/** What a block came from — the sections of the prefix, in the order they are sent. */
+type CacheBlockKind = "model" | "tool" | "speed" | "system" | "parameters" | "message";
+
+/** The blocks a breakpoint on the last tool block closes. */
+const TOOL_TIER: CacheBlockKind[] = ["model", "tool"];
+/** The blocks a breakpoint on the system block closes. */
+const SYSTEM_TIER: CacheBlockKind[] = ["model", "tool", "speed", "system"];
 
 /** One block of the prefix: the unit a hash, a token count and a position are taken over. */
-export interface CacheBlock {
+interface CacheBlock {
   kind: CacheBlockKind;
   /** The block's canonical rendering: what both the hash and the token estimate are taken over. */
   text: string;
@@ -102,15 +128,11 @@ export interface CacheUsage {
  * breakpoints the API allows alongside it — on the last tool block and on the system block — so
  * a request whose messages moved can still read the fixed prefix back.
  */
-export type BreakpointPolicy = "automatic" | "tools-system-automatic";
+type BreakpointPolicy = "automatic" | "tools-system-automatic";
 
-export interface PromptCacheSimOptions {
+interface PromptCacheSimOptions {
   /** Smallest cacheable prefix, in tokens (default {@link DEFAULT_MIN_CACHEABLE_TOKENS}). */
   minCacheableTokens?: number;
-  /** Entry lifetime in milliseconds (default {@link DEFAULT_TTL_MS}). */
-  ttlMs?: number;
-  /** Positions checked per breakpoint (default {@link DEFAULT_LOOKBACK_POSITIONS}). */
-  lookbackPositions?: number;
   /** Where the breakpoints sit (default `"automatic"`, what the harness sends today). */
   breakpoints?: BreakpointPolicy;
   /** The clock; injected so a test can advance it (default `Date.now`). */
@@ -137,10 +159,13 @@ const blockTypeOf = (block: unknown): string | undefined => {
 
 // ---- Reading a request as blocks and positions ----------------------------
 
-/** The prompt-affecting request parameters, in a fixed order, absent keys omitted. */
-function parameterView(wireConfig: Record<string, unknown>): Record<string, unknown> {
+/** The named request parameters, in a fixed order, absent keys omitted. */
+function parameterView(
+  wireConfig: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
   const view: Record<string, unknown> = {};
-  for (const key of PARAMETER_KEYS) {
+  for (const key of keys) {
     if (wireConfig[key] !== undefined) view[key] = wireConfig[key];
   }
   return view;
@@ -155,17 +180,24 @@ function makeBlock(
 }
 
 /**
- * One request as the ordered block list the cache keys on: tools, system, parameters, then
- * every content block of every message, each rendered with its message's role so an identical
- * block under a different role is a different block.
+ * One request as the ordered block list the cache keys on: the model, the tools, the fast-mode
+ * parameters, the system prompt, the remaining parameters, then every content block of every
+ * message, each rendered with its message's role so an identical block under a different role
+ * is a different block.
  */
-export function prefixBlocks(request: RecordedRequest): CacheBlock[] {
+function prefixBlocks(request: RecordedRequest): CacheBlock[] {
   const wireConfig = request.wireConfig;
   const blocks: CacheBlock[] = [];
+  // Ahead of the tools: a prompt cache is scoped to one model, and a model switch is the one
+  // invalidator no breakpoint can be placed in front of.
+  blocks.push(makeBlock("model", `model:${json(wireConfig.model)}`));
   const tools = Array.isArray(wireConfig.tools) ? wireConfig.tools : [];
   for (const tool of tools) blocks.push(makeBlock("tool", `tool:${json(tool)}`));
+  blocks.push(makeBlock("speed", `speed:${json(parameterView(wireConfig, SPEED_KEYS))}`));
   blocks.push(makeBlock("system", `system:${json(wireConfig.system)}`));
-  blocks.push(makeBlock("parameters", `parameters:${json(parameterView(wireConfig))}`));
+  blocks.push(
+    makeBlock("parameters", `parameters:${json(parameterView(wireConfig, PARAMETER_KEYS))}`),
+  );
   request.wire.forEach((message, index) => {
     const role = roleOf(message);
     for (const block of contentBlocksOf(message)) {
@@ -186,11 +218,12 @@ const runKindOf = (block: CacheBlock): string | null =>
   block.blockType === "tool_use" || block.blockType === "tool_result" ? block.blockType : null;
 
 /**
- * The end offsets (block counts) of every position, ascending; the last one is the breakpoint.
- * A maximal run of consecutive `tool_use` or `tool_result` blocks contributes a single offset,
- * which is why a turn that calls twenty-five tools stays one position away from the last one.
+ * The end offsets (block counts) of every position, ascending; the last one is the automatic
+ * breakpoint. A maximal run of consecutive `tool_use` or `tool_result` blocks contributes a
+ * single offset, which is why a turn that calls twenty-five tools stays one position away from
+ * the last one.
  */
-export function positionEnds(blocks: CacheBlock[]): number[] {
+function positionEnds(blocks: CacheBlock[]): number[] {
   const ends: number[] = [];
   for (let i = 0; i < blocks.length; i += 1) {
     const kind = runKindOf(blocks[i]!);
@@ -210,20 +243,20 @@ export const positionCount = (request: RecordedRequest): number =>
 const sumTokens = (blocks: CacheBlock[]): number =>
   blocks.reduce((total, block) => total + block.tokens, 0);
 
+const tierTokens = (request: RecordedRequest, kinds: CacheBlockKind[]): number =>
+  sumTokens(prefixBlocks(request).filter((block) => kinds.includes(block.kind)));
+
 /** Every token of a request's prefix — what a full hit would read. */
 export const prefixTokens = (request: RecordedRequest): number => sumTokens(prefixBlocks(request));
 
-/** The tool definitions alone — what survives a system-prompt change. */
-export const toolsTokens = (request: RecordedRequest): number =>
-  sumTokens(prefixBlocks(request).filter((block) => block.kind === "tool"));
+/** The model id and the tool definitions — what a breakpoint on the last tool block closes. */
+export const toolsTokens = (request: RecordedRequest): number => tierTokens(request, TOOL_TIER);
 
-/** Tools plus the system prompt — what survives a thinking-level move. */
+/** Everything through the system prompt — what a breakpoint on the system block closes. */
 export const toolsAndSystemTokens = (request: RecordedRequest): number =>
-  sumTokens(
-    prefixBlocks(request).filter((block) => block.kind === "tool" || block.kind === "system"),
-  );
+  tierTokens(request, SYSTEM_TIER);
 
-/** Tools, system prompt and parameters — the fixed prefix a fresh context reopens on. */
+/** Every non-message block — the fixed prefix a fresh context reopens on. */
 export const fixedPrefixTokens = (request: RecordedRequest): number =>
   sumTokens(prefixBlocks(request).filter((block) => block.kind !== "message"));
 
@@ -257,8 +290,6 @@ interface PendingWrite {
  */
 export class PromptCacheSim {
   private readonly minCacheableTokens: number;
-  private readonly ttlMs: number;
-  private readonly lookbackPositions: number;
   private readonly breakpoints: BreakpointPolicy;
   private readonly now: () => number;
   /** Live entries: cumulative prefix hash -> expiry timestamp. */
@@ -268,8 +299,6 @@ export class PromptCacheSim {
 
   constructor(options: PromptCacheSimOptions = {}) {
     this.minCacheableTokens = options.minCacheableTokens ?? DEFAULT_MIN_CACHEABLE_TOKENS;
-    this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
-    this.lookbackPositions = options.lookbackPositions ?? DEFAULT_LOOKBACK_POSITIONS;
     this.breakpoints = options.breakpoints ?? "automatic";
     this.now = options.now ?? (() => Date.now());
   }
@@ -285,11 +314,12 @@ export class PromptCacheSim {
     const hashes = cumulativeHashes(blocks);
     const sums = cumulativeTokens(blocks);
     const total = sums[blocks.length]!;
+    const offsets = this.breakpointOffsets(blocks);
 
-    const matchedBlocks = this.lookup(hashes, ends);
+    const matchedBlocks = this.lookup(hashes, ends, offsets);
     const read = sums[matchedBlocks]!;
     const wrote = total >= this.minCacheableTokens;
-    this.pending.set(request, { hashes, sums, offsets: this.breakpointOffsets(blocks) });
+    this.pending.set(request, { hashes, sums, offsets });
 
     const remainder = total - read;
     const creation = wrote ? remainder : 0;
@@ -311,7 +341,7 @@ export class PromptCacheSim {
     const staged = this.pending.get(request);
     if (!staged) throw new Error("PromptCacheSim.complete: the request was never begun");
     this.pending.delete(request);
-    const expiry = this.now() + this.ttlMs;
+    const expiry = this.now() + DEFAULT_TTL_MS;
     for (const offset of staged.offsets) {
       if (staged.sums[offset]! < this.minCacheableTokens) continue;
       this.entries.set(staged.hashes[offset]!, expiry);
@@ -333,32 +363,42 @@ export class PromptCacheSim {
   private breakpointOffsets(blocks: CacheBlock[]): number[] {
     const offsets = [blocks.length];
     if (this.breakpoints !== "tools-system-automatic") return offsets;
-    const tools = blocks.filter((block) => block.kind === "tool").length;
+    const lastTool = blocks.findLastIndex((block) => block.kind === "tool");
     const system = blocks.findIndex((block) => block.kind === "system");
-    if (tools > 0) offsets.push(tools);
+    if (lastTool >= 0) offsets.push(lastTool + 1);
     if (system >= 0) offsets.push(system + 1);
     return offsets;
   }
 
   /**
-   * The longest live prefix this request can read, as a block count: the breakpoint first, then
-   * one position back at a time until the lookback window runs out. Reading refreshes the entry.
+   * The longest live prefix this request can read, as a block count. Every breakpoint gets its
+   * own lookback window, anchored at its own position rather than at the request's last one, so
+   * an explicit breakpoint on the system block still reads at distance zero however many message
+   * positions follow it. Reading refreshes the entry that won.
    */
-  private lookup(hashes: string[], ends: number[]): number {
+  private lookup(hashes: string[], ends: number[], offsets: number[]): number {
     const now = this.now();
-    const first = Math.max(0, ends.length - this.lookbackPositions);
-    for (let i = ends.length - 1; i >= first; i -= 1) {
-      const end = ends[i]!;
-      const expiry = this.entries.get(hashes[end]!);
-      if (expiry === undefined) continue;
-      if (expiry <= now) {
-        this.entries.delete(hashes[end]!);
-        continue;
+    let best = 0;
+    for (const offset of offsets) {
+      const anchor = ends.indexOf(offset);
+      if (anchor < 0) continue;
+      const first = Math.max(0, anchor + 1 - DEFAULT_LOOKBACK_POSITIONS);
+      for (let i = anchor; i >= first; i -= 1) {
+        const end = ends[i]!;
+        // Positions descend, so nothing left in this window can beat what another already won.
+        if (end <= best) break;
+        const expiry = this.entries.get(hashes[end]!);
+        if (expiry === undefined) continue;
+        if (expiry <= now) {
+          this.entries.delete(hashes[end]!);
+          continue;
+        }
+        best = end;
+        break;
       }
-      this.entries.set(hashes[end]!, now + this.ttlMs);
-      return end;
     }
-    return 0;
+    if (best > 0) this.entries.set(hashes[best]!, now + DEFAULT_TTL_MS);
+    return best;
   }
 }
 

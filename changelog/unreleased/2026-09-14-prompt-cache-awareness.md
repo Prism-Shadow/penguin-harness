@@ -36,12 +36,18 @@ estimate of the input that falls after it).
   this way.
 - `packages/core/test/helpers/prompt-cache/simulator.ts` adds that provider half as a rule engine
   over the same recordings: an Anthropic-shaped prompt cache that reads each request as a block
-  list (one block per tool, the system prompt, a virtual block holding the prompt-affecting
-  parameters, then every message content block), groups it into positions — a run of `tool_use`
-  or `tool_result` blocks counting as one — writes **only at a breakpoint**, serves a read by
-  checking at most twenty positions per breakpoint (the breakpoint itself counting as the
-  first), refuses a prefix under 1024 tokens, and expires an entry five minutes after its last
-  use on an injected clock. By default it models what AgentHub's Claude client sends: one
+  list (the model id, one block per tool, a virtual block for the fast-mode parameters, the
+  system prompt, a virtual block for the remaining prompt-affecting parameters, then every
+  message content block), groups it into positions — a run of `tool_use` or `tool_result` blocks
+  counting as one — writes **only at a breakpoint**, serves a read by looking back at most twenty
+  positions from each breakpoint's own position (the breakpoint itself counting as the first),
+  refuses a prefix under 1024 tokens, and expires an entry five minutes after its last use on an
+  injected clock. That block order is what reproduces the documented invalidation hierarchy, the
+  cache's scoping to one model included: a model switch loses everything and no breakpoint can be
+  placed in front of it, a fast-mode toggle keeps the tools and loses the system prompt, and a
+  thinking-level move keeps both — on the models that render the thinking configuration after
+  them, which the documentation marks as model-specific. By default it models what AgentHub's
+  Claude client sends: one
   automatic breakpoint at the last block, so the only entries in the cache end at whole requests
   and content sitting behind a breakpoint is never separately addressable. A
   `breakpoints: "tools-system-automatic"` option models the alternative the API allows —
@@ -56,14 +62,16 @@ estimate of the input that falls after it).
   completion notice, a call the user moves to the background, three parallel tool calls, a
   subagent, a scheduled-task trigger, a resume through a Trace, a thinking-level move and a
   compaction. Every case that cannot hit by design is named with its reason and its loss bounded:
-  an interruption falls back to the breakpoint the request before it closed; a thinking-level
+  an interruption falls back to the breakpoint the request before it closed; and a thinking-level
   move, a compaction reopen and a subagent child's first request each read nothing at all, even
   where the tools and the system prompt go out byte-identical, because with one breakpoint at the
-  end of the request no entry ever ended at the system block; and a resume past the five-minute
-  lifetime reads nothing although the diagnostic reports no divergence at all.
-- One further test reruns the thinking-move and compaction flows under
-  `breakpoints: "tools-system-automatic"`, where both reads come back as the tools plus the
-  system prompt (96.3% and 96.8% hit ratios against 0% today). The recommendation to set those
-  two breakpoints in AgentHub is therefore measured rather than argued — and the measurement also
-  shows the parameters block behind the system breakpoint stays unreadable, so a thinking-level
+  end of the request no entry ever ended at the system block.
+- What the extra breakpoints would recover is measured rather than argued, and measured on
+  hand-built requests so it costs no scenario run and cannot move when AgentHub changes: under
+  `breakpoints: "tools-system-automatic"` a system-prompt change still reads the tools back, a
+  fast-mode toggle still reads the tools back, a thinking-level move still reads the tools and
+  the system prompt back, and a conversation whose messages have run far past the lookback window
+  still reads the fixed prefix back from the breakpoint that sits next to it — where the single
+  automatic breakpoint the harness sends today reads nothing in every one of those cases. The
+  parameters block behind the system breakpoint stays unreadable either way, so a thinking-level
   move still costs the messages.

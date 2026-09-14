@@ -15,8 +15,14 @@ import type { RecordedRequest } from "./recording.js";
 
 /** Rough characters-per-token ratio, only used to size the input a divergence invalidates. */
 const CHARS_PER_TOKEN = 4;
-/** Request config keys that do not take part in the cached prefix. */
-const NON_PREFIX_CONFIG_KEYS = ["max_tokens", "stream"];
+/**
+ * Request config keys that do not take part in the cached prefix: the window-derived output cap,
+ * the transport flag, and the breakpoint marker. A `cache_control` marker says where the provider
+ * should write, never what the prompt is, so moving it invalidates nothing — `simulator.ts`
+ * leaves it out of the block list for the same reason. Exported so the suites strip exactly this
+ * list rather than keeping a third copy of it.
+ */
+export const NON_PREFIX_CONFIG_KEYS = ["max_tokens", "stream", "cache_control"];
 
 /** The earliest divergence between two consecutive requests, in provider precedence order. */
 export type CacheMissReason =
@@ -24,8 +30,8 @@ export type CacheMissReason =
   | { type: "model_changed" }
   | { type: "system_changed" }
   | { type: "tools_changed"; detail: string }
-  /** thinking / output_config / tool_choice / speed / betas / cache_control — everything
-   * prompt-affecting except max_tokens. */
+  /** thinking / output_config / tool_choice / speed / betas — everything prompt-affecting
+   * except the keys in NON_PREFIX_CONFIG_KEYS. */
   | { type: "parameters_changed"; keys: string[] }
   | {
       type: "messages_changed";

@@ -54,6 +54,7 @@ const SYSTEM = "You are a coding agent. Read before you write, and say what you 
 const PLAIN_PARAMETERS = { thinking: { type: "adaptive", display: "summarized" } };
 
 interface RequestSpec {
+  model?: string;
   tools?: Record<string, unknown>[];
   system?: string;
   parameters?: Record<string, unknown>;
@@ -67,7 +68,7 @@ function request(spec: RequestSpec = {}): RecordedRequest {
     config: {} as UniConfig,
     wire: spec.messages ?? [],
     wireConfig: {
-      model: "claude-sonnet-4-6",
+      model: spec.model ?? "claude-sonnet-4-6",
       stream: true,
       // Present on every request and part of none of them: the transport flag above, the
       // window-derived output cap here, and the breakpoint below.
@@ -109,6 +110,10 @@ const toolResults = (n: number): WireMessage => ({
 /** One opening turn, reused as the prefix every case below extends or diverges from. */
 const OPENING: WireMessage[] = [text("user", "what does the entry point do?")];
 
+/** `count` plain alternating turns, one position each. */
+const turns = (count: number): WireMessage[] =>
+  counted(count).map((i) => text(i % 2 === 0 ? "assistant" : "user", `turn ${i}`));
+
 /** A simulator with no minimum, so these small fixtures exercise the hash rules alone. */
 const openSim = (over: Partial<ConstructorParameters<typeof PromptCacheSim>[0]> = {}) =>
   new PromptCacheSim({ minCacheableTokens: 0, ...over });
@@ -145,6 +150,41 @@ describe("prompt-cache simulator", () => {
     const usage = sim.request(next);
     expect(usage.cache_read_input_tokens).toBe(prefixTokens(first));
     expect(usage.cache_creation_input_tokens).toBe(prefixTokens(next) - prefixTokens(first));
+  });
+
+  it("serves nothing at all across a model switch, whatever the breakpoints", () => {
+    const switched = request({ model: "claude-opus-4-6", messages: OPENING });
+
+    // The model id sits ahead of the tools, so every breakpoint's prefix moves with it: a model
+    // switch is the one invalidator no breakpoint can be placed in front of.
+    const wider = widerSim();
+    wider.request(request({ messages: OPENING }));
+    const covered = wider.request(switched);
+    expect(covered.cache_read_input_tokens).toBe(0);
+    expect(covered.cache_creation_input_tokens).toBe(prefixTokens(switched));
+
+    const automatic = openSim();
+    automatic.request(request({ messages: OPENING }));
+    expect(automatic.request(switched).cache_read_input_tokens).toBe(0);
+  });
+
+  it("loses the system prompt on a fast-mode toggle but keeps the tools", () => {
+    // `speed` and `betas` are what AgentHub sets for fast mode, and they are rendered ahead of
+    // the system block: the tools survive the toggle and the system prompt does not.
+    const fast = request({
+      parameters: { ...PLAIN_PARAMETERS, speed: "fast", betas: ["fast-mode-2026-01-01"] },
+      messages: OPENING,
+    });
+
+    const wider = widerSim();
+    wider.request(request({ messages: OPENING }));
+    const covered = wider.request(fast);
+    expect(covered.cache_read_input_tokens).toBe(toolsTokens(fast));
+    expect(covered.cache_read_input_tokens).toBeLessThan(toolsAndSystemTokens(fast));
+
+    const automatic = openSim();
+    automatic.request(request({ messages: OPENING }));
+    expect(automatic.request(fast).cache_read_input_tokens).toBe(0);
   });
 
   it("keeps the tools past a system-prompt change only with a breakpoint on them", () => {
@@ -230,36 +270,60 @@ describe("prompt-cache simulator", () => {
   it("expires an entry once the TTL passes since its last use, and a read refreshes it", () => {
     let clock = 1_000_000;
     const sim = openSim({ now: () => clock });
-    const first = request({ messages: OPENING });
-    sim.request(first);
+    const opening = request({ messages: OPENING });
+    sim.request(opening);
 
+    // The middle request extends the prefix instead of repeating it, so the entry it writes is
+    // a different one: nothing but the read itself can keep the opening prefix alive.
+    clock += DEFAULT_TTL_MS - 1;
+    const extended = request({
+      messages: [...OPENING, text("assistant", "it re-exports the public API"), text("user", "ok")],
+    });
+    expect(sim.request(extended).cache_read_input_tokens).toBe(prefixTokens(opening));
+
+    // Just short of a second lifetime after that read, and well past the first one.
     clock += DEFAULT_TTL_MS - 1;
     expect(sim.request(request({ messages: OPENING })).cache_read_input_tokens).toBe(
-      prefixTokens(first),
+      prefixTokens(opening),
     );
 
     clock += DEFAULT_TTL_MS + 1;
     const cold = sim.request(request({ messages: OPENING }));
     expect(cold.cache_read_input_tokens).toBe(0);
-    expect(cold.cache_creation_input_tokens).toBe(prefixTokens(first));
+    expect(cold.cache_creation_input_tokens).toBe(prefixTokens(opening));
   });
 
   it("checks twenty positions per breakpoint, the breakpoint counting as the first", () => {
-    const appended = (count: number): WireMessage[] =>
-      counted(count).map((i) => text(i % 2 === 0 ? "assistant" : "user", `turn ${i}`));
-
     const within = openSim();
     const opening = request({ messages: OPENING });
     within.request(opening);
-    const nineteen = request({ messages: [...OPENING, ...appended(19)] });
+    const nineteen = request({ messages: [...OPENING, ...turns(19)] });
     expect(positionCount(nineteen) - positionCount(opening)).toBe(19);
     expect(within.request(nineteen).cache_read_input_tokens).toBe(prefixTokens(opening));
 
     // One position further and the previous write is out of reach: the request pays in full.
     const beyond = openSim();
     beyond.request(request({ messages: OPENING }));
-    const twenty = request({ messages: [...OPENING, ...appended(20)] });
+    const twenty = request({ messages: [...OPENING, ...turns(20)] });
     expect(beyond.request(twenty).cache_read_input_tokens).toBe(0);
+  });
+
+  it("gives every breakpoint its own lookback window, anchored at its own position", () => {
+    const opening = request({ messages: OPENING });
+    // Far past the twenty positions any one window reaches back, so a read can only come from a
+    // breakpoint that sits next to what it is looking for.
+    const far = request({ messages: [...OPENING, ...turns(40)] });
+    expect(positionCount(far) - positionCount(opening)).toBeGreaterThan(20);
+
+    const wider = widerSim();
+    wider.request(opening);
+    // The system breakpoint looks back from the system block, where the entry it wants sits at
+    // distance zero; only the automatic breakpoint is out of reach of the earlier write.
+    expect(wider.request(far).cache_read_input_tokens).toBe(toolsAndSystemTokens(far));
+
+    const automatic = openSim();
+    automatic.request(request({ messages: OPENING }));
+    expect(automatic.request(far).cache_read_input_tokens).toBe(0);
   });
 
   it("collapses a run of tool calls or tool results into one position", () => {

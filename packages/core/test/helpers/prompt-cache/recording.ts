@@ -19,6 +19,11 @@ import { GenerativeModel } from "../../../src/llm/index.js";
 const SCRIPTED_RESPONSE_TOKENS = 1;
 /** Input tokens a scripted reply reports when it names none. */
 const DEFAULT_PROMPT_TOKENS = 10;
+/**
+ * Cache-read input tokens every scripted reply reports. Always zero: what a provider would have
+ * served from its cache is modelled offline by `simulator.ts`, never scripted into a reply.
+ */
+const SCRIPTED_CACHED_TOKENS = 0;
 
 // ---- The script -----------------------------------------------------------
 
@@ -32,8 +37,6 @@ export interface ScriptedReply {
   toolCalls?: { id: string; name: string; args: Record<string, unknown> }[];
   /** Uncached input tokens this request reports (the compaction threshold reads this). */
   promptTokens?: number;
-  /** Cache-read input tokens this request reports. */
-  cachedTokens?: number;
   /**
    * How the request ends: cleanly, with a transport drop after the text (the engine
    * reconnects), or hanging after the text until the caller's signal aborts it.
@@ -162,14 +165,13 @@ function untilAborted(signal?: AbortSignal): Promise<void> {
  */
 async function* replyEvents(reply: ScriptedReply, signal?: AbortSignal): AsyncGenerator<UniEvent> {
   const promptTokens = reply.promptTokens ?? DEFAULT_PROMPT_TOKENS;
-  const cachedTokens = reply.cachedTokens ?? 0;
   if (signal?.aborted) return;
   yield {
     role: "assistant",
     event_type: "start",
     content_items: [],
     usage_metadata: {
-      cached_tokens: cachedTokens,
+      cached_tokens: SCRIPTED_CACHED_TOKENS,
       prompt_tokens: promptTokens,
       thoughts_tokens: null,
       response_tokens: null,
@@ -239,7 +241,7 @@ async function* replyEvents(reply: ScriptedReply, signal?: AbortSignal): AsyncGe
     event_type: "stop",
     content_items: [],
     usage_metadata: {
-      cached_tokens: cachedTokens,
+      cached_tokens: SCRIPTED_CACHED_TOKENS,
       prompt_tokens: promptTokens,
       thoughts_tokens: null,
       response_tokens: SCRIPTED_RESPONSE_TOKENS,
