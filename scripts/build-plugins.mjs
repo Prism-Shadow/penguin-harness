@@ -54,12 +54,17 @@ async function walk(dir, prefix = "") {
 function command(name) {
   return process.platform === "win32" ? `${name}.cmd` : name;
 }
+// cmd.exe does not unquote spawn args by itself: under `shell: true` the args are joined
+// into one command line, so a path with a space (the pack directory lives under the user's
+// temp directory, i.e. their profile) splits into two. Quoted the way run-with-env.mjs quotes.
+const quote = (a) => (/[\s"^&|<>;,()%!]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
 function run(name, args, cwd) {
+  const windows = process.platform === "win32";
   try {
-    execFileSync(command(name), args, {
+    execFileSync(command(name), windows ? args.map(quote) : args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
-      shell: process.platform === "win32",
+      shell: windows,
       env: process.env,
     });
   } catch (err) {
