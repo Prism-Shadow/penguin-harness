@@ -13,6 +13,14 @@
  * field, not under the page. Restore default is a write like any other on both rows, so the
  * two buttons next to one control never disagree about when they act.
  *
+ * Both control rows are rigid and the field is what gives: the buttons carry `shrink-0` and the
+ * nickname field `min-w-0`, so a narrow dialog takes width from the field rather than from the
+ * buttons. Without it the row collapses in Chinese and not in English, which is the surprising
+ * half: flex will not shrink an item below its min-content width, and min-content for a CJK label
+ * is one character — the browser breaks between any two of them — while an English label is held
+ * open by its longest word. A squeezed button then wraps "恢复默认" onto two lines and stands twice
+ * as tall as the row beside it.
+ *
  * Nothing is applied optimistically: the preview and every other surface show what is STORED.
  * A write that fails therefore leaves the screen agreeing with the server and says so inline,
  * rather than showing a picture that silently disappears on the next load.
@@ -128,13 +136,14 @@ export function ProfileSection() {
             {/* A label rather than a Button: the hidden file input has to be labelled for a
                 click to open the native picker. Same two records Button reads, at the form rung
                 its neighbours sit on. */}
-            <label className={busy ? CHANGE_AVATAR_BUSY_CLASS : CHANGE_AVATAR_CLASS}>
+            <label className={`shrink-0 ${busy ? CHANGE_AVATAR_BUSY_CLASS : CHANGE_AVATAR_CLASS}`}>
               <HiddenFileInput accept={AVATAR_ACCEPT} disabled={busy} onChange={onPickFile} />
               {S.profile.changeAvatar}
             </label>
             <Button
               size="sm"
               variant="secondary"
+              className="shrink-0"
               aria-label={S.profile.restoreDefaultOf(S.profile.avatar)}
               disabled={busy || !controls.canRestoreAvatar}
               onClick={() => void run("avatar", () => send({ avatar: null }))}
@@ -147,7 +156,7 @@ export function ProfileSection() {
           <div className="flex items-center gap-2">
             <Input
               size="sm"
-              className="w-48"
+              className="w-48 min-w-0"
               maxLength={32}
               value={draftName ?? user.displayName ?? ""}
               placeholder={S.profile.displayNamePlaceholder}
@@ -161,6 +170,7 @@ export function ProfileSection() {
             <Button
               size="sm"
               variant="primary"
+              className="shrink-0"
               disabled={busy || !controls.canSaveNickname}
               onClick={() =>
                 void run("nickname", async () => {
@@ -177,6 +187,7 @@ export function ProfileSection() {
             <Button
               size="sm"
               variant="secondary"
+              className="shrink-0"
               aria-label={S.profile.restoreDefaultOf(S.profile.displayName)}
               disabled={busy || !controls.canRestoreNickname}
               onClick={() =>

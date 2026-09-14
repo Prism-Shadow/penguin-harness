@@ -22,7 +22,11 @@ to draw the id and its letter tile draw those instead.
   letter tile back. The **nickname** is typed text, so it keeps an explicit **Save** next to the
   field and a **Restore default** of its own, whose default is the user id; both write on click,
   so the two buttons beside one field never disagree about when they act. It is 1–32 characters,
-  counted as characters so a Chinese name may be 32 of them, and saving it blank clears it.
+  counted as characters so a Chinese name may be 32 of them, and saving it blank clears it. On
+  both rows the buttons hold their width and the field is what gives, so a narrow dialog never
+  breaks a label across two lines — flex will not shrink a control below its min-content width,
+  and for a CJK label that is one character, so a squeezed button stacks 恢复默认 two high where
+  an English one is held open by its longest word.
 - A button that would write what is already stored is disabled, and nothing is applied
   optimistically: every surface, the page's own preview included, draws what is stored, so a
   write that fails leaves the screen agreeing with the server and reports the failure inline
