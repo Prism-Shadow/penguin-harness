@@ -1508,14 +1508,14 @@ export const en: Strings = {
   plugins: {
     installedTitle: "Installed plugins",
     installedDesc:
-      "What this Project asks for, and which of those this process is running. A change applies without a restart where the server can re-assemble itself.",
+      "What this Project asks for, and which of those this process is running. A change applies without a restart where the server can re-assemble itself; re-assembling stops the agent runs in progress in every Project.",
     installedEmpty: "No plugins installed yet.",
     stateActive: "running",
     builtin: "built in",
     builtinHint:
       "Ships with this build: installing it downloads nothing, and it loads only once you install it.",
     installedRestart: "restart to load",
-    stateInactive: "not loaded",
+    stateFailed: "failed to load",
     replacesLabel: "replaces",
     restartPending:
       "A listed plugin is not running and this server could not apply it without a restart: restart the server to load it.",
@@ -1524,6 +1524,12 @@ export const en: Strings = {
     installing: "Installing…",
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `Installed ${name}`,
+    /** Listed, but the process could not load it: the reason, not a success. */
+    deploymentFailedToast: (name: string, reason: string) => `${name} failed to load: ${reason}`,
+    applyConfirmInstall: (name: string) => `Install ${name}?`,
+    applyConfirmRemove: (name: string) => `Remove ${name}?`,
+    applyConfirmBody:
+      "Applying a plugin change re-assembles the App. Agent runs in progress are stopped and their pending approvals denied — in every Project, since there is one process. Terminals and machine connections are kept.",
     pageTitle: "Plugins",
     pageDesc:
       "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",
@@ -1543,6 +1549,7 @@ export const en: Strings = {
       available: "Available",
       running: "Running",
       restart: "Restart to load",
+      failed: "Failed to load",
     },
     noMatch: "No plugin matches that.",
     /** The description of a shipped package the registry has no entry for. */

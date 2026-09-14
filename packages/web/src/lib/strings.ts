@@ -1506,13 +1506,13 @@ export const zh = {
   plugins: {
     installedTitle: "已安装的插件",
     installedDesc:
-      "当前 Project 要求的插件，以及其中哪些正在被本进程运行。服务器能自行重组时，改动无需重启即可生效。",
+      "当前 Project 要求的插件，以及其中哪些正在被本进程运行。服务器能自行重组时，改动无需重启即可生效；重组会中止所有 Project 正在进行的 Agent 运行。",
     installedEmpty: "还没有安装任何插件。",
     stateActive: "运行中",
     builtin: "内置",
     builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
     installedRestart: "待重启",
-    stateInactive: "未加载",
+    stateFailed: "加载失败",
     replacesLabel: "替换",
     restartPending: "有已列出但未运行的插件，且本服务器无法免重启应用：重启服务器后加载。",
     uninstall: "移除",
@@ -1520,6 +1520,12 @@ export const zh = {
     installing: "安装中…",
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `已安装 ${name}`,
+    /** Listed, but the process could not load it: the reason, not a success. */
+    deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
+    applyConfirmInstall: (name: string) => `安装 ${name}？`,
+    applyConfirmRemove: (name: string) => `移除 ${name}？`,
+    applyConfirmBody:
+      "应用插件改动会重组 App：正在进行的 Agent 运行会被中止、待审批的请求会被拒绝——所有 Project 都是，因为只有一个进程。终端与机器连接会保留。",
     pageTitle: "插件",
     pageDesc:
       "所有插件在一个列表里。插件库里的随本次构建自带（技能和／或钩子包——快捷调用，或安装到 Agent）；当前 Project 要求的模块插件在服务端运行，市场里其余的可以为它安装。",
@@ -1539,6 +1545,7 @@ export const zh = {
       available: "可安装",
       running: "运行中",
       restart: "待重启",
+      failed: "加载失败",
     },
     noMatch: "没有匹配的插件。",
     /** The description of a shipped package the registry has no entry for. */

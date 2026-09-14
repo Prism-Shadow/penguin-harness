@@ -258,23 +258,38 @@ export function PluginsPage() {
   }, []);
 
   /**
+   * A module plugin change waiting for its confirmation (null = none). Applying one
+   * re-assembles the App, which stops the agent runs in flight in EVERY Project — the same
+   * cost a hot push has — so it is said before it is done.
+   */
+  const [pendingApply, setPendingApply] = useState<{ specifier: string; install: boolean } | null>(
+    null,
+  );
+
+  /**
    * Asks this Project for a module plugin (or drops it); the server lists it and re-assembles
-   * the App, so the row's state afterwards is what the running process has.
+   * the App, so the row's state afterwards is what the running process has — including a
+   * load that failed, which is reported as such rather than toasted as installed.
    */
   const runDeploymentInstall = async (specifier: string, install: boolean) => {
     if (pendingSpecifier !== null || projectId === null) return;
     setPendingSpecifier(specifier);
     try {
-      setDeployment(
-        install
-          ? await api.installPlugin(projectId, specifier)
-          : await api.uninstallPlugin(projectId, specifier),
-      );
-      toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
+      const next = install
+        ? await api.installPlugin(projectId, specifier)
+        : await api.uninstallPlugin(projectId, specifier);
+      setDeployment(next);
+      const row = next.plugins.find((p) => p.specifier === specifier);
+      if (install && row?.error !== undefined) {
+        toastError(S.plugins.deploymentFailedToast(specifier, row.error));
+      } else {
+        toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
+      }
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
       setPendingSpecifier(null);
+      setPendingApply(null);
     }
   };
 
@@ -615,12 +630,15 @@ export function PluginsPage() {
                       specifier={row.specifier}
                       entry={row.entry}
                       state={row.state}
+                      error={row.error}
                       shipped={row.shipped}
                       busy={pendingSpecifier === row.specifier}
                       blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
                       onInstall={null}
                       onRemove={
-                        isAdmin ? () => void runDeploymentInstall(row.specifier, false) : null
+                        isAdmin
+                          ? () => setPendingApply({ specifier: row.specifier, install: false })
+                          : null
                       }
                     />
                   ),
@@ -642,7 +660,9 @@ export function PluginsPage() {
                       busy={pendingSpecifier === row.specifier}
                       blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
                       onInstall={
-                        isAdmin ? () => void runDeploymentInstall(row.specifier, true) : null
+                        isAdmin
+                          ? () => setPendingApply({ specifier: row.specifier, install: true })
+                          : null
                       }
                       onRemove={null}
                     />
@@ -674,6 +694,24 @@ export function PluginsPage() {
         )}
       </div>
 
+      {/* A module plugin change: what it costs is said before it runs. */}
+      {pendingApply !== null && (
+        <ConfirmModal
+          open
+          title={
+            pendingApply.install
+              ? S.plugins.applyConfirmInstall(pendingApply.specifier)
+              : S.plugins.applyConfirmRemove(pendingApply.specifier)
+          }
+          tone="primary"
+          confirmLabel={pendingApply.install ? S.plugins.install : S.plugins.uninstall}
+          busy={pendingSpecifier !== null}
+          onClose={() => setPendingApply(null)}
+          onConfirm={() => void runDeploymentInstall(pendingApply.specifier, pendingApply.install)}
+        >
+          <p>{S.plugins.applyConfirmBody}</p>
+        </ConfirmModal>
+      )}
       {/* Bulk update confirmation. Same warning as the per-plugin confirm — an update is an
           overwriting reinstall — and the same primary (overwrite) tone, with the list naming
           every plugin the batch would rewrite. Confirm-first is the point of the button: it
@@ -712,9 +750,16 @@ interface ModulePluginRow {
   specifier: string;
   entry: PluginIndexEntry | undefined;
   state: ModuleState;
+  /** Why the process could not load it, when `state` is `failed`. */
+  error?: string;
   shipped: boolean;
 }
-type ModuleState = "none" | "pending" | "active";
+/**
+ * What a listed module plugin is here: running; waiting for a runtime that can re-assemble
+ * (`pending`); or FAILED — the process tried and could not load it, for the reason the
+ * server sends, which no restart would change.
+ */
+type ModuleState = "none" | "pending" | "active" | "failed";
 
 /**
  * What is installed, in one list: the library's plugins — they ship with the build, so
@@ -738,7 +783,8 @@ export function installedPluginRows(
       kind: "module",
       specifier: listed.specifier,
       entry: index.find((e) => e.name === listed.specifier),
-      state: listed.active ? "active" : "pending",
+      state: listed.active ? "active" : listed.error !== undefined ? "failed" : "pending",
+      ...(listed.error !== undefined ? { error: listed.error } : {}),
       shipped: listed.builtin || deployment?.shipped.includes(listed.specifier) === true,
     });
   }
@@ -821,13 +867,14 @@ function PluginList({
 /** What a plugin carries: the payload kinds a row is filtered by. */
 export type PluginKind = "skills" | "hooks" | "modules";
 /** What a plugin is for this deployment. */
-export type PluginState = "installed" | "available" | "running" | "restart";
+export type PluginState = "installed" | "available" | "running" | "restart" | "failed";
 export const PLUGIN_KINDS: readonly PluginKind[] = ["skills", "hooks", "modules"];
 export const PLUGIN_STATES: readonly PluginState[] = [
   "installed",
   "available",
   "running",
   "restart",
+  "failed",
 ];
 
 /** The category a row belongs to, what it carries and what it is here — the three facets the filter column offers. */
@@ -847,7 +894,9 @@ export function rowFacets(row: PluginRow): {
       ? ["installed", "running"]
       : row.state === "pending"
         ? ["installed", "restart"]
-        : ["available"];
+        : row.state === "failed"
+          ? ["installed", "failed"]
+          : ["available"];
   return { categories: row.entry?.categories ?? [], kinds: ["modules"], states };
 }
 
@@ -1352,6 +1401,7 @@ function ModuleRow({
   specifier,
   entry,
   state,
+  error,
   shipped,
   busy,
   blocked,
@@ -1361,6 +1411,8 @@ function ModuleRow({
   specifier: string;
   entry: PluginIndexEntry | undefined;
   state: ModuleState;
+  /** Why it failed to load, when it did. */
+  error?: string;
   /** The build carries this one: installing it copies nothing over the network. */
   shipped: boolean;
   /** This row's own install or removal is running. */
@@ -1376,7 +1428,9 @@ function ModuleRow({
       ? S.plugins.stateActive
       : state === "pending"
         ? S.plugins.installedRestart
-        : S.plugins.notInstalled;
+        : state === "failed"
+          ? S.plugins.stateFailed
+          : S.plugins.notInstalled;
   // Metadata line, the library card's shape: version · updated · what it is here.
   const updated =
     entry?.updatedAt === undefined
@@ -1417,12 +1471,19 @@ function ModuleRow({
               ? toneInk.success
               : state === "pending"
                 ? toneInk.attention
-                : undefined
+                : state === "failed"
+                  ? toneInk.danger
+                  : undefined
           }
         >
           {stateText}
         </span>
       </p>
+      {state === "failed" && error !== undefined && (
+        <p className={`mt-1 truncate text-[11px] ${toneInk.danger}`} title={error}>
+          {error}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
         {(entry?.categories ?? []).map((category) => (
           <Tag key={category}>{category}</Tag>

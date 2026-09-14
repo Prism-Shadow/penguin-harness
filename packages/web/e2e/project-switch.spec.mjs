@@ -100,6 +100,8 @@ test("clicking the current Project in the dropdown: Agent and Session lists must
   await expect(generalAgent).toBeVisible();
   await page.getByRole("link", { name: "插件市场" }).click();
   await expect(page).toHaveURL(/\/plugins$/);
+  // The installed section is folded on entry; its cards are inert until it is opened.
+  await page.getByRole("button", { name: /已安装的插件|Installed plugins/ }).click();
   await page.getByRole("button", { name: "管理安装 agent-initialization" }).click();
   await expect(page.getByRole("button", { name: "卸载 default_agent" })).toBeVisible();
   await page.keyboard.press("Escape");
