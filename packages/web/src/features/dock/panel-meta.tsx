@@ -9,6 +9,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { FOLDER_ICON } from "../../components/ui/group-list";
 import {
   AGENTS_PAIR_ICON,
+  ELEMENT_PICKER_ICON,
   MEMORY_ICON,
   MESSAGING_RELAY_ICON,
   NAV_ICONS,
@@ -32,6 +33,8 @@ export function panelLabel(kind: PanelKind): string {
       return S.messaging.panelTitle;
     case "schedules":
       return S.schedule.panelTitle;
+    case "workbench":
+      return S.workbench.panelTitle;
   }
 }
 
@@ -49,5 +52,7 @@ export function panelGlyph(kind: PanelKind, size: number = ICON_SIZE.iconButton)
       return <GlyphIcon d={MESSAGING_RELAY_ICON} size={size} />;
     case "schedules":
       return <GlyphIcon d={SCHEDULE_ICON} size={size} />;
+    case "workbench":
+      return <GlyphIcon d={ELEMENT_PICKER_ICON} size={size} />;
   }
 }

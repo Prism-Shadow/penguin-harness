@@ -86,6 +86,11 @@ export interface KeyRule {
  *     cannot outlive a data root.
  *   - `penguin.ooo` (lib/remark-autolink-boundary.ts) is the product's domain inside an
  *     example URL in a doc comment. It is not a storage key.
+ *
+ * A third is not a key either: `penguin.ui-element-ref` (features/workbench/element-payload.ts)
+ * is the UI workbench payload's discriminator — a field of a message, never stored. The scan in
+ * install-scope.test.ts sees its stem (`penguin.ui`, the scan stops at the hyphen) and lists it
+ * as an exclusion rather than a rule, because classifying it as a preference would be a lie.
  */
 export const KEY_RULES: readonly KeyRule[] = [
   // ---------------------------------------------------------------- browser preferences
@@ -172,6 +177,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.files.editorWrap",
     scope: "browser",
     why: "Whether the Files panel's editor soft-wraps long lines; a reading habit, valid against any root.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.workbench.previewUrl",
+    scope: "browser",
+    why: "The dev server the UI workbench preview is pointed at — a port on this machine, not an entity of the data root, and worth exactly as much after a wipe.",
   },
   {
     kind: "exact",

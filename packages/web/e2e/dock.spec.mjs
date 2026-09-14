@@ -189,7 +189,7 @@ test("two toolbar toggles: an opened empty dock shows the picker; hiding keeps t
   await page.getByTestId("dock-toggle-right").click();
   const right = dockAt(page, "right");
   await expect(right.getByTestId("dock-picker")).toBeVisible();
-  for (const kind of ["agents", "terminal", "workspace", "memory", "trace"]) {
+  for (const kind of ["agents", "terminal", "workspace", "memory", "trace", "workbench"]) {
     await expect(right.getByTestId(`dock-pick-${kind}`)).toBeVisible();
   }
   await right.getByTestId("dock-pick-trace").click();
@@ -214,6 +214,29 @@ test("two toolbar toggles: an opened empty dock shows the picker; hiding keeps t
   await right.locator('[data-tab-id="trace"]').getByTestId("dock-tab-close").click();
   await expect(dockAt(page, "right")).toHaveCount(0);
   await expect(page.getByTestId("dock-toggle-right")).toHaveAttribute("aria-expanded", "false");
+});
+
+test("the UI workbench panel opens from the picker and closes like any other", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+  const projectId = await configureProjectModel(page.request);
+  const sessionId = await createSession(page.request, projectId);
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  await page.getByPlaceholder(/输入消息/).waitFor();
+
+  await openViaPicker(page, "right", "workbench");
+  const right = dockAt(page, "right");
+  await expect(right.locator('[data-tab-id="workbench"][data-active="true"]')).toBeVisible();
+  // Its own name is on the tab; the body says what the panel is for.
+  await expect(right.getByText("UI 设计工作台").first()).toBeVisible();
+  // This run is a browser, not the desktop shell: the panel says the preview needs the shell
+  // rather than showing an address row that could not load anything.
+  await expect(right.getByText("UI 设计工作台需要桌面端应用")).toBeVisible();
+  await expect(right.getByText(/pnpm desktop/)).toBeVisible();
+  await expect(right.getByRole("button", { name: "载入" })).toHaveCount(0);
+
+  // A panel tab's × closes it, and the dock with it — same as every other kind.
+  await right.locator('[data-tab-id="workbench"]').getByTestId("dock-tab-close").click();
+  await expect(dockAt(page, "right")).toHaveCount(0);
 });
 
 test("tabs of every kind share a dock: switch, close a panel tab, terminals numbered", async ({

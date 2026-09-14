@@ -40,6 +40,7 @@ import {
   splitFileName,
   lineSuffix,
   sortEntries,
+  stageReference,
   upsertEntry,
   utf8Complete,
   visibleCrumbSegments,
@@ -470,5 +471,58 @@ describe("what the panel hands the composer is a reference, not text for the dra
     // Neither carries a line range: a whole entry has no lines to name.
     expect(file.fromLine).toBeUndefined();
     expect(dir.fromLine).toBeUndefined();
+  });
+});
+
+describe("stageReference", () => {
+  const element = (refId: string, text: string): ComposerReference => ({
+    kind: "element",
+    label: `span.badge "hello"`,
+    refId,
+    text,
+  });
+
+  it("appends what has no identity to match, so one file can be quoted twice", () => {
+    const first: ComposerReference = {
+      kind: "quote",
+      path: "src/app.ts",
+      text: "one",
+      fromLine: 3,
+      toLine: 3,
+    };
+    const second: ComposerReference = {
+      kind: "quote",
+      path: "src/app.ts",
+      text: "two",
+      fromLine: 9,
+      toLine: 11,
+    };
+    expect(stageReference(stageReference([], first), second)).toEqual([first, second]);
+  });
+
+  it("adds a second element when it is a different element", () => {
+    const staged = stageReference(stageReference([], element("el-1", "a")), element("el-2", "b"));
+    expect(staged.map((r) => r.refId)).toEqual(["el-1", "el-2"]);
+  });
+
+  it("updates the chip in place when the same element is staged again", () => {
+    // Two chips for one element would tell the Agent about it twice, each with the numbers that
+    // happened to be read when that chip was staged.
+    const other: ComposerReference = { kind: "file", path: "src/app.ts", text: "@src/app.ts" };
+    const again = element("el-1", "fresh");
+    const staged = stageReference(
+      stageReference(stageReference([], other), element("el-1", "stale")),
+      again,
+    );
+    expect(staged).toEqual([other, again]);
+    // In place: the composer's order is the order the message will carry.
+    expect(staged[0]).toBe(other);
+  });
+
+  it("does not mutate what it was given", () => {
+    const before = [element("el-1", "stale")];
+    const after = stageReference(before, element("el-1", "fresh"));
+    expect(before[0]?.text).toBe("stale");
+    expect(after[0]?.text).toBe("fresh");
   });
 });

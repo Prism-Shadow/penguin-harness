@@ -2605,6 +2605,175 @@ Benchmark：
     overwriteAnyway: "仍然覆盖",
   },
 
+  /** UI design workbench panel: points at a running dev server, picks an element, sends it to the conversation. */
+  workbench: {
+    panelTitle: "UI 设计工作台",
+    addressLabel: "预览地址",
+    addressPlaceholder: "http://localhost:5173",
+    load: "载入",
+    reload: "刷新",
+    foundPorts: "本机在跑的：",
+    noneFound: "这几个常见端口上没探到东西",
+    probing: "正在探测…",
+    probeWeb: "网页",
+    probeOpaque: "有服务但不让读",
+    noDevServer:
+      "没检测到 dev server。先在项目里把它起起来（多数项目是 npm run dev 或 pnpm dev），再回来点「载入」。",
+    badAddress: "这不是一个能打开的地址，请填 http://主机:端口",
+    loading: "正在载入…",
+    connected: "已连接",
+    tierPrecise: "页面带 sourcemap：能否精确到行，选中后看载荷那一行",
+    tierDegraded: "只能降级：这个页面读不到 sourcemap，选中的元素给不出源码行",
+    tierOpaque: "页面不让跨源读取，无法判断能否定位",
+    tierUnknown: "还没能判断定位档位",
+    /**
+     * §9.4's support matrix, in the product's own words (5.4). It is the answer to a question asked
+     * *before* pointing the panel anywhere — "can this thing work on my project at all" — so it is a
+     * fold in the panel while nothing is loaded, rather than a paragraph in a manual nobody opens.
+     * Once a page is up, the panel says that page's own tier instead (`tierText`), which supersedes
+     * any static list. Rows are written from what was measured (D18/m34, D20/m43, D21/m44), not from
+     * what the frameworks claim — `test/workbench-copy.test.ts` pins the names so an unmeasured
+     * framework cannot be added to the copy by accident.
+     */
+    support: {
+      title: "支持范围（L1）",
+      line: "只在 dev server 上工作：页面要带着 sourcemap，才可能给出源码行。",
+      exact: "精确到行列：React 19 / React 18 / Svelte 5（配 Vite 实测）",
+      fileOnly: "只到文件：Vue 3（这个框架只说得出文件，不编行号）",
+      degraded:
+        "降级档（选得中，但没有源码位置）：webpack / Next.js 这类还没实测的构建，以及任何生产构建",
+      unreachable: "选不到：shadow DOM 内部的元素、iframe 里面的元素（L1 不进入这两个）",
+      thirdParty: "第三方库造的节点：位置照给，但在依赖自己的文件里——改它不算数，要传参或包一层",
+      /**
+       * The four limits a user has to know before trusting what the panel says (M5.4). They sit in the
+       * same fold as the matrix because they answer the same question — "what can this thing actually
+       * tell me" — and each one is a measurement, not a hedge: the JSX-vs-stylesheet split and the
+       * `ambiguous` landing point come from m51/m53 (D22/D23), and the unauthenticated return channel
+       * is what m27 read off the wire (D15), kept as-is by D30's answer to Q6.
+       */
+      boundaries: {
+        lead: "已知边界（都不阻断，只是你得知道）：",
+        rows: {
+          jsx: "位置指的是这段 JSX 写在哪儿（文件:行:列），不是某条 CSS 规则在哪儿",
+          styles: "改样式时 Agent 可能直接改样式表 —— 那是它的判断，不是位置给错了",
+          ambiguous: "「有歧义」时给的位置可能是包着它的那层元素（同一处写法有多个兄弟节点）",
+          channel:
+            "拾取结果走预览页自己的 console 回传：页面理论上能伪造一条，所以载荷要先摆给你看、由你点「加入对话」才发得出去；要彻底堵住得动应用的安全边界，L1 不做",
+        },
+      },
+    },
+    failure: {
+      refused: "这个端口上没有服务在听",
+      timeout: "连上了但一直没回应，页面可能卡住或太慢",
+      dns: "主机名解析不了，检查地址拼写",
+      blocked: "对方拒绝被嵌入（X-Frame-Options / frame-ancestors）",
+      httpError: "对方返回了错误页",
+      crashed: "预览进程崩了",
+      aborted: "载入被取消",
+      other: "没能载入",
+    },
+    guestUnavailable:
+      "当前这个应用壳没开 webview（需要 packages/desktop 里 webviewTag: true），预览无法显示。",
+    desktopOnly: "UI 设计工作台需要桌面端应用",
+    desktopOnlyDetail:
+      "预览要把你正在跑的 dev server 嵌进来并读它页面里的元素，这只有桌面端壳（pnpm desktop）能做到；浏览器里打开的应用只能用其他面板。",
+    pickStart: "开启选择",
+    pickStop: "关闭选择",
+    pickPause: "暂离",
+    pickResume: "恢复选择",
+    candidate: "候选",
+    picked: "已选中",
+    pickHint:
+      "悬停高亮、点击选中（那一次点击不会落到页面上）；Esc 先取消选中，再按一次退出选择模式。够不着的元素先点「暂离」把页面操作出来，再「恢复选择」。",
+    pausedHint:
+      "暂离中：页面完全归你操作——下拉、模态、悬停浮层都可以点开，点「恢复选择」接着选（L1 不会替你展开）。",
+    pickOffHint: "选择模式已关：页面交互完全正常。",
+    pickedNext: "载荷已组装好（见上方）；「加入对话」把它放进输入框。",
+    addToChat: "加入对话",
+    /** One element a send-time re-resolution could not find (AC-8), and which way it went. */
+    goneElement: (label: string, reason: "missing" | "replaced" | "page-changed") =>
+      reason === "missing"
+        ? `已消失：${label}（页面里已经找不到它）`
+        : reason === "replaced"
+          ? `已不是原来那个元素：${label}（这个位置上换成了别的元素）`
+          : `页面已切换：${label} 是在另一个页面上选的`,
+    goneElementDetail: "这一条不会发出去——重新选一个，或者把 chip 从输入框里删掉。",
+    /** The chip itself, when its element is not in the page any more. */
+    goneChip: "已消失",
+    /** The composer is held rather than send a chip the page has already contradicted. */
+    sendHeld: (detail: string) => `没有发送：${detail}`,
+    /** The line above the payload in the message: what was picked, and on which page. */
+    elementLead: (name: string, page: string, note?: string) =>
+      `选中的 UI 元素：${name}（页面 ${page}）${note === undefined ? "" : `——${note}`}`,
+    /**
+     * The one thing the payload cannot say about an element the picker could not reach into (M4.4,
+     * PRD §9.4): the panel says it in full below, and the message says it in one clause so the Agent
+     * knows the element it is handed is a host or a frame rather than the thing under the cursor.
+     */
+    domContextMessage: {
+      shadow: "这是 Shadow DOM 的宿主元素，你点的那部分在它的 shadow root 里（L1 不穿透）",
+      frame: "这是 iframe 元素本身，它里面是另一个文档（L1 不进入 frame）",
+    },
+    /** §9.4's standing limits, spelled out where they apply rather than in a manual nobody reads. */
+    domContext: {
+      shadow: (host: string) =>
+        `这个元素在 Shadow DOM 内部：L1 不穿透 shadow root，给你的是外层宿主 ${host}——要改样式就改宿主，或者在组件里传参。`,
+      frame:
+        "这是 iframe 元素本身，它里面是另一个文档：L1 不进入 frame 内部——请让那个页面单独打开，再对它开一个预览。",
+    },
+    /** Why the element the panel is holding cannot be seen — read off its own facts, not guessed. */
+    notVisible: {
+      "display-none": "你选中的元素现在是 display:none，页面上看不到它（可能是刚被隐藏的浮层）。",
+      "visibility-hidden": "你选中的元素现在是 visibility:hidden，页面上看不到它。",
+      "opacity-zero": "你选中的元素现在是 opacity:0——占着位置但完全透明。",
+      "zero-size": "你选中的元素尺寸是 0×0，页面上没有可见区域。",
+    },
+    notVisibleDetail:
+      "先「暂离」把页面操作到它可见（展开下拉、打开模态），再「恢复选择」重新点它；L1 不会替你展开。",
+    /** The page embeds frames; said while picking, before the user hunts for what is inside one. */
+    framesInPage: (count: number) =>
+      `这个页面里有 ${count} 个 iframe：L1 不进入 frame 内部，那里面的元素选不到。`,
+    payload: {
+      title: "载荷（§6 v1）",
+      refId: "refId",
+      selector: "选择器",
+      tag: "标签",
+      role: "角色",
+      name: "名称",
+      text: "文本",
+      testId: "testId",
+      rect: "矩形",
+      parentChain: "父链",
+      classes: "类名",
+      project: "项目",
+      page: "页面",
+      source: "源码位置",
+      json: "载荷 JSON（v1）",
+    },
+    /**
+     * The `source` row, said as the tier it landed in (FR-07's four levels), with the reason spelled
+     * out when there is no location. These are the words a user reads to decide whether to keep
+     * working with this page at all, so they name the cause rather than the symptom.
+     */
+    sourceTier: {
+      locating: "正在定位源码位置…",
+      exact: (where: string) => `精确 ${where}`,
+      fileOnly: (file: string) => `只到文件 ${file}（这个框架只说得出文件，不编行号）`,
+      ambiguous: (where: string, candidates: number) =>
+        `有歧义 ${where}（同一处写法有 ${candidates} 个候选，可能是兄弟节点）`,
+      none: {
+        "page-no-map": "无源码位置：这个页面读不到 sourcemap（多半是生产构建）",
+        "dependency-runtime": "无源码位置：这个元素由框架或依赖的运行时创建，不在你的项目里",
+        "no-evidence": "无源码位置：这个页面的框架没有提供元素位置（未支持的框架或构建）",
+        unresolved: "无源码位置：拿到了线索，但这个位置没能映射回源码",
+      },
+      /**
+       * What a located-but-not-ours element adds to its row: the location is right and editing it
+       * changes nothing for this project, so the row says which file family it landed in (§9.4).
+       */
+      thirdParty: "库内部（依赖自己的文件，改它不算数：给组件传参或包一层）",
+    },
+  },
   usage: {
     title: "成本与统计",
     today: "今日",
