@@ -17,6 +17,21 @@ export interface AccountMenuSession {
 }
 
 /**
+ * Whether this page IS the desktop shell's own window — the one place a control may reach
+ * the app around the page: its updater, the chrome it is drawn in.
+ *
+ * BOTH halves are required. `desktopMode` alone would also match a browser signed in
+ * against the same desktop-mode server over loopback, which may be on another machine and
+ * must not drive this one's GUI app. `sessionVia` alone would match a stale desktop cookie
+ * replayed against a plain `penguin server` on the same data root, where no shell is
+ * listening at all. The server enforces the same pair on every route behind these
+ * controls.
+ */
+export function isDesktopShellWindow(session: AccountMenuSession): boolean {
+  return session.desktopMode && session.sessionVia === "desktop";
+}
+
+/**
  * Whether to offer a change-password entry at all.
  *
  * The desktop shell's own window is the one session with no password to change: it signs
@@ -35,7 +50,7 @@ export interface AccountMenuSession {
  * root, where the server requires the old password like any other session.
  */
 export function offersChangePassword(session: AccountMenuSession): boolean {
-  return !(session.desktopMode && session.sessionVia === "desktop");
+  return !isDesktopShellWindow(session);
 }
 
 /**
