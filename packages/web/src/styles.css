@@ -12,25 +12,6 @@
 /* Dark theme toggled via the html.dark class (Tailwind 4 custom variant). */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* The stretch of the context panel's bar past the compaction threshold: hatched, so it reads as
-   room the model has but compaction fires before the Session can use — distinct from the plain
-   free run left of the cutter. Written as plain CSS: a dark: variant inside @apply does not
-   compile for this kind of rule. */
-.context-hatch {
-  background-image: repeating-linear-gradient(
-    135deg,
-    rgb(156 163 175 / 0.55) 0 2px,
-    transparent 2px 6px
-  );
-}
-.dark .context-hatch {
-  background-image: repeating-linear-gradient(
-    135deg,
-    rgb(75 85 99 / 0.75) 0 2px,
-    transparent 2px 6px
-  );
-}
-
 /* Brand color scale (Google blue family): generates utility classes like bg-brand-600 / text-brand-300. */
 @theme {
   --color-brand-25: #f8fbff;
@@ -542,6 +523,28 @@
   /* Nor do the two busy session glyphs (#291): their keyframes only rotate and scale, so
      disabling them leaves the hourglass upright and the compress mark at full height — both
      still present, just not moving. */
+}
+
+/* The stretch of the context panel's bar past the compaction threshold: hatched, so it reads as
+   room the model has but compaction fires before the Session can use — distinct from the plain
+   free run left of the cutter. The stripe is the only carrier of that meaning (its `title` sits
+   inside the bar's aria-hidden track), so each theme weights its own ink to clear 3:1 against
+   the track it is drawn on: gray-200 in light, and in dark this app's own override of gray-800
+   (#1f1f1f, far darker than the stock value), which is why the dark stripe is the lighter ink
+   of the two. */
+.context-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--color-gray-600) 70%, transparent) 0 2px,
+    transparent 2px 6px
+  );
+}
+.dark .context-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--color-gray-400) 60%, transparent) 0 2px,
+    transparent 2px 6px
+  );
 }
 
 /* ---------- Minimal typography for Markdown body content (no typography plugin) ---------- */
