@@ -5,25 +5,32 @@
  * own token window included, which for a desktop install is the only session there is. A
  * profile is display data, so there is no old password for the server to check.
  *
- * One Save button for the page, like the Upload limits page: the avatar and the nickname are
- * two halves of one identity and a picked image that saved itself before the name was typed
- * would commit half of an edit. The picked file is turned into its stored form (cropped,
- * scaled, encoded — see lib/avatar-image.ts) at pick time so the preview shows exactly what
- * Save will send, but nothing leaves the browser until Save.
+ * The page has no footer: every control writes when it is used, and the button that writes a
+ * value stands next to that value. Choosing an image applies it at once, because a picture is
+ * direct manipulation with nothing to review before committing, and one staged behind a button
+ * is the kind of edit people set and then lose by closing the dialog. Typed text is the one
+ * thing here that still needs an explicit commit, so the nickname keeps a Save — beside the
+ * field, not under the page. Restore default is a write like any other on both rows, so the
+ * two buttons next to one control never disagree about when they act.
+ *
+ * Nothing is applied optimistically: the preview and every other surface show what is STORED.
+ * A write that fails therefore leaves the screen agreeing with the server and says so inline,
+ * rather than showing a picture that silently disappears on the next load.
  */
 import { useState } from "react";
 import type { ChangeEvent } from "react";
+import type { UpdateProfileRequest } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { avatarDataUrlFromFile } from "../../lib/avatar-image";
+import { profileControls } from "../../lib/profile-form";
 import { useAuth } from "../../state/auth";
 import { Button, labelButtonClass } from "../../components/ui/button";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Input } from "../../components/ui/input";
 import { UserAvatar, USER_AVATAR_SIZE } from "../../components/ui/user-avatar";
 import { toastSuccess } from "../../components/ui/toast";
-import { SectionShell } from "./section-shell";
 import { PrefRow } from "./setting-row";
 
 /** What the picker offers — the three formats the server stores, spelled the way `accept` wants. */
@@ -31,129 +38,163 @@ const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";
 
 const CHANGE_AVATAR_CLASS = labelButtonClass("secondary", "sm");
 
+/**
+ * The same control while a write is running. `Button`'s `disabled:` rules cannot help here — a
+ * `<label>` takes no disabled state — and a `cursor-not-allowed` beside `labelButtonClass`'s
+ * `cursor-pointer` would be decided by the order the stylesheet was generated in rather than by
+ * this string. `pointer-events-none` has no counterpart to lose to, and it removes the hover
+ * colour and the pointer cursor together; the input inside is `disabled`, so Tab skips it too.
+ */
+const CHANGE_AVATAR_BUSY_CLASS = `${CHANGE_AVATAR_CLASS} pointer-events-none opacity-60`;
+
+/** Which row is mid-write. One at a time, so the busy mark always names the row being used. */
+type PendingWrite = "avatar" | "nickname";
+
 export function ProfileSection() {
   const { user, setUserInfo } = useAuth();
-  /**
-   * Drafts, as the request would carry them: `undefined` means "not edited on this page", so
-   * Save sends only what changed — the route is a patch and an unedited field must stay
-   * untouched rather than be rewritten with the value the page happened to load.
-   */
-  const [draftAvatar, setDraftAvatar] = useState<string | null | undefined>(undefined);
+  /** The typed nickname; `undefined` means "not edited here", so the field shows what is stored. */
   const [draftName, setDraftName] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<PendingWrite | null>(null);
 
-  const storedName = user?.displayName ?? "";
-  const name = draftName ?? storedName;
-  const avatar = draftAvatar !== undefined ? draftAvatar : (user?.avatar ?? null);
-  // A blank field means "clear it", which the route spells as null; a name is trimmed here as
-  // well as on the server so the comparison below sees the value that would be stored.
-  const nameToSend = name.trim() === "" ? null : name.trim();
-  const nameChanged = (nameToSend ?? "") !== storedName;
-  const avatarChanged = draftAvatar !== undefined && draftAvatar !== (user?.avatar ?? null);
-  const dirty = nameChanged || avatarChanged;
+  /**
+   * One patch out, and the row that comes back becomes the auth state: the sidebar's user row,
+   * the collapsed rail's trigger and the account menu's header all read it, so they change with
+   * this call rather than on the next page load.
+   */
+  const send = async (patch: UpdateProfileRequest): Promise<boolean> => {
+    try {
+      const res = await api.updateProfile(patch);
+      setUserInfo(res.user);
+      toastSuccess(S.common.saved);
+      return true;
+    } catch (e) {
+      setError(apiErrorText(e));
+      return false;
+    }
+  };
 
-  const onPickFile = async (e: ChangeEvent<HTMLInputElement>) => {
+  /**
+   * Every control goes through here, so two writes can never be in flight together and the last
+   * failure is never left standing beside a control the user has since used again.
+   */
+  const run = async (what: PendingWrite, body: () => Promise<unknown>): Promise<void> => {
+    if (pending !== null) return;
+    setPending(what);
+    setError(null);
+    try {
+      await body();
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const onPickFile = (e: ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0];
     // Reset before reading so re-picking the same file fires change again.
     e.target.value = "";
-    if (!file) return;
-    setError(null);
-    try {
-      const dataUrl = await avatarDataUrlFromFile(file);
+    if (file === undefined) return;
+    // The encode runs inside the busy window as well as the request: it decodes the picked file
+    // and redraws it, which for a phone photograph is long enough to click twice through.
+    void run("avatar", async () => {
+      const dataUrl = await avatarDataUrlFromFile(file).catch(() => undefined);
+      if (dataUrl === undefined) {
+        setError(S.profile.avatarUnreadable);
+        return;
+      }
       if (dataUrl === null) {
         setError(S.profile.avatarTooLarge);
         return;
       }
-      setDraftAvatar(dataUrl);
-    } catch {
-      setError(S.profile.avatarUnreadable);
-    }
-  };
-
-  const save = async () => {
-    if (!dirty || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await api.updateProfile({
-        ...(nameChanged ? { displayName: nameToSend } : {}),
-        ...(avatarChanged ? { avatar: draftAvatar ?? null } : {}),
-      });
-      // Adopt the server's row: the user menu's avatar and name read the same auth state, so
-      // they change with this call rather than on the next page load. The drafts go back to
-      // "not edited" so what is on screen is the stored value again.
-      setUserInfo(res.user);
-      setDraftAvatar(undefined);
-      setDraftName(undefined);
-      toastSuccess(S.common.saved);
-    } catch (e) {
-      setError(apiErrorText(e));
-    } finally {
-      setBusy(false);
-    }
+      await send({ avatar: dataUrl });
+    });
   };
 
   if (!user) return null;
+  const controls = profileControls(user, draftName ?? user.displayName ?? "");
+  const busy = pending !== null;
+
   return (
-    <SectionShell
-      actions={
-        <Button size="sm" variant="primary" disabled={!dirty || busy} onClick={() => void save()}>
-          {S.common.save}
-        </Button>
-      }
-    >
+    <section>
       <div className="divide-y divide-gray-100 dark:divide-gray-800/60">
-        <PrefRow label={S.profile.avatar}>
+        <PrefRow label={S.profile.avatar} info={S.profile.avatarInfo}>
           <div className="flex items-center gap-3">
             <UserAvatar
               userId={user.userId}
-              {...(name.trim() !== "" ? { displayName: name.trim() } : {})}
-              {...(avatar !== null ? { avatar } : {})}
+              {...(user.displayName !== undefined ? { displayName: user.displayName } : {})}
+              {...(user.avatar !== undefined ? { avatar: user.avatar } : {})}
               size={USER_AVATAR_SIZE.preview}
             />
             {/* A label rather than a Button: the hidden file input has to be labelled for a
                 click to open the native picker. Same two records Button reads, at the form rung
                 its neighbours sit on. */}
-            <label className={CHANGE_AVATAR_CLASS}>
-              <HiddenFileInput
-                accept={AVATAR_ACCEPT}
-                disabled={busy}
-                onChange={(e) => void onPickFile(e)}
-              />
+            <label className={busy ? CHANGE_AVATAR_BUSY_CLASS : CHANGE_AVATAR_CLASS}>
+              <HiddenFileInput accept={AVATAR_ACCEPT} disabled={busy} onChange={onPickFile} />
               {S.profile.changeAvatar}
             </label>
-            {avatar !== null && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => {
-                  setDraftAvatar(null);
-                  setError(null);
-                }}
-              >
-                {S.profile.removeAvatar}
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-label={S.profile.restoreDefaultOf(S.profile.avatar)}
+              disabled={busy || !controls.canRestoreAvatar}
+              onClick={() => void run("avatar", () => send({ avatar: null }))}
+            >
+              {S.profile.restoreDefault}
+            </Button>
           </div>
         </PrefRow>
         <PrefRow label={S.profile.displayName} hint={S.profile.displayNameHint}>
-          <Input
-            size="sm"
-            maxLength={32}
-            value={name}
-            placeholder={S.profile.displayNamePlaceholder}
-            disabled={busy}
-            aria-label={S.profile.displayName}
-            onChange={(e) => {
-              setDraftName(e.target.value);
-              setError(null);
-            }}
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              size="sm"
+              className="w-48"
+              maxLength={32}
+              value={draftName ?? user.displayName ?? ""}
+              placeholder={S.profile.displayNamePlaceholder}
+              disabled={busy}
+              aria-label={S.profile.displayName}
+              onChange={(e) => {
+                setDraftName(e.target.value);
+                setError(null);
+              }}
+            />
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={busy || !controls.canSaveNickname}
+              onClick={() =>
+                void run("nickname", async () => {
+                  // Back to "not edited" only once it landed, so a failed save keeps the text
+                  // the user typed instead of snapping the field back to the stored value.
+                  if (await send({ displayName: controls.nicknameToStore })) {
+                    setDraftName(undefined);
+                  }
+                })
+              }
+            >
+              {S.common.save}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-label={S.profile.restoreDefaultOf(S.profile.displayName)}
+              disabled={busy || !controls.canRestoreNickname}
+              onClick={() =>
+                void run("nickname", async () => {
+                  if (await send({ displayName: null })) setDraftName(undefined);
+                })
+              }
+            >
+              {S.profile.restoreDefault}
+            </Button>
+          </div>
         </PrefRow>
       </div>
+      {/* Busy and failed, in the one place both rows can say it: a write here changes the
+          sidebar as well as this page, so "it did not happen" has to be stated rather than
+          left to the preview looking unchanged. */}
+      {busy && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{S.common.saving}</p>}
       {error !== null && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
-    </SectionShell>
+    </section>
   );
 }

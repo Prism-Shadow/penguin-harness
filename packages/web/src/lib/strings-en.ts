@@ -451,8 +451,18 @@ export const en: Strings = {
   profile: {
     /** Avatar row: its label, and the two actions beside the preview. */
     avatar: "Avatar",
+    /** Disclosed by the "?" beside that label: when a picked image takes effect. */
+    avatarInfo:
+      "A picture takes effect as soon as you choose it — there is no separate Save for it. The nickname beside it is typed text, so it keeps a Save of its own.",
     changeAvatar: "Change avatar",
-    removeAvatar: "Remove avatar",
+    /**
+     * Shared label of the two buttons that put a field back to what an account with nothing set
+     * shows: the letter tile for the avatar, the username for the nickname. Neither deletes
+     * anything the app cannot draw again, which is why it does not say "remove".
+     */
+    restoreDefault: "Restore default",
+    /** The same, named for what it restores: two of these sit on one page. */
+    restoreDefaultOf: (subject: string) => `Restore default: ${subject}`,
     /** The picked image could not be brought under the size limit even as JPEG. */
     avatarTooLarge: "That image is too large. Please pick a smaller one.",
     /** The picked file could not be decoded as an image at all. */

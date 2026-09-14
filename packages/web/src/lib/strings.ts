@@ -456,8 +456,18 @@ export const zh = {
   profile: {
     /** Avatar row: its label, and the two actions beside the preview. */
     avatar: "头像",
+    /** Disclosed by the "?" beside that label: when a picked image takes effect. */
+    avatarInfo:
+      "选择图片后立即生效，无需另行保存；旁边的昵称是输入的文本，因此保留了自己的保存按钮。",
     changeAvatar: "更换头像",
-    removeAvatar: "移除头像",
+    /**
+     * Shared label of the two buttons that put a field back to what an account with nothing set
+     * shows: the letter tile for the avatar, the username for the nickname. Neither deletes
+     * anything the app cannot draw again, which is why it does not say "remove".
+     */
+    restoreDefault: "恢复默认",
+    /** The same, named for what it restores: two of these sit on one page. */
+    restoreDefaultOf: (subject: string) => `恢复默认：${subject}`,
     /** The picked image could not be brought under the size limit even as JPEG. */
     avatarTooLarge: "图片过大，请换一张尺寸更小的图片。",
     /** The picked file could not be decoded as an image at all. */

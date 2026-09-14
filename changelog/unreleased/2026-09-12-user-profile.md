@@ -14,12 +14,19 @@ to draw the id and its letter tile draw those instead.
 
 ## Details
 
-- The page holds two rows and one Save button. **Change avatar** opens a picture picker; the
-  picked image is centre-cropped to a square and re-encoded at 128×128 as PNG, or as JPEG at
-  quality 0.85 when the PNG would pass 100 KB. An image still over 128 KiB is refused inline
-  instead of being sent for the server to reject, and **Remove avatar** appears only once one is
-  set. The **nickname** is 1–32 characters, counted as characters so a Chinese name may be 32 of
-  them, and clearing the field clears the nickname.
+- The page holds two rows and no footer: every control writes when it is used, and the button
+  that writes a value stands beside that value. **Change avatar** opens a picture picker and the
+  picked image applies at once — centre-cropped to a square and re-encoded at 128×128 as PNG, or
+  as JPEG at quality 0.85 when the PNG would pass 100 KB; an image still over 128 KiB is refused
+  inline instead of being sent for the server to reject. **Restore default** beside it puts the
+  letter tile back. The **nickname** is typed text, so it keeps an explicit **Save** next to the
+  field and a **Restore default** of its own, whose default is the user id; both write on click,
+  so the two buttons beside one field never disagree about when they act. It is 1–32 characters,
+  counted as characters so a Chinese name may be 32 of them, and saving it blank clears it.
+- A button that would write what is already stored is disabled, and nothing is applied
+  optimistically: every surface, the page's own preview included, draws what is stored, so a
+  write that fails leaves the screen agreeing with the server and reports the failure inline
+  rather than showing an avatar that disappears on the next load.
 - The page is visible in every session, the desktop shell's own token window included — unlike
   the Account page beside it, which needs a password to change. `PUT /api/me/profile` follows the
   same rule and takes any authenticated session.
