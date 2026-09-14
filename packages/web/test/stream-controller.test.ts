@@ -3,7 +3,8 @@
  * authoritative state while streaming (history-closing decision), the generation guard
  * against rebuild re-entrancy during replay, resync rebuild (clears the pending table +
  * keeps localDecisions), approval re-delivery keyed by origin composite key + missing
- * card backfill, and history load failure/retry.
+ * card backfill, the local answer time an optimistic resolveApproval stamps, and history
+ * load failure/retry.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -330,6 +331,33 @@ describe("approval re-delivery (origin composite key + missing-card backfill)", 
     expect(h.controller.pendingApprovals.size).toBe(1);
     h.controller.handleOmni(withOrigin(approvalDecision("allow", "t1"), "c1"));
     expect(h.controller.pendingApprovals.size).toBe(0);
+  });
+
+  it("an optimistic resolveApproval stamps this end's answer time, and the later approval_decision fills approvalAtMs without moving it", async () => {
+    const h = createHarness();
+    const p = h.controller.load();
+    const tc = toolCall({
+      name: "exec_command",
+      arguments: '{"cmd":"pnpm dev"}',
+      toolCallId: "t1",
+    });
+    h.resolveLoad([at(tc, "2026-07-05T00:00:00.000Z")]);
+    await p;
+    h.controller.handleServer({ type: "approval_request", toolCall: tc });
+    h.controller.resolveApproval(approvalKey(undefined, "t1"));
+    const card = findToolCard(h.controller.model, undefined, "t1") as ToolCallItem;
+    // The injected clock: clicking removes the pending entry a broadcast before the decision
+    // event, and the card carries the moment this end answered for that whole window.
+    expect(card.localApprovalAtMs).toBe(1_000_000);
+    expect(card.approvalAtMs).toBeUndefined();
+
+    // The event arrives afterwards. approvalAtMs takes the server timestamp — noteApprovalWait
+    // subtracts another server time from it, so it must never be handed a local clock — while
+    // the local stamp stays put, which is what keeps an elapsed-time gate reading it
+    // local-first from seeing its start time move and restarting.
+    h.controller.handleOmni(at(approvalDecision("allow", "t1"), "2026-07-05T00:00:05.000Z"));
+    expect(card.approvalAtMs).toBe(Date.parse("2026-07-05T00:00:05.000Z"));
+    expect(card.localApprovalAtMs).toBe(1_000_000);
   });
 });
 
