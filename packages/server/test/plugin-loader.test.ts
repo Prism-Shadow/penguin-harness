@@ -109,20 +109,15 @@ describe("plugin loading", () => {
     }`;
 
   /**
-   * A package on disk: package.json marked `penguin`, the generated table beside it, and
-   * an index.mjs default export (`null` table = a package that was never built).
+   * A package on disk: its package.json, the generated table beside it, and an index.mjs
+   * default export (`null` table = a package that ships no modules, or was never built).
    */
-  async function writePackage(
-    name: string,
-    table: unknown | null,
-    index: string,
-    penguin: unknown = {},
-  ): Promise<string> {
+  async function writePackage(name: string, table: unknown | null, index: string): Promise<string> {
     const dir = path.join(root, "node_modules", ...name.split("/"));
     await mkdir(dir, { recursive: true });
     await writeFile(
       path.join(dir, "package.json"),
-      JSON.stringify({ name, main: "./index.mjs", penguin }),
+      JSON.stringify({ name, main: "./index.mjs" }),
       "utf8",
     );
     if (table !== null) await writeFile(path.join(dir, IFACES_FILE), JSON.stringify(table), "utf8");
@@ -198,19 +193,24 @@ describe("plugin loading", () => {
     expect(result.failed.get(file)).toMatch(/Ghost: not in the generated manifest table/);
   });
 
-  it("a package without package.json#penguin is not a plugin, and says so", async () => {
-    const file = await writePluginModule("plain", "export default { modules: [] };");
+  it("a package without a table ships no modules — a plugin is a plugin by being listed", async () => {
+    const file = await writePackage("@acme/skills-only", null, "export default { modules: [] };");
     await writeConfig({ plugins: [file] });
     const result = await loadPlugins(root);
-    expect(result.loaded).toEqual([]);
-    expect(result.failed.get(file)).toMatch(/not a plugin package/);
+    expect(result.failed.size).toBe(0);
+    expect(result.loaded[0]!.modules).toEqual([]);
   });
 
-  it("a plugin package without its table was never built, and says so", async () => {
-    const file = await writePackage("@acme/unbuilt", null, "export default { modules: [] };");
+  it("a package that names module classes but ships no table was never built, and says so", async () => {
+    const file = await writePackage(
+      "@acme/unbuilt",
+      null,
+      `${thingClass}
+       export default { modules: [Thing] };`,
+    );
     await writeConfig({ plugins: [file] });
     const result = await loadPlugins(root);
-    expect(result.failed.get(file)).toMatch(/ifaces\.json is missing/);
+    expect(result.failed.get(file)).toMatch(/ifaces\.json is missing — build the package/);
   });
 
   it("a malformed manifest in the table is a load failure naming the module", async () => {

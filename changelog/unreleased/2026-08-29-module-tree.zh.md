@@ -22,7 +22,7 @@
 
 ## 插件即模块
 
-一个插件包就是一组模块，写法与 platform 自己的模块相同：`@Component` / `@Module` 类，字段上是 `@Use` / `@Provide` / `@Bind`。它的 manifest 是生成的——包的 build 跑 `gen-ifaces`，把 `ifaces.json` 随标记了 `"penguin": {}` 的 `package.json` 一起发布；默认导出是 `{ modules: [<class>, …] }`，加载时每个类对照该表核对，这些模块在每次 App 创建时作为 platform 树的子节点启动。`activate(ctx)` 契约——`initialize` / `create` 事件、`PenguinInterface`、`PenguinContext`——不再存在；它过去注册的东西（沙箱后端、workflow factory）现在是 contribution 或 provides，它过去触达的东西（`terminals`、`sandbox`）现在是按签名校验的 requires。四个沙箱后端已转换。手写的 manifest（workflow 包的）里为空的 `requires`、`provides`、`contributes`、`children` 可以省略。
+一个插件包就是一组模块，写法与 platform 自己的模块相同：`@Component` / `@Module` 类，字段上是 `@Use` / `@Provide` / `@Bind`。它的 manifest 是生成的——包的 build 跑 `gen-ifaces`，把 `ifaces.json` 随 `package.json` 一起发布——这张表就是包的模块载荷，包是不是插件由它被列出决定；默认导出是 `{ modules: [<class>, …] }`，加载时每个类对照该表核对，这些模块在每次 App 创建时作为 platform 树的子节点启动。`activate(ctx)` 契约——`initialize` / `create` 事件、`PenguinInterface`、`PenguinContext`——不再存在；它过去注册的东西（沙箱后端、workflow factory）现在是 contribution 或 provides，它过去触达的东西（`terminals`、`sandbox`）现在是按签名校验的 requires。四个沙箱后端已转换。手写的 manifest（workflow 包的）里为空的 `requires`、`provides`、`contributes`、`children` 可以省略。
 
 ## 表就是一个页面
 

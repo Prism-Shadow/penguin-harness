@@ -8,17 +8,18 @@
  * `import type` only and stays a self-contained library that happens to satisfy an
  * interface.
  *
- * A plugin is a set of MODULES — the same unit the harness itself is built from, written
- * the same way: a `@Component` (or `@Module`) class whose `@Use` / `@Provide` / `@Bind`
- * fields are its requirements, provisions and contribution code halves. Its manifest is
- * GENERATED, not written: the package's build runs `scripts/gen-ifaces.mjs` over its own
- * tsconfig and ships the resulting `ifaces.json` beside its `package.json` — the same
- * table the harness generates for itself, holding the manifest of every decorated class
- * and the signature of every interface they name. The host reads that file without
- * executing the package, and the package's default export names the classes to boot:
+ * A plugin is an npm package; what it carries is what it ships. Its MODULES — the same
+ * unit the harness itself is built from — are written the same way: a `@Component` (or
+ * `@Module`) class whose `@Use` / `@Provide` / `@Bind` fields are its requirements,
+ * provisions and contribution code halves. Their manifests are GENERATED, not written:
+ * the package's build runs `scripts/gen-ifaces.mjs` over its own tsconfig and ships the
+ * resulting `ifaces.json` beside its `package.json` — the same table the harness
+ * generates for itself, holding the manifest of every decorated class and the signature
+ * of every interface they name. That table IS the module payload: the host reads it
+ * without executing the package, and the package's default export names the classes to
+ * boot. A package without one ships no modules.
  *
  *   // package.json
- *   "penguin": {},                       // marks a plugin package
  *   "files": ["dist", "ifaces.json"],
  *   "scripts": { "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup" }
  *   // src/index.ts

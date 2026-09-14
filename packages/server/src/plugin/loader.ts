@@ -82,10 +82,11 @@ async function importPlugin(specifier: string): Promise<{ module: unknown; file:
 export const IFACES_FILE = "ifaces.json";
 
 /**
- * The package's generated table (`ifaces.json` beside the `package.json` that carries
- * `penguin`), found by walking up from the resolved entry file: the manifest of every
- * decorated class, the signature of every interface they name. Absent `penguin` = not a
- * plugin package; a plugin package without its table was never built.
+ * The package's generated table (`ifaces.json` beside its `package.json`, the nearest one
+ * above the resolved entry file): the manifest of every decorated class, the signature of
+ * every interface they name. A package is a plugin by being listed; the table is its
+ * MODULE payload, and a package without one ships no modules (`manifests` empty). Null
+ * only when no `package.json` is above the file at all.
  */
 async function readPackageTable(
   file: string | null,
@@ -95,15 +96,14 @@ async function readPackageTable(
   for (;;) {
     const where = path.join(dir, "package.json");
     try {
-      const raw = JSON.parse(await fs.readFile(where, "utf8")) as { penguin?: unknown };
-      if (raw.penguin === undefined) return null;
+      await fs.access(where);
       const tableFile = path.join(dir, IFACES_FILE);
       let text: string;
       try {
         text = await fs.readFile(tableFile, "utf8");
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-        throw new Error(`${tableFile} is missing — the package was not built (gen-ifaces)`);
+        return { where, ifaces: { ifaces: {}, types: {} }, manifests: {} };
       }
       const table = JSON.parse(text) as {
         ifaces?: unknown;
@@ -161,7 +161,7 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
       const { module, file } = await importPlugin(specifier);
       const read = await readPackageTable(file);
       if (read === null) {
-        failed.set(specifier, "not a plugin package: no package.json#penguin above it");
+        failed.set(specifier, `no package.json above ${file}`);
         continue;
       }
       const plugin = asPlugin(module);
@@ -171,6 +171,12 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
           "the default export is not a Plugin ({ modules: [<@Component or @Module class>, …] })",
         );
         continue;
+      }
+      if (plugin.modules.length > 0 && Object.keys(read.manifests).length === 0) {
+        // Classes named, no table: the package was not built (gen-ifaces runs in its build).
+        throw new Error(
+          `the default export names module classes, but ${path.join(path.dirname(read.where), IFACES_FILE)} is missing — build the package`,
+        );
       }
       const modules: ModuleDef[] = [];
       const seen = new Set<string>();
