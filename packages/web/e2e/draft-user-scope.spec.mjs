@@ -59,9 +59,11 @@ test("switching accounts: B does not restore A's draft; both drafts coexist", as
 
   // A logs out: the bottom-left user menu (the username button shares its name with the top
   // Project switcher — the initial Project's display name defaults to the username — so take
-  // the last match, which is the bottom user menu).
+  // the last match, which is the bottom user menu). The menu row only opens the confirmation;
+  // the dialog's own button, scoped to the dialog because both carry the same label, ends the session.
   await page.getByRole("button", { name: UA }).last().click();
   await page.getByRole("button", { name: "登出" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "登出" }).click();
   await page.waitForURL(/\/login/);
 
   // B logs in on the same browser, landing on the draft page for the shared Project.

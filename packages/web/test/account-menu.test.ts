@@ -114,6 +114,22 @@ describe("the account menu", () => {
     expect(source.slice(gate, signOut).match(/<\w/g)).toEqual(["<b"]);
   });
 
+  it("confirms before signing out, from a dialog the closing menu cannot take with it", () => {
+    // The row opens the confirmation; only the dialog's Confirm ends the session. A direct
+    // logout() back on the row is the regression worth naming: sign-out sits in a menu of
+    // otherwise harmless entries, where one slip used to land on the login page.
+    const signOut = source.indexOf("S.auth.logout");
+    const row = source.slice(source.lastIndexOf("{!desktopMode && (", signOut), signOut);
+    expect(row).toContain("setConfirmingLogout(true)");
+    expect(row).not.toContain("logout()");
+    // And the dialog is mounted OUTSIDE the dropdown, the property the comment beside it
+    // claims: the panel's children unmount the moment the menu closes, and the row closes
+    // the menu as it opens the dialog — moved inside, the confirmation would never appear.
+    const menuEnd = source.indexOf("</Dropdown>");
+    expect(menuEnd).toBeGreaterThan(-1);
+    expect(source.indexOf("<ConfirmModal")).toBeGreaterThan(menuEnd);
+  });
+
   it("reaches the settings it no longer holds through one ungated System settings entry", () => {
     // The preference rows, change password and user management all moved into the settings
     // dialog, whose own section registry decides which pages this viewer sees — so the row

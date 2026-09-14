@@ -53,7 +53,6 @@ export function UserMenu({
   const { user, logout, desktopMode } = useAuth();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  /** The sign-out confirmation: a menu row is one click from ending the session, and a slip lands on the login page. */
   const [confirmingLogout, setConfirmingLogout] = useState(false);
 
   return (
