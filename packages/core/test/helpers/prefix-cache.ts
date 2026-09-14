@@ -12,8 +12,9 @@
  *
  * What they deliberately do not measure: everything the provider owns — cache lifetime, the
  * lookback over recent breakpoints, the minimum cacheable prefix size, and whether a prefix
- * that could hit actually did. Those need a live endpoint. The invariants here hold offline,
- * and they are the only half the harness controls.
+ * that could hit actually did. `prompt-cache-sim.ts` models that half on top of these
+ * recordings: it consumes `RecordedRequest` and reuses `diagnoseCacheMiss` /
+ * `describeMissReason` from here to name why a modelled read fell short.
  */
 import type { UniConfig, UniEvent, UniMessage } from "@prismshadow/agenthub";
 import type { GenerativeModelConfig } from "../../src/interfaces/index.js";
@@ -50,6 +51,12 @@ export interface ScriptedReply {
 /** One request as the provider client would have sent it. */
 export interface RecordedRequest {
   index: number;
+  /**
+   * Which context issued the request (the recording model's `label`). A scenario that runs
+   * several models — a compaction rotation, a subagent's child session — tags each one so a
+   * report can tell the cache lines apart; a single-model scenario leaves it off.
+   */
+  label?: string;
   /** The full message list handed to the client (AgentHub's stateful history plus this turn). */
   messages: UniMessage[];
   /** The resolved UniConfig for this request. */
@@ -97,6 +104,18 @@ const deepCopy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 const json = (value: unknown): string => JSON.stringify(value ?? null);
 
+/** Extras a recording model carries beyond the script. */
+export interface RecordingOptions {
+  /** Context label stamped on every request this model records (see RecordedRequest.label). */
+  label?: string;
+  /**
+   * Called with each request the moment it is issued. Several models running in one scenario
+   * each keep their own `requests` array, so this is what puts their requests in one issue
+   * order — the order a provider would have seen them in.
+   */
+  onRequest?: (request: RecordedRequest) => void;
+}
+
 /**
  * A real `GenerativeModel` with its provider client's stream replaced by a script. Everything
  * else runs for real: the model builds the UniConfig, AgentHub merges the input into its
@@ -105,6 +124,7 @@ const json = (value: unknown): string => JSON.stringify(value ?? null);
 export function recordingModel(
   config: GenerativeModelConfig,
   script: ScriptedReply[],
+  options: RecordingOptions = {},
 ): { model: GenerativeModel; requests: RecordedRequest[] } {
   const model = new GenerativeModel(config);
   const auto = autoClientOf(model);
@@ -112,21 +132,24 @@ export function recordingModel(
   const pending = [...script];
 
   auto._client._streamingResponseInternal = async function* (
-    options: StreamOptions,
+    streamOptions: StreamOptions,
   ): AsyncGenerator<UniEvent> {
     const index = requests.length;
     // Recorded before anything is yielded: AgentHub stamps `created_at` onto the message
     // objects and the harness hands the same objects to the next request.
-    requests.push({
+    const request: RecordedRequest = {
       index,
-      messages: deepCopy(options.messages),
-      config: deepCopy(options.config),
-      wire: deepCopy(await auto.transformUniMessageToModelInput(options.messages)),
-      wireConfig: deepCopy(auto.transformUniConfigToModelConfig(options.config)),
-    });
+      ...(options.label !== undefined ? { label: options.label } : {}),
+      messages: deepCopy(streamOptions.messages),
+      config: deepCopy(streamOptions.config),
+      wire: deepCopy(await auto.transformUniMessageToModelInput(streamOptions.messages)),
+      wireConfig: deepCopy(auto.transformUniConfigToModelConfig(streamOptions.config)),
+    };
+    requests.push(request);
+    options.onRequest?.(request);
     const reply = pending.shift();
     if (!reply) throw new Error(`prefix-cache script exhausted at request ${index}`);
-    yield* replyEvents(reply, options.signal);
+    yield* replyEvents(reply, streamOptions.signal);
   };
 
   return { model, requests };
@@ -285,7 +308,7 @@ export function formatDiagnostics(requests: RecordedRequest[], reasons: CacheMis
     `#${request.index}`,
     `messages=${request.wire.length}`,
     thinkingLabel(request.wireConfig),
-    i === 0 ? "(first request)" : describeReason(reasons[i - 1]),
+    i === 0 ? "(first request)" : describeMissReason(reasons[i - 1]),
   ]);
   const widths = [0, 1, 2].map((col) => Math.max(...rows.map((row) => row[col]!.length)));
   const lines = rows.map((row) =>
@@ -392,7 +415,8 @@ function thinkingLabel(wireConfig: Record<string, unknown>): string {
   return `thinking=${mode} effort=${effort ?? "-"}`;
 }
 
-function describeReason(reason: CacheMissReason | undefined): string {
+/** One cache-miss reason as a single line, in the vocabulary a provider's diagnostics use. */
+export function describeMissReason(reason: CacheMissReason | undefined): string {
   if (!reason) return "?";
   if (reason.type === "tools_changed") return `tools_changed (${reason.detail})`;
   if (reason.type === "parameters_changed") {
