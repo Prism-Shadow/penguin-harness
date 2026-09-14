@@ -65,6 +65,8 @@ import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { NAV_ICONS, PLUGIN_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
+import { TRASH_ICON } from "../../components/ui/session-row-menu";
+import { StatusIcon } from "../../components/ui/status-icon";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { UpdateDot } from "../../components/ui/update-dot";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -1506,16 +1508,42 @@ function ModuleRow({
       ) : (
         <div className="min-w-0 flex-1">{body}</div>
       )}
+      {/* The verb, in the library card's shape: one square light icon button, its copy in
+          aria-label and title. While it runs, a spinner stands in for the glyph. */}
       <div className="flex shrink-0 items-center justify-center gap-1.5">
         {state === "none"
           ? onInstall !== null && (
-              <Button variant="primary" size="sm" disabled={busy || blocked} onClick={onInstall}>
-                {busy ? S.plugins.installing : S.plugins.install}
+              <Button
+                size="sm"
+                className="h-8 w-8 shrink-0 justify-center p-0"
+                aria-label={`${busy ? S.plugins.installing : S.plugins.install} ${specifier}`}
+                aria-busy={busy}
+                title={busy ? S.plugins.installing : S.plugins.install}
+                disabled={busy || blocked}
+                onClick={onInstall}
+              >
+                {busy ? (
+                  <StatusIcon state="running" size={ICON_SIZE.iconButton} />
+                ) : (
+                  <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.iconButton} />
+                )}
               </Button>
             )
           : onRemove !== null && (
-              <Button variant="secondary" size="sm" disabled={busy || blocked} onClick={onRemove}>
-                {S.plugins.uninstall}
+              <Button
+                size="sm"
+                className="h-8 w-8 shrink-0 justify-center p-0"
+                aria-label={`${S.plugins.uninstall} ${specifier}`}
+                aria-busy={busy}
+                title={S.plugins.uninstall}
+                disabled={busy || blocked}
+                onClick={onRemove}
+              >
+                {busy ? (
+                  <StatusIcon state="running" size={ICON_SIZE.iconButton} />
+                ) : (
+                  <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.iconButton} />
+                )}
               </Button>
             )}
       </div>
