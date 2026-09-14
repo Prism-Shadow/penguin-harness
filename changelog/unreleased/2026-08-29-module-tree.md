@@ -26,7 +26,7 @@ A plugin package is a set of modules, written the way the platform's own are: `@
 
 ## The table as a page
 
-`pnpm ifaces:page` renders `ifaces.json` into one self-contained HTML page (`dist-ifaces/index.html`): the module tree, every node's requires / provides / contributes, every interface at signature level, with the table's sha256 in the title and the JSON beside it.
+`pnpm ifaces:page` renders `ifaces.json` into one self-contained HTML page (`dist-ifaces/index.html`): the module tree, every node's requires / provides / contributes, every interface at signature level, with the table's sha256 in the title and the JSON beside it. CI renders it for every commit, uploads it as a workflow artifact named by the commit's sha, and links it from the job summary — the page's `ifaces.json` is the table that commit builds, hash for hash.
 
 ## Compatibility
 
