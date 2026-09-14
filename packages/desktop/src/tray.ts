@@ -10,12 +10,14 @@
 import { Menu, nativeImage, Tray } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import { TRAY_NAV_PATHS, trayMenuTemplate } from "./tray-menu.js";
-import type { TrayMenuItem } from "./tray-menu.js";
+import type { TrayLocale, TrayMenuItem } from "./tray-menu.js";
 import { readTrayPrefs, updateTrayPrefs } from "./tray-prefs.js";
 
 export interface TrayHandle {
   /** The live preference: the window's close handler asks at close time, not at install time. */
   closeToTray(): boolean;
+  /** Redraws the menu in another language, for when the Web App's changes while the app runs. */
+  setLocale(locale: TrayLocale): void;
   dispose(): void;
 }
 
@@ -24,6 +26,8 @@ export interface TrayOptions {
   /** Resolved tray image, or null when the asset is missing (see app-icon.ts). */
   iconPath: string | null;
   appName: string;
+  /** The language the menu is drawn in, until the Web App reports a different one. */
+  locale: TrayLocale;
   onShowWindow: () => void;
   onNavigate: (path: string) => void;
   onQuit: () => void;
@@ -41,6 +45,7 @@ export function installTray(opts: TrayOptions): TrayHandle | null {
     return null;
   }
   let prefs = readTrayPrefs(opts.userDataDir);
+  let locale = opts.locale;
   let tray: Tray;
   try {
     const image = nativeImage.createFromPath(opts.iconPath);
@@ -99,6 +104,7 @@ export function installTray(opts: TrayOptions): TrayHandle | null {
     const template = trayMenuTemplate({
       appName: opts.appName,
       closeToTray: prefs.closeToTray,
+      locale,
     });
     return Menu.buildFromTemplate(template.map(nativeItem));
   }
@@ -132,6 +138,11 @@ export function installTray(opts: TrayOptions): TrayHandle | null {
 
   return {
     closeToTray: () => prefs.closeToTray,
+    setLocale: (next) => {
+      locale = next;
+      // Only Linux holds a built menu; elsewhere the next popup picks the language up.
+      attachMenu();
+    },
     dispose: () => tray.destroy(),
   };
 }

@@ -48,6 +48,8 @@ import { applyLoginShellEnv } from "./login-shell-env.js";
 import { installAppMenu } from "./menu.js";
 import { startEmbeddedServer, stopEmbeddedServer } from "./server-process.js";
 import type { EmbeddedServer } from "./server-process.js";
+import { resolveTrayLocale } from "./tray-menu.js";
+import type { TrayLocale } from "./tray-menu.js";
 import { installTray } from "./tray.js";
 import type { TrayHandle } from "./tray.js";
 import {
@@ -83,6 +85,12 @@ let win: BrowserWindow | null = null;
 let tray: TrayHandle | null = null;
 /** The Appearance switch's value; the tray exists exactly while this is true and one could be created. */
 let showTrayIcon = true;
+/**
+ * The language the tray menu is drawn in. Seeded from the stored report, or from the device
+ * when there is none, so the first menu of a fresh launch is already right — the Web App's
+ * own report arrives only once a window has loaded far enough to send it.
+ */
+let trayLocale: TrayLocale = "en";
 let server: EmbeddedServer | null = null;
 /** The live server child, for pushes that are not answers to one of its messages. */
 let relayChild: EmbeddedServer["child"] | null = null;
@@ -235,6 +243,7 @@ function openTray(): void {
     userDataDir: app.getPath("userData"),
     iconPath: resolveTrayIcon(app.getAppPath(), process.platform),
     appName: app.name,
+    locale: trayLocale,
     onShowWindow: showMainWindow,
     onNavigate: navigateMainWindow,
     onQuit: () => app.quit(),
@@ -266,7 +275,24 @@ function setShowTrayIcon(next: boolean): void {
 
 /** Tells the page what the tray is actually doing, which is what its switch renders. */
 function pushTrayStatus(): void {
-  relayChild?.postMessage(trayStatusMessage(showTrayIcon));
+  relayChild?.postMessage(trayStatusMessage(showTrayIcon, trayLocale));
+}
+
+/**
+ * Applies the Web App's UI language to the tray menu. The menu is built per popup, so a
+ * change costs nothing until the next one is opened — except on Linux, where the menu is
+ * attached to the icon and has to be rebuilt in place; the tray handle does that itself.
+ */
+function setTrayLocale(next: TrayLocale): void {
+  if (next === trayLocale) return;
+  trayLocale = next;
+  try {
+    updateTrayPrefs(app.getPath("userData"), { locale: next });
+  } catch (err) {
+    process.stdout.write(`[shell] the tray language could not be saved: ${String(err)}\n`);
+  }
+  tray?.setLocale(next);
+  pushTrayStatus();
 }
 
 /**
@@ -284,8 +310,11 @@ function wireShellRelay(child: EmbeddedServer["child"]): void {
       handleUpdaterCommand(action);
       return;
     }
-    const nextShowTrayIcon = parseTrayCommand(message);
-    if (nextShowTrayIcon !== null) setShowTrayIcon(nextShowTrayIcon);
+    const command = parseTrayCommand(message);
+    if (command !== null) {
+      if (command.locale !== undefined) setTrayLocale(command.locale);
+      if (command.showTrayIcon !== undefined) setShowTrayIcon(command.showTrayIcon);
+    }
   });
   const unsubscribe = onUpdaterStatus((status) => child.postMessage(updaterStatusMessage(status)));
   child.on("exit", () => {
@@ -437,7 +466,11 @@ if (!app.requestSingleInstanceLock()) {
       // app runs. Its menu's navigation entries tolerate an origin that is not resolved yet,
       // and the close-to-tray preference has to be in hand before the first window close can
       // happen.
-      showTrayIcon = readTrayPrefs(app.getPath("userData")).showTrayIcon;
+      const trayPrefs = readTrayPrefs(app.getPath("userData"));
+      showTrayIcon = trayPrefs.showTrayIcon;
+      // Nothing has reported a language yet on a first launch, so the device decides — the
+      // same rule the Web App applies to its own "follow the system" default.
+      trayLocale = trayPrefs.locale ?? resolveTrayLocale(app.getLocale());
       openTray();
       initUpdater(() => win);
       await boot();

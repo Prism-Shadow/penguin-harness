@@ -59,7 +59,7 @@ export function shellPortOf(proc: NodeJS.Process): ShellPort | null {
     : null;
 }
 
-/** Validates one shell tray push. Same rule as the updater's: strict on the discriminator, strict on the one field it carries. */
+/** Validates one shell tray push. Same rule as the updater's: strict on the discriminator, strict on every field it carries. */
 export function parseTrayStatusMessage(data: unknown): DesktopTrayStatus | null {
   if (typeof data !== "object" || data === null) return null;
   const msg = data as Partial<DesktopTrayStatusMessage>;
@@ -67,7 +67,10 @@ export function parseTrayStatusMessage(data: unknown): DesktopTrayStatus | null 
   const status = msg.status as Partial<DesktopTrayStatus> | undefined;
   if (typeof status !== "object" || status === null) return null;
   if (typeof status.showTrayIcon !== "boolean") return null;
-  return { showTrayIcon: status.showTrayIcon };
+  // An older shell against a newer server pushes no locale. Reading it as English rather
+  // than rejecting the whole push keeps the icon switch working across that pairing.
+  const locale = status.locale === "zh" || status.locale === "en" ? status.locale : "en";
+  return { showTrayIcon: status.showTrayIcon, locale };
 }
 
 /** Connects the port to the service: stores validated status pushes, registers the command senders. */
@@ -87,10 +90,10 @@ export function wireShellUpdatePort(desktop: DesktopService, port: ShellPort): v
       action,
     } satisfies DesktopUpdaterCommandMessage);
   });
-  desktop.onTrayCommand((showTrayIcon) => {
+  desktop.onTrayCommand((patch) => {
     port.postMessage({
       type: "desktop-tray-command",
-      showTrayIcon,
+      ...patch,
     } satisfies DesktopTrayCommandMessage);
   });
 }

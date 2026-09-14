@@ -66,7 +66,7 @@ export function AppearanceSection() {
   // than leaving the row disagreeing with the icon the user is looking at.
   const changeTrayIcon = (next: boolean): void => {
     setTrayIcon(next);
-    void api.setDesktopTray(next).catch(() => setTrayIcon(!next));
+    void api.setDesktopTray({ showTrayIcon: next }).catch(() => setTrayIcon(!next));
   };
 
   const themeOptions: ReadonlyArray<{ value: ThemeMode; label: string }> = [

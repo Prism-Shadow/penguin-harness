@@ -135,6 +135,7 @@ import type {
   UpdateCheckResponse,
   UpdateJobStatus,
   RestartResponse,
+  DesktopTrayPatch,
   DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
   HookArchiveInstallRequest,
@@ -1331,6 +1332,11 @@ export const desktopUpdateInstall = () =>
 /** What the shell last pushed; `status` is null until that first push, which reads as on. */
 export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/desktop/tray");
 
-/** Relays Settings › Appearance's tray switch; the shell applies it and pushes back. */
-export const setDesktopTray = (showTrayIcon: boolean) =>
-  apiFetch<void>("/api/desktop/tray", { method: "PUT", body: { showTrayIcon } });
+/**
+ * Relays a tray change to the shell, which applies it and pushes the new state back.
+ *
+ * A patch rather than a snapshot: Settings › Appearance writes the switch, and the locale
+ * provider writes the UI language whenever it changes, and neither knows the other's value.
+ */
+export const setDesktopTray = (patch: DesktopTrayPatch) =>
+  apiFetch<void>("/api/desktop/tray", { method: "PUT", body: patch });

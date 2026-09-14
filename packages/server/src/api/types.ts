@@ -3511,11 +3511,32 @@ export interface DesktopUpdaterCommandMessage {
 // message channel as the client updater above: the shell pushes what it currently shows,
 // the page reads it at GET /api/desktop/tray and writes through PUT, which is relayed
 // back. The window stays a plain browser — no renderer IPC bridge.
+//
+// The page reports its UI language over the same route, so the tray menu reads in the
+// language the window does. The shell cannot see that preference itself: it lives in the
+// browser's localStorage, on the other side of a boundary this design keeps one-way.
+
+/** The two languages the Web App has; the shell's tray menu follows whichever is in use. */
+export type DesktopTrayLocale = "zh" | "en";
 
 /** What the shell is currently doing about its tray icon. */
 export interface DesktopTrayStatus {
   /** Whether an icon is shown in the system tray while the app runs. */
   showTrayIcon: boolean;
+  /**
+   * The language the tray menu is drawn in. Until a page reports one the shell uses the
+   * device language, so this can differ from the Web App's until the first report lands.
+   */
+  locale: DesktopTrayLocale;
+}
+
+/**
+ * What one PUT asks the shell to change. Every field is optional and a request must carry at
+ * least one: the switch and the language reach this route from different parts of the page.
+ */
+export interface DesktopTrayPatch {
+  showTrayIcon?: boolean;
+  locale?: DesktopTrayLocale;
 }
 
 /**
@@ -3533,10 +3554,16 @@ export interface DesktopTrayStatusMessage {
   status: DesktopTrayStatus;
 }
 
-/** Server → shell command over the utilityProcess message channel (relayed from PUT /api/desktop/tray). */
+/**
+ * Server → shell command over the utilityProcess message channel (relayed from PUT
+ * /api/desktop/tray). A patch, not a snapshot: the switch and the language are written by
+ * different parts of the page at different moments, and neither should have to restate the
+ * other's value to change its own.
+ */
 export interface DesktopTrayCommandMessage {
   type: "desktop-tray-command";
-  showTrayIcon: boolean;
+  showTrayIcon?: boolean;
+  locale?: DesktopTrayLocale;
 }
 
 /**

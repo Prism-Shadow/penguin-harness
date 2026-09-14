@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { createDesktopApp, createTestApp, desktopLoginCookie, loginAdmin } from "./helpers.js";
-import type { DesktopTrayStatusResponse, ErrorBody } from "../src/api/types.js";
+import type { DesktopTrayPatch, DesktopTrayStatusResponse, ErrorBody } from "../src/api/types.js";
 import { DesktopService } from "../src/services/desktop-service.js";
 import {
   parseTrayStatusMessage,
@@ -32,10 +32,10 @@ describe("GET /api/desktop/tray", () => {
       expect(before.status).toBe(200);
       expect((await before.json()) as DesktopTrayStatusResponse).toEqual({ status: null });
 
-      t.deps.desktop!.setTrayStatus({ showTrayIcon: false });
+      t.deps.desktop!.setTrayStatus({ showTrayIcon: false, locale: "en" });
       const after = await t.app.request("/api/desktop/tray", { headers: { cookie } });
       expect((await after.json()) as DesktopTrayStatusResponse).toEqual({
-        status: { showTrayIcon: false },
+        status: { showTrayIcon: false, locale: "en" },
       });
     } finally {
       await t.cleanup();
@@ -71,29 +71,39 @@ describe("PUT /api/desktop/tray", () => {
     const t = await createDesktopApp();
     try {
       const cookie = await desktopLoginCookie(t.app);
-      const sent: boolean[] = [];
-      t.deps.desktop!.onTrayCommand((show) => sent.push(show));
+      const sent: DesktopTrayPatch[] = [];
+      t.deps.desktop!.onTrayCommand((patch) => sent.push(patch));
 
       const off = await t.app.request("/api/desktop/tray", put(cookie, '{"showTrayIcon":false}'));
       expect(off.status).toBe(202);
       const on = await t.app.request("/api/desktop/tray", put(cookie, '{"showTrayIcon":true}'));
       expect(on.status).toBe(202);
-      expect(sent).toEqual([false, true]);
+      expect(sent).toEqual([{ showTrayIcon: false }, { showTrayIcon: true }]);
     } finally {
       await t.cleanup();
     }
   });
 
-  it("refuses a body that does not carry a boolean", async () => {
+  it("refuses a field it cannot read, and a request that asks for nothing", async () => {
     const t = await createDesktopApp();
     try {
       const cookie = await desktopLoginCookie(t.app);
-      const sent: boolean[] = [];
-      t.deps.desktop!.onTrayCommand((show) => sent.push(show));
-      for (const body of ["{}", '{"showTrayIcon":"off"}', '{"showTrayIcon":0}', "not json"]) {
+      const sent: DesktopTrayPatch[] = [];
+      t.deps.desktop!.onTrayCommand((patch) => sent.push(patch));
+      const cases: Array<[string, string]> = [
+        ['{"showTrayIcon":"off"}', "invalid_show_tray_icon"],
+        ['{"showTrayIcon":0}', "invalid_show_tray_icon"],
+        ['{"locale":"fr"}', "invalid_locale"],
+        ['{"locale":true}', "invalid_locale"],
+        // Nothing to do is a caller bug, not a no-op worth waking the shell for. An
+        // unparseable body lands here too: it asks for nothing this route understands.
+        ["{}", "empty_tray_patch"],
+        ["not json", "empty_tray_patch"],
+      ];
+      for (const [body, code] of cases) {
         const res = await t.app.request("/api/desktop/tray", put(cookie, body));
-        expect(res.status).toBe(400);
-        expect(((await res.json()) as ErrorBody).error.code).toBe("invalid_show_tray_icon");
+        expect(res.status, body).toBe(400);
+        expect(((await res.json()) as ErrorBody).error.code, body).toBe(code);
       }
       expect(sent).toEqual([]);
     } finally {
@@ -127,8 +137,22 @@ describe("PUT /api/desktop/tray", () => {
 describe("the tray half of the shell port", () => {
   it("parses only well-formed tray status frames", () => {
     expect(
+      parseTrayStatusMessage({
+        type: "desktop-tray-status",
+        status: { showTrayIcon: true, locale: "zh" },
+      }),
+    ).toEqual({ showTrayIcon: true, locale: "zh" });
+    // A shell older than this server pushes no language. Reading it as English keeps the
+    // icon switch working across that pairing rather than dropping the whole push.
+    expect(
       parseTrayStatusMessage({ type: "desktop-tray-status", status: { showTrayIcon: true } }),
-    ).toEqual({ showTrayIcon: true });
+    ).toEqual({ showTrayIcon: true, locale: "en" });
+    expect(
+      parseTrayStatusMessage({
+        type: "desktop-tray-status",
+        status: { showTrayIcon: true, locale: "fr" },
+      }),
+    ).toEqual({ showTrayIcon: true, locale: "en" });
     for (const data of [
       null,
       "status",
@@ -156,20 +180,22 @@ describe("the tray half of the shell port", () => {
     };
     wireShellUpdatePort(desktop, port);
 
-    onMessage!({ data: { type: "desktop-tray-status", status: { showTrayIcon: false } } });
-    expect(desktop.getTrayStatus()).toEqual({ showTrayIcon: false });
+    onMessage!({
+      data: { type: "desktop-tray-status", status: { showTrayIcon: false, locale: "zh" } },
+    });
+    expect(desktop.getTrayStatus()).toEqual({ showTrayIcon: false, locale: "zh" });
     // An updater frame on the same port leaves the tray state alone, and vice versa.
     onMessage!({
       data: { type: "desktop-updater-status", status: { appVersion: "1", state: "idle" } },
     });
-    expect(desktop.getTrayStatus()).toEqual({ showTrayIcon: false });
+    expect(desktop.getTrayStatus()).toEqual({ showTrayIcon: false, locale: "zh" });
     expect(desktop.getUpdateStatus()).toEqual({ appVersion: "1", state: "idle" });
 
-    expect(desktop.requestTrayCommand(true)).toBe(true);
+    expect(desktop.requestTrayCommand({ showTrayIcon: true })).toBe(true);
     expect(posted).toEqual([{ type: "desktop-tray-command", showTrayIcon: true }]);
   });
 
   it("reports no sender before a port is wired", () => {
-    expect(new DesktopService("t").requestTrayCommand(false)).toBe(false);
+    expect(new DesktopService("t").requestTrayCommand({ showTrayIcon: false })).toBe(false);
   });
 });

@@ -11,6 +11,13 @@
  * - `closeToTray` — whether closing the main window hides it into the tray instead of
  *   following the platform's default close semantics. It is the tray menu's own checkbox.
  *
+ * and one language:
+ *
+ * - `locale` — the Web App's UI language, reported over the same channel, so the tray menu
+ *   reads the way the window does. The shell cannot see that preference itself: it lives in
+ *   the browser's localStorage. Null until a page has reported one, and after that it is kept
+ *   so a fresh launch draws the right menu before any window has finished loading.
+ *
  * Both are conveniences, never a reason for the shell to fail to start — a missing or
  * malformed file reads as the defaults (both on), and a failed write is the caller's line
  * in the log.
@@ -21,6 +28,7 @@ import type {
   DesktopTrayCommandMessage,
   DesktopTrayStatusMessage,
 } from "@prismshadow/penguin-server/api";
+import type { TrayLocale } from "./tray-menu.js";
 
 /** Preference file name, inside the app's userData directory. */
 export const TRAY_PREFS_FILE = "tray.json";
@@ -30,9 +38,15 @@ export interface TrayPrefs {
   showTrayIcon: boolean;
   /** Closing the main window hides it and leaves the app (and its server) running. */
   closeToTray: boolean;
+  /** The Web App's UI language as last reported; null until one has been, meaning follow the device. */
+  locale: TrayLocale | null;
 }
 
-export const DEFAULT_TRAY_PREFS: TrayPrefs = { showTrayIcon: true, closeToTray: true };
+export const DEFAULT_TRAY_PREFS: TrayPrefs = {
+  showTrayIcon: true,
+  closeToTray: true,
+  locale: null,
+};
 
 /** Location of the preference file for a userData directory. */
 export function trayPrefsPath(userDataDir: string): string {
@@ -48,11 +62,20 @@ export function readTrayPrefs(userDataDir: string): TrayPrefs {
     return { ...DEFAULT_TRAY_PREFS };
   }
   if (typeof parsed !== "object" || parsed === null) return { ...DEFAULT_TRAY_PREFS };
-  const bool = (key: keyof TrayPrefs): boolean => {
-    const value = (parsed as Partial<Record<keyof TrayPrefs, unknown>>)[key];
+  const at = (key: keyof TrayPrefs): unknown =>
+    (parsed as Partial<Record<keyof TrayPrefs, unknown>>)[key];
+  const bool = (key: "showTrayIcon" | "closeToTray"): boolean => {
+    const value = at(key);
     return typeof value === "boolean" ? value : DEFAULT_TRAY_PREFS[key];
   };
-  return { showTrayIcon: bool("showTrayIcon"), closeToTray: bool("closeToTray") };
+  const locale = at("locale");
+  return {
+    showTrayIcon: bool("showTrayIcon"),
+    closeToTray: bool("closeToTray"),
+    // Anything else, including the absence this file had before the field existed, means
+    // nothing has been reported yet and the device language decides.
+    locale: locale === "zh" || locale === "en" ? locale : null,
+  };
 }
 
 /** Writes the preferences. Throws on failure: the caller decides how to report it. */
@@ -79,15 +102,31 @@ export function updateTrayPrefs(userDataDir: string, patch: Partial<TrayPrefs>):
 
 // --- the wire, to and from the Web App's Appearance settings -----------------
 
-/** Wraps the shown/hidden state for the port push. */
-export function trayStatusMessage(showTrayIcon: boolean): DesktopTrayStatusMessage {
-  return { type: "desktop-tray-status", status: { showTrayIcon } };
+/** Wraps what the tray is currently doing for the port push. */
+export function trayStatusMessage(
+  showTrayIcon: boolean,
+  locale: TrayLocale,
+): DesktopTrayStatusMessage {
+  return { type: "desktop-tray-status", status: { showTrayIcon, locale } };
 }
 
-/** Validates one server-relayed tray command off the port; null when it is not one. */
-export function parseTrayCommand(data: unknown): boolean | null {
+/**
+ * Validates one server-relayed tray command off the port. Null when the frame is not one, and
+ * an empty patch when it is one carrying nothing this build understands — a distinction the
+ * caller needs, because a frame it cannot read is not a frame it should treat as a tray push.
+ */
+export function parseTrayCommand(data: unknown): TrayCommand | null {
   if (typeof data !== "object" || data === null) return null;
   const msg = data as Partial<DesktopTrayCommandMessage>;
   if (msg.type !== "desktop-tray-command") return null;
-  return typeof msg.showTrayIcon === "boolean" ? msg.showTrayIcon : null;
+  const patch: TrayCommand = {};
+  if (typeof msg.showTrayIcon === "boolean") patch.showTrayIcon = msg.showTrayIcon;
+  if (msg.locale === "zh" || msg.locale === "en") patch.locale = msg.locale;
+  return patch;
+}
+
+/** What one relayed command asks the shell to change; every field optional, as the route's patch is. */
+export interface TrayCommand {
+  showTrayIcon?: boolean;
+  locale?: TrayLocale;
 }

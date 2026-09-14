@@ -5,6 +5,12 @@
  * The entries are deliberately few: the window is the product, and the tray is the way back
  * to it. The two navigation entries are ordinary in-window URL loads, so the window stays a
  * plain browser and the shell gains no channel into the Web App.
+ *
+ * The labels are written twice here rather than read from the Web App's catalogs: the shell
+ * is a separate process that starts before any page is loaded and must draw a menu whether or
+ * not one ever is, and it cannot import from `packages/web` — nothing in this package depends
+ * on it. Six strings is the whole surface, and the type below makes a missing translation a
+ * compile error rather than a menu that silently falls back to English.
  */
 
 /** What a menu entry does when it is clicked. */
@@ -31,23 +37,65 @@ export const TRAY_NAV_PATHS: Record<"new-session" | "models", string> = {
   models: "/models",
 };
 
-export const CLOSE_TO_TRAY_LABEL = "Keep running in the tray when the window closes";
+/** The two languages the Web App has, which the tray follows. */
+export type TrayLocale = "zh" | "en";
 
-/** The menu entries, in order. `appName` carries the dev suffix on an unpackaged run. */
-export function trayMenuTemplate(opts: { appName: string; closeToTray: boolean }): TrayMenuItem[] {
+/** One language's menu wording. `open` takes the app name, which carries a dev suffix unpackaged. */
+interface TrayLabels {
+  open: (appName: string) => string;
+  newSession: string;
+  models: string;
+  closeToTray: string;
+  quit: string;
+}
+
+export const TRAY_LABELS: Record<TrayLocale, TrayLabels> = {
+  en: {
+    open: (appName) => `Open ${appName}`,
+    newSession: "New Session",
+    models: "Models",
+    closeToTray: "Keep running in the tray when the window closes",
+    quit: "Quit",
+  },
+  zh: {
+    // The app name is a proper noun and stays as it is, here as everywhere else.
+    open: (appName) => `打开 ${appName}`,
+    newSession: "新建会话",
+    models: "模型",
+    closeToTray: "关闭窗口后继续在托盘中运行",
+    quit: "退出",
+  },
+};
+
+/**
+ * The device language the shell falls back to until the Web App reports its own — the same
+ * rule the Web App applies to `navigator.language` when its own preference is "follow the
+ * system", so an untouched install agrees with itself across the window and the tray.
+ */
+export function resolveTrayLocale(language: string | undefined): TrayLocale {
+  return language?.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+/** The menu entries, in order, in the given language. */
+export function trayMenuTemplate(opts: {
+  appName: string;
+  closeToTray: boolean;
+  locale: TrayLocale;
+}): TrayMenuItem[] {
+  const t = TRAY_LABELS[opts.locale];
   return [
-    { action: "open", label: `Open ${opts.appName}` },
+    { action: "open", label: t.open(opts.appName) },
     { type: "separator" },
-    { action: "new-session", label: "New Session" },
-    { action: "models", label: "Models" },
+    { action: "new-session", label: t.newSession },
+    { action: "models", label: t.models },
     { type: "separator" },
     {
       action: "toggle-close-to-tray",
-      label: CLOSE_TO_TRAY_LABEL,
+      label: t.closeToTray,
       type: "checkbox",
       checked: opts.closeToTray,
     },
     { type: "separator" },
-    { action: "quit", label: "Quit" },
+    { action: "quit", label: t.quit },
   ];
 }

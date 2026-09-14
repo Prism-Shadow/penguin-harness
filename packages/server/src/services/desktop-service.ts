@@ -22,6 +22,7 @@
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import type {
+  DesktopTrayPatch,
   DesktopTrayStatus,
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
@@ -97,7 +98,7 @@ export class DesktopService {
   // --- tray-icon relay -------------------------------------------------------
 
   private trayStatus: DesktopTrayStatus | null = null;
-  private trayCommandSender: ((showTrayIcon: boolean) => void) | null = null;
+  private trayCommandSender: ((patch: DesktopTrayPatch) => void) | null = null;
 
   /** Latest shell push; null until the shell's first one lands (the page then reads it as on). */
   getTrayStatus(): DesktopTrayStatus | null {
@@ -110,14 +111,14 @@ export class DesktopService {
   }
 
   /** index.ts registers the message-port sender; absent outside a shell-forked process. */
-  onTrayCommand(sender: (showTrayIcon: boolean) => void): void {
+  onTrayCommand(sender: (patch: DesktopTrayPatch) => void): void {
     this.trayCommandSender = sender;
   }
 
   /** Invoked by the tray route; false when no shell port is wired (tests, plain runs). */
-  requestTrayCommand(showTrayIcon: boolean): boolean {
+  requestTrayCommand(patch: DesktopTrayPatch): boolean {
     if (!this.trayCommandSender) return false;
-    this.trayCommandSender(showTrayIcon);
+    this.trayCommandSender(patch);
     return true;
   }
 }

@@ -12,7 +12,11 @@
  */
 import { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
-import type { DesktopTrayStatusResponse, DesktopUpdateStatusResponse } from "../../api/types.js";
+import type {
+  DesktopTrayPatch,
+  DesktopTrayStatusResponse,
+  DesktopUpdateStatusResponse,
+} from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { AppDeps } from "../../app.js";
@@ -123,9 +127,9 @@ export function desktopUpdateRoutes(deps: AppDeps): Hono<AppEnv> {
 /**
  * The tray-icon preference (mounted INSIDE authMiddleware at /api/desktop/tray, and only
  * in desktop mode). GET reads what the shell last pushed — null until that first push,
- * which the page reads as on, the shell's own default. PUT relays the switch; the shell
- * applies it, persists it and pushes the new state straight back, so the answer here is
- * an acknowledgement and the GET is what tells the truth.
+ * which the page reads as on, the shell's own default. PUT relays a patch — the switch, the
+ * page's UI language, or both; the shell applies it, persists it and pushes the new state
+ * straight back, so the answer here is an acknowledgement and the GET is what tells the truth.
  */
 export function desktopTrayRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -138,11 +142,28 @@ export function desktopTrayRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.put("/", async (c) => {
     const desktop = shellSessionOf(deps, c, refusal);
-    const body = (await c.req.json().catch(() => null)) as { showTrayIcon?: unknown } | null;
-    if (typeof body?.showTrayIcon !== "boolean") {
-      throw new HttpError(400, "invalid_show_tray_icon", "showTrayIcon must be a boolean.");
+    const body = (await c.req.json().catch(() => null)) as {
+      showTrayIcon?: unknown;
+      locale?: unknown;
+    } | null;
+    const patch: DesktopTrayPatch = {};
+    if (body?.showTrayIcon !== undefined) {
+      if (typeof body.showTrayIcon !== "boolean") {
+        throw new HttpError(400, "invalid_show_tray_icon", "showTrayIcon must be a boolean.");
+      }
+      patch.showTrayIcon = body.showTrayIcon;
     }
-    if (!desktop.requestTrayCommand(body.showTrayIcon)) {
+    if (body?.locale !== undefined) {
+      if (body.locale !== "zh" && body.locale !== "en") {
+        throw new HttpError(400, "invalid_locale", 'locale must be "zh" or "en".');
+      }
+      patch.locale = body.locale;
+    }
+    // An empty patch is a caller bug, not a no-op worth relaying to the shell.
+    if (patch.showTrayIcon === undefined && patch.locale === undefined) {
+      throw new HttpError(400, "empty_tray_patch", "Pass showTrayIcon, locale, or both.");
+    }
+    if (!desktop.requestTrayCommand(patch)) {
       throw new HttpError(503, "shell_unreachable", "The desktop shell is not listening.");
     }
     return c.body(null, 202);
