@@ -132,7 +132,7 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 ### 文件工具
 
-`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。软链接路径会被解析到它指向的文件——读取、编辑、写入都落在该文件上，链接本身仍然是链接。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。
+`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。软链接路径会被解析到它指向的文件——读取、编辑、写入都落在该文件上，链接本身仍然是链接。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。`edit_file` 与 `write_file` 在服务端进程内按文件串行，以文件的真实路径为键——软链接与它指向的文件算同一个文件——因此对同一文件的并行编辑会被逐个应用，先前编辑已删去的 `old_string` 会匹配失败而不是覆盖它；其他进程的写入不在这把锁的覆盖范围内。
 
 `read_file` 也读图片。png/jpeg/gif/webp 文件（不超过 5MB，先按魔数、再按扩展名识别）或 `file_path` 里的 http(s) URL（URL 只作图片来源，优先看响应的 content-type）走读图分支，返回什么取决于 Session 模型的 vision 标记：接受图片的模型拿到图片本身作为图像内容（文本输出只有一行 `image/png, 123.4 kB`）；text-only 模型拿到的是 Project 配置的 `vision_model` 对 `prompt`（缺省为详细描述）的回答，以流式文本作为工具输出——图片不进入该 Session 的历史。未配置 `vision_model` 时，text-only Session 的读图以解释性错误失败，请用户到模型设置中选一个。见 [模型与 Provider](/models)。分支由 SDK 仅为 text-only Session 注入 Environment 的 `VisionDescriberService` 决定，因此同一条配置条目（不带 `forModel`）同时服务两类模型。
 

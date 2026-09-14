@@ -1,7 +1,8 @@
 /**
- * Pure math of the truncated-title scroll reveal (#309): whether a clipped title
- * actually overflows, how far it must travel to bring its tail into view, and how
- * long that travel should take. Kept out of truncated.tsx so the logic is
+ * Pure rules of the truncated-title scroll reveal (#309): whether a clipped title
+ * actually overflows, how far it must travel to bring its tail into view, how long
+ * that travel should take, and which of the reveal and the `title` tooltip is the
+ * one disclosing the tail (#570). Kept out of truncated.tsx so the logic is
  * unit-testable (vitest runs node-only, no DOM) — the component feeds in the live
  * scrollWidth/clientWidth and writes the results into CSS custom properties.
  */
@@ -40,4 +41,24 @@ export function revealDurationMs(distancePx: number): number {
   if (distancePx <= 0) return 0;
   const proportional = (distancePx / REVEAL_SPEED_PX_PER_S) * 1000;
   return Math.round(Math.min(REVEAL_MAX_MS, Math.max(REVEAL_MIN_MS, proportional)));
+}
+
+/** How a clipped title hands its tail over: the scroll, the native tooltip, or neither. */
+export type TitleDisclosure = "none" | "scroll" | "tooltip";
+
+/**
+ * The scroll and the `title` tooltip are alternatives, never a pair — a tooltip raised over a
+ * row that is already scrolling repeats the text sliding past underneath it (#570). The scroll
+ * takes the disclosure wherever it can actually run: a caller that asked for it, on text that
+ * really overflows, while the keyframes are enabled. The tooltip covers everything left over —
+ * callers without the reveal, and reveal rows under `prefers-reduced-motion`, where styles.css
+ * disables the keyframes outright and nothing would move.
+ */
+export function titleDisclosure(opts: {
+  overflowing: boolean;
+  scrollReveal: boolean;
+  reducedMotion: boolean;
+}): TitleDisclosure {
+  if (!opts.overflowing) return "none";
+  return opts.scrollReveal && !opts.reducedMotion ? "scroll" : "tooltip";
 }

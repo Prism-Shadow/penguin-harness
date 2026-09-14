@@ -1094,3 +1094,123 @@ describe("Session background notices", () => {
     expect(isSteeredBackgroundNotice(texts[1]!)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sibling background subagents survive a completion notice (issue #581)
+// ---------------------------------------------------------------------------
+
+/**
+ * A runner whose every spawn is a distinct child (its own session id, so the registry and
+ * the live index tell three children apart) that answers once its gate is released.
+ */
+function gatedRunner(gates: Map<string, () => void>): SubagentRunner {
+  let spawned = 0;
+  return {
+    async spawn() {
+      spawned += 1;
+      const hop = `session-child-${String(spawned).padStart(8, "0")}`;
+      const tag = <M extends OmniMessage>(msg: M): M => ({ ...msg, origin: [hop] });
+      let metaSent = false;
+      const handle: SubagentHandle = {
+        sessionId: hop,
+        takeMeta() {
+          if (metaSent) return null;
+          metaSent = true;
+          return tag({
+            timestamp: new Date().toISOString(),
+            type: "session_meta",
+            payload: { session_id: hop },
+          } as unknown as OmniMessage);
+        },
+        // Typed like the contract: a round's return value is its cutoff, and these rounds
+        // always run to completion.
+        async *run({ messages }): AsyncGenerator<OmniMessage, null> {
+          const prompt = promptOf(messages);
+          await new Promise<void>((resolve) => gates.set(prompt, resolve));
+          yield tag(assistantText(`answer to: ${prompt}`));
+          return null;
+        },
+        dispose() {},
+      };
+      return handle;
+    },
+  };
+}
+
+describe("sibling background subagents survive a completion notice (issue #581)", () => {
+  it("settling one child ends no sibling, on the idle path or on the steering path", async () => {
+    const gates = new Map<string, () => void>();
+    const dir = await mkdtemp(path.join(tmpdir(), "penguin-bg-"));
+    const env = new Environment({
+      workspaceDir: dir,
+      toolConfig: { customTools: [SUB_DEF], mcpServers: [] },
+      services: { subagentRunner: gatedRunner(gates) },
+    });
+    cleanups.push(async () => {
+      env.dispose();
+      await rm(dir, { recursive: true, force: true });
+    });
+    const llm = new ReplyLLM();
+    const session = new Session({
+      meta: META,
+      ...IMAGES,
+      bootstrap: async () => ({ llm }),
+      environment: env,
+    });
+    let signaled = 0;
+    session.onBackgroundNotice(() => {
+      signaled += 1;
+    });
+    const running = () =>
+      env.listBackgroundSubagents().filter((s) => s.running && s.subagentId !== null);
+    const statusOf = (msg: OmniMessage): string =>
+      parseBackgroundTaskDoneMessage((msg.payload as TextPayload).text)!.done.status;
+
+    for (const prompt of ["alpha", "beta", "gamma"]) {
+      const res = await runTool(env, "run_subagent", { prompt, run_in_background: true });
+      expect(res.stopReason).toBe("completed");
+    }
+    await waitFor(() => gates.size === 3);
+    expect(running()).toHaveLength(3);
+
+    // Idle path: alpha settles while no Task runs — the host takes the notice and submits it
+    // as a Task of its own, the way the server's idle-arrival signal does.
+    gates.get("alpha")!();
+    await waitFor(() => signaled === 1);
+    const notices = session.takeBackgroundNotices();
+    expect(notices).toHaveLength(1);
+    expect(statusOf(notices[0]!)).toBe("completed");
+    for await (const msg of session.run(notices)) void msg;
+    expect(llm.calls).toBe(1);
+    expect(running()).toHaveLength(2);
+    expect(env.hasRunningBackgroundSubagents()).toBe(true);
+
+    // Steering path: beta settles while a Task runs — the engine drains the notice into that
+    // Task at its next boundary, and the host is never signaled.
+    let released = false;
+    for await (const msg of session.run([userText("how are they doing?")])) {
+      void msg;
+      if (!released) {
+        released = true;
+        gates.get("beta")!();
+        await waitFor(() => session.hasPendingBackgroundNotices());
+      }
+    }
+    expect(llm.calls).toBe(3);
+    const steered = llm.inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "");
+    expect(steered).toHaveLength(1);
+    expect(isSteeredBackgroundNotice(steered[0]!)).toBe(true);
+    expect(parseBackgroundTaskDoneMessage(steered[0]!)!.done.status).toBe("completed");
+    expect(signaled).toBe(1);
+    expect(running()).toHaveLength(1);
+    expect(env.hasRunningBackgroundSubagents()).toBe(true);
+
+    // The last child still ends on its own terms: completed, neither stopped nor failed.
+    gates.get("gamma")!();
+    await waitFor(() => signaled === 2);
+    const last = session.takeBackgroundNotices();
+    expect(last).toHaveLength(1);
+    expect(statusOf(last[0]!)).toBe("completed");
+    expect(running()).toHaveLength(0);
+  });
+});

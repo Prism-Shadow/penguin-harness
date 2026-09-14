@@ -181,11 +181,15 @@ describe("model-catalog", () => {
     // The group pin, read the one way every call site reads it.
     expect(providerClientType("vllm")).toBe("openai-chat-vllm-adapter");
     expect(providerInfo("vllm")!.gatewayBaseUrl).toBeUndefined();
-    // No group but vLLM declares one: the gateways derive openai-chat from their preset
-    // endpoint, and custom / user-defined groups leave the protocol to detection.
+    // Two groups declare one, in MODEL_PROVIDERS order: OpenRouter, whose entries all speak
+    // the Responses API its preset endpoint serves, and vLLM. The remaining gateways derive
+    // openai-chat from their preset endpoint, and custom / user-defined groups leave the
+    // protocol to detection.
     expect(MODEL_PROVIDERS.filter((p) => p.clientType !== undefined).map((p) => p.id)).toEqual([
+      "openrouter",
       "vllm",
     ]);
+    expect(providerClientType("openrouter")).toBe("openai-responses");
     expect(providerClientType("custom")).toBeUndefined();
     expect(providerClientType("my-own-group")).toBeUndefined();
     // Presets reach a Project with the pin and the zero rate, and without an endpoint: what a
@@ -295,7 +299,7 @@ describe("model-catalog", () => {
     }
   });
 
-  it("gateway models (OpenRouter / SiliconFlow / Qwen Token Plan): openai protocol + preset base URL; env fallback is OPENAI_API_KEY", () => {
+  it("gateway models (OpenRouter / SiliconFlow / Qwen Token Plan): OpenRouter pins Responses and the rest Chat Completions, all on a preset base URL; env fallback is OPENAI_API_KEY", () => {
     const or = MODEL_CATALOG.filter((m) => m.provider === "openrouter");
     // Dictionary order, newer versions of a series first (gpt-6-* before gpt-5.6-*,
     // gpt-5.6-* before gpt-5.5, opus-4.8 before 4.7) — precomputed in the catalog, no
@@ -348,15 +352,13 @@ describe("model-catalog", () => {
     for (const m of or) {
       // Every gateway row pins a client type — never left to AgentHub's id-substring routing,
       // which would send openai/gpt-5.6-* to the first-party GPT client and throw outright on
-      // the dotted anthropic/claude-opus-4.8. The openai/* rows speak the Responses protocol
-      // (OpenRouter serves it at {base}/responses); everything else is Chat Completions.
-      expect(m.clientType, m.modelId).toBe(
-        m.modelId.startsWith("openai/") ? "openai-responses" : "openai-chat",
-      );
+      // the dotted anthropic/claude-opus-4.8. Whatever the upstream, OpenRouter serves the
+      // Responses API at {base}/responses, so the whole group pins it.
+      expect(m.clientType, m.modelId).toBe("openai-responses");
       expect(m.baseUrl).toBe("https://openrouter.ai/api/v1");
     }
-    // Both protocols read the same OPENAI_* pair, so the env-fallback hint is unaffected by
-    // the split.
+    // The Responses client reads the same OPENAI_* pair as the Chat Completions one the other
+    // gateways pin, so the env-fallback hint is the same across every gateway group.
     for (const m of or) {
       expect(resolveModelEnv(m.modelId, m.clientType)?.envKey, m.modelId).toBe("OPENAI_API_KEY");
     }
@@ -790,10 +792,10 @@ describe("model-catalog", () => {
       glm53for.pricing!.output,
     ]).toEqual([0.015, 0.075, 0.25]);
     // Vision agrees on both routes: the direct row's AgentHub GLM client forwards image_url
-    // parts for this one id, and the gateway row's generic openai-chat client carries them
-    // for any id. It is the only vision-capable row in the direct Z.AI group.
+    // parts for this one id, and the gateway row's generic Responses client carries them for
+    // any id. It is the only vision-capable row in the direct Z.AI group.
     expect(glm53f.clientType).toBeUndefined();
-    expect(glm53for.clientType).toBe("openai-chat");
+    expect(glm53for.clientType).toBe("openai-responses");
     for (const m of MODEL_CATALOG.filter((m) => m.provider === "zhipu")) {
       expect(m.supportsVision, m.modelId).toBe(m.modelId === "glm-5.3-flash");
     }
@@ -1040,8 +1042,9 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
     // The dotted V4.1 spelling still carries the deepseek-v4 substring AutoLLMClient routes
     // on. It survives in the catalog as a RESOLD id — TokenDance's deepseek-v4.1-flash and
-    // OpenRouter's deepseek/deepseek-v4.1-flash, both of which pin openai-chat anyway — so
-    // this branch is what the bare spelling would resolve to, not what those rows use.
+    // OpenRouter's deepseek/deepseek-v4.1-flash, both of which pin an OpenAI-protocol client
+    // anyway — so this branch is what the bare spelling would resolve to, not what those
+    // rows use.
     expect(resolveModelEnv("deepseek-v4.1-flash")?.envKey).toBe("DEEPSEEK_API_KEY");
     expect(resolveModelEnv("deepseek-v4.1-flash")?.envBaseUrlKey).toBe("DEEPSEEK_BASE_URL");
     // The released direct id carries no `deepseek-v4` substring, and AgentHub 0.4.11 routes

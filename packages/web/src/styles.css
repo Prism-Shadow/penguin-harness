@@ -384,10 +384,11 @@
    in keyframes gets a no-op (ellipsis kept, `title` tooltip still there) instead of a
    clipped-but-motionless title.
 
-   Being an animation rather than a transition is what makes the reduced-motion path free: the
+   Being an animation rather than a transition is what keeps the reduced-motion path cheap: the
    global `animation: none !important` block below disables the reveal outright, leaving the
-   ellipsis and the `title` tooltip — no JS media query to subscribe to per row, nothing to go
-   stale between render and effect.
+   ellipsis and the `title` tooltip that truncated.tsx hands back there (#570). Choosing between
+   the two is the only thing JS reads the preference for, and it reads it from one app-wide media
+   query (use-reduced-motion.ts) — still nothing subscribed per row.
 
    :focus-visible (not :focus-within) scopes the keyboard trigger to actual keyboard focus;
    inside :is() its selector is forgiving, so engines without :has() keep the hover trigger. */

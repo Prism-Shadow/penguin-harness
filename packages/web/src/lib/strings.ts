@@ -228,6 +228,17 @@ export const zh = {
     toolAliases: "工具短名",
     toolAliasesInfo:
       "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
+    notifications: "任务完成通知",
+    notificationsInfo:
+      "Task 在窗口失焦或隐藏时结束，弹一条系统通知，点击即回到该 Session。打开这个开关会当场向系统申请通知权限——系统只问这一次，被拒之后不再询问，只能到系统的通知设置里改回来。",
+    notificationsDenied: "系统已拒绝本应用的通知权限。请先在系统的通知设置中允许，再打开这个开关。",
+    notificationsDismissed:
+      "权限提示被关闭、没有给出答复，通知因此保持关闭。再次打开这个开关可以重新申请。",
+    notificationsUnsupported: "当前浏览器不支持系统通知。",
+    /** Desktop shell only: the system-tray icon. Absent in a browser. */
+    trayIcon: "托盘图标",
+    trayIconInfo:
+      "桌面应用运行期间在系统托盘（Windows 通知区、macOS 菜单栏、Linux 托盘）常驻一个图标，点击即可回到窗口，右键可开新会话或退出。默认开启；关掉后图标立即消失，无需重启，此时关闭窗口不再收进托盘：macOS 应用留在 Dock，Windows 与 Linux 关窗即退出。",
     currencyInfo: "价格显示币种；存储始终为美元。",
     changePasswordInfo: "更改当前账号的登录密码。",
     accentNames: {
@@ -369,7 +380,7 @@ export const zh = {
     listSeparator: "、",
   },
 
-  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
     taskCompleteTitle: "任务完成",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
@@ -790,6 +801,9 @@ export const zh = {
     /** Add-dialog note for a group that pins one protocol on every entry (fed the client type): the protocol is not a choice here, and the endpoint is the user's own. */
     addProtocolHintPinned: (protocol: string): string =>
       `本分组的模型固定使用 ${protocol} 协议，base URL 填你自己的服务地址`,
+    /** The same note for a gateway group that pins a protocol: the endpoint is the gateway's, already filled in. */
+    addProtocolHintPinnedGateway: (protocol: string): string =>
+      `本分组的模型固定使用 ${protocol} 协议，base URL 已预填网关端点`,
     autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
     useCustomGroup: "转为自定义模型",
     addGroup: "新增分组",
@@ -2644,7 +2658,8 @@ Benchmark：
     globalSummary: "全局统计",
     tasksLabel: "轮次",
     messages: "消息",
-    truncatedNote: (shown: number, total: number) => `仅展示前 ${shown} / ${total} 条消息`,
+    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
+    loadingNote: (shown: number, total: number) => `已载入 ${shown} / ${total} 条消息…`,
     zoom: "缩放",
     zoomReset: "双击复位缩放",
     zoomOut: "缩小",
