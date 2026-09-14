@@ -47,8 +47,24 @@ const PROBE_TIMEOUT_MS = 5_000;
 
 /** Test seams: inject the probe verdict and capture the runner name. */
 export interface PenguinBwrapInternals {
-  probe?: (timeoutMs: number) => boolean;
+  probe?: (timeoutMs: number, runner: string) => boolean;
   runner?: string;
+}
+
+/** The settings an admin gives this backend (see the contribution's `configuration`), read off the policy. */
+export function bwrapOptions(
+  policy: SandboxPolicy,
+  fallbackRunner: string,
+): { runner: string; probeTimeoutMs: number } {
+  const runner = policy.options?.runner;
+  const seconds = policy.options?.probeTimeoutSeconds;
+  return {
+    runner: typeof runner === "string" && runner.trim() !== "" ? runner.trim() : fallbackRunner,
+    probeTimeoutMs:
+      typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0
+        ? seconds * 1000
+        : PROBE_TIMEOUT_MS,
+  };
 }
 
 /** The writable roots `workspace-write` grants: the workspace plus the temp areas, canonical and deduplicated. */
@@ -94,19 +110,20 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
 }
 
 /**
- * The backend. The probe runs once, lazily (first confine), and is cached: an
- * unavailable bwrap throws — fail-closed — rather than degrading to a weaker profile,
- * because the dimensions routed here (network, mask-paths) have no weaker form.
+ * The backend. The probe runs lazily (first confine with a given runner) and is cached per
+ * runner, so a runner an admin sets takes effect at the next spawn: an unavailable bwrap
+ * throws — fail-closed — rather than degrading to a weaker profile, because the dimensions
+ * routed here (network, mask-paths) have no weaker form.
  */
 export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}): SandboxProvider {
-  const runner = internals.runner ?? "bwrap";
-  const probe = internals.probe ?? ((timeoutMs: number) => defaultProbe(timeoutMs, runner));
-  let usable: boolean | undefined;
+  const probe = internals.probe ?? defaultProbe;
+  const usable = new Map<string, boolean>();
   return {
     dimensions: ["fs-write", "network", "mask-paths"],
     confine(argv, policy): ConfinedArgv {
-      usable ??= probe(PROBE_TIMEOUT_MS);
-      if (!usable) {
+      const { runner, probeTimeoutMs } = bwrapOptions(policy, internals.runner ?? "bwrap");
+      if (!usable.has(runner)) usable.set(runner, probe(probeTimeoutMs, runner));
+      if (!usable.get(runner)) {
         throw new Error(
           `penguin-bwrap cannot confine on this host: '${runner}' is missing or refuses the ` +
             "base profile; refusing to run the command unconfined. Install bubblewrap, or " +
@@ -140,6 +157,29 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
         id: "sandbox-bwrap.provider",
         name: "penguin-bwrap",
         dimensions: ["fs-write", "network", "mask-paths"],
+        configuration: {
+          title: "Bubblewrap",
+          titleZh: "Bubblewrap",
+          properties: {
+            runner: {
+              type: "string",
+              title: "bwrap program",
+              titleZh: "bwrap 程序",
+              description: "A path or a command on PATH; empty uses bwrap.",
+              descriptionZh: "路径或 PATH 上的命令名；留空则使用 bwrap。",
+              placeholder: "bwrap",
+            },
+            probeTimeoutSeconds: {
+              type: "number",
+              title: "Probe timeout (seconds)",
+              titleZh: "探测超时（秒）",
+              description:
+                "How long the first check that bwrap works may take before it counts as unusable.",
+              descriptionZh: "首次检查 bwrap 是否可用时最多等待多久，超时即视为不可用。",
+              default: 5,
+            },
+          },
+        },
       },
     ],
   },

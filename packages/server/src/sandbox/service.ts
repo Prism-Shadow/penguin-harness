@@ -21,6 +21,7 @@ import type {
 } from "@prismshadow/penguin-core/plugin";
 import { providerDimensions, requestedDimensions } from "./dimensions.js";
 import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import type { PluginConfiguration } from "../api/types.js";
 import type { Slot, ClassCtx, Json } from "@prismshadow/penguin-core/kernel";
 
 interface MountedProvider {
@@ -39,6 +40,8 @@ export class SandboxService {
    * a usable backend would fail every command the moment this code arrives.
    */
   private settings: SandboxSettings = { mode: "danger-full-access" };
+  /** Backend name → its own saved settings, handed to it in the policy (see SandboxPolicy.options). */
+  private readonly backendOptions = new Map<string, Readonly<Record<string, unknown>>>();
   private readonly ready: Promise<void>;
 
   /**
@@ -48,7 +51,11 @@ export class SandboxService {
    *   waiting. The default settings never consult a backend, so that window only
    *   exists for deployments flipping the mode in the first milliseconds after boot.
    */
-  constructor(registrations: Iterable<[string, SandboxProviderSource]> = []) {
+  constructor(
+    registrations: Iterable<[string, SandboxProviderSource]> = [],
+    /** Backend name → the configuration its contribution declares (manifest data, unvalidated). */
+    private readonly configurations: Readonly<Record<string, unknown>> = {},
+  ) {
     this.ready = (async () => {
       for (const [name, source] of registrations) {
         try {
@@ -69,6 +76,16 @@ export class SandboxService {
   /** Replaces the active settings (the config surface's write path). */
   configure(settings: SandboxSettings): void {
     this.settings = settings;
+  }
+
+  /** Replaces one backend's own settings; applies to the next spawn it serves. */
+  configureBackend(name: string, options: Readonly<Record<string, unknown>>): void {
+    this.backendOptions.set(name, { ...options });
+  }
+
+  /** Every declared backend's name and the configuration its contribution carries, mounted or not. */
+  declaredConfigurations(): Record<string, unknown> {
+    return { ...this.configurations };
   }
 
   /** The active settings as a plain copy (the config surface's read side). */
@@ -110,7 +127,8 @@ export class SandboxService {
       const settings = this.settings;
       if (settings.mode === "danger-full-access") return argv;
       const required = requestedDimensions(settings);
-      const provider = this.pick(required, settings.mode);
+      const { name, provider } = this.pick(required, settings.mode);
+      const options = this.backendOptions.get(name);
       // workspaceRoot is the Session's Workspace, never the per-command cwd: a command
       // running in a workdir outside the Workspace must not widen the writable roots.
       const policy: SandboxPolicy = {
@@ -120,6 +138,7 @@ export class SandboxService {
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0
           ? { maskPaths: settings.maskPaths }
           : {}),
+        ...(options !== undefined ? { options } : {}),
       };
       // ConfinedArgv also carries enforcement / denialSignatures / runnerFailureRules;
       // the classification consumer (denial vs runner failure) lands with escalation.
@@ -128,12 +147,12 @@ export class SandboxService {
   }
 
   /** The first mounted backend implementing every required dimension, or a fail-closed throw. */
-  private pick(required: readonly SandboxDimension[], mode: string): SandboxProvider {
+  private pick(required: readonly SandboxDimension[], mode: string): MountedProvider {
     const match = this.mounted.find(({ provider }) => {
       const implemented = providerDimensions(provider);
       return required.every((dimension) => implemented.includes(dimension));
     });
-    if (match !== undefined) return match.provider;
+    if (match !== undefined) return match;
     throw new Error(
       this.mounted.length === 0
         ? `sandbox mode "${mode}" is configured but no sandbox backend is mounted${this.failedSuffix()}; ` +
@@ -166,7 +185,14 @@ function copySettings(settings: SandboxSettings): SandboxSettings {
 export abstract class Sandbox extends Interface<
   Pick<
     SandboxService,
-    "configure" | "currentSettings" | "parkedSettings" | "backends" | "confiner" | "whenReady"
+    | "configure"
+    | "configureBackend"
+    | "currentSettings"
+    | "parkedSettings"
+    | "backends"
+    | "declaredConfigurations"
+    | "confiner"
+    | "whenReady"
   >
 >() {}
 
@@ -175,7 +201,19 @@ export interface SandboxSlots {
    * A backend: its static half here (name, the dimensions it implements), its code half
    * bound by the contributor — a provider, or a promise of one for backends that probe.
    */
-  providers: Slot<{ name: string; dimensions: SandboxDimension[] }, SandboxProviderSource>;
+  providers: Slot<
+    {
+      name: string;
+      dimensions: SandboxDimension[];
+      /**
+       * The backend's own settings, declared like a package's `penguin.configuration`: drawn
+       * inside the Sandbox card on the Settings dialog's Plugins page, and handed back to the
+       * backend in each policy's `options`.
+       */
+      configuration?: PluginConfiguration;
+    },
+    SandboxProviderSource
+  >;
 }
 
 @Module({
@@ -197,7 +235,13 @@ export class SandboxModule {
       (c) =>
         [c.data.name as string, c.code as SandboxProviderSource] as [string, SandboxProviderSource],
     );
-    const sandbox = new SandboxService(providers);
+    const configurations: Record<string, unknown> = {};
+    for (const c of contributions.providers ?? []) {
+      if (c.data.configuration !== undefined) {
+        configurations[c.data.name as string] = c.data.configuration;
+      }
+    }
+    const sandbox = new SandboxService(providers, configurations);
     // Parked settings ride the swap: without this every push would construct a fresh
     // service on defaults and silently un-confine a confining deployment.
     const parked = (context as { settings?: SandboxSettings } | null)?.settings;

@@ -202,7 +202,7 @@ Two numbers are deliberately not exposed. The per-message file **count** stays a
 
 ### Sandbox
 
-Admin only, server-global: the confinement every agent command spawns under — the **mode** (off / workspace write only / read-only), whether the **network** is cut off, and the **masked paths** hidden from a confined command (at most 64). Saving applies to the next command spawn with no restart; the settings are stored with the server's other settings, so a restart keeps them. What enforces a mode is a sandbox backend installed as a plugin (bwrap, Seatbelt, MXC, DSH); the page lists the mounted ones and the isolation each implements, and says plainly when there is none — a mode chosen without a backend confines nothing.
+Admin only, server-global, and the first card of **Settings → Plugins** rather than a page of its own: the confinement every agent command spawns under — the **mode** (off / workspace write only / read-only), whether the **network** is cut off, and the **masked paths** hidden from a confined command (one per line, at most 64). What enforces a mode is a sandbox backend installed as a plugin (bwrap, Seatbelt, MXC, DSH); the card lists the mounted ones and the isolation each implements, and says plainly when there is none — a mode chosen without a backend confines nothing. A backend that declares options of its own (bwrap's program and probe timeout, Seatbelt's and MXC's program) has them drawn inside the same card, and the card's one Save stores both; the change applies to the next command spawn, and a restart keeps it.
 
 ## Version and Updates
 

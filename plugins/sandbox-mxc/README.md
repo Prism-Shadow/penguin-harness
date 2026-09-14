@@ -32,6 +32,10 @@ already has native, live-verified plugins for those. Declaring them here would a
 untested second path to a solved problem, so on any non-Windows host this backend declines
 and routing moves on.
 
+## Settings
+
+On **Settings → Plugins**, inside the Sandbox card: the **wxc-exec program** (a path to the MXC runner; empty uses the one the MXC SDK ships). It applies at the next command spawn; a changed program is probed afresh.
+
 ## Install
 
 It ships with the harness build. On the Plugins page, install it to the Project that should

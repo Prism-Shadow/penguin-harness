@@ -49,7 +49,7 @@ const REQUIRED_WRITE_SINKS = ["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/d
 
 /** Test seams: inject the probe verdict and the runner name. */
 export interface SeatbeltInternals {
-  probe?: (timeoutMs: number) => boolean;
+  probe?: (timeoutMs: number, runner: string) => boolean;
   runner?: string;
 }
 
@@ -121,18 +121,23 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
 }
 
 /**
- * The backend. The probe runs once, lazily (first confine), and is cached; an
- * unusable Seatbelt throws — fail-closed — rather than degrading to a weaker profile.
+ * The backend. The probe runs lazily (first confine with a given runner) and is cached per
+ * runner, so a runner an admin sets takes effect at the next spawn; an unusable Seatbelt
+ * throws — fail-closed — rather than degrading to a weaker profile.
  */
 export function createSeatbeltProvider(internals: SeatbeltInternals = {}): SandboxProvider {
-  const runner = internals.runner ?? "sandbox-exec";
-  const probe = internals.probe ?? ((timeoutMs: number) => defaultProbe(timeoutMs, runner));
-  let usable: boolean | undefined;
+  const probe = internals.probe ?? defaultProbe;
+  const usable = new Map<string, boolean>();
   return {
     dimensions: ["fs-write", "network", "mask-paths"],
     confine(argv, policy): ConfinedArgv {
-      usable ??= probe(PROBE_TIMEOUT_MS);
-      if (!usable) {
+      const set = policy.options?.runner;
+      const runner =
+        typeof set === "string" && set.trim() !== ""
+          ? set.trim()
+          : (internals.runner ?? "sandbox-exec");
+      if (!usable.has(runner)) usable.set(runner, probe(PROBE_TIMEOUT_MS, runner));
+      if (!usable.get(runner)) {
         throw new Error(
           `penguin-seatbelt cannot confine on this host: '${runner}' is missing or refuses the ` +
             "profile (it exists only on macOS); refusing to run the command unconfined.",
@@ -163,6 +168,20 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
         id: "sandbox-seatbelt.provider",
         name: "penguin-seatbelt",
         dimensions: ["fs-write", "network", "mask-paths"],
+        configuration: {
+          title: "Seatbelt",
+          titleZh: "Seatbelt",
+          properties: {
+            runner: {
+              type: "string",
+              title: "sandbox-exec program",
+              titleZh: "sandbox-exec 程序",
+              description: "A path or a command on PATH; empty uses sandbox-exec.",
+              descriptionZh: "路径或 PATH 上的命令名；留空则使用 sandbox-exec。",
+              placeholder: "sandbox-exec",
+            },
+          },
+        },
       },
     ],
   },

@@ -152,15 +152,18 @@ export async function loadMxcProvider(
 /** The backend itself, over an already-resolved SDK and runner (the unit-testable core). */
 export function createMxcProvider(
   sdk: MxcSdk,
-  runner: string,
+  defaultRunner: string,
   probe: (runner: string, timeoutMs: number) => boolean = defaultProbe,
 ): SandboxProvider {
-  let usable: boolean | undefined;
+  // Cached per runner, so a runner an admin sets takes effect at the next spawn.
+  const usable = new Map<string, boolean>();
   return {
     dimensions: ["fs-write", "network", "mask-paths"],
     confine(argv, policy): ConfinedArgv {
-      usable ??= probe(runner, PROBE_TIMEOUT_MS);
-      if (!usable) {
+      const set = policy.options?.runner;
+      const runner = typeof set === "string" && set.trim() !== "" ? set.trim() : defaultRunner;
+      if (!usable.has(runner)) usable.set(runner, probe(runner, PROBE_TIMEOUT_MS));
+      if (!usable.get(runner)) {
         throw new Error(
           "penguin-mxc cannot confine on this host: the MXC runner is missing or reports no " +
             "usable containment; refusing to run the command unconfined.",
@@ -201,6 +204,20 @@ export function createMxcProvider(
         id: "sandbox-mxc.provider",
         name: "penguin-mxc",
         dimensions: ["fs-write", "network", "mask-paths"],
+        configuration: {
+          title: "MXC",
+          titleZh: "MXC",
+          properties: {
+            runner: {
+              type: "string",
+              title: "wxc-exec program",
+              titleZh: "wxc-exec 程序",
+              description: "A path to the MXC runner; empty uses the one the MXC SDK ships.",
+              descriptionZh: "MXC 运行器的路径；留空则使用 MXC SDK 自带的那个。",
+              placeholder: "wxc-exec.exe",
+            },
+          },
+        },
       },
     ],
   },
