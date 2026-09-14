@@ -64,7 +64,7 @@ function asIndexEntry(value: unknown): PluginIndexEntry | null {
 /**
  * Validates a whole index document. Strict, not per-entry-tolerant: an index is one
  * publisher's single artifact, so a malformed row means the artifact is broken —
- * unlike plugins.json entries, which are independent operator choices skipped one
+ * unlike a Project's plugin list, whose entries are independent choices skipped one
  * by one.
  */
 export function parsePluginIndex(data: unknown, source: string): PluginIndexEntry[] {
