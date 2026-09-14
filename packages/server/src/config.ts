@@ -67,11 +67,11 @@ export interface ServerConfig {
    * it when it exits with core's SERVER_RESTART_EXIT_CODE — what makes the web UI's "restart
    * to update" possible. False under a direct server start, a dev run, or the desktop shell.
    *
-   * OPTIONAL because the config a RUNTIME publishes is whatever its own build knew: a runtime
-   * older than this field publishes a config without it, and a pushed platform still has to
-   * boot there. Absent reads as false.
+   * Required, unlike cliEntry below: the hot-update seam names it in the
+   * config interface it claims (hmr/capabilities.ts's HMR_INTERFACES), and a runtime that
+   * publishes a lifecycle capability publishes this field with it — the two arrived together.
    */
-  supervised?: boolean;
+  supervised: boolean;
   /**
    * Port announcement file (PENGUIN_PORT_FILE): once the App is up, the actual
    * bound port is written here — the supervising process's way to learn the port when
