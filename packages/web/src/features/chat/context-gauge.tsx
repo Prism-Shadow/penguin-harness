@@ -367,6 +367,13 @@ function ContextPanel({
   // below. One piece of state for both lists, so a hovered ranking row cannot also dim the bar
   // it has no segment in.
   const [hovered, setHovered] = useState<string | null>(null);
+  // A click pins a part's highlight — the segment and its legend row together — until the
+  // same part is clicked again or another one is picked, so a reader can hold a highlight
+  // while moving the pointer elsewhere; a hover still wins while it lasts.
+  const [pinned, setPinned] = useState<string | null>(null);
+  const togglePinned = (key: string): void =>
+    setPinned((current) => (current === key ? null : key));
+  const lit = hovered ?? pinned;
   const [ranking, setRanking] = useState<RankingView>(lastRankingView);
   const pickRanking = (view: RankingView) => {
     lastRankingView = view;
@@ -409,7 +416,14 @@ function ContextPanel({
   // rather than zero, so both render `—` instead of describing a context that no longer exists.
   const unmeasured = unknown || data?.contextClosed === true;
   const composition = data === null ? null : contextComposition(data, now);
-  const hoveredPart = composition?.parts.some((p) => p.key === hovered) ? hovered : null;
+  const hoveredPart = composition?.parts.some((p) => p.key === lit) ? lit : null;
+  // The room past the compaction threshold, as a fraction of the bar: hatched below the fills
+  // so it reads as room the model has but compaction fires before the Session can use —
+  // distinct from the plain free run left of the cutter — and it follows the pending value
+  // while the cutter is dragged.
+  const shownThreshold = pendingThreshold ?? threshold;
+  const beyondFraction =
+    shownThreshold === null ? null : thresholdFraction(shownThreshold, windowTokens);
 
   return (
     <>
@@ -452,6 +466,13 @@ function ContextPanel({
             style={{ marginBottom: MARK_OVERHANG_PX }}
           >
             <div aria-hidden className="absolute inset-0 bg-gray-200 dark:bg-gray-800">
+              {beyondFraction !== null && beyondFraction < 1 && (
+                <div
+                  title={S.chat.contextBeyondThreshold}
+                  className="context-hatch absolute inset-y-0 right-0"
+                  style={{ left: `${beyondFraction * 100}%` }}
+                />
+              )}
               <div
                 className="absolute inset-y-0 left-0 flex overflow-hidden"
                 style={{ width: `${fill * 100}%`, minWidth: now > 0 ? MIN_FILL_PX : 0 }}
@@ -463,8 +484,9 @@ function ContextPanel({
                       title={`${PART_LABELS[p.key]()} ~${humanizeTokens(p.tokens)} · ${p.percent}%`}
                       onMouseEnter={() => setHovered(p.key)}
                       onMouseLeave={() => setHovered(null)}
+                      onClick={() => togglePinned(p.key)}
                       style={{ flexGrow: p.tokens, flexBasis: 0 }}
-                      className={`h-full transition-opacity duration-150 ${p.color} ${
+                      className={`h-full cursor-pointer transition-opacity duration-150 ${p.color} ${
                         hoveredPart !== null && hoveredPart !== p.key ? "opacity-25" : ""
                       }`}
                     />
@@ -505,8 +527,9 @@ function ContextPanel({
                 swatch={p.color}
                 tokens={p.tokens}
                 percent={p.percent}
-                highlighted={hovered === p.key}
+                highlighted={lit === p.key}
                 onHover={(on) => setHovered(on ? p.key : null)}
+                onSelect={() => togglePinned(p.key)}
               />
             ))}
           </ul>
@@ -735,7 +758,7 @@ function ThresholdCutter({
           style={
             fraction > 0.5 ? { right: `${(1 - fraction) * 100}%` } : { left: `${fraction * 100}%` }
           }
-          className="absolute -bottom-5 rounded bg-gray-900 px-1 py-px font-mono text-[10px] whitespace-nowrap text-white dark:bg-gray-100 dark:text-gray-900"
+          className="absolute -bottom-6 rounded bg-gray-900 px-1.5 py-0.5 font-mono text-xs font-semibold whitespace-nowrap text-white dark:bg-gray-100 dark:text-gray-900"
         >
           {humanizeTokens(shown)}
         </span>
@@ -833,6 +856,7 @@ function ShareRow({
   mono = false,
   highlighted = false,
   onHover,
+  onSelect,
 }: {
   label: string;
   /** Tooltip of the label, when it should say more than the label does; the label is its own otherwise. */
@@ -845,14 +869,17 @@ function ShareRow({
   mono?: boolean;
   highlighted?: boolean;
   onHover?: (on: boolean) => void;
+  /** A click pins the row's highlight (the six parts); the rankings pass none and stay hover-only. */
+  onSelect?: () => void;
 }) {
   return (
     <li
       onMouseEnter={() => onHover?.(true)}
       onMouseLeave={() => onHover?.(false)}
+      {...(onSelect !== undefined ? { onClick: onSelect } : {})}
       className={`-mx-1 flex items-center gap-1.5 rounded px-1 py-px transition-colors duration-150 ${
-        highlighted ? "bg-gray-100 dark:bg-gray-800" : ""
-      }`}
+        onSelect !== undefined ? "cursor-pointer " : ""
+      }${highlighted ? "bg-gray-100 dark:bg-gray-800" : ""}`}
     >
       {swatch !== undefined && (
         <span aria-hidden className={`h-2 w-2 shrink-0 rounded-[2px] ${swatch}`} />

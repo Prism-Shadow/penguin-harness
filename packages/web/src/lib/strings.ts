@@ -2018,6 +2018,8 @@ Benchmark：
     contextBreakdownFailed: "读取上下文构成失败",
     /** The dashed cutter on the panel's bar: its accessible name, and its tooltip naming the threshold it stands on. */
     contextThresholdCutter: "压缩阈值",
+    /** Tooltip of the hatched stretch of the bar past the cutter: room the model has, unusable before compaction fires. */
+    contextBeyondThreshold: "压缩阈值之上的空间：压缩会先触发，这部分暂时用不到",
     contextThresholdHover: (n: string): string => `压缩阈值 ${n}（拖动可调整）`,
     /** Confirmation for a dragged (or arrowed) threshold: dialog name, body (agent name + the threshold being replaced), the editable field and its rejection, the note when the model window will cut the typed value down, and the toast on success. */
     contextThresholdTitle: "修改压缩阈值",

@@ -12,6 +12,25 @@
 /* Dark theme toggled via the html.dark class (Tailwind 4 custom variant). */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* The stretch of the context panel's bar past the compaction threshold: hatched, so it reads as
+   room the model has but compaction fires before the Session can use — distinct from the plain
+   free run left of the cutter. Written as plain CSS: a dark: variant inside @apply does not
+   compile for this kind of rule. */
+.context-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(156 163 175 / 0.55) 0 2px,
+    transparent 2px 6px
+  );
+}
+.dark .context-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(75 85 99 / 0.75) 0 2px,
+    transparent 2px 6px
+  );
+}
+
 /* Brand color scale (Google blue family): generates utility classes like bg-brand-600 / text-brand-300. */
 @theme {
   --color-brand-25: #f8fbff;

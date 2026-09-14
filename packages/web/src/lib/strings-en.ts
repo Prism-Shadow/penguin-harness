@@ -2042,6 +2042,9 @@ Scenarios:
     contextBreakdownEmpty: "Nothing in the current context to break down yet",
     contextBreakdownFailed: "Could not read the context composition",
     contextThresholdCutter: "Compaction threshold",
+    /** Tooltip of the hatched stretch of the bar past the cutter: room the model has, unusable before compaction fires. */
+    contextBeyondThreshold:
+      "Room past the compaction threshold: compaction fires first, so this part is not usable yet",
     contextThresholdHover: (n: string): string => `Compaction threshold ${n} (drag to adjust)`,
     contextThresholdTitle: "Change the compaction threshold",
     contextThresholdBody: (agentName: string, old: string): string =>
