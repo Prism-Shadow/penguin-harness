@@ -3,6 +3,7 @@
 - **Date:** 2026-09-14
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#724](https://github.com/Prism-Shadow/penguin-harness/pull/724)
 
 [English](2026-09-14-logout-confirm.md)
 
