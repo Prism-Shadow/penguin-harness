@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appOriginFor,
   desktopLoginUrl,
+  hidesOnClose,
   isAppUrl,
   isLocalSurfaceUrl,
   parsePortFile,
@@ -63,5 +64,31 @@ describe("isLocalSurfaceUrl", () => {
 describe("restartDelayMs", () => {
   it("doubles from 1s and caps at 8s", () => {
     expect([0, 1, 2, 3, 4].map(restartDelayMs)).toEqual([1000, 2000, 4000, 8000, 8000]);
+  });
+});
+
+describe("hidesOnClose", () => {
+  const state = (over: Partial<Parameters<typeof hidesOnClose>[0]> = {}) => ({
+    quitting: false,
+    trayShown: true,
+    closeToTray: true,
+    ...over,
+  });
+
+  it("hides the window only while a tray icon can bring it back", () => {
+    expect(hidesOnClose(state())).toBe(true);
+    expect(hidesOnClose(state({ closeToTray: false }))).toBe(false);
+  });
+
+  it("lets the close through when there is no tray icon", () => {
+    // The Appearance switch turned it off, or the platform could not host one. A hidden
+    // window with nothing to restore it is a running app the user cannot reach: the close
+    // has to proceed instead, leaving the app in the Dock on macOS and quitting elsewhere.
+    expect(hidesOnClose(state({ trayShown: false }))).toBe(false);
+    expect(hidesOnClose(state({ trayShown: false, closeToTray: false }))).toBe(false);
+  });
+
+  it("never intercepts the close a quit runs", () => {
+    expect(hidesOnClose(state({ quitting: true }))).toBe(false);
   });
 });

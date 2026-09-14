@@ -100,7 +100,7 @@ import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
 import { LifecycleService } from "./services/lifecycle-service.js";
-import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
+import { desktopRoutes, desktopTrayRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -492,6 +492,10 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
     app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
+    // The tray-icon preference rides the same relay and the same shell-window gate: it is
+    // the Settings › Appearance switch reaching the chrome around the window it runs in.
+    app.use("/api/desktop/tray", authMiddleware(deps.authService, deps.config.trustProxy));
+    app.route("/api/desktop/tray", desktopTrayRoutes(deps));
   }
   // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
   // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin

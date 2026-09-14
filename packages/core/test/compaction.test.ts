@@ -57,6 +57,7 @@ import type {
   GenerativeModelParameters,
   LLMInterface,
   LLMOutcome,
+  ThinkingLevelName,
 } from "../src/interfaces/index.js";
 import { ContextEngine, SUMMARY_RETRY_GUIDANCE } from "../src/engine/context-engine.js";
 import { Session } from "../src/session.js";
@@ -77,6 +78,8 @@ interface ScriptedResponse {
 /** Fake LLM that responds according to a script, recording each input it receives. */
 class ScriptedLLM implements LLMInterface {
   calls: OmniMessage[][] = [];
+  /** The per-request thinking level of each call, in the same order as `calls`. */
+  levels: (ThinkingLevelName | undefined)[] = [];
   constructor(
     private readonly responses: ScriptedResponse[],
     readonly label = "llm",
@@ -86,6 +89,7 @@ class ScriptedLLM implements LLMInterface {
     params: GenerativeModelParameters,
   ): AsyncGenerator<OmniMessage, LLMOutcome> {
     this.calls.push(params.newMessages);
+    this.levels.push(params.thinkingLevel);
     const next = this.responses.shift();
     if (!next) {
       return { status: "retryable", errorMessage: `${this.label}: no scripted response` };
@@ -277,6 +281,33 @@ describe("context compaction", () => {
         ((m.payload as { text?: string }).text ?? "").startsWith("[context_summary]"),
       ),
     ).toBe(true);
+  });
+
+  it("carries no thinking level when the Session has no pin, on a turn or a compaction", async () => {
+    // The pinned half of the rule is engine.test.ts's "applies setThinkingLevel to every
+    // request of the Session". This is the other half: with no pin the request says nothing at
+    // all and the LLM object's construction default — the level the context was opened with —
+    // stands. The engine must not start inventing one for either kind of request.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]the distilled summary[/summary]"), usage(160, 310)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 330)] }]);
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace: new Writer({ tracesDir: traces, sessionId: "sess_compact_nolevel" }),
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openNextContext: () => ({ llm: llm2 }),
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(llm1.levels).toEqual([undefined, undefined]);
   });
 
   it("the rotated Trace file opens with the meta the new context was opened with, and a later context without one keeps it", async () => {
