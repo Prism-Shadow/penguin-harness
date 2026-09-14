@@ -3,6 +3,7 @@
 - **Date:** 2026-09-14
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#721](https://github.com/Prism-Shadow/penguin-harness/pull/721)
 
 [中文版](2026-09-14-background-action-delay.zh.md)
 
