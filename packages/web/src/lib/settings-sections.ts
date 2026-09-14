@@ -1,5 +1,5 @@
 /**
- * The System settings dialog's pages, and who may see each one.
+ * The Settings dialog's pages, and who may see each one.
  *
  * Server-global pages write through /api/admin/settings (or the admin user routes) and
  * belong to admins alone; the personal pages are per-user preferences every signed-in user
@@ -23,7 +23,7 @@
 import { offersChangePassword } from "./account-menu";
 import type { AccountMenuSession } from "./account-menu";
 
-/** A page of the System settings dialog. */
+/** A page of the Settings dialog. */
 export type SettingsSectionKey =
   | "profile"
   | "general"

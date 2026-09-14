@@ -1,5 +1,5 @@
 /**
- * System settings dialog: one popup holding the settings that used to sit as separate rows
+ * Settings dialog: one popup holding the settings that used to sit as separate rows
  * in the sidebar user menu, on the PagedDialog shell (left rail of pages, ChatGPT-style
  * rows on the right). The rail is grouped — Personal for the viewer's own preferences,
  * Server for the server-global settings an admin writes — and both the rail and the pane
@@ -125,7 +125,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     <PagedDialog
       open={open}
       onClose={onClose}
-      title={S.settings.systemSettings}
+      title={S.settings.title}
       groups={groups}
       active={current}
       onSelect={setActive}
