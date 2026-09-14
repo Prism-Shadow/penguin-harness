@@ -3,6 +3,7 @@
 - **Date:** 2026-09-14
 - **Type:** test
 - **Scope:** `core`
+- **PR:** [#722](https://github.com/Prism-Shadow/penguin-harness/pull/722)
 
 [English](2026-09-14-prefix-cache-awareness.md)
 
