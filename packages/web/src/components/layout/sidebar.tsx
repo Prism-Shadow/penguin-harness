@@ -59,9 +59,9 @@ import {
   groupPageSlice,
   groupSessionsByTime,
   groupSessionsByWorkspace,
-  hiddenRowCount,
   matchesSessionQuery,
   partitionSessions,
+  revealPlan,
   sessionCategory,
   totalCategoryCounts,
   workspaceGroupKey,
@@ -469,6 +469,7 @@ export function Sidebar({
     setGroupPage(0);
     // The other Project's groups are gone, and so is any meaning their reveal state had.
     setGroupCaps(new Map());
+    setFolderCaps(new Map());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapseStoreKey, pinStoreKey, currentProjectId]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
@@ -477,6 +478,8 @@ export function Sidebar({
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
   /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
+  /** The same display cap per folder (keyed by folderKey; absent = SIDEBAR_PAGE_SIZE), so an expanded folder reveals a page at a time instead of everything a fetch returned. */
+  const [folderCaps, setFolderCaps] = useState<ReadonlyMap<string, number>>(new Map());
   /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
   const [groupPage, setGroupPage] = useState(0);
   /** Session pending delete confirmation (null = none). */
@@ -505,6 +508,7 @@ export function Sidebar({
     setGroupOrder(loadGroupOrder(currentProjectId, mode));
     setGroupPage(0);
     setGroupCaps(new Map());
+    setFolderCaps(new Map());
   };
 
   /** Collapse/expand the page-nav group (same store-then-set convention as setGroupMode). */
@@ -1272,6 +1276,7 @@ export function Sidebar({
             // "active right now"). CLI-adopted and subagent rows are not
             // driven by this server, so theirs stays at createdAt.
             lastActive={formatRelativeShort(s.lastActiveAt, locale)}
+            locale={locale}
             {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
             {...drag}
             onOpen={openSession}
@@ -1291,17 +1296,57 @@ export function Sidebar({
   );
 
   /**
+   * A folder's "Show N more chats": reveal one more page of the rows it already holds,
+   * and fetch its next server page only when the reveal actually runs past them and
+   * somewhere is left to fetch from. Mirrors the active list's showMore — a page already
+   * in memory spends no request, which in time mode is a fan-out across every
+   * contributing Agent.
+   */
+  const revealFolderMore = (
+    groupKey: string,
+    category: FolderCategory,
+    agentIds: string[],
+    loaded: number,
+  ) => {
+    const key = folderKey(groupKey, category);
+    const nextCap = (folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE;
+    setFolderCaps((prev) => {
+      const next = new Map(prev);
+      next.set(key, nextCap);
+      return next;
+    });
+    if (loaded < nextCap && agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)))) {
+      trackedLoadMore(groupKey, category, agentIds);
+    }
+  };
+
+  /** A folder's "show less": back to the first page (rows already fetched stay in memory). */
+  const collapseFolder = (key: string) => {
+    setFolderCaps((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  /**
    * Collapsed-by-default lazy folder (subagent / scheduled / archived): nothing is
-   * fetched until the first expand, and once open the folder pages independently with
-   * its own "More" row. Everything is driven by the group's **own** exact server share
-   * (`totals` — the Agent's counts in agent mode, the per-Workspace fold in workspace
-   * mode): the folder exists only while its share is non-zero, the label shows that
-   * share, and "More" shows only while loaded rows fall short of it — an Agent's
-   * content in *other* Workspaces can never surface a folder here. The folder's "More"
-   * pages independently of the active list's; in workspace mode a fetched page can land
-   * rows in other groups' folders too, so one click may grow this folder by fewer than
-   * a full page — the row shows a loading state while the fetch runs and stays until
-   * this group's share is fully loaded.
+   * fetched until the first expand, and once open the folder reveals and pages
+   * independently with its own "More" and "show less" rows. Everything is driven by the
+   * group's **own** exact server share (`totals` — the Agent's counts in agent mode, the
+   * per-Workspace fold in workspace mode): the folder exists only while its share is
+   * non-zero, the label shows that share, and "More" shows only while something of that
+   * share is still hidden — an Agent's content in *other* Workspaces can never surface a
+   * folder here.
+   *
+   * The folder obeys the same display rule the active list does (revealPlan): one page
+   * of rows shows at a time and "More" reveals one page more, spending a fetch only when
+   * the reveal runs past what is in memory. In time mode the folders span every contributing
+   * Agent, so one fetch can return several pages at once; they stay in memory under the
+   * cap rather than all landing on screen. In workspace mode a fetched page can land rows
+   * in other groups' folders too, so one click may grow this folder by fewer than a full
+   * page — the row shows a loading state while the fetch runs.
    */
   const renderFolder = (
     groupKey: string,
@@ -1316,32 +1361,40 @@ export function Sidebar({
     // While searching the folder speaks for its loaded MATCHES only: a match hidden
     // behind a collapsed folder would look like a missing result (the models page's
     // search-forces-open rationale), so the folder is forced open, labelled by the
-    // match count, hidden when nothing matches, and never offers "More" (the server
-    // cannot search unloaded rows).
+    // match count, hidden when nothing matches, and never offers "More" or "show less"
+    // (the server cannot search unloaded rows, and every match is already on screen).
     if (searching && rows.length === 0) return null;
     // Loaded rows win a disagreement with the totals (counts refresh only on reload).
     const total = searching ? rows.length : Math.max(totals?.[category] ?? 0, rows.length);
     if (total === 0) return null;
-    // More while the group's share isn't fully loaded AND somewhere is left to fetch from
-    // (counts drifting above reality would otherwise leave a dead button until reload).
-    const more =
-      !searching &&
-      rows.length < total &&
-      agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
+    const key = folderKey(groupKey, category);
+    const cap = folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE;
+    // The folder's whole share is in memory (every Agent that could hold a row of it is
+    // fetched out), which is when the loaded rows become the truth — the same clause the
+    // active list applies, and what keeps a count drifting above reality from leaving a
+    // reveal row with nothing behind it.
+    const fullyLoaded =
+      agentIds.length > 0 && !agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
+    const plan = revealPlan({ cap, loaded: rows.length, total, fullyLoaded });
+    const shown = searching ? rows : rows.slice(0, plan.shown);
+    const hidden = searching ? 0 : plan.hidden;
     return (
       <FolderSection
         key={category}
         label={S.chat.folderGroups[category](total)}
-        open={searching || openFolders.has(folderKey(groupKey, category))}
+        open={searching || openFolders.has(key)}
         onToggle={() => toggleFolder(groupKey, category, agentIds)}
-        more={more}
-        // The folder shows every row it has loaded, so its remainder is its own share
-        // minus those — the same count the active list's reveal row names one level up.
-        moreLabel={S.chat.expandRestSessions(Math.max(total - rows.length, 0))}
+        more={hidden > 0}
+        // The rows past the cap plus the unfetched remainder of this folder's own share —
+        // the same count, and the same wording, the active list's reveal row names one
+        // level up.
+        moreLabel={S.chat.expandRestSessions(hidden)}
         pending={pendingLoads.has(loadKey(groupKey, category))}
-        onMore={() => trackedLoadMore(groupKey, category, agentIds)}
+        onMore={() => revealFolderMore(groupKey, category, agentIds, rows.length)}
+        less={!searching && plan.canCollapse}
+        onLess={() => collapseFolder(key)}
       >
-        {renderRows(rows, withAgentHint)}
+        {renderRows(shown, withAgentHint)}
       </FolderSection>
     );
   };
@@ -1387,7 +1440,6 @@ export function Sidebar({
     totals: SessionCategoryCounts | undefined,
     agentsFor: (category: SessionCategory) => string[],
   ) => {
-    const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
     // Row order: the pinned cluster first, then — under manual sort — the stored order
     // within each pin partition (lib/session-order.ts). Both reorder only rows already
     // FETCHED: a pinned conversation that lives past the loaded pages does not surface
@@ -1403,7 +1455,6 @@ export function Sidebar({
       order: sessionOrder,
       recencyOf: (s) => s.lastActiveAt,
     });
-    const shownActive = searching ? orderedActive : orderedActive.slice(0, cap);
     /** Manual sort only (never on a search-filtered view): drag scope + the group's full ordered list, so a drop commits the whole partition. */
     const dragCtx =
       effectiveSortMode === "manual" && !searching
@@ -1419,18 +1470,18 @@ export function Sidebar({
     const fullyLoaded =
       activeAgents.length > 0 &&
       !activeAgents.some((id) => hasMoreFor(id, "active", fetchScope(groupKey)));
-    const hiddenActive = searching
-      ? 0
-      : hiddenRowCount({
-          shown: shownActive.length,
-          loaded: parts.active.length,
-          total: totals?.active ?? 0,
-          fullyLoaded,
-        });
-    // "Show less" appears once the group is revealed past its first page and there is
-    // something for it to hide again.
-    const canCollapse =
-      !searching && cap > SIDEBAR_PAGE_SIZE && parts.active.length > SIDEBAR_PAGE_SIZE;
+    // One page of rows at a time, what the reveal row still hides, and whether "Show less"
+    // has anything to fold away: the single rule revealPlan states, applied here and by
+    // every folder below.
+    const plan = revealPlan({
+      cap: groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE,
+      loaded: parts.active.length,
+      total: totals?.active ?? 0,
+      fullyLoaded,
+    });
+    const shownActive = searching ? orderedActive : orderedActive.slice(0, plan.shown);
+    const hiddenActive = searching ? 0 : plan.hidden;
+    const canCollapse = !searching && plan.canCollapse;
     const folders = FOLDER_CATEGORIES.map((category) =>
       renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );
@@ -2527,6 +2578,7 @@ function SessionRow({
   pinned,
   canPin = false,
   lastActive,
+  locale,
   agentHint,
   draggable = false,
   dropEdge = null,
@@ -2556,6 +2608,8 @@ function SessionRow({
   canPin?: boolean;
   /** Preformatted compact last-active time ("" hides the slot's resting text). */
   lastActive: string;
+  /** Interface language: decides the fixed width the time slot reserves (see the slot's comment). */
+  locale: "zh" | "en";
   /** Agent display name; when set (workspace mode) a small avatar keeps the Agent context visible on the row. */
   agentHint?: string;
   /** Manual sort: the row can be drag-reordered (the sidebar wires the handlers below). */
@@ -2705,9 +2759,9 @@ function SessionRow({
               the schedules panel says how often and what. A paused task, or one past its end
               time, draws nothing — nothing more will fire from it, and a mark would be noise. */}
           {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
-          {/* Background work the conversation owns while sitting idle: parked, not running,
-              so it reads as an arrangement rather than as a turn in progress. The mark leaves
-              with the last task (live via session_background). */}
+          {/* Background work the conversation owns while sitting idle: still running, only
+              outside the turn, so it reads as live work rather than as a standing arrangement.
+              The mark leaves with the last task (live via session_background). */}
           {background > 0 && (
             <BackgroundTasksMark
               label={S.chat.backgroundTasks(background)}
@@ -2727,12 +2781,24 @@ function SessionRow({
             NOT a whole-slot overlay: the slot's width rides the time string (2 分钟前 vs
             31 分钟前), and slot-centered glyphs landed at a different x per row, so the
             icons never formed a vertical column (the user saw them shift with the time's
-            character count). Right-anchored, every row's icons share one x. min-w-12
-            reserves the pair's own width, so on a row with no time they still don't
-            overhang the title. The swap stays a pure opacity handoff: the time hides on
-            row hover (group-hover) and while a button holds focus (peer-focus-within; the
-            group precedes the time span so the peer combinator can reach it). */}
-        <div className="relative flex h-6 min-w-12 shrink-0 items-center justify-end">
+            character count). Right-anchored, every row's icons share one x. The slot's
+            width is FIXED per language rather than riding the time string: the marks that
+            end the title button (glyph, background, schedule, approvals) sit against this
+            slot, so a slot that grew with 「31 分钟前」 and shrank with 「刚刚」 moved them
+            row by row. Sized for the widest string each language produces — 「12月31日」
+            and 「59 分钟前」 in zh, "Nov 30" in en — measured at the SMALLEST font tier,
+            which is the tight one: the slot is in rem and shrinks with the root font,
+            while the time inside it is a fixed 11px and does not. Never below the hover
+            pair's own width (two w-6 buttons), so on a row with no time the buttons
+            still don't overhang the title.
+            The swap stays a pure opacity handoff: the time hides on row hover
+            (group-hover) and while a button holds focus (peer-focus-within; the group
+            precedes the time span so the peer combinator can reach it). */}
+        <div
+          className={`relative flex h-6 shrink-0 items-center justify-end ${
+            locale === "zh" ? "w-[4.5rem]" : "w-14"
+          }`}
+        >
           {/* No hover pill on these (a fill as wide as the date read ugly); feedback is
               the glyph color deepening — red for delete. */}
           <div className="peer absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
@@ -2746,7 +2812,7 @@ function SessionRow({
           {lastActive !== "" && (
             <span
               aria-hidden
-              className="pointer-events-none px-1 text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 dark:text-gray-500"
+              className="pointer-events-none whitespace-nowrap px-1 text-right text-[11px] tabular-nums text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 dark:text-gray-500"
             >
               {lastActive}
             </span>

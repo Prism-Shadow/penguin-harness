@@ -42,8 +42,8 @@ describe("describeInstant", () => {
   it("names today and tomorrow, then dates, adding the year only when it differs", () => {
     expect(describeInstant(local(2026, 9, 2, 8, 0), "zh", NOW)).toBe("今天 08:00");
     expect(describeInstant(local(2026, 9, 3, 10, 0), "zh", NOW)).toBe("明天 10:00");
-    expect(describeInstant(local(2026, 9, 5, 10, 0), "zh", NOW)).toBe("9 月 5 日 10:00");
-    expect(describeInstant(local(2027, 1, 3, 10, 0), "zh", NOW)).toBe("2027 年 1 月 3 日 10:00");
+    expect(describeInstant(local(2026, 9, 5, 10, 0), "zh", NOW)).toBe("9月5日 10:00");
+    expect(describeInstant(local(2027, 1, 3, 10, 0), "zh", NOW)).toBe("2027 年 1月3日 10:00");
     setActiveStrings(en);
     expect(describeInstant(local(2026, 9, 3, 10, 0), "en", NOW)).toBe("tomorrow 10:00");
     expect(describeInstant(local(2026, 9, 5, 10, 0), "en", NOW)).toBe("Sep 5, 10:00");
@@ -120,7 +120,7 @@ describe("describeSchedule", () => {
       "已过期 · 每天 08:00",
     );
     expect(describeSchedule({ status: "done", startAt: local(2026, 9, 1, 10, 0) }, "zh", NOW)).toBe(
-      "已完成 · 一次性 · 9 月 1 日 10:00",
+      "已完成 · 一次性 · 9月1日 10:00",
     );
     expect(describeSchedule({ ...daily, status: "missed" }, "zh", NOW)).toBe("已错过 · 每天 08:00");
     expect(

@@ -1289,7 +1289,7 @@ export const en: Strings = {
       next: (when: string): string => `Next: ${when}`,
       today: (time: string): string => `today ${time}`,
       tomorrow: (time: string): string => `tomorrow ${time}`,
-      /** `monthDay` is formatMonthDay's output (9 月 3 日 / Sep 3). */
+      /** `monthDay` is formatMonthDay's output (9月3日 / Sep 3). */
       onDate: (monthDay: string, time: string): string => `${monthDay}, ${time}`,
       onDateWithYear: (year: number, monthDay: string, time: string): string =>
         `${monthDay}, ${year}, ${time}`,

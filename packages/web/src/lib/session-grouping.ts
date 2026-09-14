@@ -131,6 +131,40 @@ export function hiddenRowCount({
 }
 
 /**
+ * The display window of one sidebar list — a group's active rows, or one of its
+ * collapsed folders; both obey the same rule and both read it from here. The list shows
+ * `SIDEBAR_PAGE_SIZE` rows, every "more" click reveals one page more, and a "show less"
+ * stands beside the reveal row (not after it) from the moment the list is revealed past
+ * its first page, folding it back to exactly that page. Rows beyond the cap stay in
+ * memory — a fetch that returned far more than a page (a time-mode folder fans out over
+ * every contributing Agent) is revealed a page at a time instead of all at once.
+ *
+ * `cap` is the list's current display cap, `loaded` the rows in memory, `total` its
+ * exact server share and `fullyLoaded` whether every Agent that could hold one of its
+ * rows is fetched out (see hiddenRowCount for why that last one decides the count).
+ * "Show less" needs both a raised cap and more loaded rows than a page — otherwise there
+ * is nothing for it to fold away.
+ */
+export function revealPlan({
+  cap,
+  loaded,
+  total,
+  fullyLoaded,
+}: {
+  cap: number;
+  loaded: number;
+  total: number;
+  fullyLoaded: boolean;
+}): { shown: number; hidden: number; canCollapse: boolean } {
+  const shown = Math.min(Math.max(cap, 0), loaded);
+  return {
+    shown,
+    hidden: hiddenRowCount({ shown, loaded, total, fullyLoaded }),
+    canCollapse: cap > SIDEBAR_PAGE_SIZE && loaded > SIDEBAR_PAGE_SIZE,
+  };
+}
+
+/**
  * Applies the limit+1 fetch trick: `fetched` came from a request with `limit = pageSize + 1`;
  * the visible page is the first `pageSize` items, and an overflow item (never shown) proves
  * the server has more.
