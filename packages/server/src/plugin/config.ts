@@ -19,15 +19,28 @@
  * Delivery is a read plus a watch. `get` merges what is stored onto the schema's defaults,
  * so a plugin reads a complete document on its first boot; `watch` fires after every save,
  * which is how a plugin applies an edit without a restart or a re-assembly of the App.
+ *
+ * A package is not the only thing with options. A module contributes a settings group to
+ * `PluginConfigProvider.groups` — a schema drawn exactly like a package's, plus live notices,
+ * plus `parent` to draw one group inside another — so a core capability (the sandbox) and the
+ * plugins that extend it (its backends' own options) get their form from the same page code
+ * rather than each shipping a page of its own. Groups are asked for per call, like the
+ * package schemas: what they list may change as backends load.
  */
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
-import type { PluginConfigEntry, PluginConfigField, PluginConfiguration } from "../api/types.js";
+import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
+import type {
+  PluginConfigEntry,
+  PluginConfigField,
+  PluginConfigNotice,
+  PluginConfiguration,
+} from "../api/types.js";
 import type { Hmr } from "../hmr/capabilities.js";
 import { Settings } from "../mechanisms/settings.js";
 import { maskApiKey } from "../services/project-config-service.js";
 import { pluginHostFrom } from "./host.js";
 
-export type { PluginConfigField, PluginConfiguration } from "../api/types.js";
+export type { PluginConfigField, PluginConfigNotice, PluginConfiguration } from "../api/types.js";
 
 const FIELD_TYPES = new Set<PluginConfigField["type"]>([
   "string",
@@ -35,6 +48,8 @@ const FIELD_TYPES = new Set<PluginConfigField["type"]>([
   "boolean",
   "number",
   "project",
+  "enum",
+  "list",
 ]);
 
 /** A field name: what the manifest and the stored document are keyed by. */
@@ -90,6 +105,33 @@ export function parsePluginConfiguration(
       }
       field[key] = v;
     }
+    if (field.type === "enum") {
+      const options = f.options;
+      if (!Array.isArray(options) || options.length === 0) {
+        throw new Error(`${where}: configuration.properties.${name}.options must list the choices`);
+      }
+      field.options = options.map((o, i) => {
+        const opt = (o ?? {}) as Record<string, unknown>;
+        if (typeof opt.value !== "string" || typeof opt.title !== "string") {
+          throw new Error(
+            `${where}: configuration.properties.${name}.options[${i}] needs a string value and title`,
+          );
+        }
+        return {
+          value: opt.value,
+          title: opt.title,
+          ...(typeof opt.titleZh === "string" ? { titleZh: opt.titleZh } : {}),
+        };
+      });
+    }
+    if (field.type === "list" && f.maxItems !== undefined) {
+      if (typeof f.maxItems !== "number" || !Number.isInteger(f.maxItems) || f.maxItems < 1) {
+        throw new Error(
+          `${where}: configuration.properties.${name}.maxItems must be a positive integer`,
+        );
+      }
+      field.maxItems = f.maxItems;
+    }
     if (f.required !== undefined) {
       if (typeof f.required !== "boolean") {
         throw new Error(`${where}: configuration.properties.${name}.required must be a boolean`);
@@ -97,7 +139,7 @@ export function parsePluginConfiguration(
       field.required = f.required;
     }
     if (f.default !== undefined) {
-      if (!valueFits(field.type, f.default)) {
+      if (!valueFits(field, f.default)) {
         throw new Error(
           `${where}: configuration.properties.${name}.default does not fit a ${field.type} field`,
         );
@@ -116,12 +158,16 @@ export function parsePluginConfiguration(
 }
 
 /** Whether a value is of a field's type (a Project is named by its id, a string). */
-export function valueFits(type: PluginConfigField["type"], value: unknown): boolean {
-  switch (type) {
+export function valueFits(field: PluginConfigField, value: unknown): boolean {
+  switch (field.type) {
     case "boolean":
       return typeof value === "boolean";
     case "number":
       return typeof value === "number" && Number.isFinite(value);
+    case "enum":
+      return typeof value === "string" && (field.options ?? []).some((o) => o.value === value);
+    case "list":
+      return Array.isArray(value) && value.every((v) => typeof v === "string");
     default:
       return typeof value === "string";
   }
@@ -178,7 +224,7 @@ export function applyUpdate(
   for (const [name, value] of Object.entries(update)) {
     const field = schema.properties[name];
     if (field === undefined)
-      throw new PluginConfigError(name, `"${name}" is not a field of this plugin`);
+      throw new PluginConfigError(name, `"${name}" is not a field of this configuration`);
     if (value === null || value === "") {
       delete next[name];
       continue;
@@ -187,8 +233,24 @@ export function applyUpdate(
       const current = stored[name];
       if (typeof current === "string" && current !== "" && value === maskApiKey(current)) continue;
     }
-    if (!valueFits(field.type, value)) {
-      throw new PluginConfigError(name, `"${name}" must be a ${field.type}`);
+    if (!valueFits(field, value)) {
+      throw new PluginConfigError(
+        name,
+        field.type === "enum"
+          ? `"${name}" must be one of ${(field.options ?? []).map((o) => o.value).join(", ")}`
+          : field.type === "list"
+            ? `"${name}" must be a list of strings`
+            : `"${name}" must be a ${field.type}`,
+      );
+    }
+    if (field.type === "list") {
+      const items = [...new Set((value as string[]).map((v) => v.trim()).filter((v) => v !== ""))];
+      if (field.maxItems !== undefined && items.length > field.maxItems) {
+        throw new PluginConfigError(name, `"${name}" may hold at most ${field.maxItems} entries`);
+      }
+      if (items.length === 0) delete next[name];
+      else next[name] = items;
+      continue;
     }
     next[name] = typeof value === "string" ? value.trim() : value;
     if (next[name] === "") delete next[name];
@@ -201,32 +263,61 @@ export function applyUpdate(
   return next;
 }
 
+/** One settings group a module contributes: a schema like a package's, and where it is drawn. */
+export interface SettingsGroup {
+  /** The store key and the name the page saves under; unique among groups and packages. */
+  name: string;
+  configuration: PluginConfiguration;
+  /** Another entry's name: this group is drawn inside that entry's card and saved with it. */
+  parent?: string;
+  notices?: PluginConfigNotice[];
+}
+
+/** The code half of a `groups` contribution: the groups as they stand now. */
+export interface SettingsGroupSource {
+  groups(): SettingsGroup[];
+}
+
 /** What a plugin module reads: its own document, and a watch on it. */
 export abstract class PluginConfig extends Interface<{
-  /** The stored values merged onto the schema's defaults; `{}` for a package that declares none. */
+  /** The stored values merged onto the schema's defaults; `{}` for a name no entry answers to. */
   get(name: string): Record<string, unknown>;
   /** Fires with the new document after every save of `name`; returns the unsubscribe. */
   watch(name: string, cb: (values: Record<string, unknown>) => void): () => void;
+  /** Whether anything was ever saved under `name` — what tells a default from a choice. */
+  saved(name: string): boolean;
 }>() {}
+
+export interface PluginConfigSlots {
+  /**
+   * A settings group, drawn on the Plugins page before the packages' own options. The data
+   * half orders the contributions; the code half answers the groups, asked per call.
+   */
+  groups: Slot<{ order: number }, SettingsGroupSource>;
+}
 
 /** What the settings page reads and writes. */
 export abstract class PluginConfigAdmin extends Interface<{
-  /** Every loaded package that declares a configuration, values masked. */
+  /** Every contributed group, then every loaded package that declares a configuration; values masked. */
   describe(): PluginConfigEntry[];
-  /** Validates and stores one update; answers the package's entry, masked. */
+  /** Validates and stores one update; answers that entry, masked. */
   set(name: string, update: Record<string, unknown>): PluginConfigEntry;
 }>() {}
 
 export interface PluginConfigStoreDeps {
   settings: Pick<Settings, "get" | "set">;
-  /** The schemas of the loaded packages, by package name — read per call, since a swap replaces the host. */
-  schemas: () => ReadonlyMap<string, PluginConfiguration>;
+  /** Every entry, contributed groups first — read per call, since a swap replaces the host and backends load late. */
+  groups: () => readonly SettingsGroup[];
 }
 
 export class PluginConfigStore {
   private readonly watchers = new Map<string, Set<(values: Record<string, unknown>) => void>>();
 
   constructor(private readonly deps: PluginConfigStoreDeps) {}
+
+  private group(name: string): SettingsGroup | undefined {
+    return this.deps.groups().find((g) => g.name === name);
+  }
 
   private stored(name: string): Record<string, unknown> {
     const raw = this.deps.settings.get(`plugin-config:${name}`);
@@ -242,9 +333,13 @@ export class PluginConfigStore {
   }
 
   get(name: string): Record<string, unknown> {
-    const schema = this.deps.schemas().get(name);
-    if (schema === undefined) return {};
-    return { ...defaultsOf(schema), ...this.stored(name) };
+    const group = this.group(name);
+    if (group === undefined) return {};
+    return { ...defaultsOf(group.configuration), ...this.stored(name) };
+  }
+
+  saved(name: string): boolean {
+    return this.deps.settings.get(`plugin-config:${name}`) !== null;
   }
 
   watch(name: string, cb: (values: Record<string, unknown>) => void): () => void {
@@ -255,20 +350,17 @@ export class PluginConfigStore {
   }
 
   describe(): PluginConfigEntry[] {
-    return [...this.deps.schemas()].map(([name, configuration]) => this.entry(name, configuration));
+    return this.deps.groups().map((g) => this.entry(g));
   }
 
   set(name: string, update: Record<string, unknown>): PluginConfigEntry {
-    const schema = this.deps.schemas().get(name);
-    if (schema === undefined) {
-      throw new PluginConfigError(
-        null,
-        `no loaded plugin named "${name}" declares a configuration`,
-      );
+    const group = this.group(name);
+    if (group === undefined) {
+      throw new PluginConfigError(null, `no settings group or loaded plugin named "${name}"`);
     }
-    const next = applyUpdate(schema, this.stored(name), update);
+    const next = applyUpdate(group.configuration, this.stored(name), update);
     this.deps.settings.set(`plugin-config:${name}`, JSON.stringify(next));
-    const merged = { ...defaultsOf(schema), ...next };
+    const merged = { ...defaultsOf(group.configuration), ...next };
     for (const cb of this.watchers.get(name) ?? []) {
       try {
         cb(merged);
@@ -276,37 +368,54 @@ export class PluginConfigStore {
         // A watcher's failure is its own; the save has happened.
       }
     }
-    return this.entry(name, schema);
+    return this.entry(group);
   }
 
-  private entry(name: string, configuration: PluginConfiguration): PluginConfigEntry {
+  private entry(group: SettingsGroup): PluginConfigEntry {
+    const { name, configuration } = group;
     return {
       name,
       configuration,
       values: maskValues(configuration, { ...defaultsOf(configuration), ...this.stored(name) }),
+      ...(group.parent !== undefined ? { parent: group.parent } : {}),
+      ...(group.notices !== undefined && group.notices.length > 0
+        ? { notices: group.notices }
+        : {}),
     };
   }
 }
 
-/** The store as a node: values in the settings repo, schemas from the process's plugin host. */
+/**
+ * The store as a node: values in the settings repo; entries from the contributed groups, then
+ * the packages the process's plugin host loaded.
+ */
 @Module()
 export class PluginConfigProvider {
   @Use() private readonly settings!: Settings;
   @Use() private readonly hmr!: Hmr;
   @Provide() pluginConfig!: PluginConfig;
   @Provide() pluginConfigAdmin!: PluginConfigAdmin;
-  setup() {
+  setup({ contributions }: ClassCtx) {
     const hmr = this.hmr;
+    const sources = [...(contributions.groups ?? [])]
+      .sort((a, b) => ((a.data.order as number) ?? 0) - ((b.data.order as number) ?? 0))
+      .map((c) => c.code as SettingsGroupSource);
     const store = new PluginConfigStore({
       settings: this.settings,
-      // Claimed per call rather than captured: the host belongs to the process, and a hot
-      // swap hands the same one to the next platform. A host from a generation before
-      // configurations existed answers none.
-      schemas: () => {
+      groups: () => {
+        const contributed = sources.flatMap((source) => source.groups());
+        // Claimed per call rather than captured: the host belongs to the process, and a hot
+        // swap hands the same one to the next platform. A host from a generation before
+        // configurations existed answers none.
         const host = pluginHostFrom(hmr.resources) as {
           configurations?: () => ReadonlyMap<string, PluginConfiguration>;
         };
-        return typeof host.configurations === "function" ? host.configurations() : new Map();
+        const packages =
+          typeof host.configurations === "function" ? [...host.configurations()] : [];
+        return [
+          ...contributed,
+          ...packages.map(([name, configuration]) => ({ name, configuration })),
+        ];
       },
     });
     this.pluginConfig = store;

@@ -196,7 +196,6 @@ import type {
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
   VersionRollbackResponse,
-  SandboxSettingsResponse,
   VersionResponse,
   WeChatBindingPutRequest,
   WeChatBindingResponse,
@@ -1774,10 +1773,3 @@ export const uninstallPlugin = (projectId: string, specifier: string) =>
     `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}`,
     { method: "DELETE" },
   );
-export const adminGetSandbox = () => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox");
-/** Applies to the next command spawn; no restart. */
-export const adminPutSandbox = (body: {
-  mode: string;
-  network: "none" | null;
-  maskPaths: string[];
-}) => apiFetch<SandboxSettingsResponse>("/api/admin/sandbox", { method: "PUT", body });

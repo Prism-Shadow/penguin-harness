@@ -1,9 +1,11 @@
 /**
- * Plugin options (admin only, server-global): one form per loaded plugin that declares a
- * configuration, drawn from the schema the plugin's package carries — a string, a secret, a
- * boolean, a number or a Project picker per field — so the page knows nothing about any
- * particular plugin. Each plugin saves on its own; nothing is written until its Save, which
- * sends every field of that plugin in one PUT. A secret field always starts empty and shows
+ * Plugin options (admin only, server-global): one card per settings entry — a group a module
+ * contributes (the sandbox) or a loaded plugin's declared configuration — drawn from its
+ * schema: a string, a secret, a boolean, a number, a Project picker, a choice or a list of
+ * lines per field, so the page knows nothing about any particular entry. An entry naming a
+ * `parent` is drawn inside that card (a sandbox backend's own options inside the sandbox's) and
+ * saved with it; notices the entry reports sit under its title. Each card saves on its own;
+ * nothing is written until its Save, which sends each changed entry of the card in one PUT. A secret field always starts empty and shows
  * the stored value's mask under it: blank keeps what is stored, typing replaces it, and the
  * clear checkbox drops it. The server validates against the same schema and answers a
  * rejected field by name, which renders under that field.
@@ -25,13 +27,13 @@ import { useLocale } from "../../state/locale";
 import { localizedText } from "../chat/skill-use";
 import { apiErrorText } from "../../lib/api-error";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
+import { Input, Textarea } from "../../components/ui/input";
 import { PasswordInput } from "../../components/ui/password-input";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
+import { toneStrip } from "../../lib/tone";
 import { SectionShell } from "./section-shell";
-import { SandboxSection } from "./sandbox-section";
 
 /**
  * A field's draft: strings and numbers as typed (a number stays the string in the box until
@@ -47,17 +49,33 @@ function draftOf(entry: PluginConfigEntry): Draft {
     if (field.type === "secret") continue;
     const v = entry.values[name];
     if (v === undefined) continue;
-    out[name] = field.type === "number" ? String(v) : v;
+    out[name] =
+      field.type === "number"
+        ? String(v)
+        : field.type === "list"
+          ? (Array.isArray(v) ? v : []).join("\n")
+          : v;
   }
   return out;
 }
 
-/** The value a draft sends for a field: a number parsed from its box, everything else as is. */
+/** The value a draft sends for a field: a number parsed from its box, a list split into lines, everything else as is. */
 function valueOf(field: PluginConfigField, draft: unknown): unknown {
+  if (field.type === "list") {
+    const lines = (typeof draft === "string" ? draft : "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+    return lines.length === 0 ? null : lines;
+  }
   if (field.type !== "number") return draft ?? null;
   const text = typeof draft === "string" ? draft.trim() : "";
   return text === "" ? null : Number(text);
 }
+
+/** Whether two field values are the same (lists compared by content). */
+const sameValue = (a: unknown, b: unknown) =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 export function PluginsSection() {
   const { locale } = useLocale();
@@ -104,8 +122,11 @@ export function PluginsSection() {
     };
   }, []);
 
-  const save = async (entry: PluginConfigEntry) => {
-    if (busy !== null) return;
+  /**
+   * The update one entry's draft makes, or `null` when it changes nothing; `false` when a
+   * number box does not parse (its error is set, and nothing in the card is sent).
+   */
+  const updateOf = (entry: PluginConfigEntry): Record<string, unknown> | null | false => {
     const draft = drafts[entry.name] ?? {};
     const values: Record<string, unknown> = {};
     let changed = false;
@@ -127,44 +148,55 @@ export function PluginsSection() {
           ...prev,
           [`${entry.name}\0${name}`]: S.settings.pluginFieldNotNumber,
         }));
-        return;
+        return false;
       }
-      if (v !== (entry.values[name] ?? null)) changed = true;
+      if (!sameValue(v, entry.values[name])) changed = true;
       values[name] = v;
     }
-    if (!changed) {
+    return changed ? values : null;
+  };
+
+  /** Saves a card: its entry and the entries drawn inside it, each changed one in its own PUT. */
+  const save = async (card: PluginConfigEntry, members: PluginConfigEntry[]) => {
+    if (busy !== null) return;
+    const updates: Array<[PluginConfigEntry, Record<string, unknown>]> = [];
+    for (const entry of members) {
+      const update = updateOf(entry);
+      if (update === false) return;
+      if (update !== null) updates.push([entry, update]);
+    }
+    if (updates.length === 0) {
       toastInfo(S.common.noChangesToSave);
       return;
     }
-    setBusy(entry.name);
-    clearErrorsOf(entry.name);
+    setBusy(card.name);
+    for (const [entry] of updates) clearErrorsOf(entry.name);
     try {
-      const res = await api.adminPutPluginConfig({ name: entry.name, values });
-      const saved = res.plugins.find((e) => e.name === entry.name);
-      if (saved !== undefined) adoptOne(saved);
-      else adopt(res.plugins);
+      for (const [entry, values] of updates) {
+        try {
+          const res = await api.adminPutPluginConfig({ name: entry.name, values });
+          const saved = res.plugins.find((e) => e.name === entry.name);
+          if (saved !== undefined) adoptOne(saved);
+          else adopt(res.plugins);
+        } catch (e) {
+          // A rejected field is named in the message as `"field" …`; it renders under that field.
+          const named =
+            e instanceof ApiError && e.code === "plugin_config_invalid"
+              ? /^"([^"]+)"/.exec(e.message)?.[1]
+              : undefined;
+          if (named !== undefined) {
+            setFieldErrors({ [`${entry.name}\0${named}`]: apiErrorText(e) });
+          } else toastError(apiErrorText(e));
+          return;
+        }
+      }
       toastSuccess(S.common.saved);
-    } catch (e) {
-      // A rejected field is named in the message as `"field" …`; it renders under that field.
-      const named =
-        e instanceof ApiError && e.code === "plugin_config_invalid"
-          ? /^"([^"]+)"/.exec(e.message)?.[1]
-          : undefined;
-      if (named !== undefined) setFieldErrors({ [`${entry.name}\0${named}`]: apiErrorText(e) });
-      else toastError(apiErrorText(e));
     } finally {
       setBusy(null);
     }
   };
 
-  // With no plugin declaring options the page is the Sandbox card alone; it needs no line
-  // saying what is absent.
-  if (entries === null)
-    return (
-      <SectionShell>
-        <SandboxSection />
-      </SectionShell>
-    );
+  if (entries === null) return <SectionShell>{null}</SectionShell>;
 
   const patch = (plugin: string, name: string, value: unknown) => {
     setDrafts((prev) => ({ ...prev, [plugin]: { ...(prev[plugin] ?? {}), [name]: value } }));
@@ -181,8 +213,41 @@ export function PluginsSection() {
     const error = fieldErrors[key];
     const label = localized(field.title, field.titleZh) ?? name;
     const hint = localized(field.description, field.descriptionZh);
-    const disabled = busy === entry.name;
+    const disabled = busy !== null;
     switch (field.type) {
+      case "enum":
+        return (
+          <Select
+            key={name}
+            size="sm"
+            label={label}
+            {...(hint !== undefined ? { hint } : {})}
+            {...(error !== undefined ? { error } : {})}
+            value={typeof draft[name] === "string" ? (draft[name] as string) : ""}
+            disabled={disabled}
+            onChange={(e) => patch(entry.name, name, e.target.value)}
+          >
+            {(field.options ?? []).map((option) => (
+              <option key={option.value} value={option.value}>
+                {localized(option.title, option.titleZh)}
+              </option>
+            ))}
+          </Select>
+        );
+      case "list":
+        return (
+          <Textarea
+            key={name}
+            label={label}
+            rows={3}
+            {...(hint !== undefined ? { hint } : {})}
+            {...(error !== undefined ? { error } : {})}
+            value={typeof draft[name] === "string" ? (draft[name] as string) : ""}
+            placeholder={field.placeholder ?? ""}
+            disabled={disabled}
+            onChange={(e) => patch(entry.name, name, e.target.value)}
+          />
+        );
       case "boolean":
         return (
           <div key={name} className="flex items-center justify-between gap-3">
@@ -300,41 +365,79 @@ export function PluginsSection() {
     }
   };
 
+  /** An entry's title, its store name, its description and its notices. */
+  const heading = (entry: PluginConfigEntry, nested: boolean) => {
+    const description = localized(
+      entry.configuration.description,
+      entry.configuration.descriptionZh,
+    );
+    return (
+      <div className="space-y-1.5">
+        <div>
+          <p className={nested ? "text-[13px] font-semibold" : "text-sm font-semibold"}>
+            {localized(entry.configuration.title, entry.configuration.titleZh) ?? entry.name}
+          </p>
+          <p className="font-mono text-xs text-gray-500 dark:text-gray-400">{entry.name}</p>
+          {description !== undefined && (
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{description}</p>
+          )}
+        </div>
+        {(entry.notices ?? []).map((notice, i) =>
+          notice.tone === "attention" ? (
+            <p key={i} className={`rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
+              {localized(notice.text, notice.textZh)}
+            </p>
+          ) : (
+            <p key={i} className="text-xs text-gray-500 dark:text-gray-400">
+              {localized(notice.text, notice.textZh)}
+            </p>
+          ),
+        )}
+      </div>
+    );
+  };
+
+  // A card per entry with no parent on the page; an entry whose parent is not listed stands
+  // on its own rather than disappearing.
+  const names = new Set(entries.map((e) => e.name));
+  const cards = entries.filter((e) => e.parent === undefined || !names.has(e.parent));
   return (
     <SectionShell>
-      <SandboxSection />
-      {entries.map((entry) => (
-        <section
-          key={entry.name}
-          className="space-y-3 rounded-md border border-gray-200 p-4 dark:border-gray-800"
-        >
-          <div>
-            <p className="text-sm font-semibold">
-              {localized(entry.configuration.title, entry.configuration.titleZh) ?? entry.name}
-            </p>
-            <p className="font-mono text-xs text-gray-500 dark:text-gray-400">{entry.name}</p>
-            {localized(entry.configuration.description, entry.configuration.descriptionZh) !==
-              undefined && (
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {localized(entry.configuration.description, entry.configuration.descriptionZh)}
-              </p>
+      {cards.map((card) => {
+        const children = entries.filter((e) => e.parent === card.name);
+        return (
+          <section
+            key={card.name}
+            className="space-y-3 rounded-md border border-gray-200 p-4 dark:border-gray-800"
+          >
+            {heading(card, false)}
+            {Object.entries(card.configuration.properties).map(([name, field]) =>
+              control(card, name, field),
             )}
-          </div>
-          {Object.entries(entry.configuration.properties).map(([name, field]) =>
-            control(entry, name, field),
-          )}
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              variant="primary"
-              disabled={busy !== null}
-              onClick={() => void save(entry)}
-            >
-              {busy === entry.name ? S.common.saving : S.common.save}
-            </Button>
-          </div>
-        </section>
-      ))}
+            {children.map((child) => (
+              <div
+                key={child.name}
+                className="space-y-3 border-t border-gray-100 pt-3 dark:border-gray-800/60"
+              >
+                {heading(child, true)}
+                {Object.entries(child.configuration.properties).map(([name, field]) =>
+                  control(child, name, field),
+                )}
+              </div>
+            ))}
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={busy !== null}
+                onClick={() => void save(card, [card, ...children])}
+              >
+                {busy === card.name ? S.common.saving : S.common.save}
+              </Button>
+            </div>
+          </section>
+        );
+      })}
     </SectionShell>
   );
 }

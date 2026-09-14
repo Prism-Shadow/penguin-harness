@@ -63,6 +63,16 @@ describe("parsePluginConfiguration", () => {
       /\.a\.default does not fit a number/,
     );
     expect(bad([])).toThrow(/properties must be an object/);
+    expect(bad({ a: { type: "enum", title: "A" } })).toThrow(/\.a\.options must list the choices/);
+    expect(bad({ a: { type: "enum", title: "A", options: [{ value: "x" }] } })).toThrow(
+      /options\[0\] needs a string value and title/,
+    );
+    expect(
+      bad({ a: { type: "enum", title: "A", options: [{ value: "x", title: "X" }], default: "y" } }),
+    ).toThrow(/\.a\.default does not fit a enum/);
+    expect(bad({ a: { type: "list", title: "A", maxItems: 0 } })).toThrow(
+      /maxItems must be a positive integer/,
+    );
   });
 });
 
@@ -83,6 +93,38 @@ describe("applyUpdate", () => {
     // A required field with a default is never missing.
     expect(() => applyUpdate(SCHEMA, {}, { token: "t" })).not.toThrow();
   });
+
+  it("holds an enum to its choices and a list to trimmed, distinct lines under its cap", () => {
+    const schema = parsePluginConfiguration(
+      {
+        properties: {
+          mode: {
+            type: "enum",
+            title: "Mode",
+            options: [
+              { value: "a", title: "A" },
+              { value: "b", title: "B" },
+            ],
+          },
+          paths: { type: "list", title: "Paths", maxItems: 2 },
+        },
+      },
+      "x",
+    )!;
+    expect(applyUpdate(schema, {}, { mode: "b", paths: [" /x ", "/x", "", "/y"] })).toEqual({
+      mode: "b",
+      paths: ["/x", "/y"],
+    });
+    expect(() => applyUpdate(schema, {}, { mode: "c" })).toThrow('"mode" must be one of a, b');
+    expect(() => applyUpdate(schema, {}, { paths: "/x" })).toThrow(
+      '"paths" must be a list of strings',
+    );
+    expect(() => applyUpdate(schema, {}, { paths: ["/a", "/b", "/c"] })).toThrow(
+      '"paths" may hold at most 2 entries',
+    );
+    // An empty list clears the field.
+    expect(applyUpdate(schema, { paths: ["/x"] }, { paths: [] })).toEqual({});
+  });
 });
 
 describe("PluginConfigStore", () => {
@@ -90,14 +132,16 @@ describe("PluginConfigStore", () => {
     const kv = new Map<string, string>();
     const store = new PluginConfigStore({
       settings: { get: (k) => kv.get(k) ?? null, set: (k, v) => void kv.set(k, v) },
-      schemas: () => new Map([["@acme/bot", SCHEMA]]),
+      groups: () => [{ name: "@acme/bot", configuration: SCHEMA }],
     });
+    expect(store.saved("@acme/bot")).toBe(false);
     expect(store.get("@acme/bot")).toEqual({ agent: "default_agent", enabled: true });
     expect(store.get("@acme/other")).toEqual({});
     const seen: Record<string, unknown>[] = [];
     const off = store.watch("@acme/bot", (v) => seen.push(v));
     const entry = store.set("@acme/bot", { token: "secret-token-value", enabled: false });
     expect(entry.values).toEqual({ token: "secr…alue", agent: "default_agent", enabled: false });
+    expect(store.saved("@acme/bot")).toBe(true);
     expect(kv.get("plugin-config:@acme/bot")).toBe(
       '{"token":"secret-token-value","enabled":false}',
     );
@@ -105,7 +149,9 @@ describe("PluginConfigStore", () => {
     off();
     store.set("@acme/bot", { agent: "x" });
     expect(seen).toHaveLength(1);
-    expect(() => store.set("@acme/other", {})).toThrow(/no loaded plugin named "@acme\/other"/);
+    expect(() => store.set("@acme/other", {})).toThrow(
+      /no settings group or loaded plugin named "@acme\/other"/,
+    );
     expect(store.describe().map((e) => e.name)).toEqual(["@acme/bot"]);
   });
 });
@@ -131,11 +177,13 @@ describe("/api/admin/plugin-config", () => {
     await t.cleanup();
   });
 
-  it("lists only the plugins that declare options, and is for admins only", async () => {
+  it("lists the contributed groups, then only the plugins that declare options, and is for admins only", async () => {
     const res = await admin.get("/api/admin/plugin-config");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginConfigResponse;
-    expect(body.plugins).toEqual([
+    // The sandbox is a contributed group, listed ahead of every package.
+    expect(body.plugins[0]!.name).toBe("sandbox");
+    expect(body.plugins.slice(1)).toEqual([
       {
         name: "@acme/bot",
         configuration: SCHEMA,
@@ -156,7 +204,7 @@ describe("/api/admin/plugin-config", () => {
     });
     expect(saved.status).toBe(200);
     const body = (await saved.json()) as PluginConfigResponse;
-    expect(body.plugins[0]!.values).toEqual({
+    expect(body.plugins.find((e) => e.name === "@acme/bot")!.values).toEqual({
       token: "secr…alue",
       project: "default_project",
       agent: "default_agent",

@@ -95,10 +95,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
 | GET | /api/admin/settings/proxy-probe | 连通性测速的目标列表：`{targets: [{provider, url}]}`（不发起任何请求） |
 | POST | /api/admin/settings/proxy-probe/:provider | 沿服务端出站链路探测其中一个目标，不携带任何凭据：`{probe: {provider, url, outcome, ms, status?}}`；`outcome` 在收到任意 HTTP 响应时为 `reachable`，否则为 `timeout` / `dns` / `refused` / `tls` / `network`；列表之外的 id 返回 404 `probe_target_not_found` |
-| GET | /api/admin/sandbox | 沙盒设置与能实施它的后端：`{settings: {mode, network?, maskPaths?}, backends: [{name, dimensions}]}`——等后端加载完成才应答，因此空列表即表示没有挂载任何后端 |
-| PUT | /api/admin/sandbox | 替换沙盒设置：`{mode, network?, maskPaths?}`——`mode` 取 `read-only` / `workspace-write` / `danger-full-access` 之一，`network` 为 `"none"` 或 null，`maskPaths` 去空白、去重（最多 64 条）；400 时整份请求被拒。存入服务器设置，对下一次命令启动生效 |
-| GET | /api/admin/plugin-config | 每个声明了选项（`package.json#penguin.configuration`）的已加载插件：`{plugins: [{name, configuration, values}]}`——声明原样的 schema、合并到缺省值上的存储值，密钥掩码 |
-| PUT | /api/admin/plugin-config | 保存一个包的选项：`{name, values}`——请求省略的字段保持原值，`null` 或 `""` 清除，密钥按掩码原样送回即保持存储值；400 `plugin_config_invalid` 点名被拒字段，404 `plugin_config_unknown` 表示该包没有声明选项。插件经 watch 接到改动，无需重启 |
+| GET | /api/admin/plugin-config | 全部设置条目：先是模块贡献的分组（沙盒，及每个已挂载沙盒后端自己的选项），再是每个声明了选项（`package.json#penguin.configuration`）的已加载插件：`{plugins: [{name, configuration, values, parent?, notices?}]}`——schema、合并到缺省值上的存储值（密钥掩码）、它被画在哪个条目的卡片里，以及实时状态行。字段类型：`string`、`secret`、`boolean`、`number`、`project`、`enum`（带 `options`）、`list`（按行，可选 `maxItems`） |
+| PUT | /api/admin/plugin-config | 保存一个包的选项：`{name, values}`——请求省略的字段保持原值，`null` 或 `""` 清除，密钥按掩码原样送回即保持存储值；400 `plugin_config_invalid` 点名被拒字段，404 `plugin_config_unknown` 表示没有条目叫这个名字。所属方经 watch 接到改动，无需重启——沙盒的保存对下一次命令启动生效 |
 
 代理设置为两个独立开关共享一个可选的显式地址；修改即时生效（对新发起的连接与新派生的子进程），无需重启：
 

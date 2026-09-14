@@ -213,20 +213,6 @@ export const zh = {
     pluginProjectNone: "选择一个 Project",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "必须是数字",
-    sandboxTitle: "沙盒",
-    sandboxInfo:
-      "Agent 执行命令时的封禁策略，由沙盒后端插件实施（Linux 用 bwrap、macOS 用 Seatbelt、Windows 用 MXC，或 DSH）。",
-    sandboxMode: "封禁模式",
-    sandboxModeHint: "改动对下一次命令启动生效，无需重启。",
-    sandboxModeOff: "关闭（完全访问）",
-    sandboxModeWorkspace: "仅工作区可写",
-    sandboxModeReadOnly: "只读",
-    sandboxNetwork: "断开网络",
-    sandboxMaskPaths: "屏蔽路径",
-    sandboxMaskPathsHint: "每行一个路径；这些路径对被封禁的命令不可见。仅在启用封禁时可填。",
-    sandboxBackends: "可用后端",
-    sandboxNoBackend:
-      "这台部署没有沙盒后端：选择模式不会产生任何实际约束，先在插件页安装一个对应平台的后端。",
     uploadLimitsTitle: "上传限制",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",

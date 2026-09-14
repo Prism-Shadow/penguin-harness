@@ -29,6 +29,10 @@ would otherwise expose them. A path that does not exist is skipped — there is 
 hide, and materializing an empty directory there would change the filesystem view rather
 than restrict it.
 
+## Settings
+
+On **Settings → Plugins**, inside the Sandbox card: the **bwrap program** (a path or a command on PATH; empty uses `bwrap`) and the **probe timeout** in seconds (default 5). Both apply at the next command spawn; a changed program is probed afresh.
+
 ## Install
 
 It ships with the harness build. On the Plugins page, install it to the Project that should

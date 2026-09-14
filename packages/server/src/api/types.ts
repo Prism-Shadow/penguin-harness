@@ -26,7 +26,6 @@ import type {
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
 import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
 import type { IfacesDiff } from "@prismshadow/penguin-hmr";
-import type { SandboxSettings as SandboxSettingsType } from "@prismshadow/penguin-core/plugin";
 
 // ---------------------------------------------------------------------------
 // General
@@ -4728,25 +4727,37 @@ export interface ContributionsResponse {
 }
 
 /**
- * One field of a plugin's declared configuration (`package.json#penguin.configuration
- * .properties.<name>`): what the Settings dialog draws for it. `project` is a
- * Project picker whose value is the Project's id; `secret` is drawn as a password field and
- * masked on the way out.
+ * One field of a declared configuration (`package.json#penguin.configuration.properties
+ * .<name>`, or a settings group a module contributes): what the Settings dialog draws for it.
+ * `project` is a Project picker whose value is the Project's id; `secret` is drawn as a
+ * password field and masked on the way out; `enum` is a choice among `options`; `list` is a
+ * list of strings, drawn one per line.
  */
 export interface PluginConfigField {
-  type: "string" | "secret" | "boolean" | "number" | "project";
+  type: "string" | "secret" | "boolean" | "number" | "project" | "enum" | "list";
   title: string;
   titleZh?: string;
   description?: string;
   descriptionZh?: string;
   placeholder?: string;
   /** The value a package with nothing stored reads; also what an empty field falls back to. */
-  default?: string | number | boolean;
+  default?: string | number | boolean | string[];
   /** A save that would leave this field empty is refused. */
   required?: boolean;
+  /** `enum` only: the values it may take, in display order. */
+  options?: PluginConfigOption[];
+  /** `list` only: the most entries a save may leave (after trimming and de-duplicating). */
+  maxItems?: number;
 }
 
-/** A plugin package's declared configuration: a titled group of fields, in declaration order. */
+/** One choice of an `enum` field. */
+export interface PluginConfigOption {
+  value: string;
+  title: string;
+  titleZh?: string;
+}
+
+/** A declared configuration: a titled group of fields, in declaration order. */
 export interface PluginConfiguration {
   title?: string;
   titleZh?: string;
@@ -4755,13 +4766,27 @@ export interface PluginConfiguration {
   properties: Record<string, PluginConfigField>;
 }
 
-/** One configurable loaded plugin (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
+/** A line of live status a contributed group reports beside its fields (e.g. that nothing can enforce it). */
+export interface PluginConfigNotice {
+  tone: "attention" | "muted";
+  text: string;
+  textZh?: string;
+}
+
+/**
+ * One configurable entry (GET /api/admin/plugin-config): a loaded plugin's declared options, or
+ * a settings group a module contributes — its schema and its values, secrets masked.
+ */
 export interface PluginConfigEntry {
-  /** The package name (`@scope/name`), which is also the store key. */
+  /** The package name (`@scope/name`) or the contributed group's name; also the store key. */
   name: string;
   configuration: PluginConfiguration;
   /** Stored values merged onto the defaults; a secret arrives masked (`first4…last4` or `***`), never in the clear. */
   values: Record<string, unknown>;
+  /** Drawn inside that entry's card and saved with it (a sandbox backend's options inside the sandbox's). */
+  parent?: string;
+  /** Live status beside the fields; absent when there is none. */
+  notices?: PluginConfigNotice[];
 }
 
 export interface PluginConfigResponse {
@@ -4773,7 +4798,7 @@ export interface PluginConfigResponse {
  * against its type; an omitted field keeps its stored value; a secret sent as the masked
  * value keeps the stored one, and `null` or `""` clears any field. 400 `plugin_config_invalid`
  * (with `field`) on a value that does not fit or a required field left empty; 404
- * `plugin_config_unknown` for a package that is not loaded or declares no configuration.
+ * `plugin_config_unknown` for a name no entry answers to.
  */
 export interface PluginConfigUpdateRequest {
   name: string;
@@ -4814,11 +4839,4 @@ export interface InstalledPluginsResponse {
   file: string;
   /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
-}
-
-/** GET|PUT /api/admin/sandbox — the confinement settings and what can enforce them. */
-export interface SandboxSettingsResponse {
-  settings: SandboxSettingsType;
-  /** Mounted backends and the isolation dimensions each implements; empty = nothing enforces. */
-  backends: Array<{ name: string; dimensions: string[] }>;
 }
