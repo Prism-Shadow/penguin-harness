@@ -189,7 +189,6 @@ export const en: Strings = {
     pluginsTitle: "Plugins",
     pluginsInfo:
       "The options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here.",
-    pluginsNone: "No loaded plugin declares any options.",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",
     pluginSecretClear: "Clear stored value",
@@ -200,7 +199,7 @@ export const en: Strings = {
     /** Admin-only sub-page (server-global). */
     sandboxTitle: "Sandbox",
     sandboxInfo:
-      "The confinement agent commands run under. What enforces it is a backend contributed by a plugin (bwrap on Linux, Seatbelt on macOS, MXC on Windows, or DSH); with none installed, choosing a mode confines nothing. The settings park with the platform, so they survive a hot update.",
+      "The confinement agent commands run under, enforced by a sandbox backend plugin (bwrap on Linux, Seatbelt on macOS, MXC on Windows, or DSH).",
     sandboxMode: "Confinement mode",
     sandboxModeHint: "Applies to the next command spawn; no restart.",
     sandboxModeOff: "Off (full access)",

@@ -1,7 +1,8 @@
 /**
  * Sandbox options (admin only, server-global): the confinement every agent command spawns
- * under. A form, like the Proxy page — nothing is written until Save, and Save applies to the
- * next spawn without a restart.
+ * under, drawn as the first card of the Settings dialog's Plugins page — what enforces it is a
+ * plugin, so it sits with the plugins' own forms and saves the same way: nothing is written
+ * until its Save, and Save applies to the next spawn without a restart.
  *
  * What enforces it is a backend, contributed by a plugin. With none mounted the page says so
  * and the modes stay reachable but honest: choosing one confines nothing until a backend for
@@ -19,7 +20,6 @@ import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import { toneStrip } from "../../lib/tone";
-import { SectionShell } from "./section-shell";
 
 type Mode = "read-only" | "workspace-write" | "danger-full-access";
 
@@ -87,13 +87,11 @@ export function SandboxSection() {
   const hydrated = server !== null;
   const confining = mode !== "danger-full-access";
   return (
-    <SectionShell
-      actions={
-        <Button variant="primary" disabled={!hydrated || busy} onClick={() => void save()}>
-          {S.common.save}
-        </Button>
-      }
-    >
+    <section className="space-y-3 rounded-md border border-gray-200 p-4 dark:border-gray-800">
+      <div>
+        <p className="text-sm font-semibold">{S.settings.sandboxTitle}</p>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{S.settings.sandboxInfo}</p>
+      </div>
       <Select
         label={S.settings.sandboxMode}
         size="sm"
@@ -132,6 +130,16 @@ export function SandboxSection() {
           )}
         </div>
       )}
-    </SectionShell>
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="primary"
+          disabled={!hydrated || busy}
+          onClick={() => void save()}
+        >
+          {S.common.save}
+        </Button>
+      </div>
+    </section>
   );
 }

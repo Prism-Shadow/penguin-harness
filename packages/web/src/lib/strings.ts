@@ -206,7 +206,6 @@ export const zh = {
     pluginsTitle: "插件",
     pluginsInfo:
       "各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。",
-    pluginsNone: "没有已装载的插件声明选项。",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "留空保持已保存的值不变",
     pluginSecretClear: "清除已存值",
@@ -216,7 +215,7 @@ export const zh = {
     pluginFieldNotNumber: "必须是数字",
     sandboxTitle: "沙盒",
     sandboxInfo:
-      "Agent 执行命令时的封禁策略。真正实施封禁的是插件提供的后端（Linux 用 bwrap、macOS 用 Seatbelt、Windows 用 MXC、或 DSH）；没有后端时选了模式也不会有任何约束。设置随平台寄存，热更新后仍然有效。",
+      "Agent 执行命令时的封禁策略，由沙盒后端插件实施（Linux 用 bwrap、macOS 用 Seatbelt、Windows 用 MXC，或 DSH）。",
     sandboxMode: "封禁模式",
     sandboxModeHint: "改动对下一次命令启动生效，无需重启。",
     sandboxModeOff: "关闭（完全访问）",
