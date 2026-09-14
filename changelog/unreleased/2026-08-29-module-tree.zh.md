@@ -32,4 +32,4 @@
 
 platform 节点的 parked 文档版本不变：模块树的文档是新增的 `modules` 字段，pty 句柄与沙箱设置仍写在最早的 platform 寄存它们的位置——所以被更新的 platform 寄存过的数据根，仍能启动之后推过来的任何更老的 platform，终端与沙箱配置都还在。
 
-`@prismshadow/penguin-server` 不再有 `AppDeps`、`buildAppDeps`、`createApp`，也不再有 `activate(ctx)` 形态：按旧契约写的已安装插件会以 "not a plugin package" 加载失败，直到改写为模块。测试需要某个服务时，通过服务端测试 helper 的 `flattenForTests(boot)`，或 `boot.tree.api(module, alias)` 取得。——组件的别名是它的 class 名（`tree.api("AuthService", "AuthService")`）；槽位是 `<Class>.<slot>`（`HttpModule.routes`、`SandboxModule.providers`）。服务与 repo class 不再从构造函数接收依赖：`new UsersRepo(db)` 变成 `@prismshadow/penguin-core/kernel` 的 `wire(UsersRepo, { db })`。
+`@prismshadow/penguin-server` 不再有 `AppDeps`、`buildAppDeps`、`createApp`，也不再有 `activate(ctx)` 形态：按旧契约写的已安装插件会以 "the default export is not a Plugin" 加载失败，直到改写为模块。测试需要某个服务时，通过服务端测试 helper 的 `flattenForTests(boot)`，或 `boot.tree.api(module, alias)` 取得。——组件的别名是它的 class 名（`tree.api("AuthService", "AuthService")`）；槽位是 `<Class>.<slot>`（`HttpModule.routes`、`SandboxModule.providers`）。服务与 repo class 不再从构造函数接收依赖：`new UsersRepo(db)` 变成 `@prismshadow/penguin-core/kernel` 的 `wire(UsersRepo, { db })`。
