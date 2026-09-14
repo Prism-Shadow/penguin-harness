@@ -2,12 +2,12 @@
 
 - **Date:** 2026-09-12
 - **Type:** fix
-- **Scope:** `web`
+- **Scope:** `web`, `docs`
 - **PR:** [#713](https://github.com/Prism-Shadow/penguin-harness/pull/713)
 
 [English](2026-09-12-background-mark-green.md)
 
-标记会话仍有后台任务的活动波形，以及对话页头统计旁的后台任务计数，改回运行态同款的绿色（应用用来表示正在进行的工作的颜色）——此前一次改动把它们和定时任务标记一起调成了灰色。
+标记会话仍有后台任务的活动波形，以及对话页头统计旁的后台任务计数，改回运行态同款的绿色（应用用来表示正在进行的工作的颜色）——此前 [#677](https://github.com/Prism-Shadow/penguin-harness/pull/677) 把它们和定时任务标记一起调成了灰色。
 
 ## 细节
 

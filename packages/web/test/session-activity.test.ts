@@ -65,7 +65,7 @@ describe("sessionBackgroundTasks", () => {
 });
 
 /**
- * The background-task mark: one glyph in the `muted` tone, standing for a count in both of
+ * The background-task mark: one glyph in the `busy` tone, standing for a count in both of
  * its placements — a session row and the chat header. Rendered only when there is background
  * work to report (the caller's decision), and always naming what it means in the accessible
  * name and tooltip, so the glyph is never the only carrier. A tool row says the same thing in
@@ -89,11 +89,12 @@ describe("BackgroundTasksMark", () => {
     expect(render(S.chat.backgroundTasks(1), ICON_SIZE.inlineGlyph)).toMatch(/width="13"/);
     const markup = render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark);
     expect(markup).toContain(`d="${BACKGROUND_TASKS_ICON}"`);
-    // Parked work is a fact about the Session, not a turn in progress: the mark recedes with
-    // the pin and the relay glyph instead of borrowing the tone the running hourglass wears.
+    // Work still running, only outside the turn: the mark takes the live tone rather than
+    // receding with the pin and the relay glyph.
     expect(markup).toContain(toneInk.busy);
     expect(markup).not.toContain(toneInk.muted);
-    // Not one of the activity glyphs, and no motion, for the same reason.
+    // A facet beside the row's activity state rather than a fourth state of it: it takes the
+    // live tone but neither the activity glyphs nor their motion.
     expect(markup).not.toContain(ACTIVITY_GLYPH.running);
     expect(markup).not.toContain("hourglass-turn");
   });

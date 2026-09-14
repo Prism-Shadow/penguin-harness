@@ -2699,9 +2699,9 @@ function SessionRow({
               the schedules panel says how often and what. A paused task, or one past its end
               time, draws nothing — nothing more will fire from it, and a mark would be noise. */}
           {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
-          {/* Background work the conversation owns while sitting idle: parked, not running,
-              so it reads as an arrangement rather than as a turn in progress. The mark leaves
-              with the last task (live via session_background). */}
+          {/* Background work the conversation owns while sitting idle: still running, only
+              outside the turn, so it reads as live work rather than as a standing arrangement.
+              The mark leaves with the last task (live via session_background). */}
           {background > 0 && (
             <BackgroundTasksMark
               label={S.chat.backgroundTasks(background)}

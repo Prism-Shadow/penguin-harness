@@ -2,12 +2,12 @@
 
 - **Date:** 2026-09-12
 - **Type:** fix
-- **Scope:** `web`
+- **Scope:** `web`, `docs`
 - **PR:** [#713](https://github.com/Prism-Shadow/penguin-harness/pull/713)
 
 [中文版](2026-09-12-background-mark-green.zh.md)
 
-The activity trace that marks a session with background tasks, and the count beside the chat header's stats, went back to the busy emerald — the colour the app uses for live work — after a recent change had muted them along with the scheduled-task mark.
+The activity trace that marks a session with background tasks, and the count beside the chat header's stats, went back to the busy emerald — the colour the app uses for live work — after [#677](https://github.com/Prism-Shadow/penguin-harness/pull/677) had muted them along with the scheduled-task mark.
 
 ## Details
 

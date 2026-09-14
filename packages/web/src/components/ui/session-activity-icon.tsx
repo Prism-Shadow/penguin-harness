@@ -70,9 +70,9 @@ export function sessionActivityLabel(activity: Activity): string {
  * The background-task mark: "work is going on behind this" wherever the app says so — a
  * session row and the chat header, where it stands for the conversation's whole set of
  * background command processes and subagents, and a tool row, where it marks the one call
- * that was made with `run_in_background`. `busy` ink — the same emerald as the chat header's
- * background count and the live-status reading: background work is work still running behind
- * this conversation, and the maintainer wants the glyph and the number read as live, in green,
+ * that was made with `run_in_background`. `busy` ink, the tone for "executing right now": a
+ * background command process or a mid-round subagent is still working — it has only left the
+ * turn. The chat header's count wears the same tone, so the glyph and the number read alike
  * wherever they appear. The required label below still carries the state in words.
  *
  * Both props are the caller's to decide, because the two placements genuinely differ: the
