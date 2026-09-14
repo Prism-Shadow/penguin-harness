@@ -25,7 +25,7 @@ import type { Dirent } from "node:fs";
 import { parse as parseToml } from "smol-toml";
 import { parsePluginTable, projectConfigPath } from "@prismshadow/penguin-core";
 import { findPackageJSON } from "node:module";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type {
@@ -85,17 +85,20 @@ export async function readProjectPluginList(root: string, projectId: string): Pr
     text = await fs.readFile(projectConfigPath(root, projectId), "utf8");
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw new Error(
-      `${projectId}: .project_config.toml could not be read: ${err instanceof Error ? err.message : String(err)}`,
+    // A Project whose config cannot be read (permissions, a directory in its place) is a
+    // configuration fault, but not this one's to fail the boot over: its models are just as
+    // unreadable, and the deployment must still come up for every other Project. The list
+    // view reports the fault on that Project (routes/plugins-installed.ts).
+    console.warn(
+      `[plugins] ${projectId}: .project_config.toml could not be read, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
+    return [];
   }
   let parsed: unknown;
   try {
     parsed = parseToml(text);
   } catch (err) {
-    // A Project whose config does not parse is a configuration fault, but not this one's
-    // to fail the boot over: its models are just as unreadable, and the deployment must
-    // still come up for every other Project.
+    // The same for one that does not parse.
     console.warn(
       `[plugins] ${projectId}: .project_config.toml is not valid TOML, its plugins are skipped: ${err instanceof Error ? err.message : String(err)}`,
     );
@@ -136,6 +139,22 @@ export async function readPluginClosure(root: string): Promise<string[]> {
 export interface PluginBase {
   file: string;
   builtin: boolean;
+  /**
+   * The running program's entry rather than an npm prefix: a specifier resolves from it the
+   * way the program's own imports do, `node_modules` upward. A prefix answers only for what
+   * is under its OWN `node_modules` — the walk upward would otherwise find a package beside
+   * the program from the builtin prefix and label it built in.
+   */
+  program?: true;
+}
+
+/** A bare package name, scoped or not — never a subpath, a path, a URL or a version range. */
+export const PACKAGE_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+
+/** Why a specifier cannot name a plugin, or null when it is a package name or a path. */
+export function specifierFault(specifier: string): string | null {
+  if (path.isAbsolute(specifier) || PACKAGE_NAME.test(specifier)) return null;
+  return `'${specifier}' is not a package name: a plugin is named by its package, never by a subpath, a URL or a version range`;
 }
 
 /** `<root>/plugins`: the npm prefix of the data root itself. */
@@ -157,7 +176,7 @@ export function pluginBases(root: string | undefined, assetsDir: string | null):
       file: path.join(path.dirname(entry), "..", "plugins", "package.json"),
       builtin: true,
     });
-    bases.push({ file: entry, builtin: false });
+    bases.push({ file: entry, builtin: false, program: true });
   }
   return bases;
 }
@@ -189,16 +208,23 @@ export function resolvePluginPackage(
     } catch {
       manifest = undefined;
     }
-    if (manifest !== undefined) return { dir: path.dirname(manifest), manifest, base };
+    if (manifest === undefined) continue;
+    // findPackageJSON walks `node_modules` upward from the base; a prefix speaks only for
+    // its own (see PluginBase.program).
+    if (base.program !== true) {
+      const own = path.join(path.dirname(base.file), "node_modules") + path.sep;
+      if (!manifest.startsWith(own)) continue;
+    }
+    return { dir: path.dirname(manifest), manifest, base };
   }
   return null;
 }
 
 /**
  * The file an `import "<name>"` of the package would load: `exports["."]` — a string, or its
- * `import` / `default` condition — else `main`, else `index.js`. The packages are ESM and
- * name one entry, which is all this reads; anything richer is the package's own business
- * once Node imports it.
+ * `import` / `node` / `default` condition — else `main` (with `.js` supplied when it is
+ * written without one), else `index.js`. The packages are ESM and name one entry, which is
+ * all this reads; anything richer is the package's own business once Node imports it.
  */
 function packageEntry(dir: string, manifest: string): string | null {
   let pkg: { exports?: unknown; main?: unknown };
@@ -211,15 +237,21 @@ function packageEntry(dir: string, manifest: string): string | null {
     if (typeof value === "string") return value;
     if (value === null || typeof value !== "object") return null;
     const v = value as Record<string, unknown>;
-    return condition(v.import) ?? condition(v.default) ?? null;
+    return condition(v.import) ?? condition(v.node) ?? condition(v.default) ?? null;
   };
   let rel: string | null = null;
-  if (pkg.exports !== undefined) {
-    const exp = pkg.exports as Record<string, unknown>;
-    rel = condition("." in exp ? exp["."] : exp);
+  const exp = pkg.exports;
+  if (typeof exp === "string") rel = exp;
+  else if (exp !== null && typeof exp === "object") {
+    const table = exp as Record<string, unknown>;
+    rel = condition("." in table ? table["."] : table);
   }
   rel ??= typeof pkg.main === "string" ? pkg.main : "./index.js";
-  return path.resolve(dir, rel);
+  const file = path.resolve(dir, rel);
+  if (!existsSync(file) && path.extname(file) === "" && existsSync(`${file}.js`)) {
+    return `${file}.js`;
+  }
+  return file;
 }
 
 /** Where a specifier resolves from — the entry file and the base that found it — or null. */
@@ -234,6 +266,9 @@ function resolvePlugin(
       ? { file: specifier, base: { file: specifier, builtin: false } }
       : null;
   }
+  // A subpath would resolve to the PACKAGE (findPackageJSON finds its manifest) and load its
+  // root entry — the wrong module, silently. Refused up front, by name.
+  if (!PACKAGE_NAME.test(specifier)) return null;
   const found = resolvePluginPackage(specifier, bases);
   if (found === null) return null;
   const file = packageEntry(found.dir, found.manifest);
@@ -265,16 +300,39 @@ export async function discoverBuiltinPlugins(bases: readonly PluginBase[]): Prom
   return names.sort();
 }
 
-/** Resolved against the data root and the installation, never the bundle's location. */
+/**
+ * The entry file's modification time, the part of its identity a path alone misses: a
+ * package updated in place keeps its path, and Node's module cache would keep serving the
+ * code it loaded first. Null when the file cannot be stat'ed (the import then says why).
+ */
+function entryStamp(file: string): number | null {
+  try {
+    return statSync(file).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolved against the data root and the installation, never the bundle's location. The
+ * import URL carries the entry's stamp, so a file rewritten in place is evaluated again
+ * rather than answered from the module cache. (Only the entry: what it imports by relative
+ * path stays cached, which a bundled plugin — one file — does not notice.)
+ */
 async function importPlugin(
   specifier: string,
   bases: readonly PluginBase[],
-): Promise<{ module: unknown; file: string | null }> {
+): Promise<{ module: unknown; file: string | null; stamp: number | null }> {
   const resolved = resolvePlugin(specifier, bases);
   if (resolved !== null) {
-    return { module: await import(pathToFileURL(resolved.file).href), file: resolved.file };
+    if (!existsSync(resolved.file)) {
+      throw new Error(`the package's entry file does not exist: ${resolved.file}`);
+    }
+    const stamp = entryStamp(resolved.file);
+    const url = pathToFileURL(resolved.file).href + (stamp === null ? "" : `?v=${stamp}`);
+    return { module: await import(url), file: resolved.file, stamp };
   }
-  return { module: await import(specifier), file: null };
+  return { module: await import(specifier), file: null, stamp: null };
 }
 
 /** The generated table a plugin package ships beside its package.json. */
@@ -296,11 +354,16 @@ export async function readPluginDeclaration(
   specifier: string,
   bases: readonly PluginBase[],
 ): Promise<{ modules: string[]; replaces: string[]; builtin: boolean } | { error: string }> {
+  const fault = specifierFault(specifier);
+  if (fault !== null) return { error: fault };
   const resolved = resolvePlugin(specifier, bases);
   if (resolved === null) {
     return {
       error: `'${specifier}' is not installed on this machine (nothing under <root>/plugins, the shipped plugins or the installation resolves it)`,
     };
+  }
+  if (!existsSync(resolved.file)) {
+    return { error: `the package's entry file does not exist: ${resolved.file}` };
   }
   let read: Awaited<ReturnType<typeof readPackageTable>>;
   try {
@@ -406,13 +469,11 @@ function asPlugin(module: unknown): Plugin | null {
 /**
  * Loads every configured plugin.
  *
- * The two failure classes are deliberately different. A PER-ENTRY failure (unresolvable
- * specifier, no table, a throw at import) is collected and skipped: that
- * capability is unavailable, which a deployment can recover from. A CONFIG-level failure
- * — the list itself unreadable or malformed — THROWS, because there is no honest way to
- * continue: the operator configured something this process cannot even read, and booting
- * with an empty plugin set would present as a healthy server that silently dropped every
- * capability the config asked for.
+ * Every failure is per entry, collected and skipped: an unresolvable specifier, a missing
+ * table, a throw at import — that capability is unavailable, which a deployment can recover
+ * from, and the reason is kept on the host for the list view. A Project whose config cannot
+ * be read or parsed contributes nothing (readProjectPluginList): the deployment comes up for
+ * every other Project, and that one's list view reports the fault.
  */
 export async function loadPlugins(
   root: string,
@@ -429,9 +490,10 @@ export async function loadPlugins(
   assetsDir?: string | null,
   /**
    * Entries an earlier App already imported, by specifier. Reused when the specifier still
-   * resolves to the FILE that entry came from — the objects then keep their identity across a
-   * swap, which is what the plugin host is parked for. A different file means different code
-   * (a push moves the builtin plugins to a new assets directory), and that is imported.
+   * resolves to the FILE that entry came from, unchanged since — the objects then keep their
+   * identity across a swap, which is what the plugin host is parked for. A different file
+   * (a push moves the builtin plugins to a new assets directory) or a file rewritten in
+   * place (a package updated under `<root>/plugins`) means different code, and that is imported.
    */
   reuse: ReadonlyMap<string, LoadedPlugin> = new Map(),
 ): Promise<PluginLoadResult> {
@@ -449,18 +511,24 @@ export async function loadPlugins(
     // Reused only when the SAME FILE is behind the name. A push writes the builtin plugins to
     // a new assets directory, so keeping an entry by specifier alone would run the previous
     // build's plugin code forever — the push would land everywhere except the plugins.
+    const fault = specifierFault(specifier);
+    if (fault !== null) {
+      failed.set(specifier, fault);
+      continue;
+    }
     const held = reuse.get(specifier);
     const heldFile = held?.file;
     if (
       held !== undefined &&
       heldFile != null &&
-      heldFile === resolvePlugin(specifier, bases)?.file
+      heldFile === resolvePlugin(specifier, bases)?.file &&
+      held.stamp === entryStamp(heldFile)
     ) {
       loaded.push(held);
       continue;
     }
     try {
-      const { module, file } = await importPlugin(specifier, bases);
+      const { module, file, stamp } = await importPlugin(specifier, bases);
       const read = await readPackageTable(file);
       if (read === null) {
         failed.set(specifier, `no package.json above ${file}`);
@@ -495,7 +563,7 @@ export async function loadPlugins(
         });
       const modules = pair(plugin.modules);
       const replaces = pair(plugin.replaces);
-      loaded.push({ specifier, file, modules, replaces, ifaces: read.ifaces });
+      loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));
     }

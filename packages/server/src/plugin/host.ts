@@ -17,6 +17,12 @@ export interface LoadedPlugin {
    * and on a bare specifier the installation itself resolves.
    */
   file?: string | null;
+  /**
+   * The entry file's modification time when it was imported. A file rewritten in place keeps
+   * its path, so the path alone would reuse the old code; absent on an older generation's
+   * entry, which is then imported again.
+   */
+  stamp?: number | null;
   /** Nodes the plugin adds under the root. */
   modules: ModuleDef[];
   /** Nodes the plugin stands in for, by the replaced node's name. */
