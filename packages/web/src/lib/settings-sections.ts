@@ -67,8 +67,7 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     { key: "uploads", group: "server", visible: (v) => v.isAdmin },
     // The company-mode master switch: server-global like the proxy and upload limits.
     { key: "company", group: "server", visible: (v) => v.isAdmin },
-    { key: "sandbox", group: "server", visible: (v) => v.isAdmin },
-    // The options loaded plugins declare (server-global, like the plugins themselves).
+    // The sandbox, and the options loaded plugins declare (server-global, like the plugins themselves).
     { key: "plugins", group: "server", visible: (v) => v.isAdmin },
     // Single-user under the desktop shell: the server rejects the admin user routes there.
     { key: "users", group: "server", visible: (v) => v.isAdmin && !v.desktopMode },

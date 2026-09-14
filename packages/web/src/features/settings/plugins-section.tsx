@@ -31,6 +31,7 @@ import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { SectionShell } from "./section-shell";
+import { SandboxSection } from "./sandbox-section";
 
 /**
  * A field's draft: strings and numbers as typed (a number stays the string in the box until
@@ -156,14 +157,14 @@ export function PluginsSection() {
     }
   };
 
-  if (entries === null) return <SectionShell>{null}</SectionShell>;
-  if (entries.length === 0) {
+  // With no plugin declaring options the page is the Sandbox card alone; it needs no line
+  // saying what is absent.
+  if (entries === null)
     return (
       <SectionShell>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{S.settings.pluginsNone}</p>
+        <SandboxSection />
       </SectionShell>
     );
-  }
 
   const patch = (plugin: string, name: string, value: unknown) => {
     setDrafts((prev) => ({ ...prev, [plugin]: { ...(prev[plugin] ?? {}), [name]: value } }));
@@ -301,6 +302,7 @@ export function PluginsSection() {
 
   return (
     <SectionShell>
+      <SandboxSection />
       {entries.map((entry) => (
         <section
           key={entry.name}
