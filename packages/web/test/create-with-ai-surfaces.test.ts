@@ -26,6 +26,20 @@ function expectUsableExamples(examples: AiExample[]): void {
   }
 }
 
+/**
+ * Per-dictionary assertions run twice over; this one compares the two, which the per-dictionary
+ * block cannot see: a card added to one language only would pass every check above.
+ */
+it("offers the same example cards in both dictionaries", () => {
+  expect(en.agent.aiExamples.map((e) => e.key)).toEqual(zh.agent.aiExamples.map((e) => e.key));
+  expect(en.models.aiAddExamples.map((e) => e.key)).toEqual(
+    zh.models.aiAddExamples.map((e) => e.key),
+  );
+  expect(en.vault.aiAddExamples.map((e) => e.key)).toEqual(
+    zh.vault.aiAddExamples.map((e) => e.key),
+  );
+});
+
 describe.each([
   ["zh", zh],
   ["en", en],

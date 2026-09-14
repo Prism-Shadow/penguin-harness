@@ -7,7 +7,7 @@
 
 [中文版](2026-09-02-create-with-ai-agents-models-vault.zh.md)
 
-Three surfaces gained the AI path the [shared kit](2026-09-02-create-with-ai-kit.md) provides: an agent, a model group and a vault secret can now be described to the Project's default agent instead of filled into a form. Each surface offers the two buttons side by side — **Create with AI** and **Create manually** — ships its own clickable examples, and carries a fixed instruction tail naming the skill the agent must use, so a novice's one-liner becomes a task the agent can finish. Nothing is sent from these dialogs: the prompt lands in a new conversation's composer for the user to read and send.
+Three surfaces gained the AI path the [shared kit](../0.2.10/2026-09-02-create-with-ai-kit.md) provides: an agent, a model group and a vault secret can now be described to the Project's default agent instead of filled into a form. Each surface offers the two buttons side by side — **Create with AI** and **Create manually** — ships its own clickable examples, and carries a fixed instruction tail naming the skill the agent must use, so a novice's one-liner becomes a task the agent can finish. Nothing is sent from these dialogs: the prompt lands in a new conversation's composer for the user to read and send.
 
 ## Details
 

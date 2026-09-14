@@ -583,6 +583,7 @@ export const en: Strings = {
     createSnapshotSkillsOff:
       "The snapshot package carries its own skills and hooks, so plugin seeding is unavailable.",
     createSnapshotClear: "Remove the selected package",
+    aiCreateTitle: "Create an agent with AI",
     aiCreateIntro:
       "Describe what the agent does, for whom, and what it produces; the agent doing the work uses the agent-initialization skill to create it in the current Project.",
     aiCreatePlaceholder: "e.g. Create an agent that turns my meeting recordings into to-do lists…",

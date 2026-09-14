@@ -583,11 +583,13 @@ export const zh = {
     createSnapshotSkillsOff: "快照包自带技能与钩子，与插件选择互斥",
     createSnapshotClear: "移除已选快照包",
     /**
-     * The create dialog's AI path: the lead line, the prompt box's placeholder, the clickable
-     * examples and the fixed instruction tail joined after the draft (composeAiPrompt). The
-     * tail follows the agent-initialization skill's contract — a new agent under the current
-     * Project, only the skills it needs, no other agent touched, the id reported at the end.
+     * The "Create with AI" dialog, a separate surface from the create form above: its title, the
+     * lead line, the prompt box's placeholder, the clickable examples and the fixed instruction
+     * tail joined after the draft (composeAiPrompt). The tail follows the agent-initialization
+     * skill's contract — a new agent under the current Project, only the skills it needs, no
+     * other agent touched, the id reported at the end.
      */
+    aiCreateTitle: "用 AI 创建 Agent",
     aiCreateIntro:
       "描述这个智能体要做什么、面向谁、产出什么；执行的智能体会用 agent-initialization 技能在当前 Project 里创建它。",
     aiCreatePlaceholder: "例如：创建一个帮我把会议录音整理成待办清单的智能体…",

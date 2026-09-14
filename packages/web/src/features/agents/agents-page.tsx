@@ -56,7 +56,6 @@ import {
   CloseIcon,
   GEAR_ICON,
   HOOK_ICON,
-  MAGIC_WAND_ICON,
   MEMORY_ICON,
   PLUGIN_ICON,
   SCHEDULE_ICON,
@@ -77,13 +76,7 @@ import { SkillPickList } from "../skills/skill-pick-list";
 import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import {
-  AiCreatePanel,
-  CreateButtons,
-  composeAiPrompt,
-  pickDefaultAgent,
-  useAiBridge,
-} from "../ai-create";
+import { AiCreateModal, CreateButtons } from "../ai-create";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
 const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
@@ -150,11 +143,8 @@ export function AgentsPage() {
   const [kernelConfirmOpen, setKernelConfirmOpen] = useState(false);
   const [kernelRunning, setKernelRunning] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  /** Which path the create dialog shows: the button that opened it decides, and it stays there. */
-  const [createMode, setCreateMode] = useState<"manual" | "ai">("manual");
-  /** The AI path's draft, owned by the page so the dialog's reset on open is the only thing that clears it. */
-  const [aiDraft, setAiDraft] = useState("");
-  const { openAiChat } = useAiBridge();
+  /** The "Create with AI" dialog, a separate surface from the form above: neither path is a step of the other. */
+  const [aiOpen, setAiOpen] = useState(false);
   const [agentId, setAgentId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -190,14 +180,8 @@ export function AgentsPage() {
    */
   const [snapshotFile, setSnapshotFile] = useState<File | null>(null);
 
-  /**
-   * Open the create dialog on the path its button names. The dialog has no mode switch, so this
-   * is the only place `createMode` is set. Nothing carries over from a previous open: both paths
-   * always start empty.
-   */
-  const openCreate = (mode: "manual" | "ai") => {
-    setCreateMode(mode);
-    setAiDraft("");
+  /** Open the create dialog: don't keep the previous draft, always start from an empty form. */
+  const openCreate = () => {
     setAgentId("");
     setName("");
     setDescription("");
@@ -211,22 +195,6 @@ export function AgentsPage() {
     setDirSkillsOpen(false);
     setSnapshotFile(null);
     setCreateOpen(true);
-  };
-
-  /**
-   * The AI path's one exit, the dialog's own footer: the draft plus the fixed tail lands in a new
-   * conversation's composer with the Project's default agent, and pressing Send stays the user's
-   * move on the next screen.
-   */
-  const aiTarget = pickDefaultAgent(agents);
-  const aiReady = aiTarget !== null && aiDraft.trim() !== "";
-  const sendAiCreate = () => {
-    if (aiTarget === null) return;
-    openAiChat({
-      agentId: aiTarget.agentId,
-      text: composeAiPrompt(aiDraft, S.agent.aiCreateTail),
-    });
-    setCreateOpen(false);
   };
 
   const onPickSnapshot = (e: ChangeEvent<HTMLInputElement>) => {
@@ -272,7 +240,7 @@ export function AgentsPage() {
   const createIntent = (location.state as { create?: boolean } | null)?.create === true;
   useEffect(() => {
     if (!createIntent) return;
-    openCreate("manual");
+    openCreate();
     navigate(location.pathname, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createIntent]);
@@ -475,7 +443,7 @@ export function AgentsPage() {
                   placeholder={S.agent.searchPlaceholder}
                 />
               </div>
-              <CreateButtons onAi={() => openCreate("ai")} onManual={() => openCreate("manual")} />
+              <CreateButtons onAi={() => setAiOpen(true)} onManual={openCreate} />
             </div>
           </div>
 
@@ -723,17 +691,14 @@ export function AgentsPage() {
               );
             })}
             {/* Until the Project has an agent of its own, the list ends in the AI path's call to
-                action: the built-in default is not one the user set up. */}
-            {agents.every((a) => BUILTIN_AGENT_IDS.has(a.agentId)) && (
+                action: the built-in default is not one the user set up. Hidden while searching
+                (the list itself is being filtered). */}
+            {query.trim() === "" && agents.every((a) => BUILTIN_AGENT_IDS.has(a.agentId)) && (
               <EmptyState
                 title={S.agent.firstAgentTitle}
                 description={S.agent.firstAgentDesc}
                 action={
-                  <CreateButtons
-                    size="sm"
-                    onAi={() => openCreate("ai")}
-                    onManual={() => openCreate("manual")}
-                  />
+                  <CreateButtons size="sm" onAi={() => setAiOpen(true)} onManual={openCreate} />
                 }
               />
             )}
@@ -745,227 +710,206 @@ export function AgentsPage() {
         open={createOpen}
         title={S.agent.createTitle}
         onClose={() => setCreateOpen(false)}
-        widthClass="sm:max-w-xl"
         footer={
-          createMode === "ai" ? (
-            <>
-              <Button size="sm" onClick={() => setCreateOpen(false)}>
-                {S.common.cancel}
-              </Button>
-              {/* One exit, naming where the prompt goes: the composer of a new conversation,
-                  where sending it is the user's own move. */}
-              <Button size="sm" variant="primary" disabled={!aiReady} onClick={sendAiCreate}>
-                <GlyphIcon d={MAGIC_WAND_ICON} />
-                {S.aiCreate.editInChat}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button size="sm" onClick={() => setCreateOpen(false)}>
-                {S.common.cancel}
-              </Button>
-              <Button size="sm" variant="primary" disabled={busy} onClick={() => void create()}>
-                {S.common.create}
-              </Button>
-            </>
-          )
+          <>
+            <Button size="sm" onClick={() => setCreateOpen(false)}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" variant="primary" disabled={busy} onClick={() => void create()}>
+              {S.common.create}
+            </Button>
+          </>
         }
       >
         <div className="space-y-3">
-          {/* The dialog opens on the path its button named and stays there: no switch, so neither
-              path can be mistaken for a step of the other. */}
-          {createMode === "ai" ? (
-            <AiCreatePanel
-              value={aiDraft}
-              onChange={setAiDraft}
-              placeholder={S.agent.aiCreatePlaceholder}
-              intro={S.agent.aiCreateIntro}
-              examples={S.agent.aiExamples}
-              tail={S.agent.aiCreateTail}
-              agents={agents}
-              agentId={aiTarget?.agentId ?? null}
-            />
-          ) : (
-            <>
-              <Input
-                label={S.agent.id}
-                required
-                size="sm"
-                value={agentId}
-                onChange={(e) => {
-                  setAgentId(e.target.value);
-                  setIdError(undefined);
-                }}
-                error={idError}
-                hint={S.agent.idHint}
-                autoFocus
-              />
-              <Input
-                label={S.common.name}
-                size="sm"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                hint={S.agent.nameHint}
-              />
-              <Textarea
-                label={S.agent.description}
-                size="sm"
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-              {/* Optional snapshot seed: the new Agent starts from an exported package instead of
+          <Input
+            label={S.agent.id}
+            required
+            size="sm"
+            value={agentId}
+            onChange={(e) => {
+              setAgentId(e.target.value);
+              setIdError(undefined);
+            }}
+            error={idError}
+            hint={S.agent.idHint}
+            autoFocus
+          />
+          <Input
+            label={S.common.name}
+            size="sm"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            hint={S.agent.nameHint}
+          />
+          <Textarea
+            label={S.agent.description}
+            size="sm"
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          {/* Optional snapshot seed: the new Agent starts from an exported package instead of
               the default template. Picking one hides the two seed fields below — the package
               carries its own skills and hooks, and the server rejects the combination. */}
-              <div>
-                <FieldLabel>{S.agent.createSnapshot}</FieldLabel>
-                {snapshotFile === null ? (
-                  <label
-                    className={`${SNAPSHOT_BUTTON_CLASS} ${busy ? "pointer-events-none opacity-60" : ""}`}
-                  >
-                    <HiddenFileInput
-                      accept={SNAPSHOT_ACCEPT}
-                      disabled={busy}
-                      onChange={onPickSnapshot}
-                    />
-                    {S.agent.createSnapshotPick}
-                  </label>
-                ) : (
-                  <div className="flex min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 truncate rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-900">
-                      {snapshotFile.name}
-                    </span>
-                    <button
-                      type="button"
-                      title={S.agent.createSnapshotClear}
-                      aria-label={S.agent.createSnapshotClear}
-                      disabled={busy}
-                      onClick={() => setSnapshotFile(null)}
-                      className="shrink-0 rounded-md p-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
-                    >
-                      <CloseIcon size={12} />
-                    </button>
-                  </div>
-                )}
-                <FieldHint>
-                  {snapshotFile === null
-                    ? S.agent.createSnapshotHint
-                    : S.agent.createSnapshotSkillsOff}
-                </FieldHint>
+          <div>
+            <FieldLabel>{S.agent.createSnapshot}</FieldLabel>
+            {snapshotFile === null ? (
+              <label
+                className={`${SNAPSHOT_BUTTON_CLASS} ${busy ? "pointer-events-none opacity-60" : ""}`}
+              >
+                <HiddenFileInput
+                  accept={SNAPSHOT_ACCEPT}
+                  disabled={busy}
+                  onChange={onPickSnapshot}
+                />
+                {S.agent.createSnapshotPick}
+              </label>
+            ) : (
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="min-w-0 truncate rounded-md border border-gray-300 bg-gray-50 px-2.5 py-1 font-mono text-xs dark:border-gray-700 dark:bg-gray-900">
+                  {snapshotFile.name}
+                </span>
+                <button
+                  type="button"
+                  title={S.agent.createSnapshotClear}
+                  aria-label={S.agent.createSnapshotClear}
+                  disabled={busy}
+                  onClick={() => setSnapshotFile(null)}
+                  className="shrink-0 rounded-md p-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  <CloseIcon size={12} />
+                </button>
               </div>
-              {snapshotFile === null && (
-                <>
-                  {/* Seed plugins: the form-variant picker (same trigger as the schedule dialog's
+            )}
+            <FieldHint>
+              {snapshotFile === null ? S.agent.createSnapshotHint : S.agent.createSnapshotSkillsOff}
+            </FieldHint>
+          </div>
+          {snapshotFile === null && (
+            <>
+              {/* Seed plugins: the form-variant picker (same trigger as the schedule dialog's
               model and workspace pickers) over the shared multi-select panel, so a dialog field
               and the composer's dropdown offer one list with one set of row semantics. */}
-                  <div>
-                    <FieldLabel>{S.agent.createPlugins}</FieldLabel>
+              <div>
+                <FieldLabel>{S.agent.createPlugins}</FieldLabel>
+                <FormPicker
+                  size="sm"
+                  open={pluginsOpen}
+                  setOpen={setPluginsOpen}
+                  label={
+                    createPlugins.length === 0
+                      ? S.agent.createPluginsPlaceholder
+                      : S.agent.createPluginsPicked(createPlugins.length)
+                  }
+                  muted={createPlugins.length === 0}
+                  title={S.agent.createPlugins}
+                  ariaLabel={S.agent.createPlugins}
+                  disabled={busy}
+                  menuClass="w-[26rem]"
+                >
+                  <SkillPickList
+                    skills={library ?? []}
+                    selected={createPlugins}
+                    onToggle={(pluginName) =>
+                      setCreatePlugins((prev) => toggleSkillName(prev, pluginName))
+                    }
+                    onSelectAll={(names) => setCreatePlugins((prev) => addSkillNames(prev, names))}
+                    onSelectNone={(names) =>
+                      setCreatePlugins((prev) => removeSkillNames(prev, names))
+                    }
+                    emptyHint={library === null ? S.common.loading : S.agent.createPluginsEmpty}
+                    searchPlaceholder={S.plugins.searchPlaceholder}
+                  />
+                </FormPicker>
+                {libraryError ? (
+                  <FieldError>{libraryError}</FieldError>
+                ) : (
+                  <FieldHint>{S.agent.createPluginsHint}</FieldHint>
+                )}
+              </div>
+              {/* Skills a checkout already carries: pick the project directory, then pick from what
+              its .agents/skills / .claude/skills hold. Separate from the library field because a
+              directory Skill may share a library plugin's Skill name and still be the one installed. */}
+              <div>
+                <FieldLabel>{S.agent.createDirSkills}</FieldLabel>
+                <WorkspaceSelect
+                  projectId={projectId ?? ""}
+                  workspace={skillsDir}
+                  onChange={setSkillsDir}
+                  variant="form"
+                  fieldLabel={S.agent.createDirSkills}
+                  emptyLabel={S.agent.createDirSkillsPick}
+                  menuHint={S.agent.createDirSkillsHint}
+                  clearLabel={S.agent.createDirSkillsClear}
+                />
+                {skillsDir && dirSkills !== null && dirSkills.length > 0 && (
+                  <div className="mt-2">
                     <FormPicker
                       size="sm"
-                      open={pluginsOpen}
-                      setOpen={setPluginsOpen}
+                      open={dirSkillsOpen}
+                      setOpen={setDirSkillsOpen}
                       label={
-                        createPlugins.length === 0
-                          ? S.agent.createPluginsPlaceholder
-                          : S.agent.createPluginsPicked(createPlugins.length)
+                        createDirSkills.length === 0
+                          ? S.agent.createSkillsPlaceholder
+                          : S.agent.createSkillsPicked(createDirSkills.length)
                       }
-                      muted={createPlugins.length === 0}
-                      title={S.agent.createPlugins}
-                      ariaLabel={S.agent.createPlugins}
+                      muted={createDirSkills.length === 0}
+                      title={S.agent.createDirSkills}
+                      ariaLabel={S.agent.createDirSkills}
                       disabled={busy}
                       menuClass="w-[26rem]"
                     >
                       <SkillPickList
-                        skills={library ?? []}
-                        selected={createPlugins}
-                        onToggle={(pluginName) =>
-                          setCreatePlugins((prev) => toggleSkillName(prev, pluginName))
+                        skills={dirSkills}
+                        selected={createDirSkills}
+                        onToggle={(skillName) =>
+                          setCreateDirSkills((prev) => toggleSkillName(prev, skillName))
                         }
                         onSelectAll={(names) =>
-                          setCreatePlugins((prev) => addSkillNames(prev, names))
+                          setCreateDirSkills((prev) => addSkillNames(prev, names))
                         }
                         onSelectNone={(names) =>
-                          setCreatePlugins((prev) => removeSkillNames(prev, names))
+                          setCreateDirSkills((prev) => removeSkillNames(prev, names))
                         }
-                        emptyHint={library === null ? S.common.loading : S.agent.createPluginsEmpty}
-                        searchPlaceholder={S.plugins.searchPlaceholder}
+                        emptyHint={S.agent.createDirSkillsEmpty}
                       />
                     </FormPicker>
-                    {libraryError ? (
-                      <FieldError>{libraryError}</FieldError>
-                    ) : (
-                      <FieldHint>{S.agent.createPluginsHint}</FieldHint>
-                    )}
                   </div>
-                  {/* Skills a checkout already carries: pick the project directory, then pick from what
-              its .agents/skills / .claude/skills hold. Separate from the library field because a
-              directory Skill may share a library plugin's Skill name and still be the one installed. */}
-                  <div>
-                    <FieldLabel>{S.agent.createDirSkills}</FieldLabel>
-                    <WorkspaceSelect
-                      projectId={projectId ?? ""}
-                      workspace={skillsDir}
-                      onChange={setSkillsDir}
-                      variant="form"
-                      fieldLabel={S.agent.createDirSkills}
-                      emptyLabel={S.agent.createDirSkillsPick}
-                      menuHint={S.agent.createDirSkillsHint}
-                      clearLabel={S.agent.createDirSkillsClear}
-                    />
-                    {skillsDir && dirSkills !== null && dirSkills.length > 0 && (
-                      <div className="mt-2">
-                        <FormPicker
-                          size="sm"
-                          open={dirSkillsOpen}
-                          setOpen={setDirSkillsOpen}
-                          label={
-                            createDirSkills.length === 0
-                              ? S.agent.createSkillsPlaceholder
-                              : S.agent.createSkillsPicked(createDirSkills.length)
-                          }
-                          muted={createDirSkills.length === 0}
-                          title={S.agent.createDirSkills}
-                          ariaLabel={S.agent.createDirSkills}
-                          disabled={busy}
-                          menuClass="w-[26rem]"
-                        >
-                          <SkillPickList
-                            skills={dirSkills}
-                            selected={createDirSkills}
-                            onToggle={(skillName) =>
-                              setCreateDirSkills((prev) => toggleSkillName(prev, skillName))
-                            }
-                            onSelectAll={(names) =>
-                              setCreateDirSkills((prev) => addSkillNames(prev, names))
-                            }
-                            onSelectNone={(names) =>
-                              setCreateDirSkills((prev) => removeSkillNames(prev, names))
-                            }
-                            emptyHint={S.agent.createDirSkillsEmpty}
-                          />
-                        </FormPicker>
-                      </div>
-                    )}
-                    {dirSkillsError ? (
-                      <FieldError>{dirSkillsError}</FieldError>
-                    ) : (
-                      <FieldHint>
-                        {!skillsDir
-                          ? S.agent.createDirSkillsHint
-                          : dirSkills === null
-                            ? S.common.loading
-                            : dirSkills.length === 0
-                              ? S.agent.createDirSkillsEmpty
-                              : S.agent.createDirSkillsFound(dirSkills.length)}
-                      </FieldHint>
-                    )}
-                  </div>
-                </>
-              )}
+                )}
+                {dirSkillsError ? (
+                  <FieldError>{dirSkillsError}</FieldError>
+                ) : (
+                  <FieldHint>
+                    {!skillsDir
+                      ? S.agent.createDirSkillsHint
+                      : dirSkills === null
+                        ? S.common.loading
+                        : dirSkills.length === 0
+                          ? S.agent.createDirSkillsEmpty
+                          : S.agent.createDirSkillsFound(dirSkills.length)}
+                  </FieldHint>
+                )}
+              </div>
             </>
           )}
         </div>
       </Modal>
+
+      {/* The AI path, its own dialog rather than a mode of the form above: the draft plus the
+          fixed tail lands in a new conversation with the Project's default agent, which runs the
+          agent-initialization skill. The list reloads on every mount, so the new agent's card is
+          there when the page is next visited. */}
+      <AiCreateModal
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        title={S.agent.aiCreateTitle}
+        intro={S.agent.aiCreateIntro}
+        placeholder={S.agent.aiCreatePlaceholder}
+        examples={S.agent.aiExamples}
+        tail={S.agent.aiCreateTail}
+        agents={agents}
+      />
 
       {/* Bulk kernel update confirmation. The body is the per-Agent confirm's own wording,
           verbatim — a kernel update is a smart merge that advances the settings tabs the user

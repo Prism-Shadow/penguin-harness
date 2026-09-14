@@ -18,7 +18,14 @@ export interface CreateButtonsProps {
   /** Labels when the object has its own verb ("Import with AI" / "Import manually"); default S.aiCreate.withAi / S.aiCreate.manual. */
   aiLabel?: string;
   manualLabel?: string;
+  /** Greys both paths. */
   disabled?: boolean;
+  /**
+   * Greys the manual path alone — for a surface whose form needs data it failed to load. The AI
+   * path stays live on purpose: it only composes a prompt and opens a conversation, and that
+   * conversation is often what repairs the configuration the failed load was reading.
+   */
+  manualDisabled?: boolean;
   className?: string;
 }
 
@@ -29,6 +36,7 @@ export function CreateButtons({
   aiLabel,
   manualLabel,
   disabled,
+  manualDisabled,
   className,
 }: CreateButtonsProps) {
   return (
@@ -38,7 +46,12 @@ export function CreateButtons({
         {aiLabel ?? S.aiCreate.withAi}
       </Button>
       {onManual !== undefined && (
-        <Button size={size} variant="secondary" disabled={disabled} onClick={onManual}>
+        <Button
+          size={size}
+          variant="secondary"
+          disabled={disabled === true || manualDisabled === true}
+          onClick={onManual}
+        >
           <GlyphIcon d={HAND_ICON} />
           {manualLabel ?? S.aiCreate.manual}
         </Button>

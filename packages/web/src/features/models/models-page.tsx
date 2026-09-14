@@ -1065,7 +1065,10 @@ export function ModelsPage() {
               {isOwner && (
                 <CreateButtons
                   size="sm"
-                  disabled={rows === null}
+                  // Only the form needs the table: AddGroupDialog is mounted behind `rows`, so
+                  // without it the manual button would be a dead click. The AI path is left live
+                  // precisely because a failed load is one of the things it can repair.
+                  manualDisabled={rows === null}
                   onAi={() => setAiAddOpen(true)}
                   onManual={() => setAddGroupOpen(true)}
                 />
@@ -1528,7 +1531,7 @@ export function ModelsPage() {
           open={aiAddOpen}
           onClose={() => setAiAddOpen(false)}
           title={S.models.aiAddTitle}
-          description={S.models.aiAddIntro}
+          intro={S.models.aiAddIntro}
           placeholder={S.models.aiAddPlaceholder}
           examples={S.models.aiAddExamples}
           tail={S.models.aiAddTail(projectId)}
