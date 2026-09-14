@@ -1548,8 +1548,7 @@ export const en: Strings = {
     deploymentFailedToast: (name: string, reason: string) => `${name} failed to load: ${reason}`,
     applyConfirmInstall: (name: string) => `Install ${name}?`,
     applyConfirmRemove: (name: string) => `Remove ${name}?`,
-    applyConfirmBody:
-      "Applying a plugin change re-assembles the App. Agent runs in progress are stopped and their pending approvals denied — in every Project, since there is one process. Terminals and machine connections are kept.",
+    applyConfirmBody: "Agent runs in progress in every Project will be stopped.",
     pageTitle: "Plugins",
     pageDesc:
       "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",

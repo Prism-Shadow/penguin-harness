@@ -1544,8 +1544,7 @@ export const zh = {
     deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
     applyConfirmInstall: (name: string) => `安装 ${name}？`,
     applyConfirmRemove: (name: string) => `移除 ${name}？`,
-    applyConfirmBody:
-      "应用插件改动会重组 App：正在进行的 Agent 运行会被中止、待审批的请求会被拒绝——所有 Project 都是，因为只有一个进程。终端与机器连接会保留。",
+    applyConfirmBody: "所有 Project 中正在进行的 Agent 运行都会被中止。",
     pageTitle: "插件",
     pageDesc:
       "所有插件在一个列表里。插件库里的随本次构建自带（技能和／或钩子包——快捷调用，或安装到 Agent）；当前 Project 要求的模块插件在服务端运行，市场里其余的可以为它安装。",
