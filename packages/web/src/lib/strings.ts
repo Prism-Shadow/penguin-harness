@@ -1520,10 +1520,31 @@ export const zh = {
     installing: "安装中…",
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `已安装 ${name}`,
-    addLabel: "添加插件",
-    fileHint: (file: string) => `仅限随本次构建发布的插件；写入该 Project 的 ${file}`,
-    pageTitle: "插件库",
-    pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
+    pageTitle: "插件",
+    pageDesc:
+      "所有插件在一个列表里。插件库里的随本次构建自带（技能和／或钩子包——快捷调用，或安装到 Agent）；当前 Project 要求的模块插件在服务端运行，市场里其余的可以为它安装。",
+    /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
+    installedSection: (n: number): string => `已安装的插件 (${n})`,
+    /** The second list: registry entries this Project does not ask for yet. */
+    availableSection: (n: number): string => `可安装 (${n})`,
+    notInstalled: "未安装",
+    /** The filter column beside the lists, and the empty result. */
+    filterCategories: "分类",
+    filterKind: "包含",
+    filterState: "状态",
+    filterClear: "清除筛选",
+    kindLabel: { skills: "技能", hooks: "钩子", modules: "模块" },
+    stateLabel: {
+      installed: "已安装",
+      available: "可安装",
+      running: "运行中",
+      restart: "待重启",
+    },
+    noMatch: "没有匹配的插件。",
+    /** The description of a shipped package the registry has no entry for. */
+    shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
+    /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
+    libraryBuiltinHint: "随本次构建自带；安装到 Agent 即可在那里使用。",
     /** Plugin count in the group header (small text to the right of the category name). */
     pluginCount: (n: number): string => `${n} 个插件`,
     /** Search box of the create dialog's plugin picker. */

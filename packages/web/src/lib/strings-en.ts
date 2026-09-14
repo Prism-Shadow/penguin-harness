@@ -1524,11 +1524,31 @@ export const en: Strings = {
     installing: "Installing…",
     /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
     deploymentInstalledToast: (name: string) => `Installed ${name}`,
-    addLabel: "Add a plugin",
-    fileHint: (file: string) => `Only a plugin this build ships; written to the Project's ${file}`,
-    pageTitle: "Plugin library",
+    pageTitle: "Plugins",
     pageDesc:
-      "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
+      "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",
+    /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
+    installedSection: (n: number): string => `Installed plugins (${n})`,
+    /** The second list: registry entries this Project does not ask for yet. */
+    availableSection: (n: number): string => `Available (${n})`,
+    notInstalled: "not installed",
+    /** The filter column beside the lists, and the empty result. */
+    filterCategories: "Categories",
+    filterKind: "Contains",
+    filterState: "Status",
+    filterClear: "Clear filters",
+    kindLabel: { skills: "Skills", hooks: "Hooks", modules: "Modules" },
+    stateLabel: {
+      installed: "Installed",
+      available: "Available",
+      running: "Running",
+      restart: "Restart to load",
+    },
+    noMatch: "No plugin matches that.",
+    /** The description of a shipped package the registry has no entry for. */
+    shippedNoEntry: "Ships with this build; the registry has no entry for it yet.",
+    /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
+    libraryBuiltinHint: "Ships with this build; install it to an agent to use it there.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
     searchPlaceholder: "Search plugins",
     /** Section labels of the plugin detail Modal. */
