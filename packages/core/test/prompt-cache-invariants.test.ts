@@ -1,126 +1,55 @@
 /**
- * Prompt-cache-aware request assembly.
+ * The harness's half of the prompt cache: every request is assembled as an extension of the last.
  *
- * A provider only serves a cached prefix when the request repeats the previous one byte for
- * byte from the front: tools, then the system prompt, then the messages. Everything the
- * harness does between two requests — running a turn, delivering a steering message, moving
- * the thinking level, compacting, reconnecting, resuming from a Trace — therefore has to leave
- * the request an extension of the last one. These tests drive a real `ContextEngine` over a
- * real `GenerativeModel` whose provider stream is scripted, and diagnose each consecutive pair
- * of requests on the wire shape the client would have sent.
+ * A provider serves a cached prefix only when the request repeats the previous one byte for byte
+ * from the front — tools, then the system prompt, then the messages. Everything the harness does
+ * between two requests — running a turn, delivering a steering message, moving the thinking
+ * level, compacting, reconnecting, resuming from a Trace — therefore has to leave the request an
+ * extension of the one before it. Each case here drives a real `ContextEngine` over a real
+ * `GenerativeModel` whose provider stream is scripted, and diagnoses each consecutive pair of
+ * requests on the wire shape the client would have sent.
  *
- * Out of scope (the provider's half): cache lifetime, breakpoint lookback, minimum cacheable
- * size, and whether a prefix that could hit actually did.
+ * These are assertions about bytes. Whether a prefix that could hit actually did — cache
+ * lifetime, breakpoint lookback, minimum cacheable size — is `prompt-cache-lifecycle.test.ts`,
+ * which puts the same kind of recording through the simulator.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { sessionMeta, toolCallOutput, userText } from "../src/omnimessage/index.js";
-import type { OmniMessage, ToolDefinition } from "../src/omnimessage/index.js";
-import type {
-  ApproveFn,
-  EnvironmentInterface,
-  GenerativeModelConfig,
-} from "../src/interfaces/index.js";
+import { sessionMeta, userText } from "../src/omnimessage/index.js";
+import type { ApproveFn } from "../src/interfaces/index.js";
 import { ContextEngine } from "../src/engine/context-engine.js";
-import type { CompactionSettings } from "../src/engine/context-engine.js";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 import {
+  COMPACTION_PROMPT,
+  META,
+  SESSION_ID,
+  allowAll,
+  blockTypes,
+  collect,
+  compactionSettings,
   diagnoseCacheMiss,
   diagnoseSeries,
+  fakeEnvironment,
   formatDiagnostics,
+  modelConfig,
   recordingModel,
+  toolTurn,
   wireHistoryOf,
-} from "./helpers/prefix-cache.js";
-import type { CacheMissReason, RecordedRequest, ScriptedReply } from "./helpers/prefix-cache.js";
+  wireMessage,
+} from "./helpers/prompt-cache/index.js";
+import type {
+  CacheMissReason,
+  RecordedRequest,
+  ScriptedReply,
+} from "./helpers/prompt-cache/index.js";
 
 // ---------------------------------------------------------------------------
-// Fixtures
+// Fixtures of this suite's own
 // ---------------------------------------------------------------------------
 
-/** Fake Environment that never runs real commands: any tool call returns a fixed output. */
-const fakeEnvironment: EnvironmentInterface = {
-  async listTools() {
-    return [];
-  },
-  async *executeTool({ toolCall: tc }) {
-    yield toolCallOutput({
-      output: "tool ran",
-      toolCallId: tc.payload.tool_call_id,
-    });
-  },
-  toolPermission() {
-    return "rw";
-  },
-};
-
-const allowAll: ApproveFn = async () => "allow";
-
-const settings = (over: Partial<CompactionSettings> = {}): CompactionSettings => ({
-  maxContextLength: 100,
-  maxSessionTurns: -1,
-  mode: "summarize",
-  prompt: "COMPACT NOW",
-  ...over,
-});
-
-const metaMessage = sessionMeta({
-  session_id: "sess_prefix_cache",
-  provider: "anthropic",
-  model_id: "claude-sonnet-4-6",
-  model_context_window: 200000,
-  system_prompt: "sp",
-  agent_state: "/tmp/state",
-  workspace: "/tmp/ws",
-});
-
-async function collect(gen: AsyncGenerator<OmniMessage>): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
-  for (;;) {
-    const res = await gen.next();
-    if (res.done) return all;
-    all.push(res.value);
-  }
-}
-
-/** A system prompt long enough to be worth caching, and fixed for the session. */
-const SYSTEM_PROMPT = [
-  "You are a coding agent working inside a sandboxed workspace.",
-  "Read a file before you change it, keep every change as small as the task allows,",
-  "and say plainly what you changed and why.",
-  "Every tool call names the file or command it touches; long output is summarized",
-  "instead of pasted back in full.",
-  "Never call a tool that is not on the list, and never guess a path you have not read.",
-].join(" ");
-
-const TOOLS: ToolDefinition[] = [
-  {
-    name: "exec_command",
-    description: "Run a shell command in the workspace and return its output.",
-    parameters: {
-      type: "object",
-      properties: { command: { type: "string", description: "The command line to run." } },
-      required: ["command"],
-    },
-  },
-  {
-    name: "read_file",
-    description: "Read a UTF-8 text file from the workspace.",
-    parameters: {
-      type: "object",
-      properties: { path: { type: "string", description: "Workspace-relative path." } },
-      required: ["path"],
-    },
-  },
-];
-
-const modelConfig = (over: Partial<GenerativeModelConfig> = {}): GenerativeModelConfig => ({
-  modelId: "claude-sonnet-4-6",
-  tools: TOOLS,
-  systemPrompt: SYSTEM_PROMPT,
-  ...over,
-});
+const metaMessage = sessionMeta(META);
 
 /** Everything in a request's config that takes part in the cached prefix. */
 function configFingerprint(request: RecordedRequest): string {
@@ -132,32 +61,15 @@ function configFingerprint(request: RecordedRequest): string {
 const effortOf = (request: RecordedRequest): string | undefined =>
   (request.wireConfig.output_config as { effort?: string } | undefined)?.effort;
 
-interface WireMessage {
-  role: string;
-  content: { type: string; text?: string; signature?: string }[];
-}
-
-const wireMessage = (request: RecordedRequest, index: number): WireMessage =>
-  request.wire.at(index) as WireMessage;
-
-const blockTypes = (message: WireMessage): string[] => message.content.map((block) => block.type);
-
-/** A tool-calling first reply, reused by the cases that need a two-turn task. */
-const toolTurn = (over: Partial<ScriptedReply> = {}): ScriptedReply => ({
-  thinking: { text: "The entry point is the place to start.", signature: "sig-turn-1" },
-  toolCalls: [{ id: "call_1", name: "read_file", args: { path: "src/index.ts" } }],
-  ...over,
-});
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("prompt-cache-aware request assembly", () => {
+describe("prompt-cache invariants of request assembly", () => {
   let traces: string;
 
   beforeEach(async () => {
-    traces = await mkdtemp(join(tmpdir(), "penguin-prefix-cache-"));
+    traces = await mkdtemp(join(tmpdir(), "penguin-prompt-cache-"));
   });
 
   afterEach(async () => {
@@ -213,7 +125,7 @@ describe("prompt-cache-aware request assembly", () => {
     expect(appended.content[1]!.text).toContain("[user_steering]");
   });
 
-  it("moving the thinking level invalidates the message cache once and then holds", async () => {
+  it("moving the thinking level invalidates the prompt cache once and then holds", async () => {
     const first = recordingModel(modelConfig(), [
       { text: "First answer.", promptTokens: 20 },
       // Over the compaction threshold at the task's wrap-up round.
@@ -224,7 +136,7 @@ describe("prompt-cache-aware request assembly", () => {
     const engine = new ContextEngine({
       llm: first.model,
       environment: fakeEnvironment,
-      compaction: settings(),
+      compaction: compactionSettings(),
       openNextContext: () => ({ llm: second.model }),
     });
 
@@ -299,7 +211,7 @@ describe("prompt-cache-aware request assembly", () => {
       { text: "The README explains the layout." },
     ];
     const live = recordingModel(modelConfig(), script);
-    const trace = new Writer({ tracesDir: traces, sessionId: "sess_prefix_cache" });
+    const trace = new Writer({ tracesDir: traces, sessionId: SESSION_ID });
     const engine = new ContextEngine({
       llm: live.model,
       environment: fakeEnvironment,
@@ -340,7 +252,7 @@ describe("prompt-cache-aware request assembly", () => {
     const first = recordingModel(modelConfig(), [
       // Mid-task: the tool round's usage is already over the threshold.
       toolTurn({
-        toolCalls: [{ id: "call_1", name: "exec_command", args: { command: "pnpm -r build" } }],
+        toolCalls: [{ id: "call_1", name: "exec_command", args: { cmd: "pnpm -r build" } }],
         promptTokens: 150,
       }),
       { text: "[summary]the distilled summary[/summary]", promptTokens: 160 },
@@ -349,7 +261,7 @@ describe("prompt-cache-aware request assembly", () => {
     const engine = new ContextEngine({
       llm: first.model,
       environment: fakeEnvironment,
-      compaction: settings(),
+      compaction: compactionSettings(),
       openNextContext: () => ({ llm: second.model }),
     });
 
@@ -362,7 +274,7 @@ describe("prompt-cache-aware request assembly", () => {
     const appended = wireMessage(first.requests[1]!, -1);
     expect(appended.role).toBe("user");
     expect(blockTypes(appended)).toEqual(["tool_result", "text"]);
-    expect(appended.content[1]!.text).toBe("COMPACT NOW");
+    expect(appended.content[1]!.text).toBe(COMPACTION_PROMPT);
     expect(configFingerprint(first.requests[1]!)).toBe(configFingerprint(first.requests[0]!));
   });
 });

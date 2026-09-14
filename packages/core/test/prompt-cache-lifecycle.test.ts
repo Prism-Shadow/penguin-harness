@@ -1,18 +1,21 @@
 /**
- * Prompt-cache hits across the Session lifecycle.
+ * The prompt cache across a Session's lifecycle, measured through the simulator.
  *
- * `prefix-cache.test.ts` asks whether the harness assembles each request as an extension of
- * the one before it. This suite asks the question a bill answers: with the provider's own
- * rules applied — the automatic breakpoint, the minimum cacheable prefix, the position
- * lookback, the five-minute TTL — does the conversation keep hitting the cache while it is
- * interrupted, backgrounded, delegated, scheduled, resumed, retuned and compacted?
+ * `prompt-cache-invariants.test.ts` asks whether the harness assembles each request as an
+ * extension of the one before it. This suite asks the question a bill answers: with the
+ * provider's own rules applied — the automatic breakpoint, the minimum cacheable prefix, the
+ * position lookback, the five-minute TTL — does the conversation keep hitting the cache while it
+ * is interrupted, backgrounded, delegated, scheduled, resumed, retuned and compacted?
  *
  * Each scenario drives a real `Session` over a real `GenerativeModel` whose provider stream is
- * scripted, feeds every recorded request to one `PromptCacheSim` in the order it was issued
- * (the simulator IS the provider for the scenario, child sessions and reopened contexts
- * included), and asserts that each request reads back the whole prefix of the previous request
- * of its context. Where that cannot hold by design, the index is named in `allowed` with the
- * reason and the loss is bounded explicitly.
+ * scripted, feeds every recorded request to one `PromptCacheSim` in the order it was issued (the
+ * simulator IS the provider for the scenario, child sessions and reopened contexts included), and
+ * asserts through `expectHits` that each request reads back the whole prefix of the previous
+ * request of its context. Where that cannot hold by design, the index is named in `allowed` with
+ * the reason and the loss is bounded explicitly.
+ *
+ * The agent, the fake collaborators and `expectHits` itself live in `helpers/prompt-cache`; what
+ * stays here is the scaffolding each scenario needs and the scenarios themselves.
  */
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,15 +23,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Environment } from "../src/environment/index.js";
 import { Session } from "../src/index.js";
-import { buildScheduledMessage, toolCallOutput, userText } from "../src/omnimessage/index.js";
-import type { OmniMessage, SessionMetaPayload, ToolDefinition } from "../src/omnimessage/index.js";
+import { buildScheduledMessage, userText } from "../src/omnimessage/index.js";
+import type { OmniMessage } from "../src/omnimessage/index.js";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 import type { CompactionSettings, TraceSink } from "../src/engine/context-engine.js";
 import { DETACHED_TOOL_NOTE_PREFIX } from "../src/interfaces/index.js";
 import type {
-  ApproveFn,
   EnvironmentInterface,
-  GenerativeModelConfig,
   LLMInterface,
   RunCutoff,
   SubagentHandle,
@@ -37,204 +38,41 @@ import type {
   ToolDefinitionConfig,
   ToolDetachResult,
 } from "../src/interfaces/index.js";
-import { recordingModel } from "./helpers/prefix-cache.js";
-import type { RecordedRequest, ScriptedReply } from "./helpers/prefix-cache.js";
 import {
-  DEFAULT_MIN_CACHEABLE_TOKENS,
+  CHILD_SESSION_ID,
+  CONTEXT_REOPENED_REASON,
   DEFAULT_TTL_MS,
+  MAIN,
+  META,
   PromptCacheSim,
+  SESSION_ID,
+  THINKING_MOVE_REASON,
+  allowAll,
+  blockTypes,
+  collect,
+  compactionSettings,
+  expectHits,
   explainMiss,
+  fakeEnvironment,
+  fakeEnvironmentWith,
   fixedPrefixTokens,
   formatCacheReport,
+  modelConfig,
+  ordering,
   positionCount,
   prefixTokens,
-  previousInContext,
-  toolsAndSystemTokens,
+  recordingModel,
+  replay,
   tokensBeforeLastUserMessage,
-} from "./helpers/prompt-cache-sim.js";
-import type { CacheUsage } from "./helpers/prompt-cache-sim.js";
+  toolTurn,
+  toolsAndSystemTokens,
+  wireMessage,
+} from "./helpers/prompt-cache/index.js";
+import type { RecordedRequest } from "./helpers/prompt-cache/index.js";
 
 // ---------------------------------------------------------------------------
-// Fixtures
+// Scaffolding each scenario needs
 // ---------------------------------------------------------------------------
-
-/**
- * A system prompt of the size a real agent carries. It has to clear the provider's minimum
- * cacheable prefix on its own, or every result below would be a statement about the minimum
- * rather than about the harness (`expectHits` asserts that it does).
- */
-const SYSTEM_PROMPT = [
-  "You are a coding agent working inside a sandboxed workspace on behalf of one user.",
-  "You have a shell, a file reader and a file writer, and nothing else runs on your behalf.",
-  "",
-  "# Working rules",
-  "",
-  "Read a file before you change it. A patch written from memory is a guess, and a guess that",
-  "compiles is worse than one that does not, because nobody notices it.",
-  "Keep every change as small as the task allows. When a task needs three unrelated edits, make",
-  "them as three changes, not as one that happens to touch three places.",
-  "Never call a tool that is not on the list you were given, and never invent a path you have",
-  "not seen in output. If you need to know whether something exists, look.",
-  "When a command fails, read the whole error before you react to it. The first line of a stack",
-  "trace is rarely the line that matters, and the exit code is never the whole story.",
-  "Prefer the workspace's own scripts to hand-rolled equivalents: if there is a build script,",
-  "run the build script, because it encodes decisions you cannot see from the file tree.",
-  "",
-  "# Tool use",
-  "",
-  "Every tool call names the file or the command it touches, in the words the user would use.",
-  "Long output is summarized rather than pasted back in full; keep the part that carries the",
-  "decision and drop the part that only proves you ran something.",
-  "A command that may run for more than a few seconds goes to the background, and you report",
-  "its identifier so the user can follow it. Do not sit on a foreground shell waiting.",
-  "When several files must be read to answer one question, ask for them together rather than",
-  "one at a time: a round trip costs the user more than a longer answer does.",
-  "Do not retry a failing command unchanged. Either change something about it, or say plainly",
-  "that it fails and what the failure looks like.",
-  "",
-  "# Answering",
-  "",
-  "Say what you changed and why, in that order, and keep it to what the user did not already",
-  "know. Repeating the request back to the user is not a summary of the work.",
-  "State uncertainty where it exists. 'This should work but I could not run the tests' is a",
-  "useful sentence; 'this works' when you did not check is not.",
-  "If the task turns out to be a different task than the one described, say so before doing the",
-  "different task. The user may have meant what they said.",
-  "Never claim a test passed, a build succeeded or a file changed unless the output you were",
-  "given says so. An unverified claim costs more to undo than an admitted gap costs to fill.",
-  "",
-  "# Output",
-  "",
-  "Write plain sentences. No headings for a two-line answer, no bullet list of three words, no",
-  "restatement of these rules back to the user.",
-  "Use the user's own vocabulary for files, commands and concepts once they have used it.",
-  "When you cannot finish, end with what remains and what you would try next, not with an",
-  "apology. The next step is the useful part.",
-  "",
-  "# Reading a codebase",
-  "",
-  "Start from the entry point the build declares, not from the file whose name looks closest to",
-  "the task. Names drift; build configuration does not.",
-  "Follow a symbol to its definition before you reason about it. Two functions with the same",
-  "name in one repository is the normal case, not the surprising one.",
-  "Read the tests around a behaviour before you change the behaviour. A test is the only place",
-  "the previous author wrote down what they meant, and it is usually shorter than the code.",
-  "When a file is longer than you can hold, read its top and its exports first, then the one",
-  "region the task touches. Reading the middle of a file you have no map of teaches you little.",
-  "Configuration counts as code. A value that reaches the running program from a TOML file is",
-  "no less part of the behaviour than a value written in a source literal.",
-  "",
-  "# Editing",
-  "",
-  "Match the surrounding style rather than the style you prefer. A patch that reads as though",
-  "the file's author wrote it costs the reviewer nothing; one that does not costs an argument.",
-  "Change one thing per edit and keep the edit adjacent to what it changes. A rename spread",
-  "across twenty files and a behaviour change in one of them is a review nobody can do.",
-  "Do not delete code you do not understand. Find out what it is for, or leave it and say that",
-  "you left it; silently removing a guard is how an incident starts.",
-  "Leave the workspace buildable at every point where you stop. If you cannot, say so in the",
-  "same breath as the change, and say which command reproduces the breakage.",
-  "Comments explain why, not what. If a line needs a comment to say what it does, rewrite the",
-  "line instead of annotating it.",
-  "",
-  "# Safety",
-  "",
-  "Never run a command that reaches outside the workspace unless the user asked for it in those",
-  "words. The workspace boundary is the whole of your permission, not a default you may widen.",
-  "Never write a credential, a token or a private key into a file, a log line or an answer, even",
-  "one you were given in this conversation.",
-  "A destructive command — a recursive delete, a force push, a database drop — is announced",
-  "before it runs and named for what it destroys. If you cannot name it, do not run it.",
-  "When a command would take longer than the user is likely to wait, say so before starting it",
-  "rather than after. An unexplained silence reads as a hang.",
-  "",
-  "# When you are stuck",
-  "",
-  "Say what you tried, what you expected and what happened instead. Those three sentences are",
-  "worth more than another round of guessing.",
-  "Reduce the problem before you widen the search. A failing case you can run in one second",
-  "beats a theory you can only test by rebuilding everything.",
-  "Ask the user for the one fact that would settle it, rather than for guidance in general. A",
-  "question that can be answered in a word gets answered; an open one gets ignored.",
-].join("\n");
-
-const TOOLS: ToolDefinition[] = [
-  {
-    name: "exec_command",
-    description:
-      "Run a shell command in the workspace and return its output. Use run_in_background " +
-      "for anything that outlives a few seconds; the completion arrives as a user message.",
-    parameters: {
-      type: "object",
-      properties: {
-        cmd: { type: "string", description: "The command line to run." },
-        run_in_background: { type: "boolean", description: "Detach and report on completion." },
-        yield_time_ms: { type: "number", description: "How long to wait before yielding." },
-      },
-      required: ["cmd"],
-    },
-  },
-  {
-    name: "read_file",
-    description: "Read a UTF-8 text file from the workspace, optionally a line range of it.",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Workspace-relative path." },
-        offset: { type: "number", description: "First line to read (1-based)." },
-        limit: { type: "number", description: "How many lines to read." },
-      },
-      required: ["path"],
-    },
-  },
-];
-
-const SESSION_ID = "sess-prompt-cache";
-const CHILD_SESSION_ID = "sess-prompt-cache-child";
-/** The one context label a single-context scenario uses. */
-const MAIN = "main";
-
-const META: SessionMetaPayload = {
-  session_id: SESSION_ID,
-  provider: "anthropic",
-  model_id: "claude-sonnet-4-6",
-  model_context_window: 200000,
-  system_prompt: SYSTEM_PROMPT,
-  agent_state: "/tmp/penguin-prompt-cache/state",
-  workspace: "/tmp/penguin-prompt-cache/workspace",
-};
-
-const modelConfig = (over: Partial<GenerativeModelConfig> = {}): GenerativeModelConfig => ({
-  modelId: "claude-sonnet-4-6",
-  tools: TOOLS,
-  systemPrompt: SYSTEM_PROMPT,
-  ...over,
-});
-
-const compactionSettings = (over: Partial<CompactionSettings> = {}): CompactionSettings => ({
-  maxContextLength: 100,
-  maxSessionTurns: -1,
-  mode: "summarize",
-  prompt: "Summarize this conversation so the next context can carry on.",
-  ...over,
-});
-
-const allowAll: ApproveFn = async () => "allow";
-
-/** Fake Environment that never runs a real command: any tool call answers with fixed output. */
-const fakeEnvironmentWith = (tools: ToolDefinition[]): EnvironmentInterface => ({
-  async listTools() {
-    return tools;
-  },
-  async *executeTool({ toolCall: call }) {
-    yield toolCallOutput({ output: "tool ran", toolCallId: call.payload.tool_call_id });
-  },
-  toolPermission() {
-    return "rw";
-  },
-});
-
-const fakeEnvironment = fakeEnvironmentWith(TOOLS);
 
 interface SessionSpec {
   llm: LLMInterface;
@@ -303,91 +141,12 @@ async function waitFor(predicate: () => boolean, timeoutMs = 8000): Promise<void
   );
 }
 
-async function collect(gen: AsyncGenerator<OmniMessage, unknown>): Promise<OmniMessage[]> {
-  const all: OmniMessage[] = [];
-  for (;;) {
-    const res = await gen.next();
-    if (res.done) return all;
-    all.push(res.value);
-  }
-}
-
-/** Collects the issue order across every model of a scenario (see RecordingOptions.onRequest). */
-function ordering(): { order: RecordedRequest[]; onRequest: (r: RecordedRequest) => void } {
-  const order: RecordedRequest[] = [];
-  return { order, onRequest: (request) => order.push(request) };
-}
-
-/** Runs every recorded request through one provider-side cache, in issue order. */
-function replay(order: RecordedRequest[], sim = new PromptCacheSim()): CacheUsage[] {
-  return order.map((request) => sim.request(request));
-}
-
-interface WireMessage {
-  role: string;
-  content: { type: string; text?: string }[];
-}
-
-const wireMessage = (request: RecordedRequest, index: number): WireMessage =>
-  request.wire.at(index) as WireMessage;
-
-const blockTypes = (message: WireMessage): string[] => message.content.map((block) => block.type);
-
-/** A tool-calling first reply, reused by the cases that need a two-turn task. */
-const toolTurn = (over: Partial<ScriptedReply> = {}): ScriptedReply => ({
-  thinking: { text: "The entry point is the place to start.", signature: "sig-turn-1" },
-  toolCalls: [{ id: "call_1", name: "read_file", args: { path: "src/index.ts" } }],
-  ...over,
-});
-
-// ---------------------------------------------------------------------------
-// The assertion every scenario shares
-// ---------------------------------------------------------------------------
-
-/**
- * Every request after the first of its context must read back the whole prefix of that
- * context's previous request. An index named in `allowed` is exempted with a stated reason —
- * the scenario then bounds its loss itself — and a context opening anywhere but at the very
- * first request must be named too, so a fresh cache line can never appear unremarked.
- */
-function expectHits(
-  requests: RecordedRequest[],
-  usages: CacheUsage[],
-  allowed: Map<number, string> = new Map(),
-): void {
-  const report = formatCacheReport(requests, usages);
-  expect(usages, report).toHaveLength(requests.length);
-  expect(requests.length, report).toBeGreaterThan(0);
-  // A fixture whose fixed prefix is under the provider's minimum would make every number
-  // below a statement about the minimum instead of about the harness.
-  expect(toolsAndSystemTokens(requests[0]!), report).toBeGreaterThanOrEqual(
-    DEFAULT_MIN_CACHEABLE_TOKENS,
-  );
-  for (const index of allowed.keys()) {
-    expect(index, `allowed miss #${index} names no request\n${report}`).toBeLessThan(
-      requests.length,
-    );
-  }
-  for (let i = 0; i < requests.length; i += 1) {
-    const previous = previousInContext(requests, i);
-    if (allowed.has(i)) continue;
-    if (previous < 0) {
-      expect(i, `#${i} opens a context with no reason given\n${report}`).toBe(0);
-      continue;
-    }
-    expect(
-      usages[i]!.cache_read_input_tokens,
-      `#${i} should read back all of #${previous}\n${report}`,
-    ).toBeGreaterThanOrEqual(prefixTokens(requests[previous]!));
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("prompt-cache hits across the session lifecycle", () => {
-  it("hits the whole previous prefix on every request of an ordinary conversation", async () => {
+describe("the prompt cache across a Session's lifecycle", () => {
+  it("an ordinary conversation hits the prompt cache on every request after the first", async () => {
     const { order, onRequest } = ordering();
     const { model } = recordingModel(
       modelConfig(),
@@ -413,7 +172,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     expect(usages[2]!.hitRatio, report).toBeGreaterThan(0.9);
   });
 
-  it("confines an interruption's loss to the last user message", async () => {
+  it("an interrupted turn still hits the prompt cache up to its last user message", async () => {
     const { order, onRequest } = ordering();
     const { model } = recordingModel(
       modelConfig(),
@@ -466,7 +225,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     );
   });
 
-  it("hits across the completion notice of a run_in_background command", async () => {
+  it("a background command's completion notice still hits the prompt cache", async () => {
     const { environment } = await makeEnvironment(["exec_command", "input_command"]);
     const { order, onRequest } = ordering();
     const { model } = recordingModel(
@@ -503,7 +262,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     expect(usages[2]!.cache_read_input_tokens, report).toBe(prefixTokens(order[1]!));
   });
 
-  it("hits after the user moves a running call to the background", async () => {
+  it("a call the user moves to the background still hits the prompt cache", async () => {
     const { environment } = await makeEnvironment(["exec_command", "input_command"]);
     const { order, onRequest } = ordering();
     const { model } = recordingModel(
@@ -548,7 +307,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     expect(usages[1]!.cache_read_input_tokens, report).toBe(prefixTokens(order[0]!));
   });
 
-  it("hits across a turn that calls three tools at once", async () => {
+  it("a turn that calls three tools at once still hits the prompt cache", async () => {
     const { environment } = await makeEnvironment(["exec_command", "input_command"]);
     const { order, onRequest } = ordering();
     const { model } = recordingModel(
@@ -588,7 +347,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     expect(positionCount(order[1]!) - positionCount(order[0]!), report).toBe(2);
   });
 
-  it("keeps the parent and the child cache lines healthy across a subagent's run", async () => {
+  it("a subagent leaves its parent's prompt cache intact, and reads 0 because it opens its own line", async () => {
     const { order, onRequest } = ordering();
     // The child Session is built from the parent Environment's own toolset, so the runner
     // reads it at spawn time rather than at construction.
@@ -649,7 +408,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     expect(usages[3]!.cache_read_input_tokens, report).toBe(prefixTokens(order[0]!));
   });
 
-  it("hits when a scheduled task opens the next run", async () => {
+  it("a scheduled task's trigger still hits the prompt cache", async () => {
     const { order, onRequest } = ordering();
     const { model } = recordingModel(
       modelConfig(),
@@ -674,7 +433,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     expect(usages[1]!.cache_read_input_tokens, report).toBe(prefixTokens(order[0]!));
   });
 
-  it("reads the whole replayed history from cache when a session resumes", async () => {
+  it("a session resumed from a Trace still hits the prompt cache, replayed history and all", async () => {
     const { order, onRequest } = ordering();
     await driveResume(onRequest);
 
@@ -687,7 +446,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     expect(explainMiss(order[1]!, order[2]!), report).toBe("no divergence");
   });
 
-  it("reads nothing when a resume lands after the cache TTL, which is an expiry", async () => {
+  it("a resume past the entry's lifetime reads 0 because the cache expired, not because anything moved", async () => {
     const { order, onRequest } = ordering();
     await driveResume(onRequest);
 
@@ -707,7 +466,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     expect(explainMiss(order[1]!, order[2]!), report).toBe("no divergence");
   });
 
-  it("gives up the whole prefix once on a thinking-level move and then holds", async () => {
+  it("a thinking-level move reads 0 because nothing closed an entry at the system prompt, then hits again", async () => {
     const { order, onRequest } = ordering();
     await driveThinkingMove(onRequest);
 
@@ -724,7 +483,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     expect(usages[2]!.cache_read_input_tokens, report).toBe(prefixTokens(order[1]!));
   });
 
-  it("reopens a compacted context with nothing cached, and hits again from there", async () => {
+  it("a reopened context reads 0 because it is a new cache line, then hits the prompt cache from there", async () => {
     const { order, onRequest } = ordering();
     await driveCompaction(onRequest);
 
@@ -749,7 +508,7 @@ describe("prompt-cache hits across the session lifecycle", () => {
     expect(usages[4]!.cache_read_input_tokens, report).toBe(prefixTokens(order[3]!));
   });
 
-  it("recovers the fixed prefix once a breakpoint is set after the system prompt", async () => {
+  it("a breakpoint after the system prompt recovers the fixed prefix on both of those flows", async () => {
     const wider = (): PromptCacheSim =>
       new PromptCacheSim({ breakpoints: "tools-system-automatic" });
 
@@ -783,14 +542,6 @@ describe("prompt-cache hits across the session lifecycle", () => {
 // ---------------------------------------------------------------------------
 // Scenario helpers
 // ---------------------------------------------------------------------------
-
-/** Named once: the two flows below are measured under both breakpoint policies. */
-const THINKING_MOVE_REASON =
-  "the thinking level moved and no breakpoint sits after the system prompt, so nothing " +
-  "behind the moved parameter is addressable";
-const CONTEXT_REOPENED_REASON =
-  "the context reopened and no breakpoint sits after the system prompt, so the fixed prefix " +
-  "the new context resends is not addressable either";
 
 /** One Session, a thinking-level move between its first and second task. */
 async function driveThinkingMove(onRequest: (request: RecordedRequest) => void): Promise<void> {

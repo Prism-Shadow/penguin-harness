@@ -5,16 +5,17 @@
 - **Scope:** `core`
 - **PR:** [#722](https://github.com/Prism-Shadow/penguin-harness/pull/722)
 
-[中文版](2026-09-14-prefix-cache-awareness.zh.md)
+[中文版](2026-09-14-prompt-cache-awareness.zh.md)
 
 A provider serves a cached prefix only when the next request repeats the previous one byte for
 byte from the front — tools, then the system prompt, then the messages — so every turn the engine
-assembles has to leave the request an extension of the last one. `packages/core/test/prefix-cache.test.ts`
-now pins that: a real `ContextEngine` drives a real `GenerativeModel` whose provider stream is
-scripted, and each consecutive pair of requests is diagnosed on the wire shape the client would
-have sent, by a client-side diagnostic modelled on the cache-miss reasons a provider reports
-(`model_changed` / `system_changed` / `tools_changed` / `parameters_changed` / `messages_changed`,
-earliest divergence first, with an estimate of the input that falls after it).
+assembles has to leave the request an extension of the last one.
+`packages/core/test/prompt-cache-invariants.test.ts` now pins that: a real `ContextEngine` drives
+a real `GenerativeModel` whose provider stream is scripted, and each consecutive pair of requests
+is diagnosed on the wire shape the client would have sent, by a client-side diagnostic modelled
+on the cache-miss reasons a provider reports (`model_changed` / `system_changed` /
+`tools_changed` / `parameters_changed` / `messages_changed`, earliest divergence first, with an
+estimate of the input that falls after it).
 
 ## Details
 
@@ -25,13 +26,17 @@ earliest divergence first, with an estimate of the input that falls after it).
   follows; and a resumed session's first request opens with the live client's committed history,
   thinking signatures and tool pairing included.
 - One reading was worth stating as its own invariant: a reconnect after a partially streamed attempt re-sends the turn with a `[turn_retried]` note carrying what the attempt already produced, so the retried turn's input grows rather than repeating. Everything before that input stays byte-identical (tools, system prompt and history still hit); the suite pins that the divergence never moves earlier and that the original input still leads the retried one.
-- `packages/core/test/helpers/prefix-cache.ts` holds the recording model, the diagnostic and the
-  wire-history reader. It measures the harness's half only: cache lifetime, breakpoint lookback
-  and minimum cacheable size belong to the provider — modelled offline by the simulator below,
-  though only a live endpoint proves a real deployment behaves this way.
-- `packages/core/test/helpers/prompt-cache-sim.ts` adds that provider half as a rule engine over
-  the same recordings: an Anthropic-shaped prompt cache that reads each request as a block list
-  (one block per tool, the system prompt, a virtual block holding the prompt-affecting
+- `packages/core/test/helpers/prompt-cache/` holds the shared machinery, a file per part:
+  `recording.ts` (the scripted provider stream and the per-request wire recording),
+  `diagnostics.ts` (the cache-miss diagnostic), `simulator.ts` (the provider half below) and
+  `fixtures.ts` (the agent, the fake collaborators and the hit assertion the two Session suites
+  share), re-exported from `index.ts`. The recording and the diagnostic measure the harness's half
+  only: cache lifetime, breakpoint lookback and minimum cacheable size belong to the provider —
+  modelled offline by the simulator, though only a live endpoint proves a real deployment behaves
+  this way.
+- `packages/core/test/helpers/prompt-cache/simulator.ts` adds that provider half as a rule engine
+  over the same recordings: an Anthropic-shaped prompt cache that reads each request as a block
+  list (one block per tool, the system prompt, a virtual block holding the prompt-affecting
   parameters, then every message content block), groups it into positions — a run of `tool_use`
   or `tool_result` blocks counting as one — writes **only at a breakpoint**, serves a read by
   checking at most twenty positions per breakpoint (the breakpoint itself counting as the
@@ -43,8 +48,8 @@ earliest divergence first, with an estimate of the input that falls after it).
   explicit breakpoints on the last tool block and on the system block alongside the automatic
   one. It answers in the numbers a provider reports: `cache_read_input_tokens`,
   `cache_creation_input_tokens`, `input_tokens` and the resulting hit ratio.
-  `packages/core/test/prompt-cache-sim.test.ts` pins those rules on hand-built requests.
-- `packages/core/test/prompt-cache-hits.test.ts` runs a real `Session` through the session
+  `packages/core/test/prompt-cache-simulator.test.ts` pins those rules on hand-built requests.
+- `packages/core/test/prompt-cache-lifecycle.test.ts` runs a real `Session` through the Session
   lifecycle against one simulated provider — child sessions and reopened contexts included — and
   asserts on those numbers that every request reads back the whole prefix of its context's
   previous request: an ordinary conversation, an interruption, a `run_in_background` command's

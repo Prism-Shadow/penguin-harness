@@ -1,14 +1,16 @@
 /**
- * The prompt-cache simulator's own rules, on hand-built requests.
+ * The simulator's own rules, on hand-built requests.
  *
- * Every scenario test in `prompt-cache-hits.test.ts` reads its result off this simulator, so
- * the rules it applies are pinned here first: what counts as a block, what counts as a
- * position, which change loses what, and the three limits a provider imposes on top of the
- * hashes — the minimum cacheable prefix, the entry lifetime, and the lookback window.
+ * `prompt-cache-lifecycle.test.ts` reads every scenario's result off this simulator, so the rules
+ * it applies are pinned here first: what counts as a block, what counts as a position, which
+ * change loses what, and the three limits a provider imposes on top of the hashes — the minimum
+ * cacheable prefix, the entry lifetime, and the lookback window.
+ *
+ * The requests below are written by hand rather than recorded (`helpers/prompt-cache/recording.ts`
+ * is what records them elsewhere), so each case is a statement about one rule and nothing else.
  */
 import { describe, expect, it } from "vitest";
 import type { UniConfig } from "@prismshadow/agenthub";
-import type { RecordedRequest } from "./helpers/prefix-cache.js";
 import {
   DEFAULT_TTL_MS,
   PromptCacheSim,
@@ -17,7 +19,8 @@ import {
   prefixTokens,
   toolsAndSystemTokens,
   toolsTokens,
-} from "./helpers/prompt-cache-sim.js";
+} from "./helpers/prompt-cache/index.js";
+import type { RecordedRequest } from "./helpers/prompt-cache/index.js";
 
 // ---------------------------------------------------------------------------
 // A tiny RecordedRequest factory: the wire shape only, nothing the engine produces

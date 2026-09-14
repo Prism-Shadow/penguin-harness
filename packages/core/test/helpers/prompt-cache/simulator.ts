@@ -1,11 +1,12 @@
 /**
- * An Anthropic-shaped prompt cache, simulated over recorded requests.
+ * The simulator: an Anthropic-shaped prompt cache, run over recorded requests.
  *
- * `prefix-cache.ts` measures the harness's half of prompt caching: whether each request is a
- * pure extension of the one before it. This file models the provider's half — the part that
- * decides whether a prefix that *could* hit actually does — so a test can state a scenario's
- * result in the numbers the provider reports: `cache_read_input_tokens`,
- * `cache_creation_input_tokens`, `input_tokens`.
+ * `diagnostics.ts` measures the harness's half — whether each request is a pure extension of the
+ * one before it. This file models the provider's half, the part that decides whether a prefix
+ * that *could* hit actually does, so a test can state a scenario's result in the numbers the
+ * provider reports: `cache_read_input_tokens`, `cache_creation_input_tokens`, `input_tokens`. Its
+ * only input is what `recording.ts` captured, and it calls back into `diagnostics.ts` to name the
+ * divergence behind a miss. `fixtures.ts` wraps it in the assertion the Session suites share.
  *
  * The rules modelled, from Anthropic's prompt-caching documentation:
  *
@@ -42,8 +43,8 @@
  * harness put on the wire.
  */
 import { createHash } from "node:crypto";
-import { diagnoseCacheMiss, describeMissReason } from "./prefix-cache.js";
-import type { RecordedRequest } from "./prefix-cache.js";
+import { diagnoseCacheMiss, describeMissReason } from "./diagnostics.js";
+import type { RecordedRequest } from "./recording.js";
 
 /** Smallest prefix a provider will cache, in tokens. */
 export const DEFAULT_MIN_CACHEABLE_TOKENS = 1024;
@@ -134,6 +135,8 @@ const blockTypeOf = (block: unknown): string | undefined => {
   return typeof type === "string" ? type : undefined;
 };
 
+// ---- Reading a request as blocks and positions ----------------------------
+
 /** The prompt-affecting request parameters, in a fixed order, absent keys omitted. */
 function parameterView(wireConfig: Record<string, unknown>): Record<string, unknown> {
   const view: Record<string, unknown> = {};
@@ -202,6 +205,8 @@ export function positionEnds(blocks: CacheBlock[]): number[] {
 export const positionCount = (request: RecordedRequest): number =>
   positionEnds(prefixBlocks(request)).length;
 
+// ---- Token counts a test states its bounds in -----------------------------
+
 const sumTokens = (blocks: CacheBlock[]): number =>
   blocks.reduce((total, block) => total + block.tokens, 0);
 
@@ -233,6 +238,8 @@ export function tokensBeforeLastUserMessage(request: RecordedRequest): number {
     prefixBlocks(request).filter((block) => block.message === undefined || block.message < last),
   );
 }
+
+// ---- The cache ------------------------------------------------------------
 
 interface PendingWrite {
   /** Cumulative prefix hashes, index `k` covering the first `k` blocks. */
@@ -360,7 +367,7 @@ function cumulativeHashes(blocks: CacheBlock[]): string[] {
   const hashes: string[] = [createHash("sha256").update("").digest("hex")];
   for (const block of blocks) {
     const previous = hashes[hashes.length - 1]!;
-    hashes.push(createHash("sha256").update(`${previous} ${block.text}`).digest("hex"));
+    hashes.push(createHash("sha256").update(`${previous} ${block.text}`).digest("hex"));
   }
   return hashes;
 }
@@ -371,6 +378,8 @@ function cumulativeTokens(blocks: CacheBlock[]): number[] {
   for (const block of blocks) sums.push(sums[sums.length - 1]! + block.tokens);
   return sums;
 }
+
+// ---- Reporting ------------------------------------------------------------
 
 /**
  * Why the prefix moved between two requests, in the vocabulary a provider's cache diagnostics
