@@ -166,6 +166,15 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
+/**
+ * A Date as the viewer's local calendar date, `yyyy-mm-dd` — the shape `formatMonthDay`
+ * reads. It takes the date part of its input verbatim, so an instant has to be converted
+ * here, on the Date; handing it a `...Z` timestamp would name the UTC day instead.
+ */
+export function localYmd(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 /** ISO timestamp → local `yyyy-MM-dd HH:mm` display; returns the input unchanged if parsing fails. */
 export function formatDateTime(iso: string): string {
   const d = new Date(iso);
@@ -274,14 +283,17 @@ export function formatRelativeDate(iso: string, locale: "zh" | "en"): string {
  * per-conversation time): under a minute zh 「刚刚」 / en "now", then minute / hour /
  * day steps — zh keeps the dictionary wording (`5 分钟前`), en stays ultra-short
  * (`5m`, `3h`, `2d`) per the CLI-style abbreviation register. A week or older — or a
- * future time (clock skew) — falls back to the absolute month-day (formatMonthDay);
- * an unparsable value yields "" so callers hide the slot rather than show garbage.
+ * future time (clock skew) — falls back to the absolute month-day of the viewer's own
+ * calendar day (formatMonthDay over localYmd, not the raw timestamp: the instant is a
+ * `...Z` stamp, and reading its date part would name the UTC day — a row last active at
+ * 07:00 on the 31st in UTC+8 would read as the 30th); an unparsable value yields "" so
+ * callers hide the slot rather than show garbage.
  */
 export function formatRelativeShort(iso: string, locale: "zh" | "en"): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const diffMs = Date.now() - d.getTime();
-  if (diffMs < 0) return formatMonthDay(iso, locale);
+  if (diffMs < 0) return formatMonthDay(localYmd(d), locale);
   const min = Math.floor(diffMs / 60_000);
   if (min < 1) return locale === "en" ? "now" : "刚刚";
   if (min < 60) return locale === "en" ? `${min}m` : `${min} 分钟前`;
@@ -289,7 +301,7 @@ export function formatRelativeShort(iso: string, locale: "zh" | "en"): string {
   if (hours < 24) return locale === "en" ? `${hours}h` : `${hours} 小时前`;
   const days = Math.floor(hours / 24);
   if (days < 7) return locale === "en" ? `${days}d` : `${days} 天前`;
-  return formatMonthDay(iso, locale);
+  return formatMonthDay(localYmd(d), locale);
 }
 
 /** ISO timestamp → local `HH:mm:ss` (inline display in the Trace timeline); returns the input unchanged if parsing fails. */

@@ -9,7 +9,7 @@
  */
 import type { ScheduleItem } from "@prismshadow/penguin-server/api";
 import { S } from "../../lib/strings";
-import { formatMonthDay } from "../../lib/format";
+import { formatMonthDay, localYmd } from "../../lib/format";
 import type { Locale } from "../../state/locale";
 
 /** The fields the line reads; the rest of ScheduleItem does not change it. */
@@ -35,14 +35,6 @@ function pad2(n: number): string {
 /** Local wall-clock `HH:mm`. */
 function clockTime(d: Date): string {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-/**
- * The local calendar date as `yyyy-mm-dd`, the shape formatMonthDay reads: it takes the date
- * part of its input verbatim, so the zone conversion has to happen here, on the Date.
- */
-function localYmd(d: Date): string {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 /** 周一 / Monday: the short form in Chinese already carries the "week" character the sentence needs. */

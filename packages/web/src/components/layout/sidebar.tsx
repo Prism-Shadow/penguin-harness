@@ -2780,14 +2780,17 @@ function SessionRow({
             end the title button (glyph, background, schedule, approvals) sit against this
             slot, so a slot that grew with 「31 分钟前」 and shrank with 「刚刚」 moved them
             row by row. Sized for the widest string each language produces — 「12月31日」
-            and 「59 分钟前」 in zh, "Dec 31" in en — and never below the hover pair's own
-            width, so on a row with no time the buttons still don't overhang the title.
+            and 「59 分钟前」 in zh, "Nov 30" in en — measured at the SMALLEST font tier,
+            which is the tight one: the slot is in rem and shrinks with the root font,
+            while the time inside it is a fixed 11px and does not. Never below the hover
+            pair's own width (two w-6 buttons), so on a row with no time the buttons
+            still don't overhang the title.
             The swap stays a pure opacity handoff: the time hides on row hover
             (group-hover) and while a button holds focus (peer-focus-within; the group
             precedes the time span so the peer combinator can reach it). */}
         <div
           className={`relative flex h-6 shrink-0 items-center justify-end ${
-            locale === "zh" ? "w-[4.5rem]" : "w-12"
+            locale === "zh" ? "w-[4.5rem]" : "w-14"
           }`}
         >
           {/* No hover pill on these (a fill as wide as the date read ugly); feedback is

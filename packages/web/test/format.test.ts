@@ -265,6 +265,22 @@ describe("formatRelativeDays", () => {
   });
 });
 
+/**
+ * Run `fn` as a reader in `tz`. Node re-reads `process.env.TZ` per call, so this pins the
+ * zone a date assertion depends on instead of inheriting the test box's — the ambient zone
+ * would make a local-vs-UTC bug invisible on a UTC runner and loud everywhere else.
+ */
+function withTimeZone(tz: string, fn: () => void): void {
+  const real = process.env.TZ;
+  process.env.TZ = tz;
+  try {
+    fn();
+  } finally {
+    if (real === undefined) delete process.env.TZ;
+    else process.env.TZ = real;
+  }
+}
+
 describe("formatRelativeShort", () => {
   // Fix "now" (the sidebar row's compact last-active time is measured from it).
   beforeEach(() => {
@@ -292,9 +308,21 @@ describe("formatRelativeShort", () => {
   });
 
   it("a week or older — and future times (clock skew) — fall back to the absolute month-day", () => {
-    expect(formatRelativeShort("2026-07-01T00:00:00.000Z", "zh")).toBe("7月1日");
-    expect(formatRelativeShort("2026-01-02T00:00:00.000Z", "en")).toBe("Jan 2");
-    expect(formatRelativeShort("2026-07-20T00:00:00.000Z", "en")).toBe("Jul 20");
+    expect(formatRelativeShort(at(6, 1, 0, 0), "zh")).toBe("7月1日");
+    expect(formatRelativeShort(at(0, 2, 0, 0), "en")).toBe("Jan 2");
+    expect(formatRelativeShort(at(6, 20, 0, 0), "en")).toBe("Jul 20");
+  });
+
+  it("that month-day is the reader's own calendar day, not the timestamp's UTC day", () => {
+    // One instant, two readers. Its UTC day (the 5th) is the Shanghai reader's 6th, and
+    // reading the date straight off the `...Z` string would hand both of them the 5th.
+    const iso = "2026-06-05T23:00:00.000Z";
+    withTimeZone("Asia/Shanghai", () => {
+      expect(formatRelativeShort(iso, "zh")).toBe("6月6日");
+    });
+    withTimeZone("America/New_York", () => {
+      expect(formatRelativeShort(iso, "en")).toBe("Jun 5");
+    });
   });
 
   it("unparsable input yields the empty string (the row hides the slot instead of showing garbage)", () => {
