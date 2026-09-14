@@ -3,6 +3,7 @@
 - **Date:** 2026-09-14
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#717](https://github.com/Prism-Shadow/penguin-harness/pull/717)
 
 [中文版](2026-09-14-session-row-time-alignment.zh.md)
 
