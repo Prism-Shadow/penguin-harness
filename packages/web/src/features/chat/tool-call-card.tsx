@@ -33,7 +33,7 @@ import { toneInk } from "../../lib/tone";
 import { StatusIcon } from "../../components/ui/status-icon";
 import type { RunState } from "../../components/ui/status-icon";
 import { ApprovalButtons } from "./approval-buttons";
-import { LiveDuration } from "./live-duration";
+import { LiveDuration, useElapsedPast } from "./live-duration";
 import { useTheme } from "../../state/theme";
 import { agentIdFromRunSubagentArgs } from "./agent-topology";
 import { SubagentChip } from "./subagent-chip";
@@ -182,10 +182,19 @@ export function isDetachedCall(output: string): boolean {
 }
 
 /**
+ * How long a call has to have been executing before the header offers "move to background".
+ * A call that finishes in a few seconds would otherwise flash the action and drop it again,
+ * and the row's right end would jump with every short command; ten seconds is where waiting
+ * starts to feel like waiting.
+ */
+export const BACKGROUND_ACTION_DELAY_MS = 10_000;
+
+/**
  * Whether the header offers "move to background": only while the call is genuinely executing
- * (that is the whole window in which there is something to move), only for a tool that has a
- * background form, and only on a main-session card — a subagent's call lives in the child
- * Session's environment, which the route does not target.
+ * (that is the whole window in which there is something to move) and has been for
+ * BACKGROUND_ACTION_DELAY_MS (`executedMs`, measured from the execution segment's start), only
+ * for a tool that has a background form, and only on a main-session card — a subagent's call
+ * lives in the child Session's environment, which the route does not target.
  *
  * A call launched with `run_in_background` is excluded: its work is already back in the
  * registry, so there is nothing left to hand over, and the row would briefly carry the
@@ -196,9 +205,14 @@ export function showsBackgroundAction(
   argsJson: string,
   executing: boolean,
   origin: readonly string[],
+  executedMs: number,
 ): boolean {
   return (
-    executing && origin.length === 0 && DETACHABLE_TOOLS.has(name) && !isBackgroundCall(argsJson)
+    executing &&
+    executedMs >= BACKGROUND_ACTION_DELAY_MS &&
+    origin.length === 0 &&
+    DETACHABLE_TOOLS.has(name) &&
+    !isBackgroundCall(argsJson)
   );
 }
 
@@ -307,6 +321,12 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   const subtitle = headerSubtitle(item.name, item.argumentsText, !item.callStreaming);
   // Executing = the call has finished streaming, output hasn't arrived yet, and it's not waiting on approval (approval wait time doesn't count toward execution).
   const executing = item.callComplete && !item.outputComplete && !pending;
+  // How long the execution segment has run, known only once it has run long enough for the
+  // "move to background" action (one re-render at that moment, none before or after).
+  const executedMs = useElapsedPast(
+    executing ? (item.approvalAtMs ?? item.callStartedAtMs) : undefined,
+    BACKGROUND_ACTION_DELAY_MS,
+  );
   // Argument-generation segment (settled): the live execution timer accumulates on top of this as a baseline, so the displayed duration doesn't shrink back once output arrives.
   const genMs =
     item.argStartedAtMs !== undefined && item.callStartedAtMs !== undefined
@@ -429,31 +449,35 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
               )
             ) : null}
           </span>
-          {/* Right of the duration, on a call made with run_in_background or moved there:
-            a bracketed marker in the row's own mono type, the shape this row already used
-            for an outcome that needs a word. A glyph here would be the session list's
-            count-of-many mark doing duty for a single call, and it would say nothing to a
-            reader who cannot spend a hover on it. It sits after the duration rather than
-            beside the name so it never competes with the truncating subtitle, and the row's
-            own status icon keeps saying what the CALL did — this says where its work went. */}
-          {(isBackgroundCall(item.argumentsText) || isDetachedCall(item.output)) && (
-            <span className={`shrink-0 font-mono text-xs ${toneInk.muted}`}>
-              {S.chat.backgroundCall}
-            </span>
-          )}
           <span className="min-w-0 flex-1" />
         </button>
-        {/* "Send to background" while the call executes: the tool hands its work back as a
-          background task and the turn carries on. A sibling of the row button rather than a
-          child — a <button> cannot nest another — with the hover tint on the whole row, so the
-          two still read as one line. The app's inline text-action style: a real <button>
-          (it acts, it navigates nowhere) painted as a link. Text at the row's own size and
-          NO padding of its own, so a row carrying it measures exactly like one that does not
-          — an action that changed the row's height would break the rhythm of a list of calls.
+        {/* At the row's right end, on a call made with run_in_background or moved there: a
+          bracketed marker in the row's own mono type, the shape this row already used for an
+          outcome that needs a word. A glyph here would be the session list's count-of-many
+          mark doing duty for a single call, and it would say nothing to a reader who cannot
+          spend a hover on it. It takes the very slot the "send to background" action below
+          occupies — the two never show together, and a click on the action leaves the mark
+          in its place — so the row's right end holds one thing, right-aligned, rather than a
+          word after the duration and an action further along. The row's own status icon
+          keeps saying what the CALL did; this says where its work went. */}
+        {(isBackgroundCall(item.argumentsText) || isDetachedCall(item.output)) && (
+          <span className={`shrink-0 font-mono text-xs ${toneInk.muted}`}>
+            {S.chat.backgroundCall}
+          </span>
+        )}
+        {/* "Send to background" once the call has been executing for a while: the tool hands
+          its work back as a background task and the turn carries on. A sibling of the row
+          button rather than a child — a <button> cannot nest another — with the hover tint on
+          the whole row, so the two still read as one line. The app's inline text-action style:
+          a real <button> (it acts, it navigates nowhere) painted as a link. Text at the row's
+          own size and NO padding of its own, so a row carrying it measures exactly like one
+          that does not — an action that changed the row's height would break the rhythm of a
+          list of calls. It waits BACKGROUND_ACTION_DELAY_MS before appearing: a command that
+          returns in a few seconds never shows an action it would only take away again.
 
           No click guard: a second detach is a no-op on an already-fired controller, and once
           the call closes the action unmounts on its own — which is also the feedback. */}
-        {showsBackgroundAction(item.name, item.argumentsText, executing, ctx.origin) &&
+        {showsBackgroundAction(item.name, item.argumentsText, executing, ctx.origin, executedMs) &&
           ctx.onSendToBackground && (
             <button
               type="button"

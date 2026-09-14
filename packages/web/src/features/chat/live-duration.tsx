@@ -9,6 +9,34 @@
 import { useEffect, useState } from "react";
 import { humanizeDurationLive } from "../../lib/format";
 
+/**
+ * How long `sinceMs` has been running, reported only once it has run for `thresholdMs`: 0 until
+ * that moment, then the elapsed time at the render that crossed it. One re-render at the
+ * crossing rather than a ticking clock — the caller compares the value to the threshold, so a
+ * finer reading would only cost renders. Undefined `sinceMs` (nothing running, or no start
+ * time known) reads as 0 for as long as it stays undefined.
+ */
+export function useElapsedPast(sinceMs: number | undefined, thresholdMs: number): number {
+  const [reached, setReached] = useState(
+    () => sinceMs !== undefined && Date.now() - sinceMs >= thresholdMs,
+  );
+  useEffect(() => {
+    if (sinceMs === undefined) {
+      setReached(false);
+      return;
+    }
+    const remaining = thresholdMs - (Date.now() - sinceMs);
+    if (remaining <= 0) {
+      setReached(true);
+      return;
+    }
+    setReached(false);
+    const id = setTimeout(() => setReached(true), remaining);
+    return () => clearTimeout(id);
+  }, [sinceMs, thresholdMs]);
+  return reached && sinceMs !== undefined ? Math.max(0, Date.now() - sinceMs) : 0;
+}
+
 export function LiveDuration({ sinceMs, offsetMs = 0 }: { sinceMs?: number; offsetMs?: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
