@@ -130,8 +130,8 @@ export const en: Strings = {
   settings: {
     language: "Language",
     languageInfo: "Interface language; can follow the browser.",
-    /** Sidebar user-menu row opening the System settings dialog. */
-    systemSettings: "System settings",
+    /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
+    title: "Settings",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -546,7 +546,7 @@ export const en: Strings = {
   },
 
   /**
-   * The Profile page of System settings, and the avatar/nickname it writes. Visible in every
+   * The Profile page of Settings, and the avatar/nickname it writes. Visible in every
    * session, the desktop shell's own window included: a profile needs no password to change.
    */
   profile: {

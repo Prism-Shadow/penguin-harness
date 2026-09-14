@@ -1,4 +1,4 @@
-# Plugins configure themselves on the System settings dialog
+# Plugins configure themselves on the Settings dialog
 
 - **Date:** 2026-09-07
 - **Type:** feature
@@ -8,7 +8,7 @@
 [中文版](2026-09-07-plugin-configuration.zh.md)
 
 A plugin package can now declare the options it needs, and an admin fills them in on a new
-**Plugins** page of the System settings dialog. Nobody edits a config file for a plugin's
+**Plugins** page of the Settings dialog. Nobody edits a config file for a plugin's
 token any more.
 
 ## Details
@@ -26,8 +26,8 @@ token any more.
   `get(name)` answers the stored values merged onto the schema's defaults, `watch(name, cb)`
   fires after every save — how a plugin applies an edit without a restart or a re-assembly of
   the App.
-- **The Plugins page.** In the System settings dialog's server group, admin only, after
-  Upload limits: one form per loaded plugin that declares options, drawn from its schema — a secret
+- **The Plugins page.** In the Settings dialog's server group, admin only, after
+  Sandbox: one form per loaded plugin that declares options, drawn from its schema — a secret
   starts empty with the stored mask and a clear checkbox under it, a Project field is a picker
   over the Projects, a boolean a switch. Each plugin saves on its own in one PUT; a field the
   server refuses is marked under that field.

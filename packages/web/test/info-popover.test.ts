@@ -87,7 +87,7 @@ describe("Field with an info popover", () => {
 });
 
 describe("PrefRow with an info popover", () => {
-  // A System settings row titles a control it does not own, so its title is a <p> and the "?"
+  // A Settings row titles a control it does not own, so its title is a <p> and the "?"
   // is safe beside it. An edit that made that title a <label> for the sake of click-to-toggle
   // would hand the row to the trigger instead — the same trap Field carries two layouts to
   // avoid, on the one row primitive that has no Field between it and the control.
