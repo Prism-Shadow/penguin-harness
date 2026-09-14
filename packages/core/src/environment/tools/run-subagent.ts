@@ -231,9 +231,11 @@ export function createSubagentTool(
             return {
               stopReason: "completed",
               note:
-                `${DETACHED_TOOL_NOTE_PREFIX} with subagent_id ${id}; its completion will arrive ` +
-                `as a user message — no need to poll. Use input_subagent to interact ` +
-                `(abort: true stops its current run)]`,
+                `${DETACHED_TOOL_NOTE_PREFIX} with subagent_id ${id}; leave it running unattended: ` +
+                `do not poll it or send it input — its completion will arrive on its own as a ` +
+                `[background_task_done] user message. Move on to other work, or end the turn if ` +
+                `nothing else is pending; input_subagent with abort: true still stops its current ` +
+                `run if the user asks]`,
             };
           }
           return {

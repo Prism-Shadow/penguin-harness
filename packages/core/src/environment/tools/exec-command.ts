@@ -162,8 +162,10 @@ export function createExecCommandTool(
             return {
               stopReason: "completed",
               note:
-                `${DETACHED_TOOL_NOTE_PREFIX} with process_id ${id}; its completion will arrive ` +
-                `as a user message — no need to poll. Use input_command to interact (kill: true stops it)]`,
+                `${DETACHED_TOOL_NOTE_PREFIX} with process_id ${id}; leave it running unattended: ` +
+                `do not poll it or send it input — its completion will arrive on its own as a ` +
+                `[background_task_done] user message. Move on to other work, or end the turn if ` +
+                `nothing else is pending; input_command with kill: true still stops it if the user asks]`,
             };
           }
           return {

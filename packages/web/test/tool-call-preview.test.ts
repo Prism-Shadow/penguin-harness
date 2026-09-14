@@ -199,8 +199,9 @@ describe("isDetachedCall", () => {
   it("marks a call whose output carries the note the tool wrote on being moved to the background", () => {
     expect(
       isDetachedCall(
-        "building…\n[moved to the background by the user with process_id proc-12ab34cd; its " +
-          "completion will arrive as a user message — no need to poll.]",
+        "building…\n[moved to the background by the user with process_id proc-12ab34cd; leave it " +
+          "running unattended: do not poll it or send it input — its completion will arrive on its " +
+          "own as a [background_task_done] user message.]",
       ),
     ).toBe(true);
   });
