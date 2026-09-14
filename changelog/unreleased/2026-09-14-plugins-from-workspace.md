@@ -3,6 +3,7 @@
 - **Date:** 2026-09-14
 - **Type:** fix
 - **Scope:** `core`, `ci`
+- **PR:** [#725](https://github.com/Prism-Shadow/penguin-harness/pull/725)
 
 [中文版](2026-09-14-plugins-from-workspace.zh.md)
 
