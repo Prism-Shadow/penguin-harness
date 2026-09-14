@@ -63,7 +63,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { NAV_ICONS, PLUGIN_ICON } from "../../components/ui/icons";
+import { GEAR_ICON, NAV_ICONS, PLUGIN_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { TRASH_ICON } from "../../components/ui/session-row-menu";
 import { StatusIcon } from "../../components/ui/status-icon";
@@ -77,6 +77,7 @@ import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
 import { prepareNewChatDraft } from "../chat/new-chat";
 import { localizedShortText, localizedText } from "../chat/skill-use";
 import { PluginDetailModal } from "./plugin-detail";
+import { SettingsDialog } from "../settings/settings-dialog";
 import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
 import { InfoPopover } from "../../components/ui/info-popover";
@@ -225,6 +226,7 @@ export function PluginsPage() {
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
+  const [settingsOpen, setSettingsOpen] = useState(false);
   /** Free text over name, specifier and description. */
   const [query, setQuery] = useState("");
   /** The filter column's choices: a row shows when it carries one selected category and every selected tag. */
@@ -555,7 +557,26 @@ export function PluginsPage() {
             {S.plugins.pageTitle}
             <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
           </h1>
+          {/* The options loaded plugins declare live on the Settings dialog's Plugins page, an
+              admin's page; this opens the dialog there rather than sending anyone through the
+              user menu to find it. */}
+          {isAdmin && (
+            <Button
+              size="sm"
+              className="h-8 w-8 shrink-0 justify-center p-0"
+              aria-label={S.plugins.openSettings}
+              title={S.plugins.openSettings}
+              onClick={() => setSettingsOpen(true)}
+            >
+              <GlyphIcon d={GEAR_ICON} size={ICON_SIZE.iconButton} />
+            </Button>
+          )}
         </div>
+        <SettingsDialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          section="plugins"
+        />
         {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
             that takes all of it in one press, and the way to clear it for someone who has looked
             and decided to stay on the installed copies. A plugin is never NEW here — one nobody

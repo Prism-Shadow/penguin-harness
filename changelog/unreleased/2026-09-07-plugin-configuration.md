@@ -30,7 +30,8 @@ token any more.
   Sandbox: one form per loaded plugin that declares options, drawn from its schema — a secret
   starts empty with the stored mask and a clear checkbox under it, a Project field is a picker
   over the Projects, a boolean a switch. Each plugin saves on its own in one PUT; a field the
-  server refuses is marked under that field.
+  server refuses is marked under that field. The Plugins page's header (the plugin list) carries
+  a gear icon button, for admins, that opens the dialog on this page.
 - **API.** `GET /api/admin/plugin-config` lists every loaded package that declares options with
   its schema and masked values; `PUT /api/admin/plugin-config {name, values}` saves one
   package's — 400 `plugin_config_invalid` names the refused field, 404
