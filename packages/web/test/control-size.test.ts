@@ -80,8 +80,9 @@ function literalChunks(node: ts.Node, out: string[] = []): string[] {
  * single place to set this and the rule has to be checked instead.
  *
  * The reach is what a parser can see without types: Buttons written inline in the `footer={…}`
- * attribute. A footer handed over as a component (`footer={<Footer …/>}`) or built in a variable,
- * and a Button in a dialog *body*, are on the same rule but out of this check's sight.
+ * attribute. A footer handed over as a component (`footer={<Footer …/>}`) or built in a variable
+ * is on the same rule but out of this check's sight. A Button in a dialog *body* is covered by
+ * `findLooseDialogBodyButtons` instead, for the modules that are only ever dialog content.
  */
 function findLooseFooterButtons(): string[] {
   const loose: string[] = [];
@@ -116,6 +117,64 @@ function findLooseFooterButtons(): string[] {
           ts.forEachChild(inner, walk);
         };
         walk(node.initializer);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return loose.sort();
+}
+
+/**
+ * Modules that are only ever rendered as a dialog's body. The settings dialog is a `PagedDialog`,
+ * which is a `Modal`, and each of these is one of its pages — so every Button in them belongs with
+ * the fields beside it on the `sm` rung, exactly as a footer button does. A parser cannot infer
+ * that from the file alone (nothing in a section module says it renders in a dialog), so the fact
+ * is declared here. Add a module when it becomes settings-dialog content; drop one when it stops.
+ */
+const DIALOG_BODY_MODULES = new Set([
+  "features/settings/account-section.tsx",
+  "features/settings/appearance-section.tsx",
+  "features/settings/general-section.tsx",
+  "features/settings/proxy-section.tsx",
+  "features/settings/section-shell.tsx",
+  "features/settings/setting-row.tsx",
+  "features/settings/trace-import-row.tsx",
+  "features/settings/uploads-section.tsx",
+  "features/admin/admin-users-page.tsx",
+]);
+
+/**
+ * Buttons in a dialog-body module that do not ask for `sm`, as "relative/path:line rung". `icon`
+ * passes: a square glyph button carries no text and so sits on no font rung.
+ */
+function findLooseDialogBodyButtons(): string[] {
+  const loose: string[] = [];
+  for (const path of tsxFiles()) {
+    const rel = path.slice(SRC.length + 1).replaceAll(sep, "/");
+    if (!DIALOG_BODY_MODULES.has(rel)) continue;
+    const source = ts.createSourceFile(
+      path,
+      readFileSync(path, "utf8"),
+      ts.ScriptTarget.Latest,
+      /* setParentNodes */ true,
+      ts.ScriptKind.TSX,
+    );
+    const visit = (node: ts.Node): void => {
+      if (jsxTag(node) === "Button") {
+        const attrs = (node as ts.JsxSelfClosingElement | ts.JsxOpeningElement).attributes
+          .properties;
+        const size = attrs.find(
+          (attr) => ts.isJsxAttribute(attr) && attr.name.getText() === "size",
+        );
+        const rung =
+          size !== undefined && ts.isJsxAttribute(size) && size.initializer !== undefined
+            ? size.initializer.getText()
+            : "<none>";
+        if (rung !== '"sm"' && rung !== '"icon"') {
+          const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+          loose.push(`${rel}:${line} ${rung}`);
+        }
       }
       ts.forEachChild(node, visit);
     };
@@ -219,6 +278,18 @@ describe("control font size", () => {
       findLooseFooterButtons(),
       'A Button in a Modal footer passes size="sm", so the dialog\'s buttons read at the same ' +
         "size as its fields (compare components/ui/confirm-modal.tsx).",
+    ).toEqual([]);
+  });
+
+  it("keeps a dialog body's buttons on the fields' rung", () => {
+    // Same rule as the footer, one layer in. The settings dialog's pages are separate modules, so
+    // the drift hides from review twice over: nothing in a section file says it renders inside a
+    // Modal, and the footer check above cannot see this far. Four of them had taken Button's md
+    // default and stood a rung above the fields they sat beside.
+    expect(
+      findLooseDialogBodyButtons(),
+      'A Button in a dialog body passes size="sm", the rung the fields beside it are on. ' +
+        "If a module in DIALOG_BODY_MODULES has stopped being dialog content, drop it from the set.",
     ).toEqual([]);
   });
 

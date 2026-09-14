@@ -1,13 +1,16 @@
 /**
  * Files panel logic (lib/workspace-tree.ts): the tree's rows from lazily loaded listings,
- * the search box's filter over them, where a drop lands, the narrow-layout
+ * the rows a whole-Workspace search draws, where a drop lands, the narrow-layout
  * decision and the tree pane's width bounds, how much of a path the
  * toolbar can show, which files count as text (by name, or by their bytes when the name says
- * nothing), the preferences' tolerant parses, and when leaving the editor has to ask.
+ * nothing), the preferences' tolerant parses, when leaving the editor has to ask, and what
+ * the panel's "add to conversation" puts in the composer.
  */
 import { describe, expect, it } from "vitest";
-import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
+import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import {
+  type ComposerReference,
+  type Listings,
   PREVIEW_MIN_WIDTH,
   TREE_LAYOUT_MIN_WIDTH,
   TREE_MIN_WIDTH,
@@ -17,7 +20,7 @@ import {
   defaultTreeWidth,
   dropTargetDir,
   expandTo,
-  filterTreeRows,
+  searchRows,
   flattenTree,
   isDirty,
   isNarrowLayout,
@@ -25,23 +28,26 @@ import {
   maxTreeWidth,
   needsDiscardConfirm,
   parentDir,
-  parseEditorWrap,
+  parseWrapLines,
   parseTreeVisible,
   parseTreeWidth,
+  pathReference,
   previewKindFor,
-  readEditorWrap,
+  readWrapLines,
   readTreeVisible,
   readTreeWidth,
+  selectionBlock,
+  splitFileName,
+  lineSuffix,
   sortEntries,
   upsertEntry,
   utf8Complete,
   visibleCrumbSegments,
   withExpanded,
-  writeEditorWrap,
+  writeWrapLines,
   writeTreeVisible,
   writeTreeWidth,
 } from "../src/lib/workspace-tree";
-import type { Listings } from "../src/lib/workspace-tree";
 
 const MTIME = "2026-09-02T00:00:00.000Z";
 const dir = (name: string): WorkspaceFileEntry => ({
@@ -176,22 +182,34 @@ describe("layout", () => {
   });
 });
 
-describe("filterTreeRows", () => {
-  /** Every listed directory walked open, which is what the panel filters over. */
-  const all = flattenTree(LISTINGS, new Set(LISTINGS.keys()));
+describe("searchRows", () => {
+  const hits: WorkspaceSearchHit[] = [
+    { path: "notes.md", kind: "file", sizeBytes: 12, mtime: "2026-09-11T00:00:00.000Z" },
+    { path: "a/deep", kind: "dir", sizeBytes: 0, mtime: "2026-09-11T00:00:01.000Z" },
+    { path: "a/deep/notes.md", kind: "file", sizeBytes: 34, mtime: "2026-09-11T00:00:02.000Z" },
+  ];
 
-  it("keeps a match with the ancestors it hangs under, and nothing else", () => {
-    expect(filterTreeRows(all, "y").map((r) => r.path)).toEqual(["a", "a/y.md"]);
+  it("names each hit by its whole path, because where it is is the part the query did not say", () => {
+    // The base name is what the reader just typed; two hits called notes.md are told apart
+    // only by the directory in front of them.
+    expect(searchRows(hits).map((r) => r.name)).toEqual(["notes.md", "a/deep", "a/deep/notes.md"]);
+    expect(searchRows(hits).map((r) => r.path)).toEqual(["notes.md", "a/deep", "a/deep/notes.md"]);
   });
 
-  it("shows a matching directory with its loaded children", () => {
-    expect(filterTreeRows(all, "a").map((r) => r.path)).toEqual(["a", "a/b", "a/y.md"]);
+  it("draws a flat list, not a tree: every row is depth 0 and closed", () => {
+    // A hit can live in a directory the lazy tree never listed, so there is nothing to nest it
+    // under; an open directory row here would promise children the panel cannot draw.
+    const rows = searchRows(hits);
+    expect(rows.every((r) => r.depth === 0)).toBe(true);
+    expect(rows.every((r) => !r.expanded)).toBe(true);
+    expect(rows.map((r) => r.posInSet)).toEqual([1, 2, 3]);
+    expect(rows.every((r) => r.setSize === 3)).toBe(true);
   });
 
-  it("matches the name case-insensitively, keeps everything for an empty query, and drops everything for a miss", () => {
-    expect(filterTreeRows(all, "X.TXT").map((r) => r.path)).toEqual(["x.txt"]);
-    expect(filterTreeRows(all, "  ").map((r) => r.path)).toEqual(all.map((r) => r.path));
-    expect(filterTreeRows(all, "nothing-like-this")).toEqual([]);
+  it("carries the size and time the row renderer shows, so a hit reads like a tree entry", () => {
+    expect(searchRows(hits).map((r) => r.sizeBytes)).toEqual([12, 0, 34]);
+    expect(searchRows(hits)[2]?.mtime).toBe("2026-09-11T00:00:02.000Z");
+    expect(searchRows([])).toEqual([]);
   });
 });
 
@@ -328,24 +346,24 @@ describe("tree width preference", () => {
   });
 });
 
-describe("editor wrap preference", () => {
-  it("wraps only on an explicit on value", () => {
-    expect(parseEditorWrap(null)).toBe(false);
-    expect(parseEditorWrap("0")).toBe(false);
-    expect(parseEditorWrap("garbage")).toBe(false);
-    expect(parseEditorWrap("1")).toBe(true);
-    expect(parseEditorWrap(" TRUE ")).toBe(true);
+describe("soft wrap preference", () => {
+  it("wraps unless an explicit off value is stored, so a stored answer survives the new default", () => {
+    expect(parseWrapLines(null)).toBe(true);
+    expect(parseWrapLines("garbage")).toBe(true);
+    expect(parseWrapLines("1")).toBe(true);
+    expect(parseWrapLines("0")).toBe(false);
+    expect(parseWrapLines(" FALSE ")).toBe(false);
   });
 
-  it("round-trips through storage and reads as off when storage throws", () => {
+  it("round-trips through storage and reads as on when storage throws", () => {
     const storage = memPreferences();
-    expect(readEditorWrap(storage)).toBe(false);
-    writeEditorWrap(true, storage);
-    expect(readEditorWrap(storage)).toBe(true);
-    writeEditorWrap(false, storage);
-    expect(readEditorWrap(storage)).toBe(false);
-    expect(readEditorWrap(brokenPreferences)).toBe(false);
-    expect(() => writeEditorWrap(true, brokenPreferences)).not.toThrow();
+    expect(readWrapLines(storage)).toBe(true);
+    writeWrapLines(false, storage);
+    expect(readWrapLines(storage)).toBe(false);
+    writeWrapLines(true, storage);
+    expect(readWrapLines(storage)).toBe(true);
+    expect(readWrapLines(brokenPreferences)).toBe(true);
+    expect(() => writeWrapLines(false, brokenPreferences)).not.toThrow();
   });
 });
 
@@ -367,5 +385,90 @@ describe("tree visibility preference", () => {
     expect(readTreeVisible(storage)).toBe(true);
     expect(readTreeVisible(brokenPreferences)).toBe(true);
     expect(() => writeTreeVisible(false, brokenPreferences)).not.toThrow();
+  });
+});
+
+describe("splitFileName", () => {
+  it("keeps the extension whole so it can outlive a truncated stem", () => {
+    expect(splitFileName("workspace-browser.tsx")).toEqual({
+      stem: "workspace-browser",
+      ext: ".tsx",
+    });
+    expect(splitFileName("archive.tar.gz")).toEqual({ stem: "archive.tar", ext: ".gz" });
+  });
+
+  it("treats a leading dot as part of the name, and a name with no dot as all stem", () => {
+    // `.gitignore` is not an extension on an empty name: splitting it there would ellipsize to
+    // nothing and leave the row showing only a dot.
+    expect(splitFileName(".gitignore")).toEqual({ stem: ".gitignore", ext: "" });
+    expect(splitFileName("Makefile")).toEqual({ stem: "Makefile", ext: "" });
+    expect(splitFileName("src")).toEqual({ stem: "src", ext: "" });
+  });
+});
+
+describe("lineSuffix", () => {
+  it("writes a range the way an editor and a stack trace do", () => {
+    expect(lineSuffix(12, 18)).toBe(":12-18");
+    expect(lineSuffix(7, 7)).toBe(":7");
+  });
+});
+
+describe("composer references", () => {
+  it("marks a directory with a trailing slash and leaves a file bare", () => {
+    expect(pathReference("src/lib/tree.ts", "file")).toBe("@src/lib/tree.ts");
+    expect(pathReference("src/lib", "dir")).toBe("@src/lib/");
+  });
+});
+
+describe("what the panel hands the composer is a reference, not text for the draft", () => {
+  const block = selectionBlock({
+    path: "src/app.ts",
+    language: "ts",
+    selection: "const x = 1;",
+    fromLine: 3,
+    toLine: 3,
+  });
+
+  it("carries the text it will send and the file it came from", () => {
+    // The chip shows the path; the block is what the message carries. Keeping the two on one
+    // object is what lets the composer show one and send the other.
+    const reference: ComposerReference = {
+      kind: "quote",
+      path: "src/app.ts",
+      text: block,
+      fromLine: 3,
+      toLine: 3,
+    };
+    expect(reference.text).toContain("@src/app.ts:3");
+    expect(reference.text).toContain("const x = 1;");
+    expect(reference.path).toBe("src/app.ts");
+  });
+
+  it("still fences the quotation, so the composer could not have shown it as a line of the draft", () => {
+    // The reason this is a chip at all: what it carries is a multi-line block, and splicing a
+    // block into a half-typed sentence buries the sentence.
+    expect(block.split("\n").length).toBeGreaterThan(2);
+    expect(block).toMatch(/```/);
+  });
+
+  it("carries a file and a directory the same way, each naming its own kind", () => {
+    // All three kinds go through one channel, so the composer has one chip to draw and the
+    // panel has no second path that could put text in the draft again.
+    const file: ComposerReference = {
+      kind: "file",
+      path: "src/app.ts",
+      text: pathReference("src/app.ts", "file"),
+    };
+    const dir: ComposerReference = {
+      kind: "dir",
+      path: "src/lib",
+      text: pathReference("src/lib", "dir"),
+    };
+    expect(file.text).toBe("@src/app.ts");
+    expect(dir.text).toBe("@src/lib/");
+    expect([file.kind, dir.kind]).toEqual(["file", "dir"]);
+    // Neither carries a line range: a whole entry has no lines to name.
+    expect(file.fromLine).toBeUndefined();
+    expect(dir.fromLine).toBeUndefined();
   });
 });

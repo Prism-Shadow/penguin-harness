@@ -25,7 +25,7 @@ export interface CreateButtonsProps {
 export function CreateButtons({
   onAi,
   onManual,
-  size = "md",
+  size = "sm",
   aiLabel,
   manualLabel,
   disabled,

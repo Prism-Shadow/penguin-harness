@@ -109,10 +109,17 @@ describe("committed tray masters", () => {
   });
 
   it.each(["trayTemplate.png", "trayTemplate@2x.png"])("gives %s enough weight to read", (name) => {
-    // The first menu bar mark here was the brand illustration flattened and shrunk to 16px. It
-    // covered 19% of the canvas, nearly all of it antialiasing, and read as a smear beside the
-    // solid marks around it. 40% is the weight those neighbours carry; the mark drawn for this
-    // size (scripts/menu-bar-glyph.svg) sits just above it.
-    expect(inkCoverage(readPixels(path.join(pkgDir, "build", "tray", name)))).toBeGreaterThan(0.4);
+    // The first menu bar mark here was the whole brand illustration flattened and shrunk. The
+    // backdrop became a filled square, the belly — drawn as a hole letting that backdrop through
+    // — became nothing, and what was left covered 19% of the canvas, nearly all of it
+    // antialiasing: a wisp beside the solid marks around it. Reducing it to the penguin's
+    // outline, belly solid and arcs dropped, roughly doubles that.
+    //
+    // The ceiling is the shape, not the rendering. A 4:3 silhouette in a square canvas leaves a
+    // band above and below, and cropping past its bounding box takes off the beak and the tail,
+    // so a third of the canvas is about all this outline can cover. The floor sits below the
+    // measured 35% by enough not to trip on an antialiasing difference, and far enough above the
+    // old 19% to catch a return to the flattened illustration.
+    expect(inkCoverage(readPixels(path.join(pkgDir, "build", "tray", name)))).toBeGreaterThan(0.3);
   });
 });

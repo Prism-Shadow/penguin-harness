@@ -5,7 +5,7 @@
  * see lib/omni/memory-changes.ts for what qualifies and what is filtered).
  *
  * Clicking a row opens the Memory side panel directly on that memory's content; the
- * header's book button opens the panel on its list. A changed file that was deleted in a
+ * header's brain button opens the panel on its list. A changed file that was deleted in a
  * later turn is filtered out (deletedKeys) — the row disappears here just as it does from
  * the panel's list; the whole card hides when nothing survives.
  */
@@ -17,14 +17,10 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import type { MemoryChangeRow } from "../../lib/omni/memory-changes";
 import { memoryRowKey } from "../../lib/omni/memory-changes";
 import { PathLabel } from "./message-files-card";
-import { FILE_EDIT_ICON, FILE_WRITE_ICON } from "../../components/ui/icons";
+import { FILE_EDIT_ICON, FILE_WRITE_ICON, MEMORY_ICON } from "../../components/ui/icons";
 import { scopeGlyph } from "./memory-view";
 
 const MAX_VISIBLE = 3;
-
-/** Open book: the card's mark, same as the Memory panel's. */
-const MEMORY_ICON =
-  "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z";
 
 export function MemoryChangesCard({
   rows,

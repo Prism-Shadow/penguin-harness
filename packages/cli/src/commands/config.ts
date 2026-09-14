@@ -19,9 +19,10 @@
  * a vendor the user did not name. For `model add`, a new entry's
  * client_type and base_url are inherited from the built-in catalog row for that exact
  * (provider, model_id) pair when one pins them, and otherwise default according to the
- * group's semantics (not set for first-party vendors; openai-chat for custom /
- * self-hosted groups / gateways, with the gateway's endpoint base URL pre-filled). For `model default`
- * / `model vision`, core validation raises an error when the reference is not
+ * group's semantics (not set for first-party vendors; the protocol a group pins where it
+ * pins one, and otherwise openai-chat for custom / self-hosted groups / gateways, with the
+ * gateway's endpoint base URL pre-filled). For `model default` / `model vision`, core
+ * validation raises an error when the reference is not
  * found in models; `model remove` reports the same condition itself, since removal is
  * idempotent in core, and clears the default / vision pointers that named the removed entry.
  * `--root` specifies the data root directory (priority: option >
@@ -163,12 +164,12 @@ export function registerConfigCommand(program: Command, t: Messages): void {
       // endpoint does so because its own id would not route otherwise — MiniMax M3 and the
       // direct DeepSeek `deepseek-flash` — and an entry added by hand must inherit that pin
       // or it is written unroutable. Failing a catalog row, the group decides: a group that
-      // pins a protocol (vLLM) gets that pin, whatever the id; otherwise not set for
-      // first-party vendor groups (AgentHub auto-routes by upstream id, with env fallback
-      // keyed on id), and openai-chat for custom / user-defined / gateway groups, with the
-      // gateway's endpoint base URL pre-filled as well. (An explicit --client-type /
-      // --base-url is passed through and outranks both; core's addModel normalizes the
-      // deprecated bare "openai" alias.)
+      // pins a protocol (OpenRouter, vLLM) gets that pin, whatever the id; otherwise not set
+      // for first-party vendor groups (AgentHub auto-routes by upstream id, with env fallback
+      // keyed on id), and openai-chat for the remaining custom / user-defined / gateway
+      // groups, with the gateway's endpoint base URL pre-filled as well. (An explicit
+      // --client-type / --base-url is passed through and outranks both; core's addModel
+      // normalizes the deprecated bare "openai" alias.)
       const pInfo = providerInfo(provider);
       const catalogEntry = catalogEntryFor(provider, modelId);
       const openAiDefault =

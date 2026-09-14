@@ -11,10 +11,13 @@
  *   - how many breadcrumb segments fit on the toolbar's single row;
  *   - which files count as text — by extension, or by looking at their first bytes when
  *     the extension says nothing — and so can be previewed as text and edited in place;
- *   - the persisted preferences (tree visibility, tree width, editor soft wrap) and the
- *     unsaved-changes decision.
+ *   - the persisted preferences (tree visibility, tree width, soft wrap) and the
+ *     unsaved-changes decision;
+ *   - what the panel's "add to conversation" puts in the composer — the `@path` reference,
+ *     the fenced block a preview selection becomes, and where each of them may be spliced
+ *     into a draft that is already half typed.
  */
-import type { WorkspaceFileEntry } from "@prismshadow/penguin-server/api";
+import type { WorkspaceFileEntry, WorkspaceSearchHit } from "@prismshadow/penguin-server/api";
 import { joinWorkspacePath } from "./file-path";
 import type { FileTreeRow } from "./file-tree";
 
@@ -184,30 +187,32 @@ export function flattenTree(listings: Listings, expanded: ReadonlySet<string>): 
 }
 
 /**
- * The rows left by the search box, or all of them for an empty query. Matching is a
- * case-insensitive substring of the entry's own name; the panel hands in rows walked with
- * every LISTED directory open, so what can be searched is exactly what has been loaded.
+ * The rows a whole-Workspace search draws: one per hit the server returned, flat, each naming
+ * its full path rather than its base name.
  *
- * A kept row is one of three things: a match; an ancestor of a match, without which the
- * match would have nothing to hang under; or anything inside a directory that matched,
- * since a directory that matched is being shown as a directory, with its contents.
+ * Flat because there is no tree to place them in — a hit can sit in a directory the lazy tree
+ * has never listed, and the hits are already ordered shallowest first, so nesting them would
+ * mean loading every ancestor of every hit to draw scaffolding nobody asked for. The full path
+ * because the base name is the part the reader just typed; where the file *is* is the answer
+ * they are looking for.
+ *
+ * Every row is depth 0 and closed: a directory hit is somewhere to go, not something to unfold
+ * in a list that is not a tree.
  */
-export function filterTreeRows(rows: readonly TreeRow[], query: string): TreeRow[] {
-  const needle = query.trim().toLowerCase();
-  if (needle === "") return [...rows];
-  const matched = new Set<string>();
-  const keep = new Set<string>();
-  for (const row of rows) {
-    if (!row.name.toLowerCase().includes(needle)) continue;
-    matched.add(row.path);
-    keep.add(row.path);
-    for (const dir of ancestorDirs(row.path)) if (dir !== "") keep.add(dir);
-  }
-  if (matched.size === 0) return [];
-  return rows.filter(
-    (row) =>
-      keep.has(row.path) || ancestorDirs(row.path).some((dir) => dir !== "" && matched.has(dir)),
-  );
+export function searchRows(hits: readonly WorkspaceSearchHit[]): TreeRow[] {
+  return hits.map((hit, index) => ({
+    path: hit.path,
+    name: hit.path,
+    kind: hit.kind,
+    depth: 0,
+    posInSet: index + 1,
+    setSize: hits.length,
+    expanded: false,
+    loaded: hit.kind === "file",
+    empty: false,
+    sizeBytes: hit.sizeBytes,
+    mtime: hit.mtime,
+  }));
 }
 
 // -------------------------------------------------------------------------- breadcrumbs
@@ -372,7 +377,7 @@ export function looksLikeText(bytes: Uint8Array): boolean {
 // ------------------------------------------------------------------------------ editing
 
 /** Bytes a text preview reads before it is cut off; a longer file previews truncated and cannot be edited in place. */
-export const TEXT_PREVIEW_LIMIT = 256 * 1024;
+export const TEXT_PREVIEW_LIMIT = 1024 * 1024;
 
 /** Per-file ceiling of the content write endpoint, in whole MB — the server's `MAX_UPLOAD_BYTES`, mirrored so an oversize save or upload is refused before any bytes travel. */
 export const WORKSPACE_UPLOAD_LIMIT_MB = 14;
@@ -426,6 +431,7 @@ export interface TreePreferenceStorage {
 /** Global preferences, not per Session: whether the tree pane is shown, how wide it is, and whether the editor soft-wraps. */
 export const TREE_VISIBLE_KEY = "penguin.files.treeVisible";
 export const TREE_WIDTH_KEY = "penguin.files.treeWidth";
+/** Soft wrap, shared by the source view and the editor (see parseWrapLines on why one value, and on the key's name). */
 export const EDITOR_WRAP_KEY = "penguin.files.editorWrap";
 
 /** Tolerant parse: only an explicit "off" spelling hides the tree; nothing stored or anything unrecognized shows it (the default). */
@@ -480,25 +486,130 @@ export function writeTreeWidth(width: number, storage?: TreePreferenceStorage): 
   }
 }
 
-/** Tolerant parse of the editor's soft-wrap preference: OFF unless an explicit on spelling is stored — long lines scrolling sideways is the default a code editor has. */
-export function parseEditorWrap(raw: string | null): boolean {
-  if (raw === null) return false;
+/**
+ * Tolerant parse of the soft-wrap preference: ON unless an explicit off spelling is stored.
+ * Wrapping is what a reader wants of a file — a line that runs off the right edge has to be
+ * chased to be read — and the same file being edited should not reflow on the way in.
+ *
+ * One value for both the source view and the editor, deliberately. They are the same file
+ * seen two ways, and Edit swaps them in place: a separate preference would let pressing Edit
+ * reflow the whole file and carry the line you were aiming at off the screen. The stored key
+ * still reads `editorWrap` because the editor had the toggle first and a rename would silently
+ * discard everyone's answer.
+ */
+export function parseWrapLines(raw: string | null): boolean {
+  if (raw === null) return true;
   const value = raw.trim().toLowerCase();
-  return value === "1" || value === "true" || value === "on" || value === "yes";
+  return !(value === "0" || value === "false" || value === "off" || value === "no");
 }
 
-export function readEditorWrap(storage?: TreePreferenceStorage): boolean {
+export function readWrapLines(storage?: TreePreferenceStorage): boolean {
   try {
-    return parseEditorWrap((storage ?? localStorage).getItem(EDITOR_WRAP_KEY));
+    return parseWrapLines((storage ?? localStorage).getItem(EDITOR_WRAP_KEY));
   } catch {
-    return false;
+    return true;
   }
 }
 
-export function writeEditorWrap(wrap: boolean, storage?: TreePreferenceStorage): void {
+export function writeWrapLines(wrap: boolean, storage?: TreePreferenceStorage): void {
   try {
     (storage ?? localStorage).setItem(EDITOR_WRAP_KEY, wrap ? "1" : "0");
   } catch {
     /* best-effort persistence (quota limits / private browsing) */
   }
+}
+
+// -------------------------------------------------------------- composer references
+
+/**
+ * Something the Files panel hands the composer: what it points at, and the text the message
+ * carries once it is sent.
+ *
+ * The text is deliberately kept out of the textarea. What the panel contributes is a whole
+ * thing — a file, a directory, a quoted range — and the draft is where the person is writing;
+ * splicing the one into the other buries what they were saying under what they were pointing
+ * at. The composer shows a chip naming it instead, the same shape `/agent` and `/skill` already
+ * stage their picks in.
+ */
+export interface ComposerReference {
+  /** Which glyph the chip wears, and what its label means. */
+  kind: "file" | "dir" | "quote";
+  /** Workspace-relative path: the chip's label comes from its last segment, its tooltip from the whole. */
+  path: string;
+  /** What goes into the message. */
+  text: string;
+  /** 1-based and inclusive, on a `quote` whose place in the file could be resolved. */
+  fromLine?: number;
+  toLine?: number;
+}
+
+/**
+ * A file name split for display: the stem, and the extension with its dot still on it.
+ *
+ * Only a real extension counts. A leading dot is part of the name — `.gitignore` is all stem —
+ * and a name with no dot has no extension at all. Splitting it lets the stem ellipsize while the
+ * extension stays: the extension is the shortest part and says what kind of thing this is, so it
+ * is the last thing worth losing when the row runs out of room.
+ */
+export function splitFileName(name: string): { stem: string; ext: string } {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? { stem: name.slice(0, dot), ext: name.slice(dot) } : { stem: name, ext: "" };
+}
+
+/**
+ * A line range as `:12` or `:12-18` — the `file:line` form every editor and stack trace uses, which
+ * is why it is written the same way in both languages and read the same way by the model.
+ */
+export function lineSuffix(fromLine: number, toLine: number): string {
+  return fromLine === toLine ? `:${fromLine}` : `:${fromLine}-${toLine}`;
+}
+
+/**
+ * The `@`-prefixed reference a Workspace entry inserts into the composer. The trailing
+ * slash on a directory is the only thing in the string that says it is one; nothing parses
+ * these — the `@` is there for the reader, not for a mention mechanism.
+ */
+export function pathReference(path: string, kind: "dir" | "file"): string {
+  return kind === "dir" ? `@${path}/` : `@${path}`;
+}
+
+/** The longest run of backticks anywhere in `text`. */
+function longestBacktickRun(text: string): number {
+  let longest = 0;
+  let run = 0;
+  for (const ch of text) {
+    if (ch !== "`") {
+      run = 0;
+      continue;
+    }
+    run += 1;
+    if (run > longest) longest = run;
+  }
+  return longest;
+}
+
+/**
+ * The fenced block a preview selection inserts: a `@path` header carrying the line range,
+ * then the selection verbatim. The fence is opened one backtick longer than the longest run
+ * the selection itself contains, so a selection that carries fences still nests correctly.
+ * The selected text is neither trimmed nor re-indented — the block is what was on screen.
+ */
+export function selectionBlock({
+  path,
+  language,
+  selection,
+  fromLine,
+  toLine,
+}: {
+  path: string;
+  language: string;
+  selection: string;
+  /** 1-based and inclusive. Both are omitted where the selection's place in the file cannot be resolved — a guessed range would be a lie, so the header then carries the path alone. */
+  fromLine?: number;
+  toLine?: number;
+}): string {
+  const range = fromLine === undefined || toLine === undefined ? "" : lineSuffix(fromLine, toLine);
+  const fence = "`".repeat(Math.max(3, longestBacktickRun(selection) + 1));
+  const body = selection.endsWith("\n") ? selection : `${selection}\n`;
+  return `@${path}${range}\n${fence}${language}\n${body}${fence}`;
 }

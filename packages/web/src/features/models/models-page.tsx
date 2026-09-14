@@ -69,6 +69,7 @@ import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { EXTERNAL_LINK_ICON } from "../../components/ui/icons";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -124,7 +125,6 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { noticeCounts } from "../../lib/bulk-update";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { UpdateDot } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
@@ -179,8 +179,6 @@ const TRASH_ICON =
   "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
 const KEY_ICON =
   "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
-const EXTERNAL_LINK_ICON =
-  "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3";
 /** Arrow entering a door: authorize with the provider and come back with a key. */
 const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
 
@@ -236,8 +234,8 @@ export function decimalOnly(v: string): string {
  * Custom keeps a generic protocol client type (protocol detection / the in-field picker
  * manage those) and otherwise switches to the generic OpenAI Chat Completions client — an
  * unroutable or vendor-pinned type must not leak into a custom group. Every other group
- * keeps the current value: a first-party group auto-routes by id, and a gateway's rows
- * carry the pin their preset already gave them.
+ * keeps the current value: a first-party group auto-routes by id, and the gateways that
+ * pin nothing at group level leave their rows on the pin their preset already gave them.
  */
 export function clientTypeAfterProviderChange(provider: string, current: string): string {
   const pinned = providerClientType(provider);
@@ -1041,32 +1039,23 @@ export function ModelsPage() {
                   placeholder={S.models.searchPlaceholder}
                 />
               </div>
-              {/* The dot stays on the control that ACTS, not on the notice below: it marks the
-                  button the trail ends at, and a mark that moved off it would point at nothing.
-                  Owner-only, like the button — the gate never raises this for a member. The dot
-                  straddles the button's top-right corner (update-dot.tsx's rule for a button)
-                  and is decorative: the sr-only sentence folds what is waiting into the button's
-                  accessible name, in the wording the trail carried down. */}
-              {isOwner && (
+              {/* The action appears only while a sync is actually waiting, and the accent says so
+                  — a preset sync with nothing to sync is a no-op, and a permanent button spent the
+                  header's width on one. That is also why the dot is gone: it marked this button as
+                  the end of the models trail, and on a button that exists only when the trail does,
+                  it would be lit every time it was seen. The sr-only sentence stays, folding what is
+                  waiting into the accessible name in the wording the trail carried down.
+                  Owner-only — the gate never raises this for a member. */}
+              {isOwner && todo && (
                 <Button
                   size="sm"
-                  className="relative"
+                  variant="primary"
                   onClick={() => void syncPresets()}
                   disabled={busy || rows === null}
-                  title={
-                    todo ? `${S.models.syncCatalogHint} · ${syncNote}` : S.models.syncCatalogHint
-                  }
+                  title={`${S.models.syncCatalogHint} · ${syncNote}`}
                 >
                   {S.models.syncCatalog}
-                  {todo && (
-                    <>
-                      <UpdateDot
-                        size="inline"
-                        position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
-                      />
-                      <span className="sr-only"> · {syncNote}</span>
-                    </>
-                  )}
+                  <span className="sr-only"> · {syncNote}</span>
                 </Button>
               )}
             </div>
@@ -2239,13 +2228,14 @@ function ModelDialog({
         output: usdToInput(row.output, currency),
       };
     }
-    // New model: protocol follows group semantics — a group that pins one (vLLM) hands it
-    // to the new entry outright; a first-party vendor group doesn't persist client_type
-    // (AgentHub auto-routes by upstream id, with env fallback resolved live from the id);
-    // custom / user-defined groups / gateways use a fixed openai-chat protocol (env fallback
-    // OPENAI_*), and gateways additionally pre-fill their endpoint base URL. provider keeps
-    // the entry point's original value (a user-defined group must not collapse into custom),
-    // stored as a separate field from model_id, with no concatenation on save.
+    // New model: protocol follows group semantics — a group that pins one (OpenRouter,
+    // vLLM) hands it to the new entry outright; a first-party vendor group doesn't persist
+    // client_type (AgentHub auto-routes by upstream id, with env fallback resolved live from
+    // the id); custom / user-defined groups and the remaining gateways use a fixed
+    // openai-chat protocol (env fallback OPENAI_*), and gateways additionally pre-fill their
+    // endpoint base URL. provider keeps the entry point's original value (a user-defined
+    // group must not collapse into custom), stored as a separate field from model_id, with
+    // no concatenation on save.
     const info = providerInfo(addProvider);
     const pinnedClientType = providerClientType(addProvider);
     const vendorAdd =
@@ -2266,7 +2256,8 @@ function ModelDialog({
       fastMode: false,
       // No protocol is preselected for a custom / user-defined group: it is detected from
       // the endpoint (on demand, or on save while still unset) or picked by hand. Vendor
-      // groups auto-route by model id, and gateways keep their preset Chat Completions pin.
+      // groups auto-route by model id; a gateway takes the protocol its group pins, or the
+      // preset Chat Completions pin where the group pins nothing.
       clientType:
         pinnedClientType ?? (vendorAdd || isCustomLikeGroup(addProvider) ? "" : "openai-chat"),
       cacheRead: "",
@@ -2684,8 +2675,9 @@ function ModelDialog({
     form.modelId.trim(),
     envHintClientType(form.provider, form.clientType),
   )?.envKey;
-  // The protocol this group pins on every entry, user-added ones included (vLLM); undefined
-  // for every group that leaves the protocol to auto-routing, a gateway preset, or detection.
+  // The protocol this group pins on every entry, user-added ones included (OpenRouter,
+  // vLLM); undefined for every group that leaves the protocol to auto-routing, a gateway
+  // preset, or detection.
   const pinnedGroupClientType = providerClientType(form.provider);
   // First-party provider group (built-in, non-gateway, non-custom, no group-level pin):
   // adding goes through auto-routing — show a hint when the id can't be routed
@@ -2946,9 +2938,10 @@ function ModelDialog({
         {/* Adding a model: protocol note first (preset direct-vendor group = only the
             vendor's official protocol, named via the group label — the in-field suffix
             on the base URL below says which path; a group that pins a protocol = that
-            protocol, named outright, plus its own endpoint; custom / self-defined group /
-            gateway = fixed OpenAI protocol), then the identity fields ("get model id /
-            API key" links next to the respective inputs; fill in the id to test
+            protocol, named outright, with the endpoint the user's own for a self-hosted
+            group and already filled in for a gateway; custom / self-defined group / an
+            unpinned gateway = fixed OpenAI protocol), then the identity fields ("get model
+            id / API key" links next to the respective inputs; fill in the id to test
             connectivity — verify before saving). */}
         {isNew && (
           <>
@@ -2956,7 +2949,9 @@ function ModelDialog({
               {vendorGroup && dialogProvider
                 ? S.models.vendorProtocolHint(dialogProvider.label)
                 : pinnedGroupClientType !== undefined
-                  ? S.models.addProtocolHintPinned(pinnedGroupClientType)
+                  ? dialogProvider?.gatewayBaseUrl !== undefined
+                    ? S.models.addProtocolHintPinnedGateway(pinnedGroupClientType)
+                    : S.models.addProtocolHintPinned(pinnedGroupClientType)
                   : customLikeGroup
                     ? S.models.addProtocolHintDetect
                     : S.models.addProtocolHint}

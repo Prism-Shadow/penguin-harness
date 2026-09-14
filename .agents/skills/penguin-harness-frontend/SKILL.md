@@ -162,18 +162,28 @@ Every control defaults to `sm` so a forgotten prop lands where its neighbours al
 surfaces are outside the family entirely: the chat composer is `text-base` because it holds prose,
 the file editor `font-mono text-xs` because it holds code.
 
-**A dialog's fields and its buttons share the small rung.** `Button` defaults to `md`
-(`text-sm px-3 py-1.5`), which is the page rung — a header's "New model", an empty state's action —
-so a `Modal` footer passes `size="sm"` on every button, as `ConfirmModal` always did. `Modal` owns
-the footer's wrapper but not the buttons inside it, so this cannot be set in one place; a Button in
-a dialog *body* takes `sm` too, next to the fields it belongs with.
+**A button takes the rung of whatever it stands beside.** `Button` defaults to `md`
+(`text-sm px-3 py-1.5`), the page rung, and that is for an action standing on its own: an empty
+state's, the login card's submit, a list's "add a custom model". Wherever a button sits next to form
+controls it takes theirs — `sm`:
+
+- a `Modal` footer, on every button, as `ConfirmModal` always did. `Modal` owns the footer's wrapper
+  but not the buttons inside it, so this cannot be set in one place.
+- a dialog *body*, next to the fields it belongs with. The settings dialog's pages are separate
+  modules and nothing in one says it renders inside a Modal, which is how four of them kept the `md`
+  default and stood a rung above their own fields.
+- a page header's toolbar that also holds a search box. The Models and Agents headers pair an
+  `Input size="sm"` with a `size="sm"` action in the same `min-w-0 flex-1 sm:w-56 sm:flex-none`
+  shape; a `md` button beside a `sm` box reads as a mistake rather than as emphasis.
 
 `test/control-size.test.ts` parses the JSX and fails, naming file and line, on a font-size class in
 a `className` passed to `Input` / `Textarea` / `Select` / `OptionMenu` / `PasswordInput` /
-`FormPicker`, on a `Modal` footer Button that does not ask for `sm`, and on a font size spelled in
-a control module outside the two records. Its reach is what a parser sees without types: a footer
-handed over as a component or built in a variable, and a Button in a dialog body, follow the same
-rule but are on you.
+`FormPicker`, on a `Modal` footer Button that does not ask for `sm`, on a Button in one of the
+declared dialog-body modules (`DIALOG_BODY_MODULES`, the settings dialog's pages) that does not ask
+for `sm`, and on a font size spelled in a control module outside the two records. Its reach is what
+a parser sees without types: a footer handed over as a component or built in a variable, and a
+dialog body outside those declared modules, follow the same rule but are on you. Adding a module to
+`DIALOG_BODY_MODULES` is how a new settings page joins the check.
 
 ## Every user-facing string is bilingual
 

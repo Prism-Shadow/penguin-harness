@@ -19,7 +19,7 @@ import { FormPicker } from "../../components/ui/form-picker";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ChevronDown } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { noAutofill } from "../../components/ui/input";
+import { menuSearchClass, noAutofill } from "../../components/ui/input";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import {
   hasConfiguredKey,
@@ -123,7 +123,7 @@ export function PickerList<T>({
           placeholder={searchPlaceholder}
           aria-label={searchPlaceholder}
           {...noAutofill}
-          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
+          className={`${menuSearchClass} px-1 py-0.5`}
         />
       </div>
       <div className="max-h-56 overflow-y-auto">

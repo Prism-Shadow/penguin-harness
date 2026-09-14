@@ -60,6 +60,7 @@ import {
   positiveIntParam,
   readJson,
   requireEnum,
+  requireString,
   requireValidId,
 } from "../validate.js";
 import type { AppDeps } from "../../app.js";
@@ -1375,6 +1376,45 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // read no version and so writes unconditionally.
     await deps.workspaceFiles.write(row.workspace, rel, data, optionalString(body, "ifVersion"));
     return c.body(null, 204);
+  });
+
+  /**
+   * Move or rename one Workspace file (the Files panel's context menu). Files only — see
+   * FilesMoveRequest for why a directory has no precondition that could protect it — and an
+   * occupied destination is refused with 409 `target_exists` rather than overwritten.
+   */
+  app.post("/:sessionId/files/move", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    await deps.workspaceFiles.move(
+      row.workspace,
+      requireString(body, "from"),
+      requireString(body, "to"),
+      optionalString(body, "ifVersion"),
+    );
+    return c.body(null, 204);
+  });
+
+  /**
+   * Delete one Workspace file. `ifVersion` is the same write precondition the PUT carries,
+   * here as a query parameter: absent, the delete is unconditional; present and stale, it is
+   * 409 `file_changed` with the file left alone.
+   */
+  app.delete("/:sessionId/files/content", async (c) => {
+    const row = resolveSession(c);
+    const rel = c.req.query("path") ?? "";
+    await deps.workspaceFiles.remove(row.workspace, rel, c.req.query("ifVersion"));
+    return c.body(null, 204);
+  });
+
+  /**
+   * Search the whole Workspace by entry name. Breadth-first from the root, so a capped result
+   * is the shallowest matches rather than an arbitrary prefix of the walk; `truncated` says a
+   * cap was reached.
+   */
+  app.get("/:sessionId/files/search", async (c) => {
+    const row = resolveSession(c);
+    return c.json(await deps.workspaceFiles.search(row.workspace, c.req.query("q") ?? ""));
   });
 
   /**

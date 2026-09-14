@@ -187,7 +187,12 @@ export function ProxySection() {
     <>
       <SectionShell
         actions={
-          <Button variant="primary" disabled={!hydrated || busy} onClick={() => void save()}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!hydrated || busy}
+            onClick={() => void save()}
+          >
             {S.common.save}
           </Button>
         }

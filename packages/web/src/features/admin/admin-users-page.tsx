@@ -49,7 +49,7 @@ export function AdminUsersSection() {
   return (
     <div>
       <div className="mb-4 flex justify-end">
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
           {S.admin.createUser}
         </Button>
       </div>

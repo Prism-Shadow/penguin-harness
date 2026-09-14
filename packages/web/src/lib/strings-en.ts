@@ -104,6 +104,8 @@ export const en: Strings = {
       `This ends the shell "${name}" — it cannot be restored.`,
     launcher: "Shortcuts",
     launcherCaption: "Shortcuts",
+    launcherOpen: "Open",
+    launcherClose: "Close",
     launcherPending: "a subagent awaits approval",
     launcherPanels: "Shortcuts",
     launcherHide: "Hide launcher",
@@ -211,6 +213,14 @@ export const en: Strings = {
     toolAliases: "Tool short names",
     toolAliasesInfo:
       'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
+    notifications: "Task completion notifications",
+    notificationsInfo:
+      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
+    notificationsDenied:
+      "The system has denied notifications for this app. Allow them in your system notification settings, then turn this on again.",
+    notificationsDismissed:
+      "The permission prompt was closed without an answer, so notifications stay off. Turn this on again to ask once more.",
+    notificationsUnsupported: "This browser does not support system notifications.",
     trayIcon: "Tray icon",
     trayIconInfo:
       "The desktop app keeps an icon in the system tray — the Windows notification area, the macOS menu bar, the Linux tray — for as long as it runs: click it to come back to the window, right-click it to start a session or quit. On by default; turning it off removes the icon at once, no restart, and closing the window then no longer hides it, so the app stays in the Dock on macOS and quits on Windows and Linux.",
@@ -363,7 +373,7 @@ export const en: Strings = {
     listSeparator: ", ",
   },
 
-  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
@@ -551,6 +561,8 @@ export const en: Strings = {
     takesEffectSuffix:
       " — new conversations pick it up right away, running ones after their next compaction",
     listTitle: "Agents",
+    searchPlaceholder: "Search agents: id / name / description",
+    searchEmpty: "No agent matches that.",
     create: "Create agent",
     createTitle: "Create agent",
     id: "Agent id",
@@ -811,6 +823,8 @@ export const en: Strings = {
       `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
     addProtocolHintPinned: (protocol: string): string =>
       `Models in this group always use the ${protocol} protocol; set the base URL to your own server`,
+    addProtocolHintPinnedGateway: (protocol: string): string =>
+      `Models in this group always use the ${protocol} protocol; the base URL is preset to the gateway's endpoint`,
     autoRouteNone:
       "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",
@@ -1950,7 +1964,7 @@ Scenarios:
     removeImage: "Remove image",
     openAgents: "Agents panel",
     /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    workspacePanel: "Workspace",
+    workspacePanel: "Files",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -2513,6 +2527,11 @@ Scenarios:
     title: "Files",
     upload: "Upload",
     download: "Download",
+    /** Row / preview context menu: the two entries both kinds carry, then the kind-specific one. */
+    copyPath: "Copy relative path",
+    addToChat: "Add to conversation",
+    addSelectionToChat: "Add selection to conversation",
+    uploadHere: "Upload here",
     openInNewTab: "Open in new tab",
     previewNotIsolatedHint:
       "This address has no separate preview origin, so the page opens sandboxed: localStorage, cookies and third-party embeds will not work. Reach the app over 127.0.0.1 or localhost, or set PENGUIN_PREVIEW_ORIGIN.",
@@ -2535,7 +2554,7 @@ Scenarios:
       `The target directory already has ${n} file(s) with these names — uploading will overwrite:`,
     loadFailed: "Failed to load",
     previewTruncated: "File too large; preview truncated, download for the full file",
-    htmlRendered: "Rendered",
+    htmlRendered: "Preview",
     htmlSource: "Source",
     backToList: "Back to list",
     /** The tree pane: its accessible name and the toolbar toggle's two states. */
@@ -2547,14 +2566,18 @@ Scenarios:
     /** The search box above the tree; it reaches only as far as the lazy tree has been loaded. */
     searchPlaceholder: "Search files",
     searchClear: "Clear search",
-    searchNoMatch: "Nothing loaded matches",
+    searchNoMatch: "No matches in the Workspace",
+    /** The walk is server-side and covers the whole Workspace, so it is not instant on a large one. */
+    searching: "Searching…",
+    /** The server stopped at its cap: what is listed is the shallowest matches, not all of them. */
+    searchTruncated: (n: number): string => `Too many matches — showing the first ${n}`,
     selectFile: "Select a file to preview",
     /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
     dropToUpload: (dir: string): string => `Drop to upload into ${dir}`,
     /** In-place text editing. */
     editorLabel: (name: string): string => `Editing ${name}`,
-    /** Editor soft-wrap toggle: off means long lines scroll sideways. */
-    editorWrap: "Wrap",
+    /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
+    wrapLines: "Wrap",
     unsaved: "Unsaved changes",
     saveTitle: "Save (Ctrl+S / ⌘S)",
     saveConfirmTitle: "Save file",
@@ -2572,6 +2595,26 @@ Scenarios:
     changedOnDisk: "Changed on disk",
     changedOnDiskHint:
       "This file has been rewritten since you opened it — saving replaces that version with yours.",
+    /** Rename and move are one action: both write the file to a new Workspace-relative path. */
+    /** The composer chip's remove button, for whatever the Files panel staged there. */
+    removeReference: "Remove reference",
+    renameTitle: "Rename or move",
+    renameLabel: "New path",
+    renameHint:
+      "Relative to the Workspace root; a directory in the path that does not exist is created",
+    renameConfirm: "Move",
+    renameTargetExists: (path: string): string => `${path} already exists, so nothing was changed.`,
+    renamed: (name: string): string => `Moved to ${name}`,
+    deleteTitle: "Delete file",
+    deleteBody: (name: string): string => `Delete ${name}? It does not go to a trash folder.`,
+    deleted: (name: string): string => `Deleted ${name}`,
+    /** Both actions read the file's current version first; until it lands there is nothing to refuse an overwrite with. */
+    actionVersionReading: "Reading this file's current version…",
+    actionVersionFailed:
+      "This file's current version could not be read, so the action is not offered.",
+    /** The version precondition refused it: the Agent wrote the file while the question was on screen. */
+    changedBeforeAction: (name: string): string =>
+      `${name} was rewritten while you were deciding, most likely by the Agent during its turn, so nothing was changed. Refresh and try again.`,
     conflictTitle: "File changed on disk",
     conflictBody: (name: string): string =>
       `${name} was rewritten after you opened it, most likely by the Agent during its turn, so nothing was saved. Overwrite it with your version, or keep editing and copy what you need out first — either way your text is kept.`,
@@ -2661,7 +2704,8 @@ Scenarios:
     globalSummary: "Overall",
     tasksLabel: "Turns",
     messages: "Messages",
-    truncatedNote: (shown: number, total: number) => `Showing first ${shown} / ${total} messages`,
+    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
+    loadingNote: (shown: number, total: number) => `Loaded ${shown} / ${total} messages…`,
     zoom: "Zoom",
     zoomReset: "Double-click to reset zoom",
     zoomOut: "Zoom out",

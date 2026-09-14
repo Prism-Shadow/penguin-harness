@@ -67,6 +67,10 @@ function katexWoff2Only(): Plugin {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), katexWoff2Only()],
+  // The highlighting worker loads its themes and each grammar with a dynamic import, so its
+  // bundle has to be code-split — and Vite's default worker format, IIFE, cannot be. Without this
+  // the build fails outright rather than shipping something subtly wrong, which is the good case.
+  worker: { format: "es" },
   server: {
     // Fixed PenguinHarness dev port (stands alone — vite configs cannot import core TS,
     // so the numbers are literals here; the allocation table lives in core's internal/ports.ts).

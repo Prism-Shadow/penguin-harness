@@ -114,10 +114,14 @@ export const zh = {
     /**
      * The floating launcher on the chat body's right edge while the right dock is hidden.
      * `launcherCaption` is printed under the ball at rest — the same words as the ball's
-     * accessible name — and gives way to the pointed-at entry's name while the fan is open.
+     * accessible name — gives way to `launcherOpen` while the ball itself is pointed at, and
+     * to the pointed-at entry's name while the fan is open.
      */
     launcher: "快捷方式",
     launcherCaption: "快捷方式",
+    /** Replaces `launcherCaption` while the pointer or focus is on the ball and no entry is: what the next click does, so the pair swaps with the fan's state. */
+    launcherOpen: "打开",
+    launcherClose: "关闭",
     /** Appended to the launcher's accessible name while its amber dot shows. */
     launcherPending: "子智能体有待审批",
     /** The fan of entries the launcher opens (its accessible group name). */
@@ -224,6 +228,13 @@ export const zh = {
     toolAliases: "工具短名",
     toolAliasesInfo:
       "对话里的工具卡片用短名称呼内置工具，read_file 显示为「读取」。其余工具（含 MCP 工具）与轨迹观测始终是工具原本的名字；悬停短名也能看到它。",
+    notifications: "任务完成通知",
+    notificationsInfo:
+      "Task 在窗口失焦或隐藏时结束，弹一条系统通知，点击即回到该 Session。打开这个开关会当场向系统申请通知权限——系统只问这一次，被拒之后不再询问，只能到系统的通知设置里改回来。",
+    notificationsDenied: "系统已拒绝本应用的通知权限。请先在系统的通知设置中允许，再打开这个开关。",
+    notificationsDismissed:
+      "权限提示被关闭、没有给出答复，通知因此保持关闭。再次打开这个开关可以重新申请。",
+    notificationsUnsupported: "当前浏览器不支持系统通知。",
     /** Desktop shell only: the system-tray icon. Absent in a browser. */
     trayIcon: "托盘图标",
     trayIconInfo:
@@ -369,7 +380,7 @@ export const zh = {
     listSeparator: "、",
   },
 
-  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
     taskCompleteTitle: "任务完成",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
@@ -552,6 +563,8 @@ export const zh = {
     /** Appended to an action's own toast (skill install / uninstall) — same timing statement. */
     takesEffectSuffix: "；新对话立即生效，进行中的对话在下一次压缩后生效",
     listTitle: "Agents",
+    searchPlaceholder: "搜索 Agent：id / 名称 / 描述",
+    searchEmpty: "没有匹配的 Agent",
     create: "创建 Agent",
     createTitle: "创建 Agent",
     id: "Agent id",
@@ -788,6 +801,9 @@ export const zh = {
     /** Add-dialog note for a group that pins one protocol on every entry (fed the client type): the protocol is not a choice here, and the endpoint is the user's own. */
     addProtocolHintPinned: (protocol: string): string =>
       `本分组的模型固定使用 ${protocol} 协议，base URL 填你自己的服务地址`,
+    /** The same note for a gateway group that pins a protocol: the endpoint is the gateway's, already filled in. */
+    addProtocolHintPinnedGateway: (protocol: string): string =>
+      `本分组的模型固定使用 ${protocol} 协议，base URL 已预填网关端点`,
     autoRouteNone: "该模型 ID 无法按当前厂商协议识别；若使用 OpenAI 兼容接口，可转为自定义模型。",
     useCustomGroup: "转为自定义模型",
     addGroup: "新增分组",
@@ -1920,7 +1936,7 @@ Benchmark：
     statsLabel: "统计信息",
     removeImage: "移除图片",
     openAgents: "智能体面板",
-    workspacePanel: "工作区",
+    workspacePanel: "文件浏览",
     /** File summary card at the end of a message (Codex-style): title, inline preview action, and collapsed row. */
     filesInMessage: (n: number) => `${n} 个文件`,
     imagesInMessage: (n: number) => `${n} 张图片`,
@@ -2472,6 +2488,11 @@ Benchmark：
     title: "文件",
     upload: "上传",
     download: "下载",
+    /** Row / preview context menu: the two entries both kinds carry, then the kind-specific one. */
+    copyPath: "复制相对路径",
+    addToChat: "添加到对话",
+    addSelectionToChat: "将选中内容添加到对话",
+    uploadHere: "上传到此文件夹",
     openInNewTab: "新页面打开",
     previewNotIsolatedHint:
       "当前访问地址无法提供独立预览源，页面将以沙箱模式打开：localStorage、Cookie 与第三方 embed 不可用。经 127.0.0.1 或 localhost 访问，或配置 PENGUIN_PREVIEW_ORIGIN 即可解除。",
@@ -2493,7 +2514,7 @@ Benchmark：
     overwriteConfirm: (n: number): string => `目标目录已存在以下 ${n} 个同名文件，上传将覆盖：`,
     loadFailed: "加载失败",
     previewTruncated: "内容过大，预览已截断，请下载查看完整文件",
-    htmlRendered: "渲染视图",
+    htmlRendered: "预览",
     htmlSource: "源码",
     backToList: "返回列表",
     /** The tree pane: its accessible name and the toolbar toggle's two states. */
@@ -2505,14 +2526,18 @@ Benchmark：
     /** The search box above the tree; it reaches only as far as the lazy tree has been loaded. */
     searchPlaceholder: "搜索文件",
     searchClear: "清除搜索",
-    searchNoMatch: "已加载的目录中没有匹配项",
+    searchNoMatch: "Workspace 中没有匹配项",
+    /** The walk is server-side and covers the whole Workspace, so it is not instant on a large one. */
+    searching: "搜索中…",
+    /** The server stopped at its cap: what is listed is the shallowest matches, not all of them. */
+    searchTruncated: (n: number): string => `匹配项过多，仅显示最靠前的 ${n} 条`,
     selectFile: "选择一个文件以预览",
     /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
     dropToUpload: (dir: string): string => `松开即上传到 ${dir}`,
     /** In-place text editing. */
     editorLabel: (name: string): string => `编辑 ${name}`,
-    /** Editor soft-wrap toggle: off means long lines scroll sideways. */
-    editorWrap: "自动换行",
+    /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
+    wrapLines: "自动换行",
     unsaved: "有未保存的修改",
     saveTitle: "保存（Ctrl+S / ⌘S）",
     saveConfirmTitle: "保存文件",
@@ -2526,6 +2551,24 @@ Benchmark：
     /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
     changedOnDisk: "磁盘上已变更",
     changedOnDiskHint: "该文件在你打开之后已被重写，保存会用你的版本覆盖它。",
+    /** Rename and move are one action: both write the file to a new Workspace-relative path. */
+    /** The composer chip's remove button, for whatever the Files panel staged there. */
+    removeReference: "移除引用",
+    renameTitle: "重命名 / 移动",
+    renameLabel: "新的路径",
+    renameHint: "相对 Workspace 根目录；路径中不存在的目录会自动创建",
+    renameConfirm: "移动",
+    renameTargetExists: (path: string): string => `${path} 已存在，未做改动。`,
+    renamed: (name: string): string => `已移动到 ${name}`,
+    deleteTitle: "删除文件",
+    deleteBody: (name: string): string => `删除 ${name}？该文件不会进入回收站。`,
+    deleted: (name: string): string => `已删除 ${name}`,
+    /** Both actions read the file's current version first; until it lands there is nothing to refuse an overwrite with. */
+    actionVersionReading: "正在读取该文件的当前版本…",
+    actionVersionFailed: "读不到该文件的当前版本，因此不执行此操作。",
+    /** The version precondition refused it: the Agent wrote the file while the question was on screen. */
+    changedBeforeAction: (name: string): string =>
+      `${name} 在你决定期间被改写（多半是 Agent 在本轮写入的），因此未做任何改动。刷新后可重试。`,
     conflictTitle: "文件在磁盘上已变更",
     conflictBody: (name: string): string =>
       `${name} 在你打开之后被重写（多半是 Agent 本轮写的），本次没有保存任何内容。可以用你的版本覆盖它，也可以继续编辑、先把需要的内容取出来——两种选择都会保留你的文本。`,
@@ -2615,7 +2658,8 @@ Benchmark：
     globalSummary: "全局统计",
     tasksLabel: "轮次",
     messages: "消息",
-    truncatedNote: (shown: number, total: number) => `仅展示前 ${shown} / ${total} 条消息`,
+    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
+    loadingNote: (shown: number, total: number) => `已载入 ${shown} / ${total} 条消息…`,
     zoom: "缩放",
     zoomReset: "双击复位缩放",
     zoomOut: "缩小",
