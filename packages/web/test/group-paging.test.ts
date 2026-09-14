@@ -7,19 +7,20 @@
  * (groups come and go under a stored page), search-free slicing never drops or repeats a
  * group across pages, the hidden count is computed from ONE group's own numbers — with the
  * loaded rows overriding a server total that drifted above reality, so the reveal row can
- * never promise conversations that are not there — and a folder reveals one page per click
- * whatever a fetch returned, offering "show less" once its share is on screen.
+ * never promise conversations that are not there — and a list (a group's active rows, or
+ * one of its folders) reveals one page per click whatever a fetch returned, folding back
+ * to exactly that first page and never to nothing.
  */
 import { describe, expect, it } from "vitest";
 import {
   SIDEBAR_GROUP_PAGE_SIZE,
   SIDEBAR_PAGE_SIZE,
   clampGroupPage,
-  folderRevealPlan,
   groupPageCount,
   groupPageOf,
   groupPageSlice,
   hiddenRowCount,
+  revealPlan,
 } from "../src/lib/session-grouping";
 
 const seq = (n: number) => Array.from({ length: n }, (_, i) => i);
@@ -103,11 +104,11 @@ describe("hiddenRowCount", () => {
   });
 });
 
-describe("folderRevealPlan", () => {
+describe("revealPlan", () => {
   it("shows one page of a folder whose share is barely fetched, with no way back yet", () => {
     // The reported bug: a fetch that returned 13 rows revealed all 13 at once and then had
     // nothing to fold them back with.
-    expect(folderRevealPlan({ cap: 10, loaded: 10, total: 28, fullyLoaded: false })).toEqual({
+    expect(revealPlan({ cap: 10, loaded: 10, total: 28, fullyLoaded: false })).toEqual({
       shown: 10,
       hidden: 18,
       canCollapse: false,
@@ -115,7 +116,7 @@ describe("folderRevealPlan", () => {
   });
 
   it("reveals a page at a time, keeping the rows a fetch over-returned under the cap", () => {
-    expect(folderRevealPlan({ cap: 20, loaded: 23, total: 28, fullyLoaded: false })).toEqual({
+    expect(revealPlan({ cap: 20, loaded: 23, total: 28, fullyLoaded: false })).toEqual({
       shown: 20,
       hidden: 8,
       canCollapse: true,
@@ -123,7 +124,7 @@ describe("folderRevealPlan", () => {
   });
 
   it("drops the reveal row and keeps the collapse once the whole share is on screen", () => {
-    expect(folderRevealPlan({ cap: 30, loaded: 28, total: 28, fullyLoaded: true })).toEqual({
+    expect(revealPlan({ cap: 30, loaded: 28, total: 28, fullyLoaded: true })).toEqual({
       shown: 28,
       hidden: 0,
       canCollapse: true,
@@ -131,7 +132,7 @@ describe("folderRevealPlan", () => {
   });
 
   it("shows nothing it does not hold: the cap never promises unfetched rows", () => {
-    expect(folderRevealPlan({ cap: 20, loaded: 3, total: 3, fullyLoaded: true })).toEqual({
+    expect(revealPlan({ cap: 20, loaded: 3, total: 3, fullyLoaded: true })).toEqual({
       shown: 3,
       hidden: 0,
       canCollapse: false,
@@ -139,7 +140,7 @@ describe("folderRevealPlan", () => {
   });
 
   it("offers no collapse on a folder that fits in its first page", () => {
-    const plan = folderRevealPlan({
+    const plan = revealPlan({
       cap: SIDEBAR_PAGE_SIZE,
       loaded: SIDEBAR_PAGE_SIZE,
       total: SIDEBAR_PAGE_SIZE,
@@ -148,10 +149,34 @@ describe("folderRevealPlan", () => {
     expect(plan).toEqual({ shown: SIDEBAR_PAGE_SIZE, hidden: 0, canCollapse: false });
   });
 
+  it("reveals the eleventh row and stops, rather than everything past the page", () => {
+    // A list of exactly 11: ten show, the reveal row names the single row it hides (the
+    // label's singular branch), and one click lands on 11 with nothing more to reveal.
+    expect(revealPlan({ cap: 10, loaded: 10, total: 11, fullyLoaded: false })).toEqual({
+      shown: 10,
+      hidden: 1,
+      canCollapse: false,
+    });
+    expect(revealPlan({ cap: 20, loaded: 11, total: 11, fullyLoaded: true })).toEqual({
+      shown: 11,
+      hidden: 0,
+      canCollapse: true,
+    });
+  });
+
+  it("folds back to the first page and not to nothing", () => {
+    // What "show less" leaves behind: the cap returns to one page while every fetched row
+    // stays in memory, so the window is the first ten again — with the reveal row back,
+    // naming the rest — rather than an emptied list.
+    expect(
+      revealPlan({ cap: SIDEBAR_PAGE_SIZE, loaded: 28, total: 28, fullyLoaded: true }),
+    ).toEqual({ shown: SIDEBAR_PAGE_SIZE, hidden: 18, canCollapse: false });
+  });
+
   it("drops a stale total once every contributing Agent is fetched out", () => {
     // Same clause hiddenRowCount applies: counts refresh only on reload, and a folder must
     // not keep a reveal row standing over rows that no longer exist.
-    expect(folderRevealPlan({ cap: 10, loaded: 10, total: 42, fullyLoaded: true })).toEqual({
+    expect(revealPlan({ cap: 10, loaded: 10, total: 42, fullyLoaded: true })).toEqual({
       shown: 10,
       hidden: 0,
       canCollapse: false,

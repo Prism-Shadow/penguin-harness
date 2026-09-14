@@ -54,15 +54,14 @@ import {
   aggregateWorkspaceLatest,
   clampGroupPage,
   completeWorkspaceGroups,
-  folderRevealPlan,
   groupPageCount,
   groupPageOf,
   groupPageSlice,
   groupSessionsByTime,
   groupSessionsByWorkspace,
-  hiddenRowCount,
   matchesSessionQuery,
   partitionSessions,
+  revealPlan,
   sessionCategory,
   totalCategoryCounts,
   workspaceGroupKey,
@@ -1339,9 +1338,9 @@ export function Sidebar({
    * share is still hidden — an Agent's content in *other* Workspaces can never surface a
    * folder here.
    *
-   * The folder obeys the active list's display rule (folderRevealPlan): one page of rows
-   * shows at a time and "More" reveals one page more, spending a fetch only when the
-   * reveal runs past what is in memory. In time mode the folders span every contributing
+   * The folder obeys the same display rule the active list does (revealPlan): one page
+   * of rows shows at a time and "More" reveals one page more, spending a fetch only when
+   * the reveal runs past what is in memory. In time mode the folders span every contributing
    * Agent, so one fetch can return several pages at once; they stay in memory under the
    * cap rather than all landing on screen. In workspace mode a fetched page can land rows
    * in other groups' folders too, so one click may grow this folder by fewer than a full
@@ -1374,7 +1373,7 @@ export function Sidebar({
     // reveal row with nothing behind it.
     const fullyLoaded =
       agentIds.length > 0 && !agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
-    const plan = folderRevealPlan({ cap, loaded: rows.length, total, fullyLoaded });
+    const plan = revealPlan({ cap, loaded: rows.length, total, fullyLoaded });
     const shown = searching ? rows : rows.slice(0, plan.shown);
     const hidden = searching ? 0 : plan.hidden;
     return (
@@ -1439,7 +1438,6 @@ export function Sidebar({
     totals: SessionCategoryCounts | undefined,
     agentsFor: (category: SessionCategory) => string[],
   ) => {
-    const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
     // Row order: the pinned cluster first, then — under manual sort — the stored order
     // within each pin partition (lib/session-order.ts). Both reorder only rows already
     // FETCHED: a pinned conversation that lives past the loaded pages does not surface
@@ -1455,7 +1453,6 @@ export function Sidebar({
       order: sessionOrder,
       recencyOf: (s) => s.lastActiveAt,
     });
-    const shownActive = searching ? orderedActive : orderedActive.slice(0, cap);
     /** Manual sort only (never on a search-filtered view): drag scope + the group's full ordered list, so a drop commits the whole partition. */
     const dragCtx =
       effectiveSortMode === "manual" && !searching
@@ -1471,18 +1468,18 @@ export function Sidebar({
     const fullyLoaded =
       activeAgents.length > 0 &&
       !activeAgents.some((id) => hasMoreFor(id, "active", fetchScope(groupKey)));
-    const hiddenActive = searching
-      ? 0
-      : hiddenRowCount({
-          shown: shownActive.length,
-          loaded: parts.active.length,
-          total: totals?.active ?? 0,
-          fullyLoaded,
-        });
-    // "Show less" appears once the group is revealed past its first page and there is
-    // something for it to hide again.
-    const canCollapse =
-      !searching && cap > SIDEBAR_PAGE_SIZE && parts.active.length > SIDEBAR_PAGE_SIZE;
+    // One page of rows at a time, what the reveal row still hides, and whether "Show less"
+    // has anything to fold away: the single rule revealPlan states, applied here and by
+    // every folder below.
+    const plan = revealPlan({
+      cap: groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE,
+      loaded: parts.active.length,
+      total: totals?.active ?? 0,
+      fullyLoaded,
+    });
+    const shownActive = searching ? orderedActive : orderedActive.slice(0, plan.shown);
+    const hiddenActive = searching ? 0 : plan.hidden;
+    const canCollapse = !searching && plan.canCollapse;
     const folders = FOLDER_CATEGORIES.map((category) =>
       renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );

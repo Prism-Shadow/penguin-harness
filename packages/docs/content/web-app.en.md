@@ -52,7 +52,7 @@ Beside a row's title sit its status marks: a turning hourglass while the Session
 
 Pinning is offered only in the active list — the archived, subagent and scheduled folders leave it out — and a pinned conversation sorts to the top of its group. The choice is remembered per Project in the browser.
 
-An expanded folder reveals ten conversations at a time, the window the active list above it already uses: **Show N more chats** reveals ten more per click — rows already in memory first, and a page is fetched from the server only when they run short, so a fetch that returns more than a page leaves the extra rows in memory rather than on screen. Once the folder's whole share is shown that row disappears and a **Show less** row folds the folder back to the first ten.
+An expanded folder reveals ten conversations at a time, the window the active list above it already uses: **Show N more chats** reveals ten more per click — rows already in memory first, and a page is fetched from the server only when they run short, so a fetch that returns more than a page leaves the extra rows in memory rather than on screen. As soon as the folder shows more than those first ten a **Show less** row stands beside the reveal row and folds it back to them; the reveal row itself disappears once the folder's whole share is on screen.
 
 ### Streaming Rendering
 

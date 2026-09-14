@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-12
 - **Type:** fix
-- **Scope:** `web`
+- **Scope:** `web`, `docs`
 - **PR:** [#712](https://github.com/Prism-Shadow/penguin-harness/pull/712)
 
 [中文版](2026-09-12-sidebar-folder-reveal.zh.md)
@@ -11,7 +11,7 @@ The conversation list's folders — Subagents, Scheduled, Archived — showed ev
 returned and had no way back: expanding Archived with 28 conversations left revealed 13 of them in
 one click, and once its share was loaded nothing folded it up again. A folder now follows the same
 display rule the active list above it already did: ten rows at a time, "Show N more chats" for the
-next ten, and a "Show less" row once the whole share is on screen.
+next ten, and a "Show less" row beside it that folds back to those first ten.
 
 ## Details
 
