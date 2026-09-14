@@ -104,11 +104,11 @@ async function readPackageManifests(
           return parseManifest(
             {
               name: d.name,
-              requires: d.requires ?? {},
-              provides: d.provides ?? {},
-              contributes: d.contributes ?? {},
+              ...(d.requires !== undefined ? { requires: d.requires } : {}),
+              ...(d.provides !== undefined ? { provides: d.provides } : {}),
+              ...(d.contributes !== undefined ? { contributes: d.contributes } : {}),
               ...(d.context !== undefined ? { context: d.context } : {}),
-              children: d.children ?? [],
+              ...(d.children !== undefined ? { children: d.children } : {}),
             },
             `${where}#penguin.modules[${i}]`,
           );

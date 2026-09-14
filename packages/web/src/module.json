@@ -1,6 +1,5 @@
 {
   "name": "web",
-  "requires": {},
   "provides": {
     "web": "WebShell"
   },
@@ -106,6 +105,5 @@
         }
       }
     ]
-  },
-  "children": []
+  }
 }

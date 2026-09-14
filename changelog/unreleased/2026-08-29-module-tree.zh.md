@@ -22,7 +22,7 @@
 
 ## 插件即模块
 
-一个插件包就是一组模块：`package.json#penguin.modules` 承载 manifest，默认导出是 `{ modules: { <name>: { create } } }`，按名字配对，这些模块在每次 App 创建时作为 platform 树的子节点启动。`activate(ctx)` 契约——`initialize` / `create` 事件、`PenguinInterface`、`PenguinContext`——不再存在；它过去注册的东西（沙箱后端、workflow factory）现在是 contribution 或 provides，它过去触达的东西（`terminals`、`sandbox`）现在是按签名校验的 requires。四个沙箱后端已转换。
+一个插件包就是一组模块：`package.json#penguin.modules` 承载 manifest，默认导出是 `{ modules: { <name>: { create } } }`，按名字配对，这些模块在每次 App 创建时作为 platform 树的子节点启动。`activate(ctx)` 契约——`initialize` / `create` 事件、`PenguinInterface`、`PenguinContext`——不再存在；它过去注册的东西（沙箱后端、workflow factory）现在是 contribution 或 provides，它过去触达的东西（`terminals`、`sandbox`）现在是按签名校验的 requires。四个沙箱后端已转换。manifest 里为空的 `requires`、`provides`、`contributes`、`children` 可以省略，所以一个后端的 manifest 只有名字和它的 contribution。
 
 ## 表就是一个页面
 

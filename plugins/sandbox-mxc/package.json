@@ -40,8 +40,6 @@
     "modules": [
       {
         "name": "SandboxMxc",
-        "requires": {},
-        "provides": {},
         "contributes": {
           "SandboxModule.providers": [
             {
@@ -54,8 +52,7 @@
               ]
             }
           ]
-        },
-        "children": []
+        }
       }
     ]
   }

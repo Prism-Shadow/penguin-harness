@@ -36,8 +36,6 @@
     "modules": [
       {
         "name": "SandboxDsh",
-        "requires": {},
-        "provides": {},
         "contributes": {
           "SandboxModule.providers": [
             {
@@ -48,8 +46,7 @@
               ]
             }
           ]
-        },
-        "children": []
+        }
       }
     ]
   }

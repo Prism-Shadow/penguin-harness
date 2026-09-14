@@ -78,7 +78,7 @@ platformImpl.create
 │    # 插件模块（package.json#penguin.modules）是同一棵树的子节点。
 └─ ctx.effect：tree.dispose()（每个模块的 effect，逆序）+ manager.shutdown 排空
 ```
-插件是一组模块——与 harness 自身的构成单位相同。`package.json#penguin.modules` 承载 manifest（requires / provides / contributes / context / children）；包的默认导出是 `{ modules: { <name>: { create } } }`，加载时按名字配对。按频率拆开：
+插件是一组模块——与 harness 自身的构成单位相同。`package.json#penguin.modules` 承载 manifest（requires / provides / contributes / context / children，为空的可以省略）；包的默认导出是 `{ modules: { <name>: { create } } }`，加载时按名字配对。按频率拆开：
 
 | 时机          | 频率        | 发生什么                                                                                                                                         |
 | ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |

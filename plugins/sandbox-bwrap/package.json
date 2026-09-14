@@ -31,8 +31,6 @@
     "modules": [
       {
         "name": "SandboxBwrap",
-        "requires": {},
-        "provides": {},
         "contributes": {
           "SandboxModule.providers": [
             {
@@ -45,8 +43,7 @@
               ]
             }
           ]
-        },
-        "children": []
+        }
       }
     ]
   }

@@ -22,7 +22,7 @@ A route group is a line in a manifest — `"HttpModule.routes": [{ id: "agents.m
 
 ## Plugins are modules
 
-A plugin package is a set of modules: `package.json#penguin.modules` carries the manifests, the default export is `{ modules: { <name>: { create } } }`, paired by name, and the modules boot as children of the platform's tree at every App creation. The `activate(ctx)` contract — `initialize` / `create` events, `PenguinInterface`, `PenguinContext` — is gone; what it registered (a sandbox backend, a workflow factory) is now a contribution or a provided interface, and what it reached (`terminals`, `sandbox`) is a requirement checked at signature level. The four sandbox backends are converted.
+A plugin package is a set of modules: `package.json#penguin.modules` carries the manifests, the default export is `{ modules: { <name>: { create } } }`, paired by name, and the modules boot as children of the platform's tree at every App creation. The `activate(ctx)` contract — `initialize` / `create` events, `PenguinInterface`, `PenguinContext` — is gone; what it registered (a sandbox backend, a workflow factory) is now a contribution or a provided interface, and what it reached (`terminals`, `sandbox`) is a requirement checked at signature level. The four sandbox backends are converted. A manifest may leave out an empty `requires`, `provides`, `contributes` or `children`, so a backend's is its name and its contribution.
 
 ## The table as a page
 

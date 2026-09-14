@@ -9,8 +9,9 @@
  * A plugin is a set of MODULES — the same unit the harness itself is built from
  * (core kernel/module.ts). Each module's static half is a manifest in the package's
  * `package.json#penguin.modules` (requires / provides / contributes / context /
- * children), read and checked by the host without executing the package; its code half
- * is the entry of the same name in the package's default export:
+ * children — an empty one may be left out), read and checked by the host without
+ * executing the package; its code half is the entry of the same name in the package's
+ * default export:
  *
  *   // package.json
  *   "penguin": { "modules": [
