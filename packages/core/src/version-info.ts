@@ -143,6 +143,21 @@ export interface HarnessHistoryEntry {
 export interface HarnessHistory {
   current: HarnessInfo | null;
   entries: HarnessHistoryEntry[];
+  /**
+   * The last push back the runtime refused, or null. A refused rollback leaves the platform
+   * that asked for it running, so it is the one that can say why; a rollback that lands
+   * replaces that platform, and the new one reports nothing here.
+   */
+  lastRollback: RollbackFailure | null;
+}
+
+/** Why a rollback did not happen, in the runtime's own words. */
+export interface RollbackFailure {
+  /** The version that was to be pushed back. */
+  id: string;
+  error: string;
+  /** When the refusal came (ISO 8601). */
+  at: string;
 }
 
 export interface VersionReport extends BuildInfo {

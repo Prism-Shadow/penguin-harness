@@ -5,40 +5,52 @@
  * was built from — under `<root>/harness-history/`, its own directory beside the
  * runtime's store. Every boot records (a push, a restart, a fresh install), so the record
  * is complete on any runtime old enough to boot this platform.
+ *
+ * The record is made once the runtime's commit has LANDED, never before: on a push the
+ * runtime commits after the boot succeeds, so at setup harness.json still names the previous
+ * version, and a line written then would carry the previous bundles under this platform's
+ * table. `hmrControl.current()` resolves when the swap that booted this platform is over —
+ * commit included — and that is when the line is written. A generation the runtime put back
+ * (its boot failed) never records: what harness.json names then is not it.
  */
 import fsp from "node:fs/promises";
 import path from "node:path";
-import zlib from "node:zlib";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
+import { atomicWriteFile } from "@prismshadow/penguin-core";
 import type {
   HarnessHistory,
   HarnessHistoryEntry,
   HarnessInfo,
   IfacesSummary,
+  RollbackFailure,
 } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
-import { readHarnessInfo, readManifest } from "../hmr/manifest.js";
-import { readApiToken } from "../auth/api-token.js";
-import { loopbackHostRoles } from "./preview-token.js";
+import { readHarnessInfo } from "../hmr/manifest.js";
+import { readPushedBuild } from "../hmr/pushed-build.js";
 import { summarizeTable } from "@prismshadow/penguin-hmr";
-import type { Clock, Config, Log, Paths } from "../hmr/capabilities.js";
-import type { HttpFetch } from "./update-check-service.js";
-
-/** How long after boot the runtime's commit of a pushed version is expected to have landed. */
-const COMMIT_SETTLE_MS = 1500;
+import type {
+  Channels,
+  Clock,
+  HmrControl,
+  HmrControlApi,
+  Log,
+  Paths,
+} from "../hmr/capabilities.js";
 
 /** How many versions the history remembers; the newest are kept. */
 export const HISTORY_KEEP = 100;
 
 export abstract class HarnessHistoryIface extends Interface<{
-  /** The recorded versions, newest first, with the runtime's current commit. */
+  /** The recorded versions, newest first, with the runtime's current commit and the last rollback that failed. */
   list(): Promise<HarnessHistory>;
   /** A recorded interface table by hash, or null. */
   table(hash: string): Promise<unknown | null>;
   /**
-   * Pushes a kept version back through the runtime's own upgrade endpoint. Resolves when
-   * the runtime has answered; false when this platform kept no artifacts for that id.
+   * Pushes a kept version back through the runtime's own upgrade channel. Resolves true
+   * once the runtime has taken it (this platform is then being replaced); false when this
+   * platform kept no artifacts for that id; throws when the runtime refused, after
+   * recording the refusal for `list()`.
    */
   rollback(id: string): Promise<boolean>;
 }>() {}
@@ -101,29 +113,38 @@ function sameVersion(a: HarnessHistoryEntry, b: HarnessHistoryEntry): boolean {
   );
 }
 
+/** The file a kept version's upgrade body is stored as: exactly what pushing it back sends. */
+const BUILD_FILE = "build.gz";
+
 @Component()
 export class HarnessHistoryStore implements HarnessHistoryIface {
   @Use() private readonly paths!: Paths;
   @Use() private readonly clock!: Clock;
-  @Use() private readonly config!: Config;
-  @Use() private readonly http!: HttpFetch;
   @Use() private readonly log!: Log;
+  @Use() private readonly hmrControl!: HmrControl;
+  @Use() private readonly channels!: Channels;
+
+  /** The boot's record, so a read that arrives first waits for it instead of racing it. */
+  private booted: Promise<void> = Promise.resolve();
+  /** Records run one at a time: two at once would write the same file over each other. */
+  private chain: Promise<void> = Promise.resolve();
+  private disposed = false;
+  /** The last push back the runtime refused, kept in memory: a refused push leaves this platform running. */
+  private lastRollback: RollbackFailure | null = null;
 
   private get dir(): string {
     return path.join(this.paths.root, "harness-history");
   }
 
-  /**
-   * Records this boot: the runtime's current commit, with this platform's own table. On a
-   * push the runtime commits AFTER the boot succeeds, so at setup harness.json still names
-   * the previous version; the record is made again a moment later, and on every read —
-   * each time an upsert that never touches another platform's line (see record).
-   */
-  async setup({ effect }: ClassCtx): Promise<void> {
-    await this.recordQuietly();
-    const later = setTimeout(() => void this.recordQuietly(), COMMIT_SETTLE_MS);
-    later.unref();
-    effect(() => clearTimeout(later));
+  setup({ effect }: ClassCtx): void {
+    effect(() => {
+      this.disposed = true;
+    });
+    // Not awaited: current() waits out the swap that is booting this very platform.
+    this.booted = (this.hmrControl as unknown as HmrControlApi).current().then(
+      () => this.recordQuietly(),
+      () => undefined, // no generation could boot: nothing to record
+    );
   }
 
   private async recordQuietly(): Promise<void> {
@@ -137,10 +158,16 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
   /**
    * Upserts the line for the runtime's current commit. A line already there for the same
    * bundles is refreshed only when it carries THIS platform's table; one carrying another
-   * table belongs to the platform that recorded it (the boot before a push sees the
-   * previous commit) and is left alone.
+   * table belongs to the platform that recorded it and is left alone. Nothing is written
+   * when the line is already what it would be.
    */
-  async record(): Promise<void> {
+  record(): Promise<void> {
+    const run = this.chain.then(() => (this.disposed ? undefined : this.recordNow()));
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async recordNow(): Promise<void> {
     const current = await readHarnessInfo(this.paths.root);
     const own = table as { hash: string; ifaces: object; types: object; modules: object };
     const summary = summarizeTable(own as unknown as Parameters<typeof summarizeTable>[0]);
@@ -149,7 +176,7 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
     try {
       await fsp.access(tablePath);
     } catch {
-      await writeAtomic(tablePath, JSON.stringify(own));
+      await atomicWriteFile(tablePath, JSON.stringify(own));
     }
     const entry: HarnessHistoryEntry = {
       id: versionId(current?.bundles ?? { platform: null, cli: null, web: null }, summary.hash),
@@ -163,10 +190,12 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
     const at = entries.findIndex((e) => sameVersion(e, entry));
     if (at !== -1 && entries[at]!.ifaces?.hash !== summary.hash) return;
     const next = at === -1 ? [entry, ...entries] : entries.map((e, i) => (i === at ? entry : e));
-    await writeAtomic(
-      path.join(this.dir, "history.json"),
-      JSON.stringify(next.slice(0, HISTORY_KEEP), null, 2),
-    );
+    if (at === -1 || JSON.stringify(entries[at]) !== JSON.stringify(entry)) {
+      await atomicWriteFile(
+        path.join(this.dir, "history.json"),
+        JSON.stringify(next.slice(0, HISTORY_KEEP), null, 2),
+      );
+    }
     // The runtime's store keeps one rollback copy of each artifact; the platform keeps a
     // few whole versions of its own, so the history can push one back.
     if (current !== null) await this.keepArtifacts(entry.id);
@@ -176,77 +205,34 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
     return path.join(this.dir, "versions");
   }
 
-  /** Copies the committed version's artifacts under `versions/<id>/`, once, and prunes the oldest beyond KEEP_VERSIONS. */
+  /**
+   * Keeps the committed version's upgrade body under `versions/<id>/`, once, and prunes the
+   * oldest beyond KEEP_VERSIONS. The body is the one a hand-over forwards (hmr/pushed-build.ts):
+   * bundles, the web archive, the native assets with their exec bits, the provenance.
+   */
   private async keepArtifacts(id: string): Promise<void> {
-    const manifest = await readManifest(this.paths.root);
-    if (manifest === null) return;
-    const hmrDir = path.join(this.paths.root, "hmr");
+    if (await this.kept(id)) return;
+    const body = readPushedBuild(this.paths.root);
+    // No store, a partial record, or a file the runtime already pruned: this version is not
+    // kept, and the history line stands without it.
+    if (body === null) return;
     const dir = path.join(this.versionsDir(), id);
+    const tmp = `${dir}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
     try {
-      await fsp.access(path.join(dir, "version.json"));
-      return; // already kept
+      await fsp.mkdir(tmp, { recursive: true });
+      await fsp.writeFile(path.join(tmp, BUILD_FILE), body);
+      await fsp.writeFile(path.join(tmp, "version.json"), JSON.stringify({ id }));
+      await fsp.rename(tmp, dir);
     } catch {
-      // fall through
-    }
-    const platform = str(manifest.platform?.bundle);
-    const cli = str(manifest.cli?.bundle);
-    const web = str(manifest.web?.manifest);
-    if (platform === null || cli === null || web === null) return;
-    const tmp = `${dir}.${process.pid}.tmp`;
-    await fsp.rm(tmp, { recursive: true, force: true });
-    await fsp.mkdir(tmp, { recursive: true });
-    try {
-      await this.copyVersion(manifest, hmrDir, tmp, id);
-    } catch {
-      // The runtime already pruned a file behind a pointer, or the copy could not be
-      // written: this version is not kept, and the history line stands without it.
       await fsp.rm(tmp, { recursive: true, force: true });
       return;
     }
-    await fsp.rename(tmp, dir);
     // Prune: keep the newest KEEP_VERSIONS by the history's order.
     const keep = new Set((await this.entries()).map((e) => e.id).slice(0, KEEP_VERSIONS));
     for (const name of await fsp.readdir(this.versionsDir())) {
-      if (!keep.has(name))
+      if (!keep.has(name) && !name.includes(".tmp-"))
         await fsp.rm(path.join(this.versionsDir(), name), { recursive: true, force: true });
     }
-  }
-
-  private async copyVersion(
-    manifest: NonNullable<Awaited<ReturnType<typeof readManifest>>>,
-    hmrDir: string,
-    tmp: string,
-    id: string,
-  ): Promise<void> {
-    const platform = str(manifest.platform?.bundle)!;
-    const cli = str(manifest.cli?.bundle)!;
-    const web = str(manifest.web?.manifest)!;
-    await fsp.copyFile(path.join(hmrDir, platform), path.join(tmp, "platform.mjs"));
-    await fsp.copyFile(path.join(hmrDir, cli), path.join(tmp, "cli.mjs"));
-    await fsp.copyFile(path.join(hmrDir, web), path.join(tmp, "web.webz"));
-    const exec: string[] = [];
-    const assetsDir = str(manifest.assets?.dir);
-    if (assetsDir !== null) {
-      const from = path.join(hmrDir, assetsDir);
-      const to = path.join(tmp, "assets");
-      for (const entry of await fsp.readdir(from, { recursive: true, withFileTypes: true })) {
-        if (!entry.isFile()) continue;
-        const abs = path.join(entry.parentPath, entry.name);
-        const rel = path.relative(from, abs).split(path.sep).join("/");
-        await fsp.mkdir(path.dirname(path.join(to, rel)), { recursive: true });
-        await fsp.copyFile(abs, path.join(to, rel));
-        if (rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0)
-          exec.push(rel);
-      }
-    }
-    await fsp.writeFile(
-      path.join(tmp, "version.json"),
-      JSON.stringify({
-        id,
-        source: manifest.source ?? null,
-        assets: assetsDir === null ? null : { exec },
-      }),
-    );
   }
 
   private async kept(id: string): Promise<boolean> {
@@ -262,69 +248,50 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
   async rollback(id: string): Promise<boolean> {
     if (!(await this.kept(id))) return false;
     try {
-      return await this.push(id);
+      await this.push(id);
+      return true;
     } catch (err) {
-      // The caller has already answered (the swap replaces it); the log is where a failed
-      // push back is seen.
-      this.log.line(
-        `[harness-history] rollback to ${id} failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      // The route has already answered; the refusal is kept for the next read of the
+      // history, and logged where a failed push back is seen.
+      const message = err instanceof Error ? err.message : String(err);
+      this.lastRollback = { id, error: message, at: this.clock.now().toISOString() };
+      this.log.line(`[harness-history] rollback to ${id} failed: ${message}`);
       throw err;
     }
   }
 
-  private async push(id: string): Promise<boolean> {
-    const dir = path.join(this.versionsDir(), id);
-    const meta = JSON.parse(await fsp.readFile(path.join(dir, "version.json"), "utf8")) as {
-      source: { repo: string; revision: string } | null;
-      assets: { exec: string[] } | null;
-    };
-    const webz = await fsp.readFile(path.join(dir, "web.webz"));
-    const web = JSON.parse(zlib.gunzipSync(webz).toString("utf8")) as {
-      files: Record<string, string>;
-    };
-    let assets: { files: Record<string, string>; exec: string[] } | undefined;
-    if (meta.assets !== null) {
-      const from = path.join(dir, "assets");
-      const files: Record<string, string> = {};
-      for (const entry of await fsp.readdir(from, { recursive: true, withFileTypes: true })) {
-        if (!entry.isFile()) continue;
-        const abs = path.join(entry.parentPath, entry.name);
-        files[path.relative(from, abs).split(path.sep).join("/")] = (
-          await fsp.readFile(abs)
-        ).toString("base64");
-      }
-      assets = { files, exec: meta.assets.exec };
-    }
-    const body = zlib.gzipSync(
-      Buffer.from(
-        JSON.stringify({
-          platform: await fsp.readFile(path.join(dir, "platform.mjs"), "utf8"),
-          cli: await fsp.readFile(path.join(dir, "cli.mjs"), "utf8"),
-          web,
-          ...(assets ? { assets } : {}),
-          ...(meta.source ? { source: meta.source } : {}),
-        }),
-      ),
+  /**
+   * Hands the kept body to the runtime's upgrade channel in-process — the same endpoint a
+   * deploy reaches over HTTP, minus the network: no bind address, scheme gate or token is
+   * involved, because the code being pushed is already on this machine and the route that
+   * called this has done the platform's own admin check. The runtime swaps this platform
+   * out on success, exactly as it does for a push from outside.
+   */
+  private async push(id: string): Promise<void> {
+    const body = await fsp.readFile(path.join(this.versionsDir(), id, BUILD_FILE));
+    const control = this.hmrControl as unknown as HmrControlApi;
+    const res = await control.endpoint(
+      new Request("http://localhost/api/hmr/upgrade", {
+        method: "POST",
+        headers: { "content-type": "application/gzip" },
+        body,
+      }),
     );
-    const token = readApiToken(this.paths.root);
-    if (token === null) throw new Error("no local api token to push with");
-    // The runtime's own door, from inside: this platform is what gets replaced, so the
-    // route that calls this answers before starting it.
-    // Addressed to the App host: on a loopback bind the two loopback names play different
-    // roles (services/preview-token.ts), and only the App one serves the API.
-    const host = loopbackHostRoles(this.config.host)?.app ?? this.config.host;
-    const res = await this.http.fetch(`http://${host}:${this.config.port}/api/hmr/upgrade`, {
-      method: "POST",
-      headers: { "content-type": "application/gzip", authorization: `Bearer ${token}` },
-      body,
-    });
     const text = await res.text();
-    if (res.status < 200 || res.status >= 300) {
-      throw new Error(`rollback to ${id}: ${res.status} ${text}`);
+    if (!res.ok) throw new Error(`rollback to ${id}: ${res.status} ${text}`);
+    const outcome = JSON.parse(text) as { status: string; web?: { rev: string }; reason?: string };
+    if (outcome.status !== "ok") {
+      throw new Error(`rollback to ${id}: ${outcome.reason ?? text.slice(0, 200)}`);
     }
+    this.lastRollback = null;
     this.log.line(`[harness-history] rolled back to ${id}: ${text.slice(0, 200)}`);
-    return true;
+    // Live clients (browser tabs AND the desktop window) reload once a version lands — what
+    // the HTTP route does for a push from outside (hmr/routes.ts).
+    this.channels.broadcast(
+      "user:",
+      { type: "web_updated", rev: outcome.web?.rev ?? "" },
+      "server_event",
+    );
   }
 
   /** The entries on disk, newest first; a truncated or hand-edited file degrades to what still parses. */
@@ -340,7 +307,7 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
   }
 
   async list(): Promise<HarnessHistory> {
-    await this.recordQuietly();
+    await this.booted;
     const [current, entries] = await Promise.all([
       readHarnessInfo(this.paths.root),
       this.entries(),
@@ -348,7 +315,7 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
     const marked = await Promise.all(
       entries.map(async (e) => ({ ...e, rollbackable: await this.kept(e.id) })),
     );
-    return { current, entries: marked };
+    return { current, entries: marked, lastRollback: this.lastRollback };
   }
 
   async table(hash: string): Promise<unknown | null> {
@@ -363,9 +330,3 @@ export class HarnessHistoryStore implements HarnessHistoryIface {
 
 /** The current commit as the history should show it: what `readHarnessInfo` says, or null. */
 export type { HarnessInfo };
-
-async function writeAtomic(file: string, text: string): Promise<void> {
-  const tmp = `${file}.${process.pid}.tmp`;
-  await fsp.writeFile(tmp, text);
-  await fsp.rename(tmp, file);
-}

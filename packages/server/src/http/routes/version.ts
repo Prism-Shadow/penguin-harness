@@ -91,7 +91,11 @@ export function versionRoutes(deps: VersionRouteDeps): Hono<AppEnv> {
     return c.json(diffIfaces(asTable(from), asTable(to)) satisfies VersionHistoryDiffResponse);
   });
 
-  /** Pushes a kept version back through the runtime (admin). Answers before the swap: this platform is what gets replaced. */
+  /**
+   * Pushes a kept version back through the runtime (admin). Answers before the swap: this
+   * platform is what gets replaced. A push the runtime refuses leaves this platform running,
+   * and the next GET /history carries the refusal as `lastRollback`.
+   */
   app.post("/history/rollback", async (c) => {
     if (!c.get("user").isAdmin) throw new HttpError(403, "forbidden", "Rollback is admin-only.");
     const { id } = (await c.req.json().catch(() => ({}))) as { id?: unknown };

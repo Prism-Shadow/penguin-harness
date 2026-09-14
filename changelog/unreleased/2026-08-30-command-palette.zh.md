@@ -16,4 +16,6 @@ Ctrl+P（macOS 上为 ⌘P）打开一个 VS Code 风格的命令面板：一个
 
 **模块树。** 每个版本在"变化"旁边还有"模块树"视图：它记录的表所描述的整棵树——组、组下的模块与组件，以及任一节点需要什么（来自哪个模块）、提供或导出什么、投递什么。
 
-**回滚。** 运行时的 store 只为每种产物保留一份回滚副本；platform 自己在 `<root>/harness-history/versions/` 下保留最近五个完整版本（bundle、web 归档、带可执行位记录的原生资产）。任何保留了产物的版本都有"回滚到这个版本"按钮（管理员，两次点击）：platform 用本地 API token 把保留的产物经运行时自己的 `/api/hmr/upgrade` 推回去，在切换前先应答，页面轮询历史直到该版本成为当前版本。`POST /api/version/history/rollback { id }`。
+**回滚。** 运行时的 store 只为每种产物保留一份回滚副本；platform 自己在 `<root>/harness-history/versions/` 下保留最近五个完整版本——每个版本就是一次机器间移交所转发的升级体（bundle、web 归档、带可执行位记录的原生资产、来源信息），由 Machines 页面所用的同一个读取器生成。任何保留了产物的版本都有"回滚到这个版本"按钮（管理员，两次点击）：platform 在进程内把保留的升级体交给运行时的升级通道——不经网络、不涉及绑定地址、HTTPS 门禁或 token——并在切换前先应答。推送落地后所有标签页会像收到外部推送一样重新加载；被运行时拒绝的推送则让 platform 继续运行，拒绝原因以运行时的原话显示在历史上（`GET /api/version/history` 的 `lastRollback`）。`POST /api/version/history/rollback { id }`。
+
+记录本身在运行时的提交落地之后才写入，而不是在启动时：推送时运行时在启动成功后才提交，过早写入的一行会把上一个版本的 bundle 记在新 platform 的接口表之下。写入是原子且串行的，读取历史不会写任何东西。

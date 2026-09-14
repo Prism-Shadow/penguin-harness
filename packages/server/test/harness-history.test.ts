@@ -63,20 +63,35 @@ async function commit(
   );
 }
 
-const posted: Array<{ url: string; init: RequestInit }> = [];
+/** What a rollback handed the runtime's upgrade channel, and what the runtime answered with. */
+const pushed: Request[] = [];
+const broadcasts: unknown[] = [];
+let answer: () => Response = () =>
+  new Response(JSON.stringify({ status: "ok", web: { rev: "r2" } }), { status: 200 });
+/** Resolves when the test says the runtime's commit has landed (the swap that booted the platform is over). */
+let landed: () => Promise<void> = async () => {};
 const storeAt = (root: string) =>
   wire(HarnessHistoryStore, {
     paths: { root },
     clock: { now: () => new Date("2026-08-30T12:00:00Z") },
-    config: { port: 7364, host: "127.0.0.1" },
     log: { line: () => {} },
-    http: {
-      fetch: async (url: string, init?: RequestInit) => {
-        posted.push({ url, init: init ?? {} });
-        return new Response('{"status":"ok"}', { status: 200 });
+    hmrControl: {
+      current: () => landed().then(() => ({})),
+      endpoint: async (req: Request) => {
+        pushed.push(req);
+        return answer();
       },
     },
+    channels: { broadcast: (...args: unknown[]) => broadcasts.push(args) },
   });
+
+/** Boots the store the way the platform does: setup() defers the record to the commit. */
+function bootedAt(root: string) {
+  const store = storeAt(root);
+  const disposers: Array<() => void> = [];
+  store.setup({ effect: (fn: () => void) => disposers.push(fn) } as never);
+  return { store, dispose: () => disposers.forEach((fn) => fn()) };
+}
 
 describe("harness history store", () => {
   it("records a boot once per version, with this platform's own table, newest first", async () => {
@@ -145,9 +160,8 @@ describe("harness history store", () => {
     ]);
   });
 
-  it("keeps a committed version's artifacts and pushes them back through the runtime's own door", async () => {
+  it("keeps a committed version's body and hands it back to the runtime's own upgrade channel", async () => {
     const root = await makeTempRoot();
-    await fs.writeFile(path.join(root, "api-token"), "tok-1");
     const store = storeAt(root);
     await commit(root, 1, { repo: "r", revision: "v1" });
     await store.record();
@@ -158,21 +172,17 @@ describe("harness history store", () => {
       ["p2-c2-w2", true],
       ["p1-c1-w1", true],
     ]);
-    // The copy is whole: bundles, the web archive, the assets with their exec bits noted.
-    const kept = path.join(root, "harness-history", "versions", "p1-c1-w1");
-    expect(JSON.parse(await fs.readFile(path.join(kept, "version.json"), "utf8"))).toEqual({
-      id: "p1-c1-w1",
-      source: { repo: "r", revision: "v1" },
-      assets: { exec: ["node_modules/node-pty/spawn-helper"] },
-    });
-    // Rolling back posts exactly what a deploy would, with the local api token.
-    posted.length = 0;
+    // Rolling back hands the channel exactly what a deploy would post — the body a hand-over
+    // forwards — with no network, token or bind address in between.
+    pushed.length = 0;
+    broadcasts.length = 0;
     expect(await store.rollback("p1-c1-w1")).toBe(true);
-    expect(posted).toHaveLength(1);
-    expect(posted[0]!.url).toBe("http://localhost:7364/api/hmr/upgrade");
-    expect((posted[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer tok-1");
+    expect(pushed).toHaveLength(1);
+    expect(new URL(pushed[0]!.url).pathname).toBe("/api/hmr/upgrade");
+    expect(pushed[0]!.headers.get("content-type")).toBe("application/gzip");
+    expect(pushed[0]!.headers.get("authorization")).toBeNull();
     const payload = JSON.parse(
-      zlib.gunzipSync(posted[0]!.init.body as Buffer).toString("utf8"),
+      zlib.gunzipSync(Buffer.from(await pushed[0]!.arrayBuffer())).toString("utf8"),
     ) as {
       platform: string;
       cli: string;
@@ -185,9 +195,82 @@ describe("harness history store", () => {
     expect(Buffer.from(payload.web.files["index.html"]!, "base64").toString()).toBe("<b>1</b>");
     expect(payload.assets.exec).toEqual(["node_modules/node-pty/spawn-helper"]);
     expect(payload.source.revision).toBe("v1");
+    // Live clients are told to reload, as they are for a push from outside.
+    expect(broadcasts).toEqual([["user:", { type: "web_updated", rev: "r2" }, "server_event"]]);
+    expect((await store.list()).lastRollback).toBeNull();
     // Nothing kept under that id: not a rollback.
     expect(await store.rollback("nope")).toBe(false);
     expect(await store.rollback("../etc")).toBe(false);
+  });
+
+  it("a push the runtime refuses is reported on the next read, in the runtime's words", async () => {
+    const root = await makeTempRoot();
+    const store = storeAt(root);
+    await commit(root, 1);
+    await store.record();
+    await commit(root, 2);
+    await store.record();
+    answer = () => new Response(JSON.stringify({ status: "refused", reason: "no upgrade route" }));
+    try {
+      await expect(store.rollback("p1-c1-w1")).rejects.toThrow(/no upgrade route/);
+      expect((await store.list()).lastRollback).toMatchObject({
+        id: "p1-c1-w1",
+        error: expect.stringContaining("no upgrade route") as string,
+        at: "2026-08-30T12:00:00.000Z",
+      });
+      // The channel's own 400 (a body it could not parse) is a refusal too.
+      answer = () => new Response("expected a gzip body", { status: 400 });
+      await expect(store.rollback("p2-c2-w2")).rejects.toThrow(/400 expected a gzip body/);
+      expect((await store.list()).lastRollback?.id).toBe("p2-c2-w2");
+    } finally {
+      answer = () =>
+        new Response(JSON.stringify({ status: "ok", web: { rev: "r2" } }), { status: 200 });
+    }
+  });
+
+  it("records a boot only once the runtime's commit has landed, and never after being put back", async () => {
+    // Version 1 is committed and the platform booting is version 2's: while its boot is in
+    // flight harness.json still names version 1, and no line may be written for it.
+    const root = await makeTempRoot();
+    await commit(root, 1);
+    let commitLanded!: () => void;
+    landed = () =>
+      new Promise<void>((resolve) => {
+        commitLanded = resolve;
+      });
+    try {
+      const { store } = bootedAt(root);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(await store.entries()).toEqual([]);
+      await commit(root, 2);
+      commitLanded();
+      const entries = (await store.list()).entries;
+      expect(entries.map((e) => e.bundles.platform)).toEqual(["store/platform/p2.mjs"]);
+      // A generation the runtime put back (its boot failed) is disposed before the swap ends:
+      // what harness.json names then is the previous version, and it stays unrecorded.
+      const failed = bootedAt(root);
+      failed.dispose();
+      commitLanded();
+      await new Promise((r) => setTimeout(r, 20));
+      await commit(root, 3);
+      expect(await store.entries()).toHaveLength(1);
+    } finally {
+      landed = async () => {};
+    }
+  });
+
+  it("writes one record at a time, and rewrites nothing when the line is unchanged", async () => {
+    const root = await makeTempRoot();
+    const store = storeAt(root);
+    await commit(root, 1);
+    await Promise.all([store.record(), store.record(), store.list(), store.record()]);
+    const file = path.join(root, "harness-history", "history.json");
+    expect(JSON.parse(await fs.readFile(file, "utf8"))).toHaveLength(1);
+    const before = await fs.stat(file);
+    await new Promise((r) => setTimeout(r, 20));
+    await store.record();
+    expect((await fs.stat(file)).mtimeMs).toBe(before.mtimeMs);
+    expect(await fs.readdir(path.join(root, "harness-history", "versions"))).toEqual(["p1-c1-w1"]);
   });
 
   it("keeps the newest KEEP_VERSIONS versions' artifacts", async () => {
