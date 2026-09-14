@@ -2,8 +2,8 @@
  * @prismshadow/penguin-plugin-sandbox-dsh — the DeepSeek Harness sandbox ecosystem
  * behind this harness's own sandbox interface.
  *
- * A PLUGIN PACKAGE, not part of the platform: a deployment lists it in plugins.json and
- * the harness resolves it from the installation (see the server's plugin/loader.ts).
+ * A PLUGIN PACKAGE, not part of the platform: a Project asks for it on the Plugins page
+ * and the harness resolves it from the installation (see the server's plugin/loader.ts).
  * The DSH dependencies live HERE, in this package — the harness itself does not depend
  * on them, which is what "plugins are configuration, not built-in capability" means in
  * dependency terms.

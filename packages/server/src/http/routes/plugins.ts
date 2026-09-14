@@ -3,7 +3,7 @@
  * Agent has installed.
  *   GET    /api/plugins                                   # the built-in library by category (any logged-in user)
  *   GET    /api/plugins/:plugin/files                     # the files a library plugin ships, for the detail view's browser
- *   GET    /api/plugins/registry                          # the deployment's plugin index (plugins.json under the data root)
+ *   GET    /api/plugins/registry                          # the merged plugin index: the builtin entries and the published ones
  *   GET    /api/plugins/registry/readme?name=…            # one indexed entry's long-form readme
  *   POST   /api/projects/:p/agents/:a/plugins             # install plugins from the library (any member)
  * Installing a plugin writes each of its skills to agent_state/skills/<name>/ and its hook

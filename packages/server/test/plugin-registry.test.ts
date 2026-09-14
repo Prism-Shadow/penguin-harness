@@ -1,6 +1,6 @@
 /**
  * Plugin registry tests: the shared index format (strict whole-document validation —
- * one malformed row fails the artifact, unlike plugins.json's per-entry tolerance),
+ * one malformed row fails the artifact, unlike a plugin list's per-entry tolerance),
  * the builtin registry serving the embedded four sandbox backends (readmes read from the
  * packages as npm shipped them), the HTTP registry
  * running a fetched document through the same validator (fetch stubbed, no network),
@@ -137,7 +137,7 @@ describe("GET /api/plugins/registry", () => {
  * The index asserts a name, version, description and license for four packages that live
  * beside it in this workspace, and their readmes are those packages' own README.md files.
  * None of that is enforced by anything the packages do, so it is asserted here: the listing
- * is the string an operator copies into `plugins.json`, and a catalogue that describes
+ * is the specifier a Project's list names, and a catalogue that describes
  * its entries wrongly is worse than one that omits them.
  */
 const PLUGINS_DIR = fileURLToPath(new URL("../../../plugins/", import.meta.url));

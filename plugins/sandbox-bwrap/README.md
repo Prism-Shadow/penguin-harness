@@ -29,11 +29,13 @@ than restrict it.
 
 ## Install
 
-Add the specifier to your deployment's `plugins.json` and restart, or push a platform that
-carries it:
+It ships with the harness build. On the Plugins page, install it to the Project that should
+run it: the App re-assembles itself, no restart. Written by hand, it is a row of the Project's
+`.project_config.toml`:
 
-```json
-{ "plugins": ["@prismshadow/penguin-plugin-sandbox-bwrap"] }
+```toml
+[plugins]
+"@prismshadow/penguin-plugin-sandbox-bwrap" = "*"
 ```
 
 Installing is an operator-side action: the harness resolves the package from the installation,
