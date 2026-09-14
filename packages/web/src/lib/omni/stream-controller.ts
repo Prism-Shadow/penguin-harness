@@ -642,7 +642,16 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
       registerLocalDecision(model, toolCallId);
     },
     resolveApproval: (key) => {
-      if (pending.delete(key)) deps.onPendingChange();
+      const entry = pending.get(key);
+      if (entry === undefined) return;
+      pending.delete(key);
+      // The local answer time, stamped as the pending entry goes: the approval_decision event
+      // that sets approvalAtMs lands a broadcast later, and in that window an elapsed-time gate
+      // reading the card would fall back to the call's start and count the human wait as
+      // execution — then jump forward when the event finally arrives.
+      const card = findToolCard(model, entry.origin, entry.toolCall.payload.tool_call_id);
+      if (card) card.localApprovalAtMs = now();
+      deps.onPendingChange();
     },
     dispose: () => {
       disposed = true;

@@ -207,6 +207,16 @@ export interface ToolCallItem {
   callStartedAtMs?: number;
   /** Approval-granted moment (the approval_decision message time): execution timing starts from here, deducting the approval wait. */
   approvalAtMs?: number;
+  /**
+   * The moment THIS client answered the approval, read from the local clock as the decision is
+   * submitted — the approval_decision event that carries approvalAtMs only arrives a broadcast
+   * later. Kept apart from approvalAtMs because that one is a server message time that
+   * noteApprovalWait subtracts callStartedAtMs (another server time) from: a local Date.now()
+   * in there would put two clocks inside one stat, so a skewed client could corrupt
+   * openApprovalWaitMs. Only the UI's elapsed-time gates read this, and they measure against
+   * Date.now(), which is the clock it is already on.
+   */
+  localApprovalAtMs?: number;
   /** This card's approval wait has already been counted toward its owning Request (see noteApprovalWait): whichever of the two timestamps arrives later triggers it, guarding against double-counting. */
   approvalWaitCounted?: boolean;
   /**

@@ -192,9 +192,10 @@ export const BACKGROUND_ACTION_DELAY_MS = 10_000;
 /**
  * Whether the header offers "move to background": only while the call is genuinely executing
  * (that is the whole window in which there is something to move) and has been for
- * BACKGROUND_ACTION_DELAY_MS (`executedMs`, measured from the execution segment's start), only
- * for a tool that has a background form, and only on a main-session card — a subagent's call
- * lives in the child Session's environment, which the route does not target.
+ * `BACKGROUND_ACTION_DELAY_MS` (`executedPastDelay`, the card's elapsed-time gate on the
+ * execution segment), only for a tool that has a background form, and only on a main-session
+ * card — a subagent's call lives in the child Session's environment, which the route does not
+ * target.
  *
  * A call launched with `run_in_background` is excluded: its work is already back in the
  * registry, so there is nothing left to hand over, and the row would briefly carry the
@@ -205,11 +206,11 @@ export function showsBackgroundAction(
   argsJson: string,
   executing: boolean,
   origin: readonly string[],
-  executedMs: number,
+  executedPastDelay: boolean,
 ): boolean {
   return (
     executing &&
-    executedMs >= BACKGROUND_ACTION_DELAY_MS &&
+    executedPastDelay &&
     origin.length === 0 &&
     DETACHABLE_TOOLS.has(name) &&
     !isBackgroundCall(argsJson)
@@ -321,10 +322,15 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
   const subtitle = headerSubtitle(item.name, item.argumentsText, !item.callStreaming);
   // Executing = the call has finished streaming, output hasn't arrived yet, and it's not waiting on approval (approval wait time doesn't count toward execution).
   const executing = item.callComplete && !item.outputComplete && !pending;
-  // How long the execution segment has run, known only once it has run long enough for the
-  // "move to background" action (one re-render at that moment, none before or after).
-  const executedMs = useElapsedPast(
-    executing ? (item.approvalAtMs ?? item.callStartedAtMs) : undefined,
+  // Whether the execution segment has run long enough for the "move to background" action (one
+  // re-render at that moment, none before or after). Local-first on the start time: this end's
+  // own answer time is there the instant the pending approval clears, while the server's
+  // approvalAtMs is still a broadcast away, so falling straight back to callStartedAtMs in that
+  // window would count the human wait as execution and then restart the gate once the event
+  // lands. Local-first also keeps the value from ever moving again, and it is the clock the
+  // gate compares against.
+  const executedPastDelay = useElapsedPast(
+    executing ? (item.localApprovalAtMs ?? item.approvalAtMs ?? item.callStartedAtMs) : undefined,
     BACKGROUND_ACTION_DELAY_MS,
   );
   // Argument-generation segment (settled): the live execution timer accumulates on top of this as a baseline, so the displayed duration doesn't shrink back once output arrives.
@@ -477,7 +483,13 @@ export function ToolCallCard({ item, ctx }: { item: ToolCallItem; ctx: StreamRen
 
           No click guard: a second detach is a no-op on an already-fired controller, and once
           the call closes the action unmounts on its own — which is also the feedback. */}
-        {showsBackgroundAction(item.name, item.argumentsText, executing, ctx.origin, executedMs) &&
+        {showsBackgroundAction(
+          item.name,
+          item.argumentsText,
+          executing,
+          ctx.origin,
+          executedPastDelay,
+        ) &&
           ctx.onSendToBackground && (
             <button
               type="button"
