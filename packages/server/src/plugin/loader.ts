@@ -9,16 +9,16 @@
  * its own, so anchoring at the bundle would find nothing.
  *
  * Failure is per-entry and non-fatal: an unresolvable or malformed plugin is reported
- * and skipped, leaving its capability unavailable rather than failing the boot. An
- * plugin is a set of modules (core plugin/index.ts): `package.json#penguin.modules`
- * carries the manifests, the default export the code, paired by name.
+ * and skipped, leaving its capability unavailable rather than failing the boot. A
+ * plugin is a set of modules (core plugin/index.ts): decorated classes, named by the
+ * default export, whose manifests the package's generated `ifaces.json` carries.
  */
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
-import { parseManifest } from "@prismshadow/penguin-core/kernel";
+import type { IfaceTable, ManifestTable, ModuleDef } from "@prismshadow/penguin-core/kernel";
+import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
 
@@ -78,14 +78,18 @@ async function importPlugin(specifier: string): Promise<{ module: unknown; file:
   return { module: await import(specifier), file: null };
 }
 
+/** The generated table a plugin package ships beside its package.json. */
+export const IFACES_FILE = "ifaces.json";
+
 /**
- * The package's manifests (`package.json#penguin.modules`), found by walking up from the
- * resolved entry file. Each entry is one module's static half; its `name` is what the
- * default export's `modules` is keyed by. Absent = not a plugin package.
+ * The package's generated table (`ifaces.json` beside the `package.json` that carries
+ * `penguin`), found by walking up from the resolved entry file: the manifest of every
+ * decorated class, the signature of every interface they name. Absent `penguin` = not a
+ * plugin package; a plugin package without its table was never built.
  */
-async function readPackageManifests(
+async function readPackageTable(
   file: string | null,
-): Promise<{ where: string; manifests: ModuleDef["manifest"][] } | null> {
+): Promise<{ where: string; ifaces: IfaceTable; manifests: ManifestTable } | null> {
   if (file === null) return null;
   let dir = path.dirname(file);
   for (;;) {
@@ -93,26 +97,31 @@ async function readPackageManifests(
     try {
       const raw = JSON.parse(await fs.readFile(where, "utf8")) as { penguin?: unknown };
       if (raw.penguin === undefined) return null;
-      const list = (raw.penguin as { modules?: unknown }).modules;
-      if (!Array.isArray(list)) {
-        throw new Error(`${where}#penguin: expected { "modules": [ … ] }`);
+      const tableFile = path.join(dir, IFACES_FILE);
+      let text: string;
+      try {
+        text = await fs.readFile(tableFile, "utf8");
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        throw new Error(`${tableFile} is missing — the package was not built (gen-ifaces)`);
+      }
+      const table = JSON.parse(text) as {
+        ifaces?: unknown;
+        types?: unknown;
+        modules?: unknown;
+      };
+      const isRecord = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
+      if (!isRecord(table.ifaces) || !isRecord(table.types) || !isRecord(table.modules)) {
+        throw new Error(`${tableFile}: expected { ifaces, types, modules } (gen-ifaces output)`);
+      }
+      const manifests: Record<string, ModuleDef["manifest"]> = {};
+      for (const [name, doc] of Object.entries(table.modules as Record<string, unknown>)) {
+        manifests[name] = parseManifest(doc, `${tableFile}#modules.${name}`);
       }
       return {
         where,
-        manifests: list.map((doc, i) => {
-          const d = (doc ?? {}) as Record<string, unknown>;
-          return parseManifest(
-            {
-              name: d.name,
-              ...(d.requires !== undefined ? { requires: d.requires } : {}),
-              ...(d.provides !== undefined ? { provides: d.provides } : {}),
-              ...(d.contributes !== undefined ? { contributes: d.contributes } : {}),
-              ...(d.context !== undefined ? { context: d.context } : {}),
-              ...(d.children !== undefined ? { children: d.children } : {}),
-            },
-            `${where}#penguin.modules[${i}]`,
-          );
-        }),
+        ifaces: { ifaces: table.ifaces, types: table.types } as IfaceTable,
+        manifests,
       };
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
@@ -127,14 +136,16 @@ async function readPackageManifests(
 function asPlugin(module: unknown): Plugin | null {
   const def = (module as { default?: unknown }).default;
   const modules = (def as { modules?: unknown } | null)?.modules;
-  return modules !== null && typeof modules === "object" ? (def as Plugin) : null;
+  return Array.isArray(modules) && modules.every((m) => typeof m === "function")
+    ? (def as Plugin)
+    : null;
 }
 
 /**
  * Loads every configured plugin.
  *
  * The two failure classes are deliberately different. A PER-ENTRY failure (unresolvable
- * specifier, no `activate` export, a throw at import) is collected and skipped: that
+ * specifier, no table, a throw at import) is collected and skipped: that
  * capability is unavailable, which a deployment can recover from. A CONFIG-level failure
  * — the list itself unreadable or malformed — THROWS, because there is no honest way to
  * continue: the operator configured something this process cannot even read, and booting
@@ -148,38 +159,32 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
   for (const specifier of specifiers) {
     try {
       const { module, file } = await importPlugin(specifier);
-      const read = await readPackageManifests(file);
+      const read = await readPackageTable(file);
       if (read === null) {
-        failed.set(specifier, "not a plugin package: no package.json#penguin.modules above it");
+        failed.set(specifier, "not a plugin package: no package.json#penguin above it");
         continue;
       }
       const plugin = asPlugin(module);
       if (plugin === null) {
         failed.set(
           specifier,
-          "the default export is not a Plugin ({ modules: { <name>: { create } } })",
+          "the default export is not a Plugin ({ modules: [<@Component or @Module class>, …] })",
         );
         continue;
       }
       const modules: ModuleDef[] = [];
-      for (const manifest of read.manifests) {
-        const impl = plugin.modules[manifest.name];
-        if (impl === undefined || typeof impl.create !== "function") {
-          throw new Error(
-            `${read.where}#penguin names module '${manifest.name}', but the default export's modules has no create() for it`,
-          );
+      const seen = new Set<string>();
+      for (const cls of plugin.modules) {
+        // The class is checked against its generated manifest here (a stale table is a
+        // named error); the manifest is checked against the tree at boot.
+        const def = moduleDefOf(cls, { manifests: read.manifests });
+        if (seen.has(def.manifest.name)) {
+          throw new Error(`the default export lists module '${def.manifest.name}' twice`);
         }
-        modules.push({ manifest, ...impl });
+        seen.add(def.manifest.name);
+        modules.push(def);
       }
-      const declared = new Set(read.manifests.map((m) => m.name));
-      for (const name of Object.keys(plugin.modules)) {
-        if (!declared.has(name)) {
-          throw new Error(
-            `the default export has a module '${name}' that ${read.where}#penguin does not declare`,
-          );
-        }
-      }
-      loaded.push({ specifier, modules });
+      loaded.push({ specifier, modules, ifaces: read.ifaces });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));
     }

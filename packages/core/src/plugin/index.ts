@@ -1,25 +1,33 @@
 /**
  * The plugin contract: what a plugin package compiles against.
  *
- * Types only — the host that drives them lives in whatever embeds this SDK (for the
- * harness, `@prismshadow/penguin-server/plugin`). A plugin reaches this module with
- * `import type`, so it carries no runtime dependency on either and stays a
- * self-contained library that happens to satisfy an interface.
+ * Types, plus the five decorators — the same ones the harness's own modules are written
+ * with (core kernel/decorators.ts: no imports, so a plugin's bundle carries them and
+ * nothing else of the SDK). The host that drives a plugin lives in whatever embeds this
+ * SDK (for the harness, `@prismshadow/penguin-server/plugin`); a plugin reaches THAT with
+ * `import type` only and stays a self-contained library that happens to satisfy an
+ * interface.
  *
- * A plugin is a set of MODULES — the same unit the harness itself is built from
- * (core kernel/module.ts). Each module's static half is a manifest in the package's
- * `package.json#penguin.modules` (requires / provides / contributes / context /
- * children — an empty one may be left out), read and checked by the host without
- * executing the package; its code half is the entry of the same name in the package's
- * default export:
+ * A plugin is a set of MODULES — the same unit the harness itself is built from, written
+ * the same way: a `@Component` (or `@Module`) class whose `@Use` / `@Provide` / `@Bind`
+ * fields are its requirements, provisions and contribution code halves. Its manifest is
+ * GENERATED, not written: the package's build runs `scripts/gen-ifaces.mjs` over its own
+ * tsconfig and ships the resulting `ifaces.json` beside its `package.json` — the same
+ * table the harness generates for itself, holding the manifest of every decorated class
+ * and the signature of every interface they name. The host reads that file without
+ * executing the package, and the package's default export names the classes to boot:
  *
  *   // package.json
- *   "penguin": { "modules": [
- *     { "name": "sandbox-bwrap",
- *       "contributes": { "sandbox.providers": [{ "id": "sandbox-bwrap.provider", "name": "penguin-bwrap", "dimensions": ["fs-write", "network", "mask-paths"] }] } }
- *   ] }
+ *   "penguin": {},                       // marks a plugin package
+ *   "files": ["dist", "ifaces.json"],
+ *   "scripts": { "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup" }
  *   // src/index.ts
- *   export default { modules: { "sandbox-bwrap": { create: () => ({ api: {}, bind: { "sandbox-bwrap.provider": createProvider() } }) } } } satisfies Plugin;
+ *   @Component({ contributes: { "SandboxModule.providers": [{ id: "sandbox-bwrap.provider", name: "penguin-bwrap", dimensions: ["fs-write", "network", "mask-paths"] }] } })
+ *   export class SandboxBwrap {
+ *     @Bind("sandbox-bwrap.provider") provider!: SandboxProviderSource;
+ *     setup() { this.provider = createProvider(); }
+ *   }
+ *   export default { modules: [SandboxBwrap] } satisfies Plugin;
  *
  * The modules boot as children of the host's tree, once per App creation — the
  * packaged boot and each hot-swap boot alike — so what a module registers never
@@ -28,18 +36,17 @@
  * `@prismshadow/penguin-server/plugin`); the requirement is checked structurally,
  * at signature level, before the module is created.
  */
-import type { Json, ModuleCtx, ModuleInstance } from "../kernel/index.js";
+import type { ModuleClass } from "../kernel/decorators.js";
+
+export type { ClassCtx } from "../kernel/module.js";
+export type { ComponentMeta, ModuleClass, ModuleMeta } from "../kernel/decorators.js";
+export { Bind, Component, Module, Provide, Use } from "../kernel/decorators.js";
+export type { Opaque, Slot } from "../kernel/markers.js";
+export { Interface } from "../kernel/markers.js";
 
 export type * from "./sandbox.js";
 
-/** One module's code half. Its manifest is the `package.json#penguin.modules` entry of the same name. */
-export interface PluginModule {
-  /** Context migrations by from-version, chained (1→2→3). */
-  migrations?: Record<number, (old: Json) => Json>;
-  create(ctx: ModuleCtx, context: Json): ModuleInstance | Promise<ModuleInstance>;
-}
-
-/** What a plugin package's default export is. */
+/** What a plugin package's default export is: the module classes to boot, each in the package's `ifaces.json`. */
 export interface Plugin {
-  modules: Record<string, PluginModule>;
+  modules: readonly ModuleClass[];
 }

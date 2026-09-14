@@ -21,7 +21,13 @@
  * them fails THIS load — reported fail-closed by the service — instead of failing the
  * whole platform bundle's import.
  */
-import type { ConfinedArgv, Plugin, SandboxProvider } from "@prismshadow/penguin-core/plugin";
+import { Bind, Component } from "@prismshadow/penguin-core/plugin";
+import type {
+  ConfinedArgv,
+  Plugin,
+  SandboxProvider,
+  SandboxProviderSource,
+} from "@prismshadow/penguin-core/plugin";
 
 /** Mount the stock DSH chain on a bare cordis Context — exactly how DSH's own tests mount it. */
 export async function loadDshAdaptor(): Promise<SandboxProvider | null> {
@@ -50,15 +56,24 @@ export async function loadDshAdaptor(): Promise<SandboxProvider | null> {
 }
 
 /**
- * The plugin: one module, whose manifest is package.json#penguin.modules[0] (one
- * provider on the sandbox.providers slot); this default export binds the provider by
- * that contribution id. Created per App, so a hot swap gets a fresh provider.
+ * The plugin's one module: a provider on the sandbox slot, the code half of the
+ * contribution the decorator declares (its manifest is generated into ifaces.json from
+ * here). Created per App, so a hot swap gets a fresh provider.
  */
-const plugin: Plugin = {
-  modules: {
-    SandboxDsh: {
-      create: () => ({ api: {}, bind: { "sandbox-dsh.provider": loadDshAdaptor() } }),
-    },
+@Component({
+  contributes: {
+    "SandboxModule.providers": [
+      { id: "sandbox-dsh.provider", name: "dsh-local", dimensions: ["fs-write"] },
+    ],
   },
-};
+})
+export class SandboxDsh {
+  @Bind("sandbox-dsh.provider") provider!: SandboxProviderSource;
+
+  setup() {
+    this.provider = loadDshAdaptor();
+  }
+}
+
+const plugin: Plugin = { modules: [SandboxDsh] };
 export default plugin;

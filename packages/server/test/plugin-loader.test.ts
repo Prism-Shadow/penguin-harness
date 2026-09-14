@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { PLUGINS_FILE, loadPlugins, readPluginList } from "../src/plugin/loader.js";
+import ts from "typescript";
+import { IFACES_FILE, PLUGINS_FILE, loadPlugins, readPluginList } from "../src/plugin/loader.js";
 
 let root: string;
 
@@ -66,8 +67,57 @@ describe("plugin list", () => {
 });
 
 describe("plugin loading", () => {
-  /** A package on disk: package.json#penguin.modules plus an index.mjs default export. */
-  async function writePackage(name: string, penguin: unknown, index: string): Promise<string> {
+  /**
+   * The decorators, as a plugin's bundle would carry them — here imported from this
+   * checkout's built SDK by file URL, since a package under a temp dir resolves nothing.
+   */
+  const decorators = new URL("../../core/dist/plugin/index.js", import.meta.url).href;
+
+  /** Plugin source as a plugin author writes it, lowered the way its build would lower it. */
+  function lower(source: string): string {
+    return ts.transpileModule(source, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+    }).outputText;
+  }
+
+  /** The table the plugin's build would generate: one component, contributing one provider. */
+  const oneModule = {
+    ifaces: {
+      "@acme/penguin-plugin-thing#Thing": { name: "Thing", methods: {}, slots: {} },
+    },
+    types: {},
+    modules: {
+      Thing: {
+        name: "Thing",
+        requires: {},
+        provides: { Thing: "@acme/penguin-plugin-thing#Thing" },
+        contributes: {
+          "SandboxModule.providers": [
+            { id: "thing.provider", name: "thing", dimensions: ["fs-write"] },
+          ],
+        },
+        children: [],
+      },
+    },
+  };
+  const thingClass = `
+    import { Bind, Component } from ${JSON.stringify(decorators)};
+    @Component({ contributes: { "SandboxModule.providers": [{ id: "thing.provider", name: "thing", dimensions: ["fs-write"] }] } })
+    export class Thing {
+      @Bind("thing.provider") provider!: unknown;
+      setup() { this.provider = { confine() { throw new Error("no"); } }; }
+    }`;
+
+  /**
+   * A package on disk: package.json marked `penguin`, the generated table beside it, and
+   * an index.mjs default export (`null` table = a package that was never built).
+   */
+  async function writePackage(
+    name: string,
+    table: unknown | null,
+    index: string,
+    penguin: unknown = {},
+  ): Promise<string> {
     const dir = path.join(root, "node_modules", ...name.split("/"));
     await mkdir(dir, { recursive: true });
     await writeFile(
@@ -75,27 +125,17 @@ describe("plugin loading", () => {
       JSON.stringify({ name, main: "./index.mjs", penguin }),
       "utf8",
     );
-    await writeFile(path.join(dir, "index.mjs"), index, "utf8");
+    if (table !== null) await writeFile(path.join(dir, IFACES_FILE), JSON.stringify(table), "utf8");
+    await writeFile(path.join(dir, "index.mjs"), lower(index), "utf8");
     return path.join(dir, "index.mjs");
   }
-  const oneModule = {
-    modules: [
-      {
-        name: "thing",
-        contributes: {
-          "SandboxModule.providers": [
-            { id: "thing.provider", name: "thing", dimensions: ["fs-write"] },
-          ],
-        },
-      },
-    ],
-  };
 
-  it("pairs each manifest in package.json#penguin.modules with the default export's module of that name", async () => {
+  it("boots the classes the default export names, each against its manifest in the package's table", async () => {
     const file = await writePackage(
       "@acme/penguin-plugin-thing",
       oneModule,
-      'export default { modules: { thing: { create: () => ({ api: {}, bind: { "thing.provider": { confine() { throw new Error("no"); } } } }) } } };',
+      `${thingClass}
+       export default { modules: [Thing] };`,
     );
     await writeConfig({ plugins: [file] });
     const result = await loadPlugins(root);
@@ -103,18 +143,27 @@ describe("plugin loading", () => {
     expect(result.loaded).toHaveLength(1);
     const entry = result.loaded[0]!;
     expect(entry.specifier).toBe(file);
-    expect(entry.modules.map((m) => m.manifest.name)).toEqual(["thing"]);
+    expect(entry.modules.map((m) => m.manifest.name)).toEqual(["Thing"]);
     expect(entry.modules[0]!.manifest.contributes["SandboxModule.providers"]?.[0]?.id).toBe(
       "thing.provider",
     );
-    expect(typeof entry.modules[0]!.create).toBe("function");
+    expect(entry.ifaces?.ifaces["@acme/penguin-plugin-thing#Thing"]).toBeDefined();
+    // The class is the code half: its @Bind field is the contribution's implementation.
+    const instance = await entry.modules[0]!.create(
+      { use: {}, contributions: {}, resources: {} as never, effect: () => {} },
+      {},
+    );
+    expect(typeof (instance.bind?.["thing.provider"] as { confine: unknown }).confine).toBe(
+      "function",
+    );
   });
 
   it("an unresolvable specifier is skipped with its reason, not fatal", async () => {
     const good = await writePackage(
       "@acme/good",
       oneModule,
-      "export default { modules: { thing: { create: () => ({ api: {} }) } } };",
+      `${thingClass}
+       export default { modules: [Thing] };`,
     );
     await writeConfig({ plugins: ["@nope/definitely-not-installed", good] });
     const result = await loadPlugins(root);
@@ -123,41 +172,55 @@ describe("plugin loading", () => {
     expect(result.failed.get("@nope/definitely-not-installed")).toBeTruthy();
   });
 
-  it("a module the manifest names but the code does not provide is a load failure that says so", async () => {
-    const file = await writePackage("@acme/half", oneModule, "export default { modules: {} };");
-    await writeConfig({ plugins: [file] });
-    const result = await loadPlugins(root);
-    expect(result.loaded).toEqual([]);
-    expect(result.failed.get(file)).toMatch(/names module 'thing'.*no create\(\)/);
-  });
-
-  it("a module the code provides but the manifest does not declare is refused too", async () => {
+  it("a default export that is not a list of classes is a load failure that says so", async () => {
     const file = await writePackage(
-      "@acme/extra",
+      "@acme/half",
       oneModule,
-      "export default { modules: { thing: { create: () => ({ api: {} }) }, ghost: { create: () => ({ api: {} }) } } };",
+      "export default { modules: { Thing: { create() {} } } };",
     );
     await writeConfig({ plugins: [file] });
     const result = await loadPlugins(root);
-    expect(result.failed.get(file)).toMatch(/module 'ghost' that .* does not declare/);
+    expect(result.loaded).toEqual([]);
+    expect(result.failed.get(file)).toMatch(/not a Plugin/);
+  });
+
+  it("a class the table does not carry is a stale build, named as such", async () => {
+    const file = await writePackage(
+      "@acme/extra",
+      oneModule,
+      `${thingClass}
+       import { Component } from ${JSON.stringify(decorators)};
+       @Component() export class Ghost {}
+       export default { modules: [Thing, Ghost] };`,
+    );
+    await writeConfig({ plugins: [file] });
+    const result = await loadPlugins(root);
+    expect(result.failed.get(file)).toMatch(/Ghost: not in the generated manifest table/);
   });
 
   it("a package without package.json#penguin is not a plugin, and says so", async () => {
-    const file = await writePluginModule("plain", "export default { modules: {} };");
+    const file = await writePluginModule("plain", "export default { modules: [] };");
     await writeConfig({ plugins: [file] });
     const result = await loadPlugins(root);
     expect(result.loaded).toEqual([]);
     expect(result.failed.get(file)).toMatch(/not a plugin package/);
   });
 
-  it("a malformed manifest entry is a load failure naming the entry", async () => {
+  it("a plugin package without its table was never built, and says so", async () => {
+    const file = await writePackage("@acme/unbuilt", null, "export default { modules: [] };");
+    await writeConfig({ plugins: [file] });
+    const result = await loadPlugins(root);
+    expect(result.failed.get(file)).toMatch(/ifaces\.json is missing/);
+  });
+
+  it("a malformed manifest in the table is a load failure naming the module", async () => {
     const file = await writePackage(
-      "@acme/bad-manifest",
-      { modules: [{ contributes: {} }] },
-      "export default { modules: {} };",
+      "@acme/bad-table",
+      { ifaces: {}, types: {}, modules: { Thing: { contributes: {} } } },
+      "export default { modules: [] };",
     );
     await writeConfig({ plugins: [file] });
     const result = await loadPlugins(root);
-    expect(result.failed.get(file)).toMatch(/penguin\.modules\[0\]/);
+    expect(result.failed.get(file)).toMatch(/ifaces\.json#modules\.Thing/);
   });
 });

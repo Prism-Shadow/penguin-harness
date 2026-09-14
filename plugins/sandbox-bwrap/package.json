@@ -15,36 +15,18 @@
   "license": "Apache-2.0",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "ifaces.json"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "build": "tsup"
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
   },
   "devDependencies": {
     "@prismshadow/penguin-core": "workspace:*",
     "tsup": "^8.3.0",
     "vitest": "^3.2.6"
   },
-  "penguin": {
-    "modules": [
-      {
-        "name": "SandboxBwrap",
-        "contributes": {
-          "SandboxModule.providers": [
-            {
-              "id": "sandbox-bwrap.provider",
-              "name": "penguin-bwrap",
-              "dimensions": [
-                "fs-write",
-                "network",
-                "mask-paths"
-              ]
-            }
-          ]
-        }
-      }
-    ]
-  }
+  "penguin": {}
 }

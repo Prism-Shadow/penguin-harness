@@ -272,7 +272,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       terminals = new TerminalManager(ctx.resources, { assets: () => null });
       terminals.adopt(adoptable("TerminalModule") ? (context.terminals ?? []) : []);
       tree = await bootModules(bareTree([...plugins.modules()]), {
-        ifaces: ifaceTable as unknown as IfaceTable,
+        ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
         resources: ctx.resources,
         parked: parkedModules(context),
       });
@@ -282,7 +282,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // data before any create() runs, created in dependency order. Sandbox backends the
       // plugin host registered enter the same tree as one contributing module.
       tree = await bootModules(platformDef(caps, adoptable, [...plugins.modules()]), {
-        ifaces: ifaceTable as unknown as IfaceTable,
+        ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
         resources: ctx.resources,
         parked: parkedModules(context),
       });

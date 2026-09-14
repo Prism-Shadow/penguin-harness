@@ -3,12 +3,14 @@
  * platform boots as children of its tree. Kept out of ./index.ts so the published
  * `@prismshadow/penguin-server/plugin` subpath stays types only.
  */
-import type { ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
+import type { IfaceTable, ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
 
-/** One loaded plugin: the package, and its modules with manifests paired to code. */
+/** One loaded plugin: the package, its modules with manifests paired to code, and its generated table. */
 export interface LoadedPlugin {
   specifier: string;
   modules: ModuleDef[];
+  /** The interfaces and types the package's `ifaces.json` carries; absent for a module built in code. */
+  ifaces?: IfaceTable;
 }
 
 /** One host per server process; load order is the order the modules join the tree. */
@@ -31,6 +33,23 @@ export class PluginHost {
   /** Every plugin module, in load order — what the platform adds to its tree. */
   modules(): readonly ModuleDef[] {
     return this.plugins.flatMap((e) => e.modules);
+  }
+
+  /**
+   * The host's table with every plugin's folded in — what the tree is checked against. On
+   * a key both carry (a plugin's table copies the host interfaces it compiled against) the
+   * host's entry stands: it is what is provided, and what a hand-written manifest was
+   * always looked up in.
+   */
+  ifaces(host: IfaceTable): IfaceTable {
+    const ifaces = { ...host.ifaces };
+    const types = { ...host.types };
+    for (const plugin of this.plugins) {
+      if (plugin.ifaces === undefined) continue;
+      for (const [key, decl] of Object.entries(plugin.ifaces.ifaces)) ifaces[key] ??= decl;
+      for (const [key, decl] of Object.entries(plugin.ifaces.types)) types[key] ??= decl;
+    }
+    return { ifaces, types };
   }
 
   /** Nothing to release at process exit: modules dispose with the App that created them. */

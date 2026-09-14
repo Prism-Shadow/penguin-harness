@@ -75,18 +75,18 @@ platformImpl.create
 │    # 每个服务和 repo 是一个 @Component（导出自己的 class），session 运行时、终端管理器和
 │    # http 装配是 @Module（导出别人的 class）。先校验它们的 manifest（gen-ifaces 从装饰器
 │    # 读出）——requires 按签名解析、contribution 按槽位校验——再按依赖顺序执行 setup()。
-│    # 插件模块（package.json#penguin.modules）是同一棵树的子节点。
+│    # 插件模块（包里生成的 ifaces.json）是同一棵树的子节点。
 └─ ctx.effect：tree.dispose()（每个模块的 effect，逆序）+ manager.shutdown 排空
 ```
-插件是一组模块——与 harness 自身的构成单位相同。`package.json#penguin.modules` 承载 manifest（requires / provides / contributes / context / children，为空的可以省略）；包的默认导出是 `{ modules: { <name>: { create } } }`，加载时按名字配对。按频率拆开：
+插件是一组模块——与 harness 自身的构成单位相同，写法也相同：`@Component` / `@Module` 类，字段上是 `@Use` / `@Provide` / `@Bind`。它的 manifest 是生成的，不是手写的——包的 build 对自己的 tsconfig 跑 `gen-ifaces`，把 `ifaces.json` 随 `package.json`（标记 `"penguin": {}`）一起发布；默认导出是 `{ modules: [<class>, …] }`，加载时每个类对照表中自己的 manifest 核对。按频率拆开：
 
 | 时机          | 频率        | 发生什么                                                                                                                                         |
 | ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 加载          | 每进程一次  | 启动步骤 ④ `loadPlugins`：解析 `plugins.json` 里的 specifier、import、读它的 `package.json#penguin.modules`，把每个 manifest 与默认导出里同名的模块配对。没有 manifest 的包、代码与 manifest 不一致的包会带原因被跳过；`plugins.json` 不可读或格式错误则启动失败 |
+| 加载          | 每进程一次  | 启动步骤 ④ `loadPlugins`：解析 `plugins.json` 里的 specifier、import、读它 `package.json` 旁的 `ifaces.json`，把默认导出点名的每个类对照表中自己的 manifest 核对。没有表的包（没构建过）、类与表不一致的包（构建陈旧）会带原因被跳过；`plugins.json` 不可读或格式错误则启动失败 |
 | 校验 + 创建   | 每 App 一次 | platform 把插件模块加入它的树；整棵树先作为数据校验（requires 按签名解析、contribution 按槽位校验），再按依赖顺序创建——所以模块在每次启动、每次热替换时都是全新创建的 |
 | 释放          | 每 App 一次 | 模块通过 `effect()` 登记的清理在 App 释放时按创建逆序执行；插件的任何东西都不会进入下一代 |
 
-插件契约（`Plugin` / `PluginModule`，加上沙箱词汇表）声明在 SDK 里，即 `@prismshadow/penguin-core/plugin`；`@prismshadow/penguin-server/plugin` 把它与插件模块可以 require 的接口（`Sandbox`、`Terminals`、`SessionManager`、`Agents`……）一并再导出。两个子路径都只产出类型。哪些插件存在由部署的 `<root>/plugins.json` 决定，harness 自身不 import 任何插件。组件的接口是它 class 的公开表面；模块的 provides 与消费者的窄 requires 是声明在归属代码旁边的抽象类（`extends Interface<…>()`）。`pnpm gen:ifaces` 把两者投影进 `src/ifaces.json`（生成物，不进版本库——`typecheck`、`build`、`test` 都会重新生成），即模块树据以校验的表。
+插件契约（`Plugin`、装饰器，加上沙箱词汇表）声明在 SDK 里，即 `@prismshadow/penguin-core/plugin`；`@prismshadow/penguin-server/plugin` 再导出插件模块可以 require 的接口（`Sandbox`、`Terminals`、`SessionManager`、`Agents`……），只有类型。装饰器是插件带走的唯一一段 SDK 运行时——它们把记录写在类自身上，所以插件 bundle 里的那份和宿主读的是同一样东西。哪些插件存在由部署的 `<root>/plugins.json` 决定，harness 自身不 import 任何插件。组件的接口是它 class 的公开表面；模块的 provides 与消费者的窄 requires 是声明在归属代码旁边的抽象类（`extends Interface<…>()`）。`pnpm gen:ifaces` 把两者投影进 `src/ifaces.json`（生成物，不进版本库——`typecheck`、`build`、`test` 都会重新生成），即模块树据以校验的表。
 
 ## 子系统一览
 
@@ -104,7 +104,7 @@ platformImpl.create
 | Scheduler            | `runtime/scheduler.ts`——**App 级**（create 内启停）| schedules 路由；执行结果发布进 ChannelHub                                                                    |
 | HMR 宿主 / 平台      | `hmr/host.ts`（⑤ 末尾）                       | `PlatformApi`（`park` / `info` / `http` / `terminals` / `attachStream`）；`POST /api/hmr/upgrade` 为运行时自留路由，不经平台 |
 | 终端                 | `terminal/`——**App 级**              | `/api/terminals*` 路由组（注册进平台唯一的 Hono app）、WS `GET /api/terminals/:id/stream`；pty 寄存跨热更新存活 |
-| 插件宿主             | ④ `loadPlugins` 构建，⑤ 发布进资源注册表      | `package.json#penguin.modules` + 默认导出 `{ modules }`；配置面是 `<root>/plugins.json` |
+| 插件宿主             | ④ `loadPlugins` 构建，⑤ 发布进资源注册表      | 标记了 `penguin` 的 `package.json`、生成的 `ifaces.json`、默认导出 `{ modules: [<class>, …] }`；配置面是 `<root>/plugins.json` |
 | 模块树               | `src/platform.ts`——**App 级**（create 在认领的能力之上启动） | 每个服务 / repo class 上 `@Component()`（节点以 class 命名），依赖是 `@Use()` 字段；一个 class 造出多个东西时用带 `@Provide()` 字段的 `@Module({ … })`；消费者的窄接口是紧挨消费者声明的抽象类（`extends Interface<…>()`）；没有 `modules/` 目录——每个节点就住在它所是的那个东西的文件里；生成的 `src/ifaces.json`；`GET /api/contributions` 列出到达 web 槽位的内容 |
 | 沙盒                 | `sandbox/service.ts`——**App 级**（一个模块；后端向它的 `providers` 槽位投递） | 插件模块向 `SandboxModule.providers` 投递的一条 contribution；约束经 core 的 spawn seam 落到命令上 |
 | 模型目录             | 无启动期构建——core 静态数据                   | `/api/projects/:projectId/models`；目录本体在 `core/src/state/model-catalog.ts`                              |
