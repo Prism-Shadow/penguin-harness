@@ -45,6 +45,10 @@ Paths are canonicalized before entering the profile. Seatbelt matches the real f
 path, and on macOS `/tmp` and `/var` are symlinks into `/private`, so an uncanonicalized
 subpath rule silently matches nothing.
 
+## Settings
+
+On **Settings → Plugins**, inside the Sandbox card: the **sandbox-exec program** (a path or a command on PATH; empty uses `sandbox-exec`). It applies at the next command spawn; a changed program is probed afresh.
+
 ## Install
 
 It ships with the harness build. On the Plugins page, install it to the Project that should

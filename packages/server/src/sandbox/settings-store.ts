@@ -1,92 +1,166 @@
 /**
- * Sandbox settings, stored: the confinement an admin chose on the Settings dialog's Sandbox
- * page, kept in `server_settings` under `sandbox` so it survives a restart, and loaded into
- * the sandbox service when the App boots.
+ * Sandbox settings, as settings groups: the confinement every agent command spawns under is a
+ * schema contributed to `PluginConfigProvider.groups`, and each mounted backend's own options
+ * (declared on its `SandboxModule.providers` contribution) are groups drawn inside it. The
+ * Plugins page draws and saves them like any plugin's options, so neither the sandbox nor a
+ * backend ships a page of its own; the values live where every entry's do (`server_settings`,
+ * `plugin-config:<name>`), so a restart keeps them.
  *
- * The service itself stays on the capability-free floor (a bare kernel boots it with no
- * database), so the store is a node of its own above it. The service's parked context is
- * untouched: it still rides a hot swap and still reaches a platform older than this store.
- * On boot a stored document wins; with none stored, whatever the swap carried stays.
+ * Two nodes, because the kernel creates a slot's contributors before its owner: the groups
+ * only read the sandbox service, and a second node reads the stored documents back through
+ * `PluginConfig` and applies them. The service itself stays on the capability-free floor (a
+ * bare kernel boots it with no database), and its parked context still carries the settings
+ * across a hot swap; on boot a stored document wins.
  */
-import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { SandboxMode, SandboxSettings } from "@prismshadow/penguin-core/plugin";
-import { Settings } from "../mechanisms/settings.js";
+import type { PluginConfigNotice, PluginConfiguration } from "../api/types.js";
+import { PluginConfig, parsePluginConfiguration } from "../plugin/config.js";
+import type { SettingsGroup, SettingsGroupSource } from "../plugin/config.js";
 import { Sandbox, SandboxModule } from "./service.js";
 
-const SETTINGS_KEY = "sandbox";
+/** The sandbox's own group: its name is the store key and the parent of every backend's group. */
+export const SANDBOX_GROUP = "sandbox";
+
+/** The group a backend's own options are stored and drawn under. */
+export const backendGroup = (backend: string): string => `${SANDBOX_GROUP}:${backend}`;
+
+/** The confinement policy, as a schema the settings page draws. */
+export const SANDBOX_CONFIGURATION: PluginConfiguration = {
+  title: "Sandbox",
+  titleZh: "沙盒",
+  description:
+    "The confinement agent commands run under, enforced by a sandbox backend plugin. Applies to the next command spawn.",
+  descriptionZh: "Agent 执行命令时的封禁策略，由沙盒后端插件实施。对下一次命令启动生效。",
+  properties: {
+    mode: {
+      type: "enum",
+      title: "Confinement mode",
+      titleZh: "封禁模式",
+      default: "danger-full-access",
+      options: [
+        { value: "danger-full-access", title: "Off (full access)", titleZh: "关闭（完全访问）" },
+        { value: "workspace-write", title: "Workspace write only", titleZh: "仅工作区可写" },
+        { value: "read-only", title: "Read-only", titleZh: "只读" },
+      ],
+    },
+    cutNetwork: {
+      type: "boolean",
+      title: "Cut off the network",
+      titleZh: "断开网络",
+      default: false,
+    },
+    maskPaths: {
+      type: "list",
+      title: "Masked paths",
+      titleZh: "屏蔽路径",
+      description: "One absolute path per line, hidden from confined commands (reads included).",
+      descriptionZh: "每行一个绝对路径，对被封禁的命令隐藏（包括读取）。",
+      maxItems: 64,
+    },
+  },
+};
+
 const MODES: readonly SandboxMode[] = ["read-only", "workspace-write", "danger-full-access"];
-/** Cap on the mask list: a policy, not a filesystem index. */
-const MAX_MASK_PATHS = 64;
 
-/** What `parseSandboxSettings` refuses. */
-export class SandboxSettingsError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SandboxSettingsError";
-  }
-}
-
-/** Parses a settings document, rejecting the whole of it rather than keeping half. */
-export function parseSandboxSettings(body: Record<string, unknown>): SandboxSettings {
-  const mode = body.mode;
-  if (typeof mode !== "string" || !MODES.includes(mode as SandboxMode)) {
-    throw new SandboxSettingsError(`mode must be one of ${MODES.join(", ")}.`);
-  }
-  const network = body.network;
-  if (network !== undefined && network !== null && network !== "none") {
-    throw new SandboxSettingsError('network must be "none" or null.');
-  }
-  const rawPaths = body.maskPaths;
-  let maskPaths: string[] | undefined;
-  if (rawPaths !== undefined && rawPaths !== null) {
-    if (!Array.isArray(rawPaths) || rawPaths.some((p) => typeof p !== "string")) {
-      throw new SandboxSettingsError("maskPaths must be an array of paths.");
-    }
-    const cleaned = [
-      ...new Set((rawPaths as string[]).map((p) => p.trim()).filter((p) => p !== "")),
-    ];
-    if (cleaned.length > MAX_MASK_PATHS) {
-      throw new SandboxSettingsError(`maskPaths may name at most ${MAX_MASK_PATHS} paths.`);
-    }
-    if (cleaned.length > 0) maskPaths = cleaned;
-  }
+/** A stored document (defaults merged) as the service's settings. */
+export function sandboxSettingsOf(doc: Record<string, unknown>): SandboxSettings {
+  const mode = MODES.includes(doc.mode as SandboxMode)
+    ? (doc.mode as SandboxMode)
+    : "danger-full-access";
+  const maskPaths = Array.isArray(doc.maskPaths)
+    ? doc.maskPaths.filter((p): p is string => typeof p === "string" && p !== "")
+    : [];
   return {
-    mode: mode as SandboxMode,
-    ...(network === "none" ? { network: "none" as const } : {}),
-    ...(maskPaths === undefined ? {} : { maskPaths }),
+    mode,
+    ...(doc.cutNetwork === true ? { network: "none" as const } : {}),
+    ...(maskPaths.length > 0 ? { maskPaths } : {}),
   };
 }
 
-/** What the Sandbox page writes through: the service's settings, persisted. */
-export abstract class SandboxConfig extends Interface<{
-  /** Stores the settings and applies them to the next command spawn. */
-  save(settings: SandboxSettings): void;
-}>() {}
+/** What the sandbox's card reports beside its fields: which backends can enforce it, or that none can. */
+function backendNotices(sandbox: Sandbox): PluginConfigNotice[] {
+  const backends = sandbox.backends();
+  if (backends.length === 0) {
+    return [
+      {
+        tone: "attention",
+        text: "This deployment has no sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.",
+        textZh:
+          "当前部署没有沙盒后端：在插件页安装适用于本平台的后端之前，选择任何模式都不会产生约束。",
+      },
+    ];
+  }
+  const list = backends.map((b) => `${b.name} (${b.dimensions.join(", ")})`).join(" · ");
+  return [{ tone: "muted", text: `Backends: ${list}`, textZh: `后端：${list}` }];
+}
 
-@Module()
-export class SandboxSettingsStore {
-  @Use() private readonly settings!: Settings;
+/** The sandbox's group, then one group per mounted backend that declares options. */
+@Component({
+  contributes: {
+    "PluginConfigProvider.groups": [{ id: "sandbox.settings", order: 0 }],
+  },
+})
+export class SandboxSettingsGroups {
   @Use(SandboxModule) private readonly sandbox!: Sandbox;
-  @Provide() sandboxConfig!: SandboxConfig;
+  @Bind("sandbox.settings") groups!: SettingsGroupSource;
   setup() {
-    const { settings, sandbox } = this;
-    const raw = settings.get(SETTINGS_KEY);
-    if (raw !== null) {
-      try {
-        sandbox.configure(parseSandboxSettings(JSON.parse(raw) as Record<string, unknown>));
-      } catch (err) {
-        // Only the validated route writes this key, so a document that does not parse was
-        // edited by hand; the service keeps what it booted with rather than guessing.
-        console.warn(
-          `[sandbox] ignoring stored settings: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-    this.sandboxConfig = {
-      save(next) {
-        settings.set(SETTINGS_KEY, JSON.stringify(next));
-        sandbox.configure(next);
+    const sandbox = this.sandbox;
+    this.groups = {
+      groups: () => {
+        const declared = sandbox.declaredConfigurations();
+        const backends: SettingsGroup[] = [];
+        // Mounted ones only: a backend that cannot serve this host (MXC off Windows) loads as
+        // nothing, and options for it would be a form for something that is not here.
+        for (const { name } of sandbox.backends()) {
+          if (declared[name] === undefined) continue;
+          try {
+            const configuration = parsePluginConfiguration(
+              declared[name],
+              `SandboxModule.providers "${name}"`,
+            );
+            if (configuration !== undefined) {
+              backends.push({ name: backendGroup(name), parent: SANDBOX_GROUP, configuration });
+            }
+          } catch (err) {
+            console.warn(`[sandbox] ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+        return [
+          {
+            name: SANDBOX_GROUP,
+            configuration: SANDBOX_CONFIGURATION,
+            notices: backendNotices(sandbox),
+          },
+          ...backends,
+        ];
       },
     };
+  }
+}
+
+/** Applies the stored documents to the service on boot and after every save. */
+@Component()
+export class SandboxSettingsApplier {
+  @Use() private readonly pluginConfig!: PluginConfig;
+  @Use(SandboxModule) private readonly sandbox!: Sandbox;
+  setup() {
+    const { pluginConfig, sandbox } = this;
+    // A saved document wins; with none saved the service keeps what the swap carried —
+    // applying the defaults here would un-confine a deployment on every hot update.
+    if (pluginConfig.saved(SANDBOX_GROUP)) {
+      sandbox.configure(sandboxSettingsOf(pluginConfig.get(SANDBOX_GROUP)));
+    }
+    pluginConfig.watch(SANDBOX_GROUP, (doc) => sandbox.configure(sandboxSettingsOf(doc)));
+    for (const name of Object.keys(sandbox.declaredConfigurations())) {
+      pluginConfig.watch(backendGroup(name), (doc) => sandbox.configureBackend(name, doc));
+    }
+    // A backend's group is listed once it has mounted, and its defaults come from that
+    // listing; backends load asynchronously, so their stored options are read after that.
+    void sandbox.whenReady().then(() => {
+      for (const name of Object.keys(sandbox.declaredConfigurations())) {
+        sandbox.configureBackend(name, pluginConfig.get(backendGroup(name)));
+      }
+    });
   }
 }
