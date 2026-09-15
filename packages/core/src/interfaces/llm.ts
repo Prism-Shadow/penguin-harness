@@ -66,8 +66,10 @@ export interface GenerativeModelConfig {
    */
   requestTimeoutMs?: number;
   /**
-   * Stable session id for this conversation, threaded to the model client so gateways that
-   * require it (e.g. OpenCode Go's `x-opencode-session`) can optimize / validate requests.
+   * The Session's id, for endpoints whose attribution scheme identifies the conversation
+   * rather than the app (OpenCode's `x-opencode-session`; see state/model-catalog.ts
+   * `attributionHeaders`). Unset: no such header is sent — a placeholder id would file every
+   * conversation at the gateway under one session, which is worse than naming none.
    */
   sessionId?: string;
   /**

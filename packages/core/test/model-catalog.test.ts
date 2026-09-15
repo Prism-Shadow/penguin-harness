@@ -1307,6 +1307,35 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
     });
   });
 
+  it("OpenCode gets the session header, and only when there is a session id to put in it", () => {
+    const sessionId = "session-2026-09-14-10-30-00-a1b2c3d4";
+    expect(attributionHeaders("https://opencode.ai/zen/v1", sessionId)).toEqual({
+      "x-opencode-session": sessionId,
+    });
+    // Same suffix-anchored host rule as the other two: a subdomain is the same gateway.
+    expect(attributionHeaders("https://api.opencode.ai/v1", sessionId)).toEqual({
+      "x-opencode-session": sessionId,
+    });
+    // No id, no header. A stand-in constant would file every conversation at the gateway
+    // under one session, which serves it worse than naming none.
+    expect(attributionHeaders("https://opencode.ai/zen/v1")).toBeUndefined();
+    expect(attributionHeaders("https://opencode.ai/zen/v1", "")).toBeUndefined();
+    // Third-party mirrors of the gateway are deliberately left out of the built-in scheme.
+    expect(attributionHeaders("https://freqtrade.1unlock.top/zen/go", sessionId)).toBeUndefined();
+  });
+
+  it("a session id leaves the app-attribution gateways exactly as they were", () => {
+    const sessionId = "session-2026-09-14-10-30-00-a1b2c3d4";
+    expect(attributionHeaders("https://openrouter.ai/api/v1", sessionId)).toEqual({
+      "HTTP-Referer": "https://penguin.ooo/",
+      "X-OpenRouter-Title": "PenguinHarness",
+      "X-OpenRouter-Categories": "cli-agent,personal-agent",
+    });
+    expect(attributionHeaders("https://tokendance.space/gateway/v1", sessionId)).toEqual({
+      "X-App-URL": "https://penguin.ooo/",
+    });
+  });
+
   it("every other endpoint gets no extra headers, and a blank or unparseable base URL is inert", () => {
     expect(attributionHeaders("https://api.deepseek.com")).toBeUndefined();
     expect(attributionHeaders("https://api.siliconflow.cn/v1")).toBeUndefined();

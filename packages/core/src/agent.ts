@@ -1130,7 +1130,7 @@ export class Agent {
               ...(visionEntry.context_window !== undefined
                 ? { contextWindow: visionEntry.context_window }
                 : {}),
-              ...(sessionId !== undefined ? { sessionId } : {}),
+              sessionId,
               requestTimeoutMs: 60_000,
             }),
         };
@@ -1207,7 +1207,7 @@ export class Agent {
         // model that rejects it.
         ...(modelEntry.fast_mode === true ? { fastMode: true } : {}),
         ...(context.thinkingLevel !== undefined ? { thinkingLevel: context.thinkingLevel } : {}),
-        ...(sessionId !== undefined ? { sessionId } : {}),
+        sessionId,
         ...(context.requestTimeoutMs !== undefined
           ? { requestTimeoutMs: context.requestTimeoutMs }
           : {}),
@@ -1277,7 +1277,7 @@ export class Agent {
         ...(modelEntry.context_window !== undefined
           ? { contextWindow: modelEntry.context_window }
           : {}),
-        ...(sessionId !== undefined ? { sessionId } : {}),
+        sessionId,
         requestTimeoutMs: 30_000,
       });
 
