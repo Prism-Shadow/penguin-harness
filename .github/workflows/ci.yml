@@ -12,12 +12,16 @@
 # again as the suite grows, whereas `ci` means what it has always meant.
 name: CI
 
-# Limit triggers to avoid duplicate runs: push runs only on main/dev; PRs always run once (no target-branch filter --
-# this repo's PRs often target integration branches rather than main/dev, and a target filter would leave them with no CI).
+# Triggers are deliberately narrow: a push to main, and a pull request whose base is main.
+# The runner pool is shared and one run is 21 jobs, so a pull request against any other
+# branch — a stacked PR, an integration branch — gets no CI until it is retargeted at main
+# (or someone dispatches this workflow by hand). That is the trade: fewer runs over a
+# pull request's life, not a gate on every branch.
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
