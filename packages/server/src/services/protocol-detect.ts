@@ -38,6 +38,11 @@
  * Probes run sequentially in the order above and stop at the first `served` hit. The API
  * key is only ever placed in request headers — never in URLs, results, or logs.
  *
+ * The typed URL is not taken literally: it is normalized and paired with its neighbouring
+ * `/v1` form (see candidateBaseUrls), and every candidate gets the full protocol sequence
+ * before the next one is tried. The candidate that answered is reported back as `baseUrl`
+ * so the caller can correct the field. Worst case a detection is six short probes.
+ *
  * Credential resolution is layered: the caller passes the key typed in the dialog or the
  * entry's stored one, and when there is neither, each probe falls back to the environment
  * variable for the protocol IT speaks (`ANTHROPIC_API_KEY` for `ant-messages`,
@@ -135,6 +140,50 @@ export function isHttpUrl(value: string): boolean {
  */
 export function probeUrl(baseUrl: string, path: string): string {
   return baseUrl.trim().replace(/\/+$/, "") + path;
+}
+
+/**
+ * Endpoint paths a pasted URL may already carry, longest match first — `/chat/completions`
+ * before `/completions`, `/v1/messages` before `/messages` — so the whole endpoint path is
+ * stripped rather than its tail.
+ */
+const ENDPOINT_PATH_SUFFIXES = [
+  "/chat/completions",
+  "/v1/messages",
+  "/completions",
+  "/responses",
+  "/messages",
+] as const;
+
+/**
+ * The base URLs one detection tries, in order, for a URL as the user typed it.
+ *
+ * What gets pasted is usually a variant of the right thing: one `/v1` too many
+ * (`https://host/v1/v1`), one too few (`https://host` for an API that lives under
+ * `https://host/v1`), or a whole endpoint URL copied out of a provider's documentation
+ * (`https://host/v1/chat/completions`). So the typed value is first normalized — trimmed,
+ * query and fragment dropped, trailing slashes removed, a trailing endpoint path stripped,
+ * runs of repeated `/v1` collapsed to one — and then its neighbouring form is tried as
+ * well: the trailing `/v1` removed when it has one, `/v1` appended when it has not. Those
+ * two forms are the whole list, so a detection costs at most six short probes.
+ *
+ * Pure string work, deliberately: `new URL()` would lowercase the host and re-encode the
+ * path, and a base URL must be probed as it was written apart from the edits above.
+ */
+export function candidateBaseUrls(typed: string): string[] {
+  // Query and fragment are never part of an endpoint base URL, but a URL copied from a
+  // browser carries them.
+  let base = typed.trim().replace(/[?#][\s\S]*$/, "");
+  base = base.replace(/\/+$/, "");
+  for (const suffix of ENDPOINT_PATH_SUFFIXES) {
+    if (base.endsWith(suffix)) {
+      base = base.slice(0, -suffix.length);
+      break;
+    }
+  }
+  base = base.replace(/\/+$/, "").replace(/(?:\/v1){2,}/g, "/v1");
+  // The two forms differ by exactly one `/v1` segment, so they can never coincide.
+  return [base, base.endsWith("/v1") ? base.slice(0, -"/v1".length) : `${base}/v1`];
 }
 
 /** A JSON body that looks like a structured API error (vs an HTML page / junk): see the header doc for why this check is tolerant. */
@@ -279,10 +328,14 @@ async function runProbe(
 }
 
 /**
- * Runs the three probes sequentially in the required order and stops at the first
- * protocol the endpoint serves. Never throws: every failure mode is a probe outcome.
- * The result lists only the probes actually run (their order is the probe order), so
- * callers can render per-protocol outcomes for debugging; no secret ever appears in it.
+ * Runs the protocol probes in the required order against each candidate base URL (see
+ * candidateBaseUrls) and stops at the first protocol an endpoint serves: candidate by
+ * candidate, and within a candidate Responses, then Messages, then Chat Completions.
+ * The candidate that answered comes back as `baseUrl`, so a URL that was typed one `/v1`
+ * off — or pasted as a full endpoint URL — is reported in the form that actually works.
+ * Never throws: every failure mode is a probe outcome. The result lists only the probes
+ * actually run, in the order they ran (each carries the URL it hit, so a reader can tell
+ * the candidates apart); no secret ever appears in it.
  */
 export async function detectModelProtocol(options: {
   baseUrl: string;
@@ -303,11 +356,13 @@ export async function detectModelProtocol(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? PROBE_TIMEOUT_MS;
   const probes: ModelProtocolProbeDto[] = [];
-  for (const spec of PROTOCOL_PROBES) {
-    const apiKey = options.apiKey ?? envApiKeyForProtocol(spec.clientType, options.env);
-    const probe = await runProbe(spec, options.baseUrl, apiKey, fetchImpl, timeoutMs);
-    probes.push(probe);
-    if (probe.outcome === "served") return { detected: spec.clientType, probes };
+  for (const baseUrl of candidateBaseUrls(options.baseUrl)) {
+    for (const spec of PROTOCOL_PROBES) {
+      const apiKey = options.apiKey ?? envApiKeyForProtocol(spec.clientType, options.env);
+      const probe = await runProbe(spec, baseUrl, apiKey, fetchImpl, timeoutMs);
+      probes.push(probe);
+      if (probe.outcome === "served") return { detected: spec.clientType, baseUrl, probes };
+    }
   }
   return { probes };
 }

@@ -1034,6 +1034,9 @@ export const en: Strings = {
     detecting: "Detecting…",
     /** Success toast; the protocol itself then shows in the base URL field's suffix. */
     detectedProtocol: (name: string): string => `Detected ${name}; applied`,
+    /** Success toast when the probe answered on a tidied-up base URL, which the field now holds. */
+    detectedProtocolAndUrl: (protocol: string, url: string): string =>
+      `Detected ${protocol}; base URL normalized to ${url}`,
     /** The ONE failure toast: every mode collapses to it, naming only what the user can act on. */
     detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
     /** Save-time detection came back empty: the save proceeds on the compatible client. */

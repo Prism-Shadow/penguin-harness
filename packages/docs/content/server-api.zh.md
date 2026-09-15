@@ -174,7 +174,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | /api/projects/:projectId/models | 模型列表（api_key 掩码显示） |
 | PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键 |
 | POST | /api/projects/:projectId/models/test | 连通性测试：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
-| POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测并返回第一个被提供的协议：`{baseUrl, apiKey?, …}` → `{detected?, probes}` |
+| POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测，先用整理后的 URL（整段端点路径会先被剥掉），再用它增删 `/v1` 后的形式，返回第一个被提供的协议与实际应答的 base URL：`{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}` |
 | POST | /api/projects/:projectId/models/list | 新增分组导入所用的端点模型列表：按检测出的协议列出端点服务的全部模型 id：`{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
 | POST | /api/projects/:projectId/models/detect-vision | 视觉能力探测：用该模型的凭据发送一张 1x1 图片(一次真实计费的补全)：`{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported\|unsupported\|failed, message?}` |
 

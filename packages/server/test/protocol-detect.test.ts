@@ -1,7 +1,9 @@
 /**
  * Protocol auto-detection tests: classification of probe answers (route-exists vs
- * route-missing 404/405 vs HTML/gateway junk vs 5xx), the required probe order
- * (openai-responses → ant-messages → openai-chat, stop at the first served protocol),
+ * route-missing 404/405 vs HTML/gateway junk vs 5xx), the candidate base URLs a typed URL
+ * expands to (an extra `/v1`, a missing `/v1`, a whole endpoint URL pasted in), the
+ * required probe order (openai-responses → ant-messages → openai-chat, candidate by
+ * candidate, stop at the first served protocol) and the base URL reported back,
  * auth header shapes per protocol (Bearer for the OpenAI protocols; x-api-key +
  * Bearer + anthropic-version for ant-messages, mirroring AgentHub's clients), the
  * per-protocol environment-variable fallback used when no key was typed or stored
@@ -16,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ModelProtocolDetectResponse, ModelsResponse } from "../src/api/types.js";
 import {
   MAX_PROBE_BODY_BYTES,
+  candidateBaseUrls,
   classifyProbeResponse,
   detectModelProtocol,
   envApiKeyForProtocol,
@@ -139,6 +142,79 @@ describe("isHttpUrl / probeUrl", () => {
   });
 });
 
+describe("candidateBaseUrls", () => {
+  it("covers the three ways a base URL is mistyped: one /v1 too many, one too few, a whole endpoint URL", () => {
+    expect(candidateBaseUrls("https://host/v1/v1")).toEqual(["https://host/v1", "https://host"]);
+    expect(candidateBaseUrls("https://host")).toEqual(["https://host", "https://host/v1"]);
+    expect(candidateBaseUrls("https://host/v1/chat/completions")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+    expect(candidateBaseUrls("https://host/v1/responses")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+    expect(candidateBaseUrls("https://host/v1/messages")).toEqual([
+      "https://host",
+      "https://host/v1",
+    ]);
+  });
+
+  it("strips the longest endpoint path, not its tail (/chat/completions before /completions, /v1/messages before /messages)", () => {
+    expect(candidateBaseUrls("https://host/v1/completions")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+    expect(candidateBaseUrls("https://host/messages")).toEqual(["https://host", "https://host/v1"]);
+    expect(candidateBaseUrls("https://host/api/chat/completions")).toEqual([
+      "https://host/api",
+      "https://host/api/v1",
+    ]);
+  });
+
+  it("a URL that is already right still gets its neighbour, and a plain host gets /v1", () => {
+    expect(candidateBaseUrls("https://api.example.com/v1")).toEqual([
+      "https://api.example.com/v1",
+      "https://api.example.com",
+    ]);
+    expect(candidateBaseUrls("http://127.0.0.1:8000")).toEqual([
+      "http://127.0.0.1:8000",
+      "http://127.0.0.1:8000/v1",
+    ]);
+  });
+
+  it("trims whitespace, drops trailing slashes, query and fragment", () => {
+    expect(candidateBaseUrls("  https://host/v1/  ")).toEqual(["https://host/v1", "https://host"]);
+    expect(candidateBaseUrls("https://host/v1/chat/completions?key=abc")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+    expect(candidateBaseUrls("https://host/v1#section")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+  });
+
+  it("collapses a run of repeated /v1 segments, endpoint path included", () => {
+    expect(candidateBaseUrls("https://host/v1/v1/v1")).toEqual(["https://host/v1", "https://host"]);
+    expect(candidateBaseUrls("https://host/v1/v1/responses")).toEqual([
+      "https://host/v1",
+      "https://host",
+    ]);
+  });
+
+  it("leaves the host's case and every other path segment exactly as typed", () => {
+    expect(candidateBaseUrls("https://API.Example.COM/v1")).toEqual([
+      "https://API.Example.COM/v1",
+      "https://API.Example.COM",
+    ]);
+    expect(candidateBaseUrls("https://host/OpenAI/Compat")).toEqual([
+      "https://host/OpenAI/Compat",
+      "https://host/OpenAI/Compat/v1",
+    ]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Probe ordering and header shapes (mocked fetch)
 // ---------------------------------------------------------------------------
@@ -193,6 +269,8 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
       ),
     });
     expect(res.detected).toBe("openai-responses");
+    // A base URL that needed no fixing is still reported, so callers compare rather than guess.
+    expect(res.baseUrl).toBe(BASE);
     expect(res.probes.map((p) => p.outcome)).toEqual(["served"]);
     expect(seen.map((c) => c.url)).toEqual(["https://gw.example.com/v1/responses"]);
   });
@@ -224,11 +302,52 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
     expect(res.probes.map((p) => p.outcome)).toEqual(["route_missing", "route_missing", "served"]);
   });
 
-  it("nothing matches: no detected protocol, all three probes reported", async () => {
+  it("nothing matches: no detected protocol, no base URL, and every candidate's probes reported", async () => {
     const res = await detectModelProtocol({ baseUrl: BASE, fetchImpl: fakeFetch({}) });
     expect(res.detected).toBeUndefined();
-    expect(res.probes).toHaveLength(3);
+    expect(res.baseUrl).toBeUndefined();
+    expect(res.probes).toHaveLength(candidateBaseUrls(BASE).length * 3);
     expect(res.probes.every((p) => p.outcome === "route_missing")).toBe(true);
+    // The whole first candidate is exhausted before the second one is tried.
+    expect(res.probes.map((p) => p.url)).toEqual([
+      "https://gw.example.com/v1/responses",
+      "https://gw.example.com/v1/v1/messages",
+      "https://gw.example.com/v1/chat/completions",
+      "https://gw.example.com/responses",
+      "https://gw.example.com/v1/messages",
+      "https://gw.example.com/chat/completions",
+    ]);
+  });
+
+  it("a pasted endpoint URL detects on the base it strips down to, and reports that base back", async () => {
+    const res = await detectModelProtocol({
+      baseUrl: "https://gw.example.com/v1/chat/completions",
+      fetchImpl: fakeFetch({ "/v1/chat/completions": { status: 401, body: OPENAI_ERROR } }),
+    });
+    expect(res.detected).toBe("openai-chat");
+    expect(res.baseUrl).toBe("https://gw.example.com/v1");
+    // The two misses before it are the same candidate's earlier protocols, not another base.
+    expect(res.probes.map((p) => [p.clientType, p.outcome, p.url])).toEqual([
+      ["openai-responses", "route_missing", "https://gw.example.com/v1/responses"],
+      ["ant-messages", "route_missing", "https://gw.example.com/v1/v1/messages"],
+      ["openai-chat", "served", "https://gw.example.com/v1/chat/completions"],
+    ]);
+  });
+
+  it("a base URL typed without /v1 falls through to the /v1 candidate and reports it", async () => {
+    const res = await detectModelProtocol({
+      baseUrl: "https://gw.example.com",
+      fetchImpl: fakeFetch({ "/v1/responses": { status: 400, body: OPENAI_ERROR } }),
+    });
+    expect(res.detected).toBe("openai-responses");
+    expect(res.baseUrl).toBe("https://gw.example.com/v1");
+    expect(res.probes.map((p) => p.outcome)).toEqual([
+      "route_missing",
+      "route_missing",
+      "route_missing",
+      "served",
+    ]);
+    expect(res.probes[3]!.url).toBe("https://gw.example.com/v1/responses");
   });
 
   it("probe failures do not stop the sequence: a timeout on /responses still finds chat completions", async () => {
@@ -300,7 +419,9 @@ describe("detectModelProtocol (order and stop-at-first)", () => {
       apiKey: "sk-secret-key",
       fetchImpl: fakeFetch({}, seen),
     });
-    expect(seen).toHaveLength(3);
+    // Nothing serves, so both candidates are probed; the header shapes are asserted on the
+    // first candidate's three calls.
+    expect(seen).toHaveLength(6);
     const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
     expect(responses.url).toBe("https://gw.example.com/v1/responses");
     expect(messages.url).toBe("https://gw.example.com/v1/v1/messages");
@@ -359,9 +480,9 @@ describe("detectModelProtocol env fallback", () => {
     await detectModelProtocol({
       baseUrl: BASE,
       env: { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-anthropic" },
-      fetchImpl: fakeFetch({}, seen), // every path 404s, so all three probes run
+      fetchImpl: fakeFetch({}, seen), // every path 404s, so both candidates run all three probes
     });
-    expect(seen).toHaveLength(3);
+    expect(seen).toHaveLength(6);
     const [responses, messages, chat] = seen as [SeenCall, SeenCall, SeenCall];
     expect(responses.headers.authorization).toBe("Bearer sk-openai");
     expect(chat.headers.authorization).toBe("Bearer sk-openai");

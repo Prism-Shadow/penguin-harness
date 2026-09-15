@@ -251,6 +251,17 @@ export function clientTypeAfterProviderChange(provider: string, current: string)
  */
 type DetectMode = "manual" | "save";
 
+/**
+ * What a detection run yields. The server probes neighbouring forms of the URL that was
+ * typed, so it reports back which one actually served the protocol; `baseUrl` carries that
+ * form only when it differs from what the field held, i.e. only when the field needs
+ * correcting.
+ */
+interface DetectOutcome {
+  clientType: string;
+  baseUrl?: string;
+}
+
 /** Local edit state for one model row (string-typed for form use; parsed uniformly on save). */
 export interface RowState {
   /**
@@ -1696,7 +1707,16 @@ function AddGroupDialog({
       const detected = res.detected !== undefined ? protocolSelectorValue(res.detected) : null;
       if (detected !== null) {
         setClientType(detected);
-        toastSuccess(S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected));
+        const name = S.models.protocolNames[detected] ?? detected;
+        // The protocol may have answered on a tidied-up form of the URL (a `/v1` added or
+        // dropped, a pasted endpoint path removed); the import must speak to that one, so
+        // the field takes it and the toast says so.
+        if (res.baseUrl !== undefined && res.baseUrl !== url) {
+          setBaseUrl(res.baseUrl);
+          toastSuccess(S.models.detectedProtocolAndUrl(name, res.baseUrl));
+        } else {
+          toastSuccess(S.models.detectedProtocol(name));
+        }
       } else {
         setDetectFailed(true);
         // Same condition the model dialog reports, so it gets the same sentence.
@@ -2331,7 +2351,7 @@ function ModelDialog({
    * probe: clicking Detect while the save path is already probing (or vice versa) must not
    * double-fire, and the save path needs the SAME run's verdict to decide whether to go on.
    */
-  const detectInFlight = useRef<Promise<string | null> | null>(null);
+  const detectInFlight = useRef<Promise<DetectOutcome | null> | null>(null);
   /** Vision probe in progress (its own control, so its own busy state). */
   const [visionDetecting, setVisionDetecting] = useState(false);
   /** Single-flight guard for the vision probe: it bills the user, so never twice at once. */
@@ -2435,7 +2455,7 @@ function ModelDialog({
    * A stale run (superseded by a manual pick or a newer run) discards its result instead
    * of clobbering the form, and stays silent.
    */
-  const detectOnce = async (mode: DetectMode): Promise<string | null> => {
+  const detectOnce = async (mode: DetectMode): Promise<DetectOutcome | null> => {
     // What an empty result means depends on who asked. A manual run simply failed; a save
     // run silently resolves to the compatible client and says so, because the save it was
     // serving is still going through.
@@ -2467,8 +2487,14 @@ function ModelDialog({
       const res = await api.detectProtocol(projectId, body);
       if (seq !== detectSeq.current) return null;
       if (res.detected) {
-        set({ clientType: res.detected });
-        return res.detected;
+        // The protocol may have answered on a tidied-up form of the URL (a `/v1` added or
+        // dropped, a pasted endpoint path removed). Saving the typed form would persist a
+        // base URL the detected protocol is not served at, so the field takes the one that
+        // answered and the outcome carries it on to the save path.
+        const served = res.baseUrl;
+        const patch = served !== undefined && served !== baseUrl ? { baseUrl: served } : {};
+        set({ clientType: res.detected, ...patch });
+        return { clientType: res.detected, ...patch };
       }
       failed();
       return null;
@@ -2484,7 +2510,7 @@ function ModelDialog({
    * Single-flight wrapper: a second trigger joins the run already in progress rather than
    * starting a rival probe (the button while the save path is probing, or vice versa).
    */
-  const runDetect = (mode: DetectMode): Promise<string | null> => {
+  const runDetect = (mode: DetectMode): Promise<DetectOutcome | null> => {
     if (detectInFlight.current) return detectInFlight.current;
     const run = detectOnce(mode).finally(() => {
       detectInFlight.current = null;
@@ -2501,7 +2527,12 @@ function ModelDialog({
   const detectFromButton = async () => {
     const detected = await runDetect("manual");
     if (detected === null) return; // detectOnce already raised the failure toast
-    toastSuccess(S.models.detectedProtocol(S.models.protocolNames[detected] ?? detected));
+    const name = S.models.protocolNames[detected.clientType] ?? detected.clientType;
+    toastSuccess(
+      detected.baseUrl === undefined
+        ? S.models.detectedProtocol(name)
+        : S.models.detectedProtocolAndUrl(name, detected.baseUrl),
+    );
   };
 
   /**
@@ -2682,7 +2713,17 @@ function ModelDialog({
     if (needsProtocolDetectOnSave(action, next.provider, next.clientType)) {
       // Joins a run already started from the Detect button rather than probing twice.
       const detected = await runDetect("save");
-      onSubmit({ ...next, clientType: detected ?? DEFAULT_CUSTOM_CLIENT_TYPE }, action);
+      onSubmit(
+        {
+          ...next,
+          clientType: detected?.clientType ?? DEFAULT_CUSTOM_CLIENT_TYPE,
+          // The draft was snapshotted before the probe, so a base URL the probe corrected
+          // has to be carried over by hand — otherwise the entry saves a URL the detected
+          // protocol is not served at.
+          ...(detected?.baseUrl !== undefined ? { baseUrl: detected.baseUrl } : {}),
+        },
+        action,
+      );
       return;
     }
     onSubmit(next, action);

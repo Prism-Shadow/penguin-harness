@@ -701,10 +701,22 @@ export interface ModelProtocolProbeDto {
   status?: number;
 }
 
-/** Detection result: probes run sequentially and stop at the first served protocol, so `probes` lists only the ones actually run, in order. */
+/**
+ * Detection result: probes run sequentially over the candidate base URLs derived from the
+ * one that was typed and stop at the first served protocol, so `probes` lists only the
+ * ones actually run, in order.
+ */
 export interface ModelProtocolDetectResponse {
-  /** The first protocol the endpoint serves (an AgentHub client type); absent when none of the three matched. */
+  /** The first protocol an endpoint serves (an AgentHub client type); absent when none of the three matched. */
   detected?: string;
+  /**
+   * The base URL the detected protocol answered at — the typed URL normalized (endpoint
+   * path stripped, repeated `/v1` collapsed) and possibly with a trailing `/v1` added or
+   * removed, so `https://host/v1/chat/completions` comes back as `https://host/v1`.
+   * Present only alongside `detected`; callers write it back into their base URL field,
+   * since that is where the protocol is served.
+   */
+  baseUrl?: string;
   probes: ModelProtocolProbeDto[];
 }
 

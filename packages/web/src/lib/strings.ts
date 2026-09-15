@@ -1027,6 +1027,9 @@ export const zh = {
     detecting: "检测中…",
     /** Success toast；协议本身随后显示在 base URL 输入框的后缀处。 */
     detectedProtocol: (name: string): string => `检测到 ${name} 协议，已应用`,
+    /** Success toast when the probe answered on a tidied-up base URL, which the field now holds. */
+    detectedProtocolAndUrl: (protocol: string, url: string): string =>
+      `已检测为 ${protocol}，base URL 已整理为 ${url}`,
     /** The ONE failure toast: 所有失败情形共用，只讲用户能动手改的两件事。 */
     detectFailedBody: "无法检测接口协议，请检查 API Key 与 base URL。",
     /** 保存时检测无结果：按兼容协议继续保存。 */
