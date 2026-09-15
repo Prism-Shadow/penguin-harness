@@ -179,6 +179,7 @@ describe("migration mechanism", () => {
         "drop-goal-state",
         "machines",
         "user-profile",
+        "machines-columns",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
@@ -239,6 +240,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
         "messaging-delivery-flags",
         "machines",
         "user-profile",
+        "machines-columns",
       ]);
     } finally {
       db.close();
@@ -260,6 +262,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
         "drop-goal-state",
         "machines",
         "user-profile",
+        "machines-columns",
       ]);
     } finally {
       db.close();
@@ -283,12 +286,12 @@ describe("0.2.9 → current: drop-goal-state", () => {
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       fresh.exec(SCHEMA_SQL);
-      expect(migrate(db).applied).toEqual(["drop-goal-state", "machines", "user-profile"]);
+      expect(migrate(db).applied).toEqual(["drop-goal-state", "machines", "user-profile", "machines-columns"]);
       expect(shape(db)).toBe(shape(fresh));
       // IF EXISTS: a database this build created, stamped 2 by an older mechanism, has no
       // goal_state to drop and must not fail on it.
       fresh.exec("PRAGMA user_version = 2");
-      expect(migrate(fresh).applied).toEqual(["drop-goal-state", "machines", "user-profile"]);
+      expect(migrate(fresh).applied).toEqual(["drop-goal-state", "machines", "user-profile", "machines-columns"]);
     } finally {
       db.close();
       fresh.close();
@@ -320,7 +323,7 @@ describe("pre-profile → current: user-profile", () => {
     try {
       fresh.exec(SCHEMA_SQL);
       expect(userColumns(db)).not.toContain("display_name");
-      expect(migrate(db).applied).toEqual(["user-profile"]);
+      expect(migrate(db).applied).toEqual(["user-profile", "machines-columns"]);
       expect(userColumns(db)).toContain("display_name");
       expect(userColumns(db)).toContain("avatar");
       expect(shape(db)).toBe(shape(fresh));
@@ -328,7 +331,7 @@ describe("pre-profile → current: user-profile", () => {
       // ADOPTION: on a database this build created, the declarative track already added both,
       // so the migration must find its work done, add nothing twice, and stamp anyway.
       fresh.exec("PRAGMA user_version = 4");
-      expect(migrate(fresh).applied).toEqual(["user-profile"]);
+      expect(migrate(fresh).applied).toEqual(["user-profile", "machines-columns"]);
       expect(userColumns(fresh).filter((c) => c === "avatar")).toEqual(["avatar"]);
     } finally {
       db.close();
@@ -404,6 +407,43 @@ describe("0.2.4 → current", () => {
   });
 });
 
+describe("a machines table from before migration 4", () => {
+  /** The machines table as the machines line created it before release: forwards, no session, no platform. */
+  const ADOPTED_MACHINES_DDL = `
+    CREATE TABLE machines (
+      address      TEXT PRIMARY KEY,
+      machine_id   TEXT,
+      version      TEXT,
+      installed_at TEXT,
+      forward_port INTEGER,
+      forward_pid  INTEGER,
+      remote_port  INTEGER
+    );
+  `;
+
+  it("is adopted by migration 4 as it stands, and gains the columns the row writes at 6", () => {
+    // What a data root that ran the machines line before its migration holds: IF NOT EXISTS
+    // kept the table, and the first connect failed on the insert naming session_pid.
+    const db = open029();
+    try {
+      db.exec(ADOPTED_MACHINES_DDL);
+      db.exec("PRAGMA user_version = 3");
+      expect(migrate(db).applied).toEqual(["machines", "user-profile", "machines-columns"]);
+      const columns = (db.prepare("PRAGMA table_info(machines)").all() as { name: string }[]).map(
+        (c) => c.name,
+      );
+      expect(columns).toEqual(expect.arrayContaining(["session_pid", "platform"]));
+      db.prepare(
+        "INSERT INTO machines (address, machine_id, version, installed_at, session_pid, remote_port, platform) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run("ssh:nas", null, "9.9.9", "2026-09-04T00:00:00.000Z", 42, 7364, "linux");
+      // Idempotent: a table that already has them is left as it is.
+      expect(migrate(db).applied).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
 describe("rollbackTo", () => {
   /** Every migration states an undo or states that it has none — never leaves it unsaid. */
   it("every migration declares its down, one way or the other", () => {
@@ -422,8 +462,8 @@ describe("rollbackTo", () => {
       const r = rollbackTo(db, 2);
       expect(r.from).toBe(LATEST_VERSION);
       expect(r.to).toBe(2);
-      // Newest first: the profile columns go, then the machines tables, then goal_state returns.
-      expect(r.reverted).toEqual(["user-profile", "machines", "drop-goal-state"]);
+      // Newest first: the machines columns, the profile columns, then the machines tables, then goal_state returns.
+      expect(r.reverted).toEqual(["machines-columns", "user-profile", "machines", "drop-goal-state"]);
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
           name: string;
@@ -462,6 +502,7 @@ describe("rollbackTo", () => {
       migrate(db);
       const r = rollbackTo(db, 0);
       expect(r.reverted).toEqual([
+        "machines-columns",
         "user-profile",
         "machines",
         "drop-goal-state",

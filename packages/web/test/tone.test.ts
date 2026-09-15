@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { toneDot, toneInk, toneStrip, toneSurface } from "../src/lib/tone";
 import type { Tone } from "../src/lib/tone";
 
-const TONES: Tone[] = ["busy", "attention", "success", "danger", "muted"];
+const TONES: Tone[] = ["busy", "attention", "success", "link", "danger", "muted"];
 
 const read = (rel: string) =>
   readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), "utf8");
@@ -41,7 +41,7 @@ describe("tone tokens", () => {
   it("fills a state dot with one value across both themes", () => {
     // A 6px dot has no interior to read: one vivid mid-scale hue works on white and on black,
     // where an ink pair tuned for a stroke does not. Muted is the exception — it must recede.
-    for (const tone of ["busy", "attention", "success", "danger"] as const) {
+    for (const tone of ["busy", "attention", "success", "link", "danger"] as const) {
       expect(toneDot[tone]).toMatch(/^bg-[a-z]+-500$/);
     }
   });
