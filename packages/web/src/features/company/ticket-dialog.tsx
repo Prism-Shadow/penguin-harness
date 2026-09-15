@@ -145,6 +145,12 @@ function TicketDialog({
   /** The organization's board and roster: the parent picker, the child titles, the owner options. */
   const [tickets, setTickets] = useState<readonly OrgTicketItem[]>([]);
   const [employees, setEmployees] = useState<readonly OrgEmployeeItem[]>([]);
+  /**
+   * The organization whose board and roster are on hand, set once that fetch settles — resolved
+   * or failed. Settled rather than succeeded: when it fails the ids are all this dialog has, and
+   * waiting for names that are never coming would hold the skeleton open forever.
+   */
+  const [contextOrg, setContextOrg] = useState<string | null>(null);
   const [editing, setEditing] = useState<Section | null>(null);
   const [summaryDraft, setSummaryDraft] = useState<SummaryDraft | null>(null);
   const [textDraft, setTextDraft] = useState("");
@@ -159,6 +165,8 @@ function TicketDialog({
   const [busy, setBusy] = useState(false);
   const names = new Map(employees.map((e) => [e.agentId, e.name]));
   const titles = new Map(tickets.map((t) => [t.ticketId, t.title]));
+  /** Whether the board and roster on hand are this organization's, so the fields can read names. */
+  const contextReady = contextOrg === `${projectId}/${orgId}`;
   const { tickets: ticketsVersion, runs: runsVersion } = company.versions;
 
   const load = useCallback(async () => {
@@ -181,8 +189,11 @@ function TicketDialog({
     void load();
   }, [load, ticketsVersion, runsVersion]);
 
-  // The board and the roster the fields read against. Best effort and never blocking: without
-  // them the parent and the children fall back to their ids, which is what an id is for.
+  // The board and the roster the fields read against. Still best effort — a failure opens the
+  // dialog anyway, on the ids — but the first reveal waits for it: the owner, the parent, the
+  // children and every history line read an id until it lands and a name afterwards, and the
+  // two are different lengths, so showing the detail first reflows the whole panel under the
+  // reader. A later version bump refetches in place and never re-hides what is on screen.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -196,6 +207,8 @@ function TicketDialog({
         setEmployees(chart.employees);
       } catch {
         // The detail itself is what the dialog is for; it carries its own error strip.
+      } finally {
+        if (!cancelled) setContextOrg(`${projectId}/${orgId}`);
       }
     })();
     return () => {
@@ -424,8 +437,8 @@ function TicketDialog({
                 {S.common.retry}
               </Button>
             </div>
-          ) : detail === null ? (
-            <div className="space-y-4">
+          ) : detail === null || !contextReady ? (
+            <div className="space-y-5">
               <div className="flex gap-2">
                 <Skeleton className="h-5 w-14 rounded-full" />
                 <Skeleton className="h-5 w-10 rounded-full" />
