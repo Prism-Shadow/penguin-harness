@@ -1,9 +1,9 @@
 /**
  * Admin plugin-configuration routes (admin only, 403 for non-admins):
- * GET /api/admin/plugin-config — every loaded plugin that declares a configuration, its
- * schema and its values (secrets masked); PUT /api/admin/plugin-config { name, values } —
- * one package's update, validated against its schema (see plugin/config.ts applyUpdate),
- * stored, and handed to the plugin's watchers so it applies without a restart.
+ * GET /api/admin/plugin-config — every declared settings group, its schema and its values
+ * (secrets masked); PUT /api/admin/plugin-config { name, values } — one group's update,
+ * validated against its schema (see plugin/config.ts applyUpdate), stored, and handed to the
+ * declaring module's watchers so it applies without a restart.
  */
 import { Hono } from "hono";
 import type { PluginConfigResponse } from "../../api/types.js";

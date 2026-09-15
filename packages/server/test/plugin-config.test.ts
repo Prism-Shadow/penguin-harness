@@ -1,10 +1,11 @@
 /**
- * Plugin configuration: a package DECLARES its options in its manifest, an admin fills them
- * in on the Plugins page through /api/admin/plugin-config, and the plugin's modules read the
- * document through the PluginConfig mechanism — defaults merged in, secrets masked at the API
- * and kept when the mask is sent back, every save handed to the watchers.
+ * Plugin configuration: a module DECLARES a settings group as a contribution (manifest data),
+ * an admin fills it in on the Plugins page through /api/admin/plugin-config, and the module
+ * reads the document back through the PluginConfig mechanism — defaults merged in, secrets
+ * masked at the API and kept when the mask is sent back, every save handed to the watchers.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { PluginConfigResponse } from "../src/api/types.js";
 import {
   PluginConfigError,
@@ -22,7 +23,7 @@ const SCHEMA = parsePluginConfiguration(
     titleZh: "Acme 机器人",
     properties: {
       token: { type: "secret", title: "Token", required: true },
-      project: { type: "project", title: "Project" },
+      project: { type: "string", title: "Project" },
       agent: { type: "string", title: "Agent", default: "default_agent" },
       enabled: { type: "boolean", title: "Enabled", default: true },
       limit: { type: "number", title: "Limit" },
@@ -52,6 +53,8 @@ describe("parsePluginConfiguration", () => {
   it("refuses a schema the page could not draw, naming the file", () => {
     const bad = (properties: unknown) => () =>
       parsePluginConfiguration({ properties }, "acme/package.json");
+    // A Project picker is not a field type: a Project is named by its id, a string.
+    expect(bad({ a: { type: "project", title: "A" } })).toThrow(/\.a\.type must be one of/);
     expect(bad({ a: { type: "colour", title: "A" } })).toThrow(
       /acme\/package.json.*\.a\.type must be one of/,
     );
@@ -149,9 +152,7 @@ describe("PluginConfigStore", () => {
     off();
     store.set("@acme/bot", { agent: "x" });
     expect(seen).toHaveLength(1);
-    expect(() => store.set("@acme/other", {})).toThrow(
-      /no settings group or loaded plugin named "@acme\/other"/,
-    );
+    expect(() => store.set("@acme/other", {})).toThrow(/no settings group named "@acme\/other"/);
     expect(store.describe().map((e) => e.name)).toEqual(["@acme/bot"]);
   });
 });
@@ -164,12 +165,21 @@ describe("/api/admin/plugin-config", () => {
     const host = new PluginHost();
     host.use({
       specifier: "@acme/bot",
-      name: "@acme/bot",
-      configuration: SCHEMA,
-      modules: [],
+      modules: [
+        {
+          // A plugin module declaring its group: pure data, the way a generated ifaces.json carries it.
+          manifest: parseManifest({
+            name: "AcmeBot",
+            requires: {},
+            provides: {},
+            contributes: { "PluginConfigProvider.groups": [{ id: "acme-bot", ...SCHEMA }] },
+            children: [],
+          }),
+          create: () => ({ api: {} }),
+        },
+      ],
       replaces: [],
     });
-    host.use({ specifier: "@acme/plain", name: "@acme/plain", modules: [], replaces: [] });
     t = await createTestApp({ plugins: host });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   });
@@ -177,15 +187,15 @@ describe("/api/admin/plugin-config", () => {
     await t.cleanup();
   });
 
-  it("lists the contributed groups, then only the plugins that declare options, and is for admins only", async () => {
+  it("lists the declared groups, and is for admins only", async () => {
     const res = await admin.get("/api/admin/plugin-config");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginConfigResponse;
-    // The sandbox is a contributed group, listed ahead of every package.
+    // The sandbox's group is ordered ahead of the rest.
     expect(body.plugins[0]!.name).toBe("sandbox");
     expect(body.plugins.slice(1)).toEqual([
       {
-        name: "@acme/bot",
+        name: "acme-bot",
         configuration: SCHEMA,
         values: { agent: "default_agent", enabled: true },
       },
@@ -193,18 +203,18 @@ describe("/api/admin/plugin-config", () => {
     const member = apiClient(t.app, (await provisionUser(t.app, "member")).cookie);
     expect((await member.get("/api/admin/plugin-config")).status).toBe(403);
     expect(
-      (await member.put("/api/admin/plugin-config", { name: "@acme/bot", values: {} })).status,
+      (await member.put("/api/admin/plugin-config", { name: "acme-bot", values: {} })).status,
     ).toBe(403);
   });
 
   it("saves one package's values, masks the secret, and refuses what the schema refuses", async () => {
     const saved = await admin.put("/api/admin/plugin-config", {
-      name: "@acme/bot",
+      name: "acme-bot",
       values: { token: "secret-token-value", project: "default_project" },
     });
     expect(saved.status).toBe(200);
     const body = (await saved.json()) as PluginConfigResponse;
-    expect(body.plugins.find((e) => e.name === "@acme/bot")!.values).toEqual({
+    expect(body.plugins.find((e) => e.name === "acme-bot")!.values).toEqual({
       token: "secr…alue",
       project: "default_project",
       agent: "default_agent",
@@ -213,7 +223,7 @@ describe("/api/admin/plugin-config", () => {
     expect(JSON.stringify(body)).not.toContain("secret-token-value");
 
     const invalid = await admin.put("/api/admin/plugin-config", {
-      name: "@acme/bot",
+      name: "acme-bot",
       values: { limit: "many" },
     });
     expect(invalid.status).toBe(400);
@@ -221,13 +231,13 @@ describe("/api/admin/plugin-config", () => {
       error: { code: "plugin_config_invalid", message: '"limit" must be a number' },
     });
     const unknown = await admin.put("/api/admin/plugin-config", {
-      name: "@acme/plain",
+      name: "acme-plain",
       values: {},
     });
     expect(unknown.status).toBe(404);
     expect(await unknown.json()).toMatchObject({ error: { code: "plugin_config_unknown" } });
     const shapeless = await admin.put("/api/admin/plugin-config", {
-      name: "@acme/bot",
+      name: "acme-bot",
       values: [],
     });
     expect(shapeless.status).toBe(400);

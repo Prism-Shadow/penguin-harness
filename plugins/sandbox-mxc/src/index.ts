@@ -39,7 +39,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { Bind, Component } from "@prismshadow/penguin-core/plugin";
+import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
   Plugin,
@@ -133,6 +133,29 @@ function defaultProbe(runner: string, timeoutMs: number): boolean {
   return probe.status === 0;
 }
 
+/** This backend's own settings, as it reads them from its group. */
+export interface MxcSettings {
+  /** A runner path to use instead of the one the MXC SDK ships; null for the SDK's. */
+  runner: string | null;
+}
+
+/** Its group's stored document as settings; an empty runner means the SDK's own. */
+export function mxcSettingsOf(doc: Record<string, unknown>): MxcSettings {
+  const runner = typeof doc.runner === "string" ? doc.runner.trim() : "";
+  return { runner: runner !== "" ? runner : null };
+}
+
+/**
+ * What this backend requires of plugin configuration: to read the group it declares. The
+ * interface is the consumer's own, so the package depends on no harness type.
+ */
+export abstract class MxcConfigReader extends Interface<{
+  get(name: string): Record<string, unknown>;
+}>() {}
+
+/** The settings group this backend declares (its contribution id), drawn inside the Sandbox card. */
+export const MXC_GROUP = "sandbox-mxc";
+
 /**
  * Loads the backend. Resolves to null where it cannot serve — a non-Windows host, or an
  * installation without the optional SDK — so the harness reports an unavailable
@@ -140,27 +163,34 @@ function defaultProbe(runner: string, timeoutMs: number): boolean {
  */
 export async function loadMxcProvider(
   internals: MxcInternals = {},
+  settings: () => MxcSettings = () => ({ runner: null }),
 ): Promise<SandboxProvider | null> {
   const platform = internals.platform ?? process.platform;
   if (platform !== "win32") return null;
   const sdk = internals.sdk ?? ((await import("@microsoft/mxc-sdk")) as unknown as MxcSdk);
   const runner = internals.runnerPath ?? resolveRunner();
   const probe = internals.probe ?? defaultProbe;
-  return createMxcProvider(sdk, runner, probe);
+  return createMxcProvider(sdk, runner, probe, settings);
 }
 
-/** The backend itself, over an already-resolved SDK and runner (the unit-testable core). */
+/**
+ * The backend itself, over an already-resolved SDK and default runner (the unit-testable
+ * core). It reads its settings at each confine; the probe is cached per runner, so a runner
+ * set in them is checked once, at the first spawn that uses it.
+ */
 export function createMxcProvider(
   sdk: MxcSdk,
-  runner: string,
+  defaultRunner: string,
   probe: (runner: string, timeoutMs: number) => boolean = defaultProbe,
+  settings: () => MxcSettings = () => ({ runner: null }),
 ): SandboxProvider {
-  let usable: boolean | undefined;
+  const usable = new Map<string, boolean>();
   return {
     dimensions: ["fs-write", "network", "mask-paths"],
     confine(argv, policy): ConfinedArgv {
-      usable ??= probe(runner, PROBE_TIMEOUT_MS);
-      if (!usable) {
+      const runner = settings().runner ?? defaultRunner;
+      if (!usable.has(runner)) usable.set(runner, probe(runner, PROBE_TIMEOUT_MS));
+      if (!usable.get(runner)) {
         throw new Error(
           "penguin-mxc cannot confine on this host: the MXC runner is missing or reports no " +
             "usable containment; refusing to run the command unconfined.",
@@ -203,13 +233,32 @@ export function createMxcProvider(
         dimensions: ["fs-write", "network", "mask-paths"],
       },
     ],
+    "PluginConfigProvider.groups": [
+      {
+        id: "sandbox-mxc",
+        parent: "sandbox",
+        title: "MXC",
+        properties: {
+          runner: {
+            type: "string",
+            title: "wxc-exec program",
+            titleZh: "wxc-exec 程序",
+            description: "A path to the MXC runner; empty uses the one the MXC SDK ships.",
+            descriptionZh: "MXC 运行器的路径；留空则使用 MXC SDK 自带的那个。",
+            placeholder: "wxc-exec.exe",
+          },
+        },
+      },
+    ],
   },
 })
 export class SandboxMxc {
+  @Use() private readonly config!: MxcConfigReader;
   @Bind("sandbox-mxc.provider") provider!: SandboxProviderSource;
 
   setup() {
-    this.provider = loadMxcProvider();
+    const config = this.config;
+    this.provider = loadMxcProvider({}, () => mxcSettingsOf(config.get(MXC_GROUP)));
   }
 }
 

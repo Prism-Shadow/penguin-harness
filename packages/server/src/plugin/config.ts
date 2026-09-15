@@ -1,31 +1,35 @@
 /**
- * Plugin configuration: the options a plugin package DECLARES (`package.json#penguin
- * .configuration`, a small schema of typed fields) and the values an admin gives them on the
- * Settings dialog's Plugins page, stored server-wide and handed to the plugin's
- * modules through the `PluginConfig` mechanism (a module `requires` it from `PluginConfigModule`).
+ * Plugin configuration: the settings a module DECLARES and the values an admin gives them on
+ * the Settings dialog's Plugins page, stored server-wide and read back by the declaring module
+ * itself through the `PluginConfig` mechanism (a module `requires` it from `PluginConfigModule`).
  *
- * The shape is VS Code's `contributes.configuration` cut down to what a settings page can
- * draw without knowing the plugin: a titled group of fields, each a string, a secret, a
- * boolean, a number or a Project picker, with a default and a description. The schema is
- * read off the manifest without running the package, so the page can list and validate a
- * plugin's options whether or not its modules booted.
+ * A declaration is a contribution to `PluginConfigProvider.groups`: pure manifest data, so a
+ * plugin's lands in its generated `ifaces.json` beside every other contribution, and the page
+ * can list and validate it without running the package. Its shape is VS Code's
+ * `contributes.configuration` cut down to what a settings page can draw without knowing the
+ * module — a titled group of fields (a string, a secret, a boolean, a number, a choice among
+ * options, or a list of lines) — plus a `parent` that draws the group inside another's card.
+ * The group's name is the contribution's id. A group whose status changes at run time (the
+ * sandbox's backends) contributes that as code to `PluginConfigPage.status`.
  *
- * Values live in `server_settings` under `plugin-config:<package name>`, one JSON document
- * per package — server-global, like the proxy: plugins load once per process (the closure
- * over every Project's list, PRFC-0010), so their options are the process's too. A secret is
- * stored in the clear beside the other settings the server keeps and is masked at every API
- * surface; a masked value sent back keeps the stored one, the models-page rule.
+ * Values live in `server_settings` under `plugin-config:<group>`, one JSON document per group
+ * — server-global, like the proxy: plugins load once per process (the closure over every
+ * Project's list, PRFC-0010), so their options are the process's too. A secret is stored in
+ * the clear beside the other settings the server keeps and is masked at every API surface; a
+ * masked value sent back keeps the stored one, the models-page rule.
  *
- * Delivery is a read plus a watch. `get` merges what is stored onto the schema's defaults,
- * so a plugin reads a complete document on its first boot; `watch` fires after every save,
- * which is how a plugin applies an edit without a restart or a re-assembly of the App.
+ * Delivery is a pull. The module that declared a group reads it: `get` merges what is stored
+ * onto the declared defaults, so a first boot reads a complete document; `watch` fires after
+ * every save, which is how a module applies an edit without a restart or a re-assembly of the
+ * App. Nothing else carries the values on its behalf, so each reader turns the document into
+ * its own typed settings at its own boundary. Declaring data on the slot does not order the
+ * boot (a data-only contribution), which is what lets one module both declare and require.
  *
- * A package is not the only thing with options. A module contributes a settings group to
- * `PluginConfigProvider.groups` — a schema drawn exactly like a package's, plus live notices,
- * plus `parent` to draw one group inside another — so a core capability (the sandbox) and the
- * plugins that extend it (its backends' own options) get their form from the same page code
- * rather than each shipping a page of its own. Groups are asked for per call, like the
- * package schemas: what they list may change as backends load.
+ * Two nodes, for the same ordering reason. `PluginConfigProvider` holds the values and takes
+ * the declarations; `PluginConfigPage` is what the admin API reads — the entries with their
+ * live notices — and takes the status code. A status contributor (the sandbox's, which reads
+ * the sandbox service) is created before the page, and a sandbox backend reading its own
+ * group is created after the provider: one node for both would close that circle.
  */
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx, Slot } from "@prismshadow/penguin-core/kernel";
@@ -35,10 +39,8 @@ import type {
   PluginConfigNotice,
   PluginConfiguration,
 } from "../api/types.js";
-import type { Hmr } from "../hmr/capabilities.js";
 import { Settings } from "../mechanisms/settings.js";
 import { maskApiKey } from "../services/project-config-service.js";
-import { pluginHostFrom } from "./host.js";
 
 export type { PluginConfigField, PluginConfigNotice, PluginConfiguration } from "../api/types.js";
 
@@ -47,7 +49,6 @@ const FIELD_TYPES = new Set<PluginConfigField["type"]>([
   "secret",
   "boolean",
   "number",
-  "project",
   "enum",
   "list",
 ]);
@@ -56,8 +57,8 @@ const FIELD_TYPES = new Set<PluginConfigField["type"]>([
 const FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
 
 /**
- * Reads a package's `penguin.configuration`. Undefined when the package declares none; a
- * declared one that is malformed throws, naming the file — a schema the page cannot draw is
+ * Validates a declared configuration. Undefined when there is none; a malformed one throws,
+ * naming where it was declared — a schema the page cannot draw is
  * a load failure of that plugin, not something to guess at.
  */
 export function parsePluginConfiguration(
@@ -263,24 +264,29 @@ export function applyUpdate(
   return next;
 }
 
-/** One settings group a module contributes: a schema like a package's, and where it is drawn. */
+/** A settings group as a module declares it: a configuration, and where the page draws it. */
+export interface SettingsGroupDecl extends PluginConfiguration {
+  /** Another group's name (its contribution id): this one is drawn inside that card and saved with it. */
+  parent?: string;
+  /** Position among the groups: lower first (absent = 100), then declaration order. */
+  order?: number;
+}
+
+/** One settings group as the store holds it: named by its contribution id. */
 export interface SettingsGroup {
-  /** The store key and the name the page saves under; unique among groups and packages. */
   name: string;
   configuration: PluginConfiguration;
-  /** Another entry's name: this group is drawn inside that entry's card and saved with it. */
   parent?: string;
-  notices?: PluginConfigNotice[];
 }
 
-/** The code half of a `groups` contribution: the groups as they stand now. */
-export interface SettingsGroupSource {
-  groups(): SettingsGroup[];
+/** The code half of a `status` contribution: a group's live notices, asked per read. */
+export interface SettingsGroupStatus {
+  notices(): PluginConfigNotice[];
 }
 
-/** What a plugin module reads: its own document, and a watch on it. */
+/** What a module reads: the group it declared, and a watch on it. */
 export abstract class PluginConfig extends Interface<{
-  /** The stored values merged onto the schema's defaults; `{}` for a name no entry answers to. */
+  /** The stored values merged onto the declared defaults; `{}` for a name no group answers to. */
   get(name: string): Record<string, unknown>;
   /** Fires with the new document after every save of `name`; returns the unsubscribe. */
   watch(name: string, cb: (values: Record<string, unknown>) => void): () => void;
@@ -289,24 +295,31 @@ export abstract class PluginConfig extends Interface<{
 }>() {}
 
 export interface PluginConfigSlots {
-  /**
-   * A settings group, drawn on the Plugins page before the packages' own options. The data
-   * half orders the contributions; the code half answers the groups, asked per call.
-   */
-  groups: Slot<{ order: number }, SettingsGroupSource>;
+  /** A settings group, as data: its id is its name, the data its configuration. */
+  groups: Slot<SettingsGroupDecl>;
 }
 
-/** What the settings page reads and writes. */
-export abstract class PluginConfigAdmin extends Interface<{
-  /** Every contributed group, then every loaded package that declares a configuration; values masked. */
+/** The entries as stored, before any live notice: what the page node builds on. */
+export abstract class PluginConfigEntries extends Interface<{
   describe(): PluginConfigEntry[];
-  /** Validates and stores one update; answers that entry, masked. */
   set(name: string, update: Record<string, unknown>): PluginConfigEntry;
 }>() {}
 
+/** What the settings page reads and writes. */
+export abstract class PluginConfigAdmin extends Interface<{
+  /** Every declared group, in order, with its live notices; values masked. */
+  describe(): PluginConfigEntry[];
+  /** Validates and stores one update; answers that entry, masked, with its notices. */
+  set(name: string, update: Record<string, unknown>): PluginConfigEntry;
+}>() {}
+
+export interface PluginConfigAdminSlots {
+  /** Live notices for a group that has any (`group` names it). */
+  status: Slot<{ group: string }, SettingsGroupStatus>;
+}
+
 export interface PluginConfigStoreDeps {
   settings: Pick<Settings, "get" | "set">;
-  /** Every entry, contributed groups first — read per call, since a swap replaces the host and backends load late. */
   groups: () => readonly SettingsGroup[];
 }
 
@@ -356,7 +369,7 @@ export class PluginConfigStore {
   set(name: string, update: Record<string, unknown>): PluginConfigEntry {
     const group = this.group(name);
     if (group === undefined) {
-      throw new PluginConfigError(null, `no settings group or loaded plugin named "${name}"`);
+      throw new PluginConfigError(null, `no settings group named "${name}"`);
     }
     const next = applyUpdate(group.configuration, this.stored(name), update);
     this.deps.settings.set(`plugin-config:${name}`, JSON.stringify(next));
@@ -378,47 +391,64 @@ export class PluginConfigStore {
       configuration,
       values: maskValues(configuration, { ...defaultsOf(configuration), ...this.stored(name) }),
       ...(group.parent !== undefined ? { parent: group.parent } : {}),
-      ...(group.notices !== undefined && group.notices.length > 0
-        ? { notices: group.notices }
-        : {}),
     };
   }
 }
 
-/**
- * The store as a node: values in the settings repo; entries from the contributed groups, then
- * the packages the process's plugin host loaded.
- */
+/** The store as a node: values in the settings repo, groups from the declarations on its slot. */
 @Module()
 export class PluginConfigProvider {
   @Use() private readonly settings!: Settings;
-  @Use() private readonly hmr!: Hmr;
   @Provide() pluginConfig!: PluginConfig;
+  @Provide() pluginConfigEntries!: PluginConfigEntries;
+  setup({ contributions }: ClassCtx) {
+    const declared: Array<SettingsGroup & { order: number; index: number }> = [];
+    for (const [index, c] of (contributions.groups ?? []).entries()) {
+      const { parent, order, ...configuration } = c.data as unknown as SettingsGroupDecl;
+      try {
+        const parsed = parsePluginConfiguration(configuration, `${c.from}: group "${c.id}"`)!;
+        declared.push({
+          name: c.id,
+          configuration: parsed,
+          ...(typeof parent === "string" ? { parent } : {}),
+          order: typeof order === "number" ? order : 100,
+          index,
+        });
+      } catch (err) {
+        // One malformed declaration drops that group, not the page.
+        console.warn(`[plugin-config] ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    declared.sort((a, b) => a.order - b.order || a.index - b.index);
+    const groups: SettingsGroup[] = declared.map(({ name, configuration, parent }) => ({
+      name,
+      configuration,
+      ...(parent !== undefined ? { parent } : {}),
+    }));
+    const store = new PluginConfigStore({ settings: this.settings, groups: () => groups });
+    this.pluginConfig = store;
+    this.pluginConfigEntries = store;
+  }
+}
+
+/** The page's view: the stored entries with the live notices their status contributors report. */
+@Module()
+export class PluginConfigPage {
+  @Use() private readonly entries!: PluginConfigEntries;
   @Provide() pluginConfigAdmin!: PluginConfigAdmin;
   setup({ contributions }: ClassCtx) {
-    const hmr = this.hmr;
-    const sources = [...(contributions.groups ?? [])]
-      .sort((a, b) => ((a.data.order as number) ?? 0) - ((b.data.order as number) ?? 0))
-      .map((c) => c.code as SettingsGroupSource);
-    const store = new PluginConfigStore({
-      settings: this.settings,
-      groups: () => {
-        const contributed = sources.flatMap((source) => source.groups());
-        // Claimed per call rather than captured: the host belongs to the process, and a hot
-        // swap hands the same one to the next platform. A host from a generation before
-        // configurations existed answers none.
-        const host = pluginHostFrom(hmr.resources) as {
-          configurations?: () => ReadonlyMap<string, PluginConfiguration>;
-        };
-        const packages =
-          typeof host.configurations === "function" ? [...host.configurations()] : [];
-        return [
-          ...contributed,
-          ...packages.map(([name, configuration]) => ({ name, configuration })),
-        ];
-      },
-    });
-    this.pluginConfig = store;
-    this.pluginConfigAdmin = store;
+    const entries = this.entries;
+    const status = new Map<string, SettingsGroupStatus>();
+    for (const c of contributions.status ?? []) {
+      status.set(c.data.group as string, c.code as SettingsGroupStatus);
+    }
+    const withNotices = (entry: PluginConfigEntry): PluginConfigEntry => {
+      const notices = status.get(entry.name)?.notices() ?? [];
+      return notices.length > 0 ? { ...entry, notices } : entry;
+    };
+    this.pluginConfigAdmin = {
+      describe: () => entries.describe().map(withNotices),
+      set: (name, update) => withNotices(entries.set(name, update)),
+    };
   }
 }
