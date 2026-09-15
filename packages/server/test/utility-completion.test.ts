@@ -127,7 +127,7 @@ describe("collectUtilityCompletion", () => {
 describe("completeOnce", () => {
   it("says which way it fell through when the Project has nothing to run it on", async () => {
     const root = await makeTempRoot();
-    const service = wire(ProjectConfigService, { config: { root } });
+    const service = wire(ProjectConfigService, { paths: { root } });
     // No `.project_config.toml` at all.
     expect(await service.completeOnce("p1", "Name: Plugin Marketplace")).toEqual({
       ok: false,
@@ -160,7 +160,7 @@ describe("completeOnce", () => {
 
   it("collapses a construction that throws into a reason instead of an exception", async () => {
     const root = await makeTempRoot();
-    const service = wire(ProjectConfigService, { config: { root } });
+    const service = wire(ProjectConfigService, { paths: { root } });
     await fs.mkdir(projectDir(root, "p1"), { recursive: true });
     // An entry whose model id no client can be routed from, and no protocol pinned: the SDK
     // throws while building the client, before any network I/O.

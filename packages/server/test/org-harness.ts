@@ -201,7 +201,7 @@ export async function makeOrgHarness(opts: {
         plugins.updated.push({ agentId, plugin });
       },
     },
-    projectConfig: wire(ProjectConfigService, { config: { root } }),
+    projectConfig: wire(ProjectConfigService, { paths: { root } }),
     usage: {
       costBySession: async (_p, ids) => ({
         bySession: new Map(ids.filter((id) => costs.has(id)).map((id) => [id, costs.get(id)!])),

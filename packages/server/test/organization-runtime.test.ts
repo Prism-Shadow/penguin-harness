@@ -223,7 +223,7 @@ describe("organization runtime", () => {
           plugins.updated.push({ agentId, plugin });
         },
       },
-      projectConfig: wire(ProjectConfigService, { config: { root } }),
+      projectConfig: wire(ProjectConfigService, { paths: { root } }),
       completeOnce: async (_p, prompt) => {
         completion.prompts.push(prompt);
         return completion.answers.shift() ?? NO_MODEL;
