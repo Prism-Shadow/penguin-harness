@@ -33,6 +33,8 @@ import {
   DEFAULT_COMMAND_POLICY_RULES,
   effectiveCommandPolicyRules,
   parseCommandPolicy,
+  parsePluginTable,
+  pluginTableToToml,
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
@@ -47,6 +49,7 @@ import {
 } from "@prismshadow/penguin-core";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type {
+  PluginTable,
   CommandPolicyRule,
   LLMOutcome,
   ModelRef,
@@ -542,6 +545,23 @@ export class ProjectConfigService implements ProjectConfigStore {
     }));
     await this.writeRaw(projectId, { ...raw, command_policy: block });
     return this.getCommandPolicy(projectId);
+  }
+
+  /** The `[plugins]` table this Project asks for, in the file's order; empty when it asks for none. */
+  async getPlugins(projectId: string): Promise<PluginTable> {
+    return parsePluginTable((await this.readRaw(projectId)).plugins) ?? {};
+  }
+
+  /**
+   * Replaces this Project's plugin table (a declarative PUT, validated at the route).
+   * Read-modify-write like setCommandPolicy, so every other key survives. An empty table is
+   * written as an empty table rather than removed: "this Project asks for none" is a
+   * decision, and a reader cannot tell it from "never configured" if the key vanishes.
+   */
+  async setPlugins(projectId: string, plugins: PluginTable): Promise<PluginTable> {
+    const raw = await this.readRaw(projectId);
+    await this.writeRaw(projectId, { ...raw, plugins: pluginTableToToml(plugins) });
+    return this.getPlugins(projectId);
   }
 
   /** Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined if none -> cost is NULL). */

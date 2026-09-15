@@ -102,6 +102,8 @@ import type {
   SessionPatchRequest,
   SessionResponse,
   SessionProcessesResponse,
+  PluginIndexResponse,
+  PluginReadmeResponse,
   SessionsResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
@@ -152,6 +154,7 @@ import type {
   UsageResponse,
   VaultResponse,
   VaultUpdateRequest,
+  InstalledPluginsResponse,
   VersionResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
@@ -1157,6 +1160,12 @@ export const installAgentPlugins = (projectId: string, agentId: string, names: s
     { method: "POST", body: { names } satisfies PluginInstallRequest },
   );
 
+/** Plugin index (available to any logged-in user): the merged index of every configured registry. */
+export const getPluginIndex = () => apiFetch<PluginIndexResponse>("/api/plugins/registry");
+
+export const getPluginReadme = (name: string) =>
+  apiFetch<PluginReadmeResponse>(`/api/plugins/registry/readme?name=${encodeURIComponent(name)}`);
+
 export const getAgentSkills = (projectId: string, agentId: string) =>
   apiFetch<AgentSkillsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/skills`,
@@ -1365,3 +1374,35 @@ export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/de
  */
 export const setDesktopTray = (patch: DesktopTrayPatch) =>
   apiFetch<void>("/api/desktop/tray", { method: "PUT", body: patch });
+
+// ---- The plugins a Project asks for ----
+/**
+ * A Project's plugin list. Project-scoped because machines are lent to Projects, so this is
+ * what says which machines a plugin has to reach; what the process RUNS is the union over
+ * the Projects, since loading is per process (see the server's plugin/loader.ts).
+ */
+const pluginsPath = (projectId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/plugins/installed`;
+export const getInstalledPlugins = (projectId: string) =>
+  apiFetch<InstalledPluginsResponse>(pluginsPath(projectId));
+/** Admin only; applied without a restart where the runtime can re-assemble the App. */
+export const putInstalledPlugins = (projectId: string, plugins: readonly string[]) =>
+  apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), {
+    method: "PUT",
+    body: { plugins },
+  });
+/**
+ * Admin only: asks this Project for a plugin the build ships — refused for one it does not,
+ * so the list never names a package that is not on the machine — then re-assembles the App.
+ */
+export const installPlugin = (projectId: string, specifier: string) =>
+  apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), {
+    method: "POST",
+    body: { specifier },
+  });
+/** Admin only: drops it from this Project's list and re-assembles the App; nothing on disk changes. */
+export const uninstallPlugin = (projectId: string, specifier: string) =>
+  apiFetch<InstalledPluginsResponse>(
+    `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}`,
+    { method: "DELETE" },
+  );

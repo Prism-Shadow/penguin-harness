@@ -14,7 +14,7 @@
  * (../plugin/loader.ts), which is why nothing here imports one and why the harness does
  * not depend on the DSH ecosystem at all:
  *
- *   sandbox service  ←  registered backends  ←  plugins.json
+ *   sandbox service  ←  registered backends  ←  the Projects' plugin lists
  *
  * The backends shipped in this repo:
  *

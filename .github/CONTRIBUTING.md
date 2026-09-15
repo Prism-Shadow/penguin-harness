@@ -118,7 +118,7 @@ single data directory (`~/.penguin/data`) and a single message protocol (OmniMes
 | [`plugins/*`](../plugins) | `@penguinharness/<name>` | The built-in plugins, one npm package each: skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries); the loader lives in `packages/core` |
 | [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |
 | [`packages/docs`](../packages/docs)       | —                             | Documentation site (bilingual, deployed under `/docs/`)                                                 |
-| [`plugins/*`](../plugins) | `@prismshadow/penguin-plugin-*` | Plugin packages a deployment installs and lists in `plugins.json` — a directory of their own because nothing else in the harness depends on one                        |
+| [`plugins/*`](../plugins) | `@prismshadow/penguin-plugin-*` | Plugin packages a Project asks for on the Plugins page (its `[plugins]` table) — a directory of their own because nothing else in the harness depends on one                        |
 
 Responsibilities split by source of truth: the **SDK** owns protocol and execution
 (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime
