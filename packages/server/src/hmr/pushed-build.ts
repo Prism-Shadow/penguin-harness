@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import { MATERIALIZED } from "./manifest.js";
+import { UNPACKED_DIR } from "./asset-archives.js";
 
 /**
  * Null when nothing has been pushed here — a server running its packaged build has no bundle
@@ -76,6 +77,9 @@ function readAssets(dir: string): { files: Record<string, string>; exec: string[
     if (!entry.isFile() || entry.name === MATERIALIZED) continue;
     const abs = path.join(entry.parentPath, entry.name);
     const rel = path.relative(dir, abs).split(path.sep).join("/");
+    // What this machine unpacked from the archives is not part of the build: the machine
+    // receiving it unpacks its own (hmr/asset-archives.ts).
+    if (rel === UNPACKED_DIR || rel.startsWith(`${UNPACKED_DIR}/`)) continue;
     files[rel] = fs.readFileSync(abs).toString("base64");
     // The mode where the filesystem keeps one; by name where it cannot. A Windows machine has
     // no exec bit to read, and a hand-over from it would otherwise strip the bit off
