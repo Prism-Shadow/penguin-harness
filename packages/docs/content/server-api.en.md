@@ -519,6 +519,30 @@ The order the bundled Web App uses:
 4. Replay the buffer, deduplicating the overlap;
 5. Go live.
 
+## The API socket (WebSocket)
+
+The API socket is a second transport of the same API, for the bundled Web App (PRFC-0011): one socket per tab, every frame a call to an existing endpoint, every long-lived stream a call that does not end. Nothing above is specific to it — HTTP and the socket enter the same routes, so a call is authorized, validated and answered exactly as its HTTP twin.
+
+It is opened on the terminal-stream upgrade path under a reserved id naming the signed-in user: `GET /api/terminals/api-socket@<userId>/stream` (Upgrade; `apiSocketPath(userId)` in `@prismshadow/penguin-server/api` spells it). The handshake is the terminal stream's — the session cookie, a same-origin `Origin` (or none), and the id's owner held to the signed-in user, so admin's cookie cannot open `api-socket@alice` — and the socket then serves calls as that user. The runtime-owned prefixes (`/api/auth`, `/api/hmr`, `/api/desktop`) answer `421 not_on_socket`; a client makes those over HTTP.
+
+Frames are JSON text frames, ids are the client's and unique for the socket's life:
+
+```jsonc
+// client -> server
+{ "id": 1, "call": { "method": "GET", "path": "/api/projects" } }
+{ "id": 2, "call": { "method": "GET", "path": "/api/sessions/session-…/stream", "headers": { "last-event-id": "3-41" } } }
+{ "id": 3, "call": { "method": "GET", "path": "/server/<machineId>/api/events" } }   // a machine's endpoint, as the proxy names it
+{ "id": 2, "cancel": true }                                                          // end a streaming call
+
+// server -> client
+{ "id": 1, "status": 200, "headers": { "date": "…" }, "body": { "projects": [] } }   // one-shot: one frame
+{ "id": 2, "status": 200, "stream": true, "headers": { "content-type": "text/event-stream" } }
+{ "id": 2, "event": "server_event", "eventId": "3-42", "data": "{\"type\":\"task_state\"}" }   // SSE's event / id / data
+{ "id": 2, "end": true, "reason": "closed" }                                        // "lagging": re-issue with last-event-id
+```
+
+Only `last-event-id`, `accept` and `content-type` are honoured in `call.headers`; credentials come from the handshake. A JSON body is sent as `application/json`; multipart bodies and binary responses (downloads) do not ride the socket — the latter answer `415 unsupported_transport`, and the client fetches instead. The server pings on the SSE heartbeat's cadence and terminates a peer silent for two beats; a client lagging past the send watermark has its stream ended with `reason: "lagging"` — the delivery guarantees above then apply to the re-issued call exactly as to a reconnect.
+
 ## Type Imports
 
 All DTO types are importable type-only from the server package's `@prismshadow/penguin-server/api` subpath:

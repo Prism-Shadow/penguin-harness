@@ -227,12 +227,9 @@ class PenguinServer {
    */
   buildApp(): void {
     this.app = createApp(this.deps);
-    attachTerminalWebSocket(this.httpServer as unknown as HttpServer, this.terminalWebSocketDeps());
-    if (this.ipv6Loopback !== null) {
-      attachTerminalWebSocket(
-        this.ipv6Loopback as unknown as HttpServer,
-        this.terminalWebSocketDeps(),
-      );
+    for (const listener of [this.httpServer, this.ipv6Loopback]) {
+      if (listener === null) continue;
+      attachTerminalWebSocket(listener as unknown as HttpServer, this.terminalWebSocketDeps());
     }
   }
 
@@ -447,7 +444,7 @@ class PenguinServer {
     });
     // The terminal stream is bound on every listener in buildApp(), this one included, or
     // the terminal only works on whichever address the browser happened to resolve; a
-    // loopback opened after buildApp() (never in practice — binding is quick) gets it here.
+    // loopback opened after buildApp() (never in practice) gets it here.
     if (this.app !== undefined) {
       attachTerminalWebSocket(loopback as unknown as HttpServer, this.terminalWebSocketDeps());
     }
