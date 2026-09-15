@@ -5,5 +5,10 @@
   "short_description_zh": "创建组织，以及员工、CEO、人事、财务、镜像公司的操作手册。",
   "version": "2026.09.14.3",
   "category": "agent-company",
-  "preinstall": false
+  "preinstall": false,
+  "quick_start": {
+    "prompt": "Create a company-mode organization for this Project: ask me for its id, name, mission, shared workspace, model and CEO budget one question at a time, confirm the whole thing with me, then create it.",
+    "prompt_zh": "为这个 Project 创建一个公司模式的组织：一次问我一个问题，收齐它的 id、名称、使命、共享工作区、模型和 CEO 预算，整体向我确认后再创建。",
+    "skills": ["company-setup"]
+  }
 }

@@ -4,5 +4,10 @@
   "short_description": "Initialize, benchmark, evaluate and improve agents.",
   "short_description_zh": "初始化、评测、评分与改进 Agent。",
   "version": "2026.09.15.1",
-  "category": "ai-app-development"
+  "category": "ai-app-development",
+  "quick_start": {
+    "prompt": "Plan a new agent that reviews pull requests: draft its AGENTS.md and list the skills it would need. Show me the plan and wait for my go-ahead before writing anything.",
+    "prompt_zh": "规划一个审阅 Pull Request 的新 Agent：起草它的 AGENTS.md，列出它需要的技能。先把方案给我看，等我确认后再写入任何东西。",
+    "skills": ["agent-initialization"]
+  }
 }

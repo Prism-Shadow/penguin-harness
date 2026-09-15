@@ -117,6 +117,15 @@ export function languageContributions(): Array<{
  */
 @Component({
   contributes: {
+    "WebModule.quickStarts": [
+      {
+        id: "languages.quick-start",
+        prompt:
+          "Show one short, idiomatic example each in Typst, Swift, Kotlin, C# and Dart, every one in a fenced code block tagged with its language.",
+        promptZh:
+          "分别用 Typst、Swift、Kotlin、C# 和 Dart 各写一个简短、地道的示例，每个都放进标注了语言的代码块。",
+      },
+    ],
     "LanguagesModule.grammars": [
       { id: "languages.typst", language: "typst", displayName: "Typst", extensions: ["typ"] },
       { id: "languages.swift", language: "swift", displayName: "Swift" },

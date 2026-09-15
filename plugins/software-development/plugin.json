@@ -4,5 +4,10 @@
   "short_description": "Engineering practice and web UI defaults in one plugin.",
   "short_description_zh": "软件工程实践与网页视觉规范合一。",
   "version": "2026.09.11.1",
-  "category": "software-development"
+  "category": "software-development",
+  "quick_start": {
+    "prompt": "Build a single-file landing page, index.html, in this Workspace for a made-up note-taking app, with a light and a dark theme.",
+    "prompt_zh": "在当前工作区为一个虚构的笔记应用做一个单文件落地页 index.html，带浅色和深色两套主题。",
+    "skills": ["web-design"]
+  }
 }
