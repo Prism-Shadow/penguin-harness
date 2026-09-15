@@ -18,3 +18,9 @@ CommonJS and type copies behind the Discord bot's route. Enough small transfers 
   sandbox-dsh's, whose per-platform binaries cannot live inside a bundle.
 - `scripts/build-plugins.mjs` refuses a builtin plugin that declares any other runtime
   dependency, naming it, before anything is packed.
+- **Assets travel as archives.** The deploy packs every package it pushes — each package of
+  the plugin prefix, and node-pty — into one deterministic `.tgz` under `archives/` (the same
+  files give the same bytes, so an unchanged package is an unchanged blob), and the platform
+  unpacks them once into `.unpacked/` before loading plugins or node-pty. A push's assets went
+  from 433 files to 19. A server handing its build to a machine forwards the archives, not what
+  it unpacked.
