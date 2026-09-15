@@ -7,7 +7,12 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { bwrapProfileArgs, bwrapSettingsOf, createPenguinBwrapProvider } from "../src/index.js";
+import {
+  bwrapProfileArgs,
+  bwrapSettingsOf,
+  createPenguinBwrapProvider,
+  loadPenguinBwrapProvider,
+} from "../src/index.js";
 
 const ARGV = ["bash", "-lc", "echo hi"] as const;
 const WS = "/work/project";
@@ -154,5 +159,13 @@ describe("penguin-bwrap provider", () => {
       [2000, "/opt/bwrap"],
       [5000, "/missing/bwrap"],
     ]);
+  });
+});
+
+describe("bwrap on another platform", () => {
+  it("declines to mount off Linux, so routing never reaches a backend this host cannot run", () => {
+    const other = "win32" as const;
+    expect(loadPenguinBwrapProvider({ platform: other, probe: () => true })).toBeNull();
+    expect(loadPenguinBwrapProvider({ platform: "linux", probe: () => true })).not.toBeNull();
   });
 });

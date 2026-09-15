@@ -11,6 +11,7 @@ import path from "node:path";
 import {
   canonicalPath,
   createSeatbeltProvider,
+  loadSeatbeltProvider,
   seatbeltProfile,
   writableRoots,
 } from "../src/index.js";
@@ -124,5 +125,13 @@ describe("seatbelt provider", () => {
     expect(() => provider.confine([...ARGV], policy)).toThrow(/cannot confine on this host/);
     expect(() => provider.confine([...ARGV], policy)).toThrow(/only on macOS/);
     expect(probes).toBe(1);
+  });
+});
+
+describe("seatbelt on another platform", () => {
+  it("declines to mount off macOS, so routing never reaches a backend this host cannot run", () => {
+    const other = "linux" as const;
+    expect(loadSeatbeltProvider({ platform: other, probe: () => true })).toBeNull();
+    expect(loadSeatbeltProvider({ platform: "darwin", probe: () => true })).not.toBeNull();
   });
 });

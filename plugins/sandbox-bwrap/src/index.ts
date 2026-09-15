@@ -40,6 +40,7 @@ import type {
   Plugin,
   SandboxPolicy,
   SandboxProvider,
+  SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
 
 /** Default probe budget; a probe that hangs must not hang the first spawn forever. */
@@ -132,6 +133,19 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
  * unavailable bwrap throws — fail-closed — rather than degrading to a weaker profile, because
  * the dimensions routed here (network, mask-paths) have no weaker form.
  */
+/**
+ * The backend where it can serve, or null elsewhere: it exists only on Linux, and a backend
+ * that mounted on another platform would be routed every policy there and fail every command.
+ * Declining leaves the policy to a backend this host has (MXC on Windows).
+ */
+export function loadPenguinBwrapProvider(
+  internals: PenguinBwrapInternals & { platform?: NodeJS.Platform } = {},
+): SandboxProvider | null {
+  return (internals.platform ?? process.platform) === "linux"
+    ? createPenguinBwrapProvider(internals)
+    : null;
+}
+
 export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}): SandboxProvider {
   const probe = internals.probe ?? defaultProbe;
   const settings =
@@ -209,11 +223,11 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
 })
 export class SandboxBwrap {
   @Use() private readonly config!: BwrapConfigReader;
-  @Bind("sandbox-bwrap.provider") provider!: SandboxProvider;
+  @Bind("sandbox-bwrap.provider") provider!: SandboxProviderSource;
 
   setup() {
     const config = this.config;
-    this.provider = createPenguinBwrapProvider({
+    this.provider = loadPenguinBwrapProvider({
       settings: () => bwrapSettingsOf(config.get(BWRAP_GROUP)),
     });
   }

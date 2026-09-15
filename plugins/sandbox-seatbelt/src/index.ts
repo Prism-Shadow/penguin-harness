@@ -39,6 +39,7 @@ import type {
   Plugin,
   SandboxPolicy,
   SandboxProvider,
+  SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
 
 /** Default probe budget; a probe that hangs must not hang the first spawn forever. */
@@ -149,6 +150,19 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
  * confine with a given runner) and is cached per runner; an unusable Seatbelt throws —
  * fail-closed — rather than degrading to a weaker profile.
  */
+/**
+ * The backend where it can serve, or null elsewhere: it exists only on macOS, and a backend
+ * that mounted on another platform would be routed every policy there and fail every command.
+ * Declining leaves the policy to a backend this host has (MXC on Windows).
+ */
+export function loadSeatbeltProvider(
+  internals: SeatbeltInternals & { platform?: NodeJS.Platform } = {},
+): SandboxProvider | null {
+  return (internals.platform ?? process.platform) === "darwin"
+    ? createSeatbeltProvider(internals)
+    : null;
+}
+
 export function createSeatbeltProvider(internals: SeatbeltInternals = {}): SandboxProvider {
   const probe = internals.probe ?? defaultProbe;
   const settings = internals.settings ?? (() => ({ runner: internals.runner ?? "sandbox-exec" }));
@@ -212,11 +226,11 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
 })
 export class SandboxSeatbelt {
   @Use() private readonly config!: SeatbeltConfigReader;
-  @Bind("sandbox-seatbelt.provider") provider!: SandboxProvider;
+  @Bind("sandbox-seatbelt.provider") provider!: SandboxProviderSource;
 
   setup() {
     const config = this.config;
-    this.provider = createSeatbeltProvider({
+    this.provider = loadSeatbeltProvider({
       settings: () => seatbeltSettingsOf(config.get(SEATBELT_GROUP)),
     });
   }
