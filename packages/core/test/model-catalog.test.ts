@@ -154,15 +154,14 @@ describe("model-catalog", () => {
   it("custom: the group pins nothing, and its one preset carries its own endpoint and protocol", () => {
     // The custom group holds user-defined models, so the group itself implies no endpoint and
     // no protocol (see the MODEL_PROVIDERS test above). A preset filed there is complete on its
-    // own row: Atria Dawn Preview at api.atria-asi.ai, Responses API, 256K window, text only.
+    // own row: Atria Dawn Preview at api.atria-asi.ai, Anthropic Messages API (the client
+    // appends /v1/messages, so the base carries no /v1), 256K window, text only.
     expect(providerClientType("custom")).toBeUndefined();
     expect(providerInfo("custom")!.gatewayBaseUrl).toBeUndefined();
     const custom = MODEL_CATALOG.filter((m) => m.provider === "custom");
     expect(
       custom.map((m) => [m.modelId, m.clientType, m.baseUrl, m.contextWindow, m.supportsVision]),
-    ).toEqual([
-      ["Atria-Dawn-Preview", "openai-responses", "https://api.atria-asi.ai/v1", 262144, false],
-    ]);
+    ).toEqual([["Atria-Dawn-Preview", "ant-messages", "https://api.atria-asi.ai", 262144, false]]);
     // The custom group is last, and so is its row: the catalog is laid out group by group.
     expect(MODEL_CATALOG.at(-1)!.modelId).toBe("Atria-Dawn-Preview");
     expect(catalogEntryFor("custom", "Atria-Dawn-Preview")?.displayName).toBe("Atria Dawn Preview");
@@ -173,10 +172,10 @@ describe("model-catalog", () => {
       provider: "custom",
       model_id: "Atria-Dawn-Preview",
       context_window: 262144,
-      client_type: "openai-responses",
+      client_type: "ant-messages",
       pricing: { unit: "usd_per_mtok", cache_read: 0, cache_write: 0, output: 0 },
       vision: false,
-      base_url: "https://api.atria-asi.ai/v1",
+      base_url: "https://api.atria-asi.ai",
     });
     expect(modelHomepageUrl("custom", "Atria-Dawn-Preview")).toBeUndefined();
   });
@@ -1170,6 +1169,14 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
       const env = resolveModelEnv(m.modelId, m.clientType);
       const provider = providerInfo(m.provider)!;
       expect(env, `${m.provider}/${m.modelId}`).toBeDefined();
+      if (m.provider === "custom") {
+        // The custom group's pair is the fallback for its OpenAI-protocol default; an entry
+        // pinned to another generic protocol reads that protocol's pair instead, exactly as a
+        // user-added custom model on ant-messages does. The one preset here is on Messages.
+        expect(env!.envKey, m.modelId).toBe("ANTHROPIC_API_KEY");
+        expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
+        continue;
+      }
       expect(env!.envKey, m.modelId).toBe(provider.envKey);
       expect(env!.envBaseUrlKey, m.modelId).toBe(provider.envBaseUrlKey);
     }

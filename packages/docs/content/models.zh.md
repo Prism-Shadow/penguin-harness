@@ -74,7 +74,7 @@ api_key = "sk-..."
 | minimax | `MINIMAX_API_KEY` | 直连 MiniMax M3 Responses 客户端（`client_type = "minimax-m3"`）：`MiniMax-M3` 支持 1,000,000 Token 上下文和视觉输入；预置 base URL `https://api.minimax.io/v1`；接受 Token Plan Subscription Key 或按量付费 API Key |
 | qwen-pay-as-you-go | `OPENAI_API_KEY` | Qwen 按量付费(DashScope OpenAI 兼容端)，预置 base URL `https://dashscope.aliyuncs.com/compatible-mode/v1`；转售第三方模型保留厂商前缀 id(如 `kimi/kimi-k3`) |
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan 订阅网关，预置 base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；定价取各模型页官方牌价(预览模型仅配额倍率促销、无牌价) |
-| custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点；自带一条预置：Atria Dawn Preview（`api.atria-asi.ai/v1` 的 Responses API，256K 窗口，厂商未公布价格前暂记 0） |
+| custom | `OPENAI_API_KEY` | 任意 OpenAI 协议端点；自带一条预置：Atria Dawn Preview（`api.atria-asi.ai` 的 Anthropic Messages API，条目未填 key 时读 `ANTHROPIC_API_KEY`，256K 窗口，厂商未公布价格前暂记 0） |
 
 网关分组(openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan)经 AgentHub 的通用 OpenAI 协议客户端请求，因此凭证留空时读取的是 `OPENAI_API_KEY`，而非网关自己的变量名。OpenRouter 分组整体使用 Responses 客户端(`client_type = "openai-responses"`)——预置条目与你自行添加进该分组的模型都是——因为 OpenRouter 为其转售的每一个模型都在同一 base URL 上提供 Responses API；其余网关预置则固定 Chat Completions 客户端(`client_type = "openai-chat"`)。两种客户端读取相同的 `OPENAI_*` 变量，凭证规则完全一致。直连 MiniMax M3 客户端读取 `MINIMAX_API_KEY`。内置 MiniMax 预设固定使用 `https://api.minimax.io/v1`；仅当模型条目未内联 `base_url` 时才读取 `MINIMAX_BASE_URL`。M3 价格取 MiniMax 按量付费的标准档、输入不超过 512K Token 的牌价；超过 512K 后各档价格翻倍，priority 档另为 1.5 倍，因此长上下文与 priority 用量会被低估——与 OpenAI(>272K)、Gemini 3.1 Pro(>200K)沿用的基准档口径一致。
 
