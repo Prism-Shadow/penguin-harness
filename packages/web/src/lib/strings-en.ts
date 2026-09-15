@@ -192,8 +192,6 @@ export const en: Strings = {
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",
     pluginSecretClear: "Clear stored value",
-    /** The Project picker's empty choice. */
-    pluginProjectNone: "Choose a Project",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "Must be a number",
     uploadLimitsTitle: "Upload limits",

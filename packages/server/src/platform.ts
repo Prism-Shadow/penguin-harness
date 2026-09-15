@@ -46,7 +46,12 @@ import { QQTransportProvider } from "./runtime/messaging/qq-connector.js";
 import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
 import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
-import { PluginConfig, PluginConfigAdmin, PluginConfigProvider } from "./plugin/config.js";
+import {
+  PluginConfig,
+  PluginConfigAdmin,
+  PluginConfigPage,
+  PluginConfigProvider,
+} from "./plugin/config.js";
 import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
@@ -100,7 +105,7 @@ import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
-import { SandboxSettingsApplier, SandboxSettingsGroups } from "./sandbox/settings-store.js";
+import { SandboxSettings, SandboxSettingsStatus } from "./sandbox/settings-store.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { Machines, MachinesModule } from "./machines/service.js";
 import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organization/service.js";
@@ -318,18 +323,18 @@ export class SettingsModule {}
  * over it, and a plugin's manifest names this module as where `PluginConfig` comes from.
  */
 @Module({
-  children: [PluginConfigProvider],
+  children: [PluginConfigProvider, PluginConfigPage],
   exports: [PluginConfig, PluginConfigAdmin],
 })
 export class PluginConfigModule {}
 
 /**
  * Sandbox settings as a group of their own: the sandbox service boots on the capability-free
- * floor, while its settings groups and the node applying the stored documents need plugin
- * configuration (and through it the database), so they sit above it.
+ * floor, while its settings group and the node applying it need plugin configuration (and
+ * through it the database), so they sit above it.
  */
 @Module({
-  children: [SandboxSettingsGroups, SandboxSettingsApplier],
+  children: [SandboxSettings, SandboxSettingsStatus],
   exports: [],
 })
 export class SandboxSettingsModule {}

@@ -1,8 +1,8 @@
 /**
- * Sandbox settings are settings groups: the sandbox's policy and each mounted backend's own
- * options are listed, validated and stored through /api/admin/plugin-config like any plugin's,
- * and what is saved reaches the service — the policy at the next spawn, the backend's options
- * in that policy — and survives a restart.
+ * Sandbox settings are a settings group: the sandbox's policy is listed, validated and stored
+ * through /api/admin/plugin-config like any module's settings and applied at the next spawn,
+ * surviving a restart. A backend with settings of its own declares its own group inside the
+ * sandbox's and reads it itself through PluginConfig — nothing hands it a bag of values.
  */
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -12,17 +12,26 @@ import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import type { SandboxPolicy } from "@prismshadow/penguin-core/plugin";
 import type { PluginConfigResponse } from "../src/api/types.js";
+import type { PluginConfig } from "../src/plugin/config.js";
 import { PluginHost } from "../src/plugin/host.js";
 import type { SandboxService } from "../src/sandbox/service.js";
 import { apiClient, createTestApp, loginAdmin } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
-/** A backend declaring one option, recording the policy each confine receives. */
-function backend(seen: SandboxPolicy[]): ModuleDef {
+/** What the backend saw at each confine: the policy, and the runner it read from its own group. */
+interface Seen {
+  policy: SandboxPolicy;
+  runner: unknown;
+}
+
+/** A backend declaring a group inside the sandbox's and reading it at each confine. */
+function backend(seen: Seen[]): ModuleDef {
   return {
     manifest: parseManifest({
       name: "TestBackend",
-      requires: {},
+      requires: {
+        config: { iface: "@prismshadow/penguin-server#PluginConfig", from: "PluginConfigModule" },
+      },
       provides: {},
       contributes: {
         "SandboxModule.providers": [
@@ -30,25 +39,28 @@ function backend(seen: SandboxPolicy[]): ModuleDef {
             id: "test.provider",
             name: "test-backend",
             dimensions: ["fs-write", "network", "mask-paths"],
-            configuration: {
-              title: "Test backend",
-              properties: {
-                runner: { type: "string", title: "Runner", default: "runner-a" },
-              },
-            },
+          },
+        ],
+        "PluginConfigProvider.groups": [
+          {
+            id: "sandbox-test",
+            parent: "sandbox",
+            title: "Test backend",
+            properties: { runner: { type: "string", title: "Runner", default: "runner-a" } },
           },
         ],
       },
       children: [],
     }),
-    create() {
+    create({ use }) {
+      const config = use.config as PluginConfig;
       return {
         api: {},
         bind: {
           "test.provider": {
             dimensions: ["fs-write", "network", "mask-paths"],
             confine(argv: readonly string[], policy: SandboxPolicy) {
-              seen.push(policy);
+              seen.push({ policy, runner: config.get("sandbox-test").runner });
               return {
                 argv: ["confined", ...argv],
                 enforcement: "full",
@@ -63,7 +75,7 @@ function backend(seen: SandboxPolicy[]): ModuleDef {
   };
 }
 
-async function appWith(seen: SandboxPolicy[], dbPath?: string) {
+async function appWith(seen: Seen[], dbPath?: string) {
   const host = new PluginHost();
   host.use({ specifier: "test-backend", modules: [backend(seen)], replaces: [] });
   const t = await createTestApp({ plugins: host, ...(dbPath ? { config: { dbPath } } : {}) });
@@ -76,18 +88,18 @@ async function appWith(seen: SandboxPolicy[], dbPath?: string) {
   return { t, admin, sandbox, spawn, list };
 }
 
-describe("sandbox settings groups", () => {
+describe("sandbox settings group", () => {
   const apps: TestApp[] = [];
   afterEach(async () => {
     for (const t of apps.splice(0)) await t.cleanup();
   });
 
-  it("lists the sandbox with its backends, and each backend's options inside it", async () => {
-    const seen: SandboxPolicy[] = [];
-    const { t, list } = await appWith(seen);
+  it("lists the sandbox with its backends' notice, and a backend's group inside it", async () => {
+    const { t, list } = await appWith([]);
     apps.push(t);
     const entries = await list();
     const sandbox = entries.find((e) => e.name === "sandbox")!;
+    expect(entries[0]).toBe(sandbox);
     expect(sandbox.values).toEqual({ mode: "danger-full-access", cutNetwork: false });
     expect(sandbox.notices).toEqual([
       expect.objectContaining({
@@ -95,13 +107,13 @@ describe("sandbox settings groups", () => {
         text: "Backends: test-backend (fs-write, network, mask-paths)",
       }),
     ]);
-    const child = entries.find((e) => e.name === "sandbox:test-backend")!;
+    const child = entries.find((e) => e.name === "sandbox-test")!;
     expect(child.parent).toBe("sandbox");
     expect(child.values).toEqual({ runner: "runner-a" });
   });
 
-  it("applies a saved policy and the backend's options to the next spawn", async () => {
-    const seen: SandboxPolicy[] = [];
+  it("applies a saved policy to the next spawn; the backend reads its own saved group", async () => {
+    const seen: Seen[] = [];
     const { t, admin, spawn, sandbox } = await appWith(seen);
     apps.push(t);
     const saved = await admin.put("/api/admin/plugin-config", {
@@ -117,17 +129,20 @@ describe("sandbox settings groups", () => {
     expect(
       (
         await admin.put("/api/admin/plugin-config", {
-          name: "sandbox:test-backend",
+          name: "sandbox-test",
           values: { runner: "runner-b" },
         })
       ).status,
     ).toBe(200);
     expect(spawn()).toEqual(["confined", "true"]);
-    expect(seen.at(-1)).toMatchObject({
-      mode: "workspace-write",
-      network: "none",
-      maskPaths: ["/etc/x"],
-      options: { runner: "runner-b" },
+    expect(seen.at(-1)).toEqual({
+      policy: {
+        mode: "workspace-write",
+        workspaceRoot: "/w",
+        network: "none",
+        maskPaths: ["/etc/x"],
+      },
+      runner: "runner-b",
     });
 
     const refused = await admin.put("/api/admin/plugin-config", {
@@ -148,17 +163,17 @@ describe("sandbox settings groups", () => {
         values: { mode: "read-only" },
       });
       await first.admin.put("/api/admin/plugin-config", {
-        name: "sandbox:test-backend",
+        name: "sandbox-test",
         values: { runner: "runner-c" },
       });
       await first.t.cleanup();
 
-      const seen: SandboxPolicy[] = [];
+      const seen: Seen[] = [];
       const second = await appWith(seen, dbPath);
       apps.push(second.t);
       expect(second.sandbox.currentSettings()).toEqual({ mode: "read-only" });
       second.spawn();
-      expect(seen.at(-1)?.options).toEqual({ runner: "runner-c" });
+      expect(seen.at(-1)?.runner).toBe("runner-c");
     } finally {
       await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
