@@ -38,10 +38,8 @@
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-plugin-test": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
+    "hono": "^4.12.34",
     "tsup": "^8.3.0",
     "vitest": "^3.2.6"
-  },
-  "dependencies": {
-    "hono": "^4.12.34"
   }
 }

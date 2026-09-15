@@ -37,11 +37,9 @@
     "test": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && vitest run --passWithNoTests",
     "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
   },
-  "dependencies": {
-    "@shikijs/langs": "^4.3.1"
-  },
   "devDependencies": {
     "@prismshadow/penguin-core": "workspace:*",
+    "@shikijs/langs": "^4.3.1",
     "tsup": "^8.3.0",
     "vitest": "^3.2.6"
   }

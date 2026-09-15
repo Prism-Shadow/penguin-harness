@@ -37,6 +37,7 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
 import { pluginsPrefix } from "./install.js";
+import { unpackedAssetsDir } from "../hmr/asset-archives.js";
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -163,7 +164,11 @@ export function pluginBases(root: string | undefined, assetsDir: string | null):
     bases.push({ file: path.join(pluginsPrefix(root), "package.json"), builtin: false });
   }
   if (assetsDir !== null) {
-    bases.push({ file: path.join(assetsDir, "plugins", "package.json"), builtin: true });
+    // A push carries the prefix as archives; they are unpacked before anything resolves.
+    bases.push({
+      file: path.join(unpackedAssetsDir(assetsDir), "plugins", "package.json"),
+      builtin: true,
+    });
   }
   const entry = process.argv[1];
   if (typeof entry === "string" && entry.length > 0) {
