@@ -184,10 +184,11 @@ export async function loadAgentState(opts?: {
       );
     }
     // The example Benchmark is provisioned on this path too, not only at initialization: a
-    // Project whose benchmarks/ directory does not exist gets one the first time its
-    // default_agent is loaded, which is what gives a data root created before this provisioning
-    // existed the same example a fresh one has. Best effort — opening a model context must not
-    // fail because a directory could not be written.
+    // Project without benchmarks/example-benchmark/ gets it the first time its default_agent
+    // is loaded, whatever else benchmarks/ holds — which is what gives a data root created
+    // before this provisioning existed, or one that made Benchmarks of its own first, the same
+    // example a fresh one has. Best effort — opening a model context must not fail because a
+    // directory could not be written.
     if (agentId === DEFAULT_AGENT_ID) {
       try {
         await provisionExampleBenchmark(root, projectId);
@@ -243,7 +244,7 @@ export async function loadAgentState(opts?: {
     ...plugins.map((plugin) => installPlugin(root, projectId, agentId, plugin)),
     // The example Benchmark is only provisioned alongside default_agent (so the evaluation
     // center has data out of the box). It lands in the Project's benchmarks/, a sibling of
-    // agents/: skipped whenever that directory already exists, and never written for a plain
+    // agents/: skipped when the example is already there, and never written for a plain
     // Agent, whose creation is not a Project's first day. Awaited here, unlike on the load
     // path — a Project's first day is the one moment a failure is worth reporting.
     ...(agentId === DEFAULT_AGENT_ID ? [provisionExampleBenchmark(root, projectId)] : []),

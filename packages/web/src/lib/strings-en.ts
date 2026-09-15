@@ -1051,6 +1051,9 @@ export const en: Strings = {
     detecting: "Detecting…",
     /** Success toast; the protocol itself then shows in the base URL field's suffix. */
     detectedProtocol: (name: string): string => `Detected ${name}; applied`,
+    /** Success toast when the probe answered on a tidied-up base URL, which the field now holds. */
+    detectedProtocolAndUrl: (protocol: string, url: string): string =>
+      `Detected ${protocol}; base URL normalized to ${url}`,
     /** The ONE failure toast: every mode collapses to it, naming only what the user can act on. */
     detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
     /** Save-time detection came back empty: the save proceeds on the compatible client. */
@@ -3117,69 +3120,46 @@ Scenarios:
     targetAgentHint:
       "The agent the cases are written for and scored under; the writing itself is done by the agent named below, in a new conversation",
     aiCreateExamples: {
+      decisionAgent: {
+        label: "Decisions: finite choices in football, after-sales and investing",
+        description: "Public rules, past cases and current facts that conflict or fall short",
+        prompt:
+          "Write cases for a general decision agent: three scenarios — football betting, an after-sales action, an investment move — each with a fixed set of options, where the public rules, the historical cases and the current facts are either incomplete or contradict one another. Does it make a stable, explainable choice instead of following the latest fact it saw?",
+      },
       reportWriter: {
-        label: "Report writing: 3 cases with contradicting sources",
-        description:
-          "3 cases: conflicting material, unstated conventions, strict length and citations",
-        prompt: `Write a small, hard Benchmark for the report-writing agent — few cases, a low baseline.
-
-- benchmark_id: \`report-conflicting-sources\`
-- capability: still deliver a report with traceable conclusions and one consistent set of conventions when the sources contradict each other, key conventions are unstated, and length and citations are constrained
-- case count: 3
-- techniques: each case gives 2–3 sources that contradict one another, one of them newer but dated only in a footer; currency, time zone and counting conventions are deliberately left incomplete, and the right move is to name the gap, make a conservative assumption and mark it; a strict length cap and citation format, where overrunning or a missing citation costs points outright
-- desired_baseline_score: \`<50\`
-- pilot_iteration_limit: \`4\``,
+        label: "Report writing: contradicting sources",
+        description: "Conflicting material, unstated conventions, strict length and citations",
+        prompt:
+          "Write cases for the report-writing agent: the sources contradict each other, key conventions such as currency and time zone are deliberately left incomplete, and the length cap and citation format are strict — does it name the gap and make a conservative assumption first?",
       },
       customerService: {
-        label: "Support: 3 conversations with a hidden policy condition",
+        label: "Support: a hidden policy condition",
         description:
-          "3 cases: incomplete users, policy conditions buried in an appendix, an over-promise trap",
-        prompt: `Write a small, hard multi-turn Benchmark for the customer-support agent — few cases, a low baseline.
-
-- benchmark_id: \`support-hidden-policy\`
-- capability: verify before answering, never over-promise, and stay consistent with the policy when the user's information is incomplete, the policy condition is buried deep in the material, and an emotional message invites a promise the agent cannot make
-- case count: 3
-- techniques: the policy's exceptions and effective dates appear only in an appendix; the user's description is vague and the key facts come out only when asked; in at least one case the most natural reply is exactly the forbidden promise; scoring looks at verification, over-promising, tone and accuracy
-- desired_baseline_score: \`<50\`
-- pilot_iteration_limit: \`4\``,
+          "Incomplete users, policy conditions buried in an appendix, an over-promise trap",
+        prompt:
+          "Write multi-turn cases for the customer-support agent: the user's description is vague and the key facts come out only when asked, the policy's exceptions sit in an appendix, and an emotional message invites a promise the agent cannot make — does it verify before answering and hold the policy line?",
       },
       codeReview: {
-        label: "Code review: 3 cases whose defects hide in the contracts",
-        description:
-          "3 cases: unstated calling and concurrency assumptions, misleading comments and tests",
-        prompt: `Write a small, hard Benchmark for the code-review agent — few cases, a low baseline.
-
-- benchmark_id: \`review-hidden-contracts\`
-- capability: find every real defect without false positives, and say how to verify each, when the defects hide in calling conventions, concurrency assumptions and data shapes and the comments and tests mislead
-- case count: 3
-- techniques: each case is a small multi-file repository with 2–3 real defects that depend on an unstated call order, a time-zone or encoding assumption, or a concurrency precondition; add one or two stale comments and a test that passes without covering the defects; scoring looks at recall, false positives and whether reproducible verification steps are given
-- desired_baseline_score: \`<50\`
-- pilot_iteration_limit: \`4\``,
-      },
-      dataAnalysis: {
-        label: "Data analysis: 3 cases with a vague ask and a booby-trapped dataset",
-        description: "3 cases: dirty data, unstated conventions, assumptions to clarify first",
-        prompt: `Write a small, hard Benchmark for the data-analysis agent — few cases, a low baseline.
-
-- benchmark_id: \`analysis-ambiguous-asks\`
-- capability: clarify assumptions before analysing, then reach a correct conclusion with verifiable conventions, when the business question is vague and the data carries dirty values and unstated conventions
-- case count: 3
-- techniques: each case ships a CSV with duplicate rows, mixed units and missing values, and a data dictionary that explains only some of the fields; the business question has two reasonable readings, and the right move is to name the split and answer under each stated assumption; scoring looks at the conclusion, the stated conventions and whether the charts agree with the conclusion
-- desired_baseline_score: \`<50\`
-- pilot_iteration_limit: \`4\``,
+        label: "Code review: defects hidden in the contracts",
+        description: "Unstated calling and concurrency assumptions, misleading comments and tests",
+        prompt:
+          "Write cases for the code-review agent: each a small multi-file repository whose defects hide in an unstated call order, a time-zone or encoding assumption and a concurrency precondition, with a stale comment or two and a test that passes without covering them — score recall, false positives and the verification steps.",
       },
     },
     aiCreateTail: (targetAgentId: string): string =>
       "Use the `benchmark-design` Skill: as the Builder, design and calibrate a Benchmark for the Test Agent below without changing that agent itself.\n\n" +
       `- test_agent_id: \`${targetAgentId}\`\n` +
       "- benchmark_id: keep the one named above if any; otherwise derive a short semantic id (letters, digits, `_` and `-` only)\n" +
-      "- desired_baseline_score: `<70` (unless the text above says otherwise)\n" +
-      "- pilot_iteration_limit: `3` (the draft above wins when it names one)\n\n" +
+      "- case count: about 3 — few and hard, each with at least one decision that separates following the motions from actually doing the work (the draft above wins when it names one)\n" +
+      "- techniques: hidden preconditions, vague or incomplete input, sources that contradict each other, strict deliverables; no difficulty from piling on rows or rules\n" +
+      "- desired_baseline_score: `<50` (the draft above wins when it names one)\n" +
+      "- pilot_iteration_limit: `4` (the draft above wins when it names one)\n\n" +
       "A Benchmark sits beside agents, not under one: create `benchmarks/<benchmark_id>/` under the Project (never inside the tested agent's directory) with " +
       "`benchmark_config.toml` (title, description, runs = 1; it records no agent), " +
       "one `CASE-NNN-<slug>/` per case (`statement/README.md` is the statement, `rubric/README.md` the scoring rubric, 100 points per case, nothing from the rubric leaking into the statement) " +
       "and `scoreboard.yaml` (initially `evaluations: []`; every evaluation records the tested `agent_id`, its `version`, the paired `provider` / `model_id` and the `thinking_level`). " +
-      "Delegate one `agent-evaluation` run per case through `run_subagent` to calibrate difficulty, " +
+      "Every trial evaluation goes through `run_subagent`, and the subagent's prompt must say to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
+      "calibrate difficulty case by case, " +
       "freeze the final revision, append the Formal Baseline to scoreboard.yaml, and finish by reporting the Benchmark id, the baseline score and the per-case scores.",
     manualCreateTitle: "Create a Benchmark manually",
     manualCreateIntro:
@@ -3242,7 +3222,7 @@ Scenarios:
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
       `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
       `- runs: \`${p.runs}\`\n\n` +
-      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned `agent-evaluation` subagent per matrix cell (omit `agent_id`); " +
+      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned subagent per matrix cell (omit `agent_id`), and say in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
       "the evaluation runtime is the model and thinking level that tested agent is configured with right now. Require every returned result to agree on " +
       "`agent_id`, `provider`, `model_id` and `thinking_level`, and stop rather than merge two labels into one record. Average the runs per case and the cases " +
       "per evaluation as the scoreboard contract specifies, then append exactly ONE evaluation to `scoreboard.yaml`, labelled with `agent_id`, `version`, " +
@@ -3285,7 +3265,7 @@ Scenarios:
       `- runs: \`${p.runs}\`\n` +
       `- desired_score: \`>=${p.targetScore}\`\n` +
       `- candidate_round_limit: \`${p.roundLimit}\`\n\n` +
-      "Each round, state one falsifiable hypothesis from the current Reference and make one bounded change; evaluate the full Case × runs matrix through `run_subagent` with `agent-evaluation`, " +
+      "Each round, state one falsifiable hypothesis from the current Reference and make one bounded change; evaluate the full Case × runs matrix through `run_subagent`, saying in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
       "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
       "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
       "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",

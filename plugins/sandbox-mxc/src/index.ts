@@ -3,8 +3,9 @@
  * MXC (Microsoft eXecution Containers).
  *
  * A PLUGIN PACKAGE, not part of the platform: a deployment lists it in plugins.json and
- * the harness resolves it from the installation. It compiles against the type-only
- * `@prismshadow/penguin-core/plugin` surface and has no runtime dependency on the
+ * the harness resolves it from the installation. It compiles against the
+ * `@prismshadow/penguin-core/plugin` surface (types, plus the decorators its bundle
+ * carries) and has no runtime dependency on the
  * harness or on any other backend.
  *
  * WHY THIS EXISTS: Windows has no bubblewrap and no sandbox-exec, and the DSH adaptor's
@@ -38,11 +39,13 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { Bind, Component } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
-  PluginContext,
+  Plugin,
   SandboxPolicy,
   SandboxProvider,
+  SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
 
 /** Default probe budget; a probe that hangs must not hang the first spawn forever. */
@@ -186,11 +189,29 @@ export function createMxcProvider(
   };
 }
 
-/** The plugin: registered per App creation, like every other backend. Default export = the plugin. */
-export function activate(ctx: PluginContext): void {
-  // Backends register per App creation — a hot swap re-registers them into the fresh
-  // registry — so the subscription is to the event, not a one-time registration here.
-  ctx.on("initialize", (iface) => {
-    iface.sandbox.registerProvider("penguin-mxc", loadMxcProvider());
-  });
+/**
+ * The plugin's one module: a provider on the sandbox slot, the code half of the
+ * contribution the decorator declares (its manifest is generated into ifaces.json from
+ * here). Created per App, so a hot swap gets a fresh provider.
+ */
+@Component({
+  contributes: {
+    "SandboxModule.providers": [
+      {
+        id: "sandbox-mxc.provider",
+        name: "penguin-mxc",
+        dimensions: ["fs-write", "network", "mask-paths"],
+      },
+    ],
+  },
+})
+export class SandboxMxc {
+  @Bind("sandbox-mxc.provider") provider!: SandboxProviderSource;
+
+  setup() {
+    this.provider = loadMxcProvider();
+  }
 }
+
+const plugin: Plugin = { modules: [SandboxMxc] };
+export default plugin;

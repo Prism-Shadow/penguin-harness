@@ -51,18 +51,28 @@ export interface Manifest {
 
 const ManifestType = type({
   name: "string > 0",
-  requires: { "[string]": { iface: "string > 0", "from?": "string > 0" } },
-  provides: { "[string]": "string > 0" },
-  contributes: { "[string]": type({ id: "string > 0", "[string]": "unknown" }).array() },
+  "requires?": { "[string]": { iface: "string > 0", "from?": "string > 0" } },
+  "provides?": { "[string]": "string > 0" },
+  "contributes?": { "[string]": type({ id: "string > 0", "[string]": "unknown" }).array() },
   "context?": { version: "number.integer >= 1", "schema?": "unknown" },
-  children: type("string").or({ keyed: "string" }).array(),
+  "children?": type("string").or({ keyed: "string" }).array(),
 });
 
-/** Strict parse of a manifest document; throws with the arktype summary on failure. */
+/**
+ * Strict parse of a manifest document; throws with the arktype summary on failure. An empty
+ * `requires`, `provides`, `contributes` or `children` may be left out of the document — a
+ * plugin that only contributes writes its name and its contributions — and reads as empty.
+ */
 export function parseManifest(doc: unknown, where = "manifest"): Manifest {
   const out = ManifestType(doc);
   if (out instanceof type.errors) throw new Error(`${where}: ${out.summary}`);
-  return out as unknown as Manifest;
+  return {
+    ...out,
+    requires: out.requires ?? {},
+    provides: out.provides ?? {},
+    contributes: out.contributes ?? {},
+    children: out.children ?? [],
+  } as unknown as Manifest;
 }
 
 /** The iface-table key a manifest reference resolves to. */

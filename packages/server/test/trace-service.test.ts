@@ -38,6 +38,7 @@ const legacyEnd = (status: string) => requestEnd(status as StopReason);
 import type { TraceService } from "../src/services/trace-service.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { openDatabase } from "../src/db/database.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 import { ErrorsRepo } from "../src/db/repos/errors.js";
 import { UsageRepo } from "../src/db/repos/usage.js";
 import { SessionSources } from "../src/runtime/session-sources.js";
@@ -255,7 +256,7 @@ describe("trace-service", () => {
       // the figure the conversation toolbar shows — land on the file's total.
       const db = openDatabase(":memory:");
       try {
-        const rows = new UsageRepo(db);
+        const rows = wire(UsageRepo, { db });
         for (const ts of stamps) {
           const at = new Date(Date.parse(ts) + 3000).toISOString();
           rows.insert({
@@ -273,7 +274,12 @@ describe("trace-service", () => {
             total: usage.total,
           });
         }
-        const center = new UsageService(rows, new ErrorsRepo(db), lookup, () => new Date());
+        const center = wire(UsageService, {
+          usage: rows,
+          errors: wire(ErrorsRepo, { db }),
+          lookupPricing: lookup,
+          now: () => new Date(),
+        });
         const res = await center.query(P, { groupBy: "session" });
         expect(res.groups.find((g) => g.key === S)?.cost).toBeCloseTo(a.cost!, 12);
       } finally {

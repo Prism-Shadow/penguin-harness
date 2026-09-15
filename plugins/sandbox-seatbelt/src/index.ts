@@ -2,8 +2,9 @@
  * @prismshadow/penguin-plugin-sandbox-seatbelt — a macOS Seatbelt sandbox backend.
  *
  * A PLUGIN PACKAGE, not part of the platform: a deployment lists it in plugins.json and
- * the harness resolves it from the installation. It compiles against the type-only
- * `@prismshadow/penguin-core/plugin` surface and has no runtime dependency on the
+ * the harness resolves it from the installation. It compiles against the
+ * `@prismshadow/penguin-core/plugin` surface (types, plus the decorators its bundle
+ * carries) and has no runtime dependency on the
  * harness or on any other backend.
  *
  * Seatbelt is the macOS counterpart to bubblewrap here, and it expresses all three
@@ -32,9 +33,10 @@ import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Bind, Component } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
-  PluginContext,
+  Plugin,
   SandboxPolicy,
   SandboxProvider,
 } from "@prismshadow/penguin-core/plugin";
@@ -149,11 +151,29 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
   };
 }
 
-/** The plugin: registered per App creation, like every other backend. Default export = the plugin. */
-export function activate(ctx: PluginContext): void {
-  // Backends register per App creation — a hot swap re-registers them into the fresh
-  // registry — so the subscription is to the event, not a one-time registration here.
-  ctx.on("initialize", (iface) => {
-    iface.sandbox.registerProvider("penguin-seatbelt", createSeatbeltProvider());
-  });
+/**
+ * The plugin's one module: a provider on the sandbox slot, the code half of the
+ * contribution the decorator declares (its manifest is generated into ifaces.json from
+ * here). Created per App, so a hot swap gets a fresh provider.
+ */
+@Component({
+  contributes: {
+    "SandboxModule.providers": [
+      {
+        id: "sandbox-seatbelt.provider",
+        name: "penguin-seatbelt",
+        dimensions: ["fs-write", "network", "mask-paths"],
+      },
+    ],
+  },
+})
+export class SandboxSeatbelt {
+  @Bind("sandbox-seatbelt.provider") provider!: SandboxProvider;
+
+  setup() {
+    this.provider = createSeatbeltProvider();
+  }
 }
+
+const plugin: Plugin = { modules: [SandboxSeatbelt] };
+export default plugin;

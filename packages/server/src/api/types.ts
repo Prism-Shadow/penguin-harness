@@ -722,10 +722,22 @@ export interface ModelProtocolProbeDto {
   status?: number;
 }
 
-/** Detection result: probes run sequentially and stop at the first served protocol, so `probes` lists only the ones actually run, in order. */
+/**
+ * Detection result: probes run sequentially over the candidate base URLs derived from the
+ * one that was typed and stop at the first served protocol, so `probes` lists only the
+ * ones actually run, in order.
+ */
 export interface ModelProtocolDetectResponse {
-  /** The first protocol the endpoint serves (an AgentHub client type); absent when none of the three matched. */
+  /** The first protocol an endpoint serves (an AgentHub client type); absent when none of the three matched. */
   detected?: string;
+  /**
+   * The base URL the detected protocol answered at — the typed URL normalized (endpoint
+   * path stripped, repeated `/v1` collapsed) and possibly with a trailing `/v1` added or
+   * removed, so `https://host/v1/chat/completions` comes back as `https://host/v1`.
+   * Present only alongside `detected`; callers write it back into their base URL field,
+   * since that is where the protocol is served.
+   */
+  baseUrl?: string;
   probes: ModelProtocolProbeDto[];
 }
 
@@ -4619,3 +4631,23 @@ export type CompanyServerEvent =
       state: "warned" | "paused" | "resumed";
       ratio: number;
     };
+
+// ---------------------------------------------------------------------------
+// Web contributions (GET /api/contributions)
+// ---------------------------------------------------------------------------
+
+/** How the web app renders a contributed surface: a name from its own registry, or an iframe. */
+export type RendererRef = { builtin: string } | { iframe: { src: string; namespace: string } };
+
+/** One contribution to a web slot: its id, the contributing module, and the slot's data. */
+export interface WebContribution {
+  id: string;
+  from: string;
+  [key: string]: unknown;
+}
+
+export interface ContributionsResponse {
+  pages: WebContribution[];
+  agentTabs: WebContribution[];
+  sessionTabs: WebContribution[];
+}

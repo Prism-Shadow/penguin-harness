@@ -12,6 +12,7 @@
  * plugins fell behind the library back up to it.
  */
 import fs from "node:fs/promises";
+import { wire } from "@prismshadow/penguin-core/kernel";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parseOrgTriggerMessage, saveProjectConfig } from "@prismshadow/penguin-core";
@@ -115,7 +116,7 @@ describe("organization runtime", () => {
       models: [{ provider: "custom", model_id: "m-bench" }],
     });
     db = openDatabase(":memory:");
-    new UsersRepo(db).insert({
+    wire(UsersRepo, { db }).insert({
       userId: "alice",
       passwordHash: "x",
       isAdmin: false,
@@ -124,10 +125,10 @@ describe("organization runtime", () => {
       avatar: null,
       createdAt: "2026-08-01T00:00:00Z",
     });
-    const projects = new ProjectsRepo(db);
+    const projects = wire(ProjectsRepo, { db });
     projects.insert({ projectId: P, ownerUserId: "alice", createdAt: "2026-08-01T00:00:00Z" });
-    sessions = new SessionsRepo(db);
-    cache = new OrgCacheRepo(db);
+    sessions = wire(SessionsRepo, { db });
+    cache = wire(OrgCacheRepo, { db });
     store = new OrgStore(root);
     nowMs = T0;
     busy = new Set();
@@ -154,7 +155,7 @@ describe("organization runtime", () => {
       store,
       cache,
       projects,
-      members: new MembersRepo(db),
+      members: wire(MembersRepo, { db }),
       sessions,
       runner: {
         statusOf: (id) => (busy.has(id) ? "running" : "idle"),
@@ -222,7 +223,7 @@ describe("organization runtime", () => {
           plugins.updated.push({ agentId, plugin });
         },
       },
-      projectConfig: new ProjectConfigService(root),
+      projectConfig: wire(ProjectConfigService, { config: { root } }),
       completeOnce: async (_p, prompt) => {
         completion.prompts.push(prompt);
         return completion.answers.shift() ?? NO_MODEL;

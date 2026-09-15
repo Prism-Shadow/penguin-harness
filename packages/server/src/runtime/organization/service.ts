@@ -50,7 +50,25 @@ import type {
   OrgHandbookFilesResponse,
 } from "../../api/types.js";
 import { TICKET_SLUG_PATTERN } from "../../api/types.js";
+import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../../http/errors.js";
+import { userChannelKey } from "../../http/routes/events.js";
+import { Channels, Config, Log, Overrides, RuntimeModule } from "../../hmr/capabilities.js";
+import type { ChannelHub } from "../channel.js";
+import { OrgCacheRepo } from "../../db/repos/organizations.js";
+import { AgentsRepo } from "../../db/repos/agents.js";
+import { MembersRepo } from "../../db/repos/members.js";
+import { ProjectsRepo } from "../../db/repos/projects.js";
+import { SessionsRepo } from "../../db/repos/sessions.js";
+import { ServerSettingsRepo } from "../../db/repos/server-settings.js";
+import { AgentConfigService } from "../../services/agent-config-service.js";
+import { AgentService } from "../../services/agent-service.js";
+import { ProjectConfigService } from "../../services/project-config-service.js";
+import { UsageService } from "../../services/usage-service.js";
+import { ErrorRecorder } from "../error-recorder.js";
+import { SessionsModule } from "../session-manager.js";
+import { OrgStore } from "../../organization/store.js";
 import { badRequest } from "../../http/validate.js";
 import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";
 import {
@@ -98,7 +116,7 @@ import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
 import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend } from "./budget.js";
-import { DEFAULT_EMPLOYEE_PLUGINS, employeePlugins } from "./deps.js";
+import { DEFAULT_EMPLOYEE_PLUGINS, OrgRuns, OrgSessions, employeePlugins } from "./deps.js";
 import type { OrgDeps } from "./deps.js";
 import { loadOrg, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
@@ -114,7 +132,7 @@ import {
 import { appendChannelMessage, listTickets, syncCaches } from "./reconcile.js";
 import type { LoadedTicket } from "./reconcile.js";
 import { rotaWarnings } from "./rota.js";
-import type { OrganizationScheduler } from "./scheduler.js";
+import { OrganizationScheduler } from "./scheduler.js";
 import { dispatchToDesk, ensureDesk, openTicketSession } from "./triggers.js";
 
 /**
@@ -2675,4 +2693,151 @@ function calendarStatus(
   if (def.periodMs === undefined && state?.missed) return "missed";
   if (def.endAtMs !== undefined && nowMs > def.endAtMs) return "expired";
   return def.enabled ? "active" : "disabled";
+}
+
+/**
+ * What the organization routes need of the runtime — declared where they consume it, so
+ * the route group names one node instead of reaching into a bag.
+ */
+export abstract class OrgService extends Interface<
+  Pick<
+    OrganizationService,
+    | "list"
+    | "create"
+    | "detail"
+    | "patch"
+    | "leave"
+    | "suggestId"
+    | "chart"
+    | "hire"
+    | "patchEmployee"
+    | "desk"
+    | "sessions"
+    | "calendar"
+    | "upsertCalendar"
+    | "deleteCalendar"
+    | "tickets"
+    | "ticket"
+    | "createTicket"
+    | "updateTicket"
+    | "moveTicket"
+    | "blockTicket"
+    | "unblockTicket"
+    | "progressTicket"
+    | "startTicket"
+    | "attachTicket"
+    | "channels"
+    | "channel"
+    | "createChannel"
+    | "patchChannel"
+    | "addChannelMember"
+    | "removeChannelMember"
+    | "channelMessages"
+    | "sendChannelMessage"
+    | "markRead"
+    | "finance"
+    | "handbook"
+    | "writeHandbook"
+    | "handbookFiles"
+    | "handbookFile"
+    | "writeHandbookFile"
+    | "deleteHandbookFile"
+  >
+>() {}
+
+/** The organization scheduler as the boot sequence drives it (the pass itself is internal). */
+export abstract class OrgScheduler extends Interface<
+  Pick<OrganizationScheduler, "start" | "stop">
+>() {}
+
+/**
+ * Company mode's runtime, assembled over the same narrow seams the schedule scheduler
+ * uses: the session manager for run state and task start, SessionService for sessions,
+ * AgentService and AgentConfigService for hiring, UsageService for spend. The scheduler
+ * is started by the platform's Startup component (one reconcile pass, no backfill) and
+ * stopped with this App, like every other timer in the tree.
+ */
+@Module()
+export class OrganizationModule {
+  @Use(RuntimeModule) private readonly config!: Config;
+  @Use(RuntimeModule) private readonly channels!: Channels;
+  @Use(RuntimeModule) private readonly overrides!: Overrides;
+  @Use(RuntimeModule) private readonly log!: Log;
+  @Use() private readonly cache!: OrgCacheRepo;
+  @Use() private readonly projects!: ProjectsRepo;
+  @Use() private readonly members!: MembersRepo;
+  @Use() private readonly sessionsRepo!: SessionsRepo;
+  @Use(SessionsModule) private readonly runner!: OrgRuns;
+  @Use(SessionsModule) private readonly sessionCreator!: OrgSessions;
+  @Use() private readonly agentService!: AgentService;
+  @Use() private readonly agentConfig!: AgentConfigService;
+  @Use() private readonly agentsRepo!: AgentsRepo;
+  @Use() private readonly projectConfig!: ProjectConfigService;
+  @Use() private readonly usage!: UsageService;
+  @Use() private readonly errors!: ErrorRecorder;
+  @Use() private readonly settings!: ServerSettingsRepo;
+  @Provide() orgService!: OrgService;
+  @Provide() orgScheduler!: OrgScheduler;
+  setup({ effect }: ClassCtx) {
+    const overrides = this.overrides.value();
+    const channels = this.channels as ChannelHub;
+    const agentService = this.agentService;
+    const agentConfig = this.agentConfig;
+    const agentsRepo = this.agentsRepo;
+    const runner = this.runner;
+    const projectConfig = this.projectConfig;
+    const deps: OrgDeps = {
+      root: this.config.root,
+      store: new OrgStore(this.config.root),
+      cache: this.cache,
+      projects: this.projects,
+      members: this.members,
+      sessions: this.sessionsRepo,
+      runner,
+      sessionCreator: this.sessionCreator,
+      agents: {
+        exists: async (projectId, agentId) =>
+          agentsRepo.exists(projectId, agentId) || agentConfig.exists(projectId, agentId),
+        create: async (projectId, agentId, name, description, plugins) => {
+          await agentService.createAgent(projectId, agentId, name, description, plugins);
+        },
+        displayName: async (projectId, agentId) =>
+          (await agentConfig.readCardMeta(projectId, agentId)).name ?? agentId,
+        writeAgentsMd: (projectId, agentId, content) =>
+          agentConfig.updateConfig(projectId, agentId, { agentsMd: content }),
+        pluginVersion: (projectId, agentId, plugin) =>
+          agentService.pluginVersion(projectId, agentId, plugin),
+        updatePlugin: async (projectId, agentId, plugin) => {
+          await agentService.updatePlugin(projectId, agentId, plugin);
+          // Same reason the plugins route invalidates: a hook package is bound when a core
+          // Session is built, so a runtime cached for this employee would keep the old set
+          // until it was evicted. A Task in flight keeps what it started with.
+          runner.invalidateAgentRuntimes(projectId, agentId);
+        },
+      },
+      projectConfig,
+      completeOnce: (projectId, prompt) => projectConfig.completeOnce(projectId, prompt),
+      usage: this.usage,
+      errors: this.errors,
+      notifyProject: (projectId, event) => {
+        const ownerUserId = this.projects.findById(projectId)?.ownerUserId;
+        if (ownerUserId === undefined) return;
+        const audience = new Set([
+          ownerUserId,
+          ...this.members.list(projectId).map((m) => m.userId),
+        ]);
+        for (const userId of audience) {
+          channels.peek(userChannelKey(userId))?.publish(event, "server_event");
+        }
+      },
+      companyModeEnabled: () => this.settings.getCompanyMode(),
+      ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+      log: (line: string) => this.log.line(line),
+    };
+    const orgScheduler = new OrganizationScheduler(deps);
+    this.orgScheduler = orgScheduler;
+    this.orgService = overrides.orgService ?? new OrganizationService(deps, orgScheduler);
+    // Only active while this App is; the successor's start() reconciles from the files.
+    effect(() => orgScheduler.stop());
+  }
 }

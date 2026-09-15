@@ -3,8 +3,9 @@
  *
  * A PLUGIN PACKAGE, not part of the platform: a deployment lists it in plugins.json and
  * the harness resolves it from the installation (see the server's plugin/loader.ts).
- * It compiles against the type-only `@prismshadow/penguin-core/plugin` surface and
- * carries no runtime dependency on the harness — and none on the DSH ecosystem either:
+ * It compiles against the `@prismshadow/penguin-core/plugin` surface (types, plus the
+ * decorators its bundle carries) and has no runtime dependency on the harness — and
+ * none on the DSH ecosystem either:
  * it talks to `bwrap` directly and implements every dimension of the sandbox interface,
  * including the two DSH's vocabulary does not cover.
  *
@@ -33,9 +34,10 @@ import { spawnSync } from "node:child_process";
 import { statSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
+import { Bind, Component } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
-  PluginContext,
+  Plugin,
   SandboxPolicy,
   SandboxProvider,
 } from "@prismshadow/penguin-core/plugin";
@@ -126,11 +128,29 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
   };
 }
 
-/** The plugin: registered per App creation, like every other backend. Default export = the plugin. */
-export function activate(ctx: PluginContext): void {
-  // Backends register per App creation — a hot swap re-registers them into the fresh
-  // registry — so the subscription is to the event, not a one-time registration here.
-  ctx.on("initialize", (iface) => {
-    iface.sandbox.registerProvider("penguin-bwrap", createPenguinBwrapProvider());
-  });
+/**
+ * The plugin's one module: a provider on the sandbox slot, the code half of the
+ * contribution the decorator declares (its manifest is generated into ifaces.json from
+ * here). Created per App, so a hot swap gets a fresh provider.
+ */
+@Component({
+  contributes: {
+    "SandboxModule.providers": [
+      {
+        id: "sandbox-bwrap.provider",
+        name: "penguin-bwrap",
+        dimensions: ["fs-write", "network", "mask-paths"],
+      },
+    ],
+  },
+})
+export class SandboxBwrap {
+  @Bind("sandbox-bwrap.provider") provider!: SandboxProvider;
+
+  setup() {
+    this.provider = createPenguinBwrapProvider();
+  }
 }
+
+const plugin: Plugin = { modules: [SandboxBwrap] };
+export default plugin;

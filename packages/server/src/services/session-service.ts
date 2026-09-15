@@ -93,7 +93,7 @@ export interface SessionServiceDeps {
    */
   orgIdOfSession?: (sessionId: string) => string | undefined;
   orgIdsOfProject?: (projectId: string) => ReadonlyMap<string, string>;
-  /** Spawn-confinement getter (see app.ts): claimed from the platform's registered resource, forwarded into core beside proxyEnv. */
+  /** Spawn-confinement getter (the sandbox module's), forwarded into core beside proxyEnv. */
   confineSpawn?: () => SpawnConfiner | null;
 }
 

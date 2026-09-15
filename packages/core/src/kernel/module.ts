@@ -24,6 +24,8 @@ import type { ContextDecl, Manifest, Requirement } from "./manifest.js";
 import { splitSlotKey } from "./manifest.js";
 import type { ManifestNode, Problem, Published } from "./check.js";
 import { checkTree, describeProblem } from "./check.js";
+import type { Meta, ModuleClass } from "./decorators.js";
+import { fieldsOf, metaOf } from "./decorators.js";
 
 /** One contribution as the consuming module receives it. */
 export interface Contributed<D = JsonObject, C = unknown> {
@@ -120,146 +122,17 @@ export const defineModule = moduleDefiner<IfaceRegistry>();
 
 // ───────────────────────── class form: @Module / @Use / @Provide / @Bind ─────────────────────────
 
-/** An interface handle: an abstract class whose instance type is the interface (see markers.ts Interface). */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type IfaceClass<T = any> = abstract new (...args: never[]) => T;
-/** A module class: decorated with @Module; instantiated once per App; `create` is the module's create. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ModuleClass = abstract new (...args: any[]) => object;
+// The decorators themselves live in decorators.ts (no imports, so a plugin bundles just them);
+// this file reads what they recorded.
+export type { ComponentMeta, IfaceClass, ModuleClass, ModuleMeta } from "./decorators.js";
+export { Bind, Component, Module, Provide, Use, wire } from "./decorators.js";
 
 /** What a module class's `create` receives: everything in {@link ModuleCtx} except `use` — requirements are fields. */
 export type ClassCtx = Omit<ModuleCtx, "use">;
 
-/**
- * The static half a module class declares in its decorator. Requirements and provisions
- * are FIELDS (`@Use`, `@Provide`), where their types already are; what is left here is
- * the name, the contributions (pure data), the parked context and the child classes.
- */
-export interface ModuleMeta {
-  readonly contributes?: Readonly<
-    Record<string, ReadonlyArray<{ readonly id: string } & JsonObject>>
-  >;
-  readonly context?: ContextDecl;
-  readonly children?: ReadonlyArray<ModuleClass>;
-}
-
-/** What a @Component declares: a module's meta minus children — a component exports itself. */
-export type ComponentMeta = Omit<ModuleMeta, "children">;
-type Meta = ModuleMeta & { readonly name: string; readonly kind: "module" | "component" };
-
-interface ClassFields {
-  /** field → the module class wired to provide it (undefined = any visible provider). */
-  use: Map<string, ModuleClass | undefined>;
-  provide: Set<string>;
-  /** field → contribution id. */
-  bind: Map<string, string>;
-}
-
-const metas = new WeakMap<ModuleClass, Meta>();
-const fields = new WeakMap<ModuleClass, ClassFields>();
-const fieldsOf = (cls: ModuleClass): ClassFields => {
-  let f = fields.get(cls);
-  if (f === undefined) {
-    f = { use: new Map(), provide: new Set(), bind: new Map() };
-    fields.set(cls, f);
-  }
-  return f;
-};
-
-/**
- * Registers a class as a module. `create(ctx, context)` runs once per App; the class's
- * `@Use` fields are injected before it, its `@Provide` fields are read after it, its
- * `@Bind` fields are the code halves of its contributions, and `park()` (optional)
- * parks its state.
- */
-export function Module(meta: ModuleMeta = {}) {
-  return (target: ModuleClass, context: ClassDecoratorContext): void => {
-    metas.set(target, { ...meta, name: nodeName(context), kind: "module" });
-  };
-}
-
-/**
- * A node's name is the class's DECLARED name — the one the generator read off the source
- * into the table — and it arrives here as the decorator context's `name`, which both
- * lowerings emit as a string literal. `target.name` would be the same word until a
- * minifier renamed the binding; a string literal it cannot touch. So the name the table
- * carries and the name the class boots under cannot disagree, whatever the bundle went
- * through.
- */
-function nodeName(context: ClassDecoratorContext): string {
-  const name = context.name;
-  if (typeof name !== "string" || name === "") {
-    throw new ModuleBootError("a @Module / @Component class must be a named class declaration");
-  }
-  return name;
-}
-
-/**
- * Registers a class as a COMPONENT: a module that exports itself. The instance is the
- * provision, named in a consumer by its own class (`@Use() auth!: AuthService`), and its
- * interface is its public surface as the generator projects it. `@Use` fields are injected
- * before the optional `create(ctx, context)`; `@Bind` fields and `park()` work as on a
- * module. A class whose inputs no interface provides (a computed closure, a path) is built
- * by a @Module instead, which is what "exports others" means.
- */
-export function Component(meta: ComponentMeta = {}) {
-  return (target: ModuleClass, context: ClassDecoratorContext): void => {
-    metas.set(target, { ...meta, name: nodeName(context), kind: "component" });
-  };
-}
-
-/**
- * A requirement: `@Use(SessionsModule) readonly runner!: ScheduleTaskRunner;` — the field's
- * type is the interface, the decorator's argument the module wired to provide it (absent =
- * whichever visible module structurally satisfies it, if exactly one does). Injected before
- * `create`. The interface key comes from the generated table, which reads the annotation.
- */
-export function Use(from?: ModuleClass) {
-  return (_value: undefined, context: ClassFieldDecoratorContext): void => {
-    const name = String(context.name);
-    context.addInitializer(function (this: unknown) {
-      fieldsOf((this as object).constructor as ModuleClass).use.set(name, from);
-    });
-  };
-}
-
-/** A provision: `@Provide() settings!: Settings;` — assigned in `create`, read after it; unassigned = boot error. */
-export function Provide() {
-  return (_value: undefined, context: ClassFieldDecoratorContext): void => {
-    const name = String(context.name);
-    context.addInitializer(function (this: unknown) {
-      fieldsOf((this as object).constructor as ModuleClass).provide.add(name);
-    });
-  };
-}
-
-/** The code half of one contribution: `@Bind("agents.routes") routes!: Hono;` — assigned in `create`. */
-export function Bind(id: string) {
-  return (_value: undefined, context: ClassFieldDecoratorContext): void => {
-    const name = String(context.name);
-    context.addInitializer(function (this: unknown) {
-      fieldsOf((this as object).constructor as ModuleClass).bind.set(name, id);
-    });
-  };
-}
-
-/**
- * Constructs a component OUTSIDE a tree — a script or a test that wants the class with
- * its fields supplied by hand. The fields are assigned as the booter would inject them;
- * nothing is checked, and `create()` is not called.
- */
-export function wire<T extends object>(
-  cls: new () => T,
-  // `any`, so a callback supplied here is contextually typed rather than an implicit any.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fields: Record<string, any>,
-): T {
-  return Object.assign(new cls(), fields);
-}
-
 /** The meta a class was decorated with; throws for an undecorated class. */
 export function moduleMetaOf(cls: ModuleClass): Meta {
-  const m = metas.get(cls);
+  const m = metaOf(cls);
   if (m === undefined)
     throw new ModuleBootError(`class '${cls.name}' is not a @Module or @Component`);
   return m;

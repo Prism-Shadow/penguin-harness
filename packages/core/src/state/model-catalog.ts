@@ -1337,6 +1337,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // Dots Studio's (rednote / Xiaohongshu) Dots3-Note Preview: an open-weight MoE, 280B total
+    // and 16B active, the lightest of the Dots 3 family. TokenDance lists it as "Dots3-Note
+    // Preview（Free）", and the name is kept as the seller spells it, tag and full-width
+    // parentheses included, as the OpenRouter `(free)` rows keep theirs. The price is a
+    // genuine CNY 0 on every bucket, the same treatment as the OpenRouter `:free` rows, so
+    // costs compute to 0 and the free badge shows — over a 512,000-token context window, with
+    // openai:chat-completions and anthropic:messages as its supported_protocols (this group's
+    // openai-chat pin is a convention here, not the only shape the id serves). The gateway's
+    // own listing describes it as covering multimodal understanding, which is what the
+    // vision flag records; no image request was sent to it. Read 2026-09-15 from the
+    // gateway's /models listing and tokendance.space/models/dots-3-note-preview.
+    modelId: "dots-3-note-preview",
+    displayName: "Dots3-Note Preview（Free）",
+    provider: "tokendance",
+    contextWindow: 512000,
+    pricing: cny(0, 0, 0),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
     modelId: "glm-5.3",
     displayName: "GLM-5.3",
     provider: "tokendance",
@@ -2024,6 +2045,26 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0, 0, 0),
     supportsVision: true,
     clientType: VLLM_CLIENT_TYPE,
+  },
+  // -- Custom (the group that otherwise holds only user-defined models). A preset may live
+  // here only as a complete row — its own base URL and a pinned generic protocol — because the
+  // group implies neither; it is where a vendor with a single preview model and no console
+  // of its own goes rather than opening a group for it. Atria Dawn Preview: the Anthropic
+  // Messages API at api.atria-asi.ai (the client appends /v1/messages, so the base URL carries
+  // no /v1; the endpoint also serves Chat Completions and Responses, but its Responses side
+  // rejects the replayed assistant turn of a multi-turn conversation), a 256K window (262144 —
+  // the API caps max_output_tokens at that minus the input), text only (the endpoint rejects
+  // image input), and no published price yet, so the row records $0 until the vendor prices
+  // it. Read 2026-09-15 from api.atria-asi.ai/docs.
+  {
+    modelId: "Atria-Dawn-Preview",
+    displayName: "Atria Dawn Preview",
+    provider: "custom",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    clientType: "ant-messages",
+    baseUrl: "https://api.atria-asi.ai",
   },
 ];
 

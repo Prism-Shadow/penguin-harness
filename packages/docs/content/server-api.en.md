@@ -21,7 +21,7 @@ The PenguinHarness server exposes a same-origin HTTP API used by the bundled Web
 
 ```text
 packages/server/src
-├── index.ts / config.ts / app.ts   # startup entry · env config · Hono assembly (createApp binds no port — testable)
+├── index.ts / config.ts / app.ts   # startup entry · env config · Hono assembly (the runtime app; the business routes are assembled by the http module under src/modules — no port bound — testable)
 ├── api/types.ts                    # the outward DTO contract (type-only import via the "./api" subpath)
 ├── auth/                           # scrypt passwords, admin seeding, cookie sessions, auth middleware
 ├── db/                             # node:sqlite connection, schema SQL, one repo per table
@@ -174,7 +174,7 @@ Member writes are owner-only. The member routes also answer `403 desktop_single_
 | GET | /api/projects/:projectId/models | List models (api_key masked) |
 | PUT | /api/projects/:projectId/models | Full-table replace, keyed by `(provider, modelId)` |
 | POST | /api/projects/:projectId/models/test | Connectivity test: `{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
-| POST | /api/projects/:projectId/models/detect | Protocol auto-detection for a custom base URL: probes `openai-responses` → `ant-messages` → `openai-chat` in order and reports the first served protocol: `{baseUrl, apiKey?, …}` → `{detected?, probes}` |
+| POST | /api/projects/:projectId/models/detect | Protocol auto-detection for a custom base URL: probes `openai-responses` → `ant-messages` → `openai-chat` in order, first on the URL as typed (normalized, a pasted endpoint path stripped) and then on its neighbouring `/v1` form, reporting the first served protocol and the base URL that served it: `{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}` |
 | POST | /api/projects/:projectId/models/list | Endpoint model listing for the add-group import: the ids the endpoint serves on a detected protocol: `{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
 | POST | /api/projects/:projectId/models/detect-vision | Vision capability probe: sends one 1x1 image on this model's credential (a real, billed completion): `{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported\|unsupported\|failed, message?}` |
 

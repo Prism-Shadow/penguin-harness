@@ -42,7 +42,10 @@ import type {
 } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionVia } from "../../auth/service.js";
-import type { AppDeps } from "../../app.js";
+import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
+import { ServerSettingsRepo } from "../../db/repos/server-settings.js";
+import { ProjectService } from "../../services/project-service.js";
+import { OrganizationModule, OrgService } from "../../runtime/organization/service.js";
 import { TICKET_ID_PATTERN } from "../../organization/files.js";
 import { ORG_TICKET_COLUMNS, isCalendarEventName, isChannelId } from "../../organization/paths.js";
 import { parsePrincipal } from "../../organization/principal.js";
@@ -165,7 +168,14 @@ function requireChannelParam(c: Context<AppEnv>): string {
   return raw;
 }
 
-export function organizationRoutes(deps: AppDeps): Hono<AppEnv> {
+/** What this route group needs — declared here, at the consumer. */
+export interface OrgRouteDeps {
+  orgService: OrgService;
+  projectService: Pick<ProjectService, "requireProjectAccess">;
+  serverSettingsRepo: Pick<ServerSettingsRepo, "getCompanyMode">;
+}
+
+export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.use("*", async (c, next) => {
@@ -924,4 +934,30 @@ function parseModel(
     provider: requireString(m, "provider", { minLen: 1, maxLen: 64, label: "model.provider" }),
     modelId: requireString(m, "modelId", { minLen: 1, maxLen: 200, label: "model.modelId" }),
   };
+}
+
+@Component({
+  contributes: {
+    "HttpModule.routes": [
+      {
+        id: "OrgRoutes.routes",
+        prefix: "/api/projects/:projectId/organizations",
+        auth: "user",
+        order: 145,
+      },
+    ],
+  },
+})
+export class OrgRoutes {
+  @Use(OrganizationModule) private readonly orgService!: OrgService;
+  @Use() private readonly projectService!: ProjectService;
+  @Use() private readonly settings!: ServerSettingsRepo;
+  @Bind("OrgRoutes.routes") routes!: Hono<AppEnv>;
+  setup() {
+    this.routes = organizationRoutes({
+      orgService: this.orgService,
+      projectService: this.projectService,
+      serverSettingsRepo: this.settings,
+    });
+  }
 }

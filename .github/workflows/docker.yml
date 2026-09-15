@@ -37,7 +37,10 @@ on:
         type: boolean
   push:
     branches: [main]
+  # Same trigger policy as ci.yml: only a pull request whose base is main, and only when it
+  # touches the image.
   pull_request:
+    branches: [main]
     paths:
       - Dockerfile
       - .dockerignore

@@ -9,6 +9,7 @@ import fs from "node:fs";
 import { openExistingDatabase } from "./db/database.js";
 import { AuthSessionsRepo } from "./db/repos/auth-sessions.js";
 import { UsersRepo } from "./db/repos/users.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 /** An hour: long enough for a controller to finish, short enough to forget. */
 export const CLI_TOKEN_TTL_MS = 60 * 60_000;
@@ -58,12 +59,12 @@ export function mintApiToken(
   let db: ReturnType<typeof openExistingDatabase> | null = null;
   try {
     db = openExistingDatabase(dbPath);
-    if (new UsersRepo(db).findById(userId) === null) {
+    if (wire(UsersRepo, { db: db }).findById(userId) === null) {
       return { outcome: "failed", detail: `no such account: ${userId}` };
     }
     // The repo is the single minting point (token shape, hash, TTL ceiling), so a CLI-minted
     // row cannot drift from one the server issues itself.
-    const { token, expiresAt } = new AuthSessionsRepo(db).issue({
+    const { token, expiresAt } = wire(AuthSessionsRepo, { db: db }).issue({
       userId,
       via: "cli",
       now: opts.now ?? new Date(),

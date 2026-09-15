@@ -1,101 +1,53 @@
 /**
  * The plugin contract: what a plugin package compiles against.
  *
- * Types only — the host that drives them lives in whatever embeds this SDK (for the
- * harness, `@prismshadow/penguin-server/plugin`). A plugin reaches this module with
- * `import type`, so it carries no runtime dependency on either and stays a
- * self-contained library that happens to satisfy an interface.
+ * Types, plus the five decorators — the same ones the harness's own modules are written
+ * with (core kernel/decorators.ts: no imports, so a plugin's bundle carries them and
+ * nothing else of the SDK). The host that drives a plugin lives in whatever embeds this
+ * SDK (for the harness, `@prismshadow/penguin-server/plugin`); a plugin reaches THAT with
+ * `import type` only and stays a self-contained library that happens to satisfy an
+ * interface.
  *
- * A plugin is a module exporting one function:
+ * A plugin is an npm package; what it carries is what it ships. Its MODULES — the same
+ * unit the harness itself is built from — are written the same way: a `@Component` (or
+ * `@Module`) class whose `@Use` / `@Provide` / `@Bind` fields are its requirements,
+ * provisions and contribution code halves. Their manifests are GENERATED, not written:
+ * the package's build runs `scripts/gen-ifaces.mjs` over its own tsconfig and ships the
+ * resulting `ifaces.json` beside its `package.json` — the same table the harness
+ * generates for itself, holding the manifest of every decorated class and the signature
+ * of every interface they name. That table IS the module payload: the host reads it
+ * without executing the package, and the package's default export names the classes to
+ * boot. A package without one ships no modules.
  *
- *   export function activate(ctx: PluginContext): void
+ *   // package.json
+ *   "files": ["dist", "ifaces.json"],
+ *   "scripts": { "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup" }
+ *   // src/index.ts
+ *   @Component({ contributes: { "SandboxModule.providers": [{ id: "sandbox-bwrap.provider", name: "penguin-bwrap", dimensions: ["fs-write", "network", "mask-paths"] }] } })
+ *   export class SandboxBwrap {
+ *     @Bind("sandbox-bwrap.provider") provider!: SandboxProviderSource;
+ *     setup() { this.provider = createProvider(); }
+ *   }
+ *   export default { modules: [SandboxBwrap] } satisfies Plugin;
  *
- * It runs once per process at load time, before any App exists. Everything after that
- * is events ({@link PluginEvents}), both fired at EVERY App creation — the packaged
- * boot and each hot-swap boot alike:
- *
- *   - `"initialize"` — {@link PenguinInterface}, the harness's DEFINITION view, where
- *     factories are registered.
- *   - `"create"` — {@link PenguinContext}, an INSTANCE of the harness, assembled after
- *     registration closes.
- *
- * `on(...)` and `ctx.disposables` are sealed when `activate` returns: handlers run per
- * App, so subscribing from inside one would accumulate a copy per hot swap. Sealing
- * turns that slow leak into a loud error at the packaged boot.
- *
- * {@link PenguinContext} and {@link PenguinInterface} are CLOSED. They name every member
- * a plugin may rely on, and are not reopened by declaration merging: an embedder that
- * augmented this module would put members into the contract that only its own build has,
- * so a plugin type-checking against the contract would compile against a surface that
- * the next embedder does not provide — and nothing at this layer could tell.
- *
- * An embedder with more to offer declares its own interface EXTENDING these and hands that
- * in; reaching those extra members is then an explicit cast at the point of use, which is
- * the honest cost of depending on one embedder (see the harness's `HarnessContext`).
+ * The modules boot as children of the host's tree, once per App creation — the
+ * packaged boot and each hot-swap boot alike — so what a module registers never
+ * survives into a generation it did not register with. What it may require is what the
+ * host publishes as interfaces (for the harness: everything under
+ * `@prismshadow/penguin-server/plugin`); the requirement is checked structurally,
+ * at signature level, before the module is created.
  */
+import type { ModuleClass } from "../kernel/decorators.js";
 
-import type { SandboxControl, SandboxProviderRegistry } from "./sandbox.js";
-import type { WorkflowFactory, WorkflowInstances } from "./workflow.js";
+export type { ClassCtx } from "../kernel/module.js";
+export type { ComponentMeta, ModuleClass, ModuleMeta } from "../kernel/decorators.js";
+export { Bind, Component, Module, Provide, Use } from "../kernel/decorators.js";
+export type { Opaque, Slot } from "../kernel/markers.js";
+export { Interface } from "../kernel/markers.js";
 
-export type { WorkflowFactory, WorkflowInstance, WorkflowInstances } from "./workflow.js";
 export type * from "./sandbox.js";
 
-/** A tool factory — RESERVED. The shape lands with the first plugin-provided tool. */
-export type ToolFactory = unknown;
-
-/** An INSTANCE of the harness. Closed — see the module doc. */
-export interface PenguinContext {
-  /** Instances built from `iface.workflow`. */
-  workflows: WorkflowInstances;
-  /** Flips confinement for this instance (see {@link SandboxControl}). */
-  sandbox: SandboxControl;
-}
-
-/** The DEFINITION view of the harness: factories by name. */
-export interface PenguinInterface {
-  /** A Map whose `set` REFUSES a duplicate name (see the harness's WorkflowFactories). */
-  workflow: Map<string, WorkflowFactory>;
-  /** RESERVED (see {@link ToolFactory}). */
-  tool: Map<string, ToolFactory>;
-  /** Sandbox backend registration (see {@link SandboxProviderRegistry}). */
-  sandbox: SandboxProviderRegistry;
-}
-
-/**
- * Event name → payload, the one place the vocabulary lives: adding an entry types the
- * platform's emit and every plugin's handler at once.
- */
-export interface PluginEvents {
-  initialize: PenguinInterface;
-  create: PenguinContext;
-}
-
-export interface Disposable {
-  dispose(): void | Promise<void>;
-}
-
-/**
- * What `activate` receives — process-level, NOT the harness instance (that is
- * {@link PenguinContext}, delivered by `"create"`).
- */
-export interface PluginContext {
-  /**
-   * Callable only while `activate` runs. Handlers are delivered synchronously and
-   * unwrapped — a throwing handler fails that App's boot. A handler must NOT be async:
-   * an App is assembled synchronously around the emit, so a promise could not be awaited
-   * and its rejection would escape as an unhandled one. Returning a thenable is refused
-   * at delivery.
-   */
-  on<E extends keyof PluginEvents>(event: E, handler: (payload: PluginEvents[E]) => void): void;
-  /** Cleanup, disposed concurrently — entries must be mutually independent. */
-  disposables: Disposable[];
-}
-
+/** What a plugin package's default export is: the module classes to boot, each in the package's `ifaces.json`. */
 export interface Plugin {
-  /**
-   * May be async: loading awaits it, so a rejection is an ordinary load failure and the
-   * subscription window does not seal until it settles. Event handlers, by contrast, are
-   * synchronous — see {@link PluginContext.on}.
-   */
-  activate(ctx: PluginContext): void | Promise<void>;
+  modules: readonly ModuleClass[];
 }

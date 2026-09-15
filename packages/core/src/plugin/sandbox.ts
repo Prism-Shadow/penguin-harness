@@ -13,6 +13,8 @@
  * Nothing here emits runtime code. The helpers that read these shapes
  * (`SANDBOX_DIMENSIONS`, `providerDimensions`, `requestedDimensions`) are the embedder's
  * and live in the server package, so a plugin carries no runtime dependency on core.
+ * A backend reaches the harness by contributing to the `sandbox.providers` slot (see
+ * the sandbox module's iface.ts in the server package).
  */
 
 /**
@@ -113,22 +115,3 @@ export type SandboxSettings = {
   network?: "none";
   maskPaths?: string[];
 };
-
-/**
- * Sandbox backend registration — the floor where plugins are PROVIDERS. Nothing is
- * built in: every backend is a package a deployment installs and names in plugins.json,
- * so a third-party one enters by the same door. A backend declares which dimensions it
- * implements (declaring none means filesystem only) and the service routes each policy
- * to one that covers it, so an unimplemented dimension can never be silently ignored.
- * A provider may be a promise — loading is async, and the service fails closed while it
- * is pending or failed.
- */
-export interface SandboxProviderRegistry {
-  registerProvider(name: string, provider: SandboxProviderSource): void;
-}
-
-/** Flips confinement. Settings park with the platform context, so they survive swaps. */
-export interface SandboxControl {
-  configure(settings: SandboxSettings): void;
-  settings(): SandboxSettings;
-}

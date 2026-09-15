@@ -23,6 +23,7 @@ import { SCHEMA_SQL } from "../src/db/schema.js";
 import { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.js";
 import { SessionsRepo } from "../src/db/repos/sessions.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 const sqlite = process.getBuiltinModule("node:sqlite");
 
@@ -91,7 +92,7 @@ describe("openDatabase column upgrade", () => {
 
     const db = openDatabase(dbPath);
     try {
-      const repo = new SessionsRepo(db);
+      const repo = wire(SessionsRepo, { db: db });
       // The legacy row reads back with the grandfathered defaults: client NULL (treated as
       // web — it stays in the default list) and has_trace false.
       const legacy = repo.findById("session-legacy");
@@ -156,7 +157,7 @@ describe("openDatabase column upgrade", () => {
 
     const db = openDatabase(dbPath);
     try {
-      const repo = new MessagingBindingsRepo(db);
+      const repo = wire(MessagingBindingsRepo, { db: db });
       // The pre-existing binding survives with its credentials, its intent and its reply
       // target; only the watermark is new, and it grandfathers in as null — the honest value
       // for a binding whose past messages this build never saw an id for.
@@ -210,7 +211,7 @@ describe("openDatabase column upgrade", () => {
 
     const db = openDatabase(dbPath);
     try {
-      const repo = new SessionsRepo(db);
+      const repo = wire(SessionsRepo, { db: db });
       // The most recent request timestamp is the closest persisted proxy for last Trace
       // activity. Read raw as well: mapRow would report created_at for a row the backfill
       // never touched, hiding a no-op migration behind a plausible-looking value.
@@ -234,7 +235,7 @@ describe("openDatabase column upgrade", () => {
 
     const reopened = openDatabase(dbPath);
     try {
-      const repo = new SessionsRepo(reopened);
+      const repo = wire(SessionsRepo, { db: reopened });
       expect(repo.findById("session-used")!.lastActiveAt).toBe("2026-02-03T09:30:00.000Z");
       expect(repo.findById("session-quiet")!.lastActiveAt).toBe("2026-03-01T00:00:00.000Z");
     } finally {
@@ -264,7 +265,7 @@ describe("openDatabase column upgrade", () => {
       expect(rawLastActive(db, "session-1")).toBeNull();
       // ...and mapRow's coalesce is what keeps that invisible to callers: the safety net,
       // not the mechanism (nothing else can repair a NULL once the gate has closed).
-      expect(new SessionsRepo(db).findById("session-1")!.lastActiveAt).toBe(
+      expect(wire(SessionsRepo, { db: db }).findById("session-1")!.lastActiveAt).toBe(
         "2026-01-01T00:00:00.000Z",
       );
     } finally {
@@ -289,7 +290,7 @@ describe("SessionsRepo last_active_at writes", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new SessionsRepo(db);
+    repo = wire(SessionsRepo, { db: db });
   });
   afterEach(() => {
     db.close();
@@ -395,10 +396,10 @@ describe("openDatabase table and index upgrades", () => {
           )
           .all(),
       ).toHaveLength(1);
-      expect(new SessionsRepo(db).findById("session-pre-messaging")).not.toBeNull();
+      expect(wire(SessionsRepo, { db: db }).findById("session-pre-messaging")).not.toBeNull();
       // And it is immediately writable — a newly created table with no rows would look
       // identical to one the upgrade forgot to create until something tries to use it.
-      const repo = new MessagingBindingsRepo(db);
+      const repo = wire(MessagingBindingsRepo, { db: db });
       expect(
         repo.upsert({
           sessionId: "session-pre-messaging",
@@ -472,7 +473,7 @@ describe("openDatabase table and index upgrades", () => {
 
     const db = openDatabase(dbPath);
     try {
-      const repo = new MessagingBindingsRepo(db);
+      const repo = wire(MessagingBindingsRepo, { db: db });
       const row = repo.find("session-old", "feishu");
       // ON, unlike every other added flag: this column's default is the CORRECTED behaviour
       // rather than the previous one, so an existing binding starts rendering Markdown after
@@ -522,7 +523,7 @@ describe("openDatabase table and index upgrades", () => {
 
     const db = openDatabase(dbPath);
     try {
-      const repo = new MessagingBindingsRepo(db);
+      const repo = wire(MessagingBindingsRepo, { db: db });
       const row = repo.find("session-old", "telegram");
       // The column arrives with a default that reproduces the behaviour the row already had —
       // one message per reply — so the upgrade cannot change how an existing binding delivers.
@@ -561,7 +562,7 @@ describe("openDatabase table and index upgrades", () => {
 
     const db = openDatabase(dbPath);
     try {
-      const repo = new MessagingBindingsRepo(db);
+      const repo = wire(MessagingBindingsRepo, { db: db });
       const row = repo.find("session-old", "telegram");
       // The default reproduces the delivery the row already had — every completed message
       // mirrored as it completed — so the upgrade cannot change how a binding behaves.
@@ -653,7 +654,7 @@ describe("openDatabase table and index upgrades", () => {
       ).toHaveLength(1);
       // The row written under the old rule survived, and a second Session may now keep the
       // same account saved beside it — the write the unique index used to reject.
-      const repo = new MessagingBindingsRepo(db);
+      const repo = wire(MessagingBindingsRepo, { db: db });
       expect(repo.find("session-a", "telegram")?.accountId).toBe("12345");
       expect(
         repo.upsert({
@@ -703,7 +704,7 @@ describe("openDatabase table and index upgrades", () => {
     });
     const db = openDatabase(dbPath);
     try {
-      const repo = new MessagingBindingsRepo(db);
+      const repo = wire(MessagingBindingsRepo, { db: db });
       expect(repo.find("session-a", "telegram")?.enabled).toBe(true);
       expect(repo.findEnabledByAccount("telegram", "99999")?.sessionId).toBe("session-a");
     } finally {
@@ -746,7 +747,7 @@ describe("openDatabase tolerates a database from a newer build", () => {
   it("leaves unknown tables, columns and indexes intact across an open", () => {
     const dbPath = path.join(dir, "web.db");
     const current = openDatabase(dbPath);
-    new SessionsRepo(current).insert({
+    wire(SessionsRepo, { db: current }).insert({
       sessionId: "s1",
       projectId: "p1",
       agentId: "a1",
@@ -790,7 +791,7 @@ describe("openDatabase tolerates a database from a newer build", () => {
       ).toHaveLength(1);
       // And this build still reads and writes the rows it does own, alongside the column it
       // cannot see — the unknown column's DEFAULT is what keeps this insert legal.
-      const repo = new SessionsRepo(reopened);
+      const repo = wire(SessionsRepo, { db: reopened });
       expect(repo.findById("s1")!.lastActiveAt).toBe("2026-05-01T00:00:00.000Z");
       repo.insert({
         sessionId: "s2",
@@ -829,7 +830,7 @@ describe("openDatabase tolerates a database from a newer build", () => {
     const opened = openDatabase(formedByNewer);
     try {
       expect(() =>
-        new SessionsRepo(opened).insert({
+        wire(SessionsRepo, { db: opened }).insert({
           sessionId: "s1",
           projectId: "p1",
           agentId: "a1",
@@ -859,7 +860,7 @@ describe("openDatabase tolerates a database from a newer build", () => {
     }
     const reopenedIndexed = openDatabase(withUniqueIndex);
     try {
-      const repo = new SessionsRepo(reopenedIndexed);
+      const repo = wire(SessionsRepo, { db: reopenedIndexed });
       const row = {
         projectId: "p1",
         agentId: "a1",

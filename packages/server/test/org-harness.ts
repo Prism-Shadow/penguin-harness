@@ -5,6 +5,7 @@
  * and scenario suites so both exercise the same seams the app binds in production.
  */
 import { saveProjectConfig } from "@prismshadow/penguin-core";
+import { wire } from "@prismshadow/penguin-core/kernel";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { ServerEvent } from "../src/api/types.js";
 import { openDatabase } from "../src/db/database.js";
@@ -95,7 +96,7 @@ export async function makeOrgHarness(opts: {
     models: [{ provider: "custom", model_id: "m-bench" }],
   });
   const db = openDatabase(":memory:");
-  new UsersRepo(db).insert({
+  wire(UsersRepo, { db }).insert({
     userId: owner,
     passwordHash: "x",
     isAdmin: false,
@@ -104,10 +105,10 @@ export async function makeOrgHarness(opts: {
     avatar: null,
     createdAt: "2026-08-01T00:00:00Z",
   });
-  const projects = new ProjectsRepo(db);
+  const projects = wire(ProjectsRepo, { db });
   projects.insert({ projectId, ownerUserId: owner, createdAt: "2026-08-01T00:00:00Z" });
-  const sessions = new SessionsRepo(db);
-  const cache = new OrgCacheRepo(db);
+  const sessions = wire(SessionsRepo, { db });
+  const cache = wire(OrgCacheRepo, { db });
   const store = new OrgStore(root);
   const clock = { nowMs: opts.nowMs };
   const busy = new Set<string>();
@@ -132,7 +133,7 @@ export async function makeOrgHarness(opts: {
     store,
     cache,
     projects,
-    members: new MembersRepo(db),
+    members: wire(MembersRepo, { db }),
     sessions,
     runner: {
       statusOf: (id) => (busy.has(id) ? "running" : "idle"),
@@ -200,7 +201,7 @@ export async function makeOrgHarness(opts: {
         plugins.updated.push({ agentId, plugin });
       },
     },
-    projectConfig: new ProjectConfigService(root),
+    projectConfig: wire(ProjectConfigService, { config: { root } }),
     usage: {
       costBySession: async (_p, ids) => ({
         bySession: new Map(ids.filter((id) => costs.has(id)).map((id) => [id, costs.get(id)!])),

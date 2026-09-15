@@ -652,10 +652,11 @@ export function Sidebar({
 
   /**
    * The folder-only groups of each mode: group key → the conversations folded inside it. A
-   * group with no active conversation of its own but rows inside its folders — the Workspace
-   * an evaluation creates per Case × Run, an Agent that has only ever been evaluated — folds
-   * up, sorts behind the other groups of its mode and wears a dimmed header carrying that
-   * count.
+   * group with no active conversation of its own but rows inside its folders — a Workspace
+   * only subagents ever ran in, an Agent that has only ever been evaluated — folds up, sorts
+   * behind the other groups of its mode and wears a dimmed header carrying that count. (The
+   * Test Workspaces an evaluation creates per Case × Run never form groups of their own: they
+   * fold into the merged temp group, see session-grouping.ts's isTempWorkspace.)
    *
    * Read off the group lists BEFORE they are ordered: the ordering consumes this, so it
    * cannot be what feeds it. The search query is deliberately not part of it either — a query

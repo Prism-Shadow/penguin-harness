@@ -72,8 +72,8 @@ function moduleNameOf(fileName) {
   const start = dir;
   for (;;) {
     // A module's name is the `name` of the defineModule({...}) literal in its module.ts;
-    // a plugin package's is the one its package.json#penguin.modules entry names,
-    // which the package name stands in for here (one module per package is the common case).
+    // a plugin package's classes are keyed by the package name (the table it ships is
+    // generated over its own tsconfig, so the key only has to agree within it).
     const mts = path.join(dir, "module.ts");
     if (fs.existsSync(mts)) {
       const m =

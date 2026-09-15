@@ -8,7 +8,8 @@
  * until its next calendar sweep carries them, so dropping it loses those digests and nothing
  * else — the changes themselves live in the ticket files and the all-hands channel.
  */
-import type { DatabaseSync } from "node:sqlite";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
 import type { OrgCalendarOutcome, OrgTicketChange } from "../../api/types.js";
 
 export interface OrgSessionRow {
@@ -103,8 +104,9 @@ const calendarRow = (r: Record<string, unknown>): OrgCalendarStateRow => ({
   lastOutcome: (r.last_outcome as OrgCalendarOutcome | null) ?? null,
 });
 
+@Component()
 export class OrgCacheRepo {
-  constructor(private readonly db: DatabaseSync) {}
+  @Use() private readonly db!: Db;
 
   // ---- desk sessions ----
 

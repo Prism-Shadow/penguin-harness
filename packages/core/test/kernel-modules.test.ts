@@ -327,6 +327,34 @@ describe("checkTree", () => {
   });
 });
 
+describe("parseManifest", () => {
+  it("reads an empty requires, provides, contributes or children left out as empty", () => {
+    expect(
+      parseManifest({
+        name: "SandboxMxc",
+        contributes: { "SandboxModule.providers": [{ id: "p" }] },
+      }),
+    ).toEqual({
+      name: "SandboxMxc",
+      requires: {},
+      provides: {},
+      contributes: { "SandboxModule.providers": [{ id: "p" }] },
+      children: [],
+    });
+    expect(parseManifest({ name: "Bare" })).toEqual({
+      name: "Bare",
+      requires: {},
+      provides: {},
+      contributes: {},
+      children: [],
+    });
+  });
+
+  it("still rejects a field of the wrong shape", () => {
+    expect(() => parseManifest({ name: "X", children: {} }, "x")).toThrow(/^x: /);
+  });
+});
+
 describe("bootModules", () => {
   const sessionsApi = {
     startTask: async () => ({ sessionId: "s", queued: false }),

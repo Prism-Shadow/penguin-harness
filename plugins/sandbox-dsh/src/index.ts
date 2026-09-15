@@ -21,22 +21,22 @@
  * them fails THIS load — reported fail-closed by the service — instead of failing the
  * whole platform bundle's import.
  */
+import { Bind, Component } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
-  PluginContext,
+  Plugin,
   SandboxProvider,
+  SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
 
 /** Mount the stock DSH chain on a bare cordis Context — exactly how DSH's own tests mount it. */
 export async function loadDshAdaptor(): Promise<SandboxProvider | null> {
   const { Context } = await import("@deepseek-ai/cordis");
   const { LocalSandboxProvider } = await import("@deepseek-ai/dsh-sandbox-local");
-  const cordisCtx = new Context();
-  // A cordis plugin, not a Penguin one: `Context.plugin` is cordis's own API, and the two
-  // vocabularies share nothing but the word. Hence the name — `ctx` in this package is
-  // the PluginContext `activate` receives, below.
-  await cordisCtx.plugin(LocalSandboxProvider, {});
-  const dsh = cordisCtx.sandbox;
+  const ctx = new Context();
+  // `ctx.plugin` is cordis's own API name, not this repo's vocabulary.
+  await ctx.plugin(LocalSandboxProvider, {});
+  const dsh = ctx.sandbox;
   return {
     // DSH's own words: "Network and process visibility are outside this vocabulary."
     dimensions: ["fs-write"],
@@ -55,11 +55,25 @@ export async function loadDshAdaptor(): Promise<SandboxProvider | null> {
   };
 }
 
-/** The plugin: registered per App creation, so a hot swap re-registers it. Default export = the plugin. */
-export function activate(ctx: PluginContext): void {
-  // Backends register per App creation — a hot swap re-registers them into the fresh
-  // registry — so the subscription is to the event, not a one-time registration here.
-  ctx.on("initialize", (iface) => {
-    iface.sandbox.registerProvider("dsh-local", loadDshAdaptor());
-  });
+/**
+ * The plugin's one module: a provider on the sandbox slot, the code half of the
+ * contribution the decorator declares (its manifest is generated into ifaces.json from
+ * here). Created per App, so a hot swap gets a fresh provider.
+ */
+@Component({
+  contributes: {
+    "SandboxModule.providers": [
+      { id: "sandbox-dsh.provider", name: "dsh-local", dimensions: ["fs-write"] },
+    ],
+  },
+})
+export class SandboxDsh {
+  @Bind("sandbox-dsh.provider") provider!: SandboxProviderSource;
+
+  setup() {
+    this.provider = loadDshAdaptor();
+  }
 }
+
+const plugin: Plugin = { modules: [SandboxDsh] };
+export default plugin;

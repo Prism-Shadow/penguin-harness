@@ -4,7 +4,7 @@
  * it without dragging the runtime shell into its graph.
  */
 import type { Context } from "hono";
-import type { AppDeps } from "../app.js";
+import type { ProjectAccess } from "../services/project-access.js";
 import type { AppEnv } from "../auth/middleware.js";
 import type { UserRow } from "../db/repos/users.js";
 
@@ -30,13 +30,16 @@ import type { UserRow } from "../db/repos/users.js";
  * - Exceptions are swallowed entirely: throwing here would break onError itself
  *   (possibly recursively); any judgment failure falls back to unattributed.
  */
-export function attributedProjectId(c: Context<AppEnv>, deps: AppDeps): string | undefined {
+export function attributedProjectId(
+  c: Context<AppEnv>,
+  deps: { access: ProjectAccess },
+): string | undefined {
   try {
     const projectId = c.req.param("projectId");
     if (projectId === undefined) return undefined;
     const user = c.get("user") as UserRow | undefined;
     if (user === undefined) return undefined;
-    return deps.projectService.canAccess(user.userId, projectId) ? projectId : undefined;
+    return deps.access.canAccess(user.userId, projectId) ? projectId : undefined;
   } catch {
     return undefined;
   }

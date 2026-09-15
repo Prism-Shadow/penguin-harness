@@ -27,6 +27,35 @@ import { TicketsPage } from "./features/company/tickets-page";
 import { FinancePage } from "./features/company/finance-page";
 import { ChannelView } from "./features/company/channel-view";
 import { HandbookPage } from "./features/company/handbook-page";
+import { MachinesPage } from "./features/machines/machines-page";
+import { PAGES } from "./lib/pages";
+import type { PageEntry } from "./lib/pages";
+
+/**
+ * The renderers the manifest may name. A page is a module.json entry plus one line here;
+ * a server-contributed page renders only when its `builtin` is in this registry.
+ */
+const BUILTIN_PAGES: Record<string, React.ComponentType> = {
+  ChatPage,
+  AgentsPage,
+  AgentSettingsPage,
+  PluginsPage,
+  ModelsPage,
+  MachinesPage,
+  UsagePage,
+  BenchmarkPage,
+  BenchmarkDetailPage,
+};
+
+function renderPage(page: PageEntry): React.ReactNode {
+  if ("iframe" in page.renderer) {
+    return (
+      <iframe title={page.key} src={page.renderer.iframe.src} className="h-full w-full border-0" />
+    );
+  }
+  const Component = BUILTIN_PAGES[page.renderer.builtin];
+  return Component === undefined ? <Navigate to="/chat" replace /> : <Component />;
+}
 
 /** Route guard: shows blank while initializing, redirects to /login when not authenticated. */
 function RequireAuth() {
@@ -78,15 +107,12 @@ export function AppRouter() {
         />
         <Route element={<RequireAuth />}>
           <Route index element={<Navigate to="/chat" replace />} />
-          <Route path="/chat/:sessionId?" element={<ChatPage />} />
-          <Route path="/agents" element={<AgentsPage />} />
-          <Route path="/agents/:agentId" element={<AgentSettingsPage />} />
-          <Route path="/plugins" element={<PluginsPage />} />
-          <Route path="/models" element={<ModelsPage />} />
-          {/* Admin-only server-side (403 otherwise); the sidebar hides the row for
-              everyone else, so a member only ever reaches this by typing the URL. */}
-          <Route path="/usage" element={<UsagePage />} />
-          <Route path="/benchmark" element={<BenchmarkPage />} />
+          {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
+              server-side (403); the sidebar hides their row, so a member only ever reaches
+              one by typing the URL. */}
+          {PAGES.map((page) => (
+            <Route key={page.id} path={page.path} element={renderPage(page)} />
+          ))}
           {/* Company mode: /org resolves to an organization (or the empty landing), and an
               organization opens on its overview — the page that says what the whole
               organization is doing; its channels are the sidebar's own list beside it. Both
@@ -103,7 +129,6 @@ export function AppRouter() {
             <Route path="channels/:channelId" element={<ChannelView />} />
             <Route path="*" element={<Navigate to="overview" replace />} />
           </Route>
-          <Route path="/benchmark/:benchmarkId" element={<BenchmarkDetailPage />} />
           {/* System settings and user management live in the settings dialog now (see
               SettingsDialog); their old routes fall through to the catch-all. */}
           <Route path="*" element={<Navigate to="/chat" replace />} />
