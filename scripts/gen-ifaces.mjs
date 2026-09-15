@@ -1062,7 +1062,10 @@ for (const project of projects) {
         const req = { iface: ifaceKeyOfType(member.type, file) };
         if (componentOfType(member.type) !== undefined)
           implementationDeps.push(`${m.name}.${field} → ${member.type.getText()}`);
-        if (use.arguments.length > 0) {
+        if (use.arguments.length > 0 && ts.isStringLiteral(use.arguments[0])) {
+          // By name: a plugin's requirement of a host module it cannot reference as a class.
+          req.from = use.arguments[0].text;
+        } else if (use.arguments.length > 0) {
           const ref = refLiteral(use.arguments[0], file);
           const fromName = moduleNameBySymbol.get(ref?.$id);
           if (fromName === undefined)

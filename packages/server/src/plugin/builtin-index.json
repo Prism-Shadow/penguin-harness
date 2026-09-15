@@ -48,5 +48,15 @@
     "repository": "https://github.com/Prism-Shadow/penguin-harness",
     "keywords": ["claude-code", "terminal", "session-surface"],
     "categories": ["surface"]
+  },
+  {
+    "name": "@prismshadow/penguin-plugin-discord-bot",
+    "version": "0.1.0",
+    "description": "A Discord bot that starts PenguinHarness agents from chat: set its token and target Agent on the Settings dialog's Plugins page, message the bot, and a Session opens and answers in the same channel.",
+    "authors": ["Prism Shadow"],
+    "license": "Apache-2.0",
+    "repository": "https://github.com/Prism-Shadow/penguin-harness",
+    "keywords": ["discord", "chat-bot", "messaging"],
+    "categories": ["chat-bot"]
   }
 ]

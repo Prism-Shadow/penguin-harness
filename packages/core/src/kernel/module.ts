@@ -212,7 +212,8 @@ export function moduleDefOf(
     if (r === undefined) throw stale(`@Use field '${field}' is not a requirement in the table`);
     // `@Use()` with no argument leaves the wiring to the table (the generator wires a field
     // typed by a component class to that component); an explicit argument must agree.
-    const fromName = from === undefined ? undefined : moduleMetaOf(from).name;
+    const fromName =
+      from === undefined ? undefined : typeof from === "string" ? from : moduleMetaOf(from).name;
     if (fromName !== undefined && r.from !== fromName)
       throw stale(
         `@Use field '${field}' is wired to '${fromName}' in code, '${r.from}' in the table`,

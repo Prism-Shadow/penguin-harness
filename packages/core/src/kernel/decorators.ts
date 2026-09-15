@@ -40,8 +40,8 @@ export type ComponentMeta = Omit<ModuleMeta, "children">;
 export type Meta = ModuleMeta & { readonly name: string; readonly kind: "module" | "component" };
 
 export interface ClassFields {
-  /** field → the module class wired to provide it (undefined = any visible provider). */
-  use: Map<string, ModuleClass | undefined>;
+  /** field → the module wired to provide it, by class or by name (undefined = any visible provider). */
+  use: Map<string, ModuleClass | string | undefined>;
   provide: Set<string>;
   /** field → contribution id. */
   bind: Map<string, string>;
@@ -115,10 +115,11 @@ export function Component(meta: ComponentMeta = {}) {
 /**
  * A requirement: `@Use(SessionsModule) readonly runner!: ScheduleTaskRunner;` — the field's
  * type is the interface, the decorator's argument the module wired to provide it (absent =
- * whichever visible module structurally satisfies it, if exactly one does). Injected before
+ * whichever visible module structurally satisfies it, if exactly one does). A plugin, which
+ * has no host class at runtime, names that module: `@Use("TerminalModule")`. Injected before
  * `create`. The interface key comes from the generated table, which reads the annotation.
  */
-export function Use(from?: ModuleClass) {
+export function Use(from?: ModuleClass | string) {
   return (_value: undefined, context: ClassFieldDecoratorContext): void => {
     const name = String(context.name);
     context.addInitializer(function (this: unknown) {
