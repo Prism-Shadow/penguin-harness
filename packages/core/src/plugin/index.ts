@@ -46,6 +46,7 @@ export type { Opaque, Slot } from "../kernel/markers.js";
 export { Interface } from "../kernel/markers.js";
 
 export type * from "./sandbox.js";
+export type * from "./surfaces.js";
 
 /**
  * What a plugin package's default export is.

@@ -180,6 +180,7 @@ describe("migration mechanism", () => {
         "machines",
         "user-profile",
         "machines-columns",
+        "sessions-surface",
       ]);
       expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
@@ -241,6 +242,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
         "machines",
         "user-profile",
         "machines-columns",
+        "sessions-surface",
       ]);
     } finally {
       db.close();
@@ -263,6 +265,7 @@ describe("the swap path refuses what a rollback could not survive", () => {
         "machines",
         "user-profile",
         "machines-columns",
+        "sessions-surface",
       ]);
     } finally {
       db.close();
@@ -278,6 +281,45 @@ describe("the swap path refuses what a rollback could not survive", () => {
       db.close();
     }
   });
+
+  /**
+   * The session row's `surface` column reaches a LIVE deployment only this way. Its line in
+   * openDatabase's ensureColumn list runs when the process starts, and a push never restarts
+   * the runtime — so without the migration a pushed platform writes `surface` to a table
+   * that has no such column, and every session insert fails: creation, fork, subagent
+   * registration, and the Trace adoption the session list hydrates through.
+   */
+  it("grows the session surface column on the swap path, so a pushed platform can write sessions", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(SCHEMA_SQL);
+      // A database as a running runtime holds it: migrated up to the version before this
+      // column, and with the column itself absent — which is what a push finds.
+      db.exec("ALTER TABLE sessions DROP COLUMN surface");
+      db.exec("PRAGMA user_version = 5");
+      const insert = () =>
+        db
+          .prepare(
+            `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id,
+               workspace, approval_mode, title, client, has_trace, last_active_at, created_at, surface)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run("s1", "p", "a", "prov", "m", "/w", "allow-all", null, "web", 0, "t", "t", null);
+      expect(insert).toThrow(/no column named surface/);
+
+      migrate(db, { swapPath: true });
+      expect(insert).not.toThrow();
+      expect(
+        (
+          db.prepare("SELECT surface FROM sessions WHERE session_id = 's1'").get() as {
+            surface: string | null;
+          }
+        ).surface,
+      ).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
 });
 
 describe("0.2.9 → current: drop-goal-state", () => {
@@ -286,12 +328,24 @@ describe("0.2.9 → current: drop-goal-state", () => {
     const fresh = new sqlite.DatabaseSync(":memory:");
     try {
       fresh.exec(SCHEMA_SQL);
-      expect(migrate(db).applied).toEqual(["drop-goal-state", "machines", "user-profile", "machines-columns"]);
+      expect(migrate(db).applied).toEqual([
+        "drop-goal-state",
+        "machines",
+        "user-profile",
+        "machines-columns",
+        "sessions-surface",
+      ]);
       expect(shape(db)).toBe(shape(fresh));
       // IF EXISTS: a database this build created, stamped 2 by an older mechanism, has no
       // goal_state to drop and must not fail on it.
       fresh.exec("PRAGMA user_version = 2");
-      expect(migrate(fresh).applied).toEqual(["drop-goal-state", "machines", "user-profile", "machines-columns"]);
+      expect(migrate(fresh).applied).toEqual([
+        "drop-goal-state",
+        "machines",
+        "user-profile",
+        "machines-columns",
+        "sessions-surface",
+      ]);
     } finally {
       db.close();
       fresh.close();
@@ -323,7 +377,7 @@ describe("pre-profile → current: user-profile", () => {
     try {
       fresh.exec(SCHEMA_SQL);
       expect(userColumns(db)).not.toContain("display_name");
-      expect(migrate(db).applied).toEqual(["user-profile", "machines-columns"]);
+      expect(migrate(db).applied).toEqual(["user-profile", "machines-columns", "sessions-surface"]);
       expect(userColumns(db)).toContain("display_name");
       expect(userColumns(db)).toContain("avatar");
       expect(shape(db)).toBe(shape(fresh));
@@ -331,7 +385,11 @@ describe("pre-profile → current: user-profile", () => {
       // ADOPTION: on a database this build created, the declarative track already added both,
       // so the migration must find its work done, add nothing twice, and stamp anyway.
       fresh.exec("PRAGMA user_version = 4");
-      expect(migrate(fresh).applied).toEqual(["user-profile", "machines-columns"]);
+      expect(migrate(fresh).applied).toEqual([
+        "user-profile",
+        "machines-columns",
+        "sessions-surface",
+      ]);
       expect(userColumns(fresh).filter((c) => c === "avatar")).toEqual(["avatar"]);
     } finally {
       db.close();
@@ -428,7 +486,12 @@ describe("a machines table from before migration 4", () => {
     try {
       db.exec(ADOPTED_MACHINES_DDL);
       db.exec("PRAGMA user_version = 3");
-      expect(migrate(db).applied).toEqual(["machines", "user-profile", "machines-columns"]);
+      expect(migrate(db).applied).toEqual([
+        "machines",
+        "user-profile",
+        "machines-columns",
+        "sessions-surface",
+      ]);
       const columns = (db.prepare("PRAGMA table_info(machines)").all() as { name: string }[]).map(
         (c) => c.name,
       );
@@ -462,8 +525,15 @@ describe("rollbackTo", () => {
       const r = rollbackTo(db, 2);
       expect(r.from).toBe(LATEST_VERSION);
       expect(r.to).toBe(2);
-      // Newest first: the machines columns, the profile columns, then the machines tables, then goal_state returns.
-      expect(r.reverted).toEqual(["machines-columns", "user-profile", "machines", "drop-goal-state"]);
+      // Newest first: the surface column, the machines columns, the profile columns, the
+      // machines tables, and goal_state comes back last.
+      expect(r.reverted).toEqual([
+        "sessions-surface",
+        "machines-columns",
+        "user-profile",
+        "machines",
+        "drop-goal-state",
+      ]);
       const tables = (
         db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
           name: string;
@@ -502,6 +572,7 @@ describe("rollbackTo", () => {
       migrate(db);
       const r = rollbackTo(db, 0);
       expect(r.reverted).toEqual([
+        "sessions-surface",
         "machines-columns",
         "user-profile",
         "machines",
