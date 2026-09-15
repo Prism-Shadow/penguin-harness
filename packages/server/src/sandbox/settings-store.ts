@@ -9,8 +9,10 @@
  * and after every save. The service stays on the capability-free floor (a bare kernel boots
  * it with no database), and its parked context still carries the settings across a hot swap:
  * on boot a saved document wins, and with none saved the service keeps what the swap carried.
- * `SandboxSettingsStatus` reports which backends can enforce the policy, as live notices; it
- * is a code contribution, so it must not require plugin configuration itself.
+ * `SandboxSettingsStatus` reports, as live notices, whether the saved policy can be enforced,
+ * which backends are in use, and why each other one is not — a backend that failed to load,
+ * failed its check or runs on another platform is named with its reason, never left out. It is
+ * a code contribution, so it must not require plugin configuration itself.
  */
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { SandboxMode, SandboxSettings as Policy } from "@prismshadow/penguin-core/plugin";
@@ -18,6 +20,7 @@ import type { PluginConfigNotice } from "../api/types.js";
 import { PluginConfig } from "../plugin/config.js";
 import type { SettingsGroupStatus } from "../plugin/config.js";
 import { Sandbox, SandboxModule } from "./service.js";
+import { requestedDimensions } from "./dimensions.js";
 
 /** The sandbox's group name (its contribution id), and the parent a backend's group names. */
 export const SANDBOX_GROUP = "sandbox";
@@ -100,7 +103,11 @@ export class SandboxSettings {
   }
 }
 
-/** The sandbox card's live notices: the mounted backends and what each enforces, or that none is mounted. */
+/**
+ * The sandbox card's live notices: a warning when the saved mode needs isolation no usable
+ * backend implements (every command would be refused), the backends in use, and each backend
+ * that is not, with its reason.
+ */
 @Component({
   contributes: {
     "PluginConfigPage.status": [{ id: "sandbox.status", group: "sandbox" }],
@@ -113,19 +120,40 @@ export class SandboxSettingsStatus {
     const sandbox = this.sandbox;
     this.status = {
       notices: (): PluginConfigNotice[] => {
+        const notices: PluginConfigNotice[] = [];
         const backends = sandbox.backends();
-        if (backends.length === 0) {
-          return [
-            {
+        const settings = sandbox.currentSettings();
+        if (settings.mode !== "danger-full-access") {
+          const required = requestedDimensions(settings);
+          const served = backends.some((b) => required.every((d) => b.dimensions.includes(d)));
+          if (!served) {
+            const needs = required.join(" + ");
+            notices.push({
               tone: "attention",
-              text: "This deployment has no sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.",
-              textZh:
-                "当前部署没有沙盒后端：在插件页安装适用于本平台的后端之前，选择任何模式都不会产生约束。",
-            },
-          ];
+              text: `The saved mode needs ${needs}, and no usable backend implements it: every agent command is refused until one does.`,
+              textZh: `当前保存的模式需要 ${needs}，但没有可用的后端实现它：在有后端能实施之前，Agent 的每条命令都会被拒绝。`,
+            });
+          }
         }
-        const list = backends.map((b) => `${b.name} (${b.dimensions.join(", ")})`).join(" · ");
-        return [{ tone: "muted", text: `Backends: ${list}`, textZh: `后端：${list}` }];
+        if (backends.length === 0) {
+          notices.push({
+            tone: "attention",
+            text: "This deployment has no usable sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.",
+            textZh:
+              "当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，选择任何模式都不会产生约束。",
+          });
+        } else {
+          const list = backends.map((b) => `${b.name} (${b.dimensions.join(", ")})`).join(" · ");
+          notices.push({ tone: "muted", text: `Backends: ${list}`, textZh: `后端：${list}` });
+        }
+        for (const { name, reason } of sandbox.failures()) {
+          notices.push({
+            tone: "attention",
+            text: `${name} is not in use: ${reason}`,
+            textZh: `${name} 未启用：${reason}`,
+          });
+        }
+        return notices;
       },
     };
   }

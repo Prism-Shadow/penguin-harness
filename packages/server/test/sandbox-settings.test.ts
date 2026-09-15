@@ -153,6 +153,65 @@ describe("sandbox settings group", () => {
     expect(sandbox.currentSettings().mode).toBe("workspace-write");
   });
 
+  it("names a backend that is not in use with its reason, and warns when the saved mode cannot be enforced", async () => {
+    const host = new PluginHost();
+    host.use({
+      specifier: "wrong-platform",
+      modules: [
+        {
+          manifest: parseManifest({
+            name: "WrongPlatformBackend",
+            requires: {},
+            provides: {},
+            contributes: {
+              "SandboxModule.providers": [
+                { id: "wrong.provider", name: "wrong-backend", dimensions: ["fs-write"] },
+              ],
+            },
+            children: [],
+          }),
+          create: () => ({
+            api: {},
+            bind: {
+              "wrong.provider": Promise.reject(
+                new Error("wrong-backend runs on Linux only; this host is win32"),
+              ),
+            },
+          }),
+        },
+      ],
+      replaces: [],
+    });
+    const t = await createTestApp({ plugins: host });
+    apps.push(t);
+    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    await t.deps.tree.api<SandboxService>("SandboxModule", "sandbox").whenReady();
+    await admin.put("/api/admin/plugin-config", {
+      name: "sandbox",
+      values: { mode: "workspace-write" },
+    });
+    const entries = (
+      (await (await admin.get("/api/admin/plugin-config")).json()) as PluginConfigResponse
+    ).plugins;
+    const notices = entries
+      .find((e) => e.name === "sandbox")!
+      .notices!.map((n) => [n.tone, n.text]);
+    expect(notices).toEqual([
+      [
+        "attention",
+        "The saved mode needs fs-write, and no usable backend implements it: every agent command is refused until one does.",
+      ],
+      [
+        "attention",
+        "This deployment has no usable sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.",
+      ],
+      [
+        "attention",
+        "wrong-backend is not in use: wrong-backend runs on Linux only; this host is win32",
+      ],
+    ]);
+  });
+
   it("keeps what was saved across a restart", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-sandbox-settings-"));
     const dbPath = path.join(dir, "web.db");
