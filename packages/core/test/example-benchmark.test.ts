@@ -16,6 +16,7 @@ import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
   EXAMPLE_BENCHMARK_ID,
+  EXAMPLE_BENCHMARK_VERSION,
   benchmarksDir,
   buildExampleScoreboard,
   loadAgentState,
@@ -81,6 +82,7 @@ describe("example benchmark provisioning", () => {
     expect(String(config.description)).toContain("Replace it with your own");
     expect(Number(config.runs)).toBe(2);
     expect(config.status).toBe("published");
+    expect(config.example_version).toBe(EXAMPLE_BENCHMARK_VERSION);
     expect(config).not.toHaveProperty("provider");
     expect(config).not.toHaveProperty("model_id");
 
@@ -196,5 +198,47 @@ describe("example benchmark provisioning", () => {
     await loadAgentState();
     // benchmarks/ is still there, so deleting the example is a decision that stands.
     expect(await fs.readdir(dir)).toEqual([]);
+  });
+
+  it("loading default_agent replaces an example from before it was versioned, leaving the user's Benchmarks alone", async () => {
+    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
+    const exampleDir = path.join(dir, EXAMPLE_BENCHMARK_ID);
+    // The previous release's sample: no example_version, one stale case, a scoreboard of its
+    // own — beside a Benchmark the user made.
+    await fs.mkdir(path.join(exampleDir, "stale-case", "statement"), { recursive: true });
+    await fs.writeFile(
+      path.join(exampleDir, "benchmark_config.toml"),
+      'title = "Example Benchmark"\ndescription = "old"\nruns = 2\n',
+      "utf8",
+    );
+    await fs.writeFile(path.join(exampleDir, "scoreboard.yaml"), "evaluations: []\n", "utf8");
+    await fs.mkdir(path.join(dir, "swe-bench-v1"), { recursive: true });
+    await fs.writeFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), 'title = "mine"\n');
+    await loadAgentState({ init: {} });
+    const config = parseToml(
+      await fs.readFile(path.join(exampleDir, "benchmark_config.toml"), "utf8"),
+    );
+    expect(config.example_version).toBe(EXAMPLE_BENCHMARK_VERSION);
+    expect(config.status).toBe("published");
+    // Replaced whole: the stale case is gone and the shipped cases are in.
+    expect(await exists(path.join(exampleDir, "stale-case"))).toBe(false);
+    const entries = (await fs.readdir(exampleDir)).sort();
+    expect(entries).toContain("scoreboard.yaml");
+    expect(
+      entries.filter((e) => e !== "benchmark_config.toml" && e !== "scoreboard.yaml").length,
+    ).toBe(2);
+    expect(await fs.readFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), "utf8")).toBe(
+      'title = "mine"\n',
+    );
+  });
+
+  it("loading default_agent leaves an example at the current version untouched, appended evaluations included", async () => {
+    await loadAgentState({ init: {} });
+    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
+    const scoreboardPath = path.join(dir, EXAMPLE_BENCHMARK_ID, "scoreboard.yaml");
+    const appended = `${await fs.readFile(scoreboardPath, "utf8")}# appended by the user\n`;
+    await fs.writeFile(scoreboardPath, appended, "utf8");
+    await loadAgentState();
+    expect(await fs.readFile(scoreboardPath, "utf8")).toBe(appended);
   });
 });

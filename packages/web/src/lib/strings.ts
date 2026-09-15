@@ -3073,6 +3073,12 @@ Benchmark：
     targetAgent: "被测智能体",
     targetAgentHint: "题目为它而出、分数记在它名下；出题本身由下方所示的智能体在新对话里完成",
     aiCreateExamples: {
+      decisionAgent: {
+        label: "决策：足球、售后与投资的有限选择",
+        description: "公开规则、历史案例与当前事实互相冲突或不完整",
+        prompt:
+          "为通用决策智能体出题：足球投注、售后处置、投资动作三个场景，各给一组有限选项，公开规则、历史案例与当前事实要么不完整、要么互相冲突，看它能不能给出稳定、可解释的选择，而不是被最近的一条信息带着走。",
+      },
       reportWriter: {
         label: "报告写作：材料互相矛盾",
         description: "冲突材料、缺失口径、严格的篇幅与引用",
@@ -3090,12 +3096,6 @@ Benchmark：
         description: "未写明的调用与并发前提，误导人的注释与测试",
         prompt:
           "为代码审查智能体出题：每题一个小型多文件仓库，缺陷藏在没写明的调用顺序、时区或编码假设和并发前提里，再配上过时的注释和一份能通过却盖不住缺陷的测试，看它查全、误报和验证步骤。",
-      },
-      dataAnalysis: {
-        label: "数据分析：问题模糊、数据带坑",
-        description: "脏数据、未说明的口径、需要先澄清的假设",
-        prompt:
-          "为数据分析智能体出题：CSV 带重复行、混合单位和缺失值，字段含义只写了一半，业务问题本身有两种合理解读，看它会不会先澄清假设再分析、结论和口径能不能对上。",
       },
     },
     /** The fixed tail after the draft: the `benchmark-design` inputs and the layout it writes. */

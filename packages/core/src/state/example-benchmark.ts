@@ -17,6 +17,13 @@
  * example back on the next load would undo it. Removing `benchmarks/` whole asks for the
  * example again, which is also how a data root that predates this provisioning gets one.
  *
+ * The example is versioned. Its config carries `example_version`, a field only the built-in
+ * example writes, and an example still on disk whose version is missing or older than
+ * EXAMPLE_BENCHMARK_VERSION is the previous release's sample: it is replaced whole by the
+ * current one, evaluations appended to it included — it is the sample whose own description
+ * says it can be deleted or replaced. Bump the version whenever the shipped content changes.
+ * An example at the current version is left exactly as it is.
+ *
  * Scoring numbers follow the current Scoreboard contract: every Case is scored out of 100;
  * Case metrics are model-written Run averages and Evaluation metrics are model-written Case
  * averages. Cost ignores unknown values; Run cost preserves its recorded precision, Score
@@ -25,12 +32,19 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { stringify as stringifyToml } from "smol-toml";
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { stringify as stringifyYaml } from "yaml";
 import { DEFAULT_AGENT_ID, benchmarksDir } from "./paths.js";
 
 /** Directory name of the example Benchmark (the directory name is also its identifier). */
 export const EXAMPLE_BENCHMARK_ID = "example-benchmark";
+
+/**
+ * Version of the shipped example content. An example on disk below this (a config without the
+ * field is version 0: the sample from before it was versioned) is replaced on the next load of
+ * default_agent. Bump it together with any change to the cases, the config or the scoreboard.
+ */
+export const EXAMPLE_BENCHMARK_VERSION = 1;
 
 /** Contents of benchmark_config.toml (no model reference here — the model is recorded on each evaluation instead). */
 const EXAMPLE_BENCHMARK_CONFIG = {
@@ -40,6 +54,7 @@ const EXAMPLE_BENCHMARK_CONFIG = {
     "Replace it with your own.",
   runs: 2,
   status: "published",
+  example_version: EXAMPLE_BENCHMARK_VERSION,
 };
 
 /** Two sample cases: statement and scoring rubric (in English, 3-5 lines each). */
@@ -332,19 +347,53 @@ export function buildExampleScoreboard(): {
 }
 
 /**
- * Provisions the example Benchmark into the Project's `benchmarks/`: if that directory exists at
- * all — holding the example, the user's own Benchmarks, or nothing — does nothing; otherwise
- * creates `benchmarks/example-benchmark/` (config, the two sample cases, and the scoreboard).
- * Callers are restricted to default_agent's initialization and load paths (see agent-state.ts).
+ * Version recorded in an example directory's config: the `example_version` field when the
+ * config parses and carries an integer, else 0 — a config from before the field existed, or
+ * one that cannot be read, is the old sample either way.
+ */
+async function exampleVersionOnDisk(benchDir: string): Promise<number> {
+  try {
+    const config = parseToml(
+      await fs.readFile(path.join(benchDir, "benchmark_config.toml"), "utf8"),
+    ) as Record<string, unknown>;
+    const version = config.example_version;
+    return typeof version === "number" && Number.isInteger(version) ? version : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Provisions the example Benchmark into the Project's `benchmarks/`. When that directory does
+ * not exist, creates `benchmarks/example-benchmark/` (config, the two sample cases, and the
+ * scoreboard). When it does, the only thing touched is an example from an earlier release —
+ * `benchmarks/example-benchmark/` whose config's `example_version` is missing or below the
+ * shipped one — which is replaced whole by the current example; the user's own Benchmarks, a
+ * deleted example and an example at the current version are all left alone. Callers are
+ * restricted to default_agent's initialization and load paths (see agent-state.ts).
  */
 export async function provisionExampleBenchmark(root: string, projectId: string): Promise<void> {
   const dir = benchmarksDir(root, projectId);
   const benchDir = path.join(dir, EXAMPLE_BENCHMARK_ID);
+  let hasBenchmarksDir = true;
   try {
     await fs.access(dir);
-    return;
   } catch {
-    // The Project has no benchmarks/ at all: proceed with provisioning.
+    hasBenchmarksDir = false;
+  }
+  if (hasBenchmarksDir) {
+    let hasExample = true;
+    try {
+      await fs.access(benchDir);
+    } catch {
+      hasExample = false;
+    }
+    // A missing example inside an existing benchmarks/ is a deletion that stands; a present
+    // one is replaced only when it predates the shipped content.
+    if (!hasExample || (await exampleVersionOnDisk(benchDir)) >= EXAMPLE_BENCHMARK_VERSION) {
+      return;
+    }
+    await fs.rm(benchDir, { recursive: true, force: true });
   }
   await Promise.all(
     EXAMPLE_CASES.flatMap((c) => [

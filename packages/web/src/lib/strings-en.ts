@@ -3090,6 +3090,12 @@ Scenarios:
     targetAgentHint:
       "The agent the cases are written for and scored under; the writing itself is done by the agent named below, in a new conversation",
     aiCreateExamples: {
+      decisionAgent: {
+        label: "Decisions: finite choices in football, after-sales and investing",
+        description: "Public rules, past cases and current facts that conflict or fall short",
+        prompt:
+          "Write cases for a general decision agent: three scenarios — football betting, an after-sales action, an investment move — each with a fixed set of options, where the public rules, the historical cases and the current facts are either incomplete or contradict one another. Does it make a stable, explainable choice instead of following the latest fact it saw?",
+      },
       reportWriter: {
         label: "Report writing: contradicting sources",
         description: "Conflicting material, unstated conventions, strict length and citations",
@@ -3108,12 +3114,6 @@ Scenarios:
         description: "Unstated calling and concurrency assumptions, misleading comments and tests",
         prompt:
           "Write cases for the code-review agent: each a small multi-file repository whose defects hide in an unstated call order, a time-zone or encoding assumption and a concurrency precondition, with a stale comment or two and a test that passes without covering them — score recall, false positives and the verification steps.",
-      },
-      dataAnalysis: {
-        label: "Data analysis: a vague ask and a booby-trapped dataset",
-        description: "Dirty data, unstated conventions, assumptions to clarify first",
-        prompt:
-          "Write cases for the data-analysis agent: the CSV carries duplicate rows, mixed units and missing values, the data dictionary explains only half the fields, and the business question has two reasonable readings — does it clarify its assumptions before analysing, and do the conclusion and the stated conventions agree?",
       },
     },
     aiCreateTail: (targetAgentId: string): string =>

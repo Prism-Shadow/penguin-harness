@@ -71,7 +71,7 @@ Each evaluation record in `scoreboard.yaml` is timestamped and carries:
 
 Every Run and every Case has a fixed maximum Score of 100, so Scoreboard entries do not carry `max_score`. The server and Web UI trust the stored aggregate values and do not recompute or cross-check them. Old Scoreboard formats are not migrated or backfilled.
 
-Initializing a Project's `default_agent` seeds an example Benchmark at the Project level (`packages/core/src/state/example-benchmark.ts`), its three sample evaluations labelled `agent_id: default_agent`, so the evaluation pages have data out of the box; the whole directory can be deleted or replaced at any time.
+Initializing a Project's `default_agent` seeds an example Benchmark at the Project level (`packages/core/src/state/example-benchmark.ts`), its three sample evaluations labelled `agent_id: default_agent`, so the evaluation pages have data out of the box; the whole directory can be deleted or replaced at any time. The example is versioned: its config carries `example_version`, a field only the built-in example writes, and when a later release ships a newer example, loading `default_agent` replaces an older one on disk whole (evaluations appended to it included) — a deleted example stays deleted, and one at the current version is left as it is.
 
 ## Snapshots and versions
 
