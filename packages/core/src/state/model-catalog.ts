@@ -1337,6 +1337,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // Dots Studio's (rednote / Xiaohongshu) Dots3-Note Preview: an open-weight MoE, 280B total
+    // and 16B active, the lightest of the Dots 3 family. TokenDance lists it as "Dots3-Note
+    // Preview（Free）", and the name is kept as the seller spells it, tag and full-width
+    // parentheses included, as the OpenRouter `(free)` rows keep theirs. The price is a
+    // genuine CNY 0 on every bucket, the same treatment as the OpenRouter `:free` rows, so
+    // costs compute to 0 and the free badge shows — over a 512,000-token context window, with
+    // openai:chat-completions and anthropic:messages as its supported_protocols (this group's
+    // openai-chat pin is a convention here, not the only shape the id serves). The gateway's
+    // own listing describes it as covering multimodal understanding, which is what the
+    // vision flag records; no image request was sent to it. Read 2026-09-15 from the
+    // gateway's /models listing and tokendance.space/models/dots-3-note-preview.
+    modelId: "dots-3-note-preview",
+    displayName: "Dots3-Note Preview（Free）",
+    provider: "tokendance",
+    contextWindow: 512000,
+    pricing: cny(0, 0, 0),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
     modelId: "glm-5.3",
     displayName: "GLM-5.3",
     provider: "tokendance",
