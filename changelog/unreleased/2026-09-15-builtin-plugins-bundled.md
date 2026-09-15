@@ -3,7 +3,7 @@
 - **Date:** 2026-09-15
 - **Type:** fix
 - **Scope:** `plugins`, `build`
-- **PR:** pending
+- **PR:** [#727](https://github.com/Prism-Shadow/penguin-harness/pull/727)
 
 [中文版](2026-09-15-builtin-plugins-bundled.zh.md)
 
