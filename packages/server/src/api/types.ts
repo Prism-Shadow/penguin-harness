@@ -3920,6 +3920,81 @@ export interface ContributionsResponse {
   sessionTabs: WebContribution[];
 }
 
+/**
+ * One field of a settings group a module declares (its `PluginConfigProvider.groups`
+ * contribution's `properties.<name>`): what the Settings dialog draws for it. `secret` is
+ * drawn as a password field and masked on the way out; `enum` is a choice among `options`;
+ * `list` is a list of strings, drawn one per line.
+ */
+export interface PluginConfigField {
+  type: "string" | "secret" | "boolean" | "number" | "enum" | "list";
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  placeholder?: string;
+  /** The value a package with nothing stored reads; also what an empty field falls back to. */
+  default?: string | number | boolean | string[];
+  /** A save that would leave this field empty is refused. */
+  required?: boolean;
+  /** `enum` only: the values it may take, in display order. */
+  options?: PluginConfigOption[];
+  /** `list` only: the most entries a save may leave (after trimming and de-duplicating). */
+  maxItems?: number;
+}
+
+/** One choice of an `enum` field. */
+export interface PluginConfigOption {
+  value: string;
+  title: string;
+  titleZh?: string;
+}
+
+/** A declared configuration: a titled group of fields, in declaration order. */
+export interface PluginConfiguration {
+  title?: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  properties: Record<string, PluginConfigField>;
+}
+
+/** A line of live status a contributed group reports beside its fields (e.g. that nothing can enforce it). */
+export interface PluginConfigNotice {
+  tone: "attention" | "muted";
+  text: string;
+  textZh?: string;
+}
+
+/** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
+export interface PluginConfigEntry {
+  /** The group's name — the id of the contribution that declared it; also the store key. */
+  name: string;
+  configuration: PluginConfiguration;
+  /** Stored values merged onto the defaults; a secret arrives masked (`first4…last4` or `***`), never in the clear. */
+  values: Record<string, unknown>;
+  /** Drawn inside that entry's card and saved with it (a sandbox backend's options inside the sandbox's). */
+  parent?: string;
+  /** Live status beside the fields; absent when there is none. */
+  notices?: PluginConfigNotice[];
+}
+
+export interface PluginConfigResponse {
+  plugins: PluginConfigEntry[];
+}
+
+/**
+ * PUT /api/admin/plugin-config — one group's update. Every named field is validated
+ * against its type; an omitted field keeps its stored value; a secret sent as the masked
+ * value keeps the stored one, and `null` or `""` clears any field. 400 `plugin_config_invalid`
+ * (with `field`) on a value that does not fit or a required field left empty; 404
+ * `plugin_config_unknown` for a name no group answers to.
+ */
+export interface PluginConfigUpdateRequest {
+  name: string;
+  values: Record<string, unknown>;
+}
+
 /** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
 export interface InstalledPlugin {
   /** The package specifier as written in the file. */

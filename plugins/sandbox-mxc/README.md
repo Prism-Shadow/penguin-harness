@@ -13,7 +13,7 @@ directly:
 
 | Harness dimension | MXC |
 | --- | --- |
-| `fs-write` | `filesystem.readwritePaths` / `readonlyPaths` |
+| `fs-write` | `filesystem.readwritePaths` (the workspace under `workspace-write`; `%TEMP%`, `%TMP%` and the OS temp directory when temp is writable) / `readonlyPaths` |
 | `mask-paths` | `filesystem.deniedPaths` |
 | `network` | `network.allowOutbound: false` (MXC already defaults to deny) |
 
@@ -31,6 +31,10 @@ MXC also ships Linux (bubblewrap/LXC) and macOS (Seatbelt) backends, but this ha
 already has native, live-verified plugins for those. Declaring them here would add an
 untested second path to a solved problem, so on any non-Windows host this backend declines
 and routing moves on.
+
+## Settings
+
+On **Settings → Plugins**, inside the Sandbox card: the **wxc-exec program** (a path to the MXC runner; empty uses the one the MXC SDK ships). It applies at the next command spawn; a changed program is probed afresh.
 
 ## Install
 

@@ -130,7 +130,7 @@ describe("the account menu", () => {
     expect(source.indexOf("<ConfirmModal")).toBeGreaterThan(menuEnd);
   });
 
-  it("reaches the settings it no longer holds through one ungated System settings entry", () => {
+  it("reaches the settings it no longer holds through one ungated Settings entry", () => {
     // The preference rows, change password and user management all moved into the settings
     // dialog, whose own section registry decides which pages this viewer sees — so the row
     // itself carries no isAdmin test, or a non-admin would lose the personal pages along

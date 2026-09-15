@@ -11,6 +11,7 @@ import path from "node:path";
 import {
   canonicalPath,
   createSeatbeltProvider,
+  loadSeatbeltProvider,
   seatbeltProfile,
   writableRoots,
 } from "../src/index.js";
@@ -31,10 +32,22 @@ describe.skipIf(process.platform === "win32")("seatbelt profile", () => {
     expect(profile).not.toContain(`(subpath "${WS}")`);
   });
 
-  it("workspace-write: the workspace and the temp areas become writable", () => {
+  it("workspace-write: the workspace becomes writable, and the temp areas only when temp is", () => {
     const profile = seatbeltProfile({ mode: "workspace-write", workspaceRoot: WS });
     expect(profile).toContain(`(allow file-write* (subpath "${canonicalPath(WS)}")`);
-    expect(profile).toContain(canonicalPath(tmpdir()));
+    expect(profile).not.toContain(`(subpath "${canonicalPath(tmpdir())}")`);
+    const withTemp = seatbeltProfile({
+      mode: "workspace-write",
+      workspaceRoot: WS,
+      writableTemp: true,
+    });
+    expect(withTemp).toContain(`(subpath "${canonicalPath(tmpdir())}")`);
+  });
+
+  it("read-only with writable temp: the temp areas are the only writable roots", () => {
+    expect(writableRoots({ mode: "read-only", workspaceRoot: WS, writableTemp: true })).toEqual([
+      ...new Set(["/tmp", tmpdir()].map(canonicalPath)),
+    ]);
   });
 
   it("network: none denies every socket", () => {
@@ -124,5 +137,20 @@ describe("seatbelt provider", () => {
     expect(() => provider.confine([...ARGV], policy)).toThrow(/cannot confine on this host/);
     expect(() => provider.confine([...ARGV], policy)).toThrow(/only on macOS/);
     expect(probes).toBe(1);
+  });
+});
+
+describe("seatbelt on another platform", () => {
+  it("refuses to load off macOS, so routing never reaches a backend this host cannot run — with the reason", async () => {
+    const other = "linux" as const;
+    await expect(loadSeatbeltProvider({ platform: other, probe: () => true })).rejects.toThrow(
+      /runs on .* only; this host is linux/,
+    );
+    await expect(loadSeatbeltProvider({ platform: "darwin", probe: () => false })).rejects.toThrow(
+      /is missing or refuses/,
+    );
+    await expect(
+      loadSeatbeltProvider({ platform: "darwin", probe: () => true }),
+    ).resolves.toBeDefined();
   });
 });

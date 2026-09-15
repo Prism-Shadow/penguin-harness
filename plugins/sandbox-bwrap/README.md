@@ -6,7 +6,8 @@ interface — filesystem writes, network isolation and path masking.
 
 ## Requirements
 
-- Linux, with `bwrap` on PATH.
+- Linux, with `bwrap` on PATH. On any other platform the backend declines to mount, so a policy
+  is routed to a backend that host has.
 - Unprivileged user namespaces enabled. The backend probes functionally at load and
   declines when the kernel will not grant them, rather than confining less than asked.
 
@@ -18,7 +19,8 @@ profile is assembled in this sequence:
 | Stage | Flags |
 | --- | --- |
 | The read-only world | `--ro-bind / /`, `--dev /dev`, `--proc /proc`, `--die-with-parent` |
-| `workspace-write` | `--tmpfs /tmp`, `--bind <workspaceRoot> <same>` |
+| writable temp (either mode) | `--tmpfs /tmp`, `--bind <tmpdir> <same>` when `$TMPDIR` is elsewhere |
+| `workspace-write` | `--bind <workspaceRoot> <same>` |
 | `network: none` | `--unshare-net` |
 | `mask-paths` | `--tmpfs <dir>` or `--ro-bind /dev/null <file>` |
 
@@ -26,6 +28,10 @@ Masking comes last on purpose: the entries have to shadow the read-only bind of 
 would otherwise expose them. A path that does not exist is skipped — there is nothing to
 hide, and materializing an empty directory there would change the filesystem view rather
 than restrict it.
+
+## Settings
+
+On **Settings → Plugins**, inside the Sandbox card: the **bwrap program** (a path or a command on PATH; empty uses `bwrap`) and the **probe timeout** in seconds (default 5). Both apply at the next command spawn; a changed program is probed afresh.
 
 ## Install
 

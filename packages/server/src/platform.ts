@@ -47,6 +47,12 @@ import { QQScanTransportProvider } from "./runtime/messaging/qq-scan.js";
 import { WeChatTransportProvider } from "./runtime/messaging/wechat-connector.js";
 import { WeChatScanTransportProvider } from "./runtime/messaging/wechat-scan.js";
 import {
+  PluginConfig,
+  PluginConfigAdmin,
+  PluginConfigPage,
+  PluginConfigProvider,
+} from "./plugin/config.js";
+import {
   CoreSessionLoaders,
   DefaultTitleGenerators,
   SessionsModule,
@@ -96,6 +102,7 @@ import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
+import { SandboxSettings, SandboxSettingsStatus } from "./sandbox/settings-store.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { Machines, MachinesModule } from "./machines/service.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
@@ -297,6 +304,28 @@ export class SessionRuntimeModule {}
 })
 export class SettingsModule {}
 
+/**
+ * Plugin configuration as a group of its own, beside the settings it is stored in: a plugin
+ * that stands in for the settings group replaces the store, not the schema-and-watch layer
+ * over it, and a plugin's manifest names this module as where `PluginConfig` comes from.
+ */
+@Module({
+  children: [PluginConfigProvider, PluginConfigPage],
+  exports: [PluginConfig, PluginConfigAdmin],
+})
+export class PluginConfigModule {}
+
+/**
+ * Sandbox settings as a group of their own: the sandbox service boots on the capability-free
+ * floor, while its settings group and the node applying it need plugin configuration (and
+ * through it the database), so they sit above it.
+ */
+@Module({
+  children: [SandboxSettings, SandboxSettingsStatus],
+  exports: [],
+})
+export class SandboxSettingsModule {}
+
 @Module({
   children: [ErrorsRepo, ErrorRecorder, UsageRepo, UsageRecorder, UsageService],
   exports: [ErrorLog, Errors, UsageStore, UsageRecording, UsageQueries],
@@ -370,6 +399,7 @@ export class ApiModule {}
   children: [
     RuntimeModule,
     SettingsModule,
+    PluginConfigModule,
     IdentityModule,
     ProjectsModule,
     SessionRuntimeModule,
@@ -380,6 +410,7 @@ export class ApiModule {}
     MessagingHubModule,
     ApiModule,
     SandboxModule,
+    SandboxSettingsModule,
     TerminalModule,
     MachinesModule,
     Startup,

@@ -13,7 +13,8 @@
  * later mount shadows an earlier one:
  *
  *   --ro-bind / /  --dev /dev  --proc /proc  --die-with-parent   the read-only world
- *   [workspace-write]  --tmpfs /tmp  --bind <workspaceRoot> <same>
+ *   [writable temp]    --tmpfs /tmp  --bind <tmpdir> <same>         a private, writable /tmp
+ *   [workspace-write]  --bind <workspaceRoot> <same>
  *   [network: none]    --unshare-net                             no network namespace
  *   [mask-paths]       --tmpfs <dir> | --ro-bind /dev/null <file>  shadowing the above
  *   --  <the caller's argv>
@@ -30,43 +31,81 @@
  * remains readable as stale metadata. Mask it explicitly with `maskPaths` if that
  * matters for a deployment.
  */
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { statSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { Bind, Component } from "@prismshadow/penguin-core/plugin";
+import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
   Plugin,
   SandboxPolicy,
   SandboxProvider,
+  SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
 
 /** Default probe budget; a probe that hangs must not hang the first spawn forever. */
 const PROBE_TIMEOUT_MS = 5_000;
 
-/** Test seams: inject the probe verdict and capture the runner name. */
-export interface PenguinBwrapInternals {
-  probe?: (timeoutMs: number) => boolean;
-  runner?: string;
+/** This backend's own settings, as it reads them from its group. */
+export interface BwrapSettings {
+  /** The bwrap program: a path or a command on PATH. */
+  runner: string;
+  /** How long the first check that the runner works may take. */
+  probeTimeoutMs: number;
 }
 
-/** The writable roots `workspace-write` grants: the workspace plus the temp areas, canonical and deduplicated. */
+/** Its group's stored document (defaults merged) as settings; anything unusable falls back. */
+export function bwrapSettingsOf(doc: Record<string, unknown>): BwrapSettings {
+  const runner = typeof doc.runner === "string" ? doc.runner.trim() : "";
+  const seconds = doc.probeTimeoutSeconds;
+  return {
+    runner: runner !== "" ? runner : "bwrap",
+    probeTimeoutMs:
+      typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0
+        ? seconds * 1000
+        : PROBE_TIMEOUT_MS,
+  };
+}
+
+/** Test seams: inject the probe verdict, and the settings the provider reads at each confine. */
+export interface PenguinBwrapInternals {
+  probe?: (timeoutMs: number, runner: string) => boolean;
+  runner?: string;
+  settings?: () => BwrapSettings;
+}
+
+/**
+ * What this backend requires of plugin configuration: to read the group it declares. The
+ * interface is the consumer's own, so the package depends on no harness type.
+ */
+export abstract class BwrapConfigReader extends Interface<{
+  get(name: string): Record<string, unknown>;
+}>() {}
+
+/** The settings group this backend declares (its contribution id), drawn inside the Sandbox card. */
+export const BWRAP_GROUP = "sandbox-bwrap";
+
+/**
+ * The writable roots a policy grants, canonical and deduplicated: the workspace under
+ * `workspace-write`, and the temp areas whenever the policy makes temp writable (either mode).
+ */
 export function writableRoots(policy: SandboxPolicy): string[] {
-  if (policy.mode !== "workspace-write") return [];
-  const roots = [policy.workspaceRoot, "/tmp", tmpdir()].map((root) => path.resolve(root));
+  const roots = [
+    ...(policy.mode === "workspace-write" ? [policy.workspaceRoot] : []),
+    ...(policy.writableTemp === true ? ["/tmp", tmpdir()] : []),
+  ].map((root) => path.resolve(root));
   return [...new Set(roots)];
 }
 
 /** The bwrap profile arguments for one policy (everything before `--` and the caller's argv). */
 export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
   const args = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--die-with-parent"];
-  if (policy.mode === "workspace-write") {
-    args.push("--tmpfs", "/tmp");
-    for (const root of writableRoots(policy)) {
-      if (root === "/tmp") continue; // already a writable tmpfs above
-      args.push("--bind", root, root);
-    }
+  const roots = writableRoots(policy);
+  if (policy.writableTemp === true) args.push("--tmpfs", "/tmp");
+  for (const root of roots) {
+    if (root === "/tmp") continue; // already a writable tmpfs above
+    args.push("--bind", root, root);
   }
   if (policy.network === "none") args.push("--unshare-net");
   for (const target of policy.maskPaths ?? []) {
@@ -84,29 +123,80 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
 }
 
 /** Functional probe: can bwrap actually create the base profile on this host? */
+/** The argv that checks bwrap can build the base profile at all. */
+const BASE_PROFILE_PROBE = [
+  "--ro-bind",
+  "/",
+  "/",
+  "--dev",
+  "/dev",
+  "--proc",
+  "/proc",
+  "--die-with-parent",
+  "--",
+  "true",
+];
+
 function defaultProbe(timeoutMs: number, runner: string): boolean {
-  const probe = spawnSync(
-    runner,
-    ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--die-with-parent", "--", "true"],
-    { timeout: timeoutMs, stdio: "ignore" },
-  );
+  const probe = spawnSync(runner, BASE_PROFILE_PROBE, { timeout: timeoutMs, stdio: "ignore" });
   return probe.status === 0;
 }
 
+/** The base-profile probe, without blocking the process: what the load-time check runs. */
+function probeAsync(timeoutMs: number, runner: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile(runner, BASE_PROFILE_PROBE, { timeout: timeoutMs }, (err) => resolve(err === null));
+  });
+}
+
 /**
- * The backend. The probe runs once, lazily (first confine), and is cached: an
- * unavailable bwrap throws — fail-closed — rather than degrading to a weaker profile,
- * because the dimensions routed here (network, mask-paths) have no weaker form.
+ * Loads the backend, checking first that it can serve on this host — and rejecting, with the
+ * reason, when it cannot: it runs on Linux only, and needs a bwrap that accepts the base profile.
+ * A backend mounted without being able to serve would be routed policies and fail every command;
+ * one that declined without a reason would leave nobody able to tell why. The sandbox service
+ * records the rejection and the settings page shows it. The confine-time probe stays, for a
+ * runner changed later in the settings.
+ */
+export async function loadPenguinBwrapProvider(
+  internals: PenguinBwrapInternals & { platform?: NodeJS.Platform } = {},
+): Promise<SandboxProvider> {
+  const platform = internals.platform ?? process.platform;
+  if (platform !== "linux") {
+    throw new Error(`penguin-bwrap runs on Linux only; this host is ${platform}`);
+  }
+  const { runner, probeTimeoutMs } = internals.settings?.() ?? {
+    runner: internals.runner ?? "bwrap",
+    probeTimeoutMs: PROBE_TIMEOUT_MS,
+  };
+  const usable = internals.probe
+    ? internals.probe(probeTimeoutMs, runner)
+    : await probeAsync(probeTimeoutMs, runner);
+  if (!usable) {
+    throw new Error(
+      `'${runner}' is missing or refuses the base profile (is bubblewrap installed, with unprivileged user namespaces enabled?)`,
+    );
+  }
+  return createPenguinBwrapProvider(internals);
+}
+
+/**
+ * The backend. It reads its settings at each confine, so an edit applies to the next spawn;
+ * the probe runs lazily (the first confine with a given runner) and is cached per runner: an
+ * unavailable bwrap throws — fail-closed — rather than degrading to a weaker profile, because
+ * the dimensions routed here (network, mask-paths) have no weaker form.
  */
 export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}): SandboxProvider {
-  const runner = internals.runner ?? "bwrap";
-  const probe = internals.probe ?? ((timeoutMs: number) => defaultProbe(timeoutMs, runner));
-  let usable: boolean | undefined;
+  const probe = internals.probe ?? defaultProbe;
+  const settings =
+    internals.settings ??
+    (() => ({ runner: internals.runner ?? "bwrap", probeTimeoutMs: PROBE_TIMEOUT_MS }));
+  const usable = new Map<string, boolean>();
   return {
     dimensions: ["fs-write", "network", "mask-paths"],
     confine(argv, policy): ConfinedArgv {
-      usable ??= probe(PROBE_TIMEOUT_MS);
-      if (!usable) {
+      const { runner, probeTimeoutMs } = settings();
+      if (!usable.has(runner)) usable.set(runner, probe(probeTimeoutMs, runner));
+      if (!usable.get(runner)) {
         throw new Error(
           `penguin-bwrap cannot confine on this host: '${runner}' is missing or refuses the ` +
             "base profile; refusing to run the command unconfined. Install bubblewrap, or " +
@@ -142,13 +232,43 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
         dimensions: ["fs-write", "network", "mask-paths"],
       },
     ],
+    "PluginConfigProvider.groups": [
+      {
+        id: "sandbox-bwrap",
+        parent: "sandbox",
+        title: "Bubblewrap",
+        properties: {
+          runner: {
+            type: "string",
+            title: "bwrap program",
+            titleZh: "bwrap 程序",
+            description: "A path or a command on PATH; empty uses bwrap.",
+            descriptionZh: "路径或 PATH 上的命令名；留空则使用 bwrap。",
+            placeholder: "bwrap",
+          },
+          probeTimeoutSeconds: {
+            type: "number",
+            title: "Probe timeout (seconds)",
+            titleZh: "探测超时（秒）",
+            description:
+              "How long the first check that bwrap works may take before it counts as unusable.",
+            descriptionZh: "首次检查 bwrap 是否可用时最多等待多久，超时即视为不可用。",
+            default: 5,
+          },
+        },
+      },
+    ],
   },
 })
 export class SandboxBwrap {
-  @Bind("sandbox-bwrap.provider") provider!: SandboxProvider;
+  @Use() private readonly config!: BwrapConfigReader;
+  @Bind("sandbox-bwrap.provider") provider!: SandboxProviderSource;
 
   setup() {
-    this.provider = createPenguinBwrapProvider();
+    const config = this.config;
+    this.provider = loadPenguinBwrapProvider({
+      settings: () => bwrapSettingsOf(config.get(BWRAP_GROUP)),
+    });
   }
 }
 

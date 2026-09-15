@@ -104,7 +104,7 @@ export function AppRouter() {
           {PAGES.map((page) => (
             <Route key={page.id} path={page.path} element={renderPage(page)} />
           ))}
-          {/* System settings and user management live in the settings dialog now (see
+          {/* Settings and user management live in the settings dialog now (see
               SettingsDialog); their old routes fall through to the catch-all. */}
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>

@@ -141,8 +141,8 @@ export const zh = {
   settings: {
     language: "语言",
     languageInfo: "界面语言，可跟随浏览器设置。",
-    /** Sidebar user-menu row opening the System settings dialog. */
-    systemSettings: "系统设置",
+    /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
+    title: "设置",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
@@ -193,6 +193,15 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
+    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
+    pluginsTitle: "插件",
+    pluginsInfo:
+      "各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。",
+    /** A secret field with a stored value: submitting it empty keeps the stored one. */
+    pluginSecretKeepHint: "留空保持已保存的值不变",
+    pluginSecretClear: "清除已存值",
+    /** Under a number field whose box does not parse; the save is not sent. */
+    pluginFieldNotNumber: "必须是数字",
     uploadLimitsTitle: "上传限制",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
@@ -452,7 +461,7 @@ export const zh = {
   },
 
   /**
-   * The Profile page of System settings, and the avatar/nickname it writes. Visible in every
+   * The Profile page of Settings, and the avatar/nickname it writes. Visible in every
    * session, the desktop shell's own window included: a profile needs no password to change.
    */
   profile: {
@@ -1529,6 +1538,8 @@ export const zh = {
     applyConfirmRemove: (name: string) => `移除 ${name}？`,
     applyConfirmBody: "所有 Project 中正在进行的 Agent 运行都会被中止。",
     pageTitle: "插件",
+    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    openSettings: "插件设置",
     pageDesc:
       "所有插件在一个列表里。插件库里的随本次构建自带（技能和／或钩子包——快捷调用，或安装到 Agent）；当前 Project 要求的模块插件在服务端运行，市场里其余的可以为它安装。",
     /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */

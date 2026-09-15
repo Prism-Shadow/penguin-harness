@@ -7,7 +7,12 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { bwrapProfileArgs, createPenguinBwrapProvider } from "../src/index.js";
+import {
+  bwrapProfileArgs,
+  bwrapSettingsOf,
+  createPenguinBwrapProvider,
+  loadPenguinBwrapProvider,
+} from "../src/index.js";
 
 const ARGV = ["bash", "-lc", "echo hi"] as const;
 const WS = "/work/project";
@@ -35,15 +40,29 @@ describe("penguin-bwrap profile", () => {
   // skipIf(win32): the profile echoes host path resolution, which turns the POSIX
   // workspace literal into a drive path — and bwrap never runs there anyway.
   it.skipIf(process.platform === "win32")(
-    "workspace-write: the workspace and a tmpfs /tmp become writable",
+    "workspace-write: the workspace becomes writable, and /tmp only when temp is",
     () => {
       const args = bwrapProfileArgs({ mode: "workspace-write", workspaceRoot: WS });
-      expect(args).toContain("--tmpfs");
       expect(args.join(" ")).toContain(`--bind ${WS} ${WS}`);
+      expect(args).not.toContain("--tmpfs");
+
+      const withTemp = bwrapProfileArgs({
+        mode: "workspace-write",
+        workspaceRoot: WS,
+        writableTemp: true,
+      });
+      expect(withTemp.join(" ")).toContain("--tmpfs /tmp");
+      expect(withTemp.join(" ")).toContain(`--bind ${WS} ${WS}`);
       // /tmp is the tmpfs, never also a bind of the host's /tmp.
-      expect(args.join(" ")).not.toContain("--bind /tmp /tmp");
+      expect(withTemp.join(" ")).not.toContain("--bind /tmp /tmp");
     },
   );
+
+  it("read-only with writable temp: a tmpfs /tmp is the only writable place", () => {
+    const args = bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS, writableTemp: true });
+    expect(args.join(" ")).toContain("--tmpfs /tmp");
+    expect(args.join(" ")).not.toContain(`--bind ${WS}`);
+  });
 
   it("network: none adds --unshare-net; absent leaves the network alone", () => {
     expect(bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS, network: "none" })).toContain(
@@ -130,5 +149,44 @@ describe("penguin-bwrap provider", () => {
     expect(() => provider.confine([...ARGV], policy)).toThrow(/cannot confine on this host/);
     expect(() => provider.confine([...ARGV], policy)).toThrow(/cannot confine on this host/);
     expect(probes).toBe(1);
+  });
+
+  it("reads its settings at each confine, probing each runner once with the timeout set", () => {
+    const probed: Array<[number, string]> = [];
+    let doc: Record<string, unknown> = {};
+    const provider = createPenguinBwrapProvider({
+      probe: (timeoutMs, runner) => {
+        probed.push([timeoutMs, runner]);
+        return runner !== "/missing/bwrap";
+      },
+      settings: () => bwrapSettingsOf(doc),
+    });
+    const policy = { mode: "read-only", workspaceRoot: WS } as const;
+    expect(provider.confine([...ARGV], policy).argv[0]).toBe("bwrap");
+    doc = { runner: " /opt/bwrap ", probeTimeoutSeconds: 2 };
+    expect(provider.confine([...ARGV], policy).argv[0]).toBe("/opt/bwrap");
+    expect(provider.confine([...ARGV], policy).argv[0]).toBe("/opt/bwrap");
+    doc = { runner: "/missing/bwrap" };
+    expect(() => provider.confine([...ARGV], policy)).toThrow(/'\/missing\/bwrap' is missing/);
+    expect(probed).toEqual([
+      [5000, "bwrap"],
+      [2000, "/opt/bwrap"],
+      [5000, "/missing/bwrap"],
+    ]);
+  });
+});
+
+describe("bwrap on another platform", () => {
+  it("refuses to load off Linux, so routing never reaches a backend this host cannot run — with the reason", async () => {
+    const other = "win32" as const;
+    await expect(loadPenguinBwrapProvider({ platform: other, probe: () => true })).rejects.toThrow(
+      /runs on .* only; this host is win32/,
+    );
+    await expect(
+      loadPenguinBwrapProvider({ platform: "linux", probe: () => false }),
+    ).rejects.toThrow(/is missing or refuses/);
+    await expect(
+      loadPenguinBwrapProvider({ platform: "linux", probe: () => true }),
+    ).resolves.toBeDefined();
   });
 });

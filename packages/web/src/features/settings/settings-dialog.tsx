@@ -1,5 +1,5 @@
 /**
- * System settings dialog: one popup holding the settings that used to sit as separate rows
+ * Settings dialog: one popup holding the settings that used to sit as separate rows
  * in the sidebar user menu, on the PagedDialog shell (left rail of pages, ChatGPT-style
  * rows on the right). The rail is grouped — Personal for the viewer's own preferences,
  * Server for the server-global settings an admin writes — and both the rail and the pane
@@ -26,6 +26,7 @@ import { AppearanceSection } from "./appearance-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
+import { PluginsSection } from "./plugins-section";
 import { AdminUsersSection } from "../admin/admin-users-page";
 
 /** Rail glyphs, on the shared 24x24 stroke grid (see NAV_ICONS' conventions). */
@@ -44,12 +45,24 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
     "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 0 0 18M12 3a15 15 0 0 1 0 18",
   /** Up arrow over a base: uploads. */
   uploads: "M12 15V4m0 0L7 9m5-5l5 5M4 20h16",
+  /** Puzzle piece: plugins. */
+  plugins:
+    "M10 4a2 2 0 1 1 4 0v2h3a1 1 0 0 1 1 1v3h-2a2 2 0 1 0 0 4h2v3a1 1 0 0 1-1 1h-3v-2a2 2 0 1 0-4 0v2H7a1 1 0 0 1-1-1v-3h2a2 2 0 1 0 0-4H6V7a1 1 0 0 1 1-1h3V4z",
   /** Two people: user management. */
   users:
     "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
 };
 
-export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsDialog({
+  open,
+  onClose,
+  section,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** The page an opening starts on; a page this viewer may not open falls back like any other. */
+  section?: SettingsSectionKey;
+}) {
   // uploadLimits feeds the Upload limits page's "?" (sectionInfo below); the rest pick pages.
   const { user, desktopMode, sessionVia, uploadLimits } = useAuth();
   const sections = visibleSettingsSections({
@@ -59,12 +72,13 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   });
   const [active, setActive] = useState<SettingsSectionKey | null>(null);
 
-  // Each opening starts on the viewer's first page: clearing the choice lets `current`
-  // below resolve it against the live list. Deliberately keyed on `open` alone — re-running
-  // on every sections identity change would yank the user off a page they navigated to.
+  // Each opening starts on the requested page, or the viewer's first: `current` below
+  // resolves the choice against the live list. Deliberately keyed on `open` (and the
+  // request) alone — re-running on every sections identity change would yank the user off a
+  // page they navigated to.
   useEffect(() => {
-    if (open) setActive(null);
-  }, [open]);
+    if (open) setActive(section ?? null);
+  }, [open, section]);
 
   const current = resolveSettingsSection(active, sections);
   if (current === null) return null;
@@ -77,6 +91,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     account: S.settings.accountTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
+    plugins: S.settings.pluginsTitle,
     users: S.admin.users,
   };
   const groupLabel: Record<SettingsGroupKey, string> = {
@@ -88,6 +103,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
+    plugins: S.settings.pluginsInfo,
   };
 
   const groups: Array<PagedDialogGroup<SettingsSectionKey>> = settingsGroups(sections).map(
@@ -109,7 +125,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     <PagedDialog
       open={open}
       onClose={onClose}
-      title={S.settings.systemSettings}
+      title={S.settings.title}
       groups={groups}
       active={current}
       onSelect={setActive}
@@ -120,6 +136,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       {current === "account" && <AccountSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
+      {current === "plugins" && <PluginsSection />}
       {current === "users" && <AdminUsersSection />}
     </PagedDialog>
   );

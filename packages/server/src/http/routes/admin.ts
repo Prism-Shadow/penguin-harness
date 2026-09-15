@@ -13,6 +13,8 @@ import { pathParam, readJson, requireString } from "../validate.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Desktop, Proxy } from "../../hmr/capabilities.js";
 import { adminSettingsRoutes } from "./admin-settings.js";
+import { adminPluginConfigRoutes } from "./admin-plugin-config.js";
+import { PluginConfigAdmin } from "../../plugin/config.js";
 import type { Admin } from "../../mechanisms/identity.js";
 import type { Settings } from "../../mechanisms/settings.js";
 
@@ -75,6 +77,12 @@ export function adminUsersRoutes(deps: AdminRouteDeps): Hono<AppEnv> {
         auth: "user",
         order: 40,
       },
+      {
+        id: "admin-api.plugin-config",
+        prefix: "/api/admin/plugin-config",
+        auth: "user",
+        order: 45,
+      },
     ],
   },
 })
@@ -83,9 +91,12 @@ export class AdminRoutes {
   @Use() private readonly desktop!: Desktop;
   @Use() private readonly proxy!: Proxy;
   @Use() private readonly settings!: Settings;
+  @Use() private readonly pluginConfigAdmin!: PluginConfigAdmin;
   @Bind("admin-api.users") usersRoutes!: Hono<AppEnv>;
   @Bind("admin-api.settings") settingsRoutes!: Hono<AppEnv>;
+  @Bind("admin-api.plugin-config") pluginConfigRoutes!: Hono<AppEnv>;
   setup() {
+    this.pluginConfigRoutes = adminPluginConfigRoutes(this.pluginConfigAdmin);
     this.usersRoutes = adminUsersRoutes({
       adminService: this.admin,
       desktop: this.desktop.current() as DesktopService | null,

@@ -1,5 +1,5 @@
 /**
- * Account page of System settings: the credentials the signed-in account can change. Only
+ * Account page of the Settings dialog: the credentials the signed-in account can change. Only
  * mounted where a password exists to change — the desktop shell's own window signs in
  * through a one-shot token and is filtered out by the section registry (see
  * offersChangePassword for the full rule).

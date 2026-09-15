@@ -6,7 +6,8 @@ network isolation and path masking — as policy rules rather than mounts.
 
 ## Requirements
 
-- macOS, with `sandbox-exec` available (part of the base system).
+- macOS, with `sandbox-exec` available (part of the base system). On any other platform the
+  backend declines to mount, so a policy is routed to a backend that host has.
 
 ## How the profile is built
 
@@ -14,7 +15,7 @@ network isolation and path masking — as policy rules rather than mounts.
 (allow default)                              ; start from the host's world
 (deny file-write*)                           ; nothing is writable…
 (allow file-write* (literal "/dev/null") …)  ; …beyond the required sinks
-;; workspace-write
+;; workspace-write, and the temp areas when temp is writable
 (allow file-write* (subpath "<workspaceRoot>") …)
 ;; network: none
 (deny network*)
@@ -29,6 +30,10 @@ inside the workspace would be overridden by the workspace's own allowance.
 Paths are canonicalized before entering the profile. Seatbelt matches the real filesystem
 path, and on macOS `/tmp` and `/var` are symlinks into `/private`, so an uncanonicalized
 subpath rule silently matches nothing.
+
+## Settings
+
+On **Settings → Plugins**, inside the Sandbox card: the **sandbox-exec program** (a path or a command on PATH; empty uses `sandbox-exec`). It applies at the next command spawn; a changed program is probed afresh.
 
 ## Install
 
