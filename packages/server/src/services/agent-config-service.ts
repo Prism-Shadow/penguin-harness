@@ -69,7 +69,8 @@ import {
 } from "../http/validate.js";
 import { maskApiKey } from "./project-config-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
-import type { Config } from "../hmr/capabilities.js";
+import type { Config, Paths } from "../hmr/capabilities.js";
+import type { AgentConfig } from "../mechanisms/agents.js";
 
 const COMPACTION_MODES = ["summarize", "discard"] as const;
 
@@ -87,10 +88,10 @@ export interface AgentConfigView {
 }
 
 @Component()
-export class AgentConfigService {
-  @Use() private readonly config!: Config;
+export class AgentConfigService implements AgentConfig {
+  @Use() private readonly paths!: Paths;
   private get root(): string {
-    return this.config.root;
+    return this.paths.root;
   }
 
   /** Whether the Agent exists (determined by the presence of system_config.yaml, matching the CLI's convention). */

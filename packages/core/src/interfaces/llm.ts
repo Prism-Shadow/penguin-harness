@@ -66,6 +66,13 @@ export interface GenerativeModelConfig {
    */
   requestTimeoutMs?: number;
   /**
+   * The Session's id, for endpoints whose attribution scheme identifies the conversation
+   * rather than the app (OpenCode's `x-opencode-session`; see state/model-catalog.ts
+   * `attributionHeaders`). Unset: no such header is sent — a placeholder id would file every
+   * conversation at the gateway under one session, which is worse than naming none.
+   */
+  sessionId?: string;
+  /**
    * tool_call_id uniqueness registry (Session-level). Pass the same instance when rebuilding a new
    * GenerativeModel on compaction so the uniqueness scope covers the whole Session; defaults to a fresh
    * one. See llm/tool-call-ids.ts.

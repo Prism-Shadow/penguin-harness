@@ -25,22 +25,18 @@ import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString } from "../validate.js";
 import { HttpError } from "../errors.js";
-import type { AuthService } from "../../auth/service.js";
 import type { ServerConfig } from "../../config.js";
-import type { ServerSettingsRepo } from "../../db/repos/server-settings.js";
-import type { UiPrefsRepo } from "../../db/repos/ui-prefs.js";
-import type { UsersRepo } from "../../db/repos/users.js";
 import type { DesktopService } from "../../services/desktop-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface MeRouteDeps {
-  authService: AuthService;
+  authService: Auth;
   config: ServerConfig;
   desktop: DesktopService | null;
-  prefsRepo: UiPrefsRepo;
-  serverSettingsRepo: ServerSettingsRepo;
+  prefsRepo: UiPrefsStore;
+  serverSettingsRepo: Settings;
   /** The `users` table itself, for the one route that writes a column no service owns (PUT /api/me/profile). */
-  usersRepo: UsersRepo;
+  usersRepo: Users;
 }
 import { resolvePreviewTarget } from "../../services/preview-token.js";
 import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
@@ -52,7 +48,9 @@ import {
 } from "../../services/attachment-limits.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Config, Desktop, RuntimeModule } from "../../hmr/capabilities.js";
+import { Config, Desktop } from "../../hmr/capabilities.js";
+import type { Auth, Users } from "../../mechanisms/identity.js";
+import type { Settings, UiPrefsStore } from "../../mechanisms/settings.js";
 
 /** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
 const DISPLAY_NAME_MIN = 1;
@@ -266,12 +264,12 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
   },
 })
 export class MeRoutes {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly desktop!: Desktop;
-  @Use() private readonly auth!: AuthService;
-  @Use() private readonly prefs!: UiPrefsRepo;
-  @Use() private readonly settings!: ServerSettingsRepo;
-  @Use() private readonly users!: UsersRepo;
+  @Use() private readonly config!: Config;
+  @Use() private readonly desktop!: Desktop;
+  @Use() private readonly auth!: Auth;
+  @Use() private readonly prefs!: UiPrefsStore;
+  @Use() private readonly settings!: Settings;
+  @Use() private readonly users!: Users;
   @Bind("MeRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = meRoutes({

@@ -33,15 +33,15 @@ import {
   requireString,
   requireValidId,
 } from "../validate.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
-import type { TraceService } from "../../services/trace-service.js";
+import type { AgentConfig } from "../../mechanisms/agents.js";
+import type { Traces } from "../../mechanisms/traces.js";
+import type { Access } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface AgentTracesRouteDeps {
-  agentConfigService: AgentConfigService;
-  access: ProjectAccess;
-  traceService: TraceService;
+  agentConfigService: AgentConfig;
+  access: Access;
+  traceService: Traces;
 }
 
 /** Import file size cap: aligned with the snapshot import (stays within the 20MB body limit after base64). */

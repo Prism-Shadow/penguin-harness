@@ -78,7 +78,7 @@ platformImpl.create
 │    # 插件模块（包里生成的 ifaces.json）是同一棵树的子节点。
 └─ ctx.effect：tree.dispose()（每个模块的 effect，逆序）+ manager.shutdown 排空
 ```
-插件是一组模块——与 harness 自身的构成单位相同，写法也相同：`@Component` / `@Module` 类，字段上是 `@Use` / `@Provide` / `@Bind`。它的 manifest 是生成的，不是手写的——包的 build 对自己的 tsconfig 跑 `gen-ifaces`，把 `ifaces.json` 随 `package.json` 一起发布——这张表就是包的模块载荷，包是不是插件由它被列出决定；默认导出是 `{ modules: [<class>, …] }`，加载时每个类对照表中自己的 manifest 核对。按频率拆开：
+插件是一组模块——与 harness 自身的构成单位相同，写法也相同：`@Component` / `@Module` 类，字段上是 `@Use` / `@Provide` / `@Bind`。它的 manifest 是生成的，不是手写的——包的 build 对自己的 tsconfig 跑 `gen-ifaces`，把 `ifaces.json` 随 `package.json` 一起发布——这张表就是包的模块载荷，包是不是插件由它被列出决定；默认导出是 `{ modules?: [<class>, …], replaces?: [<class>, …] }`——`modules` 是它新增的节点，`replaces` 是它顶替的节点（以被顶替节点为名的类：组件、模块或整个组）——加载时每个类对照表中自己的 manifest 核对。替身放入时不做检查；组装出的树在任何节点运行前作为整体校验，替身提供的少于消费者所需就按名字拒绝。按频率拆开：
 
 | 时机          | 频率        | 发生什么                                                                                                                                         |
 | ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -105,7 +105,7 @@ platformImpl.create
 | HMR 宿主 / 平台      | `hmr/host.ts`（⑤ 末尾）                       | `PlatformApi`（`park` / `info` / `http` / `terminals` / `attachStream`）；`POST /api/hmr/upgrade` 为运行时自留路由，不经平台 |
 | 终端                 | `terminal/`——**App 级**              | `/api/terminals*` 路由组（注册进平台唯一的 Hono app）、WS `GET /api/terminals/:id/stream`；pty 寄存跨热更新存活 |
 | 插件宿主             | ④ `loadPlugins` 构建，⑤ 发布进资源注册表      | 一个 npm 包：生成的 `ifaces.json`（模块载荷）、默认导出 `{ modules: [<class>, …] }`；配置面是 `<root>/plugins.json` |
-| 模块树               | `src/platform.ts`——**App 级**（create 在认领的能力之上启动） | 每个服务 / repo class 上 `@Component()`（节点以 class 命名），依赖是 `@Use()` 字段；一个 class 造出多个东西时用带 `@Provide()` 字段的 `@Module({ … })`；消费者的窄接口是紧挨消费者声明的抽象类（`extends Interface<…>()`）；没有 `modules/` 目录——每个节点就住在它所是的那个东西的文件里；生成的 `src/ifaces.json`；`GET /api/contributions` 列出到达 web 槽位的内容 |
+| 模块树               | `src/platform.ts`——**App 级**（create 在认领的能力之上启动） | 每个服务 / repo class 上 `@Component()`（节点以 class 命名），依赖是 `@Use()` 字段；`@Module({ children, exports })` 分组（`IdentityModule`、`ProjectsModule`……），exports 是组内 children 向树的其余部分提供的接口；一个 class 造出多个东西时用带 `@Provide()` 字段的 `@Module({ … })`；消费者的窄接口是紧挨消费者声明的抽象类（`extends Interface<…>()`）；没有 `modules/` 目录——每个节点就住在它所是的那个东西的文件里；生成的 `src/ifaces.json`；`GET /api/contributions` 列出到达 web 槽位的内容 |
 | 沙盒                 | `sandbox/service.ts`——**App 级**（一个模块；后端向它的 `providers` 槽位投递） | 插件模块向 `SandboxModule.providers` 投递的一条 contribution；约束经 core 的 spawn seam 落到命令上 |
 | 模型目录             | 无启动期构建——core 静态数据                   | `/api/projects/:projectId/models`；目录本体在 `core/src/state/model-catalog.ts`                              |
 

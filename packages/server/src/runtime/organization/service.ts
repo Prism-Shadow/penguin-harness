@@ -54,20 +54,19 @@ import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kerne
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { HttpError } from "../../http/errors.js";
 import { userChannelKey } from "../../http/routes/events.js";
-import { Channels, Config, Log, Overrides, RuntimeModule } from "../../hmr/capabilities.js";
+import type { Channels, Clock, Config, Log } from "../../hmr/capabilities.js";
 import type { ChannelHub } from "../channel.js";
-import { OrgCacheRepo } from "../../db/repos/organizations.js";
-import { AgentsRepo } from "../../db/repos/agents.js";
-import { MembersRepo } from "../../db/repos/members.js";
-import { ProjectsRepo } from "../../db/repos/projects.js";
-import { SessionsRepo } from "../../db/repos/sessions.js";
-import { ServerSettingsRepo } from "../../db/repos/server-settings.js";
-import { AgentConfigService } from "../../services/agent-config-service.js";
-import { AgentService } from "../../services/agent-service.js";
-import { ProjectConfigService } from "../../services/project-config-service.js";
-import { UsageService } from "../../services/usage-service.js";
-import { ErrorRecorder } from "../error-recorder.js";
-import { SessionsModule } from "../session-manager.js";
+import type { OrgCache } from "../../mechanisms/organization.js";
+import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
+import type {
+  AgentIndex,
+  Members,
+  ProjectConfigStore,
+  Projects,
+} from "../../mechanisms/projects.js";
+import type { SessionIndex } from "../../mechanisms/sessions.js";
+import type { Settings } from "../../mechanisms/settings.js";
+import type { Errors, UsageQueries } from "../../mechanisms/observability.js";
 import { OrgStore } from "../../organization/store.js";
 import { badRequest } from "../../http/validate.js";
 import type { ChannelConfig, OrgConfig, OrgEmployee, TicketDoc } from "../../organization/files.js";
@@ -2759,27 +2758,26 @@ export abstract class OrgScheduler extends Interface<
  */
 @Module()
 export class OrganizationModule {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly channels!: Channels;
-  @Use(RuntimeModule) private readonly overrides!: Overrides;
-  @Use(RuntimeModule) private readonly log!: Log;
-  @Use() private readonly cache!: OrgCacheRepo;
-  @Use() private readonly projects!: ProjectsRepo;
-  @Use() private readonly members!: MembersRepo;
-  @Use() private readonly sessionsRepo!: SessionsRepo;
-  @Use(SessionsModule) private readonly runner!: OrgRuns;
-  @Use(SessionsModule) private readonly sessionCreator!: OrgSessions;
-  @Use() private readonly agentService!: AgentService;
-  @Use() private readonly agentConfig!: AgentConfigService;
-  @Use() private readonly agentsRepo!: AgentsRepo;
-  @Use() private readonly projectConfig!: ProjectConfigService;
-  @Use() private readonly usage!: UsageService;
-  @Use() private readonly errors!: ErrorRecorder;
-  @Use() private readonly settings!: ServerSettingsRepo;
+  @Use() private readonly config!: Config;
+  @Use() private readonly channels!: Channels;
+  @Use() private readonly clock!: Clock;
+  @Use() private readonly log!: Log;
+  @Use() private readonly cache!: OrgCache;
+  @Use() private readonly projects!: Projects;
+  @Use() private readonly members!: Members;
+  @Use() private readonly sessionsRepo!: SessionIndex;
+  @Use() private readonly runner!: OrgRuns;
+  @Use() private readonly sessionCreator!: OrgSessions;
+  @Use() private readonly agentService!: AgentLifecycle;
+  @Use() private readonly agentConfig!: AgentConfig;
+  @Use() private readonly agentsRepo!: AgentIndex;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly usage!: UsageQueries;
+  @Use() private readonly errors!: Errors;
+  @Use() private readonly settings!: Settings;
   @Provide() orgService!: OrgService;
   @Provide() orgScheduler!: OrgScheduler;
   setup({ effect }: ClassCtx) {
-    const overrides = this.overrides.value();
     const channels = this.channels as ChannelHub;
     const agentService = this.agentService;
     const agentConfig = this.agentConfig;
@@ -2831,12 +2829,12 @@ export class OrganizationModule {
         }
       },
       companyModeEnabled: () => this.settings.getCompanyMode(),
-      ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+      now: () => this.clock.now().getTime(),
       log: (line: string) => this.log.line(line),
     };
     const orgScheduler = new OrganizationScheduler(deps);
     this.orgScheduler = orgScheduler;
-    this.orgService = overrides.orgService ?? new OrganizationService(deps, orgScheduler);
+    this.orgService = new OrganizationService(deps, orgScheduler);
     // Only active while this App is; the successor's start() reconciles from the files.
     effect(() => orgScheduler.stop());
   }

@@ -10,6 +10,7 @@
  */
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
+import type { OrgCache } from "../../mechanisms/organization.js";
 import type { OrgCalendarOutcome, OrgTicketChange } from "../../api/types.js";
 
 export interface OrgSessionRow {
@@ -105,7 +106,7 @@ const calendarRow = (r: Record<string, unknown>): OrgCalendarStateRow => ({
 });
 
 @Component()
-export class OrgCacheRepo {
+export class OrgCacheRepo implements OrgCache {
   @Use() private readonly db!: Db;
 
   // ---- desk sessions ----

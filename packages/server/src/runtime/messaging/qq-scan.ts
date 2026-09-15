@@ -31,6 +31,8 @@
  * style of telegram-api.ts.
  */
 import { createDecipheriv, randomBytes } from "node:crypto";
+import { Interface, Module, Provide } from "@prismshadow/penguin-core/kernel";
+import type { Opaque } from "@prismshadow/penguin-core/kernel";
 
 /** Host serving the three bind-task calls (not the bot OpenAPI host). */
 export const QQ_SCAN_BASE = "https://q.qq.com";
@@ -430,5 +432,17 @@ export class QQScanService {
     }, QQ_SCAN_TASK_TTL_MS);
     timer.unref();
     this.sweepTimer = timer;
+  }
+}
+
+/** The scan-to-connect transport as a node, so a test stands in a fake for the network. */
+export abstract class QQScanTransportHandle extends Interface<{
+  transport: Opaque<"QQScanTransport", QQScanTransport>;
+}>() {}
+@Module()
+export class QQScanTransportProvider {
+  @Provide() qqScanTransport!: QQScanTransportHandle;
+  setup() {
+    this.qqScanTransport = { transport: createQQScanTransport() };
   }
 }

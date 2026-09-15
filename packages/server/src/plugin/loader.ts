@@ -17,7 +17,12 @@ import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { IfaceTable, ManifestTable, ModuleDef } from "@prismshadow/penguin-core/kernel";
+import type {
+  IfaceTable,
+  ManifestTable,
+  ModuleClass,
+  ModuleDef,
+} from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -135,10 +140,16 @@ async function readPackageTable(
 /** The package's default export as a Plugin, or null when it is not one. */
 function asPlugin(module: unknown): Plugin | null {
   const def = (module as { default?: unknown }).default;
-  const modules = (def as { modules?: unknown } | null)?.modules;
-  return Array.isArray(modules) && modules.every((m) => typeof m === "function")
-    ? (def as Plugin)
-    : null;
+  const d = def as { modules?: unknown; replaces?: unknown } | null;
+  const classes = (v: unknown) => Array.isArray(v) && v.every((m) => typeof m === "function");
+  if (d === null || typeof d !== "object") return null;
+  if (d.modules === undefined && d.replaces === undefined) return null;
+  if (
+    (d.modules !== undefined && !classes(d.modules)) ||
+    (d.replaces !== undefined && !classes(d.replaces))
+  )
+    return null;
+  return def as Plugin;
 }
 
 /**
@@ -168,29 +179,32 @@ export async function loadPlugins(root: string): Promise<PluginLoadResult> {
       if (plugin === null) {
         failed.set(
           specifier,
-          "the default export is not a Plugin ({ modules: [<@Component or @Module class>, …] })",
+          "the default export is not a Plugin ({ modules?: [<@Component or @Module class>, …], replaces?: [<class>, …] })",
         );
         continue;
       }
-      if (plugin.modules.length > 0 && Object.keys(read.manifests).length === 0) {
+      const named = (plugin.modules?.length ?? 0) + (plugin.replaces?.length ?? 0);
+      if (named > 0 && Object.keys(read.manifests).length === 0) {
         // Classes named, no table: the package was not built (gen-ifaces runs in its build).
         throw new Error(
           `the default export names module classes, but ${path.join(path.dirname(read.where), IFACES_FILE)} is missing — build the package`,
         );
       }
-      const modules: ModuleDef[] = [];
+      // Each class is checked against its generated manifest here (a stale table is a
+      // named error); the manifest is checked against the tree at boot.
       const seen = new Set<string>();
-      for (const cls of plugin.modules) {
-        // The class is checked against its generated manifest here (a stale table is a
-        // named error); the manifest is checked against the tree at boot.
-        const def = moduleDefOf(cls, { manifests: read.manifests });
-        if (seen.has(def.manifest.name)) {
-          throw new Error(`the default export lists module '${def.manifest.name}' twice`);
-        }
-        seen.add(def.manifest.name);
-        modules.push(def);
-      }
-      loaded.push({ specifier, modules, ifaces: read.ifaces });
+      const pair = (classes: readonly ModuleClass[] | undefined): ModuleDef[] =>
+        (classes ?? []).map((cls) => {
+          const def = moduleDefOf(cls, { manifests: read.manifests });
+          if (seen.has(def.manifest.name)) {
+            throw new Error(`the default export lists '${def.manifest.name}' twice`);
+          }
+          seen.add(def.manifest.name);
+          return def;
+        });
+      const modules = pair(plugin.modules);
+      const replaces = pair(plugin.replaces);
+      loaded.push({ specifier, modules, replaces, ifaces: read.ifaces });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));
     }

@@ -13,7 +13,7 @@
  * instead of a rebuild. Worth remembering when something looks like it must
  * live in the shell: this code runs INSIDE the server process, so in-process
  * effects (e.g. extending process.env for the shells agents spawn) are
- * deliverable from boot() with no runtime change. See ../hmr/README.md.
+ * deliverable from boot() with no runtime change. See packages/hmr/README.md.
  *
  * This packaged platform carries the WHOLE business surface (see app.ts):
  * every business service and route is assembled inside create() over the runtime's
@@ -39,14 +39,13 @@ import {
   bootModules,
   moduleDefOf,
 } from "@prismshadow/penguin-core/kernel";
-import type { PlatformBundle } from "./host.js";
+import type { HmrHost, PlatformBundle } from "@prismshadow/penguin-hmr";
 import { TerminalManager } from "../terminal/manager.js";
 import type { TerminalSession } from "../terminal/session.js";
 import { identityFrom } from "../terminal/identity.js";
 import { bindTerminalStream } from "../terminal/stream.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
-import type { AuthService } from "../auth/service.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { terminalRoutes } from "../terminal/routes.js";
 import type { Identity } from "../terminal/identity.js";
@@ -57,13 +56,25 @@ import { declined, seamHttp } from "./hono-seam.js";
 import {
   PENGUIN_FAMILY,
   RESOURCE_IFACES_RESOURCE_ID,
-  claimRuntimeCapabilities,
+  claimHmrCapabilities,
+  Log,
 } from "./capabilities.js";
 import type { Interfaces, MembersOf } from "./capabilities.js";
 import { pluginHostFrom } from "../plugin/host.js";
+import { migrate } from "../db/migrations.js";
+import type { Auth } from "../mechanisms/identity.js";
+
+/**
+ * This server's hot host: the mechanism (@prismshadow/penguin-hmr) with the api ITS platforms
+ * expose. The mechanism is generic on purpose — it cannot name a route or a service — so the
+ * product supplies the type here, once, and everything that holds a host uses this alias.
+ */
+export type ServerHmrHost = HmrHost<PlatformApi>;
 
 export interface PlatformApi extends Park {
   info(): Json;
+  /** The platform's log. The layer writes its request lines through it while there is one. */
+  log(line: string): void;
   /**
    * The HTTP seam (hmr/http-seam.ts): every request is offered here first, and null
    * declines it to the runtime's own routes. This is how a business API ships by push
@@ -130,7 +141,7 @@ export const PlatformIface = defineIface<PlatformApi, PlatformCtx>({
       "modules?": { "[string]": "unknown" },
     }) as never,
   ),
-  methods: ["park", "info", "http", "terminals", "attachStream"],
+  methods: ["park", "info", "http", "terminals", "attachStream", "log"],
 });
 
 /** The node names the two parking modules were keyed by before nodes were named by class. */
@@ -216,12 +227,12 @@ const DRAIN_GRACE_MS = 5000;
 export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
   async create(ctx, context) {
     // The claim comes FIRST, before a single registry read is acted on, and "refused" is a
-    // throw — what each outcome means and why lives on RuntimeClaim (capabilities.ts).
+    // throw — what each outcome means and why lives on HmrClaim (capabilities.ts).
     // The check sits HERE, in the bundle, because the runtime that needs it is by
     // definition too old to receive it; failing this early costs nothing — doUpgradeAll
     // rolls the whole upgrade back, and a hot upgrade cannot land what a fresh start
     // would refuse (bootAppDeps treats a business-less platform as fatal too).
-    const claim = claimRuntimeCapabilities(ctx.resources);
+    const claim = claimHmrCapabilities(ctx.resources);
     if (claim.kind === "refused") {
       throw new Error(
         `this runtime publishes no business capabilities this platform can claim ` +
@@ -230,6 +241,12 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       );
     }
     const caps = claim.kind === "claimed" ? claim.caps : null;
+    // A pushed platform carries its own migrations, which is the only way the tables its
+    // business needs can reach a runtime older than they are — that runtime will never grow
+    // them by restarting, because it does not have them. swapPath: this boot can be rolled
+    // back, so a restart-only migration is refused here instead of being left behind. Before
+    // any node is created: every repo below prepares its statements against this schema.
+    if (caps !== null) migrate(caps.db, { swapPath: true });
     // Resource-interface reconciliation, BEFORE anything is adopted: integrate the groups
     // the predecessor declared at the version this build also declares, hard-stop the
     // rest — a version bump or a dropped group means this create() does not speak the
@@ -271,7 +288,7 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       console.warn("[platform] bare kernel: terminals only, no business surface");
       terminals = new TerminalManager(ctx.resources, { assets: () => null });
       terminals.adopt(adoptable("TerminalModule") ? (context.terminals ?? []) : []);
-      tree = await bootModules(bareTree([...plugins.modules()]), {
+      tree = await bootModules(bareTree([...plugins.modules()], plugins.replacements()), {
         ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
         resources: ctx.resources,
         parked: parkedModules(context),
@@ -281,19 +298,22 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       // group and the terminal manager are modules wired by their manifests — checked as
       // data before any create() runs, created in dependency order. Sandbox backends the
       // plugin host registered enter the same tree as one contributing module.
-      tree = await bootModules(platformDef(caps, adoptable, [...plugins.modules()]), {
-        ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
-        resources: ctx.resources,
-        parked: parkedModules(context),
-      });
+      tree = await bootModules(
+        platformDef(caps, adoptable, [...plugins.modules()], plugins.replacements()),
+        {
+          ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
+          resources: ctx.resources,
+          parked: parkedModules(context),
+        },
+      );
       business = tree;
       terminals = tree.api<TerminalManager>("TerminalModule", "terminals");
     }
     // Ordinary code over this App's own auth: the same object the business routes
     // authenticate with. A bare kernel has none — terminals stay fail-closed.
-    const auth = business?.api<AuthService>("AuthService", "AuthService") ?? null;
+    const auth = business?.api<Auth>("IdentityModule", "Auth") ?? null;
     const identity = identityFrom(auth);
-    const manager = business?.api<SessionManager>("SessionsModule", "manager") ?? null;
+    const manager = business?.api<SessionManager>("SessionRuntimeModule", "Sessions") ?? null;
     // The runtime's one mid-request need of the CURRENT App is a hook installed over a
     // claimed capability — overwrite-only across swaps, so a dead generation's hook is
     // replaced and never removed: "is this session busy" for the channel sweep.
@@ -356,8 +376,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
       "http",
     );
     const http = httpApi !== undefined ? seamHttp(httpApi) : seamHttp(bareApp(terminals, identity));
+    const logNode = business?.api<Log>("RuntimeModule", "Log") ?? null;
 
     return {
+      log: (line) => (logNode !== null ? logNode.line(line) : console.log(line)),
       park: () => {
         const modules = tree.park();
         // The top-level fields are written for every platform that reads them: a bare
@@ -396,7 +418,10 @@ export const platformImpl: Impl<PlatformApi, PlatformCtx> = {
 };
 
 /** A bare kernel's tree: the sandbox floor and whatever contributes to it, nothing that needs a capability. */
-function bareTree(plugins: ModuleDef[]): ModuleDef {
+function bareTree(
+  plugins: ModuleDef[],
+  replace: ReadonlyMap<string, ModuleDef> = new Map(),
+): ModuleDef {
   return {
     manifest: {
       name: "platform",
@@ -406,7 +431,7 @@ function bareTree(plugins: ModuleDef[]): ModuleDef {
       children: ["SandboxModule", "*"],
     },
     children: [
-      moduleDefOf(SandboxModule, { manifests: ifaceTable.modules as ManifestTable }),
+      moduleDefOf(SandboxModule, { manifests: ifaceTable.modules as ManifestTable, replace }),
       ...plugins,
     ],
     create: () => ({ api: {} }),

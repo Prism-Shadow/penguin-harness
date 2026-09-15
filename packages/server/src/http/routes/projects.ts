@@ -15,15 +15,15 @@ import {
   requireString,
   requireValidId,
 } from "../validate.js";
-import type { ProjectService } from "../../services/project-service.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Desktop } from "../../hmr/capabilities.js";
 import type { DesktopService } from "../../services/desktop-service.js";
 import { membersRoutes } from "./members.js";
+import type { ProjectLifecycle } from "../../mechanisms/projects.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface ProjectsRouteDeps {
-  projectService: ProjectService;
+  projectService: ProjectLifecycle;
 }
 
 export function projectsRoutes(deps: ProjectsRouteDeps): Hono<AppEnv> {
@@ -83,7 +83,7 @@ export function projectsRoutes(deps: ProjectsRouteDeps): Hono<AppEnv> {
   },
 })
 export class ProjectAdminRoutes {
-  @Use() private readonly projectService!: ProjectService;
+  @Use() private readonly projectService!: ProjectLifecycle;
   @Use() private readonly desktop!: Desktop;
   @Bind("project-admin.projects") projectsRoutes!: Hono<AppEnv>;
   @Bind("project-admin.members") membersRoutes!: Hono<AppEnv>;

@@ -43,13 +43,12 @@ import type {
 import type { AppEnv } from "../../auth/middleware.js";
 import type { SessionVia } from "../../auth/service.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
-import { ServerSettingsRepo } from "../../db/repos/server-settings.js";
-import { ProjectService } from "../../services/project-service.js";
-import { OrganizationModule, OrgService } from "../../runtime/organization/service.js";
+import type { Settings } from "../../mechanisms/settings.js";
+import type { ProjectLifecycle } from "../../mechanisms/projects.js";
 import { TICKET_ID_PATTERN } from "../../organization/files.js";
 import { ORG_TICKET_COLUMNS, isCalendarEventName, isChannelId } from "../../organization/paths.js";
 import { parsePrincipal } from "../../organization/principal.js";
-import type { Actor } from "../../runtime/organization/service.js";
+import type { Actor, OrgService } from "../../runtime/organization/service.js";
 import { HttpError } from "../errors.js";
 import {
   badRequest,
@@ -171,8 +170,8 @@ function requireChannelParam(c: Context<AppEnv>): string {
 /** What this route group needs — declared here, at the consumer. */
 export interface OrgRouteDeps {
   orgService: OrgService;
-  projectService: Pick<ProjectService, "requireProjectAccess">;
-  serverSettingsRepo: Pick<ServerSettingsRepo, "getCompanyMode">;
+  projectService: Pick<ProjectLifecycle, "requireProjectAccess">;
+  serverSettingsRepo: Pick<Settings, "getCompanyMode">;
 }
 
 export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
@@ -949,9 +948,9 @@ function parseModel(
   },
 })
 export class OrgRoutes {
-  @Use(OrganizationModule) private readonly orgService!: OrgService;
-  @Use() private readonly projectService!: ProjectService;
-  @Use() private readonly settings!: ServerSettingsRepo;
+  @Use() private readonly orgService!: OrgService;
+  @Use() private readonly projectService!: ProjectLifecycle;
+  @Use() private readonly settings!: Settings;
   @Bind("OrgRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     this.routes = organizationRoutes({

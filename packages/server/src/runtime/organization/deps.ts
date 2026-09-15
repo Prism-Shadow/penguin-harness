@@ -7,15 +7,11 @@
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { ApprovalMode, ServerEvent, SessionStatus } from "../../api/types.js";
-import type { OrgCacheRepo } from "../../db/repos/organizations.js";
-import type { MembersRepo } from "../../db/repos/members.js";
-import type { ProjectsRepo } from "../../db/repos/projects.js";
-import type { SessionsRepo } from "../../db/repos/sessions.js";
+import type { OrgCache } from "../../mechanisms/organization.js";
+import type { Members, ProjectConfigStore, Projects } from "../../mechanisms/projects.js";
+import type { SessionIndex } from "../../mechanisms/sessions.js";
 import type { OrgStore } from "../../organization/store.js";
-import type {
-  ProjectConfigService,
-  UtilityCompletion,
-} from "../../services/project-config-service.js";
+import type { UtilityCompletion } from "../../services/project-config-service.js";
 import type { ErrorSink } from "../error-recorder.js";
 
 /** The session manager as the runtime sees it: is a session busy, and start a Task on it. */
@@ -126,14 +122,14 @@ export interface OrgUsageGateway {
 export interface OrgDeps {
   root: string;
   store: OrgStore;
-  cache: OrgCacheRepo;
-  projects: ProjectsRepo;
-  members: MembersRepo;
-  sessions: SessionsRepo;
+  cache: OrgCache;
+  projects: Projects;
+  members: Members;
+  sessions: SessionIndex;
   runner: OrgTaskRunner;
   sessionCreator: OrgSessionCreator;
   agents: OrgAgentGateway;
-  projectConfig: ProjectConfigService;
+  projectConfig: ProjectConfigStore;
   /**
    * One short completion on the Project's default model, for the utility asks that are not a
    * Session's work — today the semantic id a display name is translated into. A failure comes

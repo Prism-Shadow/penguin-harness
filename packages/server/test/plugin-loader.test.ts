@@ -193,6 +193,34 @@ describe("plugin loading", () => {
     expect(result.failed.get(file)).toMatch(/Ghost: not in the generated manifest table/);
   });
 
+  it("classes under `replaces` are paired the same way, and land in the plugin's replaces", async () => {
+    const file = await writePackage(
+      "@acme/penguin-plugin-thing",
+      {
+        ...oneModule,
+        modules: {
+          ...oneModule.modules,
+          MemoryService: {
+            ...oneModule.modules.Thing,
+            name: "MemoryService",
+            provides: {},
+            contributes: {},
+          },
+        },
+      },
+      `${thingClass}
+       import { Module } from ${JSON.stringify(decorators)};
+       @Module() export class MemoryService {}
+       export default { modules: [Thing], replaces: [MemoryService] };`,
+    );
+    await writeConfig({ plugins: [file] });
+    const result = await loadPlugins(root);
+    expect(result.failed.size).toBe(0);
+    const entry = result.loaded[0]!;
+    expect(entry.modules.map((m) => m.manifest.name)).toEqual(["Thing"]);
+    expect(entry.replaces.map((m) => m.manifest.name)).toEqual(["MemoryService"]);
+  });
+
   it("a package without a table ships no modules — a plugin is a plugin by being listed", async () => {
     const file = await writePackage("@acme/skills-only", null, "export default { modules: [] };");
     await writeConfig({ plugins: [file] });

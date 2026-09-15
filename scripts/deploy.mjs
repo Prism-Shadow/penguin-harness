@@ -30,6 +30,7 @@ import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
 import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
+import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -163,6 +164,12 @@ async function compileEntry(entry, outfile) {
     bundle: true,
     format: "esm",
     platform: "node",
+    // The Node that runs it (package.json engines). Without a target esbuild compiles for
+    // `esnext`, where it takes standard decorators to be supported and emits them as they
+    // were written — and no Node parses those, so the pushed bundle fails to import with
+    // "Invalid or unexpected token" and the target keeps the generation it had. The
+    // packaged build does not hit this because tsup passes a target of its own.
+    target: "node24",
     outfile,
     logLevel: "silent",
     banner: { js: ESM_CJS_BANNER },
@@ -184,9 +191,7 @@ async function readWebManifest() {
   for (const entry of await fsp.readdir(WEB_DIST, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const abs = path.join(entry.parentPath, entry.name);
-    files[path.relative(WEB_DIST, abs).split(path.sep).join("/")] = (
-      await fsp.readFile(abs)
-    ).toString("base64");
+    files[path.relative(WEB_DIST, abs).split(path.sep).join("/")] = await fsp.readFile(abs);
   }
   return files;
 }
@@ -226,7 +231,7 @@ async function readNativeAssets() {
     const rel = path.relative(ptyDir, abs).split(path.sep).join("/");
     if (!wanted(rel)) continue;
     const target = `node_modules/node-pty/${rel}`;
-    files[target] = (await fsp.readFile(abs)).toString("base64");
+    files[target] = await fsp.readFile(abs);
     // node-pty ships its prebuilt spawn-helper as 0644; the runtime restores the bit from
     // this list, so push it regardless of how it looks on this machine.
     if (rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0) {
@@ -238,7 +243,7 @@ async function readNativeAssets() {
   // from its own assets directory, so a push that omits one leaves a server that cannot
   // install a machine at all. Same set the packaged build copies into dist/; see the module.
   for (const { name, from } of FAR_SIDE_SCRIPTS) {
-    files[name] = (await fsp.readFile(path.join(ROOT, from))).toString("base64");
+    files[name] = await fsp.readFile(path.join(ROOT, from));
   }
   return { files, exec };
 }
@@ -264,23 +269,58 @@ async function main() {
   const files = await readWebManifest();
   const assets = await readNativeAssets();
   const source = pushSource();
-  const gz = zlib.gzipSync(
-    Buffer.from(
-      JSON.stringify({
-        platform: await fsp.readFile(PLATFORM_BUNDLE, "utf8"),
-        cli: await fsp.readFile(CLI_BUNDLE, "utf8"),
-        web: { files },
-        assets,
-        ...(source === null ? {} : { source }),
-      }),
-    ),
-  );
-  if (source !== null) log(`provenance: ${source.revision}`);
-  log(
-    `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} native assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB) to ${baseUrl}…`,
-  );
 
   const cookie = await login();
+  const platform = await fsp.readFile(PLATFORM_BUNDLE);
+  const cli = await fsp.readFile(CLI_BUNDLE);
+  const mapValues = (o, f) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
+  const body = (part) => ({
+    platform: part(platform, "utf8"),
+    cli: part(cli, "utf8"),
+    web: { files: mapValues(files, (b) => part(b, "base64")) },
+    assets: { files: mapValues(assets.files, (b) => part(b, "base64")), exec: assets.exec },
+    ...(source === null ? {} : { source }),
+  });
+  // Content-addressed transfer, the way git pushes: name every part by its sha256, ask the
+  // target which blobs it lacks, PUT only those (raw), then push a body of names. A target
+  // without the probe (an older runtime) answers 404 and gets every part inline.
+  const blobs = new Map();
+  let payload = body((bytes) => {
+    const sha = createHash("sha256").update(bytes).digest("hex");
+    blobs.set(sha, bytes);
+    return { sha };
+  });
+  const probe = await request(`${baseUrl}/api/hmr/assets/probe`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ hashes: [...blobs.keys()] }),
+  });
+  if (probe.status === 200) {
+    let sent = 0;
+    for (const sha of JSON.parse(probe.body.toString("utf8")).missing) {
+      const bytes = blobs.get(sha);
+      if (bytes === undefined) continue;
+      const put = await request(`${baseUrl}/api/hmr/blobs/${sha}`, {
+        method: "PUT",
+        headers: { "content-type": "application/octet-stream", cookie },
+        body: bytes,
+      });
+      if (put.status !== 200) {
+        throw new Error(`PUT /api/hmr/blobs/${sha} → ${put.status}: ${put.body.toString("utf8")}`);
+      }
+      sent += bytes.length;
+    }
+    log(`${blobs.size} blobs; ${(sent / 1048576).toFixed(1)} MB were new to the target`);
+  } else {
+    log("target has no probe: pushing everything inline");
+    payload = body((bytes, encoding) => bytes.toString(encoding));
+  }
+  const gz = zlib.gzipSync(Buffer.from(JSON.stringify(payload)));
+  if (source !== null) log(`provenance: ${source.revision}`);
+  log(
+    `pushing ${Object.keys(files).length} web files + ${Object.keys(assets.files).length} assets + 2 bundles (${(gz.length / 1048576).toFixed(1)} MB body) to ${baseUrl}…`,
+  );
+
   const started = Date.now();
   const res = await request(`${baseUrl}/api/hmr/upgrade`, {
     method: "POST",

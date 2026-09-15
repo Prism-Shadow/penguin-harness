@@ -16,8 +16,9 @@ import { Hono, type Context } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { BenchmarkCreateResponse, CaseMaterial } from "../../api/types.js";
-import type { BenchmarkCaseInput, BenchmarkService } from "../../services/benchmark-service.js";
-import type { ProjectAccess } from "../../services/project-access.js";
+import type { BenchmarkCaseInput } from "../../services/benchmark-service.js";
+import type { Benchmarks } from "../../mechanisms/agents.js";
+import type { Access } from "../../mechanisms/projects.js";
 import {
   badRequest,
   optionalNumber,
@@ -29,8 +30,8 @@ import {
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface BenchmarksRouteDeps {
-  benchmarks: BenchmarkService;
-  access: ProjectAccess;
+  benchmarks: Benchmarks;
+  access: Access;
 }
 
 const TEXT_PREVIEW_BYTES = 256 * 1024;

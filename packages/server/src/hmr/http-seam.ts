@@ -14,11 +14,14 @@
  *
  * Two boundaries make that safe:
  *
- * - **`/api/hmr/*` is never offered.** It is the channel a broken platform is replaced through;
- *   if a push could claim it, one bad push would lock the installation out permanently.
  * - **A platform that throws does not fall through.** It claimed the request by throwing rather
  *   than declining, and quietly running the runtime's older handler instead would answer with
  *   different semantics than the caller was promised. The error surfaces as a 500.
+ * - **No platform at all is not a decline either.** When no generation is current the request
+ *   is answered 503, not passed to the static tail: the tail would serve the SPA shell for
+ *   any path, and an API call would come back 200 with an HTML body that means nothing.
+ *   (The upgrade channel is the platform's own route, so a box in this state is pushed to
+ *   through the previous generation's closures — see the host's recovery.)
  *
  * The contract is one function wide — Request in, whole Response out — and a streaming body
  * rides it unchanged: the platform's SSE endpoints (`/api/events`, a session's event stream)
@@ -28,10 +31,9 @@
  * (`terminals()`, `attachStream()`) instead.
  */
 import type { MiddlewareHandler } from "hono";
-import type { HmrHost } from "./host.js";
-
-/** Prefix the runtime keeps for itself, whatever the platform says. */
-const RESERVED_PREFIX = "/api/hmr";
+import type { Hmr } from "@prismshadow/penguin-hmr";
+import type { PlatformApi } from "./platform.js";
+import { noPlatformResponse } from "./starting.js";
 
 /**
  * A platform that wants to serve HTTP exposes this. Optional on purpose: a platform pushed
@@ -51,25 +53,19 @@ export interface PlatformHttp {
  * `hmr.ensure()` returns the already-booted instance after the first call, so this costs a
  * property read per request once the platform is up.
  */
-export function platformHttpSeam(hmr: HmrHost): MiddlewareHandler {
+export function platformHttpSeam(hmr: Hmr<PlatformApi>): MiddlewareHandler {
   return async (c, next) => {
-    if (c.req.path.startsWith(RESERVED_PREFIX)) return next();
-    // Wait out any in-flight swap FIRST, same as /api/hmr/*'s own gate (routes.ts): the
-    // kernel's upgrade() disposes the old tree before it awaits the new one's boot, and for
-    // that whole window `hmr.ensure()` still resolves synchronously to the OLD instance —
-    // it only reassigns once the swap is done. Without this wait, a request landing in that
-    // window would be handed to an already-disposed tree instead of observing the freeze as
-    // latency (see host.ts's module doc: "a client never observes the stop-the-world
-    // window").
-    await hmr.waitIdle();
+    // Which generation a request goes to — including waiting out an in-flight swap — is the
+    // frozen operation `current()` (packages/hmr's main.ts); this seam only hands over.
     let handler: PlatformHttp["http"];
     try {
-      const instance = await hmr.ensure();
+      const instance = await hmr.current();
       handler = (instance.api as PlatformHttp).http?.bind(instance.api);
-    } catch {
-      // The platform cannot boot: the runtime's own routes are the fallback, and the
-      // upgrade channel above is still reachable to push a working one.
-      return next();
+    } catch (err) {
+      // Not a decline: there is no generation to decline anything. Answering here rather
+      // than falling through keeps "no platform" distinguishable from "the platform does
+      // not serve this path", which is a 404 the platform itself gives.
+      return noPlatformResponse(err instanceof Error ? err.message : String(err));
     }
     if (!handler) return next();
 

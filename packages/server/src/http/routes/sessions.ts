@@ -42,10 +42,10 @@ import type {
 } from "../../api/types.js";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { decodeCursor } from "../../services/message-window.js";
-import type { MessagesPageRequest, TraceService } from "../../services/trace-service.js";
+import type { MessagesPageRequest } from "../../services/trace-service.js";
 import { PREVIEW_TOKEN_TTL_MS, resolvePreviewTarget } from "../../services/preview-token.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { SessionRow, SessionsRepo } from "../../db/repos/sessions.js";
+import type { SessionRow } from "../../db/repos/sessions.js";
 import { assertWorkspaceAllowed } from "../../services/workspace-guard.js";
 import { isGoalOutcome } from "../../runtime/goal-events.js";
 import { HttpError } from "../errors.js";
@@ -64,35 +64,28 @@ import {
   requireValidId,
 } from "../validate.js";
 import type { ServerConfig } from "../../config.js";
-import type { ServerSettingsRepo } from "../../db/repos/server-settings.js";
 import type { ChannelHub } from "../../runtime/channel.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
-import type { SessionSources } from "../../runtime/session-sources.js";
-import type { AgentConfigService } from "../../services/agent-config-service.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
-import type { ProjectAccess } from "../../services/project-access.js";
-import type { Machines } from "../../machines/service.js";
-import type { ProjectConfigService } from "../../services/project-config-service.js";
 import type { SessionService } from "../../services/session-service.js";
-import type { WorkspaceFilesService } from "../../services/workspace-files-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SessionsRouteDeps {
-  agentConfigService: AgentConfigService;
+  agentConfigService: AgentConfig;
   channels: ChannelHub;
   config: ServerConfig;
   manager: SessionManager;
   messaging: MessagingBridge;
   previewTokens: PreviewTokenSigner;
-  projectConfigService: ProjectConfigService;
-  access: ProjectAccess;
-  serverSettingsRepo: ServerSettingsRepo;
+  projectConfigService: ProjectConfigStore;
+  access: Access;
+  serverSettingsRepo: Settings;
   sessionService: SessionService;
-  sessionSources: SessionSources;
-  sessionsRepo: SessionsRepo;
-  traceService: TraceService;
-  workspaceFiles: WorkspaceFilesService;
+  sessionSources: SessionOrigins;
+  sessionsRepo: SessionIndex;
+  traceService: Traces;
+  workspaceFiles: WorkspaceFiles;
 }
 import { MAX_UPLOAD_BYTES } from "../../services/workspace-files-service.js";
 import {
@@ -111,14 +104,10 @@ import {
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Channels, Config, RuntimeModule } from "../../hmr/capabilities.js";
-import {
-  Sessions as ManagerIface,
-  SessionServiceIface,
-  SessionsModule,
-} from "../../runtime/session-manager.js";
-import { Messaging, MessagingModule } from "../../runtime/messaging/bridge.js";
-import { WorkspaceModule, PreviewTokens } from "./preview.js";
+import { Channels, Config } from "../../hmr/capabilities.js";
+import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
+import { Messaging } from "../../runtime/messaging/bridge.js";
+
 import { agentsRoutes } from "./agents.js";
 import { agentConfigRoutes } from "./agent-config.js";
 import { vaultRoutes } from "./vault.js";
@@ -127,12 +116,15 @@ import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./model-oauth.js";
 import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
 import { usageRoutes } from "./usage.js";
-import type { AgentService } from "../../services/agent-service.js";
-import type { SchedulesRepo } from "../../db/repos/schedules.js";
-import type { ModelOAuthService } from "../../services/model-oauth-service.js";
-import type { TraceIndexService } from "../../services/trace-index.js";
-import type { ErrorsRepo } from "../../db/repos/errors.js";
-import type { UsageService } from "../../services/usage-service.js";
+import { PreviewTokens } from "./preview.js";
+import type { Access, ModelOAuth, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/sessions.js";
+import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
+import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
+import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
+import type { Machines } from "../../machines/service.js";
+import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
+import type { Settings } from "../../mechanisms/settings.js";
 
 /** Max title length for manual renames: looser than the auto-generated 30-char limit, to accommodate users' own organizing conventions. */
 const SESSION_TITLE_MAX = 120;
@@ -1609,27 +1601,27 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   },
 })
 export class SessionApiRoutes {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly channels!: Channels;
-  @Use(SessionsModule) private readonly manager!: ManagerIface;
-  @Use(SessionsModule) private readonly sessionService!: SessionServiceIface;
-  @Use() private readonly agentConfig!: AgentConfigService;
-  @Use() private readonly agents!: AgentService;
-  @Use(MessagingModule) private readonly messaging!: Messaging;
-  @Use() private readonly schedulesRepo!: SchedulesRepo;
-  @Use() private readonly access!: ProjectAccess;
+  @Use() private readonly config!: Config;
+  @Use() private readonly channels!: Channels;
+  @Use() private readonly manager!: ManagerIface;
   @Use() private readonly machines!: Machines;
-  @Use() private readonly projectConfig!: ProjectConfigService;
-  @Use() private readonly modelOAuth!: ModelOAuthService;
-  @Use() private readonly traceIndex!: TraceIndexService;
-  @Use() private readonly traces!: TraceService;
-  @Use() private readonly workspaceFiles!: WorkspaceFilesService;
-  @Use(WorkspaceModule) private readonly previewTokens!: PreviewTokens;
-  @Use() private readonly settings!: ServerSettingsRepo;
-  @Use() private readonly sessionsRepo!: SessionsRepo;
-  @Use() private readonly sources!: SessionSources;
-  @Use() private readonly errorsRepo!: ErrorsRepo;
-  @Use() private readonly usage!: UsageService;
+  @Use() private readonly sessionService!: SessionServiceIface;
+  @Use() private readonly agentConfig!: AgentConfig;
+  @Use() private readonly agents!: AgentLifecycle;
+  @Use() private readonly messaging!: Messaging;
+  @Use() private readonly schedulesRepo!: Schedules;
+  @Use() private readonly access!: Access;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly modelOAuth!: ModelOAuth;
+  @Use() private readonly traceIndex!: TraceIndex;
+  @Use() private readonly traces!: Traces;
+  @Use() private readonly workspaceFiles!: WorkspaceFiles;
+  @Use() private readonly previewTokens!: PreviewTokens;
+  @Use() private readonly settings!: Settings;
+  @Use() private readonly sessionsRepo!: SessionIndex;
+  @Use() private readonly sources!: SessionOrigins;
+  @Use() private readonly errorsRepo!: ErrorLog;
+  @Use() private readonly usage!: UsageQueries;
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
@@ -1670,16 +1662,16 @@ export class SessionApiRoutes {
       manager,
       modelOAuth: this.modelOAuth,
       access,
-      machines: this.machines,
       channels,
+      machines: this.machines,
       projectConfigService,
       sessionsRepo,
     };
     this.modelOauthCallbackRoutes = modelOAuthCallbackRoutes(modelOAuthDeps);
     this.modelsRoutes = modelsRoutes({
-      machines: this.machines,
       channels,
       manager,
+      machines: this.machines,
       projectConfigService,
       access,
       sessionsRepo,

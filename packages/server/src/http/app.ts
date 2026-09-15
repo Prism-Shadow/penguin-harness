@@ -2,18 +2,18 @@ import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kerne
 import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
-import { Config, Log, RuntimeModule } from "../hmr/capabilities.js";
+import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { authMiddleware, jsonOnlyWrites } from "../auth/middleware.js";
-import type { AuthService } from "../auth/service.js";
 import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
-import type { ErrorRecorder } from "../runtime/error-recorder.js";
-import type { ProjectAccess } from "../services/project-access.js";
-import type { ServerSettingsRepo } from "../db/repos/server-settings.js";
+import type { Auth } from "../mechanisms/identity.js";
+import type { Access } from "../mechanisms/projects.js";
+import type { Errors } from "../mechanisms/observability.js";
+import type { Settings } from "../mechanisms/settings.js";
 
 /** The assembled business surface: one request in, one response (or a decline) out. */
 export abstract class Http extends Interface<{
@@ -32,9 +32,6 @@ export interface HttpSlots {
   >;
 }
 
-/** Prefixes the runtime owns; the platform declines them before anything else runs — in particular before the auth gate, which would otherwise 401 an unauthenticated /api/auth/login. */
-const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
-
 /**
  * The platform's whole HTTP surface, assembled from `HttpModule.routes` contributions: every
  * module that serves requests contributes its groups here as data (prefix, auth, order)
@@ -42,12 +39,12 @@ const RUNTIME_PREFIXES = ["/api/auth", "/api/desktop", "/api/hmr"];
  */
 @Module()
 export class HttpModule {
-  @Use(RuntimeModule) private readonly config!: Config;
-  @Use(RuntimeModule) private readonly log!: Log;
-  @Use() private readonly auth!: AuthService;
-  @Use() private readonly errors!: ErrorRecorder;
-  @Use() private readonly settings!: ServerSettingsRepo;
-  @Use() private readonly access!: ProjectAccess;
+  @Use() private readonly config!: Config;
+  @Use() private readonly log!: Log;
+  @Use() private readonly auth!: Auth;
+  @Use() private readonly errors!: Errors;
+  @Use() private readonly settings!: Settings;
+  @Use() private readonly access!: Access;
   @Provide() http!: Http;
   setup({ contributions }: ClassCtx) {
     const errors = this.errors;
@@ -102,23 +99,22 @@ export class HttpModule {
       }))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
     let gated = false;
-    let declinedRuntime = false;
     for (const r of routes) {
-      // The terminal group (order 0) sits before the runtime-prefix decline, so a matched
-      // terminal route ends the chain first; everything after it declines /api/auth etc.
-      if (!declinedRuntime && r.order > 0) {
-        app.use("*", async (c, next) => {
-          if (RUNTIME_PREFIXES.some((p) => c.req.path === p || c.req.path.startsWith(`${p}/`))) {
-            return declined();
-          }
-          await next();
-        });
-        declinedRuntime = true;
-      }
-      if (!gated && r.auth === "user") {
-        // Protected routes: cookie -> auth_session -> user.
-        app.use("/api/*", authMiddleware(this.auth, this.config.trustProxy));
-        gated = true;
+      if (r.auth === "user") {
+        // Protected routes: cookie -> auth_session -> user. /api/* is gated once, ahead of
+        // the first protected group. A protected group under another prefix — the machine
+        // proxy at /server/ — is gated on its own prefix: the gate is what puts the user on
+        // the context, and a handler reading it behind an ungated prefix would throw.
+        if (!gated) {
+          app.use("/api/*", authMiddleware(this.auth, this.config.trustProxy));
+          gated = true;
+        }
+        if (!r.prefix.startsWith("/api")) {
+          app.use(
+            `${r.prefix.replace(/\/$/, "")}/*`,
+            authMiddleware(this.auth, this.config.trustProxy),
+          );
+        }
       }
       app.route(r.prefix, r.app);
     }

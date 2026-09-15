@@ -6,9 +6,9 @@
 import { describe, expect, it } from "vitest";
 import type { ModuleDef } from "@prismshadow/penguin-core/kernel";
 import { parseManifest, boot, initialDoc } from "@prismshadow/penguin-core/kernel";
-import { HotResources } from "../src/hmr/resources.js";
+import { HotResources } from "@prismshadow/penguin-hmr";
 import { PluginHost, PLUGINS_RESOURCE_ID, pluginHostFrom } from "../src/plugin/host.js";
-import { PENGUIN_FAMILY, RUNTIME_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
+import { PENGUIN_FAMILY, HMR_INTERFACES_RESOURCE_ID } from "../src/hmr/capabilities.js";
 import { packagedPlatform } from "../src/hmr/platform.js";
 import type { SandboxProvider } from "@prismshadow/penguin-core/plugin";
 
@@ -44,15 +44,15 @@ function backend(name: string, onCreate?: () => void): ModuleDef {
 describe("plugin host", () => {
   it("holds every plugin's modules in load order", () => {
     const host = new PluginHost();
-    host.use({ specifier: "a", modules: [backend("a1"), backend("a2")] });
-    host.use({ specifier: "b", modules: [backend("b1")] });
+    host.use({ specifier: "a", modules: [backend("a1"), backend("a2")], replaces: [] });
+    host.use({ specifier: "b", modules: [backend("b1")], replaces: [] });
     expect(host.modules().map((m) => m.manifest.name)).toEqual(["ext-a1", "ext-a2", "ext-b1"]);
   });
 
   it("refuses a module name another plugin already loaded, naming both", () => {
     const host = new PluginHost();
-    host.use({ specifier: "a", modules: [backend("x")] });
-    expect(() => host.use({ specifier: "b", modules: [backend("x")] })).toThrow(
+    host.use({ specifier: "a", modules: [backend("x")], replaces: [] });
+    expect(() => host.use({ specifier: "b", modules: [backend("x")], replaces: [] })).toThrow(
       /plugin 'b': module 'ext-x' is already loaded/,
     );
   });
@@ -75,9 +75,9 @@ describe("plugin modules on the real platform", () => {
   /** A bare-kernel boot (no capabilities): the sandbox floor plus whatever plugins contribute. */
   async function bootWith(modules: ModuleDef[]) {
     const resources = new HotResources();
-    resources.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
+    resources.register(HMR_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
     const host = new PluginHost();
-    host.use({ specifier: "test", modules });
+    host.use({ specifier: "test", modules, replaces: [] });
     resources.register(PLUGINS_RESOURCE_ID, host);
     return boot(
       packagedPlatform.impl,
@@ -89,7 +89,7 @@ describe("plugin modules on the real platform", () => {
 
   it("boots an App when the runtime published no host at all", async () => {
     const resources = new HotResources();
-    resources.register(RUNTIME_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
+    resources.register(HMR_INTERFACES_RESOURCE_ID, { family: PENGUIN_FAMILY });
     const inst = await boot(
       packagedPlatform.impl,
       packagedPlatform.iface,

@@ -39,6 +39,14 @@ export const ICON_SIZE = {
   groupHeaderAvatar: 18,
   /** A mark that anchors a whole block rather than a line: the mobile top bar, a confirm dialog's tinted disc. */
   sectionMark: 18,
+  /**
+   * The floating launcher's ball face (features/dock/dock-launcher.tsx): a control that
+   * floats over the conversation on its own, with nothing beside it to size against, so it
+   * sits above every in-flow rung. Its entries take the rung below.
+   */
+  launcherBall: 22,
+  /** A fan entry of the floating launcher: a glyph alone in a round button one rung under the ball. */
+  launcherEntry: 19,
   /** The rotating collapse chevron. */
   chevron: 14,
   /** The collapse chevron in a dense row (an 11px folder row, a banner). */
