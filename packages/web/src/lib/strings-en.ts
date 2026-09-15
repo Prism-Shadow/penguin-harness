@@ -151,6 +151,21 @@ export const en: Strings = {
     },
     /** Suffix shown after `status.exited`; `code` is the shell's numeric exit code. */
     exitedWithCode: (code: string): string => `exit code ${code}`,
+    touchKeys: {
+      label: "Terminal keys",
+      esc: "Escape",
+      tab: "Tab",
+      ctrl: "Ctrl (tap, then the next character)",
+      alt: "Alt (tap, then the next character)",
+      up: "Arrow up",
+      down: "Arrow down",
+      left: "Arrow left",
+      right: "Arrow right",
+      interrupt: "Interrupt (Ctrl+C)",
+      paste: "Paste",
+      hideKeyboard: "Dismiss the keyboard",
+      showKeyboard: "Show the keyboard",
+    },
   },
 
   dock: {
@@ -174,6 +189,8 @@ export const en: Strings = {
     launcherPanels: "Shortcuts",
     launcherHide: "Hide launcher",
     launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
+    maximize: "Fill the screen",
+    restore: "Restore the height",
   },
 
   tracePanel: {
@@ -182,11 +199,30 @@ export const en: Strings = {
     loadFailed: "Failed to load traces",
   },
 
+  dashboard: {
+    title: "Dashboard",
+    /** The two counts, read beside their numbers: "3 running", "1 to review". */
+    running: "running",
+    pendingReview: "to review",
+    /** The merged row of auto-created temporary Workspaces, as the sidebar groups them. */
+    temporaryWorkspaces: "Temporary workspaces",
+    empty: "Nothing is running",
+    /** The empty state while a machine did not answer: this server has nothing, the rest is unknown. */
+    emptyHere: "Nothing is running on this server",
+    emptyHint:
+      "Workspaces with a Session running, or finished since you last opened it, appear here.",
+    loadFailed: "Failed to load",
+    silentMachines: (n: number) =>
+      `${n} machine${n > 1 ? "s" : ""} did not answer — Sessions there are not counted. Connect to it on the Machines page.`,
+  },
+
   settings: {
     language: "Language",
     languageInfo: "Interface language; can follow the browser.",
     /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
     title: "Settings",
+    /** Sidebar user-menu row, under the settings row, opening the dashboard page. */
+    dashboard: "Dashboard",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",

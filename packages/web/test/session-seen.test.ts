@@ -6,6 +6,8 @@ import {
   markSessionSeen,
   noteSessionSeen,
   parseSessionSeen,
+  dropSessionSeenCache,
+  readSessionSeen,
   resetSessionSeenCache,
   serializeSessionSeen,
   sessionSeenKey,
@@ -124,6 +126,24 @@ describe("storage round-trip", () => {
     expect(written.seen.size).toBe(500);
     expect(written.seen.has("s599")).toBe(true); // Most recent kept.
     expect(written.seen.has("s0")).toBe(false); // Oldest evicted.
+  });
+});
+
+describe("another tab's write", () => {
+  beforeEach(resetSessionSeenCache);
+
+  it("is served once its key is dropped from the cache, and not before", () => {
+    const storage = memoryStorage();
+    const key = sessionSeenKey("proj");
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T1) })));
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T1));
+    // The other tab opened `a` later; this tab's parsed copy does not know.
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T2) })));
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T1));
+    // What the storage event does for that key.
+    dropSessionSeenCache(key);
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T2));
+    expect(isSessionUnread(readSessionSeen("proj", storage), "a", T2)).toBe(false);
   });
 });
 
