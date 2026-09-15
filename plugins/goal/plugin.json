@@ -5,6 +5,11 @@
   "short_description_zh": "让会话循环推进一个目标直到完成。",
   "version": "2026.09.01.1",
   "category": "office-productivity",
+  "quick_start": {
+    "prompt": "Write fizzbuzz.py in this Workspace that prints FizzBuzz for 1 to 30, run it, and check that every line of the output is right.",
+    "prompt_zh": "在当前工作区写一个 fizzbuzz.py，打印 1 到 30 的 FizzBuzz，运行它，并逐行确认输出正确。",
+    "goal": true
+  },
   "hooks": {
     "user_prompt": [
       {

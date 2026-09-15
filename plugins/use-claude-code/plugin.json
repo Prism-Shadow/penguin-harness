@@ -4,5 +4,10 @@
   "short_description_zh": "在远程主机上通过 SSH 运行 Claude Code（持久会话 / headless / tmux 交互 / 多轮续接）。",
   "version": "2026.08.18.1",
   "category": "software-development",
-  "preinstall": false
+  "preinstall": false,
+  "quick_start": {
+    "prompt": "Check whether ssh and the claude CLI are available on this machine, then show the exact commands you would use to run a headless Claude Code task on a remote host.",
+    "prompt_zh": "检查这台机器上 ssh 和 claude CLI 是否可用，然后给出在远程主机上以无界面方式运行一次 Claude Code 任务的具体命令。",
+    "skills": ["remote-claude-code"]
+  }
 }
