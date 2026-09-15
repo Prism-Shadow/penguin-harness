@@ -70,11 +70,16 @@ describe("model-catalog", () => {
     expect(ids).not.toContain("inclusionai/ling-3.0-flash:free");
   });
 
-  it("every provider is in MODEL_PROVIDERS (custom only groups user-defined models; the catalog never uses it)", () => {
+  it("every provider is in MODEL_PROVIDERS (a custom preset carries its own base URL and a pinned generic protocol)", () => {
     const providerIds = new Set(MODEL_PROVIDERS.map((p) => p.id));
     for (const m of MODEL_CATALOG) {
       expect(providerIds.has(m.provider)).toBe(true);
-      expect(m.provider).not.toBe("custom");
+      // custom groups user-defined models, so the group implies no endpoint and no protocol:
+      // a preset filed there has to say both itself.
+      if (m.provider === "custom") {
+        expect(["openai-responses", "ant-messages", "openai-chat"]).toContain(m.clientType);
+        expect(m.baseUrl).toMatch(/^https:\/\//);
+      }
     }
     // Every provider gives a console link to "get an API key" (shown in the frontend's group
     // header) and a model list / docs link to "get a model id" (shown in the add-model
@@ -119,11 +124,17 @@ describe("model-catalog", () => {
 
   it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
-      if (m.provider === "vllm" || m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
+      if (
+        m.provider === "vllm" ||
+        m.modelId.endsWith(":free") ||
+        m.modelId === "openrouter/free" ||
+        m.modelId === "Atria-Dawn-Preview"
+      ) {
         // Self-hosted vLLM and the free-tier gateway rows share one treatment: a genuine $0
         // price (not "unknown"), so costs compute to 0 and the free badge shows. Nobody bills
         // per token for either — a vLLM deployment costs its operator hardware, which no
-        // catalog rate expresses.
+        // catalog rate expresses. Atria Dawn Preview has no published price yet and is
+        // recorded at $0 until the vendor prices it.
         expect(m.pricing, m.modelId).toBeDefined();
         expect([m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output]).toEqual([
           0, 0, 0,
@@ -138,6 +149,36 @@ describe("model-catalog", () => {
       expect(Number.isInteger(m.contextWindow)).toBe(true);
       expect(m.contextWindow!).toBeGreaterThan(0);
     }
+  });
+
+  it("custom: the group pins nothing, and its one preset carries its own endpoint and protocol", () => {
+    // The custom group holds user-defined models, so the group itself implies no endpoint and
+    // no protocol (see the MODEL_PROVIDERS test above). A preset filed there is complete on its
+    // own row: Atria Dawn Preview at api.atria-asi.ai, Responses API, 256K window, text only.
+    expect(providerClientType("custom")).toBeUndefined();
+    expect(providerInfo("custom")!.gatewayBaseUrl).toBeUndefined();
+    const custom = MODEL_CATALOG.filter((m) => m.provider === "custom");
+    expect(
+      custom.map((m) => [m.modelId, m.clientType, m.baseUrl, m.contextWindow, m.supportsVision]),
+    ).toEqual([
+      ["Atria-Dawn-Preview", "openai-responses", "https://api.atria-asi.ai/v1", 262144, false],
+    ]);
+    // The custom group is last, and so is its row: the catalog is laid out group by group.
+    expect(MODEL_CATALOG.at(-1)!.modelId).toBe("Atria-Dawn-Preview");
+    expect(catalogEntryFor("custom", "Atria-Dawn-Preview")?.displayName).toBe("Atria Dawn Preview");
+    // Ids are case-sensitive at the vendor, so the lookup is too.
+    expect(catalogEntryFor("custom", "atria-dawn-preview")).toBeUndefined();
+    const preset = presetModelEntries().find((e) => e.provider === "custom");
+    expect(preset).toEqual({
+      provider: "custom",
+      model_id: "Atria-Dawn-Preview",
+      context_window: 262144,
+      client_type: "openai-responses",
+      pricing: { unit: "usd_per_mtok", cache_read: 0, cache_write: 0, output: 0 },
+      vision: false,
+      base_url: "https://api.atria-asi.ai/v1",
+    });
+    expect(modelHomepageUrl("custom", "Atria-Dawn-Preview")).toBeUndefined();
   });
 
   it("vLLM (self-hosted): the group pins openai-chat-vllm-adapter, prices at zero and carries no endpoint", () => {
@@ -653,12 +694,16 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("google", "gemini-3.5-flash")!.contextWindow).toBe(1048576);
 
     // In preset entries, every gateway model inlines base_url, and so do the two direct rows
-    // whose own id does not route — MiniMax M3 and DeepSeek deepseek-flash (no credentials).
+    // whose own id does not route — MiniMax M3 and DeepSeek deepseek-flash (no credentials) —
+    // and the custom group's preset, whose group implies no endpoint at all.
     const pinnedDirect = MODEL_CATALOG.filter((m) => m.provider === "deepseek" && m.baseUrl);
     expect(pinnedDirect.map((m) => m.modelId)).toEqual(["deepseek-flash"]);
+    const customPresets = MODEL_CATALOG.filter((m) => m.provider === "custom");
     const withBaseUrl = presetModelEntries().filter((e) => e.base_url !== undefined);
     expect(withBaseUrl.map((e) => [e.provider, e.model_id]).sort()).toEqual(
-      [...gateway, ...minimax, ...pinnedDirect].map((m) => [m.provider, m.modelId]).sort(),
+      [...gateway, ...minimax, ...pinnedDirect, ...customPresets]
+        .map((m) => [m.provider, m.modelId])
+        .sort(),
     );
   });
 
