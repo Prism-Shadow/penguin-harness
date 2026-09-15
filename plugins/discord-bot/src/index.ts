@@ -69,6 +69,15 @@ export { ROUTES_ID, discordBotRoutes } from "./routes.js";
  */
 @Component({
   contributes: {
+    "WebModule.quickStarts": [
+      {
+        id: "discord-bot.quick-start",
+        prompt:
+          "Walk me through connecting the Discord bot: creating the bot in the Discord developer portal, the intents it needs, inviting it to a server, and what to fill in under Settings → Plugins → Discord bot.",
+        promptZh:
+          "带我一步步接入 Discord 机器人：在 Discord 开发者后台创建机器人、需要开启的 intents、邀请进服务器，以及在「设置 → 插件 → Discord 机器人」里要填什么。",
+      },
+    ],
     "HttpModule.routes": [
       { id: "discord-bot.routes", prefix: "/api/discord-bot", auth: "user", order: 286 },
     ],

@@ -13,6 +13,7 @@ export function SurfaceComposer({
   label,
   unavailable,
   busy,
+  initialPrompt,
   onOpen,
 }: {
   /** The surface's label, in the interface language. */
@@ -20,9 +21,11 @@ export function SurfaceComposer({
   /** The surface is not among what the server contributes (its plugin is not loaded). */
   unavailable: boolean;
   busy: boolean;
+  /** The first prompt, pre-filled (a plugin's quick start); the surface opens only on the button. */
+  initialPrompt?: string;
   onOpen: (prompt: string) => void;
 }) {
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(initialPrompt ?? "");
   const disabled = unavailable || busy;
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.nativeEvent.isComposing && !disabled) {

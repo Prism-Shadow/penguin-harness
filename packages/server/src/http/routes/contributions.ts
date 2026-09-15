@@ -40,6 +40,12 @@ export interface WebShellSlots {
   agentTabs: { key: string; order: number; renderer: RendererRef };
   /** A tab beside a Session's chat (a workflow UI lives here). */
   sessionTabs: { key: string; renderer: RendererRef };
+  /**
+   * A plugin's quick start: the demo the Plugins page pre-fills into a new-chat draft for the
+   * plugin whose module contributes it — a prompt, optionally a surface to open it in. The page
+   * never sends it; nothing runs until the person does.
+   */
+  quickStarts: { prompt: string; promptZh?: string; surface?: string };
 }
 /*
  * Session surfaces are not a slot here: they are `SessionSurfacesModule.surfaces`
@@ -73,6 +79,7 @@ export class WebModule {
       pages: collect("pages"),
       agentTabs: collect("agentTabs"),
       sessionTabs: collect("sessionTabs"),
+      quickStarts: collect("quickStarts") as unknown as ContributionsResponse["quickStarts"],
       sessionSurfaces: this.surfaces.list(),
     };
     const web: WebShell = { contributions: () => response };
