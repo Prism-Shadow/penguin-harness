@@ -612,9 +612,13 @@ export class HmrHost<Api extends Park = Park> {
     return dir;
   }
 
-  /** `store/blobs/<sha256>`: one file per distinct content, shared by every assets set. */
+  /**
+   * `store/blobs/<first two hex digits>/<sha256>`: one file per distinct content, shared by
+   * every assets set, spread over 256 subdirectories — a store holds thousands of blobs, and
+   * one directory that size is slow to create in, list and sweep.
+   */
   private blobPath(sha: string): string {
-    return path.join(this.storeDir, "blobs", sha);
+    return path.join(this.storeDir, "blobs", sha.slice(0, 2), sha);
   }
 
   /** Writes a blob under its hash (a no-op when it is already there) and returns the hash. */
@@ -835,12 +839,25 @@ export class HmrHost<Api extends Park = Park> {
       }
     }
     const blobsDir = path.join(this.storeDir, "blobs");
-    for (const name of await fsp.readdir(blobsDir).catch(() => [] as string[])) {
-      if (/^[0-9a-f]{64}$/.test(name) && !live.has(name)) {
-        await fsp.rm(path.join(blobsDir, name), { force: true }).catch(() => undefined);
-      } else if (name.endsWith(".tmp")) {
-        await fsp.rm(path.join(blobsDir, name), { force: true }).catch(() => undefined);
+    for (const shard of await fsp.readdir(blobsDir).catch(() => [] as string[])) {
+      const shardDir = path.join(blobsDir, shard);
+      if (!/^[0-9a-f]{2}$/.test(shard)) {
+        // A blob from the flat layout this store used before (or a stray temp file): nothing
+        // resolves it any more, so it goes; a push that needs its content uploads it again.
+        if (isBlobName(shard) || shard.endsWith(".tmp")) {
+          await fsp.rm(shardDir, { force: true }).catch(() => undefined);
+        }
+        continue;
       }
+      const names = await fsp.readdir(shardDir).catch(() => [] as string[]);
+      let left = names.length;
+      for (const name of names) {
+        if ((isBlobName(name) && !live.has(name)) || name.endsWith(".tmp")) {
+          await fsp.rm(path.join(shardDir, name), { force: true }).catch(() => undefined);
+          left -= 1;
+        }
+      }
+      if (left === 0) await fsp.rmdir(shardDir).catch(() => undefined);
     }
   }
 
