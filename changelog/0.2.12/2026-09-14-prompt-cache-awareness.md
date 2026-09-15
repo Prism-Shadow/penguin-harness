@@ -1,7 +1,7 @@
 # The core suite pins prompt-cache-aware request assembly
 
 - **Date:** 2026-09-14
-- **Type:** test
+- **Type:** process
 - **Scope:** `core`
 - **PR:** [#722](https://github.com/Prism-Shadow/penguin-harness/pull/722)
 

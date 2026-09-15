@@ -3,8 +3,8 @@
 - **Date:** 2026-08-29
 - **Type:** refactor
 - **Scope:** `core`, `server`, `web`, `tooling`
-- **PR:** [#543](https://github.com/Prism-Shadow/penguin-harness/pull/543)
-- **Breaking:** the `@prismshadow/penguin-server` package no longer exports `AppDeps`, `buildAppDeps` or `createApp`; the `activate(ctx)` plugin contract is replaced by `Plugin { modules }`
+- **PR:** [#543](https://github.com/Prism-Shadow/penguin-harness/pull/543), [#599](https://github.com/Prism-Shadow/penguin-harness/pull/599), [#546](https://github.com/Prism-Shadow/penguin-harness/pull/546)
+- **Breaking:** yes — the `@prismshadow/penguin-server` package no longer exports `AppDeps`, `buildAppDeps` or `createApp`; the `activate(ctx)` plugin contract is replaced by `Plugin { modules }`
 
 [中文版](2026-08-29-module-tree.zh.md)
 

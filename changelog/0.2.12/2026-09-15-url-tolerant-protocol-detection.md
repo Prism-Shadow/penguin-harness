@@ -3,6 +3,7 @@
 - **Date:** 2026-09-15
 - **Type:** fix
 - **Scope:** `server`, `web`
+- **PR:** [#729](https://github.com/Prism-Shadow/penguin-harness/pull/729)
 
 [中文版](2026-09-15-url-tolerant-protocol-detection.zh.md)
 

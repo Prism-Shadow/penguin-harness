@@ -19,10 +19,24 @@ if (base.trim() === "") {
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" });
 
+/**
+ * What an installed copy actually holds: `installPlugin` writes the plugin's skills and its hook
+ * package into the Agent's state directory, and nothing else. A plugin's npm `package.json` is
+ * workspace and publishing metadata that never reaches an installed copy, so a change confined to
+ * it cannot be invisible to a user — and demanding a `plugin.json` bump for it would advertise an
+ * update whose content is identical. Release preparation bumps every plugin's `package.json` in
+ * lockstep, so without this the first release after this guard landed failed on all thirteen.
+ */
+const isInstalledContent = (file) => {
+  const parts = file.split("/");
+  return !(parts.length === 3 && parts[2] === "package.json");
+};
+
 const changed = git("diff", "--name-only", `${base}...HEAD`, "--", "plugins/")
   .split("\n")
   .map((line) => line.trim())
-  .filter((line) => line.startsWith("plugins/"));
+  .filter((line) => line.startsWith("plugins/"))
+  .filter(isInstalledContent);
 const plugins = [...new Set(changed.map((file) => file.split("/")[1]).filter(Boolean))].sort();
 if (plugins.length === 0) {
   console.log("plugin versions: no plugin files changed");

@@ -1,8 +1,9 @@
 # TokenDance 的免费模型 Dots3-Note Preview 进入目录
 
 - **Date:** 2026-09-15
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `core`
+- **PR:** [#730](https://github.com/Prism-Shadow/penguin-harness/pull/730)
 
 [English](2026-09-15-tokendance-dots-3-note-preview.md)
 

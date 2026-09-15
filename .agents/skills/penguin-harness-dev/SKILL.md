@@ -21,6 +21,7 @@ them when the task reaches them:
 | `reference/changelog.md` | Writing or auditing a changelog entry |
 | `reference/model-catalog.md` | Touching `model-catalog.ts`, pricing, provider groups or glyphs |
 | `reference/authoring.md` | Writing a blog post, auditing prose, or proposing a simplification |
+| `reference/release.md` | Preparing a release: the branch order, what changes, the announcement, the blog post and its screenshots |
 
 ## Repo shape — read before your first edit
 

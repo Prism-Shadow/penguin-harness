@@ -1,7 +1,7 @@
 # core 测试固定了面向 Prompt 缓存的请求组装
 
 - **Date:** 2026-09-14
-- **Type:** test
+- **Type:** process
 - **Scope:** `core`
 - **PR:** [#722](https://github.com/Prism-Shadow/penguin-harness/pull/722)
 

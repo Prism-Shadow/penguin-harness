@@ -3,6 +3,7 @@
 - **Date:** 2026-09-15
 - **Type:** process
 - **Scope:** `ci`
+- **PR:** [#731](https://github.com/Prism-Shadow/penguin-harness/pull/731)
 
 [中文版](2026-09-15-ci-main-only-triggers.zh.md)
 
