@@ -71,7 +71,7 @@ Benchmark 属于 Project，存放在与 `agents/` 平级的 `<root>/<project>/be
 
 每个 Run 和每个 Case 都固定满分 100，因此 Scoreboard 不再记录 `max_score`。服务端与 Web UI 直接信任已写入的聚合值，不重算、不交叉校验；旧 Scoreboard 不迁移、不回填。
 
-初始化 Project 的 `default_agent` 时会在 Project 层级预置一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`），三条示例评估都标注 `agent_id: default_agent`，评测页面开箱即有数据；整个目录可随时删除或替换。示例自带版本：其 config 多一个只有内置示例才写的 `example_version` 字段；新版本带来更新的示例时，装载 `default_agent` 会把磁盘上的旧示例整目录换掉（追加在它上面的评估一并丢弃）——删掉的示例不会写回，版本相同的示例原样保留。
+初始化 Project 的 `default_agent` 时会在 Project 层级预置一个示例 Benchmark（`packages/core/src/state/example-benchmark.ts`），三条示例评估都标注 `agent_id: default_agent`，评测页面开箱即有数据；整个目录可随时删除或替换。判定只看示例自己的目录 `benchmarks/example-benchmark/`：它不存在时，装载 `default_agent` 就写入——不管 `benchmarks/` 里已经有什么，也不管旧数据根是否还留着已退役的按 Agent 存放的 `agents/<agent>/benchmarks/`（没有任何代码读它）。已存在的示例一概不动，删掉的示例会在下次装载时回来。
 
 ## Snapshot 与版本
 

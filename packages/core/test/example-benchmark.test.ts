@@ -16,7 +16,7 @@ import {
   DEFAULT_AGENT_ID,
   DEFAULT_PROJECT_ID,
   EXAMPLE_BENCHMARK_ID,
-  EXAMPLE_BENCHMARK_VERSION,
+  agentStateDir,
   benchmarksDir,
   buildExampleScoreboard,
   loadAgentState,
@@ -82,7 +82,6 @@ describe("example benchmark provisioning", () => {
     expect(String(config.description)).toContain("Replace it with your own");
     expect(Number(config.runs)).toBe(2);
     expect(config.status).toBe("published");
-    expect(config.example_version).toBe(EXAMPLE_BENCHMARK_VERSION);
     expect(config).not.toHaveProperty("provider");
     expect(config).not.toHaveProperty("model_id");
 
@@ -172,13 +171,38 @@ describe("example benchmark provisioning", () => {
     expect(await exists(benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID))).toBe(false);
   });
 
-  it("writes no example into a benchmarks/ directory that already holds a Benchmark", async () => {
+  it("seeds the example beside Benchmarks the user already keeps, touching none of them", async () => {
     const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
-    // The directory is the decision: a Project that already keeps Benchmarks of its own is not
-    // a Project's first day, so the example is not added beside them.
+    // Creating a Benchmark makes benchmarks/ on its own, and an older build seeded only on
+    // initialization — so a Project can hold its own Benchmarks and no example. The example's
+    // own directory is the check, not the directory around it.
     await fs.mkdir(path.join(dir, "swe-bench-v1"), { recursive: true });
+    await fs.writeFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), 'title = "mine"\n');
     await loadAgentState({ init: {} });
-    expect(await fs.readdir(dir)).toEqual(["swe-bench-v1"]);
+    expect((await fs.readdir(dir)).sort()).toEqual([EXAMPLE_BENCHMARK_ID, "swe-bench-v1"]);
+    expect(await fs.readFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), "utf8")).toBe(
+      'title = "mine"\n',
+    );
+  });
+
+  it("seeds the Project-level example even when the retired per-agent location holds one", async () => {
+    // A data root from before Benchmarks moved to the Project level keeps
+    // agents/default_agent/benchmarks/example-benchmark/; nothing reads it, and it must not
+    // stand in for the Project-level example.
+    const legacy = path.join(
+      agentStateDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+      "benchmarks",
+      EXAMPLE_BENCHMARK_ID,
+    );
+    await fs.mkdir(legacy, { recursive: true });
+    await fs.writeFile(path.join(legacy, "benchmark_config.toml"), 'title = "old"\n');
+    await loadAgentState({ init: {} });
+    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID, "benchmark_config.toml"))).toBe(true);
+    // The legacy copy is left exactly as it was.
+    expect(await fs.readFile(path.join(legacy, "benchmark_config.toml"), "utf8")).toBe(
+      'title = "old"\n',
+    );
   });
 
   it("loading default_agent re-creates the example when benchmarks/ is gone", async () => {
@@ -191,54 +215,12 @@ describe("example benchmark provisioning", () => {
     expect(await exists(path.join(dir, EXAMPLE_BENCHMARK_ID, "benchmark_config.toml"))).toBe(true);
   });
 
-  it("loading default_agent does not write the example back once it alone was deleted", async () => {
+  it("loading default_agent writes the example back once it alone was deleted", async () => {
     await loadAgentState({ init: {} });
     const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
     await fs.rm(path.join(dir, EXAMPLE_BENCHMARK_ID), { recursive: true, force: true });
     await loadAgentState();
-    // benchmarks/ is still there, so deleting the example is a decision that stands.
-    expect(await fs.readdir(dir)).toEqual([]);
-  });
-
-  it("loading default_agent replaces an example from before it was versioned, leaving the user's Benchmarks alone", async () => {
-    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
-    const exampleDir = path.join(dir, EXAMPLE_BENCHMARK_ID);
-    // The previous release's sample: no example_version, one stale case, a scoreboard of its
-    // own — beside a Benchmark the user made.
-    await fs.mkdir(path.join(exampleDir, "stale-case", "statement"), { recursive: true });
-    await fs.writeFile(
-      path.join(exampleDir, "benchmark_config.toml"),
-      'title = "Example Benchmark"\ndescription = "old"\nruns = 2\n',
-      "utf8",
-    );
-    await fs.writeFile(path.join(exampleDir, "scoreboard.yaml"), "evaluations: []\n", "utf8");
-    await fs.mkdir(path.join(dir, "swe-bench-v1"), { recursive: true });
-    await fs.writeFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), 'title = "mine"\n');
-    await loadAgentState({ init: {} });
-    const config = parseToml(
-      await fs.readFile(path.join(exampleDir, "benchmark_config.toml"), "utf8"),
-    );
-    expect(config.example_version).toBe(EXAMPLE_BENCHMARK_VERSION);
-    expect(config.status).toBe("published");
-    // Replaced whole: the stale case is gone and the shipped cases are in.
-    expect(await exists(path.join(exampleDir, "stale-case"))).toBe(false);
-    const entries = (await fs.readdir(exampleDir)).sort();
-    expect(entries).toContain("scoreboard.yaml");
-    expect(
-      entries.filter((e) => e !== "benchmark_config.toml" && e !== "scoreboard.yaml").length,
-    ).toBe(2);
-    expect(await fs.readFile(path.join(dir, "swe-bench-v1", "benchmark_config.toml"), "utf8")).toBe(
-      'title = "mine"\n',
-    );
-  });
-
-  it("loading default_agent leaves an example at the current version untouched, appended evaluations included", async () => {
-    await loadAgentState({ init: {} });
-    const dir = benchmarksDir(tmpRoot, DEFAULT_PROJECT_ID);
-    const scoreboardPath = path.join(dir, EXAMPLE_BENCHMARK_ID, "scoreboard.yaml");
-    const appended = `${await fs.readFile(scoreboardPath, "utf8")}# appended by the user\n`;
-    await fs.writeFile(scoreboardPath, appended, "utf8");
-    await loadAgentState();
-    expect(await fs.readFile(scoreboardPath, "utf8")).toBe(appended);
+    // The example's own directory is the check, so a deletion lasts until the next load.
+    expect(await fs.readdir(dir)).toEqual([EXAMPLE_BENCHMARK_ID]);
   });
 });
