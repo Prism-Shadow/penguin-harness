@@ -41,6 +41,7 @@ import {
   userText,
 } from "@prismshadow/penguin-core";
 import type {
+  AgentAssembly,
   ApproveFn,
   BackgroundCommandInfo,
   BackgroundSubagentInfo,
@@ -89,6 +90,7 @@ import { mergedNoProxy } from "../net/proxy.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { SandboxService } from "../sandbox/service.js";
 import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
+import type { Assembly } from "../mechanisms/agents.js";
 import type { Members, ProjectConfigStore, Projects } from "../mechanisms/projects.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { Errors, UsageRecording } from "../mechanisms/observability.js";
@@ -255,6 +257,7 @@ export function createCoreSessionLoader(
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
     pathPrepend?: () => string[];
     confineSpawn?: () => SpawnConfiner | null;
+    assembly?: AgentAssembly;
   } = {},
 ): SessionLoader {
   return {
@@ -267,6 +270,7 @@ export function createCoreSessionLoader(
         ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
         ...(opts.pathPrepend ? { pathPrepend: opts.pathPrepend } : {}),
         ...(opts.confineSpawn ? { confineSpawn: opts.confineSpawn } : {}),
+        ...(opts.assembly ? { assembly: opts.assembly } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),
@@ -2267,6 +2271,7 @@ export class SessionsModule {
   @Use() private readonly projectsRepo!: Projects;
   @Use() private readonly membersRepo!: Members;
   @Use() private readonly messagingRepo!: MessagingBindings;
+  @Use() private readonly assembly!: Assembly;
   @Provide() manager!: Sessions;
   @Provide() sessionService!: SessionServiceIface;
   @Provide() env!: SessionEnv;
@@ -2340,6 +2345,7 @@ export class SessionsModule {
         controlEnv: env.controlEnv,
         pathPrepend: env.pathPrepend,
         confineSpawn: env.confineSpawn,
+        assembly: this.assembly,
       }),
       sources,
       recorder,
@@ -2370,6 +2376,7 @@ export class SessionsModule {
       },
       pathPrepend: env.pathPrepend,
       confineSpawn: env.confineSpawn,
+      assembly: this.assembly,
     });
     this.manager = manager;
     this.sessionService = sessionService;

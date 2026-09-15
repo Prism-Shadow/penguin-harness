@@ -159,6 +159,8 @@ import type {
   InstalledPluginsResponse,
   VersionHistoryDiffResponse,
   VersionHistoryResponse,
+  WorkflowInfo,
+  WorkflowVersion,
   VersionRollbackResponse,
   VersionResponse,
   WorkspaceFilesResponse,
@@ -1403,6 +1405,38 @@ export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/de
  */
 export const setDesktopTray = (patch: DesktopTrayPatch) =>
   apiFetch<void>("/api/desktop/tray", { method: "PUT", body: patch });
+
+// ---- Workflows (an Agent's own extension packages, served as tabs beside the chat) ----
+const workflowsBase = (projectId: string, agentId: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workflows`;
+export const getWorkflows = (projectId: string, agentId: string) =>
+  apiFetch<{ workflows: WorkflowInfo[] }>(workflowsBase(projectId, agentId));
+/** Re-import the folder now (the server also does this whenever a file changes). */
+export const reloadWorkflow = (projectId: string, agentId: string, workflowId: string) =>
+  apiFetch<{ workflow: WorkflowInfo }>(
+    `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/reload`,
+    { method: "POST", body: {} },
+  );
+export const getWorkflowHistory = (projectId: string, agentId: string, workflowId: string) =>
+  apiFetch<{ versions: WorkflowVersion[] }>(
+    `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/history`,
+  );
+/** Restore a recorded version's files (state.json is kept) and reload. */
+export const rollbackWorkflow = (
+  projectId: string,
+  agentId: string,
+  workflowId: string,
+  revision: string,
+) =>
+  apiFetch<{ workflow: WorkflowInfo }>(
+    `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/rollback`,
+    { method: "POST", body: { revision } },
+  );
+/** Delete the folder; its recorded versions stay on disk. */
+export const removeWorkflow = (projectId: string, agentId: string, workflowId: string) =>
+  apiFetch<void>(`${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}`, {
+    method: "DELETE",
+  });
 
 // ---- The plugins a Project asks for, and the confinement agent commands run under ----
 /**
