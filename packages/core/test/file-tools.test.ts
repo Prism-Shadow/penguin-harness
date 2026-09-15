@@ -3,7 +3,8 @@
  * every failure case, workspace-relative path resolution, offset/limit windows,
  * replace_all semantics, and parent-directory creation. Directly drives
  * BuiltinTool.execute and captures the generator's return value (same approach as
- * read-image.test.ts); Environment-side framing is covered by environment.test.ts.
+ * read-file-images.test.ts, which covers read_file's image branch); Environment-side framing
+ * is covered by environment.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -189,7 +190,7 @@ describe("read_file", () => {
     const { result, text } = await run(tool(), { file_path: "bin.dat" }, tmp);
     expect(result?.stopReason).toBe("fatal");
     expect(text).toContain("binary");
-    expect(text).toContain("read_image");
+    expect(text).toContain("shell commands");
   });
 
   it("fails when offset is past the end of the file", async () => {
@@ -418,10 +419,14 @@ describe("read_file — argument coercion, CRLF, secret guard", () => {
     await writeFile(path.join(tmp, "a.txt"), "x\n");
     const badOffset = await run(tool(), { file_path: "a.txt", offset: "abc" }, tmp);
     expect(badOffset.result?.stopReason).toBe("fatal");
-    expect(badOffset.text).toContain('Invalid "offset"');
+    expect(badOffset.text).toContain(
+      'read_file was not run: argument "offset" is invalid: expected a number (got "abc").',
+    );
     const badLimit = await run(tool(), { file_path: "a.txt", limit: 0 }, tmp);
     expect(badLimit.result?.stopReason).toBe("fatal");
-    expect(badLimit.text).toContain('Invalid "limit"');
+    expect(badLimit.text).toContain(
+      'read_file was not run: argument "limit" is invalid: expected a positive number (got 0).',
+    );
   });
 
   it("strips trailing \\r from displayed lines and notes CRLF line endings", async () => {
@@ -561,7 +566,7 @@ describe("edit_file — review follow-ups", () => {
       tmp,
     );
     expect(result?.stopReason).toBe("fatal");
-    expect(text).toContain("old_string must not be empty");
+    expect(text).toContain('required argument "old_string" is empty.');
     expect(text).toContain("write_file");
   });
 
@@ -824,5 +829,83 @@ describe("edit_file / write_file — symlinked targets", () => {
       [],
     );
     expect((await readdir(tmp)).filter((e) => e.includes(".tmp-"))).toEqual([]);
+  });
+});
+
+describe("edit_file / write_file — one file, concurrent writers", () => {
+  const edit = () => createEditFileTool(def(EDIT_FILE_NAME, "rw"));
+  const write = () => createWriteFileTool(def(WRITE_FILE_NAME, "rw"));
+
+  it("applies eight concurrent edits of one file without losing any", async () => {
+    const markers = Array.from({ length: 8 }, (_, i) => `marker-${i + 1}`);
+    await writeFile(path.join(tmp, "markers.txt"), `${markers.join("\n")}\n`);
+    const outcomes = await Promise.all(
+      markers.map((marker) =>
+        run(
+          edit(),
+          { file_path: "markers.txt", old_string: marker, new_string: `done-${marker}` },
+          tmp,
+        ),
+      ),
+    );
+    for (const { result, text } of outcomes) {
+      expect(result?.stopReason).toBeUndefined();
+      expect(text).toContain("Replaced 1 occurrence");
+    }
+    // Every edit read the file after the one before it landed, so all eight are in there.
+    const final = await readFile(path.join(tmp, "markers.txt"), "utf8");
+    expect(final).toBe(`${markers.map((m) => `done-${m}`).join("\n")}\n`);
+    expect(final).not.toMatch(/(^|\n)marker-/);
+  });
+
+  it("fails the second edit of the same old_string instead of overwriting the first", async () => {
+    await writeFile(path.join(tmp, "same.txt"), "alpha\nbeta\n");
+    const outcomes = await Promise.all([
+      run(edit(), { file_path: "same.txt", old_string: "beta", new_string: "one" }, tmp),
+      run(edit(), { file_path: "same.txt", old_string: "beta", new_string: "two" }, tmp),
+    ]);
+    const succeeded = outcomes.filter((o) => o.result?.stopReason === undefined);
+    const failed = outcomes.filter((o) => o.result?.stopReason === "fatal");
+    expect(succeeded).toHaveLength(1);
+    expect(failed).toHaveLength(1);
+    // The loser read the winner's content, where its old_string no longer exists.
+    expect(failed[0]!.text).toContain('old_string not found in "same.txt"');
+    expect(["alpha\none\n", "alpha\ntwo\n"]).toContain(
+      await readFile(path.join(tmp, "same.txt"), "utf8"),
+    );
+  });
+
+  it("serializes a write_file against an edit_file of the same file", async () => {
+    await writeFile(path.join(tmp, "both.txt"), "keep\nshared\nold-tail\n");
+    const [written, edited] = await Promise.all([
+      run(write(), { file_path: "both.txt", content: "fresh\nshared\nnew-tail\n" }, tmp),
+      run(edit(), { file_path: "both.txt", old_string: "shared", new_string: "edited" }, tmp),
+    ]);
+    expect(written.result?.stopReason).toBeUndefined();
+    expect(edited.result?.stopReason).toBeUndefined();
+    // `shared` is in both contents, so the edit succeeds either way and the file alone
+    // cannot tell the orders apart: unserialized, a write that renames last also leaves its
+    // own content behind. What separates them is what the SECOND call read — each renders
+    // its diff against the bytes it found, so the loser of the lock has to have seen the
+    // winner's result.
+    const final = await readFile(path.join(tmp, "both.txt"), "utf8");
+    if (final === "fresh\nedited\nnew-tail\n") {
+      expect(edited.text).toContain("\n fresh\n"); // The edit read what the write landed.
+    } else {
+      expect(final).toBe("fresh\nshared\nnew-tail\n");
+      expect(written.text).toContain("\n-edited\n"); // The write read what the edit landed.
+    }
+  });
+
+  it("serializes edits reaching one file through a symlink and through its target", async () => {
+    await writeFile(path.join(tmp, "real.conf"), "one\ntwo\n");
+    await symlink("real.conf", path.join(tmp, "link.conf"));
+    const outcomes = await Promise.all([
+      run(edit(), { file_path: "real.conf", old_string: "one", new_string: "ONE" }, tmp),
+      run(edit(), { file_path: "link.conf", old_string: "two", new_string: "TWO" }, tmp),
+    ]);
+    for (const { result } of outcomes) expect(result?.stopReason).toBeUndefined();
+    // Both names resolve to one lock key, so neither edit was computed from stale content.
+    expect(await readFile(path.join(tmp, "real.conf"), "utf8")).toBe("ONE\nTWO\n");
   });
 });

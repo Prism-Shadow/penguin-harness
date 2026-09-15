@@ -32,6 +32,7 @@ export function HelpFold({
   children,
   label,
   title,
+  flush,
   className = "",
 }: {
   /** The explanation. Revealed only on request — a description that shows up uninvited is what this replaces. */
@@ -49,6 +50,11 @@ export function HelpFold({
    * it: two names for one trigger is what breaks "label in name".
    */
   title?: string;
+  /**
+   * The body lines up with the trigger's left edge instead of under its label — for a block, such
+   * as a code box, rather than a run of prose.
+   */
+  flush?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -74,7 +80,7 @@ export function HelpFold({
       <div
         id={panelId}
         hidden={!open}
-        className="mt-1.5 pl-4.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400"
+        className={`mt-1.5 ${flush ? "" : "pl-4.5"} text-xs leading-relaxed text-gray-500 dark:text-gray-400`}
       >
         {children}
       </div>

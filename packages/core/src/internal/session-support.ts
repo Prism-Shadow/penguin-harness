@@ -153,7 +153,7 @@ const isImage = (m: OmniMessage): boolean => (m.payload as { type?: string }).ty
  * session scratchpad; http(s) URLs are referenced
  * as-is), and the path/URL is appended to the user text (an `[attached image: …]`
  * line); the image message itself is removed from the input — the model views it by
- * path via describe_image (read on its behalf by a vision model), and images never
+ * path via read_file (which has a vision model read it on its behalf), and images never
  * enter that session's history directly.
  * Returns the input unchanged when there are no images; an image that can't be
  * parsed is replaced with an explanatory line rather than silently dropped.

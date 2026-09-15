@@ -13,7 +13,9 @@
  * icon, hover shows the hit rate = cache hit ÷ input), this round's output,
  * plus tool-call count / cost / duration / output TPS. The conversation
  * page's stats row only gives input/output totals — cache composition and
- * this kind of debugging detail belongs here.
+ * this kind of debugging detail belongs here. Every figure, cost included, is
+ * the server's: the analysis prices each round with the cost center's rule,
+ * so the file's total is what the toolbar shows for the same requests.
  *
  * Task attribution: model segments/tool spans carry their own taskIndex
  * (computed by the server), and messages fall into a Task's time range by
@@ -24,7 +26,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
 import type {
-  ModelsResponse,
   TraceAnalysisResponse,
   TraceModelSegment,
   TraceOtherSpan,
@@ -37,6 +38,7 @@ import { apiErrorText } from "../../lib/api-error";
 import {
   cacheHitRate,
   computeTps,
+  formatAverage,
   formatMoney,
   formatPercent,
   formatTps,
@@ -50,6 +52,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { TokenDonut } from "../../components/ui/token-donut";
+import { TRACE_EVENT_PAGE_SIZE, loadTraceEventPages } from "./trace-events-loader";
 import { TimelineChart } from "./timeline-chart";
 import type { TraceHighlight } from "./timeline-chart";
 import { EventRow } from "./trace-event-row";
@@ -108,12 +111,25 @@ const rowKeyOf = (taskIndex: number, i: number): string => `${taskIndex}-${i}`;
  * Each item takes its own row, with three groups arranged side by side as
  * columns — laid out horizontally it would read as a blur of digits, while
  * giving each group a full row would waste the right half of the space.
+ *
+ * `detail` is the breakdown behind the value: the row shows the total alone and keeps the
+ * breakdown in its hover text, the same way the per-round chips do. A reader with no hover
+ * gets it from `sr-only` text rather than from an `aria-label`: this row is a bare `div`,
+ * whose role is `generic`, and ARIA prohibits naming that role — a label here would be
+ * dropped, while hidden text is read in place, right after the value it belongs to (the
+ * same way an update hint is folded into a button elsewhere in the app). An empty detail
+ * renders neither: a tooltip repeating only the visible label says nothing.
  */
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  const hasDetail = detail !== undefined && detail !== "";
   return (
-    <div className="flex items-baseline justify-between gap-3 py-0.5">
+    <div
+      title={hasDetail ? `${label}${detail}` : undefined}
+      className="flex items-baseline justify-between gap-3 py-0.5"
+    >
       <span className="shrink-0 text-[11px] text-gray-400">{label}</span>
       <span className="truncate font-mono text-sm font-semibold tabular-nums">{value}</span>
+      {hasDetail && <span className="sr-only">{detail}</span>}
     </div>
   );
 }
@@ -169,6 +185,21 @@ function InputChip({ buckets }: { buckets: Buckets }) {
   );
 }
 
+/**
+ * The parenthesised API / tool breakdown printed after a duration, or the empty string when
+ * neither component has anything. The two are measurements of the same span, not a partition
+ * of it: a tool running in the background overlaps the model's decoding, while approval waits
+ * and harness overhead belong to neither — so they may exceed or fall short of the duration
+ * they follow, and neither is ever derived from the other.
+ */
+function durationSplit(apiMs: number, toolMs: number): string {
+  if (apiMs <= 0 && toolMs <= 0) return "";
+  return `${S.chat.statParenOpen}${S.chat.statElapsedSplit(
+    humanizeDuration(apiMs),
+    humanizeDuration(toolMs),
+  )}${S.chat.statParenClose}`;
+}
+
 export function TraceFileView({
   projectId,
   agentId,
@@ -195,10 +226,7 @@ export function TraceFileView({
   const { currency } = useTheme();
   const [analysis, setAnalysis] = useState<TraceAnalysisResponse | null>(null);
   const [events, setEvents] = useState<OmniMessage[]>([]);
-  /** events' starting index within the file (pagination offset): used to align with analysis.tasks' index ranges. */
-  const [eventsOffset, setEventsOffset] = useState(0);
   const [total, setTotal] = useState(0);
-  const [models, setModels] = useState<ModelsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set());
   /** Message row pinned highlighted after a bar-click jump; auto-clears when its timer fires (independent of hover highlighting, and can stack with it). */
@@ -233,69 +261,76 @@ export function TraceFileView({
   // Load the file, and re-load it whenever the panel's signal moves. Results overwrite what is
   // on screen in place — an in-flight refresh keeps the current content readable, and its
   // outcome is what clears or sets the error, since nothing was cleared up front.
+  //
+  // The events are paged through to the END of the file, not fetched once: the analysis
+  // describes every round by index range, so a round whose messages sit past the first page
+  // would render an empty message list. Each page lands at its own offset, so a long file is
+  // readable from its start while the rest of it arrives, and a REFRESH of a file already on
+  // screen updates the list in place instead of shrinking it back to one page per settled turn.
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      api.getAgentTraceAnalysis(projectId, agentId, sessionId, index),
-      api.getAgentTraceEvents(projectId, agentId, sessionId, index, 0, 1000),
-    ])
-      .then(([a, e]) => {
-        if (cancelled) return;
+    const signal = { cancelled: false };
+    const fail = (err: unknown) => {
+      if (!signal.cancelled) setError(apiErrorText(err));
+    };
+    // The error is cleared only once BOTH halves of the first load have landed: cleared on
+    // either one alone, a failure on one side would be wiped by the other side's success.
+    let haveAnalysis = false;
+    let haveFirstPage = false;
+    const clearErrorWhenBothLanded = () => {
+      if (haveAnalysis && haveFirstPage) setError(null);
+    };
+    api
+      .getAgentTraceAnalysis(projectId, agentId, sessionId, index)
+      .then((a) => {
+        if (signal.cancelled) return;
         setAnalysis(a);
-        setEvents(e.events);
-        setEventsOffset(e.offset);
-        setTotal(e.total);
-        setError(null);
+        haveAnalysis = true;
+        clearErrorWhenBothLanded();
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(apiErrorText(err));
-      });
+      .catch(fail);
+    loadTraceEventPages(
+      (offset, limit) =>
+        api.getAgentTraceEvents(projectId, agentId, sessionId, index, offset, limit),
+      {
+        pageSize: TRACE_EVENT_PAGE_SIZE,
+        signal,
+        onPage: (page) => {
+          // `total` comes from the latest page: the file is appended to while the Session runs.
+          setTotal(page.total);
+          // The page is spliced in AT ITS OFFSET rather than replacing or appending: a refresh
+          // re-walks a file already on screen (the panel re-reads on every settled turn), and
+          // a first page that replaced the list would drop a 2500-event file back to 1000 rows
+          // and empty its later rounds for a moment, once per turn. A file SWITCH starts from
+          // an empty list instead — the renderedFileKey reset above — so nothing is spliced
+          // into another file's rows.
+          setEvents((prev) => {
+            const next = prev.slice();
+            next.splice(page.offset, page.events.length, ...page.events);
+            return next;
+          });
+          haveFirstPage = true;
+          clearErrorWhenBothLanded();
+        },
+      },
+    )
+      .then((loaded) => {
+        // The completed walk's last word on the file's length: rows past it are an earlier
+        // walk's leftovers, from a file that came back shorter than it was read as before.
+        if (!signal.cancelled) {
+          setEvents((prev) => (prev.length > loaded ? prev.slice(0, loaded) : prev));
+        }
+      })
+      .catch(fail);
     return () => {
-      cancelled = true;
+      signal.cancelled = true;
     };
   }, [projectId, agentId, sessionId, index, reloadSignal]);
 
-  // Pricing is a PROJECT-level catalog, so it is fetched per project and deliberately left out
-  // of the load above: no turn changes it, and riding along there would refetch the whole
-  // catalog on every settled turn. It is optional and allowed to fail — a project whose models
-  // cannot be listed simply shows no cost column, and that is not the view's error.
-  useEffect(() => {
-    let cancelled = false;
-    void api
-      .getModels(projectId)
-      .then((m) => {
-        if (!cancelled) setModels(m);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
-  // Pricing for the session's Model (main session only; sub-session Tokens
-  // live in their own Trace and aren't part of this file): session_meta carries a paired
-  // reference (provider + model_id), matched against model config by that whole pair.
-  // A Trace whose session_meta has no provider is legacy data (core refuses to resume it
-  // for the same reason) — the model_id alone identifies nothing, since the same id can
-  // exist under several providers at different prices, so no pricing is shown rather than
-  // an arbitrary first match.
-  const pricing = useMemo(() => {
-    const meta = events.find((m) => m.type === "session_meta");
-    const ref = meta ? (meta.payload as { model_id?: string; provider?: string }) : undefined;
-    if (!ref?.model_id || !ref.provider) return undefined;
-    return models?.models.find((m) => m.modelId === ref.model_id && m.provider === ref.provider)
-      ?.pricing;
-  }, [events, models]);
-
-  const costOf = (b: Buckets): number | null => {
-    if (!pricing) return null;
-    return (
-      (b.cacheRead * pricing.cacheRead +
-        b.cacheWrite * pricing.cacheWrite +
-        b.output * pricing.output) /
-      1e6
-    );
-  };
+  // Cost is not priced here: the analysis carries each round's cost (and the file's), priced by
+  // the server with the cost center's own rule — the Project's current rates for the file's
+  // model, at the tier each Request's timestamp fell in — so what this file adds up to is what
+  // the conversation toolbar shows for the same requests. An unpriced model (or a legacy head
+  // naming no provider) simply carries no cost, and formatMoney renders that as a dash.
 
   // Session context window (the upper bound for each round's donut ring): read once from session_meta, falling back to 128000 if unconfigured.
   const contextMax = useMemo(() => {
@@ -367,9 +402,9 @@ export function TraceFileView({
     // round (the server already knows this message-by-message from its
     // sequential scan, no need to re-guess it here).
     // events is only used to populate the message list (a list view that
-    // truthfully indicates truncation at the bottom); no **numeric value**
-    // is ever derived from it: events is paginated (limit=1000, not
-    // continued), so using it for aggregation would undercount Token/cost for a long Trace.
+    // names its loading progress at the bottom); no **numeric value** is ever
+    // derived from it: the pages arrive one after another, so aggregating over
+    // events would undercount Token/cost for as long as a long Trace is still loading.
     const taskOfIndex = (k: number): number | null => {
       for (const t of analysis.tasks) {
         if (k >= t.messageFrom && k <= t.messageTo) return t.taskIndex;
@@ -379,7 +414,7 @@ export function TraceFileView({
     for (let i = 0; i < events.length; i++) {
       const msg = events[i]!;
       if (msg.origin && msg.origin.length > 0) continue; // sub-session messages don't enter this file's grouping
-      const ti = taskOfIndex(eventsOffset + i); // events is fetched starting at offset; recover the global index within the file
+      const ti = taskOfIndex(i); // events is paged from the file's start, so i IS the index within the file
       if (ti !== null) ensure(ti).messages.push(msg);
     }
     g.toolCalls = analysis.toolSpans.length;
@@ -401,7 +436,7 @@ export function TraceFileView({
     const gLlm = analysis.tasks.reduce((s, t) => s + t.llmMs, 0);
     const tasks = [...map.values()].sort((a, b) => a.taskIndex - b.taskIndex);
     return { tasks, global: g, statsByTask, globalLlmMs: gLlm };
-  }, [analysis, events, eventsOffset]);
+  }, [analysis, events]);
 
   // The error takes the whole view only while there is nothing to take it from: this re-reads
   // on every settled turn now, so a blip mid-read would otherwise blank a file the user is in
@@ -474,11 +509,17 @@ export function TraceFileView({
             {/* Rounds = number of cards below (a compaction round counts as
                 a round too): the global summary and the per-round display
                 below share **the same scope** — every figure is the sum
-                across rounds and must add up; how many of them are
-                compaction rounds is answered separately by "compaction count". */}
+                across rounds and must add up. The average is exactly the two
+                rows above it divided, tool calls ÷ rounds, so it holds that
+                same scope and a reader can check the division by eye — a
+                denominator that skipped compaction rounds would no longer
+                match the round count printed here. */}
             <SummaryRow label={S.traces.tasksLabel} value={String(analysis.tasks.length)} />
             <SummaryRow label={S.traces.toolCalls} value={String(global.toolCalls)} />
-            <SummaryRow label={S.traces.compactions} value={String(analysis.compactionCount)} />
+            <SummaryRow
+              label={S.traces.avgToolCalls}
+              value={formatAverage(global.toolCalls, analysis.tasks.length)}
+            />
           </div>
           {/* Token usage: broken down by category (input / of which cache hit + hit rate / output), never given as a lump sum. */}
           <div>
@@ -493,11 +534,12 @@ export function TraceFileView({
           <div>
             <SummaryRow
               label={S.common.cost}
-              value={formatMoney(costOf(global.buckets), currency)}
+              value={formatMoney(analysis.cost ?? null, currency)}
             />
             <SummaryRow
               label={S.chat.statElapsed}
               value={humanizeDuration(Math.max(0, globalMs))}
+              detail={durationSplit(analysis.apiMs, analysis.toolMs)}
             />
             {/* Global TPS = the output of every round (including compaction
                 rounds) ÷ the sum of LLM generation time, same scope as the
@@ -566,13 +608,13 @@ export function TraceFileView({
                 />
                 <StatChip
                   icon={STAT_ICONS.cost}
-                  value={formatMoney(costOf(tokens), currency)}
+                  value={formatMoney(st?.cost ?? null, currency)}
                   label={`${S.common.cost}（${currency}）`}
                 />
                 <StatChip
                   icon={STAT_ICONS.elapsed}
                   value={humanizeDuration(t.durationMs)}
-                  label={S.chat.statElapsed}
+                  label={`${S.chat.statElapsed}${durationSplit(st?.llmMs ?? 0, st?.toolMs ?? 0)}`}
                 />
                 <StatChip
                   icon={STAT_ICONS.tps}
@@ -651,7 +693,7 @@ export function TraceFileView({
       })}
 
       {events.length < total && (
-        <p className="text-xs text-gray-400">{S.traces.truncatedNote(events.length, total)}</p>
+        <p className="text-xs text-gray-400">{S.traces.loadingNote(events.length, total)}</p>
       )}
     </div>
   );

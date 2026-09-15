@@ -38,9 +38,10 @@ export interface ToolDefinitionConfig {
   permission?: ToolPermission;
   /**
    * Which class of session model this entry targets: `"vision"` only for models that support
-   * images (e.g. read_image), `"text-only"` only for text-only models (e.g. describe_image);
-   * omitted means available for all models. Filtered by session model at assembly time
-   * (see `selectBuiltinToolsForModel`).
+   * images, `"text-only"` only for text-only models; omitted means available for all models.
+   * Filtered by session model at assembly time (see `selectBuiltinToolsForModel`). The
+   * built-in defaults set it on no entry — read_file serves both classes and decides at
+   * runtime — so it is a config feature for entries that need a per-class definition.
    */
   forModel?: "vision" | "text-only";
   /** Timeout for a single tool call (ms); on timeout, ends as `failed`; <=0 disables it. */
@@ -206,10 +207,11 @@ export interface SubagentRunner {
 }
 
 /**
- * Proxy-reading service for describe_image: injected when the session model doesn't support
- * images (vision=false) — images are handed to the configured vision model for description and
- * the tool returns text, avoiding a 400 from feeding images back into a tool_result for a
- * provider that doesn't support images.
+ * Proxy-reading service for read_file's image branch: injected when the session model doesn't
+ * support images (vision=false) — images are handed to the configured vision model for
+ * description and the tool returns text, avoiding a 400 from feeding images back into a
+ * tool_result for a provider that doesn't support images. Its presence is also how read_file
+ * learns the session model cannot view images: absent, an image is returned as image content.
  * Docs: /docs/interfaces § "VisionDescriberService".
  */
 export interface VisionDescriberService {
@@ -225,7 +227,7 @@ export interface VisionDescriberService {
  */
 export interface EnvironmentServices {
   subagentRunner?: SubagentRunner;
-  /** Injected when the session model doesn't support images: for describe_image's single-shot vision-model proxy reading. */
+  /** Injected when (and only when) the session model doesn't support images: read_file then describes an image through it instead of returning image content. */
   visionDescriber?: VisionDescriberService;
   /** Registry of long-running command sessions (shared by `exec_command` / `input_command`); constructed and injected internally by Environment. */
   commandSessions?: CommandSessionManager;
@@ -311,6 +313,26 @@ export interface EnvironmentConfig {
    * is injected (SDK/CLI standalone use).
    */
   controlEnv?: () => Record<string, string>;
+  /**
+   * Directories put at the FRONT of PATH for exec_command / input_command subprocesses
+   * (see {@link CreateAgentOptions.pathPrepend}). Applied in two places, because one is
+   * not enough: onto the inherited PATH of the child environment — before the vault, so a
+   * vault `PATH` still replaces the whole inherited value — and as a statement in front of
+   * the command string, which is what survives a login profile rewriting PATH after the
+   * child environment was set. The statement runs last, so these directories lead whatever
+   * PATH the shell ended up with, a vault `PATH` included. Re-read at every spawn like
+   * `proxyEnv`. Absent, or a getter returning nothing = PATH is untouched.
+   */
+  pathPrepend?: () => string[];
+  /**
+   * Sandbox-confinement seam for exec_command / input_command subprocesses (see
+   * {@link SpawnConfiner}). Like {@link EnvironmentConfig.proxyEnv} it is a getter
+   * re-read at every spawn, so the hosting server can change the active confiner at
+   * runtime (e.g. via a platform hot push) and reach Sessions that are already
+   * running. Absent, or a getter returning null = commands spawn unconfined (the
+   * default for SDK/CLI standalone use).
+   */
+  confineSpawn?: () => SpawnConfiner | null;
 }
 
 /**
@@ -331,6 +353,28 @@ export interface EnvironmentConfig {
 export type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
 
 /**
+ * Rewrites the exact argv a command session is about to spawn so it executes
+ * confined — typically the original invocation wrapped in a sandbox runner
+ * (`[runner, ...profileArgs, "--", ...argv]`). Mechanism only: which confinement
+ * policy applies, and which backend enforces it, is decided by whoever supplies
+ * the confiner (the hosting server's platform layer); this seam never interprets
+ * the argv. Fail-closed by contract: a confiner that cannot enforce its policy
+ * must THROW — the error surfaces as the command's spawn failure instead of the
+ * command running unconfined. Returning the argv unchanged is reserved for
+ * policies that genuinely mean "unconfined".
+ * @param argv - the exact argv about to be spawned (`[shellCommand, ...shellArgs, cmd]`), not a shell string.
+ * @param opts - spawn context: `cwd` is the working directory of THIS command (per-call,
+ *   may differ from the workspace); `workspaceDir` is the Session's Workspace root — the
+ *   directory a workspace-scoped confinement policy should treat as writable, never
+ *   inferred from `cwd` (a command may run in a workdir outside the Workspace).
+ * @returns the argv to spawn instead.
+ */
+export type SpawnConfiner = (
+  argv: readonly string[],
+  opts: { cwd: string; workspaceDir: string },
+) => readonly string[];
+
+/**
  * An approved tool-call execution request.
  * Docs: /docs/interfaces § "ToolExecutionRequest and EnvironmentConfig".
  */
@@ -341,6 +385,24 @@ export interface ToolExecutionRequest {
   /** The parent Agent's approval callback; forwarded to tools that need to derive a child Session (run_subagent), implementing approval inheritance. */
   approve?: ApproveFn;
 }
+
+/**
+ * Outcome of a detach request (`EnvironmentInterface.detachToolCall`):
+ * - `detached` — the call was asked to hand its work back as a background task;
+ * - `not_running` — no call with that id is executing right now (unknown, or already finished);
+ * - `not_detachable` — the call is running, but its tool has no background form.
+ * The three are separate because a host answers them differently — the last one is a
+ * permanent property of the tool, while the first two describe a moment.
+ */
+export type ToolDetachResult = "detached" | "not_running" | "not_detachable";
+
+/**
+ * The opening phrase of the note a detached call returns. Shared because a render layer has
+ * to recognize a detached call from the stored output alone — the click that detached it is
+ * not in the Trace, and a reloaded page has nothing else to go on — so the sentence the tool
+ * writes and the string that matches it must be one value.
+ */
+export const DETACHED_TOOL_NOTE_PREFIX = "[moved to the background by the user";
 
 /**
  * One background command process owned by the environment (an exec_command promoted past
@@ -419,6 +481,14 @@ export interface EnvironmentInterface {
   /** Kills one background command process by id (whole process group); false when the id is unknown. Optional, like listBackgroundCommands. */
   killBackgroundCommand?(processId: string): boolean;
   /**
+   * Asks one EXECUTING tool call to hand its work back as a background task, so the turn can
+   * close and the conversation carry on (the Web App's per-card button). Addressed by
+   * tool_call_id, the only handle a host has on a single call. Not an abort: the call ends
+   * `completed` with a registry handle, nothing is killed, and the work's completion arrives
+   * later as the usual background report. Optional, like listBackgroundCommands.
+   */
+  detachToolCall?(toolCallId: string): ToolDetachResult;
+  /**
    * Whether a background subagent session is mid-round. Hosts pin a Session's runtime entry
    * on it: a `run_in_background` child outlives the call that launched it, and evicting the
    * Session while it works strands its completion report and live messages. Optional, like
@@ -462,6 +532,15 @@ export interface EnvironmentInterface {
    * Optional, same single-listener pattern as setBackgroundTaskListener.
    */
   setSubagentStateListener?(listener: () => void): void;
+  /**
+   * Attaches the single listener for background-task state changes: a command session
+   * promoted to the background, exited, stopped or removed; a subagent session promoted,
+   * starting or settling a round, or released. Payload-free — the host re-reads
+   * `listBackgroundCommands` / `listBackgroundSubagents` on each ping, and reads them once
+   * when it attaches (pings before that are not buffered). Optional, same single-listener
+   * pattern as setSubagentStateListener.
+   */
+  setBackgroundStateListener?(listener: () => void): void;
   /**
    * Attaches the host's session-lifetime fallback approval sink for child sessions: a child
    * approval with no window sink (an active run_subagent/input_subagent call) and no

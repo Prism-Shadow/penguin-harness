@@ -49,7 +49,7 @@ export function AdminUsersSection() {
   return (
     <div>
       <div className="mb-4 flex justify-end">
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" variant="primary" onClick={() => setCreateOpen(true)}>
           {S.admin.createUser}
         </Button>
       </div>
@@ -78,6 +78,14 @@ export function AdminUsersSection() {
                       <span className="ml-2 align-middle">
                         <Badge tone="gray">{S.admin.initialPasswordFlag}</Badge>
                       </span>
+                    )}
+                    {/* The nickname under the id, not instead of it: every other control on the
+                        row acts on the id, and a list that showed only the chosen name would
+                        leave an admin guessing which account they are resetting. */}
+                    {u.displayName !== undefined && (
+                      <p className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                        {u.displayName}
+                      </p>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
@@ -182,10 +190,10 @@ function CreateUserDialog({
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={onClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
             {S.common.create}
           </Button>
         </>
@@ -264,10 +272,10 @@ function ResetPasswordDialog({ user, onClose }: { user: UserInfo | null; onClose
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={onClose} disabled={busy}>
             {S.common.cancel}
           </Button>
-          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void submit()}>
             {S.common.save}
           </Button>
         </>
@@ -334,15 +342,15 @@ function DeleteUserDialog({
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose} disabled={busy}>
+          <Button size="sm" onClick={onClose} disabled={busy}>
             {S.common.cancel}
           </Button>
           {confirmed ? (
-            <Button variant="danger" disabled={busy} onClick={() => void doDelete()}>
+            <Button size="sm" variant="danger" disabled={busy} onClick={() => void doDelete()}>
               {S.common.confirm}
             </Button>
           ) : (
-            <Button variant="danger" onClick={() => setConfirmed(true)}>
+            <Button size="sm" variant="danger" onClick={() => setConfirmed(true)}>
               {S.common.delete}
             </Button>
           )}

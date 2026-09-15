@@ -20,8 +20,10 @@ export const en: Strings = {
     usage: "Cost Center",
     traces: "Trajectories",
     benchmark: "Evaluation Center",
-    // Collapsed-rail tooltip (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
+    // Collapsed-rail tooltips (product-specified wording; new chat reuses chat.newSessionMenu, the other pages reuse the page names above).
     lastConversation: "Last conversation",
+    // The rail avatar's tooltip says what the control does; who is signed in stays in its accessible name.
+    userSettings: "User settings",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     collapseGroup: "Collapse",
@@ -100,6 +102,14 @@ export const en: Strings = {
     killConfirmTitle: "Close this terminal?",
     killConfirmBody: (name: string): string =>
       `This ends the shell "${name}" — it cannot be restored.`,
+    launcher: "Shortcuts",
+    launcherCaption: "Shortcuts",
+    launcherOpen: "Open",
+    launcherClose: "Close",
+    launcherPending: "a subagent awaits approval",
+    launcherPanels: "Shortcuts",
+    launcherHide: "Hide launcher",
+    launcherHiddenToast: "Launcher hidden — turn it back on in Settings › Appearance",
   },
 
   tracePanel: {
@@ -117,6 +127,7 @@ export const en: Strings = {
     groupPersonal: "Personal",
     groupServer: "Server",
     /** Personal pages of the settings dialog. */
+    profile: "Profile",
     generalTitle: "General",
     appearanceTitle: "Appearance",
     accountTitle: "Account",
@@ -133,13 +144,38 @@ export const en: Strings = {
     /** Admin-only sub-page (server-global); its explanation is disclosed at the pane heading. */
     proxyTitle: "Proxy options",
     proxyInfo:
-      "Server-global, and in force the moment it is saved — nothing to restart. Loopback addresses always go direct.",
+      "Server-global, and in force the moment it is saved — nothing to restart. Loopback " +
+      "addresses always go direct. The reachability test sends one credential-free GET to each " +
+      "address listed below and measures this server's own outbound hop: any HTTP answer counts " +
+      "as reachable, 401 and 403 included — a refused credential still proves DNS, TCP and TLS " +
+      "all completed — while unreachable means the transport itself failed. It measures the " +
+      "saved settings, since only a save rebuilds the outbound dispatcher; that is why the test " +
+      "sits below Save, and why an edited address has to be saved before testing. Results " +
+      "appear one by one, each as soon as its own answer arrives.",
     /** The two switches: the server's own outbound traffic / agent command subprocess environments. */
     proxyForApp: "Application uses the proxy",
     proxyForAgent: "Agent environment uses the proxy",
     /** The shared explicit proxy address (empty = follow the proxy environment variables). */
     proxyAddress: "Proxy address",
     proxyAddressPlaceholder: "Empty = follow system proxy",
+    /** Reachability test: the block's heading, and its button at rest and while probing. */
+    proxyProbe: "Reachability test",
+    proxyProbeRun: "Test",
+    proxyProbeRunning: "Testing…",
+    /** A provider answered: the latency IS the result, so this is the only visible text. */
+    proxyProbeLatency: (ms: number): string => `${ms} ms`,
+    /** The same verdict in words, read out beside the number — a bare figure does not say "reachable". */
+    proxyProbeReachableState: "Reachable",
+    /** Listed but not yet measured: an absence, not a verdict. */
+    proxyProbeIdle: "Not tested",
+    /** A provider did not answer: the transport fault, each naming the state in words. */
+    proxyProbeFailure: {
+      timeout: "Timed out",
+      dns: "DNS lookup failed",
+      refused: "Connection refused",
+      tls: "TLS handshake failed",
+      network: "Unreachable",
+    },
     /** Admin-only sub-page (server-global). */
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
@@ -172,6 +208,23 @@ export const en: Strings = {
     fontLarge: "L",
     accent: "Accent",
     accentInfo: "Interface accent color.",
+    launcher: "Shortcuts launcher",
+    launcherInfo:
+      "The round button floating on the conversation's right edge that fans out shortcuts to the workbench's panels and the terminal. Turning it off here removes it; the fan's \"Hide launcher\" entry does the same.",
+    toolAliases: "Tool short names",
+    toolAliasesInfo:
+      'Tool cards in a conversation name the built-in tools by a short alias: read_file reads as "read". Every other tool (MCP tools included) and the Trace viewer keep the tool\'s own name, and hovering a short name shows it.',
+    notifications: "Task completion notifications",
+    notificationsInfo:
+      "Shows a system notification when a Task finishes while the window is hidden or unfocused; clicking it opens that Session. Turning this on asks the system for permission on the spot — the system asks once, never again after a refusal, and the only way back is its own notification settings.",
+    notificationsDenied:
+      "The system has denied notifications for this app. Allow them in your system notification settings, then turn this on again.",
+    notificationsDismissed:
+      "The permission prompt was closed without an answer, so notifications stay off. Turn this on again to ask once more.",
+    notificationsUnsupported: "This browser does not support system notifications.",
+    trayIcon: "Tray icon",
+    trayIconInfo:
+      "The desktop app keeps an icon in the system tray — the Windows notification area, the macOS menu bar, the Linux tray — for as long as it runs: click it to come back to the window, right-click it to start a session or quit. On by default; turning it off removes the icon at once, no restart, and closing the window then no longer hides it, so the app stays in the Dock on macOS and quits on Windows and Linux.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
     accentNames: {
@@ -321,7 +374,7 @@ export const en: Strings = {
     listSeparator: ", ",
   },
 
-  /** Desktop task-completion notifications (window unfocused; desktop-shell sessions only). */
+  /** Task-completion notifications (window unfocused; opt-in, see lib/notification-pref). */
   notify: {
     taskCompleteTitle: "Task completed",
     /** `session` is the Session title (defaultSessionTitle when unnamed). */
@@ -337,6 +390,8 @@ export const en: Strings = {
     edit: "Edit",
     settings: "Settings",
     confirm: "Confirm",
+    /** Sole button of a dialog that only informs: it has nothing to confirm or cancel, so the label acknowledges rather than agrees (and does not repeat the header X's "close"). */
+    gotIt: "Got it",
     loading: "Loading…",
     saved: "Saved",
     saving: "Saving…",
@@ -379,6 +434,43 @@ export const en: Strings = {
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
       "Forgot the admin password? Stop the server and run penguin server reset-admin-password to issue a fresh initial one",
+    /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
+    claimFailedTitle: "Sign-in link no longer works",
+    /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
+    claimFailedDesktop:
+      "This one-time sign-in link has already been used or has expired. Restart the PenguinHarness desktop app to get a fresh link and be signed in automatically, or sign in with your username and password below.",
+    /** Everywhere else: nobody at this browser can mint a link, so the way in is the form below or whoever runs the server. */
+    claimFailedServer:
+      "The first-login link stops working once the server has a password, and a restart replaces it with a new one. Sign in with your username and password below, or ask your administrator for a new sign-in link.",
+  },
+
+  /**
+   * The Profile page of System settings, and the avatar/nickname it writes. Visible in every
+   * session, the desktop shell's own window included: a profile needs no password to change.
+   */
+  profile: {
+    /** Avatar row: its label, and the two actions beside the preview. */
+    avatar: "Avatar",
+    /** Disclosed by the "?" beside that label: when a picked image takes effect. */
+    avatarInfo:
+      "A picture takes effect as soon as you choose it — there is no separate Save for it. The nickname beside it is typed text, so it keeps a Save of its own.",
+    changeAvatar: "Change avatar",
+    /**
+     * Shared label of the two buttons that put a field back to what an account with nothing set
+     * shows: the letter tile for the avatar, the username for the nickname. Neither deletes
+     * anything the app cannot draw again, which is why it does not say "remove".
+     */
+    restoreDefault: "Restore default",
+    /** The same, named for what it restores: two of these sit on one page. */
+    restoreDefaultOf: (subject: string) => `Restore default: ${subject}`,
+    /** The picked image could not be brought under the size limit even as JPEG. */
+    avatarTooLarge: "That image is too large. Please pick a smaller one.",
+    /** The picked file could not be decoded as an image at all. */
+    avatarUnreadable: "That image could not be read. Please pick another file.",
+    /** Nickname row: the field, and the shape rule that stays on screen while typing. */
+    displayName: "Nickname",
+    displayNameHint: "1–32 characters; leave blank to clear",
+    displayNamePlaceholder: "Blank shows the username",
   },
 
   account: {
@@ -475,12 +567,32 @@ export const en: Strings = {
     later: "Later",
   },
 
+  /** The "Create with AI" kit (features/ai-create): the pair of create buttons, the prompt panel and the bridge into a new conversation with the Project's default agent. */
+  aiCreate: {
+    withAi: "Create with AI",
+    manual: "Create manually",
+    editInChat: "Edit in a new conversation",
+    copyPrompt: "Copy prompt",
+    examplesTitle: "Try an example",
+    fullPrompt: "Full prompt",
+    /** Who does the work, and where: the panel's lead line. */
+    byAgent: (name: string): string => `Done by ${name} in a new conversation`,
+    chooseAgent: "Agent that does the work",
+    placeholder: "Describe what you want — the more specific, the better",
+    /** Accessible name of the prompt box (it has no visible label). */
+    promptLabel: "Prompt",
+    noAgent: "This Project has no agent yet",
+  },
+
   agent: {
     savedTakesEffect:
       "Saved. New conversations pick it up right away; running ones after their next compaction.",
+    savedTakesEffectNow: "Saved. It takes effect immediately, including running conversations.",
     takesEffectSuffix:
       " — new conversations pick it up right away, running ones after their next compaction",
     listTitle: "Agents",
+    searchPlaceholder: "Search agents: id / name / description",
+    searchEmpty: "No agent matches that.",
     create: "Create agent",
     createTitle: "Create agent",
     id: "Agent id",
@@ -739,6 +851,10 @@ export const en: Strings = {
       "New models use the OpenAI Chat Completions protocol; set the base URL to a compatible endpoint",
     vendorProtocolHint: (vendor: string): string =>
       `Only ${vendor}'s official API protocol is supported; use a custom model group for OpenAI-compatible endpoints.`,
+    addProtocolHintPinned: (protocol: string): string =>
+      `Models in this group always use the ${protocol} protocol; set the base URL to your own server`,
+    addProtocolHintPinnedGateway: (protocol: string): string =>
+      `Models in this group always use the ${protocol} protocol; the base URL is preset to the gateway's endpoint`,
     autoRouteNone:
       "This model ID cannot be routed with the current provider protocol. If it uses an OpenAI-compatible endpoint, move it to Custom.",
     useCustomGroup: "Move to Custom",
@@ -854,7 +970,7 @@ export const en: Strings = {
      * needs first and is the element that truncates.
      */
     recommendedGroup: "Recommended",
-    discountBadge: (pct: number): string => `-${pct}%`,
+    discountBadge: (pct: number): string => `${pct}% off`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
     offPeakTitle: (pct: number): string =>
       `Off-peak rate: ${pct}% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday`,
@@ -862,7 +978,7 @@ export const en: Strings = {
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",
     setVisionModel: "Set as proxy vision model",
-    visionModelHint: "Describes images via describe_image for models without vision",
+    visionModelHint: "Describes images for models without vision when they read one with read_file",
     priceUnitShort: "/M tok",
     testConnection: "Test connection",
     testing: "Testing…",
@@ -932,7 +1048,7 @@ export const en: Strings = {
     },
     confirmVisionModelTitle: "Set as proxy vision model",
     confirmVisionModel: (name: string): string =>
-      `Make "${name}" the proxy vision model? Models without vision will read images through it via describe_image.`,
+      `Make "${name}" the proxy vision model? Models without vision will read images through it when they call read_file.`,
     confirmSaveTitle: "Save model settings",
     confirmSave: (name: string): string => `Save the changes to "${name}"?`,
     confirmDefaultTitle: "Set as default model",
@@ -1139,6 +1255,102 @@ export const en: Strings = {
     modelDefault: "Project default",
     deleteTitle: "Delete scheduled task",
     deleteConfirm: (name: string): string => `Delete scheduled task "${name}"?`,
+    /** Toasts after a write. A schedule fires on its own clock, so none of them mentions when a conversation picks the change up: there is nothing to pick up. */
+    toastSaved: "Scheduled task saved",
+    toastEnabled: "Scheduled task enabled",
+    toastDisabled: "Scheduled task disabled",
+    /** The form's target line when it is pinned to one Session (the chat dock panel). */
+    targetThisSession: "This conversation",
+    /** The chat dock's scheduled-tasks panel (features/schedules/schedule-panel.tsx): the current Session's tasks. */
+    panelTitle: "Scheduled tasks",
+    panelSubtitle:
+      "Ask the agent to run tasks, send reminders or monitor for updates on a schedule",
+    panelSearchPlaceholder: "Search scheduled tasks",
+    filterAll: "All",
+    filterActive: "Active",
+    filterPaused: "Paused",
+    filterCompleted: "Completed",
+    panelEmpty: "No scheduled tasks in this conversation yet",
+    panelNoMatch: "No matching scheduled tasks",
+    /** The panel's body on the draft page, where no Session exists yet. */
+    panelDraftEmpty: "Send the first message, then schedule tasks for this conversation",
+    /** Accessible name of a row's overflow menu (edit / delete). */
+    rowActions: "More actions",
+    /** The human schedule line under a task's name (schedule-describe.ts). */
+    human: {
+      everyDay: (time: string): string => `Every day at ${time}`,
+      /** `weekday` is the locale's short weekday name (周一 / Monday). */
+      everyWeek: (weekday: string, time: string): string => `Every ${weekday} at ${time}`,
+      everyDays: (n: number, time: string): string => `Every ${n} days at ${time}`,
+      everyHours: (n: number): string => (n === 1 ? "Every hour" : `Every ${n} hours`),
+      everyMinutes: (n: number): string => `Every ${n} minutes`,
+      /** A one-off task and when it fires. */
+      once: (when: string): string => `One-off · ${when}`,
+      next: (when: string): string => `Next: ${when}`,
+      today: (time: string): string => `today ${time}`,
+      tomorrow: (time: string): string => `tomorrow ${time}`,
+      /** `monthDay` is formatMonthDay's output (9月3日 / Sep 3). */
+      onDate: (monthDay: string, time: string): string => `${monthDay}, ${time}`,
+      onDateWithYear: (year: number, monthDay: string, time: string): string =>
+        `${monthDay}, ${year}, ${time}`,
+    },
+    /** The "Create with AI" surfaces: the dock panel prefills this conversation's composer, the settings tab a new conversation's. */
+    aiCreateTitle: "Create a scheduled task with AI",
+    aiCreateInSessionDesc:
+      "Describe what to schedule; the agent creates it in this conversation and confirms the time it set.",
+    aiCreateDesc:
+      "Describe what to schedule; the agent creates it for this agent in a new conversation and confirms the time it set.",
+    /** The in-Session dialog's lead line (replaces the kit's "in a new conversation" wording). */
+    byAgentInSession: (name: string): string => `Done by "${name}" in this conversation`,
+    /** The in-Session dialog's one exit (the kit's aiCreate.editInChat opens a NEW conversation; this one fills the composer already on screen). */
+    editInSession: "Edit in this conversation",
+    /** Instruction tail appended to the in-Session dialog's draft (composeAiPrompt); the model binds the task to this Session. */
+    aiCreateInSessionTail:
+      "Create the request above as a scheduled task bound to this Session: write a TOML file under agent_state/schedule/ with `session_id` set to this Session's id (see the Environment section), a semantic file name and `start_at`; add `period` when it repeats and `end_at` when the request has a natural end. Then confirm the schedule you set in one line.",
+    /**
+     * Instruction tail of the settings tab's dialog: the task is created for one agent, in a
+     * new Session unless the user names one. The CLI form spells every flag, `--agent-id`
+     * above all: the prompt runs in a conversation with the Project's default agent, so the
+     * server injects THAT agent into PENGUIN_AGENT_ID, and an `add` without the flag writes
+     * the task into the wrong agent's schedule directory. The TOML keys are named only in
+     * the file branch, so they are never read as flags of the command beside them.
+     */
+    aiCreateTail: (agentId: string): string =>
+      `Create this scheduled task for agent \`${agentId}\`. Either run \`penguin schedule add <name> --agent-id ${agentId} --prompt "<the request>" --start-at <ISO 8601 or now>\`, adding \`--period <30m | 12h | 7d>\` when it repeats and \`--end-at <ISO 8601>\` when the request has a natural end — without \`--agent-id\` the task lands on whichever agent is running this conversation rather than on that one; or write the TOML file under that agent's agent_state/schedule/ yourself, with a semantic file name and the \`start_at\`, \`period\` and \`end_at\` keys. Use the new-Session mode unless the user names a Session. Then confirm the schedule you set in one line.`,
+    /** The suggestion rows (name / schedule hint / one-line description) and the prompt each prefills — one phrased for this conversation, one for an agent as a whole. */
+    suggestionsTitle: "Suggestions",
+    suggestions: {
+      dailyBrief: {
+        name: "Daily brief",
+        hint: "Weekdays at 08:00",
+        description: "Yesterday's progress and today's to-dos, summarized",
+        prompt:
+          "Every weekday at 8:00 AM, give me a brief: yesterday's progress in this conversation and today's to-dos",
+        agentPrompt:
+          "Every weekday at 8:00 AM, produce a brief: yesterday's progress and today's to-dos",
+      },
+      weeklyReview: {
+        name: "Weekly review",
+        hint: "Fridays at 16:00",
+        description: "Turn the week's work into a status update",
+        prompt: "Every Friday at 16:00, turn this week's work into a status update",
+        agentPrompt: "Every Friday at 16:00, turn this week's work into a status update",
+      },
+      followUp: {
+        name: "Follow-up reminder",
+        hint: "One-off",
+        description: "A reminder to follow up on something, at the time you name",
+        prompt: "Tomorrow at 10:00, remind me to follow up on X",
+        agentPrompt: "Tomorrow at 10:00, remind me to follow up on X",
+      },
+      monitor: {
+        name: "Monitor for updates",
+        hint: "Every 6 hours",
+        description: "Check a page or data source for changes on a schedule",
+        prompt: "Every 6 hours, check <url> for updates and tell me what changed",
+        agentPrompt: "Every 6 hours, check <url> for updates and report what changed",
+      },
+    },
     /** Prompt-injection controls (toggle card / template alert / prompt editor), mirroring the memory tab's set. */
     injection: {
       enable: "Enable schedules",
@@ -1164,8 +1376,6 @@ export const en: Strings = {
     pageDesc:
       "Built-in plugin library: each plugin ships skills and/or a hook package — browse, quick-start a chat, or install to agents.",
     pluginCount: (n: number): string => (n === 1 ? "1 plugin" : `${n} plugins`),
-    /** Content badge for each hook point a plugin's hook package answers at (e.g. "stop hook"); also the chips on the settings Hooks tab. */
-    hookBadge: (event: string): string => `${event} hook`,
     searchPlaceholder: "Search plugins",
     /** Section labels of the plugin detail Modal. */
     detailSkills: "Skills",
@@ -1189,18 +1399,62 @@ export const en: Strings = {
       `Uninstall ${plugin} from ${agent}? Its installed skill and hook files (local edits included) will be deleted.`,
   },
 
-  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent. */
+  /** Agent settings "Hooks" tab (features/agents/hooks-tab.tsx): the hook packages installed on one agent — the list with its enable switch, the import modal (chat import / zip upload) and the export. The hook-point chips carry the bare point name (`stop`, `user_prompt`) and need no string. */
   hooks: {
     agentTabDesc:
-      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task; uninstalling deletes the whole package directory.",
+      "Hook packages installed on this agent (agent_state/hooks/) — scripts the harness runs at the loop's hook points, e.g. after every Task. Uninstalling deletes the whole package directory.",
     agentTabEmpty: "No hook packages installed yet",
+    /** Members see the switch state but cannot flip it (appended to the tab description). */
+    readOnlyHint: "Only the Project owner can switch hooks on or off.",
     /** The agents page's hook-count stat (hover title / accessible name). */
     hookCount: (n: number): string => (n === 1 ? "1 hook package" : `${n} hook packages`),
+    exportHook: "Export",
+    importHook: "Import hook",
+    importChatTitle: "Recommended: import it by chatting with the agent",
+    importChatWhy:
+      "The agent reads the source in full, reviews every script and installs the package on this agent — more reliable than a bare upload.",
+    importSourceLabel: "Hook source",
+    importSourceHint:
+      "A URL, a GitHub repository, a local path, a description, or another tool's hook config (such as the hooks block of a Claude Code settings.json)",
+    importSourcePlaceholder:
+      'https://…, /path/to/hooks, or "write a stop hook that runs after every task…"',
+    /** Preview placeholder shown in the generated prompt before a source is entered. */
+    importSourceToken: "<source>",
+    importPromptLabel: "Prompt to send to the agent (preview)",
+    /** Lead sentence for a URL / repo / path source; free text (a description, a pasted hooks config) is used verbatim as the lead instead. Composed with importPromptTail by buildHookImportPrompt (features/agents/hook-import.ts). */
+    importPromptLead: (s: string): string => `Import ${s} as a hook package.`,
+    importCopyPrompt: "Copy prompt",
+    importOpenChat: "Open a new chat",
+    importUploadTitle: "Upload a hook package zip",
+    importUploadDesc:
+      "hooks.json and the scripts at the zip root, or exactly one top-level directory containing them. An import takes effect at once: while this agent has hooks on, its scripts run on this machine at every hook point, so import only what you trust.",
+    importUploadAction: "Choose zip file",
+    importUploading: "Uploading…",
+    importDoneToast: "Hook package installed",
+    importOverwriteTitle: "Overwrite installed hook package",
+    importOverwriteBody: (name: string): string =>
+      `The hook package "${name}" is already installed. Overwriting replaces all of its files (local edits included) and cannot be undone. Continue?`,
+    importOverwriteAction: "Overwrite",
+    /** The fixed tail joined after the lead (features/agents/hook-import.ts): the review step, the package format, the script contract and the install target, named by Project and Agent id. */
+    importPromptTail: (projectId: string, agentId: string): string =>
+      [
+        "Read the source in full first and review every script for malicious behavior (exfiltrating data, touching files outside its source, running unknown commands); continue only once it is safe.",
+        'Then produce a PenguinHarness hook package: a hooks.json (name, description, description_zh, version in the YYYY.MM.DD.N format, and one command list per hook point — stop / pre_tool_use / user_prompt — each entry { "command": "<script path relative to the package>", "timeout": <seconds> }) plus plain Node .mjs scripts using builtin modules only.',
+        'Script contract: stdin carries one JSON object — at the stop point { "hook": "stop", "session_id", "trace_path" } (trace_path is the Trace file the Session is writing, absent without a Trace); the pre_tool_use point adds tool_name, tool_call_id and arguments (the raw argument JSON string); the user_prompt point carries scratchpad_dir and prompt instead. Empty stdout means no opinion; otherwise stdout is one JSON answer — stop: { "decision": "continue" | "stop", "input", "reason", "output", "subagent"? }, pre_tool_use: { "decision": "allow" | "deny", "reason", "output" }, user_prompt: { "context" }. A non-zero exit, non-JSON stdout or a timeout is recorded as a failure and ignored.',
+        `Install it into agent_state/hooks/<name>/ of agent "${agentId}" in Project "${projectId}" (the directory name is the package name and must match ^[A-Za-z0-9_-]+$), then tell me what it does and at which hook point it fires.`,
+      ].join("\n"),
     uninstallConfirmTitle: (name: string): string => `Uninstall ${name}`,
     uninstallConfirmBody: (name: string, agent: string): string =>
       `Uninstall the ${name} hook package from ${agent}? All of its scripts (local edits included) will be deleted.`,
     uninstalledToast: (name: string, agent: string): string =>
       `Uninstalled the ${name} hook package from ${agent}`,
+    /** The Agent-level switch card at the top of the tab (usePromptInjection); hooks have no prompt half. */
+    injection: {
+      enable: "Enable hooks",
+      enableHint:
+        "With it on, every Session this agent starts runs all installed hook packages at the loop's hook points. With it off, a new Session runs no hooks at all and the installed packages stay on disk. A Task already running keeps the setting it started with.",
+      savedToast: "Saved — takes effect from the next turn",
+    },
   },
 
   skills: {
@@ -1571,6 +1825,17 @@ Scenarios:
     statusCompacting: "Compacting",
     /** Settled Session that finished since the user last opened it (the unread dot; a Session already read shows no glyph, so it needs no label). */
     statusCompletedUnread: "Done, unread",
+    /** The background-task mark on a session row and the chat header's count: background processes plus background subagents still running. */
+    backgroundTasks: (n: number) => (n === 1 ? "1 background task" : `${n} background tasks`),
+    /** The session row's alarm clock: at least one enabled scheduled task is bound to this conversation (a paused one draws no mark). */
+    sessionScheduled: "Has a scheduled task still to fire",
+    /** The tool row's marker for the ONE call whose work went to the background — launched with `run_in_background`, or moved there by the user — rather than for a count. Bracketed, like the row's other outcome markers. */
+    backgroundCall: "[Background]",
+    /** The tool row's inline text action, shown while the call is executing (also its accessible name). */
+    sendToBackground: "Send to background",
+    /** Its tooltip: what the click does to the call and to the conversation. */
+    sendToBackgroundHint:
+      "Send this call to the background; the conversation carries on, and its completion arrives as a background notice.",
     pendingApprovals: (n: number) => `${n} pending approval${n > 1 ? "s" : ""}`,
     jumpToLatest: "Jump to latest",
     /** Top-of-stream affordance while the previous history window is being fetched (scroll-up backfill). */
@@ -1696,12 +1961,12 @@ Scenarios:
     imageAlt: "Image uploaded by user",
     toolImageAlt: "Image from tool output",
     imagesAsPathHint:
-      "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via describe_image)",
+      "This model cannot view images directly: on send, images are saved to the session scratchpad and passed as file paths (viewed via read_file)",
     infoPanel: "Session info",
     sessionStats: "Stats",
     /** Info-dropdown Session id row: the id itself is a click-to-copy button. */
     sessionIdLabel: "Session id",
-    copySessionId: "Copy Session id",
+    copySessionId: "Copy Session ID",
     /** Info-dropdown list of background processes the conversation started, and its per-row actions (Stop on running rows, Remove on exited ones). */
     processList: "Processes",
     processStop: "Stop",
@@ -1709,13 +1974,12 @@ Scenarios:
     processRemove: "Remove",
     /** Remove button tooltip: removal also drops the output captured from that process. */
     processRemoveHint: "Remove this entry — the output captured from it is discarded too",
-    /** Header chip title: count of the conversation's still-running background processes. */
-    runningServices: (n: number) => (n === 1 ? "1 running service" : `${n} running services`),
     statTokens: "Total Tokens",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "Total Tokens",
     statCacheHit: (pct: string) => `cache hit rate ${pct}`,
     statElapsed: "Elapsed",
+    statElapsedSplit: (apiMs: string, toolMs: string): string => `API ${apiMs}, tools ${toolMs}`,
     statInput: "Input tokens",
     statCached: "cached",
     statOutput: "Output tokens",
@@ -1730,7 +1994,7 @@ Scenarios:
     removeImage: "Remove image",
     openAgents: "Agents panel",
     /** Panel switcher (chat toolbar top-right): the "create" dropdown and its pin toggles. */
-    workspacePanel: "Workspace",
+    workspacePanel: "Files",
     filesInMessage: (n: number) => `${n} ${n === 1 ? "file" : "files"}`,
     imagesInMessage: (n: number) => `${n} ${n === 1 ? "image" : "images"}`,
     openPreview: "Click to preview",
@@ -1763,13 +2027,35 @@ Scenarios:
     contextPartToolRequests: "Tool requests",
     contextPartToolResults: "Tool results",
     contextTopTools: "Top 5 tools",
-    contextCompactAt: (n: string): string => `Compaction threshold ${n}`,
+    contextWindowIs: (n: string): string => `Max context ${n}`,
     contextTopToolsHint:
       "Ranked by the context each tool's calls and results occupy (definitions count under “Tool definitions”)",
+    contextTopFiles: "Top 5 files",
+    contextTopFilesHint:
+      "Ranked by the context each file's read_file / edit_file / write_file calls and results occupy; hover a row for the full path",
+    contextRankLabel: "Ranking",
+    contextRankTools: "Tools",
+    contextRankFiles: "Files",
+    contextNoFileTraffic: "No file traffic in this context",
     contextUnknownHint:
       "Just compacted — the next request reports the usage, and the composition with it",
     contextBreakdownEmpty: "Nothing in the current context to break down yet",
     contextBreakdownFailed: "Could not read the context composition",
+    contextThresholdCutter: "Compaction threshold",
+    contextThresholdHover: (n: string): string => `Compaction threshold ${n} (drag to adjust)`,
+    contextThresholdTitle: "Change the compaction threshold",
+    contextThresholdBody: (agentName: string, old: string): string =>
+      `Change ${agentName}'s compaction threshold from ${old} to the value below? It takes effect immediately, including the running conversation.`,
+    contextThresholdField: "Compaction threshold (tokens)",
+    contextThresholdInvalid: "Must be a whole number above 0",
+    contextThresholdCapped: (n: string): string =>
+      `Above the model window — the threshold in force will be ${n}`,
+    contextThresholdSaved: (n: string): string =>
+      `Compaction threshold changed to ${n}; it applies immediately`,
+    contextWindowUnderThreshold: (n: string, m: string): string =>
+      `This model's context window ${n} is smaller than this agent's compaction threshold ${m}, so compaction actually fires at the edge of the window. Drag the dashed mark in the context panel, or set the threshold below the window in the agent settings — it applies immediately.`,
+    contextWindowUnderThresholdAction: "Open agent settings",
+    contextWindowUnderThresholdDismiss: "Dismiss",
     slashHint: "Type / for commands",
     switchAgent: "Hand off to another agent — opens a new session on send",
     switchAgentTitle: "Choose agent",
@@ -1825,6 +2111,9 @@ Scenarios:
     mcpServerFailed: "connection failed",
     mcpConnectAborted: "interrupted — reconnects on the next send",
     compactionTitle: (mode: string): string => (mode === "discard" ? "Clear" : "Compaction"),
+    compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),
+    compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
+    compactionResult: "Result",
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
@@ -1839,6 +2128,20 @@ Scenarios:
       return `failed${detail}, keeping current context`;
     },
     unknownTool: "(unknown tool)",
+    /**
+     * Short display names for the built-in tools, keyed by the name the model calls them
+     * by. The tool-call card shows these while the Appearance switch is on; a tool absent
+     * from this table (MCP tools, names only older Traces carry) renders as itself.
+     */
+    toolAliases: {
+      read_file: "read",
+      write_file: "write",
+      edit_file: "edit",
+      exec_command: "exec",
+      input_command: "follow",
+      run_subagent: "subagent",
+      input_subagent: "communicate",
+    } as Record<string, string>,
     workRunning: "Running",
     workDone: "Done",
     workGroupSteps: (n: number) => `${n} ${n === 1 ? "step" : "steps"}`,
@@ -2254,25 +2557,98 @@ Scenarios:
     title: "Files",
     upload: "Upload",
     download: "Download",
+    /** Row / preview context menu: the two entries both kinds carry, then the kind-specific one. */
+    copyPath: "Copy relative path",
+    addToChat: "Add to conversation",
+    addSelectionToChat: "Add selection to conversation",
+    uploadHere: "Upload here",
     openInNewTab: "Open in new tab",
     previewNotIsolatedHint:
       "This address has no separate preview origin, so the page opens sandboxed: localStorage, cookies and third-party embeds will not work. Reach the app over 127.0.0.1 or localhost, or set PENGUIN_PREVIEW_ORIGIN.",
     refresh: "Refresh",
-    root: "Workspace root",
+    /** The Workspace root, as the breadcrumbs and the drop overlay name it. "." is what a
+     *  shell calls the working directory, so it needs no translation. */
+    root: ".",
     empty: "Empty directory",
     previewUnsupported: "Preview not supported for this type; download instead",
-    uploaded: "Uploaded",
-    /** Upload-overwrite confirmation: same-name files in the current directory will be replaced. */
+    uploadedCount: (n: number): string => (n === 1 ? "1 file uploaded" : `${n} files uploaded`),
+    uploading: (done: number, total: number): string => `Uploading ${done}/${total}…`,
+    /** Oversize picks are named and skipped before anything is read. */
+    uploadTooLarge: (names: string, mb: number): string =>
+      `Over the ${mb}MB upload limit, skipped: ${names}`,
+    /** A dropped folder is not a file the upload endpoint can take; it is named and skipped. */
+    folderDropSkipped: (names: string): string => `Folders cannot be uploaded, skipped: ${names}`,
+    /** Upload-overwrite confirmation: same-name files in the target directory will be replaced. */
     overwriteTitle: "Overwrite existing files",
     overwriteConfirm: (n: number): string =>
-      `The current directory already has ${n} file(s) with these names — uploading will overwrite:`,
+      `The target directory already has ${n} file(s) with these names — uploading will overwrite:`,
     loadFailed: "Failed to load",
     previewTruncated: "File too large; preview truncated, download for the full file",
-    details: "Details",
-    workspacePath: "Workspace path",
-    htmlRendered: "Rendered",
+    htmlRendered: "Preview",
     htmlSource: "Source",
     backToList: "Back to list",
+    /** The tree pane: its accessible name and the toolbar toggle's two states. */
+    treeLabel: "File tree",
+    showTree: "Show file tree",
+    hideTree: "Hide file tree",
+    /** The divider between the tree and the preview: drag, or nudge with the arrow keys. */
+    treeWidth: "Resize the file tree",
+    /** The search box above the tree; it reaches only as far as the lazy tree has been loaded. */
+    searchPlaceholder: "Search files",
+    searchClear: "Clear search",
+    searchNoMatch: "No matches in the Workspace",
+    /** The walk is server-side and covers the whole Workspace, so it is not instant on a large one. */
+    searching: "Searching…",
+    /** The server stopped at its cap: what is listed is the shallowest matches, not all of them. */
+    searchTruncated: (n: number): string => `Too many matches — showing the first ${n}`,
+    selectFile: "Select a file to preview",
+    /** Drop overlay label; `dir` is the directory the files will land in (the root's display name for the root). */
+    dropToUpload: (dir: string): string => `Drop to upload into ${dir}`,
+    /** In-place text editing. */
+    editorLabel: (name: string): string => `Editing ${name}`,
+    /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
+    wrapLines: "Wrap",
+    unsaved: "Unsaved changes",
+    saveTitle: "Save (Ctrl+S / ⌘S)",
+    saveConfirmTitle: "Save file",
+    saveConfirm: (name: string): string =>
+      `Save changes to ${name}? The file in the Workspace will be overwritten.`,
+    editTooLarge: (kb: number): string =>
+      `The file is larger than ${kb}KB and cannot be edited here — download it instead`,
+    saveTooLarge: (mb: number): string =>
+      `The content exceeds the ${mb}MB write limit and was not saved`,
+    discardTitle: "Discard unsaved changes",
+    discardBody: (name: string): string => `${name} has unsaved changes. Discard them?`,
+    discard: "Discard",
+    unsavedRestored: (name: string): string => `Restored unsaved changes to ${name}`,
+    /** The file was rewritten (by the Agent, most likely) while the editor was open on it. */
+    changedOnDisk: "Changed on disk",
+    changedOnDiskHint:
+      "This file has been rewritten since you opened it — saving replaces that version with yours.",
+    /** Rename and move are one action: both write the file to a new Workspace-relative path. */
+    /** The composer chip's remove button, for whatever the Files panel staged there. */
+    removeReference: "Remove reference",
+    renameTitle: "Rename or move",
+    renameLabel: "New path",
+    renameHint:
+      "Relative to the Workspace root; a directory in the path that does not exist is created",
+    renameConfirm: "Move",
+    renameTargetExists: (path: string): string => `${path} already exists, so nothing was changed.`,
+    renamed: (name: string): string => `Moved to ${name}`,
+    deleteTitle: "Delete file",
+    deleteBody: (name: string): string => `Delete ${name}? It does not go to a trash folder.`,
+    deleted: (name: string): string => `Deleted ${name}`,
+    /** Both actions read the file's current version first; until it lands there is nothing to refuse an overwrite with. */
+    actionVersionReading: "Reading this file's current version…",
+    actionVersionFailed:
+      "This file's current version could not be read, so the action is not offered.",
+    /** The version precondition refused it: the Agent wrote the file while the question was on screen. */
+    changedBeforeAction: (name: string): string =>
+      `${name} was rewritten while you were deciding, most likely by the Agent during its turn, so nothing was changed. Refresh and try again.`,
+    conflictTitle: "File changed on disk",
+    conflictBody: (name: string): string =>
+      `${name} was rewritten after you opened it, most likely by the Agent during its turn, so nothing was saved. Overwrite it with your version, or keep editing and copy what you need out first — either way your text is kept.`,
+    overwriteAnyway: "Overwrite",
   },
 
   usage: {
@@ -2323,10 +2699,19 @@ Scenarios:
     /** Clearing the table: the action, and the confirm that must name exactly what goes. */
     errorsClear: "Clear",
     errorsClearTitle: "Clear error records",
-    errorsClearScope: (count: number, from: string, to: string): string =>
-      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} between ${from} and ${to}. Records outside that range are kept.`,
-    errorsClearScopeAgent: (count: number, from: string, to: string, agentId: string): string =>
-      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} for agent ${agentId} between ${from} and ${to}. Other agents and other dates are kept.`,
+    errorsClearRangePreset: (preset: "1h" | "1d" | "7d" | "30d" | "90d"): string =>
+      ({
+        "1h": "in the last hour",
+        "1d": "in the last 24 hours",
+        "7d": "in the last 7 days",
+        "30d": "in the last 30 days",
+        "90d": "in the last 90 days",
+      })[preset],
+    errorsClearRangeCustom: (from: string, to: string): string => `between ${from} and ${to}`,
+    errorsClearScope: (count: number, range: string): string =>
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} ${range}. Records outside that range are kept.`,
+    errorsClearScopeAgent: (count: number, range: string, agentId: string): string =>
+      `Deletes this Project's ${count} error record${count === 1 ? "" : "s"} for agent ${agentId} ${range}. Other agents and records outside that range are kept.`,
     errorsClearIrreversible: "This cannot be undone.",
     errorsClearDone: (count: number): string =>
       `Deleted ${count} error record${count === 1 ? "" : "s"}`,
@@ -2349,7 +2734,8 @@ Scenarios:
     globalSummary: "Overall",
     tasksLabel: "Turns",
     messages: "Messages",
-    truncatedNote: (shown: number, total: number) => `Showing first ${shown} / ${total} messages`,
+    /** Shown while the file's remaining pages are still being fetched; gone once every message is on screen. */
+    loadingNote: (shown: number, total: number) => `Loaded ${shown} / ${total} messages…`,
     zoom: "Zoom",
     zoomReset: "Double-click to reset zoom",
     zoomOut: "Zoom out",
@@ -2362,7 +2748,7 @@ Scenarios:
     taskOutput: "Output tokens this turn",
     cacheHit: "Cache hits",
     hitRate: "Hit rate",
-    compactions: "compactions",
+    avgToolCalls: "Avg tools / turn",
     inProgress: "in progress",
     systemPrompt: "System prompt",
     toolDefs: (n: number) => `Tool definitions (${n})`,
@@ -2430,8 +2816,9 @@ Scenarios:
       unknown_skill: "This skill is not in the selected directory.",
       unknown_plugin: "This plugin is not in the plugin library.",
       goal_plugin_not_installed:
-        "Goal mode needs the goal plugin — install it on this agent from the plugin library.",
+        "Goal mode needs the goal plugin — install it on this agent from the plugin library, and switch its hook package on.",
       skill_too_large: "This skill directory exceeds the import limits.",
+      hook_too_large: "This hook package exceeds the import limits.",
       file_not_found: "This file no longer exists.",
       not_pending: "This steering message already reached the model and can no longer be recalled.",
       follow_up_started: "This follow-up already started and can no longer be recalled.",

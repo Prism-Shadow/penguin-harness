@@ -9,9 +9,33 @@
  * working `penguin` command without any system Node installation. How bin/ reaches
  * PATH is per platform (see cli-install.ts and build/linux/*.tpl for the deb variant).
  */
+import path from "node:path";
 
 /** CLI bundle inside the app directory, emitted by tsup alongside the shell (asar off). */
 export const CLI_ENTRY_RELPATH = "dist/penguin.js";
+
+/**
+ * The CLI entry the embedded server should offer the Agents it runs — handed to it as
+ * `PENGUIN_CLI_ENTRY`, which is what the server's `<root>/bin/penguin` shim execs (see the
+ * server's services/cli-shim.ts). It is the same bundled entry the PATH launchers above
+ * run, and it is passed explicitly because nothing else would carry it: the fork inherits
+ * `process.env`, where the variable is deliberately absent — the login-shell import
+ * excludes it precisely so a profile line written for a checkout cannot retarget an
+ * installed app.
+ *
+ * An explicit `PENGUIN_CLI_ENTRY` in the launch environment still wins, as it does for
+ * `PENGUIN_WEB_DIST`. A source run pins nothing: the app directory holds no bundled CLI
+ * there, and the server's own fallback finds the checkout's `packages/cli/dist/penguin.js`.
+ */
+export function embeddedCliEntry(opts: {
+  isPackaged: boolean;
+  appPath: string;
+  env: NodeJS.ProcessEnv;
+}): string | null {
+  const explicit = opts.env.PENGUIN_CLI_ENTRY?.trim();
+  if (explicit) return explicit;
+  return opts.isPackaged ? path.join(opts.appPath, ...CLI_ENTRY_RELPATH.split("/")) : null;
+}
 
 /**
  * Present in every launcher script below, and shipped unchanged in every desktop release

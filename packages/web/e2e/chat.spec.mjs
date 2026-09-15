@@ -55,8 +55,10 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await ta.fill("Help me set up @theme");
   await page.getByRole("button", { name: "发送" }).click();
 
-  // Tool name is shown on the collapsed tool row + in the pending-approval block.
-  await expect(page.getByText("exec_command").first()).toBeVisible();
+  // The tool name is shown on the collapsed tool row + in the pending-approval block, as the
+  // short display name the Appearance switch turns on by default (`exec_command` itself stays
+  // in the tooltip of both, which is not text).
+  await expect(page.getByText("执行命令").first()).toBeVisible();
   // Thinking + tool calls are wrapped in a work group; header shows running/done status.
   await expect(page.getByText("运行中").first()).toBeVisible();
 
@@ -104,10 +106,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await runningGroup.click(); // toggle → marks the group user-toggled (open := false)
   await runningGroup.click(); // toggle back → the user is deliberately keeping it open
 
-  const toolCard = page
-    .locator("button[aria-expanded]")
-    .filter({ hasText: "exec_command" })
-    .first();
+  const toolCard = page.locator("button[aria-expanded]").filter({ hasText: "执行命令" }).first();
   await toolCard.click();
   await expect(toolCard).toHaveAttribute("aria-expanded", "true");
 
@@ -161,7 +160,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Turn is over and the stats line has landed. The card is still open — which also proves the
   // group did not collapse (a collapsed group unmounts its body, so the card would be gone).
   await expect(
-    page.locator("button[aria-expanded]").filter({ hasText: "exec_command" }).first(),
+    page.locator("button[aria-expanded]").filter({ hasText: "执行命令" }).first(),
   ).toHaveAttribute("aria-expanded", "true");
 
   // The stats line IS the AI reply's footer (bottom-left, mirroring the user footer's bottom-right):
@@ -237,7 +236,7 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // gone — its label said "duration" while it actually rendered a count.
   await expect(main.getByText("全局统计")).toBeVisible();
   await expect(main.getByText("Request 耗时")).toHaveCount(0);
-  for (const label of ["轮次", "工具调用", "压缩次数", "输入 tokens", "输出 TPS"]) {
+  for (const label of ["轮次", "工具调用", "每轮平均工具调用", "输入 tokens", "输出 TPS"]) {
     await expect(main.getByText(label, { exact: true }).first()).toBeVisible();
   }
   // Time-axis zoom: Premiere-style scrubber (role=scrollbar) + −/＋ buttons.
@@ -293,15 +292,12 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   // Rendered iframe present; the localStorage script ran on the preview origin → #shim-ok appended.
   await expect(page.locator("iframe")).toBeVisible();
   await expect(page.frameLocator("iframe").locator("#shim-ok")).toHaveText("1");
-  // The list and the preview are mutually exclusive: the toolbar only appears after
-  // returning to the list (which also triggers #59's return-refresh).
-  await page.getByRole("button", { name: "返回列表" }).click();
+  // The tree stays beside the open preview, and the toolbar (breadcrumbs, Refresh, Upload)
+  // sits above both — nothing to go back to.
   await expect(page.getByText("demo.html").first()).toBeVisible();
-  // Workspace path is hidden until the 详情 ("Details") toggle is used.
+  // The absolute Workspace path is not on this panel; it belongs to the Session details card.
   const workspaceAbs = sess.session.workspace;
   await expect(page.getByText(workspaceAbs, { exact: false })).toHaveCount(0);
-  await page.getByRole("button", { name: "详情" }).click();
-  await expect(page.getByText(workspaceAbs, { exact: false }).first()).toBeVisible();
 
   // --- message files card: only files that really exist in the workspace make the card ---
   // The mock reply mentions two backtick paths: demo.html was truly uploaded above via

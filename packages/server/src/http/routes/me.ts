@@ -1,17 +1,30 @@
 /**
- * Current-user routes: GET /api/me, PUT /api/me/password, GET|PUT /api/me/prefs.
+ * Current-user routes: GET /api/me, PUT /api/me/password, PUT /api/me/profile,
+ * GET|PUT /api/me/prefs.
  * ui_prefs is free-form JSON (theme / lastProjectId / credentialGuideSeen, etc.): GET reads
  * it whole, PUT shallow-merges (PATCH semantics) — several independent writers each write
  * their own fields without clobbering each other. Free-form does not mean unbounded: a key
  * carrying user-authored text is validated and capped on the way in (draftShortcuts).
+ *
+ * The profile (nickname + avatar) is a column pair on `users` rather than a prefs key: it is
+ * read back by surfaces other than the browser that wrote it (the admin user list names the
+ * nickname), and a blob capped at 128 KiB does not belong in a free-form JSON document that
+ * every unrelated writer re-serializes whole.
  */
 import { Hono } from "hono";
 import { setCookie } from "hono/cookie";
-import type { MeResponse, PrefsResponse, UiPrefs } from "../../api/types.js";
+import type {
+  MeResponse,
+  PrefsResponse,
+  UiPrefs,
+  UpdateProfileRequest,
+  UpdateProfileResponse,
+} from "../../api/types.js";
 import { toUserInfo } from "../../auth/service.js";
 import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import { readJson, requireString } from "../validate.js";
+import { badRequest, readJson, requireString } from "../validate.js";
+import { HttpError } from "../errors.js";
 import type { AppDeps } from "../../app.js";
 import { resolvePreviewTarget } from "../../services/preview-token.js";
 import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
@@ -21,6 +34,70 @@ import {
   MAX_ATTACHMENT_MB,
   MIN_ATTACHMENT_MB,
 } from "../../services/attachment-limits.js";
+
+/** Nickname bounds, counted in user-perceived code points so a CJK name is 32 characters, not 96. */
+const DISPLAY_NAME_MIN = 1;
+const DISPLAY_NAME_MAX = 32;
+
+/**
+ * Avatar cap, in characters of the data URL as it arrives — the same number the browser
+ * measures its re-encode against, so the client and this check can never disagree about what
+ * "too large" means. 131072 characters of base64 hold roughly 96 KiB of image.
+ */
+const AVATAR_MAX_CHARS = 131072;
+
+/** The three formats the picker offers, all of which every target browser can re-encode. */
+const AVATAR_DATA_URL = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+
+/**
+ * The stored form of a nickname: trimmed, since leading and trailing spaces are invisible in
+ * every surface that renders it and would make two names look identical. Length is measured in
+ * code points (Array.from) rather than UTF-16 units, so a 32-character Chinese name fits and a
+ * 32-emoji one does not sneak past a byte count.
+ */
+function parseDisplayName(raw: unknown): string | null {
+  if (raw === null) return null;
+  if (typeof raw !== "string") throw badRequest("displayName must be a string or null.");
+  const trimmed = raw.trim();
+  const length = Array.from(trimmed).length;
+  if (length < DISPLAY_NAME_MIN || length > DISPLAY_NAME_MAX) {
+    throw badRequest(
+      `displayName must be ${DISPLAY_NAME_MIN} to ${DISPLAY_NAME_MAX} characters once trimmed.`,
+    );
+  }
+  // Control characters carry no glyph: they would let a name imitate another one, or break the
+  // line it is rendered on.
+  if (/\p{Cc}/u.test(trimmed)) {
+    throw badRequest("displayName must not contain control characters.");
+  }
+  return trimmed;
+}
+
+/** The stored form of an avatar: the data URL itself, validated shape-first, then decoded. */
+function parseAvatar(raw: unknown): string | null {
+  if (raw === null) return null;
+  if (typeof raw !== "string") throw badRequest("avatar must be a string or null.");
+  // Length first: the pattern below is linear in the input, and a caller may send megabytes.
+  if (raw.length > AVATAR_MAX_CHARS) {
+    throw badRequest(`avatar must be at most ${AVATAR_MAX_CHARS} characters.`);
+  }
+  if (!AVATAR_DATA_URL.test(raw)) {
+    throw badRequest(
+      "avatar must be a base64 data URL of type image/png, image/jpeg or image/webp.",
+    );
+  }
+  const payload = raw.slice(raw.indexOf(",") + 1);
+  // The pattern admits the alphabet but not the arithmetic: a length that is 1 mod 4, or padding
+  // in the middle, is not decodable base64 and would be stored as an <img src> that never loads.
+  let decodedLength: number;
+  try {
+    decodedLength = atob(payload).length;
+  } catch {
+    throw badRequest("avatar is not valid base64.");
+  }
+  if (decodedLength === 0) throw badRequest("avatar is not valid base64.");
+  return raw;
+}
 
 export function meRoutes(deps: AppDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -82,6 +159,35 @@ export function meRoutes(deps: AppDeps): Hono<AppEnv> {
       await deps.authService.changePassword(c.var.user.userId, oldPassword, newPassword);
     }
     return c.body(null, 204);
+  });
+
+  /**
+   * Nickname and avatar, as a patch: an absent field keeps what is stored, `null` clears it.
+   *
+   * Open to EVERY authenticated session, the desktop shell's own token session included —
+   * deliberately not the password route's gate above. That gate exists because a password
+   * change needs a password to check against, which a token session has never seen; a profile
+   * is just the account's own display data, and the shell's window is a signed-in account like
+   * any other.
+   */
+  app.put("/profile", async (c) => {
+    const body = await readJson(c);
+    const patch: UpdateProfileRequest = {};
+    if (body.displayName !== undefined) patch.displayName = parseDisplayName(body.displayName);
+    if (body.avatar !== undefined) patch.avatar = parseAvatar(body.avatar);
+    // A body naming neither field cannot mean anything: answering 200 with the row unchanged
+    // would let a client's typo read as a successful save.
+    if (patch.displayName === undefined && patch.avatar === undefined) {
+      throw badRequest("Request body must name displayName or avatar.");
+    }
+    deps.usersRepo.updateProfile(c.var.user.userId, patch);
+    const updated = deps.usersRepo.findById(c.var.user.userId);
+    if (updated === null) {
+      // The session resolved to this user one middleware ago, so the row can only be gone if
+      // an admin deleted the account mid-request.
+      throw new HttpError(404, "not_found", "Account no longer exists.");
+    }
+    return c.json({ user: toUserInfo(updated) } satisfies UpdateProfileResponse);
   });
 
   app.get("/prefs", (c) => {

@@ -42,8 +42,10 @@ import type {
   FeishuBindingResponse,
   FeishuTestRequest,
   FeishuTestResponse,
+  FilesMoveRequest,
   FilesStatRequest,
   FilesStatResponse,
+  FilesWriteRequest,
   GoalResponse,
   InstallResponse,
   McpServerTestResponse,
@@ -84,6 +86,9 @@ import type {
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
+  ProxyProbeProvider,
+  ProxyProbeResponse,
+  ProxyProbeTargetsResponse,
   ServerSettingsResponse,
   ServerSettingsUpdateRequest,
   SessionCategory,
@@ -129,8 +134,13 @@ import type {
   UiPrefs,
   UpdateCheckResponse,
   UpdateJobStatus,
+  UpdateProfileRequest,
+  UpdateProfileResponse,
   RestartResponse,
+  DesktopTrayPatch,
+  DesktopTrayStatusResponse,
   DesktopUpdateStatusResponse,
+  HookArchiveInstallRequest,
   UsageErrorKind,
   UsageErrorsClearResponse,
   UsageErrorsPage,
@@ -142,6 +152,7 @@ import type {
   VaultUpdateRequest,
   VersionResponse,
   WorkspaceFilesResponse,
+  WorkspaceSearchResponse,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
@@ -163,6 +174,14 @@ export const getMe = () => apiFetch<MeResponse>("/api/me");
 
 export const changePassword = (body: PasswordChangeRequest) =>
   apiFetch<void>("/api/me/password", { method: "PUT", body });
+
+/**
+ * Nickname and avatar, as a patch: an absent field keeps what is stored, `null` clears it.
+ * The response carries the updated user, which the caller feeds straight back into the auth
+ * state so the sidebar's avatar and name change without a second round trip.
+ */
+export const updateProfile = (body: UpdateProfileRequest) =>
+  apiFetch<UpdateProfileResponse>("/api/me/profile", { method: "PUT", body });
 
 export const getPrefs = () => apiFetch<PrefsResponse>("/api/me/prefs");
 
@@ -191,6 +210,22 @@ export const adminGetSettings = () => apiFetch<ServerSettingsResponse>("/api/adm
 /** Omitted fields keep their current value; applies immediately (no restart). */
 export const adminPutSettings = (body: ServerSettingsUpdateRequest) =>
   apiFetch<ServerSettingsResponse>("/api/admin/settings", { method: "PUT", body });
+
+/**
+ * What the reachability probe would request — name and exact URL per provider — without
+ * requesting it. Served rather than held as a frontend constant so the listed URLs cannot
+ * drift from the ones actually fetched.
+ */
+export const adminGetProxyProbeTargets = () =>
+  apiFetch<ProxyProbeTargetsResponse>("/api/admin/settings/proxy-probe");
+
+/**
+ * Measures the server's own outbound path to ONE of those targets, unauthenticated. One
+ * request per provider so each row can be filled the moment its own answer arrives; the
+ * provider id is the only thing sent, and the server matches it against the same fixed list.
+ */
+export const adminProbeProxy = (provider: ProxyProbeProvider) =>
+  apiFetch<ProxyProbeResponse>(`/api/admin/settings/proxy-probe/${provider}`, { method: "POST" });
 
 // Project & members --------------------------------------------------------------
 
@@ -726,6 +761,17 @@ export const postApproval = (
     { method: "POST", body },
   );
 
+/**
+ * Hands one EXECUTING tool call back as a background task, so the turn closes and the
+ * conversation carries on (404 tool_call_not_found when the call already finished — a benign
+ * race the caller just ignores; 409 tool_not_detachable when the tool has no background form).
+ */
+export const postToolCallBackground = (sessionId: string, toolCallId: string) =>
+  apiFetch<void>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/tool-calls/${encodeURIComponent(toolCallId)}/background`,
+    { method: "POST", body: {} },
+  );
+
 export const postAbort = (sessionId: string) =>
   apiFetch<void>(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, {
     method: "POST",
@@ -874,8 +920,8 @@ export const importAgentTrace = (projectId: string, agentId: string, body: Trace
 /**
  * One page of the cost center's error table (newest first). The dashboard response already
  * carries the first page; this is for paging back to earlier ones without refetching the
- * whole aggregate. Takes the dashboard's date/agent filter only — the model filter never
- * applied to errors.
+ * whole aggregate. Takes the dashboard's date/agent filter (and its trailing window, when one
+ * is on) only — the model filter never applied to errors.
  */
 export const getUsageErrors = (
   projectId: string,
@@ -884,6 +930,9 @@ export const getUsageErrors = (
     limit: number;
     from?: string;
     to?: string;
+    /** The trailing window narrowing those dates; both or neither. */
+    fromTs?: string;
+    toTs?: string;
     agentId?: string;
     /** Narrow to one category; the cost-center badge asks for `unexpected` with `limit: 1`. */
     kind?: UsageErrorKind;
@@ -895,25 +944,34 @@ export const getUsageErrors = (
       limit: String(params.limit),
       from: params.from,
       to: params.to,
+      fromTs: params.fromTs,
+      toTs: params.toTs,
       agentId: params.agentId,
       kind: params.kind,
     },
   });
 
 /**
- * Empties the cost center's error table for the filter the panel is showing — the same
- * date/agent pair the reads take, so what goes is what was on screen. Owner only, and errors
- * with no Project attribution are never included. Answers how many rows were deleted.
+ * Empties the cost center's error table for the filter the panel is showing — the same dates,
+ * trailing window and Agent the reads take, so what goes is what was on screen (for an admin,
+ * the unattributed rows an admin's panel shows included). Owner only. Answers how many rows
+ * were deleted.
  */
 export const clearUsageErrors = (
   projectId: string,
-  params: { from?: string; to?: string; agentId?: string },
+  params: { from?: string; to?: string; fromTs?: string; toTs?: string; agentId?: string },
 ) =>
   apiFetch<UsageErrorsClearResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/usage/errors`,
     {
       method: "DELETE",
-      query: { from: params.from, to: params.to, agentId: params.agentId },
+      query: {
+        from: params.from,
+        to: params.to,
+        fromTs: params.fromTs,
+        toTs: params.toTs,
+        agentId: params.agentId,
+      },
     },
   );
 
@@ -984,12 +1042,54 @@ export const workspaceFileUrl = (sessionId: string, path: string, download = fal
 export const workspaceFilePreviewUrl = (sessionId: string, path: string): string =>
   `/api/sessions/${sessionId}/files/preview-redirect?path=${encodeURIComponent(path)}`;
 
-export const uploadWorkspaceFile = (sessionId: string, path: string, dataBase64: string) =>
+/**
+ * Writes a Workspace file whole. `ifVersion` is the marker a previous read returned in its
+ * `ETag`: pass it and the write is refused with 409 `file_changed` unless the file is still
+ * the one that was read (the editor's save); leave it out and the write creates or replaces
+ * unconditionally (uploads, which read no version).
+ */
+export const uploadWorkspaceFile = (
+  sessionId: string,
+  path: string,
+  dataBase64: string,
+  ifVersion?: string,
+) =>
   apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {
     method: "PUT",
-    body: { dataBase64 },
+    body: { dataBase64, ifVersion } satisfies FilesWriteRequest,
     query: { path },
   });
+
+/**
+ * Moves or renames a Workspace file. `ifVersion` (see {@link uploadWorkspaceFile}) guards the
+ * SOURCE: pass it and the move is refused with 409 `file_changed` unless the file is still the
+ * one that was read. The destination has no such marker — nothing read it — so an occupied
+ * destination is 409 `target_exists` rather than an overwrite. Files only: a directory is a
+ * 400, since nothing could express a precondition over a whole tree. `to`'s parent directory
+ * is created when it is missing.
+ */
+export const moveWorkspaceFile = (sessionId: string, body: FilesMoveRequest) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/move`, { method: "POST", body });
+
+/**
+ * Deletes a Workspace file. `ifVersion` is the same marker a write carries: with it, a file
+ * the Agent rewrote since the panel read it is refused with 409 `file_changed` instead of
+ * being removed. Files only — a directory is a 400.
+ */
+export const deleteWorkspaceFile = (sessionId: string, path: string, ifVersion?: string) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/content`, {
+    method: "DELETE",
+    query: { path, ifVersion },
+  });
+
+/**
+ * Searches the whole Workspace by entry name (case-insensitive substring), breadth-first from
+ * the root so the shallowest matches come first. `truncated` says a cap stopped the walk: the
+ * hits are then the most relevant ones rather than all of them. An empty query is a 400 — the
+ * caller decides what an empty search box shows, and it is never "every file".
+ */
+export const searchWorkspaceFiles = (sessionId: string, q: string) =>
+  apiFetch<WorkspaceSearchResponse>(`/api/sessions/${sessionId}/files/search`, { query: { q } });
 
 /** Batch file-existence check (message file cards): both out-of-bounds and missing paths simply don't appear in `existing`; always returns 200. */
 export const statSessionFiles = (sessionId: string, paths: string[]) =>
@@ -1071,6 +1171,23 @@ export const uninstallAgentHook = (projectId: string, agentId: string, name: str
       `/hooks/${encodeURIComponent(name)}`,
     { method: "DELETE" },
   );
+
+/** Installs one hook package from an uploaded zip (base64); 409 hook_exists unless overwrite; 201 returns the latest installed list. */
+export const installAgentHookArchive = (
+  projectId: string,
+  agentId: string,
+  body: HookArchiveInstallRequest,
+) =>
+  apiFetch<AgentHooksResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+      `/hooks/archive`,
+    { method: "POST", body },
+  );
+
+/** Zip download URL for one installed hook package (server sets Content-Disposition attachment); the export round-trips through installAgentHookArchive. */
+export const agentHookArchiveUrl = (projectId: string, agentId: string, name: string): string =>
+  `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}` +
+  `/hooks/${encodeURIComponent(name)}/archive`;
 
 /** Installs one skill from an uploaded zip (base64); 409 skill_exists unless overwrite; 201 returns the latest installed list. */
 export const installAgentSkillArchive = (
@@ -1219,3 +1336,17 @@ export const desktopUpdateDownload = () =>
 
 export const desktopUpdateInstall = () =>
   apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });
+
+// Desktop tray icon (desktop-shell sessions only) --------------------------------------
+
+/** What the shell last pushed; `status` is null until that first push, which reads as on. */
+export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/desktop/tray");
+
+/**
+ * Relays a tray change to the shell, which applies it and pushes the new state back.
+ *
+ * A patch rather than a snapshot: Settings › Appearance writes the switch, and the locale
+ * provider writes the UI language whenever it changes, and neither knows the other's value.
+ */
+export const setDesktopTray = (patch: DesktopTrayPatch) =>
+  apiFetch<void>("/api/desktop/tray", { method: "PUT", body: patch });

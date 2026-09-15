@@ -20,6 +20,7 @@
  */
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
+import { randomHex } from "../../lib/random-id";
 import { clearDraft, draftFromUnknown, draftKey, loadDraft, saveDraft } from "./draft-cache";
 import type { DraftCache, DraftStorage } from "./draft-cache";
 
@@ -126,7 +127,7 @@ export function useDraftSessions(
   );
 }
 
-const randomDraftId = (): string => `draft-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
+const randomDraftId = (): string => `draft-${randomHex(8)}`;
 
 /**
  * Moves the ACTIVE new-chat draft into the parked list when it holds typed text;
@@ -134,6 +135,12 @@ const randomDraftId = (): string => `draft-${crypto.randomUUID().replace(/-/g, "
  * slot keeps only the model carry-over (mirroring discardDraft on a successful send).
  * Dispatches DRAFT_FLUSH_EVENT first so a mounted draft page's debounce-pending
  * keystrokes reach the cache before it is read.
+ *
+ * A prompt a "Create with AI" surface composed (`aiPrefill`, draft-cache.ts) is text nobody
+ * typed: it is dropped rather than parked, so it never turns up in the sidebar as a draft
+ * conversation the user has to recognise and delete. Dropping — rather than leaving it in
+ * place — is what keeps the slot this function is vacating actually vacated: every caller goes
+ * on to land on a fresh new-chat draft, which would otherwise read the stale prompt back.
  */
 export function parkActiveDraft(
   userId: string,
@@ -148,6 +155,11 @@ export function parkActiveDraft(
   // which never happens outside a browser (tests always inject a storage).
   const draft = loadDraft(activeKey, storage);
   if (!draft.text || draft.text.trim() === "") return null;
+  if (draft.aiPrefill) {
+    if (draft.modelRef) saveDraft(activeKey, { modelRef: draft.modelRef }, storage);
+    else clearDraft(activeKey, storage);
+    return null;
+  }
   const key = draftSessionsKey(userId, projectId);
   const entry: DraftSessionEntry = {
     id: randomDraftId(),

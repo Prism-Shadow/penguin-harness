@@ -14,13 +14,13 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 import {
   assertValidId,
   assembleSystemPrompt,
   buildToolConfig,
   selectBuiltinToolsForModel,
   DEFAULT_COMPACTION_PROMPT,
-  DEFAULT_MAX_CONTEXT_LENGTH,
   formatModelRef,
   getModel,
   listInstalledSkills,
@@ -36,11 +36,18 @@ import {
   systemConfigPath,
   tracesDir,
   type AgentState,
+  type CompactionConfig,
   type ModelRef,
   type ModelEntry,
   type ProjectConfig,
+  type SystemConfig,
 } from "./state/index.js";
-import { GenerativeModel, ToolCallIdAllocator, effectiveMaxContextLength } from "./llm/index.js";
+import {
+  DEFAULT_MAX_CONTEXT_LENGTH,
+  GenerativeModel,
+  ToolCallIdAllocator,
+  effectiveMaxContextLength,
+} from "./llm/index.js";
 import { Environment } from "./environment/index.js";
 import {
   Writer,
@@ -86,6 +93,7 @@ import type {
   CommandPolicyConfig,
   GenerativeModelConfig,
   ProxyEnvPolicy,
+  SpawnConfiner,
   SubagentHandle,
   SubagentRunner,
   ThinkingLevelName,
@@ -126,6 +134,49 @@ export interface CreateAgentOptions {
    * standalone use).
    */
   controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
+  /**
+   * Directories put at the FRONT of PATH for the command subprocesses — and the hook
+   * scripts — of every Session this Agent creates or resumes, and of its subagents'
+   * Sessions, which inherit the getter like `proxyEnv`. The Web server points it at the
+   * shim directory holding its own `penguin`, so a command an Agent runs reaches the CLI
+   * of the harness that is running it rather than whatever is installed globally. Re-read
+   * at every spawn. Absent = PATH is untouched (SDK/CLI standalone use).
+   */
+  pathPrepend?: () => string[];
+  /**
+   * Sandbox-confinement seam for the command subprocesses of every Session this Agent
+   * creates or resumes — and of its subagents' Sessions, which inherit the getter (see
+   * {@link SpawnConfiner}). Host policy exactly like `proxyEnv`: re-read at every
+   * spawn, so the hosting server can swap the active confiner without restarting
+   * Sessions. Absent = commands spawn unconfined.
+   */
+  confineSpawn?: () => SpawnConfiner | null;
+  /**
+   * What a host adds to every Session this Agent assembles — see {@link AgentAssembly}.
+   * Host policy like
+   * `proxyEnv`: inherited by subagents' Agents, re-read at every Session creation so a
+   * hot push that changes the set reaches the next Session without a restart.
+   */
+  assembly?: AgentAssembly;
+}
+
+/**
+ * The host's contributions to Session assembly. Everything an Agent's own folder
+ * decides (system prompt, tool selection, MCP servers, model, compaction, memory) stays
+ * in its config; this is what the HOSTING PROCESS adds on top, for every Agent.
+ */
+export interface AgentAssembly {
+  /**
+   * Sections appended to the assembled system prompt, in order, each as `# <title>` +
+   * text. Empty = the prompt is exactly the Agent's own.
+   */
+  promptSections?(): readonly PromptSection[];
+}
+
+export interface PromptSection {
+  /** The `# ` heading the section is appended under. */
+  title: string;
+  text: string;
 }
 
 /** The Session coordinates a {@link CreateAgentOptions.controlEnv} policy is evaluated with. */
@@ -261,6 +312,31 @@ interface AssembledContext {
 // window arithmetic in llm/context-limits.ts; re-exported by llm/index.js.
 
 /**
+ * The Session's compaction settings as they follow from a `compaction` section: defaults
+ * filled in, the threshold capped by what the model's window leaves room for, and an unknown
+ * mode read as the default `summarize`.
+ *
+ * Stated once because two callers need the same answer from the same input — the context
+ * assembly below, and the live re-reader every checkpoint calls (see `compactionReader`). Two
+ * copies of the rule would let a running Session compact at a threshold no rotation would
+ * have chosen.
+ */
+function resolveCompaction(
+  config: CompactionConfig | undefined,
+  contextWindow: number | undefined,
+): CompactionSettings {
+  return {
+    maxContextLength: effectiveMaxContextLength(
+      config?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
+      contextWindow,
+    ),
+    maxSessionTurns: config?.max_session_turns ?? -1,
+    mode: config?.mode === "discard" ? "discard" : "summarize",
+    prompt: config?.prompt ?? DEFAULT_COMPACTION_PROMPT,
+  };
+}
+
+/**
  * Output cap for meta requests (title generation / vision describing): these carry their own
  * small hardcoded budget, tightened further by the entry's per-model `max_tokens` when that is
  * smaller — a cap the user pinned below the budget must bind every request to that model. The
@@ -269,6 +345,12 @@ interface AssembledContext {
  */
 export function metaMaxTokens(budget: number, modelCap: number | undefined): number {
   return modelCap !== undefined && modelCap > 0 ? Math.min(budget, modelCap) : budget;
+}
+
+/** The assembled prompt plus the host's sections, each under its own heading. */
+function withPromptSections(prompt: string, sections: readonly PromptSection[]): string {
+  if (sections.length === 0) return prompt;
+  return [prompt, ...sections.map((s) => `# ${s.title}\n${s.text}`)].join("\n\n");
 }
 
 /** Create or load an Agent (the one init-enabled use of `loadAgentState`). */
@@ -280,7 +362,15 @@ export async function createAgent(opts: CreateAgentOptions = {}): Promise<Agent>
     init: {},
   });
   const projectConfig = await loadProjectConfig(state.root, state.projectId);
-  return new Agent(state, projectConfig, opts.proxyEnv, opts.controlEnv);
+  return new Agent(
+    state,
+    projectConfig,
+    opts.proxyEnv,
+    opts.controlEnv,
+    opts.pathPrepend,
+    opts.confineSpawn,
+    opts.assembly,
+  );
 }
 
 export class Agent {
@@ -291,6 +381,12 @@ export class Agent {
     private readonly proxyEnv?: () => ProxyEnvPolicy | null,
     /** See {@link CreateAgentOptions.controlEnv}; evaluated per Session with that Session's coordinates. */
     private readonly controlEnv?: (ctx: ControlEnvContext) => Record<string, string>,
+    /** See {@link CreateAgentOptions.pathPrepend}; forwarded into every Session's Environment and hooks. */
+    private readonly pathPrepend?: () => string[],
+    /** See {@link CreateAgentOptions.confineSpawn}; forwarded into every Session's Environment. */
+    private readonly confineSpawn?: () => SpawnConfiner | null,
+    /** See {@link CreateAgentOptions.assembly}; read at every Session creation. */
+    private readonly assembly?: AgentAssembly,
   ) {}
 
   /**
@@ -366,27 +462,30 @@ export class Agent {
         workspaceDir: spec.workspaceDir,
         enabled: state.systemConfig.memory?.enabled !== false,
       });
-      systemPrompt = assembleSystemPrompt(
-        state,
-        sessionEnvironment(spec.workspaceDir, spec.sessionId, {
-          agentId,
-          projectDir: projectDir(root, projectId),
-          provider: spec.modelEntry.provider,
-          modelId: spec.modelEntry.model_id,
-        }),
-        Object.keys(vault),
-        installedSkills,
-        memory,
-        scheduleNames,
+      systemPrompt = withPromptSections(
+        assembleSystemPrompt(
+          state,
+          sessionEnvironment(spec.workspaceDir, spec.sessionId, {
+            agentId,
+            projectDir: projectDir(root, projectId),
+            provider: spec.modelEntry.provider,
+            modelId: spec.modelEntry.model_id,
+          }),
+          Object.keys(vault),
+          installedSkills,
+          memory,
+          scheduleNames,
+        ),
+        this.assembly?.promptSections?.() ?? [],
       );
     }
 
     // Tool exposure is capped by depth: a (leaf) child Agent that has reached the max spawn
     // depth no longer gets run_subagent or input_subagent (the latter depends on the
     // subagent_id produced by the former, so exposing it alone is meaningless). Tool entries
-    // are also selected by the session model's type (marked via forModel: vision models use
-    // read_image, text-only models use describe_image; entries without this marker are
-    // unaffected).
+    // are also selected by the session model's type through their forModel annotation
+    // (entries without it are unaffected — the built-in set carries none; read_file decides
+    // per model at runtime through the injected vision describer).
     const canSpawn = spec.subagentDepth < MAX_SUBAGENT_DEPTH;
     const baseToolConfig = buildToolConfig(state);
     const modelVision = spec.modelEntry.vision !== false;
@@ -413,18 +512,13 @@ export class Agent {
     const thinkingLevel =
       pin === null ? undefined : (pin ?? this.configuredThinkingLevel(state, projectConfig));
 
-    // Compaction config: defaults are filled in here; an unknown mode falls back to
-    // summarize (the default).
-    const compactionConfig = state.systemConfig.compaction;
-    const compaction: CompactionSettings = {
-      maxContextLength: effectiveMaxContextLength(
-        compactionConfig?.max_context_length ?? DEFAULT_MAX_CONTEXT_LENGTH,
-        spec.modelEntry.context_window,
-      ),
-      maxSessionTurns: compactionConfig?.max_session_turns ?? -1,
-      mode: compactionConfig?.mode === "discard" ? "discard" : "summarize",
-      prompt: compactionConfig?.prompt ?? DEFAULT_COMPACTION_PROMPT,
-    };
+    // Compaction config: this context's baseline. It is no longer the last word — the engine
+    // re-reads the section at every compaction checkpoint through `compactionReader` — but a
+    // context still opens on the configuration that was on disk when it opened.
+    const compaction = resolveCompaction(
+      state.systemConfig.compaction,
+      spec.modelEntry.context_window,
+    );
 
     // session_meta: this context's runtime configuration — the assembled prompt goes both to
     // the LLM and in here, so the Trace can audit the actual effective value and a resume
@@ -725,6 +819,49 @@ export class Agent {
   }
 
   /**
+   * The Session's live compaction reader: what takes `compaction` out of the set of settings
+   * a model context freezes when it opens. The engine calls it at every compaction checkpoint,
+   * so a threshold, turn count, mode or prompt saved to the Agent's `system_config.yaml`
+   * reaches the conversation that is running instead of waiting for the next rotation.
+   *
+   * Cached by the file's identity on disk, so an unchanged file costs one `stat` per checkpoint
+   * and nothing else. Three fields, because no one of them is enough: the inode number changes
+   * whenever the config is saved through `atomicWriteFile` (a temp file renamed over the name,
+   * which is also why a reader never sees a half-written config), while an in-place rewrite
+   * keeps the inode and is caught by the nanosecond mtime — `mtimeMs` alone cannot separate two
+   * saves inside the same millisecond, and a threshold dragged in the Web App can produce
+   * exactly that. Size is the cheap third opinion for a filesystem with a coarse clock.
+   *
+   * Only the `compaction` section is honoured here. Everything else in the config is strict
+   * tier and belongs to the context that was assembled from it; reading the file is not
+   * licence to apply the rest of it mid-context.
+   *
+   * The model's context window comes from the Session's own entry, which is fixed at creation
+   * (a mid-conversation model change opens a new Session), so one reader serves every context
+   * the Session opens. A parse that fails throws: the engine keeps the settings in force and
+   * warns once, which is the right answer for a file being rewritten badly.
+   */
+  private compactionReader(spec: SessionSpec): () => Promise<CompactionSettings> {
+    const { root, projectId, agentId } = this.state;
+    const configPath = systemConfigPath(root, projectId, agentId);
+    const contextWindow = spec.modelEntry.context_window;
+    let cachedKey: string | null = null;
+    let cached: CompactionSettings | null = null;
+    return async (): Promise<CompactionSettings> => {
+      const stat = await fs.stat(configPath, { bigint: true });
+      const key = `${stat.mtimeNs}:${stat.size}:${stat.ino}`;
+      if (cached !== null && key === cachedKey) return cached;
+      const parsed = parseYaml(await fs.readFile(configPath, "utf8")) as unknown;
+      if (parsed === null || typeof parsed !== "object") {
+        throw new Error(`Invalid Agent State config: ${configPath} is empty or corrupted.`);
+      }
+      cached = resolveCompaction((parsed as SystemConfig).compaction, contextWindow);
+      cachedKey = key;
+      return cached;
+    };
+  }
+
+  /**
    * Constructs the Session for `spec` running on `context` — the one assembly behind
    * createSession and resumeSession, so initialization and resumption cannot drift apart.
    * `extras` carries the resume-only fields (its history-injecting bootstrap wrapper, the
@@ -748,6 +885,9 @@ export class Agent {
 
       createBareLLM: rt.createBareLLM,
       compaction: context.compaction,
+      // Live tier: the baseline above is what this context opened on, and this is how every
+      // checkpoint after it asks the disk again.
+      readCompaction: this.compactionReader(spec),
       // Where an input image lands when it becomes a path line (see SessionConfig.imagesDir).
       imagesDir: sessionScratchpadDir(root, projectId, agentId, spec.sessionId),
       modelHasVision: spec.modelEntry.vision !== false,
@@ -816,13 +956,16 @@ export class Agent {
                 root,
                 projectId,
                 agentId,
-                // A child Agent loads its own vault/config, but the proxy-env and
-                // control-env policy getters are host policy, not Agent state: the
+                // A child Agent loads its own vault/config, but the proxy-env, control-env
+                // and spawn-confinement getters are host policy, not Agent state: the
                 // subagent's commands run in the same serving process, so they follow the
                 // same settings as the parent's — controlEnv is then evaluated with the
                 // child Session's own coordinates.
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
+                ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
+                ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
+                ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
               })
             : parentAgent;
         // The child Session follows the PARENT Session, never the Project default: with the
@@ -870,6 +1013,9 @@ export class Agent {
                 agentId,
                 ...(parentAgent.proxyEnv ? { proxyEnv: parentAgent.proxyEnv } : {}),
                 ...(parentAgent.controlEnv ? { controlEnv: parentAgent.controlEnv } : {}),
+                ...(parentAgent.pathPrepend ? { pathPrepend: parentAgent.pathPrepend } : {}),
+                ...(parentAgent.confineSpawn ? { confineSpawn: parentAgent.confineSpawn } : {}),
+                ...(parentAgent.assembly ? { assembly: parentAgent.assembly } : {}),
               });
         const childSession = await childAgent.resumeSession({ sessionId });
         return subagentHandleFor(childSession);
@@ -953,11 +1099,12 @@ export class Agent {
     }
 
     // When the session model doesn't support images (vision=false): inject a vision
-    // model service for describe_image (forModel: "text-only", selected by the tool
-    // filter in assembleContext) — images are described by the Project config's
-    // vision_model (a paired reference), and the tool returns text. Even when unconfigured
-    // or invalid, it is still injected (modelId=null); the tool then finishes with a failed
-    // explanation, and images are never allowed into that session's history.
+    // model service for read_file's image branch — images are described by the Project
+    // config's vision_model (a paired reference), and the tool returns text instead of
+    // image content. Even when unconfigured or invalid, it is still injected (modelId=null):
+    // its presence is what tells read_file the session model cannot view images; the tool
+    // then finishes with a failed explanation, and images are never allowed into that
+    // session's history.
     let visionDescriber: VisionDescriberService | undefined;
     if (modelEntry.vision === false) {
       const visionRef = this.projectConfig.vision_model;
@@ -1027,6 +1174,8 @@ export class Agent {
               }),
           }
         : {}),
+      ...(this.pathPrepend ? { pathPrepend: this.pathPrepend } : {}),
+      ...(this.confineSpawn ? { confineSpawn: this.confineSpawn } : {}),
     });
 
     // The tool_call_id uniqueness registry is shared by every context's LLM object: its
@@ -1153,34 +1302,46 @@ export class Agent {
 
   /**
    * The hooks of a top-level Session: every hook package installed in the Agent's
-   * `agent_state/hooks/` (read fresh per Session, like skills), each command run as a
-   * script (hooks/script-hook.ts), plus the spawner that honors a hook's `subagent` answer —
+   * `agent_state/hooks/` (read fresh per Session, like skills), each command run as a script
+   * (hooks/script-hook.ts), plus the spawner that honors a hook's `subagent` answer —
    * a detached child Session of this Agent (or the one it names) whose stream is dropped (its
    * own Trace is the record) and which inherits the run's approval callback. Child Sessions —
    * spawned or revived subagents — carry no hooks: a subagent's work belongs to its parent's
    * Trace, and a child could not spawn a subagent anyway.
+   *
+   * `hooks.enabled: false` in the Agent's config switches all of them off at once: the
+   * packages stay installed, and this is the one place a Session's hooks are assembled.
    */
   private async sessionHooks(
     runner: SubagentRunner,
     child: boolean,
   ): Promise<SessionHooks | undefined> {
     if (child) return undefined;
-    const installed = await listInstalledHooks(
-      this.state.root,
-      this.state.projectId,
-      this.state.agentId,
-    );
+    const { root, projectId, agentId } = this.state;
+    // Read from disk rather than from this Agent object's load-time snapshot: a long-lived
+    // Agent would otherwise keep building Sessions on a config edited since it was loaded
+    // (the same reason assembleContext re-loads the state).
+    const { systemConfig } = await loadAgentState({ root, projectId, agentId });
+    if (systemConfig.hooks?.enabled === false) return undefined;
+    const installed = await listInstalledHooks(root, projectId, agentId);
+    // Hook scripts get the same PATH front as commands do (see
+    // CreateAgentOptions.pathPrepend). Only the environment half applies: a hook is run as
+    // `node <script>` directly, with no shell and so no login profile to re-prepend
+    // anything after it.
+    const pathPrepend = this.pathPrepend;
     const stop = installed.flatMap((hook) =>
-      hook.stop.map((cmd) => scriptStopHook(hook.name, hook.dir, cmd.command, cmd.timeout)),
+      hook.stop.map((cmd) =>
+        scriptStopHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
+      ),
     );
     const preToolUse = installed.flatMap((hook) =>
       hook.pre_tool_use.map((cmd) =>
-        scriptPreToolUseHook(hook.name, hook.dir, cmd.command, cmd.timeout),
+        scriptPreToolUseHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
       ),
     );
     const userPrompt = installed.flatMap((hook) =>
       hook.user_prompt.map((cmd) =>
-        scriptUserPromptHook(hook.name, hook.dir, cmd.command, cmd.timeout),
+        scriptUserPromptHook(hook.name, hook.dir, cmd.command, cmd.timeout, pathPrepend),
       ),
     );
     if (stop.length === 0 && preToolUse.length === 0 && userPrompt.length === 0) return undefined;

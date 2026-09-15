@@ -2,13 +2,18 @@
  * Behavior tests for long-running command sessions (exec_command yield + input_command).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Environment, ManagedSession } from "../src/environment/index.js";
 import { toolCall } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
-import type { ProxyEnvPolicy, ToolConfig, ToolDefinitionConfig } from "../src/interfaces/index.js";
+import type {
+  ProxyEnvPolicy,
+  SpawnConfiner,
+  ToolConfig,
+  ToolDefinitionConfig,
+} from "../src/interfaces/index.js";
 
 function execTool(overrides: Partial<ToolDefinitionConfig> = {}): ToolDefinitionConfig {
   return {
@@ -490,6 +495,68 @@ describe("harness environment variables never reach a spawned command", () => {
   });
 });
 
+describe("confineSpawn seam rewrites the exact argv a command spawns", () => {
+  // The hosting server's platform layer supplies a SpawnConfiner getter through
+  // Agent -> Environment -> CommandSessionManager: the confiner sees the exact argv
+  // (shell included) and returns the argv to spawn instead; a throw fails the spawn
+  // closed. Standalone Environments (no getter) keep the historical direct spawn.
+  let confiner: SpawnConfiner | null = null;
+  let confinedEnv: Environment;
+
+  beforeEach(() => {
+    confiner = null;
+    confinedEnv = new Environment({
+      workspaceDir: tmp,
+      toolConfig: sessionConfig(),
+      confineSpawn: () => confiner,
+    });
+  });
+  afterEach(() => {
+    confinedEnv.dispose();
+  });
+
+  it("the confiner receives the exact argv plus cwd, and its rewrite is what runs", async () => {
+    let seen: { argv: readonly string[]; cwd: string; workspaceDir: string } | null = null;
+    confiner = (argv, opts) => {
+      seen = { argv, cwd: opts.cwd, workspaceDir: opts.workspaceDir };
+      // Stand-in runner: replaces the invocation wholesale and prints a marker, proving
+      // the child that actually ran is the rewritten argv, not the original shell.
+      return [process.execPath, "-e", "console.log('CONFINED wrapped=' + process.argv.length)"];
+    };
+    const res = await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
+    expect(res.output).toContain("CONFINED wrapped=");
+    expect(res.output).not.toContain("original\n");
+    expect(seen).not.toBeNull();
+    // The exact argv contract: last element is the command string, preceded by the shell.
+    expect(seen!.argv.at(-1)).toBe("echo original");
+    expect(seen!.argv.length).toBeGreaterThanOrEqual(2);
+    expect(seen!.cwd).toBe(tmp);
+    expect(seen!.workspaceDir).toBe(tmp);
+  });
+
+  it("a throwing confiner fails the spawn closed: reported as spawn error, nothing runs", async () => {
+    confiner = () => {
+      throw new Error('sandbox mode "workspace-write" requested but no backend is usable');
+    };
+    const res = await runTool(confinedEnv, "exec_command", {
+      cmd: "echo leaked > confine-leak.txt",
+    });
+    expect(res.stopReason).toBe("fatal");
+    expect(res.output).toContain('[spawn error: sandbox mode "workspace-write"');
+    // Fail-closed means the command never executed — not even unconfined.
+    await expect(access(path.join(tmp, "confine-leak.txt"))).rejects.toThrow();
+  });
+
+  it("the getter is re-read at every spawn, so a hot-swapped confiner needs no new Environment", async () => {
+    const first = await runTool(confinedEnv, "exec_command", { cmd: "echo unconfined-run" });
+    expect(first.output).toContain("unconfined-run");
+    confiner = () => [process.execPath, "-e", "console.log('CONFINED')"];
+    const second = await runTool(confinedEnv, "exec_command", { cmd: "echo unconfined-run" });
+    expect(second.output).toContain("CONFINED");
+    expect(second.output).not.toContain("unconfined-run");
+  });
+});
+
 describe("proxyEnv policy governs the proxy variables commands inherit", () => {
   // The Web server's proxy settings thread a ProxyEnvPolicy getter through
   // Agent -> Environment -> CommandSessionManager: strip (switch off), inject (explicit
@@ -676,6 +743,91 @@ describe("controlEnv injects the host's harness-control variables into commands"
     }
   });
 });
+
+describe.skipIf(process.platform === "win32")(
+  "pathPrepend puts the host's own directories in front of a command's PATH",
+  () => {
+    // The hosting server threads a pathPrepend getter through Environment ->
+    // CommandSessionManager so a command an Agent runs reaches the harness's own `penguin`
+    // rather than whatever the machine has installed globally.
+    // A shell BUILTIN, deliberately: these cases run with PATH rewritten out from under
+    // them (that is the subject), so a reader that has to be found on PATH would be
+    // reporting on its own resolvability as much as on the value. `export` puts the same
+    // string in the environment any child would inherit.
+    const READ_PATH = 'echo "P=[$PATH]"';
+    let shimDir: string;
+    let prepend: string[];
+    let prepared: Environment;
+
+    beforeEach(async () => {
+      shimDir = path.join(tmp, "shim");
+      await mkdir(shimDir, { recursive: true });
+      const script = path.join(shimDir, "penguin");
+      await writeFile(script, "#!/bin/sh\necho harness-cli\n");
+      await chmod(script, 0o755);
+      prepend = [shimDir];
+      prepared = new Environment({
+        workspaceDir: tmp,
+        toolConfig: sessionConfig(),
+        pathPrepend: () => prepend,
+      });
+    });
+
+    afterEach(() => prepared.dispose());
+
+    it("a bare command name resolves the prepended directory's copy", async () => {
+      const res = await runTool(prepared, "exec_command", { cmd: "penguin" });
+      expect(res.output).toContain("harness-cli");
+    });
+
+    it("the directory is FIRST on the PATH the command sees", async () => {
+      // Not merely present: commands run through a LOGIN shell, whose profile rewrites PATH
+      // after the child environment was set (on a Debian-family box /etc/profile replaces it
+      // outright). Being in front of whatever that left is the whole point.
+      const res = await runTool(prepared, "exec_command", { cmd: READ_PATH });
+      expect(res.output).toContain(`P=[${shimDir}${path.delimiter}`);
+    });
+
+    it("a vault PATH does not displace it", async () => {
+      // The vault replaces the inherited PATH the harness prepared; the statement in front
+      // of the command runs afterwards, so the harness's own directory leads either way.
+      // (The value still has to carry the session shell, which is spawned by bare name
+      // against this very PATH — a vault entry without one is an ENOENT before any of this,
+      // long-standing behaviour of a vault PATH rather than anything prepending changes.
+      // Nothing else has to be there: the command below is a builtin.)
+      const vaultEnv = new Environment({
+        workspaceDir: tmp,
+        toolConfig: sessionConfig(),
+        vault: { PATH: "/usr/bin:/bin" },
+        pathPrepend: () => prepend,
+      });
+      try {
+        const res = await runTool(vaultEnv, "exec_command", { cmd: READ_PATH });
+        expect(res.output).toContain(`P=[${shimDir}${path.delimiter}`);
+      } finally {
+        vaultEnv.dispose();
+      }
+    });
+
+    it("the getter is re-read at every spawn: nothing prepended, nothing added", async () => {
+      prepend = [];
+      const res = await runTool(prepared, "exec_command", { cmd: READ_PATH });
+      expect(res.output).not.toContain(shimDir);
+      prepend = [shimDir];
+      expect((await runTool(prepared, "exec_command", { cmd: "penguin" })).output).toContain(
+        "harness-cli",
+      );
+    });
+
+    it("the command the host lists is the one the Agent wrote, without the PATH statement", async () => {
+      const cmd = "sleep 5";
+      await runTool(prepared, "exec_command", { cmd, yield_time_ms: 200 });
+      const listed = prepared.listBackgroundCommands();
+      expect(listed).toHaveLength(1);
+      expect(listed[0]!.cmd).toBe(cmd);
+    });
+  },
+);
 
 describe("exec_command — a working directory that is not there", () => {
   // Node reports an unusable `cwd` as `spawn <shell> ENOENT`: the error names the COMMAND,

@@ -94,7 +94,7 @@ interface ToolCallOutputPayload {
   type: "tool_call_output";
   role: "user";
   output: string;
-  images?: string[];          // data:<mime>;base64,… 列表(如 read_image 的结果)
+  images?: string[];          // data:<mime>;base64,… 列表(如 read_file 读图的结果)
   tool_call_id: string;
   stop_reason?: StopReason;
 }

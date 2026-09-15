@@ -60,6 +60,7 @@ import {
   positiveIntParam,
   readJson,
   requireEnum,
+  requireString,
   requireValidId,
 } from "../validate.js";
 import type { AppDeps } from "../../app.js";
@@ -446,20 +447,18 @@ export function agentSessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     const rawCounts = c.req.query("counts");
     if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
-    const { sessions, counts, workspaceCounts } = await deps.sessionService.listSessions(
-      projectId,
-      agentId,
-      {
+    const { sessions, counts, workspaceCounts, workspaceLatest } =
+      await deps.sessionService.listSessions(projectId, agentId, {
         ...(paging ? { paging } : {}),
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
-      },
-    );
+      });
     return c.json({
       sessions,
       ...(counts ? { counts } : {}),
       ...(workspaceCounts ? { workspaceCounts } : {}),
+      ...(workspaceLatest ? { workspaceLatest } : {}),
     } satisfies SessionsResponse);
   });
 
@@ -822,6 +821,8 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         prior: {
           subagentTokens: result.prior.subagentTokens,
           elapsedMs: result.prior.elapsedMs,
+          apiMs: result.prior.apiMs,
+          toolMs: result.prior.toolMs,
           sessionTokens: result.prior.sessionTokens,
           contextTokens: result.prior.contextTokens,
         },
@@ -852,6 +853,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // caused by a stale running/idle in the list; followed by replaying all still-pending
     // approval requests.
     const pendingSteering = deps.manager.pendingSteeringOf(row.sessionId);
+    const returnedSteering = deps.manager.returnedSteeringOf(row.sessionId);
     const pendingFollowUps = deps.manager.pendingFollowUpsOf(row.sessionId);
     const subagents = deps.manager.subagentsOf(row.sessionId);
     const initialEvents: ServerEvent[] = [
@@ -863,6 +865,9 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         // snapshot too, so the composer's queued hints and the panel's running marks
         // survive a reload.
         ...(pendingSteering.length > 0 ? { pendingSteering } : {}),
+        // Undelivered steering handed back by a finished run rides the snapshot as well, so a
+        // reload still returns the message to the composer instead of stranding it.
+        ...(returnedSteering.length > 0 ? { returnedSteering } : {}),
         ...(pendingFollowUps.length > 0 ? { pendingFollowUps } : {}),
         ...(subagents.length > 0 ? { subagents } : {}),
       },
@@ -1114,6 +1119,31 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
+  // Hand one EXECUTING tool call back as a background task (the tool card's button), so the
+  // turn can close and the conversation carry on. Addressed by tool_call_id, like the
+  // approval route — the only handle the frontend has on a single call.
+  //
+  // 404 when nothing with that id is executing: unknown, already finished, or the runtime is
+  // gone. 409 when the call is real and running but its tool has no background form — 404
+  // would deny a call the user can see on screen, and 400 would blame a request that is
+  // well-formed; the conflict is with what the tool IS, the same shape as refusing to remove
+  // a running process.
+  app.post("/:sessionId/tool-calls/:toolCallId/background", (c) => {
+    const row = resolveSession(c);
+    const result = deps.manager.detachToolCall(row.sessionId, pathParam(c, "toolCallId"));
+    if (result === "not_detachable") {
+      throw new HttpError(
+        409,
+        "tool_not_detachable",
+        "This tool has no background form; it cannot be moved to the background.",
+      );
+    }
+    if (result === "not_running") {
+      throw new HttpError(404, "tool_call_not_found", "This tool call is no longer running.");
+    }
+    return c.body(null, 204);
+  });
+
   app.post("/:sessionId/abort", (c) => {
     const row = resolveSession(c);
     const aborted = deps.manager.abortTask(row.sessionId);
@@ -1217,7 +1247,7 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     // fully in an opaque origin, so agent-generated markup cannot reach this origin's cookies
     // or API. The request itself still authenticates (top-level GET sends the Lax cookie).
     const preview = !download && c.req.query("preview") === "1";
-    const { data, fileName, contentType, scriptable } = await deps.workspaceFiles.read(
+    const { data, fileName, contentType, scriptable, version } = await deps.workspaceFiles.read(
       row.workspace,
       rel,
     );
@@ -1245,6 +1275,10 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
         // A Workspace file is whatever the Agent last wrote to that path. Letting a browser
         // cache it by URL is how a re-read after a settled turn paints the previous version.
         "Cache-Control": "no-store",
+        // Not a cache validator — no-store above means nothing ever revalidates. It is the
+        // version of the bytes in this response, which the Files panel's editor hands back
+        // as `ifVersion` on save so the write can refuse to overwrite a newer file.
+        ETag: version,
         ...(preview && scriptable
           ? {
               "Content-Security-Policy":
@@ -1338,8 +1372,49 @@ export function sessionsRoutes(deps: AppDeps): Hono<AppEnv> {
     if (data.length > MAX_UPLOAD_BYTES) {
       throw new HttpError(413, "file_too_large", "Uploaded file exceeds the 14MB limit.");
     }
-    await deps.workspaceFiles.write(row.workspace, rel, data);
+    // The editor's write precondition (see FilesWriteRequest); absent on an upload, which
+    // read no version and so writes unconditionally.
+    await deps.workspaceFiles.write(row.workspace, rel, data, optionalString(body, "ifVersion"));
     return c.body(null, 204);
+  });
+
+  /**
+   * Move or rename one Workspace file (the Files panel's context menu). Files only — see
+   * FilesMoveRequest for why a directory has no precondition that could protect it — and an
+   * occupied destination is refused with 409 `target_exists` rather than overwritten.
+   */
+  app.post("/:sessionId/files/move", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    await deps.workspaceFiles.move(
+      row.workspace,
+      requireString(body, "from"),
+      requireString(body, "to"),
+      optionalString(body, "ifVersion"),
+    );
+    return c.body(null, 204);
+  });
+
+  /**
+   * Delete one Workspace file. `ifVersion` is the same write precondition the PUT carries,
+   * here as a query parameter: absent, the delete is unconditional; present and stale, it is
+   * 409 `file_changed` with the file left alone.
+   */
+  app.delete("/:sessionId/files/content", async (c) => {
+    const row = resolveSession(c);
+    const rel = c.req.query("path") ?? "";
+    await deps.workspaceFiles.remove(row.workspace, rel, c.req.query("ifVersion"));
+    return c.body(null, 204);
+  });
+
+  /**
+   * Search the whole Workspace by entry name. Breadth-first from the root, so a capped result
+   * is the shallowest matches rather than an arbitrary prefix of the walk; `truncated` says a
+   * cap was reached.
+   */
+  app.get("/:sessionId/files/search", async (c) => {
+    const row = resolveSession(c);
+    return c.json(await deps.workspaceFiles.search(row.workspace, c.req.query("q") ?? ""));
   });
 
   /**

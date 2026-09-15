@@ -140,12 +140,12 @@ export function orderGroups<T>(
  * The rows' applyManualReorder moves the dropped partition's sequence to the FRONT of
  * the stored array, which is sound for Sessions because a partition is one group's own
  * list and the ids it displaces are read only within *other* partitions. That does not
- * lift to the group axis: a Workspace group exists only once one of its Sessions has
- * paged in, so the keys a group drop would displace are its own peers — not yet on
- * screen, but ordered against the very groups being committed. Front-loading demoted
- * every unloaded Workspace to the tail, and (because the two pin partitions share one
- * array) it also flung a group the length of the sidebar the moment it was pinned or
- * unpinned.
+ * lift to the group axis: the Workspace sequence is only as complete as the last counts
+ * fetch (a Workspace whose Sessions arrive later is absent until the next reload), so
+ * the keys a group drop would displace can be peers not on screen, ordered against the
+ * very groups being committed. Front-loading demoted every such Workspace to the tail,
+ * and (because the two pin partitions share one array) it also flung a group the length
+ * of the sidebar the moment it was pinned or unpinned.
  *
  * So: materialise the rendered keys into the stored array where they already RENDER —
  * unlisted ones at the front, which is where applyManualOrder puts them — then move the

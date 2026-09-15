@@ -43,7 +43,7 @@ interface ToolResult {
 - 输出永不为空：没有任何输出时补 `[no output]`;
 - `note`(如退出码)与图像附加在输出预算之外，长输出被截断时终止标记不会丢失。
 
-工具与 Environment 从不向引擎抛异常：错误一律折叠为 `tool_call_output` 消息，交给模型阅读并调整下一步。消息结构见 [OmniMessage 协议](/omni-message)。
+工具与 Environment 从不向引擎抛异常：错误一律折叠为 `tool_call_output` 消息，交给模型阅读并调整下一步。参数不合工具定义的调用以 `fatal` 收尾，整段输出即一份纠错指引：出错之处、实际收到的参数名（点出 schema 未声明的名字）、按 schema 重述的全部参数，以及一次正确调用的形态——仅凭这段输出就能改对再发。消息结构见 [OmniMessage 协议](/omni-message)。
 
 ### 过长输出恢复
 
@@ -65,28 +65,26 @@ Recovery 文件保存 Environment 收到的未经脱敏的工具文本。误读�
 | `description` | 提供给模型的工具说明 |
 | `parameters` | 参数 JSON Schema |
 | `permission` | `"r"` 只读 / `"rw"` 读写 |
-| `forModel` | `"vision"` / `"text-only"`：按 Session 模型类别装配；缺省对所有模型可用 |
+| `forModel` | `"vision"` / `"text-only"`：按 Session 模型类别装配；缺省对所有模型可用（内置条目均不设——`read_file` 同时服务两类模型） |
 | `timeoutMs` | 单次调用超时(ms)，默认 120000;`<=0` 关闭 |
 | `maxOutputLength` | 输出长度上限(字符);`<=0` 关闭 |
 | `call_description` | 条目级开关：控制 `parameters` 中声明的 `description` 调用参数（开启时为必填）；缺省保留，`false` 时装配阶段将其连同 `required` 项从 schema 滤除 |
 
 ## 内置工具
 
-共 9 个内置工具(装配入口 `packages/core/src/environment/tools/registry.ts`):
+共 7 个内置工具(装配入口 `packages/core/src/environment/tools/registry.ts`):
 
 | 工具 | 权限 | 超时(ms) | 用途 |
 | --- | --- | --- | --- |
 | `exec_command` | rw | 120000 | 在 Workspace 内以 `bash -lc` 运行命令，流式返回 stdout/stderr |
-| `input_command` | rw | 130000 | 按 `process_id` 驱动命令会话：写 stdin、发 Ctrl-C、轮询输出，或终止（`kill: true`） |
-| `read_file` | r | 30000 | 按 `cat -n` 风格带行号读取文本文件，以 offset/limit 分页 |
+| `input_command` | rw | 120000 | 按 `process_id` 驱动命令会话：写 stdin、发 Ctrl-C、轮询输出，或终止（`kill: true`） |
+| `read_file` | r | 60000 | 按 `cat -n` 风格带行号读取文本文件（以 offset/limit 分页），或读取图片（路径或 URL）作为图像内容返回——text-only 模型则由 `vision_model` 代读为文字 |
 | `edit_file` | rw | 30000 | 对既有文件做精确字符串替换，回显校验片段 |
 | `write_file` | rw | 30000 | 新建或整体覆写文件，按需创建父目录 |
 | `run_subagent` | rw | 600000 | 把自包含子任务委派给同 Workspace 的子 Agent |
 | `input_subagent` | rw | 600000 | 轮询后台 Subagent、运行中插话、停止其当前轮，或在其空闲时追加后续 Prompt |
-| `read_image` | r | 60000 | 读取图片并作为图像内容返回(vision 模型) |
-| `describe_image` | r | 90000 | 由 `vision_model` 代读图片并返回文字回答(text-only 模型) |
 
-注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：较早创建的 Agent 不会自动获得后来新增的工具（如文件工具）与新增参数（`run_in_background`、`kill`、`abort`），已移除工具（`kill_command`、`kill_subagent`）的存量条目则不再装配——模型按旧名调用得到标准的未知工具报错；采纳新条目需手工编辑该 Agent 的 `system_config.yaml`（可从 `packages/core/src/state/default-config.ts` 的默认定义复制），或走「更新内核」。
+注意：既有 Agent 已落盘的 `tools.builtin` 列表按原样冻结（设置页只能编辑行、不能增行）：较早创建的 Agent 不会自动获得后来新增的工具（如文件工具）与新增参数（`run_in_background`、`kill`、`abort`），已移除工具（`kill_command`、`kill_subagent`、`read_image`、`describe_image`）的存量条目则不再装配——模型按旧名调用得到标准的未知工具报错；读图之前落盘的 `read_file` 条目保留旧描述与旧超时（其背后的实现已能读图）。采纳当前定义需手工编辑该 Agent 的 `system_config.yaml`（可从 `packages/core/src/state/default-config.ts` 的默认定义复制），或走「更新内核」。
 
 ### 调用描述
 
@@ -113,7 +111,7 @@ exec_command(cmd)
 ```ts
 // exec_command
 {
-  cmd: string;             // 必填:要执行的 shell 命令
+  cmd: string;             // 必填:要执行的 shell 命令(也接受别名 `command`;schema 只声明 `cmd`)
   workdir?: string;        // 工作目录;缺省为 Workspace 根,相对路径按其解析
   yield_time_ms?: number;  // 前台等待时长;默认 60000,最小 250,上限受工具超时约束
   run_in_background?: boolean; // true = 立即返回 process_id;完成回报以 user message 送达
@@ -124,7 +122,7 @@ exec_command(cmd)
 {
   process_id: string;      // 必填:exec_command 返回的命令会话 id
   chars?: string;          // 写入 stdin 的字符;单独发送 "\u0003" 传递 Ctrl-C;缺省仅轮询
-  yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 120000(一次轮询等完多数构建;想快速查看可传更小值)
+  yield_time_ms?: number;  // 等待时长;有写入默认 250,空轮询默认 110000(一次轮询等完多数构建;想快速查看可传更小值)
   description: string;     // 开关开启时必填
 }
 
@@ -134,15 +132,19 @@ POSIX 上 Ctrl-C 向会话进程组发送 `SIGINT`，中断前台命令。Window
 
 ### 文件工具
 
-`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。软链接路径会被解析到它指向的文件——读取、编辑、写入都落在该文件上，链接本身仍然是链接。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。
+`read_file` / `edit_file` / `write_file` 与 Shell 工具一样以用户完整权限运行：相对路径按 Workspace 解析，也接受绝对路径。软链接路径会被解析到它指向的文件——读取、编辑、写入都落在该文件上，链接本身仍然是链接。三者均为非流式（一次性输出最终结果），从不抛异常——失败以解释性文本收尾，`stop_reason` 为 `failed`。`edit_file` 与 `write_file` 在服务端进程内按文件串行，以文件的真实路径为键——软链接与它指向的文件算同一个文件——因此对同一文件的并行编辑会被逐个应用，先前编辑已删去的 `old_string` 会匹配失败而不是覆盖它；其他进程的写入不在这把锁的覆盖范围内。
+
+`read_file` 也读图片。png/jpeg/gif/webp 文件（不超过 5MB，先按魔数、再按扩展名识别）或 `file_path` 里的 http(s) URL（URL 只作图片来源，优先看响应的 content-type）走读图分支，返回什么取决于 Session 模型的 vision 标记：接受图片的模型拿到图片本身作为图像内容（文本输出只有一行 `image/png, 123.4 kB`）；text-only 模型拿到的是 Project 配置的 `vision_model` 对 `prompt`（缺省为详细描述）的回答，以流式文本作为工具输出——图片不进入该 Session 的历史。未配置 `vision_model` 时，text-only Session 的读图以解释性错误失败，请用户到模型设置中选一个。见 [模型与 Provider](/models)。分支由 SDK 仅为 text-only Session 注入 Environment 的 `VisionDescriberService` 决定，因此同一条配置条目（不带 `forModel`）同时服务两类模型。
 
 ```ts
-// read_file — cat -n 风格输出(行号、制表符、内容);超长单行会被截断,
-// 含 NUL 字节的二进制内容被拒绝并提示改用 Shell / 图像工具。
+// read_file — 文本文件按 cat -n 风格输出(行号、制表符、内容);超长单行会被截断,
+// 不是受支持图片的二进制内容(含 NUL 字节)被拒绝并提示改用 Shell。图片(或 http(s) URL)
+// 则返回图像内容或文字描述,并忽略 offset/limit。
 {
-  file_path: string;       // 必填:绝对路径,或相对 Workspace 的路径
+  file_path: string;       // 必填:绝对路径,或相对 Workspace 的路径;图片亦可为 http(s) URL
   offset?: number;         // 起始行号(1 起);默认 1
   limit?: number;          // 最多返回的行数;默认 2000——未读完时尾部注记提示续读
+  prompt?: string;         // 对图片的提问,text-only 模型时由 vision_model 回答;缺省为详细描述
 }
 
 // edit_file — 文件必须已存在;old_string 必须恰好出现一次(或设 replace_all);
@@ -199,26 +201,9 @@ Web App 的智能体面板用**与主对话相同的 composer**（子会话变�
 - 子 Session 继承父 Agent 的审批回调，审批模式随父生效。
 - 子 Session 拥有独立 Trace，父 Trace 以 `subagent` 指针事件链接；子消息带 `origin` 标记回流到父级消息流。见 [Session 与 Trace](/sessions-and-traces)。
 
-### 图像工具
-
-`read_image` 与 `describe_image` 互斥，按 Session 模型的 vision 标记二选一装配。两者都接受 http(s) URL 或 Workspace 路径，支持 png/jpeg/gif/webp，不超过 5MB。text-only 模型走 `describe_image`：图片连同提问转交 Project 配置的 `vision_model`，其文字回答即工具输出。见 [模型与 Provider](/models)。
-
-```ts
-// read_image(vision 模型)
-{
-  source: string;          // 必填:http(s) URL,或 Workspace 内的文件路径
-}
-
-// describe_image(text-only 模型)
-{
-  source: string;          // 必填:同上
-  prompt?: string;         // 要对图片提出的问题;缺省为详细描述
-}
-```
-
 ### 后台完成回报
 
-以 `run_in_background: true` 启动的任务在结束时，以**Harness 注入的 user message** 回报完成——模型无需轮询。消息以 `[background_task_done]` 标记块开头（kind、id、status、一行 detail），其后是任务内容与尚未送达输出的尾部（上限 4000 字符；Web App 将标记块折叠为一行提示）。其 `text` payload 带 `sender: "harness"`，在 Trace 中与真人输入相区分（见 [OmniMessage](/omni-message)）。
+以 `run_in_background: true` 启动的任务，以及用户在 Web App 的工具调用行上转入后台的调用，都在结束时以**Harness 注入的 user message** 回报完成——模型无需轮询。消息以 `[background_task_done]` 标记块开头（kind、id、status、一行 detail），其后是任务内容与尚未送达输出的尾部（上限 4000 字符；Web App 将标记块折叠为一行提示）。其 `text` payload 带 `sender: "harness"`，在 Trace 中与真人输入相区分（见 [OmniMessage](/omni-message)）。
 
 送达时机：Task 进行中时，回报搭乘下一个 turn 边界——即使最终回复已在流式输出，Task 也会为回应它再延续一个 turn。Session 空闲时，托管 Server 自动以该回报发起新 Task（SDK 嵌入方可订阅 `Session.onBackgroundNotice` / `takeBackgroundNotices`，否则回报并入下一次 run 的输入）。经 `input_command` 的 `kill` 终止的命令不发回报——该调用自身的结果已说明结局；被显式 `abort` 结束的子会话轮同样不发（打断者当场读到结局）。回报只覆盖**模型自己发起的轮**——`run_in_background` 的启动轮与 `input_subagent` 的续跑轮；用户从智能体面板发起的轮是用户与子会话自己的对话，不发回报（该轮答案文本留在模型面缓冲，下次轮询照常取得）。
 

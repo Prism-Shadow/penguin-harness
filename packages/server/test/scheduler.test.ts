@@ -68,6 +68,8 @@ describe("scheduler", () => {
       passwordHash: "x",
       isAdmin: false,
       passwordIsInitial: false,
+      displayName: null,
+      avatar: null,
       createdAt: "2026-07-16T00:00:00Z",
     });
     const projects = new ProjectsRepo(db);

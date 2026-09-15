@@ -5,20 +5,32 @@
  * pendingFilePayload decodes the file-tool arguments so a pending approval shows the actual
  * rewrite. All must tolerate incomplete mid-stream JSON; headerSubtitle additionally holds a
  * still-streaming field back until its closing quote so the header never jitters (#137).
+ * isDetachedCall and showsBackgroundAction decide the background mark and the "move to
+ * background" button from the same row's facts.
  */
 import { describe, expect, it } from "vitest";
 import {
   headerSubtitle,
+  isBackgroundCall,
+  isDetachedCall,
   pendingFilePayload,
   previewArguments,
   shortenPath,
+  showsBackgroundAction,
 } from "../src/features/chat/tool-call-card";
+import { S } from "../src/lib/strings";
 
 describe("previewArguments", () => {
   it("renders exec_command as $ <cmd>", () => {
     expect(previewArguments("exec_command", '{"cmd":"ls -la"}')).toBe("$ ls -la");
     // Mid-stream (incomplete JSON) still extracts the cmd prefix.
     expect(previewArguments("exec_command", '{"cmd":"echo h')).toBe("$ echo h");
+  });
+
+  it("previews exec_command's shell text under the `command` alias core also runs", () => {
+    expect(previewArguments("exec_command", '{"command":"ls -la"}')).toBe("$ ls -la");
+    // `cmd` is what runs when both are present, so it is what the approval row shows.
+    expect(previewArguments("exec_command", '{"cmd":"pwd","command":"ls"}')).toBe("$ pwd");
   });
 
   it("renders the file tools by their shortened file_path", () => {
@@ -37,6 +49,14 @@ describe("previewArguments", () => {
     expect(
       previewArguments("exec_command", '{"cmd":"rm -rf build","description":"Clean caches"}'),
     ).toBe("$ rm -rf build");
+  });
+
+  it("previews the historical image tools by their source argument (old Traces)", () => {
+    expect(previewArguments("read_image", '{"source":"shots/home.png"}')).toBe("shots/home.png");
+    expect(
+      previewArguments("describe_image", '{"source":"https://x.test/a/b/c.png","prompt":"?"}'),
+    ).toBe("…/b/c.png");
+    expect(headerSubtitle("read_image", '{"source":"shots/home.png"}')).toBe("shots/home.png");
   });
 
   it("falls back to the single-line raw arguments for other tools", () => {
@@ -140,10 +160,101 @@ describe("pendingFilePayload", () => {
     expect(pendingFilePayload("read_file", '{"file_path":"a.txt","offset":3,"limit":5}')).toBe(
       "file_path: a.txt\noffset: 3\nlimit: 5",
     );
+    // read_file's image branch forwards `prompt` to the vision model: it must be visible too.
+    expect(
+      pendingFilePayload("read_file", '{"file_path":"shot.png","prompt":"read the error"}'),
+    ).toBe("file_path: shot.png\nprompt: read the error");
   });
 
   it("returns null for non-file tools and incomplete JSON", () => {
     expect(pendingFilePayload("exec_command", '{"cmd":"ls"}')).toBeNull();
     expect(pendingFilePayload("edit_file", '{"file_path":"a.txt","old_str')).toBeNull();
+  });
+});
+
+describe("isBackgroundCall", () => {
+  it("marks exec_command and run_subagent launched with the flag", () => {
+    expect(isBackgroundCall('{"cmd":"pnpm dev","run_in_background":true}')).toBe(true);
+    expect(isBackgroundCall('{"prompt":"go","run_in_background":true}')).toBe(true);
+  });
+
+  it("leaves an ordinary call unmarked, flag absent or false", () => {
+    expect(isBackgroundCall('{"cmd":"ls"}')).toBe(false);
+    expect(isBackgroundCall('{"cmd":"ls","run_in_background":false}')).toBe(false);
+    // Only the real boolean counts: a string "true" is not the argument the tool acts on.
+    expect(isBackgroundCall('{"cmd":"ls","run_in_background":"true"}')).toBe(false);
+  });
+
+  it("reads nothing from a mid-stream or malformed argument string", () => {
+    // The flag is last in both schemas, so a still-growing call has not shown it yet — and a
+    // command that merely mentions it is not one that was launched with it.
+    expect(isBackgroundCall('{"cmd":"pnpm dev","run_in_background":tr')).toBe(false);
+    expect(isBackgroundCall('{"cmd":"grep run_in_background\\": true src"}')).toBe(false);
+    expect(isBackgroundCall("")).toBe(false);
+  });
+});
+
+describe("isDetachedCall", () => {
+  it("marks a call whose output carries the note the tool wrote on being moved to the background", () => {
+    expect(
+      isDetachedCall(
+        "building…\n[moved to the background by the user with process_id proc-12ab34cd; its " +
+          "completion will arrive as a user message — no need to poll.]",
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves an ordinary or deadline-promoted call unmarked", () => {
+    expect(isDetachedCall("done\n[exit code: 0]")).toBe(false);
+    // The yield deadline promotes too, but nobody moved that one — it wears no mark today.
+    expect(
+      isDetachedCall("[process running with process_id proc-12ab34cd; use input_command …]"),
+    ).toBe(false);
+    expect(isDetachedCall("")).toBe(false);
+  });
+});
+
+describe("showsBackgroundAction", () => {
+  const EXEC = '{"cmd":"pnpm dev"}';
+
+  it("offers the action while the two detachable tools execute on a main-session card", () => {
+    expect(showsBackgroundAction("exec_command", EXEC, true, [])).toBe(true);
+    expect(showsBackgroundAction("run_subagent", '{"prompt":"go"}', true, [])).toBe(true);
+  });
+
+  it("hides it once the call is no longer executing", () => {
+    expect(showsBackgroundAction("exec_command", EXEC, false, [])).toBe(false);
+  });
+
+  it("hides it for tools with no background form", () => {
+    expect(showsBackgroundAction("read_file", '{"file_path":"a.txt"}', true, [])).toBe(false);
+    expect(showsBackgroundAction("input_command", '{"process_id":"proc-1"}', true, [])).toBe(false);
+    expect(showsBackgroundAction("mcp__docs__search", "{}", true, [])).toBe(false);
+  });
+
+  it("hides it on a subagent-nested card: that call lives in the child Session's environment", () => {
+    expect(showsBackgroundAction("exec_command", EXEC, true, ["session-child-12ab34cd"])).toBe(
+      false,
+    );
+  });
+
+  it("hides it on a call already launched with run_in_background: nothing left to hand over", () => {
+    expect(
+      showsBackgroundAction(
+        "exec_command",
+        '{"cmd":"pnpm dev","run_in_background":true}',
+        true,
+        [],
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("the tool row's background marker", () => {
+  it("marks one call rather than a count of one", () => {
+    // The row marks a single call whose work went to the background; "1 background task"
+    // would be a count the row is not making, and would read as the conversation's total.
+    expect(S.chat.backgroundCall).not.toBe(S.chat.backgroundTasks(1));
+    expect(S.chat.backgroundCall).not.toMatch(/\d/);
   });
 });

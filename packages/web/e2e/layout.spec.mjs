@@ -27,10 +27,10 @@
  *   chrome used to stop fitting below ~412px;
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
- *   Agents / Plugin library / Models / Cost Center / Evaluation Center with localized
- *   (en + zh) hover
- *   tooltips; "last conversation" targets the newest non-archived session and is disabled
- *   while none exists; expanding from the rail restores the pinned sidebar;
+ *   Agents / Plugin library / Models / Cost Center / Evaluation Center, each labeled by a
+ *   localized (en + zh) styled tooltip on hover and by no native `title` (two tooltips would
+ *   stack); "last conversation" targets the most recently active non-archived session and is
+ *   disabled while none exists; expanding from the rail restores the pinned sidebar;
  * - login page: a single brand penguin logo above the form (part of the form area; the
  *   background still only has the trace animation), the trace animation grows in after a
  *   delayed blank first paint, no two trace segments cross or touch (except where a fork shares
@@ -412,8 +412,9 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   await expect(entries).toHaveCount(7);
   await expect(rail.getByRole("button", { name: "Last conversation" })).toBeDisabled();
 
-  // --- Order and tooltips (en): aria-label defines the order, title carries the same copy.
-  // Traces has no rail entry — the Trace panel lives in the chat toolbar's panel switcher. ---
+  // --- Order and tooltips (en): aria-label defines the order, and the styled tooltip shows the
+  // same copy on hover. Traces has no rail entry — the Trace panel lives in the chat toolbar's
+  // panel switcher. ---
   const EN = [
     "Last conversation",
     "New chat",
@@ -426,9 +427,18 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   const attrs = (name) =>
     entries.evaluateAll((els, n) => els.map((el) => el.getAttribute(n)), name);
   expect(await attrs("aria-label"), "rail order (en)").toEqual(EN);
-  expect(await attrs("title"), "rail tooltips (en)").toEqual(EN);
+  // No native title anywhere on the rail: it would open a second, slower tooltip under the
+  // styled one, which is the whole reason the styled one exists.
+  expect(await attrs("title"), "rail carries no native tooltips (en)").toEqual(EN.map(() => null));
+  const tooltip = page.getByTestId("tooltip");
+  await rail.getByRole("link", { name: "Models" }).hover();
+  await expect(tooltip, "rail tooltip (en)").toHaveText("Models");
+  await rail.getByRole("button", { name: "Last conversation" }).hover();
+  await expect(tooltip, "rail tooltip follows the pointer (en)").toHaveText("Last conversation");
 
-  // --- Three sessions via the API (distinct createdAt), newest archived: the rail must target the newest *non-archived* one ---
+  // --- Three sessions via the API (distinct createdAt, so distinct lastActiveAt — a row starts
+  // out last-active at its creation), newest archived: the rail must target the most recently
+  // active *non-archived* one ---
   const mkSession = async () => {
     const res = await page.request.post(
       `${BASE}/api/projects/${projectId}/agents/default_agent/sessions`,
@@ -482,7 +492,9 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   await expect(entries).toHaveCount(7);
   const ZH = ["最近一次对话", "新建对话", "智能体", "插件库", "模型库", "成本中心", "评估中心"];
   expect(await attrs("aria-label"), "rail order (zh)").toEqual(ZH);
-  expect(await attrs("title"), "rail tooltips (zh)").toEqual(ZH);
+  expect(await attrs("title"), "rail carries no native tooltips (zh)").toEqual(ZH.map(() => null));
+  await rail.getByRole("link", { name: "模型库" }).hover();
+  await expect(page.getByTestId("tooltip"), "rail tooltip (zh)").toHaveText("模型库");
 
   // --- Expand: the rail's top button (localized) restores the pinned sidebar ---
   await page.getByRole("button", { name: "展开侧栏" }).click();

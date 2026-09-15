@@ -15,13 +15,13 @@ npm install @prismshadow/penguin-core
 
 ## 配置模型
 
-SDK 与其他两条路线读同一个数据目录 `~/.penguin/data`，所以在[桌面端应用](/quickstart-desktop)或 [CLI](/quickstart-cli) 里配好的模型，SDK 直接可用，无需重复配置。
+SDK 与桌面端应用、CLI 读同一个数据目录 `~/.penguin/data`，所以在[桌面端应用](/quickstart-desktop)或 [CLI](/quickstart-cli) 里配好的模型，SDK 直接可用，无需重复配置。
 
 如果这台机器还没配过模型，最省事的方式是装上 CLI 配一次：
 
 ```bash
 npm install -g @prismshadow/penguin-cli
-penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-flash --api-key sk-... --set-default
 ```
 
 也可以完全不落盘：模型条目没有内联 api_key 时，LLM 网关库 AgentHub 会读取 `DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY` 等环境变量；工作目录下的 `.env` 会被自动加载。

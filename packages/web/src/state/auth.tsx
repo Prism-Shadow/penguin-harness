@@ -59,6 +59,13 @@ interface AuthContextValue {
   logout: () => Promise<void>;
   /** Refetch /api/me (e.g. to refresh the passwordIsInitial flag after a password change). */
   refresh: () => Promise<void>;
+  /**
+   * Adopt a user the server has just returned — the Profile page's save. `refresh()` would
+   * reach the same state through a second request, and the fields it would bring back with it
+   * (previewIsolated, the upload limits) did not change, so the response is the cheaper and
+   * more direct source: the sidebar's avatar and name move in the same commit as the save.
+   */
+  setUserInfo: (user: UserInfo) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -133,6 +140,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const setUserInfo = useCallback((next: UserInfo) => setUser(next), []);
+
   const refresh = useCallback(async () => {
     const res = await api.getMe();
     setUser(res.user);
@@ -153,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         refresh,
+        setUserInfo,
       }}
     >
       {children}

@@ -42,6 +42,14 @@ skills/core output, the prestep also clears the web app's Vite dep cache
 otherwise keep serving the browser the previous core. `dev:docs` / `dev:landing`
 run the install check only (`--install-only`).
 
+The prestep also builds `packages/cli`, because a dev server hands the Agents it runs the
+CLI of the checkout it was started from: it writes a launcher at `<root>/bin/penguin`
+pointing at `packages/cli/dist/penguin.js` and puts that directory at the front of every
+command's PATH. Nothing rebuilds that file while a dev server runs — `tsx watch` covers the
+server's own sources only — so after editing the CLI, run
+`pnpm --filter @prismshadow/penguin-cli build` (or restart `pnpm dev`) before asking an
+Agent to use it.
+
 One rule when bypassing the dev commands: **rebuild skills/core through pnpm, in that
 order** (`pnpm build`, or restart `pnpm dev`) — the workspace uses injected dependencies
 (`injectWorkspacePackages` in pnpm-workspace.yaml), so web/server consume snapshot copies
@@ -102,6 +110,7 @@ single data directory (`~/.penguin/data`) and a single message protocol (OmniMes
 | [`plugins/*`](../plugins) | `@penguinharness/<name>` | The built-in plugins, one npm package each: skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries); the loader lives in `packages/core` |
 | [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |
 | [`packages/docs`](../packages/docs)       | —                             | Documentation site (bilingual, deployed under `/docs/`)                                                 |
+| [`plugins/*`](../plugins) | `@prismshadow/penguin-plugin-*` | Plugin packages a deployment installs and lists in `plugins.json` — a directory of their own because nothing else in the harness depends on one                        |
 
 Responsibilities split by source of truth: the **SDK** owns protocol and execution
 (message parsing, the agent loop, tools), the **Server** owns the multi-user runtime
@@ -152,12 +161,30 @@ pnpm test:e2e                                        # core live-model e2e, need
   before creating the tag** — the release workflow reads it from the tag's checkout, so a
   file added later never reaches the Release page. Without it the workflow falls back to
   GitHub's auto-generated notes.
+- **The official image is built from source**, by `.github/workflows/docker.yml`, and
+  pushed to Docker Hub `hiyouga/penguinharness` for `linux/amd64` and `linux/arm64`. Every
+  push to `main` publishes that commit as `latest`, the only tag a push moves; the release
+  workflow's `docker` job builds the tag's own source and publishes the exact version
+  `X.Y.Z`, nothing else. A PR touching the `Dockerfile`,
+  `docker/` or that workflow runs the same file as an amd64 smoke build. The push
+  needs the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets of the `docker` GitHub Environment (whose URL is the Docker Hub repository) — the latter a
+  Docker Hub access token with read/write scope on that repository — and the Docker Hub
+  repository is created public on the first push.
 - **Release prep bumps the repo version**: the same `release: X.Y.Z` PR that renames
-  `changelog/unreleased/` also bumps the root and every `packages/*/package.json`
+  `changelog/unreleased/` also bumps the root and every workspace `package.json`
+  (`packages/*` and `plugins/*`)
   `version`, plus core's `VERSION` constant (`packages/core/src/index.ts`), to the release
   version. The release workflow refuses a tag push whose version does not match the
   repo's, so a forgotten bump fails before anything is published (v0.2.1 was tagged with a
   0.2.0 repo, and every dev build nagged about an update until the repo caught up).
+- **The release branch proves its installers before the tag.** Name the branch
+  `release/<version>`: every push to a `release/**` branch runs `desktop-build.yml` with macOS
+  and Windows signing required, the same call the release workflow makes, and CI never
+  exercises signing. Wait for that run on the branch's final commit before merging and
+  tagging; a tag is never moved, so a failure found after it costs a version (0.2.10 was
+  tagged on a green CI, lost its macOS installers to a runner-image change, and shipped again
+  as 0.2.11). To re-check outside a release branch:
+  `gh workflow run desktop-build.yml --ref <branch> -f require_macos_signing=true -f require_windows_signing=true`.
 - README assets under `assets/readme/` are generated — the benchmark charts from the
   landing benchmark data, and the demo screenshots via
   `node packages/landing/scripts/capture-readme-demo.mjs` (build first; needs Playwright

@@ -27,7 +27,7 @@
  */
 import { useId, useState } from "react";
 import { createPortal } from "react-dom";
-import { errorClass, sizeClass } from "./input";
+import { errorClass, sizeClass, sizeTextClass } from "./input";
 import type { ControlSize } from "./input";
 import { Field, controlBase, menuRowClass } from "./field";
 import { CheckIcon, ChevronDown } from "./icons";
@@ -45,10 +45,13 @@ export interface OptionMenuChoice<T extends string> {
 
 const PANEL_WIDTH = 288; // w-72
 
-/** Row-title text follows the control's size tier, so the dropdown reads exactly like an Input of the same tier (review: dropdown text = input text); descriptions stay text-xs secondary. */
-const rowTextClass: Record<ControlSize, string> = { base: "text-base", sm: "text-xs" };
-/** Descriptions keep one step below the row title at every tier, so the title/description hierarchy survives the sm tier's text-xs titles. */
-const rowDescClass: Record<ControlSize, string> = { base: "text-xs", sm: "text-[11px]" };
+/**
+ * Descriptions keep one step below the row title at every tier, so the title/description
+ * hierarchy survives the sm tier's text-xs titles. The sm value is the one `text-[Npx]` the
+ * control family allows: there is no rung below text-xs to step down to. It is a fixed px and
+ * so does not scale with the user's font-size setting — do not copy the shape elsewhere.
+ */
+export const rowDescClass: Record<ControlSize, string> = { base: "text-xs", sm: "text-[11px]" };
 
 export function OptionMenu<T extends string>({
   options,
@@ -60,7 +63,7 @@ export function OptionMenu<T extends string>({
   error,
   required,
   fullWidth,
-  size = "base",
+  size = "sm",
   "aria-label": ariaLabel,
 }: {
   options: ReadonlyArray<OptionMenuChoice<T>>;
@@ -146,8 +149,10 @@ export function OptionMenu<T extends string>({
                 }`}
               >
                 <span className="flex items-center justify-between gap-2">
+                  {/* Row title takes the control's own tier, so the menu reads exactly like
+                      an Input of that tier. */}
                   <span
-                    className={`${rowTextClass[size]} ${
+                    className={`${sizeTextClass[size]} ${
                       opt.value === value
                         ? "font-medium text-gray-900 dark:text-gray-100"
                         : "text-gray-700 dark:text-gray-300"

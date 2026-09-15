@@ -115,6 +115,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.toolAliases",
+    scope: "browser",
+    why: "Whether tool cards name the built-in tools by their short alias; a display choice of this browser, naming nothing on the server.",
+  },
+  {
+    kind: "exact",
     key: "penguin.terminal.theme",
     scope: "browser",
     why: "Terminal appearance pin (light/dark/follow-app); appearance only.",
@@ -139,6 +145,36 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "exact",
+    key: "penguin.dock.launcherY",
+    scope: "browser",
+    why: "Where the floating dock launcher rests along the chat body's edge; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.dock.launcherHidden",
+    scope: "browser",
+    why: "Whether the floating dock launcher shows at all; an appearance choice of this browser, and losing it would put a dismissed button back.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.files.treeVisible",
+    scope: "browser",
+    why: "Whether the Files panel shows its directory tree beside the preview; chrome layout, holds no entity.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.files.treeWidth",
+    scope: "browser",
+    why: "How wide that tree pane was dragged, in px; the same layout preference, one axis over.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.files.editorWrap",
+    scope: "browser",
+    why: "Whether the Files panel's editor soft-wraps long lines; a reading habit, valid against any root.",
+  },
+  {
+    kind: "exact",
     key: "penguin.sidebarGroupMode",
     scope: "browser",
     why: "Group sessions by Workspace/Agent/time — the MODE, not the groups; valid against any root.",
@@ -160,6 +196,12 @@ export const KEY_RULES: readonly KeyRule[] = [
     key: "penguin.steerMode",
     scope: "browser",
     why: "Steer vs queue-as-follow-up when sending mid-run; a per-user input habit.",
+  },
+  {
+    kind: "exact",
+    key: "penguin.notifications",
+    scope: "browser",
+    why: "Whether task-completion notifications were asked for; it pairs with an OS permission that belongs to this browser rather than to any data root, and clearing it would silently stop notifications the user opted into.",
   },
 
   // --------------------------------------------------------------- install-scoped state

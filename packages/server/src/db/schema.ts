@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash       TEXT NOT NULL,               -- scrypt$N$r$p$salt$hash(base64)
   is_admin            INTEGER NOT NULL DEFAULT 0,  -- 1 for the built-in admin (seeded at startup)
   password_is_initial INTEGER NOT NULL DEFAULT 0,  -- 1=initial password (seeded/admin-set); cleared once the user changes it
+  display_name        TEXT,                        -- nickname shown in place of user_id (1-32 characters); NULL = never set, surfaces show the id
+  avatar              TEXT,                        -- avatar as a data URL (image/png|jpeg|webp, <= 131072 characters); NULL = never set, surfaces draw the letter placeholder
   created_at          TEXT NOT NULL
 );
 -- Server-side sessions backing the HttpOnly cookie: the cookie carries a 32-byte random

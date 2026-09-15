@@ -9,6 +9,7 @@ import {
   appleScriptString,
   CLI_ENTRY_RELPATH,
   cliInstallKind,
+  embeddedCliEntry,
   LAUNCHER_MARKER,
   LINUX_EXECUTABLE,
   MAC_EXECUTABLE,
@@ -301,5 +302,32 @@ describe("packaged CLI", () => {
     const afterRemove = read("build/linux/after-remove.tpl");
     expect(afterRemove).toContain(`[ "\`readlink '/usr/bin/penguin'\`" = '${debTarget}' ]`);
     expect(afterRemove).toContain("rm -f '/usr/bin/penguin'");
+  });
+});
+
+describe("embeddedCliEntry", () => {
+  it("points a packaged app's server at the bundled CLI it also puts on PATH", () => {
+    expect(embeddedCliEntry({ isPackaged: true, appPath: "/opt/app/resources/app", env: {} })).toBe(
+      path.join("/opt/app/resources/app", ...CLI_ENTRY_RELPATH.split("/")),
+    );
+  });
+
+  it("leaves a source run to the server's own checkout lookup", () => {
+    // A checkout has no bundled CLI beside the shell; the server finds
+    // packages/cli/dist/penguin.js by walking to the workspace root instead.
+    expect(
+      embeddedCliEntry({ isPackaged: false, appPath: "/src/packages/desktop", env: {} }),
+    ).toBeNull();
+  });
+
+  it("an explicit PENGUIN_CLI_ENTRY wins in both forms; blank counts as unset", () => {
+    for (const isPackaged of [true, false]) {
+      expect(
+        embeddedCliEntry({ isPackaged, appPath: "/x", env: { PENGUIN_CLI_ENTRY: "/srv/cli.js" } }),
+      ).toBe("/srv/cli.js");
+    }
+    expect(
+      embeddedCliEntry({ isPackaged: true, appPath: "/x", env: { PENGUIN_CLI_ENTRY: " " } }),
+    ).toBe(path.join("/x", ...CLI_ENTRY_RELPATH.split("/")));
   });
 });

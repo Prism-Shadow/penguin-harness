@@ -33,6 +33,7 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { configuredCompactionLimit } from "../../lib/context";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import {
   formatDateTime,
@@ -41,7 +42,7 @@ import {
   humanizeTokens,
 } from "../../lib/format";
 import { latestConversation } from "../../lib/session-grouping";
-import { sessionActivity } from "../../lib/session-activity";
+import { sessionActivity, sessionBackgroundTasks } from "../../lib/session-activity";
 import { noteSessionSeen } from "../../lib/session-seen";
 import {
   approvalKey,
@@ -52,7 +53,11 @@ import {
 import type { StreamModel } from "../../lib/omni/stream-model";
 import { aggregateMemoryChanges, sameMemoryChanges } from "../../lib/omni/memory-changes";
 import type { MemoryLocateTarget } from "../../lib/omni/memory-changes";
-import { bucketCostUsd, liveSessionElapsedMs } from "../../lib/omni/task-stats";
+import {
+  bucketCostUsd,
+  liveSessionElapsedMs,
+  sessionElapsedBreakdown,
+} from "../../lib/omni/task-stats";
 import type { TaskStatsTracker } from "../../lib/omni/task-stats";
 import { useAuth } from "../../state/auth";
 import { useTheme } from "../../state/theme";
@@ -76,6 +81,8 @@ import type { StreamRenderContext } from "./message-stream";
 import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
+import type { ComposerControl } from "./chat-input";
+import type { ComposerReference } from "../../lib/workspace-tree";
 import {
   compactionTally,
   heldThinkingSwitch,
@@ -105,13 +112,17 @@ import { deletedChangeKeys } from "./memory-nav";
 import { SubagentsView } from "./subagents-view";
 import { TracePanel } from "../traces/trace-panel";
 import { MessagingPanel } from "../messaging/messaging-panel";
+import { SchedulePanel } from "../schedules/schedule-panel";
+import { noteScheduleEvent } from "../schedules/schedule-store";
 import { DockPanel } from "../dock/dock-panel";
+import { DockLauncher } from "../dock/dock-launcher";
 import { useDockMount } from "../dock/use-dock-mount";
 import { panelLabel } from "../dock/panel-meta";
 // importing it also registers the global Ctrl+` hotkey with the app bundle
 import { setDockCwd } from "../dock/dock-terminal";
 import {
   adoptDockScope,
+  closedDockView,
   dockViews,
   dockVersion,
   isTabShown,
@@ -128,7 +139,7 @@ import { PanelsToolbar } from "./panels-toolbar";
 import { toneDot, toneInk } from "../../lib/tone";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { INFO_ICON } from "../../components/ui/icons";
+import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
@@ -206,6 +217,12 @@ interface HeaderStats {
   /** Server-reported "some usage had no pricing" flag riding the shown figure (the chip's `*`). */
   costUncosted: boolean;
   elapsedNode: ReactNode;
+  /**
+   * The elapsed time's API / tool breakdown, already parenthesised, or null when neither
+   * component has anything to report yet (a conversation that has not run shows the bare
+   * time rather than a row of zeroes).
+   */
+  elapsedSplit: string | null;
 }
 
 /**
@@ -231,7 +248,25 @@ function headerStats(model: StreamModel, cost: CostStatDisplay): HeaderStats {
         taskStartLocalMs={model.taskStartLocalMs}
       />
     ),
+    elapsedSplit: elapsedSplitText(stats),
   };
+}
+
+/**
+ * The parenthesised API / tool breakdown of the elapsed time, or null when both components are
+ * still zero. A component that is genuinely zero beside a non-zero one still prints: "no tool
+ * time" is worth reading. Unlike the total beside it this does not tick — it advances as each
+ * Request and tool closes, so mid-turn it trails the running total, and the two components can
+ * also overlap each other. Both are why it is rendered as two measurements, not as a split of
+ * the total (see sessionElapsedBreakdown).
+ */
+function elapsedSplitText(stats: TaskStatsTracker): string | null {
+  const { apiMs, toolMs } = sessionElapsedBreakdown(stats);
+  if (apiMs <= 0 && toolMs <= 0) return null;
+  return `${S.chat.statParenOpen}${S.chat.statElapsedSplit(
+    humanizeDuration(apiMs),
+    humanizeDuration(toolMs),
+  )}${S.chat.statParenClose}`;
 }
 
 /**
@@ -286,9 +321,8 @@ export function ChatPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
-  // Background processes the conversation started (details popover list + the header's
-  // running-services count), refreshed by the polling effect below; procBusy marks the
-  // row whose stop request is in flight.
+  // Background processes the conversation started (the details popover list), refreshed by
+  // the polling effect below; procBusy marks the row whose stop request is in flight.
   const [processes, setProcesses] = useState<SessionProcessInfo[]>([]);
   const [procBusy, setProcBusy] = useState<string | null>(null);
   // Session Token buckets from the last usage fetch (the popover's tokens-line breakdown):
@@ -561,26 +595,74 @@ export function ChatPage() {
     };
   }, [projectId, selectedAgentId]);
 
-  // The session Agent's configured thinking level ("" = unset/loading), via the same
-  // agent-config endpoint the draft picker uses: the in-session picker DISPLAYS this while
-  // the user hasn't picked a level (auto-follow — sending still omits the level until
-  // touched, see turnThinkingLevel). Refetched when the session's Agent changes; a failed
-  // fetch leaves it unset (the picker then shows an em dash until picked).
+  // Two readouts come off the session Agent's config, via the same agent-config endpoint the
+  // draft picker uses. The configured thinking level ("" = unset/loading) is what the in-session
+  // picker DISPLAYS while the user hasn't picked a level (auto-follow — sending still omits the
+  // level until touched, see turnThinkingLevel). The configured compaction threshold is the
+  // basis the composer's context ring fills against, and the number its small-window notice is
+  // judged against. A failed fetch leaves both unset (the picker shows an em dash until picked;
+  // the ring falls back to the model window and the notice stays down).
   const [agentThinkingLevel, setAgentThinkingLevel] = useState("");
+  const [compactionLimit, setCompactionLimit] = useState<number | undefined>(undefined);
+  // Cleared on an Agent switch only. A plain refresh must not blank values that are about to
+  // come back unchanged: doing that inside the fetch effect would flash the thinking picker's
+  // em dash and drop the ring to the window basis on every refetch.
   useEffect(() => {
     setAgentThinkingLevel("");
+    setCompactionLimit(undefined);
+  }, [projectId, selectedAgentId]);
+  // Re-read on focus as well as on an Agent switch: the threshold is edited on another page, so
+  // the value this composer holds can go stale under it. Routing to the settings page and back
+  // remounts this page and refetches anyway; the focus listener covers the other tab editing the
+  // same Agent. (`models` has no such refresh — a model entry is not edited mid-conversation the
+  // way a threshold is, and it already listens for its own change event.)
+  const [agentConfigTick, setAgentConfigTick] = useState(0);
+  useEffect(() => {
+    const onFocus = () => setAgentConfigTick((n) => n + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+  useEffect(() => {
     if (!projectId || !selectedAgentId) return;
     let cancelled = false;
     api
       .getAgentConfig(projectId, selectedAgentId)
       .then((res) => {
-        if (!cancelled) setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
+        if (cancelled) return;
+        setAgentThinkingLevel(res.config.model?.thinkingLevel ?? "");
+        setCompactionLimit(configuredCompactionLimit(res.config.compaction?.maxContextLength));
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [projectId, selectedAgentId]);
+  }, [projectId, selectedAgentId, agentConfigTick]);
+  /**
+   * Commits the threshold the context panel's cutter proposed, then re-reads the Agent config
+   * this page holds so the ring, the cutter and the small-window notice all move together.
+   *
+   * Compaction settings are re-read by the engine at every compaction checkpoint, so this
+   * applies to the conversation on screen without waiting for a rotation — which is what the
+   * toast says. Rejecting rather than swallowing the failure is what keeps the dialog open on
+   * the value the user typed.
+   */
+  const onChangeCompactionLimit = useCallback(
+    async (maxContextLength: number): Promise<void> => {
+      if (!projectId || !selectedAgentId) return;
+      try {
+        await api.putAgentConfig(projectId, selectedAgentId, {
+          config: { compaction: { maxContextLength } },
+        });
+      } catch (e) {
+        toastError(apiErrorText(e));
+        throw e;
+      }
+      setCompactionLimit(configuredCompactionLimit(maxContextLength));
+      setAgentConfigTick((n) => n + 1);
+      toastSuccess(S.chat.contextThresholdSaved(humanizeTokens(maxContextLength)));
+    },
+    [projectId, selectedAgentId],
+  );
 
   // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
   // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
@@ -640,10 +722,11 @@ export function ChatPage() {
     isSessionDeleted,
   ]);
 
-  // Auto-select the most recent conversation when the route doesn't select one (newest loaded
-  // active/schedule Session — archived rows are hidden by choice and subagent Sessions belong
-  // to their parent, so neither is auto-opened); if there is none, fall back to draft state
-  // (instead of auto-creating one).
+  // Auto-select the last conversation when the route doesn't select one: the most recently
+  // ACTIVE loaded active/schedule Session, the same rule the collapsed rail's entry follows —
+  // archived rows are hidden by choice and subagent Sessions belong to their parent, so
+  // neither is auto-opened. If there is none, fall back to draft state (instead of
+  // auto-creating one).
   useEffect(() => {
     if (sessionsLoading || draft) return;
     if (selected !== null) return;
@@ -702,8 +785,23 @@ export function ChatPage() {
       // the turn appended its own record to it. Same edge, same guard — a phantom "idle"
       // from a detaching stream never reaches here.
       setSettledTurnSignal((n) => n + 1);
+      // The turn may equally have created a scheduled task, switched one off, or consumed a
+      // one-off — so the schedule directory is re-read on this same edge, the way the Files
+      // and Trace panels re-read theirs. One store refresh serves both surfaces: the store
+      // notifies its subscribers, so the dock's schedules panel and the sidebar row's alarm
+      // clock come from the same list and cannot disagree.
+      if (projectId !== null && selectedAgentId !== null) {
+        noteScheduleEvent(projectId, selectedAgentId);
+      }
     }
-  }, [stream.taskState, selectedSessionId, reloadSessions, reloadAgents]);
+  }, [
+    stream.taskState,
+    selectedSessionId,
+    selectedAgentId,
+    projectId,
+    reloadSessions,
+    reloadAgents,
+  ]);
 
   // Looking at a settled Session is what marks it read (session-seen.ts): stamped on open, and
   // again when a run finishes under the user's eyes, so the sidebar row left behind is not
@@ -826,6 +924,10 @@ export function ChatPage() {
   const runningProcessCount = processes.filter((p) => p.running).length;
   const processesCanChange =
     stream.taskState !== "idle" || runningProcessCount > 0 || (infoOpen && processes.length > 0);
+  // The row's own count moves the moment the server sees a process promoted or gone (the
+  // user channel's session_background), so a change there re-reads the list at once instead
+  // of a poll interval later — the popover stays in step with the header's count.
+  const backgroundProcessCount = selected?.backgroundTasks?.processes ?? 0;
   useEffect(() => {
     if (!selectedSessionId) return;
     let cancelled = false;
@@ -848,7 +950,7 @@ export function ChatPage() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [selectedSessionId, stream.taskState, processesCanChange]);
+  }, [selectedSessionId, stream.taskState, processesCanChange, backgroundProcessCount]);
 
   /**
    * Shared body of the per-row process actions (Stop / Remove): one request at a time
@@ -1158,6 +1260,28 @@ export function ChatPage() {
     [selected, discardSessionDraft],
   );
 
+  /**
+   * The scheduled-tasks panel's exit: the composed prompt lands in this conversation's composer
+   * and stops there. Nothing is posted — pressing Send stays the user's move, and the composer
+   * then routes it the way it routes anything typed (a steering message while a Task runs, a
+   * task otherwise), so this path needs no delivery rules of its own.
+   */
+  const composerRef = useRef<ComposerControl | null>(null);
+  const prefillComposer = useCallback((text: string) => {
+    // An empty pin list: a schedule prompt names no Skills, so the composer's own selection stands.
+    composerRef.current?.fillPrompt(text, []);
+  }, []);
+  /**
+   * The Files panel's exit into the conversation: a `@path` reference, or a fenced block
+   * around what was selected in a preview, spliced into the draft at the caret. Nothing is
+   * sent and nothing already typed is disturbed — the panel contributes a line to a message
+   * the user is writing.
+   */
+  /** Staged as a chip, so the draft keeps whatever the user was in the middle of writing. */
+  const addComposerReference = useCallback((reference: ComposerReference) => {
+    composerRef.current?.addReference(reference);
+  }, []);
+
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
   // from the next LLM request (the picker's menu advises compacting first). Modeled on
@@ -1226,6 +1350,23 @@ export function ChatPage() {
       }
     },
     [selected, stream],
+  );
+
+  // "Move to background" on an executing tool call: the call returns a background handle and
+  // the turn carries on. 404 means it finished in the click's race window and 409 that the
+  // tool has no background form — the card settles on its own either way, so neither is worth
+  // a toast; anything else is a real failure the user should see.
+  const onSendToBackground = useCallback(
+    async (toolCallId: string) => {
+      if (!selected) return;
+      try {
+        await api.postToolCallBackground(selected.sessionId, toolCallId);
+      } catch (e) {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 409)) return;
+        toastError(apiErrorText(e));
+      }
+    },
+    [selected],
   );
 
   const onChangeApprovalMode = useCallback(
@@ -1399,6 +1540,7 @@ export function ChatPage() {
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
     onApprove,
+    onSendToBackground,
     origin: [],
     // Any non-idle state (running / compacting) counts as "not yet stopped": compaction can
     // happen mid-turn, and if only running were checked, the trailing group would flash
@@ -1458,11 +1600,19 @@ export function ChatPage() {
   // view arrives as a bottom view). They render on the draft page too — the arrangement is
   // the user's workbench, and a terminal opened while drafting must be visible — with the
   // session-bound panels showing a placeholder until the first send creates the Session.
-  // useDockMount keeps a closing dock mounted through its collapse transition and skips
-  // the animation for instant changes (scope switches, cross-dock moves).
+  // useDockMount keeps a closing dock mounted through its collapse transition and then
+  // holds it at zero size on closedDockView, so hiding a dock costs none of what its panels
+  // hold; it skips the animation for instant changes (scope switches, cross-dock moves).
+  // Narrow: the merged view is a bottom view, and the closed one goes to the same mount.
   const views = dockViews();
-  const rightMount = useDockMount(views.find((view) => view.position === "right") ?? null);
-  const bottomMount = useDockMount(views.find((view) => view.position === "bottom") ?? null);
+  const rightMount = useDockMount(
+    views.find((view) => view.position === "right") ?? null,
+    closedDockView("right"),
+  );
+  const bottomMount = useDockMount(
+    views.find((view) => view.position === "bottom") ?? null,
+    closedDockView("bottom"),
+  );
   const terminalSupported = terminalApiSupported();
 
   /**
@@ -1471,7 +1621,14 @@ export function ChatPage() {
    * its own handled-once request guard is what the conversation-switch e2e covers.
    */
   const renderPanel = (kind: PanelKind, active: boolean): ReactNode => {
-    if (!selected) return <EmptyState title={panelLabel(kind)} description={S.dock.draftEmpty} />;
+    if (!selected)
+      return (
+        <EmptyState
+          title={panelLabel(kind)}
+          // The schedules tab says what the first message unlocks; the other tabs share one line.
+          description={kind === "schedules" ? S.schedule.panelDraftEmpty : S.dock.draftEmpty}
+        />
+      );
     switch (kind) {
       case "agents":
         return (
@@ -1501,6 +1658,7 @@ export function ChatPage() {
             openRequest={fileOpenRequest}
             active={active}
             reloadSignal={settledTurnSignal}
+            onAddReference={addComposerReference}
           />
         );
       case "memory":
@@ -1529,6 +1687,15 @@ export function ChatPage() {
       case "messaging":
         return (
           <MessagingPanel key={selected.sessionId} sessionId={selected.sessionId} active={active} />
+        );
+      case "schedules":
+        return (
+          <SchedulePanel
+            key={selected.sessionId}
+            session={selected}
+            active={active}
+            onPrefillComposer={prefillComposer}
+          />
         );
     }
   };
@@ -1597,6 +1764,7 @@ export function ChatPage() {
   // /model forks the conversation onto another model.
   const input = selected && (
     <ChatInput
+      controlRef={composerRef}
       status={stream.taskState}
       onSend={onSend}
       onSteer={onSteer}
@@ -1604,6 +1772,7 @@ export function ChatPage() {
       // "queued" indicator up until this count increases (i.e. the steering message arrived).
       steeringDeliveredCount={stream.model.items.filter((i) => i.kind === "user_steering").length}
       pendingSteering={stream.pendingSteering}
+      returnedSteering={stream.returnedSteering}
       onRecallSteering={onRecallSteering}
       onQueueFollowUp={onQueueFollowUp}
       queuedFollowUps={stream.queuedFollowUps}
@@ -1621,6 +1790,9 @@ export function ChatPage() {
       // Guarded: a mid-chat change stages behind the prefix-cache confirm dialog (issue #310).
       onChangeTurnThinkingLevel={onPickTurnThinkingLevel}
       {...(contextWindow !== undefined ? { contextWindow } : {})}
+      {...(compactionLimit !== undefined ? { compactionLimit } : {})}
+      onChangeCompactionLimit={onChangeCompactionLimit}
+      onOpenAgentSettings={() => navigate(`/agents/${selected.agentId}?tab=runtime`)}
       contextNow={stream.model.stats.contextNow}
       contextStale={stream.model.stats.contextStale}
       sessionId={selected.sessionId}
@@ -1658,6 +1830,8 @@ export function ChatPage() {
    */
   const headerActivity =
     selected === null ? null : sessionActivity(stream.taskState, selected.hasTrace, false);
+  /** Background tasks the conversation still owns — the same live count the sidebar row's mark carries. */
+  const backgroundCount = selected === null ? 0 : sessionBackgroundTasks(selected);
 
   return (
     // data-dock-host: the docks' edge bands, drop preview and the bottom dock's height
@@ -1745,17 +1919,26 @@ export function ChatPage() {
                   <StatChip
                     icon={STAT_ICONS.elapsed}
                     value={hs.elapsedNode}
-                    label={S.chat.statElapsed}
+                    label={`${S.chat.statElapsed}${hs.elapsedSplit ?? ""}`}
                   />
-                  {/* Right of the time, only while the conversation has live background
-                      processes: their count, in the live-status green. */}
-                  {runningProcessCount > 0 && (
+                  {/* Right of the time, only while the conversation still owns background
+                      work — command processes past their yield window, background subagents
+                      mid-round: their count, in the same tone, figure and glyph as the
+                      session row's mark and read live off the row. A count is what this
+                      reading is, and a glyph beside a number is how every other chip in this
+                      row says what its number counts. Bare ink like the chips beside it, not
+                      a tinted pill: this is one more reading in the stat row, not a badge
+                      that should out-weigh them. In the live-status green (`busy`), the same
+                      tone as the session row's mark: background work is work still running
+                      behind this conversation, and glyph and number wear that colour together
+                      wherever they appear; the title still names the count in words. */}
+                  {backgroundCount > 0 && (
                     <span
-                      title={S.chat.runningServices(runningProcessCount)}
+                      title={S.chat.backgroundTasks(backgroundCount)}
                       className={`flex shrink-0 items-center ${ICON_GAP.tight} font-mono text-xs ${toneInk.busy}`}
                     >
-                      <GlyphIcon d={STAT_ICONS.services} />
-                      {runningProcessCount}
+                      <GlyphIcon d={BACKGROUND_TASKS_ICON} />
+                      {backgroundCount}
                     </span>
                   )}
                 </span>
@@ -1832,6 +2015,7 @@ export function ChatPage() {
                   )}
                   <li>
                     {S.chat.statElapsed} {hs.elapsedNode}
+                    {hs.elapsedSplit}
                   </li>
                 </ul>
               </div>
@@ -1975,7 +2159,10 @@ export function ChatPage() {
                   // ChatInput always mounts in the same JSX slot, so it isn't unmounted and
                   // recreated when the first message arrives (preserving draft/focus).
                   <>
-                    <div className="min-h-0 flex-1">
+                    {/* `relative`: the floating dock launcher below anchors to this body —
+                        the region between the toolbar and the composer — so clamping to
+                        it keeps the launcher off both. */}
+                    <div className="relative min-h-0 flex-1">
                       {emptyChat ? (
                         <div className="flex h-full items-center justify-center px-4">
                           <p className="text-lg font-medium text-gray-400 dark:text-gray-500">
@@ -2013,6 +2200,9 @@ export function ChatPage() {
                           }
                         />
                       )}
+                      {/* The right dock's floating launcher: rides this body's right edge
+                          while that dock is hidden, and opens its panels in one click. */}
+                      <DockLauncher agentsPending={anySubagentPending} />
                     </div>
                     <div className="shrink-0 border-t border-gray-200 bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 md:pb-3 dark:border-gray-800 dark:bg-gray-950">
                       <div className="mx-auto max-w-3xl">
@@ -2069,8 +2259,11 @@ export function ChatPage() {
         onClose={() => setCredentialGuide(false)}
         footer={
           <>
-            <Button onClick={() => setCredentialGuide(false)}>{S.project.later}</Button>
+            <Button size="sm" onClick={() => setCredentialGuide(false)}>
+              {S.project.later}
+            </Button>
             <Button
+              size="sm"
               variant="primary"
               onClick={() => {
                 setCredentialGuide(false);

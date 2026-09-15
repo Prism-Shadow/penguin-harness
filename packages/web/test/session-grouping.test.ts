@@ -18,6 +18,8 @@ import {
   TIME_BUCKETS,
   TIME_FOLDERS_GROUP_KEY,
   aggregateWorkspaceCounts,
+  aggregateWorkspaceLatest,
+  completeWorkspaceGroups,
   matchesSessionQuery,
   groupSessionsByTime,
   groupSessionsByWorkspace,
@@ -217,20 +219,27 @@ describe("partitionSessions (per-group user / subagent / scheduled / archived sp
 });
 
 describe("latestConversation (the auto-opened 'last conversation')", () => {
-  it("picks the newest active/schedule row regardless of input order; archived and subagent rows never win", () => {
-    const oldActive = session("/srv/a", "2026-07-01T10:00:00.000Z");
-    const newActive = session("/srv/a", "2026-07-03T10:00:00.000Z");
-    // Newer than every conversation, but never auto-opened:
-    const newerSub = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "subagent" });
-    const newerGone = session("/srv/a", "2026-07-09T10:00:00.000Z", { archived: true });
-    expect(latestConversation([newerSub, oldActive, newerGone, newActive])).toBe(newActive);
+  it("picks the most recently active active/schedule row regardless of input order; archived and subagent rows never win", () => {
+    // Created first but returned to since: this is the conversation the user was last in,
+    // and the one created last is not.
+    const revisited = session("/srv/a", "2026-07-01T10:00:00.000Z", {
+      lastActiveAt: "2026-07-06T10:00:00.000Z",
+    });
+    const newerUntouched = session("/srv/a", "2026-07-03T10:00:00.000Z");
+    // Active more recently than every conversation, but never auto-opened:
+    const subAfter = session("/srv/a", "2026-07-08T10:00:00.000Z", { source: "subagent" });
+    const goneAfter = session("/srv/a", "2026-07-09T10:00:00.000Z", { archived: true });
+    expect(latestConversation([subAfter, newerUntouched, goneAfter, revisited])).toBe(revisited);
 
-    // A schedule-created run is the user's conversation: the newest one qualifies.
-    const newerSched = session("/srv/a", "2026-07-05T10:00:00.000Z", { source: "schedule" });
-    expect(latestConversation([newActive, newerSched, newerSub])).toBe(newerSched);
+    // A schedule-created run is the user's conversation: the most recently active one qualifies.
+    const schedAfter = session("/srv/a", "2026-07-05T10:00:00.000Z", {
+      lastActiveAt: "2026-07-07T10:00:00.000Z",
+      source: "schedule",
+    });
+    expect(latestConversation([revisited, schedAfter, subAfter])).toBe(schedAfter);
   });
 
-  it("ties on createdAt break by sessionId, and no qualifying row yields null", () => {
+  it("ties on lastActiveAt break by sessionId, and no qualifying row yields null", () => {
     const at = "2026-07-02T10:00:00.000Z";
     const a = session("/srv/a", at, { sessionId: "session-a" });
     const b = session("/srv/a", at, { sessionId: "session-b" });
@@ -481,5 +490,120 @@ describe("totalCategoryCounts", () => {
       schedule: 0,
       archived: 0,
     });
+  });
+});
+
+describe("aggregateWorkspaceLatest (per-group newest-Session stamp)", () => {
+  it("keeps the newest stamp per path across Agents, and the newest temporary path for the temp group", () => {
+    const byAgent = new Map<string, Record<string, string>>([
+      [
+        "agent_a",
+        {
+          "/srv/alpha": "2026-07-03T09:00:00.000Z",
+          [TEMP_A]: "2026-07-03T08:00:00.000Z",
+        },
+      ],
+      [
+        "agent_b",
+        {
+          "/srv/alpha": "2026-07-03T09:30:00.000Z",
+          "/srv/beta": "2026-07-01T00:00:00.000Z",
+          [TEMP_B]: "2026-07-03T08:30:00.000Z",
+        },
+      ],
+    ]);
+    const latest = aggregateWorkspaceLatest(byAgent);
+    expect(latest.get("/srv/alpha")).toBe("2026-07-03T09:30:00.000Z");
+    expect(latest.get("/srv/beta")).toBe("2026-07-01T00:00:00.000Z");
+    expect(latest.get(TEMP_WORKSPACE_GROUP_KEY)).toBe("2026-07-03T08:30:00.000Z");
+    expect(latest.size).toBe(3);
+    expect(aggregateWorkspaceLatest(new Map()).size).toBe(0);
+  });
+});
+
+describe("completeWorkspaceGroups (every counted Workspace is a group, placed by recency)", () => {
+  const zero = { active: 0, subagent: 0, schedule: 0, archived: 0 };
+  const counted = (totals: Partial<SessionCategoryCounts>) => ({
+    totals: { ...zero, ...totals },
+    agents: { active: [], subagent: [], schedule: [], archived: [] },
+  });
+
+  it("adds an empty group for a counted Workspace the loaded rows never touched, and orders every group by its newest stamp", () => {
+    // Loaded: one Agent's first page reached only alpha (newest) and a temp workspace.
+    const loaded = groupSessionsByWorkspace([
+      session("/srv/alpha", "2026-07-03T09:00:00.000Z"),
+      session(TEMP_A, "2026-07-02T12:00:00.000Z"),
+    ]);
+    const counts = new Map([
+      ["/srv/alpha", counted({ active: 40 })],
+      // Unloaded, newer than alpha's loaded row: the stamp places it first.
+      ["/srv/beta", counted({ active: 300 })],
+      // Unloaded, older: last among the named groups.
+      ["/srv/gamma", counted({ active: 2, archived: 5 })],
+      [TEMP_WORKSPACE_GROUP_KEY, counted({ active: 7 })],
+    ]);
+    const latest = new Map([
+      ["/srv/alpha", "2026-07-03T09:00:00.000Z"],
+      ["/srv/beta", "2026-07-03T10:00:00.000Z"],
+      ["/srv/gamma", "2026-06-01T00:00:00.000Z"],
+      [TEMP_WORKSPACE_GROUP_KEY, "2026-07-03T11:00:00.000Z"],
+    ]);
+    const groups = completeWorkspaceGroups(loaded, counts, latest);
+    expect(groups.map((g) => g.key)).toEqual([
+      "/srv/beta",
+      "/srv/alpha",
+      "/srv/gamma",
+      TEMP_WORKSPACE_GROUP_KEY,
+    ]);
+    const beta = groups[0]!;
+    expect(beta).toMatchObject({ label: "beta", fullPath: "/srv/beta", temp: false });
+    expect(beta.sessions).toEqual([]);
+    // Groups already formed keep their loaded rows.
+    expect(groups[1]!.sessions).toHaveLength(1);
+    // The temp group stays last however new its stamp is, and keeps its loaded row.
+    expect(groups[3]!.sessions).toHaveLength(1);
+  });
+
+  it("places a group by its newest loaded row when that is newer than the stamp (a conversation added since the counts)", () => {
+    const loaded = groupSessionsByWorkspace([
+      session("/srv/alpha", "2026-07-03T12:00:00.000Z"),
+      session("/srv/beta", "2026-07-03T09:00:00.000Z"),
+    ]);
+    const counts = new Map([
+      ["/srv/alpha", counted({ active: 1 })],
+      ["/srv/beta", counted({ active: 1 })],
+    ]);
+    // Stale stamps say beta is newer; alpha's loaded row is newer than both.
+    const latest = new Map([
+      ["/srv/alpha", "2026-07-01T00:00:00.000Z"],
+      ["/srv/beta", "2026-07-02T00:00:00.000Z"],
+    ]);
+    expect(completeWorkspaceGroups(loaded, counts, latest).map((g) => g.key)).toEqual([
+      "/srv/alpha",
+      "/srv/beta",
+    ]);
+  });
+
+  it("forms no group for a counted key with nothing left in any category, and none without counts", () => {
+    const loaded = groupSessionsByWorkspace([session("/srv/alpha", "2026-07-03T09:00:00.000Z")]);
+    const counts = new Map([
+      ["/srv/alpha", counted({ active: 1 })],
+      ["/srv/gone", counted({})],
+    ]);
+    expect(completeWorkspaceGroups(loaded, counts, new Map()).map((g) => g.key)).toEqual([
+      "/srv/alpha",
+    ]);
+    expect(completeWorkspaceGroups(loaded, new Map(), new Map()).map((g) => g.key)).toEqual([
+      "/srv/alpha",
+    ]);
+    expect(completeWorkspaceGroups([], new Map(), new Map())).toEqual([]);
+  });
+
+  it("forms the temp group from its counts alone, empty and last, when no temporary row is loaded", () => {
+    const loaded = groupSessionsByWorkspace([session("/srv/alpha", "2026-07-03T09:00:00.000Z")]);
+    const counts = new Map([[TEMP_WORKSPACE_GROUP_KEY, counted({ archived: 3 })]]);
+    const groups = completeWorkspaceGroups(loaded, counts, new Map());
+    expect(groups.map((g) => g.key)).toEqual(["/srv/alpha", TEMP_WORKSPACE_GROUP_KEY]);
+    expect(groups[1]).toMatchObject({ label: "", fullPath: null, temp: true, sessions: [] });
   });
 });

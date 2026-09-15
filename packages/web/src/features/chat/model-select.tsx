@@ -19,7 +19,7 @@ import { FormPicker } from "../../components/ui/form-picker";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ChevronDown } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
-import { noAutofill } from "../../components/ui/input";
+import { menuSearchClass, noAutofill } from "../../components/ui/input";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import {
   hasConfiguredKey,
@@ -30,9 +30,13 @@ import {
 import { loadModelGroupOrder } from "../models/model-group-order";
 import { useProject } from "../../state/project";
 
-/** Display label for a model: the display name, or falls back to the upstream id (model_id is the raw field, no prefix parsing). */
+/**
+ * Display label for a model: the display name, or falls back to the upstream id (model_id is
+ * the raw field, no prefix parsing). Blank counts as absent — a name the user cleared is sent
+ * as the empty string, which must read as the id rather than as an empty label.
+ */
 export function modelLabel(m: ModelInfo): string {
-  return m.displayName ?? m.modelId;
+  return m.displayName?.trim() || m.modelId;
 }
 
 /**
@@ -119,7 +123,7 @@ export function PickerList<T>({
           placeholder={searchPlaceholder}
           aria-label={searchPlaceholder}
           {...noAutofill}
-          className="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs text-gray-700 placeholder:text-gray-400 focus:outline-none dark:text-gray-200 dark:placeholder:text-gray-500"
+          className={`${menuSearchClass} px-1 py-0.5`}
         />
       </div>
       <div className="max-h-56 overflow-y-auto">
@@ -326,6 +330,7 @@ export function ModelSelect({
   if (variant === "form") {
     return (
       <FormPicker
+        size="sm"
         open={open}
         setOpen={setOpen}
         leading={logo}

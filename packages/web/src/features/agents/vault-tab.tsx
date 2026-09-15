@@ -229,8 +229,10 @@ export function VaultTab({
         onClose={() => setAdding(false)}
         footer={
           <>
-            <Button onClick={() => setAdding(false)}>{S.common.cancel}</Button>
-            <Button variant="primary" disabled={busy} onClick={() => void addEntry()}>
+            <Button size="sm" onClick={() => setAdding(false)}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" variant="primary" disabled={busy} onClick={() => void addEntry()}>
               {S.vault.add}
             </Button>
           </>

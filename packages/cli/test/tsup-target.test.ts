@@ -63,8 +63,13 @@ function requiredMajor(pkgPath: string): number | null {
 }
 
 describe("tsup build target", () => {
-  it("covers every package that builds with tsup", () => {
-    expect(tsupPackages.map((p) => p.name).sort()).toEqual(["cli", "core", "desktop", "server"]);
+  it("discovers the packages that build with tsup", () => {
+    // Deliberately not an exact list: new packages arrive (the sandbox backends were the
+    // first), and a closed enumeration would fail for the one reason that is not a defect.
+    // What has to hold is that discovery works at all — if it silently found nothing, the
+    // target assertion below would pass vacuously.
+    const names = tsupPackages.map((p) => p.name);
+    expect(names).toEqual(expect.arrayContaining(["cli", "core", "desktop", "server"]));
   });
 
   it("is the same Node version everywhere", () => {
@@ -72,6 +77,10 @@ describe("tsup build target", () => {
     expect(Object.fromEntries(targets)).toEqual(
       Object.fromEntries(tsupPackages.map(({ name }) => [name, "node24"])),
     );
+  });
+
+  it("has something to check — discovery finding nothing would pass the rule vacuously", () => {
+    expect(tsupPackages.length).toBeGreaterThan(0);
   });
 
   it("never emits syntax newer than a published package admits to needing", () => {

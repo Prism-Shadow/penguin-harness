@@ -27,6 +27,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 import type {
   ServerEvent,
+  SessionBackgroundTasks,
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
@@ -44,6 +45,7 @@ import {
   workspaceGroupKey,
   workspaceGroupQuery,
 } from "../lib/session-grouping";
+import { noteScheduleEvent } from "../features/schedules/schedule-store";
 import { useProject } from "./project";
 
 interface SessionsContextValue {
@@ -55,6 +57,8 @@ interface SessionsContextValue {
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   /** agentId → the same totals broken down by Workspace path (workspace-mode groups read their own share from it; maintained like countsByAgent). */
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
+  /** agentId → each Workspace path's newest Session `createdAt` from the last list fetch: what places a workspace-mode group before any of its rows are loaded. */
+  workspaceLatestByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
   /**
    * Whether a pair's first page has been fetched (false = the folder shows nothing because
    * nothing was asked for yet). `workspaceGroup` asks about ONE group's own stream, which
@@ -171,6 +175,7 @@ interface SessionsStoreState {
   pageState: ReadonlyMap<string, PagePosition>;
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
+  workspaceLatestByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
   loading: boolean;
 
   reload: () => Promise<void>;
@@ -184,6 +189,12 @@ interface SessionsStoreState {
   replace: (session: SessionInfo) => void;
   setStatus: (sessionId: string, status: SessionStatus, row?: LiveRowFields) => void;
   setTitle: (sessionId: string, title: string) => void;
+  /**
+   * Live background-task counts of one row, from the user channel's `session_background`;
+   * undefined clears the field the way the server omits it at zero. The row's mark and the
+   * chat header's count both read the field, so this is the one write that moves them.
+   */
+  setBackgroundTasks: (sessionId: string, tasks: SessionBackgroundTasks | undefined) => void;
 }
 
 /**
@@ -237,6 +248,7 @@ export function createSessionsStore() {
       pageState: new Map(),
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
+      workspaceLatestByAgent: new Map(),
       loading: true,
 
       reload: async () => {
@@ -279,6 +291,7 @@ export function createSessionsStore() {
                       scope,
                       counts: res.counts,
                       workspaceCounts: res.workspaceCounts,
+                      workspaceLatest: res.workspaceLatest,
                       ...splitPage(res.sessions, SIDEBAR_PAGE_SIZE),
                     };
                   }),
@@ -299,6 +312,7 @@ export function createSessionsStore() {
             string,
             Readonly<Record<string, SessionCategoryCounts>>
           >();
+          const nextWorkspaceLatest = new Map<string, Readonly<Record<string, string>>>();
           for (const r of results) {
             for (const p of r.pages) {
               nextPageState.set(pageKey(r.agentId, p.category, p.scope), {
@@ -307,6 +321,7 @@ export function createSessionsStore() {
               });
               if (p.counts) nextCounts.set(r.agentId, p.counts);
               if (p.workspaceCounts) nextWorkspaceCounts.set(r.agentId, p.workspaceCounts);
+              if (p.workspaceLatest) nextWorkspaceLatest.set(r.agentId, p.workspaceLatest);
               for (const s of p.items) {
                 if (!seen.has(s.sessionId)) {
                   seen.add(s.sessionId);
@@ -320,6 +335,7 @@ export function createSessionsStore() {
             pageState: nextPageState,
             countsByAgent: nextCounts,
             workspaceCountsByAgent: nextWorkspaceCounts,
+            workspaceLatestByAgent: nextWorkspaceLatest,
           });
         } finally {
           if (g === gen) set({ loading: false });
@@ -533,6 +549,31 @@ export function createSessionsStore() {
           sessions: prev.map((s) => (s.sessionId === sessionId ? { ...s, title } : s)),
         });
       },
+
+      /**
+       * Same drop rule as `setStatus` and `setTitle`: an unlisted id is ignored, and equal
+       * counts leave the array untouched (a ping that changed nothing must not re-render every
+       * row). Zero is stored as absence — the same shape a list fetch returns — so the
+       * "has background work" test stays one `backgroundTasks !== undefined` check everywhere.
+       */
+      setBackgroundTasks: (sessionId, tasks) => {
+        const prev = get().sessions;
+        const target = prev.find((s) => s.sessionId === sessionId);
+        if (!target) return;
+        const cur = target.backgroundTasks;
+        const same =
+          cur === undefined || tasks === undefined
+            ? cur === tasks
+            : cur.processes === tasks.processes && cur.subagents === tasks.subagents;
+        if (same) return;
+        set({
+          sessions: prev.map((s) => {
+            if (s.sessionId !== sessionId) return s;
+            const { backgroundTasks: _dropped, ...rest } = s;
+            return tasks === undefined ? rest : { ...rest, backgroundTasks: tasks };
+          }),
+        });
+      },
     };
   });
 }
@@ -581,6 +622,20 @@ export function applyUserEvent(
     store.getState().setTitle(ev.sessionId, ev.title);
     return;
   }
+  // A Session's background work changed — a command promoted past its yield window, a
+  // process that exited or was stopped, a background subagent starting or finishing a round.
+  // The event carries the counts as they now stand, zeros included, so the row's mark can
+  // appear and disappear without a list fetch; the pair collapses to "none" at zero.
+  if (ev.type === "session_background") {
+    const { processes, subagents } = ev;
+    store
+      .getState()
+      .setBackgroundTasks(
+        ev.sessionId,
+        processes > 0 || subagents > 0 ? { processes, subagents } : undefined,
+      );
+    return;
+  }
   // The reconnect landed outside the channel's replay buffer, so an unknown number of the flips
   // above were lost — away long enough and a row sits on an hourglass that will never stop.
   // Refetch once, on the event that says so, rather than polling for it.
@@ -588,9 +643,15 @@ export function applyUserEvent(
     void store.getState().reload();
     return;
   }
-  // A scheduled task firing may have created a new Session (new-session mode); reload the list
-  // so it appears immediately. schedule_queued doesn't change the list (the target Session
-  // already exists), so it is ignored, as is every other Session-scoped event.
+  // Either schedule event moves a task's state — nextFireAt, lastFiredAt, the queued flag, or a
+  // one-off going done — so the conversation's schedule list is stale from here. The store
+  // decides for itself whether the agent is the one on screen.
+  if (ev.type === "schedule_fired" || ev.type === "schedule_queued") {
+    noteScheduleEvent(ev.projectId, ev.agentId);
+  }
+  // A scheduled task firing may also have created a new Session (new-session mode); reload the
+  // list so it appears immediately. schedule_queued doesn't change the list (the target Session
+  // already exists), so it goes no further, as does every other Session-scoped event.
   if (ev.type !== "schedule_fired") return;
   // The event carries projectId: a trigger from another Project is unrelated to the current list.
   if (ev.projectId === store.getState().projectId) void store.getState().reload();
@@ -621,6 +682,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       pageState: new Map(),
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
+      workspaceLatestByAgent: new Map(),
       // The pages were just cleared, so the list is loading from this instant — including
       // the window where the Agent set itself is still being refetched (a Project switch
       // empties it, which makes reload() below return without fetching or clearing the
@@ -699,6 +761,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       byAgent,
       countsByAgent: state.countsByAgent,
       workspaceCountsByAgent: state.workspaceCountsByAgent,
+      workspaceLatestByAgent: state.workspaceLatestByAgent,
       isLoadedFor,
       hasMoreFor,
       loading: state.loading,

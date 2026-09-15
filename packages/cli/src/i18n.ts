@@ -634,7 +634,8 @@ const en: Messages = {
     addPriceOutput: "Price per 1M tokens: output (USD)",
     addSetDefault: "Also set as the Project default model",
     defaultDesc: "Set the Project default model",
-    visionDesc: "Set the vision model used by read_image for non-vision session models",
+    visionDesc:
+      "Set the vision model that reads images for non-vision session models (read_file hands images to it)",
     refModelId: "Upstream model id; forms the (provider, model_id) pair reference with --provider",
     refProvider: "Provider group of the referenced entry (see `penguin config model list`)",
     listDesc: "List the Project's models (API keys hidden)",
@@ -1158,7 +1159,7 @@ const zh: Messages = {
     addPriceOutput: "每百万 token 价格：输出（USD）",
     addSetDefault: "同时设为该 Project 的默认模型",
     defaultDesc: "设置 Project 的默认模型",
-    visionDesc: "设置 read_image 代读用的视觉模型（供不支持图片的会话模型读图）",
+    visionDesc: "设置代读图片的视觉模型（不支持图片的会话模型用 read_file 读图时由它代读）",
     refModelId: "上游模型 id；与 --provider 构成 (provider, model_id) 成对引用",
     refProvider: "引用条目的 provider 分组（见 `penguin config model list`）",
     listDesc: "列出当前 Project 的模型（API key 隐藏）",

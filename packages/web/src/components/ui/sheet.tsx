@@ -27,6 +27,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { CloseButton } from "./icons";
+import { usePrefersReducedMotion } from "./use-reduced-motion";
 import { SPRING_DEFAULT, SPRING_MOMENTUM, createSpringDriver } from "../../lib/spring";
 import type { SpringDriver } from "../../lib/spring";
 import { nearestSnap, project, rubberband } from "../../lib/sheet-physics";
@@ -47,19 +48,6 @@ export interface SheetProps {
   onClose: () => void;
   title?: string;
   children: ReactNode;
-}
-
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(
-    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
 }
 
 export function Sheet({ open, snap, onSnapChange, onClose, title, children }: SheetProps) {

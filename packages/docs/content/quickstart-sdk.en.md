@@ -15,13 +15,13 @@ npm install @prismshadow/penguin-core
 
 ## Configure a model
 
-The SDK reads the same data root as the other two routes, `~/.penguin/data`, so a model configured in the [desktop app](/quickstart-desktop) or the [CLI](/quickstart-cli) is immediately usable — there is nothing to configure twice.
+The SDK reads the same data root as the desktop app and the CLI, `~/.penguin/data`, so a model configured in the [desktop app](/quickstart-desktop) or the [CLI](/quickstart-cli) is immediately usable — there is nothing to configure twice.
 
 If this machine has no model configured yet, the shortest path is to install the CLI and do it once:
 
 ```bash
 npm install -g @prismshadow/penguin-cli
-penguin config model add --provider deepseek --model-id deepseek-v4-flash-vision-exp --api-key sk-... --set-default
+penguin config model add --provider deepseek --model-id deepseek-flash --api-key sk-... --set-default
 ```
 
 You can also keep credentials off disk entirely: when a model entry has no inline api_key, AgentHub (the LLM gateway library) reads environment variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.

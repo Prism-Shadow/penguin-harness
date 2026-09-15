@@ -10,6 +10,10 @@ export interface UserRow {
   isAdmin: boolean;
   /** Still using the initial password (seeded / set by an admin); cleared to 0 once the user changes it. */
   passwordIsInitial: boolean;
+  /** Nickname shown in place of the id; null = never set. */
+  displayName: string | null;
+  /** Avatar as a data URL; null = never set. */
+  avatar: string | null;
   createdAt: string;
 }
 
@@ -19,6 +23,8 @@ function mapRow(r: Record<string, unknown>): UserRow {
     passwordHash: r.password_hash as string,
     isAdmin: (r.is_admin as number) === 1,
     passwordIsInitial: (r.password_is_initial as number) === 1,
+    displayName: (r.display_name as string | null) ?? null,
+    avatar: (r.avatar as string | null) ?? null,
     createdAt: r.created_at as string,
   };
 }
@@ -29,13 +35,16 @@ export class UsersRepo {
   insert(row: UserRow): void {
     this.db
       .prepare(
-        "INSERT INTO users (user_id, password_hash, is_admin, password_is_initial, created_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO users (user_id, password_hash, is_admin, password_is_initial, display_name, avatar, created_at)" +
+          " VALUES (?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         row.userId,
         row.passwordHash,
         row.isAdmin ? 1 : 0,
         row.passwordIsInitial ? 1 : 0,
+        row.displayName,
+        row.avatar,
         row.createdAt,
       );
   }
@@ -61,6 +70,29 @@ export class UsersRepo {
     this.db
       .prepare("UPDATE users SET password_hash = ?, password_is_initial = ? WHERE user_id = ?")
       .run(passwordHash, isInitial ? 1 : 0, userId);
+  }
+
+  /**
+   * Writes the profile fields the patch names, leaving the rest as they are: an absent key
+   * keeps the stored value, `null` clears it, a string replaces it. A patch naming neither
+   * field writes nothing rather than issuing an UPDATE with an empty SET list.
+   */
+  updateProfile(
+    userId: string,
+    patch: { displayName?: string | null; avatar?: string | null },
+  ): void {
+    const sets: string[] = [];
+    const values: (string | null)[] = [];
+    if (patch.displayName !== undefined) {
+      sets.push("display_name = ?");
+      values.push(patch.displayName);
+    }
+    if (patch.avatar !== undefined) {
+      sets.push("avatar = ?");
+      values.push(patch.avatar);
+    }
+    if (sets.length === 0) return;
+    this.db.prepare(`UPDATE users SET ${sets.join(", ")} WHERE user_id = ?`).run(...values, userId);
   }
 
   /** Used by admin user deletion and account-creation compensation paths (owned Projects must be cleaned up first). */

@@ -4,7 +4,8 @@
  * windows managing their own tabs: switching Sessions switches the whole arrangement, and
  * no conversation's tabs depend on another's. An open dock with no tabs is still visible
  * (it shows the picker); closing a tab removes it, and the last tab closing puts the dock
- * away; a dock's own toggle hides it keeping its tabs.
+ * away; a dock's own toggle hides it keeping its tabs — and, through closedDockView, the
+ * mounted bodies behind them.
  *
  * The module reads localStorage at import time, so the stub is installed first and the
  * module imported dynamically.
@@ -58,6 +59,13 @@ describe("panel tabs", () => {
     dock.openPanel("agents"); // no position: the existing bottom tab activates
     expect(dock.panelDock("agents")).toBe("bottom");
     expect(dock.dockActiveKey("bottom")).toBe("agents");
+  });
+
+  it("lists the scheduled-tasks panel as a kind and opens it like any other", () => {
+    expect(dock.PANEL_KINDS).toContain("schedules");
+    dock.openPanel("schedules", "right");
+    expect(dock.panelDock("schedules")).toBe("right");
+    expect(dock.dockActiveKey("right")).toBe("schedules");
   });
 
   it("closing a panel tab removes it; closing the last one puts the dock away", () => {
@@ -284,6 +292,21 @@ describe("persistence", () => {
     expect(reloaded.dockActiveKey("bottom")).toBe("memory");
   });
 
+  it("reads a stored schedules tab back and drops a tab key it does not know", async () => {
+    // A layout written by a newer build may name a kind this build lacks; the known tab
+    // survives and the stranger is dropped, never the whole dock.
+    store.set(
+      "penguin.dock.layout",
+      '{"scopes": {"s": {"right": {"tabs": ["schedules", "someday"], "active": "schedules", "open": true}}}}',
+    );
+    vi.resetModules();
+    const reloaded = await import("../src/features/dock/dock-state");
+    reloaded.setDockScope("s");
+    expect(reloaded.dockTabs("right").map(reloaded.tabKey)).toEqual(["schedules"]);
+    expect(reloaded.dockActiveKey("right")).toBe("schedules");
+    expect(reloaded.isDockVisible("right")).toBe(true);
+  });
+
   it("degrades a malformed stored entry to empty docks", async () => {
     store.set(
       "penguin.dock.layout",
@@ -352,5 +375,24 @@ describe("view models", () => {
     expect(views[0]?.merged).toBe(false);
     expect(views[0]?.activeKey).toBe("workspace");
     expect(views[1]?.activeKey).toBe("terminal:term-a");
+  });
+
+  it("a hidden dock keeps a view to stay mounted on, an empty one has nothing to keep", () => {
+    dock.openPanel("workspace", "right");
+    dock.openPanel("memory", "right");
+    // Open: dockViews() owns it, so there is nothing to keep mounted separately.
+    expect(dock.closedDockView("right")).toBeNull();
+    dock.toggleDock("right");
+    expect(dock.dockViews()).toEqual([]);
+    expect(dock.closedDockView("right")).toEqual({
+      position: "right",
+      merged: false,
+      tabs: dock.dockTabs("right"),
+      activeKey: "memory",
+    });
+    // The last tab's × takes the dock away with it: no body left to keep.
+    dock.closePanel("workspace");
+    dock.closePanel("memory");
+    expect(dock.closedDockView("right")).toBeNull();
   });
 });

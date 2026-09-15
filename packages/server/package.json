@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-server",
-  "version": "0.2.9",
+  "version": "0.2.11",
   "type": "module",
   "description": "PenguinHarness web server: multi-user authentication and authorization, Session execution with SSE streaming, and usage accounting, built on @prismshadow/penguin-core.",
   "license": "Apache-2.0",
@@ -50,9 +50,9 @@
       "types": "./dist/secret-file.d.ts",
       "import": "./dist/secret-file.js"
     },
-    "./extension": {
-      "types": "./dist/extension/index.d.ts",
-      "import": "./dist/extension/index.js"
+    "./plugin": {
+      "types": "./dist/plugin/index.d.ts",
+      "import": "./dist/plugin/index.js"
     }
   },
   "main": "./dist/index.js",

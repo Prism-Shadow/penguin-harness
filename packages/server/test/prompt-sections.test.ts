@@ -5,7 +5,8 @@
  * toggles and prompts round-trip through PUT …/config, and each feature's
  * POST …/template-placeholder inserts — or, for a legacy hardcoded section, migrates to —
  * its placeholder, with the routers' own permission models (skills member-level,
- * vault/schedules owner-only).
+ * vault/schedules owner-only). The Hooks tab's switch rides on the same config route with no
+ * prompt half — `hooks.enabled` decides whether a new Session runs the installed hook packages.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LEGACY_SKILLS_SECTION, LEGACY_VAULT_SECTION } from "@prismshadow/penguin-core";
@@ -76,6 +77,16 @@ describe("prompt-injection config (vault / skills / schedules)", () => {
       const on = await owner.put(configPath, { config: { [feature]: { enabled: true } } });
       expect(((await on.json()) as AgentConfigResponse).config[feature].enabled).toBe(true);
     }
+  });
+
+  it("round-trips the hook switch, which carries no prompt", async () => {
+    expect((await getConfig()).config.hooks).toEqual({ enabled: true });
+    const off = await owner.put(configPath, { config: { hooks: { enabled: false } } });
+    expect(off.status).toBe(200);
+    expect(((await off.json()) as AgentConfigResponse).config.hooks.enabled).toBe(false);
+    expect((await getConfig()).config.hooks.enabled).toBe(false);
+    const on = await owner.put(configPath, { config: { hooks: { enabled: true } } });
+    expect(((await on.json()) as AgentConfigResponse).config.hooks.enabled).toBe(true);
   });
 
   it("round-trips a custom prompt, leaving the other sections untouched", async () => {

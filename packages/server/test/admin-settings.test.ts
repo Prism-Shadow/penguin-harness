@@ -10,9 +10,19 @@
  * between the two — the total may not sit below the per-file cap, checked against the EFFECTIVE
  * post-write pair so a one-field PUT cannot create an unsendable configuration — and the same
  * atomicity guarantee the proxy fields have.
+ *
+ * The reachability probe rides the same route too: the rule that decides reachable from
+ * unreachable, and the endpoint around it. Its fetch is always stubbed — a test that reached a
+ * real provider would fail on an offline machine and turn CI into a network monitor.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ServerSettingsResponse } from "../src/api/types.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  ProxyProbeDto,
+  ProxyProbeResponse,
+  ProxyProbeTargetsResponse,
+  ServerSettingsResponse,
+} from "../src/api/types.js";
+import { classifyProxyProbe } from "../src/services/proxy-probe.js";
 import {
   DEFAULT_ATTACHMENT_MAX_MB,
   DEFAULT_ATTACHMENT_TOTAL_MB,
@@ -31,6 +41,8 @@ describe("admin server settings", () => {
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   });
   afterEach(async () => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     await t.cleanup();
   });
 
@@ -45,6 +57,10 @@ describe("admin server settings", () => {
     const api = apiClient(t.app, cookie);
     expect((await api.get("/api/admin/settings")).status).toBe(403);
     expect((await api.put("/api/admin/settings", { proxyForApp: false })).status).toBe(403);
+    // The probe reaches the network on the server's behalf, so it sits behind the same gate,
+    // and so does the list of what it would reach.
+    expect((await api.get("/api/admin/settings/proxy-probe")).status).toBe(403);
+    expect((await api.post("/api/admin/settings/proxy-probe/openai")).status).toBe(403);
     // The failed PUT changed nothing.
     expect((await getSettings()).settings.proxyForApp).toBe(true);
   });
@@ -277,5 +293,134 @@ describe("admin server settings", () => {
     const { settings } = await getSettings();
     expect(settings.proxyForApp).toBe(true);
     expect(settings.attachmentMaxMb).toBe(DEFAULT_ATTACHMENT_MAX_MB);
+  });
+  // —— reachability probe ——
+
+  /** undici's shape for a transport failure: `TypeError: fetch failed` over the real error. */
+  const fetchFailed = (code: string) =>
+    new TypeError("fetch failed", { cause: Object.assign(new Error(code), { code }) });
+
+  it("probe classification: any HTTP answer is reachable", () => {
+    // The probe carries no credential, so a rejection is the expected answer — and an answer
+    // is the whole proof: the name resolved, TCP connected, TLS completed, the host replied.
+    expect(classifyProxyProbe({ status: 401 })).toBe("reachable");
+    expect(classifyProxyProbe({ status: 403 })).toBe("reachable");
+    expect(classifyProxyProbe({ status: 404 })).toBe("reachable");
+    expect(classifyProxyProbe({ status: 200 })).toBe("reachable");
+    expect(classifyProxyProbe({ status: 503 })).toBe("reachable");
+  });
+
+  it("probe classification: a transport failure is named by the cause underneath it", () => {
+    const timedOut = Object.assign(new Error("aborted due to timeout"), { name: "TimeoutError" });
+    expect(classifyProxyProbe({ error: timedOut })).toBe("timeout");
+    expect(classifyProxyProbe({ error: fetchFailed("ENOTFOUND") })).toBe("dns");
+    expect(classifyProxyProbe({ error: fetchFailed("ECONNREFUSED") })).toBe("refused");
+    expect(classifyProxyProbe({ error: fetchFailed("DEPTH_ZERO_SELF_SIGNED_CERT") })).toBe("tls");
+    expect(classifyProxyProbe({ error: fetchFailed("ERR_TLS_CERT_ALTNAME_INVALID") })).toBe("tls");
+    expect(classifyProxyProbe({ error: fetchFailed("ENETUNREACH") })).toBe("network");
+    // A proxy that refuses the CONNECT tunnel arrives as an AbortError NESTED under "fetch
+    // failed". That is a refusal to carry the request, not a host that took too long, so only
+    // an abort on the outermost error may read as a timeout.
+    const tunnelRefused = new TypeError("fetch failed", {
+      cause: Object.assign(new Error("Proxy response (403) !== 200 when HTTP Tunneling"), {
+        name: "AbortError",
+        code: "UND_ERR_ABORTED",
+      }),
+    });
+    expect(classifyProxyProbe({ error: tunnelRefused })).not.toBe("timeout");
+  });
+
+  it("one request per target: each is reported on its own, with no credential and the listed URL", async () => {
+    // The page lists these before anyone presses the button, so they must be the very URLs
+    // the probes then request — asserted together at the end of this test.
+    const listed = (await (
+      await admin.get("/api/admin/settings/proxy-probe")
+    ).json()) as ProxyProbeTargetsResponse;
+    expect(listed.targets.map((t) => t.provider)).toEqual([
+      "openai",
+      "anthropic",
+      "gemini",
+      "deepseek",
+      // GLM is two hosts, not one: a proxy can carry the global endpoint and not the mainland
+      // one, which is the difference an admin choosing between the two keys needs to see.
+      "zai",
+      "bigmodel",
+    ]);
+
+    // Every provider key the process could reach for is present, so "no credential is sent"
+    // is a claim about the code rather than about an empty environment: a probe that fell
+    // back to these the way protocol detection does would now be caught.
+    for (const key of [
+      "OPENAI_API_KEY",
+      "ANTHROPIC_API_KEY",
+      "GEMINI_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "ZAI_API_KEY",
+    ]) {
+      vi.stubEnv(key, `secret-${key}`);
+    }
+
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        requests.push({ url, init });
+        // One dead target proves the others are reported independently rather than as a batch
+        // that fails whole.
+        if (url.includes("deepseek")) throw fetchFailed("ECONNREFUSED");
+        // A 5xx is still an answer, so it is still reachable — the rule protocol detection
+        // next door deliberately does NOT share, since it reads the response and this does not.
+        if (url.includes("googleapis")) return new Response("nope", { status: 503 });
+        return new Response("{}", { status: 401 });
+      }),
+    );
+
+    // One call per provider, the way the page fires them — it renders each answer as it
+    // lands rather than waiting for a response carrying all of them.
+    const probes: ProxyProbeDto[] = [];
+    for (const target of listed.targets) {
+      const res = await admin.post(`/api/admin/settings/proxy-probe/${target.provider}`);
+      expect(res.status).toBe(200);
+      probes.push(((await res.json()) as ProxyProbeResponse).probe);
+    }
+
+    // Each answer names its own target, so a row cannot be filled from another's result.
+    expect(probes.map((p) => p.provider)).toEqual(listed.targets.map((t) => t.provider));
+    expect(probes.map((p) => p.url)).toEqual(listed.targets.map((t) => t.url));
+    expect(probes.filter((p) => p.outcome === "reachable").map((p) => p.status)).toEqual([
+      401, 401, 503, 401, 401,
+    ]);
+    expect(probes.find((p) => p.provider === "deepseek")).toMatchObject({ outcome: "refused" });
+    // Every result is timed, the failed one included.
+    for (const probe of probes) expect(probe.ms).toBeGreaterThanOrEqual(0);
+    // What was listed is exactly what was fetched: a page that advertises one URL and probes
+    // another would be lying about what "no API key" applies to.
+    expect(requests.map((r) => r.url)).toEqual(listed.targets.map((t) => t.url));
+    // Hard-coded https targets, and not one credential on any of them — the process
+    // environment's provider keys must not leak into an unauthenticated probe.
+    expect(requests).toHaveLength(listed.targets.length);
+    for (const { url, init } of requests) {
+      expect(url.startsWith("https://")).toBe(true);
+      const headers = new Headers(init.headers);
+      expect(headers.get("authorization")).toBeNull();
+      expect(headers.get("x-api-key")).toBeNull();
+      // Not under any other header name either, and not smuggled into the query string.
+      const sent = `${url} ${[...headers].map(([k, v]) => `${k}: ${v}`).join(" ")}`;
+      expect(sent).not.toContain("secret-");
+    }
+  });
+
+  it("a provider id outside the fixed list is a 404 that reaches no network at all", async () => {
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    // The route takes an id and never a URL, so an id nobody put in the list must not become
+    // a fetch of anything — that is the whole reason this endpoint has no request body.
+    for (const provider of ["evil", "openai/../evil", "https://evil.example", "OPENAI", ""]) {
+      const res = await admin.post(
+        `/api/admin/settings/proxy-probe/${encodeURIComponent(provider)}`,
+      );
+      expect(res.status).toBe(404);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

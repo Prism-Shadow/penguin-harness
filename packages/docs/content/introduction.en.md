@@ -45,5 +45,5 @@ The unified message protocol is called **OmniMessage** in technical writing (mar
 
 ## Next steps
 
-- Follow the [Quickstart](/quickstart): install PenguinHarness by whichever of the three routes fits you — desktop app, CLI, or SDK — and run your first Task.
+- Follow the [Quickstart](/quickstart): install PenguinHarness by whichever route fits you — desktop app, CLI, Docker, or SDK — and run your first Task.
 - Start the design docs at the [Architecture](/architecture) overview to see how the pieces fit together.

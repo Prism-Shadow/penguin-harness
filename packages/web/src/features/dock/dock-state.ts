@@ -3,7 +3,8 @@
  *
  * The dock is TWO surfaces — one on the right edge, one at the bottom of the chat page —
  * and every side element is a TAB in one of them: the subagents panel, the Workspace
- * files panel, the Memory panel, the Trace panel, and any number of terminals. A dock
+ * files panel, the Memory panel, the Trace panel, the messaging panel, the scheduled-tasks
+ * panel, and any number of terminals. A dock
  * shows its tabs in a strip and renders the active one; an OPEN dock with no tabs shows a
  * picker instead (choose what to open here), which is what the toolbar's two pull-open
  * buttons land on. Both docks can be open at once, and any tab can live in either dock
@@ -21,9 +22,10 @@
  * user likes a dock is one preference, not one per conversation.
  *
  * Closing a TAB removes it (the last tab closing also puts the dock away); a dock's ×
- * hides the surface keeping its tabs for the next open. Below the desktop breakpoint the
- * two docks render as ONE merged bottom surface (a 320px-minimum right panel does not fit
- * a phone); the stored arrangement splits back apart when the window widens.
+ * hides the surface, keeping its tabs — and, through closedDockView, everything their
+ * bodies hold — for the next open. Below the desktop breakpoint the two docks render as ONE
+ * merged bottom surface (a 320px-minimum right panel does not fit a phone); the stored
+ * arrangement splits back apart when the window widens.
  *
  * A store (rather than component state) because the consumers live far apart: the chat
  * toolbar toggles the docks, the global hotkey flips the terminal, AppLayout points the
@@ -38,7 +40,7 @@ const MAX_SCOPES = 40;
 export type DockPosition = "right" | "bottom";
 
 /** The singleton panel kinds. Terminals are the one multi-instance tab kind. */
-export type PanelKind = "agents" | "workspace" | "memory" | "trace" | "messaging";
+export type PanelKind = "agents" | "workspace" | "memory" | "trace" | "messaging" | "schedules";
 
 export const PANEL_KINDS: readonly PanelKind[] = [
   "agents",
@@ -46,6 +48,7 @@ export const PANEL_KINDS: readonly PanelKind[] = [
   "memory",
   "trace",
   "messaging",
+  "schedules",
 ];
 
 export type DockTab =
@@ -372,15 +375,22 @@ export function dockActiveKey(position: DockPosition): string | null {
   return area(position).active;
 }
 
+/** Whether a dock has anything to show at all — the closed merged view's counterpart to visibility. */
+function hasTabs(position: DockPosition): boolean {
+  return area(position).tabs.length > 0;
+}
+
 /**
- * The merged view's active tab: the focused dock's active when that dock is on screen,
- * else the other visible dock's. What "the shown tab" means below the breakpoint.
+ * The merged view's active tab: the focused dock's active when that dock counts, else the
+ * other's. What "the shown tab" means below the breakpoint. `counts` is what being on
+ * screen means for the view being built — visibility for the merged view the docks render,
+ * having tabs at all for the closed one that only keeps its panels mounted.
  */
-function mergedActiveKey(): string | null {
+function mergedActiveKey(counts: (position: DockPosition) => boolean): string | null {
   const first = layout.focus;
   const second: DockPosition = first === "right" ? "bottom" : "right";
-  if (isDockVisible(first) && area(first).active !== null) return area(first).active;
-  if (isDockVisible(second)) return area(second).active;
+  if (counts(first) && area(first).active !== null) return area(first).active;
+  if (counts(second)) return area(second).active;
   return null;
 }
 
@@ -412,14 +422,32 @@ export function dockViews(): DockView[] {
     ...(isDockVisible("bottom") ? layout.bottom.tabs : []),
     ...(isDockVisible("right") ? layout.right.tabs : []),
   ];
-  return [{ position: "bottom", merged: true, tabs, activeKey: mergedActiveKey() }];
+  return [{ position: "bottom", merged: true, tabs, activeKey: mergedActiveKey(isDockVisible) }];
+}
+
+/**
+ * The view a CLOSED dock would render if it opened. The chat page keeps a collapsed dock's
+ * node mounted on this, so hiding costs no panel state: the file preview, the editor draft
+ * and the shell on screen are all still there on the way back. Null when there is nothing
+ * to keep — the dock is open (dockViews() lists it then), it has no tabs, or it is the
+ * narrow layout's right dock, whose tabs the merged bottom view carries.
+ */
+export function closedDockView(position: DockPosition): DockView | null {
+  if (narrow) {
+    if (position === "right" || isDockVisible("right") || isDockVisible("bottom")) return null;
+    const tabs = [...layout.bottom.tabs, ...layout.right.tabs];
+    if (tabs.length === 0) return null;
+    return { position: "bottom", merged: true, tabs, activeKey: mergedActiveKey(hasTabs) };
+  }
+  if (isDockVisible(position) || !hasTabs(position)) return null;
+  return { position, merged: false, tabs: area(position).tabs, activeKey: area(position).active };
 }
 
 /** Whether a tab is the one actually on screen (narrow-aware — what a toggle closes). */
 export function isTabShown(key: string): boolean {
   const home = tabHome(key);
   if (home === null || !isDockVisible(home)) return false;
-  return narrow ? mergedActiveKey() === key : area(home).active === key;
+  return narrow ? mergedActiveKey(isDockVisible) === key : area(home).active === key;
 }
 
 /** Whether a tab sits in a visible dock at all (shown or behind another tab). */
@@ -687,7 +715,7 @@ export function toggleTerminalDocks(): boolean {
     (position) =>
       isDockVisible(position) &&
       (narrow
-        ? mergedActiveKey()?.startsWith("terminal:") === true
+        ? mergedActiveKey(isDockVisible)?.startsWith("terminal:") === true
         : area(position).active?.startsWith("terminal:") === true),
   );
   if (anyShown) {

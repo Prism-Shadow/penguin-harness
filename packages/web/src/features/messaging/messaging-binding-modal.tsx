@@ -42,8 +42,11 @@ export function MessagingBindingModal({
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>{S.common.close}</Button>
+          <Button size="sm" onClick={onClose}>
+            {S.common.close}
+          </Button>
           <Button
+            size="sm"
             variant="primary"
             disabled={b.busy || b.form === null}
             onClick={() => void b.save()}

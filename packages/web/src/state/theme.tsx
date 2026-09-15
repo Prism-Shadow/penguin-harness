@@ -6,6 +6,8 @@
  * - Font size: scales the root font-size (rem-based text-* utilities scale along with it).
  * - Theme color: html[data-accent] overrides --accent-bg/--accent-fg; defaults to neutral
  *   (gray/white, follows light/dark).
+ * - Tool short names: whether a tool-call card names the built-in tools by a short alias
+ *   instead of the name the model calls them by. Display-only, default on.
  * - Terminal theme: its own light/dark/follow-the-app setting, following the app unless
  *   explicitly pinned — see TerminalThemeMode. It drives no class or variable here; the
  *   terminal reads `terminalDark` and paints itself, because Tailwind's dark: variant is
@@ -36,6 +38,7 @@ const FONT_KEY = "penguin.fontScale";
 const ACCENT_KEY = "penguin.accent";
 const CURRENCY_KEY = "penguin.currency";
 const TERMINAL_KEY = "penguin.terminal.theme";
+const TOOL_ALIASES_KEY = "penguin.toolAliases";
 
 /** Font size tier → root font-size (px): overall slightly larger than the system default for readability. */
 const FONT_PX: Record<FontScale, string> = { sm: "16px", md: "18px", lg: "20px" };
@@ -54,6 +57,9 @@ interface ThemeContextValue {
   setCurrency: (currency: Currency) => void;
   terminalMode: TerminalThemeMode;
   setTerminalMode: (mode: TerminalThemeMode) => void;
+  /** Whether tool-call cards name the built-in tools by their short alias. */
+  toolAliases: boolean;
+  setToolAliases: (on: boolean) => void;
   /** Resolved terminal appearance ("app" already resolved against the app's own). */
   terminalDark: boolean;
 }
@@ -93,6 +99,11 @@ function initialTerminalMode(): TerminalThemeMode {
   return "app";
 }
 
+/** Default on, so anything but the explicit off value reads as on (an absent value included). */
+function initialToolAliases(): boolean {
+  return localStorage.getItem(TOOL_ALIASES_KEY) !== "0";
+}
+
 function initialCurrency(): Currency {
   return localStorage.getItem(CURRENCY_KEY) === "CNY" ? "CNY" : "USD";
 }
@@ -108,6 +119,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [accent, setAccentState] = useState<Accent>(initialAccent);
   const [currency, setCurrencyState] = useState<Currency>(initialCurrency);
   const [terminalMode, setTerminalModeState] = useState<TerminalThemeMode>(initialTerminalMode);
+  const [toolAliases, setToolAliasesState] = useState<boolean>(initialToolAliases);
 
   const dark = mode === "system" ? sysDark : mode === "dark";
   const terminalDark = terminalMode === "app" ? dark : terminalMode === "dark";
@@ -161,6 +173,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setTerminalModeState(next);
   }, []);
 
+  const setToolAliases = useCallback((next: boolean) => {
+    localStorage.setItem(TOOL_ALIASES_KEY, next ? "1" : "0");
+    setToolAliasesState(next);
+  }, []);
+
   return (
     <ThemeContext.Provider
       value={{
@@ -176,6 +193,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         terminalMode,
         setTerminalMode,
         terminalDark,
+        toolAliases,
+        setToolAliases,
       }}
     >
       {children}

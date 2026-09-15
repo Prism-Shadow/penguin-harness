@@ -36,12 +36,16 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
+import { FOCUSABLE_SELECTOR, isTopEscLayer, popEscLayer, pushEscLayer } from "./modal";
 import { scrollMovesAnchor } from "../../lib/context-menu";
 
 /** Gap between the trigger and the portaled panel, and the panel's minimum distance from the viewport edge (px). */
 const PANEL_GAP = 4;
 const VIEWPORT_MARGIN = 8;
+
+/** The panel's plain row: full-width, left-aligned, hover-filled. Shared so menus opened from different anchors cannot drift apart on density. */
+export const menuItemClass =
+  "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
 
 /** Portal docking: which way the panel opens and which of its edges lines up with the trigger. */
 export interface DropdownPortal {
@@ -133,11 +137,7 @@ export function Dropdown({
   const panelItems = useCallback(
     () =>
       panelRef.current
-        ? [
-            ...panelRef.current.querySelectorAll<HTMLElement>(
-              'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-            ),
-          ]
+        ? [...panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)]
         : [],
     [],
   );

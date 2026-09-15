@@ -1,7 +1,7 @@
 /**
  * Form-style picker shell: a full-width trigger that looks exactly like an Input/Select
- * (controlBase + the sm size tier — leading icon, truncating label, trailing chevron) with
- * a portaled dropdown hanging under its left edge. It is the single source of the
+ * (controlBase + the shared size tier, sm by default — leading icon, truncating label, trailing
+ * chevron) with a portaled dropdown hanging under its left edge. It is the single source of the
  * "form-variant" look shared by the model picker, the workspace picker and the schedule's
  * session picker, so the three read identically and none re-hand-rolls the trigger.
  *
@@ -14,6 +14,7 @@ import { Dropdown } from "./dropdown";
 import { ChevronDown } from "./icons";
 import { controlBase } from "./field";
 import { sizeClass } from "./input";
+import type { ControlSize } from "./input";
 
 export function FormPicker({
   open,
@@ -26,6 +27,7 @@ export function FormPicker({
   ariaLabel,
   ariaHaspopup = "listbox",
   disabled = false,
+  size = "sm",
   menuClass,
   children,
 }: {
@@ -43,6 +45,8 @@ export function FormPicker({
   ariaLabel: string;
   ariaHaspopup?: "listbox" | "dialog";
   disabled?: boolean;
+  /** Same size tier as Input/Select; sm is the form rung every picker sits at today. */
+  size?: ControlSize;
   /** Width / origin classes for the dropdown panel (placement itself is measured from the trigger). */
   menuClass: string;
   /** The dropdown menu body. */
@@ -63,7 +67,7 @@ export function FormPicker({
           aria-expanded={open}
           disabled={disabled}
           onClick={() => setOpen(!open)}
-          className={`flex w-full items-center gap-2 text-left ${controlBase} ${sizeClass.sm} disabled:cursor-not-allowed disabled:opacity-60`}
+          className={`flex w-full items-center gap-2 text-left ${controlBase} ${sizeClass[size]} disabled:cursor-not-allowed disabled:opacity-60`}
         >
           {leading}
           <span

@@ -1,13 +1,15 @@
 /**
  * catalog-sync.ts unit tests: the "sync presets" merge — union of the local model table and
  * the built-in catalog, catalog winning on differing preset entries, local additions and
- * credentials untouched — plus `catalogDelta`, the same question asked of a saved table so the
- * Models nav badge can answer it before the page has loaded any rows.
+ * credentials untouched, the display name filled but never overwritten — plus `catalogDelta`,
+ * the same question asked of a saved table so the Models nav badge can answer it before the
+ * page has loaded any rows.
  *
  * The last block is the one that matters most: the badge and the button must never disagree
  * about whether there is anything to do, so every case above is replayed through both.
  */
 import { describe, expect, it } from "vitest";
+import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import { catalogDelta, syncRowsWithCatalog } from "../src/features/models/catalog-sync";
 import { presetUpdateTodo } from "../src/lib/todo-badges";
@@ -38,6 +40,34 @@ function makeRow(partial: Partial<RowState> & Pick<RowState, "provider" | "model
     clearApiKey: false,
     ...partial,
   };
+}
+
+/**
+ * The shipped catalog's name for a pair, read rather than pinned: the fixtures below stand in
+ * for catalog entries on every other field, and a rename in `model-catalog.ts` has no business
+ * breaking a test about the merge.
+ */
+function catalogName(provider: string, modelId: string): string {
+  return catalogEntryFor(provider, modelId)!.displayName;
+}
+
+/**
+ * A row matching the catalog on every field a sync owns, the display name included: a saved
+ * preset row always carries one, because the GET fills it in from the catalog when the config
+ * file does not. Overrides make the one field under test the only thing out of line.
+ */
+function inSyncRow(extra: Partial<RowState> = {}): RowState {
+  return makeRow({
+    provider: "deepseek",
+    modelId: "deepseek-v4-pro",
+    displayName: catalogName("deepseek", "deepseek-v4-pro"),
+    vision: false,
+    contextWindow: "1000000",
+    cacheRead: "0.003571",
+    cacheWrite: "0.428571",
+    output: "0.857143",
+    ...extra,
+  });
 }
 
 const PRESET: PresetEntry[] = [
@@ -84,6 +114,15 @@ describe("syncRowsWithCatalog", () => {
     expect(glm.originalBaseUrl).toBe(""); // differs from baseUrl -> the PUT submits the preset URL
     expect(glm.cacheRead).toBe("0.285714");
     expect(glm.vision).toBe(false);
+    // The catalog's name travels with the new row: a preset entry carries none (the persisted
+    // shape only stores a name that differs from the catalog), so a row built without it would
+    // reach the PUT nameless and be saved as a model whose name the user cleared.
+    expect(glm.displayName).toBe(catalogName("qwen-token-plan", "glm-5.2"));
+    // The lookup is against the shipped catalog, not against this list: `qwen3.8-max-preview`
+    // left the Token Plan lineup, so the pair resolves to nothing and the row stays nameless
+    // (falling back to its model id) rather than picking up an empty name.
+    expect(catalogEntryFor("qwen-token-plan", "qwen3.8-max-preview")).toBeUndefined();
+    expect(rows.find((r) => r.modelId === "qwen3.8-max-preview")!.displayName).toBeUndefined();
   });
 
   it("resets differing preset rows to the catalog's fields, keeping identity and credentials", () => {
@@ -104,6 +143,7 @@ describe("syncRowsWithCatalog", () => {
     expect(updated).toBe(1);
     const row = rows[0]!;
     expect(row.contextWindow).toBe("1000000");
+    expect(row.displayName).toBe(catalogName("deepseek", "deepseek-v4-pro"));
     expect(row.vision).toBe(false);
     expect(row.cacheRead).toBe("0.003571");
     expect(row.baseUrl).toBe(""); // catalog has no base_url; differs from originalBaseUrl -> cleared on PUT
@@ -116,18 +156,28 @@ describe("syncRowsWithCatalog", () => {
   });
 
   it("leaves up-to-date rows untouched (same object, updated not counted)", () => {
-    const upToDate = makeRow({
-      provider: "deepseek",
-      modelId: "deepseek-v4-pro",
-      vision: false,
-      contextWindow: "1000000",
-      cacheRead: "0.003571",
-      cacheWrite: "0.428571",
-      output: "0.857143",
-    });
+    const upToDate = inSyncRow();
     const { rows, updated } = syncRowsWithCatalog([upToDate], PRESET);
     expect(updated).toBe(0);
     expect(rows[0]).toBe(upToDate);
+  });
+
+  it("fills a blank display name from the catalog, and never overwrites one already there", () => {
+    // A preset row showing no name is one an earlier sync saved without one: it renders as the
+    // raw model id until something puts the catalog's name back, and this is that something.
+    const blank = syncRowsWithCatalog([inSyncRow({ displayName: "" })], PRESET);
+    expect(blank.updated).toBe(1);
+    expect(blank.rows[0]!.displayName).toBe(catalogName("deepseek", "deepseek-v4-pro"));
+    // Same for a row that never had the field at all.
+    const absent = syncRowsWithCatalog([inSyncRow({ displayName: undefined })], PRESET);
+    expect(absent.updated).toBe(1);
+    expect(absent.rows[0]!.displayName).toBe(catalogName("deepseek", "deepseek-v4-pro"));
+    // A name that is there stays: unlike pricing or the context window, it may be the user's
+    // own rename, and the catalog has no claim to it.
+    const renamed = inSyncRow({ displayName: "My DeepSeek" });
+    const kept = syncRowsWithCatalog([renamed], PRESET);
+    expect(kept.updated).toBe(0);
+    expect(kept.rows[0]).toBe(renamed);
   });
 
   it("preserves a user-set max output tokens through a preset sync (user-owned, not catalog-owned)", () => {
@@ -177,6 +227,8 @@ describe("syncRowsWithCatalog", () => {
     expect(updated).toBe(0);
     // No merged row ever carries a key input: credentials are structurally untouched.
     expect(rows.every((r) => r.apiKeyInput === "" && !r.clearApiKey)).toBe(true);
+    // Every catalog entry is named, so no row added from it may go out nameless.
+    expect(rows.every((r) => (r.displayName ?? "") !== "")).toBe(true);
   });
 });
 
@@ -185,30 +237,65 @@ function makeDto(partial: Partial<ModelDto> & Pick<ModelDto, "provider" | "model
   return { ...partial } as ModelDto;
 }
 
+/**
+ * A saved entry matching the catalog on every field a sync owns. The display name comes from
+ * the catalog because the GET fills it in from there whenever the config file carries none —
+ * a table saved from a sync looks like this, and nothing in it is left to do.
+ */
+function inSyncDto(p: PresetEntry, extra: Partial<ModelDto> = {}): ModelDto {
+  const displayName = catalogEntryFor(p.provider, p.model_id)?.displayName;
+  return makeDto({
+    provider: p.provider,
+    modelId: p.model_id,
+    vision: p.vision !== false,
+    ...(displayName !== undefined ? { displayName } : {}),
+    ...(p.context_window !== undefined ? { contextWindow: p.context_window } : {}),
+    ...(p.client_type !== undefined ? { clientType: p.client_type } : {}),
+    ...(p.pricing
+      ? {
+          pricing: {
+            cacheRead: p.pricing.cache_read,
+            cacheWrite: p.pricing.cache_write,
+            output: p.pricing.output,
+          } as ModelDto["pricing"],
+        }
+      : {}),
+    ...(p.base_url !== undefined
+      ? { credential: { baseUrl: p.base_url } as ModelDto["credential"] }
+      : {}),
+    ...extra,
+  });
+}
+
 describe("catalogDelta", () => {
   it("reports nothing when the saved table already matches the catalog", () => {
-    const saved = PRESET.map((p) =>
-      makeDto({
-        provider: p.provider,
-        modelId: p.model_id,
-        vision: p.vision !== false,
-        ...(p.context_window !== undefined ? { contextWindow: p.context_window } : {}),
-        ...(p.client_type !== undefined ? { clientType: p.client_type } : {}),
-        ...(p.pricing
-          ? {
-              pricing: {
-                cacheRead: p.pricing.cache_read,
-                cacheWrite: p.pricing.cache_write,
-                output: p.pricing.output,
-              } as ModelDto["pricing"],
-            }
-          : {}),
-        ...(p.base_url !== undefined
-          ? { credential: { baseUrl: p.base_url } as ModelDto["credential"] }
-          : {}),
-      }),
-    );
-    expect(catalogDelta(saved, PRESET)).toEqual({ added: 0, updated: 0, refs: [] });
+    expect(
+      catalogDelta(
+        PRESET.map((p) => inSyncDto(p)),
+        PRESET,
+      ),
+    ).toEqual({
+      added: 0,
+      updated: 0,
+      refs: [],
+    });
+  });
+
+  it("counts a blank display name as something to sync, and a user's own name as nothing", () => {
+    // The badge has to raise the same repair the button performs: a preset row saved with no
+    // name renders as its model id until a sync puts the catalog's name back.
+    expect(catalogDelta([inSyncDto(PRESET[0]!, { displayName: "" })], PRESET)).toEqual({
+      added: 2,
+      updated: 1,
+      refs: [
+        "deepseek/deepseek-v4-pro",
+        "qwen-token-plan/glm-5.2",
+        "qwen-token-plan/qwen3.8-max-preview",
+      ],
+    });
+    expect(
+      catalogDelta([inSyncDto(PRESET[0]!, { displayName: "My DeepSeek" })], PRESET).refs,
+    ).not.toContain("deepseek/deepseek-v4-pro");
   });
 
   it("names every entry it would add or rewrite, in catalog order", () => {
@@ -248,6 +335,10 @@ describe("catalogDelta", () => {
         }),
       ],
       [makeDto({ provider: "custom", modelId: "my-own", contextWindow: 8192 })],
+      // The display name: in sync, blank (an earlier sync's damage), and the user's own.
+      [inSyncDto(PRESET[0]!)],
+      [inSyncDto(PRESET[0]!, { displayName: "" })],
+      [inSyncDto(PRESET[0]!, { displayName: "My DeepSeek" })],
     ];
     for (const table of tables) {
       const merged = syncRowsWithCatalog(table.map(toRow), PRESET);

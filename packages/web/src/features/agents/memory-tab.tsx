@@ -23,7 +23,6 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, RefObject } from "react";
-import { useNavigate } from "react-router";
 import type {
   MemoryFileInfo,
   MemoryImportMode,
@@ -38,13 +37,14 @@ import { toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { useProject } from "../../state/project";
-import { Button } from "../../components/ui/button";
+import { Button, labelButtonClass } from "../../components/ui/button";
 import { CopiedStatus, CopyCheckGlyph, useCopied } from "../../components/ui/copy-button";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { HelpFold } from "../../components/ui/help-fold";
 import { Modal } from "../../components/ui/modal";
 import { Textarea } from "../../components/ui/input";
+import { rowDescClass } from "../../components/ui/option-menu";
 import { Switch } from "../../components/ui/switch";
 import { Chevron } from "../../components/ui/chevron";
 import { DownloadIcon, UploadIcon } from "../../components/ui/icons";
@@ -55,8 +55,7 @@ import { ConfirmModal, useSaveConfirm } from "../../components/ui/confirm-modal"
 import { SkeletonList } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Md } from "../chat/md";
-import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
+import { useAiBridge } from "../ai-create";
 import { buildMemoryAddPrompt, buildMemoryEditPrompt } from "./memory-chat-prompts";
 import {
   MemoryDocumentError,
@@ -85,11 +84,7 @@ const PLUS_ICON = "M12 5v14M5 12h14";
  * and the import control has to wrap a file input (the Agent State section's transfer label does
  * the same for its own size). Mirrors Button's `ghost` variant at `sm`, icon + text.
  */
-const GHOST_LABEL_CLASS =
-  "inline-flex cursor-pointer items-center justify-center gap-1 rounded-md border border-transparent " +
-  "px-2.5 py-1 text-xs font-medium text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-900 " +
-  "focus-within:ring-2 focus-within:ring-gray-400/30 " +
-  "dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100";
+const GHOST_LABEL_CLASS = labelButtonClass("ghost", "sm");
 
 /**
  * Collapsed scope keys, persisted per user \u00d7 Project \u00d7 Agent (localStorage, same conventions as
@@ -139,10 +134,10 @@ export function MemoryTab({
   /** Config writes happen here directly, so the settings page must refetch its own copy — otherwise a later Prompt-tab save from stale data would silently revert them (e.g. the inserted placeholder). */
   onConfigChanged?: () => void;
 }) {
-  const navigate = useNavigate();
+  const { openAiChat } = useAiBridge();
   const { locale } = useLocale();
   const userId = useAuth().user?.userId ?? null;
-  const { currentProject, setCurrentAgentId, reloadAgents } = useProject();
+  const { currentProject, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   // Import writes a whole group at once, so it follows the Agent State snapshot's owner gate;
   // the server enforces it either way, this only keeps the control out of a member's reach.
@@ -354,28 +349,15 @@ export function MemoryTab({
   const editCopy = useCopied();
 
   /**
-   * The bridge-to-chat jump shared by edit and add: prefill the draft (merging over what is
-   * already cached, clearing a stale `/agent` handoff chip that would forward the prompt to a
-   * different Agent), pin this Agent — and for a Workspace scope pin that Workspace too, so the
+   * The bridge-to-chat jump shared by edit and add: the AI bridge prefills the draft with the
+   * prompt and pins this Agent — and for a Workspace scope pins that Workspace too, so the
    * Session reads the very index it is about to change.
    */
   const openChatWithDraft = (text: string, workspacePath: string | undefined) => {
-    if (!userId || !projectId) return;
-    const key = draftKey(userId, projectId);
-    saveDraft(key, {
-      ...loadDraft(key),
+    openAiChat({
       agentId,
       text,
       ...(workspacePath !== undefined ? { workspace: workspacePath } : {}),
-      skills: [],
-      handoffAgentId: undefined,
-    });
-    setCurrentAgentId(agentId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`, {
-      state: {
-        agentId,
-        ...(workspacePath !== undefined ? { workspace: workspacePath } : {}),
-      },
     });
   };
 
@@ -935,7 +917,7 @@ export function MemoryTab({
                   ["replace", S.memory.importModeReplace, S.memory.importModeReplaceHint],
                 ] as [MemoryImportMode, string, string][]
               ).map(([mode, label, hint]) => (
-                <label key={mode} className="flex cursor-pointer items-start gap-2 text-sm">
+                <label key={mode} className="flex cursor-pointer items-start gap-2 text-xs">
                   <input
                     type="radio"
                     name="memory-import-mode"
@@ -945,7 +927,10 @@ export function MemoryTab({
                   />
                   <span className="min-w-0">
                     <span className="text-gray-800 dark:text-gray-200">{label}</span>
-                    <span className="block text-xs text-gray-500 dark:text-gray-400">{hint}</span>
+                    {/* One step below the row title, the same pairing OptionMenu's rows use. */}
+                    <span className={`block ${rowDescClass.sm} text-gray-500 dark:text-gray-400`}>
+                      {hint}
+                    </span>
                   </span>
                 </label>
               ))}

@@ -15,7 +15,7 @@
  */
 import fs from "node:fs/promises";
 import { agentsDir, createAgent, isSessionMeta } from "@prismshadow/penguin-core";
-import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import type {
   ApprovalMode,
   MessagingChannel,
@@ -67,6 +67,11 @@ export interface SessionServiceDeps {
    */
   controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
   /**
+   * PATH threading (same getter the session loader passes): the shim directory holding
+   * this harness's own `penguin`, put in front of every command an Agent runs.
+   */
+  pathPrepend?: () => string[];
+  /**
    * The channel of the Session's ENABLED messaging binding, or null when none is enabled
    * (SessionInfo.messagingChannel, the sidebar row's per-channel indicator — saved-but-
    * disabled configs stay off the row). A lookup lambda rather than the repo, so the
@@ -74,6 +79,8 @@ export interface SessionServiceDeps {
    * means the field is never set.
    */
   messagingChannel?: (sessionId: string) => MessagingChannel | null;
+  /** Spawn-confinement getter (see app.ts): claimed from the platform's registered resource, forwarded into core beside proxyEnv. */
+  confineSpawn?: () => SpawnConfiner | null;
 }
 
 export class SessionService {
@@ -88,6 +95,7 @@ export class SessionService {
   async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace);
     const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
+    const backgroundTasks = this.deps.manager.backgroundTasksOf(row.sessionId);
     return {
       sessionId: row.sessionId,
       projectId: row.projectId,
@@ -107,6 +115,7 @@ export class SessionService {
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
       ...(messagingChannel !== null ? { messagingChannel } : {}),
+      ...(backgroundTasks !== undefined ? { backgroundTasks } : {}),
     };
   }
 
@@ -165,8 +174,10 @@ export class SessionService {
    * Trace-head read per row, cached in the sources registry); without `withCounts`
    * the walk stops as soon as the requested page is complete. `withCounts` classifies
    * every row and returns per-category totals over the whole list — plus the same
-   * totals broken down by Workspace path — so the sidebar can label the collapsed
-   * folders (and a workspace group can know its own share) without loading them.
+   * totals broken down by Workspace path, and each path's newest Session's `createdAt` —
+   * so the sidebar can label the collapsed folders, list every Workspace that holds
+   * Sessions (not only the ones its loaded pages happen to touch) and place the groups
+   * by recency, all without loading them.
    *
    * `workspaceGroup` filters the same way, to one Workspace group (see workspace-group.ts),
    * so a sidebar grouped by Workspace pages each group down its OWN stream instead of
@@ -187,6 +198,7 @@ export class SessionService {
     sessions: SessionInfo[];
     counts?: SessionCategoryCounts;
     workspaceCounts?: Record<string, SessionCategoryCounts>;
+    workspaceLatest?: Record<string, string>;
   }> {
     const { paging, category, workspaceGroup, withCounts } = opts;
     const rows = new Map(
@@ -228,6 +240,7 @@ export class SessionService {
     const want = paging ? paging.offset + paging.limit : Infinity;
     const counts: SessionCategoryCounts = { active: 0, subagent: 0, schedule: 0, archived: 0 };
     const workspaceCounts: Record<string, SessionCategoryCounts> = {};
+    const workspaceLatest: Record<string, string> = {};
     const matched: SessionRow[] = [];
     for (const row of sorted) {
       if (!withCounts && matched.length >= want) break;
@@ -241,6 +254,8 @@ export class SessionService {
           archived: 0,
         });
         ws[cat] += 1;
+        // The walk is newest-first, so a path's first row is its newest Session.
+        workspaceLatest[row.workspace] ??= row.createdAt;
       }
       const wanted =
         (category === undefined || cat === category) &&
@@ -248,7 +263,7 @@ export class SessionService {
       if (wanted && matched.length < want) matched.push(row);
     }
     const sessions = await toPage(paging ? matched.slice(paging.offset, want) : matched);
-    return withCounts ? { sessions, counts, workspaceCounts } : { sessions };
+    return withCounts ? { sessions, counts, workspaceCounts, workspaceLatest } : { sessions };
   }
 
   /**
@@ -351,6 +366,8 @@ export class SessionService {
       agentId: args.agentId,
       ...(this.deps.proxyEnv ? { proxyEnv: this.deps.proxyEnv } : {}),
       ...(this.deps.controlEnv ? { controlEnv: this.deps.controlEnv } : {}),
+      ...(this.deps.pathPrepend ? { pathPrepend: this.deps.pathPrepend } : {}),
+      ...(this.deps.confineSpawn ? { confineSpawn: this.deps.confineSpawn } : {}),
     });
     let session;
     try {

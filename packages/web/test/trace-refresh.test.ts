@@ -196,16 +196,13 @@ describe("what a settled-turn refresh must leave alone", () => {
     expect(fileView).toMatch(/\{error !== null && <p /);
   });
 
-  it("leaves the project's model catalog out of the refresh, on an effect of its own", () => {
-    const load = fileView.slice(
-      fileView.indexOf("useEffect(() => {", fileView.indexOf("const fileKey")),
-    );
-    // Pricing is a project-level catalog no turn produces: refetching it per settled turn was
-    // waste, and the `?? prev` guard that kept a failed refetch from dropping the cost column
-    // went with it.
-    expect(load.slice(0, load.indexOf("\n  }, ["))).not.toContain("getModels");
-    expect(fileView).not.toContain("setModels((prev)");
-    const pricing = fileView.slice(fileView.indexOf("getModels(projectId)"));
-    expect(/\n {2}\}, \[([^\]]*)\]/.exec(pricing)?.[1]).toBe("projectId");
+  it("prices nothing itself: cost is read off the analysis, and no model catalog is fetched", () => {
+    // The server prices each round with the cost center's rule (the Project's rates, at the
+    // tier the request's own timestamp fell in); a client-side price table would be a second
+    // rule that disagrees with the toolbar as soon as a schedule applies.
+    expect(fileView).not.toContain("getModels");
+    expect(fileView).not.toContain("pricing.cacheRead");
+    expect(fileView).toContain("formatMoney(analysis.cost ?? null, currency)");
+    expect(fileView).toContain("formatMoney(st?.cost ?? null, currency)");
   });
 });

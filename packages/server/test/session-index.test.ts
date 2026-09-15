@@ -361,6 +361,7 @@ describe("session-index", () => {
     expect(full.counts).toEqual({ active: 2, subagent: 1, schedule: 1, archived: 2 });
     expect((await list("")).counts).toBeUndefined();
     expect((await list("")).workspaceCounts).toBeUndefined();
+    expect((await list("")).workspaceLatest).toBeUndefined();
 
     // The per-Workspace breakdown accompanies the totals and sums back to them: the
     // subagent Session sits alone in its path; every other row lives in its own
@@ -466,6 +467,15 @@ describe("session-index", () => {
     );
     expect(ids(counted)).toHaveLength(2);
     expect(counted.counts?.active).toBe(6);
+    // Each path's newest Session rides with the counts: what places a Workspace group the
+    // sidebar has loaded no rows of. Keyed by the stored path — the client merges the
+    // temporary ones — and whole-Agent under the group filter, like the counts.
+    expect(counted.workspaceLatest).toEqual({
+      [alpha]: "2026-07-03T09:02:00.000Z",
+      [beta]: "2026-07-03T09:03:00.000Z",
+      [`${agentDir}/workspaces/tmp-0123abcd`]: "2026-07-03T09:04:00.000Z",
+      [`${agentDir}/workspaces/tmp-89abcdef`]: "2026-07-03T09:05:00.000Z",
+    });
 
     // An empty group name is rejected, never silently unfiltered.
     expect((await api.get(`${base()}?workspaceGroup=`)).status).toBe(400);

@@ -25,7 +25,7 @@ export function PasswordInput({
   error,
   invalid,
   required,
-  size = "base",
+  size = "sm",
   className,
   id,
   ...rest

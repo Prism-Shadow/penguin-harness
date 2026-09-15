@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   COMPACTION_HEADROOM,
   DEFAULT_CONTEXT_WINDOW,
+  DEFAULT_MAX_CONTEXT_LENGTH,
   MIN_OUTPUT_TOKENS,
   MIN_USABLE_CONTEXT_WINDOW,
   OUTPUT_SAFETY_MARGIN,
@@ -16,7 +17,6 @@ import {
   effectiveMaxOutputTokens,
   resolveContextWindow,
 } from "../src/llm/context-limits.js";
-import { DEFAULT_MAX_CONTEXT_LENGTH } from "../src/state/default-config.js";
 import { toolCallOutput, userText } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 
@@ -92,7 +92,7 @@ describe("approximateMessagesTokens", () => {
   });
 
   it("counts a tool output's `images` data URLs at the flat allowance, not as base64 text", () => {
-    // read_image-style outputs carry the image as tool_call_output.images (data URLs). A
+    // read_file's image outputs carry the image as tool_call_output.images (data URLs). A
     // 1 MB base64 string serialized as text would estimate ~262k "tokens" (~163x over)
     // and floor the NEXT request's cap even on a 128k window.
     const withImage = toolCallOutput({

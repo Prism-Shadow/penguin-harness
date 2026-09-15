@@ -7,7 +7,17 @@
  * 2026-08-21; the TokenDance group: 2026-08-25, its glm-5.3-flash row: 2026-08-26, its
  * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
  * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
- * the direct qwen3.8-flash: 2026-08-26 — per each provider's docs).
+ * the direct qwen3.8-flash: 2026-08-26; the TokenDance Doubao Seed rows (seed-2.1-pro,
+ * seed-2.1-turbo, seed-evolving): 2026-09-02; the vLLM group: 2026-09-03; the direct DeepSeek
+ * V4 Flash rows (flash and flash-vision-exp): 2026-09-08, for the official adjustment
+ * effective 2026-09-10; the GPT-6 Astra rows (direct + OpenRouter): 2026-09-09; the
+ * pre-registered deepseek-v4.1-flash row: 2026-09-09, from DeepSeek's release announcement;
+ * the whole Gemini 3.x line-up, direct + OpenRouter — the 3.6 / 3.7 / 3.8 Flash launch
+ * discounts declared, every other row re-read and unchanged: 2026-09-09; the direct DeepSeek
+ * group (V4.1 Flash released as `deepseek-flash`, the two V4 Flash ids retired into it —
+ * `deepseek-v4-flash` text-only even so, AgentHub's DeepSeek client refusing image parts for
+ * that id), the OpenRouter and TokenDance V4.1 Flash rows, and TokenDance's running promotions
+ * plus its Doubao Seed display names: 2026-09-10 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -31,19 +41,28 @@
  * auto-routed by AgentHub and leave client_type unset; the six gateway groups (OpenRouter,
  * Fireworks AI, SiliconFlow, TokenDance, Qwen Pay-As-You-Go, Qwen Token Plan) can't be
  * auto-routed, so every gateway row **always pins an explicit client_type** and inlines its
- * preset base URL.
+ * preset base URL. Two groups pin at GROUP level as well (ModelProviderInfo.clientType, read
+ * through providerClientType), so that a model the user adds there speaks the same protocol
+ * as the presets: vLLM, whose added models have no preset base URL to inherit either, and
+ * OpenRouter, whose do — see each group's own block comment.
  * That pin is load-bearing, not decoration: AgentHub's AutoLLMClient matches raw substrings
  * against `client_type || model_id` and never looks at base_url, so an unpinned gateway id
  * would be routed by its own spelling — `openai/gpt-5.6-sol` would reach the first-party
  * GPT-5.6 client aimed at a gateway, and `anthropic/claude-opus-4.8` would throw outright
- * (dotted "4.8" matches neither "4-8" nor "-5"). Two protocols are pinned:
- * - `openai-chat` for most rows (AgentHub 0.4.2's canonical name for the generic Chat
- *   Completions client — the bare "openai" spelling is a deprecated upstream alias, see
- *   canonicalClientType);
- * - `openai-responses` for the OpenRouter `openai/*` rows, whose upstream really is an
- *   OpenAI Responses server (see the OpenRouter block comment for why only those rows).
- * The MiniMax M3 preset pins AgentHub's first-party `minimax-m3` protocol and direct API
- * endpoint.
+ * (dotted "4.8" matches neither "4-8" nor "-5"). Three protocols are pinned:
+ * - `openai-responses` for every OpenRouter row: OpenRouter serves the Responses API for
+ *   every upstream at the same base URL the rows already carry, and the group pins the same
+ *   protocol so a user-added entry inherits it;
+ * - `openai-chat` for the other gateway rows (AgentHub 0.4.2's canonical name for the
+ *   generic Chat Completions client — the bare "openai" spelling is a deprecated upstream
+ *   alias, see canonicalClientType);
+ * - `openai-chat-vllm-adapter` for the vLLM group, which is Chat Completions on the wire
+ *   but maps the thinking level onto the served model's own chat template
+ *   (VLLM_CLIENT_TYPE).
+ * Two direct-vendor rows pin anyway, because their own id does not route: the MiniMax M3
+ * preset pins AgentHub's first-party `minimax-m3` protocol and direct API endpoint, and
+ * `deepseek-flash` pins `deepseek-v4` because AgentHub 0.4.11 routes DeepSeek on that
+ * substring alone and the released V4.1 Flash id no longer carries it.
  *
  * App attribution (`attributionHeaders`, bottom of this file) rides alongside the protocol
  * pins: it names PenguinHarness to the gateways that read such a header, keyed on the
@@ -93,6 +112,22 @@ export interface ModelProviderInfo {
    */
   oauth?: ModelProviderOAuth;
   /**
+   * The AgentHub protocol EVERY entry in this group speaks, models the user adds included.
+   *
+   * Set it only where the group itself decides the answer and no other property already
+   * implies it: the other gateways derive `openai-chat` from carrying a `gatewayBaseUrl`, and
+   * `custom` / user-defined groups deliberately declare nothing — their whole point is that
+   * the protocol is detected from the endpoint or picked by hand, and a pin here would
+   * take that choice away.
+   *
+   * Where it IS set, it outranks every group-shape guess in the app: the add-model dialog
+   * preselects it, moving an entry into the group rewrites the entry to it, the API-key env
+   * hint resolves against it, and protocol detection is skipped because the group already
+   * knows. Read it through providerClientType rather than reaching for the field, so those
+   * call sites keep answering as one.
+   */
+  clientType?: string;
+  /**
    * The group the product recommends, captioned as such on the models page. It marks the
    * GROUP, not a position: a user who drags the group elsewhere keeps the caption with it,
    * and the default sequence below is what places it first for everyone else.
@@ -136,6 +171,15 @@ export interface ModelCatalogEntry {
   baseUrl?: string;
 }
 
+/**
+ * AgentHub's client for models served by vLLM's OpenAI-compatible Chat Completions API. It
+ * is Chat Completions on the wire, but a distinct client: it maps the thinking level onto
+ * the `chat_template_kwargs` the SERVED model's chat template reads, which differs per model
+ * family, and AgentHub matches this name by exact equality (before its `openai` substring
+ * branches) so `openai-chat` would silently lose that mapping.
+ */
+const VLLM_CLIENT_TYPE = "openai-chat-vllm-adapter";
+
 /** Preset provider endpoints; only OpenAI-compatible gateways expose theirs as gatewayBaseUrl. */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
@@ -145,6 +189,7 @@ const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
 const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 
 /**
  * Provider list (web model page groups in this order BY DEFAULT — a user's dragged
@@ -158,10 +203,10 @@ const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
  *
  * The six gateway groups — OpenRouter, Fireworks AI, SiliconFlow, TokenDance, Qwen
  * Pay-As-You-Go and Qwen Token Plan — reach their models through one of AgentHub's generic
- * OpenAI-protocol clients (`openai-chat`, or `openai-responses` for the OpenRouter
- * `openai/*` rows). Those clients read **OPENAI_API_KEY / OPENAI_BASE_URL** when the
- * credential is blank, not the gateway's own variable names, so every gateway group records
- * the OPENAI_* pair and the env fallback hint the frontend shows is accurate either way.
+ * OpenAI-protocol clients (`openai-responses` for OpenRouter, `openai-chat` for the rest).
+ * Those clients read **OPENAI_API_KEY / OPENAI_BASE_URL** when the credential is blank, not
+ * the gateway's own variable names, so every gateway group records the OPENAI_* pair and the
+ * env fallback hint the frontend shows is accurate either way.
  */
 export const MODEL_PROVIDERS: ModelProviderInfo[] = [
   {
@@ -196,6 +241,9 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     apiKeyUrl: "https://openrouter.ai/workspaces/default/keys",
     modelsUrl: "https://openrouter.ai/models",
     gatewayBaseUrl: OPENROUTER_BASE_URL,
+    // The whole group speaks the Responses API, which OpenRouter serves at the preset base
+    // URL below for every upstream — presets and user-added entries alike.
+    clientType: "openai-responses",
   },
   {
     id: "fireworks",
@@ -283,6 +331,17 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     modelsUrl:
       "https://platform.qianwenai.com/docs/token-plan/personal/token-plan-personal-overview",
     gatewayBaseUrl: QWEN_TOKEN_PLAN_BASE_URL,
+  },
+  {
+    // Self-hosted: the user runs the server, so there is no console to mint a key at
+    // (apiKeyUrl) and no endpoint to preset (gatewayBaseUrl). modelsUrl points at the recipe
+    // index, which is where the served ids in this group are documented.
+    id: "vllm",
+    label: "vLLM",
+    envKey: "OPENAI_API_KEY",
+    envBaseUrlKey: "OPENAI_BASE_URL",
+    modelsUrl: "https://recipes.vllm.ai/",
+    clientType: VLLM_CLIENT_TYPE,
   },
   { id: "custom", label: "Custom", envKey: "OPENAI_API_KEY", envBaseUrlKey: "OPENAI_BASE_URL" },
 ];
@@ -419,33 +478,69 @@ export function effectivePricing(
  * takes the group sequence from MODEL_PROVIDERS.
  */
 export const MODEL_CATALOG: ModelCatalogEntry[] = [
-  // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Re-read 2026-08-18
-  // from api-docs.deepseek.com/quick_start/pricing after the official price increase
-  // introduced time-based tiers. The rows store the PEAK tier and declare
-  // DEEPSEEK_OFF_PEAK, which halves every bucket outside Beijing weekday 09:00-12:00 and
-  // 14:00-18:00 — so both tiers are billed at the rate actually in force, rather than one of
-  // them being approximated by the other. --
+  // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Prices and model
+  // names re-read 2026-09-10 from api-docs.deepseek.com/quick_start/pricing: the Flash rows
+  // are on the peak tier CNY 0.04 / 2 / 8, exactly double the off-peak 0.02 / 1 / 4;
+  // deepseek-v4-pro sits outside that tier, at 0.3 / 9 / 27. The rows store the PEAK tier
+  // and declare DEEPSEEK_OFF_PEAK, which halves every bucket outside Beijing weekday
+  // 09:00-12:00 and 14:00-18:00 — so both tiers are billed at the rate actually in force,
+  // rather than one of them being approximated by the other.
+  // V4.1 Flash ships under the bare name `deepseek-flash` and leads the group; the two V4
+  // Flash ids below are retired names the vendor still accepts and now serves from V4.1
+  // Flash at the Flash price. --
   {
+    // DeepSeek's pricing page names this model `deepseek-flash` (model version
+    // DeepSeek-V4.1-Flash, released as of the 2026-09-10 read): 1M context, image input, and
+    // the Flash series peak price and off-peak schedule.
+    // The id carries no `deepseek-v4` substring, and that substring is the only thing
+    // AgentHub 0.4.11's AutoLLMClient routes DeepSeek on (it matches raw substrings against
+    // `client_type || model_id`), so the bare name would be rejected as unsupported. This
+    // direct-vendor row therefore pins the `deepseek-v4` client and inlines the vendor
+    // endpoint — the same shape the MiniMax row uses, and the one exception to direct rows
+    // leaving both unset. Drop the two fields once AgentHub routes the bare id.
+    modelId: "deepseek-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "deepseek",
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "deepseek-v4",
+    baseUrl: DEEPSEEK_BASE_URL,
+  },
+  {
+    // Retired on 2026-09-10: DeepSeek still accepts the id and serves it from V4.1 Flash at
+    // the Flash price. V4 Flash reads no images, and the retirement does not change that —
+    // `deepseek-flash` is the id to send an image to. AgentHub agrees rather than decides:
+    // 0.4.11's DeepSeek client matches this bare id against its text-only deny-list
+    // /^deepseek-v4-(flash|pro)(-\d{4})?$/ and rejects image parts before the request leaves
+    // the harness, so relaxing that list is not a reason to flip this flag.
     modelId: "deepseek-v4-flash",
     displayName: "DeepSeek V4 Flash",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.1, 3, 9),
+    pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
   },
   {
-    // The experimental vision revision of V4 Flash (added 2026-08-21): image input on top of
-    // the base model's text capabilities, at the same published price.
+    // The experimental vision revision of V4 Flash (added 2026-08-21), retired on the same
+    // 2026-09-10 announcement: the id is still accepted and served from V4.1 Flash at the
+    // Flash price. Image input was already the point of this row, and it still holds.
     modelId: "deepseek-v4-flash-vision-exp",
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "deepseek",
     contextWindow: 1000000,
-    pricing: cny(0.1, 3, 9),
+    pricing: cny(0.04, 2, 8),
     offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
   },
   {
+    // From 12:00 Beijing on 2026-09-14 and until V4.1 Pro is released, DeepSeek routes every
+    // request for this id to V4.1 Flash and bills it at the V4.1 Flash price. The row keeps
+    // the V4 Pro list price and its text-only flag: the id, the model behind it and the
+    // billing are the vendor's to change back, and this catalog records what it publishes
+    // for deepseek-v4-pro itself.
     modelId: "deepseek-v4-pro",
     displayName: "DeepSeek V4 Pro",
     provider: "deepseek",
@@ -461,14 +556,12 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // every pre-existing openai/* and google/* row were re-read on 2026-08-18 from the model
   // pages and the per-model endpoints API.
   //
-  // Protocol: rows pin `openai-chat` except the `openai/*` rows, which pin
-  // `openai-responses` - OpenRouter serves the Responses API at {base}/responses (the same
-  // https://openrouter.ai/api/v1 base URL these rows already carry), and AgentHub 0.4.2
-  // verified that pairing live. The switch is deliberately limited to the OpenAI family:
-  // OpenRouter will translate /responses for any upstream, but the Responses client leans on
-  // OpenAI-specific reasoning-item round-tripping (replaying encrypted_content / signature /
-  // summary and the assistant `phase`), which is only guaranteed when the upstream is
-  // genuinely OpenAI. Non-OpenAI rows therefore stay on Chat Completions.
+  // Protocol: every row pins `openai-responses`. OpenRouter serves the Responses API at
+  // {base}/responses for every upstream, at the same https://openrouter.ai/api/v1 base URL
+  // the rows already carry, and the group pins the same protocol so an entry added to it by
+  // hand inherits it. The generic Responses client sends a text-only tool result as a plain
+  // string (AgentHub 0.4.11) and replays reasoning items only where the upstream returned
+  // them.
   //
   // Price buckets: cache_read stores the published input_cache_read
   // (falling back to the input price for the rows without one — the :free rows and the
@@ -481,12 +574,15 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // costs correctly compute to 0. GPT models are uniformly vision-capable (OpenAI
   // product-line policy) even where the gateway page omits the modality.
   //
-  // Discounts: these rows store what OpenRouter actually BILLS, so an active promotion is
-  // stored at its discounted rate (unlike the direct-vendor rows, which keep the list price).
-  // The endpoints API exposes the running promotion as `pricing.discount` on the default
-  // endpoint; rows sitting on one say so and name the rate to restore, because a lapsed
-  // promotion silently doubles the real cost — that is exactly how the gpt-5.6-terra and
-  // gpt-5.6-luna rows drifted 2x low before the 2026-08-18 re-read. --
+  // Discounts: what these rows record is what OpenRouter actually BILLS, so a gateway
+  // promotion is stored at its discounted rate (unlike the direct-vendor rows, which keep the
+  // list price). The Gemini 3.x Flash rows are the exception: the promotion they sit on is
+  // Google's own dated launch discount rather than the gateway's, so they keep the list price
+  // and declare it in `discount`, exactly as their direct-vendor twins do. The endpoints API
+  // exposes the running promotion as `pricing.discount` on the default endpoint; rows sitting
+  // on one say so and name the rate to restore, because a lapsed promotion silently doubles
+  // the real cost — that is exactly how the gpt-5.6-terra and gpt-5.6-luna rows drifted 2x
+  // low before the 2026-08-18 re-read. --
   {
     modelId: "anthropic/claude-fable-5",
     displayName: "Claude Fable 5",
@@ -494,7 +590,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(1, 12.5, 50),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -504,7 +600,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -514,7 +610,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -524,7 +620,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.5, 6.25, 25),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -534,7 +630,23 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.2, 2.5, 10),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Listed 2026-09-10 from the models API: the base price is the PEAK tier and
+    // `pricing.overrides` bill exactly half on weekends and outside weekday UTC 01:00-04:00 /
+    // 06:00-10:00 — DeepSeek's own Beijing windows — so the row stores the peak price and
+    // declares DEEPSEEK_OFF_PEAK, exactly as the direct row does. Context window and image
+    // input from the same listing.
+    modelId: "deepseek/deepseek-v4.1-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.006, 0.3, 1.2),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -544,7 +656,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.0157192, 0.078596, 0.157192),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -554,21 +666,22 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.0168, 0.0679, 0.168),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
     // DeepSeek serves this one alone on OpenRouter, so the stored rates are its own published
     // USD list ($0.22 / $0.66 / $0.007 cache read), and the context window is that endpoint's
-    // 1,048,576. Like the direct group, the price is the OFF-PEAK tier: the models API exposes
-    // the peak windows as `pricing.overrides` billing exactly double.
+    // 1,048,576. The row keeps that flat price as the API lists it: as of the 2026-09-10 read
+    // the listing carries no `pricing.overrides`, so unlike the deepseek-v4.1-flash row above
+    // there is no peak/off-peak split to record here.
     modelId: "deepseek/deepseek-v4-flash-vision-exp",
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.007, 0.22, 0.66),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -581,7 +694,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.022, 0.66, 1.98),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -591,59 +704,82 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.022, 0.66, 1.98),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
-    // Same Gemini cache conventions as the gemini-3.6-flash row below. The stored rates are
-    // what OpenRouter currently bills: the default Google endpoint runs `discount: 0.75` off
-    // the $0.15/$1.50/$7.50 list price (Google's launch discount through 2026-12-31, which
-    // OpenRouter deepens further), so it bills $0.0375/$0.375/$1.875 — re-read when the
-    // discount ends, and restore the $0.15/$1.50/$7.50 list then (the direct-vendor row
-    // stores that list price already).
+    // Same Gemini cache conventions as the gemini-3.7-flash row below. OpenRouter passes
+    // Google's launch discount through, so it bills $0.075/$0.75/$3.75 — the list price less
+    // 50%, declared in `discount` so the $0.15/$1.50/$7.50 list survives the promotion (same
+    // treatment as the 3.6 and 3.7 rows below).
+    modelId: "google/gemini-3.8-flash",
+    displayName: "Gemini 3.8 Flash",
+    provider: "openrouter",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
+    // Same Gemini cache conventions as the gemini-3.6-flash row below. The default Google
+    // endpoint now bills $0.075/$0.75/$3.75 with `discount: 0.5` (endpoints API, read
+    // 2026-09-09) — Google's launch discount passed straight through; the deeper
+    // `discount: 0.75` promotion this row used to store has ended. Declared in `discount` so
+    // the $0.15/$1.50/$7.50 list stays on file.
     modelId: "google/gemini-3.7-flash",
     displayName: "Gemini 3.7 Flash",
     provider: "openrouter",
     contextWindow: 1048576,
-    pricing: usd(0.0375, 0.375, 1.875),
+    pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
     // cache_read is billed as its own bucket in the cost center, and an input-priced
     // cache_read would overstate cache-heavy Gemini spend 10x; cache_write repeats the input
     // price (see the block comment — Gemini publishes storage-per-hour, not per-token write),
-    // matching the direct-vendor Gemini rows below.
+    // matching the direct-vendor Gemini rows below. OpenRouter bills $0.075/$0.75/$3.75
+    // today (endpoints API, read 2026-09-09): it reports that halved rate as its plain price
+    // with `discount: 0`, but it is Google's launch discount passed through and ends with it
+    // on 2026-12-31, so this row records the list price and the promotion the way its
+    // siblings do.
     modelId: "google/gemini-3.6-flash",
     displayName: "Gemini 3.6 Flash",
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // The 3.5 tier's own list price — $1.50 input / $9.00 output / $0.15 cache hit on Google's
+    // page, with no launch discount — and OpenRouter's default endpoint bills exactly that
+    // (`discount: 0`, read 2026-09-09). The $9 output is the tier, not a promotion to declare.
     modelId: "google/gemini-3.5-flash",
     displayName: "Gemini 3.5 Flash",
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 9),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
     // Same published-cache-price convention as gemini-3.6-flash above (2026-07-22: $0.03/mtok
-    // cache hit, $0.30 input, $2.50 output).
+    // cache hit, $0.30 input, $2.50 output; re-read 2026-09-09, unchanged and `discount: 0`).
     modelId: "google/gemini-3.5-flash-lite",
     displayName: "Gemini 3.5 Flash-Lite",
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.03, 0.3, 2.5),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -654,7 +790,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.06, 0.3, 1.2),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -664,7 +800,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.3, 3, 15),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -674,7 +810,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.0992, 0.589, 2.48),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -684,12 +820,26 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0, 0, 0),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
-  // The openai/* rows below mirror the direct OpenAI group one-for-one, and are the only
-  // gateway rows on the Responses protocol (see the block comment). Their context windows
-  // are OpenRouter's published 1,050,000 / 400,000, matching the direct rows.
+  // The openai/* rows below mirror the direct OpenAI group one-for-one. Their context
+  // windows are OpenRouter's published 1,050,000 / 400,000, matching the direct rows.
+  {
+    // Read 2026-09-09 from the models API and the per-model endpoints API: the default
+    // endpoint is OpenAI's own, listed at $10 input / $1 cached input / $12.5 cache write /
+    // $50 output with `discount: 0`, so the list price is what OpenRouter bills. The
+    // endpoints API also publishes `overrides` above 272,000 prompt tokens (2x prompt and
+    // cache, 1.5x completion); as on the direct row, only the base tier is recorded.
+    modelId: "openai/gpt-6-astra",
+    displayName: "GPT-6 Astra",
+    provider: "openrouter",
+    contextWindow: 1050000,
+    pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
   {
     // The 50% promotion this row used to store has ended: OpenRouter now bills the full
     // $0.20/$1.20 rate (endpoints API `discount: 0`), so the stored rates doubled on the
@@ -803,7 +953,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 128000,
     pricing: usd(0, 0, 0),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -813,7 +963,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.25, 2.5, 6),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -823,7 +973,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.05, 0.14, 1),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -834,7 +984,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 256000,
     pricing: usd(0.04, 0.2, 1.15),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -849,7 +999,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.042, 0.834, 2.501),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -859,7 +1009,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 262144,
     pricing: usd(0.033, 0.132, 0.528),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -872,7 +1022,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.17, 1, 4.05),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -884,7 +1034,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 500000,
     pricing: usd(0.5, 2, 6),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -894,7 +1044,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 500000,
     pricing: usd(0.3, 2, 6),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -904,7 +1054,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.0028, 0.14, 0.28),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -917,7 +1067,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1048576,
     pricing: usd(0.26, 1.4, 4.4),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -925,14 +1075,14 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // promotion through 2026-09-09 16:00 UTC (Z.AI's own price list names the same window as
     // 24:00 on 2026-09-09, UTC+8). Stored at the discounted rate the gateway actually bills;
     // when it lapses, restore 0.03 / 0.15 / 0.5. The listing takes text, images and video,
-    // and the generic openai-chat client it pins converts image_url parts.
+    // and the generic Responses client it pins carries image parts through.
     modelId: "z-ai/glm-5.3-flash",
     displayName: "GLM-5.3 Flash",
     provider: "openrouter",
     contextWindow: 1048576,
     pricing: usd(0.015, 0.075, 0.25),
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
@@ -942,7 +1092,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: usd(0.1261, 0.679, 2.134),
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "openai-responses",
     baseUrl: OPENROUTER_BASE_URL,
   },
   // -- Fireworks AI (gateway, standard serverless USD pricing: cached input / uncached
@@ -1107,20 +1257,24 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- TokenDance (gateway: OpenAI-compatible protocol, preset base URL). Context windows,
   // vision flags and supported protocols from the public catalog API (GET
-  // https://tokendance.space/gateway/v1/models, no credential required; re-read 2026-08-28);
+  // https://tokendance.space/gateway/v1/models, no credential required; re-read 2026-09-10);
   // prices are the gateway's own CNY rates from each model's detail page, read 2026-08-25
-  // (the detail pages need a signed-in session, so they cannot be re-read anonymously).
-  // TokenDance publishes an input price and a cache-hit price with no separate cache-write
-  // fee, so cache_write carries the input price.
+  // and last confirmed by the seller 2026-09-10 (the detail pages need a signed-in session,
+  // so they cannot be re-read anonymously). TokenDance publishes an input price and a
+  // cache-hit price with no separate cache-write fee, so cache_write carries the input price.
   //
   // Discounts: every row here stores the official LIST price, the convention of the two Qwen
   // groups below, and a promoted row declares its rate in `discount` rather than having its
   // price rewritten — a promotion that lapses is then one field to delete, with the rate to
   // return to still on the row. effectivePricing() applies it and presetModelEntries writes
   // that billed rate into a Project, so the cost center charges what the gateway charges.
-  // Six rows are promoted: deepseek-v4-flash-0731, deepseek-v4-pro-0813 and glm-5.3-flash at
-  // 50% off, kimi-k3 at 20%, glm-5.3 and qwen3.8-max at 10%. The rest carry no discount, so
-  // for them list price and billed rate coincide.
+  // Nine rows are promoted (rates re-confirmed 2026-09-10): deepseek-v4-flash-0731,
+  // deepseek-v4-pro-0813 and kimi-k3 at 20% off; glm-5.3, glm-5.3-flash and qwen3.8-max at
+  // 10%; the three Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50%.
+  // Two more rows — deepseek-v4.1-flash and deepseek-v4-flash-vision-exp — carry no flat
+  // discount at all and instead follow the vendor's own peak/off-peak schedule
+  // (DEEPSEEK_OFF_PEAK), storing the peak price the way the direct DeepSeek rows do. The
+  // rest carry neither, so for them list price and billed rate coincide.
   //
   // A running promotion usually also shows up without a credential: the catalog API opens
   // such a model's `description` with a bracketed 限时 ("limited-time") tag, so the same
@@ -1133,17 +1287,23 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1048576,
     pricing: cny(0.1, 3, 9),
-    discount: 0.5,
+    discount: 0.2,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // Both DeepSeek Flash rows sold here follow the vendor's own peak/off-peak schedule
+    // rather than a flat gateway discount (seller's quote 2026-09-10): the row stores the
+    // peak tier CNY 0.04 / 2 / 8 and declares DEEPSEEK_OFF_PEAK, which halves every bucket
+    // outside Beijing weekday 09:00-12:00 and 14:00-18:00 — see the deepseek-v4.1-flash row
+    // below, priced identically.
     modelId: "deepseek-v4-flash-vision-exp",
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "tokendance",
     contextWindow: 1000000,
-    pricing: cny(0.05, 1.5, 4.5),
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1154,8 +1314,25 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(0.3, 9, 27),
-    discount: 0.5,
+    discount: 0.2,
     supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // Listed 2026-09-10; the dotted id is the seller's spelling of the model DeepSeek serves
+    // directly as `deepseek-flash`. 1M context and native multimodality from the catalog
+    // API. Priced like the vision-exp row above: the peak tier, on the vendor's own
+    // schedule, no flat gateway discount (seller's quote 2026-09-10). Unlike the direct row
+    // this one needs no DeepSeek-specific pin — it is reached through this group's generic
+    // openai-chat client, which forwards image_url parts.
+    modelId: "deepseek-v4.1-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
@@ -1175,12 +1352,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     // openai-chat client forwards image_url parts, so image input works on this path. Its
     // supported_protocols is openai:chat-completions alone, so the openai-chat pin is the
     // only shape this id serves.
+    //
+    // The 50% promotion this row used to carry ran through 2026-09-09 24:00 (the catalog
+    // API's own description said so) and has been replaced by 10% off; the list price is
+    // unchanged, only the `discount` fraction moved.
     modelId: "glm-5.3-flash",
     displayName: "GLM-5.3 Flash",
     provider: "tokendance",
     contextWindow: 1000000,
     pricing: cny(0.23, 0.8, 2.8),
-    discount: 0.5,
+    discount: 0.1,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1245,6 +1426,54 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     contextWindow: 1000000,
     pricing: cny(1.5, 12, 36),
     discount: 0.1,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // The three Doubao Seed rows share this note. Priced 2026-09-02 from the seller's quoted
+    // 50%-off rates, doubled back to the list price a row stores; context windows and
+    // protocols from the catalog API, whose descriptions call the 2.1 models multimodal
+    // Coding/Agent models (this group's openai-chat client forwards image_url parts, so
+    // image input works on this path). That API tags the two 2.1 rows with a limited-time
+    // 20% line rather than the 50% here; as for every promoted row in this group, the rate
+    // recorded is the one the seller confirmed. seed-2.1-pro and seed-2.1-turbo also list
+    // openai:responses, so their openai-chat pin is the group's convention rather than the
+    // only shape they serve; seed-evolving lists chat-completions alone.
+    //
+    // Display names are the seller's own, as the catalog API spells them (re-read
+    // 2026-09-10): Seed-2.1-Pro, Seed-2.1-Turbo, Seed-Evolving.
+    modelId: "seed-2.1-pro",
+    displayName: "Seed-2.1-Pro",
+    provider: "tokendance",
+    contextWindow: 256000,
+    pricing: cny(1.2, 6, 30),
+    discount: 0.5,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    modelId: "seed-2.1-turbo",
+    displayName: "Seed-2.1-Turbo",
+    provider: "tokendance",
+    contextWindow: 256000,
+    pricing: cny(0.6, 3, 15),
+    discount: 0.5,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // A rolling id: the catalog API describes it as the newest Seed Coding/Agent model
+    // under one stable id — the same model as seed-2.1-pro at the time of reading — and
+    // the seller prices it the same.
+    modelId: "seed-evolving",
+    displayName: "Seed-Evolving",
+    provider: "tokendance",
+    contextWindow: 256000,
+    pricing: cny(1.2, 6, 30),
+    discount: 0.5,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1386,26 +1615,46 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Google Gemini (official USD pricing) --
   {
-    // Official list price, identical to gemini-3.6-flash (per AgentHub 0.4.2's registry and
-    // Google's price page). Google halves all three rates as a launch discount through
-    // 2026-12-31; like other limited-time promotions the discount is not stored (the
-    // OpenRouter row bills — and stores — the halved rates instead).
+    // Same list price and same launch discount as the gemini-3.7-flash and gemini-3.6-flash
+    // rows below: Google halves all three rates through 2026-12-31. Like those rows this one
+    // declares the promotion in `discount`, so the list price stays on file while a Project is
+    // preset with — and the cost center bills — the 0.075/0.75/3.75 Google actually charges
+    // today. One field to delete when the promotion lapses.
+    modelId: "gemini-3.8-flash",
+    displayName: "Gemini 3.8 Flash",
+    provider: "google",
+    contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
+    supportsVision: true,
+  },
+  {
+    // Google's list price, identical to gemini-3.6-flash (per AgentHub 0.4.2's registry and
+    // Google's price page), halved through 2026-12-31 by a launch discount on all three
+    // rates. That promotion is declared in `discount` — same treatment as gemini-3.8-flash
+    // above — so the list price survives it and there is one field to delete when it lapses.
     modelId: "gemini-3.7-flash",
     displayName: "Gemini 3.7 Flash",
     provider: "google",
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
   },
   {
+    // Same list price and same launch discount as the 3.7 and 3.8 rows: Google halves all
+    // three rates through 2026-12-31 (Google's pricing page, read 2026-09-09).
     modelId: "gemini-3.6-flash",
     displayName: "Gemini 3.6 Flash",
     provider: "google",
     contextWindow: 1048576,
     pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
   },
   {
+    // Google's 3.5 tier list price ($1.50 / $9.00 / $0.15 cache hit), which carries no launch
+    // discount — re-read 2026-09-09. The $9 output is what the tier costs, not a promotion.
     modelId: "gemini-3.5-flash",
     displayName: "Gemini 3.5 Flash",
     provider: "google",
@@ -1503,12 +1752,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- OpenAI (official USD pricing) --
   {
+    // OpenAI's list price (developers.openai.com/api/docs/models/gpt-6-astra, read
+    // 2026-09-09) is $10 input / $1 cached input / $12.5 cache write / $50 output. Per the
+    // bucket convention at the top of this file, cache_write carries the published
+    // cache-write price of 12.5; the $10 rate applies only to input that is not written to
+    // cache, a split the three buckets do not express. Every rate doubles above 272K input
+    // tokens (output 1.5x) — the base tier is what this row records, as the header says.
+    // Served by AgentHub's gpt6 client from the release that ships it.
+    modelId: "gpt-6-astra",
+    displayName: "GPT-6 Astra",
+    provider: "openai",
+    contextWindow: 1050000,
+    pricing: usd(1, 12.5, 50),
+    supportsVision: true,
+  },
+  {
     // The bare gpt-5.6 id routes to gpt-5.6-sol upstream and is priced as that tier, so the
     // row names the Sol codename its siblings and the openai/gpt-5.6-sol row already show —
     // the id stays bare, only the label says which variant this is; served by AgentHub
-    // 0.4.2's native gpt-5.6 client. The three rows here mirror the openai/*
-    // OpenRouter rows above, which carry the gateway's (currently discounted) rates instead
-    // of this list price.
+    // 0.4.2's native gpt-5.6 client. This row and the two gpt-5.6 rows below mirror the
+    // openai/gpt-5.6-* OpenRouter rows above, which carry the gateway's (currently
+    // discounted) rates instead of this list price.
     modelId: "gpt-5.6",
     displayName: "GPT-5.6 Sol",
     provider: "openai",
@@ -1663,6 +1927,104 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: cny(0.7, 4, 21),
     supportsVision: true,
   },
+  // -- vLLM (self-hosted: the models AgentHub's openai-chat-vllm-adapter client carries a
+  // per-model thinking switch for, as published at recipes.vllm.ai — read 2026-09-03).
+  //
+  // Every row prices at zero, and omits two other things, all because the user runs the server:
+  // - **zero pricing**. There is no seller charging per token: what the deployment costs is
+  //   the operator's own hardware, which no catalog rate could express. Three zero buckets are
+  //   the same genuine $0 tier the `:free` gateway rows carry, so these models show the free
+  //   badge and contribute 0 to the cost center rather than the "unpriced" mark — which is the
+  //   truthful reading of a self-hosted endpoint that bills nobody.
+  // - **no base URL**. Every deployment has its own; the user supplies it, as in `custom`.
+  // - **no auto-routing**. Each row pins openai-chat-vllm-adapter explicitly, and the pin is
+  //   load-bearing twice over: `Qwen/*` matches none of AutoLLMClient's substring rules and
+  //   would be rejected outright, while `deepseek-ai/DeepSeek-V4-*` contains "deepseek-v4"
+  //   and would reach DeepSeek's first-party Responses client — pointed at a vLLM server.
+  //
+  // contextWindow is the recipe's NATIVE length, which is the most a deployment can serve
+  // without reconfiguration; an operator may serve less (`--max-model-len` below the native
+  // limit) or, for the Qwen rows, far more with YaRN rope scaling. The catalog cannot know
+  // which, and it derives the compaction thresholds from this number, so the honest default
+  // is the checkpoint's own figure — an entry without one would be assumed to be 128000.
+  // The DeepSeek rows additionally document `--max-model-len >= 393216` as the floor for
+  // their top reasoning levels, which is well inside the window recorded here.
+  {
+    modelId: "deepseek-ai/DeepSeek-V4-Flash",
+    displayName: "DeepSeek V4 Flash",
+    provider: "vllm",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    // The experimental vision revision: DeepSeek's first multimodal V4, a ViT tower on the
+    // same language backbone. Its recipe verifies a 32K deployment and notes the 1M the
+    // checkpoint advertises was not what was measured; the window below is the checkpoint's,
+    // matching every other DeepSeek V4 row in this catalog.
+    modelId: "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp",
+    displayName: "DeepSeek V4 Flash Vision Exp",
+    provider: "vllm",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "deepseek-ai/DeepSeek-V4-Pro",
+    displayName: "DeepSeek V4 Pro",
+    provider: "vllm",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.5-0.8B",
+    displayName: "Qwen 3.5 0.8B",
+    provider: "vllm",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.5-9B",
+    displayName: "Qwen 3.5 9B",
+    provider: "vllm",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.6-35B-A3B",
+    displayName: "Qwen 3.6 35B A3B",
+    provider: "vllm",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.8-27B",
+    displayName: "Qwen 3.8 27B",
+    provider: "vllm",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
+  {
+    modelId: "Qwen/Qwen3.8-Flash-Next",
+    displayName: "Qwen 3.8 Flash Next",
+    provider: "vllm",
+    contextWindow: 262144,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    clientType: VLLM_CLIENT_TYPE,
+  },
 ];
 
 /**
@@ -1690,6 +2052,24 @@ export function catalogEntryFor(
 /** Looks up provider info by provider id; returns undefined for an unknown id. */
 export function providerInfo(providerId: string): ModelProviderInfo | undefined {
   return MODEL_PROVIDERS.find((p) => p.id === providerId);
+}
+
+/**
+ * The protocol a group pins on every one of its entries (ModelProviderInfo.clientType), or
+ * undefined when the group pins none — an unknown id (a user-defined group) included.
+ *
+ * Two groups pin: vLLM, whose models are served by the user's own vLLM adapter, and
+ * OpenRouter, whose models all speak the Responses API OpenRouter serves at its preset base
+ * URL.
+ *
+ * The single entry point for the pin, so the places that decide a saved model's client_type
+ * cannot drift apart: the web add-model dialog's default, moving an entry between groups,
+ * the last-resort protocol on the save paths that do not probe, the env-var hint, and the
+ * CLI's `config model add`. A group without a pin keeps whatever those call sites already
+ * derive from its shape.
+ */
+export function providerClientType(providerId: string): string | undefined {
+  return providerInfo(providerId)?.clientType;
 }
 
 /** Env var fallback for a single model (the var names AgentHub's client actually reads when api_key / base_url is blank). */
@@ -1720,7 +2100,12 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   ) {
     return env("ANTHROPIC");
   }
-  if (t.includes("gpt-5.4") || t.includes("gpt-5.5") || t.includes("gpt-5.6")) {
+  if (
+    t.includes("gpt-5.4") ||
+    t.includes("gpt-5.5") ||
+    t.includes("gpt-5.6") ||
+    t.includes("gpt-6")
+  ) {
     return env("OPENAI");
   }
   // agenthub 0.4.2's unified GLM client serves the whole glm-5 series (5.3 included).
@@ -1733,20 +2118,28 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   if (t === "minimax-m3" && modelId.toLowerCase() === "minimax-m3") {
     return env("MINIMAX");
   }
+  // AgentHub 0.4.11 routes DeepSeek on this substring alone, so the released V4.1 Flash id
+  // `deepseek-flash` matches nothing here and stays unroutable on its own — which is exactly
+  // why its catalog row pins client_type "deepseek-v4" and lands on this branch instead.
+  // Mirroring AgentHub is the contract; do not widen the test to the bare name until
+  // AgentHub itself does.
   if (t.includes("deepseek-v4")) return env("DEEPSEEK");
   // agenthub 0.4.2's generic Anthropic Messages protocol client reads the ANTHROPIC_* pair.
   // Order mirrors AutoLLMClient: ant-messages before the openai substring match.
   if (t.includes("ant-messages")) return env("ANTHROPIC");
   // The generic OpenAI-protocol clients — openai-chat (canonical since agenthub 0.4.2, with
-  // bare "openai" as a deprecated alias), openai-responses and openai-embedding — all read
-  // the OPENAI_* pair.
+  // bare "openai" as a deprecated alias), openai-responses, openai-embedding, and
+  // openai-chat-vllm-adapter (an openai_chat subclass, so it reads the same pair) — all
+  // read the OPENAI_* pair. AutoLLMClient matches openai-chat-vllm-adapter by exact
+  // equality one branch earlier; the substring lands on the same answer, so the order costs
+  // nothing here.
   if (t.includes("openai")) return env("OPENAI");
   return undefined;
 }
 
 /**
  * The wire protocol that would carry AgentHub's `fast_mode` for a model: `"openai"` for the
- * OpenAI-protocol clients (openai_chat / openai_responses / gpt5_6 / minimax_m3), which send
+ * OpenAI-protocol clients (openai_chat / openai_responses / gpt6 / minimax_m3), which send
  * `service_tier: "priority"`, and `"anthropic"` for the Anthropic-protocol ones (ant_messages
  * / claude5), which send `speed: "fast"` plus the `fast-mode-2026-02-01` beta header. The two
  * differ in what the user must be warned about, not just in wire shape (see fastModeProtocol).
@@ -1809,11 +2202,22 @@ export function fastModeProtocol(
     if (modelId.includes("4-6")) return undefined;
     return "anthropic";
   }
-  if (t.includes("gpt-5.4") || t.includes("gpt-5.5") || t.includes("gpt-5.6")) return "openai";
+  if (
+    t.includes("gpt-5.4") ||
+    t.includes("gpt-5.5") ||
+    t.includes("gpt-5.6") ||
+    t.includes("gpt-6")
+  ) {
+    return "openai";
+  }
   if (t.includes("glm-5")) return undefined;
   if (t.includes("kimi-k3") || t.includes("kimi-k2.5") || t.includes("kimi-k2.6")) return undefined;
   if (t.includes("deepseek-v4")) return undefined;
   if (t.includes("ant-messages")) return "anthropic";
+  // openai-chat-vllm-adapter is not carved out: it subclasses openai_chat without touching
+  // fast mode, so it maps the parameter exactly as the substring branch below reports. What
+  // a self-hosted server then does with `service_tier` is the third-party residue named
+  // above.
   if (t.includes("openai-responses")) return "openai";
   if (t.includes("openai") && t.includes("embedding")) return undefined;
   if (t.includes("openai")) return "openai";
@@ -1825,8 +2229,8 @@ export function fastModeProtocol(
  * config, avoiding duplicate hand-written copies). `provider` and `model_id` are persisted as
  * separate fields (`model_id` is the plain upstream id); models whose upstream id can be
  * auto-routed by AgentHub leave client_type unset; gateway models (OpenRouter / SiliconFlow)
- * always pin a client_type — openai-chat, or openai-responses for the OpenRouter openai/*
- * rows — and inline a preset base_url. The direct MiniMax M3 entry also pins its protocol and
+ * always pin a client_type — openai-responses for the OpenRouter rows, openai-chat for the
+ * rest — and inline a preset base_url. The direct MiniMax M3 entry also pins its protocol and
  * endpoint. No secrets are included, so only an API key is needed.
  *
  * Pricing is written as the EFFECTIVE rate (effectivePricing: list less any running
@@ -1848,7 +2252,7 @@ export function presetModelEntries(): ModelEntry[] {
       ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
       ...(pricing ? { pricing: { ...pricing } } : {}),
       // ModelEntry.vision defaults to supported: only models that don't support images
-      // explicitly persist false (drives the read_image / describe_image choice and input
+      // explicitly persist false (drives read_file's hand-off of images to the vision model and input
       // image hand-off, see project-config.ts).
       ...(m.supportsVision ? {} : { vision: false }),
       ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
@@ -1888,6 +2292,13 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
     const m = /^kimi-k(\d+)\.(\d+)$/.exec(modelId);
     return m
       ? `https://platform.kimi.com/docs/pricing/chat-k${m[1]}${m[2]}`
+      : providerInfo(provider)?.modelsUrl;
+  }
+  if (provider === "vllm") {
+    // recipes.vllm.ai has a page per model vLLM published a recipe for, which is exactly what
+    // this group presets; an id the user serves themselves has no page, so it gets the index.
+    return catalogEntryFor(provider, modelId) !== undefined
+      ? `https://recipes.vllm.ai/${modelId}`
       : providerInfo(provider)?.modelsUrl;
   }
   if (provider === "custom") return undefined;

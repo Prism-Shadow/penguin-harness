@@ -37,7 +37,7 @@ export type ThinkingLevelName = "none" | "low" | "medium" | "high" | "xhigh" | "
  * (none for `max_turns`).
  */
 export interface RunCutoff {
-  kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns" | "tool_loop";
+  kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
   errorCode?: ErrorCode;
   errorMessage?: string;
 }

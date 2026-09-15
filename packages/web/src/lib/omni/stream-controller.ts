@@ -83,16 +83,16 @@ export type MessagesPageQuery =
 
 /**
  * Initial (tail) window size, in message-bearing units — one unit = one Task, opened by
- * a user prompt (the server's cut rule; see MessagesPageInfo). 200 covers the vast
- * majority of real sessions in a single request, so ordinary conversations still load
- * whole exactly as before — only the pathological long tail (months-long sessions,
- * agentic marathons) starts windowed, which is the point: their full-transcript reads
- * were the unbounded memory/disk cost this pagination removes.
+ * a user prompt (the server's cut rule; see MessagesPageInfo). 50 is what a reader
+ * actually looks at when a conversation opens: the rest of a long Session streams in on
+ * scroll (see loadOlder). Anything much larger stops being a window at all — at 200 the
+ * tail covered nearly every real Session, so every open still read, shipped and rendered
+ * the whole transcript, tool output included.
  */
-export const TAIL_UNITS = 200;
+export const TAIL_UNITS = 50;
 
-/** Scroll-up backfill window size: smaller than the tail so each prepend stays snappy. */
-export const OLDER_UNITS = 100;
+/** Scroll-up backfill window size: one more tail's worth per prepend, so each stays snappy. */
+export const OLDER_UNITS = 50;
 
 /**
  * Item-id space reserved per prepended window. The live model numbers its items upward
@@ -123,6 +123,8 @@ export interface StreamControllerDeps {
   onQueuedFollowUps?: (count: number) => void;
   /** Undelivered steering messages carried on task_state events (absent = none): keeps the composer's "steering queued" hint alive across reloads. */
   onPendingSteering?: (items: PendingSteeringInfo[]) => void;
+  /** Steering a finished run never delivered: the composer takes it back into its draft. */
+  onReturnedSteering?: (items: PendingSteeringInfo[]) => void;
   /** Queued follow-up tasks carried on task_state events (absent = none): each entry's content + recall handle, alongside the count. */
   onPendingFollowUps?: (items: PendingFollowUpInfo[]) => void;
   /** Live subagent children carried on task_state events (absent = none): the panel's structural running marks — no tool-output text parsing for live sessions. */
@@ -312,6 +314,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
         deps.onTaskState(ev.state);
         deps.onQueuedFollowUps?.(ev.queued ?? 0);
         deps.onPendingSteering?.(ev.pendingSteering ?? []);
+        deps.onReturnedSteering?.(ev.returnedSteering ?? []);
         deps.onPendingFollowUps?.(ev.pendingFollowUps ?? []);
         deps.onSubagents?.(ev.subagents ?? []);
         if (ev.state === "idle") {
@@ -627,6 +630,7 @@ export function createStreamController(deps: StreamControllerDeps): StreamContro
           deps.onTaskState(ev.state);
           deps.onQueuedFollowUps?.(ev.queued ?? 0);
           deps.onPendingSteering?.(ev.pendingSteering ?? []);
+          deps.onReturnedSteering?.(ev.returnedSteering ?? []);
           deps.onPendingFollowUps?.(ev.pendingFollowUps ?? []);
         }
         buffer.push({ kind: "server", ev, id: eventId });

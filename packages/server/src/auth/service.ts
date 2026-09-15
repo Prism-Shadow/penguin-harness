@@ -52,11 +52,14 @@ export function generateInitialAdminPassword(): string {
  */
 export type SessionVia = "password" | "desktop" | "setup" | "token";
 
+/** Row -> DTO. The two profile columns are omitted rather than sent as null when unset. */
 export function toUserInfo(row: UserRow): UserInfo {
   return {
     userId: row.userId,
     isAdmin: row.isAdmin,
     passwordIsInitial: row.passwordIsInitial,
+    ...(row.displayName !== null ? { displayName: row.displayName } : {}),
+    ...(row.avatar !== null ? { avatar: row.avatar } : {}),
     createdAt: row.createdAt,
   };
 }
@@ -141,6 +144,8 @@ export class AuthService {
       passwordHash: await hashPassword(password, this.hashCost),
       isAdmin: true,
       passwordIsInitial: true,
+      displayName: null,
+      avatar: null,
       createdAt: this.now().toISOString(),
     };
     this.deps.users.insert(user);

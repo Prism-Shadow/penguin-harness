@@ -89,7 +89,7 @@ describe("skills api", () => {
     const plugins = body.groups.flatMap((g) => g.plugins);
     for (const plugin of plugins) {
       expect(plugin.description.length, plugin.name).toBeGreaterThan(0);
-      expect(plugin.version, plugin.name).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+      expect(plugin.version, plugin.name).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d+$/);
       expect(plugin.skills.length > 0 || plugin.hooks.length > 0, plugin.name).toBe(true);
       for (const skill of plugin.skills) {
         // The short description (preferred in compact spots like cards) is passed through for
@@ -349,11 +349,44 @@ describe("skills api", () => {
   // ---- POST .../skills/archive: install one skill from an uploaded zip ----
 
   const ZIP_SKILL_MD =
-    "---\nname: zip-skill\ndescription: Zip demo skill\nshort_description: Zip demo\nversion: 2026-08-01.2\n---\n\n# Zip skill\nBody.\n";
+    "---\nname: zip-skill\ndescription: Zip demo skill\nshort_description: Zip demo\nversion: 2026.08.01.2\n---\n\n# Zip skill\nBody.\n";
 
   /** Builds an in-memory zip and returns it base64-encoded (the request wire format). */
   const zipB64 = (files: Record<string, Uint8Array>): string =>
     Buffer.from(zipSync(files)).toString("base64");
+
+  /**
+   * Builds a zip and then rewrites the declared uncompressed size of the named entries, in both
+   * the local header and the central-directory record, leaving the compressed payload untouched.
+   * That is the shape of a zip bomb: the size a reader allocates comes from the header, not from
+   * the bytes that follow it.
+   */
+  const zipB64Declaring = (
+    files: Record<string, Uint8Array>,
+    declared: Record<string, number>,
+  ): string => {
+    const zip = zipSync(files);
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    const decoder = new TextDecoder();
+    const entryName = (start: number, lenAt: number, nameAt: number): string =>
+      decoder.decode(
+        zip.subarray(start + nameAt, start + nameAt + view.getUint16(start + lenAt, true)),
+      );
+    for (let i = 0; i + 4 <= zip.byteLength; i++) {
+      const signature = view.getUint32(i, true);
+      // Local file header (PK\3\4): name length at +26, name at +30, uncompressed size at +22.
+      if (signature === 0x04034b50) {
+        const size = declared[entryName(i, 26, 30)];
+        if (size !== undefined) view.setUint32(i + 22, size, true);
+      }
+      // Central-directory record (PK\1\2): name length at +28, name at +46, size at +24.
+      if (signature === 0x02014b50) {
+        const size = declared[entryName(i, 28, 46)];
+        if (size !== undefined) view.setUint32(i + 24, size, true);
+      }
+    }
+    return Buffer.from(zip).toString("base64");
+  };
 
   it("archive: nested top-dir layout — all files written (subdirs preserved), directory name wins over frontmatter", async () => {
     await createPlainAgent("zip_agent");
@@ -371,7 +404,7 @@ describe("skills api", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
     expect(body.skills.map((s) => s.name)).toEqual(["dir-skill"]);
-    expect(body.skills[0]!.version).toBe("2026-08-01.2");
+    expect(body.skills[0]!.version).toBe("2026.08.01.2");
     expect(body.skills[0]!.shortDescription).toBe("Zip demo");
     const dir = path.join(skillsDir(t.root, projectId, "zip_agent"), "dir-skill");
     expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf8")).toBe(ZIP_SKILL_MD);
@@ -409,6 +442,16 @@ describe("skills api", () => {
       });
       expect(res.status, entry).toBe(400);
     }
+    // A file entry named exactly like the top-level directory leaves an empty path once the
+    // prefix is stripped, so the write lands on the skill directory itself (EISDIR) instead of
+    // a file inside it — a rejection, not a crash.
+    const collision = await owner.post(`${url}/archive`, {
+      dataBase64: zipB64({
+        "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD),
+        "zip-skill": strToU8("x"),
+      }),
+    });
+    expect(collision.status).toBe(400);
     const list = (await (await owner.get(url)).json()) as AgentSkillsResponse;
     expect(list.skills).toEqual([]);
   });
@@ -477,6 +520,33 @@ describe("skills api", () => {
     expect((await owner.post(url, { dataBase64: zipB64(total) })).status).toBe(400);
   });
 
+  it("archive: the uncompressed caps come off the central directory, not off what inflated", async () => {
+    await createPlainAgent("zip_declared_agent");
+    const url = `${base("zip_declared_agent")}/archive`;
+    // Both archives are a few hundred bytes on the wire and inflate to one byte per entry, so
+    // caps measured on what came back would pass them — while the reader has already allocated
+    // every declared byte to inflate into.
+    const perFile = zipB64Declaring(
+      { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD), "zip-skill/big.bin": strToU8("x") },
+      { "zip-skill/big.bin": 6 * 1024 * 1024 },
+    );
+    expect((await owner.post(url, { dataBase64: perFile })).status).toBe(400);
+    // Six entries, each declaring less than the 5MB per-file cap and together more than 20MB.
+    const parts: Record<string, Uint8Array> = { "zip-skill/SKILL.md": strToU8(ZIP_SKILL_MD) };
+    const declared: Record<string, number> = {};
+    for (let i = 0; i < 6; i++) {
+      parts[`zip-skill/part${i}.bin`] = strToU8("x");
+      declared[`zip-skill/part${i}.bin`] = 4 * 1024 * 1024;
+    }
+    expect((await owner.post(url, { dataBase64: zipB64Declaring(parts, declared) })).status).toBe(
+      400,
+    );
+    const list = (await (
+      await owner.get(base("zip_declared_agent"))
+    ).json()) as AgentSkillsResponse;
+    expect(list.skills).toEqual([]);
+  });
+
   it("archive: already installed is 409 skill_exists; overwrite replaces the directory (stale files removed)", async () => {
     await createPlainAgent("zip_over_agent");
     const url = `${base("zip_over_agent")}/archive`;
@@ -499,7 +569,7 @@ describe("skills api", () => {
     expect(err.error.message).toMatch(/: zip-skill$/);
 
     // overwrite: true replaces the whole directory: old.txt is gone, new.txt appears.
-    const updatedMd = ZIP_SKILL_MD.replace("version: 2026-08-01.2", "version: 2026-08-01.3");
+    const updatedMd = ZIP_SKILL_MD.replace("version: 2026.08.01.2", "version: 2026.08.01.3");
     const res = await member.post(url, {
       dataBase64: zipB64({
         "zip-skill/SKILL.md": strToU8(updatedMd),
@@ -509,7 +579,7 @@ describe("skills api", () => {
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as AgentSkillsResponse;
-    expect(body.skills.find((s) => s.name === "zip-skill")!.version).toBe("2026-08-01.3");
+    expect(body.skills.find((s) => s.name === "zip-skill")!.version).toBe("2026.08.01.3");
     const dir = path.join(skillsDir(t.root, projectId, "zip_over_agent"), "zip-skill");
     expect(await fs.readFile(path.join(dir, "SKILL.md"), "utf8")).toBe(updatedMd);
     expect(await fs.readFile(path.join(dir, "new.txt"), "utf8")).toBe("new\n");
@@ -533,7 +603,7 @@ describe("skills api", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/zip");
     expect(res.headers.get("content-disposition")).toBe(
-      "attachment; filename*=UTF-8''zip-skill-v2026-08-01.2.zip",
+      "attachment; filename*=UTF-8''zip-skill-v2026.08.01.2.zip",
     );
     const entries = unzipSync(new Uint8Array(await res.arrayBuffer()));
     // Single-top-dir layout with every installed file, byte-identical to the upload — the
@@ -592,7 +662,7 @@ describe("skills api", () => {
 
       // Age one installed copy: the library now carries a higher version than the disk does.
       // The update is reported once, by PLUGIN, however many of its skills lag.
-      await setInstalledVersion("bare_updates", "penguin-sdk", "2000-01-01.1");
+      await setInstalledVersion("bare_updates", "penguin-sdk", "2000.01.01.1");
       const behind = (await listAgents()).find((a) => a.agentId === "bare_updates")!;
       expect(behind.pluginUpdates).toEqual([
         { name: "agent-development", version: librarySkill("penguin-sdk")!.plugin.version },
@@ -604,6 +674,22 @@ describe("skills api", () => {
       expect((await listAgents()).find((a) => a.agentId === "bare_updates")!.pluginUpdates).toEqual(
         [],
       );
+    });
+
+    it("reads a copy installed under the legacy version spelling as the same version", async () => {
+      await createPlainAgent("legacy_updates");
+      expect(
+        (await owner.post(plugins("legacy_updates"), { names: ["agent-development"] })).status,
+      ).toBe(201);
+      // The library's own version as it was spelled before the rename: same date, same sequence
+      // number, so the installed copy is current and nothing is reported behind.
+      const legacy = librarySkill("penguin-sdk")!.plugin.version.replace(
+        /^(\d{4})\.(\d{2})\.(\d{2})\./,
+        "$1-$2-$3.",
+      );
+      await setInstalledVersion("legacy_updates", "penguin-sdk", legacy);
+      const agent = (await listAgents()).find((a) => a.agentId === "legacy_updates")!;
+      expect(agent.pluginUpdates).toEqual([]);
     });
 
     it("never lists a Skill the library does not carry, however old it looks", async () => {

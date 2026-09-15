@@ -42,6 +42,14 @@ describe("HelpFold", () => {
     expect(html).not.toContain("rotate-90");
   });
 
+  it("indents the body under the label, unless the caller asks for a flush block", () => {
+    // A block with its own left edge — a code box — has to line up with what sits above it, so
+    // the chevron's indent is dropped; a run of prose keeps it.
+    expect(html).toContain("pl-4.5");
+    const flush = renderToStaticMarkup(createElement(HelpFold, { flush: true, children: DESC }));
+    expect(flush).not.toContain("pl-4.5");
+  });
+
   it("folds the subject into the accessible name, keeping the visible text a prefix of it", () => {
     // WCAG "label in name": a voice-control user must be able to say what they can see.
     const named = renderToStaticMarkup(createElement(HelpFold, { label: "Vault", children: DESC }));

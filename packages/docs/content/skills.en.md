@@ -21,12 +21,12 @@ plugins/<plugin>/
 | --- | --- |
 | `description` / `description_zh` | One-line description (English required) |
 | `short_description` / `short_description_zh` | Card labels (optional; the full description stands in) |
-| `version` | `YYYY-MM-DD.N` — the date plus a sequence number for that day |
+| `version` | `YYYY.MM.DD.N` — the date plus a sequence number for that day |
 | `category` | One of `office-productivity`, `software-development`, `ai-app-development`; missing or unknown lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set — install it manually from the library |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds |
 
-The plugin name is its directory name (`^[A-Za-z0-9_-]+$`); a plugin built around someone else's product carries a `use-` prefix (`use-firecrawl`), so the name says what it is for rather than claiming the product. Versions are compared by date, then by sequence number, so `2026-08-29.10` follows `2026-08-29.9`; the manifest's version is the version of everything the plugin ships. There is no other version scheme.
+The plugin name is its directory name (`^[A-Za-z0-9_-]+$`); a plugin built around someone else's product carries a `use-` prefix (`use-firecrawl`), so the name says what it is for rather than claiming the product. Versions are compared by date, then by sequence number, so `2026.08.29.10` follows `2026.08.29.9`; the manifest's version is the version of everything the plugin ships, and is distinct from the package's npm version (which follows the release). There is no other version scheme.
 
 Every plugin is its own npm package — `@penguinharness/<name>`, `plugins/<name>/` in the repo. The loader lives in `@prismshadow/penguin-core`: it reads the plugin names off the host package's dependency list and resolves each package through Node (the desktop app declares the same packages as dependencies, which its installer packs). At runtime the plugin files are the source of truth for library content, read on every call.
 
@@ -52,7 +52,7 @@ description: One-line English description injected into the system prompt.
 Concrete steps, boundaries and acceptance criteria...
 ```
 
-The **installed** copy is self-describing: at load time the library regenerates each skill's frontmatter with the plugin's `short_description`, `short_description_zh` and `version` stamped in (the way an installed hook package's `hooks.json` is generated from the manifest), and that is what gets written into `agent_state/skills/`. Update checks read the installed frontmatter's `version`; the UI reads its short descriptions. Parsing is tolerant: only `key: value` scalar lines inside the first `---` block are recognized, and a `version` that is not `YYYY-MM-DD.N` reads as empty — older than any library version, so the library's copy counts as an update.
+The **installed** copy is self-describing: at load time the library regenerates each skill's frontmatter with the plugin's `short_description`, `short_description_zh` and `version` stamped in (the way an installed hook package's `hooks.json` is generated from the manifest), and that is what gets written into `agent_state/skills/`. Update checks read the installed frontmatter's `version`; the UI reads its short descriptions. Parsing is tolerant: only `key: value` scalar lines inside the first `---` block are recognized, and a `version` that is neither `YYYY.MM.DD.N` nor the legacy `YYYY-MM-DD.N` an older installed copy carries reads as empty — older than any library version, so the library's copy counts as an update.
 
 ## Progressive loading
 
@@ -71,14 +71,14 @@ A hook package is the plugin's `hooks/` directory installed as `agent_state/hook
   "name": "goal",
   "description": "Goal mode: …",
   "description_zh": "目标模式：…",
-  "version": "2026-09-01.1",
+  "version": "2026.09.01.1",
   "stop": [{ "command": "stop.mjs", "timeout": 60 }],
   "pre_tool_use": [],
   "user_prompt": [{ "command": "start.mjs", "timeout": 60 }]
 }
 ```
 
-Installed is active: every top-level Session of the Agent consults its installed hook packages at the loop's hook points (a Session already running keeps the set it was built with; the server rebuilds an Agent's cached runtimes on the next idle access after a hook package is installed or removed). The scripts are plain Node with builtins only — they run wherever the harness runs, as subprocesses with JSON on stdin and a JSON answer on stdout; the contract is on [The Agent Loop](/agent-loop#stop-hooks). A hook package's other scripts are the host's to call by convention: the goal plugin's `start.mjs` is what the server runs when a user starts a goal ([Goal Mode](/goal-mode)).
+Installed is active: every top-level Session of the Agent consults its installed hook packages at the loop's hook points (a Session already running keeps the set it was built with; the server rebuilds an Agent's cached runtimes on the next idle access after a hook package is installed or removed, or after the switch below is flipped). Hooks are switched as a whole, not one package at a time: `hooks.enabled` in `system_config.yaml` (absent means on) is flipped by the Hooks tab's switch (Project owner only), and with it off a Session created from then on assembles no hooks at all while every package stays on disk. The same tab exports an installed package as a zip and imports one back — `hooks.json` and the scripts at the zip root, or in exactly one top-level directory; every command the manifest lists must name a file inside the archive — or hands the import to an agent, which reads the source and reviews the scripts before installing. The scripts are plain Node with builtins only — they run wherever the harness runs, as subprocesses with JSON on stdin and a JSON answer on stdout; the contract is on [The Agent Loop](/agent-loop#stop-hooks). A hook package's other scripts are the host's to call by convention: the goal plugin's `start.mjs` is what the server runs when a user starts a goal ([Goal Mode](/goal-mode)).
 
 ## Installation and storage
 

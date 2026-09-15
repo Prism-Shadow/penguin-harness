@@ -131,6 +131,40 @@ export function hiddenRowCount({
 }
 
 /**
+ * The display window of one sidebar list — a group's active rows, or one of its
+ * collapsed folders; both obey the same rule and both read it from here. The list shows
+ * `SIDEBAR_PAGE_SIZE` rows, every "more" click reveals one page more, and a "show less"
+ * stands beside the reveal row (not after it) from the moment the list is revealed past
+ * its first page, folding it back to exactly that page. Rows beyond the cap stay in
+ * memory — a fetch that returned far more than a page (a time-mode folder fans out over
+ * every contributing Agent) is revealed a page at a time instead of all at once.
+ *
+ * `cap` is the list's current display cap, `loaded` the rows in memory, `total` its
+ * exact server share and `fullyLoaded` whether every Agent that could hold one of its
+ * rows is fetched out (see hiddenRowCount for why that last one decides the count).
+ * "Show less" needs both a raised cap and more loaded rows than a page — otherwise there
+ * is nothing for it to fold away.
+ */
+export function revealPlan({
+  cap,
+  loaded,
+  total,
+  fullyLoaded,
+}: {
+  cap: number;
+  loaded: number;
+  total: number;
+  fullyLoaded: boolean;
+}): { shown: number; hidden: number; canCollapse: boolean } {
+  const shown = Math.min(Math.max(cap, 0), loaded);
+  return {
+    shown,
+    hidden: hiddenRowCount({ shown, loaded, total, fullyLoaded }),
+    canCollapse: cap > SIDEBAR_PAGE_SIZE && loaded > SIDEBAR_PAGE_SIZE,
+  };
+}
+
+/**
  * Applies the limit+1 fetch trick: `fetched` came from a request with `limit = pageSize + 1`;
  * the visible page is the first `pageSize` items, and an overflow item (never shown) proves
  * the server has more.
@@ -229,12 +263,13 @@ export function aggregateWorkspaceCounts(
 
 /**
  * The Session the UI opens as "the last conversation" (the chat home's auto-select and
- * the collapsed rail's entry): the newest loaded row that is a conversation of the
- * user's own. Archived rows are hidden by choice and a subagent Session is a child of
- * some other conversation, so neither is ever auto-opened; schedule-created runs are
- * the user's conversations and qualify. Newest by createdAt (uniform ISO-8601 UTC, so
- * string comparison is chronological), ties broken by sessionId — the list's ordering
- * convention. Input order doesn't matter.
+ * the collapsed rail's entry): the loaded row the user was last IN — not the one created
+ * last, which on a revisited conversation is a different row. Archived rows are hidden by
+ * choice and a subagent Session is a child of some other conversation, so neither is ever
+ * auto-opened; schedule-created runs are the user's conversations and qualify. Newest by
+ * lastActiveAt (stamped from `Date#toISOString`, so uniform ISO-8601 UTC like createdAt and
+ * comparable as a string), ties broken by sessionId — the list's ordering convention. Input
+ * order doesn't matter.
  */
 export function latestConversation(sessions: readonly SessionInfo[]): SessionInfo | null {
   let best: SessionInfo | null = null;
@@ -243,13 +278,33 @@ export function latestConversation(sessions: readonly SessionInfo[]): SessionInf
     if (category !== "active" && category !== "schedule") continue;
     if (
       !best ||
-      s.createdAt > best.createdAt ||
-      (s.createdAt === best.createdAt && s.sessionId > best.sessionId)
+      s.lastActiveAt > best.lastActiveAt ||
+      (s.lastActiveAt === best.lastActiveAt && s.sessionId > best.sessionId)
     ) {
       best = s;
     }
   }
   return best;
+}
+
+/**
+ * Folds the per-Agent per-Workspace-path newest-Session stamps
+ * (SessionsResponse.workspaceLatest) into workspace-mode group keys: the newest across
+ * Agents, and across every temporary path for the merged temp group. createdAt is uniform
+ * ISO-8601 UTC, so the string maximum is the chronological one.
+ */
+export function aggregateWorkspaceLatest(
+  byAgent: ReadonlyMap<string, Readonly<Record<string, string>>>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const byWorkspace of byAgent.values()) {
+    for (const [workspace, createdAt] of Object.entries(byWorkspace)) {
+      const key = workspaceGroupKey(workspace);
+      const cur = out.get(key);
+      if (cur === undefined || createdAt > cur) out.set(key, createdAt);
+    }
+  }
+  return out;
 }
 
 export interface WorkspaceGroup<T = SessionInfo> {
@@ -304,6 +359,56 @@ export function groupSessionsByWorkspace<T extends { workspace: string; createdA
     return byCreatedDesc(a.sessions[0]?.createdAt ?? "", b.sessions[0]?.createdAt ?? "");
   });
   return groups;
+}
+
+/**
+ * Completes the session-derived grouping with every Workspace the server's counts know:
+ * a group the loaded pages touched no row of is added EMPTY (its rows page in down its own
+ * stream once it is on screen), and the named groups are re-sorted by recency — the newer
+ * of the group's newest loaded row and the server's `latest` stamp — with the merged temp
+ * group last, the order groupSessionsByWorkspace gives. Without this the group list was
+ * only as complete as each Agent's first page: a Workspace whose newest conversation was
+ * older than an Agent's ten newest never formed a group at all, which with dozens of
+ * Workspaces holding hundreds of conversations each is most of them.
+ *
+ * A counted key with no rows left in any category (its last conversation was deleted
+ * since the counts were taken) forms no group; a key already grouped keeps its loaded rows.
+ */
+export function completeWorkspaceGroups<T extends { createdAt: string }>(
+  groups: readonly WorkspaceGroup<T>[],
+  counts: ReadonlyMap<string, GroupCounts>,
+  latest: ReadonlyMap<string, string>,
+): WorkspaceGroup<T>[] {
+  const out = [...groups];
+  const existing = new Set(groups.map((g) => g.key));
+  for (const [key, { totals }] of counts) {
+    if (existing.has(key)) continue;
+    if (!ALL_CATEGORIES.some((category) => totals[category] > 0)) continue;
+    existing.add(key);
+    const temp = key === TEMP_WORKSPACE_GROUP_KEY;
+    out.push({
+      key,
+      label: temp ? "" : workspaceLabel(key),
+      fullPath: temp ? null : key,
+      temp,
+      sessions: [],
+    });
+  }
+  // A group's newest loaded row (groupSessionsByWorkspace sorts members newest first) or
+  // the server's stamp, whichever is newer: a row added locally since the counts were
+  // taken counts, and so does a stamp for rows not loaded.
+  const recency = (g: WorkspaceGroup<T>): string => {
+    const loaded = g.sessions[0]?.createdAt ?? "";
+    const stamped = latest.get(g.key) ?? "";
+    return loaded > stamped ? loaded : stamped;
+  };
+  out.sort((a, b) => {
+    if (a.temp !== b.temp) return a.temp ? 1 : -1;
+    const ra = recency(a);
+    const rb = recency(b);
+    return ra < rb ? 1 : ra > rb ? -1 : 0;
+  });
+  return out;
 }
 
 /**

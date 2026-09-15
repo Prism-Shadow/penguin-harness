@@ -38,6 +38,10 @@
 #   to immutable releases/<tag>/ keys in Alibaba Cloud OSS through GitHub OIDC. The GitHub Environment
 #   `oss-production` supplies the provider/role ARNs and OSS settings. latest.json is uploaded last and only
 #   when the tag is still GitHub's current latest Release. Manual retries also work after a Release exists.
+# - docker: build and push the official image (Docker Hub hiyouga/penguinharness, linux/amd64 +
+#   linux/arm64) from the tag's own source, independently of npm. The build/publish steps live in
+#   docker.yml, which the same PR-time smoke job exercises and which also publishes `latest` from
+#   every push to main; this workflow only decides when the release tags are published.
 name: Release
 
 on:
@@ -135,7 +139,8 @@ jobs:
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           V="${TAG#v}"
           printf '%s\n' "$TAG" | grep -Eq '^v[0-9A-Za-z][0-9A-Za-z._-]*$'
-          # Guard: release prep must bump the repo to the tag's version (root + packages/*/package.json
+          # Guard: release prep must bump the repo to the tag's version (root + every workspace
+          # package.json — packages/* and plugins/* —
           # and core's VERSION constant move together in the release: X.Y.Z PR). v0.2.1 was tagged with
           # a 0.2.0 repo, so every dev/source build nagged about updates until the repo caught up —
           # fail the tag push instead. Manual dispatch (EVENT_NAME unset in replays) only warns,
@@ -144,7 +149,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json + plugins/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + every workspace package.json (packages/*, plugins/*) and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
@@ -562,7 +567,7 @@ jobs:
           if [ -f package.json ]; then
             PKG_V="$(node -p 'require("./package.json").version')"
             if [ "$PKG_V" != "$V" ]; then
-              MSG="tag $TAG does not match the repo version $PKG_V; bump root + packages/*/package.json + plugins/*/package.json and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
+              MSG="tag $TAG does not match the repo version $PKG_V; bump root + every workspace package.json (packages/*, plugins/*) and core VERSION during release prep, then re-tag (see .github/CONTRIBUTING.md)."
               if [ "${EVENT_NAME:-}" = "push" ]; then
                 echo "error: $MSG" >&2
                 exit 1
@@ -645,3 +650,20 @@ jobs:
             fi
             pnpm --filter "$name" publish --access public --no-git-checks
           done
+
+  # The image is built from the tag's source and installs nothing from npm, so this no longer waits
+  # for publish-npm. It is gated like mirror-oss, because a dispatch of an already-released tag must
+  # still be able to (re)publish the image: `release` skipped is as good as `release` succeeded.
+  docker:
+    name: Publish the official Docker image
+    needs: [check-release, release]
+    if: >-
+      ${{ always() && needs.check-release.result == 'success' &&
+          (needs.release.result == 'success' || needs.release.result == 'skipped') }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/docker.yml
+    with:
+      tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      push: true
+    secrets: inherit

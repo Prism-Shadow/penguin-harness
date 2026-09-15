@@ -10,6 +10,13 @@
 # this workflow with require_macos_signing=true. Windows release installers are signed
 # with EVSign when release.yml calls this workflow with require_windows_signing=true.
 # Standalone dry-runs can still build unsigned artifacts when signing secrets are absent.
+#
+# A push to a `release/**` branch runs the same signed matrix on its own: signing depends on
+# the hosted runner image as much as on this repository, and CI never exercises it, so a
+# release branch proves its installers before the tag is cut. (0.2.10 was tagged on a green
+# CI and lost its macOS installers to a keychain change in the runner image two days old;
+# the code shipped again as 0.2.11.) Signing is required on that path, as it is for a
+# release, and the version stamp stays at the dev version — the tag's own run stamps it.
 name: Desktop packages
 
 on:
@@ -43,6 +50,8 @@ on:
     # values: exactly the v0.2.2 release failure ("Missing macOS signing secrets"
     # with all six configured). release.yml still passes `secrets: inherit` so
     # repo-level secrets, if any, also remain visible.
+  push:
+    branches: ["release/**"]
   workflow_dispatch:
     inputs:
       ref:
@@ -67,6 +76,11 @@ on:
         default: false
 
 env:
+  # Whether signing is required, decided once for every event: release.yml and a dispatch
+  # say so through the inputs, a push to a release branch always requires it. Steps read
+  # these instead of `inputs.*`, which is empty on a push.
+  REQUIRE_MACOS_SIGNING: ${{ (github.event_name == 'push' || inputs.require_macos_signing) && 'true' || 'false' }}
+  REQUIRE_WINDOWS_SIGNING: ${{ (github.event_name == 'push' || inputs.require_windows_signing) && 'true' || 'false' }}
   # Keep in sync with release.yml (its header comment is the source of truth; duplicated
   # here because reusable workflows do not inherit the caller's env).
   MINGIT_VERSION: 2.55.0.3
@@ -156,7 +170,6 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         env:
-          REQUIRE_MACOS_SIGNING: ${{ inputs.require_macos_signing && 'true' || 'false' }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
@@ -218,7 +231,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          REQUIRE_WINDOWS_SIGNING: ${{ inputs.require_windows_signing && 'true' || 'false' }}
           EVSIGN_KEY: ${{ secrets.EVSIGN_KEY }}
         run: |
           $ErrorActionPreference = "Stop"
@@ -278,15 +290,13 @@ jobs:
 
       - name: Build packages
         env:
-          EVSIGN_REQUIRE: ${{ runner.os == 'Windows' && inputs.require_windows_signing && 'true' || 'false' }}
+          EVSIGN_REQUIRE: ${{ runner.os == 'Windows' && env.REQUIRE_WINDOWS_SIGNING == 'true' && 'true' || 'false' }}
           EVSIGN_KEY: ${{ runner.os == 'Windows' && secrets.EVSIGN_KEY || '' }}
-        run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }} --publish never ${{ runner.os == 'macOS' && inputs.require_macos_signing && '-c.mac.forceCodeSigning=true' || '' }}
+        run: pnpm --dir packages/desktop exec electron-builder ${{ matrix.args }} --publish never ${{ runner.os == 'macOS' && env.REQUIRE_MACOS_SIGNING == 'true' && '-c.mac.forceCodeSigning=true' || '' }}
 
       - name: Verify Windows signing and update metadata
         if: runner.os == 'Windows'
         shell: pwsh
-        env:
-          REQUIRE_WINDOWS_SIGNING: ${{ inputs.require_windows_signing && 'true' || 'false' }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -415,7 +425,7 @@ jobs:
           exit 0
 
       - name: Notarize and staple macOS DMGs
-        if: runner.os == 'macOS' && inputs.require_macos_signing
+        if: runner.os == 'macOS' && env.REQUIRE_MACOS_SIGNING == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -444,7 +454,7 @@ jobs:
           done
 
       - name: Clean macOS update metadata
-        if: runner.os == 'macOS' && inputs.require_macos_signing
+        if: runner.os == 'macOS' && env.REQUIRE_MACOS_SIGNING == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -515,7 +525,7 @@ jobs:
           NODE
 
       - name: Verify macOS signing and notarization
-        if: runner.os == 'macOS' && inputs.require_macos_signing
+        if: runner.os == 'macOS' && env.REQUIRE_MACOS_SIGNING == 'true'
         shell: bash
         run: |
           set -euo pipefail

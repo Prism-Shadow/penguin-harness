@@ -32,6 +32,7 @@ import {
   mcpConnectBegin,
   mcpConnectEnd,
   partialText,
+  partialThinking,
   requestBegin,
   requestEnd,
   sessionMeta,
@@ -56,6 +57,7 @@ import type {
   GenerativeModelParameters,
   LLMInterface,
   LLMOutcome,
+  ThinkingLevelName,
 } from "../src/interfaces/index.js";
 import { ContextEngine, SUMMARY_RETRY_GUIDANCE } from "../src/engine/context-engine.js";
 import { Session } from "../src/session.js";
@@ -76,6 +78,8 @@ interface ScriptedResponse {
 /** Fake LLM that responds according to a script, recording each input it receives. */
 class ScriptedLLM implements LLMInterface {
   calls: OmniMessage[][] = [];
+  /** The per-request thinking level of each call, in the same order as `calls`. */
+  levels: (ThinkingLevelName | undefined)[] = [];
   constructor(
     private readonly responses: ScriptedResponse[],
     readonly label = "llm",
@@ -85,6 +89,7 @@ class ScriptedLLM implements LLMInterface {
     params: GenerativeModelParameters,
   ): AsyncGenerator<OmniMessage, LLMOutcome> {
     this.calls.push(params.newMessages);
+    this.levels.push(params.thinkingLevel);
     const next = this.responses.shift();
     if (!next) {
       return { status: "retryable", errorMessage: `${this.label}: no scripted response` };
@@ -276,6 +281,33 @@ describe("context compaction", () => {
         ((m.payload as { text?: string }).text ?? "").startsWith("[context_summary]"),
       ),
     ).toBe(true);
+  });
+
+  it("carries no thinking level when the Session has no pin, on a turn or a compaction", async () => {
+    // The pinned half of the rule is engine.test.ts's "applies setThinkingLevel to every
+    // request of the Session". This is the other half: with no pin the request says nothing at
+    // all and the LLM object's construction default — the level the context was opened with —
+    // stands. The engine must not start inventing one for either kind of request.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]the distilled summary[/summary]"), usage(160, 310)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM([{ messages: [assistantText("answer two"), usage(20, 330)] }]);
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace: new Writer({ tracesDir: traces, sessionId: "sess_compact_nolevel" }),
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openNextContext: () => ({ llm: llm2 }),
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    expect(llm1.levels).toEqual([undefined, undefined]);
   });
 
   it("the rotated Trace file opens with the meta the new context was opened with, and a later context without one keeps it", async () => {
@@ -524,6 +556,71 @@ describe("context compaction", () => {
       ),
     ).toBe(true);
     expect(llm2.calls).toHaveLength(1);
+  });
+
+  it("a live threshold lowered on disk compacts at the next checkpoint, with no rotation in between", async () => {
+    // Compaction configuration is live tier: the engine asks `readCompaction` at every
+    // checkpoint, so lowering the threshold under a running conversation takes effect on its
+    // next request instead of waiting for a context to rotate.
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("answer two"), usage(150, 300)] },
+        { messages: [assistantText("[summary]lowered[/summary]"), usage(10, 310)] },
+      ],
+      "llm1",
+    );
+    const llm2 = new ScriptedLLM([], "llm2");
+    let threshold = 1000;
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings({ maxContextLength: threshold }),
+      readCompaction: () => settings({ maxContextLength: threshold }),
+      openNextContext: () => ({ llm: llm2 }),
+    });
+
+    // 150 tokens against a 1000-token threshold: nothing fires, and the context stays open.
+    const out1 = await collect(engine.run([userText("task one")], { approve: allowAll }));
+    expect(compactionEvents(out1)).toEqual([]);
+
+    threshold = 100;
+    const out2 = await collect(engine.run([userText("task two")], { approve: allowAll }));
+    const events = compactionEvents(out2);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ type: "compaction_begin", reason: "context" });
+    expect(events[1]).toMatchObject({ type: "compaction_end", status: "completed" });
+    // Turn one, turn two, then the compaction request — all on the SAME context: the lowered
+    // threshold was picked up without an opener ever running before it.
+    expect(llm1.calls).toHaveLength(3);
+  });
+
+  it("a readCompaction that throws leaves the settings already in force", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        { messages: [assistantText("[summary]kept[/summary]"), usage(10, 160)] },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      compaction: settings(),
+      readCompaction: () => {
+        throw new Error("config unreadable");
+      },
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+    // The failed read neither ends the run nor changes the threshold: 150 still reaches the
+    // static 100, and the static prompt is still what the compaction request carries.
+    expect(compactionEvents(out)).toMatchObject([
+      { type: "compaction_begin", reason: "context" },
+      { type: "compaction_end", status: "completed" },
+    ]);
+    expect(llm1.calls[1]!.map(textOf).join("\n")).toContain("COMPACT NOW");
   });
 
   it("summarize mid-task: tool outputs pair into the compaction request, summary alone feeds the new LLM", async () => {
@@ -2084,6 +2181,97 @@ describe("compaction summary streaming (issue #290)", () => {
     const begin = types.indexOf("compaction_begin");
     const end = types.indexOf("compaction_end");
     expect(streamedTexts(out.slice(begin + 1, end))).toEqual(["[summary]whole[/summary]"]);
+  });
+
+  /** The thinking messages the compaction span pushed to the stream, in order. */
+  const streamedThinking = (msgs: OmniMessage[]): string[] =>
+    msgs
+      .filter((m) => {
+        const t = (m.payload as { type?: string }).type;
+        return t === "partial_thinking" || t === "thinking";
+      })
+      .map((m) => (m.payload as { thinking?: string }).thinking ?? "");
+
+  it("streams the request's partial_thinking ahead of the summary the same way; the complete thinking stays off the stream", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        {
+          messages: [
+            partialThinking("start"),
+            partialThinking("delta", "what matters is "),
+            partialThinking("delta", "the plan"),
+            partialThinking("stop"),
+            thinkingMessage("what matters is the plan"),
+            partialText("start"),
+            partialText("delta", "[summary]the plan[/summary]"),
+            partialText("stop"),
+            assistantText("[summary]the plan[/summary]"),
+            usage(160, 310),
+          ],
+        },
+      ],
+      "llm1",
+    );
+    const trace = new Writer({ tracesDir: traces, sessionId: "sess_stream_thinking" });
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      trace,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+    const oldPath = trace.currentPath();
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+
+    const types = payloadTypes(out);
+    const begin = types.indexOf("compaction_begin");
+    const end = types.indexOf("compaction_end");
+    const span = out.slice(begin + 1, end);
+    const spanTypes = payloadTypes(span);
+    // Every phase of the thinking fragment rides the stream, in front of the summary's own
+    // fragments, and the complete thinking that follows does not re-emit.
+    expect(spanTypes.filter((t) => t === "partial_thinking")).toHaveLength(4);
+    expect(spanTypes).not.toContain("thinking");
+    expect(spanTypes.indexOf("partial_thinking")).toBeLessThan(spanTypes.indexOf("partial_text"));
+    expect(streamedThinking(span)).toEqual(["", "what matters is ", "the plan", ""]);
+    expect(streamedTexts(span)).toEqual(["", "[summary]the plan[/summary]", ""]);
+    // The old Trace records the complete thinking as before; partials never persist.
+    const recorded = await readTrace(oldPath);
+    expect(streamedThinking(recorded)).toContain("what matters is the plan");
+    expect(payloadTypes(recorded)).not.toContain("partial_thinking");
+  });
+
+  it("an LLM that yields only complete thinking streams that thinking instead; a blank fidelity-only thinking stays off the stream", async () => {
+    const llm1 = new ScriptedLLM(
+      [
+        { messages: [assistantText("answer one"), usage(150, 150)] },
+        {
+          messages: [
+            thinkingMessage("whole thought"),
+            thinkingMessage("", "completed", { signature: "opaque" }),
+            assistantText("[summary]whole[/summary]"),
+            usage(160, 310),
+          ],
+        },
+      ],
+      "llm1",
+    );
+    const engine = new ContextEngine({
+      llm: llm1,
+      environment: fakeEnvironment,
+      sessionMeta: metaMessage,
+      compaction: settings(),
+      openNextContext: () => ({ llm: new ScriptedLLM([], "llm2") }),
+    });
+
+    const out = await collect(engine.run([userText("task one")], { approve: allowAll }));
+    const types = payloadTypes(out);
+    const begin = types.indexOf("compaction_begin");
+    const end = types.indexOf("compaction_end");
+    expect(streamedThinking(out.slice(begin + 1, end))).toEqual(["whole thought"]);
   });
 });
 

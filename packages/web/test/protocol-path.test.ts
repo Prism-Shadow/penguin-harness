@@ -34,9 +34,10 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("moonshot", "")).toBe("/chat/completions");
   });
 
-  it("gateway groups always carry client_type openai-chat and get /chat/completions", () => {
+  it("the gateway groups that pin openai-chat get /chat/completions", () => {
+    // OpenRouter is the one gateway missing here: it pins openai-responses on every row, and
+    // the Responses case below covers it.
     for (const provider of [
-      "openrouter",
       "fireworks",
       "siliconflow",
       "tokendance",
@@ -55,6 +56,14 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("myproxy", "")).toBe("/chat/completions");
   });
 
+  it("openai-chat-vllm-adapter is chat completions, whatever the model id looks like", () => {
+    // It contains "openai" and reaches the same branch, which is the right answer: the vLLM
+    // client subclasses openai-chat and POSTs the same path. The DeepSeek id is the one that
+    // would go wrong if the group implied the path — the vendor's own client uses /responses.
+    expect(protocolPathForModel("vllm", "openai-chat-vllm-adapter")).toBe("/chat/completions");
+    expect(protocolPathForModel("custom", "openai-chat-vllm-adapter")).toBe("/chat/completions");
+  });
+
   it("an explicit openai-chat client type wins over vendor-group membership", () => {
     expect(protocolPathForModel("anthropic", "openai-chat")).toBe("/chat/completions");
     expect(protocolPathForModel("google", "openai-chat")).toBe("/chat/completions");
@@ -70,8 +79,8 @@ describe("protocolPathForModel", () => {
     expect(protocolPathForModel("custom", "ant-messages")).toBe("/v1/messages");
     expect(protocolPathForModel("deepseek", "openai-responses")).toBe("/responses");
     expect(protocolPathForModel("myproxy", " Ant-Messages ")).toBe("/v1/messages");
-    // The built-in OpenRouter openai/* presets pin openai-responses, so the gateway's base
-    // URL must be hinted with /responses rather than the group's usual /chat/completions.
+    // Every built-in OpenRouter preset pins openai-responses, so the gateway's base URL is
+    // hinted with /responses rather than the /chat/completions the other gateways get.
     expect(protocolPathForModel("openrouter", "openai-responses")).toBe("/responses");
   });
 

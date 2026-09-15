@@ -211,7 +211,7 @@ test("minimap ticks + hover preview + jump, five-turn gate, sticky group header,
   const header = page.locator("[data-group-header]");
   await expect(header).toHaveCount(1);
   await header.click();
-  await page.locator("button[aria-expanded]").filter({ hasText: "exec_command" }).first().click();
+  await page.locator("button[aria-expanded]").filter({ hasText: "执行命令" }).first().click();
   await expect(page.getByText("line 40")).toBeVisible();
 
   // Scrolled into the middle of the tool output, the two sticky levels stack: the group

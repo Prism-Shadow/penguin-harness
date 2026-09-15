@@ -193,9 +193,9 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
       // (same source that Trace writes).
       const meta = session.metaMessage.payload as { provider: string; model_id: string };
       expect(meta.provider).toBe("deepseek");
-      expect(meta.model_id).toBe("deepseek-v4-flash-vision-exp");
+      expect(meta.model_id).toBe("deepseek-flash");
       expect(session.provider).toBe("deepseek");
-      expect(session.modelId).toBe("deepseek-v4-flash-vision-exp");
+      expect(session.modelId).toBe("deepseek-flash");
     } finally {
       session.dispose();
     }
@@ -253,7 +253,7 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
     const session = await agent.createSession({ workspaceDir: ws });
     try {
       expect(session.provider).toBe("deepseek");
-      expect(session.modelId).toBe("deepseek-v4-flash-vision-exp");
+      expect(session.modelId).toBe("deepseek-flash");
     } finally {
       session.dispose();
     }
@@ -733,7 +733,7 @@ describe("Agent.createSession fast mode (session requests only, never the meta o
   it("the entry's fast_mode reaches the session LLM and is withheld from the meta LLM", async () => {
     // The scoping decision the whole feature rests on: the premium tier is what the user is
     // waiting on, so it rides the session's own requests, while background one-shots (title
-    // generation here; the describe_image describer builds from the *vision* model's entry and
+    // generation here; read_file's vision describer builds from the *vision* model's entry and
     // so cannot inherit it at all) stay on the standard tier. Without this test the split is
     // asserted only by comments, and a refactor that hoists fastMode into a shared config
     // helper would start billing every session title at premium rates with all suites green.
@@ -843,7 +843,7 @@ describe("Agent.createSession skill metadata injection", () => {
     await installSkill(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID, {
       name: "demo-skill",
       content:
-        "---\nname: demo-skill\ndescription: Demo skill for tests.\nversion: 2026-07-16.1\n---\n\nSKILL_BODY_NOT_IN_PROMPT\n",
+        "---\nname: demo-skill\ndescription: Demo skill for tests.\nversion: 2026.07.16.1\n---\n\nSKILL_BODY_NOT_IN_PROMPT\n",
     });
     const agent = await createAgent();
     const ws = path.join(tmpRoot, "ws-skills");
@@ -917,6 +917,36 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       // The Agent object's copies are the load-time snapshot; no Session runs on them.
       expect(agent.state.agentsMd).not.toContain("EDITED AFTER LOAD");
       expect(agent.state.systemConfig.max_turns).not.toBe(7);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("the compaction section is re-read from disk on demand, so an edited threshold reaches a running Session", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-live-compaction");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      const readCompaction = (
+        session as unknown as {
+          engineDeps: {
+            readCompaction?: () => Promise<{ maxContextLength: number; mode: string }>;
+          };
+        }
+      ).engineDeps.readCompaction!;
+
+      await patchSystemConfig((cfg) => {
+        cfg.compaction = { ...(cfg.compaction ?? {}), max_context_length: 40000, mode: "discard" };
+      });
+      // No rotation, no new Session: the reader the engine calls at each checkpoint answers
+      // from the file as it is now.
+      expect(await readCompaction()).toMatchObject({ maxContextLength: 40000, mode: "discard" });
+
+      await patchSystemConfig((cfg) => {
+        cfg.compaction = { ...(cfg.compaction ?? {}), max_context_length: 199000 };
+      });
+      expect((await readCompaction()).maxContextLength).toBe(199000);
     } finally {
       session.dispose();
     }

@@ -257,6 +257,23 @@ export interface ContextEngineDeps {
   /** The first context's compaction settings; only takes effect if provided together with `openNextContext`. A context `openNextContext` opens may bring its own. */
   compaction?: CompactionSettings;
   /**
+   * Live compaction settings, re-read at every point the engine consults them for a decision:
+   * the post-request checkpoint (threshold and turn count), and the start of a compaction
+   * (mode and prompt). This is what takes compaction configuration out of the strict tier —
+   * an edit saved to the Agent's config reaches a running Session at its next checkpoint
+   * instead of waiting for a rotation.
+   *
+   * Refreshes an existing baseline; it never creates one. An embedder that supplies only
+   * `compaction` keeps today's fixed-per-context behaviour, and one that supplies neither has
+   * no compaction at all — so whether compaction is *configured* stays a constant of the
+   * Session, which is what `compactability()` may answer synchronously.
+   *
+   * The provider is expected to be cheap enough to call once per checkpoint (the Agent's caches
+   * by the config file's identity on disk). A read that throws leaves the previous settings in
+   * force and is logged once: a config file that briefly cannot be read must not end a run.
+   */
+  readCompaction?: () => CompactionSettings | Promise<CompactionSettings>;
+  /**
    * The first context's session_meta message: written at the start of each Trace file a
    * compaction's rotation opens, until an `openNextContext` result brings the meta of the context
    * it opened — from then on that one is written, so every file's head describes its own
@@ -308,30 +325,6 @@ export interface ContextEngineDeps {
 
 const isImageMessage = (m: OmniMessage): boolean =>
   (m.payload as { type?: string }).type === "image_url";
-
-/**
- * Simple non-cyclic hash for a string — used to compare tool-call argument JSON.
- * Not cryptographic; just needs to be stable and fast for short strings.
- */
-function simpleHash(str: string): string {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = (h * 31 + str.charCodeAt(i)) | 0;
-  }
-  return h.toString(36);
-}
-
-/**
- * Tool-call loop detection: when the model repeatedly issues identical tool calls across
- * turns, the ReAct loop runs forever (maxTurns defaults to -1). We track a rolling window
- * of per-turn "signatures" (sorted name+args digests). When the last REPEAT_WINDOW
- * signatures are identical AND match the one immediately before them, we fire a tool_loop
- * cutoff. A window of 3 means 3+1 = 4 consecutive identical turns triggers the cutoff —
- * enough to avoid false positives on legitimate retries but tight enough to stop a stuck
- * model within a few seconds.
- */
-const TOOL_LOOP_WINDOW = 8;
-const TOOL_LOOP_REPEAT_WINDOW = 3;
 
 /** Whether a message carries steering of its own — an image, or text that isn't blank. */
 const carriesSteering = (m: OmniMessage): boolean => {
@@ -455,7 +448,10 @@ export function reconnectDelayMs(base: number, max: number, attempt: number): nu
 export class ContextEngine {
   /** Per-context settings: the first context's from the deps, then whatever each opened context brings (see `startNewContext`). */
   private maxTurns: number;
+  /** Compaction settings in force. Baseline per context (deps, then each opened context), and re-read from `deps.readCompaction` at every checkpoint in between. */
   private compaction: CompactionSettings | undefined;
+  /** Whether a `readCompaction` failure has already been reported; one line per Session, not one per checkpoint. */
+  private compactionReadWarned = false;
   private readonly maxReconnects: number;
   private readonly maxTurnAttempts: number;
   private readonly reconnectBackoffMs: number;
@@ -485,10 +481,9 @@ export class ContextEngine {
   /**
    * The Session's current thinking level — the soft-limited runtime parameter as
    * engine-owned state: `setThinkingLevel` (fed by the `Session.thinkingLevel` setter) moves it
-   * mid-context, and every subsequent turn request carries it as the per-request override.
-   * Undefined = no pin: the LLM object's construction default (the context's opening base)
-   * applies. Compaction requests ignore it and keep the context's base — their prefix must
-   * stay byte-identical at the moment the context is largest.
+   * mid-context, and every subsequent request carries it as the per-request override — a
+   * turn and a compaction alike. Undefined = no pin: the LLM object's construction default
+   * (the context's opening base) applies.
    */
   private thinkingLevel?: ThinkingLevelName;
   /** Most recent token_usage's request.total, i.e. the current context usage figure. */
@@ -520,15 +515,6 @@ export class ContextEngine {
   private steeringQueue: OmniMessage[][] = [];
   /** Whether a `run` is currently in flight (gates `steer`; compaction does not count). */
   private taskRunning = false;
-  /**
-   * Recent tool-call signatures, keyed by tool-call id set. Used to detect when the model
-   * repeatedly issues the same tool calls across turns — the ReAct loop would otherwise run
-   * those identical calls forever (issue: maxTurns defaults to -1 = unlimited). On every turn
-   * that produces tool_calls, the signature (sorted name+args digests) is pushed here, capped
-   * at `TOOL_LOOP_WINDOW` entries. When the last `TOOL_LOOP_REPEAT_WINDOW` signatures are
-   * identical AND match the one before them, a tool_loop cutoff fires.
-   */
-  private toolCallSignatures: string[] = [];
 
   /** Whether a `run` is in flight (the Session's notice routing keys on this: a running task delivers notices at the next boundary; an idle one goes through the host). */
   get isTaskRunning(): boolean {
@@ -580,7 +566,7 @@ export class ContextEngine {
     }
   }
 
-  /** Moves the Session's thinking level mid-context (see the `thinkingLevel` field); applies from the next turn request. */
+  /** Moves the Session's thinking level mid-context (see the `thinkingLevel` field); applies from the next request, turn or compaction. */
   setThinkingLevel(level: ThinkingLevelName): void {
     this.thinkingLevel = level;
   }
@@ -889,6 +875,11 @@ export class ContextEngine {
       // applies mid-Task — when runTurn returns, all of this turn's
       // tool results are ready and paired with their tool_call.
       const midTask = turn.toolOutputs.length > 0;
+      // The checkpoint is where compaction configuration is consulted, so it is where it is
+      // re-read: the threshold and turn count `compactionTrigger` compares against, and the
+      // `mode` picked from the same settings immediately below, are the values on disk right
+      // now rather than the ones this context opened with.
+      await this.refreshCompaction();
       const compactionReason = this.compactionTrigger();
       if (compactionReason) {
         const mode = this.compaction!.mode;
@@ -984,20 +975,6 @@ export class ContextEngine {
       // No tool_call this turn and nothing injected -> the Task ends (the final reply has
       // already been streamed out). A compaction stash, if any, rides the next run.
       if (!midTask && injected.length === 0) return null;
-      // Tool-call loop detection: if the last few turns produced identical tool calls,
-      // the model is stuck — stop the run with a tool_loop cutoff.
-      const signature = this.computeSignature(turn.toolCalls);
-      this.toolCallSignatures.push(signature);
-      if (this.toolCallSignatures.length > TOOL_LOOP_WINDOW) {
-        this.toolCallSignatures.shift();
-      }
-      if (this.detectToolLoop()) {
-        yield* this.emitToolLoop(turn.toolCalls);
-        return {
-          kind: "tool_loop",
-          errorMessage: `tool loop detected: the same ${turn.toolCalls.length} tool calls repeated across consecutive turns`,
-        };
-      }
       // Anything a failed boundary compaction stashed (synthesized repair outputs from
       // rejected attempts) rides the very next request, ahead of the turn outputs so
       // tool_results stay contiguous and first.
@@ -1048,6 +1025,9 @@ export class ContextEngine {
   }
 
   async *compact(opts?: { signal?: AbortSignal }): AsyncGenerator<OmniMessage> {
+    // The manual entry into a compaction, and the second place the live settings decide
+    // something: the `mode` below, and the prompt summarizeContext reads from them.
+    await this.refreshCompaction();
     if (!this.compaction || !this.deps.openNextContext) return;
     // The current context has no completed LLM turns: nothing to compact, return immediately.
     // This also guards against two /compact calls in a row — the new context is empty right
@@ -1459,63 +1439,6 @@ export class ContextEngine {
     }
   }
 
-  /**
-   * Computes a stable signature for a turn's tool calls: sorted list of
-   * `name:argsDigest` pairs joined by `|`. Turns with identical tool calls
-   * (regardless of order) produce identical signatures.
-   */
-  private computeSignature(toolCalls: OmniMessage<ToolCallPayload>[]): string {
-    const parts = toolCalls.map((tc) => {
-      const name = tc.payload.name;
-      const args = tc.payload.arguments;
-      // Simple hash of args for comparison
-      const digest = typeof args === "string" ? simpleHash(args) : "null";
-      return `${name}:${digest}`;
-    });
-    parts.sort();
-    return parts.join("|");
-  }
-
-  /**
-   * Detects a tool-call loop: the last `TOOL_LOOP_REPEAT_WINDOW` signatures are
-   * identical AND match the one immediately before them (i.e., at least
-   * `TOOL_LOOP_REPEAT_WINDOW + 1` consecutive identical turns).
-   */
-  private detectToolLoop(): boolean {
-    const sigs = this.toolCallSignatures;
-    if (sigs.length < TOOL_LOOP_REPEAT_WINDOW + 1) return false;
-    const last = sigs[sigs.length - 1];
-    // Must match the one before the repeat window (the "anchor")
-    if (sigs[sigs.length - 1 - TOOL_LOOP_REPEAT_WINDOW] !== last) return false;
-    // All in the repeat window must match
-    for (let i = sigs.length - TOOL_LOOP_REPEAT_WINDOW; i < sigs.length; i++) {
-      if (sigs[i] !== last) return false;
-    }
-    // Don't flag empty signatures (no tool calls = not a loop)
-    if (last === "") return false;
-    return true;
-  }
-
-  /** Tool loop detected: emits a failed notice for CLI/frontend rendering. */
-  private async *emitToolLoop(
-    toolCalls: OmniMessage<ToolCallPayload>[],
-  ): AsyncGenerator<OmniMessage> {
-    const names = toolCalls.map((tc) => tc.payload.name).join(", ");
-    const text = `[tool loop detected: the same tool calls (${names}) repeated across consecutive turns — stopping]`;
-    const partials = [
-      partialText("start"),
-      partialText("delta", text),
-      partialText("stop", "", "fatal"),
-    ];
-    for (const partial of partials) {
-      yield partial;
-      await this.write(partial);
-    }
-    const note = assistantText(text, "fatal");
-    yield note;
-    await this.write(note);
-  }
-
   /** Max turns reached: emits a failed notice (streaming fragments + complete text) for CLI/frontend rendering. */
   private async *emitMaxTurns(): AsyncGenerator<OmniMessage> {
     // Reduce leading newlines: avoid stacking extra newlines before the text (comment #15).
@@ -1537,6 +1460,32 @@ export class ContextEngine {
   // -------------------------------------------------------------------------
   // Context compaction
   // -------------------------------------------------------------------------
+
+  /**
+   * Re-reads the live compaction settings, if the host supplies a provider. Called at every
+   * point the engine is about to decide something from them — the post-request checkpoint and
+   * the two entries into a compaction — so a threshold, turn count, mode or prompt edited on
+   * disk applies to the conversation that is running.
+   *
+   * Only refreshes an existing baseline: a Session with no `compaction` in its deps has no
+   * compaction capability, and a provider must not conjure one mid-run (see
+   * ContextEngineDeps.readCompaction). A read that throws keeps the settings already in force
+   * and warns once — the alternative, failing the run because a config file was momentarily
+   * unreadable, is worse than compacting at the previous threshold.
+   */
+  private async refreshCompaction(): Promise<void> {
+    if (!this.compaction || !this.deps.readCompaction) return;
+    try {
+      this.compaction = await this.deps.readCompaction();
+    } catch (e) {
+      if (this.compactionReadWarned) return;
+      this.compactionReadWarned = true;
+      const message = e instanceof Error ? e.message : String(e);
+      process.stderr.write(
+        `[penguin] compaction settings could not be re-read: ${message}; keeping the settings in force.\n`,
+      );
+    }
+  }
 
   /**
    * Checks the compaction threshold: triggers once context usage (the most recent
@@ -1602,9 +1551,10 @@ export class ContextEngine {
    * compaction request's raw messages are not pushed to the Human output stream, with two
    * exceptions between the paired compaction events: every attempt's `token_usage` (so the
    * frontend stats and the server's usage records count the compaction's true spend,
-   * rejected attempts included), and the summary text being generated, as ordinary
-   * `partial_text`/`text` messages (issue #290 — see runCompactionRequest); everything is
-   * written to the old Trace as before. Compaction succeeds only with a **valid summary** — non-empty extracted
+   * rejected attempts included), and the thinking and summary text being generated, as
+   * ordinary `partial_thinking`/`thinking` and `partial_text`/`text` messages (issue #290 —
+   * see runCompactionRequest); everything is written to the old Trace as before. Compaction
+   * succeeds only with a **valid summary** — non-empty extracted
    * text and no tool calls in the response. Everything short of that is one kind of failure,
    * handled exactly like an ordinary LLM request's (issue #170): an unusable committed
    * response (empty summary, or tool calls — answered with synthesized failed outputs and
@@ -1623,6 +1573,9 @@ export class ContextEngine {
     pendingToolOutputs: OmniMessage[],
     signal?: AbortSignal,
   ): AsyncGenerator<OmniMessage, CompactionResult> {
+    // Already refreshed: both entries into a compaction — the post-request checkpoint and
+    // `compact()` — re-read the live settings before choosing the mode that lands here, so the
+    // prompt below comes from the same read as that decision rather than a second one.
     const settings = this.compaction!;
     yield* this.emitCompactionBegin(reason, "summarize");
 
@@ -1824,11 +1777,12 @@ export class ContextEngine {
    * the moment the context is largest, issue #84). Consumes the old LLM object's streamed
    * output; raw model messages are **not pushed to the Human output stream** (`token_usage`
    * is captured and handed back via the return value for summarizeContext to yield), with
-   * one exception: the text being generated rides the stream as its own ordinary
-   * `partial_text`/`text` messages (issue #290) so the frontend can show the summary while
-   * it is written — readers already treat model messages between the paired compaction
-   * events as compaction-internal, and history rebuild reads the identical text back from
-   * the span's complete assistant messages. Complete
+   * one exception: the thinking and the text being generated ride the stream as their own
+   * ordinary `partial_thinking`/`thinking` and `partial_text`/`text` messages (issue #290)
+   * so the frontend can show the compaction request working while it runs — readers already
+   * treat model messages between the paired compaction events as compaction-internal, and
+   * history rebuild reads the identical content back from the span's complete assistant
+   * messages. Complete
    * messages and events are written to the old Trace; complete text segments are collected as
    * the compaction output, and `toolCalls` collects the response's real tool requests (never
    * dispatched — summarizeContext rejects such a response as not-a-summary and answers each
@@ -1857,18 +1811,31 @@ export class ContextEngine {
     // written to the (old) Trace only, not pushed to the stream, keeping the compaction process
     // invisible to Human.
     await this.write(requestBegin());
+    // The Session's pinned thinking level, read live and carried exactly as a turn carries it
+    // (see the `thinkingLevel` field): the level is the soft-limited per-request parameter, so
+    // one Session never has two levels in flight at once. Were this request left on the level
+    // the context opened at while the turns around it run on the pin, a provider that reads the
+    // level as a thinking mode would see the mode change mid-conversation — and DeepSeek
+    // rejects a request whose current tool-call chain replays a turn that carries no chain of
+    // thought. The strict-tier prefix this request does hold identical to a turn's is its
+    // system prompt and toolset; the level is a request parameter, not part of either.
+    const level = this.thinkingLevel;
     const gen = this.llm.streamGenerate({
       newMessages: input,
       ...(signal ? { signal } : {}),
+      ...(level !== undefined ? { thinkingLevel: level } : {}),
     });
     let text = "";
     const toolCalls: OmniMessage<ToolCallPayload>[] = [];
     let usage: OmniMessage | null = null;
-    // Whether this attempt streamed any partial_text content: real LLM objects stream the
-    // summary as partial fragments (forwarded verbatim), and the complete text message that
-    // follows must then stay off the stream or consumers would see the content twice; an
-    // implementation that yields only complete messages streams those instead.
+    // Whether this attempt streamed any partial_text / partial_thinking content: real LLM
+    // objects stream the summary (and the thinking ahead of it) as partial fragments
+    // (forwarded verbatim), and the complete message that follows must then stay off the
+    // stream or consumers would see the content twice; an implementation that yields only
+    // complete messages streams those instead. Tracked per kind, so a model that streams its
+    // thinking but delivers its text whole still gets that text forwarded once.
     let sawPartialText = false;
+    let sawPartialThinking = false;
     for (;;) {
       const res = await gen.next();
       if (res.done) {
@@ -1911,20 +1878,24 @@ export class ContextEngine {
       // Stamped with the Session series before the write, exactly like a turn's (runTurn).
       if (this.observeTokenUsage(msg)) usage = msg;
       await this.write(msg);
-      // Streamed compaction progress (issue #290): the summary's own text rides the output
-      // stream between the paired compaction events — partial_text fragments verbatim (all
-      // three phases, so the server's live tail opens and closes its fragment and a join
-      // mid-compaction is seeded with the accumulated prefix), or the complete text when no
-      // partial carried content (implementations that yield only complete messages) — never
-      // both, so consumers see each character once. The request's other raw messages
-      // (thinking, the compaction Prompt, request events) stay Trace-only as before.
-      // Rejected attempts stream too: the frontend shows whatever the compaction request is
-      // really producing, and history rebuild reads the same text back from the span's
-      // complete assistant messages.
+      // Streamed compaction progress (issue #290): the request's thinking and the summary's
+      // own text ride the output stream between the paired compaction events —
+      // partial_thinking / partial_text fragments verbatim (all three phases, so the server's
+      // live tail opens and closes its fragment and a join mid-compaction is seeded with the
+      // accumulated prefix), or the complete thinking / text when no partial of that kind
+      // carried content (implementations that yield only complete messages) — never both,
+      // so consumers see each character once. The request's other raw messages (the
+      // compaction Prompt, request events) stay Trace-only as before. Rejected attempts
+      // stream too: the frontend shows whatever the compaction request is really producing,
+      // and history rebuild reads the same content back from the span's complete assistant
+      // messages.
       {
-        const p = msg.payload as { type?: string; text?: string };
+        const p = msg.payload as { type?: string; text?: string; thinking?: string };
         if (p.type === "partial_text") {
           if (typeof p.text === "string" && p.text !== "") sawPartialText = true;
+          yield msg;
+        } else if (p.type === "partial_thinking") {
+          if (typeof p.thinking === "string" && p.thinking !== "") sawPartialThinking = true;
           yield msg;
         }
       }
@@ -1933,6 +1904,12 @@ export class ContextEngine {
           const body = (msg.payload as TextPayload).text;
           text += body;
           if (!sawPartialText && body !== "") yield msg;
+        } else if (msg.payload.type === "thinking") {
+          // Forwarded for the banner only — the thinking is never summary material (the
+          // extraction reads `text` alone) — and a fidelity-only blank body has nothing to
+          // show.
+          const body = (msg.payload as ThinkingPayload).thinking;
+          if (!sawPartialThinking && body !== "") yield msg;
         } else if (msg.payload.type === "tool_call") {
           // Same filter as the turn loop: a tool_call synthesized to close out an interruption
           // carries a non-completed stop_reason — it is structural closure, not a real request,
@@ -1975,11 +1952,12 @@ export class ContextEngine {
     if (opened.sessionMeta) this.contextMeta = opened.sessionMeta;
     if (records.length > 0) this.contextRecords = records;
     if (opened.maxTurns !== undefined) this.maxTurns = opened.maxTurns;
+    // The new context's baseline. A `readCompaction` provider re-reads the same file at the
+    // next checkpoint and agrees with it; what this settles is the Session that has no
+    // provider, where the rotation is still the only way compaction settings change.
     if (opened.compaction) this.compaction = opened.compaction;
     this.sessionTurns = 0;
     this.lastRequestTotal = 0;
-    // Reset tool-call loop detection: a new context is a fresh start.
-    this.toolCallSignatures = [];
     // Lets compactability() distinguish "just compacted" from "hasn't chatted yet" — both have
     // sessionTurns === 0, but they mean two completely different things to the user (being told
     // "no completed conversation turns yet" right after compacting is as good as saying nothing).

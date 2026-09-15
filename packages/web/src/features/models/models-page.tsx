@@ -29,8 +29,16 @@
  * Saving does a PUT full-table replace (models not present are deleted; an empty apiKey
  * means keep the existing value); only the owner can edit.
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
 import type {
   CredentialInfo,
   ModelProtocolDetectRequest,
@@ -61,6 +69,7 @@ import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { EXTERNAL_LINK_ICON } from "../../components/ui/icons";
 import { ProviderLogo } from "../../components/ui/provider-logo";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { EmptyState } from "../../components/ui/empty-state";
@@ -71,6 +80,7 @@ import {
   catalogEntryFor,
   fastModeProtocol,
   modelHomepageUrl,
+  providerClientType,
   providerInfo,
   resolveModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
@@ -115,7 +125,6 @@ import { useUpdateBadges } from "../../lib/use-update-badges";
 import { dismissTodo } from "../../lib/todo-dismissals";
 import { noticeCounts } from "../../lib/bulk-update";
 import { refreshProjectTodos } from "../../lib/use-project-todos";
-import { UpdateDot } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { buildImportedRows } from "./group-import";
 import { tpsTone, ttftTone } from "./speed-test";
@@ -170,8 +179,6 @@ const TRASH_ICON =
   "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
 const KEY_ICON =
   "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
-const EXTERNAL_LINK_ICON =
-  "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3";
 /** Arrow entering a door: authorize with the provider and come back with a key. */
 const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
 
@@ -193,8 +200,19 @@ const TONE_CLASS: Record<SpeedTone, string> = {
  */
 const refMapKey = (provider: string, modelId: string) => `${provider}\u0000${modelId}`;
 
-/** Default context window (tokens) for custom models when left unset. */
-const CUSTOM_CONTEXT_DEFAULT = 128000;
+/**
+ * Context window (tokens) recorded for a custom or user-group model whose field is left blank.
+ *
+ * A million, not the 128000 the rest of the app assumes for an *unknown* window. The two answer
+ * different questions: the assumption exists so a model with nothing on file still gets a
+ * conservative compaction threshold, while this is a value the dialog is about to WRITE, on an
+ * entry the user is adding by hand — and models being added by hand today are large-window ones.
+ * Guessing low there costs real capacity (the ring reads full, compaction fires early) for a
+ * model that can hold far more; guessing high costs a number the user narrows once, when the
+ * endpoint turns out to serve less. Preset entries left blank still mean "unknown" and stay
+ * blank.
+ */
+const CUSTOM_CONTEXT_DEFAULT = 1000000;
 
 /** Numeric input filter: context window keeps digits only. */
 export function digitsOnly(v: string): string {
@@ -209,12 +227,19 @@ export function decimalOnly(v: string): string {
 }
 
 /**
- * Moving an existing model to Custom keeps a generic protocol client type (protocol
- * detection / the in-field picker manage those) and otherwise switches to the generic
- * OpenAI Chat Completions client — an unroutable or vendor-pinned type must not leak
- * into a custom group.
+ * The client type an entry carries after it is moved into `provider`.
+ *
+ * A group that pins a protocol takes it unconditionally — that is what the pin means, and
+ * the entry the user dragged in has to speak what the rest of the group speaks. Moving to
+ * Custom keeps a generic protocol client type (protocol detection / the in-field picker
+ * manage those) and otherwise switches to the generic OpenAI Chat Completions client — an
+ * unroutable or vendor-pinned type must not leak into a custom group. Every other group
+ * keeps the current value: a first-party group auto-routes by id, and the gateways that
+ * pin nothing at group level leave their rows on the pin their preset already gave them.
  */
 export function clientTypeAfterProviderChange(provider: string, current: string): string {
+  const pinned = providerClientType(provider);
+  if (pinned !== undefined) return pinned;
   if (provider !== "custom") return current;
   return current.trim() !== "" && isGenericProtocolClientType(current) ? current : "openai-chat";
 }
@@ -242,7 +267,12 @@ export interface RowState {
    * server uses to migrate the credential and pointers. null for a new entry.
    */
   original: ModelRefDto | null;
-  /** Display name from the built-in catalog; absent for custom models. */
+  /**
+   * What the model is called: the user's own name, or the built-in catalog's. Absent means the
+   * model has no name (a custom one, or a catalog row loaded before the name was filled in) and
+   * asks the server to inherit the catalog's; the empty string means a name the user cleared,
+   * which is a different request — see rowToEntry.
+   */
   displayName?: string;
   /**
    * Whether to treat this as a vision model (effective semantics): the server already
@@ -541,8 +571,11 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   if (row.original && !sameModelRef(row.original, rowRef(row))) {
     entry.renamedFrom = row.original;
   }
-  // Display name: the server only persists it when it differs from the built-in catalog (keeps preset model configs clean).
-  if (row.displayName?.trim()) entry.displayName = row.displayName.trim();
+  // Display name: submitted whenever the row carries one at all, the empty string included —
+  // absent means "inherit whatever the catalog calls this model" and empty means "the user
+  // cleared it", so a row that simply has no name must not travel as a deletion. The server
+  // only persists a name that differs from the built-in catalog (keeps preset configs clean).
+  if (row.displayName !== undefined) entry.displayName = row.displayName.trim();
   const cw = Number(row.contextWindow.trim());
   if (row.contextWindow.trim() && Number.isFinite(cw)) entry.contextWindow = cw;
   // Never persists an empty protocol for a custom-like entry (that entry could not start —
@@ -623,7 +656,7 @@ export function ModelsPage() {
 
   const [rows, setRows] = useState<RowState[] | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRefDto | undefined>(undefined);
-  // Vision model used for describe_image proxy-reads (describes images for session models with vision=false).
+  // Vision model used for read_file's proxy reads (describes images for session models with vision=false).
   const [visionModel, setVisionModel] = useState<ModelRefDto | undefined>(undefined);
   /** Edit target: paired reference of an existing row. */
   const [editing, setEditing] = useState<ModelRefDto | null>(null);
@@ -1006,32 +1039,23 @@ export function ModelsPage() {
                   placeholder={S.models.searchPlaceholder}
                 />
               </div>
-              {/* The dot stays on the control that ACTS, not on the notice below: it marks the
-                  button the trail ends at, and a mark that moved off it would point at nothing.
-                  Owner-only, like the button — the gate never raises this for a member. The dot
-                  straddles the button's top-right corner (update-dot.tsx's rule for a button)
-                  and is decorative: the sr-only sentence folds what is waiting into the button's
-                  accessible name, in the wording the trail carried down. */}
-              {isOwner && (
+              {/* The action appears only while a sync is actually waiting, and the accent says so
+                  — a preset sync with nothing to sync is a no-op, and a permanent button spent the
+                  header's width on one. That is also why the dot is gone: it marked this button as
+                  the end of the models trail, and on a button that exists only when the trail does,
+                  it would be lit every time it was seen. The sr-only sentence stays, folding what is
+                  waiting into the accessible name in the wording the trail carried down.
+                  Owner-only — the gate never raises this for a member. */}
+              {isOwner && todo && (
                 <Button
                   size="sm"
-                  className="relative"
+                  variant="primary"
                   onClick={() => void syncPresets()}
                   disabled={busy || rows === null}
-                  title={
-                    todo ? `${S.models.syncCatalogHint} · ${syncNote}` : S.models.syncCatalogHint
-                  }
+                  title={`${S.models.syncCatalogHint} · ${syncNote}`}
                 >
                   {S.models.syncCatalog}
-                  {todo && (
-                    <>
-                      <UpdateDot
-                        size="inline"
-                        position="right-0.5 top-0.5 -translate-y-1/2 translate-x-1/2"
-                      />
-                      <span className="sr-only"> · {syncNote}</span>
-                    </>
-                  )}
+                  <span className="sr-only"> · {syncNote}</span>
                 </Button>
               )}
             </div>
@@ -1464,9 +1488,14 @@ export function ModelsPage() {
           <p className="text-sm text-gray-600 dark:text-gray-300">
             {S.models.speedTestConfirm(rows?.filter((r) => r.provider === speedFor).length ?? 0)}
           </p>
+          {/* This dialog builds its action row in the body rather than through Modal's
+              `footer`, so it carries the footer's sm rung itself. */}
           <div className="mt-4 flex justify-end gap-2">
-            <Button onClick={() => setSpeedFor(null)}>{S.common.cancel}</Button>
+            <Button size="sm" onClick={() => setSpeedFor(null)}>
+              {S.common.cancel}
+            </Button>
             <Button
+              size="sm"
               variant="primary"
               onClick={() => {
                 const id = speedFor;
@@ -1714,18 +1743,18 @@ function AddGroupDialog({
       widthClass="sm:max-w-sm"
       footer={
         <>
-          <Button disabled={busy} onClick={onClose}>
+          <Button size="sm" disabled={busy} onClick={onClose}>
             {S.common.cancel}
           </Button>
           {mode === "create" ? (
-            <Button variant="primary" onClick={confirmCreate}>
+            <Button size="sm" variant="primary" onClick={confirmCreate}>
               {S.common.confirm}
             </Button>
           ) : (
             // The import action exists only once the protocol is determined (detected or
             // hand-picked): before that there is nothing meaningful to run.
             clientType !== null && (
-              <Button variant="primary" disabled={busy} onClick={() => void runImport()}>
+              <Button size="sm" variant="primary" disabled={busy} onClick={() => void runImport()}>
                 {S.models.groupImportAll}
               </Button>
             )
@@ -2122,6 +2151,46 @@ const CONFIRM_BODY: Record<DialogAction, (name: string) => string> = {
   remove: (n) => S.models.confirmDelete(n),
 };
 
+/**
+ * Live width of one affix drawn inside an input — the currency symbol, the "/M tok" price unit,
+ * the "Token" unit — so the input can reserve exactly the room it actually occupies. An affix is
+ * rendered text: its width follows the resolved font, the root font size (the appearance setting
+ * scales it) and, for the currency symbol, the selected currency, none of which is known where
+ * the padding is written, which is why it is measured rather than typed. The affix is absolutely
+ * positioned, so its size does not depend on the padding derived from it. One call covers every
+ * field drawing the same string at the same size; fields whose affixes differ take one each.
+ */
+function useAffixWidth(): [RefObject<HTMLSpanElement | null>, number] {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // The observer reports the box LAYOUT size, which is what has to be reserved. A rect read
+    // off the element would be wrong here: the dialog pops in under `scale(0.96)`, so a
+    // measurement taken while that animation runs comes back 4% short, and a transform never
+    // notifies an observer that would correct it. Delivery is after layout and before paint,
+    // so the unmeasured state is not painted; a currency switch, a language switch and a
+    // font-size change all resize the affix and re-run this.
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setWidth(entry.borderBoxSize[0]?.inlineSize ?? entry.contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width];
+}
+
+/**
+ * Padding that clears an affix of the given rendered width: the 0.5rem the affix is inset
+ * from the input edge (`left-2` / `right-2`), the affix itself, and 0.25rem of separation so
+ * the value does not read as one run of text with it. An unmeasured width (0) still yields a
+ * padding no smaller than the control's own, so nothing lands outside the box.
+ */
+function affixPadding(width: number): string {
+  return `calc(${width}px + 0.75rem)`;
+}
+
 function ModelDialog({
   projectId,
   row,
@@ -2159,16 +2228,21 @@ function ModelDialog({
         output: usdToInput(row.output, currency),
       };
     }
-    // New model: protocol follows group semantics — a first-party vendor group
-    // doesn't persist client_type (AgentHub auto-routes by upstream id, with env fallback
-    // resolved live from the id); custom / user-defined groups / gateways use a fixed
+    // New model: protocol follows group semantics — a group that pins one (OpenRouter,
+    // vLLM) hands it to the new entry outright; a first-party vendor group doesn't persist
+    // client_type (AgentHub auto-routes by upstream id, with env fallback resolved live from
+    // the id); custom / user-defined groups and the remaining gateways use a fixed
     // openai-chat protocol (env fallback OPENAI_*), and gateways additionally pre-fill their
     // endpoint base URL. provider keeps the entry point's original value (a user-defined
     // group must not collapse into custom), stored as a separate field from model_id, with
     // no concatenation on save.
     const info = providerInfo(addProvider);
+    const pinnedClientType = providerClientType(addProvider);
     const vendorAdd =
-      info !== undefined && info.id !== "custom" && info.gatewayBaseUrl === undefined;
+      info !== undefined &&
+      info.id !== "custom" &&
+      info.gatewayBaseUrl === undefined &&
+      pinnedClientType === undefined;
     return {
       provider: addProvider,
       modelId: "",
@@ -2182,8 +2256,10 @@ function ModelDialog({
       fastMode: false,
       // No protocol is preselected for a custom / user-defined group: it is detected from
       // the endpoint (on demand, or on save while still unset) or picked by hand. Vendor
-      // groups auto-route by model id, and gateways keep their preset Chat Completions pin.
-      clientType: vendorAdd || isCustomLikeGroup(addProvider) ? "" : "openai-chat",
+      // groups auto-route by model id; a gateway takes the protocol its group pins, or the
+      // preset Chat Completions pin where the group pins nothing.
+      clientType:
+        pinnedClientType ?? (vendorAdd || isCustomLikeGroup(addProvider) ? "" : "openai-chat"),
       cacheRead: "",
       cacheWrite: "",
       output: "",
@@ -2229,6 +2305,12 @@ function ModelDialog({
   const [visionDetecting, setVisionDetecting] = useState(false);
   /** Single-flight guard for the vision probe: it bills the user, so never twice at once. */
   const visionInFlight = useRef<Promise<void> | null>(null);
+  // Room each in-field affix needs (see useAffixWidth). The three price inputs share one
+  // currency symbol and one "/M tok" unit; the context-window and max-tokens inputs share the
+  // "Token" unit with each other, so each distinct string is measured once.
+  const [currencyRef, currencyWidth] = useAffixWidth();
+  const [priceUnitRef, priceUnitWidth] = useAffixWidth();
+  const [tokenUnitRef, tokenUnitWidth] = useAffixWidth();
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
 
@@ -2593,14 +2675,19 @@ function ModelDialog({
     form.modelId.trim(),
     envHintClientType(form.provider, form.clientType),
   )?.envKey;
-  // First-party provider group (built-in, non-gateway, non-custom): adding
-  // goes through auto-routing — show a hint when the id can't be routed
+  // The protocol this group pins on every entry, user-added ones included (OpenRouter,
+  // vLLM); undefined for every group that leaves the protocol to auto-routing, a gateway
+  // preset, or detection.
+  const pinnedGroupClientType = providerClientType(form.provider);
+  // First-party provider group (built-in, non-gateway, non-custom, no group-level pin):
+  // adding goes through auto-routing — show a hint when the id can't be routed
   // (doesn't block saving: the routing table evolves with the AgentHub
   // version, so it's judged at runtime).
   const vendorGroup =
     dialogProvider !== undefined &&
     dialogProvider.id !== "custom" &&
-    dialogProvider.gatewayBaseUrl === undefined;
+    dialogProvider.gatewayBaseUrl === undefined &&
+    pinnedGroupClientType === undefined;
   const autoRouteMiss =
     vendorGroup &&
     !form.clientType.trim() &&
@@ -2751,9 +2838,12 @@ function ModelDialog({
       widthClass="sm:max-w-lg"
       footer={
         <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
+          <Button size="sm" onClick={onClose}>
+            {S.common.cancel}
+          </Button>
           {canEdit && (
             <Button
+              size="sm"
               variant="primary"
               // Saving may have to probe the endpoint first (protocol still unset), which
               // is a network round-trip: the label says so and the button locks, matching
@@ -2847,18 +2937,24 @@ function ModelDialog({
 
         {/* Adding a model: protocol note first (preset direct-vendor group = only the
             vendor's official protocol, named via the group label — the in-field suffix
-            on the base URL below says which path; custom / self-defined group / gateway
-            = fixed OpenAI protocol), then the identity fields ("get model id / API key"
-            links next to the respective inputs; fill in the id to test connectivity —
-            verify before saving). */}
+            on the base URL below says which path; a group that pins a protocol = that
+            protocol, named outright, with the endpoint the user's own for a self-hosted
+            group and already filled in for a gateway; custom / self-defined group / an
+            unpinned gateway = fixed OpenAI protocol), then the identity fields ("get model
+            id / API key" links next to the respective inputs; fill in the id to test
+            connectivity — verify before saving). */}
         {isNew && (
           <>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {vendorGroup && dialogProvider
                 ? S.models.vendorProtocolHint(dialogProvider.label)
-                : customLikeGroup
-                  ? S.models.addProtocolHintDetect
-                  : S.models.addProtocolHint}
+                : pinnedGroupClientType !== undefined
+                  ? dialogProvider?.gatewayBaseUrl !== undefined
+                    ? S.models.addProtocolHintPinnedGateway(pinnedGroupClientType)
+                    : S.models.addProtocolHintPinned(pinnedGroupClientType)
+                  : customLikeGroup
+                    ? S.models.addProtocolHintDetect
+                    : S.models.addProtocolHint}
             </p>
             {identityFields}
           </>
@@ -3090,7 +3186,12 @@ function ModelDialog({
                 disabled={!canEdit}
                 invalid={Boolean(fieldErrors.contextWindow)}
                 onChange={(e) => set({ contextWindow: digitsOnly(e.target.value) })}
-                className="pr-12 font-mono"
+                // Half-width cell: the placeholder is wider than the box in English, and an
+                // input clips at its padding box, so an unclipped one runs past the value area
+                // and collides with the unit. `truncate` ends it in an ellipsis instead, which
+                // reads as "there is more" rather than as text colliding; the title has it in full.
+                className="truncate font-mono"
+                style={{ paddingRight: affixPadding(tokenUnitWidth) }}
                 // The title mirrors the placeholder: at half width the (EN) copy can clip, hover reveals it in full.
                 title={
                   preset
@@ -3103,7 +3204,12 @@ function ModelDialog({
                     : S.models.contextWindowDefaultHint(CUSTOM_CONTEXT_DEFAULT)
                 }
               />
-              <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
+              <span
+                // Both fields in this row draw the same unit at the same size, so one
+                // measurement sizes the reserve for the pair.
+                ref={tokenUnitRef}
+                className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400"
+              >
                 {S.models.tokenUnit}
               </span>
             </span>
@@ -3119,7 +3225,9 @@ function ModelDialog({
                 disabled={!canEdit}
                 invalid={Boolean(fieldErrors.maxTokens)}
                 onChange={(e) => set({ maxTokens: digitsOnly(e.target.value) })}
-                className="pr-12 font-mono"
+                // Truncated for the same reason as the context window beside it.
+                className="truncate font-mono"
+                style={{ paddingRight: affixPadding(tokenUnitWidth) }}
                 // Short placeholder (fits the half-width box); the full explanation incl. the small-context advice is the hover title.
                 title={S.models.maxTokensTitle}
                 placeholder={S.models.maxTokensHint}
@@ -3143,11 +3251,16 @@ function ModelDialog({
               ["cacheWrite", S.models.priceCacheWrite, form.cacheWrite],
               ["output", S.models.priceOutput, form.output],
             ] as Array<[keyof FieldErrors & keyof RowState, string, string]>
-          ).map(([key, label, value]) => (
+          ).map(([key, label, value], i) => (
             <label key={key} className="block">
               <FieldLabel>{label}</FieldLabel>
               <span className="relative block">
-                <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400">
+                <span
+                  // The three fields draw the same symbol and the same unit at the same size,
+                  // so only the first pair is measured and every field reserves from it.
+                  ref={i === 0 ? currencyRef : undefined}
+                  className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-gray-400"
+                >
                   {CURRENCY_SYMBOL[currency]}
                 </span>
                 <Input
@@ -3157,9 +3270,16 @@ function ModelDialog({
                   disabled={!canEdit}
                   invalid={Boolean(fieldErrors[key])}
                   onChange={(e) => set({ [key]: decimalOnly(e.target.value) })}
-                  className="pl-4 pr-11 text-right font-mono"
+                  className="text-right font-mono"
+                  style={{
+                    paddingLeft: affixPadding(currencyWidth),
+                    paddingRight: affixPadding(priceUnitWidth),
+                  }}
                 />
-                <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400">
+                <span
+                  ref={i === 0 ? priceUnitRef : undefined}
+                  className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-400"
+                >
                   {S.models.priceUnitShort}
                 </span>
               </span>
@@ -3172,13 +3292,16 @@ function ModelDialog({
         {!isNew && identityFields}
         {/* Legacy entries carrying a client_type other than the standard openai-chat
             (historical config): read-only display. Compared canonically so the deprecated
-            bare "openai" spelling (pre-0.4.2 configs) is not flagged as legacy either, and
+            bare "openai" spelling (pre-0.4.2 configs) is not flagged as legacy either,
             skipped when the protocol selector above already represents it (generic protocol
-            types in custom-like groups are editable there). */}
+            types in custom-like groups are editable there), and skipped when the value IS
+            the group's own pin — that is this group's normal protocol, not a leftover from
+            an older config, and "kept as configured" would misdescribe it. */}
         {!isNew &&
           !preset &&
           !showProtocolSelector &&
           form.clientType &&
+          form.clientType !== pinnedGroupClientType &&
           canonicalClientType(form.clientType) !== "openai-chat" && (
             <p className="text-xs text-gray-400 dark:text-gray-500">
               {S.models.clientTypeLocked(form.clientType)}
@@ -3199,7 +3322,7 @@ function ModelDialog({
                 (read-only, so no cell at all); custom models toggle it here — an iOS-style
                 switch sitting inline right next to the label (per owner: no full-row stretch,
                 no standing explanation text). Only the OFF state shows one small muted line:
-                images are then read via the configured vision proxy model (describe_image). */}
+                images are then read via the configured vision proxy model (read_file hands them to it). */}
             {showVision && (
               <div className={toggleCellClass}>
                 {/* Detect sits inline after the switch — the protocol control's idiom, but next
@@ -3373,8 +3496,15 @@ function GroupKeyDialog({
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>{S.common.cancel}</Button>
-          <Button variant="primary" disabled={!key.trim()} onClick={() => onSubmit(key.trim())}>
+          <Button size="sm" onClick={onClose}>
+            {S.common.cancel}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!key.trim()}
+            onClick={() => onSubmit(key.trim())}
+          >
             {S.common.confirm}
           </Button>
         </>
@@ -3569,11 +3699,12 @@ function ModelOAuthDialog({
 
   const primary =
     phase === "failed" ? (
-      <Button variant="primary" onClick={() => setAttempt((n) => n + 1)}>
+      <Button size="sm" variant="primary" onClick={() => setAttempt((n) => n + 1)}>
         {S.models.oauthRetry}
       </Button>
     ) : manual ? (
       <Button
+        size="sm"
         variant="primary"
         disabled={flow === null || phase === "waiting" || !code.trim()}
         onClick={() => void submitCode()}
@@ -3581,7 +3712,7 @@ function ModelOAuthDialog({
         {S.models.oauthSubmitCode}
       </Button>
     ) : (
-      <Button variant="primary" disabled={flow === null} onClick={openAuthorizePage}>
+      <Button size="sm" variant="primary" disabled={flow === null} onClick={openAuthorizePage}>
         {S.models.oauthAuthorize}
       </Button>
     );
@@ -3595,10 +3726,14 @@ function ModelOAuthDialog({
         // Done is an outcome, not a choice: a "cancel" beside it would offer to undo a key that
         // is already written.
         phase === "done" ? (
-          <Button onClick={onClose}>{S.common.close}</Button>
+          <Button size="sm" onClick={onClose}>
+            {S.common.close}
+          </Button>
         ) : (
           <>
-            <Button onClick={onClose}>{S.common.cancel}</Button>
+            <Button size="sm" onClick={onClose}>
+              {S.common.cancel}
+            </Button>
             {primary}
           </>
         )
@@ -3616,7 +3751,9 @@ function ModelOAuthDialog({
         )}
         {phase !== "done" && manual && (
           <>
-            <Button variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
+            {/* In the dialog body, directly above the code Input: it takes the same rung the
+                field does, not the page-level md. */}
+            <Button size="sm" variant="ghost" disabled={flow === null} onClick={openAuthorizePage}>
               <GlyphIcon d={SIGN_IN_ICON} size={13} />
               {S.models.oauthAuthorize}
             </Button>

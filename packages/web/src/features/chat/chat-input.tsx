@@ -51,8 +51,8 @@
  * wrapped the same way); the selection clears once sending succeeds. Quick-invoke pre-selects via
  * initialSkills (read once on mount; once the installed list is ready, names not in that list are
  * pruned); the slash menu also lists installed skills, and pressing Enter on `/<skill_name>`
- * selects it. The draft screen's example cards reach in through `controlRef` to fill the text
- * body and preselect their skills — a fill, never a send: the user presses Send.
+ * selects it. The draft screen's example cards and the scheduled-tasks panel's AI dialog reach
+ * in through `controlRef` to fill the text body — a fill, never a send: the user presses Send.
  * While a Task is running the input stays enabled and the toolbar keeps ONE action button:
  * an empty composer shows Stop (abort), and typing turns that same button into Send, which
  * follows the remembered mid-run send mode — steer (delivered between turns as a
@@ -93,9 +93,11 @@ import { useLocale } from "../../state/locale";
 import { useAuth } from "../../state/auth";
 import { agentDisplayName } from "../../state/project";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CheckIcon, ChevronDown } from "../../components/ui/icons";
+import { CheckIcon, ChevronDown, FILE_ICON, QUOTE_ICON } from "../../components/ui/icons";
+import { FOLDER_ICON } from "../../components/ui/group-list";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { noAutofill } from "../../components/ui/input";
 import { toastError, toastInfo } from "../../components/ui/toast";
@@ -124,8 +126,12 @@ import { isStopAction, midRunAction } from "./composer-send";
 import { PAPERCLIP_ICON } from "./attached-files-banner";
 import { FileDropZone } from "./drop-zone";
 import { ContextGauge } from "./context-gauge";
+import { modelWindowBelowCompactionLimit } from "../../lib/context";
+import { toneStrip } from "../../lib/tone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
+import { lineSuffix } from "../../lib/workspace-tree";
+import type { ComposerReference } from "../../lib/workspace-tree";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -749,18 +755,76 @@ function appendAttachmentParts(
 }
 
 /**
+ * The message body: the staged quotations, then what was typed. Blank parts are dropped so a
+ * quotation sent with no sentence after it does not trail an empty line.
+ */
+function withReferences(references: readonly ComposerReference[], typed: string): string {
+  if (references.length === 0) return typed;
+  return [...references.map((r) => r.text), typed].filter((part) => part !== "").join("\n\n");
+}
+
+/**
+ * A staged reference, split for display: the entry's own name, and the quoted lines as a
+ * `:from-to` suffix. The `file:line` form rather than a worded one — it is the shape every editor
+ * and stack trace already uses, it needs no translating, and a chip has no room for a sentence.
+ *
+ * Returned in two pieces because the chip draws them differently: a long name ellipsizes, and the
+ * line numbers must not go with it. They are the smaller half and the half the name does not
+ * already say.
+ */
+function referenceParts(reference: ComposerReference): { name: string; lines: string } {
+  const name = reference.path.split("/").pop() ?? reference.path;
+  const lines =
+    reference.fromLine === undefined || reference.toLine === undefined
+      ? ""
+      : lineSuffix(reference.fromLine, reference.toLine);
+  return { name, lines };
+}
+
+/** The whole of what a chip stands for, for its tooltip and its accessible name: path and lines. */
+function referenceTitle(reference: ComposerReference): string {
+  return `${reference.path}${referenceParts(reference).lines}`;
+}
+
+/** A directory, a file, or a passage carried in from one — each says what the chip stands for. */
+const REFERENCE_ICON: Record<ComposerReference["kind"], string> = {
+  dir: FOLDER_ICON,
+  file: FILE_ICON,
+  quote: QUOTE_ICON,
+};
+
+/**
  * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
- * One entry so far: the draft screen's example cards fill this composer instead of submitting
- * on their own.
+ * Two entries: a surface that composes a whole prompt puts it in this composer instead of
+ * submitting it on its own, and a surface that contributes one reference splices it into
+ * whatever is already being typed.
  */
 export interface ComposerControl {
   /**
-   * Put an example's prompt in the text body and preselect the skills it pins — without
-   * sending anything. `exampleSkills` is the example's full list; names the current Agent
-   * has not installed are dropped here, where the installed list already lives.
+   * Put a composed prompt in the text body and preselect the skills it pins — without sending
+   * anything. `pinnedSkills` is the caller's full list; names the current Agent has not
+   * installed are dropped here, where the installed list already lives. Pass an empty list to
+   * leave the composer's own Skill selection untouched.
    */
-  fillExample: (prompt: string, exampleSkills: readonly string[]) => void;
+  fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
+  /**
+   * Stage what the Files panel contributes as a chip rather than typing it into the draft — a
+   * file, a directory, or a quoted range. The text rides the message when it is sent; what the
+   * composer shows is the thing it points at.
+   */
+  addReference: (reference: ComposerReference) => void;
 }
+
+/**
+ * Small-window notices already put down, keyed Session + model, for the rest of the tab session.
+ *
+ * Module state rather than storage: the notice reports a live mismatch between two settings, so
+ * a dismissal should not outlive the tab that saw it — reopening the app after changing either
+ * side deserves a fresh answer. Keyed by model as well as Session because switching the
+ * conversation onto another model is exactly the case where the mismatch may no longer hold, or
+ * may hold with different numbers.
+ */
+const dismissedWindowNotices = new Set<string>();
 
 export function ChatInput({
   status,
@@ -768,6 +832,7 @@ export function ChatInput({
   onSteer,
   steeringDeliveredCount,
   pendingSteering = [],
+  returnedSteering = [],
   onRecallSteering,
   onQueueFollowUp,
   queuedFollowUps = 0,
@@ -785,6 +850,9 @@ export function ChatInput({
   turnThinkingLevel,
   onChangeTurnThinkingLevel,
   contextWindow,
+  compactionLimit,
+  onChangeCompactionLimit,
+  onOpenAgentSettings,
   contextNow,
   contextStale = false,
   sessionId,
@@ -842,6 +910,13 @@ export function ChatInput({
    * reloads (#136). The local post-202 flag only bridges until the first event arrives.
    */
   pendingSteering?: PendingSteeringInfo[];
+  /**
+   * Steering a finished run never delivered — an interrupt while a tool was running is the
+   * ordinary way to produce one. This component takes each back into the draft as soon as it
+   * sees it, through the same recall channel a queued line's button uses, so the typed message
+   * lands in the input box instead of disappearing with the run.
+   */
+  returnedSteering?: PendingSteeringInfo[];
   /**
    * Recall an undelivered steering message (#287): resolves to its original content, which
    * this component restores into the draft (text / images / files), or null when the recall
@@ -921,6 +996,19 @@ export function ChatInput({
   onChangeTurnThinkingLevel?: (level: string) => void;
   /** Model's context window (from models config; when not configured, the ring's cap falls back to 128000 via resolveContextWindow). */
   contextWindow?: number;
+  /**
+   * The Agent's CONFIGURED `compaction.max_context_length` (its seeded default when the config
+   * carries none), fetched by the parent alongside the Agent's thinking level. It gives the
+   * context ring the threshold it fills against, and it is the number the small-window notice
+   * below is judged against. Absent where no Agent config is at hand (the draft and subagent
+   * composers, and the moment before the fetch lands): the ring then falls back to the model
+   * window and the notice cannot be raised at all.
+   */
+  compactionLimit?: number;
+  /** Writes a new compaction threshold to the Session's Agent and re-reads `compactionLimit` from it: what the context panel's threshold cutter commits through. Absent wherever no Agent config is at hand, leaving the cutter a readout. */
+  onChangeCompactionLimit?: (maxContextLength: number) => Promise<void>;
+  /** Opens the Session Agent's settings, where the compaction threshold is edited: the small-window notice's action. */
+  onOpenAgentSettings?: () => void;
   /** Current context usage (total of the most recent main-session Request). */
   contextNow: number;
   /** After a successful compaction, before the next regular Request reports usage: usage is **unknown** (not 0); the ring is drawn empty and the value shown as `—`. */
@@ -1020,6 +1108,12 @@ export function ChatInput({
   // like images — a draft has no Session yet, so there is nothing to upload them to ahead of
   // time; they travel with the task request and the server files them into the scratchpad.
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  /**
+   * Quotations staged from the Files panel. Held here rather than in the draft cache, exactly
+   * like attachments: what they quote is a file on disk that may have moved on by the time a
+   * stale draft is reopened, so they belong to this composer's life and not to the text's.
+   */
+  const [references, setReferences] = useState<ComposerReference[]>([]);
   const [busy, setBusy] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   // Slash token start where Escape closed the menu: it stays shut for that one token.
@@ -1061,6 +1155,7 @@ export function ChatInput({
     text.trim().length > 0 ||
     images.length > 0 ||
     attachments.length > 0 ||
+    references.length > 0 ||
     target !== null ||
     pendingModel !== null ||
     selectedSkills.length > 0;
@@ -1232,6 +1327,31 @@ export function ChatInput({
     const m = models?.find((x) => sameModelRef(x, modelRef));
     return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
   })();
+  // The model cannot hold what the Agent is configured to compact at. Raised only in session
+  // state, where a Session id gives the dismissal a key and `/compact` is available to act on
+  // the advice; the draft composer has neither.
+  const windowNoticeKey =
+    sessionId !== undefined && modelRef
+      ? `${sessionId}\u0000${modelRef.provider}\u0000${modelRef.modelId}`
+      : null;
+  const [windowNoticeDismissed, setWindowNoticeDismissed] = useState(false);
+  // Re-read on every key change (a `/model` fork, a new Session) so a dismissal that belongs to
+  // another pairing never suppresses this one, and one that belongs to this pairing survives a
+  // trip away and back.
+  useEffect(() => {
+    setWindowNoticeDismissed(
+      windowNoticeKey !== null && dismissedWindowNotices.has(windowNoticeKey),
+    );
+  }, [windowNoticeKey]);
+  const windowNoticeOpen =
+    windowNoticeKey !== null &&
+    !windowNoticeDismissed &&
+    modelWindowBelowCompactionLimit(contextWindow, compactionLimit);
+  // The Agent the threshold confirmation is about to name. Its display name where it has one,
+  // else the id, which is the same fallback the `/agent` picker draws rows with.
+  const currentAgent = agents.find((a) => a.agentId === currentAgentId);
+  const currentAgentName = currentAgent?.name || (currentAgentId ?? "");
+
   // Queued hint: shown after a successful steer until the message shows up in the stream
   // (steeringDeliveredCount increases past the baseline captured at queue time) or the run
   // stops being observable (task no longer running).
@@ -1315,6 +1435,29 @@ export function ChatInput({
     }
   };
 
+  /**
+   * Steering a finished run never delivered returns to the draft on its own. Interrupting
+   * while a tool is still running is the ordinary way to produce one: core drops its queue as
+   * the run exits, so without this the message — and the text the user had already typed into
+   * it — would simply disappear.
+   *
+   * It goes through the same recall channel the queued lines' button uses, so the merge into
+   * the draft, the attachment restore and the one-at-a-time guard are all the existing ones.
+   * Ids are marked BEFORE the request, not after: a recall that loses the race to another tab
+   * answers 409, and a retry on the next render would spin.
+   */
+  const autoRecalledIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!onRecallSteering || busy || recallingId !== null) return;
+    // Oldest first, matching the order the user typed them.
+    const next = returnedSteering.find((p) => !autoRecalledIds.current.has(p.id));
+    if (!next) return;
+    autoRecalledIds.current.add(next.id);
+    void recallQueued(next.id, onRecallSteering);
+    // recallQueued is re-created every render; depending on it would re-run this on each one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [returnedSteering, onRecallSteering, busy, recallingId]);
+
   /** Toggle a skill on/off (shared by dropdown option clicks and the slash skill command); the change callback lets the parent write it into the draft. */
   const toggleSkill = useCallback(
     (name: string) => {
@@ -1326,16 +1469,16 @@ export function ChatInput({
   );
 
   /**
-   * Fill from a draft-screen example card, without sending (see ComposerControl): the prompt
-   * REPLACES the text body — any draft is cleared first — and the example's installed skills
-   * join the selection, so pressing Send builds exactly the `[use_skills]` message the card
-   * used to submit on its own. Why text replaces while skills merge is buildExampleFill.
+   * Fill from a surface that composed a prompt, without sending (see ComposerControl): the
+   * prompt REPLACES the text body — any draft is cleared first — and the pinned installed
+   * skills join the selection, so pressing Send builds exactly the `[use_skills]` message the
+   * caller used to submit on its own. Why text replaces while skills merge is buildExampleFill.
    */
-  const fillExample = useCallback(
-    (prompt: string, exampleSkills: readonly string[]) => {
+  const fillPrompt = useCallback(
+    (prompt: string, pinnedSkills: readonly string[]) => {
       const fill = buildExampleFill({
         prompt,
-        exampleSkills,
+        exampleSkills: pinnedSkills,
         installedSkills: skills.map((s) => s.name),
         selectedSkills,
       });
@@ -1362,7 +1505,13 @@ export function ChatInput({
     },
     [skills, selectedSkills, onTextChange, onSkillsChange],
   );
-  useImperativeHandle(controlRef, () => ({ fillExample }), [fillExample]);
+  const addReference = useCallback((reference: ComposerReference) => {
+    setReferences((prev) => [...prev, reference]);
+    // The chip is above the text body, so the caret stays where it was; focus follows the
+    // gesture back to the composer, which is where the sentence about it gets typed.
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+  useImperativeHandle(controlRef, () => ({ fillPrompt, addReference }), [fillPrompt, addReference]);
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
@@ -1742,14 +1891,17 @@ export function ChatInput({
     // skills invocation when skills are selected, otherwise the model-switch line for a staged
     // switch. A handoff needs no fallback: its first message may legitimately be nothing but
     // the [handoff_from] source block.
+    // Staged quotations go in front of what was typed: they are what the message is about, and
+    // the sentence after them reads as being about them.
+    const quoted = withReferences(references, t);
     const bodyText =
-      t !== ""
-        ? t
+      quoted !== ""
+        ? quoted
         : selectedSkills.length > 0
           ? S.chat.skillsAutoMessage(selectedSkills)
           : switchModel
             ? S.chat.modelSwitchAutoMessage
-            : t;
+            : quoted;
     // With non-empty selected skills: the text body is replaced with a [use_skills] block + the text (every branch wraps its body the same way).
     const body = buildSkillsMessage(selectedSkills, bodyText);
     const input: TaskInputPart[] = [];
@@ -1770,6 +1922,7 @@ export function ChatInput({
         setText("");
         setImages([]);
         setAttachments([]);
+        setReferences([]);
         setTarget(null);
         setPendingModel(null);
         setSelectedSkills([]);
@@ -1796,7 +1949,7 @@ export function ChatInput({
       // for the running agent; all are sent and cleared together — selected skills stay for
       // a normal send (a staged switch chip blocks this branch outright, see midRunAction).
       if (!steerAction) return;
-      const steerText = text.trim();
+      const steerText = withReferences(references, text.trim());
       const steerImages = images;
       const steerFiles = attachments.map((f) => ({ fileName: f.name, dataUrl: f.dataUrl }));
       setBusy(true);
@@ -1811,6 +1964,7 @@ export function ChatInput({
           setText("");
           setImages([]);
           setAttachments([]);
+          setReferences([]);
         }
       } finally {
         setBusy(false);
@@ -2148,9 +2302,44 @@ export function ChatInput({
         </div>
       )}
 
+      {/* The Agent's compaction threshold is above what this model can hold, so compaction fires
+          at the window's edge instead of at the number the user set. Amber rather than muted
+          body text like the notices below it: the other two describe what the composer is about
+          to do, this one asks for a settings change, and `attention` is the tone for a thing
+          waiting on the user. Dismissible, because keeping the threshold high on purpose is a
+          legitimate answer and a notice with no way down stops being read. */}
+      {windowNoticeOpen && contextWindow !== undefined && compactionLimit !== undefined && (
+        <div
+          className={`anim-fade mb-1 flex items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-xs ${toneStrip.attention}`}
+        >
+          <p className="min-w-0">
+            {S.chat.contextWindowUnderThreshold(
+              humanizeTokens(contextWindow),
+              humanizeTokens(compactionLimit),
+            )}
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                if (windowNoticeKey !== null) dismissedWindowNotices.add(windowNoticeKey);
+                setWindowNoticeDismissed(true);
+              }}
+            >
+              {S.chat.contextWindowUnderThresholdDismiss}
+            </Button>
+            {onOpenAgentSettings && (
+              <Button size="sm" variant="primary" onClick={onOpenAgentSettings}>
+                {S.chat.contextWindowUnderThresholdAction}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* When the model doesn't support viewing images directly: images still upload as usual,
           and on send the server writes them to the session's scratchpad and appends the file
-          path into the message text (the model views them via describe_image). A small note is
+          path into the message text (the model views them via read_file). A small note is
           shown while images are attached. */}
       {!vision && images.length > 0 && (
         <p className="anim-fade mb-1 text-xs text-gray-400 dark:text-gray-500">
@@ -2227,14 +2416,19 @@ export function ChatInput({
           breakpoints wouldn't judge it accurately. */}
       <div className="@container rounded-lg border border-gray-300 bg-white px-2.5 pb-2 pt-2 transition-[border-color,box-shadow] duration-200 focus-within:border-gray-500 focus-within:ring-2 focus-within:ring-gray-400/30 dark:border-gray-700 dark:bg-gray-900 dark:focus-within:border-gray-400">
         {/* Chip row above the text body: the staged switch target (an /agent handoff or a
-            /model fork — never both) followed by the selected skills, all sharing the same
-            chip look. Remove buttons recolor the x on hover (no background wash). */}
-        {(target !== null || pendingModel !== null || selectedSkills.length > 0 || goalOn) && (
+            /model fork — never both), the selected skills, and whatever the Files panel has
+            contributed, all sharing the same chip look. Remove buttons recolor the x on hover
+            (no background wash). */}
+        {(target !== null ||
+          pendingModel !== null ||
+          selectedSkills.length > 0 ||
+          references.length > 0 ||
+          goalOn) && (
           <div className="mb-1 flex flex-wrap items-center gap-1">
             {/* Goal-mode chip: the budget stays compact as a value button; its editor is a
                 fixed upward popover so it never covers the objective textarea below. */}
             {goalOn && (
-              <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200">
+              <span className="anim-pop flex max-w-full items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200">
                 <span className="flex shrink-0 items-center gap-1" title={S.chat.goalModeDesc}>
                   <GlyphIcon d={GOAL_ICON} size={13} className="text-gray-500 dark:text-gray-400" />
                   <span>{S.chat.goalMode}</span>
@@ -2292,7 +2486,7 @@ export function ChatInput({
                         title={
                           goalBudgetDraftInvalid ? S.chat.goalBudgetInvalid : S.chat.goalBudgetHint
                         }
-                        className={`min-w-0 flex-1 rounded-md border bg-white px-2 py-1 font-mono text-sm leading-5 placeholder:text-gray-400 focus:outline-none focus:ring-2 dark:bg-gray-950 dark:placeholder:text-gray-500 ${
+                        className={`min-w-0 flex-1 rounded-md border bg-white px-2 py-1 font-mono text-xs leading-5 placeholder:text-gray-400 focus:outline-none focus:ring-2 dark:bg-gray-950 dark:placeholder:text-gray-500 ${
                           goalBudgetDraftInvalid
                             ? "border-red-400 text-red-600 focus:border-red-500 focus:ring-red-400/20 dark:border-red-500 dark:text-red-400"
                             : "border-gray-300 text-gray-800 focus:border-gray-500 focus:ring-gray-400/20 dark:border-gray-700 dark:text-gray-100 dark:focus:border-gray-500"
@@ -2337,7 +2531,7 @@ export function ChatInput({
             {target !== null && (
               <span
                 title={S.chat.handoffTargetTitle(agentDisplayName(target))}
-                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
               >
                 <AgentAvatar
                   id={target.agentId}
@@ -2365,7 +2559,7 @@ export function ChatInput({
             {pendingModel !== null && (
               <span
                 title={S.chat.modelSwitchTargetTitle(modelLabel(pendingModel))}
-                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
               >
                 <ProviderLogo provider={pendingModel.provider} className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{modelLabel(pendingModel)}</span>
@@ -2387,7 +2581,7 @@ export function ChatInput({
               return (
                 <span
                   key={name}
-                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-sm text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
                   {...(meta ? { title: localizedShortText(locale, meta) } : {})}
                 >
                   <SkillIcon
@@ -2400,6 +2594,42 @@ export function ChatInput({
                     type="button"
                     aria-label={`${S.chat.skillRemove} ${name}`}
                     onClick={() => toggleSkill(name)}
+                    className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {/* Staged from the Files panel: a file, a directory, or a quoted range. The text
+                itself never enters the draft — the chip names what it points at, and the
+                message carries it on send. */}
+            {references.map((reference, i) => {
+              const { name, lines } = referenceParts(reference);
+              const title = referenceTitle(reference);
+              return (
+                <span
+                  key={i}
+                  title={title}
+                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
+                >
+                  <GlyphIcon
+                    d={REFERENCE_ICON[reference.kind]}
+                    size={13}
+                    className="shrink-0 text-gray-500 dark:text-gray-400"
+                  />
+                  {/* The name gives way, the line numbers do not: they are four characters, and
+                      they are the half the truncated name cannot tell you. The tooltip carries
+                      the whole path and the range together. */}
+                  <span className="min-w-0 truncate">{name}</span>
+                  {lines !== "" && <span className="shrink-0">{lines}</span>}
+                  <button
+                    type="button"
+                    aria-label={`${S.files.removeReference} ${title}`}
+                    onClick={() => {
+                      setReferences((prev) => prev.filter((_, j) => j !== i));
+                      textareaRef.current?.focus();
+                    }}
                     className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
                   >
                     ×
@@ -2449,6 +2679,9 @@ export function ChatInput({
                   ? S.chat.inputPlaceholderShort
                   : S.chat.inputPlaceholder
           }
+          // text-base, not the sm rung the form controls take: this is a full-height typing
+          // surface for prose the user composes and re-reads, not a field in a form, and the
+          // toolbar under it is already text-xs so the two do not compete.
           className="block max-h-44 min-h-[60px] w-full resize-none bg-transparent px-1 py-0.5 text-base leading-6 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:placeholder:text-gray-500"
         />
 
@@ -2561,7 +2794,10 @@ export function ChatInput({
                 now={contextNow}
                 unknown={contextStale}
                 {...(contextWindow !== undefined ? { window: contextWindow } : {})}
+                {...(compactionLimit !== undefined ? { compactionLimit } : {})}
                 {...(sessionId !== undefined ? { sessionId } : {})}
+                agentName={currentAgentName}
+                {...(onChangeCompactionLimit ? { onChangeCompactionLimit } : {})}
               />
             )}
             {/* Draft state: conversation-time thinking level (backed by Agent settings), docked left of the model selector. */}

@@ -22,8 +22,11 @@ CLI 与服务端启动时会自动加载工作目录下的 `.env` 文件。
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
 | `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭 Web 应用的新版本检查（服务端唯一的对外网络请求） | 开启 |
 | `PENGUIN_NO_LOGIN_SHELL_ENV` | 任意非空值可禁止桌面版在 macOS/Linux 图形界面启动时导入登录 shell 环境变量（见[桌面版速上手](/quickstart-desktop)） | 未设置，导入开启，且只补启动环境中缺失的变量 |
+| `PENGUIN_CLI_ENTRY` | 本安装提供给其所运行 Agent 的 CLI 入口脚本（见下文） | 由 `penguin server` / `penguin web` 与桌面版自动设置；若服务端从仓库检出启动，则回退到该检出的 `packages/cli/dist/penguin.js` |
 
-这些变量配置的是 PenguinHarness 自身，因此 `PORT`、`HOST`、`PENGUIN_WEB_DIST` 以及内部使用的 `PENGUIN_CLI_ENTRY` **不会出现在 Agent 所执行命令的环境变量中**——否则 `exec_command` 启动的开发服务器会读到 `PORT`，去占用留给 PenguinHarness 的端口，而不是自己另选一个。宿主环境中的其余变量原样透传，但还有一处例外：`GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER`、`GIT_PAGER` 一律被固定值覆盖，以免命令因等待编辑器、凭证输入或分页器而挂起。Agent 的 [vault](#vault) 覆盖在宿主环境之上——在 vault 里设置 `PORT` 仍然可以送达命令——但覆盖不了这六个变量。
+这些变量配置的是 PenguinHarness 自身，因此 `PORT`、`HOST`、`PENGUIN_WEB_DIST` 与 `PENGUIN_CLI_ENTRY` **不会出现在 Agent 所执行命令的环境变量中**——否则 `exec_command` 启动的开发服务器会读到 `PORT`，去占用留给 PenguinHarness 的端口，而不是自己另选一个。宿主环境中的其余变量原样透传，但还有一处例外：`GIT_EDITOR`、`GIT_TERMINAL_PROMPT`、`TERM`、`NO_COLOR`、`PAGER`、`GIT_PAGER` 一律被固定值覆盖，以免命令因等待编辑器、凭证输入或分页器而挂起。Agent 的 [vault](#vault) 覆盖在宿主环境之上——在 vault 里设置 `PORT` 仍然可以送达命令——但覆盖不了这六个变量。
+
+有一样东西是反向流动的：**本安装自己的 `penguin` 会排在 Agent 所执行的每一条命令的 PATH 最前面**。服务端启动时会在 `<root>/bin/penguin` 写下一个启动脚本——它用服务端自己的 Node 运行上表所指的 CLI 入口——并把该目录置于每条命令 PATH 的最前。于是命令里的 `penguin` 就是该 Agent 正运行其中的这套 harness，而不是机器上全局安装的那个版本。该目录既写进子进程环境，也在 shell 内部再前置一次：命令经由登录 shell 执行，而登录 profile 往往会在子进程环境设定之后重写 PATH；这同时意味着它也排在 [vault](#vault) 中设置的 `PATH` 之前——而 vault 里的 `PATH` 本身是整体替换继承值的。该脚本在每次启动时重写，因此安装位置变动会在下次启动被跟上；没有可指向的入口时则不写，`penguin` 的解析与此前无异。
 
 `PENGUIN_PREVIEW_ORIGIN` 必须与应用源在**主机名**上不同，只换端口不行：Cookie 不区分端口，换端口仍然共用会话 Cookie。本地使用不必配置——App 固定在规范主机 `localhost`，预览用 `127.0.0.1`，既不需要配置也不需要 DNS。经 LAN 地址或真实域名访问时才需要设置，否则那里的预览会回退到同源沙箱，`localStorage`、Cookie 与第三方 embed 都不可用。在真实域名上设置时，会话 Cookie 必须保持 host-only（不带 `Domain=`），否则同注册域下的兄弟子域会共享它。取值无法解析时启动即报错，不会静默回退。
 
@@ -51,7 +54,7 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 | --- | --- |
 | `name` | Project 展示名（缺省显示 id） |
 | `default_model` | 缺省模型的成对引用 `{ provider, model_id }`，必须指向 `models` 中的条目 |
-| `vision_model` | 代读图片的视觉模型（供纯文本模型的 `describe_image` 使用），成对引用 |
+| `vision_model` | 代读图片的视觉模型（纯文本模型用 `read_file` 读图时由它代读），成对引用 |
 | `[command_policy]` | 沙箱安全策略：针对 shell 命令的拒绝规则，先于审批模式生效——见[沙箱安全策略](#沙箱安全策略) |
 | `[[models]]` | 可用模型条目列表 |
 
@@ -69,24 +72,26 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 | `fast_mode` | 单模型快速模式（厂商的溢价快速推理档位）；默认关闭，只持久化 `true`。只对 AgentHub client 支持该档位的模型开放，其余模型会拒绝携带该参数的请求——见[模型与 Provider](/models#快速模式) |
 | `pricing` | 三档价格 `cache_read` / `cache_write` / `output`，单位 USD 每百万 Token（`unit = "usd_per_mtok"`） |
 | `api_key` | 内联凭证；留空回退到 Provider 环境变量 |
-| `base_url` | 自定义 Base URL；内置目录会为网关与直连 MiniMax 模型预置 |
+| `base_url` | 自定义 Base URL；内置目录会为网关，以及固定了 client 的直连条目——MiniMax M3 与 DeepSeek `deepseek-flash`——预置 |
 | `created_at` | `api_key` 写入时间（ISO 8601，界面维护的展示字段） |
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
+default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash-vision-exp"
+model_id = "deepseek-flash"
 context_window = 1000000
 vision = true
+client_type = "deepseek-v4"
+base_url = "https://api.deepseek.com"
 api_key = "sk-..."
 
 [models.pricing]
 unit = "usd_per_mtok"
-cache_read = 0.003571
-cache_write = 0.428571
-output = 0.857143
+cache_read = 0.005714
+cache_write = 0.285714
+output = 1.142857
 ```
 
 `pricing.unit` 目前固定为 `usd_per_mtok`（USD 每百万 Token）；三档对应 `token_usage` 的三个计数桶。
@@ -152,6 +157,8 @@ enabled = false
 | `compaction.max_session_turns` | `-1` | Session 累计轮数阈值（`-1` 不限制） |
 | `compaction.mode` | `summarize` | `summarize` / `discard` |
 | `compaction.prompt` | 内置模板 | summarize 压缩使用的 Prompt |
+
+`compaction.*` 四项是本文件里唯一不必等待的部分：引擎在每个压缩检查点（每次请求回报 token 用量之后，以及手动 `/compact`）重读该节，保存后对已在运行的 Session 立即生效；其余各项都在模型上下文开启时读取，于下一次压缩生效。Web App 也可以直接在上下文构成面板里改阈值——拖动条形上的虚线切刀即可。
 | `memory.enabled` | `true` | 记忆是否进入上下文、是否为持久 Workspace 准备记忆目录 |
 | `memory.prompt` | 内置模板 | `{{MEMORY}}` 区块中恒注入的一半，可在记忆标签页编辑——含 `{{USER_MEMORY_INDEX}}` |
 | `memory.workspace_prompt` | 内置模板 | 仅持久 Workspace 追加，可在记忆标签页编辑——含 `{{WORKSPACE_MEMORY_INDEX}}` 与 `{{WORKSPACE_MEMORY_DIR}}` |
@@ -161,6 +168,7 @@ enabled = false
 | `skills.prompt` | 内置模板 | `{{SKILLS}}` 区块内容，可在技能标签页编辑——含 `{{SKILL_METADATA}}` |
 | `schedules.enabled` | `true` | 定时任务小节是否进入上下文（关闭后 server 照常触发任务，只是模型不了解任务体系） |
 | `schedules.prompt` | 内置模板 | `{{SCHEDULES}}` 区块内容，可在定时任务标签页编辑——教模型用文件工具管理任务，含 `{{SCHEDULE_LIST}}` |
+| `hooks.enabled` | `true` | 新建的 Session 是否在循环的钩子点运行已安装的钩子包（关闭后包仍在磁盘上，只是无人咨询）。唯一没有 prompt 一半的小节：钩子包是脚本，不是上下文文本 |
 | `tools.builtin` | 缺省时为完整默认工具集 | 工具条目：`name` / `description` / `parameters` / `permission`（`r` 或 `rw`）/ `forModel` / `timeoutMs` / `maxOutputLength` / `call_description`（条目级开关：控制 `description` 调用参数，开启时为必填，缺省保留）；一旦写出即整体替换默认列表 |
 | `tools.mcpServers` | `[]` | MCP Server 配置（`name` + `config`）：transport 取 `stdio` / `http` / `sse`，工具以 `mcp__<server>__<tool>` 并入工具集；`config.permission`（`auto` / `r` / `rw`，缺省 `auto`）固定该 Server 全部工具的审批等级，不再采信其 `readOnlyHint`；详见[工具与审批](/tools)的 MCP Server 一节 |
 
@@ -233,7 +241,7 @@ compaction:
 
 Windows 上注入的 `{{PROJECT_DIR}}` 与 `{{CWD}}` 统一使用正斜杠——与 core 产出的其他模型可见路径（附件行、Goal file 行、截断输出 recovery 路径）同一拼写。模型会把这些拼写原样带入 JSON 工具参数和 Shell 命令；正斜杠被 Node 的 fs API 与包内 (Git) Bash 工具 Shell 接受，也避免 JSON 反斜杠转义出错。
 
-`agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。与 Agent State 的其余部分（含 `system_config.yaml`）一样，它在每次模型上下文开启时重新读取——Session 创建时一次，压缩开启下一个上下文时再一次——因此修改在运行中 Session 的下一次压缩即生效，不只作用于新 Session，也绝不会作用于正在运行的上下文（见[上下文压缩](/agent-loop)）。
+`agent_state/AGENTS.md` 是开发者可编辑的指令文件，经 `{{AGENTS_MD}}` 注入系统提示词，缺省为空——它也是优化器最常改动的文件（见[自我进化](/self-improvement)）。与 Agent State 的其余部分（含 `system_config.yaml`）一样，它在每次模型上下文开启时重新读取——Session 创建时一次，压缩开启下一个上下文时再一次——因此修改在运行中 Session 的下一次压缩即生效，不只作用于新 Session，也绝不会作用于正在运行的上下文（`compaction` 一节例外，见[上下文压缩](/agent-loop)）。
 
 Vault / 技能 / 记忆 / 定时任务四个小节均采用「段落占位符 + 开关 + 可编辑提示词」模式：模板只保留 `{{VAULT}}` / `{{SKILLS}}` / `{{MEMORY}}` / `{{SCHEDULES}}` 占位符，小节文本存于各自的 `*.prompt` 配置、在对应设置标签页编辑，`*.enabled` 关闭即整段为空。四个段落占位符在装配时**最后单趟展开**：展开产物不再被扫描，因此记忆索引或提示词正文里出现的占位符字样只会保持字面原样，不会引发二次替换。
 

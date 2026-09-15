@@ -1,17 +1,21 @@
 /**
- * What a compaction row shows: the text inside its collapsed body (compaction-summary.ts)
- * and the title above it (the dictionaries' mode-aware `compactionTitle`).
+ * What a compaction row shows: the text inside its result section (compaction-summary.ts)
+ * and the titles above it (the dictionaries' mode-aware `compactionTitle`, and the state
+ * titles `compactionRunning` / `compactionDone` the header shows while the step runs and once
+ * it settles, the work-group header's own Running/Done idiom).
  *
- * The row itself is a StepBanner with the summary as its `children`, so it is collapsed by
- * default and carries the chevron exactly like a thinking block — the reader expands it to
- * watch the summary stream or to read it afterwards. What that body contains is this pure
- * helper's job, and it is what these tests pin (the Web suite runs in a node environment
- * and renders no React).
+ * The row itself is a StepBanner whose body stacks a thinking section and a result section.
+ * The banner opens while the compaction runs and closes itself once it settles; the two
+ * sections stay closed throughout, showing only their labels and their wall times — the
+ * reader expands one to watch the request think or write, or to read the outcome afterwards.
+ * What the result section then contains is this pure helper's job, and it is what these tests
+ * pin; the section timings behind those wall times are pinned in stream-model.test.ts (the
+ * Web suite runs in a node environment and renders no React).
  */
 import { describe, expect, it } from "vitest";
 import { en } from "../src/lib/strings-en";
 import { zh } from "../src/lib/strings";
-import { compactionSummaryText } from "../src/lib/omni/compaction-summary";
+import { compactionResultVisible, compactionSummaryText } from "../src/lib/omni/compaction-summary";
 
 describe("compactionSummaryText", () => {
   it("strips the summary tags so the body reads as prose", () => {
@@ -34,6 +38,26 @@ describe("compactionSummaryText", () => {
     expect(compactionSummaryText({})).toBe("");
     expect(compactionSummaryText({ summaryText: "" })).toBe("");
     expect(compactionSummaryText({ summaryText: "   " })).toBe("");
+  });
+});
+
+describe("compactionResultVisible (the result section waits for the thinking to finish)", () => {
+  it("stays hidden while the request is still thinking and no summary has started", () => {
+    expect(
+      compactionResultVisible({ running: true, summaryText: "", summaryStartedAtMs: undefined }),
+    ).toBe(false);
+    expect(compactionResultVisible({ running: true })).toBe(false);
+  });
+
+  it("appears with the first summary text, which is what ends the thinking", () => {
+    expect(compactionResultVisible({ running: true, summaryStartedAtMs: 1000 })).toBe(true);
+    expect(compactionResultVisible({ running: true, summaryText: "<summary>x" })).toBe(true);
+  });
+
+  it("is shown on a completed row, and never on one that failed with its drafts discarded", () => {
+    expect(compactionResultVisible({ running: false, status: "completed" })).toBe(true);
+    expect(compactionResultVisible({ running: false, status: "fatal" })).toBe(false);
+    expect(compactionResultVisible({ running: false, status: "aborted" })).toBe(false);
   });
 });
 
@@ -61,6 +85,35 @@ describe("compactionTitle (the row is titled by its mode)", () => {
           dict.chat.compactionTitle("summarize"),
         );
       }
+    }
+  });
+});
+
+describe("compactionRunning / compactionDone (the title doubles as the status, as the work group's does)", () => {
+  it("reads 压缩中 while a compaction runs and 压缩完毕 once it settles", () => {
+    expect(zh.chat.compactionRunning("summarize")).toBe("压缩中");
+    expect(zh.chat.compactionDone("summarize")).toBe("压缩完毕");
+  });
+
+  it("keeps the two states and the two modes apart in both dictionaries", () => {
+    for (const [locale, dict] of [
+      ["zh", zh],
+      ["en", en],
+    ] as const) {
+      for (const mode of ["summarize", "discard"]) {
+        expect(dict.chat.compactionRunning(mode), `${locale} ${mode}`).toBeTruthy();
+        expect(
+          dict.chat.compactionRunning(mode),
+          `${locale} ${mode} running reads as settled`,
+        ).not.toBe(dict.chat.compactionDone(mode));
+      }
+      // A discard never reads as compacting, in either state — the point of titling by mode.
+      expect(dict.chat.compactionRunning("discard"), locale).not.toBe(
+        dict.chat.compactionRunning("summarize"),
+      );
+      expect(dict.chat.compactionDone("discard"), locale).not.toBe(
+        dict.chat.compactionDone("summarize"),
+      );
     }
   });
 });

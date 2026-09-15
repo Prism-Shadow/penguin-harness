@@ -154,7 +154,11 @@ function Body({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNode
 }
 
 function Footer({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNode {
-  const close = <Button onClick={closeUpdateModal}>{S.common.close}</Button>;
+  const close = (
+    <Button size="sm" onClick={closeUpdateModal}>
+      {S.common.close}
+    </Button>
+  );
   switch (flow.kind) {
     case "unknown":
     case "checking":
@@ -163,7 +167,7 @@ function Footer({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNo
       return (
         <>
           {close}
-          <Button variant="primary" onClick={() => void checkForUpdates()}>
+          <Button size="sm" variant="primary" onClick={() => void checkForUpdates()}>
             {S.update.checkNow}
           </Button>
         </>
@@ -172,20 +176,28 @@ function Footer({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNo
       if (!flow.canInstall) return close;
       return (
         <>
-          <Button onClick={closeUpdateModal}>{S.update.later}</Button>
-          <Button variant="primary" onClick={() => void downloadUpdate()}>
+          <Button size="sm" onClick={closeUpdateModal}>
+            {S.update.later}
+          </Button>
+          <Button size="sm" variant="primary" onClick={() => void downloadUpdate()}>
             {S.update.downloadAndInstall}
           </Button>
         </>
       );
     case "downloading":
-      return <Button onClick={closeUpdateModal}>{S.update.background}</Button>;
+      return (
+        <Button size="sm" onClick={closeUpdateModal}>
+          {S.update.background}
+        </Button>
+      );
     case "ready":
       if (flow.restart === "manual") return close;
       return (
         <>
-          <Button onClick={closeUpdateModal}>{S.update.later}</Button>
-          <Button variant="primary" onClick={() => void installUpdate()}>
+          <Button size="sm" onClick={closeUpdateModal}>
+            {S.update.later}
+          </Button>
+          <Button size="sm" variant="primary" onClick={() => void installUpdate()}>
             {S.update.restartNow}
           </Button>
         </>
@@ -197,6 +209,7 @@ function Footer({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNo
         <>
           {close}
           <Button
+            size="sm"
             variant="primary"
             onClick={() => void (flow.retry === "check" ? checkForUpdates() : downloadUpdate())}
           >
@@ -211,7 +224,7 @@ function Footer({ mode, flow }: { mode: UpdateMode; flow: UpdateFlow }): ReactNo
         // A server refusal is a fact about the install; the check can still run again.
         <>
           {close}
-          <Button variant="primary" onClick={() => void checkForUpdates()}>
+          <Button size="sm" variant="primary" onClick={() => void checkForUpdates()}>
             {S.update.checkNow}
           </Button>
         </>

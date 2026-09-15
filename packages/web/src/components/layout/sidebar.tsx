@@ -20,7 +20,7 @@
  * trailing slot shows the compact last-active time at rest and swaps to archive + delete
  * icon buttons on hover/focus; the full set (pin, rename, archive, delete) opens as a
  * context menu on right-click, Shift+F10, or a press-and-hold on touch
- * -> bottom user config (theme / language / System settings / logout).
+ * -> bottom user row, which opens the shared account menu (user-menu.tsx).
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
  * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
@@ -38,7 +38,7 @@ import type {
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { formatRelativeShort } from "../../lib/format";
-import { sessionRowActivity } from "../../lib/session-activity";
+import { sessionBackgroundTasks, sessionRowActivity } from "../../lib/session-activity";
 import type { SessionActivity } from "../../lib/session-activity";
 import { forgetSession, noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { apiErrorText } from "../../lib/api-error";
@@ -51,15 +51,17 @@ import {
   SIDEBAR_PAGE_SIZE,
   TIME_FOLDERS_GROUP_KEY,
   aggregateWorkspaceCounts,
+  aggregateWorkspaceLatest,
   clampGroupPage,
+  completeWorkspaceGroups,
   groupPageCount,
   groupPageOf,
   groupPageSlice,
   groupSessionsByTime,
   groupSessionsByWorkspace,
-  hiddenRowCount,
   matchesSessionQuery,
   partitionSessions,
+  revealPlan,
   sessionCategory,
   totalCategoryCounts,
   workspaceGroupKey,
@@ -104,7 +106,7 @@ import {
   orderGroups,
   saveGroupOrder,
 } from "../../lib/group-order";
-import { Dropdown } from "../ui/dropdown";
+import { Dropdown, menuItemClass } from "../ui/dropdown";
 import { useRowContextMenu } from "../ui/context-menu";
 import {
   HOVER_ROW_ACTIONS,
@@ -120,6 +122,7 @@ import {
 } from "../ui/session-row-menu";
 import type { SessionRowAction } from "../ui/session-row-menu";
 import { AgentAvatar } from "../ui/agent-avatar";
+import { UserAvatar } from "../ui/user-avatar";
 import { CheckIcon, ChevronDown, GEAR_ICON, MESSAGING_RELAY_ICON, NAV_ICONS } from "../ui/icons";
 import {
   FOLDER_ICON,
@@ -140,7 +143,11 @@ import { toastError, toastInfo, toastSuccess } from "../ui/toast";
 import { writeClipboard } from "../ui/copy-button";
 import { Truncated } from "../ui/truncated";
 import { Badge } from "../ui/badge";
-import { SessionActivityIcon } from "../ui/session-activity-icon";
+import {
+  BackgroundTasksMark,
+  ScheduleMark,
+  SessionActivityIcon,
+} from "../ui/session-activity-icon";
 import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Button } from "../ui/button";
@@ -159,11 +166,12 @@ import {
 } from "../../features/chat/draft-sessions";
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
-import { UpdateRow } from "../account/update-row";
-import { openUpdateModal } from "../../lib/use-update-flow";
+import { UserMenu } from "./user-menu";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
-import { SettingsDialog } from "../../features/settings/settings-dialog";
+import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
+import { useAgentSchedules } from "../../features/schedules/schedule-store";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { toneInk } from "../../lib/tone";
 
 /** New-chat pencil (the pinned "New chat" button and the collapsed rail share it). */
 export const NEW_CHAT_ICON = "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z";
@@ -238,9 +246,6 @@ function AddBadgeIcon({ base, size = 15 }: { base: string; size?: number }) {
   );
 }
 
-const menuItemClass =
-  "block w-full px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800";
-
 /** Section-header icon control (search / list settings / create): the grouping-toggle button look — active renders as a pressed fill. */
 const headerControlClass = (active: boolean) =>
   `flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors duration-150 ${
@@ -293,6 +298,9 @@ const folderKey = (groupKey: string, category: FolderCategory) => `${category}\0
 /** Collapse-state key of the parked-drafts group ("\0" keeps it clear of Agent ids and Workspace paths). */
 const DRAFTS_GROUP_KEY = "\0drafts";
 
+/** Standing "no Session is scheduled", so the first render has something to hold before any answer. */
+const NO_SCHEDULED_SESSIONS: ReadonlySet<string> = new Set();
+
 /**
  * Session status glyph: a turning hourglass while the Session is busy, a green dot once it has
  * finished with a reply the user has not seen, and nothing once that reply has been read — or
@@ -314,7 +322,7 @@ export function Sidebar({
   onCollapse?: () => void;
 }) {
   const navigate = useNavigate();
-  const { user, logout, desktopMode, sessionVia } = useAuth();
+  const { user, sessionVia } = useAuth();
   const { locale } = useLocale();
   const {
     projects,
@@ -330,6 +338,7 @@ export function Sidebar({
     byAgent,
     countsByAgent,
     workspaceCountsByAgent,
+    workspaceLatestByAgent,
     isLoadedFor,
     hasMoreFor,
     loadMoreFor,
@@ -341,15 +350,43 @@ export function Sidebar({
   const activeSessionId = chatMatch?.params.sessionId ?? null;
 
   const [projectOpen, setProjectOpen] = useState(false);
-  const [userOpen, setUserOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   /** The badges over the update and to-do trails (use-update-badges.ts); the avatar's dot follows the update flow's offer / restart states. */
   const badges = useUpdateBadges();
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
+  // The current Agent's scheduled tasks, shared with the dock's schedules panel through one
+  // store, which caches a list per Agent so that neither surface's scope discards the other's.
+  // The scope is the current Agent: the chat page keeps it in step with the open conversation,
+  // so the panel and these rows ask for the same list. In workspace or time grouping the list
+  // can also show OTHER Agents' Sessions, and those rows simply wear no mark — a row saying
+  // nothing is honest, a row answered from another Agent's list would not be. Re-read on every
+  // navigation: opening a conversation is the moment a task may just have been created or
+  // switched off.
+  const { items: agentSchedules } = useAgentSchedules(
+    currentProjectId,
+    currentAgent?.agentId ?? null,
+    activeSessionId ?? "",
+  );
+  // The Sessions of that Agent wearing the alarm clock: one bound task with a next fire time is
+  // enough. The store re-renders these rows on every refresh (a navigation, a schedule event, a
+  // turn ending, the panel's poll), and the server recomputes `nextFireAt` on each listing, so a
+  // task that fired for the last time loses its mark at the next refresh.
+  const pendingScheduled = useMemo(
+    () => (agentSchedules === null ? null : pendingScheduleSessions(agentSchedules)),
+    [agentSchedules],
+  );
+  // A null list means "this Agent has not been read yet", never "this Agent has no tasks":
+  // reading it as the second blanks every alarm in the list for as long as a request takes. The
+  // marks on screen stand until a real answer replaces them, which is the standing the pin and
+  // the relay glyph get for free by being fields of the row itself.
+  const lastScheduledRef = useRef<ReadonlySet<string>>(NO_SCHEDULED_SESSIONS);
+  useEffect(() => {
+    if (pendingScheduled !== null) lastScheduledRef.current = pendingScheduled;
+  }, [pendingScheduled]);
+  const scheduledSessions = pendingScheduled ?? lastScheduledRef.current;
   const collapseStoreKey = currentProjectId === null ? null : collapsedGroupsKey(currentProjectId);
   const pinStoreKey = currentProjectId === null ? null : pinnedGroupsKey(currentProjectId);
   /** Collapsed page-nav group (the 智能体 → 评估中心 entries; expanded by default, the choice persists across sessions). */
@@ -432,6 +469,7 @@ export function Sidebar({
     setGroupPage(0);
     // The other Project's groups are gone, and so is any meaning their reveal state had.
     setGroupCaps(new Map());
+    setFolderCaps(new Map());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [collapseStoreKey, pinStoreKey, currentProjectId]);
   /** Expanded folders (subagent / scheduled / archived; collapsed by default), keyed by folderKey — each folder has its own open state. */
@@ -440,6 +478,8 @@ export function Sidebar({
   const [pendingLoads, setPendingLoads] = useState<ReadonlySet<string>>(new Set());
   /** Per-group display cap for active rows (keyed by group key; absent = SIDEBAR_PAGE_SIZE). "More" raises it a page at a time. */
   const [groupCaps, setGroupCaps] = useState<ReadonlyMap<string, number>>(new Map());
+  /** The same display cap per folder (keyed by folderKey; absent = SIDEBAR_PAGE_SIZE), so an expanded folder reveals a page at a time instead of everything a fetch returned. */
+  const [folderCaps, setFolderCaps] = useState<ReadonlyMap<string, number>>(new Map());
   /** Which PAGE of groups renders (#139: dozens of Agents/Workspaces made the list too tall to scan), 0-based; reset per Project and on a mode switch, and clamped at render to the pages that still exist. */
   const [groupPage, setGroupPage] = useState(0);
   /** Session pending delete confirmation (null = none). */
@@ -468,6 +508,7 @@ export function Sidebar({
     setGroupOrder(loadGroupOrder(currentProjectId, mode));
     setGroupPage(0);
     setGroupCaps(new Map());
+    setFolderCaps(new Map());
   };
 
   /** Collapse/expand the page-nav group (same store-then-set convention as setGroupMode). */
@@ -477,16 +518,36 @@ export function Sidebar({
     setNavCollapsed(next);
   };
 
-  /** Workspace groups (workspace mode): computed from the flat list, temp directories merged last, plus the manually-added Workspaces as empty groups on top (newest registration first). */
-  const workspaceGroups = useMemo(
-    () => mergeRegisteredWorkspaces(groupSessionsByWorkspace(sessions), registeredWorkspaces),
-    [sessions, registeredWorkspaces],
-  );
-
   /** Workspace-mode per-group exact server totals (folded from the per-Agent per-Workspace counts). */
   const workspaceGroupCounts = useMemo(
     () => aggregateWorkspaceCounts(workspaceCountsByAgent),
     [workspaceCountsByAgent],
+  );
+
+  /** Workspace-mode per-group newest-Session stamps (folded the same way): a group's recency before any of its rows are loaded. */
+  const workspaceGroupLatest = useMemo(
+    () => aggregateWorkspaceLatest(workspaceLatestByAgent),
+    [workspaceLatestByAgent],
+  );
+
+  /**
+   * Workspace groups (workspace mode): the loaded rows' groups, completed with every
+   * Workspace the server's counts know (empty until their rows page in — the initial load
+   * is each Agent's ten newest conversations, which touch only a few of dozens of
+   * Workspaces), by recency with the temp group last, plus the manually-added Workspaces
+   * as empty groups behind them (newest registration first).
+   */
+  const workspaceGroups = useMemo(
+    () =>
+      mergeRegisteredWorkspaces(
+        completeWorkspaceGroups(
+          groupSessionsByWorkspace(sessions),
+          workspaceGroupCounts,
+          workspaceGroupLatest,
+        ),
+        registeredWorkspaces,
+      ),
+    [sessions, workspaceGroupCounts, workspaceGroupLatest, registeredWorkspaces],
   );
 
   // Pinned groups first within each mode, then the manual drag order within each pin
@@ -872,6 +933,13 @@ export function Sidebar({
    *
    * Only the groups on screen ask — the pager bounds that to one page of groups — and a
    * search is left alone, since it renders loaded matches only and fetching cannot find more.
+   *
+   * The ask is marked in flight like a "More" click (pendingLoads), for two reasons: a group
+   * the counts know but no page has loaded rows of starts out empty, and its body must read
+   * as loading rather than as having no conversations; and the marker is what keeps this
+   * effect from asking twice — every landed page changes the group list and re-runs it, and
+   * an in-flight pair is still unloaded, so a second request would start its cursor over and
+   * the group would later skip a page.
    */
   useEffect(() => {
     if (groupMode !== "workspace" || searching) return;
@@ -885,7 +953,17 @@ export function Sidebar({
         ...new Set([...(counts?.agents.active ?? []), ...group.sessions.map((s) => s.agentId)]),
       ];
       const unloaded = agents.filter((id) => !isLoadedFor(id, "active", group.key));
-      if (unloaded.length > 0) void loadMoreFor(unloaded, "active", group.key);
+      if (unloaded.length === 0) continue;
+      const key = loadKey(group.key, "active");
+      if (pendingLoads.has(key)) continue;
+      setPendingLoads((prev) => new Set(prev).add(key));
+      void loadMoreFor(unloaded, "active", group.key).finally(() => {
+        setPendingLoads((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      });
     }
   }, [
     groupMode,
@@ -895,6 +973,7 @@ export function Sidebar({
     workspaceGroupCounts,
     isLoadedFor,
     loadMoreFor,
+    pendingLoads,
   ]);
 
   /** Archive / unarchive: persists immediately and updates in place (fails silently; the next list refresh self-corrects). */
@@ -1183,6 +1262,8 @@ export function Sidebar({
             // Busy / settled / read / never-ran, decided in one place (session-activity.ts) so
             // the whole transition sequence is testable without a DOM.
             activity={sessionRowActivity(s, sessionSeen, activeSessionId)}
+            background={sessionBackgroundTasks(s)}
+            scheduled={scheduledSessions.has(s.sessionId)}
             pinned={pinnedSessions.has(s.sessionId)}
             // Pinning is an ACTIVE-list priority: folder rows (subagent / scheduled /
             // archived) are ordered chronologically inside their folder and never pass
@@ -1195,6 +1276,7 @@ export function Sidebar({
             // "active right now"). CLI-adopted and subagent rows are not
             // driven by this server, so theirs stays at createdAt.
             lastActive={formatRelativeShort(s.lastActiveAt, locale)}
+            locale={locale}
             {...(withAgentHint ? { agentHint: agentNameById.get(s.agentId) ?? s.agentId } : {})}
             {...drag}
             onOpen={openSession}
@@ -1214,17 +1296,57 @@ export function Sidebar({
   );
 
   /**
+   * A folder's "Show N more chats": reveal one more page of the rows it already holds,
+   * and fetch its next server page only when the reveal actually runs past them and
+   * somewhere is left to fetch from. Mirrors the active list's showMore — a page already
+   * in memory spends no request, which in time mode is a fan-out across every
+   * contributing Agent.
+   */
+  const revealFolderMore = (
+    groupKey: string,
+    category: FolderCategory,
+    agentIds: string[],
+    loaded: number,
+  ) => {
+    const key = folderKey(groupKey, category);
+    const nextCap = (folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE) + SIDEBAR_PAGE_SIZE;
+    setFolderCaps((prev) => {
+      const next = new Map(prev);
+      next.set(key, nextCap);
+      return next;
+    });
+    if (loaded < nextCap && agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)))) {
+      trackedLoadMore(groupKey, category, agentIds);
+    }
+  };
+
+  /** A folder's "show less": back to the first page (rows already fetched stay in memory). */
+  const collapseFolder = (key: string) => {
+    setFolderCaps((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  };
+
+  /**
    * Collapsed-by-default lazy folder (subagent / scheduled / archived): nothing is
-   * fetched until the first expand, and once open the folder pages independently with
-   * its own "More" row. Everything is driven by the group's **own** exact server share
-   * (`totals` — the Agent's counts in agent mode, the per-Workspace fold in workspace
-   * mode): the folder exists only while its share is non-zero, the label shows that
-   * share, and "More" shows only while loaded rows fall short of it — an Agent's
-   * content in *other* Workspaces can never surface a folder here. The folder's "More"
-   * pages independently of the active list's; in workspace mode a fetched page can land
-   * rows in other groups' folders too, so one click may grow this folder by fewer than
-   * a full page — the row shows a loading state while the fetch runs and stays until
-   * this group's share is fully loaded.
+   * fetched until the first expand, and once open the folder reveals and pages
+   * independently with its own "More" and "show less" rows. Everything is driven by the
+   * group's **own** exact server share (`totals` — the Agent's counts in agent mode, the
+   * per-Workspace fold in workspace mode): the folder exists only while its share is
+   * non-zero, the label shows that share, and "More" shows only while something of that
+   * share is still hidden — an Agent's content in *other* Workspaces can never surface a
+   * folder here.
+   *
+   * The folder obeys the same display rule the active list does (revealPlan): one page
+   * of rows shows at a time and "More" reveals one page more, spending a fetch only when
+   * the reveal runs past what is in memory. In time mode the folders span every contributing
+   * Agent, so one fetch can return several pages at once; they stay in memory under the
+   * cap rather than all landing on screen. In workspace mode a fetched page can land rows
+   * in other groups' folders too, so one click may grow this folder by fewer than a full
+   * page — the row shows a loading state while the fetch runs.
    */
   const renderFolder = (
     groupKey: string,
@@ -1239,32 +1361,40 @@ export function Sidebar({
     // While searching the folder speaks for its loaded MATCHES only: a match hidden
     // behind a collapsed folder would look like a missing result (the models page's
     // search-forces-open rationale), so the folder is forced open, labelled by the
-    // match count, hidden when nothing matches, and never offers "More" (the server
-    // cannot search unloaded rows).
+    // match count, hidden when nothing matches, and never offers "More" or "show less"
+    // (the server cannot search unloaded rows, and every match is already on screen).
     if (searching && rows.length === 0) return null;
     // Loaded rows win a disagreement with the totals (counts refresh only on reload).
     const total = searching ? rows.length : Math.max(totals?.[category] ?? 0, rows.length);
     if (total === 0) return null;
-    // More while the group's share isn't fully loaded AND somewhere is left to fetch from
-    // (counts drifting above reality would otherwise leave a dead button until reload).
-    const more =
-      !searching &&
-      rows.length < total &&
-      agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
+    const key = folderKey(groupKey, category);
+    const cap = folderCaps.get(key) ?? SIDEBAR_PAGE_SIZE;
+    // The folder's whole share is in memory (every Agent that could hold a row of it is
+    // fetched out), which is when the loaded rows become the truth — the same clause the
+    // active list applies, and what keeps a count drifting above reality from leaving a
+    // reveal row with nothing behind it.
+    const fullyLoaded =
+      agentIds.length > 0 && !agentIds.some((id) => hasMoreFor(id, category, fetchScope(groupKey)));
+    const plan = revealPlan({ cap, loaded: rows.length, total, fullyLoaded });
+    const shown = searching ? rows : rows.slice(0, plan.shown);
+    const hidden = searching ? 0 : plan.hidden;
     return (
       <FolderSection
         key={category}
         label={S.chat.folderGroups[category](total)}
-        open={searching || openFolders.has(folderKey(groupKey, category))}
+        open={searching || openFolders.has(key)}
         onToggle={() => toggleFolder(groupKey, category, agentIds)}
-        more={more}
-        // The folder shows every row it has loaded, so its remainder is its own share
-        // minus those — the same count the active list's reveal row names one level up.
-        moreLabel={S.chat.expandRestSessions(Math.max(total - rows.length, 0))}
+        more={hidden > 0}
+        // The rows past the cap plus the unfetched remainder of this folder's own share —
+        // the same count, and the same wording, the active list's reveal row names one
+        // level up.
+        moreLabel={S.chat.expandRestSessions(hidden)}
         pending={pendingLoads.has(loadKey(groupKey, category))}
-        onMore={() => trackedLoadMore(groupKey, category, agentIds)}
+        onMore={() => revealFolderMore(groupKey, category, agentIds, rows.length)}
+        less={!searching && plan.canCollapse}
+        onLess={() => collapseFolder(key)}
       >
-        {renderRows(rows, withAgentHint)}
+        {renderRows(shown, withAgentHint)}
       </FolderSection>
     );
   };
@@ -1310,7 +1440,6 @@ export function Sidebar({
     totals: SessionCategoryCounts | undefined,
     agentsFor: (category: SessionCategory) => string[],
   ) => {
-    const cap = groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE;
     // Row order: the pinned cluster first, then — under manual sort — the stored order
     // within each pin partition (lib/session-order.ts). Both reorder only rows already
     // FETCHED: a pinned conversation that lives past the loaded pages does not surface
@@ -1326,7 +1455,6 @@ export function Sidebar({
       order: sessionOrder,
       recencyOf: (s) => s.lastActiveAt,
     });
-    const shownActive = searching ? orderedActive : orderedActive.slice(0, cap);
     /** Manual sort only (never on a search-filtered view): drag scope + the group's full ordered list, so a drop commits the whole partition. */
     const dragCtx =
       effectiveSortMode === "manual" && !searching
@@ -1342,32 +1470,36 @@ export function Sidebar({
     const fullyLoaded =
       activeAgents.length > 0 &&
       !activeAgents.some((id) => hasMoreFor(id, "active", fetchScope(groupKey)));
-    const hiddenActive = searching
-      ? 0
-      : hiddenRowCount({
-          shown: shownActive.length,
-          loaded: parts.active.length,
-          total: totals?.active ?? 0,
-          fullyLoaded,
-        });
-    // "Show less" appears once the group is revealed past its first page and there is
-    // something for it to hide again.
-    const canCollapse =
-      !searching && cap > SIDEBAR_PAGE_SIZE && parts.active.length > SIDEBAR_PAGE_SIZE;
+    // One page of rows at a time, what the reveal row still hides, and whether "Show less"
+    // has anything to fold away: the single rule revealPlan states, applied here and by
+    // every folder below.
+    const plan = revealPlan({
+      cap: groupCaps.get(groupKey) ?? SIDEBAR_PAGE_SIZE,
+      loaded: parts.active.length,
+      total: totals?.active ?? 0,
+      fullyLoaded,
+    });
+    const shownActive = searching ? orderedActive : orderedActive.slice(0, plan.shown);
+    const hiddenActive = searching ? 0 : plan.hidden;
+    const canCollapse = !searching && plan.canCollapse;
     const folders = FOLDER_CATEGORIES.map((category) =>
       renderFolder(groupKey, category, parts, withAgentHint, agentsFor(category), totals),
     );
     const empty = parts.active.length === 0 && folders.every((f) => f === null);
     const activePending = pendingLoads.has(loadKey(groupKey, "active"));
+    // Rows the server counts that no page has loaded yet — a Workspace group known from
+    // the counts alone while its own first page is on its way (or, after a failed fetch,
+    // waiting on the reveal row below to be asked for again). Not "no conversations".
+    const awaitingRows = !searching && parts.active.length === 0 && hiddenActive > 0;
     return (
       <>
         {empty ? (
-          loading ? (
+          loading || (awaitingRows && activePending) ? (
             // The same window the chat pane's skeleton covers: the Agent groups render as
             // soon as the Agents arrive, but the session pages are still being fetched —
             // "no Sessions yet" is not the honest answer until they land.
             <SkeletonList rows={2} />
-          ) : (
+          ) : awaitingRows ? null : (
             <p className="px-2.5 py-1 text-xs text-gray-400 dark:text-gray-600">
               {S.chat.noSessions}
             </p>
@@ -2102,87 +2234,46 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Bottom user config */}
+      {/* Bottom user row: the trigger for the account menu both this sidebar and the
+          collapsed rail open (user-menu.tsx). */}
       <div className="shrink-0 border-t border-gray-200 p-2 dark:border-gray-800">
-        <Dropdown
-          open={userOpen}
-          setOpen={setUserOpen}
+        <UserMenu
           menuClass="bottom-full left-0 right-0 mb-1 origin-bottom"
-          button={
+          trigger={({ open, toggle }) => (
             <button
               type="button"
-              onClick={() => setUserOpen(!userOpen)}
+              onClick={toggle}
+              aria-haspopup="menu"
+              aria-expanded={open}
               {...(badges.softwareNote !== null
                 ? {
                     // The dot alone is mysterious: name what is waiting on the trigger (hover
                     // tooltip + accessible name), in the update row's own wording.
                     title: badges.softwareNote,
-                    "aria-label": `${user?.userId ?? ""} · ${badges.softwareNote}`,
+                    "aria-label": `${user?.displayName ?? user?.userId ?? ""} · ${badges.softwareNote}`,
                   }
                 : {})}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
             >
-              <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900">
-                {(user?.userId ?? "?").slice(0, 1).toUpperCase()}
+              <UserAvatar
+                userId={user?.userId ?? "?"}
+                {...(user?.displayName !== undefined ? { displayName: user.displayName } : {})}
+                {...(user?.avatar !== undefined ? { avatar: user.avatar } : {})}
+              >
                 {/* Update reminder: the menu behind this trigger holds the row that acts on
                     it, and the trigger's tooltip/label above say what it is. */}
                 {badges.software !== null && <UpdateDot />}
+              </UserAvatar>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                {user?.displayName ?? user?.userId}
               </span>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">{user?.userId}</span>
               {user?.isAdmin && (
                 <span className="text-xs text-gray-400 dark:text-gray-500">{S.auth.admin}</span>
               )}
             </button>
-          }
-        >
-          <div className="py-1">
-            {/* System settings dialog: everyone gets the row — the dialog always has the
-                personal pages, and the server-global ones inside it stay gated by the
-                section registry rather than by this row. The preference rows that used to
-                stack here live on its pages now. */}
-            <button
-              type="button"
-              className={menuItemClass}
-              onClick={() => {
-                setUserOpen(false);
-                setSettingsOpen(true);
-              }}
-            >
-              {S.settings.systemSettings}
-            </button>
-            {/* Update entry, directly under the settings entry rather than on a page inside
-                it: one row for both backends (the server release here, the shell's own
-                updater in the desktop window), naming where the update flow stands and
-                opening the update modal — where the flow is explained and acted on. The
-                modal is mounted by the app layout, so it outlives this menu. Hidden where
-                this session can update nothing (a browser signed into a desktop-mode
-                server, see updateModeFor). */}
-            <UpdateRow
-              menuItemClass={menuItemClass}
-              onOpen={() => {
-                setUserOpen(false);
-                openUpdateModal();
-              }}
-            />
-            {/* Hidden in desktop mode: the window IS the session — logging out would
-                strand the user on a login page whose password was never shown. */}
-            {!desktopMode && (
-              <button
-                type="button"
-                className="block w-full px-3.5 py-2 text-left text-sm text-red-600 transition-colors duration-150 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-                onClick={() => {
-                  setUserOpen(false);
-                  void logout().then(() => navigate("/login"));
-                }}
-              >
-                {S.auth.logout}
-              </button>
-            )}
-          </div>
-        </Dropdown>
+          )}
+        />
       </div>
-
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <CreateProjectDialog
         open={createProjectOpen}
@@ -2205,10 +2296,11 @@ export function Sidebar({
         onClose={() => (renameBusy ? undefined : setRenamingSession(null))}
         footer={
           <>
-            <Button onClick={() => setRenamingSession(null)} disabled={renameBusy}>
+            <Button size="sm" onClick={() => setRenamingSession(null)} disabled={renameBusy}>
               {S.common.cancel}
             </Button>
             <Button
+              size="sm"
               variant="primary"
               disabled={renameBusy || !renameText.trim()}
               onClick={() => void confirmRename()}
@@ -2219,6 +2311,7 @@ export function Sidebar({
         }
       >
         <Input
+          size="sm"
           label={S.chat.renameSessionLabel}
           value={renameText}
           error={renameError ?? undefined}
@@ -2260,14 +2353,17 @@ export function Sidebar({
         onClose={() => setRenamingWorkspace(null)}
         footer={
           <>
-            <Button onClick={() => setRenamingWorkspace(null)}>{S.common.cancel}</Button>
-            <Button variant="primary" onClick={confirmRenameWorkspace}>
+            <Button size="sm" onClick={() => setRenamingWorkspace(null)}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" variant="primary" onClick={confirmRenameWorkspace}>
               {S.common.save}
             </Button>
           </>
         }
       >
         <Input
+          size="sm"
           label={S.chat.renameWorkspaceLabel}
           hint={S.chat.renameWorkspaceHint}
           value={workspaceAliasText}
@@ -2477,9 +2573,12 @@ function SessionRow({
   s,
   active,
   activity,
+  background,
+  scheduled,
   pinned,
   canPin = false,
   lastActive,
+  locale,
   agentHint,
   draggable = false,
   dropEdge = null,
@@ -2499,12 +2598,18 @@ function SessionRow({
   active: boolean;
   /** Busy / settled-read / settled-unread / never-ran, already resolved by sessionRowActivity. */
   activity: SessionActivity;
+  /** Background tasks the Session still owns (sessionBackgroundTasks); 0 draws no mark. */
+  background: number;
+  /** A scheduled task still to fire is bound to this Session (pendingScheduleSessions); false draws no mark. */
+  scheduled: boolean;
   /** Row is pinned (bubbled to its group's top; small pin glyph on the title). */
   pinned: boolean;
   /** Whether pinning can actually reorder this row — active-list rows only; folder rows hide the action (see renderRows). */
   canPin?: boolean;
   /** Preformatted compact last-active time ("" hides the slot's resting text). */
   lastActive: string;
+  /** Interface language: decides the fixed width the time slot reserves (see the slot's comment). */
+  locale: "zh" | "en";
   /** Agent display name; when set (workspace mode) a small avatar keeps the Agent context visible on the row. */
   agentHint?: string;
   /** Manual sort: the row can be drag-reordered (the sidebar wires the handlers below). */
@@ -2609,9 +2714,11 @@ function SessionRow({
           )}
           {/* Truncated titles reveal their full text on row hover / keyboard focus by
               scrolling the tail into view (#309; scrollReveal, no-op when the title fits).
-              The conditional `title` stays as the pointer-hover fallback under
-              prefers-reduced-motion — not as a touch path: mobile browsers do not surface
-              `title` on long-press. Touch reaches the full text by opening the Session. */}
+              No `title` tooltip comes with it: it would sit over the very text scrolling
+              past underneath. Under prefers-reduced-motion the keyframes are disabled and
+              nothing scrolls, so the conditional `title` returns there as the pointer-hover
+              fallback — not as a touch path: mobile browsers do not surface `title` on
+              long-press. Touch reaches the full text by opening the Session. */}
           <Truncated
             scrollReveal
             text={s.title ?? S.chat.defaultSessionTitle}
@@ -2623,27 +2730,43 @@ function SessionRow({
                   : "text-gray-700 dark:text-gray-300"
             }`}
           />
-          {/* Pinned indicator: a dim pin after the title (tooltip + sr text; unpin lives in the row menu). */}
+          {/* Four marks for the row's STANDING arrangements, all in one dim cluster and all in
+              the `muted` ink: how the row is filed (pinned), where it can be reached from
+              (messaging relay), whether it runs on its own (a scheduled task) and whether it
+              owns work that outlives the turn (background tasks). None of them is live work, so
+              none competes with the status glyph that follows; each names itself in a tooltip
+              and in sr text, which is what lets them recede this far. */}
+          {/* Pinned indicator: a dim pin after the title (unpin lives in the row menu). */}
           {pinned && canPin && (
-            <span
-              title={S.chat.pinnedSession}
-              className="shrink-0 text-gray-400 dark:text-gray-500"
-            >
-              <Icon d={PIN_ICON} size={12} />
+            <span title={S.chat.pinnedSession} className={`shrink-0 ${toneInk.muted}`}>
+              <Icon d={PIN_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.chat.pinnedSession}</span>
             </span>
           )}
           {/* Enabled-messaging indicator: one glyph for every channel, the channel named in
-              the tooltip and sr text. Same dim treatment as the pin (saved-but-disabled
-              configs stay off the row; the binding dialog lives in the row menu). */}
+              the tooltip and sr text (saved-but-disabled configs stay off the row; the binding
+              dialog lives in the row menu). */}
           {s.messagingChannel !== undefined && (
             <span
               title={S.messaging.enabledIndicator[s.messagingChannel]}
-              className="shrink-0 text-gray-400 dark:text-gray-500"
+              className={`shrink-0 ${toneInk.muted}`}
             >
-              <Icon d={MESSAGING_RELAY_ICON} size={12} />
+              <Icon d={MESSAGING_RELAY_ICON} size={ICON_SIZE.rowMark} />
               <span className="sr-only">{S.messaging.enabledIndicator[s.messagingChannel]}</span>
             </span>
+          )}
+          {/* Scheduled-task indicator: the row says this conversation will run on its own, and
+              the schedules panel says how often and what. A paused task, or one past its end
+              time, draws nothing — nothing more will fire from it, and a mark would be noise. */}
+          {scheduled && <ScheduleMark size={ICON_SIZE.rowMark} />}
+          {/* Background work the conversation owns while sitting idle: still running, only
+              outside the turn, so it reads as live work rather than as a standing arrangement.
+              The mark leaves with the last task (live via session_background). */}
+          {background > 0 && (
+            <BackgroundTasksMark
+              label={S.chat.backgroundTasks(background)}
+              size={ICON_SIZE.rowMark}
+            />
           )}
           {/* No per-row source tag: subagent / scheduled Sessions live in their own labelled, collapsed folders, so a badge on the title would just repeat the folder. */}
           <StatusGlyph activity={activity} />
@@ -2658,12 +2781,24 @@ function SessionRow({
             NOT a whole-slot overlay: the slot's width rides the time string (2 分钟前 vs
             31 分钟前), and slot-centered glyphs landed at a different x per row, so the
             icons never formed a vertical column (the user saw them shift with the time's
-            character count). Right-anchored, every row's icons share one x. min-w-12
-            reserves the pair's own width, so on a row with no time they still don't
-            overhang the title. The swap stays a pure opacity handoff: the time hides on
-            row hover (group-hover) and while a button holds focus (peer-focus-within; the
-            group precedes the time span so the peer combinator can reach it). */}
-        <div className="relative flex h-6 min-w-12 shrink-0 items-center justify-end">
+            character count). Right-anchored, every row's icons share one x. The slot's
+            width is FIXED per language rather than riding the time string: the marks that
+            end the title button (glyph, background, schedule, approvals) sit against this
+            slot, so a slot that grew with 「31 分钟前」 and shrank with 「刚刚」 moved them
+            row by row. Sized for the widest string each language produces — 「12月31日」
+            and 「59 分钟前」 in zh, "Nov 30" in en — measured at the SMALLEST font tier,
+            which is the tight one: the slot is in rem and shrinks with the root font,
+            while the time inside it is a fixed 11px and does not. Never below the hover
+            pair's own width (two w-6 buttons), so on a row with no time the buttons
+            still don't overhang the title.
+            The swap stays a pure opacity handoff: the time hides on row hover
+            (group-hover) and while a button holds focus (peer-focus-within; the group
+            precedes the time span so the peer combinator can reach it). */}
+        <div
+          className={`relative flex h-6 shrink-0 items-center justify-end ${
+            locale === "zh" ? "w-[4.5rem]" : "w-14"
+          }`}
+        >
           {/* No hover pill on these (a fill as wide as the date read ugly); feedback is
               the glyph color deepening — red for delete. */}
           <div className="peer absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
@@ -2677,7 +2812,7 @@ function SessionRow({
           {lastActive !== "" && (
             <span
               aria-hidden
-              className="pointer-events-none px-1 text-[11px] text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 dark:text-gray-500"
+              className="pointer-events-none whitespace-nowrap px-1 text-right text-[11px] tabular-nums text-gray-400 transition-opacity duration-150 group-hover:opacity-0 peer-focus-within:opacity-0 dark:text-gray-500"
             >
               {lastActive}
             </span>

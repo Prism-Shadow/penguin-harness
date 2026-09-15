@@ -6,9 +6,11 @@
  * customization is kept whole, identity fields and user data are never touched, YAML comments
  * survive, the config is re-stamped).
  */
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
@@ -43,10 +45,21 @@ function mutableConfig(config: SystemConfig): Record<string, unknown> {
 }
 
 /**
- * Reconstructs a pre-#257 (pre-toggles) shaped config from the current defaults: the frozen
- * LEGACY_* sections swapped back into the template in place of the section placeholders, no
- * `{{SCHEDULES}}` line, and no vault/skills/schedules config sections (the recipe
- * prompt-sections.test.ts proves byte-exact for the template). Everything outside the swap —
+ * The `system_prompt` template the toggles generation (`2026-08-11`) shipped, frozen
+ * byte-exact — no trailing newline, so the file *is* the template. It is the anchor the
+ * reconstruction below needs: the live default goes on evolving, and a recipe reading it
+ * would stop reproducing any historical config the moment it did. Never edit it.
+ */
+const TOGGLES_GENERATION_SYSTEM_PROMPT = readFileSync(
+  fileURLToPath(new URL("./fixtures/toggles-generation-system-prompt.txt", import.meta.url)),
+  "utf8",
+);
+
+/**
+ * Reconstructs a pre-#257 (pre-toggles) shaped config: the frozen LEGACY_* sections swapped
+ * back into the frozen toggles-generation template in place of the section placeholders, no
+ * `{{SCHEDULES}}` line, and no vault/skills/schedules config sections (prompt-sections.test.ts
+ * proves the same swap recipe round-trips on the live template). Everything outside the swap —
  * the runtime, tools and memory tabs — carries the *current* defaults, so the merge tests
  * below treat those tabs as already-current; the seeding exercises the old-template migration
  * paths regardless.
@@ -62,8 +75,7 @@ function preTogglesDefaultConfig(): SystemConfig {
   } = current;
   return {
     ...rest,
-    system_prompt: current.system_prompt
-      .split(VAULT_PLACEHOLDER)
+    system_prompt: TOGGLES_GENERATION_SYSTEM_PROMPT.split(VAULT_PLACEHOLDER)
       .join(LEGACY_VAULT_SECTION)
       .split(SKILLS_PLACEHOLDER)
       .join(LEGACY_SKILLS_SECTION)
@@ -114,10 +126,8 @@ describe("kernel tab hash record (pinned-hash guard)", () => {
 
   // Keeps the oldest recorded generation honest: its pinned hash is the only record of what a
   // pre-#257 `system_config.yaml` actually contains, and nothing else can catch a typo in it.
-  // The recipe reads the *current* template, so the proof stands only while `system_prompt`
-  // has not drifted since the toggles generation. A change to it moves the prompt tab, fails
-  // this test, and the proof must then be re-anchored (or retired) deliberately rather than
-  // quietly passing on leftovers.
+  // The recipe runs on the frozen toggles-generation fixture rather than the live default, so
+  // the proof keeps standing as `system_prompt` evolves.
   it("the pre-toggles prompt tab equals the LEGACY_* reconstruction", () => {
     const reconstructed = preTogglesDefaultConfig();
     expect(kernelTabHash(reconstructed, "prompt")).toBe(KERNEL_SUPERSEDED_TAB_HASHES.prompt?.[0]);

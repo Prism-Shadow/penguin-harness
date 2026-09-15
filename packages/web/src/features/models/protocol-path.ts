@@ -10,7 +10,8 @@
  * - OpenAI direct (gpt-* clients): the Responses API, POST {base}/responses (the SDK's
  *   default base URL https://api.openai.com/v1 already ends in /v1, and a custom base
  *   URL replaces it whole). The generic Responses protocol client
- *   (`client_type: "openai-responses"`) serves the same shape.
+ *   (`client_type: "openai-responses"`) serves the same shape — and it is what every
+ *   OpenRouter row pins, OpenRouter serving the Responses API for all of its upstreams.
  * - Google direct (gemini-* clients, `@google/genai`): {base}/v1beta/models/<id>:… —
  *   the SDK joins base URL + API version (v1beta) + the models path.
  * - MiniMax direct (minimax-m3 client): MiniMax's Responses API, POST {base}/responses
@@ -19,9 +20,11 @@
  *   (agenthub 0.4.6 moved this client off Chat Completions; its default base URL
  *   https://api.deepseek.com carries no /v1, and the request path adds none).
  * - Every OpenAI Chat Completions compatible client — explicit
- *   `client_type: "openai-chat"` (gateways, custom and user-defined groups; the bare
- *   "openai" spelling is a deprecated pre-0.4.2 alias) plus the GLM / Kimi direct
- *   clients — POST {base}/chat/completions.
+ *   `client_type: "openai-chat"` (the gateways other than OpenRouter, custom and
+ *   user-defined groups; the bare "openai" spelling is a deprecated pre-0.4.2 alias),
+ *   `client_type: "openai-chat-vllm-adapter"` (the vLLM group; an openai-chat subclass that
+ *   differs only in the thinking switch it sends), plus the GLM / Kimi direct clients —
+ *   POST {base}/chat/completions.
  *
  * The three generic protocol clients — `openai-responses`, `ant-messages`,
  * `openai-chat` — are also what the custom-model protocol detection stores.
@@ -42,7 +45,10 @@ export function protocolPathForModel(provider: string, clientType: string): stri
   // Order mirrors AutoLLMClient's routing.
   if (t.includes("ant-messages")) return "/v1/messages";
   if (t.includes("openai-responses")) return "/responses";
-  // openai-chat / openai-embedding / the deprecated bare "openai" alias.
+  // openai-chat / openai-chat-vllm-adapter / openai-embedding / the deprecated bare
+  // "openai" alias. AgentHub places openai-chat-vllm-adapter one branch earlier, matched by
+  // exact equality; here the substring reaches the same path, so the two orderings cannot
+  // disagree.
   if (t.includes("openai")) return "/chat/completions";
   // Legacy explicit client types (historical config): pin the family like auto-routing would.
   if (t.includes("claude")) return "/v1/messages";

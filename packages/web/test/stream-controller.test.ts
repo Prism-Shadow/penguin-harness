@@ -46,6 +46,7 @@ interface Harness {
   controller: StreamController;
   states: SessionStatus[];
   pendingSteering: PendingSteeringInfo[][];
+  returnedSteering: PendingSteeringInfo[][];
   pendingFollowUps: PendingFollowUpInfo[][];
   errors: Array<string | null>;
   loadings: boolean[];
@@ -73,6 +74,7 @@ function createHarness(): Harness {
   }> = [];
   const states: SessionStatus[] = [];
   const pendingSteering: PendingSteeringInfo[][] = [];
+  const returnedSteering: PendingSteeringInfo[][] = [];
   const pendingFollowUps: PendingFollowUpInfo[][] = [];
   const errors: Array<string | null> = [];
   const loadings: boolean[] = [];
@@ -92,6 +94,7 @@ function createHarness(): Harness {
       }),
     onTaskState: (s) => states.push(s),
     onPendingSteering: (items) => pendingSteering.push(items),
+    onReturnedSteering: (items) => returnedSteering.push(items),
     onPendingFollowUps: (items) => pendingFollowUps.push(items),
     onLoading: (l) => loadings.push(l),
     onError: (e) => errors.push(e),
@@ -103,6 +106,7 @@ function createHarness(): Harness {
     controller,
     states,
     pendingSteering,
+    returnedSteering,
     pendingFollowUps,
     errors,
     loadings,
@@ -123,7 +127,14 @@ function createHarness(): Harness {
 function pageInfo(over: Partial<MessagesPageInfo> = {}): MessagesPageInfo {
   return {
     earlierTurns: 0,
-    prior: { subagentTokens: 0, elapsedMs: 0, sessionTokens: 0, contextTokens: 0 },
+    prior: {
+      subagentTokens: 0,
+      elapsedMs: 0,
+      apiMs: 0,
+      toolMs: 0,
+      sessionTokens: 0,
+      contextTokens: 0,
+    },
     ...over,
   };
 }
@@ -217,6 +228,20 @@ describe("in-stream task_state is the authoritative running state (history-closi
     // A later event without the field means "none left" — reported as empty, not skipped.
     h.controller.handleServer({ type: "task_state", state: "running" });
     expect(h.pendingSteering).toEqual([[{ id: "st-1", text: "hold on", images: 0, files: 1 }], []]);
+  });
+
+  it("reports steering the run handed back, so the composer can take it into its draft", async () => {
+    const h = createHarness();
+    void h.controller.load();
+    // The interrupt case: the run went idle and reported the message it never delivered.
+    h.controller.handleServer({
+      type: "task_state",
+      state: "idle",
+      returnedSteering: [{ id: "st-1", text: "wait", images: 0, files: 1 }],
+    });
+    // Once the composer has taken it, the next event omits the field — reported as empty.
+    h.controller.handleServer({ type: "task_state", state: "idle" });
+    expect(h.returnedSteering).toEqual([[{ id: "st-1", text: "wait", images: 0, files: 1 }], []]);
   });
 
   it("reports the queued follow-up list from task_state, and its absence as empty", async () => {
@@ -511,7 +536,14 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
       pageInfo({
         before: "2:10",
         earlierTurns: 7,
-        prior: { subagentTokens: 500, elapsedMs: 60_000, sessionTokens: 900, contextTokens: 800 },
+        prior: {
+          subagentTokens: 500,
+          elapsedMs: 60_000,
+          apiMs: 25_000,
+          toolMs: 20_000,
+          sessionTokens: 900,
+          contextTokens: 800,
+        },
       }),
     );
     await p;
@@ -520,6 +552,10 @@ describe("windowed history: tail-first load + scroll-up backfill", () => {
     // Header basis: prior elapsed + the loaded turn's own span (usage at +5s of a turn
     // starting at 0s); token cumulative = in-window session.total + prior subagent total.
     expect(h.controller.model.stats.sessionElapsedMs).toBe(60_000 + 5_000);
+    // The breakdown reloads with its total, so a windowed load never shows a full elapsed time
+    // beside components covering only the window.
+    expect(h.controller.model.stats.sessionLlmMs).toBe(25_000);
+    expect(h.controller.model.stats.sessionToolMs).toBe(20_000);
     const stats = h.controller.model.items.find((i) => i.kind === "task_stats") as TaskStatsItem;
     expect(stats.stats!.tokens).toBe(1000 + 500);
   });

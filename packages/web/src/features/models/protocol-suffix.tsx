@@ -33,6 +33,11 @@ import { useState } from "react";
 import { Dropdown } from "../../components/ui/dropdown";
 import { CheckIcon, ChevronDown } from "../../components/ui/icons";
 import { menuRowClass } from "../../components/ui/field";
+// This menu is an OptionMenu by hand (its trigger lives inside the base URL field, which
+// OptionMenu cannot do), so it takes its row typography from OptionMenu's own records rather
+// than re-spelling them — a change to the family reaches it.
+import { rowDescClass } from "../../components/ui/option-menu";
+import { sizeTextClass } from "../../components/ui/input";
 import { S } from "../../lib/strings";
 import { protocolPathForModel } from "./protocol-path";
 import { PROTOCOL_CLIENT_TYPES } from "./protocol-types";
@@ -124,7 +129,7 @@ export function ProtocolSuffixMenu({
             >
               <span className="flex items-center justify-between gap-2">
                 <span
-                  className={`min-w-0 truncate text-xs ${
+                  className={`min-w-0 truncate ${sizeTextClass.sm} ${
                     selected
                       ? "font-medium text-gray-900 dark:text-gray-100"
                       : "text-gray-700 dark:text-gray-300"
@@ -136,7 +141,9 @@ export function ProtocolSuffixMenu({
               </span>
               {/* The path this protocol appends: the same string the trigger shows, so the
                   menu explains what the suffix in the field means. */}
-              <span className="mt-0.5 block font-mono text-[11px] text-gray-500 dark:text-gray-500">
+              <span
+                className={`mt-0.5 block font-mono ${rowDescClass.sm} text-gray-500 dark:text-gray-500`}
+              >
                 {protocolPathForModel("custom", t)}
               </span>
             </button>

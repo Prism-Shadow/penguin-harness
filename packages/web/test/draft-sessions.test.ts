@@ -66,6 +66,27 @@ describe("parkActiveDraft", () => {
     expect(loadDraft(draftKey("u-empty", "proj"), s).agentId).toBe("a");
   });
 
+  it("drops an AI-composed prompt instead of parking it, keeping the model carry-over", () => {
+    const s = memStorage();
+    saveDraft(
+      draftKey("u-ai", "proj"),
+      {
+        text: "Create a vault entry for OPENAI_API_KEY",
+        agentId: "default_agent",
+        modelRef: { provider: "anthropic", modelId: "claude-sonnet-5" },
+        aiPrefill: true,
+      },
+      s,
+    );
+    // Nobody typed it, so it must not become a draft conversation row — and the slot this
+    // vacates must be empty, or the new-chat draft the caller lands on would read it back.
+    expect(parkActiveDraft("u-ai", "proj", s)).toBeNull();
+    expect(s.map.has(draftSessionsKey("u-ai", "proj"))).toBe(false);
+    expect(loadDraft(draftKey("u-ai", "proj"), s)).toEqual({
+      modelRef: { provider: "anthropic", modelId: "claude-sonnet-5" },
+    });
+  });
+
   it("newest parked draft sorts first", () => {
     const s = memStorage();
     saveDraft(draftKey("u-order", "proj"), { text: "first" }, s);

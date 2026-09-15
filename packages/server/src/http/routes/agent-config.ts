@@ -56,6 +56,12 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     }
     // Fine-grained validation (numeric ranges / enums) is done inside agent-config-service.
     await deps.agentConfigService.updateConfig(projectId, agentId, req);
+    // Agent State normally needs no invalidation — core re-reads it into the next model
+    // context itself. The hook switch is the exception: hook packages are bound when a
+    // Session is built, so a cached runtime would keep the set it was built with.
+    if (req.config?.hooks !== undefined) {
+      deps.manager.invalidateAgentRuntimes(projectId, agentId);
+    }
     const view = await deps.agentConfigService.getConfig(projectId, agentId);
     return c.json({
       ...view,
@@ -149,6 +155,9 @@ export function agentConfigRoutes(deps: AppDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
     await deps.agentConfigService.resetConfig(projectId, agentId);
+    // The defaults carry no `hooks` section, so a reset can switch hooks back on; cached
+    // runtimes hold the set they were built with (see the PUT above).
+    deps.manager.invalidateAgentRuntimes(projectId, agentId);
     const view = await deps.agentConfigService.getConfig(projectId, agentId);
     return c.json({
       ...view,

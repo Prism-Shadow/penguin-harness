@@ -43,6 +43,7 @@ import {
   RuntimeCapabilities,
 } from "./hmr/capabilities.js";
 import type { ProxyControl } from "./hmr/capabilities.js";
+import { cliShimDir, ensureCliShim } from "./services/cli-shim.js";
 import { openDatabase } from "./db/database.js";
 import { MachinesRepo } from "./db/repos/machines.js";
 import { migrate } from "./db/migrations.js";
@@ -59,7 +60,7 @@ import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
 import type { TerminalManager } from "./terminal/manager.js";
-import { EXTENSIONS_RESOURCE_ID, type ExtensionHost } from "./extension/host.js";
+import { PLUGINS_RESOURCE_ID, type PluginHost } from "./plugin/host.js";
 import type { AppEnv } from "./auth/middleware.js";
 import { AuthService } from "./auth/service.js";
 import { newAuthRuntimeState } from "./auth/runtime-state.js";
@@ -99,7 +100,7 @@ import { TitleGenerator, TitleNotifier } from "./runtime/title-generator.js";
 import { AdminService } from "./services/admin-service.js";
 import { DesktopService } from "./services/desktop-service.js";
 import { LifecycleService } from "./services/lifecycle-service.js";
-import { desktopRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
+import { desktopRoutes, desktopTrayRoutes, desktopUpdateRoutes } from "./http/routes/desktop.js";
 import { AgentConfigService } from "./services/agent-config-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { AgentService } from "./services/agent-service.js";
@@ -126,7 +127,7 @@ import {
 } from "./services/preview-token.js";
 import type { PreviewTokenSigner } from "./services/preview-token.js";
 
-import type { ControlEnvContext, ProxyEnvPolicy } from "@prismshadow/penguin-core";
+import type { ControlEnvContext, ProxyEnvPolicy, SpawnConfiner } from "@prismshadow/penguin-core";
 import { declined } from "./hmr/hono-seam.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { MembersRepo } from "./db/repos/members.js";
@@ -149,11 +150,8 @@ import { memoryRoutes } from "./http/routes/memory.js";
 import { scheduleRoutes } from "./http/routes/schedules.js";
 import { benchmarksRoutes } from "./http/routes/benchmarks.js";
 import { agentSkillsRoutes } from "./http/routes/skills.js";
-import {
-  agentHooksRoutes,
-  agentPluginsRoutes,
-  pluginLibraryRoutes,
-} from "./http/routes/plugins.js";
+import { agentHooksRoutes } from "./http/routes/hooks.js";
+import { agentPluginsRoutes, pluginLibraryRoutes } from "./http/routes/plugins.js";
 import { agentTransferRoutes } from "./http/routes/agent-transfer.js";
 import { agentsRoutes } from "./http/routes/agents.js";
 import { dirsRoutes } from "./http/routes/dirs.js";
@@ -174,6 +172,8 @@ export interface AppDeps {
   config: ServerConfig;
   db: DatabaseSync;
   sessionsRepo: SessionsRepo;
+  /** The `users` table itself, for the one route that writes a column no service owns (PUT /api/me/profile). */
+  usersRepo: UsersRepo;
   prefsRepo: UiPrefsRepo;
   /** Admin-level server-global settings (currently the proxy switches and address). */
   serverSettingsRepo: ServerSettingsRepo;
@@ -287,15 +287,15 @@ export interface BuildDepsOverrides {
  * the business surface — see app.ts), and return the merged view. Shared
  * by production and tests; tests pass dbPath=":memory:" and a temp root.
  *
- * `extensions` is the host index.ts's loadExtensions step filled from extensions.json — handed in
+ * `plugins` is the host index.ts's loadPlugins step filled from plugins.json — handed in
  * rather than registered by the caller because the platform boots inside this function,
  * and everything it claims has to be in the registry first. Absent (tests), the platform
- * falls back to an empty host (see extension/index.ts's extensionHostFrom).
+ * falls back to an empty host (see plugin/index.ts's pluginHostFrom).
  */
 export async function bootAppDeps(
   config: ServerConfig,
   overrides: BuildDepsOverrides = {},
-  extensions?: ExtensionHost,
+  plugins?: PluginHost,
 ): Promise<AppDeps> {
   const db = openDatabase(config.dbPath);
 
@@ -332,6 +332,23 @@ export async function bootAppDeps(
   // when it cannot be persisted: the browser then simply never sweeps.
   ensureInstallId(config.root);
 
+  // The `penguin` an Agent's commands resolve: this harness's own CLI, written into the
+  // data root for every Session to put at the front of PATH (see services/cli-shim.ts).
+  // Here rather than per App, for the same reason the two above are: it is a fact about
+  // this PROCESS's installation, and a hot-pushed platform — compiled somewhere else
+  // entirely — has no way to work out where the CLI it should point at lives.
+  const shimLog = overrides.log ?? ((line: string) => console.log(line));
+  const shim = ensureCliShim(config.root, config.cliEntry);
+  if (shim.kind === "written") {
+    shimLog(`Agent CLI: ${path.join(shim.dir, "penguin")} -> ${shim.entry}`);
+  } else if (shim.kind === "absent") {
+    shimLog(
+      "Agent CLI: no CLI entry found; commands an Agent runs resolve `penguin` on their own PATH.",
+    );
+  } else {
+    console.warn(`[server] could not write the penguin CLI shim: ${shim.reason}`);
+  }
+
   // The capability set buildAppDeps claims (see hmr/capabilities.ts) — every
   // entry must be in place before ensure() below performs the first boot. The interface
   // descriptor leads: it is what a bundle's handshake reads before trusting any of the rest.
@@ -346,11 +363,11 @@ export async function bootAppDeps(
   const desktop = config.desktopToken !== null ? new DesktopService(config.desktopToken) : null;
   hmr.resources.register(RUNTIME_DESKTOP_RESOURCE_ID, desktop);
   hmr.resources.register(RUNTIME_LIFECYCLE_RESOURCE_ID, new LifecycleService(config.supervised));
-  // The registry sweep only STARTS extension disposal (its disposers are sync) — the
+  // The registry sweep only STARTS plugin disposal (its disposers are sync) — the
   // fallback for exit paths that skip the graceful shutdown. The graceful path awaits
   // host.dispose() itself, bounded (index.ts); dispose is idempotent, so both may fire.
-  if (extensions !== undefined) {
-    hmr.resources.register(EXTENSIONS_RESOURCE_ID, extensions, () => void extensions.dispose());
+  if (plugins !== undefined) {
+    hmr.resources.register(PLUGINS_RESOURCE_ID, plugins, () => void plugins.dispose());
   }
 
   // Boot the platform now rather than on the first request: the business surface —
@@ -477,6 +494,10 @@ export function createRuntimeApp(deps: AppDeps): Hono<AppEnv> {
     app.use("/api/desktop/update", authMiddleware(deps.authService, deps.config.trustProxy));
     app.use("/api/desktop/update/*", authMiddleware(deps.authService, deps.config.trustProxy));
     app.route("/api/desktop/update", desktopUpdateRoutes(deps));
+    // The tray-icon preference rides the same relay and the same shell-window gate: it is
+    // the Settings › Appearance switch reaching the chrome around the window it runs in.
+    app.use("/api/desktop/tray", authMiddleware(deps.authService, deps.config.trustProxy));
+    app.route("/api/desktop/tray", desktopTrayRoutes(deps));
   }
   // Hot platform APIs run their own gate — the network gate, then the SAME auth middleware
   // the routes below use (the boot's local API token as `Authorization: Bearer`, or an admin
@@ -773,6 +794,13 @@ function registerStaticRoutes(app: Hono<AppEnv>, resolveSource: () => Promise<We
 export function buildAppDeps(
   caps: RuntimeCapabilities,
   overrides: BuildDepsOverrides = {},
+  // Spawn confinement (mechanism only here): platform.ts's create() hands in a getter
+  // over its own SandboxService, and it is threaded untouched through BOTH core entry
+  // paths — the loader (resume/self-heal) and SessionService (creation) — then re-read
+  // at every command spawn, like proxyEnv. Same-generation wiring on purpose: the
+  // sessions spawning through it are hard-stopped with their App, so no channel with a
+  // longer lifetime is needed. Policy itself lives in ../sandbox/.
+  confineSpawn: () => SpawnConfiner | null = () => null,
 ): AppDeps {
   const { config, db, authState, channels, hmr } = caps;
   const log = overrides.log ?? ((line: string) => console.log(line));
@@ -849,6 +877,14 @@ export function buildAppDeps(
         : (loopbackHostRoles(config.host)?.app ?? config.host);
     return `http://${host}:${config.port}`;
   };
+  // The directory core puts at the FRONT of PATH for every command an Agent runs (and for
+  // its hook scripts): the shim directory bootAppDeps wrote this harness's own `penguin`
+  // into. Derived from the config rather than passed along, so the platform half needs no
+  // new capability — and read for truth rather than for null, because a runtime older than
+  // this field publishes a config without it and wrote no shim either: no field, no
+  // directory, feature off, rather than a push declined over a PATH entry.
+  const shimDir = config.cliEntry ? cliShimDir(config.root) : null;
+  const pathPrepend = (): string[] => (shimDir === null ? [] : [shimDir]);
   const controlEnv = (ctx: ControlEnvContext): Record<string, string> => {
     const token = authService.localApiToken();
     return {
@@ -885,6 +921,10 @@ export function buildAppDeps(
     index: traceIndex,
     sessions: sessionsRepo,
     sources: sessionSources,
+    // The one price table: the analysis costs a file's Requests with the lookup the cost
+    // center prices usage rows with, so the Trace panel and the toolbar never disagree.
+    lookupPricing: (projectId, provider, modelId) =>
+      projectConfigService.getPricing(projectId, provider, modelId),
   });
   const workspaceFiles = new WorkspaceFilesService();
   // Per-process secret: preview tokens are short-lived, so losing them on restart is
@@ -939,7 +979,12 @@ export function buildAppDeps(
     channels,
     loader:
       overrides.loader ??
-      createCoreSessionLoader(config.root, sessionSources, { proxyEnv, controlEnv }),
+      createCoreSessionLoader(config.root, sessionSources, {
+        proxyEnv,
+        controlEnv,
+        pathPrepend,
+        confineSpawn,
+      }),
     sources: sessionSources,
     recorder,
     errors,
@@ -1036,6 +1081,7 @@ export function buildAppDeps(
     traceIndex,
     proxyEnv,
     controlEnv,
+    pathPrepend,
     // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
     // the row); a point query per row keeps the repo out of the service. An unknown
     // stored channel reads as none (same defensive skip as the bridge and the routes).
@@ -1049,6 +1095,7 @@ export function buildAppDeps(
         ? enabled.channel
         : null;
     },
+    confineSpawn,
   });
   // Schedule scheduler: assembled here, started by platform.ts's create() (tests drive it
   // via tickOnce, no real timer), stopped by the same create()'s dispose effect.
@@ -1071,6 +1118,7 @@ export function buildAppDeps(
     config,
     db,
     sessionsRepo,
+    usersRepo,
     prefsRepo,
     serverSettingsRepo,
     authService,

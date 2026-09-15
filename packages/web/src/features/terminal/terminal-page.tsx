@@ -18,7 +18,9 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { S } from "../../lib/strings";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useTerminalChrome } from "./terminal-appearance";
+import { killTerminal } from "./terminal-list";
 import {
   TerminalView,
   fetchJson,
@@ -132,6 +134,22 @@ export function TerminalPage() {
     setDetail(statusDetail);
   }, []);
 
+  /**
+   * Ctrl+W inside the terminal takes the dock tab's × path — confirm, then end the shell —
+   * and then closes this window, which exists only to host that shell. A window the browser
+   * will not let a script close (one opened by address rather than by the dock's detach)
+   * stays, showing the exited shell with "New shell" one click away. The kill is awaited
+   * first so the dock's detach watcher, which probes the shell when the window closes, finds
+   * it ended rather than restoring a tab for it.
+   */
+  const [confirmKill, setConfirmKill] = useState(false);
+  const killConfirmed = useCallback(async () => {
+    if (!info) return;
+    setConfirmKill(false);
+    await killTerminal(info.id);
+    window.close();
+  }, [info]);
+
   const statusText =
     status === "exited" && detail
       ? `${S.terminal.status.exited} — ${S.terminal.exitedWithCode(detail)}`
@@ -171,8 +189,22 @@ export function TerminalPage() {
         ensure={ensure}
         onStatus={onStatus}
         onInfo={setInfo}
+        onCloseRequest={info ? () => setConfirmKill(true) : undefined}
         className="min-h-0 flex-1 overflow-hidden px-2 py-1"
       />
+      <ConfirmModal
+        open={confirmKill}
+        title={S.dock.killConfirmTitle}
+        onClose={() => setConfirmKill(false)}
+        onConfirm={() => void killConfirmed()}
+        confirmLabel={S.terminal.killShell}
+      >
+        {info && (
+          <p className="break-words text-sm text-gray-600 dark:text-gray-300">
+            {S.dock.killConfirmBody(info.name)}
+          </p>
+        )}
+      </ConfirmModal>
     </div>
   );
 }

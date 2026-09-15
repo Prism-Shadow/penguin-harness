@@ -221,8 +221,10 @@ export function ShortcutsFolder({
         widthClass="sm:max-w-lg"
         footer={
           <>
-            <Button onClick={() => setDraft(null)}>{S.common.cancel}</Button>
-            <Button variant="primary" disabled={draftError !== null} onClick={saveDraft}>
+            <Button size="sm" onClick={() => setDraft(null)}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" variant="primary" disabled={draftError !== null} onClick={saveDraft}>
               {S.common.save}
             </Button>
           </>
@@ -231,6 +233,7 @@ export function ShortcutsFolder({
         {draft !== null && (
           <div className="space-y-3">
             <Input
+              size="sm"
               label={S.chat.shortcuts.titleLabel}
               hint={S.chat.shortcuts.titleHint(SHORTCUT_TITLE_MAX)}
               error={

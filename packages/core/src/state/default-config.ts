@@ -8,9 +8,9 @@
  * via a system Prompt placeholder.
  *
  * The system Prompt is sectioned and trimmed as needed (Role/Personality/Success
- * criteria/Constraints/Stop rules/Tool use/System markers/File system/Suggested workflows); it
- * does not describe specific tools (that comes from the tool schema). AGENTS.md and the
- * Vault/Skills/Memory/Schedules section placeholders go at the end, before Environment.
+ * criteria/Constraints/Output/Stop rules/Tool use/System markers/File system/Suggested
+ * workflows); it does not describe specific tools (that comes from the tool schema). AGENTS.md
+ * and the Vault/Skills/Memory/Schedules section placeholders go at the end, before Environment.
  *
  * Placeholders (`{{...}}`) appear only in the trailing injection zones (AGENTS.md / Vault /
  * Skills / Memory / Schedules / Environment); elsewhere the body uses angle-bracket notation
@@ -24,6 +24,9 @@ import type {
   ToolDefinitionConfig,
 } from "../interfaces/index.js";
 import type { CompactionMode } from "../omnimessage/types.js";
+// The seeded compaction threshold is declared beside the derivation that caps it, so the
+// default and the cap cannot drift apart.
+import { DEFAULT_MAX_CONTEXT_LENGTH } from "../llm/context-limits.js";
 import { KERNEL_VERSION } from "./kernel-history.js";
 
 /** Docs: /docs/configuration § "System prompt placeholders". */
@@ -99,21 +102,6 @@ export const SKILLS_PLACEHOLDER = "{{SKILLS}}";
 export const SCHEDULES_PLACEHOLDER = "{{SCHEDULES}}";
 /** Inside `schedules.prompt` only: the current schedule-file names, one `- name` per line (SCHEDULE_LIST_EMPTY_NOTE when none exist). */
 export const SCHEDULE_LIST_PLACEHOLDER = "{{SCHEDULE_LIST}}";
-
-/**
- * Seeded `compaction.max_context_length`: the context-token threshold newly created Agents
- * start with. Set high on purpose, because the model's own `context_window` is the backstop:
- * the effective threshold is the smaller of this value and the window minus
- * COMPACTION_HEADROOM, taken at use (see llm/context-limits.ts). A window with no room for
- * this value plus that headroom therefore decides the trigger point, so a small-window model
- * still compacts inside its window rather than never; on a roomier window — nearly every
- * built-in catalog entry — this value is what fires. A model entry with no usable
- * `context_window` falls back to the assumed window (128000), which is a different number
- * from this one and must not be conflated with it.
- *
- * Persisted per-agent in system_config.yaml — existing agents keep their stored value.
- */
-export const DEFAULT_MAX_CONTEXT_LENGTH = 256000;
 
 /**
  * Context compaction config (the `compaction` section of `system_config.yaml`).
@@ -196,6 +184,18 @@ export interface SchedulesConfig {
   enabled?: boolean;
   /** The `{{SCHEDULES}}` block: the file-based task-management guidance carrying the `{{SCHEDULE_LIST}}` roster injection point. Defaults to the built-in value. */
   prompt?: string;
+}
+
+/**
+ * Hook config (the `hooks` section of `system_config.yaml`). One Agent-level switch, toggled
+ * on the Web App's Hooks tab. No prompt: a hook package is scripts run at the loop's hook
+ * points, not text injected into the context. With it off the packages stay installed — listed
+ * and exportable — and a Session created from then on assembles no hooks at all.
+ * Docs: /docs/skills § "Hook packages".
+ */
+export interface HooksConfig {
+  /** Whether a new Session consults the installed hook packages; defaults to true. */
+  enabled?: boolean;
 }
 
 /** Stands in for an index placeholder when the `MEMORY.md` does not exist yet or is blank — the model is told the store is empty rather than being handed nothing. */
@@ -409,6 +409,8 @@ export interface SystemConfig {
   skills?: SkillsConfig;
   /** Scheduled-tasks section injection (enabled by default; only reaches the prompt through `{{SCHEDULES}}`). */
   schedules?: SchedulesConfig;
+  /** Whether new Sessions run the installed hook packages (enabled by default; nothing prompt-side). */
+  hooks?: HooksConfig;
   tools?: {
     /** Built-in system tool configuration (per-entry fields incl. the `call_description` toggle live on ToolDefinitionConfig). */
     builtin?: ToolDefinitionConfig[];
@@ -421,11 +423,11 @@ const DEFAULT_SYSTEM_PROMPT = `# Role
 You are PenguinHarness, an agent that completes the user's requests on their machine with the tools available to you.
 
 # Personality
-Communicate with the user precisely and concisely, yet with warmth, and always reply in the user's language — code, identifiers and commit messages keep their own conventions. Do not repeatedly explain your tools or restate their results.
+Communicate with the user precisely and concisely, yet with warmth, and always reply in the user's language — code, identifiers and commit messages keep their own conventions.
 
 # Success criteria
 - Before delivering the result, check that every problem in the request has been solved.
-- Verify your work through every available means; never claim a result you did not observe.
+- Verify your work through every available means — the project's own test, lint, typecheck and build commands, found in its README or manifest rather than assumed; never claim a result you did not observe.
 
 # Constraints
 - Make the smallest change that satisfies the request; do not modify unrelated files.
@@ -433,13 +435,24 @@ Communicate with the user precisely and concisely, yet with warmth, and always r
 - Never kill a process you did not start, PenguinHarness's own services included, unless the user asks; never take a PenguinHarness service port, and when a port you want is busy, pick another free port.
 - If a tool call fails, read the error, adjust, and retry; never repeat the same failing input.
 
+# Output
+- Lead with the answer or the outcome; skip filler openers, narration of the tool call you are about to make (its description is already shown) and closing recaps unless asked.
+- Describe what you are doing in plain words, never by tool name, and do not restate tool output the user can already see.
+- Name each file you create or update in the workspace by its workspace-relative path in backticks (e.g. \`src/app.py\`) so the user can open it.
+- Write links as plain URLs or Markdown links, never inside backticks or a code block — a link in code formatting is not clickable.
+- The final answer stands on its own: what was done, which files it lives in and how to run or verify it, and anything left undone or unverified.
+- When you cannot or will not do something, say so in a sentence and offer the nearest alternative.
+
 # Stop rules
 - Stop and give the final answer once the success criteria are met.
-- If the request is ambiguous, stop and ask the user for clarification instead of guessing their intent.
-- If you hit an error you cannot resolve, stop and report the blocker to the user. An API auth/key error (401/403, missing or invalid key) is one of them: retry at most once, then stop calling tools and ask the user to update the key in the agent's vault or the model settings outside the chat — the secret must never be pasted into the conversation, and a new key only takes effect in the next conversation.
+- If the request is still ambiguous after you have checked what the files and environment can tell you, stop and ask the user — one specific question, with the options you see — instead of guessing their intent.
+- If you hit an error you cannot resolve — the same error still there after three different fixes — stop and report the blocker to the user, with what you tried; do not keep trying variants. An API auth/key error (401/403, missing or invalid key) is one of them: retry at most once, then stop calling tools and ask the user to update the key in the agent's vault or the model settings outside the chat — the secret must never be pasted into the conversation, and a new key only takes effect in the next conversation.
 
 # Tool use
-- Prefer solving problems with your tools: inspect the real files and environment and run real commands instead of answering from memory or guessing.
+- Work from evidence, not memory: inspect the real files and environment and run real commands. Run a command or edit a file yourself rather than pasting it for the user to apply, unless they ask to see it.
+- Never guess a name. A path, command flag, package, API or URL you have not seen in this environment is looked up before you use it, and a library is assumed available only when the project's manifest or lockfile shows it.
+- Send independent tool calls together in one turn — several file reads, unrelated checks — they run concurrently; a call that needs an earlier result, or writes the same file as another, waits for the next turn.
+- Run commands non-interactively (\`-y\`/\`--yes\` for installers and scaffolders; no editors, pagers or REPLs): a command waiting for input is stuck, not slow — feed it the input or kill it instead of polling.
 - For anything on the internet, browse with your shell tool: prefer Playwright when it is installed — it handles dynamic sites — otherwise \`curl\` for pages and APIs.
 
 # System markers
@@ -451,7 +464,8 @@ Some messages carry system-synthesized \`[tag]...[/tag]\` blocks — not user te
 
 # File system
 - Angle-bracket names such as \`<app_data_dir>\` and \`<session_id>\` are placeholders — substitute the values from the Environment section.
-- You work inside the user's folder (\`CWD\`). For each file you create or update there, mention its workspace-relative path in backticks (e.g. \`src/app.py\`) so the user can open it.
+- You work inside the user's folder (\`CWD\`).
+- Search from \`CWD\` down; walking the user's home or the whole filesystem is rarely worth its cost. When a path does not resolve, prefer narrowing — reason about the project's layout — over widening the search root.
 - The App Data Dir is PenguinHarness's data root — every agent's files and the project-level data, none of it supplied by the user, so never treat it as task input. \`CWD\` may itself be a temporary Workspace inside it: that one folder is the task's, the rest is not.
 - Your Agent State is \`<app_data_dir>/agents/<agent_id>/agent_state/\`; it holds \`skills/\`, and its \`AGENTS.md\` is already in your context. Another agent's is the same path under its id — reach it directly.
 - Keep intermediates in this Session's scratchpad, \`<app_data_dir>/agents/<agent_id>/scratchpad/<session_id>/\`, but always place final deliverables in the workspace (under \`CWD\`) — what stays in the scratchpad is not part of your output.
@@ -460,9 +474,9 @@ Some messages carry system-synthesized \`[tag]...[/tag]\` blocks — not user te
 
 # Suggested workflows
 Recommendations, not requirements — adapt them to the task.
-- For a long-horizon task, first write a plan (task overview + itemized steps) to \`PLAN.md\` in this Session's scratchpad, and update it as each step lands.
+- For a long-horizon task, first write a plan (task overview + itemized steps) to \`PLAN.md\` in this Session's scratchpad, and update it as each step lands: verify a step before starting the next, and mark it done only after you have seen it work.
 - Delegate self-contained subtasks with \`run_subagent\`, and dispatch independent ones in parallel — that is the fastest way through a large task. Open each prompt with your own agent id (e.g. "Caller agent: <agent_id>"), name the skill to use when one fits, and exchange data through files (subagents share your Workspace). If \`run_subagent\` is not in your tool list, you are the subagent: do the work yourself.
-- Prefer React when building a web app or frontend.
+- Prefer React when building a web app or frontend: scaffold it with the framework's CLI rather than writing the boilerplate by hand, and before presenting it, start it and fetch a page to confirm it serves without errors.
 
 [developer_instructions]
 Custom instructions from the developer-editable AGENTS.md.
@@ -593,7 +607,10 @@ export const DEFAULT_COMPACTION_PROMPT =
 
 /**
  * Default built-in system tools: file reading/editing/writing first, then bash execution
- * and subagent spawning.
+ * and subagent spawning. No entry carries a `forModel` annotation: `read_file` serves vision
+ * and text-only models alike (it reads images too, deciding at runtime whether to return
+ * image content or a vision model's description), so the per-model-class filter stays a
+ * config feature for entries that need it.
  * Docs: /docs/tools § "Built-in tools".
  */
 function defaultBuiltinTools(): ToolDefinitionConfig[] {
@@ -601,30 +618,41 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
     {
       name: "read_file",
       description:
-        "Read a text file and return its content with line numbers (cat -n style) — the preferred " +
-        "way to inspect a file. Returns up to 2000 lines starting at the given offset; for longer " +
-        "files call again with offset to continue. Use the image tools for images and the shell " +
-        "tool for binary files.",
+        "Read a file — the preferred way to inspect one. A text file comes back with line numbers " +
+        "(cat -n style), up to 2000 lines starting at offset; for a longer file call again with " +
+        "offset to continue. An image (png/jpeg/gif/webp up to 5MB; file_path may also be an " +
+        "http(s) URL) is returned as image content for you to view, or — when the current model " +
+        "cannot view images — described in text by the project's vision model, which answers " +
+        "`prompt`. Other binary files are rejected: use the shell tool for those.",
       parameters: {
         type: "object",
         properties: {
           file_path: {
             type: "string",
-            description: "Path to the file to read; absolute, or relative to the workspace.",
+            description:
+              "Path to the file to read; absolute, or relative to the workspace. For an image, an http(s) URL is accepted too.",
           },
           offset: {
             type: "number",
-            description: "1-based line number to start reading from; defaults to 1.",
+            description:
+              "1-based line number to start reading from; defaults to 1. Ignored for images.",
           },
           limit: {
             type: "number",
-            description: "Max lines to read; defaults to 2000.",
+            description: "Max lines to read; defaults to 2000. Ignored for images.",
+          },
+          prompt: {
+            type: "string",
+            description:
+              "A question about an image (e.g. transcribe the text, describe the chart, locate a UI element), answered by the vision model when the current model cannot view images; defaults to a detailed description. Ignored for text files.",
           },
         },
         required: ["file_path"],
       },
       permission: "r",
-      timeoutMs: 30000,
+      // Wide enough for an image read through the vision model: one download or file read plus
+      // one one-shot vision request.
+      timeoutMs: 60000,
       // Wider than the other tools' cap: a 2000-line window of code rarely fits in 16k characters.
       maxOutputLength: 64000,
     },
@@ -757,15 +785,15 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
           yield_time_ms: {
             type: "number",
             description:
-              "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 120000 so one poll waits out most builds (output still streams as it arrives, and the wait ends early on exit — pass a smaller value to peek at a long-lived process). Minimum 250, capped below the tool timeout.",
+              "How long to wait for new output or exit before returning. Non-empty writes default to 250; empty polls default to 110000 so one poll waits out most builds (output still streams as it arrives, and the wait ends early on exit — pass a smaller value to peek at a long-lived process). Minimum 250, capped below the tool timeout.",
           },
         },
         required: ["description", "process_id"],
       },
       permission: "rw",
       call_description: true,
-      // An empty poll can wait out a build/test run (the yield ceiling is derived from timeoutMs, clamped inside the tool).
-      timeoutMs: 130000,
+      // Same tier as exec_command; an empty poll's default wait (110000) sits under it (the yield ceiling is derived from timeoutMs, clamped inside the tool).
+      timeoutMs: 120000,
       maxOutputLength: 16000,
     },
     {
@@ -864,64 +892,6 @@ function defaultBuiltinTools(): ToolDefinitionConfig[] {
       call_description: true,
       // Same generous timeout tier as run_subagent: an empty poll can wait a long time for the subagent to wrap up.
       timeoutMs: 600000,
-      maxOutputLength: 16000,
-    },
-    // The image-reading tools are mutually exclusive based on the session model's type
-    // (marked via each entry's forModel, filtered at assembly time): read_image is designed
-    // for vision models (the image is fed back as image content); describe_image is designed
-    // for text-only models (the image plus the prompt are sent to the Project's configured
-    // vision model, vision_model, whose text answer becomes the tool output).
-    {
-      name: "read_image",
-      forModel: "vision",
-      description:
-        "Read an image and return it as image content for you to view. Accepts an http(s) URL " +
-        "or a local file path (relative paths resolve against the workspace). " +
-        "Supports png/jpeg/gif/webp up to 5MB.",
-      parameters: {
-        type: "object",
-        properties: {
-          source: {
-            type: "string",
-            description:
-              "Image to read: an http(s) URL, or a local file path (absolute, or relative to the workspace).",
-          },
-        },
-        required: ["source"],
-      },
-      permission: "r",
-      timeoutMs: 60000,
-      maxOutputLength: 16000,
-    },
-    {
-      name: "describe_image",
-      forModel: "text-only",
-      description:
-        "Describe an image and return a TEXT description of it. The current model does not accept " +
-        "images directly, so the image is analyzed by the project's configured vision model and " +
-        "you get its text answer back. Use `prompt` to ask exactly what you need to know about " +
-        "the image (e.g. transcribe text, describe a chart, locate a UI element). Accepts an " +
-        "http(s) URL or a local file path (relative paths resolve against the workspace). " +
-        "Supports png/jpeg/gif/webp up to 5MB.",
-      parameters: {
-        type: "object",
-        properties: {
-          source: {
-            type: "string",
-            description:
-              "Image to read: an http(s) URL, or a local file path (absolute, or relative to the workspace).",
-          },
-          prompt: {
-            type: "string",
-            description:
-              "What to ask about the image; the vision model answers this. Defaults to a detailed description.",
-          },
-        },
-        required: ["source"],
-      },
-      permission: "r",
-      // Includes one vision-model request, so the timeout is slightly wider than plain image reading.
-      timeoutMs: 90000,
       maxOutputLength: 16000,
     },
   ];

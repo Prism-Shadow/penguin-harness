@@ -55,7 +55,32 @@ export interface UserInfo {
   isAdmin: boolean;
   /** Still using the initial password (seeded/set by admin): frontend prompts the user to change it soon. */
   passwordIsInitial: boolean;
+  /**
+   * Nickname the account chose (1-32 characters), shown wherever the id would otherwise be.
+   * Omitted when unset — every account that predates the Profile page starts without one, and
+   * a surface with no value falls back to `userId`.
+   */
+  displayName?: string;
+  /**
+   * Avatar as a `data:image/...;base64,` URL, at most 131072 characters. Omitted when unset,
+   * and a surface with no value draws the letter placeholder instead.
+   */
+  avatar?: string;
   createdAt: string;
+}
+
+/**
+ * PUT /api/me/profile — a patch, not a replacement: an absent field keeps what is stored,
+ * `null` clears it, a string sets it. A body naming neither field is a 400, since it can only
+ * be a mistake.
+ */
+export interface UpdateProfileRequest {
+  displayName?: string | null;
+  avatar?: string | null;
+}
+
+export interface UpdateProfileResponse {
+  user: UserInfo;
 }
 
 export interface AuthLoginRequest {
@@ -250,6 +275,60 @@ export interface ServerSettingsUpdateRequest {
 }
 
 /**
+ * The endpoints the proxy reachability probe covers. A fixed list: the route takes a provider
+ * id from this set and never a URL, so nothing a caller sends decides what the server fetches.
+ *
+ * GLM is two entries rather than one because it is two hosts: Z.AI serves the global endpoint
+ * and BigModel the mainland one, they are reached over different routes, and a proxy can carry
+ * one and not the other.
+ */
+export type ProxyProbeProvider =
+  "openai" | "anthropic" | "gemini" | "deepseek" | "zai" | "bigmodel";
+
+/**
+ * One probe's verdict. `reachable` means an HTTP answer arrived, whatever its status — a
+ * rejected credential still proves the whole path works. The rest are transport failures,
+ * named so a proxy that swallows connections can be told apart from one whose address does
+ * not resolve: `timeout` (no answer within the probe's window), `dns` (the name never
+ * became an address), `refused` (the connection was refused at the TCP level), `tls` (the
+ * handshake or the certificate failed) and `network` (anything else).
+ */
+export type ProxyProbeOutcome = "reachable" | "timeout" | "dns" | "refused" | "tls" | "network";
+
+/**
+ * One probe target. Served before any probe runs so the page can list what it is about to
+ * request — the URLs are the concrete answer to "what does no API key mean here".
+ */
+export interface ProxyProbeTargetDto {
+  provider: ProxyProbeProvider;
+  /** The exact URL a probe requests, unauthenticated. */
+  url: string;
+}
+
+/** What the probe endpoint would request, without requesting it. */
+export interface ProxyProbeTargetsResponse {
+  targets: ProxyProbeTargetDto[];
+}
+
+/** One provider's probe result. */
+export interface ProxyProbeDto extends ProxyProbeTargetDto {
+  outcome: ProxyProbeOutcome;
+  /** Wall time in milliseconds until the answer's headers arrived, or until the attempt failed. */
+  ms: number;
+  /** The HTTP status, present only when `outcome` is `reachable`. */
+  status?: number;
+}
+
+/**
+ * One probe's answer. The route measures a single target per call: the page asks for all of
+ * them at once and fills each row the moment its own answer lands, so one black-holed host
+ * cannot hold every other result behind its timeout.
+ */
+export interface ProxyProbeResponse {
+  probe: ProxyProbeDto;
+}
+
+/**
  * One draft-screen shortcut: a prompt the user wrote, filed under a name they chose. Clicking it
  * fills the composer exactly like a built-in example does, and sends nothing. Deliberately holds
  * no Skill list — a saved prompt is not authored against a known Skill catalog the way a shipped
@@ -388,7 +467,12 @@ export interface ModelInfo {
   provider: string;
   /** Upstream model id (the request id actually sent to AgentHub); paired with `provider` forms the entry's unique key. */
   modelId: string;
-  /** Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog; falls back to unset (frontend shows modelId). */
+  /**
+   * Display name: explicit TOML field (user-edited) takes priority, then the built-in catalog;
+   * falls back to unset (frontend shows modelId). The empty string is reported as such and
+   * means the user cleared the name on a model the catalog does name — render it as modelId,
+   * and send it back unchanged, since absent would ask for the catalog's name instead.
+   */
   displayName?: string;
   contextWindow?: number;
   /** AgentHub client protocol (`openai-chat`, `openai-responses`, etc.); defaults to AgentHub inferring it from modelId. */
@@ -431,7 +515,7 @@ export interface ModelInfo {
 export interface ModelsResponse {
   /** Paired reference to the default Model. */
   defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_image (describes images when the session model has vision=false). */
+  /** Vision model used as a proxy reader for read_file (describes images when the session model has vision=false). */
   visionModel?: ModelRefDto;
   /**
    * When the Project's model/credential config last changed (ISO; the config file's mtime,
@@ -449,7 +533,11 @@ export interface ModelUpdateEntry {
   provider: string;
   /** Upstream model id (sent to AgentHub as-is). */
   modelId: string;
-  /** Display name; the server does not persist it when it matches the built-in catalog (keeps the config file clean). */
+  /**
+   * Display name; the server does not persist it when it matches the built-in catalog (keeps
+   * the config file clean). Absent and empty are different requests: absent inherits whatever
+   * the catalog calls the model, the empty string records that the user cleared the name.
+   */
   displayName?: string;
   /**
    * The pair reference this entry was renamed from (provided when either the group or the
@@ -479,7 +567,7 @@ export interface ModelUpdateEntry {
 export interface ModelsUpdateRequest {
   /** Must be included in models (matched by paired reference). */
   defaultModel?: ModelRefDto;
-  /** Vision model used as a proxy reader for read_image: must be included in models and not annotated vision=false; omitted keeps the existing value. */
+  /** Vision model used as a proxy reader for read_file: must be included in models and not annotated vision=false; omitted keeps the existing value. */
   visionModel?: ModelRefDto;
   models: ModelUpdateEntry[];
 }
@@ -825,7 +913,7 @@ export interface VaultUpdateRequest {
 export interface PluginUpdateRef {
   /** Plugin name — what `POST …/plugins` reinstalls to bring the Agent up to date. */
   name: string;
-  /** The LIBRARY's version (`YYYY-MM-DD.N`), i.e. what installing again would bring, not what is on disk. */
+  /** The LIBRARY's version (`YYYY.MM.DD.N`), i.e. what installing again would bring, not what is on disk. */
   version: string;
 }
 
@@ -968,6 +1056,17 @@ export interface AgentSchedulesConfigDto {
   templateHasPlaceholder: boolean;
 }
 
+/**
+ * Hook config, edited on the Hooks tab. One Agent-level switch and no prompt: hook packages
+ * are scripts run at the loop's hook points, not text injected into the context. `enabled`
+ * reports the effective value (a config with no `hooks` section reads as enabled, matching
+ * core).
+ */
+export interface AgentHooksConfigDto {
+  /** Whether a Session created from now on runs the installed hook packages (they stay installed either way). */
+  enabled: boolean;
+}
+
 /** Structured view of system_config.yaml (for the edit form). */
 export interface AgentConfigDto {
   name?: string;
@@ -988,6 +1087,7 @@ export interface AgentConfigDto {
   vault: AgentVaultConfigDto;
   skills: AgentSkillsConfigDto;
   schedules: AgentSchedulesConfigDto;
+  hooks: AgentHooksConfigDto;
   toolsBuiltin: ToolDefinitionConfig[];
   mcpServers: MCPServerConfig[];
 }
@@ -1042,6 +1142,8 @@ export interface AgentConfigUpdateRequest {
     vault?: { enabled?: boolean; prompt?: string };
     skills?: { enabled?: boolean; prompt?: string };
     schedules?: { enabled?: boolean; prompt?: string };
+    /** The Agent-level hook switch; it has no prompt half. */
+    hooks?: { enabled?: boolean };
     toolsBuiltin?: ToolDefinitionConfig[];
     mcpServers?: MCPServerConfig[];
   };
@@ -1234,6 +1336,24 @@ export interface SessionInfo {
   tracePath?: string;
   /** Present when the Session has an ENABLED messaging binding: its channel (the sidebar row's per-channel indicator). */
   messagingChannel?: MessagingChannel;
+  /**
+   * Background work the Session's loaded runtime still owns: command sessions running past
+   * their yield window (`exec_command` promotions and `run_in_background` launches) and
+   * background subagent sessions mid-round. Read from the runtime's in-memory registries —
+   * no Trace is consulted — and present only while at least one count is non-zero, so a
+   * Session that is not loaded (a resumed entry starts with empty registries) and one with
+   * nothing running both omit it. Changes are pushed as `session_background` on the user
+   * channel; list rows and the single-session GET carry the same field.
+   */
+  backgroundTasks?: SessionBackgroundTasks;
+}
+
+/** The background-task counts of one Session (see SessionInfo.backgroundTasks). */
+export interface SessionBackgroundTasks {
+  /** Background command sessions whose process is still running. */
+  processes: number;
+  /** Background subagent sessions (promoted to a `subagent_id`) currently mid-round. */
+  subagents: number;
 }
 
 /**
@@ -1257,6 +1377,13 @@ export interface SessionsResponse {
    * content that lives in other Workspaces.
    */
   workspaceCounts?: Record<string, SessionCategoryCounts>;
+  /**
+   * Present with `counts`: each Workspace path's newest Session (any category), as its
+   * `createdAt`. With `workspaceCounts` this is what lets the sidebar list every Workspace
+   * that holds Sessions and place the groups by recency before — or without — loading any
+   * of their rows.
+   */
+  workspaceLatest?: Record<string, string>;
 }
 
 /** Server directory browsing (advanced new-Workspace picker): starts from the home directory by default, can navigate up to the root. */
@@ -1409,6 +1536,14 @@ export interface MessagesPageInfo {
   prior: {
     subagentTokens: number;
     elapsedMs: number;
+    /**
+     * Model-API time and tool wall time accrued before this window, the breakdown of
+     * `elapsedMs` the chat header shows under it. Seeded together with their total: seeding
+     * one alone would put a full elapsed time beside components covering only the window.
+     * The two may overlap and do not partition `elapsedMs` (see `TraceTaskStats.toolMs`).
+     */
+    apiMs: number;
+    toolMs: number;
     sessionTokens: number;
     contextTokens: number;
   };
@@ -2201,6 +2336,13 @@ export type ServerEvent =
       queued?: number;
       /** Steering messages queued but not yet delivered (absent = none): lets the composer's hint and its content survive reloads. */
       pendingSteering?: PendingSteeringInfo[];
+      /**
+       * Steering the run ended without delivering (absent = none) — an interrupt while a tool
+       * was running is the ordinary way to produce one. Handed back rather than discarded: the
+       * composer recalls each by the same handle and restores it into the draft, so the typed
+       * message returns to the input box instead of being lost.
+       */
+      returnedSteering?: PendingSteeringInfo[];
       /** Queued follow-up tasks awaiting auto-start (absent = none): per-entry content + recall handle, alongside the `queued` count. */
       pendingFollowUps?: PendingFollowUpInfo[];
       /**
@@ -2238,6 +2380,14 @@ export type ServerEvent =
       lastActiveAt: string;
       hasTrace: boolean;
     }
+  /**
+   * A Session's background-task counts changed: a command promoted to the background, a
+   * process that exited or was stopped, a background subagent starting or settling a round,
+   * a released session. The counts are the row's `backgroundTasks` as they stand after the
+   * change — zeros included, so a list can clear its mark without refetching. Published to
+   * the user channels of the Project's owner and members, like `session_state`.
+   */
+  | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
   /**
@@ -2315,6 +2465,21 @@ export interface ContextToolShare {
 }
 
 /**
+ * One file's share of the context: its `read_file` / `edit_file` / `write_file` calls plus their
+ * results, keyed by the file each call named.
+ */
+export interface ContextFileShare {
+  /**
+   * Workspace-relative when the file is inside the Session's Workspace; otherwise absolute, with
+   * the home directory shortened to `~`. Spellings that resolve to the same file are one row.
+   */
+  path: string;
+  tokens: number;
+  /** How many calls of each file tool named the file in this context. */
+  ops: { read: number; edit: number; write: number };
+}
+
+/**
  * What the Session's current model context is made of — the part derived from its messages.
  *
  * Every token figure is an **estimate** from a character heuristic, not a tokenizer: the
@@ -2324,7 +2489,8 @@ export interface ContextToolShare {
  *
  * The six parts partition the context and sum to `total`; `topTools` is a ranking inside
  * `toolRequests + toolResults` and can sum to less than those two (a result whose call was not
- * recorded in the same Trace shard has no tool to be attributed to).
+ * recorded in the same Trace shard has no tool to be attributed to). `topFiles` is the same
+ * ranking narrowed to the three file tools and keyed by the file each call named.
  */
 export interface SessionContextParts {
   systemPrompt: number;
@@ -2337,6 +2503,8 @@ export interface SessionContextParts {
   total: number;
   /** Tools ranked by the context their traffic occupies, descending; at most five. */
   topTools: ContextToolShare[];
+  /** Files ranked by the context their file-tool traffic occupies, descending; at most five. */
+  topFiles: ContextFileShare[];
   /**
    * A completed compaction closed the context these figures describe, and the next one has not
    * been written yet: the composition is of what was compacted away, not of what the model now
@@ -2453,12 +2621,37 @@ export interface TraceTaskStats {
    */
   tokens: { cacheRead: number; cacheWrite: number; output: number };
   /**
+   * This turn's cost in USD: each Request's three buckets at the Project's current rates for
+   * the file's model, at the tier that Request's own timestamp fell in — the rule and the
+   * price lookup the cost center applies to the usage row the same `token_usage` produced,
+   * so this figure, the toolbar's and the cost center's agree on what a request cost. Present
+   * on every turn of a priced file (a turn with no Request reads 0); absent when the model has
+   * no pricing or the file's head names no provider, and then absent from the response's
+   * total as well.
+   */
+  cost?: number;
+  /**
    * Total LLM generation duration for this turn (the denominator for output TPS; human
    * approval wait already deducted). The numerator is simply `tokens.output`: since
    * compaction forms its own turn, each turn's output tokens are just its own Requests'
    * output — there's no second figure to reconcile.
    */
   llmMs: number;
+  /**
+   * Wall-clock time this turn spent executing tools: the **union** of its tool spans'
+   * execution intervals (`approvalTs ?? callTs` to `outputTs`), so tools running in parallel
+   * are counted once instead of summed. Two exclusions, both deliberate: the human approval
+   * wait (`callTs` to `approvalTs`) is not tool work, and the argument-generation segment is
+   * the model streaming arguments, already counted in `llmMs`. A span with no `outputTs` —
+   * still running when the file ended, or interrupted — contributes nothing rather than being
+   * extrapolated to now.
+   *
+   * This and `llmMs` may **overlap**: a tool started in the background keeps running while the
+   * model decodes. They are two measured components of the turn's duration, not a partition of
+   * it, and they need not add up to the turn's span (approval waits and harness overhead belong
+   * to neither). Never derive one by subtracting the other from the duration.
+   */
+  toolMs: number;
 }
 
 /** Duration span of a single tool call (complete tool_call message → paired tool_call_output). */
@@ -2483,6 +2676,66 @@ export interface WorkspaceFilesResponse {
   /** Requested relative path ("" = Workspace root). */
   path: string;
   entries: WorkspaceFileEntry[];
+}
+
+/** Write one Workspace file whole (the Upload button, a drop, and the Files panel's editor). */
+export interface FilesWriteRequest {
+  /** The entire file, base64-encoded (≤14MB decoded). */
+  dataBase64: string;
+  /**
+   * Write precondition: the version marker the caller read off this file's `ETag` on
+   * `GET files/content`. The server compares it against the file's state immediately
+   * before writing and answers 409 `file_changed` — having written nothing — when they
+   * differ, which is what stops the editor's save from quietly dropping what the Agent
+   * wrote during the turn. Omitted by a caller that read no version (an upload creates or
+   * replaces unconditionally); that absence, not a sentinel value, is what says there was
+   * no prior version to match.
+   */
+  ifVersion?: string;
+}
+
+/** Move or rename one Workspace file (the Files panel's context menu). */
+export interface FilesMoveRequest {
+  /** Source path, relative to the Workspace root. */
+  from: string;
+  /** Destination path, relative to the Workspace root. Its parent directory is created when missing. */
+  to: string;
+  /**
+   * Move precondition, read exactly like {@link FilesWriteRequest.ifVersion}: the marker the
+   * caller got from this file's `ETag` on `GET files/content`, which the file must still
+   * carry. It differs on only one point — the marker guards the **source**. The destination
+   * has none, because the caller never read it, which is why an occupied destination is
+   * refused with 409 `target_exists` rather than overwritten.
+   *
+   * A directory `from` is a 400 whatever this field says: a directory carries no single
+   * version marker, so the precondition that protects this operation cannot be expressed for
+   * one, and silently moving a tree without that protection is worse than refusing to move it.
+   */
+  ifVersion?: string;
+}
+
+/**
+ * One Workspace search match. `kind`, `sizeBytes` and `mtime` are named and typed exactly as
+ * {@link WorkspaceFileEntry} names them: a hit is drawn by the same row renderer as a tree
+ * entry, and it can only render identically if it carries the same fields.
+ */
+export interface WorkspaceSearchHit {
+  /** Workspace-relative, "/"-separated, with no leading "./" (a tree entry's `name` is only its last segment). */
+  path: string;
+  kind: "dir" | "file";
+  sizeBytes: number;
+  mtime: string;
+}
+
+export interface WorkspaceSearchResponse {
+  /** Shallowest first, then directories before files, then by name — the order the breadth-first walk produced. */
+  hits: WorkspaceSearchHit[];
+  /**
+   * A cap stopped the walk (200 hits, or 20000 directory entries visited), so this is a
+   * partial list. Breadth-first is what makes that degrade well: the hits that survive
+   * truncation are the shallowest ones, not the ones that happened to be enumerated first.
+   */
+  truncated: boolean;
 }
 
 /** Batch file existence check (message file cards only list files that actually exist). */
@@ -2562,6 +2815,23 @@ export interface TraceAnalysisResponse {
    * frontend's events are paginated, so self-aggregation would undercount.
    */
   elapsedMs: number;
+  /**
+   * The file's model-API time: the sum of the turns' `llmMs` (human approval wait deducted,
+   * compaction requests included, so the scope matches `elapsedMs`).
+   */
+  apiMs: number;
+  /**
+   * The file's tool wall time: the sum of the turns' `toolMs` (parallel tools counted once
+   * within a turn). Summed per turn rather than unioned across the file, so the global figure
+   * stays the sum of the per-turn figures, exactly as `elapsedMs` is. May overlap `apiMs` —
+   * see `TraceTaskStats.toolMs`.
+   */
+  toolMs: number;
+  /**
+   * The file's cost in USD: the sum of the turns' `cost` (compaction turns included, the
+   * scope every total here shares). Absent exactly when the turns carry no `cost`.
+   */
+  cost?: number;
   requests: RequestSpan[];
   /** Token / duration aggregated per Task (used directly by the Trace page's context ring and per-turn TPS). */
   tasks: TraceTaskStats[];
@@ -2790,16 +3060,8 @@ export interface UsageErrorItem {
  * items.
  */
 export interface UsageErrors {
+  /** Filtered row count — also what a clear of the same filter takes (see {@link UsageErrorsClearResponse}). */
   total: number;
-  /**
-   * How many of {@link total} a clear would actually take (see {@link UsageErrorsClearResponse}).
-   *
-   * The same as `total` for an ordinary member, and smaller for an admin, whose reads include
-   * unattributed rows that no Project-scoped clear removes. The confirmation is the only place
-   * this matters, and it is the place it matters most: an irreversible delete has to name the
-   * number that will really go, not the number on screen.
-   */
-  clearable: number;
   /** Count of unexpected ones (500 / runtime exceptions) among them — the part the frontend highlights. */
   unexpected: number;
   /** The most frequent source · code (null when there are no errors). */
@@ -2812,8 +3074,9 @@ export interface UsageErrors {
  * GET /api/projects/:projectId/usage/errors — one page of the error detail table, newest
  * first. The dashboard response above already carries the first page; this exists so
  * "show me earlier ones" does not have to refetch the whole aggregate. It takes the same
- * date/agent filter as the dashboard, so a page never widens what the summary counted, plus
- * an optional `kind` ({@link UsageErrorKind}) narrowing to one of the two categories — which
+ * date/agent filter as the dashboard (`fromTs`/`toTs` narrow it to a trailing window, both
+ * or neither), so a page never widens what the summary counted, plus an optional `kind`
+ * ({@link UsageErrorKind}) narrowing to one of the two categories — which
  * is how the cost-center badge asks "are there unexpected errors, and how new is the newest"
  * with `limit=1` instead of pulling the whole dashboard aggregate.
  */
@@ -2825,11 +3088,15 @@ export interface UsageErrorsPage {
 
 /**
  * DELETE /api/projects/:projectId/usage/errors — empties the error table for the filter the
- * panel is showing (its date range and Agent), Project owner only.
+ * panel is showing (its date range, the trailing window when one is on, and Agent), Project
+ * owner only.
  *
  * Scoped to the filter rather than the Project's whole history, so a clear takes exactly the
- * rows on screen. Errors with no Project attribution are never included, whoever asks: they
- * belong to no Project and are surfaced in every Project's admin view.
+ * rows on screen — for an admin, the unattributed rows an admin's panel shows included; a
+ * member's panel never shows them and a member's clear never takes them.
+ *
+ * `from` and `to` are both required (400 otherwise), where the reads treat them as optional:
+ * an absent bound is unbounded on that side, which is the whole history rather than a filter.
  */
 export interface UsageErrorsClearResponse {
   /** How many rows were deleted, so the caller can say what went instead of guessing. */
@@ -3046,7 +3313,7 @@ export interface SkillMetadataItem {
    * which the plugin item carries once. Absent, the frontend draws the book glyph.
    */
   icon?: string;
-  /** Version (`YYYY-MM-DD.N`, frontmatter version); an empty string when the frontmatter carries none or a malformed one. */
+  /** Version (`YYYY.MM.DD.N`, frontmatter version; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the frontmatter carries none or a malformed one. */
   version: string;
 }
 
@@ -3056,7 +3323,7 @@ export interface HookItem {
   name: string;
   description: string;
   descriptionZh?: string;
-  /** Version (`YYYY-MM-DD.N`); an empty string when the manifest carries none. */
+  /** Version (`YYYY.MM.DD.N`; a copy installed before that spelling still carries `YYYY-MM-DD.N`); an empty string when the manifest carries none. */
   version: string;
   /** The hook points the package answers at, e.g. `["stop"]`. */
   events: string[];
@@ -3071,7 +3338,7 @@ export interface PluginItem {
   descriptionZh?: string;
   shortDescription?: string;
   shortDescriptionZh?: string;
-  /** `YYYY-MM-DD.N`. */
+  /** `YYYY.MM.DD.N`. */
   version: string;
   /** The plugin's skills (metadata only). */
   skills: SkillMetadataItem[];
@@ -3127,6 +3394,21 @@ export interface AgentSkillsResponse {
 /** GET /api/projects/:p/agents/:a/hooks: hook packages installed on this Agent; DELETE …/hooks/:name uninstalls one (204). */
 export interface AgentHooksResponse {
   hooks: HookItem[];
+}
+
+/**
+ * POST /api/projects/:p/agents/:a/hooks/archive: install one hook package from an uploaded zip.
+ * Layout: hooks.json and its scripts at the zip root, or exactly one top-level directory
+ * containing them (the directory name is then the package name). 201 returns the refreshed
+ * installed list (AgentHooksResponse); an already-installed name without `overwrite` is 409
+ * `hook_exists`. GET …/hooks/:name/archive is the matching export: the installed directory as
+ * a zip attachment, which round-trips through this POST.
+ */
+export interface HookArchiveInstallRequest {
+  /** Base64-encoded zip archive (decoded size capped at 14MB, like the skill archive). */
+  dataBase64: string;
+  /** Replace an installed package of the same name instead of answering 409. */
+  overwrite?: boolean;
 }
 
 /**
@@ -3245,6 +3527,68 @@ export interface DesktopUpdaterStatusMessage {
 export interface DesktopUpdaterCommandMessage {
   type: "desktop-updater-command";
   action: "check" | "download" | "install";
+}
+
+// Desktop tray icon (desktop mode only)
+//
+// The shell keeps an icon in the system tray for as long as the app runs, and Settings ›
+// Appearance is where it is turned off and on. The switch rides the same utilityProcess
+// message channel as the client updater above: the shell pushes what it currently shows,
+// the page reads it at GET /api/desktop/tray and writes through PUT, which is relayed
+// back. The window stays a plain browser — no renderer IPC bridge.
+//
+// The page reports its UI language over the same route, so the tray menu reads in the
+// language the window does. The shell cannot see that preference itself: it lives in the
+// browser's localStorage, on the other side of a boundary this design keeps one-way.
+
+/** The two languages the Web App has; the shell's tray menu follows whichever is in use. */
+export type DesktopTrayLocale = "zh" | "en";
+
+/** What the shell is currently doing about its tray icon. */
+export interface DesktopTrayStatus {
+  /** Whether an icon is shown in the system tray while the app runs. */
+  showTrayIcon: boolean;
+  /**
+   * The language the tray menu is drawn in. Until a page reports one the shell uses the
+   * device language, so this can differ from the Web App's until the first report lands.
+   */
+  locale: DesktopTrayLocale;
+}
+
+/**
+ * What one PUT asks the shell to change. Every field is optional and a request must carry at
+ * least one: the switch and the language reach this route from different parts of the page.
+ */
+export interface DesktopTrayPatch {
+  showTrayIcon?: boolean;
+  locale?: DesktopTrayLocale;
+}
+
+/**
+ * GET / PUT /api/desktop/tray (desktop-shell sessions only): the tray preference.
+ * `status` is null until the shell's first push lands (a beat after server start); a
+ * client that finds null reads it as on, which is the shell's own default.
+ */
+export interface DesktopTrayStatusResponse {
+  status: DesktopTrayStatus | null;
+}
+
+/** Shell → server push over the utilityProcess message channel. */
+export interface DesktopTrayStatusMessage {
+  type: "desktop-tray-status";
+  status: DesktopTrayStatus;
+}
+
+/**
+ * Server → shell command over the utilityProcess message channel (relayed from PUT
+ * /api/desktop/tray). A patch, not a snapshot: the switch and the language are written by
+ * different parts of the page at different moments, and neither should have to restate the
+ * other's value to change its own.
+ */
+export interface DesktopTrayCommandMessage {
+  type: "desktop-tray-command";
+  showTrayIcon?: boolean;
+  locale?: DesktopTrayLocale;
 }
 
 /**

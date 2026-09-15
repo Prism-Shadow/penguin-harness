@@ -1540,7 +1540,7 @@ describe("GenerativeModel per-request output cap (window clamp, issue #218)", ()
   });
 
   it("counts a tool output's base64 image at the flat allowance: the next request is not floored", async () => {
-    // Regression for the review repro: a read_image-style tool output carrying a 1 MB
+    // Regression for the review repro: a read_file image output carrying a 1 MB
     // data-URL image used to be serialized into the estimate (~262k "tokens"), flooring
     // request 2's max_tokens to the minimum even on a 128k window.
     const { model, configs } = windowModel({

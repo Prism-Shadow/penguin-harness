@@ -68,10 +68,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | --- | --- | --- |
 | POST | /api/auth/login | Log in: `{userId, password}` → `{user}` |
 | POST | /api/auth/logout | Log out, returns 204 |
-| GET | /api/auth/claim?token=… | Redeem a sign-in link (first-login, or the desktop shell's one-shot token): sets the cookie, redirects to `/` |
+| GET | /api/auth/claim?token=… | Redeem a sign-in link (first-login, or the desktop shell's one-shot token): sets the cookie, redirects to `/`. An invalid or already-used link redirects to `/login?claimFailed=…` instead, where the Web App says how to get a working one |
 | GET | /api/install | Public: `{installId}` — an opaque id identifying the data root being served (`<root>/install-id`), minted the first time the root is used. The Web App compares it against the one it stored and clears the browser-side UI state that references server entities when it differs, so replacing the data root no longer leaves the old Workspace, drafts and pins in place. `null` means the server could not establish one; clients must then change nothing. |
 | GET | /api/me | Current user info |
 | PUT | /api/me/password | Change password: `{oldPassword, newPassword}`; a desktop or first-login session may omit `oldPassword` — its current password is random and was never shown |
+| PUT | /api/me/profile | Set the avatar and nickname: `{displayName?, avatar?}` → `{user}`. A patch — an absent field keeps its stored value, `null` clears it, and a body naming neither is a `400`. `displayName` must be 1–32 characters once trimmed (counted as characters, so a CJK name may be 32 of them) and carry no control characters; `avatar` must be a `data:image/(png|jpeg|webp);base64,…` URL of at most 131072 characters whose payload decodes. Open to every authenticated session, the desktop shell's token session included — unlike the password route above, a profile has no old credential to check |
 | GET | /api/me/prefs | Read UI preferences |
 | PUT | /api/me/prefs | Write UI preferences (shallow merge) |
 
@@ -79,7 +80,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/admin/users | List users |
+| GET | /api/admin/users | List users. Each row carries the account's nickname when it has one; avatars are deliberately left out, since the list is unpaged and one data URL per account would dwarf the rest of the response |
 | POST | /api/admin/users | Create a user: `{userId, password}` |
 | POST | /api/admin/users/:userId/password | Reset a password (invalidates all of that user's login sessions) |
 | DELETE | /api/admin/users/:userId | Delete a user |
@@ -92,6 +93,8 @@ In desktop mode (the server spawned by the desktop app) the whole surface answer
 | --- | --- | --- |
 | GET | /api/admin/settings | Server-global settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
 | PUT | /api/admin/settings | Update settings (fields optional; omitted fields keep their current value), returns the full updated settings |
+| GET | /api/admin/settings/proxy-probe | The reachability probe's targets: `{targets: [{provider, url}]}` (no request is made) |
+| POST | /api/admin/settings/proxy-probe/:provider | Probe one of those targets over the server's outbound path, no credential sent: `{probe: {provider, url, outcome, ms, status?}}`; `outcome` is `reachable` for any HTTP answer, else `timeout` / `dns` / `refused` / `tls` / `network`; 404 `probe_target_not_found` for an id outside the list |
 
 The proxy settings are two independent switches sharing one optional explicit address; changes take effect for newly initiated connections/spawns immediately — no restart:
 
@@ -220,6 +223,8 @@ The paths below omit the `/api/projects/:projectId` prefix.
 | DELETE | /agents/:agentId/skills/:name | Uninstall a Skill |
 | POST | /agents/:agentId/plugins | Install library plugins by name — each one's skills and hook package; reinstalling updates. `{ names }` → 201 `{ skills, hooks }`; 404 `unknown_plugin` writes nothing |
 | GET | /agents/:agentId/hooks | Installed hook packages: name, description, version, hook points, the plugin's icon |
+| POST | /agents/:agentId/hooks/archive | Install a hook package from a zip: `{dataBase64, overwrite?}` — hooks.json and its scripts at the root or in one top-level directory, every listed command naming a file inside; 409 `hook_exists` without overwrite |
+| GET | /agents/:agentId/hooks/:name/archive | Export an installed hook package as a zip (round-trips through the POST) |
 | GET | `/api/plugins` (global) | The plugin library by category — every plugin with its skills' metadata and hook points (any logged-in user) |
 | GET | `/api/plugins/:plugin/files` (global) | Everything one library plugin ships as text keyed by path — each skill's installable SKILL.md and reference files under `skills/<name>/`, the hook scripts under `hooks/` — for the plugin detail view's file browser (any logged-in user) |
 | DELETE | /agents/:agentId/hooks/:name | Uninstall a hook package |
@@ -249,8 +254,8 @@ On Session creation, `modelId` and `provider` are both-or-neither: send the comp
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | /usage | Usage statistics; query parameters `from`, `to`, `fromTs`/`toTs` (ISO timestamps bounding a trailing window, given together; required for `minute`), `groupBy`, `granularity` (`minute` / `hour` / `day` / `week` / `month` time-series precision, default `day`; oversized range × precision combinations are rejected), `agentId`, `provider`, `modelId` |
-| GET | /usage/errors | One page of the error detail table (newest first): `offset`, `limit`, plus the same `from` / `to` / `agentId` filter and an optional `kind` (`unexpected` / `expected`) → `{items, total}` |
-| DELETE | /usage/errors | Empties the error table for the filter on screen: `from` / `to` / `agentId`, the same pair the reads take (no `kind` — the panel offers no such control) → `{deleted}`. Project owner only; errors with no Project attribution are outside every clear, admin included |
+| GET | /usage/errors | One page of the error detail table (newest first): `offset`, `limit`, plus the same `from` / `to` / `fromTs` / `toTs` / `agentId` filter and an optional `kind` (`unexpected` / `expected`) → `{items, total}` |
+| DELETE | /usage/errors | Empties the error table for the filter on screen: `from` / `to` / `fromTs` / `toTs` / `agentId`, the same set the reads take (no `kind` — the panel offers no such control) → `{deleted}`. `from` and `to` are both required here (400 otherwise) — an open bound would be the whole history rather than a filter. Project owner only; the clear reaches exactly what the caller's reads reach, so an admin's clear also takes the unattributed rows an admin's read shows, and a member's never does |
 | GET | /agents/:agentId/traces | Date → Session drill-down structure of Trace files |
 | GET | /agents/:agentId/traces/:sessionId/:index | Read Trace events (`offset` / `limit` pagination) |
 | GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace performance analysis |
@@ -268,7 +273,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | GET | / | Session info (the single-session GET additionally carries `tracePath`, the absolute path of the latest Trace file; list rows omit it) |
 | PATCH | / | Update: `{approvalMode?, thinkingLevel?, archived?, title?}`. `thinkingLevel` pins the level on this Session (durable) and applies from its very next LLM request — the thinking level is soft-limited: changeable mid-context, at the cost of the provider's cached context, which is why the picker advises compacting first — and it comes back as `SessionInfo.thinkingLevel` (absent = never pinned: the Agent config applies) |
 | DELETE | / | Delete the Session (along with its Traces and scratch files) |
-| GET | /messages | Full OmniMessage history; while a Task runs the response also carries `live` (the in-progress stream tail, see below) |
+| GET | /messages | Without parameters, the full OmniMessage history; `tailLimit=n` or `before=<cursor>&limit=n` reads a Task-aligned window instead (the bundled Web App opens a conversation on its latest 50 turns and backfills on scroll), and the response then carries `page` (the next-page cursor `before`, the turns before the window `earlierTurns`, and the cumulative `prior` stats). While a Task runs the response also carries `live` (the in-progress stream tail, see below) |
 | POST | /fork | Fork an idle Session through a completed assistant reply: `{position:{fileIndex,ordinal}}` → `{session}` |
 | GET | /stream | SSE event stream (next section) |
 | POST | /tasks | Start a Task: `{input: TaskInputPart[], queueIfBusy?}` → 202. With `queueIfBusy`, a busy session holds the input as a follow-up (`queued: true`) and auto-starts it as an ordinary next task once idle; `task_state` events report the queued count. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see the request body below). With `goal: {budget?}` the input starts a goal loop instead (409 `goal_plugin_not_installed` unless the `goal` plugin is installed on the Agent): it must carry non-empty text (an image alone states no objective), any images it carries fold into the objective as scratchpad path lines whatever the model's vision, and `file` parts are refused — nothing folds them into a re-injected objective — see [Goal mode](/goal-mode) |
@@ -276,6 +281,7 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | DELETE | /steer/:steerId | Recall an undelivered steering message (ids ride `task_state`'s `pendingSteering`): withdraws it from the queue → 200 with its original content `{text, images, files}` (files read back from the scratchpad as data URLs, their disk copies deleted) so the composer can restore it for editing; 409 `not_pending` once it was delivered to the model |
 | DELETE | /follow-ups/:followUpId | Recall a queued follow-up task (ids ride `task_state`'s `pendingFollowUps`): removes it before it auto-starts → 200 with its original content `{text, images, files}` — every queued follow-up carries that content, however it was queued; 409 `follow_up_started` once it already started |
 | POST | /approvals/:toolCallId | Approval decision: `{decision}` is `allow` or `deny` → 204 |
+| POST | /tool-calls/:toolCallId/background | Hand one **executing** tool call back as a background task, so the turn can close and the conversation carries on: 204. The call ends `completed` with its `process_id` / `subagent_id`, nothing is killed, and the completion arrives later as the usual background-task notice. 404 `tool_call_not_found` when nothing with that id is executing (unknown, already finished, or the runtime is gone), 409 `tool_not_detachable` when the call is running but its tool has no background form (only `exec_command` and `run_subagent` have one) |
 | POST | /abort | Interrupt the current Task: 202 when triggered, 204 when idle |
 | POST | /retry-now | "Retry now" on the reconnect countdown: skips the in-progress backoff wait, firing the next retry immediately (attempt counter unchanged) → 200 `{skipped}` — `skipped:false` is the benign "no wait in progress" case, never an error |
 | POST | /compact | Trigger context compaction: 202; 409 when there is nothing to compact, the reason carried by the code — `compaction_not_configured` (this Agent has no compaction configured), `nothing_to_compact` (the context has no completed conversation turn yet), `already_compacted` (nothing new was said since the last compaction). A Session resumed after a server restart reports availability from its Trace, so an existing conversation stays compactable without running a Task first |
@@ -287,6 +293,9 @@ The paths below omit the `/api/sessions/:sessionId` prefix. For the storage mode
 | GET | /files/preview-redirect?path= | "Open in a new tab" for html: mints a signed token and 302s to the separate preview origin |
 | POST | /files/stat | Batch existence check: `{paths}` |
 | PUT | /files/content?path= | Upload a file: `{dataBase64}`, capped at 14MB |
+| POST | /files/move | Move or rename one Workspace file: `{from, to, ifVersion?}` → 204. **Files only** — a directory carries no single version marker, so the precondition that protects the operation cannot be expressed for one, and it is a 400. `to`'s parent directory is created when missing. 404 `path_not_found` when `from` is gone, 409 `file_changed` when `ifVersion` no longer matches it (a source that vanished under a marker counts as changed), 409 `target_exists` when something already sits at `to` — the destination was never read, so it is refused rather than overwritten — and 400 for a move onto the file's own path |
+| DELETE | /files/content?path=&ifVersion= | Delete one Workspace file: 204. Files only (a directory is a 400); 404 `path_not_found`, and 409 `file_changed` when `ifVersion` no longer matches. The marker is optional on the wire — without it the delete is unconditional — and the Files panel always sends the one its read returned |
+| GET | /files/search?q= | Search the whole Workspace by entry **name** (case-insensitive substring; the path is not matched) → `{hits: [{path, kind, sizeBytes, mtime}], truncated}`, each hit carrying what a directory listing's entry carries. Breadth-first from the root, so hits come shallowest-first and a capped result is the most relevant ones rather than whatever the first directory held; `truncated` says a cap stopped the walk — 200 hits, or 20000 directory entries visited. An empty `q`, or one over 100 characters, is a 400 |
 | GET | /traces | List this Session's Trace files |
 | GET | /traces/:index | Read Trace events (paginated) |
 | GET | /traces/:index/analysis | Trace performance analysis |
@@ -430,7 +439,7 @@ Real-time delivery uses Server-Sent Events, not WebSocket, on two channels (the 
 | Channel | Path | Contents |
 | --- | --- | --- |
 | Per Session | GET /api/sessions/:sessionId/stream | The Session's message stream and run events |
-| Per user | GET /api/events | `hello` handshake and cross-Session notifications (session_state / schedule_fired / schedule_queued / session_created) |
+| Per user | GET /api/events | `hello` handshake and cross-Session notifications (session_state / session_background / schedule_fired / schedule_queued / session_created) |
 
 ### Wire Format
 
@@ -442,6 +451,7 @@ export type ServerEvent =
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
+  | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
@@ -456,6 +466,7 @@ export type ServerEvent =
 | task_state | The Session's run state flips (idle / running / compacting) |
 | session_title | The model-generated title after the first turn has been persisted |
 | session_state | The user-channel counterpart of `task_state`: the same run-state flip, named by `sessionId`, so a Session list stays live for every row and not only the conversation a client has open. Carries the row fields needed to redraw it without refetching — `lastActiveAt` as just stamped, and `hasTrace` (true whenever the state is running or compacting, since a Session that is running has by definition started a Task). Published to the user channels of the Project's owner and members |
+| session_background | A Session's background-task counts changed — a command promoted past its yield window or launched with `run_in_background`, a process that exited or was stopped, a background subagent starting, settling or being released. Carries `SessionInfo.backgroundTasks` as it now stands (`processes` = background command sessions still running, `subagents` = promoted subagent sessions mid-round), zeros included so a list can clear its mark without refetching; the list row and the single-session GET omit the field at zero. Same audience as `session_state` |
 | resync_required | The Last-Event-ID was evicted from the buffer; the client must refetch history |
 | credentials_updated | The Project's model credentials changed (`PUT /models`, or a completed key-minting flow): cached runtimes were invalidated, so the client clears any auth-dead composer state |
 | hello | Handshake on the user channel |

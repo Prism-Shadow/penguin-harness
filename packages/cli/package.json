@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-cli",
-  "version": "0.2.9",
+  "version": "0.2.11",
   "type": "module",
   "description": "PenguinHarness CLI: interactive REPL and single-task runner over @prismshadow/penguin-core.",
   "license": "Apache-2.0",
@@ -36,7 +36,7 @@
     "@penguinharness/use-bento-slides": "workspace:*",
     "@penguinharness/use-firecrawl": "workspace:*",
     "@penguinharness/use-claude-code": "workspace:*",
-    "@prismshadow/agenthub": "^0.4.9",
+    "@prismshadow/agenthub": "^0.4.14",
     "@prismshadow/penguin-core": "workspace:*",
     "@prismshadow/penguin-server": "workspace:*",
     "commander": "^13.0.0",

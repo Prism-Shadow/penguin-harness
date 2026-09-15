@@ -21,7 +21,7 @@ Each Project's available models are recorded in the hidden `.project_config.toml
 | --- | --- |
 | `provider` | Config group name; paired with `model_id` it forms the unique key |
 | `model_id` | Upstream request id |
-| `context_window` | Context window (tokens). Load-bearing, not just display: each request's effective output cap and the compaction threshold are derived from it, so requests never ask for more output than the window still fits. Unset (or implausibly small, under 4096): the output clamp turns off and compaction derives from an assumed 128000 — set the real value for models with smaller windows |
+| `context_window` | Context window (tokens). Load-bearing, not just display: each request's effective output cap and the compaction threshold are derived from it, so requests never ask for more output than the window still fits. Unset (or implausibly small, under 4096): the output clamp turns off and compaction derives from an assumed 128000 — set the real value for models with smaller windows. The Web dialog prefills 1,000,000 when a custom or user-group model leaves the field blank (a hand-added entry is a known model, not an unknown window); narrow it when the endpoint serves less. `penguin config model add` writes no default at all when `--context-window` is omitted |
 | `max_tokens` | Optional per-model output cap (max output tokens per request). When set it overrides the Agent's `model.max_tokens`; unset inherits it. The cap is a ceiling, not the literal wire value: each request sends `min(max_tokens, context_window − estimated input − safety margin)`, so small-window models work without hand-tuning it. Omitting the field on a Web full-table save clears it |
 | `client_type` | Protocol hint (`openai-chat` for Chat Completions, `openai-responses` for the Responses API, `ant-messages` for Anthropic Messages, …); inferred by AgentHub from the model id when omitted. Custom endpoints use one of those three generic protocol clients, and the Web dialog can detect which one a base URL serves. The pre-0.4.2 spelling `openai` is a deprecated alias and is normalized to `openai-chat` when the config is read |
 | `display_name` | Display name |
@@ -30,18 +30,20 @@ Each Project's available models are recorded in the hidden `.project_config.toml
 | `pricing` | Three price buckets (unit `usd_per_mtok`, USD per million tokens): `cache_read` / `cache_write` / `output` |
 | `api_key` / `base_url` | Inlined credentials, both optional; when blank, AgentHub falls back to environment variables |
 
-A fresh Project defaults to deepseek-v4-flash-vision-exp, which reads images itself. A `vision_model` entry can additionally designate the proxy model that `describe_image` uses for text-only session models (see [Tools & Approval](/tools)); it is unset by default.
+A fresh Project defaults to deepseek-flash (DeepSeek V4.1 Flash), which reads images itself. A `vision_model` entry can additionally designate the proxy model through which `read_file` reads images for text-only session models (see [Tools & Approval](/tools)); it is unset by default.
 
 File shape (illustrative):
 
 ```toml
-default_model = { provider = "deepseek", model_id = "deepseek-v4-flash-vision-exp" }
+default_model = { provider = "deepseek", model_id = "deepseek-flash" }
 vision_model = { provider = "google", model_id = "gemini-3.1-pro-preview" }
 
 [[models]]
 provider = "deepseek"
-model_id = "deepseek-v4-flash-vision-exp"
+model_id = "deepseek-flash"
 context_window = 1000000
+client_type = "deepseek-v4"
+base_url = "https://api.deepseek.com"
 
 [[models]]
 provider = "custom"
@@ -51,7 +53,7 @@ base_url = "https://llm.example.com/v1"
 api_key = "sk-..."
 ```
 
-For a model tagged `vision = false` (e.g. `deepseek-v4-flash`, the text-only sibling of the default), images from conversation input are saved to the Session scratchpad and handed over as a file path spliced into the text, and the image-reading tool switches to `describe_image`.
+For a model tagged `vision = false` (e.g. `deepseek-v4-pro`, the text-only member of the DeepSeek group), images from conversation input are saved to the Session scratchpad and handed over as a file path spliced into the text, and `read_file` hands an image to the `vision_model` for description instead of returning it.
 
 ## Built-in provider groups
 
@@ -74,13 +76,13 @@ Built-in groups and their env-var fallbacks (catalog source: `packages/core/src/
 | qwen-token-plan | `OPENAI_API_KEY` | Qwen Token Plan subscription gateway, preset base URL `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`; pricing from each model page's official list price (the preview model has only a quota-multiplier promo, no list price) |
 | custom | `OPENAI_API_KEY` | Any OpenAI-protocol endpoint |
 
-The gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through AgentHub's generic OpenAI-protocol clients, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable. Most gateway presets pin the Chat Completions client (`client_type = "openai-chat"`); the OpenRouter `openai/*` presets pin the Responses client (`client_type = "openai-responses"`) instead, because OpenRouter serves the Responses API at the same base URL and those rows' upstream is OpenAI itself. Both clients read the same `OPENAI_*` variables, so the credential rules are identical either way. The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset pins `https://api.minimax.io/v1`; `MINIMAX_BASE_URL` is consulted only for entries without an inline `base_url`. M3 pricing records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; every rate doubles above that and the priority tier is 1.5x, so long-context and priority usage is underestimated — the same base-tier convention already used for OpenAI (>272K) and Gemini 3.1 Pro (>200K).
+The gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay-as-you-go / qwen-token-plan) go through AgentHub's generic OpenAI-protocol clients, so with blank credentials they read `OPENAI_API_KEY` — not a gateway-specific variable. The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) throughout — its presets and any model you add to the group alike — because OpenRouter serves the Responses API at that same base URL for every model it resells; the other gateway presets pin the Chat Completions client (`client_type = "openai-chat"`). Both clients read the same `OPENAI_*` variables, so the credential rules are identical either way. The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset pins `https://api.minimax.io/v1`; `MINIMAX_BASE_URL` is consulted only for entries without an inline `base_url`. M3 pricing records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; every rate doubles above that and the priority tier is 1.5x, so long-context and priority usage is underestimated — the same base-tier convention already used for OpenAI (>272K) and Gemini 3.1 Pro (>200K).
 
 The preset catalog also carries OpenRouter's free tier: the `:free` model variant `nvidia/nemotron-3-ultra-550b-a55b:free` and the `openrouter/free` unified Free Models Router. They cost nothing, but are subject to OpenRouter's free-tier rate limits and data policy.
 
-Some models in the preset catalog: deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp (the DeepSeek group's only vision-capable model), MiniMax-M3, gemini-3.7-flash, claude-opus-5 / claude-opus-4-8 / claude-sonnet-5, gpt-5.6 / gpt-5.5, glm-5.3 / glm-5.3-flash, kimi-k3, qwen3.8-max / qwen3.8-flash (not exhaustive). The whole OpenAI line-up is listed twice — directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions). DeepSeek's direct-group rows record the official peak tier and declare its off-peak schedule: outside Beijing weekday 9:00–12:00 and 14:00–18:00 every bucket is halved, which the models page marks with a `-50%` tag and the cost center bills at. The stored price is always the peak one, so what is on disk does not depend on the hour a Project was created or re-synced in. `glm-5.3-flash` appears three times, and all three rows accept images: AgentHub's GLM client forwards image parts for this one GLM id (every other GLM id refuses them), while the OpenRouter row `z-ai/glm-5.3-flash` and the TokenDance row go through the generic OpenAI-compatible client, which carries them for any id. What the three rows do not share is the price: each records what its own seller charges, so they disagree while a promotion is running.
+Some models in the preset catalog: deepseek-flash / deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp (`deepseek-flash` and `deepseek-v4-flash-vision-exp` read images; `deepseek-v4-flash` and `deepseek-v4-pro` are text-only. Since 2026-09-10 the two legacy Flash ids are retired names that DeepSeek serves from V4.1 Flash at the Flash price, which changes what they cost but not what V4 Flash reads: send an image to `deepseek-flash`), MiniMax-M3, gemini-3.8-flash, claude-opus-5 / claude-opus-4-8 / claude-sonnet-5, gpt-6-astra / gpt-5.6 / gpt-5.5, glm-5.3 / glm-5.3-flash, kimi-k3, qwen3.8-max / qwen3.8-flash, seed-2.1-pro / seed-2.1-turbo / seed-evolving (not exhaustive). The whole OpenAI line-up is listed twice — directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions). DeepSeek's direct-group rows record the official peak tier and declare its off-peak schedule: outside Beijing weekday 9:00–12:00 and 14:00–18:00 every bucket is halved, which the models page marks with a `50% off` badge and the cost center bills at. Three resold rows follow the same schedule, because their sellers pass DeepSeek's own windows through: TokenDance's `deepseek-v4.1-flash` and `deepseek-v4-flash-vision-exp`, and OpenRouter's `deepseek/deepseek-v4.1-flash`. The stored price is always the peak one, so what is on disk does not depend on the hour a Project was created or re-synced in. `glm-5.3-flash` appears three times, and all three rows accept images: AgentHub's GLM client forwards image parts for this one GLM id (every other GLM id refuses them), while the OpenRouter row `z-ai/glm-5.3-flash` and the TokenDance row go through the generic OpenAI-compatible client, which carries them for any id. What the three rows do not share is the price: each records what its own seller charges, so they disagree while a promotion is running.
 
-TokenDance rows record the gateway's list price and, where a promotion is running, the rate off it. Six models are discounted today — `deepseek-v4-flash-0731`, `deepseek-v4-pro-0813` and `glm-5.3-flash` at 50% off, `kimi-k3` at 20%, `glm-5.3` and `qwen3.8-max` at 10%. Their model cards show the price being billed right now, with the rate as a badge, and a Project is preset with the **discounted** price, so the cost center charges what the gateway charges. Prices you edit yourself keep the discount decoration off the card: the figure is then yours, not the gateway's.
+TokenDance rows record the gateway's list price and, where a promotion is running, the rate off it. Nine models are discounted today — `deepseek-v4-flash-0731`, `deepseek-v4-pro-0813` and `kimi-k3` at 20% off, `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%, and the three Doubao Seed rows (`seed-2.1-pro`, `seed-2.1-turbo`, `seed-evolving`) at 50%. Two further rows carry no flat discount and instead follow DeepSeek's own off-peak schedule, described above. Their model cards show the price being billed right now, with the rate as a badge, and a Project is preset with the **discounted** price, so the cost center charges what the gateway charges. Prices you edit yourself keep the discount decoration off the card: the figure is then yours, not the gateway's.
 
 ## App attribution
 
@@ -157,7 +159,7 @@ Whether a fast tier exists is decided by the AgentHub client a model routes to, 
 
 | Routed client | Fast mode |
 | --- | --- |
-| OpenAI protocol (`openai_chat`, `openai_responses`, `gpt5_6`, `minimax_m3`) | sent as `service_tier: "priority"` |
+| OpenAI protocol (`openai_chat`, `openai_responses`, `gpt6`, `minimax_m3`) | sent as `service_tier: "priority"` |
 | Anthropic protocol (`ant_messages`, `claude5`) | sent as `speed: "fast"` plus the beta header |
 | Gemini, GLM, Kimi, DeepSeek, OpenAI embeddings | rejected — no toggle |
 | Claude on Bedrock, or a Claude 4.6 id | rejected — no toggle |
@@ -171,7 +173,7 @@ Two things the toggle cannot check for you:
 
 If a request does reach a client that rejects `fast_mode`, AgentHub refuses it **before any network request**: the session ends that turn immediately with the provider's message plus a pointer to the setting, and a deterministic rejection is never retried. An entry that stores `fast_mode = true` on a model that cannot serve it keeps its toggle in the dialog, marked unsupported, so it can always be switched off.
 
-The connectivity test sends the dialog's current toggle state, so "Test connection" surfaces a fast-mode rejection before saving. Background requests (session title generation, `describe_image` proxy reads) never carry fast mode — only the session's own requests do.
+The connectivity test sends the dialog's current toggle state, so "Test connection" surfaces a fast-mode rejection before saving. Background requests (session title generation, `read_file`'s vision-model proxy reads) never carry fast mode — only the session's own requests do.
 
 ## Models decoupled from Agents
 

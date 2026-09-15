@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { sessionActivity } from "../src/lib/session-activity";
+import { sessionActivity, sessionBackgroundTasks } from "../src/lib/session-activity";
 import type { SessionActivity } from "../src/lib/session-activity";
 import {
   ACTIVITY_GLYPH,
+  BackgroundTasksMark,
+  ScheduleMark,
   SessionActivityIcon,
   sessionActivityLabel,
 } from "../src/components/ui/session-activity-icon";
+import { BACKGROUND_TASKS_ICON, SCHEDULE_ICON } from "../src/components/ui/icons";
+import { ICON_SIZE } from "../src/lib/icon-scale";
 import { S } from "../src/lib/strings";
 import { toneInk } from "../src/lib/tone";
 import { readFileSync } from "node:fs";
@@ -41,6 +45,76 @@ describe("sessionActivity", () => {
   it("still reports a live run started before its Trace was recorded", () => {
     expect(sessionActivity("running", false, false)).toBe("running");
     expect(sessionActivity("compacting", false, false)).toBe("compacting");
+  });
+});
+
+describe("sessionBackgroundTasks", () => {
+  it("is zero without the field and the sum of both counts with it", () => {
+    // The server omits the field at zero, so absence is the common case, not an error.
+    expect(sessionBackgroundTasks({})).toBe(0);
+    expect(sessionBackgroundTasks({ backgroundTasks: { processes: 2, subagents: 0 } })).toBe(2);
+    expect(sessionBackgroundTasks({ backgroundTasks: { processes: 1, subagents: 3 } })).toBe(4);
+  });
+
+  it("is a facet beside the activity state, not a fourth state", () => {
+    // An idle, read Session can still own a dev server: the glyph says nothing and the
+    // background count says 1, and the row draws both.
+    expect(sessionActivity("idle", true, false)).toBeNull();
+    expect(sessionBackgroundTasks({ backgroundTasks: { processes: 1, subagents: 0 } })).toBe(1);
+  });
+});
+
+/**
+ * The background-task mark: one glyph in the `busy` tone, standing for a count in both of
+ * its placements — a session row and the chat header. Rendered only when there is background
+ * work to report (the caller's decision), and always naming what it means in the accessible
+ * name and tooltip, so the glyph is never the only carrier. A tool row says the same thing in
+ * words instead (S.chat.backgroundCall, covered by tool-call-preview.test.ts), because there
+ * it marks one call rather than a count.
+ */
+describe("BackgroundTasksMark", () => {
+  const render = (label: string, size: number) =>
+    renderToStaticMarkup(createElement(BackgroundTasksMark, { label, size }));
+
+  it("names the count where it stands for a count", () => {
+    const markup = render(S.chat.backgroundTasks(3), ICON_SIZE.rowMark);
+    expect(markup).toContain(`aria-label="${S.chat.backgroundTasks(3)}"`);
+    expect(markup).toContain(`title="${S.chat.backgroundTasks(3)}"`);
+    expect(markup).toContain('role="img"');
+    expect(S.chat.backgroundTasks(3)).toContain("3");
+  });
+
+  it("draws the activity trace in the busy emerald, at the rung its caller passes", () => {
+    expect(render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark)).toMatch(/width="12"/);
+    expect(render(S.chat.backgroundTasks(1), ICON_SIZE.inlineGlyph)).toMatch(/width="13"/);
+    const markup = render(S.chat.backgroundTasks(1), ICON_SIZE.rowMark);
+    expect(markup).toContain(`d="${BACKGROUND_TASKS_ICON}"`);
+    // Work still running, only outside the turn: the mark takes the live tone rather than
+    // receding with the pin and the relay glyph.
+    expect(markup).toContain(toneInk.busy);
+    expect(markup).not.toContain(toneInk.muted);
+    // A facet beside the row's activity state rather than a fourth state of it: it takes the
+    // live tone but neither the activity glyphs nor their motion.
+    expect(markup).not.toContain(ACTIVITY_GLYPH.running);
+    expect(markup).not.toContain("hourglass-turn");
+  });
+});
+
+describe("ScheduleMark", () => {
+  const markup = () =>
+    renderToStaticMarkup(createElement(ScheduleMark, { size: ICON_SIZE.rowMark }));
+
+  it("recedes with the row's other standing marks instead of reading as live work", () => {
+    // A scheduled task is an arrangement, not something happening now: it takes the `muted` ink
+    // the pin and the messaging-relay glyph wear, and neither the busy nor the attention tone
+    // that the hourglass and the pending-approval badge own.
+    expect(markup()).toContain(toneInk.muted);
+    expect(markup()).not.toContain(toneInk.attention);
+    expect(markup()).not.toContain(toneInk.busy);
+    // Muted is the one tone allowed under 3:1, and only where the meaning is already in text.
+    expect(markup()).toContain(`aria-label="${S.chat.sessionScheduled}"`);
+    expect(markup()).toContain(`title="${S.chat.sessionScheduled}"`);
+    expect(markup()).toContain(`d="${SCHEDULE_ICON}"`);
   });
 });
 

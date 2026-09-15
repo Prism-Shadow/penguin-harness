@@ -33,6 +33,17 @@ describe("the first-login link", () => {
       redirect: "manual",
     });
 
+  /**
+   * What a browser gets for a link that no longer works: back to the login page, carrying the
+   * advice this deployment can give (no shell here, so a new link comes from whoever runs the
+   * server), and no session.
+   */
+  function expectRefusal(res: Response): void {
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login?claimFailed=server");
+    expect(res.headers.get("set-cookie")).toBeNull();
+  }
+
   it("claims an unclaimed server, with a session that may set a password but is not desktop", async () => {
     const res = await redeem(link);
     expect(res.status).toBe(302);
@@ -57,7 +68,7 @@ describe("the first-login link", () => {
     expect(t.deps.authService.adminPasswordIsInitial()).toBe(false);
 
     // Claimed: a console scrollback is not a way in.
-    expect((await redeem(link)).status).toBe(401);
+    expectRefusal(await redeem(link));
   });
 
   it("refuses any token but the printed one, and says nothing about which it got", async () => {
@@ -67,8 +78,9 @@ describe("the first-login link", () => {
     const someoneElse = (await loginAdmin(t.app)).cookie.split("=").slice(1).join("=");
     const other = await redeem(someoneElse);
     const wrong = await redeem("not-the-token");
-    expect([other.status, wrong.status]).toEqual([401, 401]);
-    expect(await other.text()).toBe(await wrong.text());
+    expectRefusal(other);
+    expectRefusal(wrong);
+    expect(other.headers.get("location")).toBe(wrong.headers.get("location"));
   });
 
   /**
@@ -279,7 +291,7 @@ describe("the first-login link", () => {
       const res = await second.app.request("/api/auth/claim?token=anything", {
         redirect: "manual",
       });
-      expect(res.status).toBe(401);
+      expectRefusal(res);
     } finally {
       await second.cleanup();
     }

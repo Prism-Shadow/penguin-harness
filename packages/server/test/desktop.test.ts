@@ -15,7 +15,14 @@ import {
 import type { ErrorBody, MeResponse } from "../src/api/types.js";
 
 describe("desktop claim", () => {
-  it("redeems the token once: cookie session, redirect to /, second attempt 401", async () => {
+  /** What a browser gets for a token this server will not honour: the login page, plus the advice it can give there. */
+  function expectRefusal(res: Response, advice: "desktop" | "server"): void {
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`/login?claimFailed=${advice}`);
+    expect(res.headers.get("set-cookie")).toBeNull();
+  }
+
+  it("redeems the token once: cookie session, redirect to /, a replay back to the login page", async () => {
     const t = await createDesktopApp();
     try {
       const res = await t.app.request(`/api/auth/claim?token=${TEST_DESKTOP_TOKEN}`);
@@ -33,7 +40,7 @@ describe("desktop claim", () => {
       expect(body.desktopMode).toBe(true);
 
       const replay = await t.app.request(`/api/auth/claim?token=${TEST_DESKTOP_TOKEN}`);
-      expect(replay.status).toBe(401);
+      expectRefusal(replay, "desktop");
     } finally {
       await t.cleanup();
     }
@@ -42,8 +49,8 @@ describe("desktop claim", () => {
   it("rejects a wrong or missing token without consuming the real one", async () => {
     const t = await createDesktopApp();
     try {
-      expect((await t.app.request("/api/auth/claim?token=wrong")).status).toBe(401);
-      expect((await t.app.request("/api/auth/claim")).status).toBe(401);
+      expectRefusal(await t.app.request("/api/auth/claim?token=wrong"), "desktop");
+      expectRefusal(await t.app.request("/api/auth/claim"), "desktop");
       // The real token still works after failed attempts.
       expect((await t.app.request(`/api/auth/claim?token=${TEST_DESKTOP_TOKEN}`)).status).toBe(302);
     } finally {
@@ -54,10 +61,11 @@ describe("desktop claim", () => {
   it("refuses a desktop token outside desktop mode, and /api/me reports desktopMode false", async () => {
     const t = await createTestApp();
     try {
-      // The claim route serves the first-login link too, so it exists in every mode. A
-      // server with no shell has no shell token to honour, and says so as 401 — the same
-      // answer any wrong value gets, so the reply does not report which modes are enabled.
-      expect((await t.app.request("/api/auth/claim?token=x")).status).toBe(401);
+      // The claim route serves the first-login link too, so it exists in every mode. A server
+      // with no shell has no shell token to honour, and refuses this one the way it refuses
+      // every other wrong value here — pointing at the only advice it can give, since no
+      // restart of anything on this machine would produce a link.
+      expectRefusal(await t.app.request("/api/auth/claim?token=x"), "server");
       const admin = await loginAdmin(t.app);
       const me = await apiClient(t.app, admin.cookie).get("/api/me");
       expect(((await me.json()) as MeResponse).desktopMode).toBe(false);

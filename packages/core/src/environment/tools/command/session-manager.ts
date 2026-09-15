@@ -11,8 +11,9 @@
  */
 import { statSync } from "node:fs";
 import { ManagedSession } from "./session.js";
+import { prependPathEnv } from "./path-prepend.js";
 import { BackgroundRegistry } from "../background/index.js";
-import type { ProxyEnvPolicy } from "../../../interfaces/index.js";
+import type { ProxyEnvPolicy, SpawnConfiner } from "../../../interfaces/index.js";
 
 /** Concurrent managed-session cap: evicts once exceeded (exited sessions first, otherwise LRU — killing a background process has bounded cost). */
 const MAX_SESSIONS = 64;
@@ -210,15 +211,57 @@ export class CommandSessionManager {
    * A getter like `proxyEnv`, re-read at every spawn. Absent = nothing injected.
    */
   private readonly controlEnv: (() => Record<string, string>) | undefined;
+  /**
+   * Directories the host puts at the front of PATH for every command (see
+   * {@link EnvironmentConfig.pathPrepend}): the hosting server points this at the shim
+   * directory holding its own `penguin`, so an Agent's `penguin` is the harness it is
+   * running inside rather than whatever the machine has installed globally. A getter like
+   * `proxyEnv`, re-read at every spawn. Absent, or returning nothing = untouched PATH.
+   */
+  private readonly pathPrepend: (() => string[]) | undefined;
+  /** Single change listener (see onChange); null until the Environment subscribes. */
+  private changeListener: (() => void) | null = null;
+  /**
+   * Sandbox-confinement seam (see {@link SpawnConfiner}): rewrites the exact argv of
+   * every spawn. A getter for the same reason as `proxyEnv`: the active confiner can
+   * change at runtime (the hosting server's platform layer is hot-swappable), and
+   * re-reading at every spawn makes the change reach Sessions that are already
+   * running. Absent, or returning null = commands spawn unconfined.
+   */
+  private readonly confineSpawn: (() => SpawnConfiner | null) | undefined;
+  /**
+   * The Session's Workspace root, bound into every confiner call as
+   * `opts.workspaceDir` (a workspace-scoped policy must key off the Workspace, not the
+   * per-command cwd). Optional for standalone embedders without a Workspace concept;
+   * those fall back to the spawn cwd.
+   */
+  private readonly workspaceDir: string | undefined;
 
   constructor(opts?: {
     vault?: Record<string, string>;
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: () => Record<string, string>;
+    pathPrepend?: () => string[];
+    confineSpawn?: () => SpawnConfiner | null;
+    workspaceDir?: string;
   }) {
     this.vault = opts?.vault ?? {};
     this.proxyEnv = opts?.proxyEnv;
     this.controlEnv = opts?.controlEnv;
+    this.pathPrepend = opts?.pathPrepend;
+    this.confineSpawn = opts?.confineSpawn;
+    this.workspaceDir = opts?.workspaceDir;
+    this.registry.onChange(() => this.changeListener?.());
+  }
+
+  /**
+   * Attaches the single listener for changes to the set of running background commands: a
+   * session registered, one removed (kill, reap, eviction, dispose), and a registered
+   * process reaching its terminal state on its own. Payload-free; subscribers re-read
+   * `list()`. A later call replaces the earlier one.
+   */
+  onChange(listener: () => void): void {
+    this.changeListener = listener;
   }
 
   /**
@@ -237,9 +280,24 @@ export class CommandSessionManager {
       throw new Error("command session manager disposed");
     }
     assertUsableCwd(opts.cwd);
+    // The host's directories go onto the INHERITED PATH, before the vault is spread over
+    // it below: a vault `PATH` is an explicit per-Agent decision and still replaces the
+    // whole value, prepended directories included. The same list is handed to the session
+    // so the command string can re-assert it after the login profile has run — that is the
+    // half that actually decides which `penguin` a command resolves (see ManagedSession).
+    const prepend = this.pathPrepend?.() ?? [];
+    const hostEnv = prependPathEnv(hostEnvForChild(this.proxyEnv?.() ?? null), prepend);
+    const confiner = this.confineSpawn?.() ?? null;
     return new ManagedSession({
       cmd: opts.cmd,
       cwd: opts.cwd,
+      ...(prepend.length > 0 ? { pathPrepend: prepend } : {}),
+      ...(confiner !== null
+        ? {
+            confine: (argv: readonly string[], o: { cwd: string }) =>
+              confiner(argv, { cwd: o.cwd, workspaceDir: this.workspaceDir ?? o.cwd }),
+          }
+        : {}),
       // Spread order is priority: vault overrides host variables of the same name; the
       // host's control variables (controlEnv) override the vault — they are the hosting
       // server's own wiring (API URL/token, Session coordinates) and a vault entry must
@@ -258,7 +316,7 @@ export class CommandSessionManager {
       // values rather than as surviving copies. Pinned by the "an explicit injection
       // layered after the strip wins" test.
       env: {
-        ...hostEnvForChild(this.proxyEnv?.() ?? null),
+        ...hostEnv,
         ...this.vault,
         ...(this.controlEnv?.() ?? {}),
         ...HARDENED_ENV,
@@ -269,7 +327,11 @@ export class CommandSessionManager {
   /** Registers a still-running session as a background process, allocating and returning a unique `process_id`. */
   register(session: ManagedSession): string {
     this.registry.makeRoom(true);
-    return this.registry.register(session);
+    const id = this.registry.register(session);
+    // A registered process that exits on its own leaves the running set without leaving the
+    // registry (its row stays listed as exited until removed), so the exit itself is reported.
+    session.setExitListener(() => this.changeListener?.());
+    return id;
   }
 
   /** Looks up a session by process_id and refreshes its access time; returns undefined if it doesn't exist. */

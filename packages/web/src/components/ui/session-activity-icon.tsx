@@ -1,6 +1,9 @@
 import { S } from "../../lib/strings";
+import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { SessionActivity } from "../../lib/session-activity";
+import { GlyphIcon } from "./glyph-icon";
+import { BACKGROUND_TASKS_ICON, SCHEDULE_ICON } from "./icons";
 
 type Activity = Exclude<SessionActivity, null>;
 
@@ -24,6 +27,14 @@ type Activity = Exclude<SessionActivity, null>;
  * Every glyph also names its exact state in its accessible name and tooltip, so nothing here is
  * legible only to a sighted user with full colour vision. The read state announces nothing
  * because it renders nothing, which is correct — there is no state to report.
+ *
+ * Background work is a separate mark, not a fourth state (BackgroundTasksMark below): an
+ * activity trace drawn beside whichever glyph the row wears — an idle, read Session can still
+ * own a dev server or a background subagent, and the row says both. A standing scheduled task is
+ * a mark of another kind again (ScheduleMark below): it says what the conversation will do
+ * without anyone opening it, not what it is doing now, and sits with the row's settled marks
+ * ahead of the live states. Each of the two names its own tone where it is defined, so a tone is
+ * spelled in one place and cannot go stale in another.
  *
  * Ink comes from the shared tone tokens (lib/tone.ts), which carry the measured contrast ratios
  * against the two surfaces these glyphs sit on: the sidebar (gray-50 / gray-900) and the chat
@@ -55,13 +66,66 @@ export function sessionActivityLabel(activity: Activity): string {
   return S.chat.statusCompletedUnread;
 }
 
-export function SessionActivityIcon({
-  activity,
-  size = 12,
-}: {
-  activity: Activity;
-  size?: number;
-}) {
+/**
+ * The background-task mark: "work is going on behind this" wherever the app says so — a
+ * session row and the chat header, where it stands for the conversation's whole set of
+ * background command processes and subagents, and a tool row, where it marks the one call
+ * that was made with `run_in_background`. `busy` ink, the tone for "executing right now": a
+ * background command process or a mid-round subagent is still working — it has only left the
+ * turn. The chat header's count wears the same tone, so the glyph and the number read alike
+ * wherever they appear. The required label below still carries the state in words.
+ *
+ * Both props are the caller's to decide, because the two placements genuinely differ: the
+ * label names a count in one place and a single call in the other, and the size is the rung
+ * the surrounding row already uses (a session row's trailing marks, a tool row's inline
+ * glyphs). The label is the only carrier of the state — colour and shape never are — so it
+ * is required rather than defaulted. Rendered only when there is background work to report:
+ * the caller decides, so no row reserves a box for it.
+ */
+export function BackgroundTasksMark({ label, size }: { label: string; size: number }) {
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`flex shrink-0 items-center ${toneInk.busy}`}
+    >
+      <GlyphIcon d={BACKGROUND_TASKS_ICON} size={size} />
+    </span>
+  );
+}
+
+/**
+ * The scheduled-task mark: a session row wears an alarm clock while at least one bound task still
+ * has a next fire time (features/schedules' `pendingScheduleSessions`). A task switched off, past
+ * its end time, or a one-off that has already run has none and draws nothing — the panel is where
+ * it stays visible. `muted` ink, the tone for a mark that should recede: a standing arrangement is
+ * settled, not live work, so it joins the row's dim cluster (the pin and the messaging-relay glyph)
+ * rather than competing with the hourglass and the pending-approval badge for the eye. `muted` may
+ * only mark a state that is already spelled out in text, which the `aria-label` and tooltip below
+ * are.
+ *
+ * Icon only, no count: the row's job is to say that this conversation runs on its own, and how
+ * many tasks do it is the panel's business. The label is the only carrier of that meaning, so it
+ * is read here rather than passed in — unlike `BackgroundTasksMark`, this mark has one placement
+ * and one meaning, and a second wording for it would be a second meaning.
+ */
+export function ScheduleMark({ size }: { size: number }) {
+  const label = S.chat.sessionScheduled;
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={`flex shrink-0 items-center ${toneInk.muted}`}
+    >
+      <GlyphIcon d={SCHEDULE_ICON} size={size} />
+    </span>
+  );
+}
+
+export function SessionActivityIcon({ activity }: { activity: Activity }) {
+  const size = ICON_SIZE.rowMark;
   const label = sessionActivityLabel(activity);
   if (activity === "completedUnread") {
     // The dot itself is exactly the Session status dot's geometry — `h-1.5 w-1.5`, 6px, the same

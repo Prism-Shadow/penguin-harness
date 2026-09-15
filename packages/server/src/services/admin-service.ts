@@ -42,8 +42,16 @@ export class AdminService {
     this.hashCost = deps.passwordHashCost ?? SCRYPT_COST;
   }
 
+  /**
+   * Every account, for the admin user backend. The avatar is dropped on the way out: a stored
+   * avatar is a data URL of up to 128 KiB and this list is unpaged, so carrying one per account
+   * would answer a table that only shows the nickname with megabytes.
+   */
   listUsers(): UserInfo[] {
-    return this.deps.users.list().map(toUserInfo);
+    return this.deps.users.list().map((row) => {
+      const { avatar: _avatar, ...info } = toUserInfo(row);
+      return info;
+    });
   }
 
   async createUser(userId: string, password: string): Promise<UserInfo> {
@@ -65,6 +73,8 @@ export class AdminService {
       passwordHash: await hashPassword(password, this.hashCost),
       isAdmin: false,
       passwordIsInitial: true,
+      displayName: null,
+      avatar: null,
       createdAt: this.now().toISOString(),
     };
     this.deps.users.insert(user);

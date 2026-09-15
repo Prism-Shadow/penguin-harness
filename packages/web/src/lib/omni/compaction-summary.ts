@@ -12,6 +12,21 @@
 import { extractSummary } from "@prismshadow/penguin-core/markers";
 import type { CompactionItem } from "./stream-model";
 
+/**
+ * Whether the row's result section is on screen yet. It appears only once the request has
+ * moved past its thinking: the first summary text lands (which is also what settles the
+ * thinking section), or the compaction has completed with a summary. While the request is
+ * still thinking the body shows the thinking section alone — a result row with nothing in it
+ * beside a streaming thought read as two things happening at once, when only one was.
+ */
+export function compactionResultVisible(
+  item: Pick<CompactionItem, "summaryText" | "summaryStartedAtMs" | "running" | "status">,
+): boolean {
+  if (compactionSummaryText(item) !== "") return true;
+  if (item.summaryStartedAtMs !== undefined) return true;
+  return !item.running && item.status === "completed";
+}
+
 export function compactionSummaryText(item: Pick<CompactionItem, "summaryText">): string {
   const raw = item.summaryText;
   if (!raw) return "";

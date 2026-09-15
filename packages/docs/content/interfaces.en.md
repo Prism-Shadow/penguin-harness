@@ -163,7 +163,7 @@ type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy
 
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // needed by run_subagent
-  visionDescriber?: VisionDescriberService; // needed by describe_image on text-only models
+  visionDescriber?: VisionDescriberService; // injected for text-only models only: read_file describes images through it
   commandSessions?: CommandSessionManager;  // long-running command session registry (built by Environment)
   subagentSessions?: SubagentSessionManager;// background subagent session registry (likewise)
   backgroundDone?: (event: BackgroundTaskDoneEvent) => void; // completion-report sink for run_in_background launches (likewise)
@@ -209,7 +209,7 @@ interface ToolDefinitionConfig {
   description: string;
   parameters?: Record<string, unknown>;   // JSON Schema
   permission?: "r" | "rw";
-  forModel?: "vision" | "text-only";      // assembled per session-model class
+  forModel?: "vision" | "text-only";      // assembled per session-model class (unset by the built-in entries)
   timeoutMs?: number;                     // default 120000; <=0 disables
   maxOutputLength?: number;               // default 16000, head-kept truncation; <=0 disables
 }
@@ -280,7 +280,7 @@ A round's input is an OmniMessage list — the same shape `steer` takes, and the
 
 ## VisionDescriberService
 
-The image proxy-reading service for text-only models (needed by `describe_image`):
+The image proxy-reading service for text-only models (needed by `read_file` when the Session model cannot view images — its presence is how the tool knows):
 
 ```ts
 interface VisionDescriberService {

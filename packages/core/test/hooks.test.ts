@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { rmEventually } from "./rm-eventually.js";
 import {
   Session,
   assistantText,
@@ -135,7 +136,7 @@ describe("script hooks", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-script-hook-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await rmEventually(dir);
   });
 
   const write = async (name: string, body: string): Promise<string> => {
@@ -160,6 +161,18 @@ describe("script hooks", () => {
     expect(out.asNode).toBe("1");
     const quiet = await write("quiet.mjs", "process.exit(0);\n");
     expect(await runHookScript(quiet, {})).toBeUndefined();
+  });
+
+  it("pathPrepend puts the host's directories at the front of the script's PATH", async () => {
+    // A hook is spawned as `node <script>` — no shell, so nothing re-orders PATH after
+    // this. It is the same directory commands get (the harness's own CLI shim), so a hook
+    // that shells out to `penguin` reaches the harness running it.
+    const readPath = await write("path.mjs", answering("{ path: process.env.PATH }"));
+    const out = (await runHookScript(readPath, {}, { pathPrepend: ["/opt/penguin/bin"] })) as {
+      path: string;
+    };
+    expect(out.path.startsWith(`/opt/penguin/bin${path.delimiter}`)).toBe(true);
+    expect(out.path).toContain(process.env.PATH ?? "");
   });
 
   it("a non-zero exit, non-JSON stdout, and a timeout each fail with a reason", async () => {
@@ -217,7 +230,7 @@ describe("script pre-tool-use hooks", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-tool-script-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await rmEventually(dir);
   });
 
   it("scriptPreToolUseHook feeds the call on stdin and narrows the parsed answer", async () => {
@@ -261,7 +274,7 @@ describe("Session user-prompt hook", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-prompt-hook-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await rmEventually(dir);
   });
 
   it("runs the named package's hook with the Session's own id and scratchpad, null when absent", async () => {
@@ -315,7 +328,7 @@ describe("Session stop hooks", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-hooks-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await rmEventually(dir);
   });
 
   const fakeEnvironment: EnvironmentInterface = {
@@ -530,7 +543,7 @@ describe("Session pre-tool-use hooks", () => {
     dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-tool-hooks-"));
   });
   afterEach(async () => {
-    await fs.rm(dir, { recursive: true, force: true });
+    await rmEventually(dir);
   });
 
   /** Turn 1 calls exec_command; turn 2 answers with the tool output it saw. */

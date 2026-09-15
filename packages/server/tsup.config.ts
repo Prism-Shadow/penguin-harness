@@ -31,10 +31,10 @@ export default defineConfig({
     "secret-file": "src/secret-file.ts",
     "hmr/manifest": "src/hmr/manifest.ts",
     "version-report": "src/version-report.ts",
-    // "./extension": the surface extension PACKAGES compile against. Extensions live outside
+    // "./plugin": the surface plugin PACKAGES compile against. Plugins live outside
     // this bundle entirely — they are configuration resolved from the installation,
     // not platform capability.
-    "extension/index": "src/extension/index.ts",
+    "plugin/index": "src/plugin/index.ts",
   },
   format: ["esm"],
   target: "node24",

@@ -1,8 +1,9 @@
 /**
  * Behavior tests for background execution: `run_in_background` on exec_command /
- * run_subagent, the completion-report pipeline (Environment listener → Session notice
- * queue → engine boundary delivery), input_command's kill termination, and the
- * `sender` marking on user texts.
+ * run_subagent, detaching a call that is already executing (the Web App's per-card button),
+ * the completion-report pipeline (Environment listener → Session notice queue → engine
+ * boundary delivery), input_command's kill termination, and the `sender` marking on user
+ * texts.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -49,7 +50,9 @@ import type {
   SubagentRunner,
   ToolConfig,
   ToolDefinitionConfig,
+  ToolDetachResult,
 } from "../src/interfaces/index.js";
+import { DETACHED_TOOL_NOTE_PREFIX } from "../src/interfaces/index.js";
 import type { ToolExecutionContext } from "../src/environment/tools/types.js";
 
 // ---------------------------------------------------------------------------
@@ -91,6 +94,37 @@ async function runTool(
   }
   const p = (last?.payload ?? {}) as { output?: string; stop_reason?: string };
   return { output: p.output ?? "", stopReason: p.stop_reason };
+}
+
+/**
+ * Runs a tool and detaches the call from outside the moment `when` holds against the output
+ * seen so far — the Web App's button, fired while the call is still executing.
+ */
+async function runToolDetachedOn(
+  env: Environment,
+  name: string,
+  args: Record<string, unknown>,
+  when: (seen: string) => boolean,
+): Promise<FinalOutput & { detach: ToolDetachResult | null; completeOutputs: number }> {
+  const toolCallId = `call_${name}_detach`;
+  let detach: ToolDetachResult | null = null;
+  let seen = "";
+  let completeOutputs = 0;
+  let last: OmniMessage | null = null;
+  for await (const msg of env.executeTool({
+    toolCall: toolCall({ name, arguments: JSON.stringify(args), toolCallId }),
+  })) {
+    const p = msg.payload as { type?: string; output?: string };
+    if (p.type === "tool_call_output") {
+      completeOutputs += 1;
+      last = msg;
+    } else {
+      seen += p.output ?? "";
+    }
+    if (detach === null && when(seen)) detach = env.detachToolCall(toolCallId);
+  }
+  const p = (last?.payload ?? {}) as { output?: string; stop_reason?: string };
+  return { output: p.output ?? "", stopReason: p.stop_reason, detach, completeOutputs };
 }
 
 function extractProcessId(output: string): string {
@@ -353,9 +387,154 @@ describe("exec_command run_in_background", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Detaching an executing call (the Web App's per-card button)
+// ---------------------------------------------------------------------------
+
+describe("detaching an executing tool call", () => {
+  it("ends the call as completed with a process_id, kills nothing, and closes out exactly once", async () => {
+    const { env } = await makeEnv();
+    const res = await runToolDetachedOn(
+      env,
+      "exec_command",
+      // A yield window far longer than the test: the promotion below can only be the detach.
+      { cmd: "printf 'before\\n'; sleep 0.3; printf 'after\\n'; sleep 30", yield_time_ms: 60000 },
+      (seen) => seen.includes("before"),
+    );
+    expect(res.detach).toBe("detached");
+    // A detach is not an interruption: no aborted stop reason, no interruption marker.
+    expect(res.stopReason).toBe("completed");
+    expect(res.output).not.toContain("[interrupted");
+    expect(res.output).toContain(DETACHED_TOOL_NOTE_PREFIX);
+    // Exactly one complete tool_call_output, so the engine's loop closes normally.
+    expect(res.completeOutputs).toBe(1);
+    // Whatever had been collected stays in this call's output.
+    expect(res.output).toContain("before");
+
+    // The process was NOT killed: it is registered, running, and still producing output that
+    // a later input_command poll picks up.
+    const id = extractProcessId(res.output);
+    expect(env.listBackgroundCommands().find((p) => p.processId === id)?.running).toBe(true);
+    const polled = await runTool(env, "input_command", { process_id: id, yield_time_ms: 1500 });
+    expect(polled.output).toContain("after");
+  });
+
+  it("reports the detached command's completion as a background task", async () => {
+    const { env } = await makeEnv();
+    const events: BackgroundTaskDoneEvent[] = [];
+    env.setBackgroundTaskListener((e) => events.push(e));
+    const res = await runToolDetachedOn(
+      env,
+      "exec_command",
+      { cmd: "printf 'before\\n'; sleep 0.4; printf 'done\\n'; exit 0", yield_time_ms: 60000 },
+      (seen) => seen.includes("before"),
+    );
+    const id = extractProcessId(res.output);
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ kind: "command", id, status: "completed" });
+    expect(events[0]!.output).toContain("done");
+  });
+
+  it("answers not_running for an unknown or finished call, and not_detachable for a tool with no background form", async () => {
+    const { env } = await makeEnv();
+    expect(env.detachToolCall("call_nobody")).toBe("not_running");
+
+    const launched = await runTool(env, "exec_command", {
+      cmd: "printf 'poll me\\n'; sleep 30",
+      run_in_background: true,
+    });
+    const id = extractProcessId(launched.output);
+    // input_command only polls a process the registry already holds — there is nothing to
+    // hand back, so the call is refused rather than silently ending early.
+    const polled = await runToolDetachedOn(
+      env,
+      "input_command",
+      { process_id: id, yield_time_ms: 1500 },
+      (seen) => seen.includes("poll me"),
+    );
+    expect(polled.detach).toBe("not_detachable");
+    expect(polled.stopReason).toBe("completed");
+    // The call is over: its detach channel is gone with it.
+    expect(env.detachToolCall("call_input_command_detach")).toBe("not_running");
+  });
+});
+
+describe("background-state listener", () => {
+  it("pings on a background launch, again when the process exits, and on a kill", async () => {
+    const { env } = await makeEnv();
+    let pings = 0;
+    env.setBackgroundStateListener(() => {
+      pings += 1;
+    });
+    const res = await runTool(env, "exec_command", {
+      cmd: "printf done; exit 0",
+      run_in_background: true,
+    });
+    extractProcessId(res.output);
+    // Registration pinged synchronously, inside the launching call.
+    expect(pings).toBeGreaterThanOrEqual(1);
+    // The exit pings on its own: the row stays listed (exited) but leaves the running set.
+    await waitFor(() => env.listBackgroundCommands().every((p) => !p.running));
+    await waitFor(() => pings >= 2);
+
+    const settled = pings;
+    const long = await runTool(env, "exec_command", { cmd: "sleep 30", run_in_background: true });
+    const id = extractProcessId(long.output);
+    expect(pings).toBe(settled + 1);
+    // A deliberate kill disarms the completion report but not this: the registry removal
+    // pings synchronously, and the group's later exit adds nothing the host has to act on.
+    const killed = await runTool(env, "input_command", { process_id: id, kill: true });
+    expect(killed.stopReason).toBe("completed");
+    expect(pings).toBeGreaterThan(settled + 1);
+    expect(env.listBackgroundCommands().find((p) => p.processId === id)).toBeUndefined();
+  });
+
+  it("pings when a subagent is promoted to the background and when its round settles", async () => {
+    const gates = new Map<string, () => void>();
+    const runner = runnerOf(async function* ({ prompt }) {
+      await new Promise<void>((r) => gates.set(prompt, r));
+      yield withHop(assistantText(`answer to: ${prompt}`));
+    });
+    const dir = await mkdtemp(path.join(tmpdir(), "penguin-bg-"));
+    const env = new Environment({
+      workspaceDir: dir,
+      toolConfig: { customTools: [SUB_DEF], mcpServers: [] },
+      services: { subagentRunner: runner },
+    });
+    cleanups.push(async () => {
+      env.dispose();
+      await rm(dir, { recursive: true, force: true });
+    });
+    let pings = 0;
+    env.setBackgroundStateListener(() => {
+      pings += 1;
+    });
+    const res = await runTool(env, "run_subagent", { prompt: "bg task", run_in_background: true });
+    expect(res.stopReason).toBe("completed");
+    expect(pings).toBeGreaterThanOrEqual(1);
+    // Promoted (it holds a subagent_id) and mid-round: what a host counts as a background subagent.
+    expect(env.listBackgroundSubagents()).toMatchObject([{ running: true }]);
+    expect(env.listBackgroundSubagents()[0]!.subagentId).not.toBeNull();
+
+    const launched = pings;
+    await waitFor(() => gates.has("bg task"));
+    gates.get("bg task")!();
+    await waitFor(() => !env.hasRunningBackgroundSubagents());
+    // The round settling rides the same listener as the registry changes: one subscription
+    // hears everything that moves the count.
+    expect(pings).toBeGreaterThan(launched);
+    expect(env.listBackgroundSubagents()).toMatchObject([{ running: false }]);
+
+    // Disposal is silent: the Session has ended, and its registries emptying is not news.
+    const beforeDispose = pings;
+    env.dispose();
+    expect(pings).toBe(beforeDispose);
+  });
+});
+
 describe("input_command defaults", () => {
-  it("the default empty-poll wait is 120000ms", () => {
-    expect(DEFAULT_EMPTY_POLL_YIELD_MS).toBe(120_000);
+  it("the default empty-poll wait is 110000ms", () => {
+    expect(DEFAULT_EMPTY_POLL_YIELD_MS).toBe(110_000);
   });
 });
 
@@ -626,6 +805,95 @@ describe("run_subagent run_in_background", () => {
     expect(events[0]!.status).toBe("completed");
   });
 
+  it("a detached child keeps running, inherits the call's approval sink and message tap, and reports on settle", async () => {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const decisions: string[] = [];
+    const gates = new Map<string, () => void>();
+    const runner = runnerOf(async function* ({ prompt, approve }) {
+      // Parked until the test releases it, so the detach lands mid-round.
+      await new Promise<void>((r) => gates.set(prompt, r));
+      const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
+      decisions.push(await approve!(tc as OmniMessage<ToolCallPayload>));
+      yield withHop(partialText("delta", "child answer"));
+      yield withHop(assistantText("child answer"));
+    });
+    const events: BackgroundTaskDoneEvent[] = [];
+    const tapped: OmniMessage[] = [];
+    const services = {
+      subagentRunner: runner,
+      subagentSessions: manager,
+      backgroundDone: (e: BackgroundTaskDoneEvent) => events.push(e),
+      backgroundForward: (m: OmniMessage) => tapped.push(m),
+    };
+    const tool = createSubagentTool(SUB_DEF, services);
+    const approveSpy: ApproveFn = async () => "allow";
+    const detach = new AbortController();
+    const timer = setTimeout(() => detach.abort(), 50);
+    const res = await drive(
+      tool,
+      // A yield window far longer than the test: the promotion can only be the detach.
+      { prompt: "long job", yield_time_ms: 60000 },
+      { ...CTX, approve: approveSpy, detachSignal: detach.signal },
+    );
+    clearTimeout(timer);
+    // Not an interruption: the call completes with a handle, and the child is still alive.
+    expect(res.stopReason).toBe("completed");
+    expect(res.note).toContain(DETACHED_TOOL_NOTE_PREFIX);
+    const id = extractSubagentId(res.note);
+    expect(manager.hasRunning()).toBe(true);
+
+    await waitFor(() => gates.has("long job"));
+    gates.get("long job")!();
+    // Without the standing sink handed over at detach time, this parks forever: no collect
+    // window will ever attach another one.
+    await waitFor(() => decisions.length === 1);
+    expect(decisions[0]).toBe("allow");
+    await waitFor(() => events.length === 1);
+    expect(events[0]).toMatchObject({ kind: "subagent", id, status: "completed" });
+    // And its messages keep streaming to the host past the launching turn's end.
+    expect(tapped.some((m) => (m.payload as { type?: string }).type === "text")).toBe(true);
+  });
+
+  it("a detached child with a queued approval is not reported as something to poll for", async () => {
+    const manager = new SubagentSessionManager();
+    cleanups.push(() => manager.dispose());
+    const decisions: string[] = [];
+    const runner = runnerOf(async function* ({ approve }) {
+      const tc = withHop(toolCall({ name: "exec_command", arguments: "{}", toolCallId: "c1" }));
+      decisions.push(await approve!(tc as OmniMessage<ToolCallPayload>));
+      yield withHop(assistantText("child answer"));
+    });
+    const tool = createSubagentTool(SUB_DEF, {
+      subagentRunner: runner,
+      subagentSessions: manager,
+    });
+    // The user has not answered yet, so the request is still queued when the detach lands:
+    // pendingApprovals is 1 at the moment the note is written.
+    let asked = false;
+    let held = true;
+    const approveSpy: ApproveFn = async () => {
+      asked = true;
+      await waitFor(() => !held);
+      return "allow";
+    };
+    const detach = new AbortController();
+    void waitFor(() => asked).then(() => detach.abort());
+    const res = await drive(
+      tool,
+      { prompt: "long job", yield_time_ms: 60000 },
+      { ...CTX, approve: approveSpy, detachSignal: detach.signal },
+    );
+    expect(res.note).toContain(DETACHED_TOOL_NOTE_PREFIX);
+    // The standing sink attached at detach time carries that request to the user itself, so
+    // the note must not send the model off to poll for it (a run_in_background launch says
+    // nothing either; only the deadline promotion, which gets no standing sink, does).
+    expect(res.note).not.toContain("poll to review");
+    held = false;
+    await waitFor(() => decisions.length === 1);
+    expect(decisions[0]).toBe("allow");
+  });
+
   it("input_subagent fails on an id this conversation never allocated (nothing to resume)", async () => {
     const manager = new SubagentSessionManager();
     cleanups.push(() => manager.dispose());
@@ -824,5 +1092,125 @@ describe("Session background notices", () => {
     // Engine drains are the steering delivery path — the notice joined a Task the user's
     // prompt started, so it must carry the steering stamp and never open a turn of its own.
     expect(isSteeredBackgroundNotice(texts[1]!)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sibling background subagents survive a completion notice (issue #581)
+// ---------------------------------------------------------------------------
+
+/**
+ * A runner whose every spawn is a distinct child (its own session id, so the registry and
+ * the live index tell three children apart) that answers once its gate is released.
+ */
+function gatedRunner(gates: Map<string, () => void>): SubagentRunner {
+  let spawned = 0;
+  return {
+    async spawn() {
+      spawned += 1;
+      const hop = `session-child-${String(spawned).padStart(8, "0")}`;
+      const tag = <M extends OmniMessage>(msg: M): M => ({ ...msg, origin: [hop] });
+      let metaSent = false;
+      const handle: SubagentHandle = {
+        sessionId: hop,
+        takeMeta() {
+          if (metaSent) return null;
+          metaSent = true;
+          return tag({
+            timestamp: new Date().toISOString(),
+            type: "session_meta",
+            payload: { session_id: hop },
+          } as unknown as OmniMessage);
+        },
+        // Typed like the contract: a round's return value is its cutoff, and these rounds
+        // always run to completion.
+        async *run({ messages }): AsyncGenerator<OmniMessage, null> {
+          const prompt = promptOf(messages);
+          await new Promise<void>((resolve) => gates.set(prompt, resolve));
+          yield tag(assistantText(`answer to: ${prompt}`));
+          return null;
+        },
+        dispose() {},
+      };
+      return handle;
+    },
+  };
+}
+
+describe("sibling background subagents survive a completion notice (issue #581)", () => {
+  it("settling one child ends no sibling, on the idle path or on the steering path", async () => {
+    const gates = new Map<string, () => void>();
+    const dir = await mkdtemp(path.join(tmpdir(), "penguin-bg-"));
+    const env = new Environment({
+      workspaceDir: dir,
+      toolConfig: { customTools: [SUB_DEF], mcpServers: [] },
+      services: { subagentRunner: gatedRunner(gates) },
+    });
+    cleanups.push(async () => {
+      env.dispose();
+      await rm(dir, { recursive: true, force: true });
+    });
+    const llm = new ReplyLLM();
+    const session = new Session({
+      meta: META,
+      ...IMAGES,
+      bootstrap: async () => ({ llm }),
+      environment: env,
+    });
+    let signaled = 0;
+    session.onBackgroundNotice(() => {
+      signaled += 1;
+    });
+    const running = () =>
+      env.listBackgroundSubagents().filter((s) => s.running && s.subagentId !== null);
+    const statusOf = (msg: OmniMessage): string =>
+      parseBackgroundTaskDoneMessage((msg.payload as TextPayload).text)!.done.status;
+
+    for (const prompt of ["alpha", "beta", "gamma"]) {
+      const res = await runTool(env, "run_subagent", { prompt, run_in_background: true });
+      expect(res.stopReason).toBe("completed");
+    }
+    await waitFor(() => gates.size === 3);
+    expect(running()).toHaveLength(3);
+
+    // Idle path: alpha settles while no Task runs — the host takes the notice and submits it
+    // as a Task of its own, the way the server's idle-arrival signal does.
+    gates.get("alpha")!();
+    await waitFor(() => signaled === 1);
+    const notices = session.takeBackgroundNotices();
+    expect(notices).toHaveLength(1);
+    expect(statusOf(notices[0]!)).toBe("completed");
+    for await (const msg of session.run(notices)) void msg;
+    expect(llm.calls).toBe(1);
+    expect(running()).toHaveLength(2);
+    expect(env.hasRunningBackgroundSubagents()).toBe(true);
+
+    // Steering path: beta settles while a Task runs — the engine drains the notice into that
+    // Task at its next boundary, and the host is never signaled.
+    let released = false;
+    for await (const msg of session.run([userText("how are they doing?")])) {
+      void msg;
+      if (!released) {
+        released = true;
+        gates.get("beta")!();
+        await waitFor(() => session.hasPendingBackgroundNotices());
+      }
+    }
+    expect(llm.calls).toBe(3);
+    const steered = llm.inputs[2]!.map((m) => (m.payload as { text?: string }).text ?? "");
+    expect(steered).toHaveLength(1);
+    expect(isSteeredBackgroundNotice(steered[0]!)).toBe(true);
+    expect(parseBackgroundTaskDoneMessage(steered[0]!)!.done.status).toBe("completed");
+    expect(signaled).toBe(1);
+    expect(running()).toHaveLength(1);
+    expect(env.hasRunningBackgroundSubagents()).toBe(true);
+
+    // The last child still ends on its own terms: completed, neither stopped nor failed.
+    gates.get("gamma")!();
+    await waitFor(() => signaled === 2);
+    const last = session.takeBackgroundNotices();
+    expect(last).toHaveLength(1);
+    expect(statusOf(last[0]!)).toBe("completed");
+    expect(running()).toHaveLength(0);
   });
 });

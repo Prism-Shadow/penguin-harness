@@ -375,7 +375,7 @@ function EventBody({ msg }: { msg: OmniMessage }) {
         </div>
       );
     case "tool_call_output": {
-      // Tool output carrying images (e.g. read_image): render images below the text code block.
+      // Tool output carrying images (e.g. read_file on an image): render images below the text code block.
       const images = Array.isArray(p.images) ? (p.images as string[]) : [];
       if (images.length === 0) return <pre className={codeBlock}>{String(p.output ?? "")}</pre>;
       return (

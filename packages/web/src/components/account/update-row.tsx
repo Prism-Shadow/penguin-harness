@@ -14,9 +14,9 @@ export function UpdateRow({
   menuItemClass,
   onOpen,
 }: {
-  /** The menu's shared row class (owned by sidebar.tsx). */
+  /** The menu's shared row class (dropdown.tsx's `menuItemClass`). */
   menuItemClass: string;
-  /** Click: the Sidebar closes the menu and opens the update modal. */
+  /** Click: the account menu closes and the update modal opens. */
   onOpen: () => void;
 }) {
   const { mode, flow, currentVersion } = useUpdateFlow();

@@ -18,7 +18,7 @@
  * dropdowns over the shared multi-select panel, with select all / select none. A plain new Agent
  * otherwise starts with none.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type {
@@ -52,7 +52,14 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
-import { CloseIcon, GEAR_ICON, HOOK_ICON, PLUGIN_ICON } from "../../components/ui/icons";
+import {
+  CloseIcon,
+  GEAR_ICON,
+  HOOK_ICON,
+  MEMORY_ICON,
+  PLUGIN_ICON,
+  SCHEDULE_ICON,
+} from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { parkActiveDraft } from "../chat/draft-sessions";
@@ -84,16 +91,15 @@ const CARD_ICONS = {
   sessions: "M8 10h8M8 14h5M21 12a9 9 0 1 1-4-7.5",
   /** Vault key count (key: bow + teeth) */
   vaultKeys: "M15.5 7.5l3 3L22 7l-3-3M21 2l-9.6 9.6M13 15.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z",
-  /** Schedule count (alarm clock: dial + hands + twin bells, distinct from the plain clock face used for "last modified") */
-  schedules: "M12 21a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm0-10v3l2 1.5M5 3L2.5 5.5M19 3l2.5 2.5",
+  /** Schedule count: the alarm clock every scheduled-task surface wears. */
+  schedules: SCHEDULE_ICON,
   /** Installed skill count (open book, same family as the plugin library) */
   skills:
     "M12 6.5C10.5 5 8 4.5 4 5v12c4-.5 6.5 0 8 1.5 1.5-1.5 4-2 8-1.5V5c-4-.5-6.5 0-8 1.5zm0 0V18",
   /** Usage (bar chart, same as sidebar "Usage Center") */
   usage: "M4 20V10m6 10V4m6 16v-7m4 7H2",
-  /** Memory (brain: two hemispheres + inner fold, lucide simplified), opens the settings tab */
-  memory:
-    "M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18ZM12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18ZM15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4",
+  /** Memory count: the brain every Memory surface wears; opens the settings tab. */
+  memory: MEMORY_ICON,
 } as const;
 
 /**
@@ -119,6 +125,17 @@ export function AgentsPage() {
   const { locale } = useLocale();
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
+  /** Header search, the Models page's shape: name, id and description, case-insensitive. */
+  const [query, setQuery] = useState("");
+  const shownAgents = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (needle === "") return agents;
+    return agents.filter((a) =>
+      [agentDisplayName(a), a.agentId, a.description ?? ""].some((field) =>
+        field.toLowerCase().includes(needle),
+      ),
+    );
+  }, [agents, query]);
   /** The kernel trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
   const kernelTodo = useUpdateBadges().todos.agents;
   /** The bulk kernel update's confirmation is open. */
@@ -407,11 +424,25 @@ export function AgentsPage() {
             (to the list) is the same whether or not the notice is showing — the models page's
             header has the same shape. */}
         <div className="mb-4">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-xl font-semibold">{S.agent.listTitle}</h1>
-            <Button variant="primary" onClick={openCreate}>
-              {S.agent.create}
-            </Button>
+            {/* Search plus the create action, in the Models page header's shape: on a narrow
+                screen flex-wrap drops the pair onto its own line and the box shrinks with it,
+                fixed width from sm up. Both controls take the form rung, so the button reads at
+                the size of the box beside it rather than a step above it. */}
+            <div className="flex min-w-0 max-w-full grow items-center gap-2 sm:grow-0">
+              <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+                <Input
+                  size="sm"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={S.agent.searchPlaceholder}
+                />
+              </div>
+              <Button size="sm" variant="primary" onClick={openCreate}>
+                {S.agent.create}
+              </Button>
+            </div>
           </div>
 
           {/* Last stop on the kernel trail, in the one shape all four dismissible trails use.
@@ -451,15 +482,15 @@ export function AgentsPage() {
               </SkeletonCard>
             ))}
           </div>
-        ) : agents.length === 0 ? (
-          <EmptyState title={S.common.none} />
+        ) : shownAgents.length === 0 ? (
+          <EmptyState title={query.trim() === "" ? S.common.none : S.agent.searchEmpty} />
         ) : (
           /* GitHub-repo-list-style single column: separate cards with row spacing; each row is
              one horizontal band of "info | sparkline | button group", with the info column
              compressed to two lines of text (name line + combined description/stats line) to
              minimize row height */
           <div className="space-y-3">
-            {agents.map((a) => {
+            {shownAgents.map((a) => {
               const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
               return (
                 <div
@@ -667,8 +698,10 @@ export function AgentsPage() {
         onClose={() => setCreateOpen(false)}
         footer={
           <>
-            <Button onClick={() => setCreateOpen(false)}>{S.common.cancel}</Button>
-            <Button variant="primary" disabled={busy} onClick={() => void create()}>
+            <Button size="sm" onClick={() => setCreateOpen(false)}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" variant="primary" disabled={busy} onClick={() => void create()}>
               {S.common.create}
             </Button>
           </>
@@ -747,6 +780,7 @@ export function AgentsPage() {
               <div>
                 <FieldLabel>{S.agent.createPlugins}</FieldLabel>
                 <FormPicker
+                  size="sm"
                   open={pluginsOpen}
                   setOpen={setPluginsOpen}
                   label={
@@ -798,6 +832,7 @@ export function AgentsPage() {
                 {skillsDir && dirSkills !== null && dirSkills.length > 0 && (
                   <div className="mt-2">
                     <FormPicker
+                      size="sm"
                       open={dirSkillsOpen}
                       setOpen={setDirSkillsOpen}
                       label={

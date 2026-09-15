@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
  * change without it moving. (The reverse — moving it with no default change — is inert rather
  * than an error: nothing is keyed by version, so there is no table to fall out of sync with.)
  */
-export const KERNEL_VERSION = "2026-09-01";
+export const KERNEL_VERSION = "2026-09-11";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -185,15 +185,36 @@ export function isKernelOutdated(kernelVersion: string | null | undefined): bool
  *   and the carve-outs from the new default (an open-ended reminder keeps no `end_at`, work
  *   that must outlive the conversation takes the new-Session form, and a subagent omits the
  *   field): the schedules tab moved.
- * - `2026-09-01` (current) — `model.timeoutMs` rose to 300000: the value is the idle budget
- *   between upstream events, and a model that keeps its reasoning off the wire spends its
- *   whole thinking phase inside the wait for the first one, which 120000 cut short. The
- *   runtime tab moved.
+ * - `2026-09-01` — `model.timeoutMs` rose to 300000: the value is the idle budget between
+ *   upstream events, and a model that keeps its reasoning off the wire spends its whole
+ *   thinking phase inside the wait for the first one, which 120000 cut short. The runtime tab
+ *   moved.
+ * - `2026-09-03` — the default system prompt's # File system section gained a
+ *   search-scope rule: searches run from `CWD` down, never `find /` and never across the
+ *   user's home or the whole filesystem, and a path that does not resolve is narrowed by
+ *   reasoning about the project's layout instead of by widening the root. The prompt tab
+ *   moved.
+ * - `2026-09-10` — image reading folded into `read_file`: the `read_image` /
+ *   `describe_image` entries left the set, `read_file` gained the optional `prompt` argument,
+ *   an image-aware description and a 60000 timeout, and `input_command`'s timeout aligned
+ *   with `exec_command` at 120000 (its empty-poll default became 110000): the tools tab
+ *   moved.
+ * - `2026-09-11` (current) — the default system prompt gained its guardrails against loops
+ *   and unverified deliverables ("cannot resolve" means the same error after three different
+ *   fixes, ambiguity is asked about only after the files were checked, names are never
+ *   guessed, independent tool calls go out together, commands run non-interactively,
+ *   verification uses the project's own commands, a PLAN.md step is verified before the next,
+ *   a web app is scaffolded by CLI and fetched before it is presented), a new # Output section
+ *   between # Constraints and # Stop rules (lead with the outcome, plain words rather than
+ *   tool names, files named by backticked workspace-relative path — moved here from # File
+ *   system — links never in code formatting, a final answer that stands on its own, a
+ *   one-sentence refusal), one specific question with options, and doing the work rather than
+ *   pasting it. The prompt tab moved.
  */
 export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
-  prompt: "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254",
+  prompt: "9b2b54a241c7b8ac92faf7177d6f42c9c87b54f2e6d89411b37c53e5061ca515",
   runtime: "5dfea06a5e801950c24f44f5527e62435ae4facc311a6587e53aa69983ab0346",
-  tools: "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d",
+  tools: "a5e067fe58899be651c3c0541f587b2d5999030dc3008a39737a8fe21f5f7a23",
   skills: "7e343aa692e5eaeadfc8add6bb375fb50ac33ef81ebe460490fc219b0f3d707f",
   memory: "53d190390829cc0132bb12e468a6891f2e0576ec0c4022a9b4a5d9233666900d",
   vault: "19bd36a6d4ab442b66583c423450602b817990a9a79bafa21c9b6137fb6b47d8",
@@ -214,8 +235,11 @@ export const KERNEL_DEFAULT_TAB_HASHES: Readonly<Record<KernelTab, string>> = {
 export type KernelSupersededTabHashes = Readonly<Partial<Record<KernelTab, readonly string[]>>>;
 
 export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
-  // The pre-toggles template, with the hardcoded # Vault / # Skills sections (before #257).
-  prompt: ["99b8babb72d95c636a2c2893b657ac9c92d60c270a2e04e346b35b1fb720c932"],
+  prompt: [
+    "99b8babb72d95c636a2c2893b657ac9c92d60c270a2e04e346b35b1fb720c932", // the pre-toggles template, with the hardcoded # Vault / # Skills sections (before #257)
+    "048198c37b8d7840352c225fdfcb15baf2679973c6eab4bf400d492daf6ce254", // the toggles template, before the # File system search-scope rule
+    "f9576833f73192d69c962bf21bd2049d0c8f5389ba4b9700ca9bd95ea545d3b0", // the search-scope template, before the 2026-09-11 guardrails and interaction rules
+  ],
   runtime: [
     "808ae1d1b544f46daff4f59f1e62357b89a61f60803061e86b10635616e0102c", // compaction.max_context_length was 128000, before the rise to 256000
     "c952d44ecdd6790e17f02bc1b5056118b56ec7f0987dc2cbe950f6051fddbd20", // model.timeoutMs was 120000, before the rise to 300000
@@ -225,6 +249,7 @@ export const KERNEL_SUPERSEDED_TAB_HASHES: KernelSupersededTabHashes = {
     "c719f2fe8a25bc5c644a4e1a78d26cf960dd0561efc453614af2e395000ed4de", // before `max` joined the ladder
     "074248073c5fe89537ff257cc5d5662159288fc79ede7703eded6b440b4e38e9", // before background execution and the kill tools
     "8bbd336ff1f3fc283c4e11e54d43dd2bfe4ba2458577bf9eb3b6e3d7be4f3cde", // before the kill tools folded into the input tools
+    "c24bcf47b1377e9da4dcfb69a1f7240dcdbfff2d420df5db0a5eaec2b7d4087d", // before the image tools folded into read_file
   ],
   // The memory prompt's wording before #397 named when a fact is worth saving.
   memory: ["c28acdda755552967cd0c99ba4ced407eddfa843b3dce228a965da4674676dc7"],

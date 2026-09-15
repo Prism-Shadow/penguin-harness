@@ -50,6 +50,7 @@ export type {
 } from "./engine/context-engine.js";
 export { Session } from "./session.js";
 export type { SessionConfig } from "./session.js";
+export type { AgentAssembly, PromptSection } from "./agent.js";
 // Session-title generation lives in internal/ (an assembly detail of Session.generateTitle);
 // only its narrow public surface is re-exported: the result type (part of
 // Session.generateTitle's signature) and the two cleaners, sanitizeTitle and truncateTitle,
@@ -81,7 +82,7 @@ export type {
 } from "./agent.js";
 
 /** SDK version number. */
-export const VERSION = "0.2.9";
+export const VERSION = "0.2.11";
 /** Release build date (UTC yyyy-mm-dd), stamped by the release workflow next to VERSION; null in a dev/source build. */
 export const BUILD_DATE: string | null = null;
 /** Full commit sha the release was built from, stamped by the release workflow next to VERSION; null in a dev/source build. */

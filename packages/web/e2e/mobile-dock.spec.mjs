@@ -60,6 +60,8 @@ test("mobile merged dock: workspace opens at the bottom → nested dir → md re
   // One merged bottom surface, never a right dock at this width.
   const dock = page.locator('[data-testid="dock"][data-position="bottom"]');
   await expect(dock).toBeVisible();
+  // Absent, not hidden: a hidden dock would still be in the DOM (at zero size, keeping its
+  // panels), while at this width there is no right surface to render at all.
   await expect(page.locator('[data-testid="dock"][data-position="right"]')).toHaveCount(0);
   await dock.getByTestId("dock-pick-workspace").click();
   await expect(dock.locator('[data-tab-id="workspace"][data-active="true"]')).toBeVisible();

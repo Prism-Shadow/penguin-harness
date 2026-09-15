@@ -82,7 +82,7 @@ export const MAX_ATTACHMENT_COUNT = 20;
  * paste that works today stops working; it is a bound where there was none, not a new restriction.
  *
  * Note this is the *transport* ceiling, not a promise the model will accept the image: providers
- * impose their own per-image limits (commonly ~5MB), and core's `read_image` tool caps at 5MB.
+ * impose their own per-image limits (commonly ~5MB), and core's `read_file` caps an image at 5MB.
  * An image between those numbers and this one uploads fine and may still be refused by the model.
  */
 export const INLINE_IMAGE_MAX_MB = 20;

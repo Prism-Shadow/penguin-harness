@@ -68,10 +68,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | --- | --- | --- |
 | POST | /api/auth/login | 登录：`{userId, password}` → `{user}` |
 | POST | /api/auth/logout | 退出登录，返回 204 |
-| GET | /api/auth/claim?token=… | 兑换登录链接（首次登录链接，或桌面 shell 的一次性 token）：种下 Cookie 并跳转到 `/` |
+| GET | /api/auth/claim?token=… | 兑换登录链接（首次登录链接，或桌面 shell 的一次性 token）：种下 Cookie 并跳转到 `/`；链接无效或已被使用时改为跳转 `/login?claimFailed=…`，由 Web App 说明如何获取新链接 |
 | GET | /api/install | 公开：`{installId}`——标识当前所服务数据根的不透明 id（`<root>/install-id`），在该根首次被使用时铸造。Web App 将其与自己存下的值比较，不一致时清除浏览器侧那些引用服务端实体的 UI 状态，因此更换数据根后不会再留下旧的 Workspace、草稿与置顶。`null` 表示服务端无法确定该 id，此时客户端不应改动任何内容。 |
 | GET | /api/me | 当前用户信息 |
 | PUT | /api/me/password | 修改密码：`{oldPassword, newPassword}`；桌面会话与首次登录会话可省略 `oldPassword`——其当前密码是随机生成且从未展示过的 |
+| PUT | /api/me/profile | 设置头像与昵称：`{displayName?, avatar?}` → `{user}`。为补丁语义——字段缺省表示保持原值，`null` 表示清除，两个字段都未出现则返回 `400`。`displayName` 去除首尾空白后须为 1–32 个字符（按字符计，因此中文昵称可以有 32 个）且不含控制字符；`avatar` 须是 `data:image/(png|jpeg|webp);base64,…` 形式的 data URL，长度不超过 131072 个字符且载荷可解码。任何已认证会话均可调用，含桌面 shell 的 token 会话——与上面的密码路由不同，个人资料没有需要校验的旧凭据 |
 | GET | /api/me/prefs | 读取 UI 偏好 |
 | PUT | /api/me/prefs | 写入 UI 偏好（浅合并） |
 
@@ -79,7 +80,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/admin/users | 用户列表 |
+| GET | /api/admin/users | 用户列表。每行在账号设置了昵称时带上昵称；头像刻意不下发——该列表不分页，每个账号一份 data URL 会让响应体积远超这张表实际用到的内容 |
 | POST | /api/admin/users | 创建用户：`{userId, password}` |
 | POST | /api/admin/users/:userId/password | 重置密码（该用户全部登录会话失效） |
 | DELETE | /api/admin/users/:userId | 删除用户 |
@@ -92,6 +93,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | --- | --- | --- |
 | GET | /api/admin/settings | 服务端全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
 | PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
+| GET | /api/admin/settings/proxy-probe | 连通性测速的目标列表：`{targets: [{provider, url}]}`（不发起任何请求） |
+| POST | /api/admin/settings/proxy-probe/:provider | 沿服务端出站链路探测其中一个目标，不携带任何凭据：`{probe: {provider, url, outcome, ms, status?}}`；`outcome` 在收到任意 HTTP 响应时为 `reachable`，否则为 `timeout` / `dns` / `refused` / `tls` / `network`；列表之外的 id 返回 404 `probe_target_not_found` |
 
 代理设置为两个独立开关共享一个可选的显式地址；修改即时生效（对新发起的连接与新派生的子进程），无需重启：
 
@@ -220,6 +223,8 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 | DELETE | /agents/:agentId/skills/:name | 卸载 Skill |
 | POST | /agents/:agentId/plugins | 按名称安装库内插件——各自的 Skill 与钩子包，重装即更新。`{ names }` → 201 `{ skills, hooks }`；404 `unknown_plugin` 时什么都不写 |
 | GET | /agents/:agentId/hooks | 已安装钩子包：名称、描述、版本、钩子点、所属插件的图标 |
+| POST | /agents/:agentId/hooks/archive | 从 zip 安装钩子包：`{dataBase64, overwrite?}`——hooks.json 与脚本在根目录或唯一顶层目录内，清单列出的每条命令都须指向包内文件；未带 overwrite 而同名已装时 409 `hook_exists` |
+| GET | /agents/:agentId/hooks/:name/archive | 把已安装的钩子包导出为 zip（可原样经 POST 导回） |
 | GET | `/api/plugins`（全局） | 按分类列出插件库——每个插件带其 Skill 元数据与钩子点（任意已登录用户） |
 | GET | `/api/plugins/:plugin/files`（全局） | 单个库内插件携带的全部文件，按路径键入的文本——各 Skill 的可安装 SKILL.md 与参考文件在 `skills/<name>/` 下，钩子脚本在 `hooks/` 下——供插件详情弹窗的文件浏览器使用（任意已登录用户） |
 | DELETE | /agents/:agentId/hooks/:name | 卸载钩子包 |
@@ -249,8 +254,8 @@ Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | /usage | 用量统计，查询参数 `from`、`to`、`fromTs`/`toTs`（ISO 时间戳界定的滑动窗口，须成对给出；`minute` 精度必需）、`groupBy`、`granularity`（时间序列精度 `minute` / `hour` / `day` / `week` / `month`，默认 `day`；范围 × 精度过大的组合会被拒绝）、`agentId`、`provider`、`modelId` |
-| GET | /usage/errors | 异常明细表分页（按时间倒序）：`offset`、`limit`，以及与看板一致的 `from` / `to` / `agentId` 过滤，另可选 `kind`（`unexpected` / `expected`）→ `{items, total}` |
-| DELETE | /usage/errors | 清空当前筛选下的异常明细：`from` / `to` / `agentId`，与读取所用的同一组（不接受 `kind`，面板没有该控件）→ `{deleted}`。仅 Project owner；无 Project 归属的异常不在任何一次清空范围内，管理员亦然 |
+| GET | /usage/errors | 异常明细表分页（按时间倒序）：`offset`、`limit`，以及与看板一致的 `from` / `to` / `fromTs` / `toTs` / `agentId` 过滤，另可选 `kind`（`unexpected` / `expected`）→ `{items, total}` |
+| DELETE | /usage/errors | 清空当前筛选下的异常明细：`from` / `to` / `fromTs` / `toTs` / `agentId`，与读取所用的同一组（不接受 `kind`，面板没有该控件）→ `{deleted}`。此处 `from` 与 `to` 必填（缺一即 400）——开区间等于整段历史而非一次筛选。仅 Project owner；删除的触及范围与调用者的读取范围相同，故管理员的清空同时带走其读取所含的无归属异常，成员的清空从不涉及 |
 | GET | /agents/:agentId/traces | Trace 文件的日期 → Session 下钻结构 |
 | GET | /agents/:agentId/traces/:sessionId/:index | 读取 Trace 事件（`offset` / `limit` 分页） |
 | GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace 性能分析结果 |
@@ -268,7 +273,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
 | PATCH | / | 更新：`{approvalMode?, thinkingLevel?, archived?, title?}`。`thinkingLevel` 将思考等级钉在该 Session 上并持久化，自下一次 LLM 请求起生效——思考等级是软限制参数：允许中途更换，代价是提供商的缓存失效，因此选择器会建议先压缩；读取时由 `SessionInfo.thinkingLevel` 返回（缺省即从未钉住：按 Agent 配置生效） |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
-| GET | /messages | 完整 OmniMessage 历史；Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
+| GET | /messages | 无参数时返回完整 OmniMessage 历史；`tailLimit=n` 或 `before=<游标>&limit=n` 改为读取一个按 Task 切分的窗口（自带 Web App 打开对话只读最近 50 轮，滚动到顶部再续载），此时响应携带 `page`（下一页游标 `before`、窗口前的轮数 `earlierTurns` 与累计统计 `prior`）。Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
 | POST | /fork | 从一条已完成的模型回复分叉空闲 Session：`{position:{fileIndex,ordinal}}` → `{session}` |
 | GET | /stream | SSE 事件流（见下节） |
 | POST | /tasks | 发起 Task：`{input: TaskInputPart[], queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环（Agent 未安装 `goal` 插件则 409 `goal_plugin_not_installed`）：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/goal-mode) |
@@ -276,6 +281,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | DELETE | /steer/:steerId | 撤回一条尚未送达的插话（id 随 `task_state` 的 `pendingSteering` 下发）：从队列中撤出 → 200，返回其原始内容 `{text, images, files}`（文件从 scratchpad 读回为 data URL，磁盘副本随之删除），供输入框恢复编辑；已送达模型则 409 `not_pending` |
 | DELETE | /follow-ups/:followUpId | 撤回一条排队中的跟进消息（id 随 `task_state` 的 `pendingFollowUps` 下发）：在自动发出前移除 → 200，返回其原始内容 `{text, images, files}`——排队中的跟进消息一律带有该内容，与其入队路径无关；已自动发出则 409 `follow_up_started` |
 | POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
+| POST | /tool-calls/:toolCallId/background | 把一个**正在执行**的工具调用交还为后台任务，使本轮可以结束、对话继续进行：204。调用带着 `process_id` / `subagent_id` 以 `completed` 结束，不杀任何进程，任务完成后仍以一贯的后台任务通知送回。该 id 没有正在执行的调用时（未知、已结束，或运行时已不存在）返回 404 `tool_call_not_found`；调用在运行但其工具没有后台形态时返回 409 `tool_not_detachable`（只有 `exec_command` 与 `run_subagent` 具备后台形态） |
 | POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
 | POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
 | POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409，具体原因由 code 承载——`compaction_not_configured`（该 Agent 没有配置压缩）、`nothing_to_compact`（当前上下文尚未完成一轮对话）、`already_compacted`（上次压缩后还没有新的对话）。服务重启后恢复的 Session 依据 Trace 判断可压缩性，因此已有对话无需先跑一次 Task 即可压缩 |
@@ -287,6 +293,9 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | GET | /files/preview-redirect?path= | html 的“新页面打开”：签发令牌并 302 跳转到独立预览源 |
 | POST | /files/stat | 批量存在性检查：`{paths}` |
 | PUT | /files/content?path= | 上传文件：`{dataBase64}`，上限 14MB |
+| POST | /files/move | 移动或重命名单个 Workspace 文件：`{from, to, ifVersion?}` → 204。**仅限文件**——目录没有单一的版本标记，无法为其表达保护该操作的前置条件，因此返回 400。`to` 的父目录缺失时自动创建。`from` 不存在时 404 `path_not_found`；`ifVersion` 与文件不再匹配时 409 `file_changed`（带标记时源文件消失同样算作已变化）；`to` 已被占用时 409 `target_exists`——目的地从未被读取过，因此只拒绝、不覆盖；移动到文件自身路径返回 400 |
+| DELETE | /files/content?path=&ifVersion= | 删除单个 Workspace 文件：204。仅限文件（目录返回 400）；文件不存在时 404 `path_not_found`，`ifVersion` 不再匹配时 409 `file_changed`。该标记在协议上可选——不带即为无条件删除——而 Files 面板总是回传其读取时拿到的那一枚 |
+| GET | /files/search?q= | 按条目**名称**搜索整个 Workspace（大小写不敏感的子串匹配，不匹配路径）→ `{hits: [{path, kind, sizeBytes, mtime}], truncated}`，每条命中携带的字段与目录列表中的条目一致。自根目录广度优先遍历，因此命中按层级由浅至深排列，被截断时留下的是最相关的命中，而不是最先遍历到的那个目录里的内容；`truncated` 表示遍历触及上限——200 条命中，或访问 20000 个目录条目。`q` 为空或超过 100 字符返回 400 |
 | GET | /traces | 本 Session 的 Trace 文件列表 |
 | GET | /traces/:index | 读取 Trace 事件（分页） |
 | GET | /traces/:index/analysis | Trace 性能分析结果 |
@@ -427,7 +436,7 @@ Web 的 `/model` 模型切换没有专用接口：它按 `/agent` 交接的方�
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
 | Session 级 | GET /api/sessions/:sessionId/stream | 该 Session 的消息流与运行事件 |
-| 用户级 | GET /api/events | `hello` 握手与跨 Session 通知（session_state / schedule_fired / schedule_queued / session_created） |
+| 用户级 | GET /api/events | `hello` 握手与跨 Session 通知（session_state / session_background / schedule_fired / schedule_queued / session_created） |
 
 ### 传输格式
 
@@ -439,6 +448,7 @@ export type ServerEvent =
   | { type: "task_state"; state: "idle" | "running" | "compacting" }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
+  | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
@@ -453,6 +463,7 @@ export type ServerEvent =
 | task_state | Session 运行状态翻转（idle / running / compacting） |
 | session_title | 首轮后模型生成的标题已持久化 |
 | session_state | `task_state` 在用户通道上的对应事件：同一次运行状态翻转，带上 `sessionId`，因此会话列表的每一行都能保持实时，而不只是客户端当前打开的那个会话。事件还携带重绘该行所需的行字段，无需重新拉取列表 —— 刚刚写入的 `lastActiveAt`，以及 `hasTrace`（状态为 running 或 compacting 时必为 true，因为正在运行的会话必然已经启动过 Task）。仅发往该 Project 拥有者与成员的用户通道 |
+| session_background | 某个 Session 的后台任务计数发生变化——命令超过 yield 窗口转入后台或以 `run_in_background` 启动、进程退出或被停止、后台子智能体开始一轮、结束一轮或被释放。携带此刻的 `SessionInfo.backgroundTasks`（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转后台、正在跑一轮的子会话数），归零时同样推送，列表据此即可撤下标记而无需重新拉取；列表行与单条查询在计数为零时省略该字段。受众与 `session_state` 相同 |
 | resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
 | credentials_updated | Project 模型凭据已变更（`PUT /models`，或一次完成的授权新建 key 流程）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
 | hello | 用户通道连接握手 |

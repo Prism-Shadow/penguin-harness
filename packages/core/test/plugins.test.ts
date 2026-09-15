@@ -28,7 +28,7 @@ const pluginsRoot = path.resolve(import.meta.dirname, "../../../plugins");
 const fakePlugin = (name: string, category?: string): LibraryPlugin => ({
   name,
   description: `Do ${name}.`,
-  version: "2026-08-29.1",
+  version: "2026.08.29.1",
   preinstall: true,
   skills: [],
   ...(category !== undefined ? { category } : {}),
@@ -141,12 +141,19 @@ describe("loadPreinstalledPlugins", () => {
 
 describe("comparePluginVersions", () => {
   it("orders by date, then by sequence number numerically; non-versions sort before every version", () => {
-    expect(comparePluginVersions("2026-08-29.1", "2026-08-29.1")).toBe(0);
-    expect(comparePluginVersions("2026-08-29.2", "2026-08-29.10")).toBeLessThan(0);
-    expect(comparePluginVersions("2026-09-01.1", "2026-08-29.9")).toBeGreaterThan(0);
-    expect(comparePluginVersions("", "2026-08-29.1")).toBeLessThan(0);
-    expect(comparePluginVersions("7", "2026-08-29.1")).toBeLessThan(0);
+    expect(comparePluginVersions("2026.08.29.1", "2026.08.29.1")).toBe(0);
+    expect(comparePluginVersions("2026.08.29.2", "2026.08.29.10")).toBeLessThan(0);
+    expect(comparePluginVersions("2026.09.01.1", "2026.08.29.9")).toBeGreaterThan(0);
+    expect(comparePluginVersions("", "2026.08.29.1")).toBeLessThan(0);
+    expect(comparePluginVersions("7", "2026.08.29.1")).toBeLessThan(0);
     expect(comparePluginVersions("", "")).toBe(0);
+  });
+
+  it("reads the legacy spelling as the same version a copy installed earlier carries", () => {
+    expect(comparePluginVersions("2026-08-29.1", "2026.08.29.1")).toBe(0);
+    expect(comparePluginVersions("2026.09.10.2", "2026.09.10.1")).toBeGreaterThan(0);
+    expect(comparePluginVersions("2026.09.10.1", "2026-09-09.9")).toBeGreaterThan(0);
+    expect(comparePluginVersions("2026-09-09.9", "2026.09.09.10")).toBeLessThan(0);
   });
 });
 
@@ -201,13 +208,21 @@ describe("lookups", () => {
 describe("parseSkillFrontmatter", () => {
   it("parses name/description/version and the optional short descriptions; values may contain colons", () => {
     const meta = parseSkillFrontmatter(
-      "---\nname: x\ndescription: a: b\nshort_description: s\nshort_description_zh: 中\nversion: 2026-08-29.3\n---\nbody",
+      "---\nname: x\ndescription: a: b\nshort_description: s\nshort_description_zh: 中\nversion: 2026.08.29.3\n---\nbody",
     );
     expect(meta).toEqual({
       name: "x",
       description: "a: b",
       shortDescription: "s",
       shortDescriptionZh: "中",
+      version: "2026.08.29.3",
+    });
+  });
+
+  it("keeps the legacy version spelling an installed copy from before the rename carries", () => {
+    expect(parseSkillFrontmatter("---\nname: x\nversion: 2026-08-29.3\n---\nbody")).toEqual({
+      name: "x",
+      description: "",
       version: "2026-08-29.3",
     });
   });
