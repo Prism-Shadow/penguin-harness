@@ -119,4 +119,6 @@ export type SandboxSettings = {
   mode: SandboxMode;
   network?: "none";
   maskPaths?: string[];
+  /** Grant the system temp directory writable (SandboxPolicy.writableTemp). Absent = granted. */
+  writableTemp?: boolean;
 };

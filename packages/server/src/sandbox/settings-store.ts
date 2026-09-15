@@ -39,6 +39,7 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
     mode,
     ...(doc.cutNetwork === true ? { network: "none" as const } : {}),
     ...(maskPaths.length > 0 ? { maskPaths } : {}),
+    ...(doc.writableTemp === false ? { writableTemp: false } : {}),
   };
 }
 
@@ -74,6 +75,16 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
             title: "Cut off the network",
             titleZh: "断开网络",
             default: false,
+          },
+          writableTemp: {
+            type: "boolean",
+            title: "Temporary directory writable",
+            titleZh: "临时目录可写",
+            description:
+              "Confined commands may write the system temp directory, in either mode. Shells and most tools need one to start; off keeps it read-only too.",
+            descriptionZh:
+              "被封禁的命令在两种模式下都可以写系统临时目录。Shell 与大多数工具需要它才能启动；关闭后临时目录同样只读。",
+            default: true,
           },
           maskPaths: {
             type: "list",
