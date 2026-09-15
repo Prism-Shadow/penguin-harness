@@ -530,7 +530,9 @@ describe("a push is content-addressed: blobs are put raw, parts are named by has
 
     expect(await (await put(t.app, cookie, sha, bytes)).json()).toEqual({ sha });
     expect((await probe(t.app, cookie, [wrong, sha])).missing).toEqual([wrong]);
-    expect(await fs.readFile(path.join(t.root, "hmr", "store", "blobs", sha))).toEqual(bytes);
+    expect(
+      await fs.readFile(path.join(t.root, "hmr", "store", "blobs", sha.slice(0, 2), sha)),
+    ).toEqual(bytes);
     // Not a hash: refused before any byte is read.
     expect((await put(t.app, cookie, "latest", bytes)).status).toBe(400);
   });
@@ -652,6 +654,10 @@ describe("a push is content-addressed: blobs are put raw, parts are named by has
     t = await createTestApp();
     const cookie = (await loginAdmin(t.app)).cookie;
     const blobsDir = path.join(t.root, "hmr", "store", "blobs");
+    // A blob in the flat layout of an older store: nothing resolves it, so the sweep drops it.
+    const legacy = path.join(blobsDir, sha256(Buffer.from("flat")));
+    await fs.mkdir(blobsDir, { recursive: true });
+    await fs.writeFile(legacy, "flat");
     // Four pushes with four distinct files: the store keeps current + one rollback, so the
     // two oldest sets go, and with them the blobs only they referenced.
     const contents = ["a", "b", "c", "d"].map((x) => Buffer.from(`file ${x}`));
@@ -663,7 +669,16 @@ describe("a push is content-addressed: blobs are put raw, parts are named by has
       );
       expect(res.status).toBe(200);
     }
-    const kept = (await fs.readdir(blobsDir)).sort();
+    // Sharded by the hash's first two hex digits; no shard holds anything but its own blobs.
+    const kept: string[] = [];
+    for (const shard of await fs.readdir(blobsDir)) {
+      expect(shard).toMatch(/^[0-9a-f]{2}$/);
+      for (const name of await fs.readdir(path.join(blobsDir, shard))) {
+        expect(name.slice(0, 2)).toBe(shard);
+        kept.push(name);
+      }
+    }
+    expect(fsSync.existsSync(legacy)).toBe(false);
     expect(kept).toContain(sha256(contents[3]!));
     expect(kept).toContain(sha256(contents[2]!));
     expect(kept).not.toContain(sha256(contents[0]!));
