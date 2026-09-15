@@ -4,5 +4,10 @@
   "short_description_zh": "去除文本的 AI 味，把行文改成书籍、报纸、百科式的风格，任何语言通用。",
   "version": "2026.08.12.1",
   "category": "office-productivity",
-  "preinstall": false
+  "preinstall": false,
+  "quick_start": {
+    "prompt": "Rewrite this so it reads like edited human writing: \"In today's fast-paced world, it is important to note that leveraging cutting-edge solutions can unlock a myriad of opportunities and drive meaningful impact across diverse domains.\"",
+    "prompt_zh": "把这段话改写成像经过编辑的人写的文字：「在当今快速发展的时代，值得注意的是，借助前沿解决方案能够解锁无数机遇，并在多元领域推动有意义的影响。」",
+    "skills": ["humanizer"]
+  }
 }

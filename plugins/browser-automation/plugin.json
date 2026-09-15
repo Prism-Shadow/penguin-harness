@@ -4,5 +4,10 @@
   "short_description": "Read pages, act and extract data in the built-in browser or your Chrome.",
   "short_description_zh": "在内置浏览器或你的 Chrome 中读取页面、执行操作、提取数据。",
   "version": "2026.10.03.1",
-  "category": "office-productivity"
+  "category": "office-productivity",
+  "quick_start": {
+    "prompt": "Open news.ycombinator.com in the agent browser and list the top five stories as a table of title, points and link.",
+    "prompt_zh": "在 Agent 浏览器中打开 news.ycombinator.com，把排名前五的帖子整理成表格：标题、分数和链接。",
+    "skills": ["browser-automation"]
+  }
 }

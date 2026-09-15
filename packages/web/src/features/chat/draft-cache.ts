@@ -50,6 +50,8 @@ export interface DraftCache {
    * installed list once it's ready; cleared along with the entire draft on successful send.
    */
   skills?: string[];
+  /** Start in goal mode (written by a plugin's quick start whose demo is a goal); cleared with the draft on send. */
+  goal?: true;
   /**
    * This text was composed by a "Create with AI" surface (features/ai-create/ai-bridge.ts), not
    * typed by anyone: it seeds exactly one draft and dies with it. The mark rides in the cache
@@ -127,6 +129,7 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
   }
   if (o.aiPrefill === true) out.aiPrefill = true;
   if (o.source === "benchmark") out.source = "benchmark";
+  if (o.goal === true) out.goal = true;
   if (
     typeof o.approvalMode === "string" &&
     APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)

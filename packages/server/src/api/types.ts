@@ -4018,6 +4018,18 @@ export interface PluginItem {
   hooks: string[];
   /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
+  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`); absent = pre-select its first skill. */
+  quickStart?: QuickStartItem;
+}
+
+/** A quick start: a prompt pre-filled into a new-chat draft — never sent by the page. */
+export interface QuickStartItem {
+  prompt: string;
+  promptZh?: string;
+  /** Skills to pre-select (a library plugin's own). */
+  skills?: string[];
+  /** Open the draft in goal mode. */
+  goal?: boolean;
 }
 
 export interface PluginGroupItem {

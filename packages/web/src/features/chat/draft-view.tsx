@@ -938,6 +938,7 @@ export function DraftView({
           {...(agentId ? { currentAgentId: agentId } : {})}
           skills={agentSkills}
           {...(cached.skills && cached.skills.length > 0 ? { initialSkills: cached.skills } : {})}
+          {...(cached.goal === true ? { initialGoal: true } : {})}
           onSkillsChange={onSkillsChange}
           initialText={cached.text ?? ""}
           onTextChange={onTextChange}

@@ -3,5 +3,10 @@
   "short_description": "Web search and page scraping via Firecrawl.",
   "short_description_zh": "用 Firecrawl 做网络搜索与页面抓取。",
   "version": "2026.07.20.1",
-  "category": "office-productivity"
+  "category": "office-productivity",
+  "quick_start": {
+    "prompt": "Search the web for the latest PenguinHarness release and summarize its three most important changes, with links to the sources.",
+    "prompt_zh": "在网上搜索 PenguinHarness 的最新版本，概括其中最重要的三项改动，并附上来源链接。",
+    "skills": ["firecrawl"]
+  }
 }
