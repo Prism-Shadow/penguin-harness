@@ -37,8 +37,6 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import { moduleDefOf, parseManifest } from "@prismshadow/penguin-core/kernel";
 import { unpackedAssetsDir } from "../hmr/asset-archives.js";
-import { parsePluginConfiguration } from "./config.js";
-import type { PluginConfiguration } from "../api/types.js";
 import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
@@ -395,9 +393,6 @@ export async function readPluginDeclaration(
  */
 async function readPackageTable(file: string | null): Promise<{
   where: string;
-  name?: string;
-  /** The options the package declares (`package.json#penguin.configuration`) — data with no code twin, so it stays there. */
-  configuration?: PluginConfiguration;
   ifaces: IfaceTable;
   manifests: ManifestTable;
   /** What the default export names, as the generator read it: the modules added and the nodes stood in for. */
@@ -408,15 +403,7 @@ async function readPackageTable(file: string | null): Promise<{
   for (;;) {
     const where = path.join(dir, "package.json");
     try {
-      const raw = JSON.parse(await fs.readFile(where, "utf8")) as {
-        name?: unknown;
-        penguin?: unknown;
-      };
-      const penguin = (raw.penguin ?? {}) as { configuration?: unknown };
-      const configuration = parsePluginConfiguration(
-        penguin.configuration,
-        `${where}#penguin.configuration`,
-      );
+      await fs.access(where);
       const tableFile = path.join(dir, IFACES_FILE);
       let text: string;
       try {
@@ -453,8 +440,6 @@ async function readPackageTable(file: string | null): Promise<{
       }
       return {
         where,
-        ...(typeof raw.name === "string" ? { name: raw.name } : {}),
-        ...(configuration !== undefined ? { configuration } : {}),
         ifaces: { ifaces: table.ifaces, types: table.types } as IfaceTable,
         manifests,
         plugin: {
@@ -583,16 +568,7 @@ export async function loadPlugins(
         });
       const modules = pair(plugin.modules);
       const replaces = pair(plugin.replaces);
-      loaded.push({
-        specifier,
-        file,
-        stamp,
-        modules,
-        replaces,
-        ifaces: read.ifaces,
-        ...(read.name !== undefined ? { name: read.name } : {}),
-        ...(read.configuration !== undefined ? { configuration: read.configuration } : {}),
-      });
+      loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));
     }
