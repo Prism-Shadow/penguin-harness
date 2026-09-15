@@ -2,9 +2,10 @@
  * Application menu. Electron's default menu cannot be extended, only replaced, so the
  * standard structure is rebuilt here. The custom entries are native-only shell actions:
  * installing the bundled `penguin` command, and checking for desktop updates. On Windows
- * and Linux the menu bar itself stays hidden (main.ts) — the menu lives on for its
- * accelerators and for F10 — and the same actions are offered from the page's command
- * palette, over the server's /api/command relay.
+ * and Linux the menu bar itself stays hidden (main.ts) — F10 brings it up — and the same
+ * actions are offered from the page's command palette, over the server's /api/command relay.
+ * A key the shell means to guarantee is not left to a menu accelerator: the page is offered
+ * every key first, so main.ts binds those on `before-input-event` (see shortcuts.ts).
  *
  * Installing this build's server onto an SSH host used to live here too; it is now the
  * Machines page in the Web App, served by the server itself (packages/server/src/machines)

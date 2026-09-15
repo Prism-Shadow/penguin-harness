@@ -226,6 +226,9 @@ describe("host commands on the port", () => {
     expect(parseHostCommand({ type: "host-command", command: "check-updates" })).toBe(
       "check-updates",
     );
+    expect(parseHostCommand({ type: "host-command", command: "open-devtools" })).toBe(
+      "open-devtools",
+    );
     expect(parseHostCommand({ type: "host-command", command: "format-disk" })).toBeNull();
     expect(parseHostCommand({ type: "desktop-updater-command", action: "check" })).toBeNull();
     expect(parseHostCommand(null)).toBeNull();
