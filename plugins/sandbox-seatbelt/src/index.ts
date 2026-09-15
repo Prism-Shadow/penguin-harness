@@ -29,7 +29,7 @@
  * working, the probe below is what turns that into a fail-closed refusal rather than an
  * unconfined run.
  */
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -146,23 +146,38 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
 }
 
 /**
+ * Loads the backend, checking first that it can serve on this host — and rejecting, with the
+ * reason, when it cannot: it runs on macOS only, and needs a sandbox-exec that accepts its
+ * profile. The sandbox service records the rejection and the settings page shows it, so the
+ * backend is never silently absent; the confine-time probe stays, for a runner changed later.
+ */
+export async function loadSeatbeltProvider(
+  internals: SeatbeltInternals & { platform?: NodeJS.Platform } = {},
+): Promise<SandboxProvider> {
+  const platform = internals.platform ?? process.platform;
+  if (platform !== "darwin") {
+    throw new Error(`penguin-seatbelt runs on macOS only; this host is ${platform}`);
+  }
+  const { runner } = internals.settings?.() ?? { runner: internals.runner ?? "sandbox-exec" };
+  const usable = internals.probe
+    ? internals.probe(PROBE_TIMEOUT_MS, runner)
+    : await new Promise<boolean>((resolve) => {
+        execFile(
+          runner,
+          [...seatbeltArgs({ mode: "read-only", workspaceRoot: "/" }), "--", "true"],
+          { timeout: PROBE_TIMEOUT_MS },
+          (err) => resolve(err === null),
+        );
+      });
+  if (!usable) throw new Error(`'${runner}' is missing or refuses the Seatbelt profile`);
+  return createSeatbeltProvider(internals);
+}
+
+/**
  * The backend. It reads its settings at each confine; the probe runs lazily (the first
  * confine with a given runner) and is cached per runner; an unusable Seatbelt throws —
  * fail-closed — rather than degrading to a weaker profile.
  */
-/**
- * The backend where it can serve, or null elsewhere: it exists only on macOS, and a backend
- * that mounted on another platform would be routed every policy there and fail every command.
- * Declining leaves the policy to a backend this host has (MXC on Windows).
- */
-export function loadSeatbeltProvider(
-  internals: SeatbeltInternals & { platform?: NodeJS.Platform } = {},
-): SandboxProvider | null {
-  return (internals.platform ?? process.platform) === "darwin"
-    ? createSeatbeltProvider(internals)
-    : null;
-}
-
 export function createSeatbeltProvider(internals: SeatbeltInternals = {}): SandboxProvider {
   const probe = internals.probe ?? defaultProbe;
   const settings = internals.settings ?? (() => ({ runner: internals.runner ?? "sandbox-exec" }));

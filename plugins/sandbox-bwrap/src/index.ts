@@ -30,7 +30,7 @@
  * remains readable as stale metadata. Mask it explicitly with `maskPaths` if that
  * matters for a deployment.
  */
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { statSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -118,13 +118,60 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
 }
 
 /** Functional probe: can bwrap actually create the base profile on this host? */
+/** The argv that checks bwrap can build the base profile at all. */
+const BASE_PROFILE_PROBE = [
+  "--ro-bind",
+  "/",
+  "/",
+  "--dev",
+  "/dev",
+  "--proc",
+  "/proc",
+  "--die-with-parent",
+  "--",
+  "true",
+];
+
 function defaultProbe(timeoutMs: number, runner: string): boolean {
-  const probe = spawnSync(
-    runner,
-    ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--die-with-parent", "--", "true"],
-    { timeout: timeoutMs, stdio: "ignore" },
-  );
+  const probe = spawnSync(runner, BASE_PROFILE_PROBE, { timeout: timeoutMs, stdio: "ignore" });
   return probe.status === 0;
+}
+
+/** The base-profile probe, without blocking the process: what the load-time check runs. */
+function probeAsync(timeoutMs: number, runner: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile(runner, BASE_PROFILE_PROBE, { timeout: timeoutMs }, (err) => resolve(err === null));
+  });
+}
+
+/**
+ * Loads the backend, checking first that it can serve on this host — and rejecting, with the
+ * reason, when it cannot: it runs on Linux only, and needs a bwrap that accepts the base profile.
+ * A backend mounted without being able to serve would be routed policies and fail every command;
+ * one that declined without a reason would leave nobody able to tell why. The sandbox service
+ * records the rejection and the settings page shows it. The confine-time probe stays, for a
+ * runner changed later in the settings.
+ */
+export async function loadPenguinBwrapProvider(
+  internals: PenguinBwrapInternals & { platform?: NodeJS.Platform } = {},
+): Promise<SandboxProvider> {
+  const platform = internals.platform ?? process.platform;
+  if (platform !== "linux") {
+    throw new Error(`penguin-bwrap runs on Linux only; this host is ${platform}`);
+  }
+  const { runner, probeTimeoutMs } = internals.settings?.() ?? {
+    runner: internals.runner ?? "bwrap",
+    probeTimeoutMs: PROBE_TIMEOUT_MS,
+  };
+  const usable = internals.probe
+    ? internals.probe(probeTimeoutMs, runner)
+    : await probeAsync(probeTimeoutMs, runner);
+  if (!usable) {
+    throw new Error(
+      `'${runner}' is missing or refuses the base profile (is bubblewrap installed, with unprivileged user namespaces enabled?)`,
+    );
+  }
+  return createPenguinBwrapProvider(internals);
 }
 
 /**
@@ -133,19 +180,6 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
  * unavailable bwrap throws — fail-closed — rather than degrading to a weaker profile, because
  * the dimensions routed here (network, mask-paths) have no weaker form.
  */
-/**
- * The backend where it can serve, or null elsewhere: it exists only on Linux, and a backend
- * that mounted on another platform would be routed every policy there and fail every command.
- * Declining leaves the policy to a backend this host has (MXC on Windows).
- */
-export function loadPenguinBwrapProvider(
-  internals: PenguinBwrapInternals & { platform?: NodeJS.Platform } = {},
-): SandboxProvider | null {
-  return (internals.platform ?? process.platform) === "linux"
-    ? createPenguinBwrapProvider(internals)
-    : null;
-}
-
 export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}): SandboxProvider {
   const probe = internals.probe ?? defaultProbe;
   const settings =

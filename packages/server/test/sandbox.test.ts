@@ -66,8 +66,20 @@ describe("sandbox service — the built-in interface and its optional dimensions
     ]);
     svc.configure({ mode: "read-only" });
     expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(
-      /failed to load: dsh-local \(Cannot find module 'landlock-run'\)/,
+      /not in use: dsh-local \(Cannot find module 'landlock-run'\)/,
     );
+  });
+
+  it("a backend that declines is recorded with a reason, never silently absent", async () => {
+    const svc = await service([
+      ["quiet", Promise.resolve(null)],
+      ["loud", Promise.reject(new Error("runs on Linux only; this host is win32"))],
+    ]);
+    expect(svc.backends()).toEqual([]);
+    expect(svc.failures()).toEqual([
+      { name: "quiet", reason: "declined to load on this host, giving no reason" },
+      { name: "loud", reason: "runs on Linux only; this host is win32" },
+    ]);
   });
 
   it("an installation missing a backend package keeps the platform usable, sandbox aside", async () => {

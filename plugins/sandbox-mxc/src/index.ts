@@ -38,7 +38,7 @@
  */
 import { createRequire } from "node:module";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/plugin";
 import type {
   ConfinedArgv,
@@ -157,19 +157,43 @@ export abstract class MxcConfigReader extends Interface<{
 export const MXC_GROUP = "sandbox-mxc";
 
 /**
- * Loads the backend. Resolves to null where it cannot serve — a non-Windows host, or an
- * installation without the optional SDK — so the harness reports an unavailable
- * capability instead of a failure.
+ * Loads the backend, checking first that it can serve on this host — and rejecting, with the
+ * reason, when it cannot: a non-Windows host, an installation without the optional SDK, or a
+ * runner that reports no usable containment. The sandbox service records the rejection and the
+ * settings page shows it, so the backend is never silently absent, and a host where MXC cannot
+ * contain is known at load rather than discovered by the first command.
  */
 export async function loadMxcProvider(
   internals: MxcInternals = {},
   settings: () => MxcSettings = () => ({ runner: null }),
-): Promise<SandboxProvider | null> {
+): Promise<SandboxProvider> {
   const platform = internals.platform ?? process.platform;
-  if (platform !== "win32") return null;
-  const sdk = internals.sdk ?? ((await import("@microsoft/mxc-sdk")) as unknown as MxcSdk);
-  const runner = internals.runnerPath ?? resolveRunner();
+  if (platform !== "win32") {
+    throw new Error(`penguin-mxc runs on Windows only; this host is ${platform}`);
+  }
+  let sdk: MxcSdk;
+  let runner: string;
+  try {
+    sdk = internals.sdk ?? ((await import("@microsoft/mxc-sdk")) as unknown as MxcSdk);
+    runner = internals.runnerPath ?? resolveRunner();
+  } catch (err) {
+    throw new Error(
+      `@microsoft/mxc-sdk is not installed (an optional peer dependency of this backend): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   const probe = internals.probe ?? defaultProbe;
+  // Checked with the runner the settings name, the one the first command would use.
+  const checked = settings().runner ?? runner;
+  const usable = internals.probe
+    ? internals.probe(checked, PROBE_TIMEOUT_MS)
+    : await new Promise<boolean>((resolve) => {
+        execFile(checked, ["--probe"], { timeout: PROBE_TIMEOUT_MS }, (err) =>
+          resolve(err === null),
+        );
+      });
+  if (!usable) {
+    throw new Error(`the MXC runner '${checked}' is missing or reports no usable containment`);
+  }
   return createMxcProvider(sdk, runner, probe, settings);
 }
 

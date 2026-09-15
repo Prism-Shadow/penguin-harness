@@ -129,9 +129,16 @@ describe("seatbelt provider", () => {
 });
 
 describe("seatbelt on another platform", () => {
-  it("declines to mount off macOS, so routing never reaches a backend this host cannot run", () => {
+  it("refuses to load off macOS, so routing never reaches a backend this host cannot run — with the reason", async () => {
     const other = "linux" as const;
-    expect(loadSeatbeltProvider({ platform: other, probe: () => true })).toBeNull();
-    expect(loadSeatbeltProvider({ platform: "darwin", probe: () => true })).not.toBeNull();
+    await expect(loadSeatbeltProvider({ platform: other, probe: () => true })).rejects.toThrow(
+      /runs on .* only; this host is linux/,
+    );
+    await expect(loadSeatbeltProvider({ platform: "darwin", probe: () => false })).rejects.toThrow(
+      /is missing or refuses/,
+    );
+    await expect(
+      loadSeatbeltProvider({ platform: "darwin", probe: () => true }),
+    ).resolves.toBeDefined();
   });
 });

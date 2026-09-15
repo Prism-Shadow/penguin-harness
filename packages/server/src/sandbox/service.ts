@@ -30,7 +30,10 @@ interface MountedProvider {
 
 export class SandboxService {
   private readonly mounted: MountedProvider[] = [];
-  /** name → why it failed to load; surfaced in the fail-closed message. */
+  /**
+   * name → why it is not in use: it failed to load, failed its check, or declined — never
+   * silently absent. Surfaced in the fail-closed message and on the settings card.
+   */
   private readonly loadErrors = new Map<string, string>();
   /**
    * Ships with confinement OFF (`danger-full-access`): the default flips to
@@ -49,14 +52,23 @@ export class SandboxService {
    *   exists for deployments flipping the mode in the first milliseconds after boot.
    */
   constructor(registrations: Iterable<[string, SandboxProviderSource]> = []) {
+    // Every source is settled at once (a backend's check runs while the others load, and a
+    // rejection is handled the moment it happens); the results are recorded in registration
+    // order, which is routing order.
+    const settled = [...registrations].map(([name, source]) => ({
+      name,
+      result: Promise.resolve(source).then(
+        (provider) => ({ provider }),
+        (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }),
+      ),
+    }));
     this.ready = (async () => {
-      for (const [name, source] of registrations) {
-        try {
-          const provider = await source;
-          if (provider !== null && provider !== undefined) this.mounted.push({ name, provider });
-        } catch (err) {
-          this.loadErrors.set(name, err instanceof Error ? err.message : String(err));
-        }
+      for (const { name, result } of settled) {
+        const outcome = await result;
+        if ("error" in outcome) this.loadErrors.set(name, outcome.error);
+        else if (outcome.provider === null || outcome.provider === undefined) {
+          this.loadErrors.set(name, "declined to load on this host, giving no reason");
+        } else this.mounted.push({ name, provider: outcome.provider });
       }
     })();
   }
@@ -90,6 +102,11 @@ export class SandboxService {
       return undefined;
     }
     return copySettings(s);
+  }
+
+  /** The backends that are not in use, each with why (diagnostics / the config surface). */
+  failures(): Array<{ name: string; reason: string }> {
+    return [...this.loadErrors].map(([name, reason]) => ({ name, reason }));
   }
 
   /** The mounted backends and what each implements (diagnostics / the config surface). */
@@ -150,7 +167,7 @@ export class SandboxService {
     const failures = [...this.loadErrors]
       .map(([name, message]) => `${name} (${message})`)
       .join("; ");
-    return `; backends that failed to load: ${failures}`;
+    return `; backends not in use: ${failures}`;
   }
 }
 
@@ -166,7 +183,13 @@ function copySettings(settings: SandboxSettings): SandboxSettings {
 export abstract class Sandbox extends Interface<
   Pick<
     SandboxService,
-    "configure" | "currentSettings" | "parkedSettings" | "backends" | "confiner" | "whenReady"
+    | "configure"
+    | "currentSettings"
+    | "parkedSettings"
+    | "backends"
+    | "failures"
+    | "confiner"
+    | "whenReady"
   >
 >() {}
 

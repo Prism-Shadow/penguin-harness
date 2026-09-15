@@ -153,8 +153,39 @@ describe("runner invocation", () => {
 
 describe("platform gating and SDK contract", () => {
   it("declines on every non-Windows host instead of pretending", async () => {
-    expect(await loadMxcProvider({ platform: "linux" })).toBeNull();
-    expect(await loadMxcProvider({ platform: "darwin" })).toBeNull();
+    await expect(loadMxcProvider({ platform: "linux" })).rejects.toThrow(
+      "penguin-mxc runs on Windows only; this host is linux",
+    );
+    await expect(loadMxcProvider({ platform: "darwin" })).rejects.toThrow(/Windows only/);
+  });
+
+  it("on Windows, checks the runner at load and rejects with the reason when it cannot contain", async () => {
+    const sdk = { buildSandboxPayload: () => ({}) } as never;
+    await expect(
+      loadMxcProvider({
+        platform: "win32",
+        sdk,
+        runnerPath: "C:/mxc/wxc-exec.exe",
+        probe: () => false,
+      }),
+    ).rejects.toThrow(
+      "the MXC runner 'C:/mxc/wxc-exec.exe' is missing or reports no usable containment",
+    );
+    // The runner the settings name is the one checked.
+    const checked: string[] = [];
+    await loadMxcProvider(
+      {
+        platform: "win32",
+        sdk,
+        runnerPath: "C:/mxc/wxc-exec.exe",
+        probe: (runner) => {
+          checked.push(runner);
+          return true;
+        },
+      },
+      () => ({ runner: "D:/other/wxc-exec.exe" }),
+    );
+    expect(checked).toEqual(["D:/other/wxc-exec.exe"]);
   });
 
   it("the runner path is bin/<arch>/wxc-exec.exe inside the installed SDK", () => {
