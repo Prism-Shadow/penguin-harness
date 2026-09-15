@@ -49,12 +49,6 @@ export interface SandboxPolicy {
   network?: "none";
   /** `mask-paths`: absolute paths hidden from the confined process, reads included. */
   maskPaths?: readonly string[];
-  /**
-   * The chosen backend's own settings, as an admin saved them against the configuration its
-   * `SandboxModule.providers` contribution declares (defaults merged in). Absent when the
-   * backend declares none. Read per confine, so an edit applies to the next spawn.
-   */
-  options?: Readonly<Record<string, unknown>>;
 }
 
 /**

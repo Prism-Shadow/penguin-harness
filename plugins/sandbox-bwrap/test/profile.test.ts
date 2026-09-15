@@ -131,27 +131,4 @@ describe("penguin-bwrap provider", () => {
     expect(() => provider.confine([...ARGV], policy)).toThrow(/cannot confine on this host/);
     expect(probes).toBe(1);
   });
-
-  it("runs the runner and probe timeout an admin set, probing each runner once", () => {
-    const probed: Array<[number, string]> = [];
-    const provider = createPenguinBwrapProvider({
-      probe: (timeoutMs, runner) => {
-        probed.push([timeoutMs, runner]);
-        return runner !== "/missing/bwrap";
-      },
-    });
-    const base = { mode: "read-only", workspaceRoot: WS } as const;
-    expect(provider.confine([...ARGV], base).argv[0]).toBe("bwrap");
-    const custom = { ...base, options: { runner: " /opt/bwrap ", probeTimeoutSeconds: 2 } };
-    expect(provider.confine([...ARGV], custom).argv[0]).toBe("/opt/bwrap");
-    expect(provider.confine([...ARGV], custom).argv[0]).toBe("/opt/bwrap");
-    expect(() =>
-      provider.confine([...ARGV], { ...base, options: { runner: "/missing/bwrap" } }),
-    ).toThrow(/'\/missing\/bwrap' is missing/);
-    expect(probed).toEqual([
-      [5000, "bwrap"],
-      [2000, "/opt/bwrap"],
-      [5000, "/missing/bwrap"],
-    ]);
-  });
 });
