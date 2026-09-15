@@ -1,7 +1,7 @@
 /**
  * Plugin options (admin only, server-global): one card per settings entry — a group a module
  * contributes (the sandbox) or a loaded plugin's declared configuration — drawn from its
- * schema: a string, a secret, a boolean, a number, a Project picker, a choice or a list of
+ * schema: a string, a secret, a boolean, a number, a choice or a list of
  * lines per field, so the page knows nothing about any particular entry. An entry naming a
  * `parent` is drawn inside that card (a sandbox backend's own options inside the sandbox's) and
  * saved with it; notices the entry reports sit under its title. Each card saves on its own;
@@ -15,11 +15,7 @@
  * nothing here says "restart".
  */
 import { useEffect, useState } from "react";
-import type {
-  PluginConfigEntry,
-  PluginConfigField,
-  ProjectSummary,
-} from "@prismshadow/penguin-server/api";
+import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
@@ -82,7 +78,6 @@ export function PluginsSection() {
   const localized = (en: string | undefined, zhText: string | undefined) =>
     en === undefined ? undefined : localizedText(locale, en, zhText);
   const [entries, setEntries] = useState<PluginConfigEntry[] | null>(null);
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   /** Secret fields whose stored value the next Save drops, keyed `<plugin>\0<field>`. */
   const [clearing, setClearing] = useState<Set<string>>(new Set());
@@ -108,15 +103,14 @@ export function PluginsSection() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([api.adminGetPluginConfig(), api.listProjects()])
-      .then(([config, list]) => {
-        if (cancelled) return;
-        adopt(config.plugins);
-        setProjects(list.projects);
-      })
-      .catch((e: unknown) => {
+    void api.adminGetPluginConfig().then(
+      (config) => {
+        if (!cancelled) adopt(config.plugins);
+      },
+      (e: unknown) => {
         if (!cancelled) toastError(apiErrorText(e));
-      });
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -313,25 +307,6 @@ export function PluginsSection() {
           </div>
         );
       }
-      case "project":
-        return (
-          <Select
-            key={name}
-            label={label}
-            {...(hint !== undefined ? { hint } : {})}
-            {...(error !== undefined ? { error } : {})}
-            value={typeof draft[name] === "string" ? (draft[name] as string) : ""}
-            disabled={disabled}
-            onChange={(e) => patch(entry.name, name, e.target.value)}
-          >
-            <option value="">{S.settings.pluginProjectNone}</option>
-            {projects.map((p) => (
-              <option key={p.projectId} value={p.projectId}>
-                {p.name !== undefined && p.name !== "" ? `${p.name} (${p.projectId})` : p.projectId}
-              </option>
-            ))}
-          </Select>
-        );
       case "number":
         return (
           <Input
