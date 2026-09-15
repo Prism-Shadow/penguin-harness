@@ -81,6 +81,7 @@ import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
+import { RevealService } from "./services/reveal-path.js";
 import { ProjectAccess } from "./services/project-access.js";
 import { ProjectService, ProjectRuns } from "./services/project-service.js";
 import { AuthService, InitialProjectProvisioner } from "./auth/service.js";
@@ -127,7 +128,7 @@ import {
 } from "./mechanisms/observability.js";
 import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
-import { WorkspaceFiles } from "./mechanisms/workspace.js";
+import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
@@ -318,8 +319,8 @@ export class TracesModule {}
 export class AgentsModule {}
 
 @Module({
-  children: [WorkspaceFilesService, PreviewModule],
-  exports: [WorkspaceFiles, PreviewTokens],
+  children: [WorkspaceFilesService, RevealService, PreviewModule],
+  exports: [WorkspaceFiles, FileReveal, PreviewTokens],
 })
 export class WorkspaceModule {}
 

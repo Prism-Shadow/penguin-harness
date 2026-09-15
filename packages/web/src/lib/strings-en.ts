@@ -2702,6 +2702,8 @@ Scenarios:
     title: "Files",
     upload: "Upload",
     download: "Download",
+    /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */
+    revealInFolder: "Show in folder",
     /** Row / preview context menu: the two entries both kinds carry, then the kind-specific one. */
     copyPath: "Copy relative path",
     addToChat: "Add to conversation",
@@ -3293,6 +3295,7 @@ Scenarios:
       dir_not_found: "That directory does not exist or is inaccessible.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
+      reveal_failed: "Could not open the folder.",
       workspace_missing: "This Session's Workspace no longer exists.",
       workspace_not_found: "That Workspace does not exist, or is not a directory.",
       session_not_found: "This Session no longer exists, or you do not have access.",

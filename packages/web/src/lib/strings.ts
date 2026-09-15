@@ -2689,6 +2689,8 @@ Benchmark：
     title: "文件",
     upload: "上传",
     download: "下载",
+    /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */
+    revealInFolder: "在文件夹中显示",
     /** Row / preview context menu: the two entries both kinds carry, then the kind-specific one. */
     copyPath: "复制相对路径",
     addToChat: "添加到对话",
@@ -3270,6 +3272,7 @@ Benchmark：
       dir_not_found: "该目录不存在或不可访问。",
       not_a_dir: "该路径不是目录。",
       path_not_found: "该路径不存在。",
+      reveal_failed: "无法打开文件夹。",
       workspace_missing: "该 Session 的 Workspace 已不存在。",
       workspace_not_found: "该 Workspace 不存在或不是目录。",
       session_not_found: "该 Session 已不存在，或你没有访问权限。",

@@ -28,4 +28,10 @@ export abstract class WorkspaceFiles extends Interface<{
   move(workspace: string, from: string, to: string, ifVersion?: string): Promise<void>;
   remove(workspace: string, rel: string, ifVersion?: string): Promise<void>;
   search(workspace: string, q: string): Promise<WorkspaceSearchResponse>;
+  resolvePath(workspace: string, rel: string): Promise<string>;
+}>() {}
+
+/** FileReveal: opening a path in the machine's file manager, as RevealService implements it. */
+export abstract class FileReveal extends Interface<{
+  reveal(filePath: string): Promise<void>;
 }>() {}

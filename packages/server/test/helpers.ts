@@ -60,6 +60,7 @@ import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import { CoreSessionLoaders, DefaultTitleGenerators } from "../src/runtime/session-manager.js";
 import type { TitleNotifier } from "../src/runtime/title-generator.js";
 import { UpdateCheckService } from "../src/services/update-check-service.js";
+import { RevealService } from "../src/services/reveal-path.js";
 import { DefaultMessagingTuning } from "../src/runtime/messaging/bridge.js";
 import { FeishuSdkProvider } from "../src/runtime/messaging/feishu-connector.js";
 import type { FeishuSdk } from "../src/runtime/messaging/feishu-sdk.js";
@@ -254,6 +255,8 @@ export interface TestAppOptions {
   wechatRetryDelayMs?: (failures: number) => number;
   /** Test double: machines service whose ssh effects are faked. */
   machines?: MachinesService;
+  /** Test double: the desktop reveal, so a test never opens a file manager. */
+  reveal?: (filePath: string) => Promise<void>;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
   passwordHashCost?: number;
   log?: (line: string) => void;
@@ -292,6 +295,7 @@ export function replacementsFor(o: TestAppOptions): Replacements {
     out.push([DefaultTitleGenerators, { create: () => titles }]);
   }
   if (o.updateCheck) out.push([UpdateCheckService, o.updateCheck]);
+  if (o.reveal) out.push([RevealService, { reveal: o.reveal }]);
   if (o.feishuSdk) out.push([FeishuSdkProvider, { feishuSdk: { sdk: o.feishuSdk } }]);
   if (o.telegramTransport)
     out.push([
@@ -378,8 +382,11 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
 export const TEST_DESKTOP_TOKEN = "test-desktop-token";
 
 /** A test app running in desktop mode (desktop.test.ts, desktop-update.test.ts). */
-export function createDesktopApp(): Promise<TestApp> {
-  return createTestApp({ config: { desktopToken: TEST_DESKTOP_TOKEN } });
+export function createDesktopApp(options: TestAppOptions = {}): Promise<TestApp> {
+  return createTestApp({
+    ...options,
+    config: { desktopToken: TEST_DESKTOP_TOKEN, ...options.config },
+  });
 }
 
 /** Redeems the shell's one-shot token for a `sessionVia: "desktop"` cookie. */

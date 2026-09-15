@@ -86,6 +86,10 @@ export interface SessionsRouteDeps {
   sessionsRepo: SessionIndex;
   traceService: Traces;
   workspaceFiles: WorkspaceFiles;
+  /** Whether this server was spawned by the desktop shell — half of the reveal route's gate. */
+  desktopMode: boolean;
+  /** Opens a Workspace file's directory in the machine's file manager (the reveal route). */
+  fileReveal: FileReveal;
 }
 import { MAX_UPLOAD_BYTES } from "../../services/workspace-files-service.js";
 import {
@@ -104,7 +108,7 @@ import {
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
-import { Channels, Config } from "../../hmr/capabilities.js";
+import { Channels, Config, Desktop } from "../../hmr/capabilities.js";
 import { Sessions as ManagerIface, SessionServiceIface } from "../../runtime/session-manager.js";
 import { Messaging } from "../../runtime/messaging/bridge.js";
 
@@ -121,7 +125,7 @@ import type { Access, ModelOAuth, ProjectConfigStore } from "../../mechanisms/pr
 import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/sessions.js";
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
-import type { WorkspaceFiles } from "../../mechanisms/workspace.js";
+import type { FileReveal, WorkspaceFiles } from "../../mechanisms/workspace.js";
 import type { Machines } from "../../machines/service.js";
 import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
 import type { Settings } from "../../mechanisms/settings.js";
@@ -1343,6 +1347,43 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     });
   });
 
+  /**
+   * Shows a Workspace file in the machine's own file manager.
+   *
+   * Gated on the same two fields the desktop routes use, and for the same reason: outside
+   * desktop mode there is no window on this machine to open anything beside, and inside it a
+   * browser session is refused because the server cannot tell one signed in from this machine
+   * from one signed in from another — a folder springing open on the server's machine means
+   * nothing to a user who is somewhere else.
+   *
+   * The path is resolved the way a read resolves it (`..` and symlink escapes refused, a
+   * missing path a 404) before it is handed to the OS, and the answer comes back as soon as
+   * the file manager has started: nothing here waits for the window to be closed.
+   */
+  app.post("/:sessionId/files/reveal", async (c) => {
+    const row = resolveSession(c);
+    const rel = c.req.query("path") ?? "";
+    if (!deps.desktopMode) throw new HttpError(404, "not_found", "Desktop mode is not enabled.");
+    if (c.var.sessionVia !== "desktop") {
+      throw new HttpError(
+        403,
+        "desktop_shell_only",
+        "Showing a file in its folder is available from the desktop app's own window.",
+      );
+    }
+    const file = await deps.workspaceFiles.resolvePath(row.workspace, rel);
+    try {
+      await deps.fileReveal.reveal(file);
+    } catch (err) {
+      throw new HttpError(
+        502,
+        "reveal_failed",
+        err instanceof Error ? err.message : "The file manager could not be opened.",
+      );
+    }
+    return c.body(null, 204);
+  });
+
   // "Open in a new tab" for Workspace HTML: mints a token and redirects to the separate
   // preview origin.
   //
@@ -1616,6 +1657,8 @@ export class SessionApiRoutes {
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traces!: Traces;
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
+  @Use() private readonly fileReveal!: FileReveal;
+  @Use() private readonly desktop!: Desktop;
   @Use() private readonly previewTokens!: PreviewTokens;
   @Use() private readonly settings!: Settings;
   @Use() private readonly sessionsRepo!: SessionIndex;
@@ -1656,6 +1699,10 @@ export class SessionApiRoutes {
       sessionsRepo,
       traceService: this.traces,
       workspaceFiles: this.workspaceFiles,
+      // Read once per generation, as the desktop routes read it: the shell either spawned
+      // this process or it did not, and that cannot change under a running server.
+      desktopMode: this.desktop.current() !== null,
+      fileReveal: this.fileReveal,
     };
     const modelOAuthDeps = {
       config: this.config,

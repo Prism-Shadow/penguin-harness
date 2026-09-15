@@ -1046,6 +1046,15 @@ export const workspaceFilePreviewUrl = (sessionId: string, path: string): string
   `/api/sessions/${sessionId}/files/preview-redirect?path=${encodeURIComponent(path)}`;
 
 /**
+ * Opens the file's directory in the machine's own file manager, selecting the file where the
+ * platform allows. Only the desktop shell's own window may ask: the server answers 404 when it
+ * was not spawned by a shell and 403 `desktop_shell_only` for a browser session beside one,
+ * since it cannot tell that browser from a remote one (see lib/account-menu.ts).
+ */
+export const revealWorkspaceFile = (sessionId: string, path: string) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/reveal`, { method: "POST", query: { path } });
+
+/**
  * Writes a Workspace file whole. `ifVersion` is the marker a previous read returned in its
  * `ETag`: pass it and the write is refused with 409 `file_changed` unless the file is still
  * the one that was read (the editor's save); leave it out and the write creates or replaces
