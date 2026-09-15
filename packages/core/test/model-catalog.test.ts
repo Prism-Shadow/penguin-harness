@@ -1320,8 +1320,10 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
     // under one session, which serves it worse than naming none.
     expect(attributionHeaders("https://opencode.ai/zen/v1")).toBeUndefined();
     expect(attributionHeaders("https://opencode.ai/zen/v1", "")).toBeUndefined();
-    // Third-party mirrors of the gateway are deliberately left out of the built-in scheme.
-    expect(attributionHeaders("https://freqtrade.1unlock.top/zen/go", sessionId)).toBeUndefined();
+    // A host outside the scheme gets nothing, whatever path it serves: third-party mirrors of
+    // a gateway are not part of the built-in attribution, and naming one here would put it in
+    // the repository just as surely as listing it would.
+    expect(attributionHeaders("https://gateway.example.com/zen/go", sessionId)).toBeUndefined();
   });
 
   it("a session id leaves the app-attribution gateways exactly as they were", () => {
