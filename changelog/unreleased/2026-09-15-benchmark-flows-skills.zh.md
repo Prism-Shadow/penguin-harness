@@ -3,6 +3,7 @@
 - **Date:** 2026-09-15
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#728](https://github.com/Prism-Shadow/penguin-harness/pull/728)
 
 [English](2026-09-15-benchmark-flows-skills.md)
 
