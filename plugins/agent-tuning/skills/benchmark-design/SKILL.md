@@ -26,7 +26,7 @@ Follow this order:
 3. Plan the complete initial Case set and point allocation. For each Case, privately state the intended behavior, a plausible shortcut for a strong Test Agent, and how the Case distinguishes them. Write and leak-check the complete initial Benchmark.
 4. Complete one valid evaluation for every planned Case. Together these results form Pilot iteration 1; finish this complete set before refining any Case.
 5. For later Pilot iterations, use scores and Traces to reconstruct how the Test Agent solved each Case. A single iteration may refine multiple Cases or difficulty dimensions; rerun every affected Case.
-6. Freeze the first valid Pilot revision that meets the desired baseline score. If none does within the requested valid-iteration limit, restore and freeze the lowest-scoring valid Pilot revision.
+6. Freeze the first valid Pilot revision that meets the desired baseline score. If none does within the requested valid-iteration limit, restore and freeze the lowest-scoring valid Pilot revision. The desired score steers refinement; the publish gate is fixed at 85 on the `0..100` scale, so a frozen revision that scores below 85 is published even when it misses the desired score.
 7. Freeze the selected revision and record its complete one-Run-per-Case Pilot result as the Formal Baseline when every cell is valid, the Agent State version remains unchanged, and no known design defect remains. Do not rerun or backfill it. The Formal score does not determine validity.
 
 ## Setup and access
@@ -70,7 +70,7 @@ Each Case contains:
 
 Both directories require a `README.md` and may contain supporting files. Do not put Gold answers for evaluated instances, hidden mappings, or private scoring conditions in `statement/`.
 
-Create `benchmark_config.toml` with `title`, `description`, `runs = 1`, and `status = "draft"`. Benchmark design always uses one Run per Case; do not ask for or accept another Run count. `status = "draft"` tells the Web App that the Benchmark is still being built — it shows the Benchmark masked, and nobody can use or open it until the status is `published`. A draft ends in one of two states: `published` once the Formal Baseline is recorded, or `failed` when calibration produces no valid Pilot result to freeze. Initialize `scoreboard.yaml` with `evaluations: []`.
+Create `benchmark_config.toml` with `title`, `description`, `runs = 1`, and `status = "draft"`. Benchmark design always uses one Run per Case; do not ask for or accept another Run count. `status = "draft"` tells the Web App that the Benchmark is still being built — it shows the Benchmark masked, and nobody can use or open it until the status is `published`. A draft ends in one of two states: `published` once a Formal Baseline scoring below 85 is recorded, or `failed` when calibration produces no valid Pilot result to freeze or when the lowest-scoring valid revision still scores 85 or above at the iteration limit. Initialize `scoreboard.yaml` with `evaluations: []`.
 
 Pass the resolved `(provider, model_id)` explicitly in every Pilot Evaluator request, starting with the first cell. Freeze that pair and the Test Agent's configured `thinking_level` for the complete Benchmark workflow. Every scored Evaluator result must report the requested pair and the same configured thinking level. A mismatch invalidates the matrix.
 
@@ -152,15 +152,15 @@ An information gap or supported alternative is not automatically a design defect
 
 More rows, fields, distractors, files, near-duplicate examples, or explicit rule layers do not increase difficulty when the observed strategy still solves the Case. Base refinements on observed behavior and fix the Gold before each evaluation.
 
-Freeze immediately when a complete valid Pilot iteration meets the desired baseline score and no known design defect remains. Do not run another difficulty refinement merely to create more score margin. Otherwise continue through the requested valid-iteration limit. If the desired score is still unmet, restore the temporary lowest-scoring valid revision and proceed to Freeze. Report `calibration_failed` only when no valid Pilot revision can be produced or evaluation failures prevent a valid selection; missing the desired score alone is not a failure.
+Freeze immediately when a complete valid Pilot iteration meets the desired baseline score and no known design defect remains. Do not run another difficulty refinement merely to create more score margin. Otherwise continue through the requested valid-iteration limit. If the desired score is still unmet, restore the temporary lowest-scoring valid revision and proceed to Freeze. The desired baseline score is a calibration target, not the publish gate: the gate is fixed at 85 on the `0..100` scale, and any frozen valid revision scoring below 85 is published, however far it stays from the desired score. Report `calibration_failed` only when no valid Pilot revision can be produced, evaluation failures prevent a valid selection, or the lowest-scoring valid revision still scores 85 or above at the iteration limit — a Test Agent that already scores that high leaves the Benchmark nothing to measure. Missing the desired score alone is never a failure.
 
 ## Freeze and record the Formal Baseline
 
 After selecting the Pilot revision, restore that exact revision and its complete result if needed. Run a complete consistency review and final leak check across every Case. If the review finds a defect, repair it and produce a complete valid one-Run-per-Case Pilot result for the repaired revision before selecting and freezing it. Freeze the Benchmark and record the current Agent State version. Do not launch a fresh Formal matrix, rerun the selected Pilot, or backfill it to another Run count.
 
-Accept the selected Pilot result as the Formal Baseline when every Case has exactly one valid Run, every cell reports the frozen evaluation runtime, the Agent State version remains unchanged, the private scoring standard remained fixed, and every score loss reflects the Capability Contract. Record the Formal Baseline even when its score does not meet the desired baseline score.
+Accept the selected Pilot result as the Formal Baseline when every Case has exactly one valid Run, every cell reports the frozen evaluation runtime, the Agent State version remains unchanged, the private scoring standard remained fixed, and every score loss reflects the Capability Contract. Record the Formal Baseline even when its score does not meet the desired baseline score; only a score of 85 or above blocks it.
 
-Report `calibration_failed` only when no valid revision remains or evaluation failures prevent a complete selected Pilot result. Never record a partial, abandoned, invalid, or non-selected Pilot result as the Formal Baseline.
+Report `calibration_failed` only when no valid revision remains, evaluation failures prevent a complete selected Pilot result, or the selected revision scores 85 or above. Never record a partial, abandoned, invalid, or non-selected Pilot result as the Formal Baseline.
 
 ## Record and finish
 
@@ -195,7 +195,7 @@ evaluations:
 
 After writing, parse the complete `scoreboard.yaml` and verify the appended Evaluation, including its `agent_id`, before reporting success or continuing.
 
-Once the Formal Baseline is verified, set `status = "published"` in `benchmark_config.toml`. Change only that line, keep `title`, `description` and `runs` as they are, and parse the file again to confirm it is valid TOML. When the run ends in `calibration_failed`, set `status = "failed"` the same way — change only that line, keep the other fields, and parse the file again — so the Web App tells the user that this Benchmark failed to calibrate and has to be deleted and created again. Never leave a failed Benchmark on `draft`.
+Once the Formal Baseline is verified, set `status = "published"` in `benchmark_config.toml`. Change only that line, keep `title`, `description` and `runs` as they are, and parse the file again to confirm it is valid TOML. When the run ends in `calibration_failed`, set `status = "failed"` the same way — change only that line, keep the other fields, and parse the file again — so the Web App tells the user that this Benchmark failed to calibrate and has to be deleted and created again. Never leave a failed Benchmark on `draft`, and never write `failed` because the desired baseline score was missed: a Formal Baseline below 85 is published.
 
 Every Run and Case score is on the fixed `0..100` scale. Do not write `max_score`. Calculate and write every Case and Evaluation average directly in the Scoreboard: ignore `null` values when averaging cost and write `null` only when all contributing costs are unknown; round `score` averages to two decimal places, `cost` averages to six decimal places, and `duration_ms` averages to the nearest integer. These stored values are authoritative—do not add a server, frontend, script, or consistency check that recomputes or validates them. Do not add an `aggregate` object or use `case_id`, `mean_score`, `mean_cost`, or `mean_duration_ms`.
 

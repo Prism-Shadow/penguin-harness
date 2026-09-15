@@ -43,6 +43,9 @@ import { CreateBenchmarkModal } from "./create-benchmark-modal";
 import { ScoreSparkline } from "./score-sparkline";
 import { UseBenchmarkModal } from "./use-benchmark-modal";
 
+/** The Skills a design conversation is opened with (see the create modal below). */
+const BENCHMARK_DESIGN_SKILLS = ["benchmark-design", "agent-evaluation"];
+
 /** Delete (trash can), the same card-row mark the Agents list carries. */
 const TRASH_ICON =
   "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0l-1 13a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 7m4 4v6m4-6v6";
@@ -474,6 +477,10 @@ export function BenchmarkPage() {
         description={S.benchmark.aiCreateDescription}
         agents={agents}
         examples={benchmarkCreateExamples()}
+        // The Skills the design conversation rests on, preselected in the composer so the
+        // `[use_skills]` block names them on send: the designer's own, and the evaluator it has
+        // to delegate every trial evaluation to. An agent that lacks one keeps its list short.
+        skills={BENCHMARK_DESIGN_SKILLS}
         {...(aiTarget !== "" ? { tail: benchmarkCreateTail(aiTarget) } : {})}
         intro={
           <Select

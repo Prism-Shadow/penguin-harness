@@ -128,13 +128,15 @@ describe("model-catalog", () => {
         m.provider === "vllm" ||
         m.modelId.endsWith(":free") ||
         m.modelId === "openrouter/free" ||
-        m.modelId === "Atria-Dawn-Preview"
+        m.modelId === "Atria-Dawn-Preview" ||
+        m.modelId === "dots-3-note-preview"
       ) {
         // Self-hosted vLLM and the free-tier gateway rows share one treatment: a genuine $0
         // price (not "unknown"), so costs compute to 0 and the free badge shows. Nobody bills
         // per token for either — a vLLM deployment costs its operator hardware, which no
         // catalog rate expresses. Atria Dawn Preview has no published price yet and is
-        // recorded at $0 until the vendor prices it.
+        // recorded at $0 until the vendor prices it; TokenDance's dots-3-note-preview is the
+        // one free row of its group.
         expect(m.pricing, m.modelId).toBeDefined();
         expect([m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output]).toEqual([
           0, 0, 0,
@@ -461,6 +463,7 @@ describe("model-catalog", () => {
       ["deepseek-v4-flash-vision-exp", 1000000, true],
       ["deepseek-v4-pro-0813", 1000000, false],
       ["deepseek-v4.1-flash", 1000000, true],
+      ["dots-3-note-preview", 512000, true],
       ["glm-5.3", 1000000, false],
       ["glm-5.3-flash", 1000000, true],
       ["hy4-preview", 1024000, false],
@@ -537,6 +540,17 @@ describe("model-catalog", () => {
         0.005714, 0.285714, 1.142857,
       ]);
     }
+    // The one free row of the group: CNY 0 on every bucket, no discount decoration, a 512K
+    // window, and the seller's own spelling of the name, its "（Free）" tag included, as the
+    // OpenRouter "(free)" rows keep theirs.
+    const dots = td.find((m) => m.modelId === "dots-3-note-preview")!;
+    expect(dots.displayName).toBe("Dots3-Note Preview（Free）");
+    expect(dots.contextWindow).toBe(512000);
+    expect(dots.discount).toBeUndefined();
+    expect([dots.pricing!.cache_read, dots.pricing!.cache_write, dots.pricing!.output]).toEqual([
+      0, 0, 0,
+    ]);
+    expect(dots.supportsVision).toBe(true);
     // Display names are the seller's own spelling, not a prettified one.
     expect(td.filter((m) => m.modelId.startsWith("seed-")).map((m) => m.displayName)).toEqual([
       "Seed-2.1-Pro",

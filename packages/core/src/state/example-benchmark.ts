@@ -1,8 +1,7 @@
 /**
  * Provisioning of the example Benchmark.
  *
- * A Project whose `benchmarks/` directory does not exist yet gets the Project-level
- * `benchmarks/example-benchmark/`: two sample cases (each with statement/ and rubric/ indexed
+ * A Project without `benchmarks/example-benchmark/` gets it, at the Project level: two sample cases (each with statement/ and rubric/ indexed
  * by a README.md), benchmark_config.toml (runs = 2, status = published — the example is a
  * finished Benchmark, not one a Skill is still writing), and a scoreboard.yaml with three sample
  * evaluations, each labelled with default_agent as the Agent it tested — so the evaluation
@@ -11,11 +10,13 @@
  * default_agent alone, on both its initialization and every later load; creating or loading an
  * ordinary Agent provisions nothing.
  *
- * The check is on the DIRECTORY, not on the example inside it: deleting the example while
- * keeping `benchmarks/` (which is what deleting it through the Evaluation Center leaves behind,
- * and what a Project holding Benchmarks of its own looks like) is a decision, and writing the
- * example back on the next load would undo it. Removing `benchmarks/` whole asks for the
- * example again, which is also how a data root that predates this provisioning gets one.
+ * The check is on the example's own directory, nothing else: whatever else `benchmarks/`
+ * holds — the user's own Benchmarks, created before the example was ever seeded (creating one
+ * makes the directory, and an older build seeded only on initialization) — and whatever an
+ * older data root keeps at the retired per-agent location `agents/<agent>/benchmarks/`, which
+ * this code never reads, the Project-level example is written when it is missing. That also
+ * means deleting the example lasts until the next load of default_agent; an example that is
+ * present is never touched, evaluations appended to it included.
  *
  * Scoring numbers follow the current Scoreboard contract: every Case is scored out of 100;
  * Case metrics are model-written Run averages and Evaluation metrics are model-written Case
@@ -332,19 +333,20 @@ export function buildExampleScoreboard(): {
 }
 
 /**
- * Provisions the example Benchmark into the Project's `benchmarks/`: if that directory exists at
- * all — holding the example, the user's own Benchmarks, or nothing — does nothing; otherwise
- * creates `benchmarks/example-benchmark/` (config, the two sample cases, and the scoreboard).
- * Callers are restricted to default_agent's initialization and load paths (see agent-state.ts).
+ * Provisions the example Benchmark into the Project's `benchmarks/`: when
+ * `benchmarks/example-benchmark/` does not exist, creates it (config, the two sample cases, and
+ * the scoreboard), making `benchmarks/` on the way if needed; when it does, does nothing. The
+ * user's own Benchmarks beside it, and anything at the retired per-agent location, play no
+ * part. Callers are restricted to default_agent's initialization and load paths (see
+ * agent-state.ts).
  */
 export async function provisionExampleBenchmark(root: string, projectId: string): Promise<void> {
-  const dir = benchmarksDir(root, projectId);
-  const benchDir = path.join(dir, EXAMPLE_BENCHMARK_ID);
+  const benchDir = path.join(benchmarksDir(root, projectId), EXAMPLE_BENCHMARK_ID);
   try {
-    await fs.access(dir);
+    await fs.access(benchDir);
     return;
   } catch {
-    // The Project has no benchmarks/ at all: proceed with provisioning.
+    // The Project has no example: proceed with provisioning.
   }
   await Promise.all(
     EXAMPLE_CASES.flatMap((c) => [

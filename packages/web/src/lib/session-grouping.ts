@@ -23,13 +23,25 @@ export const TEMP_WORKSPACE_GROUP_KEY = "\0temp-workspaces";
 const TEMP_WORKSPACE_RE = /[/\\]workspaces[/\\]tmp-[0-9a-f]{8}$/;
 
 /**
- * Whether a Session's Workspace is an auto-created temporary workspace. An empty
- * path also counts as one: the server always backfills the resolved path, so this
- * is defensive only.
+ * Any directory directly under an Agent's own `workspaces/` — `agents/<agent>/workspaces/<name>`
+ * — which is where the evaluation Skill creates its isolated Test Workspaces, one per Case ×
+ * Run, each holding that run's Test Session and nothing else. Their names are the Skill's
+ * own, so the parent directory is the rule, not a prefix; a directory below one of them is
+ * not itself such a Workspace. The server's workspace-group.ts folds the same paths, so the
+ * group the sidebar draws is the group it pages.
+ */
+const AGENT_WORKSPACES_RE = /[/\\]agents[/\\][^/\\]+[/\\]workspaces[/\\][^/\\]+$/;
+
+/**
+ * Whether a Session's Workspace is one the system made for itself — core's auto-created
+ * temporary directory, or any directory directly under an Agent's `workspaces/` (the
+ * evaluation Skill's Test Workspaces) — and so belongs to the merged temp group instead of
+ * a group of its own. An empty path also counts as one: the server always backfills the
+ * resolved path, so this is defensive only.
  */
 export function isTempWorkspace(workspace: string): boolean {
   const p = workspace.trim();
-  return p === "" || TEMP_WORKSPACE_RE.test(p);
+  return p === "" || TEMP_WORKSPACE_RE.test(p) || AGENT_WORKSPACES_RE.test(p);
 }
 
 /** Stable group key for a Session's Workspace (collapse state / React key): the path itself, or the temp sentinel. */
