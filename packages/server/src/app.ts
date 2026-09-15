@@ -108,6 +108,8 @@ import { BenchmarkService } from "./services/benchmark-service.js";
 import { SnapshotService } from "./services/snapshot-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthService } from "./services/model-oauth-service.js";
+import { PlatformAuthService } from "./services/platform-auth-service.js";
+import { PENGUIN_GO_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 import { ProjectService } from "./services/project-service.js";
 import { SessionService } from "./services/session-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
@@ -143,6 +145,7 @@ import { projectsRoutes } from "./http/routes/projects.js";
 import { membersRoutes } from "./http/routes/members.js";
 import { modelsRoutes } from "./http/routes/models.js";
 import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./http/routes/model-oauth.js";
+import { platformAuthRoutes } from "./http/routes/platform-auth.js";
 import { chatDefaultsRoutes } from "./http/routes/chat-defaults.js";
 import { commandPolicyRoutes } from "./http/routes/command-policy.js";
 import { vaultRoutes } from "./http/routes/vault.js";
@@ -183,6 +186,8 @@ export interface AppDeps {
   projectConfigService: ProjectConfigService;
   /** In-flight provider key-minting flows (PKCE verifiers live here and nowhere else). */
   modelOAuth: ModelOAuthService;
+  /** In-flight Penguin Go flows and Project-scoped connection checks. */
+  platformAuth: PlatformAuthService;
   agentService: AgentService;
   agentConfigService: AgentConfigService;
   memoryService: MemoryService;
@@ -904,6 +909,18 @@ export function buildAppDeps(
     applyGroupKey: (projectId, provider, apiKey) =>
       projectConfigService.setGroupApiKey(projectId, provider, apiKey),
   });
+  const platformAuth = new PlatformAuthService({
+    origin: config.penguinGoOrigin,
+    getKey: (projectId) => projectConfigService.getGroupApiKey(projectId, PENGUIN_GO_PROVIDER_ID),
+    applyCatalog: (projectId, catalog, apiKey, applyKeyToExisting) =>
+      projectConfigService.mergePlatformModels(
+        projectId,
+        PENGUIN_GO_PROVIDER_ID,
+        catalog,
+        apiKey,
+        applyKeyToExisting,
+      ),
+  });
   const agentConfigService = new AgentConfigService(config.root);
   const snapshots = new SnapshotService(config.root);
   const agentService = new AgentService(config.root, agentsRepo, agentConfigService, snapshots);
@@ -1126,6 +1143,7 @@ export function buildAppDeps(
     projectService,
     projectConfigService,
     modelOAuth,
+    platformAuth,
     agentService,
     agentConfigService,
     memoryService,
@@ -1278,6 +1296,7 @@ export function createApp(
   app.route("/api/projects/:projectId/members", membersRoutes(deps));
   app.route("/api/projects/:projectId/models", modelsRoutes(deps));
   app.route("/api/projects/:projectId/model-oauth", modelOAuthRoutes(deps));
+  app.route("/api/projects/:projectId/platform-auth", platformAuthRoutes(deps));
   app.route("/api/projects/:projectId/chat-defaults", chatDefaultsRoutes(deps));
   app.route("/api/projects/:projectId/command-policy", commandPolicyRoutes(deps));
   app.route("/api/projects/:projectId/agents", agentsRoutes(deps));

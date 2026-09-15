@@ -9,7 +9,7 @@
  * about whether there is anything to do, so every case above is replayed through both.
  */
 import { describe, expect, it } from "vitest";
-import { catalogEntryFor } from "@prismshadow/penguin-core/model-catalog";
+import { catalogEntryFor, presetModelEntries } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import { catalogDelta, syncRowsWithCatalog } from "../src/features/models/catalog-sync";
 import { presetUpdateTodo } from "../src/lib/todo-badges";
@@ -219,6 +219,33 @@ describe("syncRowsWithCatalog", () => {
     expect(updated).toBe(1);
     const row = rows.find((r) => r.modelId === "qwen3.8-max-preview")!;
     expect([row.cacheRead, row.cacheWrite, row.output]).toEqual(["", "", ""]);
+  });
+
+  it("keeps Penguin Go pricing owned by platform sync out of preset updates", () => {
+    const preset = presetModelEntries().find(
+      (entry) => entry.provider === "penguin-go" && entry.model_id === "gemini-3.8-flash",
+    )!;
+    const local = makeRow({
+      provider: preset.provider,
+      modelId: preset.model_id,
+      displayName: catalogName(preset.provider, preset.model_id),
+      vision: preset.vision !== false,
+      contextWindow: String(preset.context_window),
+      clientType: preset.client_type ?? "",
+      baseUrl: preset.base_url ?? "",
+      originalBaseUrl: preset.base_url ?? "",
+      cacheRead: "0.1",
+      cacheWrite: "0.2",
+      output: "0.3",
+    });
+    const merged = syncRowsWithCatalog([local], [preset]);
+    expect(merged.updated).toBe(0);
+    expect(merged.rows[0]).toBe(local);
+
+    const dto = inSyncDto(preset, {
+      pricing: { cacheRead: 0.1, cacheWrite: 0.2, output: 0.3 },
+    });
+    expect(catalogDelta([dto], [preset])).toEqual({ added: 0, updated: 0, refs: [] });
   });
 
   it("syncs against the real built-in catalog by default", () => {

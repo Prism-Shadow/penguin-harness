@@ -982,6 +982,7 @@ export const zh = {
         "- 不要读取或改动 .project_config.toml，配置只经 penguin 命令。",
         `- 最后运行 \`penguin config model list --project-id ${projectId} --root <数据根目录>\` 把结果列给我。`,
       ].join("\n"),
+    platformSync: "同步",
     homepage: "模型主页",
     speedTest: "测速",
     speedTestTitle: "分组测速",
@@ -1141,6 +1142,21 @@ export const zh = {
       upstream_failed: "供应商没有返回可用的 key，请重新开始。",
       unreachable: "连不上供应商，请检查网络后重新开始。",
       apply_failed: "key 已创建但未能保存。请重新授权，并到供应商控制台删掉那个没用上的 key。",
+    },
+    platformKeyIntro: (n: number): string =>
+      `授权后会自动获取一个 Penguin Go API key，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key。`,
+    platformKeyAppliedBody: (n: number): string =>
+      `已完成授权：Penguin Go API key 已配置到 ${n} 个模型上，可以直接使用了。`,
+    platformKeyStarting: "正在创建授权请求…",
+    platformKeyApplying: "授权已完成，正在写入模型组…",
+    platformKeyErrors: {
+      unreachable: "无法连接 Penguin Go，请检查网络后重新开始。",
+      upstream_failed: "Penguin Go 未能完成授权，请重新开始。",
+      invalid_key: "Penguin Go 未返回可用的 API key，请重新开始。",
+      expired: "授权已过期，请重新开始。",
+      locked: "授权已锁定，请重新开始。",
+      already_delivered: "该授权结果已经交付，请重新开始。",
+      apply_failed: "API key 已取得，但未能写入模型组。可以直接重试，无需再次授权。",
     },
     // Providers with separate domestic / international endpoints: note on the default
     // endpoint used when left blank via env var (the other side's key needs an explicit
@@ -3301,6 +3317,7 @@ Benchmark：
       task_in_progress: "该 Session 已有任务在运行。",
       compacting: "该 Session 正在压缩上下文，暂不接受新的输入。",
       shutting_down: "服务正在关闭，请稍后重试。",
+      platform_rate_limited: "平台授权请求过于频繁，请等待倒计时结束后重试。",
       // The three "cannot compact" reasons each have their own server code, so each keeps its
       // own explanation here — collapsing them into one sentence would tell a user who just
       // compacted that they have never spoken.

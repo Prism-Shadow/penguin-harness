@@ -995,6 +995,7 @@ export const en: Strings = {
         "- Never read or edit .project_config.toml; configuration goes through penguin commands only.",
         `- Finish with \`penguin config model list --project-id ${projectId} --root <data root>\` and show me the result.`,
       ].join("\n"),
+    platformSync: "Sync",
     homepage: "Model page",
     speedTest: "Speed test",
     speedTestTitle: "Speed test",
@@ -1139,6 +1140,22 @@ export const en: Strings = {
       unreachable: "The provider could not be reached. Check the network and start again.",
       apply_failed:
         "A key was created but could not be saved. Authorize again, then delete the unused key in the provider's console.",
+    },
+    platformKeyIntro: (n: number): string =>
+      `Authorization automatically obtains a Penguin Go API key and writes it to all ${n} preset models in this group, replacing their current key.`,
+    platformKeyAppliedBody: (n: number): string =>
+      `Authorized. The Penguin Go API key is set on ${n} model${n === 1 ? "" : "s"} and ready to use.`,
+    platformKeyStarting: "Starting authorization…",
+    platformKeyApplying: "Authorization completed. Writing the key to the model group…",
+    platformKeyErrors: {
+      unreachable: "Penguin Go could not be reached. Check the network and start again.",
+      upstream_failed: "Penguin Go could not complete authorization. Start again.",
+      invalid_key: "Penguin Go returned no usable API key. Start again.",
+      expired: "The authorization expired. Start again.",
+      locked: "The authorization was locked. Start again.",
+      already_delivered: "That authorization was already delivered. Start again.",
+      apply_failed:
+        "The API key was received but could not be written to the model group. Retry without authorizing again.",
     },
     providerEnvNotes: {
       zhipu:
@@ -3325,6 +3342,8 @@ Scenarios:
       task_in_progress: "This Session already has a task running.",
       compacting: "This Session is compacting its context and is not accepting new input.",
       shutting_down: "The server is shutting down. Please try again shortly.",
+      platform_rate_limited:
+        "Too many platform authorization requests. Try again when the countdown ends.",
       // The three "cannot compact" reasons each have their own server code, so each keeps its
       // own explanation here — collapsing them into one sentence would tell a user who just
       // compacted that they have never spoken.

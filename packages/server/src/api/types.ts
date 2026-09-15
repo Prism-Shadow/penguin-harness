@@ -816,6 +816,37 @@ export interface ModelOAuthCodeResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Penguin Go key authorization (/api/projects/:p/platform-auth, owner)
+// ---------------------------------------------------------------------------
+
+export interface PlatformAuthStartResponse {
+  flowId: string;
+  authorizeUrl: string;
+  expiresAt: string;
+}
+
+export type PlatformAuthFlowErrorCode =
+  | "unreachable"
+  | "upstream_failed"
+  | "invalid_key"
+  | "expired"
+  | "locked"
+  | "already_delivered"
+  | "apply_failed";
+
+export interface PlatformAuthFlowStatusResponse {
+  status: "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
+  error?: PlatformAuthFlowErrorCode;
+  applied?: number;
+}
+
+/** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */
+export interface PlatformModelSyncResponse extends ModelsResponse {
+  added: number;
+  updated: number;
+}
+
+// ---------------------------------------------------------------------------
 // New-chat defaults (the `[default_chat]` block of .project_config.toml)
 // ---------------------------------------------------------------------------
 

@@ -152,7 +152,7 @@
   }
 }
 
-/* ---------- Animations (EmaPowerbank style: 160-280ms ease, slight entrance offset + subtle scale) ---------- */
+/* ---------- Animations (160-280ms ease, slight entrance offset + subtle scale) ---------- */
 
 @keyframes rise-in {
   from {

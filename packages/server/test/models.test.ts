@@ -22,6 +22,7 @@ import {
 import type {
   ModelsResponse,
   ModelTestResponse,
+  ModelVisionDetectResponse,
   ProjectCreateResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
@@ -152,16 +153,18 @@ describe("models preset & catalog enrichment", () => {
     });
   });
 
-  it("masks the env fallback for first-party official entries only, and never leaks the value", async () => {
+  it("masks allowed direct and relay env fallbacks, never gateway fallbacks, and never leaks a value", async () => {
     const saved = {
       anthropic: process.env.ANTHROPIC_API_KEY,
       deepseek: process.env.DEEPSEEK_API_KEY,
       openai: process.env.OPENAI_API_KEY,
+      penguin: process.env.PENGUIN_GO_API_KEY,
     };
     const anthropicValue = "sk-ant-test-secret-value-123456";
     const openaiValue = "sk-openai-test-secret-value-789";
     process.env.ANTHROPIC_API_KEY = anthropicValue;
     process.env.OPENAI_API_KEY = openaiValue;
+    process.env.PENGUIN_GO_API_KEY = "sk-penguin-test-secret-value-456";
     // Empty counts as absent — it would not authenticate either.
     process.env.DEEPSEEK_API_KEY = "";
     try {
@@ -184,6 +187,13 @@ describe("models preset & catalog enrichment", () => {
             baseUrl: "https://openrouter.ai/api/v1",
           },
           { provider: "custom", modelId: "my-model", clientType: "openai" },
+          // Both protocols in the relay group resolve the same provider-scoped key.
+          { provider: "penguin-go", modelId: "gemini-3.8-flash" },
+          {
+            provider: "penguin-go",
+            modelId: "deepseek-flash",
+            clientType: "openai-chat",
+          },
         ],
       });
       expect(put.status).toBe(200);
@@ -203,11 +213,17 @@ describe("models preset & catalog enrichment", () => {
       expect(gateway.envKey).toBe("OPENAI_API_KEY");
       expect(gateway.envKeyMasked).toBeUndefined();
       expect(pick(body, "custom", "my-model").envKeyMasked).toBeUndefined();
+      const penguinMasked = "sk-p…-456";
+      expect(pick(body, "penguin-go", "gemini-3.8-flash").envKey).toBe("PENGUIN_GO_API_KEY");
+      expect(pick(body, "penguin-go", "gemini-3.8-flash").envKeyMasked).toBe(penguinMasked);
+      expect(pick(body, "penguin-go", "deepseek-flash").envKey).toBe("PENGUIN_GO_API_KEY");
+      expect(pick(body, "penguin-go", "deepseek-flash").envKeyMasked).toBe(penguinMasked);
     } finally {
       for (const [key, value] of [
         ["ANTHROPIC_API_KEY", saved.anthropic],
         ["DEEPSEEK_API_KEY", saved.deepseek],
         ["OPENAI_API_KEY", saved.openai],
+        ["PENGUIN_GO_API_KEY", saved.penguin],
       ] as const) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
@@ -840,6 +856,57 @@ describe("model-reference rekeying and the connectivity test", () => {
       expect(typeof body.message).toBe("string");
     } finally {
       if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    }
+  });
+
+  it("Penguin Go probes never substitute vendor environment keys", async () => {
+    const saved = {
+      gemini: process.env.GEMINI_API_KEY,
+      openai: process.env.OPENAI_API_KEY,
+      penguin: process.env.PENGUIN_GO_API_KEY,
+    };
+    process.env.GEMINI_API_KEY = "vendor-gemini-must-not-cross";
+    process.env.OPENAI_API_KEY = "vendor-openai-must-not-cross";
+    delete process.env.PENGUIN_GO_API_KEY;
+    try {
+      for (const modelId of ["gemini-3.8-flash", "deepseek-flash"]) {
+        const tested = await api.post(testUrl(), { provider: "penguin-go", modelId });
+        expect(tested.status).toBe(200);
+        expect((await tested.json()) as ModelTestResponse).toMatchObject({
+          ok: false,
+          message: "Missing API key for Penguin Go.",
+        });
+
+        const vision = await api.post(`${url()}/detect-vision`, {
+          provider: "penguin-go",
+          modelId,
+        });
+        expect(vision.status).toBe(200);
+        expect((await vision.json()) as ModelVisionDetectResponse).toMatchObject({
+          outcome: "failed",
+          message: "Missing API key for Penguin Go.",
+        });
+      }
+
+      process.env.PENGUIN_GO_API_KEY = "penguin-go-key-without-endpoint";
+      const noEndpoint = await api.post(testUrl(), {
+        provider: "penguin-go",
+        modelId: "gemini-3.8-flash",
+        baseUrl: null,
+      });
+      expect((await noEndpoint.json()) as ModelTestResponse).toMatchObject({
+        ok: false,
+        message: "Missing API base URL for Penguin Go.",
+      });
+    } finally {
+      for (const [key, value] of [
+        ["GEMINI_API_KEY", saved.gemini],
+        ["OPENAI_API_KEY", saved.openai],
+        ["PENGUIN_GO_API_KEY", saved.penguin],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   });
 

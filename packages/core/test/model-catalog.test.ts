@@ -19,10 +19,11 @@ import {
   providerInfo,
   fastModeProtocol,
   resolveModelEnv,
+  resolveProviderModelEnv,
 } from "../src/state/index.js";
 
 describe("model-catalog", () => {
-  it("(provider, model_id) pairs are unique; DeepSeek comes first (the default model's provider)", () => {
+  it("(provider, model_id) pairs are unique and provider order keeps the recommendation first", () => {
     // Bare model ids may repeat across providers (a gateway reselling a vendor model keeps the
     // vendor's upstream id, e.g. Qwen Token Plan's glm-5.2 / deepseek-v4-pro) — uniqueness is
     // the (provider, model_id) pair, matching the catalog's sole lookup key (catalogEntryFor).
@@ -30,13 +31,15 @@ describe("model-catalog", () => {
     expect(new Set(pairs).size).toBe(pairs.length);
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
-    // Group order is hand-curated, interleaving gateways and first-party vendors: TokenDance
-    // first (the recommended group), DeepSeek next (the default model's provider), vLLM last
+    // Group order is hand-curated, interleaving gateways and first-party vendors: the
+    // recommended TokenDance first, the prebuilt Penguin Go group next, DeepSeek after it,
+    // and vLLM last
     // among the vendors (self-hosted, so nothing in it runs until the user names a server)
     // and custom always last. This is the page's DEFAULT only — a Project that has reordered
     // its groups stores every key and keeps its own arrangement (web's model-group-order.ts).
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "tokendance",
+      "penguin-go",
       "deepseek",
       "openrouter",
       "fireworks",
@@ -55,10 +58,11 @@ describe("model-catalog", () => {
     // Exactly one group is marked recommended, and it is the one that leads the default
     // order: the caption and the placement are two statements of the same curation.
     expect(MODEL_PROVIDERS.filter((p) => p.recommended).map((p) => p.id)).toEqual(["tokendance"]);
-    expect(MODEL_PROVIDERS[0]!.recommended).toBe(true);
+    expect(providerInfo("tokendance")!.recommended).toBe(true);
     expect(providerInfo("siliconflow")!.label).toBe("SiliconFlow");
     expect(providerInfo("minimax")!.label).toBe("MiniMax");
     expect(providerInfo("minimax")!.envKey).toBe("MINIMAX_API_KEY");
+    expect(providerInfo("penguin-go")!.label).toBe("Penguin Go");
     // The catalog no longer includes GLM-5-Turbo.
     expect(ids).not.toContain("glm-5-turbo");
     // The OpenRouter and SiliconFlow gateway listings of GLM-5.1 were delisted 2026-08-06;
@@ -110,6 +114,39 @@ describe("model-catalog", () => {
     expect(oauth.keyName).toBe("PenguinHarness");
   });
 
+  it("prebuilds Penguin Go with fixed relay routes and no account-owned pricing", () => {
+    const penguinGoModels = MODEL_CATALOG.filter((model) => model.provider === "penguin-go");
+    expect(penguinGoModels.map((model) => model.modelId)).toEqual([
+      "gemini-3.8-flash",
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-3.1-pro-preview",
+      "deepseek-flash",
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "deepseek-v4-flash-vision-exp",
+    ]);
+    expect(
+      penguinGoModels.every((model) => model.baseUrl === "https://token.penguin.ooo/api"),
+    ).toBe(true);
+    expect(penguinGoModels.every((model) => model.pricing === undefined)).toBe(true);
+    expect(
+      penguinGoModels
+        .filter((model) => model.modelId.startsWith("gemini-"))
+        .every((model) => model.clientType === undefined),
+    ).toBe(true);
+    expect(
+      penguinGoModels
+        .filter((model) => model.modelId.startsWith("deepseek-"))
+        .every((model) => model.clientType === "openai-chat"),
+    ).toBe(true);
+    expect(catalogEntryFor("penguin-go", "deepseek-flash")?.supportsVision).toBe(true);
+    expect(catalogEntryFor("penguin-go", "deepseek-v4-flash")?.supportsVision).toBe(false);
+  });
+
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
     expect(APP_URL).toBe("https://penguin.ooo/");
     expect(attributionHeaders("https://tokendance.space/gateway/v1")).toEqual({
@@ -119,7 +156,15 @@ describe("model-catalog", () => {
 
   it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
-      if (m.provider === "vllm" || m.modelId.endsWith(":free") || m.modelId === "openrouter/free") {
+      if (m.provider === "penguin-go") {
+        // Penguin Go pricing belongs to the external platform and may vary independently of this
+        // release. Undefined is deliberately "unknown", not a fabricated zero cost.
+        expect(m.pricing, m.modelId).toBeUndefined();
+      } else if (
+        m.provider === "vllm" ||
+        m.modelId.endsWith(":free") ||
+        m.modelId === "openrouter/free"
+      ) {
         // Self-hosted vLLM and the free-tier gateway rows share one treatment: a genuine $0
         // price (not "unknown"), so costs compute to 0 and the free badge shows. Nobody bills
         // per token for either — a vLLM deployment costs its operator hardware, which no
@@ -658,7 +703,14 @@ describe("model-catalog", () => {
     expect(pinnedDirect.map((m) => m.modelId)).toEqual(["deepseek-flash"]);
     const withBaseUrl = presetModelEntries().filter((e) => e.base_url !== undefined);
     expect(withBaseUrl.map((e) => [e.provider, e.model_id]).sort()).toEqual(
-      [...gateway, ...minimax, ...pinnedDirect].map((m) => [m.provider, m.modelId]).sort(),
+      [
+        ...gateway,
+        ...minimax,
+        ...pinnedDirect,
+        ...MODEL_CATALOG.filter((m) => m.provider === "penguin-go"),
+      ]
+        .map((m) => [m.provider, m.modelId])
+        .sort(),
     );
   });
 
@@ -1038,6 +1090,19 @@ describe("model-catalog", () => {
 });
 
 describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
+  it("keeps Penguin Go relay credentials separate from both vendor protocols", () => {
+    expect(resolveProviderModelEnv("penguin-go", "gemini-3.8-flash")?.envKey).toBe(
+      "PENGUIN_GO_API_KEY",
+    );
+    expect(resolveProviderModelEnv("penguin-go", "deepseek-flash", "openai-chat")?.envKey).toBe(
+      "PENGUIN_GO_API_KEY",
+    );
+    expect(resolveProviderModelEnv("deepseek", "deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
+    expect(resolveProviderModelEnv("openrouter", "any-model", "openai-chat")?.envKey).toBe(
+      "OPENAI_API_KEY",
+    );
+  });
+
   it("first-party model ids route to the provider client's env var", () => {
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
     // The dotted V4.1 spelling still carries the deepseek-v4 substring AutoLLMClient routes
@@ -1125,6 +1190,12 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
       const env = resolveModelEnv(m.modelId, m.clientType);
       const provider = providerInfo(m.provider)!;
       expect(env, `${m.provider}/${m.modelId}`).toBeDefined();
+      if (m.provider === "penguin-go") {
+        // Penguin Go mixes routed clients behind one relay, so its provider-scoped
+        // environment name intentionally differs from each client's vendor variable.
+        expect(provider.envKey).toBe("PENGUIN_GO_API_KEY");
+        continue;
+      }
       expect(env!.envKey, m.modelId).toBe(provider.envKey);
       expect(env!.envBaseUrlKey, m.modelId).toBe(provider.envBaseUrlKey);
     }

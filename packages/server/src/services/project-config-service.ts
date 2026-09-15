@@ -36,13 +36,14 @@ import {
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
+  PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
   defaultProjectConfig,
   imageUrlMessage,
   projectConfigFromTable,
   projectConfigPath,
   renderProjectConfigToml,
-  resolveModelEnv,
+  resolveProviderModelEnv,
   userText,
 } from "@prismshadow/penguin-core";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
@@ -73,6 +74,11 @@ import type {
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
 import { cacheable } from "../internal/mtime-gate.js";
+import type {
+  PlatformCatalogPricing,
+  PlatformModelApplyResult,
+  PlatformModelCatalog,
+} from "./platform-auth-types.js";
 import { detectModelProtocol } from "./protocol-detect.js";
 import {
   VISION_PROBE_IMAGE,
@@ -149,6 +155,59 @@ function asArray(v: unknown): RawTable[] {
 
 function optNum(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+function platformPricingTable(pricing: PlatformCatalogPricing): RawTable {
+  return {
+    unit: pricing.unit,
+    cache_read: pricing.cacheRead,
+    cache_write: pricing.cacheWrite,
+    output: pricing.output,
+  };
+}
+
+function platformPricingMatches(value: unknown, pricing: PlatformCatalogPricing): boolean {
+  const stored = asTable(value);
+  return (
+    stored.unit === pricing.unit &&
+    stored.cache_read === pricing.cacheRead &&
+    stored.cache_write === pricing.cacheWrite &&
+    stored.output === pricing.output
+  );
+}
+
+function modelEnvironmentApiKey(
+  provider: string,
+  modelId: string,
+  clientType: string | undefined,
+): string | undefined {
+  const envKey = resolveProviderModelEnv(provider, modelId, clientType)?.envKey;
+  return envKey ? process.env[envKey]?.trim() || undefined : undefined;
+}
+
+function probeApiKey(input: {
+  provider: string;
+  modelId: string;
+  clientType: string | undefined;
+  requestKey: string | undefined;
+  savedKey: string | undefined;
+  clearSavedKey: boolean | undefined;
+}): string | undefined {
+  return (
+    input.requestKey ??
+    (input.clearSavedKey ? undefined : input.savedKey) ??
+    modelEnvironmentApiKey(input.provider, input.modelId, input.clientType)
+  );
+}
+
+function assertRelayConnection(
+  provider: string,
+  apiKey: string | undefined,
+  baseUrl: string | undefined,
+): void {
+  if (provider !== PENGUIN_GO_PROVIDER_ID) return;
+  if (apiKey === undefined) throw new Error("Missing API key for Penguin Go.");
+  if (!baseUrl?.trim()) throw new Error("Missing API base URL for Penguin Go.");
 }
 
 /**
@@ -593,12 +652,19 @@ export class ProjectConfigService {
     const raw = await this.readRaw(projectId);
     // Probeable before the entry exists, so a custom model can be checked while adding it.
     const entry = asArray(raw.models).find((m) => entryMatches(m, req.provider, req.modelId)) ?? {};
-    const savedKey = optStr(entry.api_key);
-    const apiKey = req.clearApiKey ? undefined : (req.apiKey ?? savedKey);
     const savedBaseUrl = optStr(entry.base_url);
     const baseUrl = req.baseUrl === null ? undefined : (req.baseUrl ?? savedBaseUrl);
     const clientType = canonicalClientType(req.clientType ?? optStr(entry.client_type));
+    const apiKey = probeApiKey({
+      provider: req.provider,
+      modelId: req.modelId,
+      clientType,
+      requestKey: req.apiKey,
+      savedKey: optStr(entry.api_key),
+      clearSavedKey: req.clearApiKey,
+    });
     try {
+      assertRelayConnection(req.provider, apiKey, baseUrl);
       // Inside the try for the same reason as testModel: the SDK throws on a missing
       // credential during construction, and that must read as "probe failed", not a 500.
       const llm = new GenerativeModel({
@@ -647,13 +713,19 @@ export class ProjectConfigService {
     // Testable even if the model isn't in the config yet (validate before saving when adding a custom model): in that case all parameters come from the request body.
     const entry = asArray(raw.models).find((m) => entryMatches(m, req.provider, req.modelId)) ?? {};
     // Always tests against the **current form draft**: checking "clear" means the saved key is not fallen back to; an explicit null base URL is treated as cleared.
-    const savedKey = optStr(entry.api_key);
-    const apiKey = req.clearApiKey ? undefined : (req.apiKey ?? savedKey);
     const savedBaseUrl = optStr(entry.base_url);
     const baseUrl = req.baseUrl === null ? undefined : (req.baseUrl ?? savedBaseUrl);
     // The pre-0.4.2 "openai" spelling (request or stored entry) is normalized to the
     // canonical "openai-chat" (deprecated upstream alias; see canonicalClientType).
     const clientType = canonicalClientType(req.clientType ?? optStr(entry.client_type));
+    const apiKey = probeApiKey({
+      provider: req.provider,
+      modelId: req.modelId,
+      clientType,
+      requestKey: req.apiKey,
+      savedKey: optStr(entry.api_key),
+      clearSavedKey: req.clearApiKey,
+    });
     // Fast mode follows the form draft like baseUrl (the frontend always sends the current
     // toggle), falling back to the stored annotation: the probe then exercises exactly the
     // serving tier sessions would use, so a model rejecting fast_mode fails the test with
@@ -662,6 +734,7 @@ export class ProjectConfigService {
 
     const startedAt = Date.now();
     try {
+      assertRelayConnection(req.provider, apiKey, baseUrl);
       // Construction must be inside the try block: the underlying provider SDK can
       // throw during **client construction** itself when a credential is missing
       // (models on the OpenAI protocol need apiKey/OPENAI_API_KEY) — the whole point
@@ -745,14 +818,26 @@ export class ProjectConfigService {
     req: ModelProtocolDetectRequest,
   ): Promise<ModelProtocolDetectResponse> {
     let apiKey = req.apiKey;
+    let savedClientType: string | undefined;
     if (apiKey === undefined && !req.clearApiKey && req.provider && req.modelId) {
       const raw = await this.readRaw(projectId);
       const entry = asArray(raw.models).find((m) =>
         entryMatches(m, req.provider as string, req.modelId as string),
       );
       apiKey = entry !== undefined ? optStr(entry.api_key) : undefined;
+      savedClientType = entry === undefined ? undefined : optStr(entry.client_type);
     }
-    return detectModelProtocol({ baseUrl: req.baseUrl, ...(apiKey ? { apiKey } : {}) });
+    const relayRequest = req.provider === PENGUIN_GO_PROVIDER_ID;
+    if (apiKey === undefined && relayRequest && req.provider && req.modelId) {
+      apiKey = modelEnvironmentApiKey(req.provider, req.modelId, savedClientType);
+    }
+    return detectModelProtocol({
+      baseUrl: req.baseUrl,
+      ...(apiKey ? { apiKey } : {}),
+      // Without a relay key, anonymous probing is still safe and can identify a route from
+      // its 401. An empty env prevents the lower-level detector from substituting a vendor key.
+      ...(relayRequest ? { env: {} } : {}),
+    });
   }
 
   /**
@@ -839,7 +924,7 @@ export class ProjectConfigService {
         // protocol reads OPENAI_*, independent of the group), otherwise it's
         // auto-routed to a provider client based on model_id; an id that can't be
         // routed has no fallback (no envKey, and AgentHub will reject that id).
-        const envKey = resolveModelEnv(modelId, clientType)?.envKey;
+        const envKey = resolveProviderModelEnv(provider, modelId, clientType)?.envKey;
         const vision = typeof m.vision === "boolean" ? m.vision : cat?.supportsVision;
         // Output cap: TOML annotation only (user-owned; the built-in catalog never presets it).
         const maxTokens = optNum(m.max_tokens);
@@ -1105,6 +1190,83 @@ export class ProjectConfigService {
     if (applied === 0) return 0;
     await this.writeRaw(projectId, { ...raw, models: nextModels });
     return applied;
+  }
+
+  /** Returns one persisted group key without exposing it through an HTTP response. */
+  async getGroupApiKey(projectId: string, provider: string): Promise<string | undefined> {
+    const raw = await this.readRaw(projectId);
+    for (const model of asArray(raw.models)) {
+      if (model.provider !== provider) continue;
+      const apiKey = optStr(model.api_key);
+      if (apiKey !== undefined) return apiKey;
+    }
+    return undefined;
+  }
+
+  /**
+   * Adds newly advertised models and refreshes the platform-owned price on existing rows.
+   * Routing and all other annotations remain Project-owned and are never overwritten.
+   * Authorization additionally applies the freshly delivered key to the whole group.
+   */
+  async mergePlatformModels(
+    projectId: string,
+    provider: string,
+    catalog: PlatformModelCatalog,
+    apiKey: string,
+    applyKeyToExisting: boolean,
+  ): Promise<PlatformModelApplyResult> {
+    const raw = await this.readRaw(projectId);
+    const current = asArray(raw.models);
+    const catalogById = new Map(catalog.models.map((model) => [model.modelId, model]));
+    const known = new Set<string>();
+    const createdAt = new Date().toISOString();
+    let added = 0;
+    let updated = 0;
+    let applied = 0;
+    const nextModels = current.map((model) => {
+      if (model.provider !== provider || typeof model.model_id !== "string") return model;
+      const modelId = String(model.model_id);
+      known.add(modelId);
+      const catalogModel = catalogById.get(modelId);
+      const remotePricing = catalogModel?.pricing;
+      const pricingChanged =
+        remotePricing !== undefined && !platformPricingMatches(model.pricing, remotePricing);
+      if (pricingChanged) updated += 1;
+      if (applyKeyToExisting) applied += 1;
+      if (!pricingChanged && !applyKeyToExisting) return model;
+      return {
+        ...model,
+        ...(pricingChanged && remotePricing !== undefined
+          ? { pricing: platformPricingTable(remotePricing) }
+          : {}),
+        ...(applyKeyToExisting ? { api_key: apiKey, created_at: createdAt } : {}),
+      };
+    });
+
+    for (const model of catalog.models) {
+      if (known.has(model.modelId)) continue;
+      known.add(model.modelId);
+      added += 1;
+      applied += 1;
+      nextModels.push({
+        provider,
+        model_id: model.modelId,
+        display_name: model.displayName,
+        context_window: model.contextWindow,
+        ...(model.maxOutputTokens !== undefined ? { max_tokens: model.maxOutputTokens } : {}),
+        vision: model.supportsVision,
+        pricing: platformPricingTable(model.pricing),
+        ...(model.clientType !== undefined ? { client_type: model.clientType } : {}),
+        base_url: model.baseUrl,
+        api_key: apiKey,
+        created_at: createdAt,
+      });
+    }
+
+    if (added > 0 || updated > 0 || applyKeyToExisting) {
+      await this.writeRaw(projectId, { ...raw, models: nextModels });
+    }
+    return { added, updated, applied };
   }
 }
 

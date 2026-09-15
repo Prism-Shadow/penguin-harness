@@ -2,15 +2,20 @@
  * One-click sync of the Project model table with the built-in catalog ("sync presets" next
  * to the search box): union semantics — catalog entries not configured locally are added;
  * entries present on both sides are reset to the catalog's fields (context window, pricing,
- * protocol, base URL, vision — the catalog wins wherever the two differ, including removing
- * pricing the catalog doesn't carry); locally added models (including user-defined groups)
- * are kept untouched. Credentials are never touched: merged rows carry no apiKey input (the
+ * protocol, base URL, vision — the catalog wins wherever the two differ). Missing catalog
+ * pricing normally removes local pricing; Penguin Go is the exception because its mutable
+ * prices come from platform sync. Locally added models (including user-defined groups) are
+ * kept untouched. Credentials are never touched: merged rows carry no apiKey input (the
  * PUT keeps the stored key) and existing rows keep their credential display state.
  *
  * The display name is the one catalog field that is filled but never overwritten — see
  * {@link displayNameFill}.
  */
-import { catalogEntryFor, presetModelEntries } from "@prismshadow/penguin-core/model-catalog";
+import {
+  PENGUIN_GO_PROVIDER_ID,
+  catalogEntryFor,
+  presetModelEntries,
+} from "@prismshadow/penguin-core/model-catalog";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import type { RowState } from "./models-page";
 
@@ -23,14 +28,27 @@ type ModelDto = ModelsResponse["models"][number];
 type CatalogFields = ReturnType<typeof presetFields>;
 
 /** The catalog-owned fields of a row, in RowState's string-typed form (mirrors toRow). */
-function presetFields(p: PresetEntry) {
+function presetFields(
+  p: PresetEntry,
+  current?: { cacheRead: string; cacheWrite: string; output: string },
+) {
+  const keepPlatformPricing = p.provider === PENGUIN_GO_PROVIDER_ID && p.pricing === undefined;
+  const pricing = p.pricing
+    ? {
+        cacheRead: String(p.pricing.cache_read),
+        cacheWrite: String(p.pricing.cache_write),
+        output: String(p.pricing.output),
+      }
+    : keepPlatformPricing
+      ? current
+      : undefined;
   return {
     vision: p.vision !== false,
     contextWindow: p.context_window !== undefined ? String(p.context_window) : "",
     clientType: p.client_type ?? "",
-    cacheRead: p.pricing ? String(p.pricing.cache_read) : "",
-    cacheWrite: p.pricing ? String(p.pricing.cache_write) : "",
-    output: p.pricing ? String(p.pricing.output) : "",
+    cacheRead: pricing?.cacheRead ?? "",
+    cacheWrite: pricing?.cacheWrite ?? "",
+    output: pricing?.output ?? "",
     baseUrl: p.base_url ?? "",
   };
 }
@@ -133,7 +151,7 @@ export function catalogDelta(
       continue;
     }
     const fields = savedFields(entry);
-    const target = presetFields(p);
+    const target = presetFields(p, fields);
     // The name counts as an update on the same fill-only rule the merge applies, or a Project
     // carrying rows with no name would hold a badge the button answers "already up to date".
     if (
@@ -170,7 +188,7 @@ export function syncRowsWithCatalog(
       continue;
     }
     const row = next[i]!;
-    const fields = presetFields(p);
+    const fields = presetFields(p, row);
     const fill = displayNameFill(p, row.displayName);
     const changed =
       fill !== undefined ||

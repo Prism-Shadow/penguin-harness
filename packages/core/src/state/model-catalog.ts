@@ -17,7 +17,8 @@
  * group (V4.1 Flash released as `deepseek-flash`, the two V4 Flash ids retired into it —
  * `deepseek-v4-flash` text-only even so, AgentHub's DeepSeek client refusing image parts for
  * that id), the OpenRouter and TokenDance V4.1 Flash rows, and TokenDance's running promotions
- * plus its Doubao Seed display names: 2026-09-10 — per each provider's docs).
+ * plus its Doubao Seed display names: 2026-09-10; the Penguin Go resale lineup, matched to the
+ * relay's current generic-client model export: 2026-09-11 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -190,12 +191,17 @@ const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
 const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+export const PENGUIN_GO_BASE_URL = "https://token.penguin.ooo/api";
+
+/** Provider id for the preconfigured Penguin Go relay group. */
+export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
 
 /**
  * Provider list (web model page groups in this order BY DEFAULT — a user's dragged
  * arrangement is stored per Project and wins over this sequence; see the web's
  * model-group-order.ts). The sequence is a hand-curated display order: TokenDance leads as
- * the recommended group, DeepSeek follows as the default model's provider, and custom
+ * the recommended group, Penguin Go follows, then DeepSeek as the default model's
+ * provider, and custom
  * (custom OpenAI-protocol models) is always last; in between, gateways and first-party
  * vendors are interleaved by expected use rather than sorted by kind. Only this default
  * moves when the curation changes: a Project that has ever reordered its groups has every
@@ -224,6 +230,16 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
       exchangeUrl: "https://tokendance.space/portal/api/v1/auth/keys",
       keyName: "PenguinHarness",
     },
+  },
+  {
+    id: PENGUIN_GO_PROVIDER_ID,
+    label: "Penguin Go",
+    // The authorization flow writes one inlined relay key across the group. Keep the env
+    // names private to this relay so the UI never suggests using a vendor credential here.
+    envKey: "PENGUIN_GO_API_KEY",
+    envBaseUrlKey: "PENGUIN_GO_BASE_URL",
+    apiKeyUrl: "https://token.penguin.ooo/",
+    modelsUrl: "https://token.penguin.ooo/",
   },
   {
     id: "deepseek",
@@ -1478,6 +1494,103 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
+  // -- Penguin Go (mixed-protocol relay). The model ids are the generation rows
+  // provisioned by Penguin Go's generic-client authorization contract. Both
+  // protocols share the /api base: the Google client appends /v1beta itself, while the
+  // OpenAI Chat client appends /chat/completions. Prices are intentionally omitted because
+  // the relay owns mutable account pricing; PenguinHarness only needs stable routing here.
+  {
+    modelId: "gemini-3.8-flash",
+    displayName: "Gemini 3.8 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    supportsVision: true,
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.7-flash",
+    displayName: "Gemini 3.7 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    supportsVision: true,
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.6-flash",
+    displayName: "Gemini 3.6 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    supportsVision: true,
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.5-flash",
+    displayName: "Gemini 3.5 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    supportsVision: true,
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.5-flash-lite",
+    displayName: "Gemini 3.5 Flash-Lite",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    supportsVision: true,
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.1-flash-lite",
+    displayName: "Gemini 3.1 Flash-Lite",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    supportsVision: true,
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.1-pro-preview",
+    displayName: "Gemini 3.1 Pro (Preview)",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    supportsVision: true,
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1000000,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-v4-flash",
+    displayName: "DeepSeek V4 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1000000,
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-v4-pro",
+    displayName: "DeepSeek V4 Pro",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1000000,
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-v4-flash-vision-exp",
+    displayName: "DeepSeek V4 Flash Vision Exp",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1000000,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
   // table). Pricing and context windows from each model's page at
   // www.qianwenai.com/models/<id> (official CNY list prices; limited-time promotions such as
@@ -2135,6 +2248,26 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   // nothing here.
   if (t.includes("openai")) return env("OPENAI");
   return undefined;
+}
+
+/**
+ * Resolves the credential environment for a configured model entry. Most groups follow the
+ * AgentHub client selected by model id / protocol. The Penguin Go relay is deliberately
+ * different: its Google and OpenAI routes share one relay credential, so its provider-scoped
+ * variable must win over both clients' vendor variables everywhere the harness resolves a key.
+ */
+export function resolveProviderModelEnv(
+  provider: string,
+  modelId: string,
+  clientType?: string,
+): ModelEnvInfo | undefined {
+  if (provider === PENGUIN_GO_PROVIDER_ID) {
+    const group = providerInfo(provider);
+    return group === undefined
+      ? undefined
+      : { envKey: group.envKey, envBaseUrlKey: group.envBaseUrlKey };
+  }
+  return resolveModelEnv(modelId, clientType);
 }
 
 /**
