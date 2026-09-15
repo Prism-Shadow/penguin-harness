@@ -59,7 +59,7 @@ Benchmark 属于 Project，存放在与 `agents/` 平级的 `<root>/<project>/be
 
 `benchmark_config.toml` 是目录成为 Benchmark 的标志：`benchmarks/` 下缺少该文件的目录不会被列出。在评测运行期间删除 Benchmark 会留下这样的目录——正在运行的评测仍在向被删除的路径写入。从未评测过的 Benchmark 仍带有配置文件，照常列出；残留目录可以手工删除。
 
-`status` 表示这个 Benchmark 是否已经完成：`benchmark-design` 仍在出题与校准难度时为草稿 `draft`，Web App 对其遮罩——不能使用、也看不到详情；记录 Formal Baseline 后为发布 `published`；`benchmark-design` 报告 `calibration_failed`（没有任何可冻结的有效 Pilot 结果）时为失败 `failed`。失败的 Benchmark 不可用：Web App 同样遮罩，提示创建失败、请删除后重新创建。手动创建的 Benchmark 与内置示例一开始就是 `published`。没有该字段、或取值既不是 `draft` 也不是 `failed` 的配置，都按 `published` 读。
+`status` 表示这个 Benchmark 是否已经完成：`benchmark-design` 仍在出题与校准难度时为草稿 `draft`，Web App 对其遮罩——不能使用、也看不到详情；记录 Formal Baseline 后为发布 `published`；`benchmark-design` 报告 `calibration_failed`（没有任何可冻结的有效 Pilot 结果，或迭代上限内最低分的有效版本仍不低于 85）时为失败 `failed`。发布的门槛是固定的 85 分，而不是请求里要求的 desired_baseline_score：Formal Baseline 低于 85 就发布，未达期望分数不算失败。失败的 Benchmark 不可用：Web App 同样遮罩，提示创建失败、请删除后重新创建。手动创建的 Benchmark 与内置示例一开始就是 `published`。没有该字段、或取值既不是 `draft` 也不是 `failed` 的配置，都按 `published` 读。
 
 `scoreboard.yaml` 中的每条评测记录带时间戳，并记录：
 
