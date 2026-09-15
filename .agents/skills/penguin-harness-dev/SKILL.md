@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-dev
-description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; running the test suite here or, when asked, on another machine; deciding what to do about data already on disk; or auditing prose that reads like a leaked authoring session. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
+description: Use when developing PenguinHarness itself — changing packages/{core,server,web,cli,desktop,landing,docs,skills}, the built-in model catalog, the installers or the release workflow; writing or auditing changelog entries; writing a blog post or capturing release screenshots; running the test suite here or, when asked, on another machine; reading a prompt-cache regression out of the core suites; deciding what to do about data already on disk; or auditing prose that reads like a leaked authoring session. Covers the two-repo symlink layout, the CI-parity verification chain, the record-and-ship contract, where blog media is hosted, and the seams that are intentional.
 ---
 
 # Developing PenguinHarness
@@ -79,6 +79,7 @@ pnpm --filter @prismshadow/penguin-web test                                     
 | `packages/docs/content/**`, blog posts under `packages/landing/content/**` | `format:check` + the `docs` and `landing` package tests (search index, blog fixtures) |
 | `plugins/**` (repo root) | the `plugins` package test (loader, README tables, the hook scripts against fake Traces) + `docs`'s `skills-sync.test.ts` |
 | The model catalog | core `model-catalog.test.ts`, web `model-grouping.test.ts` and `protocol-path.test.ts`, server `models.test.ts` |
+| Request assembly, history rebuild, compaction, the system prompt, a tool's description or schema | core's three `prompt-cache-*` suites — read the section below before you touch what they report |
 | One package's source | that package's `test`, plus `typecheck` |
 | Exported core types, or anything downstream imports | `pnpm build` + `pnpm typecheck` before any test |
 | `package.json`, the lockfile, `pnpm-workspace.yaml` | `pnpm install --frozen-lockfile` + `pnpm build` |
@@ -102,6 +103,30 @@ Force-pushes and reverting someone else's commits still need confirmation.
 When a test fails in a way that does not match your diff, when CI reads green too easily, or when a
 fake or an assertion looks like it proves nothing, read `reference/verification.md` before spending
 a second round on it.
+
+## A prompt-cache miss is a cost regression, and it has to be said out loud
+
+A provider serves a cached prefix only while the next request repeats the previous one byte for byte
+from the front: the model id, the tools, the fast-mode parameters, the system prompt, the remaining
+prompt-affecting parameters, then the messages. Everything from the earliest divergence onward is
+re-read at full price, on every request of every running conversation — not only the one in front of
+you. A word added to a tool description costs far more than its own tokens.
+
+Three suites in `packages/core/test` hold that line, and a failure means something different in each:
+
+| Failing | What it is telling you |
+| --- | --- |
+| `prompt-cache-invariants.test.ts` | Your change made a request stop extending its predecessor. This is the regression itself; the diagnostic names the tier that diverged and estimates the input that falls after it. |
+| `prompt-cache-lifecycle.test.ts` | The same thing counted in provider tokens. A number that went down is money. |
+| `prompt-cache-simulator.test.ts` | You changed the rule engine, not the harness. Only correct when the provider's documented rules changed — go and check the documentation, not the test. |
+
+**Never re-baseline these to green.** Editing an expected number, or adding a case to the list of
+misses that are there by design, is a decision about spending the user's money — not a fix. Put the
+tier that moved and what it costs in front of them and let them decide.
+
+And say it in the reply, not only in a test log. A cache regression shows up in no other signal this
+repo produces: nothing is slower, nothing is wrong on screen, and CI goes green the moment the
+numbers are edited. If you do not raise it, it ships.
 
 ## Record and ship
 

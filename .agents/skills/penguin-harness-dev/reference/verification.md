@@ -29,6 +29,31 @@ text in a test is house style here (20 web test files do it), which makes it eas
 shape the file already had. Replay each new assertion against `git show <base>:<path>` and keep
 the ones that fail there.
 
+## A prompt-cache number that moved
+
+The diagnostic reports the **earliest** divergence between two consecutive requests and nothing
+after it, because nothing after it matters: the prefix is matched from the front, so the first tier
+that differs is where the cache stops and the whole remainder is re-read. `model_changed` costs
+everything and has no escape — no breakpoint can sit in front of the model id. `tools_changed`
+costs the system prompt and the messages. `system_changed` costs the messages. `messages_changed`
+is the ordinary case and is usually fine, since an extended history is exactly what a cache serves.
+
+So read the tier before you read the token count. A change that moved `messages_changed` later in
+the conversation is noise; a change that turned `messages_changed` into `system_changed` moved the
+cost of every future request in every conversation, however small the diff looked.
+
+Some misses are there by design and the lifecycle suite names each one with its reason: a
+thinking-level move, a compaction reopen and a subagent child's first request each read nothing,
+even though the tools and system prompt go out byte-identical, because the harness sends one
+automatic breakpoint at the end of the request and no entry ever ended at the system block. Those
+are properties of what AgentHub sends, not defects in the change under test. Adding a **new** name
+to that list is the thing you must not do quietly.
+
+The simulator is offline: it encodes the documented rules over the same recordings, which makes it
+exact about the harness's half and only as good as the documentation about the provider's. It is
+evidence that request assembly did not move; it is not evidence that a live deployment behaves this
+way. When the two disagree, the endpoint wins and the simulator's rule is the bug.
+
 ## Reading CI without fooling yourself
 
 **On a conflicting PR, waiting for CI is waiting for nothing.** The workflows run against the
