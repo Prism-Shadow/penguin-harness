@@ -1,7 +1,9 @@
 /**
  * Focus behaviour of the Modal primitive (src/components/ui/modal.tsx), which every dialog in
  * the app inherits: focus enters the panel on open, Tab and Shift+Tab cycle inside it, and
- * focus returns to the trigger on close.
+ * focus returns to the trigger on close. The wiring lives in `useDialogLayer`, which the
+ * command palette and the harness history overlay share with Modal, so what is pinned here
+ * holds for those two as well.
  *
  * `nextFocusIndex` is the arithmetic and is exercised directly. The wiring around it cannot
  * be: this suite is `environment: "node"` with no jsdom, and Modal renders through
