@@ -80,6 +80,18 @@ describe("isTempWorkspace (temporary-workspace pattern from core's createTempWor
     expect(isTempWorkspace("   ")).toBe(true);
   });
 
+  it("matches any directory directly under an Agent's workspaces/ — the evaluation Skill's Test Workspaces", () => {
+    expect(
+      isTempWorkspace("/pg/data/proj/agents/a/workspaces/eval-example-benchmark-case-1-run-1"),
+    ).toBe(true);
+    expect(isTempWorkspace("C:\\pg\\data\\proj\\agents\\a\\workspaces\\run-7")).toBe(true);
+    // A directory below one of them is not itself such a Workspace, and a workspaces/
+    // directory that is not an Agent's is a user directory that just looks similar.
+    expect(isTempWorkspace("/pg/data/proj/agents/a/workspaces/run-7/nested")).toBe(false);
+    expect(isTempWorkspace("/srv/repo/workspaces/run-7")).toBe(false);
+    expect(isTempWorkspace("/pg/data/proj/agents/a/workspaces")).toBe(false);
+  });
+
   it("rejects named directories and near misses", () => {
     expect(isTempWorkspace("/srv/repo")).toBe(false);
     // tmp-<8hex> without a workspaces/ parent is a user directory that just looks similar

@@ -41,7 +41,7 @@ Below the composer the draft page files example prompts into folders, exactly on
 
 ### The Conversation List
 
-The sidebar's conversation list groups by Workspace or by Agent. Grouping and sort order are switched in the **List options** menu (the sliders icon in the section header), where each option carries its own icon: a folder for Workspace grouping, the Agent glyph for Agent grouping, a clock for most-recent order, and up/down arrows for the drag-reordered manual order.
+The sidebar's conversation list groups by Workspace or by Agent. Under Workspace grouping, the directories the system makes for itself — the temporary Workspace a conversation gets when none is chosen, and the isolated Test Workspace an evaluation creates for each Case × Run, both directly under the Agent's own `workspaces/` directory — fold into one **Temporary workspaces** group instead of each standing alone; a directory you pick yourself always has its own group. Grouping and sort order are switched in the **List options** menu (the sliders icon in the section header), where each option carries its own icon: a folder for Workspace grouping, the Agent glyph for Agent grouping, a clock for most-recent order, and up/down arrows for the drag-reordered manual order.
 
 A row's actions come at two levels:
 

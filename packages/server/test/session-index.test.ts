@@ -452,6 +452,13 @@ describe("session-index", () => {
       `${agentDir}/workspaces/tmp-89abcdef`,
       "2026-07-03T09:05:00.000Z",
     );
+    // The isolated Test Workspace an evaluation creates for one Case × Run: directly under
+    // the Agent's workspaces/, named by the Skill.
+    await seed(
+      "session-2026-07-03-09-06-00-dddd0001",
+      `${agentDir}/workspaces/eval-example-benchmark-case-1-run-1`,
+      "2026-07-03T09:06:00.000Z",
+    );
 
     const list = async (qs: string) => {
       const res = await api.get(`${base()}${qs}`);
@@ -470,8 +477,10 @@ describe("session-index", () => {
     ]);
 
     // Every auto-created temporary Workspace is ONE group (they are single-use, so a group
-    // per path would be one-session noise).
+    // per path would be one-session noise) — and so is every other directory directly under
+    // the Agent's workspaces/, the evaluation Skill's Test Workspaces among them.
     expect(ids(await list("?category=active&workspaceGroup=temp"))).toEqual([
+      "session-2026-07-03-09-06-00-dddd0001",
       "session-2026-07-03-09-05-00-cccc0002",
       "session-2026-07-03-09-04-00-cccc0001",
     ]);
@@ -499,7 +508,7 @@ describe("session-index", () => {
       `?category=active&counts=1&workspaceGroup=${encodeURIComponent(alpha)}`,
     );
     expect(ids(counted)).toHaveLength(2);
-    expect(counted.counts?.active).toBe(6);
+    expect(counted.counts?.active).toBe(7);
     // Each path's newest Session rides with the counts: what places a Workspace group the
     // sidebar has loaded no rows of. Keyed by the stored path — the client merges the
     // temporary ones — and whole-Agent under the group filter, like the counts.
@@ -508,6 +517,7 @@ describe("session-index", () => {
       [beta]: "2026-07-03T09:03:00.000Z",
       [`${agentDir}/workspaces/tmp-0123abcd`]: "2026-07-03T09:04:00.000Z",
       [`${agentDir}/workspaces/tmp-89abcdef`]: "2026-07-03T09:05:00.000Z",
+      [`${agentDir}/workspaces/eval-example-benchmark-case-1-run-1`]: "2026-07-03T09:06:00.000Z",
     });
 
     // An empty group name is rejected, never silently unfiltered.
