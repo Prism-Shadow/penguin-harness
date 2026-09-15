@@ -34,6 +34,8 @@ const ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
 
 /** Key of the per-message total attachment limit, in whole MB; default DEFAULT_ATTACHMENT_TOTAL_MB. */
 const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
+/** Key of the company-mode master switch; default off (see getCompanyMode). */
+const COMPANY_MODE_KEY = "companyMode";
 
 @Component()
 export class ServerSettingsRepo implements Settings {
@@ -145,5 +147,24 @@ export class ServerSettingsRepo implements Settings {
       attachmentMaxMb: this.getAttachmentMaxMb(),
       attachmentTotalMb: this.getAttachmentTotalMb(),
     };
+  }
+
+  /**
+   * Company mode master switch (default OFF): an absent row — and an unreadable one — means
+   * off, so the whole mode stays out of the way until an admin turns it on under
+   * System settings > Server > Company mode.
+   */
+  getCompanyMode(): boolean {
+    const raw = this.get(COMPANY_MODE_KEY);
+    if (raw === null) return false;
+    try {
+      return JSON.parse(raw) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  setCompanyMode(value: boolean): void {
+    this.set(COMPANY_MODE_KEY, JSON.stringify(value));
   }
 }

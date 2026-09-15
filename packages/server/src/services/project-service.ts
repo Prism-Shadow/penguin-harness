@@ -37,6 +37,7 @@ import type { Users } from "../mechanisms/identity.js";
 import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
 import type { ErrorLog, UsageStore } from "../mechanisms/observability.js";
 import type { TraceIndex } from "../mechanisms/traces.js";
+import type { OrgCache } from "../mechanisms/organization.js";
 
 /** Fallback timeout for waiting on runs to settle before deleting a Project. */
 const ABORT_SETTLE_TIMEOUT_MS = 5000;
@@ -65,6 +66,8 @@ export class ProjectService implements ProjectLifecycle {
   @Use() private readonly usage!: UsageStore;
   @Use() private readonly errors!: ErrorLog;
   @Use() private readonly schedules!: Schedules;
+  /** Company-mode caches: a destroyed Project takes its organization projections with it. */
+  @Use() private readonly orgCache!: OrgCache;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   /** What destroying a Project needs of the session runtime — declared at the consumer. */
   @Use() private readonly manager!: ProjectRuns;
@@ -262,6 +265,7 @@ export class ProjectService implements ProjectLifecycle {
     this.usage.deleteByProject(projectId);
     this.errors.deleteByProject(projectId);
     this.schedules.deleteByProject(projectId);
+    this.orgCache.deleteProject(projectId);
     this.traceIndex.removeProject(projectId);
     await fs.rm(projectDir(this.root, projectId), { recursive: true, force: true });
   }

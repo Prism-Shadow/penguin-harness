@@ -95,6 +95,7 @@ import type { Errors, UsageRecording } from "../mechanisms/observability.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
+import type { OrgCache } from "../mechanisms/organization.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -363,6 +364,27 @@ export interface SessionManagerDeps {
    * backfill assumes when it reads MAX(ts) as a session's last activity.
    */
   now?: () => Date;
+  /**
+   * Called when a Task starts (or is queued) from a PERSON's input — a message typed in the
+   * Web App, the CLI or a bound messaging bot, as opposed to one the harness injected
+   * (`sender: "server"` / `"harness"`). Company mode uses it to reset the desk's @-chain
+   * accounting: a person's message opens a fresh chain (hop 0), whatever mention last woke
+   * the desk. Optional; unit tests that do not wire it get nothing.
+   */
+  onHumanInput?: (sessionId: string) => void;
+}
+
+/**
+ * Whether a Task's input came from a person: every text payload either carries no sender or
+ * `sender: "user"`. A harness-injected turn (`"server"`, `"harness"`, `"parent_agent"`) on any
+ * message makes the whole input non-human — the org scheduler's trigger and a subagent's
+ * prompt both arrive that way.
+ */
+export function isHumanInput(input: readonly OmniMessage[]): boolean {
+  return input.every((m) => {
+    const p = m.payload as { sender?: string };
+    return p.sender === undefined || p.sender === "user";
+  });
 }
 
 /**
@@ -967,6 +989,9 @@ export class SessionManager {
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      // A person's message opens a fresh chain for company mode's hop accounting, whether the
+      // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
+      if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
       if (entry.status !== "idle" && opts?.queueIfBusy) {
         entry.followUps.push({
           id: randomUUID(),
@@ -2267,6 +2292,8 @@ export class SessionsModule {
   @Use() private readonly projectsRepo!: Projects;
   @Use() private readonly membersRepo!: Members;
   @Use() private readonly messagingRepo!: MessagingBindings;
+  /** Company-mode caches: which organization owns a Session (read at every command spawn). */
+  @Use() private readonly orgCache!: OrgCache;
   @Provide() manager!: Sessions;
   @Provide() sessionService!: SessionServiceIface;
   @Provide() env!: SessionEnv;
@@ -2280,6 +2307,7 @@ export class SessionsModule {
     const errors = this.errors;
     const projectConfig = this.projectConfig;
     const sandbox = this.sandbox as SandboxService;
+    const orgCache = this.orgCache;
 
     // Which commands run confined, under which policy, by which backend is policy — the
     // sandbox module's; core only carries the spawn seam, reached through this getter.
@@ -2295,12 +2323,17 @@ export class SessionsModule {
             ? "127.0.0.1"
             : (loopbackHostRoles(config.host)?.app ?? config.host);
         const token = authState.apiToken;
+        const orgId = orgCache.ownerOfSession(ctx.sessionId)?.orgId ?? null;
         return {
           PENGUIN_API_URL: `http://${host}:${config.port}`,
           ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),
           PENGUIN_PROJECT_ID: ctx.projectId,
           PENGUIN_AGENT_ID: ctx.agentId,
           PENGUIN_SESSION_ID: ctx.sessionId,
+          // A desk or ticket session also learns its organization, so `penguin org` needs no
+          // --org-id inside it. Looked up per spawn from the cache the ledger and the tickets
+          // project into.
+          ...(orgId !== null ? { PENGUIN_ORG_ID: orgId } : {}),
         };
       },
       // The directory core puts at the FRONT of PATH for every command an Agent runs (and for
@@ -2347,6 +2380,11 @@ export class SessionsModule {
       titles,
       log,
       notifyProjectUsers,
+      // A person talking to a desk (the chat page, a bound bot) starts a new @-chain: the
+      // desk's next channel message is hop 1 again, whatever mention last woke it.
+      onHumanInput: (sessionId) => {
+        if (orgCache.ownerOfSession(sessionId) !== null) orgCache.setTriggerHop(sessionId, 0);
+      },
       now: () => this.clock.now(),
     });
     const sessionService = new SessionService({
@@ -2368,6 +2406,13 @@ export class SessionsModule {
           ? enabled.channel
           : null;
       },
+      // Company mode: which organization owns a Session, so development mode's list can hide
+      // organization sessions and the company sidebar can group its own. The caches are a
+      // projection of the organization's files, rebuilt every reconcile pass, so a row that
+      // has not been projected yet reads as an ordinary Session for one pass — never as the
+      // wrong organization.
+      orgIdOfSession: (sessionId) => orgCache.ownerOfSession(sessionId)?.orgId,
+      orgIdsOfProject: (projectId) => orgCache.orgIdsOfProject(projectId),
       pathPrepend: env.pathPrepend,
       confineSpawn: env.confineSpawn,
     });

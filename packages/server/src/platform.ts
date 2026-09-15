@@ -71,6 +71,7 @@ import { UsageRepo } from "./db/repos/usage.js";
 import { SchedulesRepo } from "./db/repos/schedules.js";
 import { TraceIndexRepo } from "./db/repos/trace-index.js";
 import { MessagingBindingsRepo } from "./db/repos/messaging-bindings.js";
+import { OrgCacheRepo } from "./db/repos/organizations.js";
 import { ErrorsRepo } from "./db/repos/errors.js";
 import { SessionSources } from "./runtime/session-sources.js";
 import { ErrorRecorder } from "./runtime/error-recorder.js";
@@ -97,6 +98,9 @@ import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
 import { Machines, MachinesModule } from "./machines/service.js";
+import { OrganizationModule, OrgScheduler, OrgService } from "./runtime/organization/service.js";
+import { OrgRoutes } from "./http/routes/organizations.js";
+import { OrgRuns, OrgSessions } from "./runtime/organization/deps.js";
 import { ProjectAdminRoutes } from "./http/routes/projects.js";
 import { AdminRoutes } from "./http/routes/admin.js";
 import { MeRoutes } from "./http/routes/me.js";
@@ -131,6 +135,7 @@ import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./me
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
+import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
 import { Http, HttpModule } from "./http/app.js";
 import { WebModule, WebShell } from "./http/routes/contributions.js";
@@ -153,6 +158,7 @@ import { WebModule, WebShell } from "./http/routes/contributions.js";
 @Component()
 export class Startup {
   @Use() private readonly scheduler!: Scheduling;
+  @Use() private readonly orgScheduler!: OrgScheduler;
   @Use() private readonly sessionService!: SessionServiceIface;
   @Use() private readonly machines!: Machines;
   @Use() private readonly errors!: Errors;
@@ -160,6 +166,9 @@ export class Startup {
   async setup() {
     // Schedule scheduler: startup reconciliation (missed, don't backfill) + periodic scan.
     await this.scheduler.start();
+    // Company mode's scheduler: same lifetime and the same startup rule (reconcile once,
+    // no backfill), only active while this App is.
+    await this.orgScheduler.start();
     // Startup adoption sweep: fold Trace-only Sessions into the index. Fire-and-forget —
     // a broken trace shard must not block the boot.
     void this.sessionService.adoptUnmanagedTraceSessions().catch((err: unknown) => {
@@ -282,6 +291,8 @@ export class ProjectsModule {}
     ScheduleTaskRunner,
     ScheduleSessionCreator,
     MessagingTaskRunner,
+    OrgRuns,
+    OrgSessions,
     ProjectRuns,
   ],
 })
@@ -340,6 +351,17 @@ export class WorkspaceModule {}
 })
 export class MessagingHubModule {}
 
+/**
+ * Company mode: the organization runtime, its routes and the caches they project into.
+ * The caches are the group's own store — only the four members the session runtime and
+ * Project deletion reach for leave the group, as OrgCache.
+ */
+@Module({
+  children: [OrgCacheRepo, OrganizationModule, OrgRoutes],
+  exports: [OrgCache, OrgService, OrgScheduler],
+})
+export class CompanyModule {}
+
 @Module({
   children: [
     GlobalFetch,
@@ -372,6 +394,7 @@ export class ApiModule {}
     AgentsModule,
     WorkspaceModule,
     MessagingHubModule,
+    CompanyModule,
     ApiModule,
     SandboxModule,
     TerminalModule,

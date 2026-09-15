@@ -60,6 +60,7 @@ import type { ErrorLog, Errors } from "../mechanisms/observability.js";
 /** Capture-site source (maps one-to-one to error_records.source). */
 export type ErrorSource =
   | "http"
+  | "organization"
   | "session"
   | "llm"
   | "environment"

@@ -23,6 +23,8 @@ export const MARKER_TAGS = {
   handoffFrom: "handoff_from",
   /** Scheduled-task trigger origin block (server scheduler). */
   scheduledTask: "scheduled_task",
+  /** Organization trigger origin block — a work run or ticket session opened by the company-mode scheduler (server). */
+  orgTrigger: "org_trigger",
   /** Background-task completion report injected as a harness user message (exec_command / run_subagent with run_in_background). */
   backgroundTaskDone: "background_task_done",
   /** `/model` switch origin block, first message of the continued conversation (Web). */
@@ -50,6 +52,7 @@ export const TITLE_NOISE_TAGS: readonly string[] = [
   MARKER_TAGS.useSkills,
   MARKER_TAGS.handoffFrom,
   MARKER_TAGS.scheduledTask,
+  MARKER_TAGS.orgTrigger,
   MARKER_TAGS.modelSwitchFrom,
   MARKER_TAGS.backgroundTaskDone,
 ];

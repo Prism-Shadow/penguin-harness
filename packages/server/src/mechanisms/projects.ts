@@ -24,7 +24,7 @@ import type {
   ProjectSummary,
 } from "../api/types.js";
 import type { UserRow } from "../db/repos/users.js";
-import type { RawTable } from "../services/project-config-service.js";
+import type { RawTable, UtilityCompletion } from "../services/project-config-service.js";
 import type { ListEndpointModelsOptions, ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
 import type { TieredRates } from "../services/usage-service.js";
 import type {
@@ -131,6 +131,7 @@ export abstract class ProjectConfigStore extends Interface<{
   getModels(projectId: string): Promise<ModelsResponse>;
   updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse>;
   setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number>;
+  completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
 }>() {}
 
 /** ModelOAuth: the mechanism ModelOAuthService implements. */

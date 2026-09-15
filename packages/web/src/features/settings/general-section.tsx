@@ -23,6 +23,7 @@ import {
   writeNotificationsEnabled,
 } from "../../lib/notification-pref";
 import type { NotificationAccess } from "../../lib/notification-pref";
+import { useCompany } from "../../state/company";
 import { useLocale } from "../../state/locale";
 import type { LangPref } from "../../state/locale";
 import { useTheme } from "../../state/theme";
@@ -33,6 +34,7 @@ import { TraceImportRow } from "./trace-import-row";
 export function GeneralSection() {
   const { lang, setLang } = useLocale();
   const { currency, setCurrency } = useTheme();
+  const { serverEnabled, personalEnabled, setPersonalEnabled } = useCompany();
 
   useSyncExternalStore(subscribeNotificationsEnabled, notificationsEnabledVersion);
   const notificationsOn = readNotificationsEnabled();
@@ -92,6 +94,18 @@ export function GeneralSection() {
           }}
         />
       </PrefRow>
+      {/* The personal company-mode switch: off hides this user's mode switch and nothing else.
+          Offered only while the server allows company mode at all — a switch that changes
+          nothing would only invite the question of why. */}
+      {serverEnabled && (
+        <PrefRow label={S.settings.companyModePersonal} info={S.settings.companyModePersonalInfo}>
+          <Switch
+            checked={personalEnabled}
+            onChange={setPersonalEnabled}
+            aria-label={S.settings.companyModePersonal}
+          />
+        </PrefRow>
+      )}
       <TraceImportRow />
     </div>
   );

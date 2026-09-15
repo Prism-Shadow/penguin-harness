@@ -91,6 +91,14 @@ export function contextMenuActions(canPin: boolean): readonly SessionRowAction[]
     : ["rename", "messaging", "archive", "copy", "delete"];
 }
 
+/**
+ * A company desk row's menu (features/company/org-session-groups.tsx). A desk's title and its
+ * lifecycle belong to the organization — the employee names it, hiring and firing open and
+ * close it — so rename, archive, delete and pin are not its reader's to run. What is left is
+ * which Session this is and what it is bound to.
+ */
+export const DESK_ROW_ACTIONS: readonly SessionRowAction[] = ["copy", "messaging"];
+
 export interface SessionRowMenuItem {
   /** Label in the action's current state, and the icon-only buttons' accessible name. */
   label: string;

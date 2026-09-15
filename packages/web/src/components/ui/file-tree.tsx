@@ -17,6 +17,9 @@
  * event over the whole tree (the Workspace panel's drag-and-drop, its context menu) resolves
  * the row under the pointer.
  *
+ * A row names itself from what it draws. `rowLabel` is the one way out, for a row whose visible
+ * text is not the whole of what it means — the handbook's pinned index.
+ *
  * The rows stay one flat list; what nests is the drawing. An open directory's descendants go
  * in a `role="group"` box whose height is animated, so a subtree grows out of its directory's
  * row and shrinks back into it. Only the directory the caller says was just toggled animates,
@@ -67,6 +70,7 @@ export function FileTree<Row extends FileTreeRow>({
   scrollTo = null,
   toggled = null,
   rowTitle,
+  rowLabel,
   rowTrailing,
   emptyLabel,
   className = "",
@@ -89,6 +93,13 @@ export function FileTree<Row extends FileTreeRow>({
   toggled?: TreeToggle | null;
   /** A row's `title` tooltip; the path by default. */
   rowTitle?: (row: Row) => string;
+  /**
+   * A row's accessible name, for the row whose visible text leaves out what the row means — the
+   * handbook's pinned index says on screen only a file name, and why it is pinned would
+   * otherwise live in the tooltip alone. Undefined (the default, and every ordinary row): the
+   * row names itself from what it draws.
+   */
+  rowLabel?: (row: Row) => string | undefined;
   /** Trailing content on a row, after its name — the Workspace's file sizes. */
   rowTrailing?: (row: Row) => ReactNode;
   /** What an open directory holding nothing says in place of its children; omitted, it says nothing. */
@@ -224,6 +235,7 @@ export function FileTree<Row extends FileTreeRow>({
         // resolve a row by this attribute, and neither may land on one that is on its way out.
         {...(retained ? {} : { "data-tree-path": row.path, "data-tree-kind": row.kind })}
         title={rowTitle?.(row) ?? row.path}
+        aria-label={rowLabel?.(row)}
         {...(retained ? {} : { onClick: () => activate(row), onFocus: () => setFocused(row.path) })}
         style={{ paddingLeft: TREE_PAD_PX + row.depth * TREE_INDENT_PX }}
         className={`flex cursor-pointer select-none items-center gap-1.5 py-1 pr-2 text-sm outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400/60 ${

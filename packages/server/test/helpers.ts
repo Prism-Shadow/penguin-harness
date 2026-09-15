@@ -39,6 +39,8 @@ import type { MessagingBindingsRepo } from "../src/db/repos/messaging-bindings.j
 import type { MessagingBridge } from "../src/runtime/messaging/bridge.js";
 import type { QQScanService, QQScanTransport } from "../src/runtime/messaging/qq-scan.js";
 import type { Scheduler } from "../src/runtime/scheduler.js";
+import type { OrganizationService } from "../src/runtime/organization/service.js";
+import type { OrgCacheRepo } from "../src/db/repos/organizations.js";
 import type { SessionManager, SessionLoader } from "../src/runtime/session-manager.js";
 import type { ErrorRecorder } from "../src/runtime/error-recorder.js";
 import type { MachinesService } from "../src/machines/service.js";
@@ -74,6 +76,7 @@ import type { WeChatTransport } from "../src/runtime/messaging/wechat-api.js";
 import { WeChatScanTransportProvider } from "../src/runtime/messaging/wechat-scan.js";
 import type { WeChatScanTransport } from "../src/runtime/messaging/wechat-scan.js";
 import { MachinesModule, machinesServerProxyRoutes } from "../src/machines/service.js";
+import { OrganizationModule } from "../src/runtime/organization/service.js";
 import { machinesRoutes } from "../src/http/routes/machines.js";
 import type { Access } from "../src/mechanisms/projects.js";
 
@@ -159,6 +162,9 @@ export interface TestDeps {
   messaging: MessagingBridge;
   qqScan: QQScanService;
   scheduler: Scheduler;
+  /** Company mode: the organization runtime and its caches. */
+  orgService: OrganizationService;
+  orgCacheRepo: OrgCacheRepo;
   manager: SessionManager;
   sessionSources: SessionSources;
   errors: ErrorRecorder;
@@ -204,6 +210,8 @@ export function flattenForTests(boot: ServerBoot): TestDeps {
     messaging: api("MessagingHubModule", "Messaging"),
     qqScan: api("MessagingHubModule", "QQScan"),
     scheduler: api("SessionRuntimeModule", "Scheduling"),
+    orgService: api("CompanyModule", "OrgService"),
+    orgCacheRepo: api("CompanyModule", "OrgCache"),
     manager: api("SessionRuntimeModule", "Sessions"),
     sessionSources: api("SessionRuntimeModule", "SessionOrigins"),
     errors: api("ObservabilityModule", "Errors"),
@@ -255,6 +263,8 @@ export interface TestAppOptions {
   wechatRetryDelayMs?: (failures: number) => number;
   /** Test double: machines service whose ssh effects are faked. */
   machines?: MachinesService;
+  /** Test double: company mode's organization service, for the route suite (its semantics have their own suites). */
+  orgService?: OrganizationService;
   /** Test double: the desktop reveal, so a test never opens a file manager. */
   reveal?: (filePath: string) => Promise<void>;
   /** Test double: the password work factor (scrypt at full strength is seconds per hash). */
@@ -320,6 +330,17 @@ export function replacementsFor(o: TestAppOptions): Replacements {
   if (o.telegramRetryDelayMs) tuning.retryDelayMs = o.telegramRetryDelayMs;
   if (o.wechatRetryDelayMs) tuning.retryDelayMs = o.wechatRetryDelayMs;
   if (Object.keys(tuning).length > 0) out.push([DefaultMessagingTuning, tuning]);
+  if (o.orgService) {
+    // The whole node stands in: the module provides the service and its scheduler together,
+    // and a suite that fakes the service wants no pass running against the real files.
+    out.push([
+      OrganizationModule,
+      {
+        orgService: o.orgService,
+        orgScheduler: { start: async () => {}, stop: () => {} },
+      },
+    ]);
+  }
   if (o.machines) {
     const machines = o.machines;
     out.push([

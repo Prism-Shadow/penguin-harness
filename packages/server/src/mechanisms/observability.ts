@@ -2,6 +2,7 @@
  * The observability mechanisms: what a node may require, declared apart from what implements it.
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { Opaque } from "@prismshadow/penguin-core/kernel";
 import type {
   ErrorCodeCount,
   ErrorFilter,
@@ -113,4 +114,16 @@ export abstract class UsageQueries extends Interface<{
   queryErrors(projectId: string, q: UsageErrorsQuery): UsageErrorsPage;
   clearErrors(projectId: string, q: UsageErrorsClearQuery): number;
   modelTotals(projectId: string): UsageModelTotals;
+  costBySession(
+    projectId: string,
+    sessionIds: readonly string[],
+    fromTs: string,
+    toTs: string,
+  ): Promise<Opaque<"CostBySession", { bySession: Map<string, number>; unpriced: boolean }>>;
+  dailyCostForSessions(
+    projectId: string,
+    sessionIds: readonly string[],
+    fromTs: string,
+    toTs: string,
+  ): Promise<Array<{ date: string; cost: number }>>;
 }>() {}

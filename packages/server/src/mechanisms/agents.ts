@@ -129,4 +129,10 @@ export abstract class AgentLifecycle extends Interface<{
     directory?: { path: string; names: readonly string[] },
     archive?: Buffer<ArrayBufferLike>,
   ): Promise<AgentListItem>;
+  pluginVersion(
+    projectId: string,
+    agentId: string,
+    pluginName: string,
+  ): Promise<{ installed: string | null; library: string | null }>;
+  updatePlugin(projectId: string, agentId: string, pluginName: string): Promise<void>;
 }>() {}

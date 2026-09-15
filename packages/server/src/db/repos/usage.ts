@@ -40,6 +40,8 @@ export interface UsageFilter {
   /** Provider filter paired with modelId (the frontend dropdown always sends them together). */
   provider?: string;
   modelId?: string;
+  /** Restrict to these sessions (company mode attributes cost by the sessions an organization owns); an empty list matches nothing. */
+  sessionIds?: readonly string[];
 }
 
 /** Raw Token sums for a single Model (paired reference) — the smallest unit for cost conversion. */
@@ -246,6 +248,17 @@ export class UsageRepo implements UsageStore {
     if (f.modelId !== undefined) {
       conds.push("model_id = :modelId");
       params.modelId = f.modelId;
+    }
+    if (f.sessionIds !== undefined) {
+      if (f.sessionIds.length === 0) {
+        conds.push("0");
+      } else {
+        const keys = f.sessionIds.map((id, i) => {
+          params[`s${i}`] = id;
+          return `:s${i}`;
+        });
+        conds.push(`session_id IN (${keys.join(", ")})`);
+      }
     }
     return { where: conds.join(" AND "), params };
   }

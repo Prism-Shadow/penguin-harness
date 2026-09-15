@@ -55,7 +55,7 @@ export function buildInputHistory(items: readonly ChatItem[]): string[] {
       if (item.sender === "harness") continue;
       const parsed = parseUserMessageBody(item.text);
       // Background completion notices are harness-written, never typed here either.
-      if (!parsed || parsed.scheduled || parsed.backgroundDone) continue;
+      if (!parsed || parsed.scheduled || parsed.orgTrigger || parsed.backgroundDone) continue;
       push(parsed.body);
     } else if (item.kind === "user_steering") {
       push(splitAttachments(item.text).text.trim());

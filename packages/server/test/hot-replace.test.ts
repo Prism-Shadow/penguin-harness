@@ -43,6 +43,8 @@ function memorySettings(maxMb = 7): Settings {
   return {
     get: (k) => kv.get(k) ?? null,
     set: (k, v) => void kv.set(k, v),
+    getCompanyMode: () => false,
+    setCompanyMode: () => {},
     getProxyForApp: () => false,
     setProxyForApp: () => {},
     getProxyForAgent: () => false,

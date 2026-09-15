@@ -287,6 +287,9 @@ export function ModelMenuList({
  *   under the card's own `@container` query, menu right-aligned;
  * - "form": the shared FormPicker (full-width Input/Select-styled trigger, menu left-aligned
  *   under the control), used by every dialog host.
+ *
+ * `emptyLabel` is for the one kind of host where an unpicked model is a decision and not a
+ * gap — the organization dialogs' "Project default"; see the prop.
  */
 export function ModelSelect({
   models,
@@ -295,6 +298,7 @@ export function ModelSelect({
   onChange,
   disabled,
   variant = "pill",
+  emptyLabel,
 }: {
   models: ModelInfo[];
   /** Currently selected (provider, modelId) pair; null = not yet chosen. */
@@ -304,12 +308,21 @@ export function ModelSelect({
   disabled: boolean;
   /** Trigger style: the composer's toolbar pill (default), or a dialog form control (see the header comment). */
   variant?: "pill" | "form";
+  /**
+   * What the trigger reads while nothing is picked, for a host where "nothing" is itself a
+   * choice rather than an unfinished one — the organization dialogs, where an empty model
+   * means "follow the Project's default". The menu still offers models only, so such a host
+   * carries its own way back to the empty value; here the label is grayed as a placeholder
+   * and the provider logo is dropped, since no provider is being named.
+   */
+  emptyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const current = models.find((m) => sameModelRef(m, value));
+  const unset = value === null && emptyLabel !== undefined;
   // Display rule matches the model page's card: display name, or falls back to the upstream id (grouping is already conveyed by the provider logo).
-  const label = current ? modelLabel(current) : (value?.modelId ?? "…");
-  const logo = (
+  const label = current ? modelLabel(current) : (value?.modelId ?? emptyLabel ?? "…");
+  const logo = unset ? null : (
     <ProviderLogo
       provider={current?.provider ?? value?.provider ?? "custom"}
       className="h-4 w-4 shrink-0"
@@ -335,6 +348,7 @@ export function ModelSelect({
         setOpen={setOpen}
         leading={logo}
         label={label}
+        muted={unset}
         title={`${S.chat.chooseModel}：${label}`}
         ariaLabel={S.chat.chooseModel}
         ariaHaspopup="listbox"

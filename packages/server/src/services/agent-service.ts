@@ -29,6 +29,7 @@ import {
   skillsDir,
   systemConfigPath,
   comparePluginVersions,
+  libraryPlugin,
   loadLibraryPlugins,
   parseSkillFrontmatter,
 } from "@prismshadow/penguin-core";
@@ -254,6 +255,63 @@ export class AgentService implements AgentLifecycle {
       hookCount: hooks.length,
       updates: [...updates].map(([name, version]) => ({ name, version })),
     };
+  }
+
+  /**
+   * Where one library plugin stands on one Agent: `installed` is the OLDEST version among the
+   * plugin's installed skills and its installed hook package — the same "any component behind
+   * the library is an update" rule {@link installedPlugins} draws the list cards' hints from —
+   * and null when the Agent carries none of them; `library` is the version the library offers
+   * now, null when the library has no such plugin. Only the head of each SKILL.md is read
+   * (see SKILL_HEAD_BYTES), so the answer costs one small read per skill the plugin ships.
+   *
+   * The organization runtime asks this per employee per pass to keep company plugins current.
+   * A skill the Agent does not carry — never installed, or removed by hand — counts for
+   * nothing: what is compared is the oldest version the Agent actually has, so a plugin whose
+   * skills are all current reads as current even where one of them is missing. Restoring a
+   * deleted skill is the Agents page's business, not a pass's.
+   */
+  async pluginVersion(
+    projectId: string,
+    agentId: string,
+    pluginName: string,
+  ): Promise<{ installed: string | null; library: string | null }> {
+    const plugin = libraryPlugin(pluginName);
+    if (!plugin) return { installed: null, library: null };
+    const base = skillsDir(this.root, projectId, agentId);
+    const versions: string[] = [];
+    for (const skill of plugin.skills) {
+      try {
+        const head = await readHead(path.join(base, skill.name, "SKILL.md"), SKILL_HEAD_BYTES);
+        versions.push(parseSkillFrontmatter(head)?.version ?? "");
+      } catch {
+        // The Agent does not carry this skill: it says nothing about the installed version.
+      }
+    }
+    if (plugin.hooks !== undefined) {
+      const hooks = await listInstalledHooks(this.root, projectId, agentId);
+      const installedHook = hooks.find((h) => h.name === pluginName);
+      if (installedHook) versions.push(installedHook.version);
+    }
+    let installed: string | null = null;
+    for (const version of versions) {
+      if (installed === null || comparePluginVersions(version, installed) < 0) installed = version;
+    }
+    return { installed, library: plugin.version };
+  }
+
+  /**
+   * Reinstall one library plugin over an Agent's copy: the same whole-plugin update the
+   * Agents page performs, through the same `installPlugin` writer, which overwrites every
+   * skill the plugin ships and its hook package with library content. Throws 404
+   * `unknown_plugin` when the library does not carry the name. Callers that may hold a cached
+   * runtime for the Agent invalidate it afterwards — hook packages are bound when a core
+   * Session is built, unlike skills, which are read from disk on demand.
+   */
+  async updatePlugin(projectId: string, agentId: string, pluginName: string): Promise<void> {
+    for (const plugin of resolveLibraryPlugins([pluginName])) {
+      await installPlugin(this.root, projectId, agentId, plugin);
+    }
   }
 
   /** Number of memory topic files: regular `*.md` files (minus each scope's MEMORY.md index) summed over the scope directories under memory/ (0 if the directory doesn't exist). */

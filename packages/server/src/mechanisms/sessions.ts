@@ -15,6 +15,7 @@ export abstract class SessionIndex extends Interface<{
   insert(row: SessionRow): void;
   insertOrIgnore(row: SessionRow): void;
   insertFork(sourceSessionId: string, row: SessionRow): SessionRow;
+  markOrgClient(sessionIds: readonly string[]): void;
   markHasTrace(sessionId: string): void;
   markDriven(sessionId: string, at: string): void;
   touchLastActive(sessionId: string, at: string): void;
