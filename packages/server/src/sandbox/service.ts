@@ -32,7 +32,7 @@ export class SandboxService {
   private readonly mounted: MountedProvider[] = [];
   /**
    * name → why it FAILED: it could not load, or failed its check on a host it is meant for —
-   * never silently absent. Surfaced in the fail-closed message.
+   * never silently absent. Surfaced in the fail-closed message and on the settings card.
    */
   private readonly loadErrors = new Map<string, string>();
   /**
@@ -108,6 +108,11 @@ export class SandboxService {
       return undefined;
     }
     return copySettings(s);
+  }
+
+  /** The backends that failed to load, each with why (diagnostics / the config surface). */
+  failures(): Array<{ name: string; reason: string }> {
+    return [...this.loadErrors].map(([name, reason]) => ({ name, reason }));
   }
 
   /** The mounted backends and what each implements (diagnostics / the config surface). */
@@ -193,7 +198,13 @@ function copySettings(settings: SandboxSettings): SandboxSettings {
 export abstract class Sandbox extends Interface<
   Pick<
     SandboxService,
-    "configure" | "currentSettings" | "parkedSettings" | "backends" | "confiner" | "whenReady"
+    | "configure"
+    | "currentSettings"
+    | "parkedSettings"
+    | "backends"
+    | "failures"
+    | "confiner"
+    | "whenReady"
   >
 >() {}
 
