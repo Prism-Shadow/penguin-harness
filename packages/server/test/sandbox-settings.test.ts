@@ -100,7 +100,11 @@ describe("sandbox settings group", () => {
     const entries = await list();
     const sandbox = entries.find((e) => e.name === "sandbox")!;
     expect(entries[0]).toBe(sandbox);
-    expect(sandbox.values).toEqual({ mode: "danger-full-access", cutNetwork: false });
+    expect(sandbox.values).toEqual({
+      mode: "danger-full-access",
+      cutNetwork: false,
+      writableTemp: true,
+    });
     expect(sandbox.notices).toEqual([
       expect.objectContaining({
         tone: "muted",
@@ -141,16 +145,26 @@ describe("sandbox settings group", () => {
         workspaceRoot: "/w",
         network: "none",
         maskPaths: ["/etc/x"],
+        writableTemp: true,
       },
       runner: "runner-b",
     });
+
+    await admin.put("/api/admin/plugin-config", {
+      name: "sandbox",
+      values: { mode: "read-only", cutNetwork: false, maskPaths: [], writableTemp: false },
+    });
+    expect(sandbox.currentSettings()).toEqual({ mode: "read-only", writableTemp: false });
+    spawn();
+    expect(seen.at(-1)?.policy).toEqual({ mode: "read-only", workspaceRoot: "/w" });
+    expect(sandbox.parkedSettings()).toEqual({ mode: "read-only", writableTemp: false });
 
     const refused = await admin.put("/api/admin/plugin-config", {
       name: "sandbox",
       values: { mode: "wide-open" },
     });
     expect(refused.status).toBe(400);
-    expect(sandbox.currentSettings().mode).toBe("workspace-write");
+    expect(sandbox.currentSettings().mode).toBe("read-only");
   });
 
   it("names a backend that is not in use with its reason, and warns when the saved mode cannot be enforced", async () => {

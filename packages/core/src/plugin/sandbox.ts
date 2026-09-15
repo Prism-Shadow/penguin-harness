@@ -49,6 +49,11 @@ export interface SandboxPolicy {
   network?: "none";
   /** `mask-paths`: absolute paths hidden from the confined process, reads included. */
   maskPaths?: readonly string[];
+  /**
+   * The system temporary directory is writable, in either confining mode: shells and most
+   * tools need somewhere to write before they run anything. Absent = not granted.
+   */
+  writableTemp?: boolean;
 }
 
 /**
@@ -114,4 +119,6 @@ export type SandboxSettings = {
   mode: SandboxMode;
   network?: "none";
   maskPaths?: string[];
+  /** Grant the system temp directory writable (SandboxPolicy.writableTemp). Absent = granted. */
+  writableTemp?: boolean;
 };

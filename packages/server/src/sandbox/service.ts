@@ -98,7 +98,12 @@ export class SandboxService {
    */
   parkedSettings(): SandboxSettings | undefined {
     const s = this.settings;
-    if (s.mode === "danger-full-access" && s.network === undefined && s.maskPaths === undefined) {
+    if (
+      s.mode === "danger-full-access" &&
+      s.network === undefined &&
+      s.maskPaths === undefined &&
+      s.writableTemp === undefined
+    ) {
       return undefined;
     }
     return copySettings(s);
@@ -137,6 +142,8 @@ export class SandboxService {
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0
           ? { maskPaths: settings.maskPaths }
           : {}),
+        // On unless turned off: without a writable temp directory a shell cannot start.
+        ...(settings.writableTemp !== false ? { writableTemp: true } : {}),
       };
       // ConfinedArgv also carries enforcement / denialSignatures / runnerFailureRules;
       // the classification consumer (denial vs runner failure) lands with escalation.
@@ -176,6 +183,7 @@ function copySettings(settings: SandboxSettings): SandboxSettings {
     mode: settings.mode,
     ...(settings.network !== undefined ? { network: settings.network } : {}),
     ...(settings.maskPaths !== undefined ? { maskPaths: [...settings.maskPaths] } : {}),
+    ...(settings.writableTemp !== undefined ? { writableTemp: settings.writableTemp } : {}),
   };
 }
 
@@ -209,6 +217,7 @@ export interface SandboxSlots {
         mode: "'read-only'|'workspace-write'|'danger-full-access'",
         "network?": "'none'",
         "maskPaths?": "string[]",
+        "writableTemp?": "boolean",
       },
     },
   },

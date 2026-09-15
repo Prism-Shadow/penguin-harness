@@ -37,6 +37,7 @@
  * trailing argv to append).
  */
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { execFile, spawnSync } from "node:child_process";
 import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/plugin";
@@ -73,6 +74,17 @@ export interface MxcInternals {
   platform?: NodeJS.Platform;
 }
 
+/** The directories a Windows process writes temp files to: %TEMP%, %TMP% and os.tmpdir(), deduplicated. */
+export function temporaryDirs(env: NodeJS.ProcessEnv = process.env): string[] {
+  return [
+    ...new Set(
+      [env.TEMP, env.TMP, os.tmpdir()]
+        .filter((d): d is string => typeof d === "string" && d !== "")
+        .map((d) => path.resolve(d)),
+    ),
+  ];
+}
+
 /**
  * Quotes one argument the way `CommandLineToArgvW` parses it, so the argv the harness
  * handed us survives the round trip through MXC's single `commandLine` string. The
@@ -105,8 +117,18 @@ export function toCommandLine(argv: readonly string[]): string {
 }
 
 /** The MXC SandboxPolicy for one harness policy: the three dimensions, mapped. */
-export function mxcPolicyFor(policy: SandboxPolicy): Record<string, unknown> {
-  const readwritePaths = policy.mode === "workspace-write" ? [policy.workspaceRoot] : [];
+export function mxcPolicyFor(
+  policy: SandboxPolicy,
+  tempDirs: readonly string[] = temporaryDirs(),
+): Record<string, unknown> {
+  // MXC grants nothing it is not told to: without the temp directory a Git Bash (MSYS2)
+  // shell fails while loading its runtime, before it runs anything (0xC0000142).
+  const readwritePaths = [
+    ...new Set([
+      ...(policy.mode === "workspace-write" ? [policy.workspaceRoot] : []),
+      ...(policy.writableTemp === true ? tempDirs : []),
+    ]),
+  ];
   return {
     version: MXC_POLICY_VERSION,
     filesystem: {

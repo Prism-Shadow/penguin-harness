@@ -5,6 +5,7 @@
  * about our mapping, and exercised for real where the test is about the SDK contract.
  */
 import { describe, expect, it } from "vitest";
+import os from "node:os";
 import path from "node:path";
 import {
   createMxcProvider,
@@ -12,6 +13,7 @@ import {
   mxcPolicyFor,
   quoteWindowsArg,
   resolveRunner,
+  temporaryDirs,
   toCommandLine,
   type MxcSdk,
 } from "../src/index.js";
@@ -85,6 +87,24 @@ describe("dimension mapping", () => {
     expect(mxcPolicyFor({ mode: "read-only", workspaceRoot: WS }).filesystem).toMatchObject({
       readwritePaths: [],
     });
+  });
+
+  it("writable temp adds the temp directories, once each, in either mode", () => {
+    const temps = ["C:\\Users\\u\\AppData\\Local\\Temp"];
+    expect(
+      mxcPolicyFor({ mode: "read-only", workspaceRoot: WS, writableTemp: true }, temps).filesystem,
+    ).toMatchObject({ readwritePaths: temps });
+    expect(
+      mxcPolicyFor({ mode: "workspace-write", workspaceRoot: WS, writableTemp: true }, [
+        WS,
+        ...temps,
+      ]).filesystem,
+    ).toMatchObject({ readwritePaths: [WS, ...temps] });
+  });
+
+  it("the temp directories are %TEMP%, %TMP% and the OS default, deduplicated", () => {
+    const dirs = temporaryDirs({ TEMP: os.tmpdir(), TMP: os.tmpdir() });
+    expect(dirs).toEqual([path.resolve(os.tmpdir())]);
   });
 
   it("network: none maps to allowOutbound false; absent leaves the network alone", () => {

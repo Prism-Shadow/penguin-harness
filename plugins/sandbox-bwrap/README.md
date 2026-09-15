@@ -19,7 +19,8 @@ profile is assembled in this sequence:
 | Stage | Flags |
 | --- | --- |
 | The read-only world | `--ro-bind / /`, `--dev /dev`, `--proc /proc`, `--die-with-parent` |
-| `workspace-write` | `--tmpfs /tmp`, `--bind <workspaceRoot> <same>` |
+| writable temp (either mode) | `--tmpfs /tmp`, `--bind <tmpdir> <same>` when `$TMPDIR` is elsewhere |
+| `workspace-write` | `--bind <workspaceRoot> <same>` |
 | `network: none` | `--unshare-net` |
 | `mask-paths` | `--tmpfs <dir>` or `--ro-bind /dev/null <file>` |
 

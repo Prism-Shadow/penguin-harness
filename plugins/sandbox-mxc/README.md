@@ -13,7 +13,7 @@ directly:
 
 | Harness dimension | MXC |
 | --- | --- |
-| `fs-write` | `filesystem.readwritePaths` / `readonlyPaths` |
+| `fs-write` | `filesystem.readwritePaths` (the workspace under `workspace-write`; `%TEMP%`, `%TMP%` and the OS temp directory when temp is writable) / `readonlyPaths` |
 | `mask-paths` | `filesystem.deniedPaths` |
 | `network` | `network.allowOutbound: false` (MXC already defaults to deny) |
 
