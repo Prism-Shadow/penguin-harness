@@ -9,7 +9,11 @@
  * is a choice here; the baseline and the default target follow that choice. The model of the
  * conversation that carries the work out is picked with the Project settings' own model picker
  * (ModelSelect in its form variant, the one the new-chat defaults and the schedule form use),
- * preset to the Project's default model. The evaluation runtime is never picked in this dialog —
+ * preset to the Project's default model. The new conversation opens with the Skills its tab
+ * rests on preselected — the evaluator on both tabs, the optimizer on its own — so the
+ * `[use_skills]` block names them on send and the model reads them before it acts; a model
+ * left to its own devices sometimes scored the runs itself instead of delegating to
+ * agent-evaluation. The evaluation runtime is never picked in this dialog —
  * Evaluate takes the tested agent's own configured model and thinking level, and Optimize reuses
  * what that agent's baseline recorded, so scores stay comparable. Mounted fresh per Benchmark.
  */
@@ -174,6 +178,7 @@ export function UseBenchmarkModal({
     openAiChat({
       agentId: runnerId,
       text,
+      skills: tab === "evaluate" ? [EVALUATION_SKILL] : [OPTIMIZATION_SKILL, EVALUATION_SKILL],
       ...(ref !== undefined ? { modelRef: ref } : {}),
       // An evaluation / optimization run, not a conversation of the user's own: the session
       // list files it, and the Test Sessions it launches, under the Evaluations folder.

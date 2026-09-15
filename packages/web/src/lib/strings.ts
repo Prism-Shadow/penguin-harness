@@ -3074,52 +3074,28 @@ Benchmark：
     targetAgentHint: "题目为它而出、分数记在它名下；出题本身由下方所示的智能体在新对话里完成",
     aiCreateExamples: {
       reportWriter: {
-        label: "报告写作：材料互相矛盾的 3 道题",
-        description: "3 道题：冲突材料、缺失口径、严格篇幅与引用",
-        prompt: `为报告写作智能体出一套题量少而难的 Benchmark，把基线分压低。
-
-- benchmark_id：\`report-conflicting-sources\`
-- capability：在材料互相矛盾、关键口径没有写明、篇幅与引用受限时，仍能交出结论可追溯、口径一致的报告
-- 题量：3 道
-- 出题手法：每题给 2–3 份彼此冲突的材料，其中一份日期更新但只在页脚标注；币种、时区、统计口径等关键前提刻意不写全，正确做法是先指出缺口、再做保守假设并标明；篇幅上限与引用格式严格，超限或漏引直接失分
-- desired_baseline_score：\`<50\`
-- pilot_iteration_limit：\`4\``,
+        label: "报告写作：材料互相矛盾",
+        description: "冲突材料、缺失口径、严格的篇幅与引用",
+        prompt:
+          "为报告写作智能体出题：材料互相矛盾，币种、时区这类关键口径故意不写全，篇幅和引用格式卡得很严，看它会不会先指出缺口、再做保守假设。",
       },
       customerService: {
-        label: "客服：隐藏政策前提的 3 道对话题",
-        description: "3 道题：信息不全的用户、藏在附录的政策条件、越权承诺陷阱",
-        prompt: `为客服智能体出一套题量少而难的多轮对话 Benchmark，把基线分压低。
-
-- benchmark_id：\`support-hidden-policy\`
-- capability：在用户信息不全、政策条件藏在资料深处、情绪化表达诱导越权承诺时，仍能先核实再答复、不越权、口径与政策一致
-- 题量：3 道
-- 出题手法：政策文件的例外条款与生效日期只出现在附录；用户描述模糊，关键事实要追问才给；至少一题里最顺手的答复正是越权承诺；评分看是否核实、是否越权、语气与准确性
-- desired_baseline_score：\`<50\`
-- pilot_iteration_limit：\`4\``,
+        label: "客服：隐藏政策前提的对话题",
+        description: "信息不全的用户、藏在附录的政策条件、越权承诺陷阱",
+        prompt:
+          "为客服智能体出多轮对话题：用户描述模糊、关键事实要追问才给，政策的例外条款藏在附录里，情绪化的表达在诱导越权承诺，看它会不会先核实再答复、守住政策口径。",
       },
       codeReview: {
-        label: "代码审查：缺陷藏在约定里的 3 道题",
-        description: "3 道题：调用约定与并发前提未写明，注释与测试会误导",
-        prompt: `为代码审查智能体出一套题量少而难的 Benchmark，把基线分压低。
-
-- benchmark_id：\`review-hidden-contracts\`
-- capability：在缺陷藏在调用约定、并发前提与数据形态里、注释与测试反而误导时，仍能查全真实缺陷、不误报、并说明如何验证
-- 题量：3 道
-- 出题手法：每题一个小型多文件仓库，2–3 个真实缺陷分别依赖未写明的调用顺序、时区或编码假设、并发前提；附带一两条过时注释和一份能通过却覆盖不到缺陷的测试；评分看查全、误报与是否给出可复现的验证步骤
-- desired_baseline_score：\`<50\`
-- pilot_iteration_limit：\`4\``,
+        label: "代码审查：缺陷藏在约定里",
+        description: "未写明的调用与并发前提，误导人的注释与测试",
+        prompt:
+          "为代码审查智能体出题：每题一个小型多文件仓库，缺陷藏在没写明的调用顺序、时区或编码假设和并发前提里，再配上过时的注释和一份能通过却盖不住缺陷的测试，看它查全、误报和验证步骤。",
       },
       dataAnalysis: {
-        label: "数据分析：问题模糊、数据带坑的 3 道题",
-        description: "3 道题：脏数据、未说明的口径、需要先澄清假设",
-        prompt: `为数据分析智能体出一套题量少而难的 Benchmark，把基线分压低。
-
-- benchmark_id：\`analysis-ambiguous-asks\`
-- capability：在业务问题表述模糊、数据带脏值与未说明的口径时，先澄清假设再分析，结论正确且口径可核对
-- 题量：3 道
-- 出题手法：每题附一份带重复行、混合单位与缺失值的 CSV，字段含义只有一部分写在数据字典里；业务问题本身有两种合理解读，正确做法是指出分歧、按标明的假设分别作答；评分看结论、口径说明与图表是否与结论一致
-- desired_baseline_score：\`<50\`
-- pilot_iteration_limit：\`4\``,
+        label: "数据分析：问题模糊、数据带坑",
+        description: "脏数据、未说明的口径、需要先澄清的假设",
+        prompt:
+          "为数据分析智能体出题：CSV 带重复行、混合单位和缺失值，字段含义只写了一半，业务问题本身有两种合理解读，看它会不会先澄清假设再分析、结论和口径能不能对上。",
       },
     },
     /** The fixed tail after the draft: the `benchmark-design` inputs and the layout it writes. */
@@ -3127,14 +3103,16 @@ Benchmark：
       "请使用 `benchmark-design` Skill，作为 Builder 为下面的被测智能体设计并校准一套 Benchmark，不要修改被测智能体本身。\n\n" +
       `- test_agent_id：\`${targetAgentId}\`\n` +
       "- benchmark_id：上文已指定则沿用，否则按场景取一个简短的语义化 id（仅字母、数字、`_` 和 `-`）\n" +
-      "- desired_baseline_score：`<70`（上文另有要求时以上文为准）\n" +
-      "- pilot_iteration_limit：`3`（上文另有要求时以上文为准）\n\n" +
+      "- 题量：3 道左右——少而难，每题至少有一个能把「照着做」和「真会做」分开的决定点（上文另有要求时以上文为准）\n" +
+      "- 出题手法：隐藏的先验条件、模糊或不完整的输入、互相冲突的材料、严格的交付格式；不要靠堆行数、堆规则来加难度\n" +
+      "- desired_baseline_score：`<50`（上文另有要求时以上文为准）\n" +
+      "- pilot_iteration_limit：`4`（上文另有要求时以上文为准）\n\n" +
       "Benchmark 与 Agent 平级：在 Project 的 `benchmarks/<benchmark_id>/` 下（不在被测智能体目录内）创建 `benchmark_config.toml`" +
       "（title、description、runs = 1；不记录被测智能体）、" +
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
-      "通过 `run_subagent` 委派 `agent-evaluation` 逐题试测以校准难度，" +
-      "定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题得分。",
+      "每一次试测都必须通过 `run_subagent` 派发子会话，并在子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
+      "逐题试测以校准难度，定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题得分。",
     // New Benchmark, manual mode: the form.
     manualCreateTitle: "手动创建 Benchmark",
     manualCreateIntro:
@@ -3195,7 +3173,7 @@ Benchmark：
       `- test_agent_id：\`${p.targetAgentId}\`\n` +
       `- benchmark_id：\`${p.benchmarkId}\`（Project 的 \`benchmarks/${p.benchmarkId}/\`，与 Agent 平级）\n` +
       `- runs：\`${p.runs}\`\n\n` +
-      "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的 `agent-evaluation` 子会话（省略 `agent_id`）；" +
+      "通过 `run_subagent` 按完整的 Case × runs 矩阵评测，每个矩阵单元一个自调用的子会话（省略 `agent_id`），并在每个子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
       "评测 Runtime 取被测智能体当前配置的模型与思考等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
       "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
       "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
@@ -3234,7 +3212,7 @@ Benchmark：
       `- runs：\`${p.runs}\`\n` +
       `- desired_score：\`>=${p.targetScore}\`\n` +
       `- candidate_round_limit：\`${p.roundLimit}\`\n\n` +
-      "每轮从当前 Reference 出发提出一个可证伪的假设、只做一个有界改动；通过 `run_subagent` 委派 `agent-evaluation` 评测完整的 Case × runs 矩阵，" +
+      "每轮从当前 Reference 出发提出一个可证伪的假设、只做一个有界改动；通过 `run_subagent` 评测完整的 Case × runs 矩阵，每个子会话的 prompt 里都写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
       "评测沿用该被测智能体基线记录的 provider / model_id / thinking_level；仅当总分严格高于 Reference 时保留该版本，" +
       "并把记有 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 的 evaluation 追加到 scoreboard.yaml，否则回滚。" +
       "结束时报告优化前后的分数、保留的版本号，以及每轮的改动与取舍。",
