@@ -14,6 +14,8 @@ workspace deps); `pnpm desktop` runs a full `pnpm -r build`, so it is slow to st
 | --- | --- | --- |
 | `pnpm dev` | http://localhost:7365 | `~/.penguin/dev-data` |
 | `pnpm desktop` | its own window | `~/.penguin/dev-data` |
+| installed app, launched with `--dev` | its own window | `~/.penguin/dev-data` |
+| installed app, launched with `--dev` | its own window | `~/.penguin/dev-data` |
 | `pnpm dev:landing` | http://localhost:7366 | none (static) |
 | `pnpm dev:docs` | http://localhost:7367 | none (static) |
 

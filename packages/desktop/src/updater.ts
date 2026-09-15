@@ -29,6 +29,7 @@ import type {
   DesktopUpdateStatus,
   DesktopUpdaterCommandMessage,
 } from "@prismshadow/penguin-server/api";
+import { resolveProfile } from "./app-identity.js";
 import { feedUrlOverride, updateSourceConfig, updateSupport } from "./update-support.js";
 import {
   feedLabel,
@@ -58,6 +59,9 @@ function log(line: string): void {
   process.stdout.write(`[updater] ${line}\n`);
 }
 
+// Pure over argv and isPackaged, so resolving it here again costs nothing and keeps the
+// menu's enabled state (read before initUpdater) in step with the running instance.
+const profile = resolveProfile({ argv: process.argv, isPackaged: app.isPackaged });
 let manualCheckInFlight = false;
 let downloadedVersion: string | null = null;
 let downloadInFlight = false;
@@ -241,6 +245,7 @@ export function handleUpdaterCommand(action: DesktopUpdaterCommandMessage["actio
   if (action === "check") {
     const support = updateSupport({
       isPackaged: app.isPackaged,
+      profile,
       platform: process.platform,
       env: process.env,
     });
@@ -276,8 +281,12 @@ export function handleUpdaterCommand(action: DesktopUpdaterCommandMessage["actio
 
 /** Whether the "Check for Updates…" menu item should be enabled at all. */
 export function updatesAvailableInThisForm(): boolean {
-  return updateSupport({ isPackaged: app.isPackaged, platform: process.platform, env: process.env })
-    .supported;
+  return updateSupport({
+    isPackaged: app.isPackaged,
+    profile,
+    platform: process.platform,
+    env: process.env,
+  }).supported;
 }
 
 /**
@@ -287,6 +296,7 @@ export function updatesAvailableInThisForm(): boolean {
 export function initUpdater(getWindow: () => BrowserWindow | null): void {
   const support = updateSupport({
     isPackaged: app.isPackaged,
+    profile,
     platform: process.platform,
     env: process.env,
   });
@@ -498,6 +508,7 @@ export async function checkForUpdatesManually(): Promise<void> {
   if (!updatesAvailableInThisForm()) {
     const support = updateSupport({
       isPackaged: app.isPackaged,
+      profile,
       platform: process.platform,
       env: process.env,
     });

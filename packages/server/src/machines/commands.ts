@@ -24,6 +24,7 @@
  *   account for this connection; `~/.ssh/config` is read-only to us.
  */
 import type { RemotePlatform } from "./detect.js";
+import type { RemoteLayout } from "./layout.js";
 
 /** Wraps a value for a POSIX remote shell. Single quotes are literal there, except `'` itself. */
 export function shQuote(value: string): string {
@@ -58,20 +59,15 @@ function connectionOptions(target: RemoteTarget): string[] {
 }
 
 /**
- * The far side's program directory, and the launcher inside it that everything here runs.
- * Absolute, because sshd's non-login shell has no `~/.local/bin` on PATH — the symlink the
- * installer drops there is for a person at a terminal, not for us.
- *
- * `$HOME/.penguin` is where install.sh puts it (`PENGUIN_INSTALL_DIR`, defaulting there),
- * laid out as bin/ lib/ web/ node/, with the launcher exec'ing `node/bin/node lib/dist/…`
- * (scripts/launchers/penguin). A remote's own override of that variable is not visible over
- * a non-interactive ssh, so the default is the only thing this side can assume — the same
- * assumption detect.ts makes to find the manifest.
- */
-export const REMOTE_PROGRAM_DIR = "$HOME/.penguin";
-
-/**
  * The CLI these commands run on a machine: the one PUSHED to it, not the one installed.
+ *
+ * Run out of the layout's program directory by absolute path, because sshd's non-login
+ * shell has no `~/.local/bin` on PATH — the symlink the installer drops there is for a
+ * person at a terminal, not for us. The directory is laid out as bin/ lib/ web/ node/ by
+ * install.sh (`PENGUIN_INSTALL_DIR`, which runInstallScriptCommand names), with the
+ * launcher exec'ing `node/bin/node lib/dist/…` (scripts/launchers/penguin). The data root
+ * rides along as PENGUIN_HOME: the CLI's `server status`, `server stop` and `auth token`
+ * all act on the root they are given, and the profile's root is not the default one.
  *
  * `bin/penguin` is the released program, and a release only carries the subcommands this
  * side asks for (`server status`, `auth token`, `server --detach`) once a release has
@@ -88,23 +84,22 @@ export const REMOTE_PROGRAM_DIR = "$HOME/.penguin";
  * Invoked through the bundled runtime rather than the launcher, because there is no
  * launcher for this entry. Machines installed from here always carry that runtime: the
  * install runs install.sh without `--universal`, which is the only mode that omits it.
+ *
+ * Spelled in the dialect of the shell that will read it. A Windows sshd hands a command to
+ * cmd.exe, where `$HOME` is four literal characters and the bundled runtime is
+ * `node\node.exe` (scripts/launchers/penguin.cmd) — so the POSIX form is not "not found"
+ * there, it is a different sentence. `%USERPROFILE%` is what install.ps1 defaults to.
  */
-export const REMOTE_PENGUIN = `"${REMOTE_PROGRAM_DIR}/node/bin/node" "${REMOTE_PROGRAM_DIR}/lib/dist/penguin-hmr.js"`;
-
-/**
- * The same program directory as cmd.exe names it. A Windows sshd hands a command to cmd.exe,
- * where `$HOME` is four literal characters and the bundled runtime is `node\node.exe`
- * (scripts/launchers/penguin.cmd) — so the POSIX form above is not "not found" there, it is
- * a different sentence. `%USERPROFILE%` is what install.ps1 defaults to.
- */
-export const REMOTE_PROGRAM_DIR_WINDOWS = "%USERPROFILE%\\.penguin";
-
-/** The pushed CLI, invoked in the dialect of the shell that will read the command. */
-export function remotePenguin(platform: "linux" | "darwin" | "win32"): string {
+export function remotePenguin(platform: RemotePlatform, layout: RemoteLayout): string {
   if (platform === "win32") {
-    return `"${REMOTE_PROGRAM_DIR_WINDOWS}\\node\\node.exe" "${REMOTE_PROGRAM_DIR_WINDOWS}\\lib\\dist\\penguin-hmr.js"`;
+    const dir = layout.programDir.win;
+    return `set "PENGUIN_HOME=${layout.dataRoot.win}" & "${dir}\\node\\node.exe" "${dir}\\lib\\dist\\penguin-hmr.js"`;
   }
-  return REMOTE_PENGUIN;
+  const dir = layout.programDir.posix;
+  // `env`, not a bare `VAR=value` prefix: startServerCommand puts `nohup` in front of this,
+  // and nohup takes the first word as the program — a bare assignment there is "no such
+  // command", and the server never starts.
+  return `env PENGUIN_HOME="${layout.dataRoot.posix}" "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
 }
 
 /** `ssh <options> <alias> <remote command>`. */
@@ -140,17 +135,26 @@ export function scpArgs(target: RemoteTarget, localFiles: string[], remoteDir: s
 export function runInstallScriptCommand(
   versionTag: string,
   where: { platform: "linux" | "darwin" } | { platform: "win32"; scriptPath: string },
+  layout: RemoteLayout,
 ): { command: string; scriptOnStdin: boolean } {
+  // The program directory is named on every install, release profile included: the
+  // installer's default happens to match that profile, but the far side's own override of
+  // PENGUIN_INSTALL_DIR would not be visible here, and the rest of these commands assume
+  // the layout they were given.
   if (where.platform === "win32") {
     const script = cmdQuote(where.scriptPath);
     return {
       command:
+        `set "PENGUIN_INSTALL_DIR=${layout.programDir.win}" & ` +
         `powershell -NoProfile -ExecutionPolicy Bypass -File ${script} -Version ${cmdQuote(versionTag)}` +
         ` & del /q ${script}`,
       scriptOnStdin: false,
     };
   }
-  return { command: `PENGUIN_VERSION=${shQuote(versionTag)} sh -s`, scriptOnStdin: true };
+  return {
+    command: `PENGUIN_INSTALL_DIR="${layout.programDir.posix}" PENGUIN_VERSION=${shQuote(versionTag)} sh -s`,
+    scriptOnStdin: true,
+  };
 }
 
 /**
@@ -165,12 +169,12 @@ export function runInstallScriptCommand(
  * `<root>/hmr` — and the machine goes on answering with whatever it held before, so the
  * replication reports success and achieves nothing.
  */
-export function unpackStoreCommand(platform: RemotePlatform): string {
+export function unpackStoreCommand(platform: RemotePlatform, layout: RemoteLayout): string {
   if (platform === "win32") {
-    const root = "%USERPROFILE%\\.penguin\\data\\hmr";
+    const root = `${layout.dataRoot.win}\\hmr`;
     return `(if not exist ${cmdQuote(root)} mkdir ${cmdQuote(root)}) & tar -xzf - -C ${cmdQuote(root)}`;
   }
-  const root = "$HOME/.penguin/data/hmr";
+  const root = `${layout.dataRoot.posix}/hmr`;
   return `mkdir -p "${root}" && tar -xzf - -C "${root}"`;
 }
 
@@ -179,18 +183,20 @@ export function unpackStoreCommand(platform: RemotePlatform): string {
  * caller's probe. `nohup` and the redirections are what let it outlive the shell that ran it,
  * and the log is the far side's own words when it comes up and dies.
  */
-export function startServerCommand(port: number): string {
+export function startServerCommand(port: number, layout: RemoteLayout): string {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
-  const log = `"${REMOTE_PROGRAM_DIR}/data/server.log"`;
+  const root = layout.dataRoot.posix;
   // --host is PINNED, not defaulted: the CLI falls back to the HOST environment variable when
   // it is omitted, so a login shell carrying HOST=0.0.0.0 would put that machine's server on
   // every interface. This side only ever reaches it as a channel inside the ssh session, at
   // loopback on the far end, so binding wider is exposure with nothing asking for it.
-  return `mkdir -p "${REMOTE_PROGRAM_DIR}/data" && nohup ${REMOTE_PENGUIN} server --host 127.0.0.1 --port ${port} >> ${log} 2>&1 < /dev/null &`;
+  return `mkdir -p "${root}" && nohup ${remotePenguin("linux", layout)} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null &`;
 }
 
 /** The last lines of that log, for a start that did not answer. */
-export const SERVER_LOG_TAIL = `tail -n 20 "${REMOTE_PROGRAM_DIR}/data/server.log" 2>/dev/null`;
+export function serverLogTail(layout: RemoteLayout): string {
+  return `tail -n 20 "${layout.dataRoot.posix}/server.log" 2>/dev/null`;
+}
 
 // --- tunnelling to that server ---------------------------------------------------------------
 

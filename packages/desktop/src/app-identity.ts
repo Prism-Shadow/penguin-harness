@@ -2,8 +2,12 @@
  * Per-form app identity — pure, no Electron imports, so it unit-tests under plain
  * vitest.
  *
- * A dev (unpackaged) shell must be able to run while an installed release build is
- * running (#292). Electron keys everything that must stay per-instance on the app
+ * A dev shell must be able to run while an installed release build is running (#292).
+ * "Dev" is a *profile* — an instance identity plus its default data root — and not the
+ * same thing as being unpackaged: an unpackaged run defaults to it, and a packaged
+ * build opts into it with `--dev`, so one installed exe can also run as a second,
+ * isolated instance. What stays keyed on `app.isPackaged` is capability, not identity:
+ * whether there is an installed artifact to update or a bundled CLI to install. Electron keys everything that must stay per-instance on the app
  * name: the userData directory holds the Chromium profile and this shell's state
  * files (server-port, preferred-port, cli-install-offered), and the single-instance
  * lock is derived from it — under a shared name a second launch does not open a
@@ -35,9 +39,26 @@ export interface AppIdentity {
   appUserModelId: string;
 }
 
-/** The identity for this form: release, or dev-suffixed so both can run side by side. */
-export function appIdentity(isPackaged: boolean): AppIdentity {
-  return isPackaged
+/** Which instance this process is: the installed app, or the isolated dev instance. */
+export type Profile = "release" | "dev";
+
+/** The command-line switch that puts a packaged build on the dev profile. */
+export const DEV_SWITCH = "--dev";
+
+/**
+ * The profile rule: `--dev` on the command line always selects the dev profile; without
+ * it an unpackaged run is dev (the repo's `pnpm desktop`) and a packaged one is release.
+ * Read from `process.argv` rather than `app.commandLine` so it can run before anything
+ * touches Electron's cached paths (see the tripwire above).
+ */
+export function resolveProfile(opts: { argv: readonly string[]; isPackaged: boolean }): Profile {
+  if (opts.argv.includes(DEV_SWITCH)) return "dev";
+  return opts.isPackaged ? "release" : "dev";
+}
+
+/** The identity for this profile: release, or dev-suffixed so both can run side by side. */
+export function appIdentity(profile: Profile): AppIdentity {
+  return profile === "release"
     ? { name: "PenguinHarness", appUserModelId: "com.prismshadow.penguinharness" }
     : { name: "PenguinHarness-Dev", appUserModelId: "com.prismshadow.penguinharness.dev" };
 }
@@ -56,9 +77,10 @@ export function devDataRoot(homedir: string): string {
 
 /**
  * This form's data root, i.e. the precedence rule itself: an explicit `PENGUIN_HOME`
- * always wins; without one a release build shares the CLI's root by design, so a desktop
- * install and the CLI see the same Agents, Sessions and usage, while a dev run takes the
- * repo's dev root instead of attaching to — or writing into — the release install's data.
+ * always wins; without one the release profile shares the CLI's root by design, so a
+ * desktop install and the CLI see the same Agents, Sessions and usage, while the dev
+ * profile takes the repo's dev root instead of attaching to — or writing into — the
+ * release install's data.
  *
  * `releaseRoot` stays a thunk (core's `resolveRoot`) so core remains the single
  * definition point of `~/.penguin/data`; it is only called when there is no explicit
@@ -67,9 +89,11 @@ export function devDataRoot(homedir: string): string {
  */
 export function desktopDataRoot(opts: {
   envHome: string | undefined;
-  isPackaged: boolean;
+  profile: Profile;
   homedir: string;
   releaseRoot: () => string;
 }): string {
-  return opts.envHome ?? (opts.isPackaged ? opts.releaseRoot() : devDataRoot(opts.homedir));
+  return (
+    opts.envHome ?? (opts.profile === "release" ? opts.releaseRoot() : devDataRoot(opts.homedir))
+  );
 }

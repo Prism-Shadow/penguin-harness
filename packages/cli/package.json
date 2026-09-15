@@ -20,7 +20,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
     "build": "tsup",
-    "penguin": "node ../../scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data-cli PORT=7369 -- tsx src/penguin.ts"
+    "penguin": "node ../../scripts/run-with-env.mjs PENGUIN_HOME=~/.penguin/dev-data-cli PENGUIN_PROFILE=dev PORT=7369 -- tsx src/penguin.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
