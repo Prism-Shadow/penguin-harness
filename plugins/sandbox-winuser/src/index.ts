@@ -25,10 +25,13 @@
  * account, so anything readable by every local user stays readable, and isolation ends at the
  * filesystem and the network. In exchange the agent gets the shell it actually uses.
  *
- * SETUP IS ELEVATED, ONCE. Creating local accounts and firewall rules needs administrator
- * rights, so it is a script (`setup/penguin-sandbox-setup.ps1`) a person runs, not something a
- * server does behind their back. Until it has run, this backend declines with the command to
- * run — never silently, and never by failing the first agent command.
+ * SETUP IS ELEVATED, ONCE, AND ASKED FOR. Creating local accounts and firewall rules needs an
+ * administrator, which the harness is not. So the card offers to do it: the action raises
+ * Windows' own consent prompt for `setup/penguin-sandbox-setup.ps1` (see setup.ts), the person
+ * clicks Yes on the machine, and the accounts exist — no PowerShell to find, no path to type,
+ * and nothing done behind their back, since the prompt is theirs to refuse. The script is also
+ * plainly runnable by hand. Until it has run, this backend declines with what to do, never
+ * silently and never by failing the first agent command.
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +46,7 @@ import type {
 import { readState, stateFile } from "./state.js";
 import type { WinUserState } from "./state.js";
 import type { LaunchJob } from "./launch.js";
+import { runSetup } from "./setup.js";
 
 export { readState, stateFile, sandboxHome } from "./state.js";
 export type { WinUserState, SandboxAccount } from "./state.js";
@@ -186,12 +190,77 @@ export function createWinUserProvider(
 }
 
 /**
+ * What this backend puts on its card, as the page asks for it: the notices, the actions, and
+ * what running one reported. The shape is the consumer's own — the package depends on no
+ * harness type, only on the contract both halves agree to.
+ */
+export interface SettingsGroupStatus {
+  notices(): Array<{ tone: "attention" | "muted"; text: string; textZh?: string }>;
+  actions(): Array<{
+    id: string;
+    title: string;
+    titleZh?: string;
+    description?: string;
+    descriptionZh?: string;
+  }>;
+  run(action: string): Promise<{ ok: boolean; message: string; messageZh?: string }>;
+}
+
+/**
  * What this backend requires of plugin configuration: to read the group it declares. The
  * interface is the consumer's own, so the package depends on no harness type.
  */
 export abstract class WinUserConfigReader extends Interface<{
   get(name: string): Record<string, unknown>;
 }>() {}
+
+/**
+ * The card's live half: whether this host has been set up, and the button that does it.
+ *
+ * The accounts need an administrator, and the harness is not one — but it can ASK. The action
+ * raises Windows' own consent prompt (see setup.ts), so the person clicks Yes on the machine
+ * instead of finding a PowerShell, a path and an elevation for themselves. A host already set up
+ * is told nothing here; the sandbox's own card lists the backend among those in use.
+ */
+@Component({
+  contributes: {
+    "PluginConfigPage.status": [{ id: "sandbox-winuser.status", group: "sandbox-winuser" }],
+  },
+})
+export class SandboxWinUserStatus {
+  @Bind("sandbox-winuser.status") status!: SettingsGroupStatus;
+  setup() {
+    const ready = () => process.platform === "win32" && readState() !== null;
+    this.status = {
+      notices: () => {
+        if (process.platform !== "win32" || ready()) return [];
+        return [
+          {
+            tone: "attention",
+            text: "This host has no sandbox accounts yet, so nothing confines an agent's commands. Set them up below: Windows will ask for permission once.",
+            textZh:
+              "本机还没有沙盒账户，因此没有任何东西在封禁 Agent 的命令。在下方完成安装即可：Windows 会请求一次授权。",
+          },
+        ];
+      },
+      actions: () =>
+        process.platform !== "win32" || ready()
+          ? []
+          : [
+              {
+                id: "setup",
+                title: "Set up sandbox accounts",
+                titleZh: "创建沙盒账户",
+                description:
+                  "Windows asks for permission, then two local accounts and the firewall rules that cut the network for one of them are created. Nothing else on this machine changes.",
+                descriptionZh:
+                  "Windows 会请求授权，然后创建两个本地账户，以及让其中一个断网的防火墙规则。本机的其他部分不受影响。",
+              },
+            ],
+      run: async () => runSetup(),
+    };
+  }
+}
 
 /**
  * The plugin's one module: a provider on the sandbox slot, the code half of the contribution
@@ -246,5 +315,5 @@ export class SandboxWinUser {
   }
 }
 
-const plugin: Plugin = { modules: [SandboxWinUser] };
+const plugin: Plugin = { modules: [SandboxWinUser, SandboxWinUserStatus] };
 export default plugin;

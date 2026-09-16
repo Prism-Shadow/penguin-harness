@@ -15,6 +15,8 @@ import {
 } from "../src/index.js";
 import type { WinUserState } from "../src/index.js";
 import { sandboxEnvironment } from "../src/launch.js";
+import { runSetup, setupScript } from "../src/setup.js";
+import { existsSync } from "node:fs";
 
 const STATE: WinUserState = {
   group: "PenguinSandboxUsers",
@@ -137,5 +139,53 @@ describe("the confined environment", () => {
     expect(env.USERPROFILE).toBe("C:\\ProgramData\\penguin\\sandbox-home");
     expect(env.TEMP).toBe("C:\\ProgramData\\penguin\\sandbox-home\\temp");
     expect(env.TMP).toBe(env.TEMP);
+  });
+});
+
+describe("asking Windows for the accounts", () => {
+  it("reports success once the accounts exist, not on the prompt's exit code", async () => {
+    let asked = 0;
+    let created = false;
+    const outcome = await runSetup({
+      raise: async () => {
+        asked++;
+        created = true; // the elevated run left its state behind
+        return 0;
+      },
+      state: () => created,
+      waitMs: 1_000,
+      pollMs: 10,
+    });
+    expect(asked).toBe(1);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.message).toMatch(/accounts are ready/);
+    expect(outcome.messageZh).toMatch(/沙盒账户已就绪/);
+  });
+
+  it("a refused prompt creates nothing, and says so with the script to run by hand", async () => {
+    const outcome = await runSetup({
+      raise: async () => 1,
+      state: () => false,
+      waitMs: 20,
+      pollMs: 10,
+    });
+    expect(outcome.ok).toBe(false);
+    expect(outcome.message).toMatch(/declined or could not be shown/);
+    expect(outcome.message).toMatch(/penguin-sandbox-setup\.ps1/);
+  });
+
+  it("a prompt that was accepted but left no accounts is a different failure", async () => {
+    const outcome = await runSetup({
+      raise: async () => 0,
+      state: () => false,
+      waitMs: 20,
+      pollMs: 10,
+    });
+    expect(outcome.ok).toBe(false);
+    expect(outcome.message).toMatch(/ran but left no accounts/);
+  });
+
+  it("ships the script the prompt runs", () => {
+    expect(existsSync(setupScript())).toBe(true);
   });
 });

@@ -164,6 +164,7 @@ import type {
   SessionResponse,
   PluginIndexResponse,
   PluginConfigResponse,
+  PluginConfigActionResponse,
   PluginConfigUpdateRequest,
   LanguageIndexResponse,
   PluginReadmeResponse,
@@ -288,6 +289,13 @@ export const adminGetPluginConfig = () =>
 /** One package's update (admin): omitted fields keep their value, a masked secret sent back keeps the stored one. */
 export const adminPutPluginConfig = (body: PluginConfigUpdateRequest) =>
   apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { method: "PUT", body });
+
+/** Runs one settings group's action (admin): what a deployment must DO on the machine, once. */
+export const adminRunPluginConfigAction = (body: { name: string; action: string }) =>
+  apiFetch<PluginConfigActionResponse>("/api/admin/plugin-config/action", {
+    method: "POST",
+    body,
+  });
 
 /** Omitted fields keep their current value; applies immediately (no restart). */
 export const adminPutSettings = (body: ServerSettingsUpdateRequest) =>

@@ -135,6 +135,12 @@ function Protect-StateFile([string] $Path) {
 
 Assert-Elevated
 
+# Elevation goes through ShellExecute, which cannot hand a stream back to whoever asked for it,
+# so this run keeps its own transcript — that is what the Plugins page reads when it has to
+# explain a failure it could not see.
+New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+try { Start-Transcript -Path (Join-Path $stateDir 'sandbox-setup.log') -Force | Out-Null } catch { }
+
 if ($Remove) {
   Remove-Everything
   return
@@ -168,3 +174,4 @@ Write-Host ''
 Write-Host "penguin-winuser is set up. State: $stateFile (readable by $ServerUser)."
 Write-Host 'Install the sandbox-winuser plugin on the Project, then pick a mode on'
 Write-Host 'Settings -> Plugins -> Sandbox. No restart is needed.'
+try { Stop-Transcript | Out-Null } catch { }
