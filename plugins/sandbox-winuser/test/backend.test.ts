@@ -147,10 +147,9 @@ describe("asking Windows for the accounts", () => {
     let asked = 0;
     let created = false;
     const outcome = await runSetup({
-      raise: async () => {
+      raise: () => {
         asked++;
         created = true; // the elevated run left its state behind
-        return 0;
       },
       state: () => created,
       waitMs: 1_000,
@@ -162,27 +161,19 @@ describe("asking Windows for the accounts", () => {
     expect(outcome.messageZh).toMatch(/沙盒账户已就绪/);
   });
 
-  it("a refused prompt creates nothing, and says so with the script to run by hand", async () => {
+  it("an unanswered prompt does not hold the page: it reports and lets the person answer", async () => {
+    const started = Date.now();
     const outcome = await runSetup({
-      raise: async () => 1,
+      raise: () => {},
       state: () => false,
-      waitMs: 20,
+      waitMs: 60,
       pollMs: 10,
     });
+    // The prompt may still be open on the machine's screen; this call is already back.
+    expect(Date.now() - started).toBeLessThan(5_000);
     expect(outcome.ok).toBe(false);
-    expect(outcome.message).toMatch(/declined or could not be shown/);
+    expect(outcome.message).toMatch(/asking for permission/);
     expect(outcome.message).toMatch(/penguin-sandbox-setup\.ps1/);
-  });
-
-  it("a prompt that was accepted but left no accounts is a different failure", async () => {
-    const outcome = await runSetup({
-      raise: async () => 0,
-      state: () => false,
-      waitMs: 20,
-      pollMs: 10,
-    });
-    expect(outcome.ok).toBe(false);
-    expect(outcome.message).toMatch(/ran but left no accounts/);
   });
 
   it("ships the script the prompt runs", () => {

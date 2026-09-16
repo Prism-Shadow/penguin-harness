@@ -38,20 +38,22 @@ export interface SetupOutcome {
 
 /** Test seam: how the prompt is raised, and how long the accounts are waited for. */
 export interface SetupInternals {
-  raise?: (script: string, log: string) => Promise<number | null>;
+  raise?: (script: string, log: string) => void;
   waitMs?: number;
   pollMs?: number;
   state?: () => boolean;
 }
 
 /**
- * Raises the consent prompt and waits for the accounts to appear.
+ * Raises the consent prompt — and does NOT wait for it.
  *
- * PowerShell is asked to start PowerShell elevated: the outer process exits as soon as the
- * prompt is answered, so its exit code says whether the person consented, never whether the
- * setup worked. That is what the polling below is for.
+ * `ShellExecute` with the RunAs verb blocks until the person answers the dialog, which may be
+ * never: they can leave it open, or not notice it behind a window. Waiting on that process
+ * would hold the page's request open for exactly as long, which is the difference between a
+ * button that reports and a button that hangs. So this fires and lets go; whether it worked is
+ * read from the machine afterwards, not from this process.
  */
-function raisePrompt(script: string, log: string): Promise<number | null> {
+function raisePrompt(script: string, log: string): void {
   const inner = [
     "-NoProfile",
     "-ExecutionPolicy",
@@ -65,14 +67,14 @@ function raisePrompt(script: string, log: string): Promise<number | null> {
     `$ErrorActionPreference='Stop'; ` +
     `Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -WindowStyle Hidden ` +
     `-ArgumentList '${inner}'`;
-  return new Promise((resolve) => {
-    const child = spawn("powershell.exe", ["-NoProfile", "-Command", command], {
-      stdio: "ignore",
-      windowsHide: true,
-    });
-    child.on("error", () => resolve(null));
-    child.on("exit", (code) => resolve(code));
+  const child = spawn("powershell.exe", ["-NoProfile", "-Command", command], {
+    stdio: "ignore",
+    windowsHide: true,
+    detached: true,
   });
+  // Nothing here waits on it, and the server must not be kept alive by a dialog either.
+  child.on("error", () => {});
+  child.unref();
 }
 
 /** The last few lines the elevated run wrote, for a failure that needs a reason. */
@@ -103,9 +105,11 @@ export async function runSetup(internals: SetupInternals = {}): Promise<SetupOut
     };
   }
   const log = setupLog();
-  const code = await (internals.raise ?? raisePrompt)(script, log);
+  (internals.raise ?? raisePrompt)(script, log);
   const present = internals.state ?? (() => readState() !== null);
-  const waitMs = internals.waitMs ?? 60_000;
+  // Long enough for a prompt answered right away to finish, short enough that a page waiting on
+  // this never feels stuck. An unanswered prompt is reported as what it is, not waited out.
+  const waitMs = internals.waitMs ?? 20_000;
   const pollMs = internals.pollMs ?? 500;
   for (let waited = 0; waited <= waitMs; waited += pollMs) {
     if (present()) {
@@ -120,18 +124,23 @@ export async function runSetup(internals: SetupInternals = {}): Promise<SetupOut
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
   const reason = tail(log);
-  const because = reason === "" ? "" : ` It said: ${reason}`;
-  const becauseZh = reason === "" ? "" : `它的输出是：${reason}`;
+  // A transcript means the elevated run started, so the prompt was answered and something else
+  // went wrong; no transcript means nobody has answered it yet, or it was refused.
+  if (reason !== "") {
+    return {
+      ok: false,
+      message: `The setup ran but left no accounts behind. It said: ${reason}`,
+      messageZh: `安装脚本执行了，但没有留下账户。它的输出是：${reason}`,
+    };
+  }
   return {
     ok: false,
     message:
-      code === null || code !== 0
-        ? `The Windows permission prompt was declined or could not be shown, so nothing was created. Run ${script} from an elevated PowerShell instead.${because}`
-        : `The setup ran but left no accounts behind. Run ${script} from an elevated PowerShell to see why.${because}`,
+      "Windows is asking for permission on the machine's own screen — accept the prompt, then reopen these settings. " +
+      `If no prompt appeared (a server that is not on that desktop cannot raise one), run ${script} from an elevated PowerShell instead.`,
     messageZh:
-      code === null || code !== 0
-        ? `Windows 的权限确认被拒绝或无法弹出，因此什么都没有创建。请改为在管理员 PowerShell 中执行 ${script}。${becauseZh}`
-        : `安装脚本执行了，但没有留下账户。请在管理员 PowerShell 中执行 ${script} 查看原因。${becauseZh}`,
+      "Windows 正在这台机器的屏幕上请求授权——确认那个弹窗，然后重新打开本页设置。" +
+      `如果没有看到弹窗（不在该桌面会话中的服务端无法弹出它），请改为在管理员 PowerShell 中执行 ${script}。`,
   };
 }
 
