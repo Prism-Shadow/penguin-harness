@@ -76,7 +76,7 @@ export const en: Strings = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
-    newShell: "New shell",
+    newShell: "New terminal",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */

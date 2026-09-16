@@ -80,7 +80,7 @@ export const zh = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "终端",
-    newShell: "新建 Shell",
+    newShell: "新建终端",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
