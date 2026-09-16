@@ -11,13 +11,13 @@ The built-in model catalog was re-read against its providers on 2026-09-16. The 
 
 ## DeepSeek
 
-- Retired `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`. DeepSeek still accepts both names and serves them from V4.1 Flash at the Flash price, but its pricing page lists only `deepseek-flash` and `deepseek-v4-pro`.
+- Retired `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` as presets. DeepSeek still accepts both names and serves them from V4.1 Flash at the Flash price, but its pricing page lists only `deepseek-flash` and `deepseek-v4-pro`. Both stay in the catalog as retired rows (see [backward compatibility](2026-09-16-backward-compatibility.md)).
 - `deepseek-v4-pro` is now named **DeepSeek V4 Pro 0813**, the release DeepSeek names behind the id. Its peak price stays CNY 0.30 / 9 / 27 on DeepSeek's off-peak schedule, and DeepSeek keeps V4 Pro available after 2026-09-14 with its billing unchanged.
 - `deepseek-flash` and the default model were left as they were.
 
 ## TokenDance
 
-- Retired `deepseek-v4-flash-vision-exp`.
+- Retired `deepseek-v4-flash-vision-exp` as a preset; it stays in the catalog as a retired row, like the DeepSeek pair.
 - Re-rated three promotions from the seller's 2026-09-16 quote. `deepseek-v4-flash-0731` lists at CNY 0.15 / 1.5 / 4.5 with 10% off, billed 0.135 / 1.35 / 4.05. `deepseek-v4-pro-0813` lists at CNY 0.45 / 4.5 / 13.5 with 10% off, billed 0.405 / 4.05 / 12.15. `kimi-k3` lists at CNY 1.6 / 20 / 100 with 40% off, billed 0.96 / 12 / 60.
 
 ## OpenRouter
@@ -52,4 +52,4 @@ The built-in model catalog was re-read against its providers on 2026-09-16. The 
 
 ## Existing Projects
 
-Presets are copied into a Project when it is created, and the models page's **Sync presets** brings in the added rows and the new prices, but never deletes: a retired row stays in an existing Project until the user deletes it. The catalog no longer carries a schedule for the retired DeepSeek rows, so the cost center prices a kept row's usage, past records included, at its stored price at every hour, and its card shows no off-peak badge. The new **DeepSeek V4 Pro 0813** name reaches every Project without a sync unless the Project stores a name of its own for `deepseek-v4-pro`, which a sync never overwrites.
+Presets are copied into a Project when it is created, and the models page's **Sync presets** brings in the added rows and the new prices, but never deletes: a row this refresh removed stays in an existing Project until the user deletes it. The three retired DeepSeek rows keep their names and their off-peak pricing there (see [backward compatibility](2026-09-16-backward-compatibility.md)); the removed Qwen rows keep their stored prices and show their raw model id. The new **DeepSeek V4 Pro 0813** name reaches every Project without a sync unless the Project stores a name of its own for `deepseek-v4-pro`, which a sync never overwrites.

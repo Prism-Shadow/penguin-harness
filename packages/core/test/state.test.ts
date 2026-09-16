@@ -1328,11 +1328,11 @@ describe("project-config round trip", () => {
     );
     expect(defaultEntry?.client_type).toBe("deepseek-v4");
     expect(defaultEntry?.base_url).toBe("https://api.deepseek.com");
-    // The catalog is presented in full: provider and model_id are separate columns, model_id
-    // being the plain upstream id (vision is only persisted as false for models that don't
-    // support images).
+    // The catalog is presented in full, retired rows aside (they are kept only for Projects
+    // that already carry them): provider and model_id are separate columns, model_id being the
+    // plain upstream id (vision is only persisted as false for models that don't support images).
     expect(cfg.models.map((m) => [m.provider, m.model_id])).toEqual(
-      MODEL_CATALOG.map((m) => [m.provider, m.modelId]),
+      MODEL_CATALOG.filter((m) => m.retired !== true).map((m) => [m.provider, m.modelId]),
     );
     for (const entry of cfg.models) {
       const cat = MODEL_CATALOG.find(

@@ -32,8 +32,10 @@ import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./
 import type { TestApp } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 
-/** Catalog paired refs (config primary key = (provider, model_id)). */
-const catalogPairs = MODEL_CATALOG.map((m) => `${m.provider}\0${m.modelId}`);
+/** Preset paired refs (config primary key = (provider, model_id)): retired catalog rows are not presets. */
+const catalogPairs = MODEL_CATALOG.filter((m) => m.retired !== true).map(
+  (m) => `${m.provider}\0${m.modelId}`,
+);
 /** Response row → comparable paired key (test-only comparison, not the storage format). */
 const pairKey = (m: { provider: string; modelId: string }): string => `${m.provider}\0${m.modelId}`;
 /** Fetch a row by its paired ref. */

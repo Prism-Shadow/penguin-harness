@@ -169,6 +169,22 @@ export interface ModelCatalogEntry {
   clientType?: string;
   /** Preset base URL: inlined into gateway and direct MiniMax entries so only an API key is required. */
   baseUrl?: string;
+  /**
+   * The seller no longer offers this row, but Projects created while it did still carry it: a
+   * row a Project has is never deleted by "Sync presets", and several of these were the default
+   * model of new Projects. A retired row is not a preset — `presetModelEntries` skips it, so a
+   * new Project never gets it and a sync neither adds nor updates it — but lookups by
+   * `(provider, modelId)` still find it, so those Projects keep its display name, its vision
+   * flag and its off-peak schedule. The schedule is the part that matters: cost is priced when
+   * it is read, so deleting a scheduled row would reprice every off-peak record already on
+   * those Projects at the peak rate.
+   *
+   * Compatibility, not catalog data: remove a retired row only after its seller has stopped
+   * accepting the id AND the release notes have told users that usage recorded on it will be
+   * priced without its schedule from then on. Whoever does the catalog refresh that finds the
+   * id rejected makes that call.
+   */
+  retired?: true;
 }
 
 /**
@@ -500,8 +516,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // 09:00-12:00 and 14:00-18:00 — so both tiers are billed at the rate actually in force,
   // rather than one of them being approximated by the other.
   // The retired V4 Flash names, `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, are
-  // still accepted and served by V4.1 Flash at the Flash price, but the page no longer lists
-  // them and neither is a preset any more. --
+  // still accepted and served by V4.1 Flash at the Flash price and on the same schedule, but
+  // the page no longer lists them: they stay below as retired rows, which are not presets. --
   {
     // DeepSeek's pricing page names this model `deepseek-flash` (model version
     // DeepSeek-V4.1-Flash, released as of the 2026-09-10 read): 1M context, image input, and
@@ -521,6 +537,32 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: true,
     clientType: "deepseek-v4",
     baseUrl: DEEPSEEK_BASE_URL,
+  },
+  {
+    // Retired 2026-09-16 (see ModelCatalogEntry.retired): the default model of new Projects
+    // from 0.2.0 to 0.2.8. DeepSeek still accepts the id and serves it from V4.1 Flash at the
+    // Flash price, off-peak schedule included. Text only: AgentHub's DeepSeek client refuses
+    // image parts for this id.
+    modelId: "deepseek-v4-flash",
+    displayName: "DeepSeek V4 Flash",
+    provider: "deepseek",
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: false,
+    retired: true,
+  },
+  {
+    // Retired 2026-09-16 (see ModelCatalogEntry.retired): the default model of new Projects in
+    // 0.2.9, served from V4.1 Flash at the Flash price like deepseek-v4-flash above.
+    modelId: "deepseek-v4-flash-vision-exp",
+    displayName: "DeepSeek V4 Flash Vision Exp",
+    provider: "deepseek",
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    retired: true,
   },
   {
     // DeepSeek's pricing page names the model behind this id DeepSeek-V4-Pro-0813 (read
@@ -1359,7 +1401,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // and the three Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50% (rates
   // re-confirmed 2026-09-10). One more row, deepseek-v4.1-flash, carries no flat discount at
   // all and instead follows the vendor's own peak/off-peak schedule (DEEPSEEK_OFF_PEAK),
-  // storing the peak price the way the direct DeepSeek rows do. The rest carry neither, so
+  // storing the peak price the way the direct DeepSeek rows do; so does the retired
+  // deepseek-v4-flash-vision-exp row, which is no longer a preset. The rest carry neither, so
   // for them list price and billed rate coincide.
   //
   // A running promotion usually also shows up without a credential: the catalog API opens
@@ -1379,6 +1422,21 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
+  },
+  {
+    // Retired from TokenDance's line-up 2026-09-16 (see ModelCatalogEntry.retired). It was sold
+    // on DeepSeek's own peak/off-peak schedule at the peak tier CNY 0.04 / 2 / 8, which is what
+    // the Projects still carrying it are priced on.
+    modelId: "deepseek-v4-flash-vision-exp",
+    displayName: "DeepSeek V4 Flash Vision Exp",
+    provider: "tokendance",
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: TOKENDANCE_BASE_URL,
+    retired: true,
   },
   {
     // 10% off a CNY 4.5 input / 13.5 output / 0.45 cache hit list, so the gateway bills
@@ -2403,7 +2461,8 @@ export function fastModeProtocol(
  * difference stay in the catalog, where they can be read and restored.
  */
 export function presetModelEntries(): ModelEntry[] {
-  return MODEL_CATALOG.map((m) => {
+  // A retired row stays in the catalog for the Projects that still carry it, and only for them.
+  return MODEL_CATALOG.filter((m) => m.retired !== true).map((m) => {
     // A scheduled discount writes the PEAK price, which is the same number whatever hour the
     // Project is created or re-synced in. What is on disk has to be stable: the off-peak rate
     // is applied when the price is read, by the models page and by the cost center alike.

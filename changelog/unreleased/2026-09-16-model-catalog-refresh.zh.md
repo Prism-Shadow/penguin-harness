@@ -11,13 +11,13 @@
 
 ## DeepSeek 分组
 
-- 移除 `deepseek-v4-flash` 与 `deepseek-v4-flash-vision-exp`。DeepSeek 仍接受这两个名称、由 V4.1 Flash 承接并按 Flash 价计费，但其价格页只列出 `deepseek-flash` 与 `deepseek-v4-pro`。
+- `deepseek-v4-flash` 与 `deepseek-v4-flash-vision-exp` 不再作为预置条目。DeepSeek 仍接受这两个名称、由 V4.1 Flash 承接并按 Flash 价计费，但其价格页只列出 `deepseek-flash` 与 `deepseek-v4-pro`。两者作为退役条目留在目录中（见[向后兼容](2026-09-16-backward-compatibility.zh.md)）。
 - `deepseek-v4-pro` 的显示名改为 **DeepSeek V4 Pro 0813**，即 DeepSeek 为该 id 标注的版本。高峰价仍为 CNY 0.30 / 9 / 27，沿用 DeepSeek 的空闲时段规则；DeepSeek 表示 V4 Pro 在 2026-09-14 之后继续提供，计费不变。
 - `deepseek-flash` 与默认模型保持原样。
 
 ## TokenDance 分组
 
-- 移除 `deepseek-v4-flash-vision-exp`。
+- `deepseek-v4-flash-vision-exp` 不再作为预置条目，与 DeepSeek 那两条一样作为退役条目留在目录中。
 - 按卖家 2026-09-16 的报价调整三项促销。`deepseek-v4-flash-0731` 牌价 CNY 0.15 / 1.5 / 4.5、九折，实收 0.135 / 1.35 / 4.05。`deepseek-v4-pro-0813` 牌价 CNY 0.45 / 4.5 / 13.5、九折，实收 0.405 / 4.05 / 12.15。`kimi-k3` 牌价 CNY 1.6 / 20 / 100、六折，实收 0.96 / 12 / 60。
 
 ## OpenRouter 分组
@@ -52,4 +52,4 @@
 
 ## 既有 Project
 
-预置条目在创建 Project 时复制进去；模型页的**同步预置**会加入新增条目并更新价格，但从不删除：被移除的条目会留在既有 Project 中，直到用户自己删掉。目录不再为被移除的 DeepSeek 条目声明时段规则，因此 Project 若保留这类条目，成本中心会按其存储价格计价所有时段的用量（包括过去的记录），卡片上也不再显示空闲时段徽标。新显示名 **DeepSeek V4 Pro 0813** 无需同步即可出现在各 Project 中，除非该 Project 为 `deepseek-v4-pro` 存有自己的名称——同步从不覆盖这类名称。
+预置条目在创建 Project 时复制进去；模型页的**同步预置**会加入新增条目并更新价格，但从不删除：本次移除的条目会留在既有 Project 中，直到用户自己删掉。三条退役的 DeepSeek 条目在这些 Project 中照旧显示名称、按空闲时段计价（见[向后兼容](2026-09-16-backward-compatibility.zh.md)）；被移除的 Qwen 条目保留其存储价格，显示原始模型 id。新显示名 **DeepSeek V4 Pro 0813** 无需同步即可出现在各 Project 中，除非该 Project 为 `deepseek-v4-pro` 存有自己的名称——同步从不覆盖这类名称。
