@@ -22,11 +22,14 @@ the old post, the product's UI strings and the code before it replaced the old t
   built on the prompts the post already used.
 - The three perspectives essays state their question and thesis up front and give each step of the
   argument its own section. Their dated claims were kept as of their publication date.
-- Stale or wrong statements were corrected, among them: the 0.2.13 post now says that the
-  CEO-proposes, board-decides rule is guidance in the company Skills and handbook rather than
-  something the server enforces; the 0.2.4 post names the default command-policy rules that
-  block commands such as `rm -rf`; UI labels follow the shipped product (**Set key**,
-  **Cost Center**, **Trajectories**, **Remote control**).
+- Stale or wrong statements were corrected against the code at each post's release, among them:
+  the 0.2.13 post now says that the CEO-proposes, board-decides rule is guidance in the company
+  Skills and handbook rather than something the server enforces; the 0.2.4 post names the default
+  command-policy rules that block commands such as `rm -rf`; the self-improvement tutorial creates
+  `meeting_summary_agent`, because agent ids do not allow hyphens. UI labels are the ones the app
+  showed on each post's date (for example **Set API key for group**, **Costs**, **Trajectory**),
+  and claims that no longer hold today are tied to the version they describe.
+- In-page anchor links were replaced by plain references to the section they pointed at.
 - The Chinese posts use the Chinese UI's own labels and the product's term 插话 for steering, keep
   their China-specific material (the China ADP route in the Fireworks guide, localized prompts
   and screenshots), and render every bold span next to CJK punctuation.
