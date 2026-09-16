@@ -72,9 +72,26 @@ function raisePrompt(script: string, log: string): void {
     windowsHide: true,
     detached: true,
   });
-  // Nothing here waits on it, and the server must not be kept alive by a dialog either.
-  child.on("error", () => {});
+  // Nothing here waits on it, and the server must not be kept alive by a dialog either — but a
+  // prompt that could not even be ASKED for must not vanish silently, so the reason is written
+  // where the failure path reads from.
+  child.on("error", (err) => note(log, `could not start powershell: ${err.message}`));
+  child.on("exit", (code) => {
+    if (code !== 0 && code !== null) {
+      note(log, `the elevation request exited ${code} (the prompt was refused, or not shown)`);
+    }
+  });
   child.unref();
+}
+
+/** Leaves a line where the failure path looks, for something that happened after we let go. */
+function note(log: string, line: string): void {
+  try {
+    fs.mkdirSync(path.win32.dirname(log), { recursive: true });
+    fs.appendFileSync(log, `${new Date().toISOString()} penguin-winuser: ${line}\n`);
+  } catch {
+    // Nothing to do: this is the path that reports failures, and it just failed.
+  }
 }
 
 /** The last few lines the elevated run wrote, for a failure that needs a reason. */
