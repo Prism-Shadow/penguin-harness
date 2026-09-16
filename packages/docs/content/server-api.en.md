@@ -297,7 +297,7 @@ A desk session is driven by three things only: a calendar event, a channel `@`-m
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /agents/:agentId/sessions | List Sessions (including run state); every row is listed whichever client created it |
+| GET | /agents/:agentId/sessions | List Sessions (including run state); every row is listed whichever client created it, unless `excludeOrg=1` asks for the user's own rows only — an organization's desk, ticket and sub-sessions then leave the page and the `counts=1` totals together (what development mode's list requests) |
 | POST | /agents/:agentId/sessions | Create a Session: `{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201. `client` is the creating-client hint stored on the row (`"cli"` from the CLI; default `"web"`) — informational provenance, never a list filter; `source` accepts only `"benchmark"` (a Benchmark evaluation or optimization), since `subagent` and `schedule` are set by the server itself `org` is the value the server itself writes for an organization's desk and ticket sessions (company mode); a client cannot pass it. |
 | GET | /dirs?path= | Server-side directory browser (backs the Workspace picker) |
 

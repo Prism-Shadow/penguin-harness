@@ -2045,6 +2045,13 @@ export class SessionManager {
     const source = asSessionSource(p.source) ?? "subagent";
     this.deps.sources.set(childSid, source);
     const createdAt = this.now().toISOString();
+    // A sub-session of an organization's Session is company mode's own as much as the desk
+    // or ticket session that spawned it: it inherits the durable "org" stamp, which is the
+    // only mark it can carry — the organization caches name desks and ticket sessions, never
+    // what those spawn — and the one development mode's list leaves out. Every other parent
+    // leaves the marker blank (read as web): the child was spawned by this server's run, not
+    // opened through the CLI, whatever opened its parent.
+    const parentClient = this.deps.sessions.findById(entry.sessionId)?.client;
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
       projectId: entry.projectId,
@@ -2056,7 +2063,8 @@ export class SessionManager {
       // inserted with defaults (matches the convention for Sessions discovered by the CLI).
       approvalMode: "allow-all",
       title: null,
-      // Spawned by this server's run (client NULL = web); its Trace exists by construction.
+      ...(parentClient === "org" ? { client: "org" as const } : {}),
+      // Its Trace exists by construction.
       hasTrace: true,
       // A subagent's own runs are driven through the PARENT entry's drive, so nothing ever
       // stamps this row: it stays at its registration time (see SessionRow.lastActiveAt).

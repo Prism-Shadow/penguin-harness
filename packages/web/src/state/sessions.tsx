@@ -13,6 +13,14 @@
  * back to its first page (an open folder must not blank on an event-triggered refresh)
  * and leaves unopened folders unloaded.
  *
+ * **Own rows only**: every fetch asks the server for the user's own conversations
+ * (`excludeOrg`), so an organization's desk, ticket and sub-sessions are in neither the rows
+ * nor the totals the sidebar builds its groups from. One can still enter through `add()` (the
+ * chat page's deep-link self-heal): the sidebar drops it at render (withoutOrgSessions) and
+ * the totals are left alone for it. Live statuses are remembered for EVERY `session_state`
+ * the user channel reports (`liveStatuses`), row or no row — company mode's surfaces read
+ * them for the Sessions this list deliberately does not hold (useLiveSessionStatuses).
+ *
  * **Sessions are not auto-created here**: a new conversation starts as a draft (chat page `/chat/new`),
  * and the Session is only actually created when the first message is sent — after landing, the user
  * may still switch models or configure an API key first, so persisting the Session early would both
@@ -41,6 +49,7 @@ import { isCompanyEvent, publishCompanyEvent } from "./company";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
+  isOrgSession,
   sessionCategory,
   splitPage,
   workspaceGroupKey,
@@ -60,6 +69,8 @@ interface SessionsContextValue {
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
   /** agentId → each Workspace path's newest Session `createdAt` from the last list fetch: what places a workspace-mode group before any of its rows are loaded. */
   workspaceLatestByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
+  /** Every run status the user channel has reported this page's lifetime, by Session id — loaded row or not (see useLiveSessionStatuses). */
+  liveStatuses: ReadonlyMap<string, SessionStatus>;
   /**
    * Whether a pair's first page has been fetched (false = the folder shows nothing because
    * nothing was asked for yet). `workspaceGroup` asks about ONE group's own stream, which
@@ -177,6 +188,15 @@ interface SessionsStoreState {
   countsByAgent: ReadonlyMap<string, SessionCategoryCounts>;
   workspaceCountsByAgent: ReadonlyMap<string, Readonly<Record<string, SessionCategoryCounts>>>;
   workspaceLatestByAgent: ReadonlyMap<string, Readonly<Record<string, string>>>;
+  /**
+   * Run status by Session id as the user channel last reported it, for every `session_state`
+   * received — the rows this store holds AND the ones it never fetches (an organization's
+   * desks and ticket sessions, another category's unopened folder). The user channel is the
+   * only source that reports a run ENDING, so company mode's surfaces read this for the
+   * Sessions the development list deliberately leaves out. Not reset on a Project switch:
+   * ids are globally unique and a status is a fact about the Session, not about the list.
+   */
+  liveStatuses: ReadonlyMap<string, SessionStatus>;
   loading: boolean;
 
   reload: () => Promise<void>;
@@ -207,6 +227,32 @@ interface SessionsStoreState {
 const DELETED_IDS_MAX = 500;
 
 /**
+ * Cap on remembered live statuses, for the same reason as DELETED_IDS_MAX: a very long-lived
+ * tab must not grow the map without bound. Evicts oldest-first; a Session that flips again is
+ * re-inserted at the end, so what falls off is what has been quiet longest — and a dropped
+ * entry only costs company mode a fallback to its own snapshot for that Session.
+ */
+const LIVE_STATUS_MAX = 1000;
+
+/** `live` with `sessionId` at `status` — the same map when nothing changed, so no render is spent on a repeat. */
+function rememberStatus(
+  live: ReadonlyMap<string, SessionStatus>,
+  sessionId: string,
+  status: SessionStatus,
+): ReadonlyMap<string, SessionStatus> {
+  if (live.get(sessionId) === status) return live;
+  const next = new Map(live);
+  next.delete(sessionId);
+  next.set(sessionId, status);
+  while (next.size > LIVE_STATUS_MAX) {
+    const oldest = next.keys().next();
+    if (oldest.done) break;
+    next.delete(oldest.value);
+  }
+  return next;
+}
+
+/**
  * Builds one Provider's store. Exported as a test seam: vitest runs this package in Node with
  * no DOM, so the list's own behaviour is exercised against the store directly rather than
  * through a React tree.
@@ -217,8 +263,15 @@ export function createSessionsStore() {
   let gen = 0;
 
   return createStore<SessionsStoreState>((set, get) => {
-    /** Keeps an Agent's category totals — overall and per Workspace — in step with a local list mutation of `session` (no-op while its counts are unknown). */
+    /**
+     * Keeps an Agent's category totals — overall and per Workspace — in step with a local
+     * list mutation of `session` (no-op while its counts are unknown). An organization's row
+     * never moves them: the server's totals are the user's own rows only (`excludeOrg`), so
+     * such a row — held for the page that deep-linked it — was never counted and must not be
+     * counted out.
+     */
     const adjustCount = (session: SessionInfo, category: SessionCategory, delta: number) => {
+      if (isOrgSession(session)) return;
       const { agentId, workspace } = session;
       const counts = get().countsByAgent;
       const cur = counts.get(agentId);
@@ -256,6 +309,7 @@ export function createSessionsStore() {
       countsByAgent: new Map(),
       workspaceCountsByAgent: new Map(),
       workspaceLatestByAgent: new Map(),
+      liveStatuses: new Map(),
       loading: true,
 
       reload: async () => {
@@ -290,6 +344,7 @@ export function createSessionsStore() {
                       offset: 0,
                       limit: SIDEBAR_PAGE_SIZE + 1,
                       category,
+                      excludeOrg: true,
                       ...(scope === "" ? {} : { workspaceGroup: scope }),
                       ...(category === "active" && scope === "" ? { withCounts: true } : {}),
                     });
@@ -408,6 +463,7 @@ export function createSessionsStore() {
                   offset,
                   limit: SIDEBAR_PAGE_SIZE + 1,
                   category,
+                  excludeOrg: true,
                   ...(scope === "" ? {} : { workspaceGroup: scope }),
                 })
               ).sessions;
@@ -519,11 +575,20 @@ export function createSessionsStore() {
        * Session, it does not describe one, and a row invented from a status and a timestamp
        * would have no title, Agent or Workspace to render. That same drop is what filters
        * another Project's Sessions — this store only ever holds the current Project's rows.
+       * The STATUS is remembered either way (`liveStatuses`): the user channel is the one
+       * source that reports a run ending, and company mode reads it for the Sessions this
+       * list never fetches.
        */
       setStatus: (sessionId, status, row) => {
+        const remembered = rememberStatus(get().liveStatuses, sessionId, status);
+        // The remembered half of the write, empty when this status was already on record.
+        const patch = remembered === get().liveStatuses ? {} : { liveStatuses: remembered };
         const prev = get().sessions;
         const target = prev.find((s) => s.sessionId === sessionId);
-        if (!target) return;
+        if (!target) {
+          if ("liveStatuses" in patch) set(patch);
+          return;
+        }
         const lastActiveAt = row?.lastActiveAt ?? target.lastActiveAt;
         const live = status === "running" || status === "compacting";
         const hasTrace = target.hasTrace || row?.hasTrace === true || live;
@@ -532,9 +597,11 @@ export function createSessionsStore() {
           target.lastActiveAt === lastActiveAt &&
           target.hasTrace === hasTrace
         ) {
+          if ("liveStatuses" in patch) set(patch);
           return;
         }
         set({
+          ...patch,
           sessions: prev.map((s) =>
             s.sessionId === sessionId ? { ...s, status, lastActiveAt, hasTrace } : s,
           ),
@@ -695,6 +762,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     // deletedSessionIds is deliberately NOT reset: session ids are globally unique and never
     // reused, so a Session deleted before a Project switch is still deleted after it — and
     // re-arming its lookup would just re-create the 404 this set exists to prevent.
+    // liveStatuses stays for the same reason: a status is a fact about the Session.
     store.setState({
       projectId,
       agentIds: agentIdsKey === "" ? [] : agentIdsKey.split(","),
@@ -782,6 +850,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       countsByAgent: state.countsByAgent,
       workspaceCountsByAgent: state.workspaceCountsByAgent,
       workspaceLatestByAgent: state.workspaceLatestByAgent,
+      liveStatuses: state.liveStatuses,
       isLoadedFor,
       hasMoreFor,
       loading: state.loading,
@@ -806,15 +875,34 @@ export function useSessions(): SessionsContextValue {
 }
 
 /**
- * Every loaded Session's run status by id — the user event channel's view of it, which is the
- * only one that reports a run ENDING. Surfaces built on a server-side snapshot (company mode's
- * desk and ticket rows, the org chart's state dots, the overview's employee counts) read this
- * first and keep their snapshot for the rows this list has not loaded: their snapshots are
- * re-read on organization events, and no event announces that a run finished.
+ * Run status by Session id as this page knows it: every status the user channel has reported
+ * (`live`, loaded row or not), with a loaded row's own status winning — a row is written by
+ * the same events AND by every list fetch, so it is never older than the remembered entry,
+ * while an id the list does not hold has only the remembered one. Pure, so the merge the hook
+ * below publishes is testable without a React tree.
+ */
+export function liveSessionStatuses(
+  sessions: readonly SessionInfo[],
+  live: ReadonlyMap<string, SessionStatus>,
+): ReadonlyMap<string, SessionStatus> {
+  const out = new Map(live);
+  for (const s of sessions) out.set(s.sessionId, s.status);
+  return out;
+}
+
+/**
+ * Run status by Session id — the user event channel's view of it, which is the only one that
+ * reports a run ENDING. Surfaces built on a server-side snapshot (company mode's desk and
+ * ticket rows, the org chart's state dots, the overview's employee counts) read this first and
+ * keep their snapshot for a Session no event has named yet: their snapshots are re-read on
+ * organization events, and no event announces that a run finished. The development list never
+ * fetches an organization's Sessions, so for them this is the remembered `session_state`
+ * alone — which reaches every one of them, not only the first page of an employee's stream.
  *
- * Memoized on the rows, so a consumer re-shapes only when a status (or the list) actually moves.
+ * Memoized on the rows and the remembered statuses, so a consumer re-shapes only when one
+ * actually moves.
  */
 export function useLiveSessionStatuses(): ReadonlyMap<string, SessionStatus> {
-  const { sessions } = useSessions();
-  return useMemo(() => new Map(sessions.map((s) => [s.sessionId, s.status])), [sessions]);
+  const { sessions, liveStatuses } = useSessions();
+  return useMemo(() => liveSessionStatuses(sessions, liveStatuses), [sessions, liveStatuses]);
 }

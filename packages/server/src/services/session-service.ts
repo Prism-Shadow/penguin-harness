@@ -100,6 +100,22 @@ export interface SessionServiceDeps {
   confineSpawn?: () => SpawnConfiner | null;
 }
 
+/**
+ * Whether a row is an organization's — a desk session, a session contributing to a ticket, or
+ * a sub-session one of those spawned. The durable `client` stamp answers first (it survives
+ * the organization and is inherited by sub-sessions, which no cache names); the organization
+ * caches (`orgIds`, session id → orgId) catch a row the reconcile pass has not stamped yet.
+ * The one predicate the list's `excludeOrg` applies to its page, its totals and its
+ * Workspace stamps alike, so the development list can never be handed a total for rows it
+ * will not be handed.
+ */
+export function isOrganizationRow(
+  row: Pick<SessionRow, "sessionId" | "client">,
+  orgIds: ReadonlyMap<string, string>,
+): boolean {
+  return row.client === "org" || orgIds.has(row.sessionId);
+}
+
 export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
 
@@ -211,6 +227,14 @@ export class SessionService {
    * sharing one per-Agent cursor — without it, one group's "load more" consumes the page
    * its siblings were about to read, and their rows move on screen untouched. The two
    * filters compose; the returned counts stay whole-Agent either way.
+   *
+   * `excludeOrg` drops the rows an organization owns (isOrganizationRow) from the stream
+   * BEFORE anything else looks at it — the page, `counts`, `workspaceCounts`,
+   * `workspaceLatest` and the limit+1 "has more" all describe the same own-rows stream. It is
+   * what development mode's list asks for: that list draws the user's own conversations, and
+   * a total or a stamp that still counted a desk or a ticket session would make its Workspace
+   * appear as a group the list can never fill. Without the flag every row is served,
+   * whichever client created it.
    */
   async listSessions(
     projectId: string,
@@ -220,6 +244,7 @@ export class SessionService {
       category?: SessionCategory;
       workspaceGroup?: string;
       withCounts?: boolean;
+      excludeOrg?: boolean;
     } = {},
   ): Promise<{
     sessions: SessionInfo[];
@@ -227,7 +252,7 @@ export class SessionService {
     workspaceCounts?: Record<string, SessionCategoryCounts>;
     workspaceLatest?: Record<string, string>;
   }> {
-    const { paging, category, workspaceGroup, withCounts } = opts;
+    const { paging, category, workspaceGroup, withCounts, excludeOrg } = opts;
     const rows = new Map(
       this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
@@ -235,6 +260,11 @@ export class SessionService {
     // below: the company caches are small, and a lookup per row would put a statement
     // behind every entry of a long sidebar list.
     const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
+    if (excludeOrg) {
+      for (const row of [...rows.values()]) {
+        if (isOrganizationRow(row, orgIds)) rows.delete(row.sessionId);
+      }
+    }
 
     let traces: ReadonlySet<string> | undefined;
     if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {

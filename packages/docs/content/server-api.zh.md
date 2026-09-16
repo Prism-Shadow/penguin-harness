@@ -297,7 +297,7 @@ Benchmark 挂在 Project 上而非某个 Agent 上：一个 Benchmark 评测过�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /agents/:agentId/sessions | Session 列表（含运行状态）；无论由哪个客户端创建，所有行都会列出 |
+| GET | /agents/:agentId/sessions | Session 列表（含运行状态）；无论由哪个客户端创建，所有行都会列出；带 `excludeOrg=1` 时只列用户自己的行——组织的工位会话、工单会话及其派生的子会话同时从分页与 `counts=1` 的统计中剔除（开发模式的会话列表即以此请求） |
 | POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201。`client` 是存入索引行的创建客户端标记（CLI 传 `"cli"`，缺省 `"web"`）——仅作来源信息，绝不参与列表过滤；`source` 只接受 `"benchmark"`（Benchmark 评估或优化创建），`subagent` 与 `schedule` 由服务端自己写入 `org` 是服务端为组织的工位与工单会话（公司模式）自行写入的值，客户端不能传。 |
 | GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
 
