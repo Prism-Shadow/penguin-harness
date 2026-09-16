@@ -13,6 +13,7 @@ import {
   mxcPolicyFor,
   quoteWindowsArg,
   resolveRunner,
+  STATUS_DLL_INIT_FAILED,
   temporaryDirs,
   toCommandLine,
   type MxcSdk,
@@ -175,6 +176,46 @@ describe("platform gating and SDK contract", () => {
   it("declines on every non-Windows host instead of pretending, and without calling it a failure", async () => {
     await expect(loadMxcProvider({ platform: "linux" })).resolves.toBeNull();
     await expect(loadMxcProvider({ platform: "darwin" })).resolves.toBeNull();
+  });
+
+  it("rejects when the shell cannot start inside a container, naming the grant that is missing", async () => {
+    const sdk = { buildSandboxPayload: () => ({}) } as never;
+    const shell = { command: "C:\\Users\\k\\tools\\git\\bin\\bash.exe", args: ["-lc"] };
+    const load = loadMxcProvider({
+      platform: "win32",
+      sdk,
+      runnerPath: "wxc-exec.exe",
+      probe: () => true,
+      shell,
+      smoke: () => STATUS_DLL_INIT_FAILED,
+    });
+    await expect(load).rejects.toThrow(/STATUS_DLL_INIT_FAILED/);
+    // The reason has to be actionable: the identity, the directory, and the command to fix it.
+    await expect(load).rejects.toThrow(/ALL APPLICATION PACKAGES/);
+    await expect(load).rejects.toThrow(/C:\\Users\\k\\tools\\git\b/);
+    await expect(load).rejects.toThrow(/icacls/);
+
+    // Another exit code is still a refusal, said plainly; a clean run mounts the backend.
+    await expect(
+      loadMxcProvider({
+        platform: "win32",
+        sdk,
+        runnerPath: "wxc-exec.exe",
+        probe: () => true,
+        shell,
+        smoke: () => 1,
+      }),
+    ).rejects.toThrow(/exited 1 inside a test container/);
+    await expect(
+      loadMxcProvider({
+        platform: "win32",
+        sdk,
+        runnerPath: "wxc-exec.exe",
+        probe: () => true,
+        shell,
+        smoke: () => 0,
+      }),
+    ).resolves.toBeDefined();
   });
 
   it("on Windows, checks the runner at load and rejects with the reason when it cannot contain", async () => {

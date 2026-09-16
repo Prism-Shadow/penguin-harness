@@ -51,6 +51,8 @@ import type {
 
 /** Default probe budget; a probe that hangs must not hang the first spawn forever. */
 const PROBE_TIMEOUT_MS = 5_000;
+/** The smoke run starts a whole shell, so it is given more room than the runner's own probe. */
+const SMOKE_TIMEOUT_MS = 20_000;
 
 /** The MXC policy schema this backend writes. Pinned: a preview schema is a moving target. */
 const MXC_POLICY_VERSION = "0.7.0-alpha";
@@ -66,12 +68,94 @@ export interface MxcSdk {
   ): Record<string, unknown>;
 }
 
-/** Test seams: inject the SDK, the runner path, and the probe verdict. */
+/** Test seams: inject the SDK, the runner path, the probe verdict and the smoke result. */
 export interface MxcInternals {
   sdk?: MxcSdk;
   runnerPath?: string;
   probe?: (runner: string, timeoutMs: number) => boolean;
   platform?: NodeJS.Platform;
+  /** The exit code of the load-time smoke run (see smokeShell), or null when it never ran. */
+  smoke?: (runner: string, sdk: MxcSdk) => number | null;
+  /** The shell the smoke run starts; defaults to the one the harness would spawn. */
+  shell?: ShellCommand;
+}
+
+/** A shell as it is invoked: the program, then the arguments before the command string. */
+export interface ShellCommand {
+  command: string;
+  args: string[];
+}
+
+/** Windows' STATUS_DLL_INIT_FAILED: a process died while loading its DLLs, before running anything. */
+export const STATUS_DLL_INIT_FAILED = 0xc0000142;
+
+/**
+ * The shell the harness will hand this backend to confine, resolved the way core's
+ * `resolveShell` does on Windows (packages/core/src/environment/tools/command/shell.ts):
+ * `PENGUIN_SHELL`, else the first `bash` on PATH that is not the WSL launcher under
+ * System32, else the bundled MinGit shell, else pwsh, else Windows PowerShell. Only the
+ * program matters here — the smoke run below starts it with a command that does nothing.
+ */
+export function smokeShell(env: NodeJS.ProcessEnv = process.env): ShellCommand {
+  const explicit = env.PENGUIN_SHELL?.trim();
+  if (explicit !== undefined && explicit !== "") return { command: explicit, args: ["-lc"] };
+  const systemRoot = env.SystemRoot ?? "C:\\Windows";
+  const found = spawnSync("where", ["bash"], { encoding: "utf8", windowsHide: true });
+  const bash = (found.stdout ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line !== "");
+  if (bash !== undefined && !bash.toLowerCase().startsWith(`${systemRoot.toLowerCase()}\\`)) {
+    return { command: bash, args: ["-lc"] };
+  }
+  const bundled = env.PENGUIN_BUNDLED_SHELL?.trim();
+  if (bundled !== undefined && bundled !== "") return { command: bundled, args: ["-lc"] };
+  const pwsh = spawnSync("where", ["pwsh"], { encoding: "utf8", windowsHide: true });
+  const command = pwsh.status === 0 ? "pwsh" : "powershell";
+  return { command, args: ["-NoLogo", "-NoProfile", "-Command"] };
+}
+
+/**
+ * Starts the shell inside a container and returns its exit code (null when the runner itself
+ * could not be run). MXC confines with an AppContainer, and an AppContainer can only load a
+ * program whose files grant the `ALL APPLICATION PACKAGES` identity — a grant that System32
+ * has and a tool unpacked under a user profile usually does not. Nothing in the policy can
+ * substitute for it: such a program dies at STATUS_DLL_INIT_FAILED before its first
+ * instruction, which is why this runs at load rather than leaving every command to fail.
+ */
+function defaultSmoke(runner: string, sdk: MxcSdk, shell: ShellCommand): number | null {
+  const argv = [shell.command, ...shell.args, "exit 0"];
+  const config = sdk.buildSandboxPayload(
+    toCommandLine(argv),
+    mxcPolicyFor({ mode: "read-only", workspaceRoot: os.tmpdir(), writableTemp: true }),
+    os.tmpdir(),
+    undefined,
+    "process",
+  );
+  const encoded = Buffer.from(JSON.stringify(config), "utf8").toString("base64");
+  const run = spawnSync(runner, ["--config-base64", encoded], {
+    timeout: SMOKE_TIMEOUT_MS,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  return run.error !== undefined ? null : run.status;
+}
+
+/** What to do about a shell that cannot start in a container, as the settings card will say it. */
+export function smokeFailureReason(shell: ShellCommand, status: number): string {
+  // `…\git\bin\bash.exe` needs the grant on the Git ROOT: its DLLs live in a sibling of bin.
+  const dir = shell.command.includes("\\") ? path.dirname(path.dirname(shell.command)) : "";
+  const where = dir === "" ? "" : ` (${dir})`;
+  if (status === STATUS_DLL_INIT_FAILED) {
+    return (
+      `the shell '${shell.command}' cannot start inside a Windows container: it died loading its ` +
+      "DLLs (STATUS_DLL_INIT_FAILED, 0xC0000142). Every confined command runs as an AppContainer " +
+      "identity, which can only load programs whose files grant ALL APPLICATION PACKAGES. Grant it " +
+      `on the shell's install directory${where} — icacls "<dir>" /grant "*S-1-15-2-1:(OI)(CI)(RX)" /T ` +
+      "— or use a shell installed where the grant already exists, such as under Program Files."
+    );
+  }
+  return `the shell '${shell.command}' exited ${status} inside a test container, so no confined command would run`;
 }
 
 /** The directories a Windows process writes temp files to: %TEMP%, %TMP% and os.tmpdir(), deduplicated. */
@@ -180,8 +264,8 @@ export const MXC_GROUP = "sandbox-mxc";
 
 /**
  * Loads the backend, checking first that it can serve on this host — and rejecting, with the
- * reason, when it cannot: a non-Windows host, an installation without the optional SDK, or a
- * runner that reports no usable containment. The sandbox service records the rejection and the
+ * reason, when it cannot: a non-Windows host, an installation without the optional SDK, a
+ * runner that reports no usable containment, or a shell that cannot start inside one. The sandbox service records the rejection and the
  * settings page shows it, so the backend is never silently absent, and a host where MXC cannot
  * contain is known at load rather than discovered by the first command.
  */
@@ -215,6 +299,13 @@ export async function loadMxcProvider(
   if (!usable) {
     throw new Error(`the MXC runner '${checked}' is missing or reports no usable containment`);
   }
+  // The runner containing SOMETHING is not the same as this host's shell being able to run
+  // inside it, so the shell itself is started once, here.
+  const shell = internals.shell ?? smokeShell();
+  const status = internals.smoke
+    ? internals.smoke(checked, sdk)
+    : defaultSmoke(checked, sdk, shell);
+  if (status !== 0 && status !== null) throw new Error(smokeFailureReason(shell, status));
   return createMxcProvider(sdk, runner, probe, settings);
 }
 
