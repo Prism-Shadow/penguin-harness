@@ -71,6 +71,49 @@ jobs:
       - name: Changed plugins carry a new version
         run: node scripts/check-plugin-versions.mjs '${{ github.event.pull_request.base.sha }}'
 
+  # The npm publishing path, walked without publishing. CI used to prove only that the sources
+  # typecheck and the tests pass, and the release workflow built a different, narrower set -- so a
+  # packaging break first appeared after the tag, where it costs a version number. This job builds
+  # the way the release does and packs what it would upload.
+  npm-packaging:
+    name: npm packaging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      # --registry also asks npm which published names do not exist yet. A new package is
+      # legitimate, so that is a warning rather than a failure -- but it has to be seen before the
+      # tag, because the release's OIDC exchange cannot create a name npm has never seen.
+      - name: A published package depends on nothing private, and names that need a first publish
+        run: node scripts/check-publishable.mjs --registry
+      - name: Build the whole workspace, as the release does
+        run: pnpm -r build
+      # The release stages two things into the package directories before it publishes: the root
+      # LICENSE, and the built web assets as the server's web-dist/. Neither exists in the repo, and
+      # npm silently skips a `files` entry that is not on disk -- so packing without them proves the
+      # manifest is well formed and says nothing about what actually ships. Stage them the same way
+      # release.yml does, so the dry run lists the real tarball.
+      - name: Stage what the release stages
+        run: |
+          for p in core server cli; do cp LICENSE "packages/$p/LICENSE"; done
+          rm -rf packages/server/web-dist
+          cp -r packages/web/dist packages/server/web-dist
+      - name: Pack the publishable packages
+        run: |
+          for p in core server cli; do
+            echo "--- packages/$p"
+            (cd "packages/$p" && npm pack --dry-run)
+          done
+      # A tarball that lost web-dist/ serves no Web UI from an npm install, and the failure is a
+      # blank page at runtime rather than anything the pack step reports.
+      - name: The server tarball carries the Web UI and the license
+        run: |
+          listing="$(cd packages/server && npm pack --dry-run 2>&1)"
+          for want in web-dist/ LICENSE; do
+            echo "$listing" | grep -q -- "$want" || { echo "::error::packages/server tarball is missing $want"; exit 1; }
+          done
+          echo "server tarball carries web-dist/ and LICENSE"
+
   # tsc over every package, so this one does need the whole build. Results are
   # platform-independent, which is why neither macOS nor Windows repeats it.
   typecheck:
@@ -347,6 +390,7 @@ jobs:
       [
         style,
         plugin-versions,
+        npm-packaging,
         typecheck,
         test,
         installer-e2e,

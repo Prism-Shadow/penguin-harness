@@ -18,7 +18,8 @@
  * `deepseek-v4-flash` text-only even so, AgentHub's DeepSeek client refusing image parts for
  * that id), the OpenRouter and TokenDance V4.1 Flash rows, and TokenDance's running promotions
  * plus its Doubao Seed display names: 2026-09-10; the Penguin Go resale lineup, matched to the
- * relay's current generic-client model export: 2026-09-11 — per each provider's docs).
+ * relay's current generic-client model export: 2026-09-11; the OpenRouter
+ * z-ai/glm-5.3-flash row: 2026-09-16 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -1087,11 +1088,13 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
-    // The gateway listing of the direct glm-5.3-flash row below, sitting on a 50%-off ZAI
-    // promotion through 2026-09-09 16:00 UTC (Z.AI's own price list names the same window as
-    // 24:00 on 2026-09-09, UTC+8). Stored at the discounted rate the gateway actually bills;
-    // when it lapses, restore 0.03 / 0.15 / 0.5. The listing takes text, images and video,
-    // and the generic Responses client it pins carries image parts through.
+    // The gateway listing of the direct glm-5.3-flash row below. Stored at the rate OpenRouter's
+    // default endpoint bills: DeepInfra (fp4), running `discount: 0.5` on the 0.03 / 0.15 / 0.5
+    // list (endpoints API, re-read 2026-09-16) — restore the list rates when that endpoint's
+    // promotion ends. Z.AI's own 50% promotion is a different one: it ended at 2026-09-09
+    // 16:00 UTC, and the Z.AI endpoint on OpenRouter bills the list price since. The listing
+    // takes text, images and video, and the generic Responses client it pins carries image
+    // parts through.
     modelId: "z-ai/glm-5.3-flash",
     displayName: "GLM-5.3 Flash",
     provider: "openrouter",
@@ -2024,10 +2027,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   {
     // Z.AI's price list (docs.z.ai/guides/overview/pricing) publishes $0.15 input / $0.03
-    // cached input / $0.50 output; a 50% promotion halves all three through 24:00 on
+    // cached input / $0.50 output; a 50% promotion halved all three through 24:00 on
     // 2026-09-09 (UTC+8). Direct-vendor rows record the vendor's list price, so that is what
-    // is stored here — the OpenRouter z-ai/glm-5.3-flash row above carries the promotional
-    // rate it is actually billed at.
+    // is stored here — the OpenRouter z-ai/glm-5.3-flash row above carries the rate its
+    // default endpoint bills, which runs a promotion of its own.
     //
     // The model is natively multimodal (docs.z.ai/guides/vlm/glm-5.3-flash: images, video
     // and files), and it is the one GLM id whose images AgentHub's GLM client forwards — as

@@ -15,7 +15,7 @@ and the rule is checked rather than remembered.
 
 - Four buttons in the settings dialog stood a rung above the fields beside them — Account's "change
   password", Proxy's and Uploads' "save", and the admin Users page's "create". All four are dialog
-  *body* buttons, which #689's rule already put on `sm`; they kept `Button`'s `md` default because
+  *body* buttons, which [#689](https://github.com/Prism-Shadow/penguin-harness/pull/689)'s rule already put on `sm`; they kept `Button`'s `md` default because
   nothing checked them. `control-size.test.ts` now names the settings dialog's pages in
   `DIALOG_BODY_MODULES` and fails on a Button in one of them that does not ask for `sm`.
 - The Agents page header gained a search box — name, id and description, case-insensitive — in the

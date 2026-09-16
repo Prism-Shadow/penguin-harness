@@ -1,8 +1,9 @@
 # 自定义分组自带 Atria Dawn Preview
 
 - **Date:** 2026-09-15
-- **Type:** feat
+- **Type:** feature
 - **Scope:** `core`
+- **PR:** [#729](https://github.com/Prism-Shadow/penguin-harness/pull/729)
 
 [English](2026-09-15-atria-dawn-preview.md)
 

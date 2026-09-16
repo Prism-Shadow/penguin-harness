@@ -665,9 +665,9 @@ export function applyUserEvent(
   // already exists), so it is ignored, as is every other Session-scoped event.
   // Either schedule event moves a task's state — nextFireAt, lastFiredAt, the queued flag, or a
   // one-off going done — so the conversation's schedule list is stale from here. The store
-  // decides for itself whether the agent is the one on screen.
+  // decides for itself whether the Project is the one on screen.
   if (ev.type === "schedule_fired" || ev.type === "schedule_queued") {
-    noteScheduleEvent(ev.projectId, ev.agentId);
+    noteScheduleEvent(ev.projectId);
   }
   // A scheduled task firing may also have created a new Session (new-session mode); reload the
   // list so it appears immediately. schedule_queued doesn't change the list (the target Session

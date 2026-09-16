@@ -3,8 +3,8 @@
 - **Date:** 2026-08-29
 - **Type:** refactor
 - **Scope:** `core`, `server`, `web`, `tooling`
-- **PR:** [#543](https://github.com/Prism-Shadow/penguin-harness/pull/543)
-- **Breaking:** `@prismshadow/penguin-server` 不再导出 `AppDeps`、`buildAppDeps`、`createApp`；`activate(ctx)` 形态的插件契约被 `Plugin { modules }` 取代
+- **PR:** [#543](https://github.com/Prism-Shadow/penguin-harness/pull/543), [#599](https://github.com/Prism-Shadow/penguin-harness/pull/599), [#546](https://github.com/Prism-Shadow/penguin-harness/pull/546)
+- **Breaking:** yes — `@prismshadow/penguin-server` 不再导出 `AppDeps`、`buildAppDeps`、`createApp`；`activate(ctx)` 形态的插件契约被 `Plugin { modules }` 取代
 
 [English](2026-08-29-module-tree.md)
 

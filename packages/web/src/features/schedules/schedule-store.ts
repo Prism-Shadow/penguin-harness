@@ -1,79 +1,70 @@
 /**
- * Scheduled tasks per agent, as a tiny module-level store shared by the two surfaces that read
- * them: the sidebar's alarm-clock mark (which of the listed Sessions have an enabled task bound
- * to them) and the dock's scheduled-tasks panel (the conversation's own tasks, listed). They must
- * never disagree about whether a conversation has tasks, so they read one cache rather than
+ * A Project's scheduled tasks, as a tiny module-level store shared by the two surfaces that read
+ * them: the session list's alarm-clock mark (which of the listed Sessions have a task still to
+ * fire) and the dock's scheduled-tasks panel (the open conversation's own tasks, listed). They
+ * must never disagree about whether a conversation has tasks, so they read one cache rather than
  * fetching one each.
  *
- * The server has no per-Session schedule field and no push channel for the schedule
- * directory — an agent may write a task file at any moment — so the store decides *when* to
- * look: on the Session or agent changing, whenever the window regains focus while a reader is
- * mounted, on the `schedule_fired` / `schedule_queued` events (wired in state/sessions.tsx), on
- * the panel's slow poll while it is on screen, and after every mutation the panel makes.
+ * The scope is the whole Project because that is what the two surfaces need between them: the
+ * session list draws every Agent's Sessions — workspace, time and agent grouping all mix them —
+ * while the panel is one conversation of one of them. Read per agent, the list answered only the
+ * panel: every other Agent's rows wore no mark, and because the chat page moves the current Agent
+ * to whatever conversation is open, the marks left one Agent's rows and returned to them as the
+ * user walked the list. One Project-wide listing answers both surfaces, so a row's mark no longer
+ * depends on which Agent is current.
  *
- * Everything here is keyed by scope — one project and one agent — rather than held in a single
- * slot the store points at. The two readers genuinely disagree for as long as a navigation takes
- * to settle: the sidebar names the current Agent, which flips the moment a row is clicked, while
- * the panel names the open conversation's. With one slot every such moment threw the list away
- * and bought it back with a round trip, so the row marks blinked; with one entry per scope, a
- * reader whose scope has already answered keeps answering from it, and a request asked for on
- * behalf of agent B is issued for B even while A's is still out.
+ * The server has no per-Session schedule field and no push channel for the schedule directories —
+ * an agent may write a task file at any moment — so the store decides *when* to look: on
+ * navigation (the Project or the Session on screen changing), whenever the window regains focus
+ * while a reader is mounted, on the `schedule_fired` / `schedule_queued` events (wired in
+ * state/sessions.tsx), on the panel's slow poll while it is on screen, after every mutation the
+ * panel makes, and on the edge where a turn settles (chat-page.tsx) — a turn may have written a
+ * task file of its own.
+ *
+ * Entries are kept per Project rather than held in a single slot the store points at, and none is
+ * ever evicted: switching Projects and back then draws the marks on the first frame instead of
+ * blanking them for the length of a round trip. Growth is bounded by how many Projects one
+ * sitting opens, and an entry is a list already loaded once, so dropping one would trade a few
+ * kilobytes back for exactly the blank-then-refetch this cache exists to remove.
  */
 import { useEffect, useSyncExternalStore } from "react";
-import type { ScheduleItem } from "@prismshadow/penguin-server/api";
+import type { ProjectScheduleItem } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { apiErrorText } from "../../lib/api-error";
 
-interface Scope {
-  projectId: string;
-  agentId: string;
-}
-
 interface Entry {
-  scope: Scope;
-  /** Null until this scope has answered once; a refetch keeps the list it already has. */
-  items: ScheduleItem[] | null;
+  projectId: string;
+  /** Null until this Project has answered once; a refetch keeps the list it already has. */
+  items: ProjectScheduleItem[] | null;
   /** Last failure text, cleared by the next success. The panel shows it only while `items` is null. */
   error: string | null;
-  /** This scope's request: concurrent readers of one scope share it, another scope gets its own. */
+  /** This Project's request: concurrent readers share it, another Project gets its own. */
   inflight: Promise<void> | null;
-  /** Mounted readers of this scope (retainSchedules); zero means nothing on screen shows this list. */
+  /** Mounted readers of this Project (retainSchedules); zero means nothing on screen shows this list. */
   readers: number;
 }
 
-/**
- * One entry per scope, kept for the lifetime of the tab. Growth is bounded in practice by how
- * many Agents one sitting opens — a project holds a handful, and an entry is a list already
- * loaded once — so nothing is evicted: dropping an entry would trade a few kilobytes back for
- * exactly the blank-then-refetch this cache exists to remove.
- */
+/** One entry per Project, kept for the lifetime of the tab (see the header). */
 const entries = new Map<string, Entry>();
 
-/** Cache key. "\0" separates the pair, as it does elsewhere for keys built from ids, so no
- * spelling of either id can make two pairs collide. */
-function keyOf(projectId: string, agentId: string): string {
-  return `${projectId}\0${agentId}`;
-}
-
-function entryFor(projectId: string, agentId: string): Entry {
-  const key = keyOf(projectId, agentId);
-  const existing = entries.get(key);
+function entryFor(projectId: string): Entry {
+  const existing = entries.get(projectId);
   if (existing) return existing;
   const created: Entry = {
-    scope: { projectId, agentId },
+    projectId,
     items: null,
     error: null,
     inflight: null,
     readers: 0,
   };
-  entries.set(key, created);
+  entries.set(projectId, created);
   return created;
 }
 
-/** Lookup that creates nothing: a render must not add an entry for a scope nobody is loading. */
-function peek(projectId: string | null, agentId: string | null): Entry | undefined {
-  if (projectId === null || agentId === null) return undefined;
-  return entries.get(keyOf(projectId, agentId));
+/** Lookup that creates nothing: a render must not add an entry for a Project nobody is loading. */
+function peek(projectId: string | null): Entry | undefined {
+  if (projectId === null) return undefined;
+  return entries.get(projectId);
 }
 
 let version = 0;
@@ -89,32 +80,29 @@ export function schedulesVersion(): number {
   return version;
 }
 
-/** This agent's loaded list, or null while this scope has never answered. */
-export function scheduleItems(
-  projectId: string | null,
-  agentId: string | null,
-): ScheduleItem[] | null {
-  return peek(projectId, agentId)?.items ?? null;
+/** This Project's loaded list, or null while it has never answered. */
+export function scheduleItems(projectId: string | null): ProjectScheduleItem[] | null {
+  return peek(projectId)?.items ?? null;
 }
 
-/** This agent's last failure text, or null. */
-export function scheduleError(projectId: string | null, agentId: string | null): string | null {
-  return peek(projectId, agentId)?.error ?? null;
+/** This Project's last failure text, or null. */
+export function scheduleError(projectId: string | null): string | null {
+  return peek(projectId)?.error ?? null;
 }
 
 /**
- * Re-reads one agent's list. The scope is an argument rather than whatever the store last pointed
- * at, which is what makes the request always the one the caller asked for: concurrent calls for a
- * scope share its request, and a call for another scope issues its own instead of waiting on a
- * promise that will answer about somebody else.
+ * Re-reads one Project's list. The Project is an argument rather than whatever the store last
+ * pointed at, which is what makes the request always the one the caller asked for: concurrent
+ * calls for a Project share its request, and a call for another Project issues its own instead of
+ * waiting on a promise that will answer about somebody else.
  */
-export function refreshSchedules(projectId: string | null, agentId: string | null): Promise<void> {
-  if (projectId === null || agentId === null) return Promise.resolve();
-  const entry = entryFor(projectId, agentId);
+export function refreshSchedules(projectId: string | null): Promise<void> {
+  if (projectId === null) return Promise.resolve();
+  const entry = entryFor(projectId);
   if (entry.inflight) return entry.inflight;
   const request = (async () => {
     try {
-      const res = await api.listSchedules(projectId, agentId);
+      const res = await api.listProjectSchedules(projectId);
       entry.items = res.schedules;
       entry.error = null;
     } catch (e) {
@@ -126,20 +114,20 @@ export function refreshSchedules(projectId: string | null, agentId: string | nul
     notify();
   })();
   // Assigned after the body starts, which is safe because the body suspends at its first
-  // `await`: any second caller for this scope runs after that point and finds the promise here.
+  // `await`: any second caller for this Project runs after that point and finds the promise here.
   entry.inflight = request;
   return request;
 }
 
 /**
- * Counts one mounted reader of a scope; the returned function releases it. The count decides
- * which scopes an event or a regained focus re-reads — refreshing a list nothing is showing
+ * Counts one mounted reader of a Project; the returned function releases it. The count decides
+ * which Projects an event or a regained focus re-reads — refreshing a list nothing is showing
  * spends a request on an answer that would be re-read anyway when it next comes on screen.
  * Releasing keeps the cached list, which is precisely what the reader shows again on return.
  */
-export function retainSchedules(projectId: string | null, agentId: string | null): () => void {
-  if (projectId === null || agentId === null) return () => {};
-  const entry = entryFor(projectId, agentId);
+export function retainSchedules(projectId: string | null): () => void {
+  if (projectId === null) return () => {};
+  const entry = entryFor(projectId);
   entry.readers += 1;
   return () => {
     entry.readers -= 1;
@@ -147,20 +135,20 @@ export function retainSchedules(projectId: string | null, agentId: string | null
 }
 
 /**
- * A schedule event landed for some agent (state/sessions.tsx, chat-page.tsx): refresh only when
- * that agent is on screen, so a task firing in another Project or another Agent costs no request.
+ * A schedule event landed for some Project (state/sessions.tsx, chat-page.tsx): refresh only when
+ * that Project is on screen, so a task firing in another Project costs no request.
  */
-export function noteScheduleEvent(projectId: string, agentId: string): void {
-  const entry = peek(projectId, agentId);
+export function noteScheduleEvent(projectId: string): void {
+  const entry = peek(projectId);
   if (entry === undefined || entry.readers === 0) return;
-  void refreshSchedules(projectId, agentId);
+  void refreshSchedules(projectId);
 }
 
-/** Regaining focus re-reads every scope a mounted reader is showing, and no other. */
+/** Regaining focus re-reads every Project a mounted reader is showing, and no other. */
 const onFocus = (): void => {
   if (document.visibilityState !== "visible") return;
   for (const entry of [...entries.values()]) {
-    if (entry.readers > 0) void refreshSchedules(entry.scope.projectId, entry.scope.agentId);
+    if (entry.readers > 0) void refreshSchedules(entry.projectId);
   }
 };
 
@@ -180,29 +168,29 @@ export function subscribeSchedules(listener: () => void): () => void {
 }
 
 /**
- * Subscribes to the store and keeps one agent's list loaded, refetching whenever `refreshKey`
- * changes — the Session on screen, so two conversations of the same agent each get a fresh read.
- * The result is this agent's whole list; callers narrow it to a Session themselves
- * (`sessionSchedules` / `pendingScheduleSessions`).
+ * Subscribes to the store and keeps one Project's list loaded, refetching whenever `refreshKey`
+ * changes — the Session on screen, so opening a conversation re-reads what may just have been
+ * created or switched off. The result is the Project's whole list, every Agent's tasks stamped
+ * with the agent that owns them; callers narrow it themselves (`sessionSchedules` /
+ * `pendingScheduleSessions`).
  *
- * `items` is null only for a scope that has never been answered. An agent already loaded answers
- * from its own entry on the first render after a navigation, while the refetch is still out,
- * which is what keeps the session rows' marks from blinking as the current Agent changes.
+ * `items` is null only for a Project that has never been answered. A Project already loaded
+ * answers from its entry on the first render after a navigation, while the refetch is still out,
+ * which is what keeps the session rows' marks from blinking as the user walks the list.
  */
-export function useAgentSchedules(
+export function useProjectSchedules(
   projectId: string | null,
-  agentId: string | null,
   refreshKey: string,
-): { items: ScheduleItem[] | null; error: string | null } {
+): { items: ProjectScheduleItem[] | null; error: string | null } {
   useSyncExternalStore(subscribeSchedules, schedulesVersion, schedulesVersion);
   // Held for as long as this reader is mounted, and deliberately not keyed on `refreshKey`:
-  // moving between two conversations of one agent must not release the scope and take it again.
-  useEffect(() => retainSchedules(projectId, agentId), [projectId, agentId]);
+  // moving between two conversations of one Project must not release the entry and take it again.
+  useEffect(() => retainSchedules(projectId), [projectId]);
   useEffect(() => {
-    void refreshSchedules(projectId, agentId);
-  }, [projectId, agentId, refreshKey]);
+    void refreshSchedules(projectId);
+  }, [projectId, refreshKey]);
   return {
-    items: scheduleItems(projectId, agentId),
-    error: scheduleError(projectId, agentId),
+    items: scheduleItems(projectId),
+    error: scheduleError(projectId),
   };
 }

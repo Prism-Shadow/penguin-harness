@@ -1,6 +1,6 @@
 /**
- * The chat dock's scheduled-tasks panel: the tasks bound to the conversation on screen (an
- * agent's schedules filtered to this Session — new-Session tasks belong to the agent and live
+ * The chat dock's scheduled-tasks panel: the tasks bound to the conversation on screen (the
+ * Project's schedules filtered to this Session — new-Session tasks belong to the agent and live
  * on its settings tab), searchable and filtered by state, each row with its human schedule
  * line, an enable switch and an overflow menu (edit / delete); a suggestions list of everyday
  * schedules; and the two create buttons in the header — "Create with AI" composes the request
@@ -16,7 +16,11 @@
  * while the AI path stays open to everyone — asking the agent is a message, not a write.
  */
 import { useEffect, useState } from "react";
-import type { ScheduleItem, SessionInfo } from "@prismshadow/penguin-server/api";
+import type {
+  ProjectScheduleItem,
+  ScheduleItem,
+  SessionInfo,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -55,7 +59,7 @@ import {
   sessionSchedules,
 } from "./schedule-panel-state";
 import type { ScheduleFilter } from "./schedule-panel-state";
-import { refreshSchedules, useAgentSchedules } from "./schedule-store";
+import { refreshSchedules, useProjectSchedules } from "./schedule-store";
 import { ScheduleSuggestions } from "./schedule-suggestions";
 import { toggleBody } from "./schedule-upsert";
 
@@ -146,54 +150,50 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
   const isOwner = currentProject?.role === "owner";
   // The shared store's list, narrowed to this conversation; only the first load's failure shows
   // in place, and row actions report via toast.
-  const { items: agentItems, error } = useAgentSchedules(
-    projectId,
-    session.agentId,
-    session.sessionId,
-  );
-  const items = agentItems === null ? null : sessionSchedules(agentItems, session.sessionId);
+  const { items: projectItems, error } = useProjectSchedules(projectId, session.sessionId);
+  const items = projectItems === null ? null : sessionSchedules(projectItems, session.sessionId);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ScheduleFilter>("all");
   const [busy, setBusy] = useState(false);
   // Form dialog: non-null means open (editing a row, or null for a new task pinned to this Session).
-  const [form, setForm] = useState<{ editing: ScheduleItem | null } | null>(null);
-  // Name of the task pending deletion confirmation.
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [form, setForm] = useState<{ editing: ProjectScheduleItem | null } | null>(null);
+  // The task pending deletion confirmation, named by its file: the agent whose directory holds it
+  // and the file name, which is what the delete call takes.
+  const [deleting, setDeleting] = useState<{ agentId: string; name: string } | null>(null);
   // AI dialog: non-null means open, seeded with a suggestion's prompt or nothing.
   const [ai, setAi] = useState<{ initial: string } | null>(null);
 
   // On coming to the front, and on a timer while it stays there. Focus and visibility are the
-  // store's own business (it refreshes for the toolbar mark too); a hidden tab adds no poll.
-  // Every refresh names this conversation's agent: the store holds a list per agent, and the
-  // sidebar is reading another one whenever the current Agent has moved ahead of this panel.
+  // store's own business (it refreshes for the session rows' marks too); a hidden tab adds no
+  // poll. The refresh re-reads the whole Project, which is the one list both surfaces share, so
+  // the poll keeps the rows as fresh as this panel.
   useEffect(() => {
     if (!active) return;
-    void refreshSchedules(projectId, session.agentId);
+    void refreshSchedules(projectId);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void refreshSchedules(projectId, session.agentId);
+      if (document.visibilityState === "visible") void refreshSchedules(projectId);
     }, REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [active, projectId, session.agentId]);
+  }, [active, projectId]);
 
   /** After a create or delete: the list, and the agent card's schedule count. */
   const changed = () => {
-    void refreshSchedules(projectId, session.agentId);
+    void refreshSchedules(projectId);
     void reloadAgents();
   };
 
-  /** Toggle: whole-file-replace semantics — resend original fields, only flip enabled. */
-  const toggle = async (item: ScheduleItem) => {
+  /**
+   * Toggle: whole-file-replace semantics — resend original fields, only flip enabled. The write
+   * names the agent whose schedule directory holds the file, which the Project-wide list stamps
+   * on every task; the conversation's own agent is only the right answer for tasks created here.
+   */
+  const toggle = async (item: ProjectScheduleItem) => {
     if (!projectId) return;
     setBusy(true);
     try {
-      await api.updateSchedule(
-        projectId,
-        session.agentId,
-        item.name,
-        toggleBody(item, !item.enabled),
-      );
+      await api.updateSchedule(projectId, item.agentId, item.name, toggleBody(item, !item.enabled));
       toastSuccess(item.enabled ? S.schedule.toastDisabled : S.schedule.toastEnabled);
-      await refreshSchedules(projectId, session.agentId);
+      await refreshSchedules(projectId);
     } catch (e) {
       toastError(apiErrorText(e));
     } finally {
@@ -205,8 +205,10 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
     if (!projectId || deleting === null) return;
     setBusy(true);
     try {
-      await api.deleteSchedule(projectId, session.agentId, deleting);
-      if (form?.editing?.name === deleting) setForm(null);
+      await api.deleteSchedule(projectId, deleting.agentId, deleting.name);
+      // The form may be sitting open on the very task just deleted (the row menu offers both).
+      const editing = form?.editing;
+      if (editing?.agentId === deleting.agentId && editing?.name === deleting.name) setForm(null);
       changed();
     } catch (e) {
       toastError(apiErrorText(e));
@@ -319,7 +321,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
                       />
                       <RowMenu
                         onEdit={() => setForm({ editing: item })}
-                        onDelete={() => setDeleting(item.name)}
+                        onDelete={() => setDeleting({ agentId: item.agentId, name: item.name })}
                       />
                     </>
                   )}
@@ -334,7 +336,9 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
 
       <ScheduleFormModal
         open={form !== null}
-        agentId={session.agentId}
+        // Editing writes back to the file's own agent; creating pins the new task to this
+        // conversation, which is this agent's.
+        agentId={form?.editing?.agentId ?? session.agentId}
         editing={form?.editing ?? null}
         lockedSessionId={session.sessionId}
         onClose={() => setForm(null)}
@@ -358,7 +362,7 @@ export function SchedulePanel({ session, active, onPrefillComposer }: SchedulePa
         onConfirm={() => void confirmRemove()}
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          {deleting !== null ? S.schedule.deleteConfirm(deleting) : ""}
+          {deleting !== null ? S.schedule.deleteConfirm(deleting.name) : ""}
         </p>
       </ConfirmModal>
     </div>

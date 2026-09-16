@@ -127,6 +127,7 @@ import type {
   PrefsResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
+  ProjectSchedulesResponse,
   ProjectsResponse,
   ProjectUpdateRequest,
   ProjectUpdateResponse,
@@ -1190,6 +1191,10 @@ export const listSchedules = (projectId: string, agentId: string) =>
   apiFetch<SchedulesResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/schedules`,
   );
+
+/** Every agent's scheduled tasks in the Project, each stamped with its agent: what the session list's marks read. */
+export const listProjectSchedules = (projectId: string) =>
+  apiFetch<ProjectSchedulesResponse>(`/api/projects/${encodeURIComponent(projectId)}/schedules`);
 
 export const createSchedule = (
   projectId: string,

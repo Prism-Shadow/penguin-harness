@@ -3,6 +3,7 @@
 - **Date:** 2026-09-15
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#732](https://github.com/Prism-Shadow/penguin-harness/pull/732)
 
 [中文版](2026-09-15-launcher-size.zh.md)
 

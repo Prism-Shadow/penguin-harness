@@ -1,7 +1,7 @@
 # The HMR layer: named, packaged, and reduced to /api/hmr
 
 - **Date:** 2026-09-07
-- **Type:** improvement
+- **Type:** refactor
 - **Scope:** `hmr`, `server`, `desktop`, `tooling`, `ci`
 - **PR:** [#656](https://github.com/Prism-Shadow/penguin-harness/pull/656)
 

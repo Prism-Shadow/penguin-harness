@@ -408,9 +408,6 @@ importers:
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-hmr':
-        specifier: workspace:*
-        version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -451,6 +448,9 @@ importers:
         specifier: ^2.5.0
         version: 2.9.0
     devDependencies:
+      '@prismshadow/penguin-hmr':
+        specifier: workspace:*
+        version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
@@ -5572,23 +5572,11 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-hmr@file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
-    dependencies:
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-      - ws
-      - zod
-
   '@prismshadow/penguin-server@file:packages/server(supports-color@10.2.2)':
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
-      '@prismshadow/penguin-hmr': file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
       fflate: 0.8.3
@@ -5615,7 +5603,6 @@ snapshots:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
-      '@prismshadow/penguin-hmr': file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
       fflate: 0.8.3

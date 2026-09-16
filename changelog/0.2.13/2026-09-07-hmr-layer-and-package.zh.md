@@ -1,7 +1,7 @@
 # HMR 层：定名、成包、只剩 /api/hmr
 
 - **Date:** 2026-09-07
-- **Type:** improvement
+- **Type:** refactor
 - **Scope:** `hmr`, `server`, `desktop`, `tooling`, `ci`
 - **PR:** [#656](https://github.com/Prism-Shadow/penguin-harness/pull/656)
 

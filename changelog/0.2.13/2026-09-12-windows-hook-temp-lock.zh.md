@@ -3,6 +3,7 @@
 - **Date:** 2026-09-12
 - **Type:** process
 - **Scope:** `core`, `ci`
+- **PR:** [#711](https://github.com/Prism-Shadow/penguin-harness/pull/711)
 
 [English](2026-09-12-windows-hook-temp-lock.md)
 
