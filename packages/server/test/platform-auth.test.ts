@@ -40,9 +40,16 @@ const deliveryBody = {
         pricing: {
           unit: "usd_per_mtok",
           cacheRead: 0,
+          cacheWrite: 0.625,
+          output: 5,
+        },
+        listPricing: {
+          unit: "usd_per_mtok",
+          cacheRead: 0,
           cacheWrite: 1.25,
           output: 10,
         },
+        discount: 0.5,
         recommendedRoute: {
           protocol: "google-generative-language",
           endpoint: "google",
@@ -62,7 +69,7 @@ const deliveryBody = {
           output: 0.6,
         },
         recommendedRoute: {
-          protocol: "openai-chat-completions",
+          protocol: "deepseek-responses",
           endpoint: "openai",
         },
       },
@@ -86,14 +93,22 @@ describe("Penguin Go key delivery validation", () => {
           {
             modelId: "gemini-3.8-flash",
             maxOutputTokens: 65_536,
+            clientType: "gemini-3.8",
+            discount: 0.5,
             pricing: {
+              unit: "usd_per_mtok",
+              cacheRead: 0,
+              cacheWrite: 0.625,
+              output: 5,
+            },
+            listPricing: {
               unit: "usd_per_mtok",
               cacheRead: 0,
               cacheWrite: 1.25,
               output: 10,
             },
           },
-          { modelId: "deepseek-future", maxOutputTokens: 65_536, clientType: "openai-chat" },
+          { modelId: "deepseek-future", maxOutputTokens: 65_536, clientType: "deepseek-v4" },
         ],
       },
     });
@@ -131,7 +146,7 @@ describe("Penguin Go key delivery validation", () => {
           ],
         },
       }),
-    ).toThrow("invalid output price");
+    ).toThrow("invalid effective output price");
     expect(() =>
       platformConnection({
         ...deliveryBody,
@@ -148,7 +163,7 @@ describe("Penguin Go key delivery validation", () => {
           ],
         },
       }),
-    ).toThrow("unsupported pricing unit");
+    ).toThrow("unsupported effective pricing unit");
   });
 });
 
@@ -279,15 +294,16 @@ describe("Penguin Go key authorization routes", () => {
       displayName: "DeepSeek Future",
       contextWindow: 1_000_000,
       maxTokens: 65_536,
-      clientType: "openai-chat",
+      clientType: "deepseek-v4",
       vision: false,
       pricing: { cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
       credential: { baseUrl: "https://token.penguin.ooo/api" },
     });
-    expect(penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash")?.pricing).toEqual({
-      cacheRead: 0,
-      cacheWrite: 1.25,
-      output: 10,
+    expect(penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash")).toMatchObject({
+      clientType: "gemini-3.8",
+      pricing: { cacheRead: 0, cacheWrite: 0.625, output: 5 },
+      listPricing: { cacheRead: 0, cacheWrite: 1.25, output: 10 },
+      discount: 0.5,
     });
     expect(penguinGoModels.every((model) => model.credential?.apiKeyMasked !== undefined)).toBe(
       true,
@@ -316,6 +332,12 @@ describe("Penguin Go key authorization routes", () => {
             pricing: {
               unit: "usd_per_mtok",
               cacheRead: 0,
+              cacheWrite: 0.75,
+              output: 6,
+            },
+            listPricing: {
+              unit: "usd_per_mtok",
+              cacheRead: 0,
               cacheWrite: 1.5,
               output: 12,
             },
@@ -328,8 +350,8 @@ describe("Penguin Go key authorization routes", () => {
     expect(repriced).toMatchObject({ added: 0, updated: 1 });
     expect(repriced.models.find((model) => model.modelId === "gemini-3.8-flash")?.pricing).toEqual({
       cacheRead: 0,
-      cacheWrite: 1.5,
-      output: 12,
+      cacheWrite: 0.75,
+      output: 6,
     });
 
     currentCatalogModels.push({
@@ -341,10 +363,17 @@ describe("Penguin Go key authorization routes", () => {
       supportsVision: true,
       pricing: {
         unit: "usd_per_mtok",
+        cacheRead: 0.05,
+        cacheWrite: 0.25,
+        output: 1,
+      },
+      listPricing: {
+        unit: "usd_per_mtok",
         cacheRead: 0.1,
         cacheWrite: 0.5,
         output: 2,
       },
+      discount: 0.5,
       recommendedRoute: {
         protocol: "google-generative-language",
         endpoint: "google",
@@ -358,8 +387,11 @@ describe("Penguin Go key authorization routes", () => {
       displayName: "Gemini Future",
       contextWindow: 1_048_576,
       maxTokens: 65_536,
+      clientType: "gemini-3.8",
       vision: true,
-      pricing: { cacheRead: 0.1, cacheWrite: 0.5, output: 2 },
+      pricing: { cacheRead: 0.05, cacheWrite: 0.25, output: 1 },
+      listPricing: { cacheRead: 0.1, cacheWrite: 0.5, output: 2 },
+      discount: 0.5,
       credential: {
         apiKeyMasked: "sk-p…0001",
         baseUrl: "https://token.penguin.ooo/api",

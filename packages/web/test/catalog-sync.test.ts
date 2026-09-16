@@ -221,7 +221,7 @@ describe("syncRowsWithCatalog", () => {
     expect([row.cacheRead, row.cacheWrite, row.output]).toEqual(["", "", ""]);
   });
 
-  it("keeps Penguin Go pricing owned by platform sync out of preset updates", () => {
+  it("restores Penguin Go's complete preset pricing when the saved row is stale", () => {
     const preset = presetModelEntries().find(
       (entry) => entry.provider === "penguin-go" && entry.model_id === "gemini-3.8-flash",
     )!;
@@ -239,13 +239,23 @@ describe("syncRowsWithCatalog", () => {
       output: "0.3",
     });
     const merged = syncRowsWithCatalog([local], [preset]);
-    expect(merged.updated).toBe(0);
-    expect(merged.rows[0]).toBe(local);
+    expect(merged.updated).toBe(1);
+    expect([merged.rows[0]!.cacheRead, merged.rows[0]!.cacheWrite, merged.rows[0]!.output]).toEqual(
+      [
+        String(preset.pricing!.cache_read),
+        String(preset.pricing!.cache_write),
+        String(preset.pricing!.output),
+      ],
+    );
 
     const dto = inSyncDto(preset, {
       pricing: { cacheRead: 0.1, cacheWrite: 0.2, output: 0.3 },
     });
-    expect(catalogDelta([dto], [preset])).toEqual({ added: 0, updated: 0, refs: [] });
+    expect(catalogDelta([dto], [preset])).toEqual({
+      added: 0,
+      updated: 1,
+      refs: ["penguin-go/gemini-3.8-flash"],
+    });
   });
 
   it("syncs against the real built-in catalog by default", () => {

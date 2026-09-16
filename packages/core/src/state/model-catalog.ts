@@ -1518,14 +1518,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- Penguin Go (mixed-protocol relay). The model ids are the generation rows
   // provisioned by Penguin Go's generic-client authorization contract. Both
   // protocols share the /api base: the Google client appends /v1beta itself, while the
-  // OpenAI Chat client appends /chat/completions. Prices are intentionally omitted because
-  // the relay owns mutable account pricing; PenguinHarness only needs stable routing here.
+  // DeepSeek Responses client appends /responses. The rows carry Penguin Go's current list
+  // prices so a new Project is complete before its first authorization; platform sync remains
+  // authoritative when the relay later publishes changed metadata.
   {
     modelId: "gemini-3.8-flash",
     displayName: "Gemini 3.8 Flash",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
+    clientType: "gemini-3.8",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1533,7 +1537,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Gemini 3.7 Flash",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
+    clientType: "gemini-3.8",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1541,7 +1548,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Gemini 3.6 Flash",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 7.5),
+    discount: 0.5,
     supportsVision: true,
+    clientType: "gemini-3.8",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1549,7 +1559,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Gemini 3.5 Flash",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 9),
+    discount: 0.5,
     supportsVision: true,
+    clientType: "gemini-3.8",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1557,7 +1570,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Gemini 3.5 Flash-Lite",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1048576,
+    pricing: usd(0.03, 0.3, 2.5),
+    discount: 0.5,
     supportsVision: true,
+    clientType: "gemini-3.8",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1565,7 +1581,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Gemini 3.1 Flash-Lite",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1048576,
+    pricing: usd(0.025, 0.25, 1.5),
+    discount: 0.5,
     supportsVision: true,
+    clientType: "gemini-3.8",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1573,7 +1592,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "Gemini 3.1 Pro (Preview)",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1048576,
+    pricing: usd(0.2, 2, 12),
+    discount: 0.5,
     supportsVision: true,
+    clientType: "gemini-3.8",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1581,8 +1603,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4.1 Flash",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "deepseek-v4",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1590,8 +1614,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Flash",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "deepseek-v4",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1599,8 +1625,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Pro",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1000000,
+    pricing: cny(0.3, 9, 27),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: false,
-    clientType: "openai-chat",
+    clientType: "deepseek-v4",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   {
@@ -1608,8 +1636,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: PENGUIN_GO_PROVIDER_ID,
     contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: "deepseek-v4",
     baseUrl: PENGUIN_GO_BASE_URL,
   },
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model

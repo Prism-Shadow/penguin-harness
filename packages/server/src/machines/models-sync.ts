@@ -72,6 +72,16 @@ function fromLocal(entry: ModelEntry): ModelUpdateEntry {
           },
         }
       : {}),
+    ...(entry.list_pricing !== undefined
+      ? {
+          listPricing: {
+            cacheRead: entry.list_pricing.cache_read,
+            cacheWrite: entry.list_pricing.cache_write,
+            output: entry.list_pricing.output,
+          },
+        }
+      : {}),
+    ...(entry.discount !== undefined ? { discount: entry.discount } : {}),
     // An entry with no inline key authenticates from THIS machine's environment
     // (ANTHROPIC_API_KEY and friends), and an environment variable is not ours to carry
     // anywhere. Omitted rather than cleared: the machine may have its own value for the same
@@ -100,6 +110,8 @@ function fromRemote(info: ModelInfo): ModelUpdateEntry {
     ...(info.maxTokens !== undefined ? { maxTokens: info.maxTokens } : {}),
     ...(info.fastMode === true ? { fastMode: true } : {}),
     ...(info.pricing !== undefined ? { pricing: info.pricing } : {}),
+    ...(info.listPricing !== undefined ? { listPricing: info.listPricing } : {}),
+    ...(info.discount !== undefined ? { discount: info.discount } : {}),
     ...(info.credential?.baseUrl !== undefined ? { baseUrl: info.credential.baseUrl } : {}),
   };
 }

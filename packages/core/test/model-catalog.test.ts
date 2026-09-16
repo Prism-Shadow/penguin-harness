@@ -119,7 +119,7 @@ describe("model-catalog", () => {
     expect(oauth.keyName).toBe("PenguinHarness");
   });
 
-  it("prebuilds Penguin Go with fixed relay routes and no account-owned pricing", () => {
+  it("prebuilds Penguin Go with fixed relay routes and complete account pricing", () => {
     const penguinGoModels = MODEL_CATALOG.filter((model) => model.provider === "penguin-go");
     expect(penguinGoModels.map((model) => model.modelId)).toEqual([
       "gemini-3.8-flash",
@@ -137,19 +137,35 @@ describe("model-catalog", () => {
     expect(
       penguinGoModels.every((model) => model.baseUrl === "https://token.penguin.ooo/api"),
     ).toBe(true);
-    expect(penguinGoModels.every((model) => model.pricing === undefined)).toBe(true);
+    expect(
+      penguinGoModels.every(
+        (model) => model.pricing !== undefined && model.pricing.unit === "usd_per_mtok",
+      ),
+    ).toBe(true);
     expect(
       penguinGoModels
         .filter((model) => model.modelId.startsWith("gemini-"))
-        .every((model) => model.clientType === undefined),
+        .every((model) => model.clientType === "gemini-3.8"),
     ).toBe(true);
     expect(
       penguinGoModels
         .filter((model) => model.modelId.startsWith("deepseek-"))
-        .every((model) => model.clientType === "openai-chat"),
+        .every((model) => model.clientType === "deepseek-v4"),
     ).toBe(true);
     expect(catalogEntryFor("penguin-go", "deepseek-flash")?.supportsVision).toBe(true);
     expect(catalogEntryFor("penguin-go", "deepseek-v4-flash")?.supportsVision).toBe(false);
+    expect(catalogEntryFor("penguin-go", "gemini-3.8-flash")).toMatchObject({
+      pricing: { cache_read: 0.15, cache_write: 1.5, output: 7.5 },
+      discount: 0.5,
+    });
+    expect(catalogEntryFor("penguin-go", "deepseek-v4-flash")).toMatchObject({
+      pricing: {
+        cache_read: 0.005714,
+        cache_write: 0.285714,
+        output: 1.142857,
+      },
+      offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    });
   });
 
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
@@ -161,11 +177,7 @@ describe("model-catalog", () => {
 
   it("every entry has valid three-bucket pricing; context_window is a positive integer", () => {
     for (const m of MODEL_CATALOG) {
-      if (m.provider === "penguin-go") {
-        // Penguin Go pricing belongs to the external platform and may vary independently of this
-        // release. Undefined is deliberately "unknown", not a fabricated zero cost.
-        expect(m.pricing, m.modelId).toBeUndefined();
-      } else if (
+      if (
         m.provider === "vllm" ||
         m.modelId.endsWith(":free") ||
         m.modelId === "openrouter/free" ||
@@ -1503,12 +1515,13 @@ describe("off-peak schedules", () => {
   const beijing = (iso: string): Date => new Date(`${iso}+08:00`);
 
   it("the DeepSeek rows store the peak price and declare the schedule", () => {
-    // Every direct row, plus the three resold rows whose sellers pass DeepSeek's own windows
-    // through: two on TokenDance and one on OpenRouter. A gateway row on the schedule carries
-    // no flat `discount` — the two are mutually exclusive, pinned by the last case here.
+    // Every direct row, plus the resold rows whose sellers pass DeepSeek's own windows through:
+    // four on Penguin Go, two on TokenDance and one on OpenRouter. A gateway row on the schedule
+    // carries no flat `discount` — the two are mutually exclusive, pinned by the last case here.
     const rows = MODEL_CATALOG.filter(
       (m) =>
         m.provider === "deepseek" ||
+        (m.provider === "penguin-go" && m.modelId.startsWith("deepseek-")) ||
         (m.provider === "tokendance" &&
           ["deepseek-v4.1-flash", "deepseek-v4-flash-vision-exp"].includes(m.modelId)) ||
         (m.provider === "openrouter" && m.modelId === "deepseek/deepseek-v4.1-flash"),

@@ -15,6 +15,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   MODEL_CATALOG,
+  PENGUIN_GO_BASE_URL,
   catalogEntryFor,
   effectivePricing,
   userText,
@@ -189,11 +190,17 @@ describe("models preset & catalog enrichment", () => {
           },
           { provider: "custom", modelId: "my-model", clientType: "openai" },
           // Both protocols in the relay group resolve the same provider-scoped key.
-          { provider: "penguin-go", modelId: "gemini-3.8-flash" },
+          {
+            provider: "penguin-go",
+            modelId: "gemini-3.8-flash",
+            clientType: "gemini-3.8",
+            baseUrl: PENGUIN_GO_BASE_URL,
+          },
           {
             provider: "penguin-go",
             modelId: "deepseek-flash",
-            clientType: "openai-chat",
+            clientType: "deepseek-v4",
+            baseUrl: PENGUIN_GO_BASE_URL,
           },
         ],
       });

@@ -372,6 +372,24 @@ describe("discountedPrice", () => {
     expect(entry.pricing!.cache_write).toBeGreaterThan(found.billed.cacheWrite);
   });
 
+  it("an off-catalog platform model uses synchronized list price metadata", () => {
+    const row = {
+      provider: "penguin-go",
+      modelId: "gemini-future",
+      cacheRead: "0.05",
+      cacheWrite: "0.25",
+      output: "1",
+      listPricing: { cacheRead: 0.1, cacheWrite: 0.5, output: 2 },
+      discount: 0.5,
+    };
+    expect(discountedPrice(row)).toEqual({
+      percent: 50,
+      billed: { cacheRead: 0.05, cacheWrite: 0.25, output: 1 },
+      scheduled: false,
+    });
+    expect(discountedPrice({ ...row, output: "1.1" })).toBeUndefined();
+  });
+
   // Beijing is UTC+8, so 01:00Z is 09:00 there. 2026-08-31 is a Monday.
   const PEAK = new Date("2026-08-31T01:30:00Z");
   const OFF_PEAK = new Date("2026-08-31T05:00:00Z");

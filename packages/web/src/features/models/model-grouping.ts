@@ -47,6 +47,10 @@ export interface ModelRowLike {
   /** Upstream model id (i.e. the stored model_id). */
   modelId: string;
   displayName?: string;
+  /** Platform-synchronized list price for an off-catalog promoted model. */
+  listPricing?: { cacheRead: number; cacheWrite: number; output: number };
+  /** Fraction off list price (0.5 = half price). */
+  discount?: number;
 }
 
 /** Synthesized vendor info for a user-defined group: OpenAI protocol semantics (env fallback OPENAI_*), no external links or gateway endpoint. */
@@ -233,15 +237,36 @@ export function discountedPrice(
   now: Date = new Date(),
 ): DiscountedPrice | undefined {
   const entry = catalogEntryFor(row.provider, row.modelId);
-  if (entry?.pricing === undefined) return undefined;
-  const schedule = entry.offPeakDiscount;
-  const rate = schedule?.rate ?? entry.discount;
+  const syncedPromotion =
+    entry?.pricing === undefined &&
+    row.listPricing !== undefined &&
+    row.discount !== undefined &&
+    row.discount > 0 &&
+    row.discount < 1
+      ? {
+          rate: row.discount,
+          expected: {
+            cache_read: Math.round(row.listPricing.cacheRead * (1 - row.discount) * 1e6) / 1e6,
+            cache_write: Math.round(row.listPricing.cacheWrite * (1 - row.discount) * 1e6) / 1e6,
+            output: Math.round(row.listPricing.output * (1 - row.discount) * 1e6) / 1e6,
+          },
+        }
+      : undefined;
+  if (entry?.pricing === undefined && syncedPromotion === undefined) return undefined;
+  const schedule = syncedPromotion === undefined ? entry?.offPeakDiscount : undefined;
+  const rate = syncedPromotion?.rate ?? schedule?.rate ?? entry?.discount;
   // A fraction off, so only (0, 1) says anything: `effectivePricing` already ignores 0, and a
   // badge built from a value outside that range reads as `-0%`, `-100%` beside a "Free" tag, or
   // `--20%`. A stray 0 is the plausible one — the field's own doc says a lapsed promotion is one
   // field to delete, and deleting a digit is the near miss.
   if (rate === undefined || rate <= 0 || rate >= 1) return undefined;
-  const expected = schedule !== undefined ? entry.pricing : effectivePricing(entry);
+  const expected =
+    syncedPromotion?.expected ??
+    (entry === undefined
+      ? undefined
+      : schedule !== undefined
+        ? entry.pricing
+        : effectivePricing(entry));
   if (expected === undefined) return undefined;
   const same =
     bucketValue(row.cacheRead) === expected.cache_read &&
@@ -249,7 +274,8 @@ export function discountedPrice(
     bucketValue(row.output) === expected.output;
   if (!same) return undefined;
   if (schedule !== undefined && !offPeakAt(schedule, now)) return undefined;
-  const billed = effectivePricing(entry, now);
+  const billed =
+    syncedPromotion?.expected ?? (entry === undefined ? undefined : effectivePricing(entry, now));
   if (billed === undefined) return undefined;
   return {
     percent: Math.round(rate * 100),
@@ -258,7 +284,7 @@ export function discountedPrice(
       cacheWrite: billed.cache_write,
       output: billed.output,
     },
-    scheduled: schedule !== undefined,
+    scheduled: syncedPromotion === undefined && schedule !== undefined,
   };
 }
 

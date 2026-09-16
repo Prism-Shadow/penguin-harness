@@ -1062,6 +1062,18 @@ export class ProjectConfigService implements ProjectConfigStore {
                 output: optNum(pricing.output) ?? 0,
               }
             : undefined;
+        const listPricing = asTable(m.list_pricing);
+        const listPricingDto: ModelPricingDto | undefined =
+          optNum(listPricing.cache_read) !== undefined ||
+          optNum(listPricing.cache_write) !== undefined ||
+          optNum(listPricing.output) !== undefined
+            ? {
+                cacheRead: optNum(listPricing.cache_read) ?? 0,
+                cacheWrite: optNum(listPricing.cache_write) ?? 0,
+                output: optNum(listPricing.output) ?? 0,
+              }
+            : undefined;
+        const discount = optNum(m.discount);
         // Normalized on read: entries stored before AgentHub 0.4.2's openai -> openai-chat
         // rename report the canonical spelling without a disk rewrite (the next models PUT
         // persists it).
@@ -1120,6 +1132,8 @@ export class ProjectConfigService implements ProjectConfigStore {
           ...(envKey ? { envKey } : {}),
           ...(envKeyMasked !== undefined ? { envKeyMasked } : {}),
           ...(pricingDto ? { pricing: pricingDto } : {}),
+          ...(listPricingDto ? { listPricing: listPricingDto } : {}),
+          ...(discount !== undefined ? { discount } : {}),
           ...(apiKey !== undefined || credBaseUrl !== undefined
             ? {
                 credential: {
@@ -1197,6 +1211,8 @@ export class ProjectConfigService implements ProjectConfigStore {
       delete next.max_tokens;
       delete next.fast_mode;
       delete next.pricing;
+      delete next.list_pricing;
+      delete next.discount;
       delete next.display_name;
       // Leftover key from the old concatenated format (request_model_id): defensively stripped, never written to disk again.
       delete next.request_model_id;
@@ -1238,6 +1254,15 @@ export class ProjectConfigService implements ProjectConfigStore {
           output: entry.pricing.output,
         };
       }
+      if (entry.listPricing !== undefined) {
+        next.list_pricing = {
+          unit: "usd_per_mtok",
+          cache_read: entry.listPricing.cacheRead,
+          cache_write: entry.listPricing.cacheWrite,
+          output: entry.listPricing.output,
+        };
+      }
+      if (entry.discount !== undefined) next.discount = entry.discount;
 
       // credential is inlined on the entry; added/removed on top of the old value per the request (migrates automatically with the base entry when the key changes).
       if (entry.clearApiKey) {
@@ -1352,8 +1377,8 @@ export class ProjectConfigService implements ProjectConfigStore {
   }
 
   /**
-   * Adds newly advertised models and refreshes the platform-owned price on existing rows.
-   * Routing and all other annotations remain Project-owned and are never overwritten.
+   * Adds newly advertised models and refreshes platform-owned routing, price and promotion
+   * metadata on existing rows. Other annotations remain Project-owned and are never overwritten.
    * Authorization additionally applies the freshly delivered key to the whole group.
    */
   async mergePlatformModels(
@@ -1376,19 +1401,44 @@ export class ProjectConfigService implements ProjectConfigStore {
       const modelId = String(model.model_id);
       known.add(modelId);
       const catalogModel = catalogById.get(modelId);
+      const listPricing = catalogModel?.listPricing;
       const remotePricing = catalogModel?.pricing;
       const pricingChanged =
         remotePricing !== undefined && !platformPricingMatches(model.pricing, remotePricing);
-      if (pricingChanged) updated += 1;
+      const clientTypeChanged =
+        catalogModel !== undefined && model.client_type !== catalogModel.clientType;
+      const promotionChanged =
+        catalogModel !== undefined &&
+        (catalogModel.discount === undefined
+          ? model.discount !== undefined || model.list_pricing !== undefined
+          : model.discount !== catalogModel.discount ||
+            listPricing === undefined ||
+            !platformPricingMatches(model.list_pricing, listPricing));
+      if (pricingChanged || clientTypeChanged || promotionChanged) updated += 1;
       if (applyKeyToExisting) applied += 1;
-      if (!pricingChanged && !applyKeyToExisting) return model;
-      return {
+      if (!pricingChanged && !clientTypeChanged && !promotionChanged && !applyKeyToExisting) {
+        return model;
+      }
+      const nextModel: RawTable = {
         ...model,
         ...(pricingChanged && remotePricing !== undefined
           ? { pricing: platformPricingTable(remotePricing) }
           : {}),
+        ...(clientTypeChanged && catalogModel !== undefined
+          ? { client_type: catalogModel.clientType }
+          : {}),
         ...(applyKeyToExisting ? { api_key: apiKey, created_at: createdAt } : {}),
       };
+      if (promotionChanged) {
+        if (catalogModel?.discount !== undefined && listPricing !== undefined) {
+          nextModel.discount = catalogModel.discount;
+          nextModel.list_pricing = platformPricingTable(listPricing);
+        } else {
+          delete nextModel.discount;
+          delete nextModel.list_pricing;
+        }
+      }
+      return nextModel;
     });
 
     for (const model of catalog.models) {
@@ -1404,7 +1454,13 @@ export class ProjectConfigService implements ProjectConfigStore {
         ...(model.maxOutputTokens !== undefined ? { max_tokens: model.maxOutputTokens } : {}),
         vision: model.supportsVision,
         pricing: platformPricingTable(model.pricing),
-        ...(model.clientType !== undefined ? { client_type: model.clientType } : {}),
+        ...(model.discount !== undefined && model.listPricing !== undefined
+          ? {
+              list_pricing: platformPricingTable(model.listPricing),
+              discount: model.discount,
+            }
+          : {}),
+        client_type: model.clientType,
         base_url: model.baseUrl,
         api_key: apiKey,
         created_at: createdAt,

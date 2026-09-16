@@ -16,9 +16,14 @@ export interface PlatformCatalogModel {
   contextWindow: number;
   maxOutputTokens?: number;
   supportsVision: boolean;
+  /** Effective price Penguin Go actually bills. */
   pricing: PlatformCatalogPricing;
+  /** Seller list price behind a flat promotion. */
+  listPricing?: PlatformCatalogPricing;
+  /** Fraction off `listPricing` (0.5 = half price). */
+  discount?: number;
   baseUrl: string;
-  clientType?: "openai-chat";
+  clientType: "gemini-3.8" | "deepseek-v4";
 }
 
 /** Validated snapshot returned by Penguin Go's client-model catalog. */

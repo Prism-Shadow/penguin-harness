@@ -16,6 +16,7 @@ import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import type { PlatformAuthFlowStatusResponse } from "../api/types.js";
 import {
   PLATFORM_CLIENT_ID,
+  type PlatformCatalogPricing,
   type PlatformModelApplyResult,
   type PlatformModelCatalog,
 } from "./platform-auth-types.js";
@@ -123,6 +124,54 @@ function platformPrice(value: unknown, label: string): number {
   return value;
 }
 
+function platformPricing(value: unknown, label: string): PlatformCatalogPricing {
+  const pricing = asRecord(value);
+  if (pricing.unit !== "usd_per_mtok") {
+    throw new Error(`The platform returned an unsupported ${label} pricing unit.`);
+  }
+  return {
+    unit: "usd_per_mtok",
+    cacheRead: platformPrice(pricing.cacheRead, `${label} cache read`),
+    cacheWrite: platformPrice(pricing.cacheWrite, `${label} cache write`),
+    output: platformPrice(pricing.output, `${label} output`),
+  };
+}
+
+function platformPromotion(
+  model: Record<string, unknown>,
+  effectivePricing: PlatformCatalogPricing,
+): {
+  listPricing?: PlatformCatalogPricing;
+  discount?: number;
+} {
+  const hasListPricing = model.listPricing !== undefined;
+  const hasDiscount = model.discount !== undefined;
+  if (hasListPricing !== hasDiscount) {
+    throw new Error("The platform returned incomplete discount metadata.");
+  }
+  if (!hasListPricing) return {};
+  if (
+    typeof model.discount !== "number" ||
+    !Number.isFinite(model.discount) ||
+    model.discount <= 0 ||
+    model.discount >= 1
+  ) {
+    throw new Error("The platform returned an invalid discount.");
+  }
+  const discount = model.discount;
+  const listPricing = platformPricing(model.listPricing, "list");
+  const close = (actual: number, list: number): boolean =>
+    Math.abs(actual - list * (1 - discount)) <= 1e-9 * Math.max(1, Math.abs(actual));
+  if (
+    !close(effectivePricing.cacheRead, listPricing.cacheRead) ||
+    !close(effectivePricing.cacheWrite, listPricing.cacheWrite) ||
+    !close(effectivePricing.output, listPricing.output)
+  ) {
+    throw new Error("The platform returned inconsistent discount metadata.");
+  }
+  return { listPricing, discount };
+}
+
 function platformCatalog(value: unknown, requireEnvelope: boolean): PlatformModelCatalog {
   const body = asRecord(value);
   if (requireEnvelope && body.schemaVersion !== 1) {
@@ -162,21 +211,19 @@ function platformCatalog(value: unknown, requireEnvelope: boolean): PlatformMode
     if (typeof model.supportsVision !== "boolean") {
       throw new Error("The platform returned an invalid vision capability.");
     }
-    const pricing = asRecord(model.pricing);
-    if (pricing.unit !== "usd_per_mtok") {
-      throw new Error("The platform returned an unsupported pricing unit.");
-    }
+    const pricing = platformPricing(model.pricing, "effective");
+    const promotion = platformPromotion(model, pricing);
     const route = asRecord(model.recommendedRoute);
     const provider = model.provider;
     const googleRoute =
       provider === "google" &&
       route.protocol === "google-generative-language" &&
       route.endpoint === "google";
-    const openAiRoute =
+    const deepSeekRoute =
       provider === "deepseek" &&
-      route.protocol === "openai-chat-completions" &&
+      route.protocol === "deepseek-responses" &&
       route.endpoint === "openai";
-    if (!googleRoute && !openAiRoute) {
+    if (!googleRoute && !deepSeekRoute) {
       throw new Error("The platform returned an unsupported model route.");
     }
     return {
@@ -185,14 +232,10 @@ function platformCatalog(value: unknown, requireEnvelope: boolean): PlatformMode
       contextWindow: Number(contextWindow),
       ...(maxOutputTokens === undefined ? {} : { maxOutputTokens: Number(maxOutputTokens) }),
       supportsVision: model.supportsVision,
-      pricing: {
-        unit: "usd_per_mtok" as const,
-        cacheRead: platformPrice(pricing.cacheRead, "cache read"),
-        cacheWrite: platformPrice(pricing.cacheWrite, "cache write"),
-        output: platformPrice(pricing.output, "output"),
-      },
+      pricing,
+      ...promotion,
       baseUrl: endpointByName[googleRoute ? "google" : "openai"],
-      ...(openAiRoute ? { clientType: "openai-chat" as const } : {}),
+      clientType: googleRoute ? ("gemini-3.8" as const) : ("deepseek-v4" as const),
     };
   });
   return { models };

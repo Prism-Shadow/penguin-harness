@@ -41,6 +41,7 @@ import {
 import type { DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
 import type {
   CredentialInfo,
+  ModelPricingDto,
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
@@ -323,6 +324,9 @@ export interface RowState {
   cacheRead: string;
   cacheWrite: string;
   output: string;
+  /** Seller list price and flat discount supplied by a platform sync. */
+  listPricing?: ModelPricingDto;
+  discount?: number;
   /** Current base_url input; compared against originalBaseUrl to decide omit/override/clear (null). */
   baseUrl: string;
   originalBaseUrl: string;
@@ -510,6 +514,8 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   if (m.envKey !== undefined) row.envKey = m.envKey;
   if (m.envKeyMasked !== undefined) row.envKeyMasked = m.envKeyMasked;
   if (m.credential) row.credential = m.credential;
+  if (m.listPricing !== undefined) row.listPricing = m.listPricing;
+  if (m.discount !== undefined) row.discount = m.discount;
   return row;
 }
 
@@ -621,6 +627,8 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   ) {
     entry.pricing = { cacheRead: cr, cacheWrite: cwr, output: out };
   }
+  if (row.listPricing !== undefined) entry.listPricing = row.listPricing;
+  if (row.discount !== undefined) entry.discount = row.discount;
   if (row.apiKeyInput.trim()) entry.apiKey = row.apiKeyInput.trim();
   if (row.clearApiKey) entry.clearApiKey = true;
   const baseUrl = row.baseUrl.trim();

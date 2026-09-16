@@ -166,6 +166,34 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
         output: p.output as number,
       };
     }
+    if (m.listPricing !== undefined) {
+      const p = m.listPricing as Record<string, unknown>;
+      if (p === null || typeof p !== "object" || Array.isArray(p)) {
+        throw badRequest(`models[${i}].listPricing must be an object.`);
+      }
+      for (const key of ["cacheRead", "cacheWrite", "output"] as const) {
+        const v = p[key];
+        if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+          throw badRequest(`models[${i}].listPricing.${key} must be a non-negative number.`);
+        }
+      }
+      entry.listPricing = {
+        cacheRead: p.cacheRead as number,
+        cacheWrite: p.cacheWrite as number,
+        output: p.output as number,
+      };
+    }
+    if (m.discount !== undefined) {
+      if (
+        typeof m.discount !== "number" ||
+        !Number.isFinite(m.discount) ||
+        m.discount <= 0 ||
+        m.discount >= 1
+      ) {
+        throw badRequest(`models[${i}].discount must be a number between 0 and 1.`);
+      }
+      entry.discount = m.discount;
+    }
     if (m.apiKey !== undefined) {
       if (typeof m.apiKey !== "string" || m.apiKey.length === 0) {
         throw badRequest(`models[${i}].apiKey must be a non-empty string.`);
