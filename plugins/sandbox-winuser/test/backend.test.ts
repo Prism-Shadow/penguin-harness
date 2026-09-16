@@ -89,6 +89,8 @@ describe("confining", () => {
     });
     expect(confined.argv.slice(0, 2)).toEqual(["C:\\node\\node.exe", "C:\\plugin\\launch.js"]);
     expect(confined.enforcement).toBe("full");
+    // The interpreter may be the desktop app's own binary, which runs a script only when told.
+    expect(confined.env).toEqual({ ELECTRON_RUN_AS_NODE: "1" });
     // Every process on the machine can read a command line: the secret must not be in one.
     expect(confined.argv.join(" ")).not.toContain("secret-offline");
     expect(jobOf(confined.argv)).toMatchObject({
@@ -134,10 +136,17 @@ describe("loading", () => {
 describe("the confined environment", () => {
   it("points HOME and the temp variables at the sandbox's own home, keeping the rest", () => {
     const env = sandboxEnvironment(
-      { PATH: "C:\\Windows", USERPROFILE: "C:\\Users\\k", HOME: "C:\\Users\\k" },
+      {
+        PATH: "C:\\Windows",
+        USERPROFILE: "C:\\Users\\k",
+        HOME: "C:\\Users\\k",
+        ELECTRON_RUN_AS_NODE: "1",
+      },
       "C:\\ProgramData\\penguin\\sandbox-home",
     );
     expect(env.PATH).toBe("C:\\Windows");
+    // The launcher's own interpreter switch stays with the launcher.
+    expect(env.ELECTRON_RUN_AS_NODE).toBeUndefined();
     expect(env.HOME).toBe("C:\\ProgramData\\penguin\\sandbox-home");
     expect(env.USERPROFILE).toBe("C:\\ProgramData\\penguin\\sandbox-home");
     expect(env.TEMP).toBe("C:\\ProgramData\\penguin\\sandbox-home\\temp");

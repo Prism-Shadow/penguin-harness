@@ -179,6 +179,9 @@ export function sandboxEnvironment(
       if (/^(https?|all|ftp)_proxy$/i.test(key)) delete out[key];
     }
   }
+  // The provider's switch for THIS launcher's interpreter (see index.ts): it describes the
+  // runner, and a confined command that inherited it would run the desktop app as Node.
+  delete out.ELECTRON_RUN_AS_NODE;
   const temp = path.win32.join(home, "temp");
   return {
     ...out,
@@ -340,6 +343,8 @@ function main(): void {
     process.stderr.write("penguin-winuser: the launcher takes one base64 job argument.\n");
     process.exit(2);
   }
+  // The first line a command leaves: a run with none never reached this launcher at all.
+  trace(`invoked cwd=${process.cwd()}`);
   let job: LaunchJob;
   try {
     job = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as LaunchJob;

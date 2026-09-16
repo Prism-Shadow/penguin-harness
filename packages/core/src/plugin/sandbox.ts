@@ -89,6 +89,14 @@ export interface ConfinedArgv {
   denialSignatures: readonly string[];
   /** Structured runner-failure evidence (see {@link RunnerFailureRule}). */
   runnerFailureRules: readonly RunnerFailureRule[];
+  /**
+   * Environment entries the RUNNER needs, laid over the command's own environment at
+   * spawn. A runner that is a script has to tell its interpreter how to behave — the
+   * desktop app's own binary runs a script only under `ELECTRON_RUN_AS_NODE`, and
+   * nothing in an argv can say so. These describe the runner, not the command: a runner
+   * that hands the environment on keeps them from the command it confines.
+   */
+  env?: Readonly<Record<string, string>>;
 }
 
 /**

@@ -521,7 +521,9 @@ describe("confineSpawn seam rewrites the exact argv a command spawns", () => {
       seen = { argv, cwd: opts.cwd, workspaceDir: opts.workspaceDir };
       // Stand-in runner: replaces the invocation wholesale and prints a marker, proving
       // the child that actually ran is the rewritten argv, not the original shell.
-      return [process.execPath, "-e", "console.log('CONFINED wrapped=' + process.argv.length)"];
+      return {
+        argv: [process.execPath, "-e", "console.log('CONFINED wrapped=' + process.argv.length)"],
+      };
     };
     const res = await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
     expect(res.output).toContain("CONFINED wrapped=");
@@ -550,10 +552,27 @@ describe("confineSpawn seam rewrites the exact argv a command spawns", () => {
   it("the getter is re-read at every spawn, so a hot-swapped confiner needs no new Environment", async () => {
     const first = await runTool(confinedEnv, "exec_command", { cmd: "echo unconfined-run" });
     expect(first.output).toContain("unconfined-run");
-    confiner = () => [process.execPath, "-e", "console.log('CONFINED')"];
+    confiner = () => ({ argv: [process.execPath, "-e", "console.log('CONFINED')"] });
     const second = await runTool(confinedEnv, "exec_command", { cmd: "echo unconfined-run" });
     expect(second.output).toContain("CONFINED");
     expect(second.output).not.toContain("unconfined-run");
+  });
+
+  it("the entries a confiner asks for reach the runner, on top of the assembled environment", async () => {
+    // A runner that is a script must be able to tell its interpreter how to behave (the
+    // desktop app's binary runs a script only under ELECTRON_RUN_AS_NODE); the argv alone
+    // cannot say so. The rest of the environment is still the manager's.
+    confiner = () => ({
+      argv: [
+        process.execPath,
+        "-e",
+        "console.log('RUNNER=' + process.env.PENGUIN_RUNNER_MARK + ' PATH=' + (process.env.PATH ?? '').length)",
+      ],
+      env: { PENGUIN_RUNNER_MARK: "set-by-confiner" },
+    });
+    const res = await runTool(confinedEnv, "exec_command", { cmd: "echo original" });
+    expect(res.output).toContain("RUNNER=set-by-confiner");
+    expect(res.output).not.toMatch(/PATH=0\b/);
   });
 });
 

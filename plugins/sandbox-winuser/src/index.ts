@@ -180,6 +180,11 @@ export function createWinUserProvider(
         // The job travels base64-encoded, and the password never travels at all: the launcher
         // reads it from a file only the harness's account and administrators can open.
         argv: [node, launcher, encoded],
+        // `node` is this server's own interpreter, and in the desktop app that is the app's
+        // binary: without this switch it does not run a script at all — it opens a second
+        // instance of the app, which hands off to the running one (whose window jumps to
+        // the front) and exits with nothing on its streams. A plain Node ignores the switch.
+        env: { ELECTRON_RUN_AS_NODE: "1" },
         enforcement: "full",
         // Win32 denial dialects: cmd, PowerShell/.NET, and Node's own EACCES text.
         denialSignatures: ["access is denied", "access to the path", "permission denied"],

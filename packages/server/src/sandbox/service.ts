@@ -141,7 +141,7 @@ export class SandboxService {
   confiner(): SpawnConfiner {
     return (argv, opts) => {
       const settings = this.settings;
-      if (settings.mode === "danger-full-access") return argv;
+      if (settings.mode === "danger-full-access") return { argv };
       const required = requestedDimensions(settings);
       const provider = this.pick(required, settings.mode);
       // workspaceRoot is the Session's Workspace, never the per-command cwd: a command
@@ -158,7 +158,10 @@ export class SandboxService {
       };
       // ConfinedArgv also carries enforcement / denialSignatures / runnerFailureRules;
       // the classification consumer (denial vs runner failure) lands with escalation.
-      return provider.confine(argv, policy).argv;
+      const confined = provider.confine(argv, policy);
+      return confined.env === undefined
+        ? { argv: confined.argv }
+        : { argv: confined.argv, env: confined.env };
     };
   }
 

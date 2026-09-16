@@ -141,7 +141,7 @@ describe("sandbox settings group", () => {
         })
       ).status,
     ).toBe(200);
-    expect(spawn()).toEqual(["confined", "true"]);
+    expect(spawn()).toEqual({ argv: ["confined", "true"] });
     expect(seen.at(-1)).toEqual({
       policy: {
         mode: "workspace-write",
