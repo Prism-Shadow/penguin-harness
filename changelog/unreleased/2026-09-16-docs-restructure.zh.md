@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** process
 - **Scope:** `docs`
+- **PR:** [#758](https://github.com/Prism-Shadow/penguin-harness/pull/758)
 
 [English](2026-09-16-docs-restructure.md)
 
