@@ -92,6 +92,13 @@ function Remove-Everything {
       Remove-LocalUser -Name $user
       Write-Host "removed account $user"
     }
+    # A profile directory, if some earlier version logged the account in with one. Removing the
+    # account leaves it behind, and it belongs to nothing once the account is gone.
+    $profileDir = Join-Path $env:SystemDrive "Users\$user"
+    if (Test-Path $profileDir) {
+      Remove-Item $profileDir -Recurse -Force -ErrorAction SilentlyContinue
+      Write-Host "removed leftover profile $profileDir"
+    }
   }
   if (Get-LocalGroup -Name $GroupName -ErrorAction SilentlyContinue) {
     Remove-LocalGroup -Name $GroupName
