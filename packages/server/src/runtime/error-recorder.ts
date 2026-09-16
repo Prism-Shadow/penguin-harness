@@ -70,7 +70,8 @@ export type ErrorSource =
   | "subagent"
   | "process"
   | "schedule"
-  | "messaging";
+  | "messaging"
+  | "id_suggest";
 
 /** Error classification: see file header — the criterion is "does a human need to step in". */
 export type ErrorKind = "expected" | "unexpected";

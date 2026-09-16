@@ -110,6 +110,7 @@ import { InstallRoutes } from "./http/routes/install.js";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
 import { PluginRoutes } from "./http/routes/plugins.js";
+import { SuggestIdRoutes } from "./http/routes/suggest-id.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
 import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
@@ -376,6 +377,7 @@ export class CompanyModule {}
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
     PluginRoutes,
+    SuggestIdRoutes,
   ],
   exports: [Http, WebShell, UpdateCheck],
 })

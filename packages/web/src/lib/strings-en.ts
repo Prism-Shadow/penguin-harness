@@ -436,6 +436,39 @@ export const en: Strings = {
     time: "Time",
   },
 
+  /**
+   * The id field every create dialog with a semantic id wears (features/semantic-id): a Project's,
+   * an Agent's, a Benchmark's, an organization's and a channel's.
+   */
+  semanticId: {
+    /**
+     * The id field's generate button — its label says who proposes the id, its tooltip says
+     * what the proposal is derived from — and the clause the hint appends for it. The clause
+     * carries its own leading separator: what joins two clauses is punctuation, and
+     * punctuation belongs to the language.
+     */
+    generateIdLabel: "Generate with AI",
+    generateId: "Generate an id from the name",
+    idGenerateHint: "; you can also generate one from the display name",
+    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
+    idSuggest: {
+      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
+      fromName: "Transliterated from the name",
+      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
+      placeholder: (reason: string): string =>
+        `The model gave no usable id (${reason}); a placeholder was filled in — please change it to something meaningful`,
+      /** Why the proposal fell through, keyed by the server's reason code. */
+      reasons: {
+        no_default_model: "no default model configured",
+        model_failed: "the model request failed",
+        unusable_answer: "the model's answer was unusable",
+        no_ascii: "the name carries no ASCII to transliterate",
+      },
+      /** A reason a newer server named and this build does not know. */
+      reasonUnknown: "reason unknown",
+    },
+  },
+
   auth: {
     usernameHint:
       "2–32 chars: starts with a lowercase letter; lowercase letters, digits and underscores only",
@@ -529,9 +562,9 @@ export const en: Strings = {
     createTitle: "New Project",
     id: "Project id",
     idHint:
-      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
+      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only; cannot be changed later",
     idPrefixHint:
-      "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores. Cannot be changed later.",
+      "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores; cannot be changed later",
     displayName: "Display name",
     /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
     displayNameHint: "Leave empty to use the Project id as the name",
@@ -618,7 +651,7 @@ export const en: Strings = {
     createTitle: "Create agent",
     id: "Agent id",
     idHint:
-      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
+      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only; cannot be changed later",
     nameHint: "Leave empty to use the agent id as the name",
     description: "Description",
     createPlugins: "Plugins",
@@ -3169,6 +3202,8 @@ Scenarios:
     idField: "Benchmark id",
     idHint:
       "The directory name is the identifier: letters, digits, _ and - only, e.g. report-writing-v1",
+    /** The id field's generation clause: a Benchmark is named by its title, not a display name. */
+    idGenerateHint: "; you can also generate one from the title",
     idExists: "A Benchmark with this id already exists; pick another",
     titleField: "Title",
     descriptionField: "Description",
@@ -3315,32 +3350,6 @@ Scenarios:
     orgId: "Organization id",
     orgIdHint:
       "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores; also the directory name, fixed once created",
-    /**
-     * The id field's generate button — its label says who proposes the id, its tooltip says
-     * what the proposal is derived from — and the clause the hint appends for it. The clause
-     * carries its own leading separator: what joins two clauses is punctuation, and
-     * punctuation belongs to the language.
-     */
-    generateIdLabel: "Generate with AI",
-    generateId: "Generate an id from the name",
-    idGenerateHint: "; you can also generate one from the display name",
-    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
-    idSuggest: {
-      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
-      fromName: "Transliterated from the name",
-      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
-      placeholder: (reason: string): string =>
-        `The model gave no usable id (${reason}); a placeholder was filled in — please change it to something meaningful`,
-      /** Why the proposal fell through, keyed by the server's reason code. */
-      reasons: {
-        no_default_model: "no default model configured",
-        model_failed: "the model request failed",
-        unusable_answer: "the model's answer was unusable",
-        no_ascii: "the name carries no ASCII to transliterate",
-      },
-      /** A reason a newer server named and this build does not know. */
-      reasonUnknown: "reason unknown",
-    },
     displayName: "Display name",
     displayNameHint: "Leave empty to use the organization id",
     mission: "Mission",

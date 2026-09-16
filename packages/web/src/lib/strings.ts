@@ -442,6 +442,39 @@ export const zh = {
     time: "时间",
   },
 
+  /**
+   * The id field every create dialog with a semantic id wears (features/semantic-id): a Project's,
+   * an Agent's, a Benchmark's, an organization's and a channel's.
+   */
+  semanticId: {
+    /**
+     * The id field's generate button — its label says who proposes the id, its tooltip says
+     * what the proposal is derived from — and the clause the hint appends for it. The clause
+     * carries its own leading separator: what joins two clauses is punctuation, and
+     * punctuation belongs to the language.
+     */
+    generateIdLabel: "用 AI 生成",
+    generateId: "从名称生成 ID",
+    idGenerateHint: "；也可以从显示名生成",
+    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
+    idSuggest: {
+      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
+      fromName: "按名称转写生成",
+      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
+      placeholder: (reason: string): string =>
+        `模型没有给出可用的 ID（${reason}），已填入占位 ID，请改成有含义的英文名`,
+      /** Why the proposal fell through, keyed by the server's reason code. */
+      reasons: {
+        no_default_model: "未配置默认模型",
+        model_failed: "模型调用失败",
+        unusable_answer: "模型回答不可用",
+        no_ascii: "名称里没有可转写的英文",
+      },
+      /** A reason a newer server named and this build does not know. */
+      reasonUnknown: "原因未知",
+    },
+  },
+
   auth: {
     usernameHint: "2~32 位：小写字母开头，仅小写字母、数字与下划线",
     password: "密码",
@@ -3151,6 +3184,8 @@ Benchmark：
       "填好标题、题干与评分细则后，目录结构会按技能约定写入 Project 的 benchmarks/ 下；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
     idField: "Benchmark id",
     idHint: "目录名即标识：仅字母、数字、_ 和 -，例如 report-writing-v1",
+    /** The id field's generation clause: a Benchmark is named by its title, not a display name. */
+    idGenerateHint: "；也可以从标题生成",
     idExists: "已有同名 Benchmark，请换一个 id",
     titleField: "标题",
     descriptionField: "描述",
@@ -3291,32 +3326,6 @@ Benchmark：
     createTitle: "新建组织",
     orgId: "组织 id",
     orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；也是目录名，创建后不可修改",
-    /**
-     * The id field's generate button — its label says who proposes the id, its tooltip says
-     * what the proposal is derived from — and the clause the hint appends for it. The clause
-     * carries its own leading separator: what joins two clauses is punctuation, and
-     * punctuation belongs to the language.
-     */
-    generateIdLabel: "用 AI 生成",
-    generateId: "从名称生成 ID",
-    idGenerateHint: "；也可以从显示名生成",
-    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
-    idSuggest: {
-      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
-      fromName: "按名称转写生成",
-      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
-      placeholder: (reason: string): string =>
-        `模型没有给出可用的 ID（${reason}），已填入占位 ID，请改成有含义的英文名`,
-      /** Why the proposal fell through, keyed by the server's reason code. */
-      reasons: {
-        no_default_model: "未配置默认模型",
-        model_failed: "模型调用失败",
-        unusable_answer: "模型回答不可用",
-        no_ascii: "名称里没有可转写的英文",
-      },
-      /** A reason a newer server named and this build does not know. */
-      reasonUnknown: "原因未知",
-    },
     displayName: "显示名",
     displayNameHint: "留空则使用组织 id",
     mission: "使命",

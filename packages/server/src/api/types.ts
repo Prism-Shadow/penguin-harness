@@ -4412,19 +4412,30 @@ export interface OrganizationPatchRequest {
 }
 
 /**
- * A semantic id proposed for a display name — the organization and channel dialogs let the
- * user name the thing first and derive the id from that name. The server asks the Project's
- * default model for a short English snake_case id (a Chinese name has no mechanical
+ * What a proposed semantic id names. Each kind has its own shape — organization and channel
+ * ids carry a `co_` / `ch_` prefix, a non-admin's Project id its owner's `<username>-`, a
+ * Benchmark id is kebab-case — and its own set of ids to avoid.
+ */
+export type SemanticIdKind = "org" | "channel" | "project" | "agent" | "benchmark";
+
+/**
+ * A semantic id proposed for a display name — every create dialog that names an object with a
+ * semantic id (a Project, an Agent, a Benchmark, an organization, a channel) lets the user name
+ * the thing first and derive the id from that name. The server asks the Project's default
+ * model for a short English id in the kind's spelling (a Chinese name has no mechanical
  * transliteration), falling back to an ASCII slug of the name when the model is unavailable,
  * and to a dated placeholder when neither can name it. The request never fails for a name it
  * cannot translate: a dialog that asked for an id always gets one back.
  */
 export interface SemanticIdSuggestRequest {
-  /** The display name typed so far (or the mission, when nothing else names the thing). */
+  /** The display name typed so far (or the mission / description, when nothing else names the thing). */
   name: string;
-  /** What the id is for: decides the prompt's examples and the fallback's prefix. */
-  kind: "org" | "channel";
-  /** Ids already in use in the target scope; the proposal avoids them. */
+  /** What the id is for: decides the id's shape, the prompt's examples and the ids avoided. */
+  kind: SemanticIdKind;
+  /**
+   * Ids already in use in the target scope; the proposal avoids them. `POST /suggest-id` also
+   * avoids, on its own, the Projects, the Project's Agents or its Benchmarks that already exist.
+   */
   taken?: string[];
 }
 
@@ -4439,7 +4450,10 @@ export type SemanticIdSuggestReason =
   "no_default_model" | "model_failed" | "unusable_answer" | "no_ascii";
 
 export interface SemanticIdSuggestResponse {
-  /** A valid semantic id (`^[a-z][a-z0-9_]{1,63}$`), not in `taken`. */
+  /**
+   * An id the kind's create route accepts, not in `taken`: `^[a-z][a-z0-9_]{1,63}$` for most
+   * kinds, `<username>-<suffix>` for a non-admin's Project, kebab-case for a Benchmark.
+   */
   id: string;
   /** Who produced it: the model, the ASCII fallback, or the dated placeholder that names nothing. */
   source: "model" | "fallback" | "placeholder";

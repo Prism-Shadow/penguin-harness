@@ -11,7 +11,6 @@ import type {
   OrgCalendarResponse,
   OrgCalendarUpsertRequest,
   OrgCalendarWriteResponse,
-  SemanticIdSuggestReason,
   SemanticIdSuggestRequest,
   SemanticIdSuggestResponse,
   OrgChannelCreateRequest,
@@ -105,11 +104,8 @@ import {
   userPrincipal,
 } from "../../organization/principal.js";
 import { isValidTimeZone, zonedDate, zonedDayRange } from "../../organization/zoned.js";
-import {
-  fallbackSemanticId,
-  placeholderSemanticId,
-  sanitizeSuggestedId,
-} from "../../organization/semantic-id.js";
+import { SEMANTIC_ID_RULES } from "../../services/semantic-id.js";
+import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { SEMANTIC_ID_PATTERN } from "../../services/ids.js";
 import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
@@ -218,70 +214,31 @@ export class OrganizationService {
 
   /**
    * A semantic id for a display name (the organization and channel dialogs name the thing
-   * first and derive the id). The Project's default model translates the name into one
-   * snake_case English identifier — the common case is a Chinese name, which nothing
-   * mechanical can transliterate — and the ASCII slug of the name answers whenever the model
-   * is unavailable, refuses or answers with something no id can be built from. A name that
-   * neither path can name gets a dated placeholder and the reason it fell that far: the
-   * dialog fills the box and asks for a meaningful name in its place, which is a better
-   * answer than a refusal that leaves the box empty and the user with nothing to type.
+   * first and derive the id): the shared proposal (semantic-id-suggest.ts) with the kind's
+   * prefix, the ids the dialog passed in to avoid, and every model dead end recorded as the
+   * organization's.
    */
   async suggestId(
     projectId: string,
     req: SemanticIdSuggestRequest,
   ): Promise<SemanticIdSuggestResponse> {
-    const taken = req.taken ?? [];
-    // No model bound at all: nothing more specific can be said than what the name itself lacks.
-    let reason: SemanticIdSuggestReason = "no_ascii";
-    const complete = this.deps.completeOnce;
-    if (complete !== undefined) {
-      const proposed = await this.modelSemanticId(complete, projectId, req, taken);
-      if (proposed.id !== undefined) return { id: proposed.id, source: "model" };
-      reason = proposed.reason;
-    }
-    const id = fallbackSemanticId(req.name, req.kind, taken);
-    if (id !== null) return { id, source: "fallback" };
-    return { id: placeholderSemanticId(req.kind, taken), source: "placeholder", reason };
-  }
-
-  /**
-   * The model half of a proposal: the id it produced, or the reason there is none. An answer
-   * that does not sanitize to an id buys one retry with the format rule spelled out — a model
-   * that explained itself the first time usually complies when told to answer with the
-   * identifier alone — while a request that failed outright is not repeated, since nothing
-   * about the second ask would go differently. Every dead end is recorded, so the errors panel
-   * can say why the button produced a placeholder instead of a name.
-   */
-  private async modelSemanticId(
-    complete: NonNullable<OrgDeps["completeOnce"]>,
-    projectId: string,
-    req: SemanticIdSuggestRequest,
-    taken: readonly string[],
-  ): Promise<
-    { id: string; reason?: undefined } | { id?: undefined; reason: SemanticIdSuggestReason }
-  > {
-    const base = semanticIdPrompt(req);
-    let lastAnswer = "";
-    for (const prompt of [base, `${base} ${SEMANTIC_ID_RETRY_RULE}`]) {
-      const res = await complete(projectId, prompt);
-      if (!res.ok) {
-        this.recordIdSuggestFailure(projectId, `${req.kind} id for "${req.name}": ${res.error}`);
-        return { reason: res.cause === "no_model" ? "no_default_model" : "model_failed" };
-      }
-      const id = sanitizeSuggestedId(res.text, req.kind, taken);
-      if (id !== null) return { id };
-      lastAnswer = res.text;
-    }
-    this.recordIdSuggestFailure(
+    return suggestSemanticId(
+      {
+        completeOnce: this.deps.completeOnce,
+        recordFailure: (p, detail) => this.recordIdSuggestFailure(p, detail),
+      },
       projectId,
-      `${req.kind} id for "${req.name}": no id could be built from the model's answer: ${lastAnswer.trim()}`,
+      {
+        name: req.name,
+        kind: req.kind,
+        rule: SEMANTIC_ID_RULES[req.kind],
+        taken: req.taken ?? [],
+      },
     );
-    return { reason: "unusable_answer" };
   }
 
   /** One dead end of an id proposal, in the log and in the Project's errors panel. */
-  private recordIdSuggestFailure(projectId: string, detail: string): void {
-    const message = detail.slice(0, ID_SUGGEST_FAILURE_MAX);
+  private recordIdSuggestFailure(projectId: string, message: string): void {
     this.deps.log?.(`org: id suggestion fell back for ${projectId}: ${message}`);
     this.deps.errors.record({
       source: "organization",
@@ -2525,17 +2482,6 @@ function lastClosedAt(doc: TicketDoc): string | null {
   return null;
 }
 
-/**
- * Appended to the prompt on the one retry an unusable answer buys. The first ask already
- * describes the format; a model that answered with prose anyway is told, in one sentence, that
- * the answer IS the identifier — which is the instruction such a model complies with.
- */
-const SEMANTIC_ID_RETRY_RULE =
-  "Answer with the identifier only — ASCII lowercase letters, digits and underscores, nothing else.";
-
-/** How much of a failed proposal's detail reaches the log and the errors panel. */
-const ID_SUGGEST_FAILURE_MAX = 300;
-
 /** The first non-empty line of a model's answer, stripped of the marks a model wraps one in. */
 function firstLine(answer: string): string {
   const line = answer
@@ -2562,27 +2508,6 @@ function ticketSlugPrompt(title: string): string {
     "上线站点 → launch-the-site; 季度财报 → quarterly-financial-report; 招募前端 →",
     "hire-a-frontend-engineer.",
     `Title: ${title}`,
-  ].join(" ");
-}
-
-/**
- * The prompt behind a model-backed semantic id: the model translates a display name into
- * one snake_case English identifier — the semantic core only, since `sanitizeSuggestedId`
- * puts the kind's prefix (`co_` / `ch_`) in front of whatever comes back. Examples in both
- * scripts, the taken ids named so the answer does not collide, and no room for prose;
- * anything that does not survive the sanitizer falls back to the ASCII slug.
- */
-function semanticIdPrompt(req: SemanticIdSuggestRequest): string {
-  const taken = (req.taken ?? []).join(", ");
-  return [
-    "You produce identifiers. Given a display name, answer with ONE snake_case ASCII identifier:",
-    "lowercase letters, digits and underscores, starting with a letter, 2–40 characters, made of",
-    "English words that carry the name's meaning (translate a non-English name), no explanation,",
-    "nothing else. Examples: Plugin Marketplace → plugin_marketplace; 科研论文公司 →",
-    "research_paper_lab; 市场推广 → marketing; Site → site.",
-    "Do not add any prefix of your own; one is added to your answer.",
-    ...(taken !== "" ? [`Those answers are taken, prefix included: ${taken}.`] : []),
-    `Name: ${req.name}`,
   ].join(" ");
 }
 

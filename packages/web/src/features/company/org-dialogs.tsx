@@ -62,7 +62,7 @@ import { ErrorLine, MoneyPerMonthInput, OrgStatusPill } from "./shared";
 import { orgCreatedTarget } from "./company-nav";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { ORG_EXAMPLES } from "./org-examples";
-import { SemanticIdField } from "./semantic-id-field";
+import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import {
   EMPTY_ORG_DRAFT,
   clearOrgDraft,
