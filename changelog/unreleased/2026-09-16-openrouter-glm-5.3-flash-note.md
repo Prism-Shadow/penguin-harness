@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** fix
 - **Scope:** `model-catalog`
+- **PR:** [#745](https://github.com/Prism-Shadow/penguin-harness/pull/745)
 
 [中文版](2026-09-16-openrouter-glm-5.3-flash-note.zh.md)
 
