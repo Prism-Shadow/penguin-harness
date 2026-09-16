@@ -833,7 +833,7 @@ describe("model-catalog", () => {
     expect(glm53.pricing).toEqual(catalogEntryFor("zhipu", "glm-5.2")!.pricing);
     // GLM-5.3 Flash is listed both directly and on OpenRouter, and the two rows deliberately
     // disagree on price: the direct row keeps Z.AI's list price while the gateway row stores
-    // the 50%-off rate OpenRouter actually bills through 2026-09-09, so the gateway figures
+    // the 50%-off rate OpenRouter's default endpoint (DeepInfra) bills, so the gateway figures
     // are exactly half the direct ones.
     const glm53f = catalogEntryFor("zhipu", "glm-5.3-flash")!;
     expect([glm53f.contextWindow, glm53f.supportsVision]).toEqual([1000000, true]);
