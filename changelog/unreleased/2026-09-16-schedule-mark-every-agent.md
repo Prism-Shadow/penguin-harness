@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** fix
 - **Scope:** `web`, `server`, `docs`
+- **PR:** [#743](https://github.com/Prism-Shadow/penguin-harness/pull/743)
 
 [中文版](2026-09-16-schedule-mark-every-agent.zh.md)
 
