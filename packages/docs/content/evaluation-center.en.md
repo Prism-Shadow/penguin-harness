@@ -53,6 +53,8 @@ AI writes the cases for an agent, trial-runs each case to calibrate its difficul
 
 The dialog's "Done by … in a new conversation" line names the agent that does the writing: the Project's default agent, not the Test Agent.
 
+The Builder runs the Test Agent on the model of this new conversation, for the trial runs and for the baseline. Evaluations started later from **Use** run the agent on the model it is configured with, and the chart gives each model its own line. To keep the baseline on the same line as later scores, pick the Test Agent's configured model in the composer before you send.
+
 While the cases are being written, the Benchmark's card shows **Being built**. The Benchmark opens once the baseline is recorded. If calibration fails, the card shows **Creation failed**: delete the Benchmark and create it again.
 
 ## Create a Benchmark manually

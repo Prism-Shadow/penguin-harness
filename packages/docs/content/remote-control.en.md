@@ -40,7 +40,7 @@ The settings run from top to bottom in this order:
 
 | Setting | What it does |
 | --- | --- |
-| **Channel** | Feishu, Telegram, QQ or WeChat. Each channel keeps its own saved settings for this conversation. |
+| Channel tabs | **Feishu**, **Telegram**, **QQ** and **WeChat**, along the top of the dialog. Each channel keeps its own saved settings for this conversation. |
 | **Enable connection** | Turns the connection on or off. Turning it on binds the bot to this conversation; turning it off releases the bot. Saved credentials stay either way. |
 | **Connection status** | **Not connected**, **Connecting**, **Connected** or **Connection error**, plus when the last message arrived and the last connection or delivery problem. The status refreshes on its own. |
 | **Test connection** | Checks that the saved or typed credentials sign in, and reports the response time. |
@@ -66,7 +66,7 @@ A saved secret is never shown again. Leave its field empty to keep it. To delete
 1. In the [Feishu developer console](https://open.feishu.cn/app), create a self-built app.
 2. Enable the bot capability for the app.
 3. Subscribe to the message-receive event, and set the subscription mode to long connection.
-4. In PenguinHarness, open **Remote control** for the conversation and set **Channel** to **Feishu**.
+4. In PenguinHarness, open **Remote control** for the conversation and select the **Feishu** tab.
 5. From the app's credentials page, copy the App ID and App Secret into **App ID** and **App Secret**.
 6. If you use Lark, change **API domain** to `https://open.larksuite.com`. The default, `https://open.feishu.cn`, is for Feishu.
 7. Select **Save**.
@@ -86,7 +86,7 @@ To receive images and files, the Feishu app needs the permission to read message
 
 1. In Telegram, open [@BotFather](https://t.me/BotFather) and send `/newbot` to create a bot.
 2. Name the bot as prompted, and copy the Bot Token that @BotFather returns.
-3. In PenguinHarness, open **Remote control** for the conversation and set **Channel** to **Telegram**.
+3. In PenguinHarness, open **Remote control** for the conversation and select the **Telegram** tab.
 4. Paste the token into **Bot Token**. A Bot Token looks like `<digits>:<secret>`.
 5. Select **Save**.
 6. Turn on **Enable connection**, and wait for **Connected**.
@@ -110,7 +110,7 @@ You can give PenguinHarness the bot's credentials by scanning a QR code or by en
 
 ### Connect with a QR code
 
-1. In PenguinHarness, open **Remote control** for the conversation and set **Channel** to **QQ**.
+1. In PenguinHarness, open **Remote control** for the conversation and select the **QQ** tab.
 2. Select **Connect by QR**.
 3. Scan the code with QQ on your phone.
 4. On the page that opens, pick the bot to authorize, and confirm. PenguinHarness saves the credentials and shows "Saved the credentials for bot {appId} — the connection can be enabled now".
@@ -120,7 +120,7 @@ You can give PenguinHarness the bot's credentials by scanning a QR code or by en
 ### Enter the credentials by hand
 
 1. On the QQ open platform, copy the App ID and App Secret from the bot's development settings page.
-2. In PenguinHarness, open **Remote control**, set **Channel** to **QQ**, and under **Or enter them by hand**, fill in **App ID** and **App Secret**.
+2. In PenguinHarness, open **Remote control**, select the **QQ** tab, and under **Or enter them by hand**, fill in **App ID** and **App Secret**.
 3. Select **Save**.
 4. Turn on **Enable connection**, and wait for **Connected**.
 5. In QQ, find the bot and send it a message.
@@ -140,13 +140,13 @@ This rule shapes how QQ behaves:
 
 WeChat connects through its official bot channel. There is no console and nothing to register: you scan a QR code, and the credential is saved for you.
 
-1. In PenguinHarness, open **Remote control** for the conversation and set **Channel** to **WeChat**.
+1. In PenguinHarness, open **Remote control** for the conversation and select the **WeChat** tab.
 2. Select **Connect by scanning** to generate a QR code.
 3. Scan the code with WeChat on your phone.
 4. If your phone shows a number, type it into **Pairing code** and select **Confirm**.
 5. Confirm the authorization on your phone. PenguinHarness saves the credential and shows "Saved the credential for bot {botId} — the connection can be enabled now".
 6. Turn on **Enable connection**, and wait for **Connected**.
-7. Wait about 10 seconds.
+7. Wait about 15 seconds.
 8. Find the bot in WeChat and send it a message. If you get no reply, send the message again.
 
 > [!NOTE]
@@ -244,4 +244,4 @@ Credentials are stored on the server and never sent back to the browser in full.
 
 **WeChat: the bot does not answer in a group.** The WeChat channel receives direct chats only. Message the bot directly.
 
-**WeChat: the first message gets no reply.** A message sent in the first seconds after the status turns **Connected** is dropped. Wait about 10 seconds, then send the message again.
+**WeChat: the first message gets no reply.** A message sent in the first seconds after the status turns **Connected** is dropped. Wait about 15 seconds, then send the message again.
