@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** feature
 - **Scope:** `skills`, `server`, `web`, `docs`
+- **PR:** [#750](https://github.com/Prism-Shadow/penguin-harness/pull/750)
 
 [中文版](2026-09-16-company-ask-before-heavy-work.zh.md)
 
