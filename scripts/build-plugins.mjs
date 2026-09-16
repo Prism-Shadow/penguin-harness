@@ -40,7 +40,7 @@ const PLUGINS_SRC = path.join(ROOT, "plugins");
 const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 11;
+const PACK_FORMAT = 12;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -286,6 +286,13 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
         }
         if (platformPackages.length > 0) {
           log(`${platformPackages.length} per-platform native binaries: installed`);
+        }
+      }
+      // npm installs a package's files with the mode it pleases, and a vendored program
+      // arrives without its exec bit — which no consumer of the prefix can guess back.
+      for (const rel of await walk(out)) {
+        if (/(^|\/)vendor\/[^/]+\/bin\/[^/]+$/.test(rel)) {
+          await fsp.chmod(path.join(out, rel), 0o755);
         }
       }
       await fsp.writeFile(path.join(out, COMPLETE), hash);

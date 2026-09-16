@@ -32,8 +32,9 @@
  * matters for a deployment.
  */
 import { execFile, spawnSync } from "node:child_process";
-import { statSync } from "node:fs";
+import { accessSync, constants, statSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/plugin";
 import type {
@@ -55,12 +56,47 @@ export interface BwrapSettings {
   probeTimeoutMs: number;
 }
 
+/**
+ * The bwrap this plugin SHIPS for the host it is running on, or "" when it carries none.
+ *
+ * A deployment must not depend on the distribution having bubblewrap — most do not install it,
+ * and an operator who has to run `apt install bubblewrap` before the sandbox works is an
+ * operator whose sandbox is off. The binary lives beside the built module
+ * (`vendor/<platform>-<arch>/bin/bwrap`, see scripts/vendor-bwrap.mjs) and finds its own
+ * libcap through an `$ORIGIN/../lib` rpath, which is what lets a backend that only rewrites an
+ * argv use it: there is no environment to set.
+ */
+export function vendoredRunner(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+  runnable: (p: string) => boolean = executable,
+): string {
+  const candidate = fileURLToPath(
+    new URL(`../vendor/${platform}-${arch}/bin/bwrap`, import.meta.url),
+  );
+  return runnable(candidate) ? candidate : "";
+}
+
+/** Present AND executable: a package installer may drop the exec bit, and then it is not ours to run. */
+function executable(target: string): boolean {
+  try {
+    accessSync(target, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Its group's stored document (defaults merged) as settings; anything unusable falls back. */
-export function bwrapSettingsOf(doc: Record<string, unknown>): BwrapSettings {
+export function bwrapSettingsOf(
+  doc: Record<string, unknown>,
+  vendored: string = vendoredRunner(),
+): BwrapSettings {
   const runner = typeof doc.runner === "string" ? doc.runner.trim() : "";
   const seconds = doc.probeTimeoutSeconds;
   return {
-    runner: runner !== "" ? runner : "bwrap",
+    // What a deployment names wins; then the one shipped here; and only then a host's own.
+    runner: runner !== "" ? runner : vendored !== "" ? vendored : "bwrap",
     probeTimeoutMs:
       typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0
         ? seconds * 1000
@@ -165,7 +201,7 @@ export async function loadPenguinBwrapProvider(
   // its Linux machines, and saying so on every Windows card would be noise.
   if (platform !== "linux") return null;
   const { runner, probeTimeoutMs } = internals.settings?.() ?? {
-    runner: internals.runner ?? "bwrap",
+    runner: internals.runner ?? (vendoredRunner() || "bwrap"),
     probeTimeoutMs: PROBE_TIMEOUT_MS,
   };
   const usable = internals.probe
@@ -173,7 +209,7 @@ export async function loadPenguinBwrapProvider(
     : await probeAsync(probeTimeoutMs, runner);
   if (!usable) {
     throw new Error(
-      `'${runner}' is missing or refuses the base profile (is bubblewrap installed, with unprivileged user namespaces enabled?)`,
+      `'${runner}' is missing or refuses the base profile (are unprivileged user namespaces enabled on this host? \`sysctl kernel.unprivileged_userns_clone\`)`,
     );
   }
   return createPenguinBwrapProvider(internals);
@@ -189,7 +225,10 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
   const probe = internals.probe ?? defaultProbe;
   const settings =
     internals.settings ??
-    (() => ({ runner: internals.runner ?? "bwrap", probeTimeoutMs: PROBE_TIMEOUT_MS }));
+    (() => ({
+      runner: internals.runner ?? (vendoredRunner() || "bwrap"),
+      probeTimeoutMs: PROBE_TIMEOUT_MS,
+    }));
   const usable = new Map<string, boolean>();
   return {
     dimensions: ["fs-write", "network", "mask-paths"],
@@ -251,8 +290,10 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
             type: "string",
             title: "bwrap program",
             titleZh: "bwrap 程序",
-            description: "A path or a command on PATH; empty uses bwrap.",
-            descriptionZh: "路径或 PATH 上的命令名；留空则使用 bwrap。",
+            description:
+              "A path or a command on PATH; empty uses the bubblewrap this plugin ships, falling back to one on PATH where it carries none for this host.",
+            descriptionZh:
+              "路径或 PATH 上的命令名；留空则使用本插件自带的 bubblewrap，若没有适配本机的自带版本，再回退到 PATH 上的。",
             placeholder: "bwrap",
           },
           probeTimeoutSeconds: {

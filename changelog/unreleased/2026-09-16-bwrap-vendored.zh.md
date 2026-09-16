@@ -1,0 +1,14 @@
+# Linux 沙盒自带 bubblewrap
+
+- **Date:** 2026-09-16
+- **Type:** fix
+- **Scope:** plugins, build
+- **PR:** [#729](https://github.com/Prism-Shadow/penguin-harness/pull/729)
+
+[English](2026-09-16-bwrap-vendored.md)
+
+Linux 上的封禁不再依赖主机装了 bubblewrap。多数发行版并不预装它，各机器版本也不一致，而一套没人执行过 `apt install bubblewrap` 的部署，沙盒其实就是关着的。
+
+- **插件自带 `bwrap`**，按架构各一份（`linux-x64`、`linux-arm64`），连同它加载的 libcap 与两份许可证一起随包发出。`scripts/vendor-bwrap.mjs` 在构建时从 conda-forge 取回，按确切 URL 与 sha256 钉死——哈希对不上即构建失败，绝不发出没钉死的二进制。该二进制通过 `$ORIGIN/../lib` 的 rpath 找到自己的库，因此只改写 argv、无从设置环境变量的后端也能直接用它。
+- **每次启动命令时的取用顺序：** 沙盒设置里指定的程序，其次是插件自带的，最后才是 PATH 上的 `bwrap`。两者皆无的主机仍然 fail closed，并且提示去看 `kernel.unprivileged_userns_clone`，而不再问「装没装 bubblewrap」。
+- 该后端的实机封禁测试——工作区可写而外部不可写、`read-only` 连工作区也拒绝、后台子进程一并受限、`network: none` 只剩回环、被屏蔽目录读起来是空的——现在是在一台自身没有 bubblewrap 的主机上、针对自带二进制跑通的。

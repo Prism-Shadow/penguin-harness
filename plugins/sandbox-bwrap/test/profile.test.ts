@@ -4,7 +4,7 @@
  * paths are deterministic on any host (a real-bwrap host also runs sandbox-live).
  */
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -12,6 +12,7 @@ import {
   bwrapSettingsOf,
   createPenguinBwrapProvider,
   loadPenguinBwrapProvider,
+  vendoredRunner,
 } from "../src/index.js";
 
 const ARGV = ["bash", "-lc", "echo hi"] as const;
@@ -159,7 +160,8 @@ describe("penguin-bwrap provider", () => {
         probed.push([timeoutMs, runner]);
         return runner !== "/missing/bwrap";
       },
-      settings: () => bwrapSettingsOf(doc),
+      // "" for the shipped binary: this is about the settings, not about what the package carries.
+      settings: () => bwrapSettingsOf(doc, ""),
     });
     const policy = { mode: "read-only", workspaceRoot: WS } as const;
     expect(provider.confine([...ARGV], policy).argv[0]).toBe("bwrap");
@@ -188,5 +190,26 @@ describe("bwrap on another platform", () => {
     await expect(
       loadPenguinBwrapProvider({ platform: "linux", probe: () => true }),
     ).resolves.toBeDefined();
+  });
+});
+
+describe("the bwrap it runs", () => {
+  it("ships its own, so a host without bubblewrap still confines", () => {
+    // The real thing: the package carries a binary for THIS host (scripts/vendor-bwrap.mjs).
+    const shipped = vendoredRunner();
+    expect(shipped).toMatch(/vendor[\\/]linux-(x64|arm64)[\\/]bin[\\/]bwrap$/);
+    expect(existsSync(shipped)).toBe(true);
+  });
+
+  it("carries none for a host it has no binary for, and says so with an empty path", () => {
+    expect(vendoredRunner("win32", "x64", () => false)).toBe("");
+  });
+
+  it("what the deployment names wins; then the shipped one; then a bwrap on PATH", () => {
+    const shipped = "/pkg/vendor/linux-x64/bin/bwrap";
+    expect(bwrapSettingsOf({ runner: "/usr/bin/bwrap" }, shipped).runner).toBe("/usr/bin/bwrap");
+    expect(bwrapSettingsOf({}, shipped).runner).toBe(shipped);
+    expect(bwrapSettingsOf({ runner: "  " }, shipped).runner).toBe(shipped);
+    expect(bwrapSettingsOf({}, "").runner).toBe("bwrap");
   });
 });
