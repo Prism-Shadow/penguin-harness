@@ -77,7 +77,14 @@ describe("organization runtime", () => {
   /** Set by a test to make every task start throw — a runner that refuses the work. */
   let startFails: boolean;
   let started: Started[];
-  let created: Array<{ projectId: string; agentId: string; workspace?: string; client: "org" }>;
+  let created: Array<{
+    projectId: string;
+    agentId: string;
+    workspace?: string;
+    modelId?: string;
+    provider?: string;
+    client: "org";
+  }>;
   let agentsCreated: Array<{ agentId: string; plugins: readonly string[] }>;
   let briefs: Map<string, string>;
   let costs: Map<string, number>;
@@ -173,6 +180,11 @@ describe("organization runtime", () => {
             projectId: args.projectId,
             agentId: args.agentId,
             ...(args.workspace !== undefined ? { workspace: args.workspace } : {}),
+            // Recorded as passed: an absent pair is what makes the real SessionService
+            // resolve the Project's default model at this moment, so a test can tell "no
+            // model asked for" from "the default asked for by name".
+            ...(args.modelId !== undefined ? { modelId: args.modelId } : {}),
+            ...(args.provider !== undefined ? { provider: args.provider } : {}),
             client: args.client,
           });
           const createdAt = new Date(nowMs).toISOString();
@@ -349,6 +361,12 @@ describe("organization runtime", () => {
     // The board decides: the init run proposes and stops before hiring anything.
     expect(parsed?.rest).toContain("END THIS RUN");
     expect(parsed?.rest).toContain("@user:alice");
+    // The plan names roles and budgets, never a model per role: every hire runs on the
+    // Project's default unless the board asked for another.
+    expect(parsed?.rest).toContain("Project's default model");
+    expect(parsed?.rest).not.toContain("budgets and model");
+    // Whatever touches the machine or the outside is the board's for every employee.
+    expect(parsed?.rest).toContain("What you may not decide alone");
     // The mission is English, so the organization works in English — its desk titles too.
     expect(sessions.findById(started[0]!.sessionId)?.title).toBe(`Name of ${CEO}'s desk`);
     expect(cache.ownerOfSession(started[0]!.sessionId)).toMatchObject({
@@ -411,6 +429,44 @@ describe("organization runtime", () => {
         "alice",
       ),
     ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("hires without a model by default: the entry carries none and the hire's sessions open without a model pair, so the Project default is resolved as each session opens", async () => {
+    await createOrg();
+    await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+    const entry = (await service.chart(P, ORG)).employees.find((e) => e.agentId === HR);
+    expect(entry).toBeDefined();
+    expect(entry).not.toHaveProperty("model");
+    // The hire opened the newcomer's desk with no (provider, modelId) pair: that absence is
+    // what makes the real SessionService fall back to the Project's default model at this
+    // moment, rather than to a value baked into the chart at creation.
+    const desk = created.at(-1)!;
+    expect(desk.agentId).toBe(HR);
+    expect(desk).not.toHaveProperty("modelId");
+    expect(desk).not.toHaveProperty("provider");
+    // A ticket session of that employee opens the same way — the default is read per session.
+    const t = await service.createTicket(
+      P,
+      ORG,
+      { title: "Staff the company", owner: `agent:${HR}` },
+      { userId: "alice" },
+    );
+    await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" });
+    const work = created.at(-1)!;
+    expect(work.agentId).toBe(HR);
+    expect(work).not.toHaveProperty("modelId");
+    // A model the board asked for by name still travels with the hire.
+    await service.hire(P, ORG, {
+      newAgent: { agentId: `${ORG}_dev` },
+      title: "Developer",
+      reportsTo: CEO,
+      model: { provider: "custom", modelId: "m-bench" },
+    });
+    expect(created.at(-1)).toMatchObject({
+      agentId: `${ORG}_dev`,
+      provider: "custom",
+      modelId: "m-bench",
+    });
   });
 
   it("refuses a taken organization id and cleans up when the CEO cannot be created", async () => {
