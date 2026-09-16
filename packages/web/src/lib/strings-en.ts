@@ -2487,6 +2487,12 @@ Scenarios:
     statParenOpen: " (",
     statParenClose: ")",
     noSessions: "No Sessions yet",
+    /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    sessionOnOfflineMachine: (machine: string) =>
+      `This conversation is on ${machine}, which is not connected right now.`,
+    sessionOnOfflineMachineUnknown:
+      "This conversation is on a machine that is not connected right now.",
+    sessionOfflineHint: "It will open as soon as the connection is back.",
     emptyStream: "Send a message to start the conversation",
     historyLoadFailed: "Failed to load history",
     statsLabel: "Stats",

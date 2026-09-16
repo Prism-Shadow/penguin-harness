@@ -27,7 +27,7 @@ Switching the model stays on the machine too. The switch opens a new Session for
 
 The sidebar's Session list is every connected machine's, merged: each server pages its own rows with its own offsets, so the merge walks one page from each and orders them together rather than sharing a cursor that would ask one machine for rows only another had reached. Folder counts are summed across the servers that answered.
 
-A machine that cannot be asked is recorded as such, and what it last held is shown from a cache until it answers again. That is what separates "this server has not got that Session" from "nobody who might have it answered" — so a Session on a machine that is out of reach reads as out of reach rather than gone, and the open conversation is not dropped for a Session whose machine is merely down.
+A machine that cannot be asked is recorded as such, and what it last held is shown from a cache until it answers again. That is what separates "this server has not got that Session" from "nobody who might have it answered" — so a Session on a machine that is out of reach reads as out of reach rather than gone, and the open conversation is not dropped for a Session whose machine is merely down. Opening one whose machine is down says which machine it is waiting on, and opens it once the connection is back.
 
 ## A Workspace is a directory on a machine
 

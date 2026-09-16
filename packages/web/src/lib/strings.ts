@@ -2496,6 +2496,10 @@ Benchmark：
     statParenOpen: "（",
     statParenClose: "）",
     noSessions: "还没有 Session",
+    /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
+    sessionOnOfflineMachineUnknown: "这个对话在某台机器上，当前没有连接。",
+    sessionOfflineHint: "连接恢复后会自动打开。",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",
     statsLabel: "统计信息",

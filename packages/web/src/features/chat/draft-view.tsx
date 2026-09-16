@@ -294,16 +294,34 @@ export function DraftView({
     machineId?: string;
   } | null;
   const stateAgentId = routeState?.agentId;
+  // Read here rather than beside their own effect below: the Agent resolution waits on them
+  // (see `routeMachineSettled`), and a dependency array is evaluated during the render that
+  // declares it.
+  const stateWorkspace = routeState?.workspace;
+  const stateMachineId = routeState?.machineId;
   const appliedStateKey = useRef<string | null>(null);
   useEffect(() => {
     if (agents.length === 0) return; // list not ready yet, nothing to validate against — wait for the next pass
     const valid = (id: string | null | undefined): id is string =>
       !!id && agents.some((a) => a.agentId === id);
+    // The route may name an Agent that only exists on the machine it names alongside it (the
+    // Agents page offers a new chat on a machine's own Agent). That machine is applied by the
+    // Workspace effect below, one render later, and its Agents are fetched after that — so
+    // this pass would validate the id against THIS server's list, reject it, and spend the
+    // one-shot key on the fallback Agent, which is then what the Session is created with.
+    // Nothing is decided until the list being validated against is the one the route asked
+    // for. A machine named without a path is never applied at all (the machine travels with
+    // the path), so it cannot hold this up.
+    const routeMachineSettled =
+      stateMachineId === undefined ||
+      stateWorkspace === undefined ||
+      workspaceMachine === stateMachineId;
     if (
       stateAgentId &&
       appliedStateKey.current !== location.key &&
       loadAppliedRouteKey("agentId") !== location.key
     ) {
+      if (!routeMachineSettled) return;
       appliedStateKey.current = location.key;
       saveAppliedRouteKey("agentId", location.key);
       if (valid(stateAgentId)) {
@@ -316,14 +334,21 @@ export function DraftView({
     // there was is gone): the new-chat default, once the Project's defaults are known.
     if (chatDefaults === null) return;
     setAgentId(newChatAgentId(agents, chatDefaults));
-  }, [agents, agentId, location.key, stateAgentId, chatDefaults]);
+  }, [
+    agents,
+    agentId,
+    location.key,
+    stateAgentId,
+    stateMachineId,
+    stateWorkspace,
+    workspaceMachine,
+    chatDefaults,
+  ]);
 
   // Explicit Workspace from route state (the workspace-mode group header "+"): applied once per
   // location.key, same convention as the Agent above, overriding the cached selection ("" pre-fills
   // the temporary workspace). Unlike the Agent there's no list to validate against, so this is a
   // separate effect that never has to wait for a load.
-  const stateWorkspace = routeState?.workspace;
-  const stateMachineId = routeState?.machineId;
   const appliedWorkspaceKey = useRef<string | null>(null);
   useEffect(() => {
     if (

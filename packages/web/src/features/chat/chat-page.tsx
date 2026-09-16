@@ -767,6 +767,11 @@ export function ChatPage() {
   };
   const routeSessionUnowned =
     !!routeSessionId &&
+    // Except one we deleted ourselves. That is the one case where a failed lookup settles it
+    // whoever is out of reach — nobody is going to answer differently — and leaving it open
+    // held the page on a skeleton for as long as some machine stayed down, on the ordinary
+    // act of deleting the conversation you are looking at.
+    !isSessionDeleted(routeSessionId) &&
     (routeSessionOwner === null
       ? machinesUnreachable
       : offlineMachineIds.includes(routeSessionOwner));
@@ -775,6 +780,14 @@ export function ChatPage() {
   // Session that really is gone has to keep probing until the lookup fails and releases both.
   const routeSessionPending =
     !!routeSessionId && listed === null && (probeFailedKey !== probeKey || routeSessionUnowned);
+  /**
+   * The lookup has failed and the only servers that could still answer for this Session are
+   * out of reach. It is not gone — so the redirect must not fire and the row must not be
+   * dropped — but it is not loading either, and a skeleton that never resolves reads as a
+   * hung page. Say what is actually the matter instead, and let the recheck open it when the
+   * connection is back (state/sessions.tsx: OFFLINE_RECHECK_MS).
+   */
+  const routeSessionOffline = routeSessionPending && probeFailedKey === probeKey;
   useEffect(() => {
     if (draft || !projectId || !routeSessionId || !probeKey || sessionsLoading) return;
     // Settled (row loaded, or the lookup already failed): nothing to probe — and a failed
@@ -2412,6 +2425,17 @@ export function ChatPage() {
                     </div>
                   </>
                 )
+              ) : routeSessionOffline ? (
+                <EmptyState
+                  title={
+                    routeSessionOwner === null
+                      ? S.chat.sessionOnOfflineMachineUnknown
+                      : S.chat.sessionOnOfflineMachine(
+                          machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
+                        )
+                  }
+                  description={S.chat.sessionOfflineHint}
+                />
               ) : sessionsLoading || routeSessionPending ? (
                 <div className="space-y-3 p-6">
                   <Skeleton className="h-5 w-1/2" />
