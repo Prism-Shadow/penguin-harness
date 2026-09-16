@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** feature
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#755](https://github.com/Prism-Shadow/penguin-harness/pull/755)
 
 [中文版](2026-09-16-ai-suggested-ids.zh.md)
 
