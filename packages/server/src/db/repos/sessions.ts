@@ -152,7 +152,7 @@ export class SessionsRepo implements SessionIndex {
   /**
    * Stamp `client = "org"` on the rows an organization's files name, leaving the ones
    * already stamped alone. The reconcile pass calls it with every session the desk ledger
-   * and the tickets' `Sessions` headers claim, so a row opened before the marker existed
+   * and the tickets' `sessions` fields claim, so a row opened before the marker existed
    * carries the organization's provenance from the next pass on — and keeps it when the
    * organization is deleted or company mode is switched off, which is exactly when the
    * organization caches can no longer answer for it. Chunked because the id list is

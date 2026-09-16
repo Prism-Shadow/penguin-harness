@@ -88,7 +88,7 @@ of your system prompt. Never write absolute paths into files other people read.
 ## Principals
 
 People and employees are named \`user:<user_id>\` and \`agent:<agent_id>\` in every structured
-field (ticket headers, message senders and mentions). \`all\` in a mention means every member of
+field (ticket fields, message senders and mentions). \`all\` in a mention means every member of
 that channel — in the all-hands channel, every employee; \`system\` is the scheduler. In message
 text \`@<id>\` is shorthand: employees resolve first, then Project members; write
 \`@agent:<id>\` or \`@user:<id>\` when both exist.
@@ -218,7 +218,7 @@ ${input.mission}
 
 ## 身份记号
 
-人和员工在所有结构化字段（工单头部、消息发送者与提及）里都记作 \`user:<user_id>\` 与 \`agent:<agent_id>\`。提及里的 \`all\` 指该频道的全体成员——在全员频道即全体员工；\`system\` 是调度器。消息正文里的 \`@<id>\` 是简写：先解析为员工，再解析为 Project 成员；两者都存在时写 \`@agent:<id>\` 或 \`@user:<id>\`。
+人和员工在所有结构化字段（工单字段、消息发送者与提及）里都记作 \`user:<user_id>\` 与 \`agent:<agent_id>\`。提及里的 \`all\` 指该频道的全体成员——在全员频道即全体员工；\`system\` 是调度器。消息正文里的 \`@<id>\` 是简写：先解析为员工，再解析为 Project 成员；两者都存在时写 \`@agent:<id>\` 或 \`@user:<id>\`。
 
 ## 工单协议
 
