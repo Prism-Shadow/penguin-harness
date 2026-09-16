@@ -28,6 +28,7 @@ import type { RawTable, UtilityCompletion } from "../services/project-config-ser
 import type { ListEndpointModelsOptions, ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
 import type { TieredRates } from "../services/usage-service.js";
 import type {
+  PlatformCatalogPromotion,
   PlatformModelApplyResult,
   PlatformModelCatalog,
 } from "../services/platform-auth-types.js";
@@ -144,6 +145,12 @@ export abstract class ProjectConfigStore extends Interface<{
     applyKeyToExisting: boolean,
   ): Promise<PlatformModelApplyResult>;
   completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
+}>() {}
+
+/** Rebuildable per-Project platform catalog metadata stored outside Project TOML. */
+export abstract class PlatformCatalogCache extends Interface<{
+  list(projectId: string, provider: string): PlatformCatalogPromotion[];
+  replace(projectId: string, provider: string, catalog: PlatformModelCatalog): void;
 }>() {}
 
 /** ModelOAuth: the mechanism ModelOAuthService implements. */

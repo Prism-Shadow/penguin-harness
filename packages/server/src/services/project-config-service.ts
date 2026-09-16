@@ -78,6 +78,7 @@ import { badRequest } from "../http/validate.js";
 import { cacheable } from "../internal/mtime-gate.js";
 import type {
   PlatformCatalogPricing,
+  PlatformCatalogPromotion,
   PlatformModelApplyResult,
   PlatformModelCatalog,
 } from "./platform-auth-types.js";
@@ -93,7 +94,7 @@ import {
 import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { PlatformCatalogCache, ProjectConfigStore } from "../mechanisms/projects.js";
 
 export type RawTable = Record<string, unknown>;
 
@@ -178,6 +179,28 @@ function platformPricingMatches(value: unknown, pricing: PlatformCatalogPricing)
     stored.cache_read === pricing.cacheRead &&
     stored.cache_write === pricing.cacheWrite &&
     stored.output === pricing.output
+  );
+}
+
+function samePlatformPricing(left: PlatformCatalogPricing, right: PlatformCatalogPricing): boolean {
+  return (
+    left.unit === right.unit &&
+    left.cacheRead === right.cacheRead &&
+    left.cacheWrite === right.cacheWrite &&
+    left.output === right.output
+  );
+}
+
+function cachedPromotionMatches(
+  cached: PlatformCatalogPromotion | undefined,
+  model: PlatformModelCatalog["models"][number] | undefined,
+): boolean {
+  if (model?.listPricing === undefined || model.discount === undefined) return cached === undefined;
+  return (
+    cached !== undefined &&
+    cached.discount === model.discount &&
+    samePlatformPricing(cached.pricing, model.pricing) &&
+    samePlatformPricing(cached.listPricing, model.listPricing)
   );
 }
 
@@ -426,6 +449,8 @@ export class ProjectConfigService implements ProjectConfigStore {
   private readonly cache = new Map<string, { mtimeMs: number; table: RawTable }>();
 
   @Use() private readonly paths!: Paths;
+  /** Optional for narrow service tests; the production Projects module always provides it. */
+  @Use() private readonly platformCatalogCache?: PlatformCatalogCache;
   private get root(): string {
     return this.paths.root;
   }
@@ -1045,6 +1070,11 @@ export class ProjectConfigService implements ProjectConfigStore {
     const raw = await this.readRaw(projectId);
     const defaultRef = optRef(raw.default_model);
     const visionRef = optRef(raw.vision_model);
+    const penguinGoPromotions = new Map(
+      (this.platformCatalogCache?.list(projectId, PENGUIN_GO_PROVIDER_ID) ?? []).map(
+        (promotion) => [promotion.modelId, promotion],
+      ),
+    );
     const models: ModelInfo[] = asArray(raw.models)
       // An entry is valid only if both provider and model_id are strings (an entry in the old concatenated format lacks provider and is ignored).
       .filter((m) => typeof m.provider === "string" && typeof m.model_id === "string")
@@ -1062,18 +1092,17 @@ export class ProjectConfigService implements ProjectConfigStore {
                 output: optNum(pricing.output) ?? 0,
               }
             : undefined;
-        const listPricing = asTable(m.list_pricing);
-        const listPricingDto: ModelPricingDto | undefined =
-          optNum(listPricing.cache_read) !== undefined ||
-          optNum(listPricing.cache_write) !== undefined ||
-          optNum(listPricing.output) !== undefined
-            ? {
-                cacheRead: optNum(listPricing.cache_read) ?? 0,
-                cacheWrite: optNum(listPricing.cache_write) ?? 0,
-                output: optNum(listPricing.output) ?? 0,
-              }
+        const cachedPromotion =
+          provider === PENGUIN_GO_PROVIDER_ID ? penguinGoPromotions.get(modelId) : undefined;
+        const promotion =
+          pricingDto !== undefined &&
+          cachedPromotion !== undefined &&
+          samePlatformPricing(cachedPromotion.pricing, {
+            unit: "usd_per_mtok",
+            ...pricingDto,
+          })
+            ? cachedPromotion
             : undefined;
-        const discount = optNum(m.discount);
         // Normalized on read: entries stored before AgentHub 0.4.2's openai -> openai-chat
         // rename report the canonical spelling without a disk rewrite (the next models PUT
         // persists it).
@@ -1132,8 +1161,16 @@ export class ProjectConfigService implements ProjectConfigStore {
           ...(envKey ? { envKey } : {}),
           ...(envKeyMasked !== undefined ? { envKeyMasked } : {}),
           ...(pricingDto ? { pricing: pricingDto } : {}),
-          ...(listPricingDto ? { listPricing: listPricingDto } : {}),
-          ...(discount !== undefined ? { discount } : {}),
+          ...(promotion !== undefined
+            ? {
+                listPricing: {
+                  cacheRead: promotion.listPricing.cacheRead,
+                  cacheWrite: promotion.listPricing.cacheWrite,
+                  output: promotion.listPricing.output,
+                },
+                discount: promotion.discount,
+              }
+            : {}),
           ...(apiKey !== undefined || credBaseUrl !== undefined
             ? {
                 credential: {
@@ -1254,16 +1291,6 @@ export class ProjectConfigService implements ProjectConfigStore {
           output: entry.pricing.output,
         };
       }
-      if (entry.listPricing !== undefined) {
-        next.list_pricing = {
-          unit: "usd_per_mtok",
-          cache_read: entry.listPricing.cacheRead,
-          cache_write: entry.listPricing.cacheWrite,
-          output: entry.listPricing.output,
-        };
-      }
-      if (entry.discount !== undefined) next.discount = entry.discount;
-
       // credential is inlined on the entry; added/removed on top of the old value per the request (migrates automatically with the base entry when the key changes).
       if (entry.clearApiKey) {
         delete next.api_key;
@@ -1377,9 +1404,11 @@ export class ProjectConfigService implements ProjectConfigStore {
   }
 
   /**
-   * Adds newly advertised models and refreshes platform-owned routing, price and promotion
-   * metadata on existing rows. Other annotations remain Project-owned and are never overwritten.
-   * Authorization additionally applies the freshly delivered key to the whole group.
+   * Adds newly advertised models and refreshes platform-owned routing and effective price on
+   * existing rows. Promotion metadata is replaced in the rebuildable SQLite catalog cache only;
+   * Project TOML stays in the same shape as every other model group. Other annotations remain
+   * Project-owned and are never overwritten. Authorization additionally applies the freshly
+   * delivered key to the whole group.
    */
   async mergePlatformModels(
     projectId: string,
@@ -1391,34 +1420,38 @@ export class ProjectConfigService implements ProjectConfigStore {
     const raw = await this.readRaw(projectId);
     const current = asArray(raw.models);
     const catalogById = new Map(catalog.models.map((model) => [model.modelId, model]));
+    const cachedPromotions = new Map(
+      (this.platformCatalogCache?.list(projectId, provider) ?? []).map((promotion) => [
+        promotion.modelId,
+        promotion,
+      ]),
+    );
     const known = new Set<string>();
     const createdAt = new Date().toISOString();
     let added = 0;
     let updated = 0;
     let applied = 0;
+    let configChanged = false;
     const nextModels = current.map((model) => {
       if (model.provider !== provider || typeof model.model_id !== "string") return model;
       const modelId = String(model.model_id);
       known.add(modelId);
       const catalogModel = catalogById.get(modelId);
-      const listPricing = catalogModel?.listPricing;
       const remotePricing = catalogModel?.pricing;
       const pricingChanged =
         remotePricing !== undefined && !platformPricingMatches(model.pricing, remotePricing);
       const clientTypeChanged =
         catalogModel !== undefined && model.client_type !== catalogModel.clientType;
       const promotionChanged =
-        catalogModel !== undefined &&
-        (catalogModel.discount === undefined
-          ? model.discount !== undefined || model.list_pricing !== undefined
-          : model.discount !== catalogModel.discount ||
-            listPricing === undefined ||
-            !platformPricingMatches(model.list_pricing, listPricing));
+        this.platformCatalogCache !== undefined &&
+        !cachedPromotionMatches(cachedPromotions.get(modelId), catalogModel);
+      const hasLegacyPromotion = model.discount !== undefined || model.list_pricing !== undefined;
       if (pricingChanged || clientTypeChanged || promotionChanged) updated += 1;
       if (applyKeyToExisting) applied += 1;
-      if (!pricingChanged && !clientTypeChanged && !promotionChanged && !applyKeyToExisting) {
+      if (!pricingChanged && !clientTypeChanged && !hasLegacyPromotion && !applyKeyToExisting) {
         return model;
       }
+      configChanged = true;
       const nextModel: RawTable = {
         ...model,
         ...(pricingChanged && remotePricing !== undefined
@@ -1429,15 +1462,10 @@ export class ProjectConfigService implements ProjectConfigStore {
           : {}),
         ...(applyKeyToExisting ? { api_key: apiKey, created_at: createdAt } : {}),
       };
-      if (promotionChanged) {
-        if (catalogModel?.discount !== undefined && listPricing !== undefined) {
-          nextModel.discount = catalogModel.discount;
-          nextModel.list_pricing = platformPricingTable(listPricing);
-        } else {
-          delete nextModel.discount;
-          delete nextModel.list_pricing;
-        }
-      }
+      // Compatibility cleanup for builds that briefly persisted platform promotion metadata in
+      // Project TOML. The cache below is now its only dynamic source.
+      delete nextModel.discount;
+      delete nextModel.list_pricing;
       return nextModel;
     });
 
@@ -1446,6 +1474,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       known.add(model.modelId);
       added += 1;
       applied += 1;
+      configChanged = true;
       nextModels.push({
         provider,
         model_id: model.modelId,
@@ -1453,12 +1482,6 @@ export class ProjectConfigService implements ProjectConfigStore {
         context_window: model.contextWindow,
         vision: model.supportsVision,
         pricing: platformPricingTable(model.pricing),
-        ...(model.discount !== undefined && model.listPricing !== undefined
-          ? {
-              list_pricing: platformPricingTable(model.listPricing),
-              discount: model.discount,
-            }
-          : {}),
         client_type: model.clientType,
         base_url: model.baseUrl,
         api_key: apiKey,
@@ -1466,9 +1489,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       });
     }
 
-    if (added > 0 || updated > 0 || applyKeyToExisting) {
+    if (configChanged) {
       await this.writeRaw(projectId, { ...raw, models: nextModels });
     }
+    // Deliberately after the authoritative Project write: a cache failure can hide promotion
+    // decoration until the next sync, but can never make requests or cost accounting incorrect.
+    this.platformCatalogCache?.replace(projectId, provider, catalog);
     return { added, updated, applied };
   }
 }

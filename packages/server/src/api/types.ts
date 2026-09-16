@@ -519,9 +519,9 @@ export interface ModelInfo {
    */
   fastMode?: boolean;
   pricing?: ModelPricingDto;
-  /** Seller list price for a synchronized flat promotion; `pricing` is the billed price. */
+  /** Read-only seller list price from the platform catalog cache; `pricing` is the billed price. */
   listPricing?: ModelPricingDto;
-  /** Fraction off list price (0.5 = half price). */
+  /** Read-only fraction off list price (0.5 = half price). */
   discount?: number;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
@@ -581,10 +581,6 @@ export interface ModelUpdateEntry {
   /** Per-model fast mode: only `true` is persisted; omitted or `false` clears the annotation (absent = off). */
   fastMode?: boolean;
   pricing?: ModelPricingDto;
-  /** Platform-synchronized promotion metadata, round-tripped with the model table. */
-  listPricing?: ModelPricingDto;
-  /** Fraction off list price (0.5 = half price). */
-  discount?: number;
   /** Providing it overwrites and updates createdAt; omitting it keeps the existing value. */
   apiKey?: string;
   /** When true, clears the stored api_key. */

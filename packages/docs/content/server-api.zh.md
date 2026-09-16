@@ -184,7 +184,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 #### Penguin Go Key 授权
 
-以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-go` 既有条目，并按平台元数据创建本地缺失模型；已有模型会刷新平台价格、客户端协议和固定促销元数据，端点及其他由 Project 管理的配置不会被覆盖，模型也不会被删除。
+以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-go` 既有条目，并按平台元数据创建本地缺失模型；已有模型会刷新实际平台价格和客户端协议，端点及其他由 Project 管理的配置不会被覆盖，模型也不会被删除。Project 模型表成功写入后，原价和折扣率会整体替换到 `web.db` 的可重建缓存，不写入 `.project_config.toml`。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

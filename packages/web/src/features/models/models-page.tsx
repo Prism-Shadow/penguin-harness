@@ -627,8 +627,6 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   ) {
     entry.pricing = { cacheRead: cr, cacheWrite: cwr, output: out };
   }
-  if (row.listPricing !== undefined) entry.listPricing = row.listPricing;
-  if (row.discount !== undefined) entry.discount = row.discount;
   if (row.apiKeyInput.trim()) entry.apiKey = row.apiKeyInput.trim();
   if (row.clearApiKey) entry.clearApiKey = true;
   const baseUrl = row.baseUrl.trim();

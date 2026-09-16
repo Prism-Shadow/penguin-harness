@@ -240,6 +240,18 @@ describe("rowToEntry (the persistence funnel)", () => {
   it("omits clientType for a vendor group so AgentHub keeps inferring it", () => {
     expect(rowToEntry(row({ provider: "openai", modelId: "gpt-5.6" })).clientType).toBeUndefined();
   });
+
+  it("does not persist read-only platform promotion metadata", () => {
+    expect(
+      rowToEntry(
+        row({
+          provider: "penguin-go",
+          listPricing: { cacheRead: 0.1, cacheWrite: 0.5, output: 2 },
+          discount: 0.5,
+        }),
+      ),
+    ).not.toMatchObject({ listPricing: expect.anything(), discount: expect.anything() });
+  });
 });
 
 describe("detection copy", () => {

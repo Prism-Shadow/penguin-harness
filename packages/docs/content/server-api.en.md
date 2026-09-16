@@ -184,7 +184,7 @@ Every endpoint that names a model takes the complete `(provider, modelId)` pair.
 
 #### Penguin Go key authorization
 
-All routes are owner-only. The browser receives a local flow id and authorization URL, never the device secret, delivered API key, or other platform response fields. PenguinHarness validates the platform catalog server-side, writes the delivered key across existing `penguin-go` entries, and creates locally missing models from the platform metadata. Existing models refresh their platform price, client protocol, and flat-promotion metadata; endpoints and other Project-owned configuration are not overwritten, and models are never deleted.
+All routes are owner-only. The browser receives a local flow id and authorization URL, never the device secret, delivered API key, or other platform response fields. PenguinHarness validates the platform catalog server-side, writes the delivered key across existing `penguin-go` entries, and creates locally missing models from the platform metadata. Existing models refresh their effective platform price and client protocol; endpoints and other Project-owned configuration are not overwritten, and models are never deleted. List price and discount metadata are replaced in a rebuildable `web.db` cache after the Project model table succeeds, rather than being persisted in `.project_config.toml`.
 
 | Method | Path | Description |
 | --- | --- | --- |

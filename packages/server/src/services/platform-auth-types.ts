@@ -30,6 +30,15 @@ export interface PlatformModelCatalog {
   models: PlatformCatalogModel[];
 }
 
+/** Rebuildable promotion metadata read from web.db for model-page decoration. */
+export interface PlatformCatalogPromotion {
+  modelId: string;
+  /** Effective price fingerprint: a stale cache row is ignored when Project pricing differs. */
+  pricing: PlatformCatalogPricing;
+  listPricing: PlatformCatalogPricing;
+  discount: number;
+}
+
 /** Catalog merge result. `updated` counts existing rows whose platform price changed. */
 export interface PlatformModelApplyResult {
   added: number;

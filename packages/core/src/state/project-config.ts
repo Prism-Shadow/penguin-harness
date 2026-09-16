@@ -119,14 +119,6 @@ export interface ModelEntry {
   fast_mode?: boolean;
   /** Pricing info; absent means this Model's cost isn't counted. */
   pricing?: ModelPricing;
-  /**
-   * Seller list price behind a synchronized flat promotion. `pricing` remains the effective
-   * billed price used by the cost center; this metadata lets interfaces explain the discount
-   * for platform-discovered models that are not yet present in the built-in catalog.
-   */
-  list_pricing?: ModelPricing;
-  /** Fraction off `list_pricing` (0.5 = half price); platform-synchronized metadata. */
-  discount?: number;
   /** API key (inlined credential); left empty falls back to the vendor's environment variable. */
   api_key?: string;
   /** Custom base URL (inlined credential); preset for gateway models. */
@@ -553,10 +545,6 @@ export async function addModel(
       output: mergedPricing.output ?? 0,
     };
   }
-  // Promotion metadata is platform-owned and not editable through this CLI helper. Preserve it
-  // when a call only changes the key, endpoint, or another ordinary model field.
-  if (existing?.list_pricing !== undefined) modelEntry.list_pricing = existing.list_pricing;
-  if (existing?.discount !== undefined) modelEntry.discount = existing.discount;
   // Inline credential entry: fields not provided keep their existing value.
   const apiKey = entry.api_key ?? existing?.api_key;
   if (apiKey !== undefined) {

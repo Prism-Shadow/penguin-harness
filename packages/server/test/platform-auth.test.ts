@@ -265,6 +265,25 @@ describe("Penguin Go key authorization routes", () => {
       error: { code: "platform_reauthorization_required" },
     });
 
+    // Compatibility fixture: the earlier implementation briefly persisted promotion metadata
+    // in Project TOML. A successful platform merge removes it while rebuilding the DB cache.
+    const legacy = await t.deps.projectConfigService.readRaw(projectId);
+    const legacyModels = (legacy.models as Record<string, unknown>[]).map((model) =>
+      model.provider === "penguin-go" && model.model_id === "gemini-3.8-flash"
+        ? {
+            ...model,
+            list_pricing: {
+              unit: "usd_per_mtok",
+              cache_read: 0,
+              cache_write: 1.25,
+              output: 10,
+            },
+            discount: 0.5,
+          }
+        : model,
+    );
+    await t.deps.projectConfigService.writeRaw(projectId, { ...legacy, models: legacyModels });
+
     const startResponse = await owner.post(`${base}/start`, {});
     expect(startResponse.status).toBe(201);
     const started = (await startResponse.json()) as PlatformAuthStartResponse;
@@ -306,6 +325,18 @@ describe("Penguin Go key authorization routes", () => {
       listPricing: { cacheRead: 0, cacheWrite: 1.25, output: 10 },
       discount: 0.5,
     });
+    const stored = await t.deps.projectConfigService.readRaw(projectId);
+    expect(JSON.stringify(stored)).not.toContain("list_pricing");
+    expect(JSON.stringify(stored)).not.toContain('"discount"');
+    expect(
+      t.deps.db
+        .prepare(
+          `SELECT effective_output, list_output, discount
+           FROM provider_catalog_cache
+           WHERE project_id = ? AND provider = ? AND model_id = ?`,
+        )
+        .get(projectId, "penguin-go", "gemini-3.8-flash"),
+    ).toEqual({ effective_output: 5, list_output: 10, discount: 0.5 });
     expect(penguinGoModels.every((model) => model.credential?.apiKeyMasked !== undefined)).toBe(
       true,
     );

@@ -432,6 +432,38 @@ export const MIGRATIONS: readonly Migration[] = [
       `);
     },
   },
+  {
+    version: 9,
+    name: "provider-catalog-cache",
+    // Additive and rebuildable: this table only decorates platform-synchronized models with
+    // promotion metadata. A predecessor build ignores it, and losing its rows hides only the
+    // discount badge until the next authorization or sync.
+    swapSafe: true,
+    up(db) {
+      // Frozen migration DDL: keep this independent from the live declaration in schema.ts.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS provider_catalog_cache ( -- DERIVED CACHE: platform promotion metadata, fully rebuilt by authorization/sync; Project pricing remains authoritative
+          project_id            TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+          provider              TEXT NOT NULL,
+          model_id              TEXT NOT NULL,
+          effective_cache_read  REAL NOT NULL,
+          effective_cache_write REAL NOT NULL,
+          effective_output      REAL NOT NULL,
+          list_cache_read       REAL NOT NULL,
+          list_cache_write      REAL NOT NULL,
+          list_output           REAL NOT NULL,
+          discount              REAL NOT NULL CHECK (discount > 0 AND discount < 1),
+          synced_at             TEXT NOT NULL,
+          PRIMARY KEY (project_id, provider, model_id)
+        );
+      `);
+    },
+    // LOSES only rebuildable promotion decoration; effective prices remain in Project TOML,
+    // and the next platform authorization or sync recreates these rows.
+    down(db) {
+      db.exec("DROP TABLE IF EXISTS provider_catalog_cache");
+    },
+  },
 ];
 
 /** The highest version this build knows how to reach. */

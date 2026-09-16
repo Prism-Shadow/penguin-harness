@@ -65,6 +65,7 @@ import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
+import { PlatformCatalogCacheRepo } from "./db/repos/platform-catalog-cache.js";
 import { MembersRepo } from "./db/repos/members.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { UsageRepo } from "./db/repos/usage.js";
@@ -246,6 +247,7 @@ export class IdentityModule {}
 @Module({
   children: [
     ProjectsRepo,
+    PlatformCatalogCacheRepo,
     MembersRepo,
     AgentsRepo,
     ProjectAccess,
