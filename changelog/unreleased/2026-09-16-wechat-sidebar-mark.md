@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#759](https://github.com/Prism-Shadow/penguin-harness/pull/759)
 
 [中文版](2026-09-16-wechat-sidebar-mark.zh.md)
 
