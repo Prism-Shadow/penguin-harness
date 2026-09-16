@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#760](https://github.com/Prism-Shadow/penguin-harness/pull/760)
 
 [English](2026-09-16-benchmark-score-label.md)
 
