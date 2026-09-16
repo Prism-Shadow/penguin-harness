@@ -12,8 +12,13 @@ tree, and every installed file is a separate blob on the push: about 1,700 files
 the whole Shiki grammar collection behind the languages plugin's five grammars and Hono's ESM,
 CommonJS and type copies behind the Discord bot's route. Enough small transfers to stall a push.
 
-- The Discord bot compiles in Hono, the languages plugin its five grammars, and sandbox-dsh the
-  DSH chain; those packages move to `devDependencies`. The prefix is now 167 files (6MB).
+- The Discord bot compiles in Hono and the languages plugin its five grammars; those packages
+  move to `devDependencies`.
+- sandbox-dsh keeps the DSH chain as a dependency tree: it picks its per-platform rung by bare
+  specifier at run time, and a bundle turns that into an unresolvable import — which is how the
+  Windows rung (a restricted token and ACLs) came to fail there with "Cannot find package
+  '@deepseek-ai/dsh-sandbox-windows-acl'". The tree is ~160 small files, and with the archives
+  below it costs a handful of blobs rather than a transfer each.
 - What stays a runtime dependency is a native module: `koffi` and the landlock launcher, both
   sandbox-dsh's, whose per-platform binaries cannot live inside a bundle.
 - Those binaries now ship for every target a push can reach — Linux x64/arm64, Windows x64 and
