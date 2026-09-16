@@ -3,6 +3,7 @@
  *   GET|POST   /api/projects/:p/agents/:a/schedules
  *   POST       /api/projects/:p/agents/:a/schedules/template-placeholder  # insert the {{SCHEDULES}} placeholder
  *   GET|PUT|DELETE /api/projects/:p/agents/:a/schedules/:name (name is the file name)
+ *   GET        /api/projects/:p/schedules  # every Agent's tasks in the Project, in one list
  * Any member can read; only the owner can modify. The file is declarative intent:
  * POST/PUT fully replace the file, validation always goes through parseScheduleFile
  * (same rules as hand-edited files), and writes take effect immediately via reconciliation.
@@ -10,7 +11,12 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { isValidId } from "@prismshadow/penguin-core";
-import type { ScheduleItem, ScheduleStatus, SchedulesResponse } from "../../api/types.js";
+import type {
+  ProjectSchedulesResponse,
+  ScheduleItem,
+  ScheduleStatus,
+  SchedulesResponse,
+} from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import type { ServerConfig } from "../../config.js";
 
@@ -231,6 +237,34 @@ export function scheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
   return app;
 }
 
+/**
+ * The Project-wide listing. The sidebar's session list draws every Agent's Sessions, so the
+ * scheduled-task mark it puts on a row is read from one request that spans the Project instead
+ * of one request per Agent — reading a single Agent's list would leave every other row unmarked.
+ */
+export function projectScheduleRoutes(deps: SchedulesRouteDeps): Hono<AppEnv> {
+  const app = new Hono<AppEnv>();
+
+  app.get("/", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
+    const { entries, invalid } = await deps.scheduler.listProject(projectId);
+    // One clock reading for the whole response: every row's status and next fire time is derived
+    // against the same instant, so a long list cannot straddle a slot boundary.
+    const nowMs = Date.now();
+    const res: ProjectSchedulesResponse = {
+      schedules: entries.map((e) => ({
+        agentId: e.agentId,
+        ...toItem(e.def, e.state, e.queued, nowMs),
+      })),
+      invalidFiles: invalid,
+    };
+    return c.json(res);
+  });
+
+  return app;
+}
+
 /** Write + register creator + reconcile immediately (API changes take effect right away). */
 async function upsert(
   deps: SchedulesRouteDeps,
@@ -284,6 +318,12 @@ async function readItem(
         auth: "user",
         order: 200,
       },
+      {
+        id: "SchedulerRoutes.projectRoutes",
+        prefix: "/api/projects/:projectId/schedules",
+        auth: "user",
+        order: 200,
+      },
     ],
   },
 })
@@ -295,14 +335,17 @@ export class SchedulerRoutes {
   @Use() private readonly scheduler!: Scheduling;
   @Use() private readonly schedulesRepo!: Schedules;
   @Bind("SchedulerRoutes.routes") routes!: Hono<AppEnv>;
+  @Bind("SchedulerRoutes.projectRoutes") projectRoutes!: Hono<AppEnv>;
   setup() {
-    this.routes = scheduleRoutes({
+    const deps: SchedulesRouteDeps = {
       agentConfigService: this.agentConfig,
       config: this.config,
       projectConfigService: this.projectConfig,
       access: this.access,
       scheduler: this.scheduler,
       schedulesRepo: this.schedulesRepo,
-    });
+    };
+    this.routes = scheduleRoutes(deps);
+    this.projectRoutes = projectScheduleRoutes(deps);
   }
 }

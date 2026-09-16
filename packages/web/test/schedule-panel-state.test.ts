@@ -4,7 +4,7 @@
  * the display statuses, what the search matches, and the whole-file toggle body.
  */
 import { describe, expect, it } from "vitest";
-import type { ScheduleItem } from "@prismshadow/penguin-server/api";
+import type { ProjectScheduleItem, ScheduleItem } from "@prismshadow/penguin-server/api";
 import {
   SCHEDULE_FILTERS,
   pendingScheduleSessions,
@@ -27,6 +27,13 @@ function item(overrides: Partial<ScheduleItem> & { name: string }): ScheduleItem
   };
 }
 
+/** A task as the Project-wide listing returns it: stamped with the agent whose directory holds it. */
+function projectItem(
+  overrides: Partial<ProjectScheduleItem> & { name: string; agentId: string },
+): ProjectScheduleItem {
+  return { ...item(overrides), agentId: overrides.agentId };
+}
+
 describe("sessionSchedules", () => {
   it("keeps only the tasks bound to the given Session — new-Session tasks belong to the agent", () => {
     const items = [
@@ -35,6 +42,17 @@ describe("sessionSchedules", () => {
       item({ name: "fresh" }),
     ];
     expect(sessionSchedules(items, "s1").map((i) => i.name)).toEqual(["here"]);
+  });
+
+  it("keeps the caller's item type, so the panel still knows which agent owns each task", () => {
+    const items = [
+      projectItem({ name: "here", agentId: "writer", sessionId: "s1" }),
+      projectItem({ name: "elsewhere", agentId: "reviewer", sessionId: "s2" }),
+    ];
+    // The annotation is the assertion: the panel writes a task file back to its `agentId`, so a
+    // narrowing that handed back plain ScheduleItems would not compile here.
+    const mine: ProjectScheduleItem[] = sessionSchedules(items, "s1");
+    expect(mine.map((i) => i.agentId)).toEqual(["writer"]);
   });
 });
 
@@ -60,6 +78,14 @@ describe("pendingScheduleSessions", () => {
     ];
     expect([...pendingScheduleSessions(items)]).toEqual(["s1"]);
     expect(pendingScheduleSessions([]).size).toBe(0);
+  });
+
+  it("marks the Sessions of every Agent, since the list it feeds draws every Agent's rows", () => {
+    const items = [
+      projectItem({ name: "brief", agentId: "writer", sessionId: "s1", nextFireAt: due }),
+      projectItem({ name: "review", agentId: "reviewer", sessionId: "s2", nextFireAt: due }),
+    ];
+    expect([...pendingScheduleSessions(items)]).toEqual(["s1", "s2"]);
   });
 });
 

@@ -233,6 +233,7 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| GET | /schedules | 一次列出 Project 内所有 Agent 的定时任务，每条带所属 `agentId`（任意成员） |
 | GET / POST | /agents/:agentId/schedules | 定时任务列表 / 创建（重名返回 409） |
 | GET / PUT / DELETE | /agents/:agentId/schedules/:name | 读取 / 更新 / 删除单个任务 |
 

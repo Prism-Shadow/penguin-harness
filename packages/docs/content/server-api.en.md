@@ -233,6 +233,7 @@ The paths below omit the `/api/projects/:projectId` prefix.
 
 | Method | Path | Description |
 | --- | --- | --- |
+| GET | /schedules | Every agent's scheduled tasks in the Project in one list, each stamped with its `agentId` (any member) |
 | GET / POST | /agents/:agentId/schedules | List scheduled tasks / create one (409 if the name exists) |
 | GET / PUT / DELETE | /agents/:agentId/schedules/:name | Read / update / delete a single task |
 

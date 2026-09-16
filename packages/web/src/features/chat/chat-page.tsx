@@ -807,22 +807,13 @@ export function ChatPage() {
       // from a detaching stream never reaches here.
       setSettledTurnSignal((n) => n + 1);
       // The turn may equally have created a scheduled task, switched one off, or consumed a
-      // one-off — so the schedule directory is re-read on this same edge, the way the Files
-      // and Trace panels re-read theirs. One store refresh serves both surfaces: the store
-      // notifies its subscribers, so the dock's schedules panel and the sidebar row's alarm
-      // clock come from the same list and cannot disagree.
-      if (projectId !== null && selectedAgentId !== null) {
-        noteScheduleEvent(projectId, selectedAgentId);
-      }
+      // one-off — so the Project's schedule directories are re-read on this same edge, the way
+      // the Files and Trace panels re-read theirs. One store refresh serves both surfaces: the
+      // store notifies its subscribers, so the dock's schedules panel and the sidebar row's
+      // alarm clock come from the same list and cannot disagree.
+      if (projectId !== null) noteScheduleEvent(projectId);
     }
-  }, [
-    stream.taskState,
-    selectedSessionId,
-    selectedAgentId,
-    projectId,
-    reloadSessions,
-    reloadAgents,
-  ]);
+  }, [stream.taskState, selectedSessionId, projectId, reloadSessions, reloadAgents]);
 
   // Looking at a settled Session is what marks it read (session-seen.ts): stamped on open, and
   // again when a run finishes under the user's eyes, so the sidebar row left behind is not

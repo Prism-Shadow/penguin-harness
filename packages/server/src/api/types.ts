@@ -3245,6 +3245,21 @@ export interface SchedulesResponse {
   invalidFiles: Array<{ name: string; error: string }>;
 }
 
+/**
+ * One task in the Project-wide listing (GET /api/projects/:projectId/schedules): the agent's
+ * item plus the agent whose schedule directory holds it, since the list spans every agent.
+ */
+export interface ProjectScheduleItem extends ScheduleItem {
+  agentId: string;
+}
+
+export interface ProjectSchedulesResponse {
+  /** Every agent's tasks: agents in id order, each agent's tasks in the order its own listing returns them. */
+  schedules: ProjectScheduleItem[];
+  /** Files that failed to parse (skipped from scheduling and logged as errors), with the agent that holds each. */
+  invalidFiles: Array<{ agentId: string; name: string; error: string }>;
+}
+
 export interface ScheduleUpsertRequest {
   prompt: string;
   enabled: boolean;

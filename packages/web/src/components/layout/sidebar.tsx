@@ -181,7 +181,7 @@ import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { UserMenu } from "./user-menu";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { pendingScheduleSessions } from "../../features/schedules/schedule-panel-state";
-import { useAgentSchedules } from "../../features/schedules/schedule-store";
+import { useProjectSchedules } from "../../features/schedules/schedule-store";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { Segmented } from "../ui/segmented";
 import { useCompany } from "../../state/company";
@@ -450,28 +450,23 @@ export function Sidebar({
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
   const sessionSeen = useSessionSeen(currentProjectId);
-  // The current Agent's scheduled tasks, shared with the dock's schedules panel through one
-  // store, which caches a list per Agent so that neither surface's scope discards the other's.
-  // The scope is the current Agent: the chat page keeps it in step with the open conversation,
-  // so the panel and these rows ask for the same list. In workspace or time grouping the list
-  // can also show OTHER Agents' Sessions, and those rows simply wear no mark — a row saying
-  // nothing is honest, a row answered from another Agent's list would not be. Re-read on every
-  // navigation: opening a conversation is the moment a task may just have been created or
-  // switched off.
-  const { items: agentSchedules } = useAgentSchedules(
-    currentProjectId,
-    currentAgent?.agentId ?? null,
-    activeSessionId ?? "",
-  );
-  // The Sessions of that Agent wearing the alarm clock: one bound task with a next fire time is
-  // enough. The store re-renders these rows on every refresh (a navigation, a schedule event, a
-  // turn ending, the panel's poll), and the server recomputes `nextFireAt` on each listing, so a
-  // task that fired for the last time loses its mark at the next refresh.
+  // The Project's scheduled tasks, shared with the dock's schedules panel through one store, so
+  // that neither surface can take the other's answer away. The scope is the Project, not the
+  // current Agent: this list draws every Agent's Sessions in every grouping mode, so whether a
+  // row wears the mark must not depend on which Agent is current — the chat page moves that to
+  // whatever conversation is open, and with a per-Agent list every other Agent's rows lost their
+  // marks until the user came back to them. Re-read on every navigation: opening a conversation
+  // is the moment a task may just have been created or switched off.
+  const { items: projectSchedules } = useProjectSchedules(currentProjectId, activeSessionId ?? "");
+  // The Sessions wearing the alarm clock: one bound task with a next fire time is enough. The
+  // store re-renders these rows on every refresh (a navigation, a schedule event, a turn ending,
+  // the panel's poll), and the server recomputes `nextFireAt` on each listing, so a task that
+  // fired for the last time loses its mark at the next refresh.
   const pendingScheduled = useMemo(
-    () => (agentSchedules === null ? null : pendingScheduleSessions(agentSchedules)),
-    [agentSchedules],
+    () => (projectSchedules === null ? null : pendingScheduleSessions(projectSchedules)),
+    [projectSchedules],
   );
-  // A null list means "this Agent has not been read yet", never "this Agent has no tasks":
+  // A null list means "this Project has not been read yet", never "this Project has no tasks":
   // reading it as the second blanks every alarm in the list for as long as a request takes. The
   // marks on screen stand until a real answer replaces them, which is the standing the pin and
   // the relay glyph get for free by being fields of the row itself.

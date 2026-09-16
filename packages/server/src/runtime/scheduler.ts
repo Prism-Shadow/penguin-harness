@@ -218,6 +218,28 @@ export class Scheduler implements Scheduling {
     return { entries, invalid };
   }
 
+  /**
+   * For the Project-wide route display: every Agent's tasks in one list, each stamped with the
+   * Agent whose schedule directory holds it. It goes through listAgent instead of reading the
+   * files itself so both listings reconcile along the same path and can never disagree about a
+   * task's state. The ids are sorted because readdir order is not stable across platforms and
+   * the order of this list is part of the response.
+   */
+  async listProject(projectId: string): Promise<{
+    entries: Array<ScheduleEntryView & { agentId: string }>;
+    invalid: Array<{ agentId: string; name: string; error: string }>;
+  }> {
+    const entries: Array<ScheduleEntryView & { agentId: string }> = [];
+    const invalid: Array<{ agentId: string; name: string; error: string }> = [];
+    const agentIds = [...(await this.listAgentIds(projectId))].sort();
+    for (const agentId of agentIds) {
+      const listed = await this.listAgent(projectId, agentId);
+      for (const entry of listed.entries) entries.push({ agentId, ...entry });
+      for (const bad of listed.invalid) invalid.push({ agentId, ...bad });
+    }
+    return { entries, invalid };
+  }
+
   /** For routes: state cleanup after a task is deleted (the unlink moved the dir mtime, but invalidate for immediate effect anyway). */
   dropEntry(projectId: string, agentId: string, name: string): void {
     this.pending.delete(this.keyOf(projectId, agentId, name));

@@ -8,7 +8,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { scheduleDir } from "@prismshadow/penguin-core";
-import type { ProjectCreateResponse, ScheduleItem, SchedulesResponse } from "../src/api/types.js";
+import type {
+  ProjectCreateResponse,
+  ProjectSchedulesResponse,
+  ScheduleItem,
+  SchedulesResponse,
+} from "../src/api/types.js";
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -230,5 +235,61 @@ describe("schedules api", () => {
     expect(list.invalidFiles[0]?.error).toContain("given together");
     // Reading it by name reports the same error rather than 404 or a 500.
     expect((await owner.get(`${base}/legacy`)).status).toBe(400);
+  });
+
+  it("the Project-wide list spans every Agent, stamping each task and each invalid file with its Agent", async () => {
+    expect(
+      (await owner.post(`/api/projects/${projectId}/agents`, { agentId: "agent_two" })).status,
+    ).toBe(201);
+    const secondBase = `/api/projects/${projectId}/agents/agent_two/schedules`;
+    expect(
+      (
+        await owner.post(base, {
+          name: "default-job",
+          prompt: "p",
+          enabled: true,
+          startAt: FUTURE,
+          period: "30m",
+          sessionId: "session-aaa",
+        })
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await owner.post(secondBase, {
+          name: "second-job",
+          prompt: "p",
+          enabled: true,
+          startAt: FUTURE,
+          period: "30m",
+          sessionId: "session-bbb",
+        })
+      ).status,
+    ).toBe(201);
+    // A hand-edited file that does not parse is reported under the Agent holding it.
+    const dir = scheduleDir(t.root, projectId, "agent_two");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "broken.toml"), "not = toml =", "utf8");
+
+    // Any member can read the whole Project in one request; Agents come back in id order.
+    const res = await member.get(`/api/projects/${projectId}/schedules`);
+    expect(res.status).toBe(200);
+    const list = (await res.json()) as ProjectSchedulesResponse;
+    expect(list.schedules.map((s) => [s.agentId, s.name, s.sessionId])).toEqual([
+      ["agent_two", "second-job", "session-bbb"],
+      ["default_agent", "default-job", "session-aaa"],
+    ]);
+    for (const item of list.schedules) {
+      expect(item, item.name).toMatchObject({
+        status: "active",
+        nextFireAt: "2099-01-01T09:00:00.000Z",
+      });
+    }
+    expect(list.invalidFiles).toEqual([
+      { agentId: "agent_two", name: "broken", error: expect.any(String) },
+    ]);
+
+    // Same access rule as the per-Agent list: an outsider is told the Project is not there.
+    expect((await outsider.get(`/api/projects/${projectId}/schedules`)).status).toBe(404);
   });
 });

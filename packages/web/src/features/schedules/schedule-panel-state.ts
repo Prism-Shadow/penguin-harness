@@ -1,5 +1,5 @@
 /**
- * Pure state of the chat dock's scheduled-tasks panel: which of an agent's tasks belong to
+ * Pure state of the chat dock's scheduled-tasks panel: which of the Project's tasks belong to
  * the conversation on screen, how the filter chips bucket the server's display statuses,
  * what the search box matches, and which state glyph a row wears. Kept apart from the panel
  * so the rules run in the node-only unit tests (test/schedule-panel-state.test.ts).
@@ -30,22 +30,29 @@ export function filterBucket(status: ScheduleStatus): Exclude<ScheduleFilter, "a
   }
 }
 
-/** The tasks bound to one Session. New-Session tasks belong to the agent as a whole and stay on its settings tab. */
-export function sessionSchedules(
-  items: readonly ScheduleItem[],
+/**
+ * The tasks bound to one Session. New-Session tasks belong to the agent as a whole and stay on
+ * its settings tab. Generic in the item so the caller keeps what it passed in: the list being
+ * narrowed carries the agent that owns each task, and the panel needs it to write the file back.
+ */
+export function sessionSchedules<T extends Pick<ScheduleItem, "sessionId">>(
+  items: readonly T[],
   sessionId: string,
-): ScheduleItem[] {
+): T[] {
   return items.filter((item) => item.sessionId === sessionId);
 }
 
 /**
- * The Sessions of one agent that have a task still to fire — the rows the sidebar gives an alarm
- * clock. Same binding rule as `sessionSchedules`, so the mark and the panel can never disagree
- * about which tasks belong to a conversation. "Still to fire" is the server's `nextFireAt`: it
- * is set only while a next run is on the calendar, and absent for a task that is switched off,
- * past its end time, invalid, or a one-off that has already run — every case the row should say
- * nothing about, and one rule rather than four re-derived here. A set rather than a per-Session
- * predicate: the sidebar asks the same question of every row it draws.
+ * The Sessions that have a task still to fire — the rows the sidebar gives an alarm clock. It runs
+ * over the Project's whole list, so it marks the Sessions of every Agent, which is the point: the
+ * list draws them all, and a row's mark must not depend on which Agent is current. Session ids are
+ * globally unique, so the set needs no agent beside them. Same binding rule as `sessionSchedules`,
+ * so the mark and the panel can never disagree about which tasks belong to a conversation. "Still
+ * to fire" is the server's `nextFireAt`: it is set only while a next run is on the calendar, and
+ * absent for a task that is switched off, past its end time, invalid, or a one-off that has
+ * already run — every case the row should say nothing about, and one rule rather than four
+ * re-derived here. A set rather than a per-Session predicate: the sidebar asks the same question
+ * of every row it draws.
  */
 export function pendingScheduleSessions(items: readonly ScheduleItem[]): Set<string> {
   const ids = new Set<string>();
@@ -63,11 +70,12 @@ export function matchesQuery(item: Pick<ScheduleItem, "name" | "prompt">, query:
   return item.name.toLowerCase().includes(q) || item.prompt.toLowerCase().includes(q);
 }
 
-export function filterSchedules(
-  items: readonly ScheduleItem[],
+/** Generic in the item for the same reason as `sessionSchedules`: filtering must not strip fields. */
+export function filterSchedules<T extends Pick<ScheduleItem, "status" | "name" | "prompt">>(
+  items: readonly T[],
   filter: ScheduleFilter,
   query: string,
-): ScheduleItem[] {
+): T[] {
   return items.filter(
     (item) =>
       (filter === "all" || filterBucket(item.status) === filter) && matchesQuery(item, query),

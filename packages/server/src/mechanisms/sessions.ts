@@ -79,5 +79,9 @@ export abstract class Scheduling extends Interface<{
     projectId: string,
     agentId: string,
   ): Promise<{ entries: ScheduleEntryView[]; invalid: Array<{ name: string; error: string }> }>;
+  listProject(projectId: string): Promise<{
+    entries: Array<ScheduleEntryView & { agentId: string }>;
+    invalid: Array<{ agentId: string; name: string; error: string }>;
+  }>;
   dropEntry(projectId: string, agentId: string, name: string): void;
 }>() {}
