@@ -31,10 +31,16 @@ interface MountedProvider {
 export class SandboxService {
   private readonly mounted: MountedProvider[] = [];
   /**
-   * name → why it is not in use: it failed to load, failed its check, or declined — never
-   * silently absent. Surfaced in the fail-closed message and on the settings card.
+   * name → why it FAILED: it could not load, or failed its check on a host it is meant for —
+   * never silently absent. Surfaced in the fail-closed message and on the settings card.
    */
   private readonly loadErrors = new Map<string, string>();
+  /**
+   * The backends that declined: this host is not theirs (a Linux backend on Windows). Nothing
+   * is wrong with a deployment that installs one backend per platform, so a decline is not a
+   * failure — it is listed only when NO backend serves, where it is the explanation.
+   */
+  private readonly declinedNames: string[] = [];
   /**
    * Ships with confinement OFF (`danger-full-access`): the default flips to
    * workspace-write together with the deployment-facing config surface, so a
@@ -67,7 +73,7 @@ export class SandboxService {
         const outcome = await result;
         if ("error" in outcome) this.loadErrors.set(name, outcome.error);
         else if (outcome.provider === null || outcome.provider === undefined) {
-          this.loadErrors.set(name, "declined to load on this host, giving no reason");
+          this.declinedNames.push(name);
         } else this.mounted.push({ name, provider: outcome.provider });
       }
     })();
@@ -109,9 +115,14 @@ export class SandboxService {
     return copySettings(s);
   }
 
-  /** The backends that are not in use, each with why (diagnostics / the config surface). */
+  /** The backends that failed to load, each with why (diagnostics / the config surface). */
   failures(): Array<{ name: string; reason: string }> {
     return [...this.loadErrors].map(([name, reason]) => ({ name, reason }));
+  }
+
+  /** The backends that declined because this host is not theirs (the config surface). */
+  declined(): string[] {
+    return [...this.declinedNames];
   }
 
   /** The mounted backends and what each implements (diagnostics / the config surface). */
@@ -170,11 +181,11 @@ export class SandboxService {
   }
 
   private failedSuffix(): string {
-    if (this.loadErrors.size === 0) return "";
-    const failures = [...this.loadErrors]
-      .map(([name, message]) => `${name} (${message})`)
-      .join("; ");
-    return `; backends not in use: ${failures}`;
+    const parts = [...this.loadErrors].map(([name, message]) => `${name} (${message})`);
+    if (this.declinedNames.length > 0) {
+      parts.push(`${this.declinedNames.join(", ")} (not for this host)`);
+    }
+    return parts.length === 0 ? "" : `; backends not in use: ${parts.join("; ")}`;
   }
 }
 
@@ -196,6 +207,7 @@ export abstract class Sandbox extends Interface<
     | "parkedSettings"
     | "backends"
     | "failures"
+    | "declined"
     | "confiner"
     | "whenReady"
   >

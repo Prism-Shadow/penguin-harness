@@ -172,11 +172,9 @@ describe("runner invocation", () => {
 });
 
 describe("platform gating and SDK contract", () => {
-  it("declines on every non-Windows host instead of pretending", async () => {
-    await expect(loadMxcProvider({ platform: "linux" })).rejects.toThrow(
-      "penguin-mxc runs on Windows only; this host is linux",
-    );
-    await expect(loadMxcProvider({ platform: "darwin" })).rejects.toThrow(/Windows only/);
+  it("declines on every non-Windows host instead of pretending, and without calling it a failure", async () => {
+    await expect(loadMxcProvider({ platform: "linux" })).resolves.toBeNull();
+    await expect(loadMxcProvider({ platform: "darwin" })).resolves.toBeNull();
   });
 
   it("on Windows, checks the runner at load and rejects with the reason when it cannot contain", async () => {

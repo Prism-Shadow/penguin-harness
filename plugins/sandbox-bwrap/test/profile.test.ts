@@ -177,11 +177,11 @@ describe("penguin-bwrap provider", () => {
 });
 
 describe("bwrap on another platform", () => {
-  it("refuses to load off Linux, so routing never reaches a backend this host cannot run — with the reason", async () => {
+  it("declines off Linux (not a failure), and fails with a reason on Linux it cannot serve", async () => {
     const other = "win32" as const;
-    await expect(loadPenguinBwrapProvider({ platform: other, probe: () => true })).rejects.toThrow(
-      /runs on .* only; this host is win32/,
-    );
+    await expect(
+      loadPenguinBwrapProvider({ platform: other, probe: () => true }),
+    ).resolves.toBeNull();
     await expect(
       loadPenguinBwrapProvider({ platform: "linux", probe: () => false }),
     ).rejects.toThrow(/is missing or refuses/);

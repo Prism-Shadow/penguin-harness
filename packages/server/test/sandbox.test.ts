@@ -70,16 +70,18 @@ describe("sandbox service — the built-in interface and its optional dimensions
     );
   });
 
-  it("a backend that declines is recorded with a reason, never silently absent", async () => {
+  it("separates a backend that declines this host from one that failed on it", async () => {
     const svc = await service([
       ["quiet", Promise.resolve(null)],
-      ["loud", Promise.reject(new Error("runs on Linux only; this host is win32"))],
+      ["loud", Promise.reject(new Error("'bwrap' is missing"))],
     ]);
     expect(svc.backends()).toEqual([]);
-    expect(svc.failures()).toEqual([
-      { name: "quiet", reason: "declined to load on this host, giving no reason" },
-      { name: "loud", reason: "runs on Linux only; this host is win32" },
-    ]);
+    expect(svc.declined()).toEqual(["quiet"]);
+    expect(svc.failures()).toEqual([{ name: "loud", reason: "'bwrap' is missing" }]);
+    svc.configure({ mode: "read-only" });
+    expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(
+      /loud \('bwrap' is missing\); quiet \(not for this host\)/,
+    );
   });
 
   it("an installation missing a backend package keeps the platform usable, sandbox aside", async () => {

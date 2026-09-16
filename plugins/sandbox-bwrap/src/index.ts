@@ -159,11 +159,11 @@ function probeAsync(timeoutMs: number, runner: string): Promise<boolean> {
  */
 export async function loadPenguinBwrapProvider(
   internals: PenguinBwrapInternals & { platform?: NodeJS.Platform } = {},
-): Promise<SandboxProvider> {
+): Promise<SandboxProvider | null> {
   const platform = internals.platform ?? process.platform;
-  if (platform !== "linux") {
-    throw new Error(`penguin-bwrap runs on Linux only; this host is ${platform}`);
-  }
+  // Not this host's backend: a decline, not a failure — the deployment installed it for
+  // its Linux machines, and saying so on every Windows card would be noise.
+  if (platform !== "linux") return null;
   const { runner, probeTimeoutMs } = internals.settings?.() ?? {
     runner: internals.runner ?? "bwrap",
     probeTimeoutMs: PROBE_TIMEOUT_MS,

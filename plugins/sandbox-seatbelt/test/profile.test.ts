@@ -141,11 +141,9 @@ describe("seatbelt provider", () => {
 });
 
 describe("seatbelt on another platform", () => {
-  it("refuses to load off macOS, so routing never reaches a backend this host cannot run — with the reason", async () => {
+  it("declines off macOS (not a failure), and fails with a reason on macOS it cannot serve", async () => {
     const other = "linux" as const;
-    await expect(loadSeatbeltProvider({ platform: other, probe: () => true })).rejects.toThrow(
-      /runs on .* only; this host is linux/,
-    );
+    await expect(loadSeatbeltProvider({ platform: other, probe: () => true })).resolves.toBeNull();
     await expect(loadSeatbeltProvider({ platform: "darwin", probe: () => false })).rejects.toThrow(
       /is missing or refuses/,
     );

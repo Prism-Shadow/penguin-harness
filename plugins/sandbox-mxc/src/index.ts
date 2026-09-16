@@ -188,11 +188,10 @@ export const MXC_GROUP = "sandbox-mxc";
 export async function loadMxcProvider(
   internals: MxcInternals = {},
   settings: () => MxcSettings = () => ({ runner: null }),
-): Promise<SandboxProvider> {
+): Promise<SandboxProvider | null> {
   const platform = internals.platform ?? process.platform;
-  if (platform !== "win32") {
-    throw new Error(`penguin-mxc runs on Windows only; this host is ${platform}`);
-  }
+  // Not this host's backend: a decline, not a failure (see penguin-bwrap's loader).
+  if (platform !== "win32") return null;
   let sdk: MxcSdk;
   let runner: string;
   try {

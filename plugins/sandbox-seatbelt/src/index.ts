@@ -162,11 +162,10 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
  */
 export async function loadSeatbeltProvider(
   internals: SeatbeltInternals & { platform?: NodeJS.Platform } = {},
-): Promise<SandboxProvider> {
+): Promise<SandboxProvider | null> {
   const platform = internals.platform ?? process.platform;
-  if (platform !== "darwin") {
-    throw new Error(`penguin-seatbelt runs on macOS only; this host is ${platform}`);
-  }
+  // Not this host's backend: a decline, not a failure (see penguin-bwrap's loader).
+  if (platform !== "darwin") return null;
   const { runner } = internals.settings?.() ?? { runner: internals.runner ?? "sandbox-exec" };
   const usable = internals.probe
     ? internals.probe(PROBE_TIMEOUT_MS, runner)
