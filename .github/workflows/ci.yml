@@ -81,8 +81,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup
-      - name: A published package depends on nothing private
-        run: node scripts/check-publishable.mjs
+      # --registry also asks npm which published names do not exist yet. A new package is
+      # legitimate, so that is a warning rather than a failure -- but it has to be seen before the
+      # tag, because the release's OIDC exchange cannot create a name npm has never seen.
+      - name: A published package depends on nothing private, and names that need a first publish
+        run: node scripts/check-publishable.mjs --registry
       - name: Build the whole workspace, as the release does
         run: pnpm -r build
       # The release stages two things into the package directories before it publishes: the root

@@ -12,8 +12,17 @@
  * This is the shape that broke the 0.2.12 release: `packages/server` took `@prismshadow/penguin-hmr`
  * — private, and bundled — as a runtime dependency.
  *
- * Usage: node scripts/check-publishable.mjs
+ * With `--registry`, it additionally asks npm which of the packages a release publishes do not
+ * exist there yet. That is not a defect — a new plugin has to be new once — but it is the one
+ * thing the release cannot do on its own: npm's trusted publishing is configured per package, a
+ * name that does not exist has no configuration, and the OIDC token exchange 404s. The release
+ * job carries no fallback credential, so the first publish of a new name needs a human. Finding
+ * that out from a warning on a pull request costs nothing; finding it out from the release run
+ * costs a version number, which is what 0.2.13 cost.
+ *
+ * Usage: node scripts/check-publishable.mjs [--registry]
  */
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -52,6 +61,54 @@ if (problems.length > 0) {
   for (const p of problems) console.error(`  ${p}`);
   process.exit(1);
 }
+const publishable = [...workspace.values()].filter((p) => !p.private).length;
 console.log(
-  `publishable packages: ${[...workspace.values()].filter((p) => !p.private).length} publishable, none depends on a private workspace package`,
+  `publishable packages: ${publishable} publishable, none depends on a private workspace package`,
 );
+
+if (!process.argv.includes("--registry")) process.exit(0);
+
+// Everything the release publishes: the non-private packages above, plus every plugin — the
+// release loops `plugins/*/` and publishes each as `@penguinharness/<dir>`.
+// Read each plugin's own name and private flag rather than deriving a name from its directory:
+// `plugins/sandbox-*` are `@prismshadow/penguin-plugin-sandbox-*` and private, so a name built
+// from the directory names a package that does not exist and never will.
+const pluginNames = [];
+for (const entry of readdirSync(path.join(root, "plugins"), { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  try {
+    const pkg = read(path.join(root, "plugins", entry.name, "package.json"));
+    if (pkg.name && pkg.private !== true) pluginNames.push(pkg.name);
+  } catch {
+    // Not a package directory.
+  }
+}
+
+const names = [
+  ...[...workspace.entries()].filter(([, p]) => !p.private).map(([name]) => name),
+  ...pluginNames,
+].sort();
+
+const missing = [];
+for (const name of names) {
+  try {
+    execFileSync("npm", ["view", name, "name"], { stdio: ["ignore", "ignore", "ignore"] });
+  } catch {
+    missing.push(name);
+  }
+}
+
+if (missing.length > 0) {
+  const list = missing.join(", ");
+  // A warning, not a failure: adding a package is legitimate, and blocking every such pull
+  // request would be the wrong trade. What must not happen is learning it after the tag.
+  console.log(
+    `::warning::${missing.length} package(s) have never been published: ${list}. ` +
+      `npm trusted publishing is configured per package, so the release's OIDC exchange cannot ` +
+      `create a name that does not exist yet and will fail on the first one it reaches. ` +
+      `Publish each once by hand (or give it a trusted publisher) BEFORE tagging.`,
+  );
+  console.log(`first publish needed: ${list}`);
+} else {
+  console.log(`registry: all ${names.length} published names already exist`);
+}

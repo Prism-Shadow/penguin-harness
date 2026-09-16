@@ -36,6 +36,19 @@ Two bugs, and the second is the one to remember:
 The lesson under both: **a green CI that builds differently from the release proves nothing about
 the release.** When the two diverge, the divergence is the defect.
 
+### A package npm has never seen cannot be published by the release
+
+npm's trusted publishing is configured **per package**. A name that does not exist yet has no
+configuration, so the OIDC token exchange 404s, and the release job carries no fallback credential
+— the first publish of a new name needs a person with npm rights, done once, before the tag.
+
+0.2.13 cost a run to learn this: company mode brought `@penguinharness/agent-company`, plugins
+publish in directory order, it sorts first, and the job died on it before `core`, `server` or `cli`
+were reached.
+
+`node scripts/check-publishable.mjs --registry` lists the names that need it; the `npm packaging`
+CI job runs it on every pull request and warns. **Read that warning before tagging.**
+
 ## Order
 
 1. Branch `release/<version>` off `main`, in a worktree.

@@ -636,7 +636,16 @@ jobs:
           # The @penguinharness/* plugin packages go first: core declares them as workspace:*
           # deps, rewritten to their versions at publish time, so they must exist first.
           for dir in plugins/*/; do
-            name="@penguinharness/$(basename "$dir")"
+            # Read the name and the private flag out of the manifest rather than building a name
+            # from the directory: plugins/sandbox-* are @prismshadow/penguin-plugin-sandbox-* and
+            # private, so a derived name queries a package that does not exist and filters to
+            # nothing. Publishing is driven by what each package says it is.
+            name="$(node -p "require('./$dir/package.json').name")"
+            private="$(node -p "require('./$dir/package.json').private === true")"
+            if [ "$private" = "true" ]; then
+              echo "$name is private, not published."
+              continue
+            fi
             if [ -n "$(npm view "$name@$V" version 2>/dev/null || true)" ]; then
               echo "$name@$V already on the registry, skipping."
               continue
