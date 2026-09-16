@@ -12,12 +12,16 @@
 # again as the suite grows, whereas `ci` means what it has always meant.
 name: CI
 
-# Limit triggers to avoid duplicate runs: push runs only on main/dev; PRs always run once (no target-branch filter --
-# this repo's PRs often target integration branches rather than main/dev, and a target filter would leave them with no CI).
+# Triggers are deliberately narrow: a push to main, and a pull request whose base is main.
+# The runner pool is shared and one run is 21 jobs, so a pull request against any other
+# branch — a stacked PR, an integration branch — gets no CI until it is retargeted at main
+# (or someone dispatches this workflow by hand). That is the trade: fewer runs over a
+# pull request's life, not a gate on every branch.
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -95,7 +99,7 @@ jobs:
             build: "@prismshadow/penguin-core..."
             tests: pnpm --filter @prismshadow/penguin-core test
           - shard: server
-            build: "@prismshadow/penguin-core..."
+            build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server test
           - shard: web-cli
             build: "@prismshadow/penguin-core...,@prismshadow/penguin-web..."
@@ -156,7 +160,7 @@ jobs:
             tests: pnpm --filter @prismshadow/penguin-core test
             smoke: false
           - shard: server
-            build: "@prismshadow/penguin-core..."
+            build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server test
             smoke: false
           - shard: rest
@@ -198,13 +202,13 @@ jobs:
             build: "@prismshadow/penguin-core..."
             tests: pnpm --filter @prismshadow/penguin-core test
           - shard: server-1
-            build: "@prismshadow/penguin-core..."
+            build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=1/3
           - shard: server-2
-            build: "@prismshadow/penguin-core..."
+            build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=2/3
           - shard: server-3
-            build: "@prismshadow/penguin-core..."
+            build: "@prismshadow/penguin-server..."
             tests: pnpm --filter @prismshadow/penguin-server exec vitest run --shard=3/3
           - shard: rest
             build: "@prismshadow/penguin-desktop...,@prismshadow/penguin-cli..."
@@ -215,6 +219,15 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           build: ${{ matrix.build }}
+
+      # The server's own `test` script runs `gen:ifaces` first, because src/ifaces.json is
+      # generated and not committed and src/platform.ts imports it at load. The server
+      # shards here call `exec vitest` instead — the script cannot take `--shard` — so they
+      # skip that half and every file that reaches platform.ts fails to resolve it. The
+      # other platforms run the script and never notice.
+      - name: Generate the interface table
+        if: startsWith(matrix.shard, 'server')
+        run: pnpm --filter @prismshadow/penguin-server gen:ifaces
 
       # One retry, and only here. Per-test flakes are already absorbed inside vitest
       # (`retry` in core's and the server's configs, Windows only); what this covers is the

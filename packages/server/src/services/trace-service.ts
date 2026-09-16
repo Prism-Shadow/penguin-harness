@@ -54,9 +54,9 @@ import type { SessionRow } from "../db/repos/sessions.js";
 import type { TraceFileRow, TraceSessionRow } from "../db/repos/trace-index.js";
 import { HttpError } from "../http/errors.js";
 import { formatLocalDate } from "../internal/dates.js";
-import type { SessionSources } from "../runtime/session-sources.js";
 import { ratesAt, requestCostUsd } from "./usage-service.js";
 import type { PricingLookup, TieredRates } from "./usage-service.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import {
   cloneScanState,
   deserializePrefix,
@@ -76,6 +76,10 @@ import type {
 import { buildContextBreakdown, emptyContextBreakdown } from "./context-breakdown.js";
 import { sessionIdCreatedAt } from "./session-service.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Paths } from "../hmr/capabilities.js";
+import type { TraceIndex, TraceIndexStore, Traces } from "../mechanisms/traces.js";
+import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 
 const TRACE_FILE_RE = /^(.+)_(\d{3})\.jsonl$/;
 
@@ -242,38 +246,39 @@ export interface TraceSessionIndex {
 }
 
 /** TraceService wiring (the trace-file index is required: every listing/locating path serves from it — no directory walks). */
-export interface TraceServiceDeps {
-  index: TraceIndexService;
-  /** Optional (narrow tests may omit): DB rows supplying titles / archived / workspace / client. */
-  sessions?: TraceSessionIndex;
-  /** Optional (narrow tests may omit): the shared in-process Session-origin registry (single source of truth for `source`). */
-  sources?: SessionSources;
-  /**
-   * Optional (narrow tests may omit): the Project's current price for a paired reference —
-   * the same lookup the cost center prices `usage_records` with, so the analysis' per-turn
-   * cost and the toolbar's figure come from one price table. Absent, the analysis carries no
-   * cost at all.
-   */
-  lookupPricing?: PricingLookup;
-  /**
-   * Test observability: called with the path of every Trace shard this service reads
-   * from disk (windowed-read tests assert an old-window request never touches the
-   * newest shard and vice versa). Production wiring omits it.
-   */
-  observeShardRead?: (path: string) => void;
-}
-
 /** One Session's classification result (see classify): its sidebar category + Workspace path ("" = unknown). */
 interface TraceSessionFacts {
   category: SessionCategory;
   workspace: string;
 }
 
-export class TraceService {
-  constructor(
-    private readonly root: string,
-    private readonly deps: TraceServiceDeps,
-  ) {}
+@Component()
+export class TraceService implements Traces {
+  @Use() private readonly paths!: Paths;
+  private get root(): string {
+    return this.paths.root;
+  }
+  @Use() private readonly index!: TraceIndex;
+  @Use() private readonly store!: TraceIndexStore;
+  /** DB rows supplying titles / archived / workspace / client (narrow tests may omit). */
+  @Use() private readonly sessions?: SessionIndex;
+  /** The shared in-process Session-origin registry, single source of truth for `source` (narrow tests may omit). */
+  @Use() private readonly sources?: SessionOrigins;
+  @Use() private readonly projectConfig?: ProjectConfigStore;
+  /**
+   * The Project's current price for a paired reference — the same lookup the cost center
+   * prices `usage_records` with, so the analysis' per-turn cost and the toolbar's figure come
+   * from one price table. Narrow tests wire their own or none; without a price the analysis
+   * carries no cost at all.
+   */
+  private lookupPricing: PricingLookup = async (projectId, provider, modelId) =>
+    this.projectConfig?.getPricing(projectId, provider, modelId);
+  /**
+   * Test observability: called with the path of every Trace shard this service reads
+   * from disk (windowed-read tests assert an old-window request never touches the
+   * newest shard and vice versa). Production wiring leaves it unset.
+   */
+  observeShardRead?: (path: string) => void;
 
   /**
    * All of this Session's Trace files (sorted by index ascending), served from the
@@ -288,11 +293,11 @@ export class TraceService {
     agentId: string,
     sessionId: string,
   ): Promise<LocatedFile[]> {
-    await this.deps.index.reconcileAgent(projectId, agentId);
-    let rows = this.deps.index.repo.listFilesBySession(projectId, agentId, sessionId);
+    await this.index.reconcileAgent(projectId, agentId);
+    let rows = this.store.listFilesBySession(projectId, agentId, sessionId);
     if (rows.length === 0) {
-      await this.deps.index.reconcileAgent(projectId, agentId, { force: true });
-      rows = this.deps.index.repo.listFilesBySession(projectId, agentId, sessionId);
+      await this.index.reconcileAgent(projectId, agentId, { force: true });
+      rows = this.store.listFilesBySession(projectId, agentId, sessionId);
     }
     return rows.map((r) => ({
       path: traceFilePath(this.root, r),
@@ -304,7 +309,7 @@ export class TraceService {
 
   /** All shard reads funnel through here (deps.observeShardRead is the windowed-read tests' proof of which files were touched). */
   private async readShard(path: string): Promise<OmniMessage[]> {
-    this.deps.observeShardRead?.(path);
+    this.observeShardRead?.(path);
     return readTraceTolerant(path);
   }
 
@@ -314,7 +319,7 @@ export class TraceService {
     for (const file of files) {
       await fs.rm(file.path, { force: true });
     }
-    this.deps.index.removeSession(projectId, agentId, sessionId);
+    this.index.removeSession(projectId, agentId, sessionId);
   }
 
   /**
@@ -365,11 +370,11 @@ export class TraceService {
     childSid: string,
     ctx: { projectScanned: boolean },
   ): Promise<string | null> {
-    const hit = this.deps.index.repo.findAgentBySession(projectId, childSid);
+    const hit = this.store.findAgentBySession(projectId, childSid);
     if (hit !== null || ctx.projectScanned) return hit;
     ctx.projectScanned = true;
-    await this.deps.index.reconcileProject(projectId, { force: true });
-    return this.deps.index.repo.findAgentBySession(projectId, childSid);
+    await this.index.reconcileProject(projectId, { force: true });
+    return this.store.findAgentBySession(projectId, childSid);
   }
 
   /** A child session's concatenated raw shard messages, memoized per request; null = no Trace located. */
@@ -493,7 +498,7 @@ export class TraceService {
     for (let j = 0; j <= upto; j++) {
       const file = files[j]!;
       const cached = deserializePrefix(
-        this.deps.index.repo.getPageStats(projectId, agentId, sessionId, file.index),
+        this.store.getPageStats(projectId, agentId, sessionId, file.index),
       );
       if (cached !== null) {
         states.push(cached);
@@ -507,7 +512,7 @@ export class TraceService {
         () => {},
         (sid) => this.aggregateChild(projectId, sid, ctx),
       );
-      this.deps.index.repo.setPageStats(
+      this.store.setPageStats(
         projectId,
         agentId,
         sessionId,
@@ -774,7 +779,7 @@ export class TraceService {
         const body = records.map((record) => JSON.stringify(record)).join("\n") + "\n";
         await fs.writeFile(file, body, { encoding: "utf8", flag: "wx" });
         written.push(file);
-        this.deps.index.registerImportedFile({
+        this.index.registerImportedFile({
           projectId,
           agentId,
           sessionId: newSessionId,
@@ -788,7 +793,7 @@ export class TraceService {
     } catch (err) {
       await Promise.all(written.map((file) => fs.rm(file, { force: true }).catch(() => undefined)));
       await fs.rm(forkScratchpad, { recursive: true, force: true }).catch(() => undefined);
-      this.deps.index.removeSession(projectId, agentId, newSessionId);
+      this.index.removeSession(projectId, agentId, newSessionId);
       throw err;
     }
   }
@@ -862,7 +867,6 @@ export class TraceService {
     projectId: string,
     messages: OmniMessage[],
   ): Promise<{ provider: string; modelId: string; rates: TieredRates } | null> {
-    if (this.deps.lookupPricing === undefined) return null;
     const meta = messages.find(
       (m) => isSessionMeta(m) && (m.origin === undefined || m.origin.length === 0),
     );
@@ -873,7 +877,7 @@ export class TraceService {
     };
     if (typeof provider !== "string" || provider === "") return null;
     if (typeof modelId !== "string" || modelId === "") return null;
-    const rates = await this.deps.lookupPricing(projectId, provider, modelId);
+    const rates = await this.lookupPricing(projectId, provider, modelId);
     return rates === undefined ? null : { provider, modelId, rates };
   }
 
@@ -1454,8 +1458,8 @@ export class TraceService {
     paging?: { offset: number; limit: number } | null,
     opts: { category?: SessionCategory } = {},
   ): Promise<AgentTracesResponse> {
-    await this.deps.index.reconcileAgent(projectId, agentId);
-    const files = this.deps.index.repo.listFilesByAgent(projectId, agentId);
+    await this.index.reconcileAgent(projectId, agentId);
+    const files = this.store.listFilesByAgent(projectId, agentId);
     if (paging) return this.agentTracesPage(projectId, agentId, files, paging, opts);
     const byDate = new Map<string, Map<string, { index: number; sizeBytes: number }[]>>();
     for (const f of files) {
@@ -1494,7 +1498,7 @@ export class TraceService {
     row: SessionRow | undefined,
     facts: TraceSessionRow | undefined,
   ): TraceSessionFacts {
-    const known = this.deps.sources?.get(sessionId);
+    const known = this.sources?.get(sessionId);
     // Registry answer (including null = known user-created) wins — it can be fresher
     // (subagent registration happens at spawn, before any reconcile); else the stored facts.
     const source = known !== undefined ? known : (facts?.source ?? undefined);
@@ -1524,10 +1528,10 @@ export class TraceService {
     // One indexed query per source: the Agent's DB rows (title / archived / workspace /
     // client) and the registration-time facts.
     const rows = new Map(
-      (this.deps.sessions?.listByAgent(projectId, agentId) ?? []).map((r) => [r.sessionId, r]),
+      (this.sessions?.listByAgent(projectId, agentId) ?? []).map((r) => [r.sessionId, r]),
     );
     const factsBySession = new Map(
-      this.deps.index.repo.listSessionsByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
+      this.store.listSessionsByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
     const ids = [...bySession.keys()].sort((a, b) => b.localeCompare(a));
     // Classify every group once; the same result drives the category filter, the
@@ -1573,13 +1577,7 @@ export class TraceService {
           try {
             sizeBytes = (await fs.stat(traceFilePath(this.root, f))).size;
             if (sizeBytes !== f.sizeBytes) {
-              this.deps.index.repo.updateFileSize(
-                projectId,
-                agentId,
-                sessionId,
-                f.fileIndex,
-                sizeBytes,
-              );
+              this.store.updateFileSize(projectId, agentId, sessionId, f.fileIndex, sizeBytes);
             }
           } catch {
             /* Vanished mid-request: serve the last observed size; the next reconcile settles the rows. */
@@ -1690,7 +1688,7 @@ export class TraceService {
     // the existing one, and the list folded the two into a single conversation, leaving a
     // group's count one above the rows it could ever show.
     if ((await this.locateAll(projectId, agentId, sessionId)).length > 0) throw duplicate();
-    if (this.deps.sessions?.findById?.(sessionId)) throw duplicate();
+    if (this.sessions?.findById?.(sessionId)) throw duplicate();
     const ts = Date.parse(first.timestamp);
     const date = formatLocalDate(Number.isNaN(ts) ? new Date() : new Date(ts));
     const index = 1;
@@ -1710,7 +1708,7 @@ export class TraceService {
     }
     // Write-time registration: this path knows the file's identity and already holds the
     // parsed records, so the index row + session facts land synchronously (no re-read).
-    this.deps.index.registerImportedFile({
+    this.index.registerImportedFile({
       projectId,
       agentId,
       sessionId,
@@ -1739,11 +1737,11 @@ export class TraceService {
    * half-formed — the Trace file itself is already written and readable either way.
    */
   private indexImportedSession(projectId: string, agentId: string, sessionId: string): void {
-    const sessions = this.deps.sessions;
+    const sessions = this.sessions;
     if (!sessions) return;
-    const facts = this.deps.index.repo.getSession(sessionId);
+    const facts = this.store.getSession(sessionId);
     if (!facts?.metaRead || facts.provider === null || facts.modelId === null) return;
-    if (facts.source !== null) this.deps.sources?.set(sessionId, facts.source);
+    if (facts.source !== null) this.sources?.set(sessionId, facts.source);
     const createdAt = sessionIdCreatedAt(sessionId) ?? facts.firstTs ?? new Date().toISOString();
     sessions.insertOrIgnore?.({
       sessionId,

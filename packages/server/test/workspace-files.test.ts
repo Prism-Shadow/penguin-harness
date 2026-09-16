@@ -1,8 +1,9 @@
 /**
  * Unit tests for the Workspace files service: directory-listing order, read/write,
  * move / delete / search, path confinement (`..` traversal and symlink escape), size-limit
- * protection, batch existence checks (files/stat); and the Agent delete route (default_agent
- * cannot be deleted, owner-only, directory and index cleanup).
+ * protection, batch existence checks (files/stat); the desktop-only files/reveal route; and
+ * the Agent delete route (default_agent cannot be deleted, owner-only, directory and index
+ * cleanup).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -14,11 +15,20 @@ import {
 } from "../src/services/workspace-files-service.js";
 import type {
   AgentCreateResponse,
+  ErrorBody,
   ProjectCreateResponse,
   SessionCreateResponse,
   WorkspaceSearchResponse,
 } from "../src/api/types.js";
-import { apiClient, createTestApp, makeTempRoot, provisionUser } from "./helpers.js";
+import {
+  apiClient,
+  createDesktopApp,
+  createTestApp,
+  desktopLoginCookie,
+  loginAdmin,
+  makeTempRoot,
+  provisionUser,
+} from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 describe("workspace-files-service", () => {
@@ -737,5 +747,129 @@ describe("agent delete route", () => {
 
     const def = await owner.delete(`/api/projects/${projectId}/agents/default_agent`);
     expect(def.status).toBe(409);
+  });
+});
+
+describe("files/reveal route (the desktop shell's own window)", () => {
+  /** The admin's Session in default_project, with one file sitting in its Workspace. */
+  async function seedSession(
+    t: TestApp,
+  ): Promise<{ cookie: string; sessionId: string; workspace: string }> {
+    const admin = await loginAdmin(t.app);
+    const api = apiClient(t.app, admin.cookie);
+    await api.put("/api/projects/default_project/models", {
+      defaultModel: { provider: "anthropic", modelId: "claude-sonnet-4-6" },
+      models: [{ provider: "anthropic", modelId: "claude-sonnet-4-6", contextWindow: 128000 }],
+    });
+    const created = await api.post(
+      "/api/projects/default_project/agents/default_agent/sessions",
+      {},
+    );
+    expect(created.status).toBe(201);
+    const { session } = (await created.json()) as SessionCreateResponse;
+    await fs.writeFile(path.join(session.workspace, "a.txt"), "A");
+    return { cookie: admin.cookie, sessionId: session.sessionId, workspace: session.workspace };
+  }
+
+  it("opens the file for the shell's own window: 204, and the opener is handed the canonical path", async () => {
+    const revealed: string[] = [];
+    const t = await createDesktopApp({
+      reveal: async (filePath) => {
+        revealed.push(filePath);
+      },
+    });
+    try {
+      const { sessionId, workspace } = await seedSession(t);
+      const shell = apiClient(t.app, await desktopLoginCookie(t.app));
+      const res = await shell.post(`/api/sessions/${sessionId}/files/reveal?path=a.txt`);
+      expect(res.status).toBe(204);
+      expect(await res.text()).toBe("");
+      // The absolute path the OS can act on, with every symlink already resolved away.
+      expect(revealed).toEqual([await fs.realpath(path.join(workspace, "a.txt"))]);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("refuses a browser session on the same desktop-mode server with desktop_shell_only", async () => {
+    const revealed: string[] = [];
+    const t = await createDesktopApp({
+      reveal: async (filePath) => {
+        revealed.push(filePath);
+      },
+    });
+    try {
+      const { cookie, sessionId } = await seedSession(t);
+      // The seeded admin signed in through the login form: the same user, the same machine
+      // for all the server knows, and still not the window the shell is drawing.
+      const res = await apiClient(t.app, cookie).post(
+        `/api/sessions/${sessionId}/files/reveal?path=a.txt`,
+      );
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as ErrorBody).error.code).toBe("desktop_shell_only");
+      expect(revealed).toEqual([]);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("does not exist outside desktop mode", async () => {
+    const revealed: string[] = [];
+    const t = await createTestApp({
+      reveal: async (filePath) => {
+        revealed.push(filePath);
+      },
+    });
+    try {
+      const { cookie, sessionId } = await seedSession(t);
+      const res = await apiClient(t.app, cookie).post(
+        `/api/sessions/${sessionId}/files/reveal?path=a.txt`,
+      );
+      expect(res.status).toBe(404);
+      expect(((await res.json()) as ErrorBody).error.code).toBe("not_found");
+      expect(revealed).toEqual([]);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("resolves the path as a read does: `..` is a 400 and a missing file a 404, with nothing opened", async () => {
+    const revealed: string[] = [];
+    const t = await createDesktopApp({
+      reveal: async (filePath) => {
+        revealed.push(filePath);
+      },
+    });
+    try {
+      const { sessionId } = await seedSession(t);
+      const shell = apiClient(t.app, await desktopLoginCookie(t.app));
+      const escape = await shell.post(
+        `/api/sessions/${sessionId}/files/reveal?path=${encodeURIComponent("../secret.txt")}`,
+      );
+      expect(escape.status).toBe(400);
+      const missing = await shell.post(`/api/sessions/${sessionId}/files/reveal?path=nope.txt`);
+      expect(missing.status).toBe(404);
+      expect(((await missing.json()) as ErrorBody).error.code).toBe("path_not_found");
+      expect(revealed).toEqual([]);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  it("reports an opener that cannot start as 502 reveal_failed", async () => {
+    const t = await createDesktopApp({
+      reveal: () => Promise.reject(new Error("spawn xdg-open ENOENT")),
+    });
+    try {
+      const { sessionId } = await seedSession(t);
+      const shell = apiClient(t.app, await desktopLoginCookie(t.app));
+      const res = await shell.post(`/api/sessions/${sessionId}/files/reveal?path=a.txt`);
+      expect(res.status).toBe(502);
+      const body = (await res.json()) as ErrorBody;
+      expect(body.error.code).toBe("reveal_failed");
+      expect(body.error.message).toContain("ENOENT");
+    } finally {
+      await t.cleanup();
+    }
   });
 });

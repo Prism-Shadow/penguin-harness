@@ -20,8 +20,8 @@ export const LAUNCHER_Y_KEY = "penguin.dock.launcherY";
 export const LAUNCHER_HIDDEN_KEY = "penguin.dock.launcherHidden";
 const LAUNCHER_HIDDEN_ON = "1";
 const LAUNCHER_HIDDEN_OFF = "0";
-/** The ball's diameter (px). */
-export const LAUNCHER_SIZE = 44;
+/** The ball's diameter (px). Raised from 44 on 2026-09-15: the ball, its entries and the caption read too small. */
+export const LAUNCHER_SIZE = 56;
 /** Room kept between the ball and the body's top and bottom edges (px). */
 export const LAUNCHER_EDGE_MARGIN = 12;
 /** Where the ball rests until the user moves it: centred on the body's height. */
@@ -31,10 +31,10 @@ export const DEFAULT_LAUNCHER_RATIO = 0.5;
  * height. It hangs outside the ball's box, so the vertical clamp has to reserve it or the
  * caption would be the first thing the composer covers.
  */
-export const LAUNCHER_CAPTION_HEIGHT = 26;
+export const LAUNCHER_CAPTION_HEIGHT = 30;
 
 /** A fan entry's diameter (px), one rung under the ball so the fan reads as its offspring. */
-export const FAN_ENTRY_SIZE = 36;
+export const FAN_ENTRY_SIZE = 46;
 /**
  * The ring's radius at rest (px): how far an entry's centre sits from the ball's centre
  * while the whole semicircle is available.
@@ -42,24 +42,24 @@ export const FAN_ENTRY_SIZE = 36;
  * The floor is the tightest packing that arc produces. Seven entries — five panel kinds,
  * the terminal, and the hide entry — spread evenly over a semicircle leave a chord of
  * 2R·sin(step / 2) between neighbours, with step = pi / 6, so keeping FAN_ENTRY_GAP of air
- * around the 36px circles needs 44 / (2·sin 15°) ≈ 85px. 92 is that with a few pixels to
- * spare (a chord of ≈ 48px, some 12px of air), and it keeps the ring close enough to the
+ * around the 46px circles needs 54 / (2·sin 15°) ≈ 104px. 112 is that with a few pixels to
+ * spare (a chord of ≈ 58px, some 12px of air), and it keeps the ring close enough to the
  * ball to read as one object. The arc only ever grows from here, and only where a trimmed
  * span would otherwise crowd the entries together.
  */
-export const FAN_MIN_RADIUS = 92;
+export const FAN_MIN_RADIUS = 112;
 /** Air kept between two neighbouring entries' circles (px). */
 export const FAN_ENTRY_GAP = 8;
 /**
  * The widest the ring may grow (px). Real geometry never asks for this much — a ball parked
- * against the body's top edge, the tightest span seven entries ever get, settles at ≈ 161px.
- * It is there for a body barely taller than the entries themselves, where no radius can
- * space them apart (the arc that fits keeps a bounded length however far the ring is pushed
- * out) and the solver below would otherwise run away with them off the left of the screen.
- * The ceiling is the narrow layout's width: on a ~320px phone the ball's centre sits 54px
- * from the edge, so an entry's far side, R + 18, has to fit the 266px left of it.
+ * against the body's top edge, the tightest span seven entries ever get, settles well under
+ * 200px. It is there for a body barely taller than the entries themselves, where no radius
+ * can space them apart (the arc that fits keeps a bounded length however far the ring is
+ * pushed out) and the solver below would otherwise run away with them off the left of the
+ * screen. The ceiling is the narrow layout's width: on a ~320px phone the ball's centre sits
+ * 60px from the edge, so an entry's far side, R + 23, has to fit the 260px left of it.
  */
-export const FAN_MAX_RADIUS = 240;
+export const FAN_MAX_RADIUS = 232;
 /** Room kept between an entry and the body's top or bottom edge (px). */
 const FAN_EDGE_PAD = 4;
 /**

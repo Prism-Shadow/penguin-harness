@@ -58,13 +58,14 @@ describe("visibleSettingsSections", () => {
       "account",
       "proxy",
       "uploads",
+      "company",
       "users",
     ]);
   });
 
   it("gives a non-admin their own pages and nothing server-global", () => {
-    // Not "fewer pages" — the exact list. Proxy, upload limits and user management are
-    // admin surfaces, and the whole point of dropping them is that a non-admin is never
+    // Not "fewer pages" — the exact list. Proxy, upload limits, the company-mode master
+    // switch and user management are admin surfaces, and the whole point of dropping them is that a non-admin is never
     // told they exist. Updating is not among them either way: it lives in the sidebar user
     // menu, outside this dialog, for every account.
     expect(plain.map((s) => s.key)).toEqual(["profile", "general", "appearance", "account"]);
@@ -80,6 +81,7 @@ describe("visibleSettingsSections", () => {
       "appearance",
       "proxy",
       "uploads",
+      "company",
     ]);
   });
 
@@ -93,6 +95,7 @@ describe("visibleSettingsSections", () => {
       "account",
       "proxy",
       "uploads",
+      "company",
     ]);
   });
 });

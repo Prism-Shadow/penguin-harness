@@ -16,6 +16,7 @@
     "pack:win": "node scripts/preflight.mjs && electron-builder --win"
   },
   "dependencies": {
+    "@penguinharness/agent-company": "workspace:*",
     "@penguinharness/agent-development": "workspace:*",
     "@penguinharness/agent-tuning": "workspace:*",
     "@penguinharness/continual-learning": "workspace:*",

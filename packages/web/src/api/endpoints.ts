@@ -13,16 +13,16 @@ import type {
   AgentConfigUpdateRequest,
   AgentCreateRequest,
   AgentCreateResponse,
+  AgentHooksResponse,
   AgentImportRequest,
   AgentImportResponse,
   AgentKernelUpdateResponse,
+  AgentPluginsInstallResponse,
   AgentSchedulesConfigDto,
   AgentSkillsConfigDto,
-  AgentHooksResponse,
-  AgentPluginsInstallResponse,
   AgentSkillsResponse,
-  AgentVaultConfigDto,
   AgentsResponse,
+  AgentVaultConfigDto,
   ApprovalDecisionRequest,
   AuthLoginRequest,
   AuthResponse,
@@ -36,6 +36,7 @@ import type {
   CommandPolicyRuleDto,
   DefaultModelResponse,
   DefaultModelUpdateRequest,
+  DesktopUpdateStatusResponse,
   DirectorySkillsResponse,
   DirListResponse,
   EndpointModelListRequest,
@@ -50,8 +51,8 @@ import type {
   FilesWriteRequest,
   GoalResponse,
   InstallResponse,
+  MachinesResponse,
   McpServerTestResponse,
-  MeResponse,
   MemberAddRequest,
   MemberAddResponse,
   MembersResponse,
@@ -61,6 +62,7 @@ import type {
   MemoryImportResponse,
   MemoryOverviewResponse,
   MemoryScopeExport,
+  MeResponse,
   MessagesResponse,
   MessagingBindingsResponse,
   MessagingChannel,
@@ -74,23 +76,74 @@ import type {
   PlatformModelSyncResponse,
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
-  MachinesResponse,
   ModelsResponse,
   ModelsUpdateRequest,
   ModelTestRequest,
   ModelTestResponse,
   ModelVisionDetectRequest,
   ModelVisionDetectResponse,
+  OrganizationCreateRequest,
+  OrganizationDetail,
+  OrganizationPatchRequest,
+  OrganizationSettings,
+  OrganizationsResponse,
+  OrgCalendarResponse,
+  OrgCalendarUpsertRequest,
+  OrgCalendarWriteResponse,
+  OrgChannelCreateRequest,
+  OrgChannelDetail,
+  OrgChannelItem,
+  OrgChannelMemberRequest,
+  OrgChannelMessage,
+  OrgChannelMessageSendRequest,
+  OrgChannelMessagesResponse,
+  OrgChannelPatchRequest,
+  OrgChannelReadRequest,
+  OrgChannelsResponse,
+  OrgChartResponse,
+  OrgDeskResponse,
+  OrgEmployeeItem,
+  OrgEmployeePatchRequest,
+  OrgFinanceResponse,
+  OrgHandbookFileResponse,
+  OrgHandbookFilesResponse,
+  OrgHandbookResponse,
+  OrgHireRequest,
+  OrgSessionsResponse,
+  OrgTicketAttachRequest,
+  OrgTicketBlockRequest,
+  OrgTicketCreateRequest,
+  OrgTicketDetail,
+  OrgTicketMoveRequest,
+  OrgTicketProgressRequest,
+  OrgTicketsResponse,
+  OrgTicketStartRequest,
+  OrgTicketStartResponse,
+  OrgTicketUpdateRequest,
   PasswordChangeRequest,
+  PluginFilesResponse,
+  PluginInstallRequest,
+  PluginLibraryResponse,
   PrefsResponse,
   ProjectCreateRequest,
   ProjectCreateResponse,
+  ProjectsResponse,
   ProjectUpdateRequest,
   ProjectUpdateResponse,
-  ProjectsResponse,
+  QQBindingPutRequest,
+  QQBindingResponse,
+  QQScanPollResponse,
+  QQScanStartResponse,
+  QQTestRequest,
+  QQTestResponse,
+  RecalledMessageResponse,
+  RestartResponse,
+  RetryNowResponse,
   ScheduleItem,
   SchedulesResponse,
   ScheduleUpsertRequest,
+  SemanticIdSuggestRequest,
+  SemanticIdSuggestResponse,
   ProxyProbeProvider,
   ProxyProbeResponse,
   ProxyProbeTargetsResponse,
@@ -103,27 +156,11 @@ import type {
   SessionForkRequest,
   SessionForkResponse,
   SessionPatchRequest,
-  SessionResponse,
   SessionProcessesResponse,
+  SessionResponse,
   SessionsResponse,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
-  PluginFilesResponse,
-  PluginInstallRequest,
-  PluginLibraryResponse,
-  QQBindingPutRequest,
-  QQBindingResponse,
-  QQScanPollResponse,
-  QQScanStartResponse,
-  QQTestRequest,
-  QQTestResponse,
-  WeChatBindingPutRequest,
-  WeChatBindingResponse,
-  WeChatScanPollResponse,
-  WeChatScanStartResponse,
-  WeChatTestResponse,
-  RecalledMessageResponse,
-  RetryNowResponse,
   SteerRequest,
   SubagentMessageResponse,
   TaskCreateRequest,
@@ -141,10 +178,8 @@ import type {
   UpdateJobStatus,
   UpdateProfileRequest,
   UpdateProfileResponse,
-  RestartResponse,
   DesktopTrayPatch,
   DesktopTrayStatusResponse,
-  DesktopUpdateStatusResponse,
   HookArchiveInstallRequest,
   UsageErrorKind,
   UsageErrorsClearResponse,
@@ -156,8 +191,14 @@ import type {
   VaultResponse,
   VaultUpdateRequest,
   VersionResponse,
+  WeChatBindingPutRequest,
+  WeChatBindingResponse,
+  WeChatScanPollResponse,
+  WeChatScanStartResponse,
+  WeChatTestResponse,
   WorkspaceFilesResponse,
   WorkspaceSearchResponse,
+  ContributionsResponse,
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
@@ -1079,6 +1120,15 @@ export const workspaceFilePreviewUrl = (sessionId: string, path: string): string
   `/api/sessions/${sessionId}/files/preview-redirect?path=${encodeURIComponent(path)}`;
 
 /**
+ * Opens the file's directory in the machine's own file manager, selecting the file where the
+ * platform allows. Only the desktop shell's own window may ask: the server answers 404 when it
+ * was not spawned by a shell and 403 `desktop_shell_only` for a browser session beside one,
+ * since it cannot tell that browser from a remote one (see lib/account-menu.ts).
+ */
+export const revealWorkspaceFile = (sessionId: string, path: string) =>
+  apiFetch<void>(`/api/sessions/${sessionId}/files/reveal`, { method: "POST", query: { path } });
+
+/**
  * Writes a Workspace file whole. `ifVersion` is the marker a previous read returned in its
  * `ETag`: pass it and the write is refused with 409 `file_changed` unless the file is still
  * the one that was read (the editor's save); leave it out and the write creates or replaces
@@ -1385,6 +1435,290 @@ export const desktopUpdateDownload = () =>
 export const desktopUpdateInstall = () =>
   apiFetch<void>("/api/desktop/update/install", { method: "POST", body: {} });
 
+// ---------------------------------------------------------------------------
+// Company mode: organizations (one wrapper per route of routes/organizations.ts)
+// ---------------------------------------------------------------------------
+
+/** Base path of one Project's organizations, or of one organization when `orgId` is given. */
+const orgBase = (projectId: string, orgId?: string) =>
+  `/api/projects/${encodeURIComponent(projectId)}/organizations${
+    orgId === undefined ? "" : `/${encodeURIComponent(orgId)}`
+  }`;
+
+export const listOrganizations = (projectId: string) =>
+  apiFetch<OrganizationsResponse>(orgBase(projectId));
+
+export const createOrganization = (projectId: string, body: OrganizationCreateRequest) =>
+  apiFetch<OrganizationDetail>(orgBase(projectId), { method: "POST", body });
+
+/** A semantic id for a display name (organization or channel), from the Project's default model with an ASCII fallback. */
+export const suggestSemanticId = (projectId: string, body: SemanticIdSuggestRequest) =>
+  apiFetch<SemanticIdSuggestResponse>(`${orgBase(projectId)}/suggest-id`, { method: "POST", body });
+
+export const getOrganization = (projectId: string, orgId: string) =>
+  apiFetch<OrganizationDetail>(orgBase(projectId, orgId));
+
+export const patchOrganization = (
+  projectId: string,
+  orgId: string,
+  body: OrganizationPatchRequest,
+) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
+
+export const getOrgChart = (projectId: string, orgId: string) =>
+  apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
+
+export const hireOrgEmployee = (projectId: string, orgId: string, body: OrgHireRequest) =>
+  apiFetch<OrgEmployeeItem>(`${orgBase(projectId, orgId)}/employees`, { method: "POST", body });
+
+export const patchOrgEmployee = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  body: OrgEmployeePatchRequest,
+) =>
+  apiFetch<OrgEmployeeItem>(
+    `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}`,
+    { method: "PATCH", body },
+  );
+
+export const leaveOrganization = (projectId: string, orgId: string, agentId: string) =>
+  apiFetch<void>(`${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}`, {
+    method: "DELETE",
+  });
+
+/** The employee's desk session, opened on demand (GET creates it when there is none). */
+export const getOrgDesk = (projectId: string, orgId: string, agentId: string) =>
+  apiFetch<OrgDeskResponse>(
+    `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}/desk`,
+  );
+
+/** A fresh desk session for the employee (the old one stays as an ordinary Session). */
+export const renewOrgDesk = (projectId: string, orgId: string, agentId: string) =>
+  apiFetch<OrgDeskResponse>(
+    `${orgBase(projectId, orgId)}/employees/${encodeURIComponent(agentId)}/desk`,
+    { method: "POST", body: {} },
+  );
+
+export const getOrgHandbook = (projectId: string, orgId: string) =>
+  apiFetch<OrgHandbookResponse>(`${orgBase(projectId, orgId)}/handbook`);
+
+export const putOrgHandbook = (projectId: string, orgId: string, content: string) =>
+  apiFetch<OrgHandbookResponse>(`${orgBase(projectId, orgId)}/handbook`, {
+    method: "PUT",
+    body: { content },
+  });
+
+/** A handbook file's URL: the path is relative to `handbook/`, so each segment is encoded and the `/` between them kept. */
+const handbookFileUrl = (projectId: string, orgId: string, path: string) =>
+  `${orgBase(projectId, orgId)}/handbook/files/${path.split("/").map(encodeURIComponent).join("/")}`;
+
+export const listOrgHandbookFiles = (projectId: string, orgId: string) =>
+  apiFetch<OrgHandbookFilesResponse>(`${orgBase(projectId, orgId)}/handbook/files`);
+
+export const getOrgHandbookFile = (projectId: string, orgId: string, path: string) =>
+  apiFetch<OrgHandbookFileResponse>(handbookFileUrl(projectId, orgId, path));
+
+export const putOrgHandbookFile = (
+  projectId: string,
+  orgId: string,
+  path: string,
+  content: string,
+) =>
+  apiFetch<OrgHandbookFileResponse>(handbookFileUrl(projectId, orgId, path), {
+    method: "PUT",
+    body: { content },
+  });
+
+export const deleteOrgHandbookFile = (projectId: string, orgId: string, path: string) =>
+  apiFetch<void>(handbookFileUrl(projectId, orgId, path), { method: "DELETE" });
+
+export const listOrgCalendar = (projectId: string, orgId: string) =>
+  apiFetch<OrgCalendarResponse>(`${orgBase(projectId, orgId)}/calendar`);
+
+export const createOrgCalendarEvent = (
+  projectId: string,
+  orgId: string,
+  body: OrgCalendarUpsertRequest & { agentId: string; name: string },
+) =>
+  apiFetch<OrgCalendarWriteResponse>(`${orgBase(projectId, orgId)}/calendar`, {
+    method: "POST",
+    body,
+  });
+
+export const updateOrgCalendarEvent = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  name: string,
+  body: OrgCalendarUpsertRequest,
+) =>
+  apiFetch<OrgCalendarWriteResponse>(
+    `${orgBase(projectId, orgId)}/calendar/${encodeURIComponent(agentId)}/${encodeURIComponent(name)}`,
+    { method: "PUT", body },
+  );
+
+export const deleteOrgCalendarEvent = (
+  projectId: string,
+  orgId: string,
+  agentId: string,
+  name: string,
+) =>
+  apiFetch<void>(
+    `${orgBase(projectId, orgId)}/calendar/${encodeURIComponent(agentId)}/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
+  );
+
+export const listOrgTickets = (projectId: string, orgId: string) =>
+  apiFetch<OrgTicketsResponse>(`${orgBase(projectId, orgId)}/tickets`);
+
+export const getOrgTicket = (projectId: string, orgId: string, ticketId: string) =>
+  apiFetch<OrgTicketDetail>(`${orgBase(projectId, orgId)}/tickets/${encodeURIComponent(ticketId)}`);
+
+export const createOrgTicket = (projectId: string, orgId: string, body: OrgTicketCreateRequest) =>
+  apiFetch<OrgTicketDetail>(`${orgBase(projectId, orgId)}/tickets`, { method: "POST", body });
+
+export const updateOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketUpdateRequest,
+) =>
+  apiFetch<OrgTicketDetail>(
+    `${orgBase(projectId, orgId)}/tickets/${encodeURIComponent(ticketId)}`,
+    { method: "PUT", body },
+  );
+
+/** `…/tickets/:ticketId/<action>` POST helper shared by the six ticket actions. */
+const ticketAction = <T>(
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  action: string,
+  body: unknown,
+) =>
+  apiFetch<T>(`${orgBase(projectId, orgId)}/tickets/${encodeURIComponent(ticketId)}/${action}`, {
+    method: "POST",
+    body,
+  });
+
+export const moveOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketMoveRequest,
+) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "move", body);
+
+export const blockOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketBlockRequest,
+) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "block", body);
+
+export const unblockOrgTicket = (projectId: string, orgId: string, ticketId: string) =>
+  ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "unblock", {});
+
+export const progressOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketProgressRequest,
+) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "progress", body);
+
+export const startOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketStartRequest = {},
+) => ticketAction<OrgTicketStartResponse>(projectId, orgId, ticketId, "start", body);
+
+export const attachOrgTicket = (
+  projectId: string,
+  orgId: string,
+  ticketId: string,
+  body: OrgTicketAttachRequest,
+) => ticketAction<OrgTicketDetail>(projectId, orgId, ticketId, "attach", body);
+
+const channelBase = (projectId: string, orgId: string, channelId: string) =>
+  `${orgBase(projectId, orgId)}/channels/${encodeURIComponent(channelId)}`;
+
+/** The organization's channels: the all-hands one first, then by name. */
+export const listOrgChannels = (projectId: string, orgId: string) =>
+  apiFetch<OrgChannelsResponse>(`${orgBase(projectId, orgId)}/channels`);
+
+export const createOrgChannel = (projectId: string, orgId: string, body: OrgChannelCreateRequest) =>
+  apiFetch<OrgChannelItem>(`${orgBase(projectId, orgId)}/channels`, { method: "POST", body });
+
+export const getOrgChannel = (projectId: string, orgId: string, channelId: string) =>
+  apiFetch<OrgChannelDetail>(channelBase(projectId, orgId, channelId));
+
+export const patchOrgChannel = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  body: OrgChannelPatchRequest,
+) => apiFetch<OrgChannelItem>(channelBase(projectId, orgId, channelId), { method: "PATCH", body });
+
+export const addOrgChannelMember = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  body: OrgChannelMemberRequest,
+) =>
+  apiFetch<OrgChannelDetail>(`${channelBase(projectId, orgId, channelId)}/members`, {
+    method: "POST",
+    body,
+  });
+
+/** Removes a member; `principal` is the literal `agent:<id>` / `user:<id>`, encoded into the path. */
+export const removeOrgChannelMember = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  principal: string,
+) =>
+  apiFetch<void>(
+    `${channelBase(projectId, orgId, channelId)}/members/${encodeURIComponent(principal)}`,
+    { method: "DELETE" },
+  );
+
+/** One day of a channel (today in the organization's timezone when `date` is omitted). */
+export const getOrgChannelMessages = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  date?: string,
+) =>
+  apiFetch<OrgChannelMessagesResponse>(`${channelBase(projectId, orgId, channelId)}/messages`, {
+    query: { date },
+  });
+
+export const sendOrgChannelMessage = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  body: OrgChannelMessageSendRequest,
+) =>
+  apiFetch<OrgChannelMessage>(`${channelBase(projectId, orgId, channelId)}/messages`, {
+    method: "POST",
+    body,
+  });
+
+export const readOrgChannel = (
+  projectId: string,
+  orgId: string,
+  channelId: string,
+  body: OrgChannelReadRequest,
+) => apiFetch<void>(`${channelBase(projectId, orgId, channelId)}/read`, { method: "POST", body });
+
+/** Budget and spend for one `yyyy-mm` period (the current one when omitted). */
+export const getOrgFinance = (projectId: string, orgId: string, period?: string) =>
+  apiFetch<OrgFinanceResponse>(`${orgBase(projectId, orgId)}/finance`, {
+    query: { period },
+  });
+
+export const getOrgSessions = (projectId: string, orgId: string) =>
+  apiFetch<OrgSessionsResponse>(`${orgBase(projectId, orgId)}/sessions`);
 // Desktop tray icon (desktop-shell sessions only) --------------------------------------
 
 /** What the shell last pushed; `status` is null until that first push, which reads as on. */

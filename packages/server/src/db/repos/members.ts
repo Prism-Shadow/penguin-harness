@@ -2,7 +2,9 @@
  * Repo for the project_members table: only member
  * authorization relationships — the owner is never in this table.
  */
-import type { DatabaseSync } from "node:sqlite";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
+import type { Members } from "../../mechanisms/projects.js";
 
 export interface MemberRow {
   projectId: string;
@@ -10,8 +12,9 @@ export interface MemberRow {
   createdAt: string;
 }
 
-export class MembersRepo {
-  constructor(private readonly db: DatabaseSync) {}
+@Component()
+export class MembersRepo implements Members {
+  @Use() private readonly db!: Db;
 
   insert(row: MemberRow): void {
     this.db

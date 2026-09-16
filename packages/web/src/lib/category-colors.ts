@@ -73,3 +73,54 @@ export const NEUTRAL_SERIES: SeriesColor = {
   text: "text-gray-400 dark:text-gray-500",
   swatch: "bg-gray-400 dark:bg-gray-500",
 };
+
+/**
+ * Employee colours for the organization calendar: one hue per employee, identity again and
+ * not severity, so the set may grow without any hue reading as a state. Each entry is a chip
+ * (a tinted event block with its own readable ink) and the matching dot for the legend and
+ * filter; index by an employee's position in the chart, cycling past the end (the legend and
+ * the chip's own text keep identity from ever resting on colour alone).
+ */
+export interface EmployeeColor {
+  chip: string;
+  dot: string;
+}
+
+export const EMPLOYEE_COLORS: readonly EmployeeColor[] = [
+  {
+    chip: "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200",
+    dot: "bg-violet-500",
+  },
+  {
+    chip: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
+    dot: "bg-amber-500 dark:bg-amber-600",
+  },
+  {
+    chip: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200",
+    dot: "bg-sky-500 dark:bg-sky-600",
+  },
+  { chip: "bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-200", dot: "bg-rose-500" },
+  {
+    chip: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+    dot: "bg-emerald-500 dark:bg-emerald-600",
+  },
+  {
+    chip: "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-200",
+    dot: "bg-fuchsia-500 dark:bg-fuchsia-600",
+  },
+  {
+    chip: "bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200",
+    dot: "bg-teal-500 dark:bg-teal-600",
+  },
+  {
+    chip: "bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200",
+    dot: "bg-orange-500 dark:bg-orange-600",
+  },
+];
+
+/** Colour for the i-th employee (cycles once past the end). */
+export function employeeColor(i: number): EmployeeColor {
+  return EMPLOYEE_COLORS[
+    ((i % EMPLOYEE_COLORS.length) + EMPLOYEE_COLORS.length) % EMPLOYEE_COLORS.length
+  ]!;
+}

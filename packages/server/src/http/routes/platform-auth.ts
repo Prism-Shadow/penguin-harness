@@ -5,11 +5,16 @@ import type {
   PlatformAuthStartResponse,
   PlatformModelSyncResponse,
 } from "../../api/types.js";
-import type { AppDeps } from "../../app.js";
 import type { AppEnv } from "../../auth/middleware.js";
+import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import { HttpError } from "../errors.js";
 import { requireValidId } from "../validate.js";
 import { modelConfigChanged } from "./models.js";
+import type { ModelsRouteDeps } from "./models.js";
+
+export interface PlatformAuthRouteDeps extends ModelsRouteDeps {
+  platformAuth: PlatformAuth;
+}
 
 const FLOW_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -24,15 +29,15 @@ function flowId(value: string): string {
   return value;
 }
 
-function owner(deps: AppDeps, userId: string, projectId: string): void {
-  deps.projectService.requireProjectOwner(userId, projectId);
+function owner(deps: PlatformAuthRouteDeps, userId: string, projectId: string): void {
+  deps.access.requireProjectOwner(userId, projectId);
 }
 
-function publishIfChanged(deps: AppDeps, projectId: string, changed: boolean): void {
+function publishIfChanged(deps: PlatformAuthRouteDeps, projectId: string, changed: boolean): void {
   if (changed) modelConfigChanged(deps, projectId);
 }
 
-export function platformAuthRoutes(deps: AppDeps): Hono<AppEnv> {
+export function platformAuthRoutes(deps: PlatformAuthRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.post("/start", async (c) => {

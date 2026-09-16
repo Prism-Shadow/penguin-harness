@@ -1,7 +1,9 @@
 /**
  * agents table repo: Agent index; name/description live in system_config.yaml.
  */
-import type { DatabaseSync } from "node:sqlite";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
+import type { AgentIndex } from "../../mechanisms/projects.js";
 
 export interface AgentRow {
   projectId: string;
@@ -9,8 +11,9 @@ export interface AgentRow {
   createdAt: string;
 }
 
-export class AgentsRepo {
-  constructor(private readonly db: DatabaseSync) {}
+@Component()
+export class AgentsRepo implements AgentIndex {
+  @Use() private readonly db!: Db;
 
   /** Idempotent insert: backfills an untracked Agent discovered via directory scan; shared with explicit creation. */
   insertOrIgnore(row: AgentRow): void {

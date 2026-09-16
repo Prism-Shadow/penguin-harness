@@ -25,7 +25,20 @@ import type { Context } from "hono";
 import type { RestartResponse, UpdateJobStatus, VersionResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import type { AppEnv } from "../../auth/middleware.js";
-import type { AppDeps } from "../../app.js";
+import type { ServerConfig } from "../../config.js";
+import type { UpdateCheck } from "../../services/update-check-service.js";
+import type { UpdateJob } from "../../services/update-job.js";
+import type { Lifecycle } from "../../hmr/capabilities.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface VersionRouteDeps {
+  config: ServerConfig;
+  updateCheck: UpdateCheck;
+  /** The admin self-update run in the background (`penguin update --yes`), with its progress for the update modal. */
+  updateJob: UpdateJob;
+  /** Whether a supervisor relaunches this process, and the restart trigger the update flow pulls. */
+  lifecycle: Lifecycle;
+}
 
 // The classifier lives with the job now; re-exported so its unit tests keep their import.
 export { classifyUpdateRun } from "../../services/update-job.js";
@@ -39,7 +52,7 @@ function requireAdmin(c: Context<AppEnv>): void {
   }
 }
 
-export function versionRoutes(deps: AppDeps): Hono<AppEnv> {
+export function versionRoutes(deps: VersionRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {

@@ -1,109 +1,91 @@
 /**
- * The plugin host: it owns activation, event delivery and disposal. Kept out of
- * ./index.ts so the published `@prismshadow/penguin-server/plugin` subpath stays types
- * only — a plugin package cannot take a runtime dependency on the harness even by
- * accident, which is what keeps it a self-contained library.
+ * The plugin host: the plugins this process loaded, as module definitions the
+ * platform boots as children of its tree. Kept out of ./index.ts so the published
+ * `@prismshadow/penguin-server/plugin` subpath stays types only.
  */
-import type { Resources } from "@prismshadow/penguin-core/kernel";
-import type { Disposable, Plugin, PluginEvents } from "@prismshadow/penguin-core/plugin";
+import type { IfaceTable, ModuleDef, Resources } from "@prismshadow/penguin-core/kernel";
 
-interface ActivatedPlugin {
-  handlers: { [E in keyof PluginEvents]?: Array<(payload: PluginEvents[E]) => void> };
-  disposables: Disposable[];
+/** One loaded plugin: the package, its modules and stand-ins with manifests paired to code, and its generated table. */
+export interface LoadedPlugin {
+  specifier: string;
+  /** Nodes the plugin adds under the root. */
+  modules: ModuleDef[];
+  /** Nodes the plugin stands in for, by the replaced node's name. */
+  replaces: ModuleDef[];
+  /** The interfaces and types the package's `ifaces.json` carries; absent for a module built in code. */
+  ifaces?: IfaceTable;
 }
 
-/** One host per server process; activation order is delivery order. */
+/** One host per server process; load order is the order the modules join the tree. */
 export class PluginHost {
-  private readonly plugins: ActivatedPlugin[] = [];
+  private readonly plugins: LoadedPlugin[] = [];
 
-  /**
-   * Runs `activate` (awaiting it when async), then seals its subscription window.
-   *
-   * TRANSACTIONAL: a plugin may have registered disposables before it threw, and the
-   * caller is about to drop it — so those run here, before the failure is reported.
-   * Without this the entry is never published and `dispose()` could never reach them.
-   */
-  async use(plugin: Plugin): Promise<void> {
-    const entry: ActivatedPlugin = { handlers: {}, disposables: [] };
-    let sealed = false;
-    try {
-      await plugin.activate({
-        on<E extends keyof PluginEvents>(event: E, handler: (payload: PluginEvents[E]) => void) {
-          if (sealed) {
-            throw new Error(
-              `plugin subscribed to '${event}' after activate settled — a handler-time ` +
-                `subscription would accumulate one copy per hot swap`,
-            );
-          }
-          // Sound, but under a generic key TS folds the mapped type to a union.
-          const list = (entry.handlers[event] ??= []) as Array<(payload: PluginEvents[E]) => void>;
-          list.push(handler);
-        },
-        disposables: entry.disposables,
-      });
-    } catch (err) {
-      sealed = true;
-      await runDisposables(entry.disposables);
-      throw err;
-    }
-    sealed = true;
-    Object.freeze(entry.disposables);
-    this.plugins.push(entry);
-  }
-
-  emit<E extends keyof PluginEvents>(event: E, payload: PluginEvents[E]): void {
-    for (const plugin of this.plugins) {
-      for (const handler of plugin.handlers[event] ?? []) {
-        // An App is assembled synchronously around this call, so a returned promise
-        // could not be awaited and its rejection would escape unhandled — possibly
-        // killing the process, since boot runs before the process handlers are on.
-        // Refusing it fails the boot loudly instead, which is what a throwing handler
-        // already does.
-        const returned = handler(payload) as { then?: unknown; catch?: unknown } | undefined;
-        if (typeof returned?.then === "function") {
-          // Neutralize it first: the promise is already running, and throwing below
-          // without claiming it would leave its rejection unhandled — exactly the escape
-          // this refusal exists to close.
-          if (typeof returned.catch === "function") {
-            (returned as Promise<unknown>).catch(() => {});
-          }
-          throw new Error(
-            `plugin handler for '${event}' returned a promise — event handlers must be ` +
-              `synchronous (do async work in activate, or start it without awaiting)`,
-          );
-        }
-      }
-    }
-  }
-
-  /**
-   * Runs every disposable concurrently, settling once all have: a failing one is logged
-   * without stranding the rest, and there is deliberately no teardown order. Idempotent
-   * — the graceful shutdown awaits it (bounded), the registry sweep only starts it.
-   */
-  async dispose(): Promise<void> {
-    const plugins = this.plugins.splice(0);
-    await runDisposables(plugins.flatMap((plugin) => [...plugin.disposables]));
-  }
-}
-
-/** Concurrent, failure-isolated teardown — see {@link PluginHost.dispose}. */
-async function runDisposables(disposables: readonly Disposable[]): Promise<void> {
-  await Promise.all(
-    disposables.map(async (disposable) => {
-      try {
-        await disposable.dispose();
-      } catch (err) {
-        console.warn(
-          `[plugins] disposer failed: ${err instanceof Error ? err.message : String(err)}`,
+  /** Registers a plugin; a module name already taken by an earlier plugin is refused. */
+  use(plugin: LoadedPlugin): void {
+    const taken = new Set(this.modules().map((m) => m.manifest.name));
+    for (const m of plugin.modules) {
+      if (taken.has(m.manifest.name)) {
+        throw new Error(
+          `plugin '${plugin.specifier}': module '${m.manifest.name}' is already loaded by another plugin`,
         );
       }
-    }),
-  );
+    }
+    const replaced = this.replacements();
+    for (const m of plugin.replaces) {
+      if (replaced.has(m.manifest.name)) {
+        throw new Error(
+          `plugin '${plugin.specifier}': '${m.manifest.name}' is already replaced by another plugin`,
+        );
+      }
+    }
+    this.plugins.push(plugin);
+  }
+
+  /** Every plugin module, in load order — what the platform adds to its tree. */
+  modules(): readonly ModuleDef[] {
+    return this.plugins.flatMap((e) => e.modules);
+  }
+
+  /** The nodes plugins stand in for, by name — what the platform builds instead of its own. */
+  replacements(): ReadonlyMap<string, ModuleDef> {
+    return new Map(this.plugins.flatMap((e) => e.replaces.map((m) => [m.manifest.name, m])));
+  }
+
+  /**
+   * The host's table with every plugin's folded in — what the tree is checked against. On
+   * a key both carry (a plugin's table copies the host interfaces it compiled against) the
+   * host's entry stands: it is what is provided, and what a hand-written manifest was
+   * always looked up in.
+   */
+  ifaces(host: IfaceTable): IfaceTable {
+    const ifaces = { ...host.ifaces };
+    const types = { ...host.types };
+    for (const plugin of this.plugins) {
+      if (plugin.ifaces === undefined) continue;
+      for (const [key, decl] of Object.entries(plugin.ifaces.ifaces)) ifaces[key] ??= decl;
+      for (const [key, decl] of Object.entries(plugin.ifaces.types)) types[key] ??= decl;
+    }
+    return { ifaces, types };
+  }
+
+  /** Nothing to release at process exit: modules dispose with the App that created them. */
+  dispose(): void {}
 }
 
-/** Registry key the runtime publishes its loaded host under. */
-export const PLUGINS_RESOURCE_ID = "runtime:plugins";
+/**
+ * Registry key for the loaded plugin host.
+ *
+ * Nothing about the host is the runtime's business: which plugins a deployment runs is
+ * configuration the platform reads, the modules go into the platform's tree, and a platform
+ * route writes this very entry when the list changes (http/routes/plugins-installed.ts). It
+ * is parked only because the imported objects must survive a swap — a re-import would give
+ * the successor different module instances.
+ *
+ * That the runtime still LOADS it at process start (index.ts) is the misfiling this note
+ * exists to flag: it is why a machine whose program is older cannot learn a new loading rule
+ * from a push, and had to be restarted to pick up a plugin list.
+ */
+export const PLUGINS_RESOURCE_ID = "platform.plugins";
 
 /**
  * The host the runtime loaded (see ./loader.ts), or an empty one — the honest reading

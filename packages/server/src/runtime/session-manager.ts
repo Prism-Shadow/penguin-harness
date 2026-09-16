@@ -65,8 +65,9 @@ import type {
   SessionStatus,
 } from "../api/types.js";
 import type { RecallableFile } from "../services/task-attachments.js";
+import { cliShimDir } from "../services/cli-shim.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
-import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
+import type { SessionRow } from "../db/repos/sessions.js";
 import { ApprovalRegistry, makeApprove } from "./approvals.js";
 import { goalOutcomeOf, goalProgressOf } from "./goal-events.js";
 import type { PendingApproval } from "./approvals.js";
@@ -74,10 +75,27 @@ import type { ChannelHub } from "./channel.js";
 import type { ErrorSink } from "./error-recorder.js";
 import { LiveTailTracker } from "./live-tail.js";
 import { asSessionSource } from "./session-sources.js";
-import type { SessionSources } from "./session-sources.js";
 import { StreamErrorWatcher } from "./stream-error-watcher.js";
 import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
+import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
+import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
+import { Sandbox, SandboxModule } from "../sandbox/service.js";
+import { SessionService } from "../services/session-service.js";
+import { TitleGenerator } from "./title-generator.js";
+import { loopbackHostRoles } from "../services/preview-token.js";
+import { mergedNoProxy } from "../net/proxy.js";
+import { userChannelKey } from "../http/routes/events.js";
+import type { SandboxService } from "../sandbox/service.js";
+import type { AuthState, Channels, Clock, Config, Log } from "../hmr/capabilities.js";
+import type { Members, ProjectConfigStore, Projects } from "../mechanisms/projects.js";
+import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
+import type { Errors, UsageRecording } from "../mechanisms/observability.js";
+import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
+import type { Settings } from "../mechanisms/settings.js";
+import type { MessagingBindings } from "../mechanisms/messaging.js";
+import type { OrgCache } from "../mechanisms/organization.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -232,7 +250,7 @@ export interface SessionLoader {
  */
 export function createCoreSessionLoader(
   root: string,
-  sources?: SessionSources,
+  sources?: SessionOrigins,
   opts: {
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
@@ -320,17 +338,18 @@ export interface UsageRecorderLike {
 }
 
 export interface SessionManagerDeps {
-  sessions: SessionsRepo;
+  sessions: SessionIndex;
   channels: ChannelHub;
   loader: SessionLoader;
   /** Session-origin registry (session_meta is the single source of truth; subagent registration records the forwarded meta's source here). */
-  sources: SessionSources;
+  sources: SessionOrigins;
   recorder: UsageRecorderLike;
   /** Automatic Session title generation (optional: not injected in tests or when disabled). */
   titles?: TitleNotifier;
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
   errors?: ErrorSink;
   log?: (line: string) => void;
+  /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   /**
    * Publishes a Session-scoped event on the user-level channel of everyone who can see the
    * Project. The audience lookup (owner + members) and the `user:<id>` channel binding stay in
@@ -345,6 +364,27 @@ export interface SessionManagerDeps {
    * backfill assumes when it reads MAX(ts) as a session's last activity.
    */
   now?: () => Date;
+  /**
+   * Called when a Task starts (or is queued) from a PERSON's input — a message typed in the
+   * Web App, the CLI or a bound messaging bot, as opposed to one the harness injected
+   * (`sender: "server"` / `"harness"`). Company mode uses it to reset the desk's @-chain
+   * accounting: a person's message opens a fresh chain (hop 0), whatever mention last woke
+   * the desk. Optional; unit tests that do not wire it get nothing.
+   */
+  onHumanInput?: (sessionId: string) => void;
+}
+
+/**
+ * Whether a Task's input came from a person: every text payload either carries no sender or
+ * `sender: "user"`. A harness-injected turn (`"server"`, `"harness"`, `"parent_agent"`) on any
+ * message makes the whole input non-human — the org scheduler's trigger and a subagent's
+ * prompt both arrive that way.
+ */
+export function isHumanInput(input: readonly OmniMessage[]): boolean {
+  return input.every((m) => {
+    const p = m.payload as { sender?: string };
+    return p.sender === undefined || p.sender === "user";
+  });
 }
 
 /**
@@ -949,6 +989,9 @@ export class SessionManager {
       this.assertAgentNotDeleting(sessionId);
       this.assertSessionNotDeleting(sessionId);
       const entry = await this.ensureEntry(sessionId);
+      // A person's message opens a fresh chain for company mode's hop accounting, whether the
+      // Task starts now or waits in the queue (see SessionManagerDeps.onHumanInput).
+      if (isHumanInput(input)) this.deps.onHumanInput?.(sessionId);
       if (entry.status !== "idle" && opts?.queueIfBusy) {
         entry.followUps.push({
           id: randomUUID(),
@@ -2046,7 +2089,7 @@ export class SessionManager {
    * run-end one lives in its finally — and the realistic failure (the DatabaseSync handle
    * closed by shutdown while a run outlived its drain window) throws ERR_INVALID_STATE.
    */
-  private touchRow(ctx: UsageContext, write: (repo: SessionsRepo, at: string) => void): void {
+  private touchRow(ctx: UsageContext, write: (repo: SessionIndex, at: string) => void): void {
     try {
       write(this.deps.sessions, this.now().toISOString());
     } catch (err) {
@@ -2159,5 +2202,254 @@ export class SessionManager {
       });
     this.locks.set(sessionId, settled);
     return next;
+  }
+}
+
+/** The session runtime: one entry per live Session, task mutex, approvals, streaming. */
+export abstract class Sessions extends Interface<
+  Pick<
+    SessionManager,
+    | "statusOf"
+    | "pendingApprovalCount"
+    | "pendingApprovals"
+    | "pendingFollowUpCount"
+    | "pendingSteeringOf"
+    | "subagentsOf"
+    | "sendToSubagent"
+    | "abortSubagentRun"
+    | "pendingFollowUpsOf"
+    | "liveFragments"
+    | "pendingInputs"
+    | "pendingBootstrap"
+    | "activeCountForAgent"
+    | "invalidateAgentRuntimes"
+    | "invalidateProjectRuntimes"
+    | "assertCanAcceptTask"
+    | "startTask"
+    | "startGoal"
+    | "startCompact"
+    | "decideApproval"
+    | "steer"
+    | "recallSteering"
+    | "recallFollowUp"
+    | "retryNow"
+    | "abortTask"
+    | "listProcesses"
+    | "probeProcessServices"
+    | "killProcess"
+    | "removeProcess"
+    | "abortProject"
+    | "beginAgentDeletion"
+    | "endAgentDeletion"
+    | "beginSessionDeletion"
+    | "endSessionDeletion"
+    | "atIdleBoundary"
+    | "shutdown"
+    | "sweepIdle"
+  >
+>() {}
+
+export abstract class SessionServiceIface extends Interface<
+  Pick<
+    SessionServiceImpl,
+    | "toInfo"
+    | "hasTrace"
+    | "listSessions"
+    | "sessionStats"
+    | "createSession"
+    | "latestTracePath"
+    | "adoptUnmanagedTraceSessions"
+  >
+>() {}
+
+/** The per-spawn policies every Session's command environment is built with. */
+export abstract class SessionEnv extends Interface<{
+  proxyEnv(): ProxyEnvPolicy | null;
+  controlEnv(ctx: ControlEnvContext): Record<string, string>;
+  /** The directories at the FRONT of every command's PATH: the harness's own CLI shim (see CreateAgentOptions.pathPrepend). */
+  pathPrepend(): string[];
+  confineSpawn(): SpawnConfiner | null;
+}>() {}
+
+@Module()
+export class SessionsModule {
+  @Use() private readonly config!: Config;
+  @Use() private readonly channels!: Channels;
+  @Use() private readonly authState!: AuthState;
+  @Use() private readonly clock!: Clock;
+  @Use() private readonly sessionLoaders!: SessionLoaders;
+  @Use() private readonly titleGenerators!: TitleGenerators;
+  @Use() private readonly log!: Log;
+  @Use() private readonly settings!: Settings;
+  @Use() private readonly sessionsRepo!: SessionIndex;
+  @Use() private readonly sources!: SessionOrigins;
+  @Use() private readonly recorder!: UsageRecording;
+  @Use() private readonly errors!: Errors;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Use() private readonly traceIndex!: TraceIndex;
+  @Use() private readonly traceStore!: TraceIndexStore;
+  @Use(SandboxModule) private readonly sandbox!: Sandbox;
+  @Use() private readonly projectsRepo!: Projects;
+  @Use() private readonly membersRepo!: Members;
+  @Use() private readonly messagingRepo!: MessagingBindings;
+  /** Company-mode caches: which organization owns a Session (read at every command spawn). */
+  @Use() private readonly orgCache!: OrgCache;
+  @Provide() manager!: Sessions;
+  @Provide() sessionService!: SessionServiceIface;
+  @Provide() env!: SessionEnv;
+  setup() {
+    const { config, settings, authState } = this;
+    const log = (line: string) => this.log.line(line);
+    const channels = this.channels as ChannelHub;
+    const sessionsRepo = this.sessionsRepo;
+    const sources = this.sources;
+    const recorder = this.recorder;
+    const errors = this.errors;
+    const projectConfig = this.projectConfig;
+    const sandbox = this.sandbox as SandboxService;
+    const orgCache = this.orgCache;
+
+    // Which commands run confined, under which policy, by which backend is policy — the
+    // sandbox module's; core only carries the spawn seam, reached through this getter.
+    const env: SessionEnv = {
+      proxyEnv: (): ProxyEnvPolicy | null => {
+        if (!settings.getProxyForAgent()) return { mode: "strip" };
+        const url = settings.getProxyUrl();
+        return url === null ? null : { mode: "inject", url, noProxy: mergedNoProxy() };
+      },
+      controlEnv: (ctx: ControlEnvContext): Record<string, string> => {
+        const host =
+          config.host === "0.0.0.0" || config.host === "::"
+            ? "127.0.0.1"
+            : (loopbackHostRoles(config.host)?.app ?? config.host);
+        const token = authState.apiToken;
+        const orgId = orgCache.ownerOfSession(ctx.sessionId)?.orgId ?? null;
+        return {
+          PENGUIN_API_URL: `http://${host}:${config.port}`,
+          ...(token !== null ? { PENGUIN_API_TOKEN: token } : {}),
+          PENGUIN_PROJECT_ID: ctx.projectId,
+          PENGUIN_AGENT_ID: ctx.agentId,
+          PENGUIN_SESSION_ID: ctx.sessionId,
+          // A desk or ticket session also learns its organization, so `penguin org` needs no
+          // --org-id inside it. Looked up per spawn from the cache the ledger and the tickets
+          // project into.
+          ...(orgId !== null ? { PENGUIN_ORG_ID: orgId } : {}),
+        };
+      },
+      // The directory core puts at the FRONT of PATH for every command an Agent runs (and for
+      // its hook scripts): the shim directory bootAppDeps wrote this harness's own `penguin`
+      // into. Derived from the config rather than passed along, so the platform half needs no
+      // new capability — and read for truth rather than for null, because a runtime older than
+      // this field publishes a config without it and wrote no shim either: no field, no
+      // directory, feature off, rather than a push declined over a PATH entry.
+      pathPrepend: (): string[] => (config.cliEntry ? [cliShimDir(config.root)] : []),
+      confineSpawn: () => sandbox.confiner(),
+    };
+
+    const notifyProjectUsers = (projectId: string, event: ServerEvent): void => {
+      const ownerUserId = this.projectsRepo.findById(projectId)?.ownerUserId;
+      if (ownerUserId === undefined) return;
+      const audience = new Set([
+        ownerUserId,
+        ...this.membersRepo.list(projectId).map((m) => m.userId),
+      ]);
+      for (const userId of audience) {
+        channels.peek(userChannelKey(userId))?.publish(event, "server_event");
+      }
+    };
+    const titles = this.titleGenerators.create({
+      sessions: sessionsRepo,
+      channels,
+      recorder,
+      errors,
+      log,
+      notifyProjectUsers,
+    });
+    const manager = new SessionManager({
+      sessions: sessionsRepo,
+      channels,
+      loader: this.sessionLoaders.create(config.root, sources, {
+        proxyEnv: env.proxyEnv,
+        controlEnv: env.controlEnv,
+        pathPrepend: env.pathPrepend,
+        confineSpawn: env.confineSpawn,
+      }),
+      sources,
+      recorder,
+      errors,
+      titles,
+      log,
+      notifyProjectUsers,
+      // A person talking to a desk (the chat page, a bound bot) starts a new @-chain: the
+      // desk's next channel message is hop 1 again, whatever mention last woke it.
+      onHumanInput: (sessionId) => {
+        if (orgCache.ownerOfSession(sessionId) !== null) orgCache.setTriggerHop(sessionId, 0);
+      },
+      now: () => this.clock.now(),
+    });
+    const sessionService = new SessionService({
+      root: config.root,
+      sessions: sessionsRepo,
+      manager,
+      projectConfig,
+      sources,
+      traceIndex: this.traceIndex,
+      traceStore: this.traceStore,
+      proxyEnv: env.proxyEnv,
+      controlEnv: env.controlEnv,
+      messagingChannel: (sessionId) => {
+        const enabled = this.messagingRepo.findEnabled(sessionId);
+        return enabled !== null &&
+          (enabled.channel === "feishu" ||
+            enabled.channel === "telegram" ||
+            enabled.channel === "qq")
+          ? enabled.channel
+          : null;
+      },
+      // Company mode: which organization owns a Session, so development mode's list can hide
+      // organization sessions and the company sidebar can group its own. The caches are a
+      // projection of the organization's files, rebuilt every reconcile pass, so a row that
+      // has not been projected yet reads as an ordinary Session for one pass — never as the
+      // wrong organization.
+      orgIdOfSession: (sessionId) => orgCache.ownerOfSession(sessionId)?.orgId,
+      orgIdsOfProject: (projectId) => orgCache.orgIdsOfProject(projectId),
+      pathPrepend: env.pathPrepend,
+      confineSpawn: env.confineSpawn,
+    });
+    this.manager = manager;
+    this.sessionService = sessionService;
+    this.env = env;
+  }
+}
+
+/** Builds the loader a manager runs sessions through; a test stands in a fake session. */
+export abstract class SessionLoaders extends Interface<{
+  create(
+    root: string,
+    sources: Opaque<"SessionOrigins", SessionOrigins>,
+    env: Opaque<"SessionLoaderEnv", Parameters<typeof createCoreSessionLoader>[2]>,
+  ): Opaque<"SessionLoader", SessionLoader>;
+}>() {}
+@Component()
+export class CoreSessionLoaders implements SessionLoaders {
+  create(
+    root: string,
+    sources: SessionOrigins,
+    env: Parameters<typeof createCoreSessionLoader>[2],
+  ): SessionLoader {
+    return createCoreSessionLoader(root, sources, env);
+  }
+}
+
+/** Builds the title generator; a test stands in a notifier that never calls a model. */
+export abstract class TitleGenerators extends Interface<{
+  create(
+    deps: Opaque<"TitleGeneratorDeps", ConstructorParameters<typeof TitleGenerator>[0]>,
+  ): Opaque<"TitleNotifier", TitleNotifier>;
+}>() {}
+@Component()
+export class DefaultTitleGenerators implements TitleGenerators {
+  create(deps: ConstructorParameters<typeof TitleGenerator>[0]): TitleNotifier {
+    return new TitleGenerator(deps);
   }
 }

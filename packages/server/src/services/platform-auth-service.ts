@@ -8,7 +8,11 @@
  * metadata remain outside PenguinHarness.
  */
 import { randomBytes } from "node:crypto";
+import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
+import { PENGUIN_GO_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 import { HttpError } from "../http/errors.js";
+import { Config } from "../hmr/capabilities.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
 import type { PlatformAuthFlowStatusResponse } from "../api/types.js";
 import {
   PLATFORM_CLIENT_ID,
@@ -539,5 +543,33 @@ export class PlatformAuthService {
     for (const flow of mine.slice(0, Math.max(0, mine.length - (MAX_FLOWS_PER_OWNER - 1)))) {
       this.flows.delete(flow.flowId);
     }
+  }
+}
+
+/** The per-App key authorization capability consumed by Project model routes. */
+export abstract class PlatformAuth extends Interface<
+  Pick<PlatformAuthService, "start" | "status" | "retryApply" | "sync" | "cancel">
+>() {}
+
+/** Keep in-flight flows on the current platform App, like ModelOAuthService. */
+@Module()
+export class PlatformAuthProvider {
+  @Use() private readonly config!: Config;
+  @Use() private readonly projectConfig!: ProjectConfigStore;
+  @Provide() auth!: PlatformAuth;
+
+  setup() {
+    this.auth = new PlatformAuthService({
+      origin: this.config.penguinGoOrigin,
+      getKey: (projectId) => this.projectConfig.getGroupApiKey(projectId, PENGUIN_GO_PROVIDER_ID),
+      applyCatalog: (projectId, catalog, apiKey, applyKeyToExisting) =>
+        this.projectConfig.mergePlatformModels(
+          projectId,
+          PENGUIN_GO_PROVIDER_ID,
+          catalog,
+          apiKey,
+          applyKeyToExisting,
+        ),
+    });
   }
 }

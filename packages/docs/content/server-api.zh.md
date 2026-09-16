@@ -21,7 +21,7 @@ PenguinHarness Server 提供一套同源 HTTP API，自带的 Web App 与其他 
 
 ```text
 packages/server/src
-├── index.ts / config.ts / app.ts   # 启动入口 · 环境变量配置 · Hono 组装(createApp 不绑端口,便于测试)
+├── index.ts / config.ts / app.ts   # 启动入口 · 环境变量配置 · Hono 组装（运行时 app；业务路由由 src/modules 下的 http 模块装配，不绑端口,便于测试)
 ├── api/types.ts                    # 对外 DTO 契约(经 "./api" 子路径供前端 type-only 引用)
 ├── auth/                           # scrypt 密码、admin 种子、cookie 会话、认证中间件
 ├── db/                             # node:sqlite 连接、建表 SQL、每表一个 repo
@@ -174,7 +174,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | /api/projects/:projectId/models | 模型列表（api_key 掩码显示） |
 | PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键 |
 | POST | /api/projects/:projectId/models/test | 连通性测试：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
-| POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测并返回第一个被提供的协议：`{baseUrl, apiKey?, …}` → `{detected?, probes}` |
+| POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测，先用整理后的 URL（整段端点路径会先被剥掉），再用它增删 `/v1` 后的形式，返回第一个被提供的协议与实际应答的 base URL：`{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}` |
 | POST | /api/projects/:projectId/models/list | 新增分组导入所用的端点模型列表：按检测出的协议列出端点服务的全部模型 id：`{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
 | POST | /api/projects/:projectId/models/detect-vision | 视觉能力探测：用该模型的凭据发送一张 1x1 图片(一次真实计费的补全)：`{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported\|unsupported\|failed, message?}` |
 
@@ -265,12 +265,53 @@ Benchmark 挂在 Project 上而非某个 Agent 上：一个 Benchmark 评测过�
 | GET | /benchmarks/:benchmarkId/cases/:caseId/files | 浏览某道题的 `statement/`；在 `/files` 前加 `/rubric` 即评分细则一侧 |
 | GET | /benchmarks/:benchmarkId/cases/:caseId/files/content | 读取该材料下的单个文件（`?path=`、`?preview=1`、`?download=1`），内联渲染的加固规则与 Workspace 文件一致 |
 
+### 组织（公司模式）
+
+以下路径都在 `/api/projects/:projectId/organizations` 之下。管理员的公司模式总开关关闭时所有路由回 404。Project 成员可读写。没有删除组织的路由：`status`（`active` / `paused`）就是它的开关，暂停的组织仍保留其对话、员工、工位与工单。写入体可带 `agentId` 与 `sessionId`——调用方所在的员工与会话，CLI 从 `PENGUIN_AGENT_ID` 与 `PENGUIN_SESSION_ID` 填入——文件里记录的就是该员工而不是 token 的用户；`agentId` 指向某名员工时以它为准，否则看会话。频道的读取与成员 DELETE 没有请求体，同样两项改由 `?agentId=` / `?sessionId=` 传入。两者都仅对携带本机 API token 的请求生效，员工因此被当作它自己而不是登录的那个人来应答。这些路由背后的文件见[公司模式](/company-mode)。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?, language?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409）。CEO 的组织图条目写入 `workspace: ceo`，与其他员工一样是公共工作区下的一个分区。`ceoBudget` 是 CEO 的月预算（美元），写入其 `org_chart.yaml` 条目的 `budget`——非负，不给则为 100；按累计线比较，即整家公司的上限。`language` 取 `zh` 或 `en`，是组织书写一切内容所用的工作语言；不给则从使命判定 |
+| POST | /suggest-id | 为显示名提议一个语义 id：`{name, kind}`——`kind` 为 `org` 或 `channel`——外加 `taken?`（提议须避开的 id）→ `{id, source, reason?}`。Project 的缺省 Model 把名称译成一个 snake_case 英文词干（`source: model`）；首次回答拼不出 id 时，会带上「只回答标识符本身」的格式要求再问一次；未配置 Model 或两次回答都无法用时，以名称的 ASCII slug 兜底（`source: fallback`）；两条路都命名不了的名称回一个占位 id `co_org_<yyyymmdd>` / `ch_channel_<yyyymmdd>`（`source: placeholder`），并带上 `reason`：`no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`。该路由不会因为「名称译不出来」而失败——问了 id 的对话框一定拿得到一个；Model 一侧的每一次落空都记为 `organization` / `id_suggest_failed` 错误。随后服务端按 kind 给词干加前缀——`org` 加 `co_`、`channel` 加 `ch_`，词干本就带前缀时不会加第二遍——再截长度、再避开 `taken`，因此提议出来的 id 一定带前缀，而手工输入的 id 一律按原样接受。该次补全关闭思考、使用共享的元请求预算，不属于任何 Session，也不计量 |
+| GET / PATCH | /:orgId | 概览（设置、看板计数、今日日程、待处理、全员频道最近消息、`inbox`、告警；设置里的 `language` 一律是生效值，文件里没有该字段时从使命读出）/ 修改名称、使命、`status`（`active` / `paused`——暂停即停止一切自动触发）、`approvalMode`、`timezone`、`language` 与阈值 |
+| GET | /:orgId/chart | 员工树，含每位员工的实况状态、工位与本周期支出 |
+| POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?`。`workspace` 不给则缺省为以该员工 Agent id 命名的子目录——公共工作区的根目录放共享输入，不是任何人的工位。相对 `workspace` 会归一化（`./hr` → `hr`）并在公共工作区下创建，绝对路径必须已经存在，用 `..` 爬出公共工作区的写法回 400 `invalid_workspace` |
+| PATCH / DELETE | /:orgId/employees/:agentId | 改头衔、汇报对象、工作区（校验与创建同招募）、预算（`null` 清除）、职责、Model / 离任（下属上移到其上级；CEO 不可离任） |
+| GET / POST | /:orgId/employees/:agentId/desk | 工位会话（无则创建）/ 换新的工位会话 |
+| GET / PUT | /:orgId/handbook | 组织手册索引（`handbook/README.md`） |
+| GET | /:orgId/handbook/files | 知识库文件清单，索引在前 |
+| GET / PUT / DELETE | /:orgId/handbook/files/\<path\> | 按相对路径读写、删除一份文档；索引不可删 |
+| GET / POST | /:orgId/calendar | 全员日程项及运行状态 / 新建：`{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` → 除写下的事件外还带一组建议性的 `warnings`（每条一行）：同一起始分钟上已有另一位员工的常设日程项、同一员工已有同周期的常设日程项、常设日程项以 `now` 起算。写入绝不因此被拒 |
+| GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | 单个日程项；`PUT` 的响应与上面的新建相同，同样带 `warnings` |
+| GET / POST | /:orgId/tickets | 按列的看板（含无法解析的文件）/ 新建：`{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}`。`owner` 是这张工单**唯一**的责任人——本组织的员工（裸 Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`），缺省为调用方；没有 `notify` 时它成为整个 `notify`，但仅限它是员工时，人不会因为自己名下的工单被 @。谁创建的记在工单 `history` 的 `created` 条目里。id 的 slug 优先取 `slug`（小写英文单词以连字符连接，否则 400），否则由标题推导；标题推不出两个词时交给 Project 的模型来取，模型也取不出则回 400 `slug_required`，请调用方自己取 |
+| GET / PUT | /:orgId/tickets/:ticketId | 工单详情（frontmatter 字段、正文各节、`progress` 为纯句子、`history`、贡献会话、子工单、上卷成本）/ 更新 `{title?, owner?, parent?, notify?, priority?, due?, goal?, acceptanceCriteria?, result?}`。`owner` 不接受 `null`：工单永远有负责人，只能改派、不能清空；`parent` 与 `due` 仍可传 `null` 清除 |
+| POST | /:orgId/tickets/:ticketId/move | `{status, reason?}`——移入 `rejected` 须给理由 |
+| POST | /:orgId/tickets/:ticketId/block | `{reason, by?}`——`by` 为工单 id 或主体；工单留在所在列 |
+| POST | /:orgId/tickets/:ticketId/unblock | 解除阻塞 |
+| POST | /:orgId/tickets/:ticketId/progress | `{text}`——往 `## Progress` 追加一句大白话；谁写的、什么时候写的记为 `history` 里的一条 `progress` |
+| POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：该员工的一个工单会话，记入工单的 `sessions` 与 `history`。本路由是唯一一个 `agentId` 不表示调用方身份的路由——它指的是这个会话以谁的身份运行。谁能发起取决于调用方：人可以为任何工单发起（`agentId` 指定员工，缺省取负责人）；而以员工身份写入的调用方——工位会话或工单会话在请求体里带上自己的 `sessionId`——只能为**自己名下**的工单发起，对别人的工单或没有员工负责人的工单一律回 403 `not_ticket_owner`。负责人仍可用 `agentId` 把同事拉进自己名下的工单 |
+| POST | /:orgId/tickets/:ticketId/attach | `{sessionId}`——把既有会话记为贡献会话 |
+| GET / POST | /:orgId/channels | 调用方可见的全部频道（人：全部；员工：自己所在的），`default_channel` 在前 / 新建：`{channelId, name?, purpose?}` → 201，初始成员只有创建者（id 被占用则 409） |
+| GET / PATCH | /:orgId/channels/:channelId | 频道及其成员 / 改名称、改 `purpose`、设 `archived`（仅限人，且 `default_channel` 不可归档） |
+| POST | /:orgId/channels/:channelId/members | `{principal}`——任一成员可邀请 `agent:<id>` 员工或 `user:<id>` Project 成员；人可以自行加入，员工不可。重复添加已有成员为幂等的 201 |
+| DELETE | /:orgId/channels/:channelId/members/:principal | 移出成员：任何人都可移出自己，人可移出任何人，员工只能移出自己；移出非成员为幂等的 204 |
+| GET / POST | /:orgId/channels/:channelId/messages | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析，且必须都是频道成员。`system` 消息在英文 `text` 之外还带 `notice`——一个 `kind`（`employee_joined`、`employee_left`、`channel_created`、`channel_archived`、`channel_unarchived`、`channel_joined`、`channel_invited`、`channel_left`、`channel_removed`、`budget_warned`、`budget_paused`，以及遗留的 `ticket_blocked`、`ticket_done`、`ticket_rejected`——这三种已不再写入，保留只是为了让磁盘上已有的行仍能渲染）与一组字符串 `params`——客户端据此按读者的语言渲染该句；该字段出现之前写下的消息没有它 |
+| POST | /:orgId/channels/:channelId/read | `{upTo}`——调用方在该频道的已读游标 |
+| GET | /:orgId/finance | 按员工（本人与沿汇报线累计）、按工单（沿 `Parent` 上卷）的支出、逐日趋势与告警；`?period=yyyy-mm` |
+| GET | /:orgId/sessions | 组织的工位会话与按工单分组的工单会话 |
+
+频道相关错误：`channel_not_found`（404，频道 id 不合法时同样如此）、`channel_exists`（409）、`channel_archived`（409，归档频道在取消归档前不接受写入）、`not_a_member`（403，无成员身份的读取、发言与邀请，以及员工尝试仅限人的操作）、`all_hands_immutable`（400，归档 `default_channel` 或编辑其成员）、`mention_not_member`（400，消息提及了不在该频道的对象，整条不写入）、`invalid_principal`（400）。
+
+`GET /api/events` 上的用户级事件：`org_run`（工作轮或工单会话开始）、`org_channel`（新消息，带 `channelId` 与 @ 名单）、`org_ticket`（工单的状态、负责人、阻塞或会话变化）、`org_budget`（告警 / 暂停 / 解除）。
+
+驱动工位会话的只有三样：日程项、频道里的 @ 提及、直接同它说话的人（CEO 创建时的初始化运行是唯一例外）。**工单写入不会启动任何一轮运行。** `move`、`block`、`unblock` 以及经 `PUT /:orgId/tickets/:ticketId` 设定负责人，都只被记录——写进工单文件、该变化在全员频道有系统消息时写进全员频道、并发出 `org_ticket` 事件——同时排入相关员工的队列；每人的下一条日程项在正文的 `## Since your last sweep` 一节里带上它们，一条变化一行。组织或员工被暂停期间队列照常积累，由此后真正触发的那次巡检送达；员工离职时，尚未送达的行随之删除。
+
 ### Session 创建与目录浏览
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | /agents/:agentId/sessions | Session 列表（含运行状态）；无论由哪个客户端创建，所有行都会列出 |
-| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201。`client` 是存入索引行的创建客户端标记（CLI 传 `"cli"`，缺省 `"web"`）——仅作来源信息，绝不参与列表过滤；`source` 只接受 `"benchmark"`（Benchmark 评估或优化创建），`subagent` 与 `schedule` 由服务端自己写入 |
+| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201。`client` 是存入索引行的创建客户端标记（CLI 传 `"cli"`，缺省 `"web"`）——仅作来源信息，绝不参与列表过滤；`source` 只接受 `"benchmark"`（Benchmark 评估或优化创建），`subagent` 与 `schedule` 由服务端自己写入 `org` 是服务端为组织的工位与工单会话（公司模式）自行写入的值，客户端不能传。 |
 | GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
 
 创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时工作区，审批模式默认 `allow-all`。
@@ -296,7 +337,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含） |
+| GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含）。`orgId` 标出被公司模式缓存认领的会话——工位会话，或参与该组织某个工单的会话——普通会话没有这个字段；列表路由同样带上它 |
 | PATCH | / | 更新：`{approvalMode?, thinkingLevel?, archived?, title?}`。`thinkingLevel` 将思考等级钉在该 Session 上并持久化，自下一次 LLM 请求起生效——思考等级是软限制参数：允许中途更换，代价是提供商的缓存失效，因此选择器会建议先压缩；读取时由 `SessionInfo.thinkingLevel` 返回（缺省即从未钉住：按 Agent 配置生效） |
 | DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
 | GET | /messages | 无参数时返回完整 OmniMessage 历史；`tailLimit=n` 或 `before=<游标>&limit=n` 改为读取一个按 Task 切分的窗口（自带 Web App 打开对话只读最近 50 轮，滚动到顶部再续载），此时响应携带 `page`（下一页游标 `before`、窗口前的轮数 `earlierTurns` 与累计统计 `prior`）。Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
@@ -321,6 +362,7 @@ Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入�
 | PUT | /files/content?path= | 上传文件：`{dataBase64}`，上限 14MB |
 | POST | /files/move | 移动或重命名单个 Workspace 文件：`{from, to, ifVersion?}` → 204。**仅限文件**——目录没有单一的版本标记，无法为其表达保护该操作的前置条件，因此返回 400。`to` 的父目录缺失时自动创建。`from` 不存在时 404 `path_not_found`；`ifVersion` 与文件不再匹配时 409 `file_changed`（带标记时源文件消失同样算作已变化）；`to` 已被占用时 409 `target_exists`——目的地从未被读取过，因此只拒绝、不覆盖；移动到文件自身路径返回 400 |
 | DELETE | /files/content?path=&ifVersion= | 删除单个 Workspace 文件：204。仅限文件（目录返回 400）；文件不存在时 404 `path_not_found`，`ifVersion` 不再匹配时 409 `file_changed`。该标记在协议上可选——不带即为无条件删除——而 Files 面板总是回传其读取时拿到的那一枚 |
+| POST | /files/reveal?path= | 在本机的系统文件管理器里显示该文件（macOS 与 Windows 选中文件，Linux 桌面打开其所在目录）→ 204。仅桌面端自己的窗口可以请求：服务端非由 shell 启动时 404 `not_found`，桌面模式下的浏览器会话 403 `desktop_shell_only`——服务端分不清它与远程浏览器，而在服务端所在机器上弹出目录对那边的用户毫无用处。路径按读取的同一道规则限域（越界 400，不存在 404 `path_not_found`）；文件管理器起不来时 502 `reveal_failed` |
 | GET | /files/search?q= | 按条目**名称**搜索整个 Workspace（大小写不敏感的子串匹配，不匹配路径）→ `{hits: [{path, kind, sizeBytes, mtime}], truncated}`，每条命中携带的字段与目录列表中的条目一致。自根目录广度优先遍历，因此命中按层级由浅至深排列，被截断时留下的是最相关的命中，而不是最先遍历到的那个目录里的内容；`truncated` 表示遍历触及上限——200 条命中，或访问 20000 个目录条目。`q` 为空或超过 100 字符返回 400 |
 | GET | /traces | 本 Session 的 Trace 文件列表 |
 | GET | /traces/:index | 读取 Trace 事件（分页） |

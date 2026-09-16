@@ -14,23 +14,27 @@
  *   back into it and every reader must observe that write).
  *
  * What a booting platform does when the capabilities are missing or wrong — refuse, or
- * run terminals-only for a declared bare kernel — is {@link RuntimeClaim}'s story, below.
+ * run terminals-only for a declared bare kernel — is {@link HmrClaim}'s story, below.
  *
  * There is no reverse direction here: the runtime reaches the current App through the
  * instance `hmr.ensure()` already returns (in-process api members), never through the
  * registry.
  */
 import type { DatabaseSync } from "node:sqlite";
-import type { Resources } from "@prismshadow/penguin-core/kernel";
+import type { Resources, Opaque, ModuleClass } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "../config.js";
 import type { AuthRuntimeState } from "../auth/runtime-state.js";
 import { newAuthRuntimeState } from "../auth/runtime-state.js";
-import type { ChannelHub } from "../runtime/channel.js";
+import type { ChannelHub, Channel } from "../runtime/channel.js";
 import type { ProxySettings } from "../net/proxy.js";
-import type { BuildDepsOverrides } from "../app.js";
-import type { HmrHost } from "../hmr/host.js";
+import type { HmrHost, Hmr as HmrControlOf } from "@prismshadow/penguin-hmr";
+import type { PlatformApi } from "./platform.js";
+
+/** The control object the entry built (hmrMain): `current()` and `upgrade()`. */
+export type HmrControlApi = HmrControlOf<PlatformApi>;
 import type { DesktopService } from "../services/desktop-service.js";
 import type { LifecycleService } from "../services/lifecycle-service.js";
+import { Interface, Component, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 
 /**
  * What one side of the seam speaks: a family, and a Go-style structural interface per
@@ -75,7 +79,7 @@ export type MembersOf<T> = readonly (keyof T & string)[];
 export const PENGUIN_FAMILY = "penguin";
 
 /**
- * The interfaces the RUNTIME publishes for a platform to claim: per `runtime:*`
+ * The interfaces the HMR LAYER publishes for a platform to claim: per `runtime:*`
  * capability, the members a claimer reaches for. The runtime registers this descriptor
  * and a bundle checks it — and the live objects behind it — against the copy compiled
  * into itself, so a mismatch declines the claim at boot instead of surfacing as a
@@ -83,7 +87,7 @@ export const PENGUIN_FAMILY = "penguin";
  *
  * `proxy` is a bare callable: an empty member set means "nothing beyond being there".
  */
-interface RuntimeInterfaces extends Interfaces {
+interface HmrInterfaces extends Interfaces {
   family: string;
   config: MembersOf<ServerConfig>;
   db: MembersOf<DatabaseSync>;
@@ -94,7 +98,7 @@ interface RuntimeInterfaces extends Interfaces {
   lifecycle: MembersOf<LifecycleService>;
 }
 
-export const RUNTIME_INTERFACES: RuntimeInterfaces = {
+export const HMR_INTERFACES: HmrInterfaces = {
   family: PENGUIN_FAMILY,
   config: [
     "root",
@@ -115,15 +119,15 @@ export const RUNTIME_INTERFACES: RuntimeInterfaces = {
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
   proxy: [],
   hmr: ["resources", "ensure", "resolveWebSource", "assetsDir", "dispose"],
-  // The construction-override seam (BuildDepsOverrides): production publishes {}, tests
-  // publish live collaborators (loader fakes, clocks). Presence-only — its fields are all
-  // optional, so there are no members to verify.
+  hmrControl: ["current", "upgrade", "endpoint"],
+  // The replacement seam (Replacements): production publishes [], tests publish the nodes
+  // they stand in for. Presence-only — a list has no members to verify.
   overrides: [],
   desktop: ["onShutdownRequest", "requestShutdown", "verifyToken", "redeemLoginToken"],
   lifecycle: ["supervised", "onRestartRequest", "requestRestart"],
 };
 
-export const RUNTIME_INTERFACES_RESOURCE_ID = "runtime:interfaces";
+export const HMR_INTERFACES_RESOURCE_ID = "platform.interfaces";
 
 /** The member set an entry names, or [] when the entry is absent or is the family tag. */
 function members(descriptor: Interfaces, name: string): readonly string[] | undefined {
@@ -168,34 +172,33 @@ export function lacksMembers(value: unknown, need: readonly string[]): string[] 
   return need.filter((m) => (value as Record<string, unknown>)[m] === undefined);
 }
 
-export const RUNTIME_CONFIG_RESOURCE_ID = "runtime:config";
-export const RUNTIME_DB_RESOURCE_ID = "runtime:db";
-/**
- * Process-scoped auth STATE (auth/runtime-state.ts), not an auth service: authentication is
- * business behaviour the platform builds for itself, so it ships by push. Only the values that
- * must ride across a swap and die at a restart live here. Claimed optionally — a runtime older
- * than this resource simply gives the platform a fresh holder, which costs one reprint of the
- * first-login link and nothing else.
- */
-export const RUNTIME_AUTH_STATE_RESOURCE_ID = "runtime:auth-state";
-export const RUNTIME_CHANNELS_RESOURCE_ID = "runtime:channels";
-export const RUNTIME_PROXY_RESOURCE_ID = "runtime:proxy-control";
-export const RUNTIME_HMR_RESOURCE_ID = "runtime:hmr-host";
+// What the layer publishes for the platform to claim: the platform's state, kept by the process
+// so a swap does not lose it. Ids are `platform.<name>`, the plugin-id shape.
+
+export const HMR_CONFIG_RESOURCE_ID = "platform.config";
+export const HMR_DB_RESOURCE_ID = "platform.db";
+export const HMR_CHANNELS_RESOURCE_ID = "platform.channels";
+export const HMR_PROXY_RESOURCE_ID = "platform.proxyControl";
+export const HMR_HOST_RESOURCE_ID = "platform.host";
+/** The frozen operations over the host (packages/hmr's main.ts): what the upgrade route drives. */
+export const HMR_CONTROL_RESOURCE_ID = "platform.hmrControl";
 /**
  * Desktop mode's one service (one-shot login + shutdown token holder). Registered even
- * when null: desktop-ness is the runtime's lifecycle fact, but the business surface
- * reads it too (`/api/me` reports desktopMode; single-user mode closes the multi-user
- * admin surfaces), so the claim must distinguish "not desktop" from "not published".
+ * when null — the platform reads desktop-ness too (`/api/me`, single-user mode), so the
+ * claim must distinguish "not desktop" from "not published".
  */
-export const RUNTIME_DESKTOP_RESOURCE_ID = "runtime:desktop";
+export const HMR_DESKTOP_RESOURCE_ID = "platform.desktop";
+/** Whether a supervisor relaunches this process, and the restart trigger. Always published. */
+export const HMR_LIFECYCLE_RESOURCE_ID = "platform.lifecycle";
+
 /**
- * Process lifecycle (services/lifecycle-service.ts): whether a supervisor relaunches this
- * process, and the restart trigger. Always published — the platform's restart route needs
- * a definite "nobody would relaunch me" to refuse with, not a missing capability.
+ * Process-scoped auth values (auth/runtime-state.ts), not an auth service. Claimed
+ * optionally: a layer older than the holder gives the platform a fresh one, which costs one
+ * reprint of the first-login link.
  */
-export const RUNTIME_LIFECYCLE_RESOURCE_ID = "runtime:lifecycle";
-/** Test-only: BuildDepsOverrides published by bootAppDeps for the platform boot to claim. */
-export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
+export const HMR_AUTH_STATE_RESOURCE_ID = "platform.authState";
+/** Test-only: the node Replacements bootAppDeps leaves for the platform boot to claim. */
+export const HMR_OVERRIDES_RESOURCE_ID = "platform.overrides";
 
 /**
  * The {@link Interfaces} descriptor each App leaves for its successor, naming the
@@ -205,11 +208,10 @@ export const RUNTIME_OVERRIDES_RESOURCE_ID = "runtime:overrides";
  * registration order) before it adopts anything. Riding the registry, not the kernel
  * iface, keeps the swap mechanism untouched and the policy itself hot-pushable.
  *
- * Deliberately colon-free: an ID without a group can never be swept by disposeGroup —
- * the declaration must outlive the App that wrote it (its dispose effect does NOT
- * release it) to inform the successor.
+ * Not in any `<group>:` — disposeGroup never sweeps it: the declaration must outlive the App
+ * that wrote it (its dispose effect does NOT release it) to inform the successor.
  */
-export const RESOURCE_IFACES_RESOURCE_ID = "resource-interfaces";
+export const RESOURCE_IFACES_RESOURCE_ID = "platform.resourceInterfaces";
 
 /*
  * There is deliberately NO reverse-direction registry entry. The runtime already holds
@@ -226,7 +228,7 @@ export const RESOURCE_IFACES_RESOURCE_ID = "resource-interfaces";
 export type ProxyControl = (settings: ProxySettings) => void;
 
 /** Everything buildAppDeps needs, claimed in one place. */
-export interface RuntimeCapabilities {
+export interface HmrCapabilities {
   config: ServerConfig;
   db: DatabaseSync;
   /** Process-scoped auth values; the AuthService itself is built per App (see buildAppDeps). */
@@ -234,11 +236,12 @@ export interface RuntimeCapabilities {
   channels: ChannelHub;
   proxyControl: ProxyControl;
   hmr: HmrHost;
+  hmrControl: HmrControlApi;
   /** Null on a non-desktop server (a real value, not an absent capability). */
   desktop: DesktopService | null;
   lifecycle: LifecycleService;
-  /** The construction-override seam; {} outside tests. */
-  overrides: BuildDepsOverrides;
+  /** Nodes a test stands in for (see Replacements); [] outside tests. */
+  replacements: Replacements;
 }
 
 /**
@@ -256,49 +259,50 @@ export interface RuntimeCapabilities {
  *   carry what the descriptor promised. Booting a business platform over any of these
  *   would put a new frontend in front of an older runtime's own routes.
  */
-export type RuntimeClaim =
-  | { kind: "claimed"; caps: RuntimeCapabilities }
+export type HmrClaim =
+  | { kind: "claimed"; caps: HmrCapabilities }
   | { kind: "bare" }
   | { kind: "refused"; reason: string };
 
-export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
-  const offered = resources.claim<Interfaces>(RUNTIME_INTERFACES_RESOURCE_ID);
+export function claimHmrCapabilities(resources: Resources): HmrClaim {
+  const offered = resources.claim<Interfaces>(HMR_INTERFACES_RESOURCE_ID);
   if (offered === undefined) {
     return { kind: "refused", reason: "no interface descriptor published" };
   }
-  if (offered.family !== RUNTIME_INTERFACES.family) {
+  if (offered.family !== HMR_INTERFACES.family) {
     return {
       kind: "refused",
-      reason: `family '${String(offered.family)}' != '${String(RUNTIME_INTERFACES.family)}'`,
+      reason: `family '${String(offered.family)}' != '${String(HMR_INTERFACES.family)}'`,
     };
   }
   // A family-matching descriptor that offers none of the required capabilities IS the
   // bare-kernel declaration; offering SOME of them is a broken runtime, refused below.
-  const required = Object.keys(RUNTIME_INTERFACES).filter((name) => name !== "family");
+  const required = Object.keys(HMR_INTERFACES).filter((name) => name !== "family");
   if (required.every((name) => members(offered, name) === undefined)) {
     return { kind: "bare" };
   }
-  const mismatch = interfaceMismatch(offered, RUNTIME_INTERFACES);
+  const mismatch = interfaceMismatch(offered, HMR_INTERFACES);
   if (mismatch !== null) return { kind: "refused", reason: mismatch };
-  const config = resources.claim<ServerConfig>(RUNTIME_CONFIG_RESOURCE_ID);
-  const db = resources.claim<DatabaseSync>(RUNTIME_DB_RESOURCE_ID);
-  const channels = resources.claim<ChannelHub>(RUNTIME_CHANNELS_RESOURCE_ID);
-  const proxyControl = resources.claim<ProxyControl>(RUNTIME_PROXY_RESOURCE_ID);
-  const hmr = resources.claim<HmrHost>(RUNTIME_HMR_RESOURCE_ID);
-  const lifecycle = resources.claim<LifecycleService>(RUNTIME_LIFECYCLE_RESOURCE_ID);
-  if (!config || !db || !channels || !proxyControl || !hmr || !lifecycle) {
+  const config = resources.claim<ServerConfig>(HMR_CONFIG_RESOURCE_ID);
+  const db = resources.claim<DatabaseSync>(HMR_DB_RESOURCE_ID);
+  const channels = resources.claim<ChannelHub>(HMR_CHANNELS_RESOURCE_ID);
+  const proxyControl = resources.claim<ProxyControl>(HMR_PROXY_RESOURCE_ID);
+  const hmr = resources.claim<HmrHost>(HMR_HOST_RESOURCE_ID);
+  const hmrControl = resources.claim<HmrControlApi>(HMR_CONTROL_RESOURCE_ID);
+  const lifecycle = resources.claim<LifecycleService>(HMR_LIFECYCLE_RESOURCE_ID);
+  if (!config || !db || !channels || !proxyControl || !hmr || !hmrControl || !lifecycle) {
     return { kind: "refused", reason: "a declared capability was not actually published" };
   }
   // Desktop is nullable by meaning, so it sits outside the all-present check.
-  const desktop = resources.claim<DesktopService | null>(RUNTIME_DESKTOP_RESOURCE_ID) ?? null;
-  const overrides = resources.claim<BuildDepsOverrides>(RUNTIME_OVERRIDES_RESOURCE_ID) ?? {};
+  const desktop = resources.claim<DesktopService | null>(HMR_DESKTOP_RESOURCE_ID) ?? null;
+  const replacements = resources.claim<Replacements>(HMR_OVERRIDES_RESOURCE_ID) ?? [];
   // Optional by design (see the resource's own note): an older runtime published no such
   // holder, and a fresh one is a correct, slightly forgetful substitute. A runtime older
   // than this platform may also publish a holder missing the fields added since; they are
   // filled IN PLACE, never by copying — the bag is shared with the runtime by identity, and
   // a copy would strand every write the App makes to it.
   const authState =
-    resources.claim<AuthRuntimeState>(RUNTIME_AUTH_STATE_RESOURCE_ID) ?? newAuthRuntimeState();
+    resources.claim<AuthRuntimeState>(HMR_AUTH_STATE_RESOURCE_ID) ?? newAuthRuntimeState();
   authState.firstLoginToken ??= null;
   authState.apiToken ??= null;
   // …then the objects themselves. A descriptor is a claim about what is there; this is
@@ -310,11 +314,12 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
     ["channels", channels],
     ["proxy", proxyControl],
     ["hmr", hmr],
+    ["hmrControl", hmrControl],
     ["lifecycle", lifecycle],
     ...(desktop === null ? [] : ([["desktop", desktop]] as Array<[string, unknown]>)),
   ];
   for (const [name, value] of live) {
-    const need = RUNTIME_INTERFACES[name];
+    const need = HMR_INTERFACES[name];
     if (!Array.isArray(need)) continue;
     const lacking = lacksMembers(value, need);
     if (lacking.length > 0) {
@@ -323,6 +328,246 @@ export function claimRuntimeCapabilities(resources: Resources): RuntimeClaim {
   }
   return {
     kind: "claimed",
-    caps: { config, db, authState, channels, proxyControl, hmr, desktop, lifecycle, overrides },
+    caps: {
+      config,
+      db,
+      authState,
+      channels,
+      proxyControl,
+      hmr,
+      hmrControl,
+      desktop,
+      lifecycle,
+      replacements,
+    },
   };
+}
+
+/**
+ * What the runtime publishes, as the tree sees it. The runtime registers live objects in
+ * the resource registry; the platform claims them once and hands each to a node of its own
+ * (RuntimeDb, RuntimeChannels, …) that provides it under an interface declared here. Every
+ * other node reaches the runtime only through these — `@Use() db!: Db` — so what a bundle
+ * needs from its host is written down and checked, not assumed.
+ */
+
+/** The process configuration object — one per process; the listen callback writes the real port into it. */
+export abstract class Config extends Interface<ServerConfig>() {}
+
+/** The SQLite handle (single-writer, one per process). Statements are host objects. */
+export abstract class Db extends Interface<{
+  prepare(sql: string): Opaque<"StatementSync", ReturnType<DatabaseSync["prepare"]>>;
+  exec(sql: string): void;
+  close(): void;
+}>() {}
+
+/** One SSE channel (the class in runtime/channel.ts satisfies this). */
+export type ChannelApi = Pick<Channel, "publish" | "sendTo" | "subscribe" | "replayAfter">;
+
+export abstract class Channels extends Interface<{
+  get(key: string): ChannelApi;
+  peek(key: string): ChannelApi | undefined;
+  broadcast(prefix: string, data: unknown, event?: string): void;
+  dispose(): void;
+  setActivityProbe(probe: (key: string) => boolean): void;
+}>() {}
+/** Compile-time proof the hub satisfies the contract. */
+export type _ChannelsCheck = ChannelHub extends Channels ? true : never;
+
+/** The global fetch dispatcher's settings — runtime-owned, since a bundle's own undici is not the one `globalThis.fetch` routes through. */
+export abstract class Proxy extends Interface<{
+  apply(settings: ProxySettings): void;
+}>() {}
+
+/** The hot-update host: the cross-generation resource registry and the current App. */
+export abstract class Hmr extends Interface<{
+  resources: Resources;
+  ensure(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
+  resolveWebSource(): Opaque<
+    "WebSource",
+    NonNullable<ReturnType<HmrHost["resolveWebSource"]>>
+  > | null;
+  assetsDir(): string | null;
+  dispose(): void;
+}>() {}
+export type _HmrCheck = HmrHost extends Hmr ? true : never;
+
+/**
+ * The frozen operations (packages/hmr's main.ts), as the platform's routes drive them. The
+ * instance and the outcome are host objects to the contract, like `Hmr`'s.
+ */
+export abstract class HmrControl extends Interface<{
+  current(): Promise<Opaque<"PlatformInstance", Awaited<ReturnType<HmrHost["ensure"]>>>>;
+  upgrade(
+    target: Opaque<"UpgradeAllTarget", Parameters<HmrHost["upgradeAll"]>[0]>,
+  ): Promise<Opaque<"UpgradeOutcome", Awaited<ReturnType<HmrHost["upgradeAll"]>>>>;
+  endpoint(request: Opaque<"Request", Request>): Promise<Opaque<"Response", Response>>;
+}>() {}
+
+export type DesktopApi = Pick<
+  DesktopService,
+  | "verifyToken"
+  | "redeemLoginToken"
+  | "onShutdownRequest"
+  | "requestShutdown"
+  | "getUpdateStatus"
+  | "setUpdateStatus"
+  | "onUpdateCommand"
+  | "requestUpdateCommand"
+  | "getTrayStatus"
+  | "setTrayStatus"
+  | "onTrayCommand"
+  | "requestTrayCommand"
+>;
+
+/** The desktop shell's service, or null when this server is not the shell's child. */
+export abstract class Desktop extends Interface<{
+  current(): DesktopApi | null;
+}>() {}
+
+export abstract class AuthState extends Interface<AuthRuntimeState>() {}
+
+/** Process lifecycle: whether a supervisor relaunches this process, and the restart trigger. */
+export abstract class Lifecycle extends Interface<
+  Pick<LifecycleService, "supervised" | "onRestartRequest" | "requestRestart">
+>() {}
+
+export abstract class Log extends Interface<{
+  line(text: string): void;
+}>() {}
+
+/**
+ * Whether a registry resource group inherited from the previous App may be adopted — the
+ * platform node decides from the parked declaration (hmr/platform.ts); a
+ * module that parks handles asks before claiming them back.
+ */
+export abstract class ResourceGroups extends Interface<{
+  adoptable(group: string): boolean;
+}>() {}
+
+/** A clock every node reads time through; a test replaces it. */
+export abstract class Clock extends Interface<{ now(): Date }>() {}
+
+/** Where the data lives — what most nodes actually want from the config. */
+export abstract class Paths extends Interface<{ root: string }>() {}
+
+/**
+ * A replacement for one node of the tree: the class the platform would build, and the
+ * instance to boot in its place. Tests publish these (bootAppDeps) for the platform to
+ * claim; production publishes none. A replacement is checked exactly like the node it
+ * stands in for — the table says what the class provides, the instance has to have it.
+ */
+export type Replacements = ReadonlyArray<readonly [ModuleClass, object]>;
+
+/**
+ * The claimed capabilities enter the tree one node each, so a consumer names the one it
+ * needs and nothing else. They are the only classes with constructor arguments; the
+ * platform pre-builds their instances (platform.ts) from the claim, which is the one
+ * place the registry is read.
+ */
+@Module()
+export class RuntimeConfig {
+  @Provide() config!: Config;
+  constructor(private readonly caps: HmrCapabilities) {}
+  setup() {
+    this.config = this.caps.config;
+  }
+}
+@Module()
+export class RuntimeDb {
+  @Provide() db!: Db;
+  constructor(private readonly caps: HmrCapabilities) {}
+  setup() {
+    this.db = this.caps.db;
+  }
+}
+@Module()
+export class RuntimeChannels {
+  @Provide() channels!: Channels;
+  constructor(private readonly caps: HmrCapabilities) {}
+  setup() {
+    this.channels = this.caps.channels;
+  }
+}
+@Module()
+export class RuntimeProxy {
+  @Provide() proxy!: Proxy;
+  constructor(private readonly caps: HmrCapabilities) {}
+  setup() {
+    this.proxy = { apply: this.caps.proxyControl };
+  }
+}
+@Module()
+export class RuntimeHmr {
+  @Provide() hmr!: Hmr;
+  constructor(private readonly caps: HmrCapabilities) {}
+  setup() {
+    this.hmr = this.caps.hmr;
+  }
+}
+@Module()
+export class RuntimeHmrControl {
+  @Provide() hmrControl!: HmrControl;
+  constructor(private readonly caps: HmrCapabilities) {}
+  setup() {
+    this.hmrControl = this.caps.hmrControl;
+  }
+}
+@Module()
+export class RuntimeDesktop {
+  @Provide() desktop!: Desktop;
+  constructor(private readonly caps: HmrCapabilities) {}
+  setup() {
+    const { desktop } = this.caps;
+    this.desktop = { current: () => desktop };
+  }
+}
+@Module()
+export class RuntimeLifecycle {
+  @Provide() lifecycle!: Lifecycle;
+  constructor(private readonly caps: HmrCapabilities) {}
+  setup() {
+    this.lifecycle = this.caps.lifecycle;
+  }
+}
+@Module()
+export class RuntimeAuthState {
+  @Provide() authState!: AuthState;
+  constructor(private readonly caps: HmrCapabilities) {}
+  setup() {
+    this.authState = this.caps.authState;
+  }
+}
+@Module()
+export class RuntimeResourceGroups {
+  @Provide() resourceGroups!: ResourceGroups;
+  constructor(private readonly adoptable: (group: string) => boolean) {}
+  setup() {
+    this.resourceGroups = { adoptable: this.adoptable };
+  }
+}
+
+/** The process log; a test replaces it with a sink. */
+@Component()
+export class ConsoleLog implements Log {
+  line(text: string): void {
+    console.log(text);
+  }
+}
+
+/** Wall-clock time; a test replaces it with a frozen one. */
+@Component()
+export class SystemClock implements Clock {
+  now(): Date {
+    return new Date();
+  }
+}
+
+/** The data root, read off the config. */
+@Component()
+export class ConfigPaths implements Paths {
+  @Use() private readonly config!: Config;
+  get root(): string {
+    return this.config.root;
+  }
 }

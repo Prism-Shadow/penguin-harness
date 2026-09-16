@@ -17,6 +17,8 @@ import type {
 } from "../api/types.js";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
+import { Component } from "@prismshadow/penguin-core/kernel";
+import type { WorkspaceFiles } from "../mechanisms/workspace.js";
 
 /** Per-file read cap (a safety limit since preview/download reads the whole file into memory). */
 const MAX_READ_BYTES = 50 * 1024 * 1024;
@@ -124,7 +126,8 @@ export interface WorkspaceFileStat {
   mtimeMs: number;
 }
 
-export class WorkspaceFilesService {
+@Component()
+export class WorkspaceFilesService implements WorkspaceFiles {
   /** Canonical path (realpath) of the Workspace root; 404 if it doesn't exist. */
   private async realBase(workspace: string): Promise<string> {
     try {
@@ -400,6 +403,17 @@ export class WorkspaceFilesService {
       a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === "dir" ? -1 : 1,
     );
     return { path: rel, entries };
+  }
+
+  /**
+   * The canonical absolute path of an existing entry, for the caller that hands the path to
+   * something other than this process's own IO (the desktop "show in folder", which passes it
+   * to the machine's file manager). Resolution is the read path's, so a `..` and a symlink
+   * pointing out of the Workspace are refused here exactly as they are for a read, and a path
+   * that is not there at all is a 404 rather than a path the OS is asked to open.
+   */
+  async resolvePath(workspace: string, rel: string): Promise<string> {
+    return await this.resolveRead(workspace, rel);
   }
 
   /**

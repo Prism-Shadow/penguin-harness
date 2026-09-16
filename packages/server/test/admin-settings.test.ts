@@ -1,9 +1,9 @@
 /**
- * Admin server-settings route tests: permission boundary (non-admin 403), the proxy
- * defaults (absent rows read as both switches on, no explicit address), adoption of the
- * legacy single-switch key, PUT persistence and validation (proxy-address normalization
- * and rejection), and merge semantics (an omitted field keeps its current value; a
- * rejected PUT writes nothing).
+ * Admin server-settings route tests: permission boundary (non-admin 403), the defaults
+ * (absent rows read as both proxy switches on with no explicit address, and company mode
+ * off), adoption of the legacy single-switch key, PUT persistence and validation
+ * (proxy-address normalization and rejection), and merge semantics (an omitted field keeps
+ * its current value; a rejected PUT writes nothing).
  *
  * The upload limits ride the same route and are covered here too: their defaults, the bounded
  * range (the reason "100GB" is a clear refusal rather than an accepted number), the relation
@@ -65,7 +65,7 @@ describe("admin server settings", () => {
     expect((await getSettings()).settings.proxyForApp).toBe(true);
   });
 
-  it("defaults while no rows exist: both switches on, no explicit address", async () => {
+  it("defaults while no rows exist: both proxy switches on, company mode off, no explicit address", async () => {
     expect(t.deps.db.prepare("SELECT COUNT(*) AS n FROM server_settings").get()).toMatchObject({
       n: 0,
     });
@@ -73,6 +73,8 @@ describe("admin server settings", () => {
     expect(settings.proxyForApp).toBe(true);
     expect(settings.proxyForAgent).toBe(true);
     expect(settings.proxyUrl).toBeNull();
+    // Company mode is the one switch that starts off: an admin opts the server into it.
+    expect(settings.companyMode).toBe(false);
   });
 
   it("adopts the legacy use_system_proxy row as the default for BOTH switches", async () => {

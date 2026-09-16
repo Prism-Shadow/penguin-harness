@@ -1,0 +1,37 @@
+/**
+ * The workspace mechanisms: what a node may require, declared apart from what implements it.
+ */
+import { Interface } from "@prismshadow/penguin-core/kernel";
+import type {
+  WorkspaceFileContent,
+  WorkspaceFileReadOptions,
+  WorkspaceFileStat,
+} from "../services/workspace-files-service.js";
+import type { WorkspaceFilesResponse, WorkspaceSearchResponse } from "../api/types.js";
+
+/** WorkspaceFiles: the mechanism WorkspaceFilesService implements. */
+export abstract class WorkspaceFiles extends Interface<{
+  statExisting(workspace: string, rels: string[]): Promise<string[]>;
+  statExistingWithMtime(workspace: string, rels: string[]): Promise<WorkspaceFileStat[]>;
+  list(workspace: string, rel: string): Promise<WorkspaceFilesResponse>;
+  read(
+    workspace: string,
+    rel: string,
+    options?: WorkspaceFileReadOptions,
+  ): Promise<WorkspaceFileContent>;
+  write(
+    workspace: string,
+    rel: string,
+    data: Buffer<ArrayBufferLike>,
+    ifVersion?: string,
+  ): Promise<void>;
+  move(workspace: string, from: string, to: string, ifVersion?: string): Promise<void>;
+  remove(workspace: string, rel: string, ifVersion?: string): Promise<void>;
+  search(workspace: string, q: string): Promise<WorkspaceSearchResponse>;
+  resolvePath(workspace: string, rel: string): Promise<string>;
+}>() {}
+
+/** FileReveal: opening a path in the machine's file manager, as RevealService implements it. */
+export abstract class FileReveal extends Interface<{
+  reveal(filePath: string): Promise<void>;
+}>() {}

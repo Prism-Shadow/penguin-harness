@@ -15,12 +15,13 @@
   "license": "Apache-2.0",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "ifaces.json"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "build": "tsup"
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
   },
   "peerDependencies": {
     "@microsoft/mxc-sdk": ">=0.7.0 <1"

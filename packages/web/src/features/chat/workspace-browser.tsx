@@ -54,6 +54,7 @@ import { ApiError } from "../../api/client";
 import { useAuth } from "../../state/auth";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { isDesktopShellWindow } from "../../lib/account-menu";
 import { joinWorkspacePath } from "../../lib/file-path";
 import { dropRegionAction, isFileDrag } from "../../lib/file-drop";
 import type { DragSignal } from "../../lib/file-drop";
@@ -109,6 +110,7 @@ import {
 import { Dropdown } from "../../components/ui/dropdown";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { FOLDER_OPEN_ICON } from "../../components/ui/group-list";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import {
   CloseIcon,
@@ -508,7 +510,11 @@ export function WorkspaceBrowser({
   // rendered view and "open in new tab" through the preview origin; false downgrades
   // the new tab to the same-origin sandbox (which the link flags rather than failing
   // silently in the page) and the in-app rendered view to the srcDoc fallback.
-  const { previewIsolated } = useAuth();
+  const { previewIsolated, desktopMode, sessionVia } = useAuth();
+  // The desktop app's own window is the one page whose machine IS the server's, so it is the
+  // only one offered "show in folder" — see lib/account-menu.ts for why a browser signed into
+  // the same server, even on this machine, must not be.
+  const isShellWindow = isDesktopShellWindow({ desktopMode, sessionVia });
   const previewIsolatedRef = useRef(previewIsolated);
   previewIsolatedRef.current = previewIsolated;
   const sessionId = session.sessionId;
@@ -1496,6 +1502,20 @@ export function WorkspaceBrowser({
     if (files.length > 0) void stageUpload(files, menuUploadDir.current);
   };
 
+  /**
+   * Asks the server to show the file in the machine's file manager. Only the shell's own
+   * window offers this, so a refusal here is a real failure — no file manager on the box, or
+   * a command that would not start — and it is reported rather than swallowed. Nothing on
+   * screen changes either way: the window that opens is not this one.
+   */
+  const revealInFolder = async (filePath: string): Promise<void> => {
+    try {
+      await api.revealWorkspaceFile(sessionId, filePath);
+    } catch (err) {
+      toastError(apiErrorText(err));
+    }
+  };
+
   // ------------------------------------------------------------------------ context menus
 
   const copyPath = (target: FileMenuTarget): void => {
@@ -2387,6 +2407,18 @@ export function WorkspaceBrowser({
             <GlyphIcon d={DOWNLOAD_ICON} size={ICON_SIZE.iconButton} />
           </a>
         </Tooltip>
+        {isShellWindow && (
+          <Tooltip label={S.files.revealInFolder} placement="bottom" className="shrink-0">
+            <button
+              type="button"
+              aria-label={S.files.revealInFolder}
+              onClick={() => void revealInFolder(preview.path)}
+              className={iconActionClass}
+            >
+              <GlyphIcon d={FOLDER_OPEN_ICON} size={ICON_SIZE.iconButton} />
+            </button>
+          </Tooltip>
+        )}
       </>
     ));
 

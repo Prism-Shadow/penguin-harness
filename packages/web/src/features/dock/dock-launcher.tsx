@@ -85,7 +85,7 @@ import {
 /**
  * The ball's inset from the body's right edge (px): the ball floats well clear of the edge
  * rather than sitting against it, and that room is what keeps the caption centred. A caption
- * centred under the ball may be up to LAUNCHER_SIZE + 2·EDGE_INSET − 12 ≈ 96px wide before
+ * centred under the ball may be up to LAUNCHER_SIZE + 2·EDGE_INSET − 12 ≈ 108px wide before
  * it touches the body's edge — wider than the longest name it shows ("Hide launcher"), so
  * nothing has to slide sideways to stay inside.
  */
@@ -140,7 +140,7 @@ interface FanState {
 interface FanEntry {
   key: string;
   label: string;
-  /** Drawn twice at two sizes: 15px in the fan, 18px in the ball while this entry is pointed at. */
+  /** Drawn twice at two sizes: ICON_SIZE.launcherEntry in the fan, ICON_SIZE.launcherBall in the ball while this entry is pointed at. */
   glyphAt: (size: number) => ReactNode;
   badge: boolean;
   testId: string;
@@ -158,7 +158,7 @@ const ENTRY_CLASS =
  * entry is hovered or focused, and the launcher's own caption the rest of the time.
  */
 const CAPTION_CLASS =
-  "pointer-events-none absolute whitespace-nowrap rounded-md border border-gray-200/80 bg-white/85 px-1.5 py-0.5 text-[11px] font-medium leading-4 shadow-[0_1px_4px_rgba(0,0,0,0.08)] backdrop-blur-md transition-colors duration-150 dark:border-white/10 dark:bg-gray-900/85";
+  "pointer-events-none absolute whitespace-nowrap rounded-md border border-gray-200/80 bg-white/85 px-2 py-0.5 text-[13px] font-medium leading-5 shadow-[0_1px_4px_rgba(0,0,0,0.08)] backdrop-blur-md transition-colors duration-150 dark:border-white/10 dark:bg-gray-900/85";
 
 const BALL_CLASS =
   "anim-pop relative flex touch-none select-none items-center justify-center rounded-full border border-gray-200/80 text-gray-500 shadow-[0_2px_10px_rgba(0,0,0,0.10)] backdrop-blur-md transition-[background-color,color,opacity,box-shadow] duration-150 hover:bg-white/95 hover:text-gray-800 hover:opacity-100 hover:shadow-[0_4px_16px_rgba(0,0,0,0.14)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-bg)] dark:border-white/10 dark:text-gray-400 dark:hover:bg-gray-800/95 dark:hover:text-gray-100";
@@ -478,11 +478,11 @@ function LauncherBall({
   const ballAction = fanOpen ? S.dock.launcherClose : S.dock.launcherOpen;
   const captionText = hovered?.label ?? (ballActive ? ballAction : S.dock.launcherCaption);
   const ballGlyph = hovered ? (
-    hovered.glyphAt(ICON_SIZE.sectionMark)
+    hovered.glyphAt(ICON_SIZE.launcherBall)
   ) : (
     <GlyphIcon
       d={ballActive ? (fanOpen ? COLLAPSE_ICON : EXPAND_ICON) : WORKBENCH_ICON}
-      size={ICON_SIZE.sectionMark}
+      size={ICON_SIZE.launcherBall}
     />
   );
 
@@ -546,7 +546,7 @@ function LauncherBall({
                   } as CSSProperties
                 }
               >
-                {entry.glyphAt(ICON_SIZE.iconButton)}
+                {entry.glyphAt(ICON_SIZE.launcherEntry)}
                 {entry.badge && (
                   <span
                     aria-hidden

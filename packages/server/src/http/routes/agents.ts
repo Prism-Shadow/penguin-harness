@@ -18,18 +18,37 @@ import {
   requireValidId,
 } from "../validate.js";
 import { readArchiveBase64 } from "./agent-transfer.js";
-import type { AppDeps } from "../../app.js";
+import type { SessionManager } from "../../runtime/session-manager.js";
+import type { SessionService } from "../../services/session-service.js";
+import type { AgentConfig, AgentLifecycle } from "../../mechanisms/agents.js";
+import type { TraceIndex } from "../../mechanisms/traces.js";
+import type { ErrorLog } from "../../mechanisms/observability.js";
+import type { Schedules, SessionIndex } from "../../mechanisms/sessions.js";
+import type { Access } from "../../mechanisms/projects.js";
+
+/** What this route group reaches — bound by its module (src/modules). */
+export interface AgentsRouteDeps {
+  agentConfigService: AgentConfig;
+  agentService: AgentLifecycle;
+  errorsRepo: ErrorLog;
+  manager: SessionManager;
+  access: Access;
+  schedulesRepo: Schedules;
+  sessionService: SessionService;
+  sessionsRepo: SessionIndex;
+  traceIndex: TraceIndex;
+}
 
 /** Window size in days for the card's activity sparkline (last 30 days, including today). */
 const ACTIVITY_DAYS = 30;
 
-export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
+export function agentsRoutes(deps: AgentsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/", async (c) => {
     // Defensive id validation: don't rely on the implicit invariant that requireProjectAccess always runs before path construction.
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const items = await deps.agentService.listAgents(projectId);
     const agents: AgentSummary[] = await Promise.all(
       items.map(async (item) => {
@@ -51,7 +70,7 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
 
   app.post("/", async (c) => {
     const projectId = requireValidId(c, "projectId");
-    deps.projectService.requireProjectAccess(c.var.user.userId, projectId);
+    deps.access.requireProjectAccess(c.var.user.userId, projectId);
     const body = await readJson(c);
     const agentId = requireString(body, "agentId", { label: "agentId" });
     const name = optionalString(body, "name", { minLen: 1, maxLen: 100, label: "name" });
@@ -105,7 +124,7 @@ export function agentsRoutes(deps: AppDeps): Hono<AppEnv> {
     const projectId = requireValidId(c, "projectId");
     const agentId = requireValidId(c, "agentId");
     // Deletion is a Project-level management operation: owner only.
-    deps.projectService.requireProjectOwner(c.var.user.userId, projectId);
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
     await deps.agentConfigService.requireExists(projectId, agentId);
     // Mark as deleting and converge active runs (beginAgentDeletion): any new Task during
     // this window gets 409, preventing the race where a new task recreates the directory

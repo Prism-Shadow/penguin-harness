@@ -8,10 +8,17 @@ import { Hono } from "hono";
 import type { MemberAddResponse, MembersResponse } from "../../api/types.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { rejectInDesktopMode } from "./desktop.js";
+import type { DesktopService } from "../../services/desktop-service.js";
 import { pathParam, readJson, requireString, requireValidId } from "../validate.js";
-import type { AppDeps } from "../../app.js";
+import type { ProjectLifecycle } from "../../mechanisms/projects.js";
 
-export function membersRoutes(deps: AppDeps): Hono<AppEnv> {
+/** What this route group reaches — bound by its module (src/modules). */
+export interface MembersRouteDeps {
+  desktop: DesktopService | null;
+  projectService: ProjectLifecycle;
+}
+
+export function membersRoutes(deps: MembersRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.use("*", rejectInDesktopMode(deps));

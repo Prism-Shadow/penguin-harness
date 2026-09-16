@@ -30,6 +30,15 @@ export const en: Strings = {
     expandGroup: "Expand",
     pinGroup: "Pin group",
     unpinGroup: "Unpin group",
+    /** Company mode's page entries (S.nav.org.<key>, the COMPANY_NAV_KEYS manifest), and the mode switch's option names. */
+    org: {
+      overview: "Overview",
+      chart: "Org Chart",
+      calendar: "Calendar",
+      tickets: "Tickets",
+      finance: "Finance",
+      handbook: "Handbook",
+    },
   },
 
   /** Machines page: the server's own ssh hosts, and installing this build on one. */
@@ -227,6 +236,14 @@ export const en: Strings = {
       "The desktop app keeps an icon in the system tray — the Windows notification area, the macOS menu bar, the Linux tray — for as long as it runs: click it to come back to the window, right-click it to start a session or quit. On by default; turning it off removes the icon at once, no restart, and closing the window then no longer hides it, so the app stays in the Dock on macOS and quits on Windows and Linux.",
     currencyInfo: "Display currency for prices; storage is always USD.",
     changePasswordInfo: "Change this account's sign-in password.",
+    /** Personal company-mode switch (general page) and the admin master switch (its own server page). */
+    companyModeTitle: "Company mode",
+    companyModePersonal: "Company mode",
+    companyModePersonalInfo:
+      "Off only hides your own mode switch; organizations keep running. The admin master switch sits under Server.",
+    companyModeServer: "Enable company mode",
+    companyModeServerInfo:
+      "The server-wide master switch, off until an admin turns it on here. Off stops the organization scheduler and every organization route and hides the mode switch for everyone. Organizations on disk are untouched, and turning it back on backfills no missed trigger. Beta: it may be unstable; please report what you hit.",
     accentNames: {
       neutral: "Neutral",
       blue: "Blue",
@@ -1035,6 +1052,9 @@ export const en: Strings = {
     detecting: "Detecting…",
     /** Success toast; the protocol itself then shows in the base URL field's suffix. */
     detectedProtocol: (name: string): string => `Detected ${name}; applied`,
+    /** Success toast when the probe answered on a tidied-up base URL, which the field now holds. */
+    detectedProtocolAndUrl: (protocol: string, url: string): string =>
+      `Detected ${protocol}; base URL normalized to ${url}`,
     /** The ONE failure toast: every mode collapses to it, naming only what the user can act on. */
     detectFailedBody: "Could not detect the protocol. Please check the API key and the base URL.",
     /** Save-time detection came back empty: the save proceeds on the compatible client. */
@@ -2242,6 +2262,16 @@ Scenarios:
     /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
     modelLockedHint: "Type /model to switch models",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
+    /** `[org_trigger]` banner: what the organization scheduler sent this desk or ticket session, folded into one line. */
+    orgTriggerFrom: (org: string): string => `Triggered by organization "${org}"`,
+    orgTriggerKinds: {
+      init: "Initialization",
+      event: "Calendar event",
+      mention: "Channel mention",
+      ticket_notice: "Ticket notice",
+      ticket_work: "Ticket work",
+    } as Record<string, string>,
+    orgTriggerBudget: (budget: string): string => `budget ${budget}`,
     /** One-line notice of a `[background_task_done]` harness message (run_in_background completion): the collapsed row's whole label. */
     backgroundDone: (kind: "command" | "subagent", status: "completed" | "failed" | "stopped") => {
       const what = kind === "command" ? "Background command" : "Background task";
@@ -2716,6 +2746,8 @@ Scenarios:
     title: "Files",
     upload: "Upload",
     download: "Download",
+    /** Desktop shell's own window only: opens the previewed file's directory in the OS file manager. */
+    revealInFolder: "Show in folder",
     /** Row / preview context menu: the two entries both kinds carry, then the kind-specific one. */
     copyPath: "Copy relative path",
     addToChat: "Add to conversation",
@@ -3107,69 +3139,46 @@ Scenarios:
     targetAgentHint:
       "The agent the cases are written for and scored under; the writing itself is done by the agent named below, in a new conversation",
     aiCreateExamples: {
+      decisionAgent: {
+        label: "Decisions: finite choices in football, after-sales and investing",
+        description: "Public rules, past cases and current facts that conflict or fall short",
+        prompt:
+          "Write cases for a general decision agent: three scenarios — football betting, an after-sales action, an investment move — each with a fixed set of options, where the public rules, the historical cases and the current facts are either incomplete or contradict one another. Does it make a stable, explainable choice instead of following the latest fact it saw?",
+      },
       reportWriter: {
-        label: "Report writing: 3 cases with contradicting sources",
-        description:
-          "3 cases: conflicting material, unstated conventions, strict length and citations",
-        prompt: `Write a small, hard Benchmark for the report-writing agent — few cases, a low baseline.
-
-- benchmark_id: \`report-conflicting-sources\`
-- capability: still deliver a report with traceable conclusions and one consistent set of conventions when the sources contradict each other, key conventions are unstated, and length and citations are constrained
-- case count: 3
-- techniques: each case gives 2–3 sources that contradict one another, one of them newer but dated only in a footer; currency, time zone and counting conventions are deliberately left incomplete, and the right move is to name the gap, make a conservative assumption and mark it; a strict length cap and citation format, where overrunning or a missing citation costs points outright
-- desired_baseline_score: \`<50\`
-- pilot_iteration_limit: \`4\``,
+        label: "Report writing: contradicting sources",
+        description: "Conflicting material, unstated conventions, strict length and citations",
+        prompt:
+          "Write cases for the report-writing agent: the sources contradict each other, key conventions such as currency and time zone are deliberately left incomplete, and the length cap and citation format are strict — does it name the gap and make a conservative assumption first?",
       },
       customerService: {
-        label: "Support: 3 conversations with a hidden policy condition",
+        label: "Support: a hidden policy condition",
         description:
-          "3 cases: incomplete users, policy conditions buried in an appendix, an over-promise trap",
-        prompt: `Write a small, hard multi-turn Benchmark for the customer-support agent — few cases, a low baseline.
-
-- benchmark_id: \`support-hidden-policy\`
-- capability: verify before answering, never over-promise, and stay consistent with the policy when the user's information is incomplete, the policy condition is buried deep in the material, and an emotional message invites a promise the agent cannot make
-- case count: 3
-- techniques: the policy's exceptions and effective dates appear only in an appendix; the user's description is vague and the key facts come out only when asked; in at least one case the most natural reply is exactly the forbidden promise; scoring looks at verification, over-promising, tone and accuracy
-- desired_baseline_score: \`<50\`
-- pilot_iteration_limit: \`4\``,
+          "Incomplete users, policy conditions buried in an appendix, an over-promise trap",
+        prompt:
+          "Write multi-turn cases for the customer-support agent: the user's description is vague and the key facts come out only when asked, the policy's exceptions sit in an appendix, and an emotional message invites a promise the agent cannot make — does it verify before answering and hold the policy line?",
       },
       codeReview: {
-        label: "Code review: 3 cases whose defects hide in the contracts",
-        description:
-          "3 cases: unstated calling and concurrency assumptions, misleading comments and tests",
-        prompt: `Write a small, hard Benchmark for the code-review agent — few cases, a low baseline.
-
-- benchmark_id: \`review-hidden-contracts\`
-- capability: find every real defect without false positives, and say how to verify each, when the defects hide in calling conventions, concurrency assumptions and data shapes and the comments and tests mislead
-- case count: 3
-- techniques: each case is a small multi-file repository with 2–3 real defects that depend on an unstated call order, a time-zone or encoding assumption, or a concurrency precondition; add one or two stale comments and a test that passes without covering the defects; scoring looks at recall, false positives and whether reproducible verification steps are given
-- desired_baseline_score: \`<50\`
-- pilot_iteration_limit: \`4\``,
-      },
-      dataAnalysis: {
-        label: "Data analysis: 3 cases with a vague ask and a booby-trapped dataset",
-        description: "3 cases: dirty data, unstated conventions, assumptions to clarify first",
-        prompt: `Write a small, hard Benchmark for the data-analysis agent — few cases, a low baseline.
-
-- benchmark_id: \`analysis-ambiguous-asks\`
-- capability: clarify assumptions before analysing, then reach a correct conclusion with verifiable conventions, when the business question is vague and the data carries dirty values and unstated conventions
-- case count: 3
-- techniques: each case ships a CSV with duplicate rows, mixed units and missing values, and a data dictionary that explains only some of the fields; the business question has two reasonable readings, and the right move is to name the split and answer under each stated assumption; scoring looks at the conclusion, the stated conventions and whether the charts agree with the conclusion
-- desired_baseline_score: \`<50\`
-- pilot_iteration_limit: \`4\``,
+        label: "Code review: defects hidden in the contracts",
+        description: "Unstated calling and concurrency assumptions, misleading comments and tests",
+        prompt:
+          "Write cases for the code-review agent: each a small multi-file repository whose defects hide in an unstated call order, a time-zone or encoding assumption and a concurrency precondition, with a stale comment or two and a test that passes without covering them — score recall, false positives and the verification steps.",
       },
     },
     aiCreateTail: (targetAgentId: string): string =>
       "Use the `benchmark-design` Skill: as the Builder, design and calibrate a Benchmark for the Test Agent below without changing that agent itself.\n\n" +
       `- test_agent_id: \`${targetAgentId}\`\n` +
       "- benchmark_id: keep the one named above if any; otherwise derive a short semantic id (letters, digits, `_` and `-` only)\n" +
-      "- desired_baseline_score: `<70` (unless the text above says otherwise)\n" +
-      "- pilot_iteration_limit: `3` (the draft above wins when it names one)\n\n" +
+      "- case count: about 3 — few and hard, each with at least one decision that separates following the motions from actually doing the work (the draft above wins when it names one)\n" +
+      "- techniques: hidden preconditions, vague or incomplete input, sources that contradict each other, strict deliverables; no difficulty from piling on rows or rules\n" +
+      "- desired_baseline_score: `<50` (the draft above wins when it names one)\n" +
+      "- pilot_iteration_limit: `4` (the draft above wins when it names one)\n\n" +
       "A Benchmark sits beside agents, not under one: create `benchmarks/<benchmark_id>/` under the Project (never inside the tested agent's directory) with " +
       "`benchmark_config.toml` (title, description, runs = 1; it records no agent), " +
       "one `CASE-NNN-<slug>/` per case (`statement/README.md` is the statement, `rubric/README.md` the scoring rubric, 100 points per case, nothing from the rubric leaking into the statement) " +
       "and `scoreboard.yaml` (initially `evaluations: []`; every evaluation records the tested `agent_id`, its `version`, the paired `provider` / `model_id` and the `thinking_level`). " +
-      "Delegate one `agent-evaluation` run per case through `run_subagent` to calibrate difficulty, " +
+      "Every trial evaluation goes through `run_subagent`, and the subagent's prompt must say to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
+      "calibrate difficulty case by case, " +
       "freeze the final revision, append the Formal Baseline to scoreboard.yaml, and finish by reporting the Benchmark id, the baseline score and the per-case scores.",
     manualCreateTitle: "Create a Benchmark manually",
     manualCreateIntro:
@@ -3232,7 +3241,7 @@ Scenarios:
       `- test_agent_id: \`${p.targetAgentId}\`\n` +
       `- benchmark_id: \`${p.benchmarkId}\` (the Project's \`benchmarks/${p.benchmarkId}/\`, beside the agents)\n` +
       `- runs: \`${p.runs}\`\n\n` +
-      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned `agent-evaluation` subagent per matrix cell (omit `agent_id`); " +
+      "Evaluate the full Case × runs matrix through `run_subagent`, one self-spawned subagent per matrix cell (omit `agent_id`), and say in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
       "the evaluation runtime is the model and thinking level that tested agent is configured with right now. Require every returned result to agree on " +
       "`agent_id`, `provider`, `model_id` and `thinking_level`, and stop rather than merge two labels into one record. Average the runs per case and the cases " +
       "per evaluation as the scoreboard contract specifies, then append exactly ONE evaluation to `scoreboard.yaml`, labelled with `agent_id`, `version`, " +
@@ -3275,12 +3284,799 @@ Scenarios:
       `- runs: \`${p.runs}\`\n` +
       `- desired_score: \`>=${p.targetScore}\`\n` +
       `- candidate_round_limit: \`${p.roundLimit}\`\n\n` +
-      "Each round, state one falsifiable hypothesis from the current Reference and make one bounded change; evaluate the full Case × runs matrix through `run_subagent` with `agent-evaluation`, " +
+      "Each round, state one falsifiable hypothesis from the current Reference and make one bounded change; evaluate the full Case × runs matrix through `run_subagent`, saying in every subagent's prompt to use the `agent-evaluation` Skill — never score a run yourself and never bypass that Skill; " +
       "keeping the provider / model_id / thinking_level that tested agent's baseline recorded; keep the version and append an evaluation carrying `agent_id`, `version`, `provider` / `model_id` and `thinking_level` " +
       "to scoreboard.yaml only when the total score is strictly higher than the Reference, otherwise roll back. " +
       "Finish by reporting the scores before and after, the retained version, and each round's change and decision.",
   },
 
+  /** Company mode: the organization switcher and dialogs, and the six organization pages. */
+  company: {
+    /** The mode switch (top-left of the sidebar, above the Project switcher) and its two options. */
+    workMode: "Work mode",
+    modeDev: "Development",
+    modeCompany: "Company",
+    switchToCompany: "Switch to company mode",
+    switchToDev: "Switch to development mode",
+    /**
+     * Company mode is a beta, said in three shapes: the mini tag at the top-right of 「公司」 in
+     * the work-mode switch (and the suffix the collapsed rail's tooltip carries in its place),
+     * the tag's own tooltip, and the one sentence shown both under the admin's master switch
+     * and as the notice a person gets the first time they enter the mode.
+     */
+    beta: "Beta",
+    betaTitle: "Company mode is in beta and may be unstable.",
+    betaNotice: "Beta: it may be unstable; please report what you hit.",
+    /** The organization switcher that replaces the Project switcher in company mode. */
+    switcher: "Organization",
+    noOrganizations: "No organizations yet",
+    createOrg: "New organization",
+    orgSettings: "Organization settings",
+    orgInvalid: "Invalid configuration",
+    orgPaused: "Paused",
+    /** The switcher's check mark beside the open organization (sr text). */
+    switcherCurrent: "Current organization",
+    /** `<project> / <org>` in the switcher: the Project half of the label. */
+    inProject: (project: string, org: string): string => `${project} / ${org}`,
+    /** The empty landing of `/org` when the user has no organization anywhere. */
+    landingTitle: "Company mode",
+    landingBody:
+      "An organization is a group of employee Agents working along a reporting line: a CEO, the employees it hires, a shared board and its channels, and the calendar that drives them. Create one and start by talking to the CEO about its mission.",
+    /** The page a stale deep link lands on: the organization it names is gone. */
+    orgGoneTitle: "Organization not found",
+    orgGoneBody:
+      "It may have been deleted, or you may no longer have access to the Project it belongs to.",
+    backToOrgs: "Back to organizations",
+    /** Create dialog. */
+    createTitle: "New organization",
+    orgId: "Organization id",
+    orgIdHint:
+      "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores; also the directory name, fixed once created",
+    /**
+     * The id field's generate button — its label says who proposes the id, its tooltip says
+     * what the proposal is derived from — and the clause the hint appends for it. The clause
+     * carries its own leading separator: what joins two clauses is punctuation, and
+     * punctuation belongs to the language.
+     */
+    generateIdLabel: "Generate with AI",
+    generateId: "Generate an id from the name",
+    idGenerateHint: "; you can also generate one from the display name",
+    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
+    idSuggest: {
+      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
+      fromName: "Transliterated from the name",
+      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
+      placeholder: (reason: string): string =>
+        `The model gave no usable id (${reason}); a placeholder was filled in — please change it to something meaningful`,
+      /** Why the proposal fell through, keyed by the server's reason code. */
+      reasons: {
+        no_default_model: "no default model configured",
+        model_failed: "the model request failed",
+        unusable_answer: "the model's answer was unusable",
+        no_ascii: "the name carries no ASCII to transliterate",
+      },
+      /** A reason a newer server named and this build does not know. */
+      reasonUnknown: "reason unknown",
+    },
+    displayName: "Display name",
+    displayNameHint: "Leave empty to use the organization id",
+    mission: "Mission",
+    missionHint:
+      "One sentence on why this organization exists; the CEO's first session starts from it",
+    missionPlaceholder:
+      "e.g. Maintain the PenguinHarness docs site and publish a weekly update digest",
+    /** The three examples under the mission field (org-examples.ts holds their order). */
+    missionExampleHint: "Click to fill the mission",
+    missionExamples: {
+      research: {
+        name: "Research Paper Lab",
+        mission:
+          "Set up a company that does research for me: keeps drafting and reviewing papers and produces work that can be submitted to top-tier conferences.",
+      },
+      agentTuning: {
+        name: "Agent Tuning Studio",
+        mission:
+          "Set up a company that optimizes my product Agent: raise its accuracy in real business use and improve the product experience.",
+      },
+      cloudReseller: {
+        name: "Cloud Service Reseller",
+        mission:
+          "Set up a company that runs a cloud-service-style website for me: collect every low-priced service on the market, bundle and resell them at a markup to make money, and grow the site's SEO and visibility.",
+      },
+      mirror: {
+        name: "Digital-twin company",
+        mission:
+          "Set up a company that mirrors our real company: I will give the CEO our real org chart and the CEO creates one digital twin per real employee; each twin's desk session is bound to that colleague's Feishu bot. A twin only receives its own colleague's messages by default, answers what it can on its own and relays the rest to the relevant colleague's twin, who passes it on to the real person. The CEO hires nobody on its own, schedules nothing and files no tickets; the company only relays and solves what it can.",
+      },
+    },
+    createdOpeningCeo: "Organization created — opening the CEO's desk session",
+    /** Create and settings dialogs: the model and the shared workspace, both optional. */
+    modelField: "Model",
+    modelInfo:
+      "The model desk and ticket sessions run on by default; an employee given its own model in the org chart uses that instead. Takes effect from the next work round.",
+    modelHint: "Leave empty to use the Project's default model",
+    modelClear: "Back to the Project default",
+    modelStale: "This model is no longer in the Project's model list",
+    modelProjectDefault: "Project default",
+    modelProjectDefaultNamed: (name: string): string => `Project default (${name})`,
+    modelsLoadFailed:
+      "The model list could not be read; you can still create with the Project default",
+    workspaceField: "Company workspace",
+    workspaceInfo:
+      "The directory the employees work in together: each employee's workspace is one of its sub-directories (or all of it), and desk and ticket sessions run inside it.",
+    workspaceHint:
+      "Leave empty for the organization's own workspace/ directory; a path must be an existing directory on the server",
+    workspaceEmpty: "The organization's own workspace/ directory",
+    workspaceMenuHint: "Pick an existing directory as the company workspace",
+    workspaceClear: "Back to the organization's own directory",
+    /** CEO budget field (create dialog): the CEO's ceiling is the company's, since everyone reports to it. */
+    ceoBudget: "CEO budget",
+    ceoBudgetHint: "A monthly cap; the CEO's budget is the whole company's",
+    /** The create dialog's draft (org-draft.ts): restored on reopen, dropped on create or on demand. */
+    draftRestored: "Restored the draft you had not submitted",
+    clearDraft: "Clear draft",
+    creating: "Creating…",
+    /** Settings dialog (the switcher's entry). */
+    settingsTitle: "Organization settings",
+    timezone: "Timezone",
+    timezoneHint:
+      "An IANA timezone such as Asia/Shanghai; budget periods (calendar months) and channel day files follow it",
+    language: "Working language",
+    languageInfo:
+      "The language the organization works in: its handbook, the employee briefs, the CEO's initialization session and every desk's output are written in it; it is detected from the mission when the organization is created.",
+    languages: {
+      zh: "中文",
+      en: "English",
+    },
+    approvalMode: "Approval mode",
+    approvalModeInfo:
+      "How tool calls in desk and ticket sessions are approved. Unattended runs never stop to ask a person, so there is no always-ask here.",
+    approvalModes: {
+      "allow-all": "Allow all",
+      "read-only": "Read only",
+      "deny-all": "Deny all",
+    } as Record<string, string>,
+    status: "Status",
+    statusActive: "Active",
+    statusPaused: "Paused",
+    pause: "Pause organization",
+    resume: "Resume organization",
+    pauseInfo:
+      "Paused stops every automatic trigger — calendar events no longer fire and @-mentions are not delivered to employees; you can still open any desk session and talk directly. An organization is paused, never deleted: its conversations, employees and tickets stay reachable.",
+    settingsLoadFailed: "The organization's settings could not be read",
+    /** Employee state dot, and the CEO mark. */
+    employeeStates: {
+      running: "Running",
+      idle: "On desk",
+      paused: "Budget paused",
+    } as Record<string, string>,
+    ceo: "CEO",
+    reportsTo: (name: string): string => `Reports to ${name}`,
+    openDesk: "Open desk session",
+    openingDesk: "Opening the desk session…",
+    /** Principals as the chat and tickets name them. */
+    principalSystem: "System",
+    principalAll: "Everyone",
+    /** Spend against a budget, and the unbounded case. */
+    spendOfBudget: (spend: string, budget: string): string => `${spend} / ${budget}`,
+    noBudget: "Unbounded",
+    budgetUnit: (symbol: string): string => `${symbol} / month`,
+    budgetStoredAs: (amount: string): string => `Stored as ${amount} / month`,
+    /** The 工位 group under the company sidebar's channel list: one row per employee. */
+    sessionList: {
+      desks: (n: number): string => `Desks (${n})`,
+      deskOf: (name: string): string => `${name}'s desk`,
+      running: "Running",
+      noEmployees: "This organization has no employees yet",
+      untitledSession: "Untitled session",
+      loadFailed: "The employee list could not be loaded",
+    },
+    overview: {
+      title: "Overview",
+      info: "The organization on one page: employees, the board, today's calendar and this period's budget, plus what needs your decision. A corner button on each block opens its page.",
+      employees: "Employees",
+      onDesk: "On desk",
+      running: "Running",
+      paused: "Budget paused",
+      board: "Board",
+      blocked: "Blocked",
+      today: "Today's calendar",
+      todayEmpty: "Nothing scheduled today",
+      spend: "This period's spend",
+      reviewTickets: "Tickets in review",
+      alerts: "Alerts",
+      alertsEmpty: "No budget alerts this period",
+      /** A fresh organization: point the user at the CEO. */
+      firstStep:
+        "The organization is brand new: open the CEO's desk session to confirm the mission, hire employees and set up the calendar.",
+      /** The hero: who made it, how big it is, which period the spend counts. */
+      createdBy: (user: string): string => `Created by ${user}`,
+      employeesCount: (n: number): string => `${n} employee${n === 1 ? "" : "s"}`,
+      period: (period: string): string => `Period ${period}`,
+      openCeoDesk: "Open the CEO's desk",
+      refreshFailed: "The refresh failed; this is the last data read",
+      /** The hero's mission, clamped to one line until the toggle opens it. */
+      mission: "Mission",
+      expand: "Expand",
+      collapse: "Collapse",
+      /** The KPI strip. */
+      openTickets: "Open tickets",
+      boardTotal: (n: number): string => `${n} in total`,
+      todayCount: (n: number): string => `${n} event${n === 1 ? "" : "s"}`,
+      upcoming: "Upcoming",
+      failed: "Not on time",
+      budgetLeft: (amount: string): string => `${amount} left`,
+      overBudget: (amount: string): string => `${amount} over`,
+      /** The corner button of a KPI cell and of the hero's spend block: where it jumps to. */
+      openChart: "Open the org chart",
+      openBoard: "Open the ticket board",
+      openCalendar: "Open the calendar",
+      openFinance: "Open finance",
+      /** The tooltip of an inbox row's title: the row is inert, its title is what goes there. */
+      openTicket: "Open the ticket",
+      openChannel: "Open the channel",
+      /** The counts under the board bar: each opens the board filtered to the column it counts. */
+      openColumn: (column: string): string => `Open the "${column}" tickets`,
+      /** The three first steps of a new organization (replaces the empty sections). */
+      firstStepsTitle: "First steps",
+      firstStepsInfo:
+        "The guide for a brand-new organization: talk to the CEO about the mission, hire, schedule. Once the first employee is hired or the first ticket filed, the dashboard takes its place.",
+      stepCeoTitle: "Talk to the CEO",
+      stepCeoBody:
+        "Open the CEO's desk session, confirm the mission and let it propose the structure and the first tickets.",
+      stepHireTitle: "Hire employees",
+      stepHireBody:
+        "On the org chart, hire subordinates for the CEO: an existing Agent or a new one, with a title and a budget.",
+      stepScheduleTitle: "Schedule the work",
+      stepScheduleBody:
+        "On the calendar, give employees their rounds: when one is due, its prompt goes to the employee's desk session.",
+      stepDone: "Done",
+      goToChart: "Open the org chart",
+      goToCalendar: "Open the calendar",
+      /** The inbox: what names the reader, what is stuck and what has landed, newest first. */
+      inbox: "Inbox",
+      inboxInfo:
+        "The three things the organization has to tell you, newest first: messages naming you (or everyone) in the all-hands channel, blocked tickets, and the tickets closed as done this period. For anything else, read the channel and the board themselves.",
+      inboxEmpty: "Nothing in the inbox.",
+      /** The filter chips over the rows, each with its own count. */
+      inboxFilters: { all: "All", mention: "@me", blocked: "Blocked", done: "Done" },
+      /** The chip that leads a row, naming what the row is. */
+      inboxCategories: { mention: "@me", blocked: "Blocked", done: "Done" },
+      /** Today's timeline. */
+      timelineMore: (n: number): string => `${n} more — open the calendar`,
+    },
+    calendarOutcomes: {
+      fired: "Fired",
+      queued: "Queued",
+      paused: "Paused",
+      missed: "Missed",
+      error: "Error",
+    } as Record<string, string>,
+    chart: {
+      title: "Org Chart",
+      info: "The employee tree is the reporting line: the CEO at the root, every node an employee Agent. The menu in a node's top-right corner opens its desk session and holds the personnel actions, each of which rewrites the chart file. The canvas zooms with the wheel and pans by dragging; click the percentage to fit the whole chart in the window again.",
+      empty: "The chart is empty",
+      nodeMenu: "Employee actions",
+      hire: "Hire a subordinate",
+      setBudget: "Set budget",
+      changeReportsTo: "Change reporting line",
+      renewDesk: "New desk session",
+      leave: "Leave the organization",
+      ceoCannotLeave: "The CEO cannot leave",
+      invalidEntry: "This entry is invalid",
+      workspaceTail: "Workspace",
+      /** Hire dialog. */
+      hireTitle: (manager: string): string => `Hire a subordinate for ${manager}`,
+      hireSource: "Source",
+      hireExisting: "Pick an existing Agent",
+      hireNew: "Create a new Agent",
+      agent: "Agent",
+      pickAgent: "Pick an Agent…",
+      noAgentsLeft: "No Agent in this Project is left to hire",
+      agentId: "Agent id",
+      agentIdHint:
+        "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores",
+      agentName: "Name",
+      agentNameHint: "Leave empty to use the Agent id",
+      agentDescription: "Description",
+      plugins: "Plugins",
+      pluginsHint:
+        "agent-company (the organization procedures) and agent-development (development skills) are installed by default",
+      pluginsPlaceholder: "No plugins picked",
+      pluginsPicked: (n: number): string => `${n} plugin${n === 1 ? "" : "s"} picked`,
+      pluginsEmpty: "The plugin library has nothing to install",
+      employeeTitle: "Title",
+      employeeTitlePlaceholder: "e.g. Docs engineer",
+      duties: "Duties",
+      dutiesHint: "Written into the chart; the employee reads it at every work run",
+      workspace: "Workspace",
+      workspaceHint:
+        "A sub-directory of the shared workspace (`.` for all of it), or an absolute path that already exists",
+      /** Hiring: the same spec, with the default the server fills in when the field is left empty. */
+      hireWorkspaceHint:
+        "A sub-directory of the shared workspace, or an absolute path that already exists; left empty, a sub-directory named after the employee's Agent id",
+      budget: "Monthly budget",
+      budgetHint:
+        "A monthly cap, leave empty for unbounded; counts the employee plus every subordinate",
+      hireConfirm: (name: string, manager: string): string =>
+        `Add ${name} to the organization, reporting to ${manager}? This rewrites the chart file.`,
+      hired: (name: string): string => `Hired ${name}`,
+      /** Budget / reporting line / desk renewal / leave dialogs. */
+      budgetTitle: (name: string): string => `Set the budget of ${name}`,
+      budgetConfirm: (name: string, budget: string): string =>
+        `Set the monthly budget of ${name} to ${budget}? Past 80% warns; at 100% its automatic triggers pause.`,
+      reportsToTitle: (name: string): string => `Change who ${name} reports to`,
+      reportsToConfirm: (name: string, manager: string): string =>
+        `Have ${name} report to ${manager}? Its subordinates move along with it.`,
+      reportsToCycle: "Cannot report to itself or to one of its own subordinates",
+      renewDeskTitle: (name: string): string => `A new desk session for ${name}`,
+      renewDeskExplain:
+        "A new desk session opens with a fresh context; a changed workspace is written to the org chart.",
+      workspaceInvalid:
+        "Invalid workspace: it must be a sub-directory of the shared workspace, or an absolute path that already exists.",
+      renewed: "Moved to a new desk session",
+      leaveConfirm: (name: string): string =>
+        `Have ${name} leave? It is removed from the chart and its subordinates report to its manager instead; the Agent and every session are kept.`,
+      left: (name: string): string => `${name} has left`,
+      saved: "Chart updated",
+      /** The page: the canvas and its zoom control, the legend, counts, a failed refresh, the detached row. */
+      canvas: "Org chart canvas",
+      zoom: "Zoom",
+      zoomIn: "Zoom in",
+      zoomOut: "Zoom out",
+      zoomFit: "Fit to window",
+      legend: "State legend",
+      employeeCount: (n: number): string => `${n} employee${n === 1 ? "" : "s"}`,
+      spend: "This period's spend",
+      refreshFailed: (error: string): string => `Refresh failed: ${error}`,
+      detached: "Manager not in the chart",
+      detachedNotice: (n: number): string =>
+        `${n} employee${n === 1 ? "" : "s"} cannot reach the CEO along the reporting line: the manager left the organization, or the line loops. Use "Change reporting line" to reattach them.`,
+      /** Hire and edit dialogs: the two sections, the current value, and the field hints. */
+      hireAgentSection: "Agent",
+      hirePositionSection: "Position",
+      agentHint: "Only Agents of this Project not yet in the organization",
+      budgetPlaceholder: "e.g. 30",
+      clearBudget: "Set unbounded",
+      currentValue: (value: string): string => `Current: ${value}`,
+      manager: "Manager",
+      reportsToHint: "Only employees outside its own subtree are listed",
+    },
+    calendar: {
+      title: "Calendar",
+      info: "Every employee's calendar events in a month / week / day view. Each event belongs to one employee and sends its prompt to that employee's desk session when due; colours tell employees apart, and past instances show what the trigger did. Calendar events drive employees' desk sessions to check the board and push tickets on time; use New event, top right, to schedule one for an employee.",
+      month: "Month",
+      week: "Week",
+      day: "Day",
+      today: "Today",
+      prev: "Previous",
+      next: "Next",
+      allEmployees: "All employees",
+      filterEmployee: "Filter by employee",
+      create: "New event",
+      createTitle: "New calendar event",
+      editTitle: (name: string): string => `Edit event "${name}"`,
+      employee: "Employee",
+      name: "Name",
+      nameHint: "The file name (without .toml); fixed once created",
+      prompt: "Prompt",
+      enabled: "Enabled",
+      startAt: "Start",
+      endAt: "End",
+      period: "Period",
+      periodHint: "30m / 12h / 7d, empty for a one-off; 5m at the shortest",
+      delete: "Delete event",
+      deleteConfirm: (name: string): string => `Delete event "${name}"?`,
+      saveConfirm: (name: string): string =>
+        `Save event "${name}"? This rewrites its calendar file.`,
+      outcome: "Outcome",
+      lastFired: "Last fired",
+      nextFire: "Next fire",
+      past: "Past",
+      pausedNote: "Paused: due slots are skipped, not fired",
+      disabledNote: "Disabled",
+      invalidFiles: "Calendar files that failed to parse",
+      empty: "No events yet",
+      emptyHint:
+        "Calendar events drive employees' desk sessions to check the board and push tickets on time; use New event, top right, to schedule one for an employee.",
+      moreEvents: (n: number): string => `${n} more`,
+      /** The month cell's "+N more" is a button: its accessible name, and the day panel it opens. */
+      moreEventsExpand: (n: number): string => `${n} more, expand`,
+      openDay: "Open the day",
+      weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as readonly string[],
+      allDay: "All day",
+      promptHint:
+        "What the employee should sweep at this moment, e.g. check the board, push its tickets, report in a channel",
+      monthTitle: (year: number, month: number): string =>
+        `${
+          [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+          ][month - 1] ?? month
+        } ${year}`,
+      /** How an event recurs, for the legend: the period read as a cadence with the time of day. */
+      cadence: {
+        once: "One-off",
+        minutes: (n: number): string => `Every ${n} min`,
+        hours: (n: number): string => `Every ${n} h`,
+        daily: (time: string): string => `Daily ${time}`,
+        days: (n: number, time: string): string => `Every ${n} days ${time}`,
+        weekly: (time: string): string => `Weekly ${time}`,
+        weeks: (n: number, time: string): string => `Every ${n} weeks ${time}`,
+        invalid: "Invalid period",
+      },
+      legendEmpty: "No events yet",
+      legendFilter: (name: string): string => `Show only ${name}'s events`,
+      createAt: (label: string): string => `New event at ${label}`,
+      loadFailed: (error: string): string => `Could not load the calendar: ${error}`,
+      /** The "×" that puts the empty-calendar note away for good (the same sentence stays in the page's "?"). */
+      dismissHint: "Got it",
+      /** Under the start time: why two employees should not share one minute. */
+      staggerHint:
+        "Stagger the rota: give every employee its own minute; desks that fire together compete for the same budget and tickets.",
+      /** Heads the advisory lines a calendar write answers with (the lines themselves come from the server, in English). */
+      warningsPrefix: "Rota notice",
+    },
+    tickets: {
+      title: "Tickets",
+      info: "Five columns are a ticket's life: proposed → in progress → review → done / rejected. Drag a card to move it between columns, click a card's title to open its detail in place; a blocked ticket stays in its column with a badge. A ticket is the organization's unit of work: use New ticket, top right, to create one and name an owner, and the owner's desk session starts a ticket session for it.",
+      columns: {
+        proposed: "Proposed",
+        in_progress: "In progress",
+        review: "Review",
+        done: "Done",
+        rejected: "Rejected",
+      } as Record<string, string>,
+      blockedOnly: "Blocked only",
+      create: "New ticket",
+      createTitle: "New ticket",
+      empty: "No tickets yet",
+      emptyHint:
+        "A ticket is the organization's unit of work: use New ticket, top right, to create one and name an owner, and the owner's desk session starts a ticket session for it.",
+      /** The "×" that puts the empty-board note away for good (the same sentence stays in the page's "?"). */
+      dismissHint: "Got it",
+      columnEmpty: "Empty",
+      ticketTitle: "Title",
+      goal: "Goal",
+      goalHint: "What to achieve, in a paragraph",
+      acceptance: "Acceptance criteria",
+      acceptanceHint: "What counts as done; checked one by one at review",
+      result: "Result",
+      owner: "Owner",
+      noOwner: "Unassigned",
+      ownerSelf: "Yourself",
+      ownerSelfHint: "Left empty, the owner is you",
+      parent: "Parent ticket",
+      noParent: "None",
+      notify: "Notify",
+      notifyHint:
+        "Comma-separated principals, e.g. agent:ceo, user:alice; notified on status changes",
+      priority: "Priority",
+      due: "Due",
+      noDue: "None",
+      blocked: "Blocked",
+      blockedReason: "Blocked reason",
+      blockedBy: "Waiting on",
+      blockedTooltip: (reason: string, by: string): string =>
+        `Blocked: ${reason} (waiting on ${by})`,
+      unblock: "Unblock",
+      unblockConfirm: (title: string): string => `Unblock "${title}"?`,
+      block: "Mark blocked",
+      blockTitle: "Mark blocked",
+      blockReasonHint: "One line on what it is stuck on",
+      blockByHint: "The ticket or principal it waits on",
+      sessions: "Ticket sessions",
+      sessionsCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
+      openSession: "Open session",
+      openTicket: "Open ticket",
+      progress: "Progress",
+      progressEmpty: "No progress recorded yet",
+      addProgress: "Add progress",
+      progressPlaceholder: "One line on what moved…",
+      children: "Child tickets",
+      childrenEmpty: "No child tickets",
+      cost: "This ticket's cost",
+      rolledUpCost: "Total cost",
+      parentLine: (title: string): string => `Parent ticket: ${title}`,
+      moveTitle: "Move ticket",
+      moveConfirm: (title: string, column: string): string => `Move "${title}" to "${column}"?`,
+      rejectReason: "Rejection reason",
+      rejectReasonHint: "One line on why, recorded under the ticket's result",
+      moved: "Ticket moved",
+      invalid:
+        "This ticket is invalid: its status disagrees with its column, or its id is duplicated",
+      invalidFiles: "Ticket files that failed to parse",
+      edit: "Edit fields",
+      saveConfirm: (title: string): string =>
+        `Save the changes to "${title}"? This rewrites the ticket file.`,
+      saved: "Ticket saved",
+      created: "Ticket created",
+      detail: "Ticket detail",
+      back: "Back",
+      dragHint: "Drag to another column to move it",
+      searchPlaceholder: "Search title or id",
+      searchNoMatch: "No matching tickets",
+      dropHere: "Drop here",
+      overdue: "Overdue",
+      summary: "Details",
+      history: "History",
+      historyEmpty: "No history yet",
+      historyActions: {
+        created: "created",
+        assigned: "assigned to",
+        moved: "moved to",
+        blocked: "blocked",
+        unblocked: "unblocked",
+        progress: "noted progress",
+        session_started: "started a session",
+        session_attached: "attached a session",
+        edited: "edited",
+      } as Record<string, string>,
+      slug: "Id slug",
+      slugHint:
+        "Lowercase English words joined by hyphens, e.g. marketplace-site; no digits, derived from the title when left empty",
+      slugInvalid: "Lowercase English words joined by hyphens only, no digits",
+      noGoal: "No goal yet",
+      noAcceptance: "No acceptance criteria yet",
+      noResult: "No result yet",
+      moveTo: "Move to…",
+      move: "Move",
+      copyId: "Copy ticket id",
+      invalidTickets: "Invalid tickets",
+      loadFailed: (error: string): string => `Could not load the board: ${error}`,
+    },
+    finance: {
+      title: "Finance",
+      info: "Budgets are set per employee and count the employee plus every subordinate; a period is a calendar month in the organization's timezone. Reaching 80% warns, reaching 100% pauses that employee's automatic triggers.",
+      period: "Period",
+      thisPeriod: "This period",
+      prevPeriod: "Previous period",
+      total: "Total",
+      unpriced: "* Some usage ran on a model without pricing; the cost is a lower bound",
+      budget: "Budget",
+      editBudget: "Edit budget",
+      budgetPlaceholder: "Unbounded",
+      clearBudget: "Clear",
+      budgetSaved: "Budget updated",
+      own: "Own spend",
+      cumulative: "Cumulative",
+      /** The spend tree reads cumulative against budget in one column; own spend rides in the row tooltip. */
+      cumulativeBudget: "Cumulative spend / budget",
+      ratio: "Ratio",
+      warned: "Warned",
+      paused: "Paused",
+      spendTree: "Spend tree",
+      spendTreeInfo:
+        "Expanded along the reporting line: cumulative spend includes every subordinate, and budget and ratio use the same measure.",
+      ticketsTable: "Ticket spend",
+      ticketsInfo:
+        "Each ticket's contributing-session cost; the total cost adds up along parent tickets. A session attached to several tickets is shared between them.",
+      ticketsEmpty: "No ticket spend this period",
+      rolledUp: "Total cost",
+      /** The ledger's fold: child tickets are hidden until the parent's chevron opens them. */
+      expandChildren: "Show child tickets",
+      collapseChildren: "Hide child tickets",
+      childCount: (n: number): string => `${n} child ticket${n === 1 ? "" : "s"}`,
+      trend: "Trend",
+      alerts: "Alerts and pauses",
+      alertsEmpty: "No alerts this period",
+      alertWarned: (name: string, at: string): string =>
+        `${name} reached 80% of its budget at ${at}`,
+      alertPaused: (name: string, at: string): string =>
+        `${name} reached its budget at ${at}; automatic triggers paused`,
+      alertsHint:
+        "To lift a pause, raise the employee's budget or clear it; the next check resumes it automatically.",
+      /** The KPI row under the title. */
+      kpiTotal: "Total spend",
+      orgBudget: "Organization budget (CEO)",
+      kpiEmployees: "Employees",
+      budgetsSet: (n: number): string => `${n} with a budget`,
+      thresholds: "80% warns, 100% pauses",
+      kpiAlerts: "Alerts",
+      alertsSummary: (warned: number, paused: number): string =>
+        `${warned} warned · ${paused} paused`,
+      /** Column header explanations, and the tree's root mark. */
+      cumulativeInfo:
+        "The employee's own spend plus every subordinate's; budget and ratio use this measure.",
+      rolledUpInfo: "This ticket plus its children.",
+      root: "Root",
+      /** The inline budget editor. */
+      budgetEmptyHint: "Leave empty for unbounded",
+      saveBudget: "Save budget",
+      cancelEdit: "Cancel",
+      editBudgetOf: (name: string): string => `Edit the budget of ${name}`,
+      /** The ticket table's owner column and row action. */
+      openTicket: "Open ticket",
+      /** The trend section. */
+      trendInfo:
+        "The daily cost of every session in the organization, by the organization's timezone; only days with spend are drawn.",
+      trendEmpty: "No spend recorded this period yet",
+      /** The alert list. */
+      alertsInfo:
+        "Every check compares cumulative spend with the budget: reaching 80% records a warning, reaching 100% pauses the employee's and its subordinates' automatic triggers; lifting the pause resumes them.",
+      pausedGroup: "Automatic triggers paused",
+      warnedGroup: "Warned",
+      warnedAt: (at: string): string => `reached 80% at ${at}`,
+      pausedAt: (at: string): string => `reached 100% at ${at}`,
+      /** A refetch failed while the last good data is still on screen. */
+      refreshFailed: "Refresh failed; showing the last loaded data",
+    },
+    channels: {
+      listTitle: "Channels",
+      drawerLabel: "Channel list",
+      allHands: "All hands",
+      mine: "My channels",
+      others: "Other channels",
+      archivedGroup: "Archived",
+      newChannel: "New channel",
+      noChannels: "No channels yet",
+      loadFailed: "Could not load the channels",
+      join: "Join",
+      joining: "Joining…",
+      joined: "Joined the channel",
+      joinTitle: "Join channel",
+      joinConfirm:
+        "Once you join, messages in this channel that @ you reach you, and you can post here.",
+      mentionChip: "@me",
+      badgeUnread: (n: number): string => `${n} unread`,
+      badgeMentions: (n: number): string => `${n} mentioning me`,
+      streamLabel: (name: string): string => `Messages in ${name}`,
+      purpose: "Purpose",
+      purposeEmpty: "No purpose written yet",
+      memberCount: (n: number): string => `${n} member${n === 1 ? "" : "s"}`,
+      memberList: "Channel members",
+      invite: "Invite",
+      inviteTitle: "Invite to the channel",
+      inviteSearch: "Search employees and members",
+      inviteEmpty: "Nobody left to invite",
+      invited: (name: string): string => `Invited ${name}`,
+      leave: "Leave",
+      leaveTitle: "Leave the channel",
+      leaveConfirm: (name: string): string =>
+        `Leave "${name}"? You can still read it, but no @ will reach you and you cannot post until you join again.`,
+      left: "Left the channel",
+      channelMenu: "Channel actions",
+      rename: "Rename",
+      renameTitle: "Rename the channel",
+      editPurpose: "Edit purpose",
+      purposeTitle: "Edit the channel's purpose",
+      archive: "Archive",
+      unarchive: "Unarchive",
+      archiveTitle: "Archive the channel",
+      archiveConfirm: (name: string): string =>
+        `Archive "${name}"? It becomes read-only and folds away under Archived; you can unarchive it at any time.`,
+      archived: "Channel archived",
+      unarchived: "Channel unarchived",
+      archivedNotice: "This channel is archived and read-only. Unarchive it to post again.",
+      notMemberNotice: "You are not in this channel yet. Join it to post.",
+      channelLoadFailed: "Could not load the channel",
+      allHandsInfo:
+        "The all-hands channel is created with the organization: everyone in the organization is here — every employee, every Project member, and you, reading along — nobody can leave it and it cannot be archived. System notices — budget alerts and the like — are posted here.",
+      channelInfo:
+        "An invitation-only channel: an employee joins only when a member invites it, and an @ delivers within the channel's membership. People may join any channel themselves, and can read every channel.",
+      allHandsNoArchive: "The all-hands channel cannot be archived",
+      createTitle: "New channel",
+      creating: "Creating…",
+      created: "Channel created",
+      idField: "Channel id",
+      idHint: "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores",
+      idReserved: "default_channel belongs to the all-hands channel",
+      idTaken: "That id is already taken",
+      nameField: "Display name",
+      nameHint: "Defaults to the id",
+      purposeHint: "One line on what this channel is for",
+      empty: "No messages yet",
+      emptyHint:
+        "Only an @ reaches an employee: @employee delivers to its desk session, @all to every member of the channel; a message without one is just a note.",
+      placeholder: "Type a message — Enter sends, Shift+Enter breaks the line, @ mentions a member",
+      send: "Send",
+      you: "You",
+      mentionAll: "Everyone",
+      mentionAllDesc: "Every member of the channel",
+      employees: "Employees",
+      members: "Members",
+      earlierDays: "Earlier days",
+      ticketRef: (id: string): string => `Ticket ${id}`,
+      sessionRef: "View session",
+      replyTo: "Reply to",
+      /** The ref chips' tooltips: what the chip's own text does not say — where it lands. */
+      openTicketRef: "Open the ticket",
+      replyToJump: "Jump to the message this replies to",
+      hop: (n: number): string => `Relay · hop ${n}`,
+      hopInfo:
+        "Sent automatically by an employee's work run, N relays down an @-chain: a message from a person or the calendar is hop 0, an employee's reply from the run it triggered is hop 1 (unmarked), the reply of the next employee it @-mentioned is hop 2 … At the organization's chain limit (3 by default) an @ is recorded but triggers nobody, so two employees cannot @ each other all night.",
+      hopSummary:
+        'A mentioned employee may @ somebody else in its reply, which is an @-chain: from hop 2 a message is marked "Relay · hop N", and at the organization\'s chain limit (3 by default) an @ is recorded but triggers nobody.',
+      today: "Today",
+      yesterday: "Yesterday",
+      noEarlier: "No earlier messages",
+      unreadDivider: "Unread",
+      newMessages: (n: number): string => `${n} new message${n === 1 ? "" : "s"}`,
+      mentionPanel: "Mention",
+      mentionsYou: "Mentions you",
+      systemMessage: "System message",
+      sentAt: (time: string): string => `Sent at ${time}`,
+      notices: {
+        employee_joined: (agent: string, title: string, manager: string): string =>
+          `${agent} joined as ${title}, reporting to ${manager}.`,
+        employee_left: (agent: string, manager: string): string =>
+          `${agent} left the organization; reports now go to ${manager}.`,
+        channel_created: (by: string): string => `${by} created the channel.`,
+        channel_archived: (by: string): string => `${by} archived the channel.`,
+        channel_unarchived: (by: string): string => `${by} unarchived the channel.`,
+        channel_joined: (principal: string): string => `${principal} joined the channel.`,
+        channel_invited: (by: string, principal: string): string =>
+          `${by} invited ${principal} to the channel.`,
+        channel_left: (principal: string): string => `${principal} left the channel.`,
+        channel_removed: (by: string, principal: string): string =>
+          `${by} removed ${principal} from the channel.`,
+        budget_warned: (
+          agent: string,
+          percent: string,
+          period: string,
+          cost: string,
+          budget: string,
+        ): string =>
+          `Budget warning: ${agent} has used ${percent}% of its ${period} budget (${cost} / ${budget} USD).`,
+        budget_paused: (
+          agent: string,
+          percent: string,
+          period: string,
+          cost: string,
+          budget: string,
+        ): string =>
+          `Budget pause: ${agent} reached ${percent}% of its ${period} budget (${cost} / ${budget} USD). Its calendar and its subordinates' are paused until the next month or a raised budget; mentions and direct conversations still work.`,
+        ticket_blocked: (ticket: string, title: string): string =>
+          `Ticket ${ticket} (${title}) is blocked.`,
+        ticket_done: (ticket: string, title: string): string =>
+          `Ticket ${ticket} (${title}) is done.`,
+        ticket_rejected: (ticket: string, title: string): string =>
+          `Ticket ${ticket} (${title}) was rejected.`,
+      },
+    },
+    /** The handbook page: the knowledge base directory, its index and its documents. */
+    handbook: {
+      info: "The company's knowledge base: the Markdown documents under handbook/. The index (README.md) is the page every trigger makes the employee Agent read first; the other documents are listed from it and read on demand.",
+      /** The pinned first row: the index, and why it is pinned. */
+      indexLabel: "Index · read first every run",
+      documents: "Documents",
+      /** The tree's own controls: closing every folder, and what a folder row's count means. */
+      collapseAll: "Collapse all",
+      documentsInFolder: (n: number): string => `${n} document${n === 1 ? "" : "s"}`,
+      noOtherDocuments: "No other documents yet. Create one and list it in the index.",
+      emptyDocument: "This document is still empty.",
+      newDocument: "New document",
+      creating: "Creating…",
+      pathField: "Path",
+      pathPlaceholder: "decisions/2026-09-02-hire-plan.md",
+      pathHint:
+        "Relative to handbook/, folders separated by /; each segment starts with a letter or digit and uses only letters, digits, . _ -; .md is added when the extension is left out.",
+      pathInvalid:
+        "Invalid path: each segment starts with a letter or digit and uses only letters, digits, . _ -, folders separated by /, at most eight levels.",
+      pathExists: "That document already exists.",
+      documentCreated: "Document created",
+      deleteDocument: "Delete document",
+      deleteConfirm: (path: string): string =>
+        `Delete ${path}? The document is removed from handbook/; the index entry pointing at it is not updated automatically.`,
+      documentDeleted: "Document deleted",
+      loadFailed: "Could not load the handbook",
+      documentLoadFailed: "Could not load the document",
+      /** A row's tooltip: when the file was last written, and its size. */
+      updatedAt: (time: string, size: string): string => `Updated ${time} · ${size}`,
+      /** Beside the editor's buttons: what the text is, and the shortcut. */
+      editorHint: "Markdown · Ctrl/⌘+S to save",
+    },
+  },
   errors: {
     networkError: "Network error, please check your connection",
     modelCredentialMissing: (modelId: string) =>
@@ -3330,6 +4126,7 @@ Scenarios:
       dir_not_found: "That directory does not exist or is inaccessible.",
       not_a_dir: "That path is not a directory.",
       path_not_found: "That path does not exist.",
+      reveal_failed: "Could not open the folder.",
       workspace_missing: "This Session's Workspace no longer exists.",
       workspace_not_found: "That Workspace does not exist, or is not a directory.",
       session_not_found: "This Session no longer exists, or you do not have access.",
@@ -3382,6 +4179,23 @@ Scenarios:
         "Disable this channel's connection before clearing its credential.",
       messaging_disable_before_scan:
         "Disable this channel's connection before rebinding it by scan.",
+      company_mode_off: "Company mode is turned off on this server.",
+      org_not_found: "This organization no longer exists.",
+      org_exists: "That organization id is already taken.",
+      org_invalid:
+        "This organization's configuration needs repair; it accepts no changes until then.",
+      invalid_org_id:
+        "Invalid organization id: 2–64 characters, a lowercase letter first, then lowercase letters, digits or underscores.",
+      employee_not_found: "That Agent is not an employee of this organization.",
+      employee_exists: "That Agent is already an employee of this organization.",
+      calendar_event_exists: "A calendar event with that name already exists.",
+      calendar_event_not_found: "That calendar event no longer exists.",
+      desk_unavailable: "The desk session could not be opened.",
+      ticket_not_found: "That ticket no longer exists.",
+      ticket_invalid: "This ticket file needs repair; it accepts no changes until then.",
+      ticket_session_failed: "The ticket session could not be started.",
+      handbook_file_not_found: "That document no longer exists.",
+      handbook_index_required: "The handbook index (README.md) cannot be deleted.",
     },
   },
 };

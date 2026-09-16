@@ -26,15 +26,19 @@ import type {
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { SessionRow, SessionsRepo } from "../db/repos/sessions.js";
+import type { SessionRow } from "../db/repos/sessions.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { asSessionSource } from "../runtime/session-sources.js";
-import type { SessionSources } from "../runtime/session-sources.js";
 import { TraceIndexService, traceFilePath } from "./trace-index.js";
 import { matchesWorkspaceGroup } from "./workspace-group.js";
-import type { ProjectConfigService } from "./project-config-service.js";
+import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
+import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
+import type { ProjectConfigStore } from "../mechanisms/projects.js";
 
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
+
+/** Stands in for the organization map when company mode is not wired in (tests, older assemblies). */
+const EMPTY_ORG_IDS: ReadonlyMap<string, string> = new Map();
 
 /** Derives creation time from the local timestamp embedded in session_id; returns null if it doesn't match. */
 export function sessionIdCreatedAt(sessionId: string): string | null {
@@ -47,13 +51,15 @@ export function sessionIdCreatedAt(sessionId: string): string | null {
 
 export interface SessionServiceDeps {
   root: string;
-  sessions: SessionsRepo;
+  sessions: SessionIndex;
   manager: SessionManager;
-  projectConfig: ProjectConfigService;
+  projectConfig: ProjectConfigStore;
   /** In-process origin registry derived from session_meta (the DB stores no source column). */
-  sources: SessionSources;
+  sources: SessionOrigins;
   /** Trace-file index: discovery / adoption / stats serve from it (mtime-gated reconciler; no per-request walks). */
-  traceIndex: TraceIndexService;
+  traceIndex: TraceIndex;
+  /** The index rows themselves (files and sessions), for the reads the service does directly. */
+  traceStore: TraceIndexStore;
   /**
    * Admin proxy-settings threading (same getter the session loader passes, see
    * createCoreSessionLoader): the runtime created here is adopted by the manager and
@@ -79,7 +85,18 @@ export interface SessionServiceDeps {
    * means the field is never set.
    */
   messagingChannel?: (sessionId: string) => MessagingChannel | null;
-  /** Spawn-confinement getter (see app.ts): claimed from the platform's registered resource, forwarded into core beside proxyEnv. */
+  /**
+   * Company mode: the organization owning a Session (a desk session, or a session
+   * contributing to a ticket), for `SessionInfo.orgId` — development mode's list hides
+   * those rows, the company sidebar groups them. Two shapes because the two flows cost
+   * differently: the single-Session GET asks about one id, a list asks once for the whole
+   * Project and looks its rows up in the returned map, so a long list never costs a query
+   * per row. Lambdas rather than the repo, so the service stays decoupled from the
+   * company-mode caches; absent (older assemblies/tests) means the field is never set.
+   */
+  orgIdOfSession?: (sessionId: string) => string | undefined;
+  orgIdsOfProject?: (projectId: string) => ReadonlyMap<string, string>;
+  /** Spawn-confinement getter (the sandbox module's), forwarded into core beside proxyEnv. */
   confineSpawn?: () => SpawnConfiner | null;
 }
 
@@ -91,10 +108,18 @@ export class SessionService {
    * Async because `source` is derived from session_meta: a registry miss (Session predating
    * this process) falls back to reading the Trace head once (see sourceOf). `traces` is the
    * list flow's one-walk discovery result; without it a miss locates the shard itself.
+   *
+   * `orgIds` is the list flow's one-query organization map (see listSessions); without it the
+   * organization is a point lookup, which is what the single-Session paths want.
    */
-  async toInfo(row: SessionRow, hasTrace: boolean): Promise<SessionInfo> {
+  async toInfo(
+    row: SessionRow,
+    hasTrace: boolean,
+    orgIds?: ReadonlyMap<string, string>,
+  ): Promise<SessionInfo> {
     const source = await this.sourceOf(row, hasTrace);
     const messagingChannel = this.deps.messagingChannel?.(row.sessionId) ?? null;
+    const orgId = orgIds ? orgIds.get(row.sessionId) : this.deps.orgIdOfSession?.(row.sessionId);
     const backgroundTasks = this.deps.manager.backgroundTasksOf(row.sessionId);
     return {
       sessionId: row.sessionId,
@@ -115,6 +140,8 @@ export class SessionService {
       hasTrace,
       archived: (row.archivedAt ?? null) !== null,
       ...(messagingChannel !== null ? { messagingChannel } : {}),
+      ...(orgId !== undefined ? { orgId } : {}),
+      ...(row.client !== null && row.client !== undefined ? { client: row.client } : {}),
       ...(backgroundTasks !== undefined ? { backgroundTasks } : {}),
     };
   }
@@ -132,7 +159,7 @@ export class SessionService {
     const known = this.deps.sources.get(row.sessionId);
     if (known !== undefined) return known ?? undefined;
     if (!hasTrace) return undefined;
-    const facts = this.deps.traceIndex.repo.getSession(row.sessionId);
+    const facts = this.deps.traceStore.getSession(row.sessionId);
     if (!facts?.metaRead) return undefined; // Unreadable/unregistered: stay unknown, retry on the next list.
     this.deps.sources.set(row.sessionId, facts.source);
     return facts.source ?? undefined;
@@ -204,6 +231,10 @@ export class SessionService {
     const rows = new Map(
       this.deps.sessions.listByAgent(projectId, agentId).map((r) => [r.sessionId, r]),
     );
+    // One query for the whole Project's organization-owned sessions, looked up per row
+    // below: the company caches are small, and a lookup per row would put a statement
+    // behind every entry of a long sidebar list.
+    const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
 
     let traces: ReadonlySet<string> | undefined;
     if ([...rows.values()].some((r) => this.deps.sources.get(r.sessionId) === undefined)) {
@@ -226,7 +257,7 @@ export class SessionService {
     const rowHasTrace = (row: SessionRow): boolean =>
       traces ? traces.has(row.sessionId) : row.hasTrace === true;
     const toPage = (page: SessionRow[]) =>
-      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row))));
+      Promise.all(page.map((row) => this.toInfo(row, rowHasTrace(row), orgIds)));
 
     // No classification asked for: slice straight away (the pre-category behavior).
     if (category === undefined && workspaceGroup === undefined && !withCounts) {
@@ -298,7 +329,7 @@ export class SessionService {
     // this used to walk the Agent's ENTIRE trace history on every agents-list request):
     // the date is the shard's date directory (local yyyy-mm-dd, core's writing convention).
     await this.deps.traceIndex.reconcileAgent(projectId, agentId);
-    for (const f of this.deps.traceIndex.repo.listFilesByAgent(projectId, agentId)) {
+    for (const f of this.deps.traceStore.listFilesByAgent(projectId, agentId)) {
       mark(f.date, f.sessionId);
     }
     // DB index: the creation day also counts as active (a Session that hasn't run a Task yet produces no Trace).
@@ -343,10 +374,11 @@ export class SessionService {
     source?: "schedule" | "benchmark";
     /**
      * Creating-client hint stored on the index row (`POST .../sessions` body `client`):
-     * "cli" from the CLI, defaulting to "web". Purely informational — lists no longer
-     * filter on it.
+     * "cli" from the CLI, defaulting to "web". "org" is not accepted over HTTP — the
+     * organization runtime calls this method directly and is the only caller that passes
+     * it, so no request can claim an organization's provenance for itself.
      */
-    client?: "web" | "cli";
+    client?: "web" | "cli" | "org";
   }): Promise<SessionInfo> {
     if ((args.modelId === undefined) !== (args.provider === undefined)) {
       throw badRequest(
@@ -419,8 +451,8 @@ export class SessionService {
       approvalMode: args.approvalMode ?? "allow-all",
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,
-      // otherwise "web" (schedule runs included). NULL means a legacy row, treated as
-      // web. Informational only — lists serve every row.
+      // "org" when the organization runtime opened a desk or a ticket session, otherwise
+      // "web" (schedule runs included). NULL means a legacy row, treated as web.
       client: args.client ?? "web",
       // Creation is the first activity; the first driven run advances it (see SessionManager.drive).
       lastActiveAt: createdAt,
@@ -440,20 +472,12 @@ export class SessionService {
    */
   async latestTracePath(row: SessionRow): Promise<string | undefined> {
     await this.deps.traceIndex.reconcileAgent(row.projectId, row.agentId);
-    let files = this.deps.traceIndex.repo.listFilesBySession(
-      row.projectId,
-      row.agentId,
-      row.sessionId,
-    );
+    let files = this.deps.traceStore.listFilesBySession(row.projectId, row.agentId, row.sessionId);
     if (files.length === 0) {
       // Index miss with disk possibly ahead: one forced diff, then retry (the consumers'
       // rule — a stale index costs one extra scan, never a missing resume shard).
       await this.deps.traceIndex.reconcileAgent(row.projectId, row.agentId, { force: true });
-      files = this.deps.traceIndex.repo.listFilesBySession(
-        row.projectId,
-        row.agentId,
-        row.sessionId,
-      );
+      files = this.deps.traceStore.listFilesBySession(row.projectId, row.agentId, row.sessionId);
     }
     const latest = files.at(-1);
     return latest === undefined ? undefined : traceFilePath(this.deps.root, latest);
@@ -468,7 +492,7 @@ export class SessionService {
   private async discoverTraces(projectId: string, agentId: string): Promise<Set<string>> {
     await this.deps.traceIndex.reconcileAgent(projectId, agentId);
     const out = new Set<string>();
-    for (const f of this.deps.traceIndex.repo.listFilesByAgent(projectId, agentId)) {
+    for (const f of this.deps.traceStore.listFilesByAgent(projectId, agentId)) {
       out.add(f.sessionId);
     }
     return out;
@@ -512,7 +536,7 @@ export class SessionService {
     agentId: string,
     sessionId: string,
   ): SessionRow | null {
-    const facts = this.deps.traceIndex.repo.getSession(sessionId);
+    const facts = this.deps.traceStore.getSession(sessionId);
     if (!facts?.metaRead) return null; // Corrupt/unreadable head: skip (does not block the list; retried by a later reconcile)
     // An older Trace version's session_meta lacks provider (the model reference
     // wasn't split into separate fields yet): no backward compat, skip adoption

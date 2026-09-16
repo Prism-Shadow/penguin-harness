@@ -6,7 +6,9 @@
 
 /**
  * A host object compared by NAME across the push boundary: `Opaque<"AbortSignal">`
- * projects to `{ opaque: "AbortSignal" }`. The generator refuses an unmarked class type
+ * projects to `{ opaque: "<declaring package>#AbortSignal" }` — the generator qualifies
+ * the name by the package that declares the type, so two packages' `Resources` never
+ * match each other. The generator refuses an unmarked class type
  * — writing this out is how a declaration says "structure not checked here".
  */
 export type Opaque<Name extends string, T = unknown> = T & { readonly __opaque?: Name };

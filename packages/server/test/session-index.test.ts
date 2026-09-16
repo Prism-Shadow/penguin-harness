@@ -452,6 +452,13 @@ describe("session-index", () => {
       `${agentDir}/workspaces/tmp-89abcdef`,
       "2026-07-03T09:05:00.000Z",
     );
+    // The isolated Test Workspace an evaluation creates for one Case × Run: directly under
+    // the Agent's workspaces/, named by the Skill.
+    await seed(
+      "session-2026-07-03-09-06-00-dddd0001",
+      `${agentDir}/workspaces/eval-example-benchmark-case-1-run-1`,
+      "2026-07-03T09:06:00.000Z",
+    );
 
     const list = async (qs: string) => {
       const res = await api.get(`${base()}${qs}`);
@@ -470,8 +477,10 @@ describe("session-index", () => {
     ]);
 
     // Every auto-created temporary Workspace is ONE group (they are single-use, so a group
-    // per path would be one-session noise).
+    // per path would be one-session noise) — and so is every other directory directly under
+    // the Agent's workspaces/, the evaluation Skill's Test Workspaces among them.
     expect(ids(await list("?category=active&workspaceGroup=temp"))).toEqual([
+      "session-2026-07-03-09-06-00-dddd0001",
       "session-2026-07-03-09-05-00-cccc0002",
       "session-2026-07-03-09-04-00-cccc0001",
     ]);
@@ -499,7 +508,7 @@ describe("session-index", () => {
       `?category=active&counts=1&workspaceGroup=${encodeURIComponent(alpha)}`,
     );
     expect(ids(counted)).toHaveLength(2);
-    expect(counted.counts?.active).toBe(6);
+    expect(counted.counts?.active).toBe(7);
     // Each path's newest Session rides with the counts: what places a Workspace group the
     // sidebar has loaded no rows of. Keyed by the stored path — the client merges the
     // temporary ones — and whole-Agent under the group filter, like the counts.
@@ -508,6 +517,7 @@ describe("session-index", () => {
       [beta]: "2026-07-03T09:03:00.000Z",
       [`${agentDir}/workspaces/tmp-0123abcd`]: "2026-07-03T09:04:00.000Z",
       [`${agentDir}/workspaces/tmp-89abcdef`]: "2026-07-03T09:05:00.000Z",
+      [`${agentDir}/workspaces/eval-example-benchmark-case-1-run-1`]: "2026-07-03T09:06:00.000Z",
     });
 
     // An empty group name is rejected, never silently unfiltered.
@@ -602,10 +612,55 @@ describe("session-index", () => {
     expect(t.deps.sessionsRepo.findById(fromCli.session.sessionId)!.client).toBe("cli");
     expect(t.deps.sessionsRepo.findById(fromWeb.session.sessionId)!.client).toBe("web");
     expect((await api.post(base(), { client: "carrier-pigeon" })).status).toBe(400);
+    // "org" is the organization runtime's own marker: it calls SessionService directly, so
+    // no request may claim it and hide its Session from development mode's list.
+    expect((await api.post(base(), { client: "org" })).status).toBe(400);
     const list = (await (await api.get(base())).json()) as SessionsResponse;
     const ids = list.sessions.map((s) => s.sessionId);
     expect(ids).toContain(fromCli.session.sessionId);
     expect(ids).toContain(fromWeb.session.sessionId);
+    // The DTO carries the stamp, which is what the two modes' lists partition on.
+    expect(list.sessions.find((s) => s.sessionId === fromCli.session.sessionId)!.client).toBe(
+      "cli",
+    );
+    expect(fromWeb.session.client).toBe("web");
+  });
+
+  it("an organization's session carries client: 'org' through the list and the single GET", async () => {
+    const deskSession = "session-2026-07-03-09-00-00-0abc0002";
+    t.deps.sessionsRepo.insert({
+      sessionId: deskSession,
+      projectId,
+      agentId: "default_agent",
+      provider: "custom",
+      modelId: "m-desk",
+      workspace: "/tmp/w-desk",
+      approvalMode: "allow-all",
+      title: null,
+      client: "org",
+      createdAt: "2026-07-03T09:00:00.000Z",
+      lastActiveAt: "2026-07-03T09:00:00.000Z",
+    });
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    expect(list.sessions.find((s) => s.sessionId === deskSession)!.client).toBe("org");
+    const one = (await (await api.get(`/api/sessions/${deskSession}`)).json()) as SessionResponse;
+    expect(one.session.client).toBe("org");
+    // A row that predates the column says nothing rather than claiming a client.
+    const legacyId = "session-2026-07-03-10-00-00-0abc0003";
+    t.deps.sessionsRepo.insert({
+      sessionId: legacyId,
+      projectId,
+      agentId: "default_agent",
+      provider: "custom",
+      modelId: "m-legacy",
+      workspace: "/tmp/w-legacy",
+      approvalMode: "allow-all",
+      title: null,
+      createdAt: "2026-07-03T10:00:00.000Z",
+      lastActiveAt: "2026-07-03T10:00:00.000Z",
+    });
+    const again = (await (await api.get(base())).json()) as SessionsResponse;
+    expect(again.sessions.find((s) => s.sessionId === legacyId)!.client).toBeUndefined();
   });
 
   it("legacy rows without a client marker stay visible by default (grandfathered as web)", async () => {
@@ -703,6 +758,43 @@ describe("session-index", () => {
     const list = (await (await api.get(base())).json()) as SessionsResponse;
     expect(list.sessions[0]!.sessionId).toBe(created.session.sessionId);
     expect(list.sessions[list.sessions.length - 1]!.sessionId).toBe(older);
+  });
+
+  it("orgId marks organization sessions on the list and the single GET; ordinary rows carry none", async () => {
+    await configureModels();
+    const create = async () =>
+      ((await (await api.post(base(), {})).json()) as SessionCreateResponse).session.sessionId;
+    const deskSession = await create();
+    const ticketSession = await create();
+    const plainSession = await create();
+    // The organization caches are the source: a desk row for the employee, a ticket row for
+    // a session contributing to one of the organization's tickets.
+    t.deps.orgCacheRepo.syncDeskSessions(projectId, "acme", [
+      { sessionId: deskSession, agentId: "acme_ceo", current: true },
+    ]);
+    t.deps.orgCacheRepo.addTicketSession(
+      projectId,
+      "acme",
+      "2026-09-02-site",
+      ticketSession,
+      "acme_dev",
+    );
+
+    const list = (await (await api.get(base())).json()) as SessionsResponse;
+    const orgIdOf = (sessionId: string) =>
+      list.sessions.find((s) => s.sessionId === sessionId)?.orgId;
+    expect(orgIdOf(deskSession)).toBe("acme");
+    expect(orgIdOf(ticketSession)).toBe("acme");
+    expect(orgIdOf(plainSession)).toBeUndefined();
+
+    for (const [sessionId, orgId] of [
+      [deskSession, "acme"],
+      [ticketSession, "acme"],
+      [plainSession, undefined],
+    ] as const) {
+      const got = (await (await api.get(`/api/sessions/${sessionId}`)).json()) as SessionResponse;
+      expect(got.session.orgId).toBe(orgId);
+    }
   });
 
   it("PATCH approval mode persists and reads back", async () => {

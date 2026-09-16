@@ -17,6 +17,7 @@ import type { PricingRates } from "../src/services/usage-service.js";
 import { openDatabase } from "../src/db/database.js";
 import { enumerateBuckets, enumerateTsBuckets, formatLocalDate } from "../src/internal/dates.js";
 import type { DatabaseSync } from "node:sqlite";
+import { wire } from "@prismshadow/penguin-core/kernel";
 
 const CTX = {
   projectId: "project-x",
@@ -48,12 +49,12 @@ describe("usage-recorder", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new UsageRepo(db);
+    repo = wire(UsageRepo, { db: db });
   });
   afterEach(() => db.close());
 
   it("token_usage → one row (the request bucket; only Tokens persisted, never cost)", async () => {
-    const rec = new UsageRecorder(repo);
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     await rec.record(CTX, tokenUsage(counts(1000), counts(115)));
     const rows = db.prepare("SELECT * FROM usage_records").all();
     expect(rows).toHaveLength(1);
@@ -66,7 +67,7 @@ describe("usage-recorder", () => {
   });
 
   it("a sub-session's session_meta registers the origin→model mapping; token_usage is attributed via it", async () => {
-    const rec = new UsageRecorder(repo);
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     const childMeta = withOrigin(
       sessionMeta(meta("session-child", "child-model")),
       "session-child",
@@ -80,20 +81,20 @@ describe("usage-recorder", () => {
   });
 
   it("falls back to the main Session's Model when the origin mapping is missing", async () => {
-    const rec = new UsageRecorder(repo);
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     await rec.record(CTX, withOrigin(tokenUsage(counts(5), counts(5)), "session-unknown"));
     const row = db.prepare("SELECT model_id FROM usage_records").get()!;
     expect(row.model_id).toBe("main-model");
   });
 
   it("non-token_usage messages are a no-op", async () => {
-    const rec = new UsageRecorder(repo);
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     await rec.record(CTX, sessionMeta(meta("session-main", "main-model")));
     expect(db.prepare("SELECT COUNT(*) AS n FROM usage_records").get()!.n).toBe(0);
   });
 
   it("the origin mapping is capped: past the limit the earliest entry is evicted and falls back to the main Session's Model", async () => {
-    const rec = new UsageRecorder(repo);
+    const rec = wire(UsageRecorder, { usage: repo, clock: { now: () => new Date() } });
     for (let i = 0; i <= ORIGIN_MODELS_MAX; i++) {
       // ORIGIN_MODELS_MAX + 1 entries total: the earliest, sub-0, gets evicted.
       await rec.record(CTX, withOrigin(sessionMeta(meta(`sub-${i}`, "sub-model")), `sub-${i}`));
@@ -123,9 +124,10 @@ describe("usage-service (cost computed on the fly)", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new UsageRepo(db);
-    const errors = new ErrorsRepo(db);
-    service = (now: Date) => new UsageService(repo, errors, lookup, () => now);
+    repo = wire(UsageRepo, { db: db });
+    const errors = wire(ErrorsRepo, { db: db });
+    service = (now: Date) =>
+      wire(UsageService, { usage: repo, errors, lookupPricing: lookup, clock: { now: () => now } });
     pricing = { m1: { cacheRead: 0.3, cacheWrite: 3.75, output: 15 } };
   });
   afterEach(() => db.close());
@@ -170,7 +172,12 @@ describe("usage-service (cost computed on the fly)", () => {
     const peakCost = (10 * 1 + 1 * 2 + 5 * 4) / 1e6;
     const expected = peakCost + peakCost / 2;
     for (const at of ["2026-08-31T01:30:00Z", "2026-08-31T12:00:00Z", "2026-09-06T01:30:00Z"]) {
-      const svc = new UsageService(repo, new ErrorsRepo(db), tiered, () => new Date(at));
+      const svc = wire(UsageService, {
+        usage: repo,
+        errors: wire(ErrorsRepo, { db: db }),
+        lookupPricing: tiered,
+        clock: { now: () => new Date(at) },
+      });
       const res = await svc.query("p1", { groupBy: "date", from: "2026-08-31", to: "2026-08-31" });
       expect(res.summary.total.cost, at).toBeCloseTo(expected, 10);
     }
@@ -242,15 +249,15 @@ describe("usage-service (cost computed on the fly)", () => {
     // covers it, so it must not be priced — and must not perturb the ones that are.
     insert("2026-06-20", { modelId: "m-old" });
     const asked: string[] = [];
-    const svc = new UsageService(
-      repo,
-      new ErrorsRepo(db),
-      async (p, provider, modelId) => {
+    const svc = wire(UsageService, {
+      usage: repo,
+      errors: wire(ErrorsRepo, { db: db }),
+      lookupPricing: async (p: string, provider: string, modelId: string) => {
         asked.push(modelId);
         return lookup(p, provider, modelId);
       },
-      () => now,
-    );
+      clock: { now: () => now },
+    });
     const res = await svc.query("p1", { groupBy: "date", from: "2026-07-06", to: "2026-07-06" });
     expect(asked).toEqual(["m1"]);
     expect(res.summary.total.cost).toBeCloseTo(ROW_COST, 12);
@@ -347,8 +354,12 @@ describe("usage-service model totals (unfiltered, for the models page)", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new UsageRepo(db);
-    service = new UsageService(repo, new ErrorsRepo(db), lookup);
+    repo = wire(UsageRepo, { db: db });
+    service = wire(UsageService, {
+      usage: repo,
+      errors: wire(ErrorsRepo, { db: db }),
+      lookupPricing: lookup,
+    });
   });
   afterEach(() => db.close());
 
@@ -407,9 +418,10 @@ describe("usage-service series (zero-filled time-series buckets)", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    repo = new UsageRepo(db);
-    const errors = new ErrorsRepo(db);
-    service = (now: Date) => new UsageService(repo, errors, lookup, () => now);
+    repo = wire(UsageRepo, { db: db });
+    const errors = wire(ErrorsRepo, { db: db });
+    service = (now: Date) =>
+      wire(UsageService, { usage: repo, errors, lookupPricing: lookup, clock: { now: () => now } });
     pricing = { m1: { cacheRead: 0.3, cacheWrite: 3.75, output: 15 } };
   });
   afterEach(() => db.close());
@@ -677,8 +689,13 @@ describe("usage-service.queryErrors (error table paging)", () => {
 
   beforeEach(() => {
     db = openDatabase(":memory:");
-    errors = new ErrorsRepo(db);
-    service = new UsageService(new UsageRepo(db), errors, async () => undefined);
+    errors = wire(ErrorsRepo, { db: db });
+    service = wire(UsageService, {
+      usage: wire(UsageRepo, { db: db }),
+      errors,
+      lookupPricing: async () => undefined,
+      clock: { now: () => new Date() },
+    });
     // 25 rows, oldest first — so "newest first" ordering is observable across a page boundary.
     for (let i = 0; i < 25; i += 1) {
       errors.insert({

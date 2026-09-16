@@ -3,12 +3,14 @@
  * with JSON-encoded values. An absent row means the setting's built-in default, so
  * settings added after a web.db was formed need no migration.
  */
-import type { DatabaseSync } from "node:sqlite";
 import {
   clampAttachmentMb,
   DEFAULT_ATTACHMENT_MAX_MB,
   DEFAULT_ATTACHMENT_TOTAL_MB,
 } from "../../services/attachment-limits.js";
+import { Component, Use } from "@prismshadow/penguin-core/kernel";
+import type { Db } from "../../hmr/capabilities.js";
+import type { Settings } from "../../mechanisms/settings.js";
 
 /** Key of the "application uses the proxy" switch (the server's own outbound dispatcher); default on. */
 const PROXY_FOR_APP_KEY = "proxy_for_app";
@@ -32,9 +34,12 @@ const ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
 
 /** Key of the per-message total attachment limit, in whole MB; default DEFAULT_ATTACHMENT_TOTAL_MB. */
 const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
+/** Key of the company-mode master switch; default off (see getCompanyMode). */
+const COMPANY_MODE_KEY = "companyMode";
 
-export class ServerSettingsRepo {
-  constructor(private readonly db: DatabaseSync) {}
+@Component()
+export class ServerSettingsRepo implements Settings {
+  @Use() private readonly db!: Db;
 
   /** Returns the raw JSON-encoded value; null if never set. */
   get(key: string): string | null {
@@ -142,5 +147,24 @@ export class ServerSettingsRepo {
       attachmentMaxMb: this.getAttachmentMaxMb(),
       attachmentTotalMb: this.getAttachmentTotalMb(),
     };
+  }
+
+  /**
+   * Company mode master switch (default OFF): an absent row — and an unreadable one — means
+   * off, so the whole mode stays out of the way until an admin turns it on under
+   * System settings > Server > Company mode.
+   */
+  getCompanyMode(): boolean {
+    const raw = this.get(COMPANY_MODE_KEY);
+    if (raw === null) return false;
+    try {
+      return JSON.parse(raw) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  setCompanyMode(value: boolean): void {
+    this.set(COMPANY_MODE_KEY, JSON.stringify(value));
   }
 }

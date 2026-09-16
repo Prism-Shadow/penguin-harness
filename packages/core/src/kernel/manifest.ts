@@ -47,22 +47,43 @@ export interface Manifest {
   >;
   readonly context?: ContextDecl;
   readonly children: ReadonlyArray<ChildRef>;
+  /**
+   * Aliases in `provides` that are FORWARDED from a child: the module exports what one of
+   * its children provides under that interface, so the subtree's other provisions stay
+   * private to it. Resolved at boot to the child declaring the interface (else the one
+   * child whose provision satisfies it).
+   */
+  readonly exports?: ReadonlyArray<string>;
+  /** What the class was declared as: a component exports itself, a module exports others. Informational. */
+  readonly kind?: "module" | "component";
 }
 
 const ManifestType = type({
   name: "string > 0",
-  requires: { "[string]": { iface: "string > 0", "from?": "string > 0" } },
-  provides: { "[string]": "string > 0" },
-  contributes: { "[string]": type({ id: "string > 0", "[string]": "unknown" }).array() },
+  "requires?": { "[string]": { iface: "string > 0", "from?": "string > 0" } },
+  "provides?": { "[string]": "string > 0" },
+  "contributes?": { "[string]": type({ id: "string > 0", "[string]": "unknown" }).array() },
   "context?": { version: "number.integer >= 1", "schema?": "unknown" },
-  children: type("string").or({ keyed: "string" }).array(),
+  "children?": type("string").or({ keyed: "string" }).array(),
+  "exports?": "string[]",
+  "kind?": "'module' | 'component'",
 });
 
-/** Strict parse of a manifest document; throws with the arktype summary on failure. */
+/**
+ * Strict parse of a manifest document; throws with the arktype summary on failure. An empty
+ * `requires`, `provides`, `contributes` or `children` may be left out of the document — a
+ * plugin that only contributes writes its name and its contributions — and reads as empty.
+ */
 export function parseManifest(doc: unknown, where = "manifest"): Manifest {
   const out = ManifestType(doc);
   if (out instanceof type.errors) throw new Error(`${where}: ${out.summary}`);
-  return out as unknown as Manifest;
+  return {
+    ...out,
+    requires: out.requires ?? {},
+    provides: out.provides ?? {},
+    contributes: out.contributes ?? {},
+    children: out.children ?? [],
+  } as unknown as Manifest;
 }
 
 /** The iface-table key a manifest reference resolves to. */
