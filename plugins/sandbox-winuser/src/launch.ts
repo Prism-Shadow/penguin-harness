@@ -59,8 +59,18 @@ const CREATE_UNICODE_ENVIRONMENT = 0x0000_0400;
 const CREATE_NO_WINDOW = 0x0800_0000;
 const HANDLE_FLAG_INHERIT = 0x0000_0001;
 const INFINITE = 0xffff_ffff;
-/** The command inherits the caller's streams; it must NOT get a console of its own. */
-const LOGON_WITH_PROFILE = 0x0000_0001;
+/**
+ * How the sandbox account is logged in: WITHOUT loading its profile.
+ *
+ * `LOGON_WITH_PROFILE` makes Windows load (and on first use, CREATE) that account's user
+ * profile for every command — a registry hive mounted and unmounted, a `C:\Users\<account>`
+ * built, and the shell told about a logon. A person watching their desktop sees the harness's
+ * own window drop to the taskbar while that happens, which is what a sandbox must never do to
+ * someone's machine. Nothing here needs the profile: the launcher points HOME, USERPROFILE and
+ * the temp variables at the sandbox's own directory (see sandboxEnvironment), which is where an
+ * MSYS shell keeps its files.
+ */
+const LOGON_WITHOUT_PROFILE = 0x0000_0000;
 
 const STARTUPINFOW = koffi.struct("STARTUPINFOW", {
   cb: "uint32",
@@ -283,7 +293,7 @@ function launch(job: LaunchJob): number {
     account.user,
     ".",
     account.password,
-    LOGON_WITH_PROFILE,
+    LOGON_WITHOUT_PROFILE,
     null,
     wide(job.commandLine),
     CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
