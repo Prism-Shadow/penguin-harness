@@ -60,6 +60,12 @@ describe("scenario: the DeepSeek Harness plugin Marketplace company", () => {
     const handbook = await service.handbook(P, ORG);
     expect(handbook).toContain("Plugin Marketplace");
     expect(handbook).toContain(MISSION);
+    // The gate every employee reads first: the board's list, the default-model rule, and
+    // the ask before anything touches the machine or the outside — addressed to the creator.
+    expect(handbook).toContain("## Decisions belong to the board");
+    expect(handbook).toContain("Project's default model");
+    expect(handbook).toContain("## Ask before it touches the machine or the outside");
+    expect(handbook).toContain("penguin org ticket block <id> --reason … --by user:alice");
 
     // 2. The CEO (from its desk) confirms the mission with the board in the all-hands channel …
     const m1 = await service.sendChannelMessage(P, ORG, "alice", DEFAULT_CHANNEL_ID, {
