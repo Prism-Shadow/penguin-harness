@@ -1,23 +1,23 @@
 ---
-title: "PenguinHarness 0.2.12：新版评估中心、文件浏览器升级、托盘图标，以及 Agent 公司内测"
+title: "PenguinHarness 0.2.13：新版评估中心、文件浏览器升级、托盘图标，以及 Agent 公司内测"
 date: 2026-09-15
 category: news
 excerpt: 评估中心重做了一遍，Benchmark 从 Agent 的附属品变成与 Agent 平级的对象。文件浏览长出右键菜单并去掉了体积上限，桌面端关掉窗口后继续在托盘里干活，运行中的工具调用可以转入后台，三个会让任务中途终止的网关问题也一并修掉。最后是仍在内测的公司模式：缺省关闭，需管理员开启，一个 Project 可以变成一家公司，把里面的 Agent 组织起来——一位 CEO、一棵汇报树、一张日历、一块五列工单板和若干频道，每一样都是磁盘上的文件。
 ---
 
-PenguinHarness 0.2.12 改的主要是工作台：评估中心按它服务的那条闭环重建，文件浏览变成真的能管理 Workspace 的面板，桌面端进了系统托盘，以及三个曾经让 Task 停在原地的网关问题。这一版还开了一项内测，需管理员开启——「Project 可以变成组织」：CEO 提议、人拍板，整家公司以文件的形式存在 Project 下。
+PenguinHarness 0.2.13 改的主要是工作台：评估中心按它服务的那条闭环重建，文件浏览变成真的能管理 Workspace 的面板，桌面端进了系统托盘，以及三个曾经让 Task 停在原地的网关问题。这一版还开了一项内测，需管理员开启——「Project 可以变成组织」：CEO 提议、人拍板，整家公司以文件的形式存在 Project 下。
 
 ## 评估中心围着闭环重建
 
 Benchmark 从 `agents/<agent>/benchmarks/<id>/` 移到了 Project 自己的 `benchmarks/<id>/`：一个 Benchmark 可以评测多个 Agent，被测 Agent 记录在每条评测记录上。评测记录的标签是 `<agent_id> · <model_id> · <thinking_level>`，图表按标签画序列，只有可比的分数才落在同一条线上——同一个 Agent 在同一运行时上的历次版本，终于连成一条趋势线。打开一个 Benchmark 现在是**进入**它，地址是 `/benchmark/:benchmarkId`；表格中的一行点开评测详情对话框。两个详情对话框末尾都有**问 AI**：把屏幕上的事实——Benchmark id、序列标签、版本、供应商、模型、思考等级、逐题分数和每次 Run 的 Session id——交给一个预填好的对话。Benchmark 带上了 `status`，`benchmark-design` 校准期间的 `draft` 会被遮住，发布门槛固定为 0–100 分制下的 85 分。评测产生的 Session 归进独立的「评估任务」分组，不再涌入被测 Agent 的活跃列表。
 
-![Benchmark 页面：按 Agent、模型与思考等级分序列的分数图，下面是评测表格](/blog-assets/penguinharness-0-2-12-benchmark-detail-zh.png)
+![Benchmark 页面：按 Agent、模型与思考等级分序列的分数图，下面是评测表格](/blog-assets/penguinharness-0-2-13-benchmark-detail-zh.png)
 
 ## 文件浏览成了真正的文件管理器
 
 面板改名为文件浏览，目录树的任意一行和预览区本身都有了右键菜单：复制路径、加入对话、上传、下载、重命名、移动、删除，右键、Shift+F10 和长按都能唤出。重命名和删除带着与编辑器保存相同的前置条件——对话框开着的时候 Agent 改写了文件，这一次操作会被拒绝。高亮移进了 Worker，体积上限也就此消失：TypeScript 每千字节约耗四毫秒，这正是源码视图卡在 64KB、编辑器卡在 32KB 的原因，现在两道上限都没有了。文本预览可读到 1MB，400KB 的文件整个过程稳在每秒 60 帧。搜索框改为在服务端搜索整个 Workspace，而不是过滤目录树恰好加载过的那些行；自动换行改为缺省开启。
 
-![文件浏览面板，目录树上的一行打开着右键菜单](/blog-assets/penguinharness-0-2-12-files-panel-zh.png)
+![文件浏览面板，目录树上的一行打开着右键菜单](/blog-assets/penguinharness-0-2-13-files-panel-zh.png)
 
 ## 关掉窗口，桌面端继续运行
 
@@ -27,7 +27,7 @@ Benchmark 从 `agents/<agent>/benchmarks/<id>/` 移到了 Project 自己的 `ben
 
 `exec_command` 或 `run_subagent` 执行期间，它在对话里的那一行提供**转入后台执行**：调用带着 `process_id` 或 `subagent_id` 结束，什么都不会被杀掉，这一轮继续往下走，不必等命令跑完。转入后台的子智能体在启动它的那一轮结束之后仍然在跑、仍然在流式输出。这个操作在调用运行满十秒后才出现——几秒就返回的命令不会再闪一下又消失。
 
-![运行中的 exec_command 行上出现的转入后台执行](/blog-assets/penguinharness-0-2-12-send-to-background-zh.png)
+![运行中的 exec_command 行上出现的转入后台执行](/blog-assets/penguinharness-0-2-13-send-to-background-zh.png)
 
 ## 三个会让任务中途终止的网关问题
 
@@ -48,13 +48,13 @@ harness 有了自己的沙箱接口，标明三个维度——`fs-write`、`netw
 
 公司模式是**内测功能，缺省关闭**，要管理员在「系统设置 › 服务器 › 启用公司模式」里打开，开关一拨即刻生效；模式切换处和总开关下方都标着内测版——它很新，你会撞上问题。一个组织以 CEO 为汇报树的根，每位员工有一条常驻的工位会话，另有日历、工单板、频道，以及每位员工的月度预算：用到 80% 告警，100% 暂停该员工的日历。这些全都是 `<project>/organizations/<org_id>/` 下的文件，SQLite 只存每轮从这些文件重建的缓存。新建一个组织只要一句话——使命——建成后只有 CEO，缺省预算每月 100 USD，按累计额比较，所以从第一分钟起就有一个数字封住整家公司。概览、组织图、日历、工单、财务、手册六个页面挂在 Project 切换器上方的「开发 | 公司」开关后面；命令行一侧，`penguin org` 覆盖了全部 API，每条命令都带 `--json`。
 
-![公司模式的概览页：收件箱、今日日程与预算告警](/blog-assets/penguinharness-0-2-12-company-overview-zh.png)
+![公司模式的概览页：收件箱、今日日程与预算告警](/blog-assets/penguinharness-0-2-13-company-overview-zh.png)
 
 ## 看板、日历，以及谁来拍板
 
 工单板分五列：提议、进行中、审核中、已完成、已拒绝。CEO 负责提议——它如何理解使命、第一批工单、招谁、给多少预算和什么模型、工作区怎么划分——由你拍板：招聘、预算，以及关闭 P0 或 P1 工单，都要等你在全员频道里确认。服务端调度器每 30 秒对每个组织对账一次，API 写入之后也立刻再对一次：把到点的日程投给工位、投递频道里的提及、重算预算；组织暂停期间到点的日程，恢复后不会补发。工单变更本身从不启动运行，它们排队等待，在该员工下一次日历扫描时落在 `## Since your last sweep` 之下。频道里只有 `@` 提及才会送达。工位会话与工单会话都是普通对话——同一套消息列表、工具卡片、审批与输入框——公司模式没有自己的聊天页。
 
-![五列工单板：提议、进行中、审核中、已完成、已拒绝](/blog-assets/penguinharness-0-2-12-company-tickets-zh.png)
+![五列工单板：提议、进行中、审核中、已完成、已拒绝](/blog-assets/penguinharness-0-2-13-company-tickets-zh.png)
 
 ## 这一版还有
 
@@ -98,4 +98,4 @@ penguin web
 docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
 ```
 
-完整细节见 [`changelog/0.2.12/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.12)。
+完整细节见 [`changelog/0.2.13/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.13)。

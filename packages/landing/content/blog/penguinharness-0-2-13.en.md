@@ -1,11 +1,11 @@
 ---
-title: "PenguinHarness 0.2.12: a rebuilt Evaluation Center, a working file manager, a tray icon, and a company-mode beta"
+title: "PenguinHarness 0.2.13: a rebuilt Evaluation Center, a working file manager, a tray icon, and a company-mode beta"
 date: 2026-09-15
 category: news
 excerpt: The Evaluation Center was rebuilt around a Benchmark that became a peer of an agent rather than something an agent owns. The Workspace browser grew a context menu and lost its size ceilings, the desktop app keeps working from the system tray after you close its window, and a running tool call can be handed to the background. Three gateway bugs that used to end a task mid-run are gone. Last, a Project can become an organization: company mode — a beta, off until an admin turns it on — gives a Project's Agents a CEO, a reporting tree, a calendar, a five-column ticket board and channels, each of them a file on disk.
 ---
 
-PenguinHarness 0.2.12 is a release about the workbench: the Evaluation Center rebuilt around the loop it exists to serve, the Files panel turned into something you can actually manage a Workspace with, a tray icon for the desktop app, and three provider-gateway bugs that used to stop a Task where it stood. Behind an admin switch it also opens a beta — a Project can become an organization, with a CEO that proposes, a human who decides, and the whole company living as files under the Project.
+PenguinHarness 0.2.13 is a release about the workbench: the Evaluation Center rebuilt around the loop it exists to serve, the Files panel turned into something you can actually manage a Workspace with, a tray icon for the desktop app, and three provider-gateway bugs that used to stop a Task where it stood. Behind an admin switch it also opens a beta — a Project can become an organization, with a CEO that proposes, a human who decides, and the whole company living as files under the Project.
 
 ## The Evaluation Center, rebuilt around the loop
 
@@ -16,7 +16,7 @@ PenguinHarness 0.2.12 is a release about the workbench: the Evaluation Center re
 - A Benchmark carries a `status`. A `draft` is masked while `benchmark-design` calibrates it, and the publish gate is a fixed 85 on the 0–100 scale.
 - Evaluation Sessions are filed into their own **Evaluations** folder instead of pouring into the tested agent's active list.
 
-![A Benchmark's page: the score chart drawing one labelled series per agent, model and thinking level, above the evaluation table](/blog-assets/penguinharness-0-2-12-benchmark-detail-en.png)
+![A Benchmark's page: the score chart drawing one labelled series per agent, model and thinking level, above the evaluation table](/blog-assets/penguinharness-0-2-13-benchmark-detail-en.png)
 
 ## The Workspace browser became a working file manager
 
@@ -26,7 +26,7 @@ PenguinHarness 0.2.12 is a release about the workbench: the Evaluation Center re
 - A text preview now reads up to 1MB, and over a 400KB file the page holds a full 60 frames a second for the whole pass.
 - The search box searches the whole Workspace on the server, rather than filtering the rows the tree happened to have loaded. Soft wrap now defaults to on.
 
-![The Files panel with its context menu open over a tree row](/blog-assets/penguinharness-0-2-12-files-panel-en.png)
+![The Files panel with its context menu open over a tree row](/blog-assets/penguinharness-0-2-13-files-panel-en.png)
 
 ## The desktop app stays running when you close the window
 
@@ -40,7 +40,7 @@ PenguinHarness 0.2.12 is a release about the workbench: the Evaluation Center re
 - A detached subagent keeps running and streaming after the turn that started it has ended.
 - The action appears once the call has been running for ten seconds, so a command that returns in a few seconds no longer flashes it and takes it away again.
 
-![A running exec_command row offering Send to background](/blog-assets/penguinharness-0-2-12-send-to-background-en.png)
+![A running exec_command row offering Send to background](/blog-assets/penguinharness-0-2-13-send-to-background-en.png)
 
 ## Three gateway bugs that used to end a task mid-run
 
@@ -70,7 +70,7 @@ PenguinHarness 0.2.12 is a release about the workbench: the Evaluation Center re
 - Creating an organization takes one sentence — the mission — and produces only the CEO, with a default budget of 100 USD/month compared on the cumulative line, so that one number caps the whole company from the first minute.
 - Six pages — overview, org chart, calendar, tickets, finance, handbook — sit behind a Development | Company switch above the Project switcher, and `penguin org` covers the whole API from the command line, with `--json` everywhere.
 
-![Company mode's overview page: the inbox, today's schedule and the budget alerts](/blog-assets/penguinharness-0-2-12-company-overview-en.png)
+![Company mode's overview page: the inbox, today's schedule and the budget alerts](/blog-assets/penguinharness-0-2-13-company-overview-en.png)
 
 ## The board, the calendar, and who decides
 
@@ -81,7 +81,7 @@ PenguinHarness 0.2.12 is a release about the workbench: the Evaluation Center re
 - In a channel, only an `@` mention reaches anyone.
 - A desk or ticket conversation is an ordinary conversation — the same message list, tool cards, approvals and composer as development mode. Company mode has no chat view of its own.
 
-![The five-column ticket board: proposed, in progress, review, done and rejected](/blog-assets/penguinharness-0-2-12-company-tickets-en.png)
+![The five-column ticket board: proposed, in progress, review, done and rejected](/blog-assets/penguinharness-0-2-13-company-tickets-en.png)
 
 ## Also in this release
 
@@ -125,4 +125,4 @@ penguin web
 docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
 ```
 
-Full details for every change are in [`changelog/0.2.12/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.12).
+Full details for every change are in [`changelog/0.2.13/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.13).

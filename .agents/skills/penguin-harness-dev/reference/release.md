@@ -5,11 +5,36 @@ commit rather than written down at the time — so when you deviate, record it h
 
 ## The one rule that costs a version number
 
-**A pushed tag is never moved.** The release run publishes npm and Docker before it builds the
-signed desktop installers, so a signing failure leaves a tag whose packages shipped and whose
-Release page does not exist. That happened to 0.2.10; the same code shipped as 0.2.11 and the
-number was burned. Hence the order below: a `release/**` branch proves the signed matrix
-*before* the tag exists.
+**A pushed tag is never moved.** Two numbers have been burned for two different reasons, and both
+are worth knowing because they fail at opposite ends of the run:
+
+- **0.2.10** got as far as publishing npm and Docker, then failed the signed macOS build. The tag
+  existed, the packages were public, the Release page was not. Shipped again as 0.2.11.
+- **0.2.12** failed in the *first* job, `Publish npm packages`, at its build step — so nothing
+  reached npm, Docker or a Release page at all. Shipped again as 0.2.13.
+
+A `release/**` branch proves the signed matrix before the tag exists, which is what 0.2.10 bought.
+0.2.12 bought the rest: **CI has to walk the publishing path too**, because the release workflow
+building differently from CI is a break that cannot appear until after the tag.
+
+### What 0.2.12 actually hit
+
+Two bugs, and the second is the one to remember:
+
+1. The release job built a hand-written list of four packages with **bare `--filter`**. CI's setup
+   action uses `<pkg>...` — pnpm for "the package *and its dependencies*" — so CI built
+   `packages/hmr` transitively and was green, while the release job built `penguin-server` alone
+   and its esbuild could not resolve the dependency. Three characters apart, and only the tag side
+   was wrong. The job now runs `pnpm -r build`, so there is no list to fall out of.
+2. `penguin-server` took the **private** `packages/hmr` as a runtime `dependency`. `pnpm publish`
+   rewrites `workspace:*` to the dependency's current version, so the published manifest would have
+   named a version npm has never seen and `npm install` would have failed with E404 — *after* a
+   successful publish. tsup bundles it (`noExternal`), so it was never needed at runtime and
+   belongs in `devDependencies`. `scripts/check-publishable.mjs` now fails CI on that shape; the
+   `npm packaging` job also packs each publishable package with `npm pack --dry-run`.
+
+The lesson under both: **a green CI that builds differently from the release proves nothing about
+the release.** When the two diverge, the divergence is the defect.
 
 ## Order
 

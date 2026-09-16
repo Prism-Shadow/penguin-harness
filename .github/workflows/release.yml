@@ -601,14 +601,15 @@ jobs:
           (cd packages/server && npm version --no-git-tag-version --allow-same-version "$V")
           (cd packages/cli && npm version --no-git-tag-version --allow-same-version "$V")
 
-      # Dependency order: cli bundles core's dist (tsup noExternal), server/web need core's types;
-      # web is built here only to be copied into the server package below.
+      # `pnpm -r build` rather than a list of the packages that get published: it builds the whole
+      # workspace in dependency order, so a package added later cannot fall out of a list nobody
+      # remembers to update. That is what broke 0.2.12 -- `packages/hmr` arrived, `penguin-server`
+      # took a dependency on it, and the list still named four packages, each with a bare
+      # `--filter` that builds the package alone and not what it needs. web is built here for the
+      # same reason it always was: it is copied into the server package below.
       - name: Build and test
         run: |
-          pnpm --filter @prismshadow/penguin-core build
-          pnpm --filter @prismshadow/penguin-server build
-          pnpm --filter @prismshadow/penguin-web build
-          pnpm --filter @prismshadow/penguin-cli build
+          pnpm -r build
           pnpm --filter @prismshadow/penguin-core test
           pnpm --filter @prismshadow/penguin-server test
           pnpm --filter @prismshadow/penguin-cli test

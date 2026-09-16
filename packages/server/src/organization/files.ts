@@ -926,9 +926,9 @@ function parseLegacyProgressLine(line: string): { time: string; by: string; text
  * one `progress` history entry carrying its time and principal. Nothing is repaired on disk
  * here — the file converts to the new format the first time it is written.
  *
- * **Compatibility shim.** The frontmatter format ships in 0.2.12, so this can be deleted in
- * 0.2.13 — by then every ticket an organization still writes to has been converted; see
- * `changelog/0.2.12/2026-09-09-backward-compatibility.md`.
+ * **Compatibility shim.** The frontmatter format ships in 0.2.13, so this can be deleted in
+ * 0.2.14 — by then every ticket an organization still writes to has been converted; see
+ * `changelog/0.2.13/2026-09-09-backward-compatibility.md`.
  */
 export function parseLegacyTicket(text: string): ParseResult<TicketDoc> {
   const lines = text.split("\n");

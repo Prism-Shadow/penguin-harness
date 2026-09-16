@@ -1,4 +1,6 @@
-PenguinHarness 0.2.12 is the release where a Project can become an organization. Company mode — a beta, off until an admin turns it on — turns a Project's Agents into a company with a CEO, a reporting tree, a calendar, a ticket board and channels, each of them a file on disk. Beside it, a Benchmark became a peer of an agent rather than something an agent owns, the Workspace browser became a working file manager, the desktop app took a place in the system tray, and three gateway bugs that used to end a task mid-run are gone.
+PenguinHarness 0.2.13 is 0.2.12 shipped under a new number: that tag's release run failed at its build step before anything was published — no npm packages, no Docker image and no Release page — so install 0.2.13 instead.
+
+It is the release where a Project can become an organization. Company mode — a beta, off until an admin turns it on — turns a Project's Agents into a company with a CEO, a reporting tree, a calendar, a ticket board and channels, each of them a file on disk. Beside it, a Benchmark became a peer of an agent rather than something an agent owns, the Workspace browser became a working file manager, the desktop app took a place in the system tray, and three gateway bugs that used to end a task mid-run are gone.
 
 ## Install
 
@@ -30,7 +32,7 @@ Or the official Docker image (`linux/amd64` and `linux/arm64`):
 docker run -d --name penguin -p 127.0.0.1:7364:7364 -v penguin-data:/data hiyouga/penguinharness:latest
 ```
 
-`latest` follows `main` and is rebuilt on every push, `0.2.12` is this release built from its own tag, and the example publishes the port on the host's loopback, so a fresh deployment answers only on the machine running Docker.
+`latest` follows `main` and is rebuilt on every push, `0.2.13` is this release built from its own tag, and the example publishes the port on the host's loopback, so a fresh deployment answers only on the machine running Docker.
 
 ## Highlights
 
@@ -104,4 +106,4 @@ Company mode brings migrations 6, 7 and 8 and the profile page brings 5; all are
 
 Linux or macOS (x64 / arm64), or Windows 10+ (x64). The desktop app and the CLI installers bundle their own runtime; installing from npm needs Node >= 24, or the official Docker image, which carries its own. All data stays under `~/.penguin/data` — the `/data` volume in the container.
 
-Full detail: [changelog/0.2.12/](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.12).
+Full detail: [changelog/0.2.13/](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.13).

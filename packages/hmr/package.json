@@ -1,6 +1,6 @@
 {
   "name": "@prismshadow/penguin-hmr",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "private": true,
   "type": "module",
   "description": "The hot-update mechanism: the version store, the atomic commit, the resource registry and the park → boot → swap. Mechanism only.",
