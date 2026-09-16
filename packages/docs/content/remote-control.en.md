@@ -184,7 +184,7 @@ A connected conversation shows a paper-plane icon on its row in the sidebar. Poi
 
 Tool approvals cannot be answered from the chat. When a tool call needs approval, the bot sends "A tool call is waiting for your approval in the PenguinHarness web UI." Approve or deny it in the Web App.
 
-Whether a tool call needs approval depends on the conversation's [approval mode](/tools#approval). Read [Security](#security) before you relax it.
+Whether a tool call needs approval depends on the conversation's [approval mode](/tools#approval). New conversations start in **Approve everything**, which asks for nothing, so read [Security](#security) before you bind a bot to one.
 
 There are no chat commands. Text such as `/stop` goes to the agent as an ordinary message.
 
