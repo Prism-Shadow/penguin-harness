@@ -4,8 +4,8 @@
  * direction only (a clone of the first slide follows the last one, and the track
  * snaps back without animation once the clone is fully in view). No manual
  * switch controls; hovering or focusing the bar pauses the rotation. Every
- * announcement is a link into the blog, with a small arrow marking it as
- * click-through.
+ * announcement is a link with a small arrow marking it as click-through: a blog
+ * post opens in place through the router, a page on another site in a new tab.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -15,14 +15,31 @@ import { ArrowRightIcon } from "./icons";
 const ROTATE_MS = 6000;
 
 /**
- * Every announcement points at a blog post (content/blog/<slug>.*.md), newest
- * first: slide 0 is what a visitor sees before the rotation moves, so the
+ * Where an announcement leads, exactly one of: `to`, a blog post on this site
+ * (content/blog/<slug>.*.md) followed through the router, or `href`, a page on
+ * another site, opened in a new tab.
+ */
+type AnnouncementTarget =
+  { to: `/blog/${string}`; href?: never } | { href: `https://${string}`; to?: never };
+
+/**
+ * Newest first: slide 0 is what a visitor sees before the rotation moves, so the
  * freshest news goes at the front.
  */
 const ITEMS = [
-  { key: "flashModels", to: "/blog/penguinharness-0-2-6" },
-  { key: "fireworks", to: "/blog/fireworks-credits-amd" },
-] as const;
+  { key: "flashModels", to: "/blog/penguinharness-0-2-11" },
+  { key: "penguinGo", href: "https://token.penguin.ooo/" },
+] as const satisfies ReadonlyArray<{ key: string } & AnnouncementTarget>;
+
+/**
+ * A slide as the renderer reads it. Typed against the target union rather than the
+ * literal list, so reading `to` and `href` still type-checks while the list holds
+ * only one kind.
+ */
+type Announcement = { key: (typeof ITEMS)[number]["key"] } & AnnouncementTarget;
+
+const LINK_CLASS =
+  "inline-flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-brand-800 underline-offset-2 hover:underline dark:text-brand-200";
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
@@ -31,9 +48,9 @@ function prefersReducedMotion(): boolean {
 }
 
 export function AnnouncementBar() {
-  const texts: Record<(typeof ITEMS)[number]["key"], string> = {
+  const texts: Record<Announcement["key"], string> = {
     flashModels: S.announcement.flashModels,
-    fireworks: S.announcement.fireworks,
+    penguinGo: S.announcement.penguinGo,
   };
   // pos runs 0..ITEMS.length where ITEMS.length is the clone of slide 0.
   const [pos, setPos] = useState(0);
@@ -79,7 +96,7 @@ export function AnnouncementBar() {
     return () => cancelAnimationFrame(raf);
   }, [animate]);
 
-  const slides = [...ITEMS, ITEMS[0]!];
+  const slides: readonly Announcement[] = [...ITEMS, ITEMS[0]!];
 
   return (
     <div
@@ -106,22 +123,38 @@ export function AnnouncementBar() {
               }
             }}
           >
-            {slides.map((item, i) => (
-              <div
-                key={`${item.key}-${i}`}
-                aria-hidden={i !== pos}
-                className="flex w-full shrink-0 items-center justify-center"
-              >
-                <Link
-                  to={item.to}
-                  tabIndex={i === pos ? 0 : -1}
-                  className="inline-flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-brand-800 underline-offset-2 hover:underline dark:text-brand-200"
-                >
+            {slides.map((item, i) => {
+              const tabIndex = i === pos ? 0 : -1;
+              const content = (
+                <>
                   <span className="truncate">{texts[item.key]}</span>
                   <ArrowRightIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                </Link>
-              </div>
-            ))}
+                </>
+              );
+              return (
+                <div
+                  key={`${item.key}-${i}`}
+                  aria-hidden={i !== pos}
+                  className="flex w-full shrink-0 items-center justify-center"
+                >
+                  {item.to !== undefined ? (
+                    <Link to={item.to} tabIndex={tabIndex} className={LINK_CLASS}>
+                      {content}
+                    </Link>
+                  ) : (
+                    <a
+                      href={item.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      tabIndex={tabIndex}
+                      className={LINK_CLASS}
+                    >
+                      {content}
+                    </a>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
