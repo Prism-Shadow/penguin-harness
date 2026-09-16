@@ -154,10 +154,19 @@ describe("model-catalog", () => {
     ).toBe(true);
     expect(catalogEntryFor("penguin-go", "deepseek-flash")?.supportsVision).toBe(true);
     expect(catalogEntryFor("penguin-go", "deepseek-v4-flash")?.supportsVision).toBe(false);
-    expect(catalogEntryFor("penguin-go", "gemini-3.8-flash")).toMatchObject({
-      pricing: { cache_read: 0.15, cache_write: 1.5, output: 7.5 },
-      discount: 0.5,
-    });
+    for (const modelId of ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]) {
+      const row = catalogEntryFor("penguin-go", modelId)!;
+      expect(row, modelId).toMatchObject({
+        pricing: { cache_read: 0.075, cache_write: 0.75, output: 3.75 },
+        discount: 0.5,
+      });
+      expect(effectivePricing(row), modelId).toEqual({
+        unit: "usd_per_mtok",
+        cache_read: 0.0375,
+        cache_write: 0.375,
+        output: 1.875,
+      });
+    }
     expect(catalogEntryFor("penguin-go", "deepseek-v4-flash")).toMatchObject({
       pricing: {
         cache_read: 0.005714,
