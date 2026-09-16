@@ -117,11 +117,11 @@ export function smokeShell(env: NodeJS.ProcessEnv = process.env): ShellCommand {
 
 /**
  * Starts the shell inside a container and returns its exit code (null when the runner itself
- * could not be run). MXC confines with an AppContainer, and an AppContainer can only load a
- * program whose files grant the `ALL APPLICATION PACKAGES` identity — a grant that System32
- * has and a tool unpacked under a user profile usually does not. Nothing in the policy can
- * substitute for it: such a program dies at STATUS_DLL_INIT_FAILED before its first
- * instruction, which is why this runs at load rather than leaving every command to fail.
+ * could not be run). MXC confines with an AppContainer, and an AppContainer denies the global
+ * object namespace — so an MSYS2 shell (Git Bash, the harness's first choice on Windows) dies
+ * at STATUS_DLL_INIT_FAILED before its first instruction, while creating its
+ * `\BaseNamedObjects\msys-*` directory. No policy and no file permission reaches that, which
+ * is why the shell is tried here rather than left to fail on every command the agent runs.
  */
 function defaultSmoke(runner: string, sdk: MxcSdk, shell: ShellCommand): number | null {
   const argv = [shell.command, ...shell.args, "exit 0"];
@@ -143,16 +143,14 @@ function defaultSmoke(runner: string, sdk: MxcSdk, shell: ShellCommand): number 
 
 /** What to do about a shell that cannot start in a container, as the settings card will say it. */
 export function smokeFailureReason(shell: ShellCommand, status: number): string {
-  // `…\git\bin\bash.exe` needs the grant on the Git ROOT: its DLLs live in a sibling of bin.
-  const dir = shell.command.includes("\\") ? path.dirname(path.dirname(shell.command)) : "";
-  const where = dir === "" ? "" : ` (${dir})`;
   if (status === STATUS_DLL_INIT_FAILED) {
     return (
-      `the shell '${shell.command}' cannot start inside a Windows container: it died loading its ` +
-      "DLLs (STATUS_DLL_INIT_FAILED, 0xC0000142). Every confined command runs as an AppContainer " +
-      "identity, which can only load programs whose files grant ALL APPLICATION PACKAGES. Grant it " +
-      `on the shell's install directory${where} — icacls "<dir>" /grant "*S-1-15-2-1:(OI)(CI)(RX)" /T ` +
-      "— or use a shell installed where the grant already exists, such as under Program Files."
+      `the shell '${shell.command}' cannot start inside a Windows container: it died while ` +
+      "loading its DLLs (STATUS_DLL_INIT_FAILED, 0xC0000142). A confined command runs as an " +
+      "AppContainer identity, which is denied the global object namespace, and an MSYS2 shell " +
+      "(Git Bash) needs a directory there — `NtCreateDirectoryObject(\\BaseNamedObjects\\msys-*)` " +
+      "returns access denied. No sandbox policy or file permission grants it, so confinement on " +
+      "this host needs a shell that does not need one (cmd.exe runs), set through PENGUIN_SHELL."
     );
   }
   return `the shell '${shell.command}' exited ${status} inside a test container, so no confined command would run`;

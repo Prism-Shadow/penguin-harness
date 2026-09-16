@@ -190,10 +190,10 @@ describe("platform gating and SDK contract", () => {
       smoke: () => STATUS_DLL_INIT_FAILED,
     });
     await expect(load).rejects.toThrow(/STATUS_DLL_INIT_FAILED/);
-    // The reason has to be actionable: the identity, the directory, and the command to fix it.
-    await expect(load).rejects.toThrow(/ALL APPLICATION PACKAGES/);
-    await expect(load).rejects.toThrow(/C:\\Users\\k\\tools\\git\b/);
-    await expect(load).rejects.toThrow(/icacls/);
+    // The reason has to name the shell, what the container denied it, and the way out.
+    await expect(load).rejects.toThrow(/C:\\Users\\k\\tools\\git\\bin\\bash\.exe/);
+    await expect(load).rejects.toThrow(/BaseNamedObjects/);
+    await expect(load).rejects.toThrow(/PENGUIN_SHELL/);
 
     // Another exit code is still a refusal, said plainly; a clean run mounts the backend.
     await expect(
