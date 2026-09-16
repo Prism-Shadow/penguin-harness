@@ -15,8 +15,8 @@ import {
 } from "../src/index.js";
 import type { WinUserState } from "../src/index.js";
 import { sandboxEnvironment } from "../src/launch.js";
-import { runSetup, setupScript } from "../src/setup.js";
-import { existsSync } from "node:fs";
+import { elevationCommand, runSetup, setupScript } from "../src/setup.js";
+import { existsSync, readFileSync } from "node:fs";
 
 const STATE: WinUserState = {
   group: "PenguinSandboxUsers",
@@ -178,5 +178,46 @@ describe("asking Windows for the accounts", () => {
 
   it("ships the script the prompt runs", () => {
     expect(existsSync(setupScript())).toBe(true);
+  });
+});
+
+describe("the elevation request", () => {
+  it("quotes each argument exactly once, so PowerShell can parse it", () => {
+    const command = elevationCommand("C:\\plugin\\setup\\penguin-sandbox-setup.ps1");
+    expect(command).toContain(
+      "-ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','C:\\plugin\\setup\\penguin-sandbox-setup.ps1')",
+    );
+    // The bug this replaces: a doubled quote, which parses as nothing and prompts for nothing.
+    expect(command).not.toContain("''C:");
+    expect(command).not.toContain("ps1''");
+  });
+
+  it("survives a path with a quote in it, the way PowerShell escapes one", () => {
+    expect(elevationCommand("C:\\it's\\setup.ps1")).toContain("'C:\\it''s\\setup.ps1'");
+  });
+});
+
+describe("the setup script this package ships", () => {
+  /**
+   * PowerShell reads `$Name:` inside a string as a SCOPE reference, not as a variable and a
+   * colon — so `"account $Name: created"` is a parse error, and a script that cannot parse dies
+   * before its first line, leaving no transcript and no accounts. That is exactly how it failed
+   * on a real host: the elevated process started and vanished. Nothing here can run PowerShell,
+   * so the shape that bit us is the thing asserted.
+   */
+  it("never interpolates a bare variable before a colon", () => {
+    const text = readFileSync(setupScript(), "utf8");
+    const offenders = text
+      .split(/\r?\n/)
+      .map((line, i) => [i + 1, line] as const)
+      .filter(([, line]) =>
+        /\$(?!\{)(?!env:)(?!script:)(?!global:)(?!using:)[A-Za-z_]\w*:/.test(line),
+      );
+    expect(offenders.map(([n, line]) => `${n}: ${line.trim()}`)).toEqual([]);
+  });
+
+  it("is what the elevation request runs", () => {
+    expect(setupScript()).toMatch(/setup[\\/]penguin-sandbox-setup\.ps1$/);
+    expect(readFileSync(setupScript(), "utf8")).toContain("New-LocalUser");
   });
 });

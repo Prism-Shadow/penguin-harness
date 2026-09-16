@@ -53,20 +53,24 @@ export interface SetupInternals {
  * button that reports and a button that hangs. So this fires and lets go; whether it worked is
  * read from the machine afterwards, not from this process.
  */
-function raisePrompt(script: string, log: string): void {
-  const inner = [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    `'${script.replace(/'/g, "''")}'`,
-  ].join("','");
+export function elevationCommand(script: string): string {
+  // Each argument quoted once, as its own element of a PowerShell array: quoting the script
+  // AND wrapping the list produced `'…ps1''`, a parse error that raised no prompt at all and
+  // looked exactly like a prompt nobody had answered. Hence the test beside this.
+  const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
+    .map((arg) => `'${arg.replace(/'/g, "''")}'`)
+    .join(",");
   // No redirection here on purpose: -Verb RunAs goes through ShellExecute, which cannot
-  // redirect at all — the script keeps its own transcript at `log` instead.
-  const command =
+  // redirect at all — the script keeps its own transcript instead.
+  return (
     `$ErrorActionPreference='Stop'; ` +
-    `Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -WindowStyle Hidden ` +
-    `-ArgumentList '${inner}'`;
+    `Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden ` +
+    `-ArgumentList @(${args})`
+  );
+}
+
+function raisePrompt(script: string, log: string): void {
+  const command = elevationCommand(script);
   const child = spawn("powershell.exe", ["-NoProfile", "-Command", command], {
     stdio: "ignore",
     windowsHide: true,

@@ -91,11 +91,11 @@ function New-SandboxAccount([string] $Name) {
   $secure = ConvertTo-SecureString $password -AsPlainText -Force
   if (Get-LocalUser -Name $Name -ErrorAction SilentlyContinue) {
     Set-LocalUser -Name $Name -Password $secure -PasswordNeverExpires $true
-    Write-Host "account $Name: password reset"
+    Write-Host "account ${Name}: password reset"
   } else {
     New-LocalUser -Name $Name -Password $secure -PasswordNeverExpires -AccountNeverExpires `
       -Description 'PenguinHarness sandbox: agent commands run as this account.' | Out-Null
-    Write-Host "account $Name: created"
+    Write-Host "account ${Name}: created"
   }
   if (-not (Get-LocalGroupMember -Group $GroupName -Member $Name -ErrorAction SilentlyContinue)) {
     Add-LocalGroupMember -Group $GroupName -Member $Name
