@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** process
 - **Scope:** `landing`
+- **PR:** [#766](https://github.com/Prism-Shadow/penguin-harness/pull/766)
 
 [English](2026-09-16-blog-new-posts.md)
 
