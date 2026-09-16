@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** fix
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#751](https://github.com/Prism-Shadow/penguin-harness/pull/751)
 
 [中文版](2026-09-16-org-sessions-out-of-the-development-list.zh.md)
 
