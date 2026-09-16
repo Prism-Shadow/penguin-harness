@@ -2989,7 +2989,7 @@ Benchmark：
     colVersion: "版本",
     colModel: "模型 ID",
     colThinkingLevel: "推理强度",
-    colScore: "Score",
+    colScore: "分数",
     colDuration: "耗时",
     colCase: "题目",
     colRun: "运行",
