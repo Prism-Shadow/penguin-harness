@@ -621,6 +621,14 @@ jobs:
       # rather than its exit code -- for a missing version of an existing package, older npm exits 0 and
       # newer npm exits 1, but the output is non-empty only when the version exists. Re-running the tag
       # after a mid-chain failure (e.g. Trusted Publisher not configured yet) picks up where it left off.
+      # Before anything is published: every name this job will push must already exist on npm, or
+      # be one the run can create. npm's trusted publishing is configured per package, so a name npm
+      # has never seen cannot be published here at all -- and the loop would find that out partway
+      # through, having already published everything alphabetically before it. 0.2.13 lost a run to
+      # exactly that. Fail here instead, naming what needs a first publish by hand.
+      - name: Every package this publishes already exists on npm
+        run: node scripts/check-publishable.mjs --registry --strict
+
       - name: Publish to npm
         run: |
           TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"

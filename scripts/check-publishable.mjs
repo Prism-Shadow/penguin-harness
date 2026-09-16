@@ -20,7 +20,12 @@
  * that out from a warning on a pull request costs nothing; finding it out from the release run
  * costs a version number, which is what 0.2.13 cost.
  *
- * Usage: node scripts/check-publishable.mjs [--registry]
+ * `--strict` turns that warning into a failure. CI warns, because adding a package is
+ * legitimate and blocking every such pull request would be the wrong trade; the release
+ * pre-flight fails, because the release genuinely cannot publish a name npm has never seen
+ * and finding out mid-loop costs a version number.
+ *
+ * Usage: node scripts/check-publishable.mjs [--registry] [--strict]
  */
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
@@ -100,15 +105,22 @@ for (const name of names) {
 
 if (missing.length > 0) {
   const list = missing.join(", ");
-  // A warning, not a failure: adding a package is legitimate, and blocking every such pull
-  // request would be the wrong trade. What must not happen is learning it after the tag.
-  console.log(
-    `::warning::${missing.length} package(s) have never been published: ${list}. ` +
+  const strict = process.argv.includes("--strict");
+  const say = strict ? console.error : console.log;
+  say(
+    `${strict ? "" : "::warning::"}${missing.length} package(s) have never been published: ${list}. ` +
       `npm trusted publishing is configured per package, so the release's OIDC exchange cannot ` +
       `create a name that does not exist yet and will fail on the first one it reaches. ` +
       `Publish each once by hand (or give it a trusted publisher) BEFORE tagging.`,
   );
-  console.log(`first publish needed: ${list}`);
+  say(`first publish needed: ${list}`);
+  if (strict) {
+    console.error(
+      "Publish each once by hand with credentials that may create it, then re-run. The release " +
+        "cannot do this itself.",
+    );
+    process.exit(1);
+  }
 } else {
   console.log(`registry: all ${names.length} published names already exist`);
 }
