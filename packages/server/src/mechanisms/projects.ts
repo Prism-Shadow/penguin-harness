@@ -28,7 +28,6 @@ import type { RawTable, UtilityCompletion } from "../services/project-config-ser
 import type { ListEndpointModelsOptions, ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
 import type { TieredRates } from "../services/usage-service.js";
 import type {
-  PlatformCatalogPromotion,
   PlatformModelApplyResult,
   PlatformModelCatalog,
 } from "../services/platform-auth-types.js";
@@ -99,7 +98,8 @@ export abstract class ProjectConfigStore extends Interface<{
   loadConfig(projectId: string): Promise<ProjectConfig>;
   writeRaw(projectId: string, data: RawTable): Promise<void>;
   writeInitialConfig(projectId: string, name: string): Promise<void>;
-  ensurePresetModels(projectId: string): Promise<void>;
+  ensurePresetModels(projectId: string): Promise<boolean>;
+  seedPresetPromotions(projectId: string): Promise<void>;
   getName(projectId: string): Promise<string | undefined>;
   setName(projectId: string, name: string): Promise<void>;
   getDefaultModelRef(projectId: string): Promise<ModelRef | undefined>;
@@ -147,10 +147,20 @@ export abstract class ProjectConfigStore extends Interface<{
   completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
 }>() {}
 
-/** Rebuildable per-Project platform catalog metadata stored outside Project TOML. */
-export abstract class PlatformCatalogCache extends Interface<{
-  list(projectId: string, provider: string): PlatformCatalogPromotion[];
-  replace(projectId: string, provider: string, catalog: PlatformModelCatalog): void;
+export interface ModelPromotion {
+  provider: string;
+  modelId: string;
+  discount: number;
+}
+
+/** Per-Project model promotions (web.db `model_promotions`). */
+export abstract class ModelPromotions extends Interface<{
+  get(projectId: string, provider: string, modelId: string): number | undefined;
+  list(projectId: string): ModelPromotion[];
+  /** Replaces every promotion of the Project, in one transaction. */
+  replaceAll(projectId: string, rows: readonly ModelPromotion[]): void;
+  /** Replaces the promotions of one provider group, in one transaction. */
+  replaceProvider(projectId: string, provider: string, rows: readonly ModelPromotion[]): void;
 }>() {}
 
 /** ModelOAuth: the mechanism ModelOAuthService implements. */

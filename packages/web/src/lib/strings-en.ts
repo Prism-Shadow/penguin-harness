@@ -1108,6 +1108,8 @@ export const en: Strings = {
     priceCacheRead: "Cache read price",
     priceCacheWrite: "Cache write price",
     priceOutput: "Output price",
+    promotionPriceHint: (pct: number): string =>
+      `These are list prices. A running promotion takes ${pct}% off them; changing a price cancels it`,
     currency: "Currency",
     currencyUsd: "USD $",
     currencyCny: "CNY ¥",

@@ -15,11 +15,12 @@ export interface PlatformCatalogModel {
   displayName: string;
   contextWindow: number;
   supportsVision: boolean;
-  /** Effective price Penguin Go actually bills. */
+  /**
+   * List price, which is what a Project stores: the platform's `listPricing` when it runs a
+   * promotion on the model, its billed `pricing` otherwise.
+   */
   pricing: PlatformCatalogPricing;
-  /** Seller list price behind a flat promotion. */
-  listPricing?: PlatformCatalogPricing;
-  /** Fraction off `listPricing` (0.5 = half price). */
+  /** Fraction off `pricing` the platform is running (0.5 = half price); absent when none. */
   discount?: number;
   baseUrl: string;
   clientType: "gemini-3.8" | "deepseek-v4";
@@ -30,16 +31,7 @@ export interface PlatformModelCatalog {
   models: PlatformCatalogModel[];
 }
 
-/** Rebuildable promotion metadata read from web.db for model-page decoration. */
-export interface PlatformCatalogPromotion {
-  modelId: string;
-  /** Effective price fingerprint: a stale cache row is ignored when Project pricing differs. */
-  pricing: PlatformCatalogPricing;
-  listPricing: PlatformCatalogPricing;
-  discount: number;
-}
-
-/** Catalog merge result. `updated` counts existing rows whose platform price changed. */
+/** Catalog merge result. `updated` counts existing rows whose list price, client type or promotion changed. */
 export interface PlatformModelApplyResult {
   added: number;
   updated: number;

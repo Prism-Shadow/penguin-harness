@@ -41,6 +41,7 @@ import {
   defaultProjectConfig,
   imageUrlMessage,
   metaMaxTokens,
+  presetPromotions,
   projectConfigFromTable,
   projectConfigPath,
   renderProjectConfigToml,
@@ -78,7 +79,6 @@ import { badRequest } from "../http/validate.js";
 import { cacheable } from "../internal/mtime-gate.js";
 import type {
   PlatformCatalogPricing,
-  PlatformCatalogPromotion,
   PlatformModelApplyResult,
   PlatformModelCatalog,
 } from "./platform-auth-types.js";
@@ -94,7 +94,11 @@ import {
 import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { PlatformCatalogCache, ProjectConfigStore } from "../mechanisms/projects.js";
+import type {
+  ModelPromotion,
+  ModelPromotions,
+  ProjectConfigStore,
+} from "../mechanisms/projects.js";
 
 export type RawTable = Record<string, unknown>;
 
@@ -182,26 +186,35 @@ function platformPricingMatches(value: unknown, pricing: PlatformCatalogPricing)
   );
 }
 
-function samePlatformPricing(left: PlatformCatalogPricing, right: PlatformCatalogPricing): boolean {
-  return (
-    left.unit === right.unit &&
-    left.cacheRead === right.cacheRead &&
-    left.cacheWrite === right.cacheWrite &&
-    left.output === right.output
-  );
+/**
+ * A stored `pricing` table as the three buckets, or undefined when it holds none: one present
+ * bucket is a price, and a missing one reads as 0.
+ */
+function pricingDtoOf(value: unknown): ModelPricingDto | undefined {
+  const pricing = asTable(value);
+  const cacheRead = optNum(pricing.cache_read);
+  const cacheWrite = optNum(pricing.cache_write);
+  const output = optNum(pricing.output);
+  if (cacheRead === undefined && cacheWrite === undefined && output === undefined) {
+    return undefined;
+  }
+  return { cacheRead: cacheRead ?? 0, cacheWrite: cacheWrite ?? 0, output: output ?? 0 };
 }
 
-function cachedPromotionMatches(
-  cached: PlatformCatalogPromotion | undefined,
-  model: PlatformModelCatalog["models"][number] | undefined,
-): boolean {
-  if (model?.listPricing === undefined || model.discount === undefined) return cached === undefined;
-  return (
-    cached !== undefined &&
-    cached.discount === model.discount &&
-    samePlatformPricing(cached.pricing, model.pricing) &&
-    samePlatformPricing(cached.listPricing, model.listPricing)
-  );
+/** The same three numbers, or both absent. */
+function samePricing(a: ModelPricingDto | undefined, b: ModelPricingDto | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.cacheRead === b.cacheRead && a.cacheWrite === b.cacheWrite && a.output === b.output;
+}
+
+/** A promotion's fraction off every bucket, rounded to six decimals the way `tieredRates` rounds. */
+function promotedRates(rates: PricingRates, discount: number): PricingRates {
+  const off = (v: number): number => Math.round(v * (1 - discount) * 1e6) / 1e6;
+  return {
+    cacheRead: off(rates.cacheRead),
+    cacheWrite: off(rates.cacheWrite),
+    output: off(rates.output),
+  };
 }
 
 function modelEnvironmentApiKey(
@@ -450,7 +463,7 @@ export class ProjectConfigService implements ProjectConfigStore {
 
   @Use() private readonly paths!: Paths;
   /** Optional for narrow service tests; the production Projects module always provides it. */
-  @Use() private readonly platformCatalogCache?: PlatformCatalogCache;
+  @Use() private readonly promotions?: ModelPromotions;
   private get root(): string {
     return this.paths.root;
   }
@@ -569,11 +582,12 @@ export class ProjectConfigService implements ProjectConfigStore {
    * **Only backfills when there are no models at all**: a Project that already has
    * models configured (via the CLI or edited by the user) is left as-is, and its
    * other fields (name, etc.) are preserved too — existing config is never
-   * overwritten.
+   * overwritten. Returns whether it wrote the presets, which is when their promotions
+   * are to be seeded too (seedPresetPromotions).
    */
-  async ensurePresetModels(projectId: string): Promise<void> {
+  async ensurePresetModels(projectId: string): Promise<boolean> {
     const raw = await this.readRaw(projectId);
-    if (asArray(raw.models).length > 0) return;
+    if (asArray(raw.models).length > 0) return false;
     const preset = defaultProjectConfig();
     await this.writeRaw(projectId, {
       ...raw,
@@ -581,6 +595,17 @@ export class ProjectConfigService implements ProjectConfigStore {
       ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
       models: preset.models,
     });
+    return true;
+  }
+
+  /**
+   * Stores the built-in catalog's flat promotions for a Project just seeded with the preset
+   * models: the file carries their list prices, and these fractions are the rest of what the
+   * presets bill. The rows reference the Project's `projects` row (foreign keys are enforced),
+   * so this runs once that row exists.
+   */
+  async seedPresetPromotions(projectId: string): Promise<void> {
+    this.promotions?.replaceAll(projectId, presetPromotions());
   }
 
   /** Project display name (the toml's name; returns undefined if unset, the frontend falls back to displaying the id). */
@@ -726,7 +751,11 @@ export class ProjectConfigService implements ProjectConfigStore {
     return this.getCommandPolicy(projectId);
   }
 
-  /** Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined if none -> cost is NULL). */
+  /**
+   * Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined
+   * if none -> cost is NULL). The file holds the list price; a stored promotion takes its
+   * fraction off both tiers, so a scheduled row on a promotion bills the two factors multiplied.
+   */
   async getPricing(
     projectId: string,
     provider: string,
@@ -734,15 +763,15 @@ export class ProjectConfigService implements ProjectConfigStore {
   ): Promise<TieredRates | undefined> {
     const raw = await this.readRaw(projectId);
     const entry = asArray(raw.models).find((m) => entryMatches(m, provider, modelId));
-    const pricing = entry ? asTable(entry.pricing) : {};
-    const cacheRead = optNum(pricing.cache_read);
-    const cacheWrite = optNum(pricing.cache_write);
-    const output = optNum(pricing.output);
-    if (cacheRead === undefined && cacheWrite === undefined && output === undefined) {
-      return undefined;
-    }
-    const rates = { cacheRead: cacheRead ?? 0, cacheWrite: cacheWrite ?? 0, output: output ?? 0 };
-    return tieredRates(provider, modelId, rates);
+    const rates = pricingDtoOf(entry?.pricing);
+    if (rates === undefined) return undefined;
+    const tiered = tieredRates(provider, modelId, rates);
+    const discount = this.promotions?.get(projectId, provider, modelId);
+    if (discount === undefined) return tiered;
+    return {
+      peak: promotedRates(tiered.peak, discount),
+      offPeak: promotedRates(tiered.offPeak, discount),
+    };
   }
 
   /**
@@ -1064,16 +1093,18 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the catalog are treated as custom models: envKey only has a fallback for the
    * openai protocol). vision follows the TOML annotation when present, otherwise
    * falls back to the catalog annotation (if neither exists, the field is omitted =
-   * supported by default).
+   * supported by default). `pricing` is the file's list price, and a row with a stored
+   * promotion reports its fraction as `discount`.
    */
   async getModels(projectId: string): Promise<ModelsResponse> {
     const raw = await this.readRaw(projectId);
     const defaultRef = optRef(raw.default_model);
     const visionRef = optRef(raw.vision_model);
-    const penguinGoPromotions = new Map(
-      (this.platformCatalogCache?.list(projectId, PENGUIN_GO_PROVIDER_ID) ?? []).map(
-        (promotion) => [promotion.modelId, promotion],
-      ),
+    const discounts = new Map(
+      (this.promotions?.list(projectId) ?? []).map((p) => [
+        refKey(p.provider, p.modelId),
+        p.discount,
+      ]),
     );
     const models: ModelInfo[] = asArray(raw.models)
       // An entry is valid only if both provider and model_id are strings (an entry in the old concatenated format lacks provider and is ignored).
@@ -1081,28 +1112,8 @@ export class ProjectConfigService implements ProjectConfigStore {
       .map((m) => {
         const provider = m.provider as string;
         const modelId = m.model_id as string;
-        const pricing = asTable(m.pricing);
-        const pricingDto: ModelPricingDto | undefined =
-          optNum(pricing.cache_read) !== undefined ||
-          optNum(pricing.cache_write) !== undefined ||
-          optNum(pricing.output) !== undefined
-            ? {
-                cacheRead: optNum(pricing.cache_read) ?? 0,
-                cacheWrite: optNum(pricing.cache_write) ?? 0,
-                output: optNum(pricing.output) ?? 0,
-              }
-            : undefined;
-        const cachedPromotion =
-          provider === PENGUIN_GO_PROVIDER_ID ? penguinGoPromotions.get(modelId) : undefined;
-        const promotion =
-          pricingDto !== undefined &&
-          cachedPromotion !== undefined &&
-          samePlatformPricing(cachedPromotion.pricing, {
-            unit: "usd_per_mtok",
-            ...pricingDto,
-          })
-            ? cachedPromotion
-            : undefined;
+        const pricingDto = pricingDtoOf(m.pricing);
+        const discount = discounts.get(refKey(provider, modelId));
         // Normalized on read: entries stored before AgentHub 0.4.2's openai -> openai-chat
         // rename report the canonical spelling without a disk rewrite (the next models PUT
         // persists it).
@@ -1161,16 +1172,7 @@ export class ProjectConfigService implements ProjectConfigStore {
           ...(envKey ? { envKey } : {}),
           ...(envKeyMasked !== undefined ? { envKeyMasked } : {}),
           ...(pricingDto ? { pricing: pricingDto } : {}),
-          ...(promotion !== undefined
-            ? {
-                listPricing: {
-                  cacheRead: promotion.listPricing.cacheRead,
-                  cacheWrite: promotion.listPricing.cacheWrite,
-                  output: promotion.listPricing.output,
-                },
-                discount: promotion.discount,
-              }
-            : {}),
+          ...(discount !== undefined ? { discount } : {}),
           ...(apiKey !== undefined || credBaseUrl !== undefined
             ? {
                 credential: {
@@ -1205,8 +1207,20 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the upstream id changes) is migrated as a pair via `renamedFrom`: credential and
    * unknown fields migrate along with the base entry, and default/vision pointers
    * follow. Other extension fields in the toml (name, etc.) are preserved.
+   *
+   * Promotions (web.db) follow the new table once the file is written: a declared
+   * `discount` is stored (null clears it); an omitted one keeps the stored promotion unless
+   * the entry renames the row or changes its pricing; a row left out of the table takes its
+   * promotion with it. A `discount` outside (0, 1) rejects the request before any write.
    */
   async updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse> {
+    req.models.forEach((entry, i) => {
+      const { discount } = entry;
+      if (discount === undefined || discount === null) return;
+      if (!(Number.isFinite(discount) && discount > 0 && discount < 1)) {
+        throw badRequest(`models[${i}].discount must be null or a number above 0 and below 1.`);
+      }
+    });
     const raw = await this.readRaw(projectId);
     const prevModels = asArray(raw.models);
 
@@ -1214,6 +1228,13 @@ export class ProjectConfigService implements ProjectConfigStore {
     const nextModels: RawTable[] = [];
     // Rename mapping (old reference key -> new reference): default model / vision model pointers follow a key change instead of being lost on a full table replacement.
     const renamed = new Map<string, ModelRefDto>();
+    // Each row's promotion, settled against the stored set once the file is written.
+    const promotionPlan: Array<{
+      provider: string;
+      modelId: string;
+      declared: number | null | undefined;
+      keep: boolean;
+    }> = [];
     for (const entry of req.models) {
       const key = refKey(entry.provider, entry.modelId);
       if (seen.has(key)) {
@@ -1222,14 +1243,16 @@ export class ProjectConfigService implements ProjectConfigStore {
         );
       }
       seen.add(key);
-      if (
+      const renamedFrom =
         entry.renamedFrom !== undefined &&
         !(
           entry.renamedFrom.provider === entry.provider &&
           entry.renamedFrom.modelId === entry.modelId
         )
-      ) {
-        renamed.set(refKey(entry.renamedFrom.provider, entry.renamedFrom.modelId), {
+          ? entry.renamedFrom
+          : undefined;
+      if (renamedFrom !== undefined) {
+        renamed.set(refKey(renamedFrom.provider, renamedFrom.modelId), {
           provider: entry.provider,
           modelId: entry.modelId,
         });
@@ -1241,6 +1264,17 @@ export class ProjectConfigService implements ProjectConfigStore {
       // means removed).
       const prevRef = entry.renamedFrom ?? { provider: entry.provider, modelId: entry.modelId };
       const prev = prevModels.find((m) => entryMatches(m, prevRef.provider, prevRef.modelId)) ?? {};
+      // An omitted promotion survives only on the row it was taken off, at the price it was
+      // taken off: a renamed row is another row, and a changed price is not that price.
+      promotionPlan.push({
+        provider: entry.provider,
+        modelId: entry.modelId,
+        declared: entry.discount,
+        keep:
+          entry.discount === undefined &&
+          renamedFrom === undefined &&
+          samePricing(entry.pricing, pricingDtoOf(prev.pricing)),
+      });
       const next: RawTable = { ...prev, provider: entry.provider, model_id: entry.modelId };
       delete next.context_window;
       delete next.client_type;
@@ -1248,8 +1282,6 @@ export class ProjectConfigService implements ProjectConfigStore {
       delete next.max_tokens;
       delete next.fast_mode;
       delete next.pricing;
-      delete next.list_pricing;
-      delete next.discount;
       delete next.display_name;
       // Leftover key from the old concatenated format (request_model_id): defensively stripped, never written to disk again.
       delete next.request_model_id;
@@ -1367,6 +1399,18 @@ export class ProjectConfigService implements ProjectConfigStore {
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
     else delete next.vision_model;
     await this.writeRaw(projectId, next);
+    if (this.promotions !== undefined) {
+      const stored = new Map(
+        this.promotions.list(projectId).map((p) => [refKey(p.provider, p.modelId), p.discount]),
+      );
+      const rows: ModelPromotion[] = [];
+      for (const { provider, modelId, declared, keep } of promotionPlan) {
+        const discount = keep ? stored.get(refKey(provider, modelId)) : declared;
+        if (discount !== undefined && discount !== null) rows.push({ provider, modelId, discount });
+      }
+      // Built from the new table alone, so a dropped row's promotion is gone with it.
+      this.promotions.replaceAll(projectId, rows);
+    }
     return this.getModels(projectId);
   }
 
@@ -1404,11 +1448,11 @@ export class ProjectConfigService implements ProjectConfigStore {
   }
 
   /**
-   * Adds newly advertised models and refreshes platform-owned routing and effective price on
-   * existing rows. Promotion metadata is replaced in the rebuildable SQLite catalog cache only;
-   * Project TOML stays in the same shape as every other model group. Other annotations remain
-   * Project-owned and are never overwritten. Authorization additionally applies the freshly
-   * delivered key to the whole group.
+   * Adds newly advertised models and refreshes platform-owned routing and list price on
+   * existing rows, then replaces this group's promotions (web.db) with the platform's. Project
+   * TOML stays in the same shape as every other model group, list price included. Other
+   * annotations remain Project-owned and are never overwritten. Authorization additionally
+   * applies the freshly delivered key to the whole group.
    */
   async mergePlatformModels(
     projectId: string,
@@ -1420,11 +1464,10 @@ export class ProjectConfigService implements ProjectConfigStore {
     const raw = await this.readRaw(projectId);
     const current = asArray(raw.models);
     const catalogById = new Map(catalog.models.map((model) => [model.modelId, model]));
-    const cachedPromotions = new Map(
-      (this.platformCatalogCache?.list(projectId, provider) ?? []).map((promotion) => [
-        promotion.modelId,
-        promotion,
-      ]),
+    const storedPromotions = new Map(
+      (this.promotions?.list(projectId) ?? [])
+        .filter((promotion) => promotion.provider === provider)
+        .map((promotion) => [promotion.modelId, promotion.discount]),
     );
     const known = new Set<string>();
     const createdAt = new Date().toISOString();
@@ -1432,7 +1475,7 @@ export class ProjectConfigService implements ProjectConfigStore {
     let updated = 0;
     let applied = 0;
     let configChanged = false;
-    const nextModels = current.map((model) => {
+    const nextModels = current.map((model): RawTable => {
       if (model.provider !== provider || typeof model.model_id !== "string") return model;
       const modelId = String(model.model_id);
       known.add(modelId);
@@ -1442,17 +1485,14 @@ export class ProjectConfigService implements ProjectConfigStore {
         remotePricing !== undefined && !platformPricingMatches(model.pricing, remotePricing);
       const clientTypeChanged =
         catalogModel !== undefined && model.client_type !== catalogModel.clientType;
+      // A row the platform no longer lists loses its promotion below, which is a change too.
       const promotionChanged =
-        this.platformCatalogCache !== undefined &&
-        !cachedPromotionMatches(cachedPromotions.get(modelId), catalogModel);
-      const hasLegacyPromotion = model.discount !== undefined || model.list_pricing !== undefined;
+        this.promotions !== undefined && storedPromotions.get(modelId) !== catalogModel?.discount;
       if (pricingChanged || clientTypeChanged || promotionChanged) updated += 1;
       if (applyKeyToExisting) applied += 1;
-      if (!pricingChanged && !clientTypeChanged && !hasLegacyPromotion && !applyKeyToExisting) {
-        return model;
-      }
+      if (!pricingChanged && !clientTypeChanged && !applyKeyToExisting) return model;
       configChanged = true;
-      const nextModel: RawTable = {
+      return {
         ...model,
         ...(pricingChanged && remotePricing !== undefined
           ? { pricing: platformPricingTable(remotePricing) }
@@ -1462,11 +1502,6 @@ export class ProjectConfigService implements ProjectConfigStore {
           : {}),
         ...(applyKeyToExisting ? { api_key: apiKey, created_at: createdAt } : {}),
       };
-      // Compatibility cleanup for builds that briefly persisted platform promotion metadata in
-      // Project TOML. The cache below is now its only dynamic source.
-      delete nextModel.discount;
-      delete nextModel.list_pricing;
-      return nextModel;
     });
 
     for (const model of catalog.models) {
@@ -1492,9 +1527,17 @@ export class ProjectConfigService implements ProjectConfigStore {
     if (configChanged) {
       await this.writeRaw(projectId, { ...raw, models: nextModels });
     }
-    // Deliberately after the authoritative Project write: a cache failure can hide promotion
-    // decoration until the next sync, but can never make requests or cost accounting incorrect.
-    this.platformCatalogCache?.replace(projectId, provider, catalog);
+    // After the file write, so a promotion never lands for a row the file failed to take; a
+    // failure here leaves the group's previous promotions until the next authorization or Sync.
+    this.promotions?.replaceProvider(
+      projectId,
+      provider,
+      catalog.models.flatMap((model) =>
+        model.discount !== undefined && known.has(model.modelId)
+          ? [{ provider, modelId: model.modelId, discount: model.discount }]
+          : [],
+      ),
+    );
     return { added, updated, applied };
   }
 }

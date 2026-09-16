@@ -41,7 +41,6 @@ import {
 import type { DragEvent as ReactDragEvent, ReactNode, RefObject } from "react";
 import type {
   CredentialInfo,
-  ModelPricingDto,
   ModelProtocolDetectRequest,
   ModelRefDto,
   ModelsResponse,
@@ -94,6 +93,7 @@ import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-c
 import {
   allGroupKeys,
   discountedPrice,
+  fractionOff,
   groupModelRows,
   hasConfiguredKey,
   isFreeModel,
@@ -321,12 +321,22 @@ export interface RowState {
    * their preset pin. Never persisted empty for a custom-like entry — see protocolForPersist.
    */
   clientType: string;
+  /** Price buckets in USD per million tokens: the list price, any promotion kept in `discount`. */
   cacheRead: string;
   cacheWrite: string;
   output: string;
-  /** Seller list price and flat discount supplied by a platform sync. */
-  listPricing?: ModelPricingDto;
+  /**
+   * The running promotion the server reports for this row: a fraction off the list price above
+   * (0.5 = half price), stored outside the config file and applied when usage is priced. Absent
+   * when the row has none.
+   */
   discount?: number;
+  /**
+   * Set only by the "sync presets" merge: the row states its catalog promotion on save —
+   * `discount`, or none to clear one — instead of leaving the server to keep or clear what it
+   * has stored (see rowToEntry and catalog-sync.ts).
+   */
+  discountDeclared?: boolean;
   /** Current base_url input; compared against originalBaseUrl to decide omit/override/clear (null). */
   baseUrl: string;
   originalBaseUrl: string;
@@ -471,10 +481,10 @@ export function modelLabelOf(displayName: string | undefined, modelId: string): 
  *
  * Loading rounds the stored USD to four decimals so it is typeable (`usdToInput`), so
  * re-encoding an untouched field would commit that rounding as the new price: a silent edit of
- * a number nobody changed. Small, but not nothing — a catalog row billed at CNY 0.05 per
- * million lands on $0.0071 instead of $0.00714285…, enough to move a promoted row off the
- * figure its seller bills and drop the discount mark that says so. Editing the field is what
- * makes the typed value authoritative.
+ * a number nobody changed. Small, but not nothing — a catalog row listed at CNY 0.05 per
+ * million lands on $0.0071 instead of $0.00714285…, which is a price change: the save would
+ * cancel the row's promotion, and a scheduled row would leave the catalog's peak price and
+ * lose its off-peak mark. Editing the field is what makes the typed value authoritative.
  */
 export function priceToSubmit(
   formValue: string,
@@ -514,7 +524,6 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   if (m.envKey !== undefined) row.envKey = m.envKey;
   if (m.envKeyMasked !== undefined) row.envKeyMasked = m.envKeyMasked;
   if (m.credential) row.credential = m.credential;
-  if (m.listPricing !== undefined) row.listPricing = m.listPricing;
   if (m.discount !== undefined) row.discount = m.discount;
   return row;
 }
@@ -627,6 +636,10 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   ) {
     entry.pricing = { cacheRead: cr, cacheWrite: cwr, output: out };
   }
+  // Promotion: sent only when the preset sync declared one (a number stores it, null clears it).
+  // Every other save omits it and leaves the stored promotion to the server, which keeps it
+  // unless this entry renames the row or changes its price.
+  if (row.discountDeclared) entry.discount = row.discount ?? null;
   if (row.apiKeyInput.trim()) entry.apiKey = row.apiKeyInput.trim();
   if (row.clearApiKey) entry.clearApiKey = true;
   const baseUrl = row.baseUrl.trim();
@@ -2061,17 +2074,18 @@ function ModelCard({
 }) {
   const priced = row.cacheRead || row.cacheWrite || row.output;
   /**
-   * A promoted catalog row. `discountedPrice` returns nothing once the price has been edited
-   * away from the catalog's, and nothing for a row on a time-of-day schedule while it is inside
-   * its peak windows — at peak it is simply at list price, which is what is stored.
+   * What is taken off this row's list price right now: its running promotion, its live
+   * off-peak tier, or both. `discountedPrice` returns nothing for a row with neither — no
+   * promotion, and a schedule that is inside its peak windows or on a price edited away from
+   * the catalog's peak price.
    *
-   * `hourTick` is in the dependency list for that second case: a scheduled row's price changes
-   * on the hour with nobody touching the page, and a card left open would otherwise keep
-   * printing a rate that stopped applying.
+   * `hourTick` is in the dependency list for the schedule: a scheduled row's price changes on
+   * the hour with nobody touching the page, and a card left open would otherwise keep printing
+   * a rate that stopped applying.
    */
   const discount = useMemo(() => discountedPrice(row), [row, hourTick]);
-  // The buckets to print: what the seller bills right now. They differ from the stored numbers
-  // only for a scheduled discount, whose stored price is the peak one.
+  // The buckets to print: what the seller bills right now. The stored numbers are the list
+  // price, so they differ whenever a discount applies.
   const shownPrice = discount
     ? {
         cacheRead: String(discount.billed.cacheRead),
@@ -2439,6 +2453,8 @@ function ModelDialog({
   const [tokenUnitRef, tokenUnitWidth] = useAffixWidth();
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
+  /** The loaded row's running promotion, explained under the price fields. */
+  const promotion = fractionOff(row?.discount);
 
   // Read from the live form, not the saved row, so editing the upstream id, the protocol or
   // the base URL updates the answer as it is typed.
@@ -2757,15 +2773,30 @@ function ModelDialog({
       return null;
     }
     setFieldErrors({});
+    const cacheRead = priceToSubmit(form.cacheRead, row?.cacheRead, currency);
+    const cacheWrite = priceToSubmit(form.cacheWrite, row?.cacheWrite, currency);
+    const output = priceToSubmit(form.output, row?.output, currency);
+    // The server cancels the promotion of a row saved with a new price or identity. A promotion
+    // the preset sync declared (still on the row when that sync's save failed) would restate it
+    // instead, so the declaration goes, and with it the promotion the card would otherwise keep
+    // showing until the save lands.
+    const cancelsPromotion =
+      row !== null &&
+      (cacheRead !== row.cacheRead ||
+        cacheWrite !== row.cacheWrite ||
+        output !== row.output ||
+        form.provider !== row.provider ||
+        modelId !== row.modelId);
     return {
       ...form,
       modelId,
       // Custom models with an empty context window fall back to the default value (preset models left empty just mean "unknown", not auto-filled).
       contextWindow:
         !preset && !contextWindow ? String(CUSTOM_CONTEXT_DEFAULT) : form.contextWindow,
-      cacheRead: priceToSubmit(form.cacheRead, row?.cacheRead, currency),
-      cacheWrite: priceToSubmit(form.cacheWrite, row?.cacheWrite, currency),
-      output: priceToSubmit(form.output, row?.output, currency),
+      cacheRead,
+      cacheWrite,
+      output,
+      ...(cancelsPromotion ? { discount: undefined, discountDeclared: undefined } : {}),
     };
   };
 
@@ -3436,6 +3467,14 @@ function ModelDialog({
             </label>
           ))}
         </div>
+        {/* The fields hold the list price, not the promotional price the card prints: the
+            promotion is stored apart and taken off when usage is priced. It is said here, in
+            view while the prices are typed, because typing a different price cancels it. */}
+        {promotion !== undefined && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {S.models.promotionPriceHint(Math.round(promotion * 100))}
+          </p>
+        )}
 
         {/* 5) Identity: model id (renamable) + display name and group (side by side) */}
         {!isNew && identityFields}

@@ -137,19 +137,20 @@ function platformPricing(value: unknown, label: string): PlatformCatalogPricing 
   };
 }
 
+/**
+ * The promotion a platform model carries, if any: its list price and the fraction off it. The
+ * wire sends both or neither, and the billed `pricing` must be that list price less the fraction.
+ */
 function platformPromotion(
   model: Record<string, unknown>,
-  effectivePricing: PlatformCatalogPricing,
-): {
-  listPricing?: PlatformCatalogPricing;
-  discount?: number;
-} {
+  billed: PlatformCatalogPricing,
+): { listPricing: PlatformCatalogPricing; discount: number } | undefined {
   const hasListPricing = model.listPricing !== undefined;
   const hasDiscount = model.discount !== undefined;
   if (hasListPricing !== hasDiscount) {
     throw new Error("The platform returned incomplete discount metadata.");
   }
-  if (!hasListPricing) return {};
+  if (!hasListPricing) return undefined;
   if (
     typeof model.discount !== "number" ||
     !Number.isFinite(model.discount) ||
@@ -163,9 +164,9 @@ function platformPromotion(
   const close = (actual: number, list: number): boolean =>
     Math.abs(actual - list * (1 - discount)) <= 1e-9 * Math.max(1, Math.abs(actual));
   if (
-    !close(effectivePricing.cacheRead, listPricing.cacheRead) ||
-    !close(effectivePricing.cacheWrite, listPricing.cacheWrite) ||
-    !close(effectivePricing.output, listPricing.output)
+    !close(billed.cacheRead, listPricing.cacheRead) ||
+    !close(billed.cacheWrite, listPricing.cacheWrite) ||
+    !close(billed.output, listPricing.output)
   ) {
     throw new Error("The platform returned inconsistent discount metadata.");
   }
@@ -211,8 +212,8 @@ function platformCatalog(value: unknown, requireEnvelope: boolean): PlatformMode
     if (typeof model.supportsVision !== "boolean") {
       throw new Error("The platform returned an invalid vision capability.");
     }
-    const pricing = platformPricing(model.pricing, "effective");
-    const promotion = platformPromotion(model, pricing);
+    const billed = platformPricing(model.pricing, "effective");
+    const promotion = platformPromotion(model, billed);
     const route = asRecord(model.recommendedRoute);
     const provider = model.provider;
     const googleRoute =
@@ -231,8 +232,9 @@ function platformCatalog(value: unknown, requireEnvelope: boolean): PlatformMode
       displayName,
       contextWindow: Number(contextWindow),
       supportsVision: model.supportsVision,
-      pricing,
-      ...promotion,
+      // A Project stores the list price; the promotion travels apart, as the fraction.
+      pricing: promotion?.listPricing ?? billed,
+      ...(promotion !== undefined ? { discount: promotion.discount } : {}),
       baseUrl: endpointByName[googleRoute ? "google" : "openai"],
       clientType: googleRoute ? ("gemini-3.8" as const) : ("deepseek-v4" as const),
     };

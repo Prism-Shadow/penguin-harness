@@ -104,7 +104,7 @@ import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
-import { hasConfiguredKey, sameModelRef } from "../models/model-grouping";
+import { hasConfiguredKey, promotedPricing, sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { WorkspaceBrowser } from "./workspace-browser";
 import { ChatMemoryView } from "./memory-view";
@@ -1547,8 +1547,11 @@ export function ChatPage() {
   );
 
   // Real-time cost for this turn: converts the Task's bucketed usage using the session Model's
-  // (paired reference) current pricing; null if no pricing is configured.
-  const modelPricing = models?.models.find((m) => sameModelRef(m, activeModelRef))?.pricing;
+  // (paired reference) current pricing; null if no pricing is configured. That pricing is the
+  // list price, so a promotion the models response reports for the Model comes off it here, as
+  // it does on the recorded cost.
+  const activeModel = models?.models.find((m) => sameModelRef(m, activeModelRef));
+  const modelPricing = promotedPricing(activeModel?.pricing, activeModel?.discount);
   const ctx: StreamRenderContext = {
     pendingApprovals: stream.pendingApprovals,
     onApprove,

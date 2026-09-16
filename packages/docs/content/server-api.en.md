@@ -171,8 +171,8 @@ Member writes are owner-only. The member routes also answer `403 desktop_single_
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/projects/:projectId/models | List models (api_key masked) |
-| PUT | /api/projects/:projectId/models | Full-table replace, keyed by `(provider, modelId)` |
+| GET | /api/projects/:projectId/models | List models (api_key masked); a row with a running promotion carries it as `discount` |
+| PUT | /api/projects/:projectId/models | Full-table replace, keyed by `(provider, modelId)`; an entry's `discount` stores or clears its promotion (see below) |
 | POST | /api/projects/:projectId/models/test | Connectivity test: `{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | /api/projects/:projectId/models/detect | Protocol auto-detection for a custom base URL: probes `openai-responses` → `ant-messages` → `openai-chat` in order, first on the URL as typed (normalized, a pasted endpoint path stripped) and then on its neighbouring `/v1` form, reporting the first served protocol and the base URL that served it: `{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}` |
 | POST | /api/projects/:projectId/models/list | Endpoint model listing for the add-group import: the ids the endpoint serves on a detected protocol: `{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
@@ -180,11 +180,13 @@ Member writes are owner-only. The member routes also answer `403 desktop_single_
 
 Every endpoint that names a model takes the complete `(provider, modelId)` pair. Nothing is inferred: a request carrying only one half is a 400, never a lookup. Where the reference itself is optional (Session creation, Schedules), omitting both halves selects the Project's default model.
 
+A row's `pricing` is always the list price. A promotion — a fraction in (0, 1) off that price — is not written to `.project_config.toml`: the server keeps it per row in `web.db` and takes it off when it prices usage. On `PUT /models`, an entry that carries `discount` gets exactly that: a number stores it, `null` clears it, and any other value is a 400 before anything is written. An entry that omits it keeps the stored promotion, unless the entry renames the row (`renamedFrom` naming a different pair) or its `pricing` differs from the stored one — then the promotion is cleared. Rows absent from the new table lose theirs.
+
 `PUT /models` also invalidates the Project's cached Session runtimes (same effective-value semantics as a vault update): no hot swap into a run already in flight, but the next Task on any Session of the Project re-resumes and reads the new `api_key` / `base_url`. It additionally publishes a `credentials_updated` event to the Project's open Session channels (see Streaming below), and the models response carries `updatedAt` (the config file's mtime) — the Web App compares it against the last auth failure to decide whether an auth-dead composer should stay disabled.
 
 #### Penguin Go key authorization
 
-All routes are owner-only. The browser receives a local flow id and authorization URL, never the device secret, delivered API key, or other platform response fields. PenguinHarness validates the platform catalog server-side, writes the delivered key across existing `penguin-go` entries, and creates locally missing models from the platform metadata. Existing models refresh their effective platform price and client protocol; endpoints and other Project-owned configuration are not overwritten, and models are never deleted. List price and discount metadata are replaced in a rebuildable `web.db` cache after the Project model table succeeds, rather than being persisted in `.project_config.toml`.
+All routes are owner-only. The browser receives a local flow id and authorization URL, never the device secret, delivered API key, or other platform response fields. PenguinHarness validates the platform catalog server-side, writes the delivered key across existing `penguin-go` entries, and creates locally missing models from the platform metadata. Existing models refresh their platform list price and client protocol; endpoints and other Project-owned configuration are not overwritten, and models are never deleted. Once the Project model table is written, the platform's discounts replace the group's stored promotions in `web.db`; they are never persisted in `.project_config.toml`.
 
 | Method | Path | Description |
 | --- | --- | --- |

@@ -171,8 +171,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/projects/:projectId/models | 模型列表（api_key 掩码显示） |
-| PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键 |
+| GET | /api/projects/:projectId/models | 模型列表（api_key 掩码显示）；有促销的行以 `discount` 携带其折扣 |
+| PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键；条目的 `discount` 写入或清除其促销折扣（见下文） |
 | POST | /api/projects/:projectId/models/test | 连通性测试：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测，先用整理后的 URL（整段端点路径会先被剥掉），再用它增删 `/v1` 后的形式，返回第一个被提供的协议与实际应答的 base URL：`{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}` |
 | POST | /api/projects/:projectId/models/list | 新增分组导入所用的端点模型列表：按检测出的协议列出端点服务的全部模型 id：`{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
@@ -180,11 +180,13 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
 
+行上的 `pricing` 恒为牌价。促销折扣是从牌价中扣除的比例，取值在 0 与 1 之间（不含两端），不写入 `.project_config.toml`，而由服务端按行存于 `web.db`、在计算成本时扣除。`PUT /models` 时，条目带 `discount` 即按其写入：数字写入，`null` 清除，其他取值在写入任何内容之前即返回 400。省略 `discount` 的条目保留已存折扣，但若条目改名（`renamedFrom` 指向另一对引用）或 `pricing` 与已存价格不同，则一并清除；新表中不再出现的行，折扣随之删除。
+
 `PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
 
 #### Penguin Go Key 授权
 
-以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-go` 既有条目，并按平台元数据创建本地缺失模型；已有模型会刷新实际平台价格和客户端协议，端点及其他由 Project 管理的配置不会被覆盖，模型也不会被删除。Project 模型表成功写入后，原价和折扣率会整体替换到 `web.db` 的可重建缓存，不写入 `.project_config.toml`。
+以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-go` 既有条目，并按平台元数据创建本地缺失模型；已有模型会刷新平台牌价和客户端协议，端点及其他由 Project 管理的配置不会被覆盖，模型也不会被删除。Project 模型表写入后，平台返回的折扣会整体替换该分组存于 `web.db` 的促销折扣，从不写入 `.project_config.toml`。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

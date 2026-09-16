@@ -86,31 +86,34 @@ const syncCatalog = (models: unknown[] = deliveryBody.connection.models) => ({
 
 describe("Penguin Go key delivery validation", () => {
   it("accepts only the expected client and connection API key", () => {
-    expect(platformConnection(deliveryBody)).toMatchObject({
+    const connection = platformConnection(deliveryBody);
+    expect(connection).toMatchObject({
       apiKey: "sk-penguin-go-secret-0001",
       catalog: {
         models: [
           {
             modelId: "gemini-3.8-flash",
             clientType: "gemini-3.8",
-            discount: 0.5,
+            // A promoted model normalizes to its list price, which is what a Project stores,
+            // and the fraction off it; the billed price is only checked against the two.
             pricing: {
-              unit: "usd_per_mtok",
-              cacheRead: 0,
-              cacheWrite: 0.625,
-              output: 5,
-            },
-            listPricing: {
               unit: "usd_per_mtok",
               cacheRead: 0,
               cacheWrite: 1.25,
               output: 10,
             },
+            discount: 0.5,
           },
-          { modelId: "deepseek-future", clientType: "deepseek-v4" },
+          {
+            modelId: "deepseek-future",
+            clientType: "deepseek-v4",
+            pricing: { unit: "usd_per_mtok", cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
+          },
         ],
       },
     });
+    expect(connection.catalog.models[0]).not.toHaveProperty("listPricing");
+    expect(connection.catalog.models[1]).not.toHaveProperty("discount");
     expect(() => platformConnection({ ...deliveryBody, client: { id: "another-client" } })).toThrow(
       "another client",
     );
@@ -246,9 +249,7 @@ describe("Penguin Go key authorization routes", () => {
       "gemini-3.1-flash-lite",
       "gemini-3.1-pro-preview",
       "deepseek-flash",
-      "deepseek-v4-flash",
       "deepseek-v4-pro",
-      "deepseek-v4-flash-vision-exp",
     ]);
     expect(
       initialPenguinGoModels.every(
@@ -264,25 +265,6 @@ describe("Penguin Go key authorization routes", () => {
     expect(await unauthorizedSync.json()).toMatchObject({
       error: { code: "platform_reauthorization_required" },
     });
-
-    // Compatibility fixture: the earlier implementation briefly persisted promotion metadata
-    // in Project TOML. A successful platform merge removes it while rebuilding the DB cache.
-    const legacy = await t.deps.projectConfigService.readRaw(projectId);
-    const legacyModels = (legacy.models as Record<string, unknown>[]).map((model) =>
-      model.provider === "penguin-go" && model.model_id === "gemini-3.8-flash"
-        ? {
-            ...model,
-            list_pricing: {
-              unit: "usd_per_mtok",
-              cache_read: 0,
-              cache_write: 1.25,
-              output: 10,
-            },
-            discount: 0.5,
-          }
-        : model,
-    );
-    await t.deps.projectConfigService.writeRaw(projectId, { ...legacy, models: legacyModels });
 
     const startResponse = await owner.post(`${base}/start`, {});
     expect(startResponse.status).toBe(201);
@@ -300,15 +282,16 @@ describe("Penguin Go key authorization routes", () => {
     const done = (await (
       await owner.get(`${base}/${started.flowId}/status`)
     ).json()) as PlatformAuthFlowStatusResponse;
-    expect(done).toEqual({ status: "completed", applied: 12 });
+    expect(done).toEqual({ status: "completed", applied: 10 });
     expect(JSON.stringify(done)).not.toContain("sk-penguin");
 
     const models = (await (
       await owner.get(`/api/projects/${projectId}/models`)
     ).json()) as ModelsResponse;
     const penguinGoModels = models.models.filter((model) => model.provider === "penguin-go");
-    expect(penguinGoModels).toHaveLength(12);
-    expect(penguinGoModels.find((model) => model.modelId === "deepseek-future")).toMatchObject({
+    expect(penguinGoModels).toHaveLength(10);
+    const deepseekFuture = penguinGoModels.find((model) => model.modelId === "deepseek-future");
+    expect(deepseekFuture).toMatchObject({
       displayName: "DeepSeek Future",
       contextWindow: 1_000_000,
       clientType: "deepseek-v4",
@@ -316,27 +299,35 @@ describe("Penguin Go key authorization routes", () => {
       pricing: { cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
       credential: { baseUrl: "https://token.penguin.ooo/api" },
     });
-    expect(penguinGoModels.find((model) => model.modelId === "deepseek-future")).not.toHaveProperty(
-      "maxTokens",
-    );
-    expect(penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash")).toMatchObject({
+    expect(deepseekFuture).not.toHaveProperty("maxTokens");
+    expect(deepseekFuture).not.toHaveProperty("discount");
+    // The promoted model: the file takes the platform's LIST price, and the fraction is stored
+    // beside it in web.db.
+    const gemini = penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash");
+    expect(gemini).toMatchObject({
       clientType: "gemini-3.8",
-      pricing: { cacheRead: 0, cacheWrite: 0.625, output: 5 },
-      listPricing: { cacheRead: 0, cacheWrite: 1.25, output: 10 },
+      pricing: { cacheRead: 0, cacheWrite: 1.25, output: 10 },
       discount: 0.5,
     });
-    const stored = await t.deps.projectConfigService.readRaw(projectId);
-    expect(JSON.stringify(stored)).not.toContain("list_pricing");
-    expect(JSON.stringify(stored)).not.toContain('"discount"');
-    expect(
+    expect(gemini).not.toHaveProperty("listPricing");
+    const stored = (await t.deps.projectConfigService.readRaw(projectId)).models as Record<
+      string,
+      unknown
+    >[];
+    const storedGemini = stored.find(
+      (model) => model.provider === "penguin-go" && model.model_id === "gemini-3.8-flash",
+    );
+    expect(storedGemini).toMatchObject({
+      pricing: { unit: "usd_per_mtok", cache_read: 0, cache_write: 1.25, output: 10 },
+    });
+    expect(storedGemini).not.toHaveProperty("discount");
+    const promotionOf = (modelId: string) =>
       t.deps.db
         .prepare(
-          `SELECT effective_output, list_output, discount
-           FROM provider_catalog_cache
-           WHERE project_id = ? AND provider = ? AND model_id = ?`,
+          "SELECT discount FROM model_promotions WHERE project_id = ? AND provider = ? AND model_id = ?",
         )
-        .get(projectId, "penguin-go", "gemini-3.8-flash"),
-    ).toEqual({ effective_output: 5, list_output: 10, discount: 0.5 });
+        .get(projectId, "penguin-go", modelId);
+    expect(promotionOf("gemini-3.8-flash")).toEqual({ discount: 0.5 });
     expect(penguinGoModels.every((model) => model.credential?.apiKeyMasked !== undefined)).toBe(
       true,
     );
@@ -352,39 +343,46 @@ describe("Penguin Go key authorization routes", () => {
     ).json()) as PlatformModelSyncResponse;
     expect(synced).toMatchObject({ added: 0, updated: 0 });
     expect(synced.updatedAt).toBe(models.updatedAt);
-    expect(synced.models.filter((model) => model.provider === "penguin-go")).toHaveLength(12);
+    expect(synced.models.filter((model) => model.provider === "penguin-go")).toHaveLength(10);
 
-    currentCatalogModels = currentCatalogModels.map((model) =>
-      typeof model === "object" &&
-      model !== null &&
-      "modelId" in model &&
-      model.modelId === "gemini-3.8-flash"
-        ? {
-            ...model,
-            pricing: {
-              unit: "usd_per_mtok",
-              cacheRead: 0,
-              cacheWrite: 0.75,
-              output: 6,
-            },
-            listPricing: {
-              unit: "usd_per_mtok",
-              cacheRead: 0,
-              cacheWrite: 1.5,
-              output: 12,
-            },
-          }
-        : model,
-    );
+    const patchGemini = (patch: Record<string, unknown>) => {
+      currentCatalogModels = currentCatalogModels.map((model) =>
+        (model as { modelId?: unknown }).modelId === "gemini-3.8-flash"
+          ? { ...(model as Record<string, unknown>), ...patch }
+          : model,
+      );
+    };
+    patchGemini({
+      pricing: { unit: "usd_per_mtok", cacheRead: 0, cacheWrite: 0.75, output: 6 },
+      listPricing: { unit: "usd_per_mtok", cacheRead: 0, cacheWrite: 1.5, output: 12 },
+    });
     const repriced = (await (
       await owner.post(`${base}/sync`, {})
     ).json()) as PlatformModelSyncResponse;
     expect(repriced).toMatchObject({ added: 0, updated: 1 });
-    expect(repriced.models.find((model) => model.modelId === "gemini-3.8-flash")?.pricing).toEqual({
-      cacheRead: 0,
-      cacheWrite: 0.75,
-      output: 6,
+    expect(repriced.models.find((model) => model.modelId === "gemini-3.8-flash")).toMatchObject({
+      pricing: { cacheRead: 0, cacheWrite: 1.5, output: 12 },
+      discount: 0.5,
     });
+
+    // Same list price, deeper promotion: an update all the same, landing in web.db alone —
+    // the file is not rewritten and keeps the list price.
+    patchGemini({
+      pricing: { unit: "usd_per_mtok", cacheRead: 0, cacheWrite: 1.125, output: 9 },
+      discount: 0.25,
+    });
+    const promotionOnly = (await (
+      await owner.post(`${base}/sync`, {})
+    ).json()) as PlatformModelSyncResponse;
+    expect(promotionOnly).toMatchObject({ added: 0, updated: 1 });
+    expect(promotionOnly.updatedAt).toBe(repriced.updatedAt);
+    expect(
+      promotionOnly.models.find((model) => model.modelId === "gemini-3.8-flash"),
+    ).toMatchObject({
+      pricing: { cacheRead: 0, cacheWrite: 1.5, output: 12 },
+      discount: 0.25,
+    });
+    expect(promotionOf("gemini-3.8-flash")).toEqual({ discount: 0.25 });
 
     currentCatalogModels.push({
       provider: "google",
@@ -420,8 +418,7 @@ describe("Penguin Go key authorization routes", () => {
       contextWindow: 1_048_576,
       clientType: "gemini-3.8",
       vision: true,
-      pricing: { cacheRead: 0.05, cacheWrite: 0.25, output: 1 },
-      listPricing: { cacheRead: 0.1, cacheWrite: 0.5, output: 2 },
+      pricing: { cacheRead: 0.1, cacheWrite: 0.5, output: 2 },
       discount: 0.5,
       credential: {
         apiKeyMasked: "sk-p…0001",

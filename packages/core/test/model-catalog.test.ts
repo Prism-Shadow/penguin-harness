@@ -15,6 +15,7 @@ import {
   offPeakAt,
   DEEPSEEK_OFF_PEAK,
   presetModelEntries,
+  presetPromotions,
   providerClientType,
   providerInfo,
   fastModeProtocol,
@@ -119,8 +120,10 @@ describe("model-catalog", () => {
     expect(oauth.keyName).toBe("PenguinHarness");
   });
 
-  it("prebuilds Penguin Go with fixed relay routes and complete account pricing", () => {
+  it("prebuilds Penguin Go with fixed relay routes and list prices, leaving promotions to the platform", () => {
     const penguinGoModels = MODEL_CATALOG.filter((model) => model.provider === "penguin-go");
+    // The DeepSeek rows follow DeepSeek's own lineup: V4.1 Flash and V4 Pro 0813. The two
+    // retired V4 Flash ids are not resold.
     expect(penguinGoModels.map((model) => model.modelId)).toEqual([
       "gemini-3.8-flash",
       "gemini-3.7-flash",
@@ -130,9 +133,7 @@ describe("model-catalog", () => {
       "gemini-3.1-flash-lite",
       "gemini-3.1-pro-preview",
       "deepseek-flash",
-      "deepseek-v4-flash",
       "deepseek-v4-pro",
-      "deepseek-v4-flash-vision-exp",
     ]);
     expect(
       penguinGoModels.every((model) => model.baseUrl === "https://token.penguin.ooo/api"),
@@ -153,21 +154,22 @@ describe("model-catalog", () => {
         .every((model) => model.clientType === "deepseek-v4"),
     ).toBe(true);
     expect(catalogEntryFor("penguin-go", "deepseek-flash")?.supportsVision).toBe(true);
-    expect(catalogEntryFor("penguin-go", "deepseek-v4-flash")?.supportsVision).toBe(false);
+    expect(catalogEntryFor("penguin-go", "deepseek-v4-pro")).toMatchObject({
+      displayName: "DeepSeek V4 Pro 0813",
+      supportsVision: false,
+    });
+    // No static promotion: the platform delivers whatever it runs at authorization and Sync,
+    // so every row here is its list price and nothing else.
+    expect(penguinGoModels.filter((model) => model.discount !== undefined)).toEqual([]);
     for (const modelId of ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]) {
-      const row = catalogEntryFor("penguin-go", modelId)!;
-      expect(row, modelId).toMatchObject({
-        pricing: { cache_read: 0.075, cache_write: 0.75, output: 3.75 },
-        discount: 0.5,
-      });
-      expect(effectivePricing(row), modelId).toEqual({
+      expect(catalogEntryFor("penguin-go", modelId)!.pricing, modelId).toEqual({
         unit: "usd_per_mtok",
-        cache_read: 0.0375,
-        cache_write: 0.375,
-        output: 1.875,
+        cache_read: 0.075,
+        cache_write: 0.75,
+        output: 3.75,
       });
     }
-    expect(catalogEntryFor("penguin-go", "deepseek-v4-flash")).toMatchObject({
+    expect(catalogEntryFor("penguin-go", "deepseek-flash")).toMatchObject({
       pricing: {
         cache_read: 0.005714,
         cache_write: 0.285714,
@@ -383,14 +385,11 @@ describe("model-catalog", () => {
       expect(entry.provider).toBe(cat.provider);
       expect(entry.model_id).toBe(cat.modelId);
       expect(entry.context_window).toBe(cat.contextWindow);
-      // A Project stores the BILLED rate, not the catalog's list price: the cost center
-      // prices only against what is written here, so a promoted row must arrive discounted.
-      // The exception is a row on a peak/off-peak schedule, which stores the PEAK price: the
-      // rate changes twice a day, so baking one in would make the number on disk depend on the
-      // hour the Project happened to be created or re-synced in.
-      expect(entry.pricing, entry.model_id).toEqual(
-        cat.offPeakDiscount !== undefined ? cat.pricing : effectivePricing(cat),
-      );
+      // A Project stores the catalog's LIST price (a scheduled row's PEAK price), never a
+      // discounted one: a promotion is seeded beside it as a fraction (presetPromotions), and
+      // baking either rate in would make the number on disk depend on which promotion was
+      // live, or which hour it was, when the Project was created or re-synced.
+      expect(entry.pricing, entry.model_id).toEqual(cat.pricing);
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
       // Gateway presets pin a client protocol, and so do the two direct rows whose own id
       // does not route (MiniMax M3, DeepSeek deepseek-flash); other direct models auto-route.
@@ -401,6 +400,17 @@ describe("model-catalog", () => {
       // The concatenated storage id and request_model_id have been removed and no longer appear.
       expect(Object.hasOwn(entry, "request_model_id")).toBe(false);
     }
+  });
+
+  it("presetPromotions: a promoted row is seeded with its fraction, a Penguin Go row never is", () => {
+    const promotions = presetPromotions();
+    expect(promotions).toContainEqual({
+      provider: "tokendance",
+      modelId: "glm-5.3-flash",
+      discount: 0.1,
+    });
+    // Penguin Go's promotions are the platform's to deliver, at authorization and Sync.
+    expect(promotions.filter((p) => p.provider === "penguin-go")).toEqual([]);
   });
 
   it("gateway models (OpenRouter / SiliconFlow / Qwen Token Plan): OpenRouter pins Responses and the rest Chat Completions, all on a preset base URL; env fallback is OPENAI_API_KEY", () => {
@@ -1525,7 +1535,7 @@ describe("off-peak schedules", () => {
 
   it("the DeepSeek rows store the peak price and declare the schedule", () => {
     // Every direct row, plus the resold rows whose sellers pass DeepSeek's own windows through:
-    // four on Penguin Go, two on TokenDance and one on OpenRouter. A gateway row on the schedule
+    // two on Penguin Go, two on TokenDance and one on OpenRouter. A gateway row on the schedule
     // carries no flat `discount` — the two are mutually exclusive, pinned by the last case here.
     const rows = MODEL_CATALOG.filter(
       (m) =>
@@ -1599,9 +1609,10 @@ describe("off-peak schedules", () => {
     ]);
   });
   it("no entry declares both a flat discount and a schedule", () => {
-    // effectivePricing, discountedPrice and presetModelEntries all silently prefer the schedule,
-    // so a row declaring both would be billed at its list price during peak with nothing failing.
-    // The rule is stated in the field's doc; this is what makes it true.
+    // effectivePricing silently prefers the schedule, while the cost center would apply the
+    // seeded promotion on top of it, so a row declaring both would be shown at one rate and
+    // billed at another with nothing failing. The rule is stated in the field's doc; this is
+    // what makes it true.
     const both = MODEL_CATALOG.filter(
       (m) => m.discount !== undefined && m.offPeakDiscount !== undefined,
     ).map((m) => `${m.provider}/${m.modelId}`);

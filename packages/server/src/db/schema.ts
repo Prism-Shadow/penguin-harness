@@ -12,19 +12,13 @@
  * idx_usage_session_ts): CREATE INDEX IF NOT EXISTS never rebuilds an existing index either.
  */
 
-export const PROVIDER_CATALOG_CACHE_SQL = `
-CREATE TABLE IF NOT EXISTS provider_catalog_cache ( -- DERIVED CACHE: platform promotion metadata, fully rebuilt by authorization/sync; Project pricing remains authoritative
-  project_id            TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
-  provider              TEXT NOT NULL,
-  model_id              TEXT NOT NULL,
-  effective_cache_read  REAL NOT NULL,       -- fingerprint of the Project price this promotion describes
-  effective_cache_write REAL NOT NULL,
-  effective_output      REAL NOT NULL,
-  list_cache_read       REAL NOT NULL,
-  list_cache_write      REAL NOT NULL,
-  list_output           REAL NOT NULL,
-  discount              REAL NOT NULL CHECK (discount > 0 AND discount < 1),
-  synced_at             TEXT NOT NULL,
+export const MODEL_PROMOTIONS_SQL = `
+CREATE TABLE IF NOT EXISTS model_promotions ( -- NOT a cache rebuildable from files: the only record of a Project row's running promotion (.project_config.toml keeps the list price), written by preset seeding at Project creation, "sync presets" and Penguin Go authorization / sync, and read by cost; lost rows price usage at list until the next sync writes them back
+  project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+  provider   TEXT NOT NULL,
+  model_id   TEXT NOT NULL,
+  discount   REAL NOT NULL CHECK (discount > 0 AND discount < 1),  -- fraction off the row's list price: billed = list × (1 − discount)
+  updated_at TEXT NOT NULL,
   PRIMARY KEY (project_id, provider, model_id)
 );`;
 
@@ -64,7 +58,7 @@ CREATE TABLE IF NOT EXISTS project_members (  -- member grants only; owners are 
   created_at TEXT NOT NULL,
   PRIMARY KEY (project_id, user_id)
 );
-${PROVIDER_CATALOG_CACHE_SQL}
+${MODEL_PROMOTIONS_SQL}
 CREATE TABLE IF NOT EXISTS agents (           -- index only; name/description live in system_config.yaml
   project_id TEXT NOT NULL,
   agent_id   TEXT NOT NULL,

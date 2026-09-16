@@ -1111,6 +1111,9 @@ export const zh = {
     priceCacheRead: "缓存命中价格",
     priceCacheWrite: "缓存未命中价格",
     priceOutput: "输出价格",
+    /** Line under the model dialog's price fields on a row with a running promotion: the fields hold the list price, and changing it cancels the promotion. */
+    promotionPriceHint: (pct: number): string =>
+      `此处为牌价，当前促销在此基础上省 ${pct}%；修改价格会取消促销`,
     currency: "币种",
     currencyUsd: "美元 $",
     currencyCny: "人民币 ¥",
