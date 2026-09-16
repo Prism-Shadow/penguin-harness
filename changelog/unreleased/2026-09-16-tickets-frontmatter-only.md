@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** refactor
 - **Scope:** `server`, `skills`
+- **PR:** [#754](https://github.com/Prism-Shadow/penguin-harness/pull/754)
 - **Breaking:** yes — a ticket file still in the `# Ticket:` header format is reported as invalid instead of being read
 
 [中文版](2026-09-16-tickets-frontmatter-only.zh.md)

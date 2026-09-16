@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** refactor
 - **Scope:** `server`, `skills`
+- **PR:** [#754](https://github.com/Prism-Shadow/penguin-harness/pull/754)
 - **Breaking:** yes — 仍是 `# Ticket:` 表头格式的工单文件会被报告为无效，不再被读取
 
 [English](2026-09-16-tickets-frontmatter-only.md)
