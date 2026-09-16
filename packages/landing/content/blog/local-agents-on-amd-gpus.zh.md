@@ -1,34 +1,52 @@
 ---
-title: 深入了解 PenguinHarness——并在 AMD GPU 上本地跑通一个自我进化的 Agent
+title: "在 AMD GPU 上用 PenguinHarness 本地运行自我进化的 Agent"
 date: 2026-07-20
 category: practice
 author: 张宁（AMD）、高钰洋（AMD）、郑耀威（PrismShadow）
-excerpt: PenguinHarness 到底是什么、它的架构背后有哪些理念，以及一次真实的端到端运行——一个完全本地、运行在 AMD GPU 上的开源权重模型，先在一个打分任务上失败，再通过自己诊断并改写自身文件，把分数从大约半数递归自我提升到接近满分，全程数据不出本机。
+excerpt: "先了解 PenguinHarness 的架构，再在 AMD GPU 上用本地开源权重模型运行它：让一个 Agent 构建另一个 Agent，再看 Agent 把自己的分数从约 4.6 提升到 9.8（满分 10），全程在本机完成。"
 ---
 
 *AMD × PrismShadow——张宁、高钰洋（AMD），郑耀威（PrismShadow）。*
 
-如果你是第一次接触 PenguinHarness，这篇文章是一次完整的导览：这个项目是什么、它的架构背后有哪些设计理念，以及——为了让一切足够具体——一次真实的运行：一个完全本地、跑在 AMD GPU 上的开源权重模型，先在一个打分任务上失败，再由它自己诊断失分、改写自身文件，把分数从大约半数递归自我提升到接近满分，全程没有一个字节离开本机。
+在这篇教程里，你将在 AMD GPU 上，用完全本地、开源权重的环境运行 PenguinHarness。每个 Token 都在本机生成，不向任何云端 API 发送内容。
 
-## PenguinHarness 是什么
+你会先简要了解 PenguinHarness 的架构，然后在 GPU 上部署一个本地模型，让一个 Agent 根据一句话需求构建新 Agent，再看一个 Agent 在打分任务上失败之后，如何通过诊断失分原因、改写自己的文件实现自我进化。
 
-PenguinHarness 是一个开源的 AI Agent Harness——一套用于*构建*和*进化* Agent 的完整 TypeScript 技术栈，而不是某一个具体应用。它可以完全本地部署，最低单 CPU 即可运行，并通过一个统一网关触达 1000+ 在线与本地模型。它的主旨只有一句话：
+完成本教程后，你将拥有：
+
+- 在你的 AMD GPU 上由 Ollama 部署、并注册为 PenguinHarness 默认模型的 `qwen3.6:35b`；
+- 一个由另一个 Agent 替你构建的 `commit-helper` Agent；
+- 一次自我进化运行：两轮之内，分数从约 4.6 提升到约 9.8（满分 10）。
+
+本教程面向初次接触 PenguinHarness 的开发者。如果没有 AMD GPU，请看[没有 AMD GPU？改用 Fireworks 额度](#没有-amd-gpu改用-fireworks-额度)。
+
+## 准备工作
+
+- 一块受 ROCm 支持的 AMD GPU，已安装 ROCm，显存足以装下约 24 GB 的 `qwen3.6:35b`。
+- 同一台机器上装有 Ollama。
+- 克隆好的 [PenguinHarness 仓库](https://github.com/Prism-Shadow/penguin-harness)，以及 Node.js 24 或更高版本和 pnpm，用来运行第三步到第五步的两个示例。
+
+不需要云端账号，也不需要 API Key。
+
+## PenguinHarness 的架构
+
+PenguinHarness 是一个开源的 AI Agent Harness：一套用于*构建*和*进化* Agent 的完整 TypeScript 技术栈，而不是某一个具体应用。它可以完全本地部署，最低单个 CPU 即可运行，并通过一个统一网关接入 1000 多个在线和本地模型。它的宗旨可以用一句话概括：
 
 > Efficient Self-Improving Harness for Everyone.（为每个人打造的、高效的自我进化 Harness。）
 
-"Harness"（挽具 / 骨架）这个词是刻意选择的。它不是一个让你*在其之上*层层搭建的重型框架，而是一层轻薄、可靠、可观测的底座——Agent 可以*站在其中*运行，更关键的是，Agent 可以反过来触及并改进它自己。三大支柱承载了这一理念：
+「Harness」这个词是刻意选的。PenguinHarness 不是一个让你在其上层层搭建的重型框架，而是一层轻薄、可靠、可观测的底座：Agent 在其中运行，也能反过来触及并改进它。三大支柱承载了这一理念：
 
 | 支柱 | 含义 |
 | --- | --- |
-| **Simplest Is the Best（大道至简）** | 在干净的底层接口之上，提供刻意精简的工具集：更少的工具调用、更少的 Token、复杂任务高效完成。 |
-| **构建 Agent 的 Harness** | 既可用 SDK 编程构建（`createAgent` → `createSession` → `run`），也可由一个 Agent 根据一句需求描述，自动造出一个全新 Agent。 |
-| **递归自我进化的 Harness** | 借助 Skills，一个 Agent 能评估并优化*它自己*，随时间递归改进。 |
+| **Simplest Is the Best（大道至简）** | 在干净的底层接口之上，提供刻意精简的工具集：更少的工具调用、更少的 Token，高效完成复杂任务。 |
+| **构建 Agent 的 Harness** | 既可以用 SDK 编程构建（`createAgent` → `createSession` → `run`），也可以让一个 Agent 根据一句自然语言需求，替你构建一个全新的 Agent。 |
+| **递归自我进化的 Harness** | 借助 Skill，Agent 评估并优化*自己*，随时间递归改进。 |
 
-后两点，PenguinHarness 是业界首个开源实现。
+在后两根支柱上，PenguinHarness 是同类项目中第一个开源实现。
 
-## 架构，以及它为何长成这样
+### 一个内核，多个前端
 
-一次安装即可获得共享同一个数据目录和同一套消息协议的四层：
+一次安装即可得到四层结构，它们共享同一个数据目录和同一套消息协议：
 
 ```text
 ┌─────────────┐  ┌─────────────────────────────┐
@@ -46,57 +64,57 @@ PenguinHarness 是一个开源的 AI Agent Harness——一套用于*构建*和*
 └──────────────────────────────────────────────┘
 ```
 
-系统的中心是 `@prismshadow/penguin-core` 里的执行引擎。CLI、Server、Web App 只是同一个引擎的不同"Human 实现"。这一个决定——单一内核、多前端——正是让整个系统保持自洽的关键，而它源自一组值得单独理解的设计信条。
+系统的中心是 `@prismshadow/penguin-core` 里的执行引擎。CLI、Server 和 Web App 只是同一个引擎的不同「Human 实现」。「单一内核、多个前端」这一个决定，让整个系统保持自洽。它源自几条设计原则，下面逐一介绍。
 
-### 一套协议，三重身份——OmniMessage
+### OmniMessage：一套协议，三种职责
 
-系统所做的一切都用同一种消息类型 OmniMessage 表达。它同时是：
+系统所做的一切，都用同一种消息类型 OmniMessage 表达。它同时是：
 
-- SDK 的对外接口（你输入的、以及流式返回的），
-- 磁盘上的 Trace 格式，
-- 引擎内部流转的"通货"。
+- SDK 的对外接口（你传入的消息和流式返回的消息）；
+- 磁盘上的 Trace 格式；
+- 引擎内部流转的通用数据。
 
-换句话说，*实时流式的内容、落盘存储的内容、模型看到的内容，是字面意义上的同一个对象*。中间没有一个隐形的转换层在"实际发生了什么"和"被记录了什么"之间悄悄改写数据。正是这种"三位一体"，构成了其余一切可观测性与可恢复性的根基。
+实时流出的内容、落盘存储的内容、模型看到的内容，是字面意义上的同一个对象。在「发生了什么」和「记录了什么」之间，没有一个隐形的转换层在悄悄改写数据。正是这种同一性，构成了系统其余部分所依赖的可观测性和可恢复性的基础。
 
 ### 三接口边界
 
-引擎只讲 OmniMessage，并在恰好三个边界之间编排信息流：
+引擎只认 OmniMessage，并在恰好三个边界之间编排信息流：
 
-- **Human**——用户侧。值得注意的是它*不是*一个类：SDK 唯一的入口 `session.run(newMessages, { approve, signal })` *就是* Human 边界。输入是一组新消息加一个审批回调，输出是一串流式消息。CLI 和 Server 是它的两个官方实现。
-- **LLM**——模型侧（`LLMInterface`）。所有与厂商相关的协议适配都活在 AgentHub 网关里；core 从不导入任何厂商 SDK。这正是为什么任何 OpenAI 兼容端点——包括本地端点——都能开箱即用。
-- **Environment**——工具侧（`EnvironmentInterface`）。执行已审批的工具调用并把结果流式返回。
+- **Human**：用户侧。它不是一个类：SDK 唯一的入口 `session.run(newMessages, { approve, signal })` *就是* Human 边界。输入是一组消息加一个审批回调，输出是一串流式消息。CLI 和 Server 是它的两个官方实现。
+- **LLM**：模型侧（`LLMInterface`）。所有与供应商相关的协议适配都放在 AgentHub 网关里，core 从不引入任何厂商 SDK。正因如此，任何 OpenAI 兼容端点（包括本地端点）都能直接使用。
+- **Environment**：工具侧（`EnvironmentInterface`）。它执行通过审批的工具调用，并把结果流式返回。
 
-因为内核不含任何 provider、工具或 UI 的具体细节，每一侧都仅靠配置即可替换。今天的本地 shell 可以变成明天的沙箱；一个 CLI 调用方可以换成 Web 调用方——core 始终不变。
+内核不包含任何供应商、工具或 UI 的具体细节，所以每一侧都只靠配置就能替换。今天的本地 shell 明天可以换成沙箱，CLI 调用方也可以换成 Web 调用方，core 始终不变。
 
 ### Agent 是可编辑的数据，不是代码
 
-一个 Agent 的全部行为——它的提示词、Skills、运行参数——都以磁盘上的可编辑文件形式存在（`agent_state/`），而非硬编码常量。这是整个项目安静而关键的一点：*你能看到的，Agent 就能改进*。自我进化不是引擎的某个特殊功能，而是一个 Agent 去编辑那些你本可以手动编辑的同一批文件，然后重新评估自己。
+Agent 的全部行为（Prompt、Skill 和运行参数）都以可编辑文件的形式保存在磁盘上的 `agent_state/` 里，而不是写死的常量。这是整个项目的关键：你能看到的，Agent 就能改进。自我进化不是引擎的某个特殊功能，而是 Agent 去编辑那些你本来也可以手动编辑的文件，然后重新评估自己。第五步会展示这一点。
 
-### 贯穿始终的其余信条
+### 贯穿始终的设计原则
 
-- **错误收敛为消息。** 模型与工具的失败从不向引擎抛异常；它们会变成模型可以据此反应的消息。健壮性是协议的属性，而非散落各处的 try/catch。
-- **一切皆可观测。** 每一次请求、工具调用、审批决策都会追加进 Trace；一个 Session 可完整从中恢复。
-- **流式优先。** 文本逐 Token 流出；工具调用与结果实时呈现。
-- **模型与 Agent 解耦。** Agent 从不绑定模型——在创建每个 Session 时选择。同一个 Agent 可以在不同 Session 上跑不同模型。
+- 错误收敛为消息。模型和工具的失败从不向引擎抛出异常，而是变成模型可以据此应对的消息。健壮性是协议本身的属性，不靠散落各处的 try/catch。
+- 一切皆可观测。每一次请求、工具调用和审批决定都会追加进 Trace，Session 可以据此完整恢复。
+- 流式优先。文本逐 Token 流出，工具调用和结果实时呈现。
+- 模型与 Agent 解耦。Agent 从不绑定模型：模型在每个 Session 里单独选择，同一个 Agent 可以在不同的 Session 上跑不同的模型。
 
-分层的一句话总结：*可编辑或需记录的活在文件里；让消息流动的活在 SDK 里；需要常驻进程与多用户的活在 Server 里；其余的都是渲染。*
+这套分层可以用一句话总结：*可编辑或需要记录的放在文件里；让消息流动的放在 SDK 里；需要常驻进程和多用户的放在 Server 里；其余都是渲染。*
 
-## 大道至简——只有 6 个工具，以及这为何重要
+### 六个内置工具
 
-第一根支柱最容易被忽略，却是你在实际使用中感受最深的：工具集刻意做得极小。PenguinHarness 只内置恰好 6 个工具：
+第一根支柱最容易被忽略，实际使用中的感受却最深：工具集刻意做得极小。PenguinHarness 恰好只内置六个工具：
 
 | 工具 | 用途 |
 | --- | --- |
-| `exec_command` | 在工作区里执行 shell 命令（流式返回 stdout/stderr） |
-| `input_command` | 驱动一个运行中的命令——写 stdin、发 Ctrl-C、轮询输出 |
+| `exec_command` | 在 Workspace 里执行 shell 命令（流式返回 stdout/stderr） |
+| `input_command` | 操作运行中的命令：写入 stdin、发送 Ctrl-C、轮询输出 |
 | `run_subagent` | 把一个自包含的子任务委派给子 Agent |
-| `input_subagent` | 轮询后台子 Agent，或在其空闲后追加提示 |
+| `input_subagent` | 轮询后台子 Agent，或向它追加提示 |
 | `read_image` | 把图片作为图像内容读入（视觉模型） |
-| `describe_image` | 让视觉模型把图片描述成文本（供纯文本模型使用） |
+| `describe_image` | 让视觉模型把图片描述成文字（供纯文本模型使用） |
 
-注意这里*没有*什么：没有 `read_file`、没有 `write_file`、没有 `edit_file`、没有 `list_dir`、没有 `grep` 工具。这是刻意的——shell 就是通用接口，所以文件的读、写、改全部通过 `exec_command` 走（`cat`、`>`、`sed` 等等）。它遵循的原则就是"大道至简"：每多一个工具，就是提示词里多一段 schema、每次调用多一些 token、模型多一个可能选错的选项。工具越少，选错越少、token 开销越小——复杂任务反而做得更利落。
+这里没有 `read_file`、`write_file`、`edit_file`、`list_dir` 或 `grep` 工具，这是有意为之。shell 就是通用接口，读、写、改文件全部通过 `exec_command` 完成（`cat`、`>`、`sed` 等）。每多一个工具，Prompt 里就多一段 schema，每次调用都多花一些 Token，模型也多一个可能选错的选项。工具越少，选错的调用越少，Token 开销也越小。
 
-这不只是理论——你可以直接从 Trace 里读出来。下面就是那个 CSV 清洗 Case，Agent 完成整个任务所做的全部 3 次工具调用，全都是 `exec_command`：
+这一点可以直接从 Trace 里读出来。下面是一个 Agent 完成一道 CSV 清洗题目时的全部三次工具调用，全都是 `exec_command`：
 
 ```bash
 # 1. 读输入——没有 read_file 工具，直接 cat
@@ -118,19 +136,64 @@ for r in cleaned:
 cat users_clean.csv
 ```
 
-读文件、做转换、核对结果——3 次调用、1 个工具、没有任何专用文件机制。再留意第二步：正因为接口是一个 shell，模型很自然地用起了 Python 来表达去重逻辑——这是任何固定的 `edit_file` 工具都做不到的。精简的工具集不是模型需要绕过的限制；它恰恰*正是*一个有能力的模型能用极少步骤完成真实任务的原因。
+读文件、做转换、核对结果：三次调用、一个工具，没有任何专用的文件机制。再看第二次调用：正因为接口是 shell，模型很自然地用 Python 写出了去重逻辑，这是任何固定的 `edit_file` 工具都做不到的。精简的工具集不是模型需要绕过的限制；有能力的模型之所以能用这么少的步骤完成真实任务，靠的正是它。
 
-## 用 Agent 造 Agent——一个完整的例子
+## 第一步：安装 PenguinHarness
 
-这就是第二根支柱——构建 Agent 的 Harness——的具体呈现。它有两面。第一面是 SDK：你用几行代码就能把一个 Agent 嵌进自己的程序——`createAgent()` → `createSession()` → `session.run(...)`（文末有代码片段）。第二面更惊艳，也正是"Agent 是可编辑的数据"的另一面：如果一个 Agent 不过是一堆文件，那么*一个 Agent 就能替你把这些文件写出来*。这正是内置 `agent-creation` skill 所做的事——给它一句大白话需求，一个 Agent 就能搭建出一个全新的 Agent：它的目录布局、它的 `system_config.yaml`（名称与描述），以及最关键的 `AGENTS.md`——那个把需求变成行为的文件。为了把这第二面端到端地展示出来，我们就在本地 AMD GPU 这套技术栈上真跑了一次。
+用一行安装命令安装 PenguinHarness：
 
-**需求。** 我们让本地的 `qwen3.6:35b`，通过 `agent-creation` skill：
+```bash
+curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
+```
 
-> 创建一个叫 `commit-helper` 的新 Agent，专门写 Conventional Commits 提交信息——`type(scope): subject` 的标题（type 取自 feat/fix/docs/…）、祈使句、subject 控制在约 50 字符内，空一行，然后是一段解释"为什么"的正文。
+安装完成后就有了 `penguin` CLI，下一步用它注册本地模型。
 
-**它产出了什么。** 这个 Agent 自主完成了：创建新 Agent 的目录、复制一份 base config、设置名称与描述，并写出了一份质量相当高的 `AGENTS.md`——涵盖了标题格式、type 枚举、subject 长度规则、正文"解释 why 而非 what"、可选的 `BREAKING CHANGE`/`Closes #` 脚注，甚至还有一条"从 diff 推断 type"的启发式（例如"重命名 → refactor 而非 chore"）。内容层面完全没有需要人工提点。
+## 第二步：在 AMD GPU 上部署 qwen3.6:35b
 
-**然后我们运行了它造出来的这个 Agent。** 给刚创建的 `commit-helper` 一段改动描述（"给支付客户端加了带退避的重试，因为网关偶发的 503 导致下单失败"），它——只依据为它写的那份 `AGENTS.md`——产出了：
+这一步用 Ollama 部署一个本地模型，并在 PenguinHarness 中注册它。
+
+模型是 `qwen3.6:35b`，一个能力不俗的本地开源权重模型：约 24 GB 的 MoE，总参数量 36B，Q4_K_M 量化。在 ROCm 下，Ollama 能原生识别 AMD GPU，无需设置任何架构 override，就能把模型加载进显存。这条路径覆盖 AMD 受 ROCm 支持的整个产品线，从 Radeon PRO 工作站显卡（如 W7900，48 GB，RDNA3）一直到数据中心的 Instinct 加速卡。
+
+启动 Ollama 并拉取模型：
+
+```bash
+ollama serve &          # 若尚未作为服务运行
+ollama pull qwen3.6:35b
+```
+
+然后在 PenguinHarness 中注册这个模型，并设为默认模型：
+
+```bash
+penguin config model add \
+  --model-id qwen3.6:35b \
+  --provider custom --client-type openai \
+  --base-url http://localhost:11434/v1 \
+  --api-key ollama --set-default
+```
+
+一条命令就够了，因为 core 对任何 OpenAI 兼容端点一视同仁，而 Ollama 正好在 `http://localhost:11434/v1` 提供这样一个端点。
+
+## 第三步：让 Agent 构建新 Agent
+
+这一步由一个 Agent 替你构建新 Agent，第二根支柱「构建 Agent 的 Harness」在这里落到实处。
+
+这根支柱有两面。第一面是 SDK：几行代码就能把 Agent 嵌进你自己的程序，即 `createAgent()` → `createSession()` → `session.run(...)`（见[后续步骤](#后续步骤)）。第二面源于「Agent 是可编辑的数据」：既然 Agent 不过是一组文件，*Agent 就能替你把这些文件写出来*。内置的 `agent-creation` Skill 做的正是这件事。给它一句自然语言需求，Agent 就能搭建出一个新 Agent：目录结构、`system_config.yaml`（名称和描述），以及最关键的 `AGENTS.md`，也就是把需求变成行为的那个文件。
+
+仓库里的示例 [`examples/build-agent-with-agent/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples/build-agent-with-agent) 把整个流程做成了一个自包含、由 SDK 驱动的脚本，跑在本地 Ollama + qwen3.6:35b 上，不调用任何云端 API。一次性的 Ollama 配置见其 `README.md`。在仓库根目录运行：
+
+```bash
+pnpm install
+pnpm build
+pnpm --dir examples/build-agent-with-agent start
+```
+
+第一阶段，脚本通过 `createAgent`/`createSession`/`run` 驱动 `default_agent` 构建 `commit-helper`。本地的 `qwen3.6:35b` Agent 借助 `agent-creation` Skill，收到的请求是：
+
+> 创建一个叫 `commit-helper` 的新 Agent，专门写 Conventional Commits 提交信息：`type(scope): subject` 格式的标题（type 取自 feat/fix/docs/…），subject 用祈使句并控制在约 50 个字符以内，空一行，然后是一段解释*为什么*要改的正文。
+
+Agent 会自主创建新 Agent 的目录、复制一份基础配置、设置名称和描述，并写出一份质量相当高的 `AGENTS.md`。文件里写明了标题格式、type 枚举、subject 长度规则、正文要「解释为什么改，而不是改了什么」、可选的 `BREAKING CHANGE`/`Closes #` 脚注，甚至还有一条从 diff 推断 type 的经验规则（例如「重命名 → refactor，而不是 chore」）。内容上完全不需要人工提点。
+
+第二阶段，脚本加载这个新 Agent，让它处理一段改动描述：「给支付客户端加了带退避的重试，因为网关偶发的 503 导致下单失败」。刚创建好的 `commit-helper` 只依据为它写的 `AGENTS.md`，产出了：
 
 ```text
 fix(payment): add retry-with-backoff for transient gateway 503 errors
@@ -141,66 +204,64 @@ exponential backoff gives the gateway time to recover, preventing
 spurious user-facing errors without requiring manual retries.
 ```
 
-它甚至先"出声"权衡了这个改动到底算 `fix` 还是 `feat`，才最终定为 `fix`——这个行为完全来自它的父 Agent 为它写的 AGENTS.md。
+它甚至会先出声权衡这个改动算 `fix` 还是 `feat`，最后才定为 `fix`。这一行为完全来自父 Agent 为它写的 `AGENTS.md`。
 
-**你可以自己跑一遍。** 上面整个流程在仓库里有一个自包含、纯 SDK 驱动的脚本：
-[`examples/build-agent-with-agent/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples/build-agent-with-agent)。
-第一阶段用 `createAgent`/`createSession`/`run` 驱动 `default_agent` 造出 `commit-helper`；第二阶段加载这个新 Agent 并运行它——全部跑在本地 Ollama + qwen3.6:35b 上，不用任何云端 API。一次性的 Ollama 配置见其 `README.md`。
+## 第四步：测量基线
 
-## 自我进化，一句话概括
+这一步给一个 `AGENTS.md` 为空的 Agent 打分，而任务的规则它看不到。
 
-第三根支柱建立在同一个理念之上。因为 Agent 是可编辑的数据、且一切皆被追踪，一个 Agent 可以*度量自己并变得更好*——这是一个"定基准 → 评估 → 找到失分点 → 编辑 Agent 自己的文件 → 只有分数提升才保留"的循环。它背后没有任何专用引擎代码，就是由 Skills 编排的普通 Agent 机制，而 scoreboard 上的每一个数字都能追回到产生它的那次具体 Session。我们会在下面这次运行之后，用一次真实的前后对比，把整个循环走一遍。
+任务看起来平平无奇：读一个项目笔记文件，写一份摘要，包含 2 句概述和恰好 3 条要点，*并遵守团队的标准报告格式*。关键全在最后这个要求。所谓「团队格式」是一套随意定下的内部约定：一行特定的标记、一个 `# Report: <subject>` 标题、一行 `Classification: INTERNAL`，以及一行 `Reviewed-by: Aurora Team` 页脚。它*只写在 Agent 的 `AGENTS.md` 里*，从任务本身推断不出来。
 
-## 在 AMD GPU 上的一次真实本地运行
+任务附带一份私有评分细则，也就是 Agent 永远看不到的一份检查清单，满分 10 分：
 
-设计信条说起来容易。下面是一次真正践行了这些信条的端到端运行，全程在完全本地、开源权重、AMD GPU 的环境上进行——每一个 Token 都在本机生成，不向任何云端 API 发送。
+- 5 分给内容，任何有能力的模型仅凭任务本身就能拿到；
+- 5 分给约定，只有从 `AGENTS.md` 里才能得知。
 
-**环境。** 一块 AMD GPU 运行 ROCm，通过 Ollama 的 OpenAI 兼容端点提供 `qwen3.6:35b`——一个能力不俗的本地开源权重模型（约 24 GB 的 MoE，36B 总参数，Q4_K_M 量化）。Ollama 原生识别到该 AMD GPU（无需任何架构 override），并把模型加载进显存。这条路径覆盖 AMD 受 ROCm 支持的整个产品线——从 Radeon PRO 工作站显卡（如 W7900，48 GB，RDNA3）一直到数据中心的 Instinct 加速卡。把它接入 PenguinHarness 只需一条命令，正因为 core 对任何 OpenAI 兼容端点一视同仁：
+仓库里的示例 [`examples/self-improving-agent/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples/self-improving-agent) 把这个任务和随后的改进闭环做成了一个自包含、由 SDK 驱动的脚本。它使用一份确定性的、可读的评分细则，同样是这 10 分；跑在同一套本地 Ollama + qwen3.6:35b 环境上；并使用一个专用的 Agent id，不会动到你自己的 Agent。在仓库根目录启动：
 
 ```bash
-penguin config model add \
-  --model-id qwen3.6:35b \
-  --provider custom --client-type openai \
-  --base-url http://localhost:11434/v1 \
-  --api-key ollama --set-default
+pnpm --dir examples/self-improving-agent start
 ```
 
-**任务，以及如何评分。** 我们给它一个看似平平无奇的任务：读一个项目 notes 文件，写一份含 2 句概述和恰好 3 条要点的摘要——*并遵守团队的标准报告格式。* 玄机全在最后这句：这个“团队格式”是一套任意的内部约定——一行特定 marker、一个 `# Report: <subject>` 标题、一行 `Classification: INTERNAL`、一行 `Reviewed-by: Aurora Team` 页脚——它*只存在于 Agent 的 `AGENTS.md` 里*，无法从任务本身推断。任务附带一份私有 rubric——一份 Agent 永远看不到的清单——共 10 分：5 分是任何有能力的模型仅凭任务就能拿到的内容分，另外 5 分是只能从 `AGENTS.md` 得知的约定分。
+脚本报告的第一个分数就是基线。`AGENTS.md` 为空时，模型写出的摘要相当合理，却稳定地丢掉全部 5 个约定分，落在 4.6 / 10 左右。具体数字每次运行会有波动。本地模型的输出有随机性，所以脚本对每个版本取多次运行的平均分，这也正是真实的 Benchmark 要设置 `runs` 次数的原因。
 
-**基线——以及它为何不是满分。** 跑在本地 AMD GPU 上、`AGENTS.md` 为空时，这个模型写出了一份相当合理的摘要——却稳定丢掉全部 5 个约定分，落在 **4.6 / 10** 左右（具体数字每次运行会有波动）。它别无选择：任务里没有任何东西透露那套内部约定，所以这是*信息缺口，不是能力缺口*——也正是为什么更强的模型也没法“自己想出来”。而因为每一步都在 Trace 里，这不是靠猜——你可以打开这次运行，精确看到哪些分被丢了。
+模型别无选择。任务里没有任何信息透露这套内部约定，所以这是*信息缺口，而不是能力缺口*，这也是更强的模型同样无法「自己想出来」的原因。每一步都记录在 Trace 里，打开这次运行，就能准确看到丢了哪几分。
 
-这就是诚实的起点：在本地硬件上，一个开箱即用的 Agent，面对规则藏在它尚未学过的文件里的任务，并不能一次拿满分。而这恰恰让下一节变得有意思——一个可度量、可审计、*可复现*的失败，Agent 可以通过自学来系统性修复。
+这就是诚实的起点：在本地硬件上，一个开箱即用的 Agent，面对规则写在它尚未学过的文件里的任务，并不能拿到满分。而一个可测量、可审计、可复现的失败，Agent 可以通过自学系统地修复，下一步就会展示。
 
-## 自我进化到底是怎么运作的——附一次真实的前后对比
+## 第五步：让 Agent 自我进化
 
-上面那个 4.6 / 10 是一次*评估*——是这个 Agent 当前状态的一张快照。更有意思的问题是：PenguinHarness 如何把这张快照变成进步。这就是递归自我进化循环，值得作为一种"机制"来理解，因为它背后没有任何魔法引擎代码——它就是由 Skills 编排的普通 Agent 机制：
+这一步，同一次运行会继续进入自我进化闭环。诊断和修改都由 Agent 自己完成，没有人把答案交给它。
 
-1. **Benchmark（定基准）**——定义能力 Case，每个都配一份私有 rubric（如上）。
-2. **Evaluate（评估）**——让 Agent 跑这些 Case 并按 rubric 打分。每一次运行都是一个普通的、被完整追踪的 Session。
-3. **读 Trace 定位失分点**——因为每个分数都能追回到那次具体运行，你能看到某一分*为什么*被扣，而不只是"被扣了"。
-4. **编辑 Agent 的状态**——Agent 的行为活在可编辑文件里（`AGENTS.md`、Skills、config）。你（或一个 Optimizer Agent）针对失分点去改这些文件，产出版本 N+1。
-5. **快照 & 保留或回滚**——每轮前先打快照；只有当分数*严格提升*时才保留 N+1，否则回滚。
+这个闭环有五个阶段。背后没有任何特殊的引擎代码，只是由 Skill 编排的普通 Agent 机制：
 
-我们就来改进上一节里那个 Agent——同一个 `qwen3.6:35b`、同一块 AMD GPU、同一个刚拿了 4.6 / 10 的任务。关键之处在于：诊断和编辑都是 *Agent* 自己做的——我们并不把答案递给它。
+1. Benchmark：定义能力题目，每道题配一份私有评分细则，和第四步一样。
+2. 评估：让 Agent 跑这些题目，并按评分细则打分。每一次运行都是一个普通的、全程留有 Trace 的 Session。
+3. 读 Trace，找出丢分点：每个分数都能追溯到具体的那次运行，所以你不只知道丢了分，还能看到*为什么*丢分。
+4. 编辑 Agent State：Agent 的行为保存在可编辑的文件里（`AGENTS.md`、Skill、配置）。由你或一个 Optimizer Agent 针对失败修改这些文件，产出版本 N+1。
+5. 打快照，然后保留或回滚：每轮开始前先打快照；只有分数严格提升才保留 N+1，否则回滚。
 
-- **诊断（由 Agent 完成）。** 我们只给 Agent 两个文件，别无其他：它刚被拒的那份报告，以及*另一个*项目里一份通过了评审的报告。没有人告诉它规则。它对比两者，自己推断出可复用的内部约定——marker、标题形态、元数据行、签名页脚。这就是"读 Trace 定位失分点"那一步，只不过由 Agent 亲自完成。
-- **编辑（N → N+1），由 Agent 撰写。** Agent 把刚推断出的约定写进它自己的 `AGENTS.md`。从单一范例里它能正确还原出*结构*，但还分不清哪些 token 是固定常量、哪些是每份报告要替换的字段（单个范例本就有歧义），于是把 marker 泛化成了占位符。重新评估，分数升到约 **6.6 / 10**。没有重新训练、没有改代码——Agent 编辑的是一份它每次运行都会读的文本文件。
-- **递归（N+1 → N+2）。** 现在我们再给它*多份*来自不同项目、却共享同一 marker 和签名的通过报告。Agent 推断出：凡是在所有样本里都完全相同的，必是固定常量；于是它读取自己*上一轮*写的 N+1 `AGENTS.md` 并精炼它——把 `<!-- ACME-DATA-PLATFORM -->` 和 `Reviewed-by: Aurora Team` 锁定为字面量。再评估一次：约 **9.8 / 10**。这才是真正意义上的递归：`state_{n+1} = agent.reflect(state_n, 新证据)`。
+在这个示例里，脚本只提供失败信号、通过审核的示例报告，以及保留还是回滚的判定，从不自己写入那套约定。
 
-在同一个模型、同一个任务上，仅仅由 Agent 自己编辑一份它会读取的文本文件，分数就走出了 **4.6 → 6.6 → 9.8** 的轨迹（数字每次运行会有波动）——而且 harness 每一轮都只因分数严格提升才保留。这就是自驱动的循环：*Agent 能看到的，Agent 就能改进*——用一份 rubric 度量、关联着 Trace，不是拍脑袋。
+### 第一轮：学会结构
 
-**你可以自己跑一遍。** 整个循环在仓库里有一个自包含、纯 SDK 驱动的脚本：
-[`examples/self-improving-agent/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples/self-improving-agent)。
-它用一份确定性的、可读的 rubric（10 分：5 分内容分、5 分只存在于 `AGENTS.md` 的内部约定分），并且——因为本地模型有随机性——对每个版本跑多次取平均分，这正是真实 benchmark 里 `runs`（多次运行）的意义所在。关键在于：脚本从不自己写那套约定；是 *Agent* 从一份通过范例里诊断出缺口，并编辑自己的 `AGENTS.md`。在我们的运行中，平均分沿着 **4.6 → 6.6 → 9.8** 走过两轮自撰改进（先学到结构、再锁定常量），harness 每一轮都只因分数严格提升才保留。它跑在同一套本地 Ollama + qwen3.6:35b 环境上，并使用一个专用 agent id，所以你自己的 Agent 不会被动到。
+Agent 只拿到两个文件，别无其他：它刚被退回的那份报告，以及*另一个*项目里一份通过审核的报告。没有人告诉它规则。它对比两份报告，推断出可复用的内部约定：标记、标题形式、元数据行和署名页脚。这正是「读 Trace，找出丢分点」这个阶段，只不过由 Agent 亲自完成。
 
-## 还没有 AMD GPU？来自 AMD + Fireworks 的免费云端算力
+随后，Agent 把推断出的约定写进自己的 `AGENTS.md`，得到版本 N+1。从单个示例里，它能正确还原出*结构*，但还分不清哪些词是固定常量、哪些是每份报告各不相同的字段，因为单个示例本身就有歧义。于是它把标记泛化成了占位符。再次评估，分数升到约 6.6 / 10。没有重新训练，也没有改代码：Agent 改的只是一份它每次运行都会读取的文本文件。
 
-不是每个人桌下都有一块 AMD GPU——而要试用这一切，你并不需要它。通过 AMD AI Developer Program，AMD 与 Fireworks AI 合作，向符合条件的开发者提供**价值 50 美元的免费 Fireworks 额度**。Fireworks 通过 OpenAI 兼容端点提供开源权重模型，因此——和上面的本地 Ollama 一样——把 PenguinHarness 指向它也只是一行配置的事。
+### 第二轮：锁定常量
 
-领取额度（审核通常需要 2–3 个工作日）可参阅 [Fireworks API 获取指南](https://penguin.ooo/blog/fireworks-credits-amd)，了解额度兑换和 API Key 获取步骤。
+接下来，Agent 看到*多份*来自不同项目、共用同一个标记和署名页脚的合格报告。它推理出：凡是在所有报告里都完全相同的部分，必然是固定常量。于是它读取*自己*上一轮写的 N+1 版 `AGENTS.md` 并加以完善，把 `<!-- ACME-DATA-PLATFORM -->` 和 `Reviewed-by: Aurora Team` 锁定为字面量。再次评估，分数达到约 9.8 / 10。这才是真正意义上的递归：`state_{n+1} = agent.reflect(state_n, new_evidence)`。
 
+每一轮之所以被 Harness 保留，都是因为分数严格提升了。
 
-之后像接入任何其他端点一样把它接进 PenguinHarness：
+## 没有 AMD GPU？改用 Fireworks 额度
+
+想动手试试，不一定需要 AMD GPU。通过 AMD AI Developer Program，AMD 与 Fireworks AI 合作，向符合条件的开发者提供价值 50 美元的免费 Fireworks 额度。Fireworks 通过 OpenAI 兼容端点提供开源权重模型，所以和本地 Ollama 一样，把 PenguinHarness 指向它也只需改一行配置。
+
+领取额度（审核通常需要 2–3 个工作日）的步骤，请参阅 [Fireworks API 获取指南](https://penguin.ooo/blog/fireworks-credits-amd)，里面详细介绍了额度兑换和 API Key 的获取方法。
+
+然后像接入其他端点一样，在 PenguinHarness 中注册 Fireworks：
 
 ```bash
 penguin config model add --model-id <fireworks-模型-id> \
@@ -209,15 +270,29 @@ penguin config model add --model-id <fireworks-模型-id> \
   --api-key <你的-fireworks-key> --set-default
 ```
 
-同一套 Harness、同样的一行切换——无论 Token 是在你自己的 AMD GPU 上生成，还是用 AMD 支持的云端额度生成。（请妥善保管优惠码与 Key；项目条款可能变动，具体以官方页面和审核邮件为准。）
+无论 Token 是在你自己的 AMD GPU 上生成，还是用 AMD 支持的云端额度生成，Harness 都不变，一行配置的切换方式也不变。请妥善保管优惠码和 API Key。计划条款可能变动，具体以官方页面和审核邮件为准。
 
-## 这为什么重要
+## 结果
 
-- **本地优先不是口号。** 一个完整的"构建 → 运行 → 自我评估"闭环在本机、在一块 AMD GPU 上跑通，没有数据离开机器——这是对隐私敏感与企业场景的真实回答。而且因为它跑在 ROCm + Ollama 之上，同一套配置可覆盖 AMD 的整个 GPU 阵容：单块 Radeon PRO 工作站显卡（如 48 GB 的 W7900）从 8B 到 30B 以上的模型都能从容运行，而 Instinct 加速卡则可进一步向上扩展。
-- **薄模型层带来实际收益。** 因为 provider 适配完全活在网关里，"一个本地 Ollama 模型"和"一个前沿云端 API"只是同一处一行配置的差别。你不会被某个厂商锁定——也不会被某个 GPU 厂商锁定。我们这次跑在 AMD GPU（ROCm）上，但这里没有任何 AMD 专属的东西：同样的步骤在 NVIDIA GPU（Ollama 的 CUDA 后端）或 Apple Silicon 上一样成立——底层变的只是 Ollama 运行时，而 Harness、命令、example 全都保持不变。
-- **可观测性内建于每一处。** 这次本地运行产生了与任何云端运行相同的只追加 Trace 与 scoreboard 关联。评估在设计上就是可审计的。
+在我们的运行中，同一个模型、同一个任务的分数是这样爬升的，具体数字每次运行都会有波动：
 
-## 立即开始
+| 版本 | Agent 写进 `AGENTS.md` 的内容 | 分数 |
+| --- | --- | --- |
+| N（基线） | 无，文件为空 | 约 4.6 / 10 |
+| N+1 | 约定的结构，标记仍是占位符 | 约 6.6 / 10 |
+| N+2 | 同一套约定，常量已锁定为字面量 | 约 9.8 / 10 |
+
+分数的提升，完全来自 Agent 编辑了一份它每次都会读取的文本文件。这次运行说明了三点：
+
+- 本地优先在 AMD 硬件上切实可行。完整的「构建 → 运行 → 自我评估」闭环在本机的一块 AMD GPU 上跑通，没有数据离开机器，这对隐私敏感的场景和企业环境是一个实实在在的答案。由于它建立在 ROCm + Ollama 之上，同一套配置适用于 AMD 的整个 GPU 产品线：单块 Radeon PRO 工作站显卡（如 48 GB 的 W7900）就能从容运行 8B 到 30B 以上的模型，Instinct 加速卡还能进一步向上扩展。
+- 薄模型层带来实际收益。供应商适配全部放在网关里，所以「本地 Ollama 模型」和「前沿云端 API」之间只差一行配置。你不会被某个厂商锁定，也不会被某个 GPU 厂商锁定。我们这次跑在 AMD GPU（ROCm）上，但这里没有任何 AMD 专属的东西：同样的步骤在 NVIDIA GPU（Ollama 的 CUDA 后端）或 Apple Silicon 上一样可行。变的只是底层的 Ollama 运行时，Harness、命令和示例都保持不变。
+- 可观测性处处内建。本地运行产生的只追加 Trace 和记分板关联，与任何云端运行完全相同，记分板上的每个数字都能追溯到产生它的那个 Session。评估从设计上就是可审计的。
+
+## 后续步骤
+
+这一路下来，你在 AMD GPU 上部署了本地模型，让一个 Agent 构建了 `commit-helper`，还看到一个 Agent 通过编辑自己的 `AGENTS.md` 提高了分数。
+
+整套配置只需三条命令，适用于任何 OpenAI 兼容端点，包括本地 Ollama 模型：
 
 ```bash
 curl -fsSL https://github.com/Prism-Shadow/penguin-harness/releases/latest/download/install.sh | sh
@@ -230,7 +305,7 @@ penguin config model add --model-id <你的模型> \
 penguin web   # 或：penguin run --approve allow-all --message "..."
 ```
 
-想把它嵌进自己的程序？这就是"构建 Agent"支柱的 SDK 那一面——核心循环就是三次调用：
+想把 Agent 嵌进自己的程序，就用「构建 Agent」这根支柱的 SDK 那一面。核心循环只有三次调用：
 
 ```ts
 const agent = await createAgent({ agentId: "default_agent" });
@@ -238,6 +313,4 @@ const session = await agent.createSession({ workspaceDir: process.cwd() });
 for await (const out of session.run([userText("...")], { approve: async () => "allow" })) { /* 流式处理 */ }
 ```
 
-完整、可运行的版本见 [`examples/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples)——包括一个"用 Agent 造 Agent"和一个"自我改进的 Agent"，都跑在本地 Ollama 上。
-
-无论你跑的是前沿云端模型，还是自己 AMD GPU 上的开源权重模型，PenguinHarness 都为你提供同一套精简、可观测、可自我进化的底座。在 [GitHub](https://github.com/Prism-Shadow/penguin-harness) 关注我们，并提交你的第一个 issue。
+完整、可运行的版本见 [`examples/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples)，其中包括一个构建其他 Agent 的 Agent 和一个自我进化的 Agent，都跑在本地 Ollama 上。在 [GitHub](https://github.com/Prism-Shadow/penguin-harness) 关注我们，提交你的第一个 issue。
