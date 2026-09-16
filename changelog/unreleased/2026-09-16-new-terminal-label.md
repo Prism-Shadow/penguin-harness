@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#746](https://github.com/Prism-Shadow/penguin-harness/pull/746)
 
 [中文版](2026-09-16-new-terminal-label.zh.md)
 
