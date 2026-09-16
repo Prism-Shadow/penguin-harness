@@ -40,7 +40,7 @@ const PLUGINS_SRC = path.join(ROOT, "plugins");
 const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 6;
+const PACK_FORMAT = 7;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -49,6 +49,11 @@ const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, versio
  */
 const NATIVE_DEPENDENCIES = new Map([
   ["koffi", "FFI with per-platform prebuilt binaries (sandbox-dsh's Windows ACL runner)"],
+  [
+    "@deepseek-ai/dsh-sandbox-local",
+    "picks its per-platform rung by bare specifier at run time — bundling it makes the Windows one unresolvable (sandbox-dsh)",
+  ],
+  ["@deepseek-ai/cordis", "the context the DSH chain is mounted on, shared with it (sandbox-dsh)"],
   [
     "@deepseek-ai/node-addon-landlock-run",
     "resolves its per-platform launcher binary package at run time (sandbox-dsh)",
