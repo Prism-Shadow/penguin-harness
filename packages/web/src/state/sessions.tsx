@@ -54,7 +54,12 @@ import {
   machineForSession,
   rememberSessionMachine,
 } from "../lib/session-machines";
-import { cachedMachineSessions, rememberMachineSessions } from "../lib/machine-cache";
+import {
+  cachedMachineAgents,
+  cachedMachineSessions,
+  rememberMachineAgents,
+  rememberMachineSessions,
+} from "../lib/machine-cache";
 import { setTerminalMachines } from "../lib/terminal-machines";
 import { machineIdOf } from "../lib/workspace-machines";
 import {
@@ -261,6 +266,17 @@ interface SessionsStoreState {
    * from the list (features/chat/chat-page.tsx). Their rows come from the cache.
    */
   offlineMachineIds: string[];
+  /**
+   * machineId → the Agents THAT machine runs, which are not this Project's.
+   *
+   * An Agent is per server: a machine has its own set, and the Agents page offers a new chat
+   * on one of them (features/agents/agents-page.tsx). The Session that follows belongs to an
+   * Agent this server has never heard of, so a list built from this server's Agent ids alone
+   * would ask the machine the wrong question and drop the row on the next reload — and with
+   * it the record of which machine holds that Session, which is what a deep link needs to
+   * reach it at all.
+   */
+  agentIdsByMachine: Readonly<Record<string, string[]>>;
 
   sessions: SessionInfo[];
   /**
@@ -351,6 +367,7 @@ export function createSessionsStore() {
       agentIds: [],
       machineIds: [],
       offlineMachineIds: [],
+      agentIdsByMachine: {},
 
       sessions: [],
       deletedSessionIds: new Set(),
@@ -361,7 +378,7 @@ export function createSessionsStore() {
       loading: true,
 
       reload: async () => {
-        const { projectId, agentIds, machineIds, offlineMachineIds } = get();
+        const { projectId, agentIds, machineIds, offlineMachineIds, agentIdsByMachine } = get();
         // No context to fetch against yet. `loading` is deliberately left alone rather than
         // cleared: nothing was loaded, so reporting "done" here would be a lie — and one the
         // empty state renders. The Provider's reset step raised it and a later reload,
@@ -377,71 +394,88 @@ export function createSessionsStore() {
         // This server first, then every machine of the Project this server holds a
         // connection to. Order matters only as a tie-break for equal timestamps.
         const sources: (string | null)[] = [null, ...machineIds];
+        // One job per (Agent, source), asking each server about the Agents IT can answer for:
+        // this server about the Project's, a machine about those plus its own. A machine-only
+        // Agent's Sessions are listed by nobody otherwise.
+        const jobs = sources.flatMap((source) => {
+          const ids =
+            source === null
+              ? agentIds
+              : [...new Set([...agentIds, ...(agentIdsByMachine[source] ?? [])])];
+          return ids.map((agentId) => ({ agentId, source }));
+        });
         try {
           const results = await Promise.all(
-            agentIds.flatMap((agentId) =>
-              sources.map(async (source) => {
-                // The Agent's whole-stream active first page (with per-category totals)
-                // always; plus the first page of every other pair already on screen — an
-                // open folder, and each Workspace group paging its own stream — because a
-                // reload triggered by a server event must refresh them, not blank them.
-                const pairs: { category: SessionCategory; scope: string }[] = [
-                  { category: "active", scope: "" },
-                ];
-                for (const key of get().pageState.keys()) {
-                  const parsed = parsePageKey(key);
-                  if (parsed === null || parsed.agentId !== agentId || parsed.source !== source)
-                    continue;
-                  if (parsed.category === "active" && parsed.scope === "") continue;
-                  pairs.push({ category: parsed.category, scope: parsed.scope });
-                }
-                try {
-                  const pages = await Promise.all(
-                    pairs.map(async ({ category, scope }) => {
-                      const res = await api.listSessions(
-                        projectId,
-                        agentId,
-                        {
-                          offset: 0,
-                          limit: SIDEBAR_PAGE_SIZE + 1,
-                          category,
-                          ...(scope === "" ? {} : { workspaceGroup: scope }),
-                          ...(category === "active" && scope === "" ? { withCounts: true } : {}),
-                        },
-                        source,
-                      );
-                      return {
+            jobs.map(async ({ agentId, source }) => {
+              // The Agent's whole-stream active first page (with per-category totals)
+              // always; plus the first page of every other pair already on screen — an
+              // open folder, and each Workspace group paging its own stream — because a
+              // reload triggered by a server event must refresh them, not blank them.
+              const pairs: { category: SessionCategory; scope: string }[] = [
+                { category: "active", scope: "" },
+              ];
+              for (const key of get().pageState.keys()) {
+                const parsed = parsePageKey(key);
+                if (parsed === null || parsed.agentId !== agentId || parsed.source !== source)
+                  continue;
+                if (parsed.category === "active" && parsed.scope === "") continue;
+                pairs.push({ category: parsed.category, scope: parsed.scope });
+              }
+              try {
+                const pages = await Promise.all(
+                  pairs.map(async ({ category, scope }) => {
+                    const res = await api.listSessions(
+                      projectId,
+                      agentId,
+                      {
+                        offset: 0,
+                        limit: SIDEBAR_PAGE_SIZE + 1,
                         category,
-                        scope,
-                        counts: res.counts,
-                        workspaceCounts: res.workspaceCounts,
-                        workspaceLatest: res.workspaceLatest,
-                        ...splitPage(res.sessions, SIDEBAR_PAGE_SIZE),
-                      };
-                    }),
-                  );
-                  return { agentId, source, pages, answered: true };
-                } catch (err) {
-                  // Two very different things arrive here, and treating them alike is what
-                  // emptied the sidebar. An Agent is per-server, so a server simply not
-                  // having this one answers 404: an ANSWER, and the ordinary case. Anything
-                  // else — this server mid-swap, a connection held to a server that is not
-                  // serving, the network — is a failure to answer at all, and an empty
-                  // result standing in for it replaces rows that are perfectly alive.
-                  const absent = err instanceof ApiError && err.status === 404;
-                  return { agentId, source, pages: [], answered: absent };
-                }
-              }),
-            ),
+                        ...(scope === "" ? {} : { workspaceGroup: scope }),
+                        ...(category === "active" && scope === "" ? { withCounts: true } : {}),
+                      },
+                      source,
+                    );
+                    return {
+                      category,
+                      scope,
+                      counts: res.counts,
+                      workspaceCounts: res.workspaceCounts,
+                      workspaceLatest: res.workspaceLatest,
+                      ...splitPage(res.sessions, SIDEBAR_PAGE_SIZE),
+                    };
+                  }),
+                );
+                return { agentId, source, pages, answered: true };
+              } catch (err) {
+                // Two very different things arrive here, and treating them alike is what
+                // emptied the sidebar. An Agent is per-server, so a server simply not
+                // having this one answers 404: an ANSWER, and the ordinary case. Anything
+                // else — this server mid-swap, a connection held to a server that is not
+                // serving, the network — is a failure to answer at all, and an empty
+                // result standing in for it replaces rows that are perfectly alive.
+                const absent = err instanceof ApiError && err.status === 404;
+                return { agentId, source, pages: [], answered: absent };
+              }
+            }),
           );
           if (g !== gen) return;
-          // This server did not answer. It holds the Sessions every other source is merged
-          // AROUND, so there is no list to build — and building one anyway would replace
-          // everything on screen with a handful of remote rows, or with nothing at all. A
-          // reload is a refresh, and a refresh that cannot read anything changes nothing:
-          // the rows stand, `loading` is left as it was, and the next one tries again. This
-          // is the ordinary state during a hot swap and for the moment after a reconnect.
-          if (results.some((r) => r.source === null && !r.answered)) return;
+          // Agents this server did not answer about. Per Agent, not per server: a damaged
+          // index or a 500 on ONE Agent is a different event from this server being
+          // unreadable, and reading the first as the second is what leaves the page on a
+          // skeleton — nothing is applied, so `loading` is never cleared, and on a quiet
+          // server nothing asks again.
+          const unanswered = new Set(
+            results.flatMap((r) => (r.source === null && !r.answered ? [r.agentId] : [])),
+          );
+          // This server did not answer about ANY of them. It holds the Sessions every other
+          // source is merged AROUND, so there is no list to build — and building one anyway
+          // would replace everything on screen with a handful of remote rows, or with nothing
+          // at all. A reload is a refresh, and a refresh that cannot read anything changes
+          // nothing: the rows stand, `loading` is left as it was, and the next one tries
+          // again. This is the ordinary state during a hot swap and for the moment after a
+          // reconnect.
+          if (unanswered.size === agentIds.length && agentIds.length > 0) return;
           // Machines that did not answer are treated exactly like machines that were never
           // asked: their rows come from the cache below, and their cache is left alone.
           const silent = new Set(
@@ -559,6 +593,35 @@ export function createSessionsStore() {
               seen.add(s.sessionId);
               nextSessions.push(s);
               rememberSessionMachine(s.sessionId, machineId);
+            }
+          }
+          // An Agent this server could not answer about keeps everything it already had: its
+          // rows here, the page positions they were loaded at, and its badge counts. The list
+          // is rebuilt wholesale, so without this one Agent's failed call erases it — and an
+          // erased Agent is indistinguishable, on screen, from one that has no conversations.
+          // Its counts are kept as last read rather than remerged from the machines that did
+          // answer: a total missing this server's share would contradict the rows beneath it.
+          if (unanswered.size > 0) {
+            const held = get();
+            for (const s of held.sessions) {
+              if (!unanswered.has(s.agentId) || machineForSession(s.sessionId) !== null) continue;
+              if (seen.has(s.sessionId)) continue;
+              seen.add(s.sessionId);
+              nextSessions.push(s);
+            }
+            for (const [key, position] of held.pageState) {
+              const parsed = parsePageKey(key);
+              if (parsed === null || parsed.source !== null) continue;
+              if (!unanswered.has(parsed.agentId) || nextPageState.has(key)) continue;
+              nextPageState.set(key, position);
+            }
+            for (const agentId of unanswered) {
+              const counts = held.countsByAgent.get(agentId);
+              if (counts) nextCounts.set(agentId, counts);
+              const workspaceCounts = held.workspaceCountsByAgent.get(agentId);
+              if (workspaceCounts) nextWorkspaceCounts.set(agentId, workspaceCounts);
+              const latest = held.workspaceLatestByAgent.get(agentId);
+              if (latest) nextWorkspaceLatest.set(agentId, latest);
             }
           }
           // Newest first across every source: each answered sorted, and concatenating sorted
@@ -876,12 +939,16 @@ export function applyUserEvent(
   // A Session now exists that this list did not create — the CLI, another tab, a schedule, an
   // agent spawning a child, on this server or on a machine. Nothing short of a fetch can put
   // the row in place with everything a row needs (title, workspace, counts), so reload; the
-  // same answer schedule_fired gives below, for the same reason. A machine's Project ids are
-  // its own and never match this server's, so for a machine the reload is unconditional.
+  // same answer schedule_fired gives below, for the same reason.
+  //
+  // The Project is compared whatever the event came from. A machine's Projects carry THIS
+  // server's ids — installing one creates the same Project over there, and every list call
+  // below names it (machines/models-sync.ts) — so a machine's events are as unrelated to this
+  // list as this server's are when the id differs. Reloading on all of them meant every
+  // Session and every subagent started in any other Project on any connected machine refetched
+  // the whole list, Agents × sources.
   if (ev.type === "session_created") {
-    if (source !== null || ev.projectId === store.getState().projectId) {
-      void store.getState().reload();
-    }
+    if (ev.projectId === store.getState().projectId) void store.getState().reload();
     return;
   }
   // A Session changed run state. This is what keeps every row honest: a tab subscribes to the
@@ -959,10 +1026,8 @@ export function applyUserEvent(
   // already exists), so it goes no further, as does every other Session-scoped event.
   if (ev.type !== "schedule_fired") return;
   // The event carries projectId: a trigger from another Project is unrelated to the current
-  // list — unless it came from a machine, whose Project ids are its own (see session_created).
-  if (source !== null || ev.projectId === store.getState().projectId) {
-    void store.getState().reload();
-  }
+  // list, wherever it fired (see session_created).
+  if (ev.projectId === store.getState().projectId) void store.getState().reload();
 }
 
 /**
@@ -1003,12 +1068,19 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
    * part of a machine a person recognises.
    */
   const [machineLabelsJson, setMachineLabelsJson] = useState("[]");
+  /**
+   * machineId → its own Agent ids, as JSON for the same reason the lists above are strings.
+   * What the list is FOR: a Session started on a machine's own Agent is listed by nobody
+   * unless that machine is asked about that Agent (see `agentIdsByMachine` in the store).
+   */
+  const [machineAgentIdsJson, setMachineAgentIdsJson] = useState("{}");
   const [machinesEpoch, setMachinesEpoch] = useState(0);
   useEffect(() => {
     if (projectId === null) {
       setMachineIdsKey("");
       setOfflineMachineIdsKey("");
       setMachineLabelsJson("[]");
+      setMachineAgentIdsJson("{}");
       return;
     }
     let cancelled = false;
@@ -1036,8 +1108,38 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
         if (offline.length > 0) {
           timer = setTimeout(() => setMachinesEpoch((epoch) => epoch + 1), OFFLINE_RECHECK_MS);
         }
+        // Then what each machine is RUNNING. An Agent is per server, so a machine's set is
+        // its own, and a Session started on one of its Agents (the Agents page offers exactly
+        // that) is listed only if the machine is asked about that Agent by name. A machine
+        // that cannot answer contributes what it was last seen running — the same account the
+        // composer offers a remote draft, and better than dropping its rows.
+        const answers = await Promise.all(
+          installed.map(async (machine) => {
+            const machineId = machineIdOf(machine);
+            if (machineId === null) return null;
+            const remembered = () =>
+              cachedMachineAgents(projectId, machineId).map((a) => a.agentId);
+            if (machine.connection === null) return [machineId, remembered()] as const;
+            try {
+              const listed = (await api.listAgents(projectId, machineId)).agents;
+              rememberMachineAgents(projectId, machineId, listed);
+              return [machineId, listed.map((a) => a.agentId)] as const;
+            } catch {
+              return [machineId, remembered()] as const;
+            }
+          }),
+        );
+        if (cancelled) return;
+        setMachineAgentIdsJson(
+          JSON.stringify(Object.fromEntries(answers.filter((entry) => entry !== null))),
+        );
       } catch {
         // No machine list (not an admin, or the call failed): the list is this server's alone.
+        // Said so out loud rather than left unsaid — the terminal list waits for this word
+        // before it may drop a tab whose terminal is gone, and a user who can never read the
+        // machine list would otherwise keep every dead tab in their dock forever
+        // (features/terminal/terminal-list.ts).
+        if (!cancelled) setTerminalMachines([]);
       }
     })();
     return () => {
@@ -1067,6 +1169,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
       agentIds: agentIdsKey === "" ? [] : agentIdsKey.split(","),
       machineIds: machineIdsKey === "" ? [] : machineIdsKey.split(","),
       offlineMachineIds: offlineMachineIdsKey === "" ? [] : offlineMachineIdsKey.split(","),
+      agentIdsByMachine: JSON.parse(machineAgentIdsJson) as Record<string, string[]>,
       // Cleared only when the CONTEXT changed. A machine appearing, or dropping out, changes
       // which servers are asked — not whether what is already on screen is still true.
       // reload() below rebuilds the list wholesale from whatever answers, so a departed
@@ -1096,7 +1199,15 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     // route at THIS server until the refetch lands.
     if (contextChanged) forgetSessionMachines();
     void store.getState().reload();
-  }, [store, projectId, agentIdsKey, machineIdsKey, offlineMachineIdsKey, contextKey]);
+  }, [
+    store,
+    projectId,
+    agentIdsKey,
+    machineIdsKey,
+    offlineMachineIdsKey,
+    machineAgentIdsJson,
+    contextKey,
+  ]);
 
   // User-level event stream (/api/events); see applyUserEvent for what each event does. The
   // connection stays a single one for the whole login session and doesn't reconnect on Project

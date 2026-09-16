@@ -23,7 +23,7 @@
  */
 import type http from "node:http";
 import { WebSocket } from "ws";
-import type { WebSocket as WsSocket } from "ws";
+import type { RawData, WebSocket as WsSocket } from "ws";
 import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
 import type { Terminal } from "../terminal/manager.js";
 import type { Auth } from "../mechanisms/identity.js";
@@ -55,6 +55,26 @@ export function parseRemoteTerminalRef(id: string): RemoteTerminalRef | null {
 export const isRemoteTerminalRef = (session: object): session is RemoteTerminalRef =>
   "remote" in session;
 
+/**
+ * Viewer frames held while the machine's stream is still opening. Generous for what actually
+ * arrives in that window — an opening resize and a few keystrokes — and bounded because a
+ * viewer can paste into a handshake that never completes.
+ */
+const PENDING_INPUT_MAX_BYTES = 256 * 1024;
+
+/**
+ * Backpressure watermarks for the viewer's socket, the same pair the machine's own stream
+ * uses on its viewers (terminal/stream.ts).
+ */
+const BACKPRESSURE_HIGH_WATER = 1024 * 1024;
+const BACKPRESSURE_LOW_WATER = 64 * 1024;
+const BACKPRESSURE_POLL_MS = 250;
+
+const frameBytes = (data: RawData): number => {
+  if (Array.isArray(data)) return data.reduce((total, part) => total + part.length, 0);
+  return data instanceof ArrayBuffer ? data.byteLength : data.length;
+};
+
 export interface RelayDeps {
   /**
    * What the proxy needs to reach the machine's API by its own id — a dial through the held
@@ -79,19 +99,12 @@ export async function relayTerminalStream(
   log: (line: string) => void,
 ): Promise<void> {
   if (!deps.isAdmin(ref.ownerUserId)) return ws.close(1008, "forbidden");
-  const target = await deps.proxyTarget(ref.remote.machineId).catch(() => null);
-  if (target === null) return ws.close(1013, "machine not connected");
 
-  const path = `/api/terminals/${encodeURIComponent(ref.remote.terminalId)}/stream${url.search}`;
-  // Through the connection, like every request to a machine's API: the agent's sockets are
-  // SOCKS dials inside the held ssh session (transport/connection.ts). Canonical host, as the
-  // request proxy sends it — the App answers on `localhost` and refuses `127.0.0.1`. No
-  // Origin: the machine's guard reads its absence as a non-browser client, which this is.
-  const remote = new WebSocket(`ws://127.0.0.1:${target.port}${path}`, {
-    agent: target.agent,
-    headers: { host: `localhost:${target.port}`, cookie: target.cookie },
-    perMessageDeflate: false,
-  });
+  // The remote socket, once there is one. Everything below is written to run before it
+  // exists, because the viewer can go away — and does, on a pane closed or reopened — while
+  // the dial and the handshake are still in flight.
+  let remote: WebSocket | null = null;
+  let closing = false;
 
   // A close that arrived without a status (1005/1006) cannot be sent as one; ws throws.
   const sendable = (code: number) =>
@@ -103,37 +116,114 @@ export async function relayTerminalStream(
     (code >= 3000 && code <= 4999)
       ? code
       : 1000;
+  let drainTimer: ReturnType<typeof setInterval> | null = null;
+  const stopDrainPoll = () => {
+    if (drainTimer !== null) clearInterval(drainTimer);
+    drainTimer = null;
+  };
   const closeBoth = (raw: number, reason: string) => {
+    closing = true;
+    stopDrainPoll();
     const code = sendable(raw);
     if (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING) ws.close(code, reason);
-    if (remote.readyState === remote.OPEN || remote.readyState === remote.CONNECTING) {
+    if (
+      remote !== null &&
+      (remote.readyState === remote.OPEN || remote.readyState === remote.CONNECTING)
+    ) {
       remote.close(code, reason);
     }
   };
 
-  remote.on("open", () => {
-    ws.on("message", (data, isBinary) => {
-      if (remote.readyState === remote.OPEN) remote.send(data, { binary: isBinary });
-    });
-    remote.on("message", (data, isBinary) => {
-      if (ws.readyState === ws.OPEN) ws.send(data, { binary: isBinary });
+  // Frames the viewer sends before the machine's stream is open are held, not dropped: the
+  // pane's opening geometry rides in one of them, and a shell started at the wrong size stays
+  // at it until something resizes the pane again.
+  const pending: { data: RawData; isBinary: boolean }[] = [];
+  let pendingBytes = 0;
+
+  // Listened to HERE, before the dial below — not after it. A viewer that closed during the
+  // handshake would otherwise never fire a close on a listener attached afterwards, and the
+  // socket opened below would stay attached to the pty on the machine with nobody reading it:
+  // one leaked pty stream per pane closed at the wrong moment.
+  ws.on("message", (data, isBinary) => {
+    if (remote !== null && remote.readyState === remote.OPEN) {
+      remote.send(data, { binary: isBinary });
+      return;
+    }
+    const size = frameBytes(data);
+    if (pendingBytes + size > PENDING_INPUT_MAX_BYTES) return;
+    pending.push({ data, isBinary });
+    pendingBytes += size;
+  });
+  ws.on("close", (code, reason) => closeBoth(code, reason.toString()));
+  ws.on("error", () => closeBoth(1011, "viewer failed"));
+
+  const target = await deps.proxyTarget(ref.remote.machineId).catch(() => null);
+  // The viewer left while this server was reaching the machine: there is nothing to relay to,
+  // and dialling anyway is exactly the leak above.
+  if (closing) return;
+  if (target === null) return ws.close(1013, "machine not connected");
+
+  const path = `/api/terminals/${encodeURIComponent(ref.remote.terminalId)}/stream${url.search}`;
+  // Through the connection, like every request to a machine's API: the agent's sockets are
+  // SOCKS dials inside the held ssh session (transport/connection.ts). Canonical host, as the
+  // request proxy sends it — the App answers on `localhost` and refuses `127.0.0.1`. No
+  // Origin: the machine's guard reads its absence as a non-browser client, which this is.
+  const socket = new WebSocket(`ws://127.0.0.1:${target.port}${path}`, {
+    agent: target.agent,
+    headers: { host: `localhost:${target.port}`, cookie: target.cookie },
+    perMessageDeflate: false,
+  });
+  remote = socket;
+
+  /**
+   * Backpressure on behalf of a viewer the machine cannot see.
+   *
+   * The machine's own stream watches its socket's buffer and stops sending to a viewer that
+   * falls behind, resyncing it with a fresh screen once it drains (terminal/stream.ts). But
+   * the socket it watches is this relay's, which is fast and local to it — so a slow browser
+   * link makes THIS server the buffer, and a `cat` of a large log grows it without bound.
+   * Reading the machine's socket is stopped instead: the bytes back up through the connection
+   * to where the lag detection can see them, and it does the dropping and resyncing it
+   * already knows how to do.
+   */
+  const applyBackpressure = () => {
+    if (drainTimer !== null || ws.bufferedAmount <= BACKPRESSURE_HIGH_WATER) return;
+    socket.pause();
+    drainTimer = setInterval(() => {
+      if (ws.readyState !== ws.OPEN || socket.readyState !== socket.OPEN) {
+        stopDrainPoll();
+        socket.resume();
+        return;
+      }
+      if (ws.bufferedAmount > BACKPRESSURE_LOW_WATER) return;
+      stopDrainPoll();
+      socket.resume();
+    }, BACKPRESSURE_POLL_MS);
+  };
+
+  socket.on("open", () => {
+    for (const frame of pending) socket.send(frame.data, { binary: frame.isBinary });
+    pending.length = 0;
+    pendingBytes = 0;
+    socket.on("message", (data, isBinary) => {
+      if (ws.readyState !== ws.OPEN) return;
+      ws.send(data, { binary: isBinary });
+      applyBackpressure();
     });
   });
   // A handshake the machine refused: pass its status on as a close reason rather than
   // inventing one — 404 for a pty that is gone reads differently from 401.
-  remote.on("unexpected-response", (_req, res) => {
+  socket.on("unexpected-response", (_req, res) => {
     res.resume();
     closeBoth(1011, `machine answered ${res.statusCode ?? "?"}`);
   });
-  remote.on("error", (err) => {
+  socket.on("error", (err) => {
     log(`[machines] terminal relay to ${ref.remote.machineId}: ${err.message}`);
     closeBoth(1011, "relay failed");
   });
   // Either end closing takes the other with it: a half-open pipe to a shell is a pane that
   // looks alive and answers nothing.
-  remote.on("close", (code, reason) => closeBoth(code, reason.toString()));
-  ws.on("close", (code, reason) => closeBoth(code, reason.toString()));
-  ws.on("error", () => closeBoth(1011, "viewer failed"));
+  socket.on("close", (code, reason) => closeBoth(code, reason.toString()));
 }
 
 /**

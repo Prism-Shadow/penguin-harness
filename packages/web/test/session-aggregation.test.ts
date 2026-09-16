@@ -9,7 +9,7 @@
  * memory `localStorage` for the per-machine cache.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionInfo, SessionsResponse } from "@prismshadow/penguin-server/api";
+import type { ServerEvent, SessionInfo, SessionsResponse } from "@prismshadow/penguin-server/api";
 import { ApiError } from "../src/api/client";
 
 type Answer = SessionsResponse | Error;
@@ -37,7 +37,7 @@ vi.mock("../src/api/endpoints", () => ({
   },
 }));
 
-import { createSessionsStore } from "../src/state/sessions";
+import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
 import { machineForSession } from "../src/lib/session-machines";
 import { cachedMachineSessions, rememberMachineSessions } from "../src/lib/machine-cache";
 
@@ -94,6 +94,60 @@ describe("the list across machines", () => {
     store.setState({ projectId: "p", agentIds: ["a1"], machineIds, offlineMachineIds });
     return store;
   };
+
+  it("asks a machine about ITS Agents too — an Agent that exists only there", async () => {
+    // A new chat started from a machine's Agent card belongs to an Agent this server has
+    // never heard of. Asked only about this Project's Agents, the machine answers nothing
+    // about it: the row was listed once (add) and vanished on the next reload, taking with
+    // it the record of which machine holds it — after which a deep link asks THIS server,
+    // gets a 404, and the conversation cannot be reached at all.
+    answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
+    answers.set(key("M1", "a1"), new ApiError(404, "not_found", "no such agent"));
+    answers.set(
+      key("M1", "theirs"),
+      page([row("over-there", "2026-01-03T00:00:00Z", "theirs")], 1),
+    );
+    const store = boot(["M1"]);
+    store.setState({ agentIdsByMachine: { M1: ["theirs"] } });
+    await store.getState().reload();
+    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(["over-there", "here"]);
+    expect(machineForSession("over-there")).toBe("M1");
+    // And this server is never asked about an Agent that is not its own.
+    expect(asked.filter((a) => a.machineId === null)).toHaveLength(1);
+  });
+
+  it("one Agent this server cannot answer about keeps its rows; the rest still refresh", async () => {
+    answers.set(key(null, "a1"), page([row("a1-row", "2026-01-02T00:00:00Z")], 1));
+    answers.set(key(null, "a2"), page([row("a2-row", "2026-01-01T00:00:00Z", "a2")], 1));
+    const store = createSessionsStore();
+    store.setState({
+      projectId: "p",
+      agentIds: ["a1", "a2"],
+      machineIds: [],
+      offlineMachineIds: [],
+    });
+    await store.getState().reload();
+    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(["a1-row", "a2-row"]);
+
+    // a2's index is damaged and its list 500s, while a1 answers as before. Erasing a2 would
+    // read, on screen, as an Agent with no conversations; abandoning the whole reload would
+    // leave the page on a skeleton nothing clears.
+    answers.set(key(null, "a2"), new ApiError(500, "internal", "broken index"));
+    answers.set(
+      key(null, "a1"),
+      page([row("a1-row", "2026-01-02T00:00:00Z"), row("a1-new", "2026-01-04T00:00:00Z")], 2),
+    );
+    await store.getState().reload();
+    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual([
+      "a1-new",
+      "a1-row",
+      "a2-row",
+    ]);
+    expect(store.getState().countsByAgent.get("a1")?.active).toBe(2);
+    // Kept as last read: a total without this server's share would contradict the row below it.
+    expect(store.getState().countsByAgent.get("a2")?.active).toBe(1);
+    expect(store.getState().loading).toBe(false);
+  });
 
   it("merges every source newest-first, records where each row lives, and sums the counts", async () => {
     answers.set(key(null, "a1"), page([row("here", "2026-01-02T00:00:00Z")], 1));
@@ -198,5 +252,45 @@ describe("the list across machines", () => {
     await store.getState().reload();
     unsubscribe();
     expect(raised).toBe(false);
+  });
+});
+
+/**
+ * Which events from a machine concern this list (applyUserEvent in state/sessions.tsx).
+ *
+ * A machine's Projects carry THIS server's ids — installing one creates the same Project
+ * over there, and every list call names it — so the id in the event is as meaningful from a
+ * machine as from here.
+ */
+describe("events arriving from a machine", () => {
+  const created = (projectId: string): ServerEvent =>
+    ({ type: "session_created", projectId, agentId: "a1", sessionId: "s1" }) as ServerEvent;
+
+  const countingStore = () => {
+    const store = createSessionsStore();
+    store.setState({ projectId: "p", agentIds: ["a1"] });
+    let reloads = 0;
+    store.setState({
+      reload: async () => {
+        reloads += 1;
+      },
+    });
+    return { store, reloads: () => reloads };
+  };
+
+  it("reloads for this Project, wherever the Session was created", () => {
+    const { store, reloads } = countingStore();
+    applyUserEvent(store, created("p"), () => undefined, "M1");
+    applyUserEvent(store, created("p"), () => undefined, null);
+    expect(reloads()).toBe(2);
+  });
+
+  it("ignores another Project on a machine, as it does here", () => {
+    // Unconditional for machines, every Session and every subagent started in any other
+    // Project on any connected machine refetched this whole list, Agents x sources.
+    const { store, reloads } = countingStore();
+    applyUserEvent(store, created("other"), () => undefined, "M1");
+    applyUserEvent(store, created("other"), () => undefined, null);
+    expect(reloads()).toBe(0);
   });
 });
