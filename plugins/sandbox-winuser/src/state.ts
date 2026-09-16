@@ -62,7 +62,9 @@ function isState(value: unknown): value is WinUserState {
 export function readState(file: string = stateFile()): WinUserState | null {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    // Windows PowerShell writes UTF-8 WITH a byte-order mark, and JSON.parse refuses one — so
+    // the setup would leave a perfectly good file that this read reported as no setup at all.
+    parsed = JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
   } catch {
     return null;
   }

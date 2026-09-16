@@ -64,6 +64,11 @@ export function grant(
 ): string | null {
   const rights = RIGHTS[access];
   if (hasEntry(target, group, rights, 20_000)) return null;
+  // Entries ACCUMULATE: a Workspace opened for writing keeps that entry when the mode later
+  // says read-only, and the command writes anyway. So whatever this group held here goes first,
+  // and the access the policy asks for is what remains. (Masked paths are denied separately and
+  // never cleared here.)
+  icacls([target, "/remove:g", group], timeoutMs);
   const done = icacls([target, "/grant", `${group}:${rights}`], timeoutMs);
   return done.ok
     ? null

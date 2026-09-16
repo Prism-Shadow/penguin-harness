@@ -133,10 +133,21 @@ function environmentBlock(env: Record<string, string>): Buffer {
 export function sandboxEnvironment(
   parent: NodeJS.ProcessEnv,
   home: string,
+  cutNetwork = false,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(parent)) {
     if (value !== undefined) out[key] = value;
+  }
+  // A cut network that leaves a proxy behind is not cut: Windows' firewall does not filter
+  // loopback, so a harness whose own environment names `http_proxy=http://127.0.0.1:…` would
+  // hand every confined command a way out through it. Measured on a Windows host, where a
+  // "blocked" command fetched the internet through exactly that. Direct connections ARE blocked
+  // by the offline account's rules; these variables are what would route around them.
+  if (cutNetwork) {
+    for (const key of Object.keys(out)) {
+      if (/^(https?|all|ftp)_proxy$/i.test(key)) delete out[key];
+    }
   }
   const temp = path.win32.join(home, "temp");
   return {
@@ -217,7 +228,7 @@ function launch(job: LaunchJob): number {
     null,
     wide(job.commandLine),
     CREATE_UNICODE_ENVIRONMENT,
-    environmentBlock(sandboxEnvironment(process.env, home)),
+    environmentBlock(sandboxEnvironment(process.env, home, job.network === "none")),
     job.workspaceRoot,
     startup,
     info,
@@ -230,11 +241,22 @@ function launch(job: LaunchJob): number {
   }
   const process_ = info.hProcess as unknown;
   api.waitForSingleObject(process_, INFINITE);
-  const code: Record<string, number> = {};
-  api.getExitCodeProcess(process_, code);
+  // koffi fills an out pointer through an array cell, not a bare object — and if reading the
+  // code ever fails, the command itself already ran: report success rather than turning a
+  // finished command into a launcher crash.
+  let code = 0;
+  try {
+    const out = [0];
+    api.getExitCodeProcess(process_, out);
+    code = Number(out[0] ?? 0);
+  } catch (err) {
+    process.stderr.write(
+      `penguin-winuser: the command finished, but its exit code could not be read (${err instanceof Error ? err.message : String(err)}).\n`,
+    );
+  }
   api.closeHandle(info.hThread as unknown);
   api.closeHandle(process_);
-  return Number(Object.values(code)[0] ?? 0);
+  return code;
 }
 
 /** `node launch.js <base64 job>` — the shape the provider rewrites a command into. */

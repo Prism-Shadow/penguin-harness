@@ -38,7 +38,7 @@ export interface SetupOutcome {
 
 /** Test seam: how the prompt is raised, and how long the accounts are waited for. */
 export interface SetupInternals {
-  raise?: (script: string, log: string) => void;
+  raise?: (script: string, log: string) => { failure: string };
   waitMs?: number;
   pollMs?: number;
   state?: () => boolean;
@@ -69,33 +69,54 @@ export function elevationCommand(script: string): string {
   );
 }
 
-function raisePrompt(script: string, log: string): void {
+/**
+ * Windows PowerShell, by its full path.
+ *
+ * A bare `powershell.exe` is a PATH lookup, and a server started from something with a trimmed
+ * PATH has no System32 in it: the spawn then fails with ENOENT, the failure has nowhere to go,
+ * and the button reports a prompt that was never raised. The interpreter is always at this path
+ * on a Windows install, so it is named rather than searched for.
+ */
+export function powershellPath(env: NodeJS.ProcessEnv = process.env): string {
+  return path.win32.join(
+    env.SystemRoot ?? "C:\Windows",
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+}
+
+/** What the request left behind, read after the wait: the reason it never became a prompt. */
+interface RaisedPrompt {
+  failure: string;
+}
+
+function raisePrompt(script: string): RaisedPrompt {
+  const raised: RaisedPrompt = { failure: "" };
   const command = elevationCommand(script);
-  const child = spawn("powershell.exe", ["-NoProfile", "-Command", command], {
+  // NOT detached: a detached child on Windows has no console and no usable window station, and
+  // ShellExecute's RunAs verb then does nothing at all — the outer PowerShell exits 0, no prompt
+  // is raised, no elevated process starts, and nothing anywhere says why. Measured on a Windows
+  // 11 host: the same spawn without this flag elevates and runs. `unref` below is what keeps the
+  // server free of it, which is all that was wanted from detaching.
+  const child = spawn(powershellPath(), ["-NoProfile", "-Command", command], {
     stdio: "ignore",
     windowsHide: true,
-    detached: true,
   });
-  // Nothing here waits on it, and the server must not be kept alive by a dialog either — but a
-  // prompt that could not even be ASKED for must not vanish silently, so the reason is written
-  // where the failure path reads from.
-  child.on("error", (err) => note(log, `could not start powershell: ${err.message}`));
+  // Nothing waits on the prompt, and the server must not be kept alive by a dialog — but a
+  // request that could not even be MADE has to end up somewhere the failure path can read, and
+  // it cannot be a file: the transcript directory belongs to the elevated runs that wrote it.
+  child.on("error", (err) => {
+    raised.failure = `the elevation request could not be started: ${err.message}`;
+  });
   child.on("exit", (code) => {
     if (code !== 0 && code !== null) {
-      note(log, `the elevation request exited ${code} (the prompt was refused, or not shown)`);
+      raised.failure = `the elevation request exited ${code}, so no prompt was shown`;
     }
   });
   child.unref();
-}
-
-/** Leaves a line where the failure path looks, for something that happened after we let go. */
-function note(log: string, line: string): void {
-  try {
-    fs.mkdirSync(path.win32.dirname(log), { recursive: true });
-    fs.appendFileSync(log, `${new Date().toISOString()} penguin-winuser: ${line}\n`);
-  } catch {
-    // Nothing to do: this is the path that reports failures, and it just failed.
-  }
+  return raised;
 }
 
 /** The last few lines the elevated run wrote, for a failure that needs a reason. */
@@ -126,7 +147,14 @@ export async function runSetup(internals: SetupInternals = {}): Promise<SetupOut
     };
   }
   const log = setupLog();
-  (internals.raise ?? raisePrompt)(script, log);
+  // A transcript from an earlier attempt would be read as THIS run's outcome, which turns a
+  // prompt nobody answered into "it ran and failed", with last week's reason attached.
+  try {
+    fs.rmSync(log, { force: true });
+  } catch {
+    // Left behind at worst; the reason below says which run it belongs to by naming the script.
+  }
+  const raised = (internals.raise ?? ((s: string) => raisePrompt(s)))(script, log);
   const present = internals.state ?? (() => readState() !== null);
   // Long enough for a prompt answered right away to finish, short enough that a page waiting on
   // this never feels stuck. An unanswered prompt is reported as what it is, not waited out.
@@ -144,14 +172,22 @@ export async function runSetup(internals: SetupInternals = {}): Promise<SetupOut
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
+  // What stopped it being a prompt at all outranks anything a previous run left in the log.
+  if (raised.failure !== "") {
+    return {
+      ok: false,
+      message: `${raised.failure}. Run ${script} from an elevated PowerShell instead.`,
+      messageZh: `${raised.failure}。请改为在管理员 PowerShell 中执行 ${script}。`,
+    };
+  }
   const reason = tail(log);
   // A transcript means the elevated run started, so the prompt was answered and something else
   // went wrong; no transcript means nobody has answered it yet, or it was refused.
   if (reason !== "") {
     return {
       ok: false,
-      message: `The setup ran but left no accounts behind. It said: ${reason}`,
-      messageZh: `安装脚本执行了，但没有留下账户。它的输出是：${reason}`,
+      message: `${script} ran but left no accounts behind. It said: ${reason}`,
+      messageZh: `${script} 执行了，但没有留下账户。它的输出是：${reason}`,
     };
   }
   return {

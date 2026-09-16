@@ -38,8 +38,9 @@ Once, from an **elevated** PowerShell:
 powershell -ExecutionPolicy Bypass -File setup\penguin-sandbox-setup.ps1
 ```
 
-It creates the local group `PenguinSandboxUsers`, the accounts `PenguinSandboxOffline` and
-`PenguinSandboxOnline`, the three firewall rules that block the offline one, and one state file
+It creates the local group `PenguinSandboxUsers`, the accounts `PenguinSandboxNoNet` and
+`PenguinSandboxNet` (Windows caps an account name at 20 characters, hence the short forms), the
+three firewall rules that block the offline one, and one state file
 (`%ProgramData%\penguin\sandbox-winuser.json`) naming them. The accounts' passwords are random
 and never displayed; the state file's permissions are their protection — Administrators, SYSTEM
 and the account the harness runs as (`-ServerUser`, by default whoever runs the script).

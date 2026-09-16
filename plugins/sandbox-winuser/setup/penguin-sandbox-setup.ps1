@@ -28,8 +28,9 @@
 [CmdletBinding()]
 param(
   [string] $GroupName = 'PenguinSandboxUsers',
-  [string] $OfflineUser = 'PenguinSandboxOffline',
-  [string] $OnlineUser = 'PenguinSandboxOnline',
+  # Windows caps a local account name at 20 characters, which is why these are not spelled out.
+  [string] $OfflineUser = 'PenguinSandboxNoNet',
+  [string] $OnlineUser = 'PenguinSandboxNet',
   [string] $ServerUser = "$env:USERDOMAIN\$env:USERNAME",
   [switch] $Remove
 )
@@ -44,6 +45,24 @@ $ruleNames = @(
   'penguin_sandbox_offline_block_loopback_tcp',
   'penguin_sandbox_offline_block_loopback_udp'
 )
+
+# What Windows refuses, said before it refuses: New-LocalUser names neither the value nor the
+# rule, and its refusal reaches a page that can only repeat it. Both limits are its own.
+$accountNameLimit = 20
+$accountDescriptionLimit = 48
+$accountDescription = 'PenguinHarness sandbox account.'
+
+function Assert-AccountName([string] $Name) {
+  if ($Name.Length -gt $accountNameLimit) {
+    throw "Account name '$Name' is $($Name.Length) characters; Windows allows at most $accountNameLimit."
+  }
+}
+
+function Assert-AccountDescription([string] $Text) {
+  if ($Text.Length -gt $accountDescriptionLimit) {
+    throw "The account description is $($Text.Length) characters; Windows allows at most $accountDescriptionLimit."
+  }
+}
 
 function Assert-Elevated {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -94,7 +113,7 @@ function New-SandboxAccount([string] $Name) {
     Write-Host "account ${Name}: password reset"
   } else {
     New-LocalUser -Name $Name -Password $secure -PasswordNeverExpires -AccountNeverExpires `
-      -Description 'PenguinHarness sandbox: agent commands run as this account.' | Out-Null
+      -Description $accountDescription | Out-Null
     Write-Host "account ${Name}: created"
   }
   if (-not (Get-LocalGroupMember -Group $GroupName -Member $Name -ErrorAction SilentlyContinue)) {
@@ -134,6 +153,9 @@ function Protect-StateFile([string] $Path) {
 }
 
 Assert-Elevated
+Assert-AccountName $OfflineUser
+Assert-AccountName $OnlineUser
+Assert-AccountDescription $accountDescription
 
 # Elevation goes through ShellExecute, which cannot hand a stream back to whoever asked for it,
 # so this run keeps its own transcript — that is what the Plugins page reads when it has to
@@ -167,7 +189,9 @@ $state = [ordered]@{
   online  = [ordered]@{ user = $OnlineUser; password = $onlinePassword }
   createdAt = (Get-Date).ToString('o')
 }
-$state | ConvertTo-Json -Depth 4 | Set-Content -Path $stateFile -Encoding UTF8
+# Written without a byte-order mark: Set-Content -Encoding UTF8 adds one here, and a BOM is not
+# valid JSON to most readers, this plugin's own included.
+[System.IO.File]::WriteAllText($stateFile, ($state | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 Protect-StateFile $stateFile
 
 Write-Host ''

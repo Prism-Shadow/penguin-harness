@@ -12,16 +12,19 @@ import {
   quoteWindowsArg,
   toCommandLine,
   winUserSettingsOf,
+  readState,
 } from "../src/index.js";
 import type { WinUserState } from "../src/index.js";
 import { sandboxEnvironment } from "../src/launch.js";
-import { elevationCommand, runSetup, setupScript } from "../src/setup.js";
-import { existsSync, readFileSync } from "node:fs";
+import { elevationCommand, powershellPath, runSetup, setupScript } from "../src/setup.js";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 const STATE: WinUserState = {
   group: "PenguinSandboxUsers",
-  offline: { user: "PenguinSandboxOffline", password: "secret-offline" },
-  online: { user: "PenguinSandboxOnline", password: "secret-online" },
+  offline: { user: "PenguinSandboxNoNet", password: "secret-offline" },
+  online: { user: "PenguinSandboxNet", password: "secret-online" },
 };
 const WS = "C:\\work\\project";
 const BASH = "C:\\Users\\k\\tools\\git\\bin\\bash.exe";
@@ -150,6 +153,7 @@ describe("asking Windows for the accounts", () => {
       raise: () => {
         asked++;
         created = true; // the elevated run left its state behind
+        return { failure: "" };
       },
       state: () => created,
       waitMs: 1_000,
@@ -164,7 +168,7 @@ describe("asking Windows for the accounts", () => {
   it("an unanswered prompt does not hold the page: it reports and lets the person answer", async () => {
     const started = Date.now();
     const outcome = await runSetup({
-      raise: () => {},
+      raise: () => ({ failure: "" }),
       state: () => false,
       waitMs: 60,
       pollMs: 10,
@@ -219,5 +223,105 @@ describe("the setup script this package ships", () => {
   it("is what the elevation request runs", () => {
     expect(setupScript()).toMatch(/setup[\\/]penguin-sandbox-setup\.ps1$/);
     expect(readFileSync(setupScript(), "utf8")).toContain("New-LocalUser");
+  });
+});
+
+describe("what Windows will accept", () => {
+  /**
+   * A local account name may be at most 20 characters. The first names here were 21, and
+   * New-LocalUser's refusal named neither the account nor the rule — the setup simply exited 1
+   * with nothing written anywhere, which from the page looked like an unanswered prompt.
+   */
+  it("the account names the script defaults to fit", () => {
+    const text = readFileSync(setupScript(), "utf8");
+    const defaults = [...text.matchAll(/\$(?:Offline|Online)User = '([^']+)'/g)].map((m) => m[1]!);
+    expect(defaults.length).toBe(2);
+    for (const name of defaults) expect(name.length).toBeLessThanOrEqual(20);
+  });
+
+  it("and the account description fits too", () => {
+    const text = readFileSync(setupScript(), "utf8");
+    const description = /\$accountDescription = '([^']+)'/.exec(text)?.[1];
+    expect(description).toBeDefined();
+    expect(description!.length).toBeLessThanOrEqual(48);
+  });
+
+  it("the script states both limits itself, so its refusal explains them", () => {
+    const text = readFileSync(setupScript(), "utf8");
+    expect(text).toContain("$accountNameLimit = 20");
+    expect(text).toContain("$accountDescriptionLimit = 48");
+  });
+});
+
+describe("raising the prompt at all", () => {
+  it("names Windows PowerShell by its full path, never by a PATH lookup", () => {
+    expect(powershellPath({ SystemRoot: "D:\\Windows" })).toBe(
+      "D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    );
+  });
+
+  it("a request that could not be made is reported as that, not as a waiting prompt", async () => {
+    const outcome = await runSetup({
+      raise: () => ({ failure: "the elevation request could not be started: spawn ENOENT" }),
+      state: () => false,
+      waitMs: 30,
+      pollMs: 10,
+    });
+    expect(outcome.ok).toBe(false);
+    expect(outcome.message).toMatch(/could not be started/);
+    expect(outcome.message).not.toMatch(/asking for permission/);
+  });
+});
+
+describe("reading what the setup wrote", () => {
+  /**
+   * Windows PowerShell's UTF8 encoding writes a byte-order mark, and `JSON.parse` refuses one.
+   * The setup then leaves a correct file that reads as no setup at all — accounts on the
+   * machine, a card insisting there are none. Both sides are fixed; this holds the read side.
+   */
+  it("accepts a state file with a byte-order mark", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "penguin-winuser-state-"));
+    const file = path.join(dir, "sandbox-winuser.json");
+    try {
+      writeFileSync(file, `﻿${JSON.stringify(STATE)}`, "utf8");
+      expect(readState(file)).toEqual(STATE);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("and still refuses a file that is not a state", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "penguin-winuser-state-"));
+    const file = path.join(dir, "sandbox-winuser.json");
+    try {
+      writeFileSync(file, '{"group":"x"}', "utf8");
+      expect(readState(file)).toBeNull();
+      expect(readState(path.join(dir, "absent.json"))).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a cut network stays cut", () => {
+  it("strips proxy variables, which a local proxy would otherwise route around", () => {
+    const parent = {
+      http_proxy: "http://127.0.0.1:10809",
+      HTTPS_PROXY: "http://127.0.0.1:10809",
+      all_proxy: "socks5://127.0.0.1:10808",
+      no_proxy: "localhost",
+      PATH: "C:\\Windows",
+    };
+    const cut = sandboxEnvironment(parent, "C:\\home", true);
+    expect(cut.http_proxy).toBeUndefined();
+    expect(cut.HTTPS_PROXY).toBeUndefined();
+    expect(cut.all_proxy).toBeUndefined();
+    // no_proxy names what to bypass; without a proxy it says nothing, and PATH is untouched.
+    expect(cut.PATH).toBe("C:\\Windows");
+  });
+
+  it("leaves them alone when the policy did not ask for isolation", () => {
+    const open = sandboxEnvironment({ http_proxy: "http://127.0.0.1:10809" }, "C:\\home", false);
+    expect(open.http_proxy).toBe("http://127.0.0.1:10809");
   });
 });
