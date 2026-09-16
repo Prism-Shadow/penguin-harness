@@ -184,12 +184,12 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 #### Penguin Go Key 授权
 
-以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-go` 既有条目，并按平台元数据创建本地缺失模型；已有模型只刷新平台价格，其他元数据不会被覆盖，模型也不会被删除。
+以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-go` 既有条目，并按平台元数据创建本地缺失模型；已有模型会刷新平台价格、客户端协议和固定促销元数据，端点及其他由 Project 管理的配置不会被覆盖，模型也不会被删除。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | /api/projects/:projectId/platform-auth/start | 开启一次性授权流程；按平台截止时间过期，本地最长保留十分钟 |
-| POST | /api/projects/:projectId/platform-auth/sync | 使用已保存的 Key 获取平台模型清单，新增本地缺失模型并刷新已有模型价格；响应以 `added` / `updated` 返回数量，Key 无效时返回 `platform_reauthorization_required` |
+| POST | /api/projects/:projectId/platform-auth/sync | 使用已保存的 Key 获取平台模型清单，新增本地缺失模型并刷新已有模型的平台元数据；响应以 `added` / `updated` 返回数量，Key 无效时返回 `platform_reauthorization_required` |
 | GET | /api/projects/:projectId/platform-auth/:flowId/status | 由服务端轮询中转站，把已交付 Key 写入模型组并新增平台模型 |
 | POST | /api/projects/:projectId/platform-auth/:flowId/retry | 写入失败时仅重试本地原子写，不重复请求一次性交付 |
 | POST | /api/projects/:projectId/platform-auth/:flowId/cancel | 取消本地流程；中转站的 pending 记录按自身 TTL 过期 |

@@ -184,12 +184,12 @@ Every endpoint that names a model takes the complete `(provider, modelId)` pair.
 
 #### Penguin Go key authorization
 
-All routes are owner-only. The browser receives a local flow id and authorization URL, never the device secret, delivered API key, or other platform response fields. PenguinHarness validates the platform catalog server-side, writes the delivered key across existing `penguin-go` entries, and creates locally missing models from the platform metadata. Existing models refresh only their platform price; other metadata is not overwritten, and models are never deleted.
+All routes are owner-only. The browser receives a local flow id and authorization URL, never the device secret, delivered API key, or other platform response fields. PenguinHarness validates the platform catalog server-side, writes the delivered key across existing `penguin-go` entries, and creates locally missing models from the platform metadata. Existing models refresh their platform price, client protocol, and flat-promotion metadata; endpoints and other Project-owned configuration are not overwritten, and models are never deleted.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | POST | /api/projects/:projectId/platform-auth/start | Start a one-time authorization flow; its platform deadline is capped locally at ten minutes |
-| POST | /api/projects/:projectId/platform-auth/sync | Fetch the platform catalog with the stored key, add locally missing models, and refresh existing prices; returns `added` / `updated` counts, or `platform_reauthorization_required` when that key is invalid |
+| POST | /api/projects/:projectId/platform-auth/sync | Fetch the platform catalog with the stored key, add locally missing models, and refresh existing platform-owned metadata; returns `added` / `updated` counts, or `platform_reauthorization_required` when that key is invalid |
 | GET | /api/projects/:projectId/platform-auth/:flowId/status | Poll Penguin Go server-side, write the delivered key to the group, and add platform models |
 | POST | /api/projects/:projectId/platform-auth/:flowId/retry | Retry only the local atomic write after an apply failure; does not request the single-use delivery again |
 | POST | /api/projects/:projectId/platform-auth/:flowId/cancel | Cancel the local flow; the platform-side pending record expires by its TTL |
