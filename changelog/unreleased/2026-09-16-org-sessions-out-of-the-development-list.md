@@ -30,3 +30,8 @@ the server for the user's own rows only, and a sub-session inherits its parent's
 - The store remembers every run status the user channel reports (`session_state`), whether or
   not a loaded page holds the row, and company mode's desk rows, org chart and overview read
   those — so a desk past the first page of an employee's stream shows its run ending too.
+- `GET /api/projects/:projectId/organizations/:orgId/sessions` marks a desk whose Session has
+  an enabled messaging binding with `messagingChannel`, read as the Session's own row reads it.
+  The company sidebar's desk rows draw their messaging mark from it — every bound desk, where
+  the mark used to come from whichever desks the development list happened to hold — and a
+  bind or unbind from a desk's row menu updates the row at once.

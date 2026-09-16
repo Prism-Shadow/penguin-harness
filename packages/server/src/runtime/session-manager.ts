@@ -96,6 +96,7 @@ import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
+import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -2405,15 +2406,7 @@ export class SessionsModule {
       traceStore: this.traceStore,
       proxyEnv: env.proxyEnv,
       controlEnv: env.controlEnv,
-      messagingChannel: (sessionId) => {
-        const enabled = this.messagingRepo.findEnabled(sessionId);
-        return enabled !== null &&
-          (enabled.channel === "feishu" ||
-            enabled.channel === "telegram" ||
-            enabled.channel === "qq")
-          ? enabled.channel
-          : null;
-      },
+      messagingChannel: (sessionId) => enabledMessagingChannel(this.messagingRepo, sessionId),
       // Company mode: which organization owns a Session, so development mode's list can hide
       // organization sessions and the company sidebar can group its own. The caches are a
       // projection of the organization's files, rebuilt every reconcile pass, so a row that

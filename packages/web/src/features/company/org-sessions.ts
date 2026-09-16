@@ -19,6 +19,7 @@
  * snapshots stand in for the rows that list has not loaded.
  */
 import type {
+  MessagingChannel,
   OrgChartResponse,
   OrgEmployeeState,
   OrgSessionsResponse,
@@ -46,6 +47,11 @@ export interface OrgDeskRow {
   jobTitle: string;
   sessionId: string | null;
   status: SessionStatus;
+  /**
+   * The channel of the desk's enabled messaging binding, from the sessions route's own row;
+   * absent when it has none, or while that route has not listed the desk.
+   */
+  messagingChannel?: MessagingChannel;
 }
 
 /**
@@ -56,6 +62,9 @@ export interface OrgDeskRow {
  * chart yet (the first read of an organization) the sessions route stands in: it walks the
  * same chart server-side, so the order holds and only employees without a desk are missing
  * until the chart lands.
+ *
+ * The messaging mark is the sessions route's alone: the chart carries no binding, and the
+ * development list — where a Session's mark used to be read — never holds a desk.
  */
 export function deskRows(
   chart: OrgChartResponse | null,
@@ -70,6 +79,7 @@ export function deskRows(
       jobTitle: "",
       sessionId: d.sessionId,
       status: live?.get(d.sessionId) ?? d.status,
+      ...(d.messagingChannel !== undefined ? { messagingChannel: d.messagingChannel } : {}),
     }));
   }
   return chart.employees.map((e) => {
@@ -82,8 +92,30 @@ export function deskRows(
       jobTitle: e.title,
       sessionId,
       status: liveStatus ?? desk?.status ?? (e.state === "running" ? "running" : "idle"),
+      ...(desk?.messagingChannel !== undefined ? { messagingChannel: desk.messagingChannel } : {}),
     };
   });
+}
+
+/**
+ * The sessions route's answer with one desk's messaging mark set to `channel` (null clears
+ * it) — what binding or unbinding a desk from its row menu writes into the loaded copy, so the
+ * row follows at once instead of at the next organization event. The same object when no desk
+ * names `sessionId` or the mark already says so, so a store holding it spends no render.
+ */
+export function withDeskMessagingChannel(
+  sessions: OrgSessionsResponse,
+  sessionId: string,
+  channel: MessagingChannel | null,
+): OrgSessionsResponse {
+  const at = sessions.desks.findIndex((d) => d.sessionId === sessionId);
+  if (at === -1 || (sessions.desks[at]!.messagingChannel ?? null) === channel) return sessions;
+  const desk = { ...sessions.desks[at]! };
+  if (channel === null) delete desk.messagingChannel;
+  else desk.messagingChannel = channel;
+  const desks = sessions.desks.slice();
+  desks[at] = desk;
+  return { ...sessions, desks };
 }
 
 /**

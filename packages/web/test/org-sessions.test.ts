@@ -2,6 +2,7 @@
  * The company sidebar's 工位 group (features/company/org-sessions.ts) and the development
  * list's organization filter (session-grouping): a desk row per employee in chart order
  * whether or not a desk exists, the session list's live status winning over both snapshots,
+ * the messaging mark read from the sessions route and patched by a bind or an unbind,
  * the glyph a row draws, an employee's own state read from every Session the organization
  * attributes to it — its ticket sessions included, though no list shows them as a group —
  * and the render-time guard that keeps an organization's row out of the development list when
@@ -14,7 +15,12 @@ import type {
   OrgSessionsResponse,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import { deskRows, liveEmployeeStates, orgRowActivity } from "../src/features/company/org-sessions";
+import {
+  deskRows,
+  liveEmployeeStates,
+  orgRowActivity,
+  withDeskMessagingChannel,
+} from "../src/features/company/org-sessions";
 import { isOrgSession, withoutOrgSessions } from "../src/lib/session-grouping";
 
 const liveStatuses = (entries: Record<string, SessionStatus>): ReadonlyMap<string, SessionStatus> =>
@@ -146,6 +152,53 @@ describe("deskRows", () => {
       "compacting",
       "idle",
     ]);
+  });
+});
+
+describe("the desk row's messaging mark", () => {
+  const bound: OrgSessionsResponse = {
+    ...sessions,
+    desks: sessions.desks.map((d) =>
+      d.agentId === "ceo" ? { ...d, messagingChannel: "telegram" as const } : d,
+    ),
+  };
+
+  // The development list never holds a desk, so the sessions route is the only place the
+  // binding is read from — with or without a chart.
+  it("carries the sessions route's channel onto the desk it names, and nothing onto the rest", () => {
+    const rows = deskRows(chart, bound);
+    expect(rows[0]).toMatchObject({ agentId: "ceo", messagingChannel: "telegram" });
+    expect(rows[1]).not.toHaveProperty("messagingChannel");
+    expect(rows[2]).not.toHaveProperty("messagingChannel");
+    expect(deskRows(null, bound).find((d) => d.agentId === "ceo")).toMatchObject({
+      messagingChannel: "telegram",
+    });
+    // A desk only the chart names yet has no sessions-route row to be marked by.
+    expect(deskRows(chart, { desks: [], tickets: [] })[0]).not.toHaveProperty("messagingChannel");
+  });
+
+  it("follows a bind, a switch of channel and an unbind written into the loaded answer", () => {
+    const pm = (r: OrgSessionsResponse) => r.desks.find((d) => d.sessionId === "s-pm");
+    const onPm = withDeskMessagingChannel(bound, "s-pm", "feishu");
+    expect(pm(onPm)?.messagingChannel).toBe("feishu");
+    expect(deskRows(chart, onPm)[1]).toMatchObject({ agentId: "pm", messagingChannel: "feishu" });
+    // The input is left as it was: the store's previous copy is never written into.
+    expect(pm(bound)).not.toHaveProperty("messagingChannel");
+
+    expect(pm(withDeskMessagingChannel(onPm, "s-pm", "qq"))?.messagingChannel).toBe("qq");
+    const off = withDeskMessagingChannel(onPm, "s-pm", null);
+    expect(pm(off)).not.toHaveProperty("messagingChannel");
+    expect(deskRows(chart, off)[1]).not.toHaveProperty("messagingChannel");
+    // The other desk and the tickets ride through untouched.
+    expect(off.desks.find((d) => d.agentId === "ceo")?.messagingChannel).toBe("telegram");
+    expect(off.tickets).toBe(bound.tickets);
+  });
+
+  it("hands back the same answer when no desk is that Session or the mark already says so", () => {
+    // A ticket session is not a desk: the sidebar draws no mark for it.
+    expect(withDeskMessagingChannel(bound, "s-t1", "telegram")).toBe(bound);
+    expect(withDeskMessagingChannel(bound, "s-ceo", "telegram")).toBe(bound);
+    expect(withDeskMessagingChannel(bound, "s-pm", null)).toBe(bound);
   });
 });
 

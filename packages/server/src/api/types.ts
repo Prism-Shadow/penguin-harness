@@ -4330,6 +4330,12 @@ export interface OrgDeskItem {
   status: SessionStatus;
   workspace: string;
   lastActiveAt?: string;
+  /**
+   * Present when the desk session has an ENABLED messaging binding: its channel, read as
+   * `SessionInfo.messagingChannel` is (the company sidebar's desk row draws the same mark as a
+   * development row, and the development list never holds a desk).
+   */
+  messagingChannel?: MessagingChannel;
 }
 
 export interface OrgSessionsResponse {

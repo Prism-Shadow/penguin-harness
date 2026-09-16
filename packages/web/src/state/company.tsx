@@ -40,6 +40,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import type { ReactNode } from "react";
 import type {
   CompanyServerEvent,
+  MessagingChannel,
   OrgChannelItem,
   OrgChartResponse,
   OrgSessionsResponse,
@@ -56,6 +57,7 @@ import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/b
 import { channelBadgeCounts } from "../features/company/channel-list";
 import { orgKey, parseOrgKey } from "../features/company/company-nav";
 import type { WorkMode } from "../features/company/company-nav";
+import { withDeskMessagingChannel } from "../features/company/org-sessions";
 import {
   clearLastOrgKey,
   initialLastOrgKey,
@@ -181,6 +183,8 @@ interface CompanyStoreState {
   reloadOrganizations: (projectIds: readonly string[]) => Promise<void>;
   forgetMissingOrganizations: () => void;
   reloadOrgSessions: (projectId: string) => Promise<void>;
+  /** A desk was bound to a messaging bot here (or unbound: null): its row's mark follows without a re-read. */
+  setDeskMessagingChannel: (sessionId: string, channel: MessagingChannel | null) => void;
   reloadOrgChart: (projectId: string, orgId: string) => Promise<void>;
   openTicket: (projectId: string, orgId: string, ticketId: string) => void;
   closeTicket: () => void;
@@ -393,6 +397,19 @@ export function createCompanyStore() {
       set({ orgSessions: next });
     },
 
+    setDeskMessagingChannel: (sessionId, channel) => {
+      // A Session id is unique across organizations, so every entry is asked and at most one
+      // changes; nothing is set when none does.
+      let changed = false;
+      const next = new Map<string, OrgSessionsResponse>();
+      for (const [key, sessions] of get().orgSessions) {
+        const patched = withDeskMessagingChannel(sessions, sessionId, channel);
+        if (patched !== sessions) changed = true;
+        next.set(key, patched);
+      }
+      if (changed) set({ orgSessions: next });
+    },
+
     /**
      * Re-reads the open organization's chart (the 工位 group's roster). A response for an
      * organization the shell has since left is dropped, and a failure leaves whatever the
@@ -532,6 +549,8 @@ interface CompanyContextValue {
   markChannelRead: (channelId: string) => void;
   /** Desk and ticket Sessions of every organization of the current Project, keyed by org key. */
   orgSessions: ReadonlyMap<string, OrgSessionsResponse>;
+  /** Writes a desk's messaging binding change into `orgSessions` (null = unbound), so its row's mark follows at once. */
+  setDeskMessagingChannel: (sessionId: string, channel: MessagingChannel | null) => void;
   /** The open organization's employees, in chart order; null until the first read. */
   orgChart: OrgChartResponse | null;
   orgChartError: string | null;
@@ -699,6 +718,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       },
       markChannelRead: state.markChannelRead,
       orgSessions: state.orgSessions,
+      setDeskMessagingChannel: state.setDeskMessagingChannel,
       orgChart: state.orgChart,
       orgChartError: state.orgChartError,
       reloadOrgChart: () => {
