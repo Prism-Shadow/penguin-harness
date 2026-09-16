@@ -11,8 +11,11 @@ import path from "node:path";
 import {
   canonicalPath,
   createSeatbeltProvider,
+  defaultRunner,
   loadSeatbeltProvider,
   seatbeltProfile,
+  seatbeltSettingsOf,
+  SYSTEM_RUNNER,
   writableRoots,
 } from "../src/index.js";
 
@@ -150,5 +153,23 @@ describe("seatbelt on another platform", () => {
     await expect(
       loadSeatbeltProvider({ platform: "darwin", probe: () => true }),
     ).resolves.toBeDefined();
+  });
+});
+
+describe("the sandbox-exec it runs", () => {
+  it("names the macOS program by its absolute path, so PATH cannot decide what confines", () => {
+    expect(SYSTEM_RUNNER).toBe("/usr/bin/sandbox-exec");
+    expect(defaultRunner(() => true)).toBe(SYSTEM_RUNNER);
+    // A host without it (or any non-macOS machine running these tests) falls back to a lookup,
+    // and the load-time probe is what rejects a host where nothing answers.
+    expect(defaultRunner(() => false)).toBe("sandbox-exec");
+  });
+
+  it("what the deployment names wins over the OS's own", () => {
+    expect(seatbeltSettingsOf({ runner: " /opt/sandbox-exec " }, SYSTEM_RUNNER).runner).toBe(
+      "/opt/sandbox-exec",
+    );
+    expect(seatbeltSettingsOf({}, SYSTEM_RUNNER).runner).toBe(SYSTEM_RUNNER);
+    expect(seatbeltSettingsOf({ runner: "" }, "sandbox-exec").runner).toBe("sandbox-exec");
   });
 });
