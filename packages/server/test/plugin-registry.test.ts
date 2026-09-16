@@ -77,6 +77,7 @@ describe("builtinPluginRegistry", () => {
     expect(entries.map((e) => e.name)).toEqual([
       "@prismshadow/penguin-plugin-sandbox-bwrap",
       "@prismshadow/penguin-plugin-sandbox-seatbelt",
+      "@prismshadow/penguin-plugin-sandbox-winuser",
       "@prismshadow/penguin-plugin-sandbox-dsh",
       "@prismshadow/penguin-plugin-languages",
       "@prismshadow/penguin-plugin-claude-code",
@@ -171,7 +172,7 @@ describe("GET /api/plugins/registry", () => {
     const res = await apiClient(t.app, admin.cookie).get("/api/plugins/registry");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins).toHaveLength(6);
+    expect(body.plugins).toHaveLength(7);
     expect(body.plugins.every((p) => p.name.startsWith("@prismshadow/penguin-plugin-"))).toBe(true);
   });
 });

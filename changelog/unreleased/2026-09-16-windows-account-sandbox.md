@@ -1,0 +1,14 @@
+# The Windows sandbox runs commands as a dedicated account
+
+- **Date:** 2026-09-16
+- **Type:** feat
+- **Scope:** plugins, server
+- **PR:** [#728](https://github.com/Prism-Shadow/penguin-harness/pull/728)
+
+[中文](2026-09-16-windows-account-sandbox.zh.md)
+
+Confinement on Windows no longer goes through a container, because no container available there can run the shell the harness spawns. `penguin-winuser` confines by identity instead: each agent command runs as a dedicated local account that owns nothing, and what it may touch is what the setup granted.
+
+- **A new backend, `sandbox-winuser`**, implementing all three dimensions. The Workspace is opened to a local group — Modify under `workspace-write`, Read and Execute under `read-only`; `network: "none"` picks the one of two accounts whose outbound traffic three firewall rules block, loopback included; `mask-paths` becomes an explicit Deny, which outranks the Workspace's own grant. Everything else is already out of reach: one local user cannot read another's profile.
+- **Setup is elevated, once, and it is a script a person runs** (`setup/penguin-sandbox-setup.ps1`) — creating local accounts and firewall rules is not something a server should do behind anyone's back. It leaves a group, two accounts with random passwords, three firewall rules and one state file naming them; `-Remove` takes all of it away. The passwords are protected by that file's permissions: Administrators, SYSTEM and the account the harness runs as. Until it has run, the backend declines to load and the Sandbox card carries the command, rather than letting the first agent command fail.
+- **The command's identity never reaches its command line.** The provider rewrites a confined command into a launcher carrying the policy; the launcher reads the credentials from the state file, because every process on a machine can read another's arguments.

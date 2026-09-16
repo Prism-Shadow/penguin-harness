@@ -11,7 +11,7 @@
  * STRICT PARITY, decided by the operator (PRFC-0010): what goes over is the Project's whole
  * list, and what the machine has beyond it is removed. That is the literal meaning of "the
  * same plugins everywhere", and it has a cost worth stating at the call site: a
- * platform-specific sandbox backend — `sandbox-mxc` on Windows, `sandbox-bwrap` on Linux —
+ * platform-specific sandbox backend — `sandbox-winuser` on Windows, `sandbox-bwrap` on Linux —
  * is not in the other's list and is therefore taken away. Keeping one means listing it
  * fleet-wide; a machine that cannot resolve it shows an inert error row rather than losing
  * the backend it can use.
