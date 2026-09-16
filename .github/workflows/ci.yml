@@ -109,7 +109,7 @@ jobs:
           for want in web-dist/ LICENSE; do
             echo "$listing" | grep -q -- "$want" || { echo "::error::packages/server tarball is missing $want"; exit 1; }
           done
-          echo "server tarball carries web-dist/ and LICENSE" 
+          echo "server tarball carries web-dist/ and LICENSE"
 
   # tsc over every package, so this one does need the whole build. Results are
   # platform-independent, which is why neither macOS nor Windows repeats it.
