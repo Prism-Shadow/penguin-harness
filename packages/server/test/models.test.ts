@@ -603,8 +603,8 @@ describe("model-reference rekeying and the connectivity test", () => {
     // that record's own timestamp when the usage is aggregated, so the price lookup's whole job
     // is to say what the two tiers are. The number on disk is the peak one either way.
     const svc = wire(ProjectConfigService, { paths: { root: t.root } });
-    const rates = await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash");
-    const catalogPeak = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
+    const rates = await svc.getPricing(projectId, "deepseek", "deepseek-flash");
+    const catalogPeak = catalogEntryFor("deepseek", "deepseek-flash")!.pricing!;
     expect(rates!.peak.output).toBe(catalogPeak.output);
     expect(rates!.offPeak.output).toBeCloseTo(catalogPeak.output / 2, 5);
     expect(rates!.peak.cacheRead).toBe(catalogPeak.cache_read);
@@ -619,7 +619,7 @@ describe("model-reference rekeying and the connectivity test", () => {
       ...(m.pricing
         ? {
             pricing:
-              m.provider === "deepseek" && m.modelId === "deepseek-v4-flash"
+              m.provider === "deepseek" && m.modelId === "deepseek-flash"
                 ? { cacheRead: 1, cacheWrite: 2, output: 3 }
                 : {
                     cacheRead: m.pricing.cacheRead,
@@ -634,7 +634,7 @@ describe("model-reference rekeying and the connectivity test", () => {
     // Nothing here knows whether 3 is a peak rate, so halving it would invent a discount: the
     // two tiers collapse to the typed number and the split costs a row and changes nothing.
     const typed = { cacheRead: 1, cacheWrite: 2, output: 3 };
-    expect(await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash")).toEqual({
+    expect(await svc.getPricing(projectId, "deepseek", "deepseek-flash")).toEqual({
       peak: typed,
       offPeak: typed,
     });

@@ -8,17 +8,16 @@
  * qwen3.8-flash row: 2026-08-27 and its running promotions plus the hy4-preview rows
  * (TokenDance + OpenRouter): 2026-08-28; the GLM-5.3 Flash rows (direct + OpenRouter) and
  * the direct qwen3.8-flash: 2026-08-26; the TokenDance Doubao Seed rows (seed-2.1-pro,
- * seed-2.1-turbo, seed-evolving): 2026-09-02; the vLLM group: 2026-09-03; the direct DeepSeek
- * V4 Flash rows (flash and flash-vision-exp): 2026-09-08, for the official adjustment
- * effective 2026-09-10; the GPT-6 Astra rows (direct + OpenRouter): 2026-09-09; the
- * pre-registered deepseek-v4.1-flash row: 2026-09-09, from DeepSeek's release announcement;
- * the whole Gemini 3.x line-up, direct + OpenRouter — the 3.6 / 3.7 / 3.8 Flash launch
- * discounts declared, every other row re-read and unchanged: 2026-09-09; the direct DeepSeek
- * group (V4.1 Flash released as `deepseek-flash`, the two V4 Flash ids retired into it —
- * `deepseek-v4-flash` text-only even so, AgentHub's DeepSeek client refusing image parts for
- * that id), the OpenRouter and TokenDance V4.1 Flash rows, and TokenDance's running promotions
- * plus its Doubao Seed display names: 2026-09-10; the OpenRouter z-ai/glm-5.3-flash row:
- * 2026-09-16 — per each provider's docs).
+ * seed-2.1-turbo, seed-evolving): 2026-09-02; the vLLM group: 2026-09-03; the GPT-6 Astra
+ * rows (direct + OpenRouter): 2026-09-09; the whole Gemini 3.x line-up, direct + OpenRouter —
+ * the 3.6 / 3.7 / 3.8 Flash launch discounts declared, every other row re-read and unchanged:
+ * 2026-09-09; the OpenRouter and TokenDance V4.1 Flash rows, and TokenDance's running
+ * promotions plus its Doubao Seed display names: 2026-09-10; the OpenRouter z-ai/glm-5.3-flash
+ * row: 2026-09-16; and the 2026-09-16 refresh — the direct DeepSeek group down to the two
+ * names its pricing page lists, TokenDance's deepseek-v4-flash-0731 / deepseek-v4-pro-0813 /
+ * kimi-k3 promotions, the OpenRouter qwen/qwen3.8-27b row, the Fireworks AI and SiliconFlow
+ * additions, and both Qwen groups' line-ups with their peak/off-peak DeepSeek rows: 2026-09-16
+ * — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -408,6 +407,19 @@ export const DEEPSEEK_OFF_PEAK: OffPeakDiscount = {
 };
 
 /**
+ * Qwen's off-peak tier on the time-banded models it sells (www.qianwenai.com/models/<id>, read
+ * 2026-09-16): half price from 22:00 to 08:00 Beijing time, every day of the week, and the peak
+ * price at every other hour. Each model page shows the two tiers as separate price tabs, and
+ * every bucket's off-peak figure is exactly half its peak one.
+ */
+export const QWEN_OFF_PEAK: OffPeakDiscount = {
+  rate: 0.5,
+  utcOffsetMinutes: 480,
+  peakDays: [1, 2, 3, 4, 5, 6, 7],
+  peakHours: [[8, 22]],
+};
+
+/**
  * The catalog's time-based schedules, each with the references that carry it.
  *
  * The cost center needs this to split an aggregation by tier before it prices anything: the
@@ -480,15 +492,16 @@ export function effectivePricing(
  */
 export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- DeepSeek (official CNY pricing: cache hit / cache miss / output). Prices and model
-  // names re-read 2026-09-10 from api-docs.deepseek.com/quick_start/pricing: the Flash rows
-  // are on the peak tier CNY 0.04 / 2 / 8, exactly double the off-peak 0.02 / 1 / 4;
-  // deepseek-v4-pro sits outside that tier, at 0.3 / 9 / 27. The rows store the PEAK tier
-  // and declare DEEPSEEK_OFF_PEAK, which halves every bucket outside Beijing weekday
+  // names re-read 2026-09-16 from api-docs.deepseek.com/zh-cn/quick_start/pricing, which now
+  // lists exactly two names, both with a 1M context window and a 384K output cap:
+  // `deepseek-flash` (DeepSeek-V4.1-Flash, image input) on the peak tier CNY 0.04 / 2 / 8, and
+  // `deepseek-v4-pro` (DeepSeek-V4-Pro-0813, text only) at 0.30 / 9 / 27. The rows store the
+  // PEAK tier and declare DEEPSEEK_OFF_PEAK, which halves every bucket outside Beijing weekday
   // 09:00-12:00 and 14:00-18:00 — so both tiers are billed at the rate actually in force,
   // rather than one of them being approximated by the other.
-  // V4.1 Flash ships under the bare name `deepseek-flash` and leads the group; the two V4
-  // Flash ids below are retired names the vendor still accepts and now serves from V4.1
-  // Flash at the Flash price. --
+  // The retired V4 Flash names, `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, are
+  // still accepted and served by V4.1 Flash at the Flash price, but the page no longer lists
+  // them and neither is a preset any more. --
   {
     // DeepSeek's pricing page names this model `deepseek-flash` (model version
     // DeepSeek-V4.1-Flash, released as of the 2026-09-10 read): 1M context, image input, and
@@ -510,40 +523,15 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: DEEPSEEK_BASE_URL,
   },
   {
-    // Retired on 2026-09-10: DeepSeek still accepts the id and serves it from V4.1 Flash at
-    // the Flash price. V4 Flash reads no images, and the retirement does not change that —
-    // `deepseek-flash` is the id to send an image to. AgentHub agrees rather than decides:
-    // 0.4.11's DeepSeek client matches this bare id against its text-only deny-list
-    // /^deepseek-v4-(flash|pro)(-\d{4})?$/ and rejects image parts before the request leaves
-    // the harness, so relaxing that list is not a reason to flip this flag.
-    modelId: "deepseek-v4-flash",
-    displayName: "DeepSeek V4 Flash",
-    provider: "deepseek",
-    contextWindow: 1000000,
-    pricing: cny(0.04, 2, 8),
-    offPeakDiscount: DEEPSEEK_OFF_PEAK,
-    supportsVision: false,
-  },
-  {
-    // The experimental vision revision of V4 Flash (added 2026-08-21), retired on the same
-    // 2026-09-10 announcement: the id is still accepted and served from V4.1 Flash at the
-    // Flash price. Image input was already the point of this row, and it still holds.
-    modelId: "deepseek-v4-flash-vision-exp",
-    displayName: "DeepSeek V4 Flash Vision Exp",
-    provider: "deepseek",
-    contextWindow: 1000000,
-    pricing: cny(0.04, 2, 8),
-    offPeakDiscount: DEEPSEEK_OFF_PEAK,
-    supportsVision: true,
-  },
-  {
-    // From 12:00 Beijing on 2026-09-14 and until V4.1 Pro is released, DeepSeek routes every
-    // request for this id to V4.1 Flash and bills it at the V4.1 Flash price. The row keeps
-    // the V4 Pro list price and its text-only flag: the id, the model behind it and the
-    // billing are the vendor's to change back, and this catalog records what it publishes
-    // for deepseek-v4-pro itself.
+    // DeepSeek's pricing page names the model behind this id DeepSeek-V4-Pro-0813 (read
+    // 2026-09-16), which is what the display name says — the same 0813 release the gateway
+    // groups sell under dated ids. Text only. DeepSeek states that V4 Pro stays available
+    // after 2026-09-14 with its billing unchanged, so the row keeps the V4 Pro peak price on
+    // the shared off-peak schedule. AgentHub 0.4.11's DeepSeek client also matches this bare
+    // id against its text-only deny-list /^deepseek-v4-(flash|pro)(-\d{4})?$/, so image parts
+    // never leave the harness for it.
     modelId: "deepseek-v4-pro",
-    displayName: "DeepSeek V4 Pro",
+    displayName: "DeepSeek V4 Pro 0813",
     provider: "deepseek",
     contextWindow: 1000000,
     pricing: cny(0.3, 9, 27),
@@ -958,6 +946,18 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: OPENROUTER_BASE_URL,
   },
   {
+    // Read 2026-09-16 from the models API: $0.214 input / $2.55 output with a published $0.15
+    // input_cache_read, a 1,000,000-token context window, and text, image and video input.
+    modelId: "qwen/qwen3.8-27b",
+    displayName: "Qwen 3.8 27B",
+    provider: "openrouter",
+    contextWindow: 1000000,
+    pricing: usd(0.15, 0.214, 2.55),
+    supportsVision: true,
+    clientType: "openai-responses",
+    baseUrl: OPENROUTER_BASE_URL,
+  },
+  {
     modelId: "qwen/qwen3.8-max",
     displayName: "Qwen 3.8 Max",
     provider: "openrouter",
@@ -1100,7 +1100,23 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   // -- Fireworks AI (gateway, standard serverless USD pricing: cached input / uncached
   // input / output from each model's page; API ids use the accounts/fireworks/models/<slug>
-  // form) --
+  // form, where Fireworks spells a version's dot as `p`: deepseek-v4p1-flash, glm-5p3). The
+  // DeepSeek V4.1 Flash, DeepSeek V4 Pro 0813, GLM-5.3, GLM-5.3 Flash and Qwen 3.8 Max rows
+  // were added 2026-09-16 from their fireworks.ai/models pages. Fireworks publishes no context
+  // length for qwen3p8-max, so that row records the vendor's 1M window, as the other
+  // qwen3.8-max rows do. --
+  {
+    // Fireworks' listing of the model DeepSeek serves directly as `deepseek-flash`: 1,048,576
+    // context, image input, and the single serverless price its page lists, so no schedule.
+    modelId: "accounts/fireworks/models/deepseek-v4p1-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: "fireworks",
+    contextWindow: 1048576,
+    pricing: usd(0.007, 0.22, 0.66),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
   {
     modelId: "accounts/fireworks/models/deepseek-v4-flash-0731",
     displayName: "DeepSeek V4 Flash 0731",
@@ -1122,12 +1138,44 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: FIREWORKS_BASE_URL,
   },
   {
+    modelId: "accounts/fireworks/models/deepseek-v4-pro-0813",
+    displayName: "DeepSeek V4 Pro 0813",
+    provider: "fireworks",
+    contextWindow: 1048576,
+    pricing: usd(0.044, 1.32, 3.96),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
+  {
     modelId: "accounts/fireworks/models/deepseek-v4-pro",
     displayName: "DeepSeek V4 Pro",
     provider: "fireworks",
     contextWindow: 1000000,
     pricing: usd(0.15, 1.74, 3.48),
     supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
+  {
+    modelId: "accounts/fireworks/models/glm-5p3",
+    displayName: "GLM-5.3",
+    provider: "fireworks",
+    contextWindow: 1048576,
+    pricing: usd(0.26, 1.4, 4.4),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
+  {
+    // Natively multimodal like every other GLM-5.3 Flash row, and this group's generic
+    // openai-chat client forwards image_url parts, so image input works on this path.
+    modelId: "accounts/fireworks/models/glm-5p3-flash",
+    displayName: "GLM-5.3 Flash",
+    provider: "fireworks",
+    contextWindow: 1048576,
+    pricing: usd(0.03, 0.15, 0.5),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: FIREWORKS_BASE_URL,
   },
@@ -1179,6 +1227,16 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: "fireworks",
     contextWindow: 524288,
     pricing: usd(0.06, 0.3, 1.2),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: FIREWORKS_BASE_URL,
+  },
+  {
+    modelId: "accounts/fireworks/models/qwen3p8-max",
+    displayName: "Qwen 3.8 Max",
+    provider: "fireworks",
+    contextWindow: 1000000,
+    pricing: usd(0.25, 2, 6),
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: FIREWORKS_BASE_URL,
@@ -1249,6 +1307,30 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: SILICONFLOW_BASE_URL,
   },
   {
+    // Added 2026-09-16, both ids confirmed in SiliconFlow's /v1/models listing. Hy4 preview is
+    // text only at CNY 6 input / 18 output / 0.3 cache hit, with the 1,024,000-token window the
+    // TokenDance hy4-preview row records; GLM-5.3 below is text only at 8 / 28 / 2, with the
+    // same 1M window as zai-org/GLM-5.2.
+    modelId: "tencent/Hy4-preview",
+    displayName: "Hy4 preview",
+    provider: "siliconflow",
+    contextWindow: 1024000,
+    pricing: cny(0.3, 6, 18),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
+    modelId: "zai-org/GLM-5.3",
+    displayName: "GLM-5.3",
+    provider: "siliconflow",
+    contextWindow: 1000000,
+    pricing: cny(2, 8, 28),
+    supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: SILICONFLOW_BASE_URL,
+  },
+  {
     modelId: "zai-org/GLM-5.2",
     displayName: "GLM-5.2",
     provider: "siliconflow",
@@ -1262,22 +1344,23 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // vision flags and supported protocols from the public catalog API (GET
   // https://tokendance.space/gateway/v1/models, no credential required; re-read 2026-09-10);
   // prices are the gateway's own CNY rates from each model's detail page, read 2026-08-25
-  // and last confirmed by the seller 2026-09-10 (the detail pages need a signed-in session,
-  // so they cannot be re-read anonymously). TokenDance publishes an input price and a
-  // cache-hit price with no separate cache-write fee, so cache_write carries the input price.
+  // and last confirmed by the seller 2026-09-10, or 2026-09-16 for the deepseek-v4-flash-0731,
+  // deepseek-v4-pro-0813 and kimi-k3 rows (the detail pages need a signed-in session, so they
+  // cannot be re-read anonymously). TokenDance publishes an input price and a cache-hit price
+  // with no separate cache-write fee, so cache_write carries the input price.
   //
   // Discounts: every row here stores the official LIST price, the convention of the two Qwen
   // groups below, and a promoted row declares its rate in `discount` rather than having its
   // price rewritten — a promotion that lapses is then one field to delete, with the rate to
   // return to still on the row. effectivePricing() applies it and presetModelEntries writes
   // that billed rate into a Project, so the cost center charges what the gateway charges.
-  // Nine rows are promoted (rates re-confirmed 2026-09-10): deepseek-v4-flash-0731,
-  // deepseek-v4-pro-0813 and kimi-k3 at 20% off; glm-5.3, glm-5.3-flash and qwen3.8-max at
-  // 10%; the three Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50%.
-  // Two more rows — deepseek-v4.1-flash and deepseek-v4-flash-vision-exp — carry no flat
-  // discount at all and instead follow the vendor's own peak/off-peak schedule
-  // (DEEPSEEK_OFF_PEAK), storing the peak price the way the direct DeepSeek rows do. The
-  // rest carry neither, so for them list price and billed rate coincide.
+  // Nine rows are promoted: deepseek-v4-flash-0731 and deepseek-v4-pro-0813 at 10% off and
+  // kimi-k3 at 40% (seller's quote 2026-09-16); glm-5.3, glm-5.3-flash and qwen3.8-max at 10%
+  // and the three Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50% (rates
+  // re-confirmed 2026-09-10). One more row, deepseek-v4.1-flash, carries no flat discount at
+  // all and instead follows the vendor's own peak/off-peak schedule (DEEPSEEK_OFF_PEAK),
+  // storing the peak price the way the direct DeepSeek rows do. The rest carry neither, so
+  // for them list price and billed rate coincide.
   //
   // A running promotion usually also shows up without a credential: the catalog API opens
   // such a model's `description` with a bracketed 限时 ("limited-time") tag, so the same
@@ -1285,39 +1368,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // still live. It is neither exhaustive nor authoritative on the rate — the rates above are
   // the ones the seller confirmed. --
   {
+    // 10% off a CNY 1.5 input / 4.5 output / 0.15 cache hit list, so the gateway bills
+    // 1.35 / 4.05 / 0.135 (seller's quote 2026-09-16).
     modelId: "deepseek-v4-flash-0731",
     displayName: "DeepSeek V4 Flash 0731",
     provider: "tokendance",
     contextWindow: 1048576,
-    pricing: cny(0.1, 3, 9),
-    discount: 0.2,
+    pricing: cny(0.15, 1.5, 4.5),
+    discount: 0.1,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
-    // Both DeepSeek Flash rows sold here follow the vendor's own peak/off-peak schedule
-    // rather than a flat gateway discount (seller's quote 2026-09-10): the row stores the
-    // peak tier CNY 0.04 / 2 / 8 and declares DEEPSEEK_OFF_PEAK, which halves every bucket
-    // outside Beijing weekday 09:00-12:00 and 14:00-18:00 — see the deepseek-v4.1-flash row
-    // below, priced identically.
-    modelId: "deepseek-v4-flash-vision-exp",
-    displayName: "DeepSeek V4 Flash Vision Exp",
-    provider: "tokendance",
-    contextWindow: 1000000,
-    pricing: cny(0.04, 2, 8),
-    offPeakDiscount: DEEPSEEK_OFF_PEAK,
-    supportsVision: true,
-    clientType: "openai-chat",
-    baseUrl: TOKENDANCE_BASE_URL,
-  },
-  {
+    // 10% off a CNY 4.5 input / 13.5 output / 0.45 cache hit list, so the gateway bills
+    // 4.05 / 12.15 / 0.405 (seller's quote 2026-09-16).
     modelId: "deepseek-v4-pro-0813",
     displayName: "DeepSeek V4 Pro 0813",
     provider: "tokendance",
     contextWindow: 1000000,
-    pricing: cny(0.3, 9, 27),
-    discount: 0.2,
+    pricing: cny(0.45, 4.5, 13.5),
+    discount: 0.1,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
@@ -1325,10 +1396,12 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     // Listed 2026-09-10; the dotted id is the seller's spelling of the model DeepSeek serves
     // directly as `deepseek-flash`. 1M context and native multimodality from the catalog
-    // API. Priced like the vision-exp row above: the peak tier, on the vendor's own
-    // schedule, no flat gateway discount (seller's quote 2026-09-10). Unlike the direct row
-    // this one needs no DeepSeek-specific pin — it is reached through this group's generic
-    // openai-chat client, which forwards image_url parts.
+    // API. It follows the vendor's own peak/off-peak schedule rather than a flat gateway
+    // discount (seller's quote 2026-09-10): the row stores the peak tier CNY 0.04 / 2 / 8,
+    // the direct row's figures, and declares DEEPSEEK_OFF_PEAK, which halves every bucket
+    // outside Beijing weekday 09:00-12:00 and 14:00-18:00. Unlike the direct row this one
+    // needs no DeepSeek-specific pin — it is reached through this group's generic openai-chat
+    // client, which forwards image_url parts.
     modelId: "deepseek-v4.1-flash",
     displayName: "DeepSeek V4.1 Flash",
     provider: "tokendance",
@@ -1411,20 +1484,24 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
+    // 40% off a CNY 20 input / 100 output / 1.6 cache hit list, so the gateway bills
+    // 12 / 60 / 0.96 (seller's quote 2026-09-16).
     modelId: "kimi-k3",
     displayName: "Kimi K3",
     provider: "tokendance",
     contextWindow: 1048576,
-    pricing: cny(2, 20, 100),
-    discount: 0.2,
+    pricing: cny(1.6, 20, 100),
+    discount: 0.4,
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
   {
-    // The gateway's own rate undercuts Qwen's direct list price for the same id (CNY 0.8 vs 1
-    // input, 2.7 vs 3 output, cache hit the same 0.1), which is the whole reason both rows
-    // exist: the pair is one model reached two ways, priced by whoever is selling it.
+    // One model reached two ways, priced by whoever is selling it: this row carries the
+    // gateway's own CNY 0.8 input / 2.7 output / 0.1 cache hit, and the qwen-pay-as-you-go row
+    // carries Qwen's direct list price for the same id. The two figures agree since Qwen's
+    // 2026-09-16 re-pricing (its page had read 1 / 3 / 0.1), but only because the two sellers
+    // do: each row still follows its own seller.
     //
     // Its supported_protocols is the widest in this group — openai:chat-completions,
     // openai:responses AND anthropic:messages — so the openai-chat pin here is the group's
@@ -1503,37 +1580,58 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: TOKENDANCE_BASE_URL,
   },
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
-  // table). Pricing and context windows from each model's page at
-  // www.qianwenai.com/models/<id> (official CNY list prices; limited-time promotions such as
-  // the 20%/50% off discounts are not stored). Lineup updated 2026-08-03: qwen3.8-max and
-  // deepseek-v4-flash-0731 join; qwen3.8-max-preview and qwen3.7-max leave the plan. --
+  // table, and for the rows added 2026-09-16 per their model pages' input modalities).
+  // Pricing and context windows from each model's page at www.qianwenai.com/models/<id>
+  // (official CNY list prices; limited-time promotions such as the 20%/50% off discounts are
+  // not stored). Lineup updated 2026-09-16: deepseek-v4.1-flash, deepseek-v4-pro-0813,
+  // glm-5.3 and qwen3.8-flash join; deepseek-v4-flash-0731, deepseek-v4-pro and glm-5.2
+  // leave the plan.
+  //
+  // The two DeepSeek rows are priced by time of day: their pages list a peak and an off-peak
+  // price, the off-peak one exactly half on every bucket and in force from 22:00 to 08:00
+  // Beijing time every day. They store the PEAK price and declare QWEN_OFF_PEAK, the same
+  // shape the DeepSeek rows take with DeepSeek's own schedule. --
   {
-    modelId: "deepseek-v4-flash-0731",
-    displayName: "DeepSeek V4 Flash 0731",
+    // Peak CNY 2 input / 8 output / 0.2 cache hit; off-peak 1 / 4 / 0.1. Text and image input.
+    modelId: "deepseek-v4.1-flash",
+    displayName: "DeepSeek V4.1 Flash",
     provider: "qwen-token-plan",
     contextWindow: 1000000,
-    pricing: cny(0.2, 1, 2),
+    pricing: cny(0.2, 2, 8),
+    offPeakDiscount: QWEN_OFF_PEAK,
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
+  },
+  {
+    // Peak CNY 9 input / 27 output / 0.9 cache hit; off-peak 4.5 / 13.5 / 0.45. Text only.
+    modelId: "deepseek-v4-pro-0813",
+    displayName: "DeepSeek V4 Pro 0813",
+    provider: "qwen-token-plan",
+    contextWindow: 1000000,
+    pricing: cny(0.9, 9, 27),
+    offPeakDiscount: QWEN_OFF_PEAK,
     supportsVision: false,
     clientType: "openai-chat",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
   {
-    modelId: "deepseek-v4-pro",
-    displayName: "DeepSeek V4 Pro",
-    provider: "qwen-token-plan",
-    contextWindow: 1000000,
-    pricing: cny(1, 12, 24),
-    supportsVision: false,
-    clientType: "openai-chat",
-    baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
-  },
-  {
-    modelId: "glm-5.2",
-    displayName: "GLM-5.2",
+    modelId: "glm-5.3",
+    displayName: "GLM-5.3",
     provider: "qwen-token-plan",
     contextWindow: 1048576,
     pricing: cny(2, 8, 28),
     supportsVision: false,
+    clientType: "openai-chat",
+    baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
+  },
+  {
+    modelId: "qwen3.8-flash",
+    displayName: "Qwen 3.8 Flash",
+    provider: "qwen-token-plan",
+    contextWindow: 1000000,
+    pricing: cny(0.1, 0.8, 2.7),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: QWEN_TOKEN_PLAN_BASE_URL,
   },
@@ -1560,14 +1658,20 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // -- Qwen Pay-As-You-Go (DashScope's OpenAI-compatible pay-per-token marketplace; official
   // CNY list prices and specs from each model's page at www.qianwenai.com/models/<id> —
   // resold third-party models keep their upstream ids exactly as the page lists them: kimi/
-  // and ZHIPU/ carry vendor prefixes, DeepSeek is listed bare) --
+  // and ZHIPU/ carry vendor prefixes, DeepSeek is listed bare). Lineup updated 2026-09-16:
+  // deepseek-v4.1-flash, kimi/kimi-k2.8-preview and ZHIPU/GLM-5.3-Flash join;
+  // deepseek-v4-flash-0731 and ZHIPU/GLM-5.2 leave. The DeepSeek row is priced by time of day
+  // on QWEN_OFF_PEAK and stores its peak price, as in the Token Plan group above. --
   {
-    modelId: "deepseek-v4-flash-0731",
-    displayName: "DeepSeek V4 Flash 0731",
+    // Peak CNY 2 input / 8 output / 0.2 cache hit; off-peak (22:00-08:00 Beijing) 1 / 4 / 0.1.
+    // Text and image input, which this group's openai-chat client forwards.
+    modelId: "deepseek-v4.1-flash",
+    displayName: "DeepSeek V4.1 Flash",
     provider: "qwen-pay-as-you-go",
     contextWindow: 1000000,
-    pricing: cny(0.2, 1, 2),
-    supportsVision: false,
+    pricing: cny(0.2, 2, 8),
+    offPeakDiscount: QWEN_OFF_PEAK,
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: QWEN_PAYG_BASE_URL,
   },
@@ -1582,15 +1686,27 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: QWEN_PAYG_BASE_URL,
   },
   {
-    // Official CNY list price from www.qianwenai.com/models/qwen3.8-flash: CNY 1 input /
-    // CNY 0.1 cache hit / CNY 3 output per MTok, over a 1M-token input window with a 131K
-    // output cap. Its input modalities include images and video, and this group's
-    // openai-chat client converts image parts.
+    // CNY 6.5 input / 27 output / 1.7 cache hit over a 1M window (1,048,576, as on the
+    // kimi/kimi-k3 row); text, image and video input.
+    modelId: "kimi/kimi-k2.8-preview",
+    displayName: "Kimi K2.8 Preview",
+    provider: "qwen-pay-as-you-go",
+    contextWindow: 1048576,
+    pricing: cny(1.7, 6.5, 27),
+    supportsVision: true,
+    clientType: "openai-chat",
+    baseUrl: QWEN_PAYG_BASE_URL,
+  },
+  {
+    // Official CNY list price from www.qianwenai.com/models/qwen3.8-flash, re-read 2026-09-16:
+    // CNY 0.8 input / CNY 0.1 cache hit / CNY 2.7 output per MTok (it had been 1 / 0.1 / 3),
+    // over a 1M-token input window with a 131K output cap. Its input modalities include
+    // images and video, and this group's openai-chat client converts image parts.
     modelId: "qwen3.8-flash",
     displayName: "Qwen 3.8 Flash",
     provider: "qwen-pay-as-you-go",
     contextWindow: 1000000,
-    pricing: cny(0.1, 1, 3),
+    pricing: cny(0.1, 0.8, 2.7),
     supportsVision: true,
     clientType: "openai-chat",
     baseUrl: QWEN_PAYG_BASE_URL,
@@ -1616,12 +1732,15 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     baseUrl: QWEN_PAYG_BASE_URL,
   },
   {
-    modelId: "ZHIPU/GLM-5.2",
-    displayName: "GLM-5.2",
+    // CNY 0.8 input / 2.8 output / 0.23 cache hit over a 1M window with a 131K output cap;
+    // natively multimodal like every other GLM-5.3 Flash row, and this group's openai-chat
+    // client forwards image parts.
+    modelId: "ZHIPU/GLM-5.3-Flash",
+    displayName: "GLM-5.3 Flash",
     provider: "qwen-pay-as-you-go",
-    contextWindow: 1048576,
-    pricing: cny(2, 8, 28),
-    supportsVision: false,
+    contextWindow: 1000000,
+    pricing: cny(0.23, 0.8, 2.8),
+    supportsVision: true,
     clientType: "openai-chat",
     baseUrl: QWEN_PAYG_BASE_URL,
   },

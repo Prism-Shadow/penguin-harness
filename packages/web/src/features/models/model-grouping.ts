@@ -22,7 +22,7 @@ import {
   effectivePricing,
   offPeakAt,
 } from "@prismshadow/penguin-core/model-catalog";
-import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import type { ModelProviderInfo, OffPeakDiscount } from "@prismshadow/penguin-core/model-catalog";
 
 import { orderModelGroups } from "./model-group-order";
 
@@ -198,8 +198,52 @@ export interface DiscountedPrice {
    * time; for a scheduled one the stored price is the peak price and this is the reduced rate.
    */
   billed: { cacheRead: number; cacheWrite: number; output: number };
-  /** True when the rate is a time-of-day one, so the badge can explain when it applies. */
-  scheduled: boolean;
+  /**
+   * For a time-of-day rate, the peak windows of the row's own schedule — the hours it bills at
+   * list price instead — so the badge can explain when the rate applies. Absent for a flat
+   * promotion.
+   */
+  peak?: PeakWindows;
+}
+
+/**
+ * A schedule's peak windows reduced to the parts a sentence about them needs. Each dictionary
+ * spells this one digest in its own words, so the explanation follows the schedule a row
+ * actually declares; the catalog carries more than one vendor's windows.
+ */
+export interface PeakWindows {
+  /**
+   * The ISO weekdays the windows fall on (1 = Monday … 7 = Sunday), as inclusive runs of
+   * consecutive days in week order: `[[1, 5]]` is Monday to Friday.
+   */
+  days: Array<[number, number]>;
+  /** The runs cover the whole week, so the windows recur daily. */
+  everyDay: boolean;
+  /** The windows on those days, as whole-hour `[start, end)` pairs on the schedule's own clock. */
+  hours: Array<[number, number]>;
+  /** The schedule's zone as an offset from UTC: `"+8"` (Beijing), `"+5:30"`, `"-3"`. */
+  utcOffset: string;
+}
+
+/** The digest of one schedule's peak windows (see PeakWindows). */
+export function peakWindows(schedule: OffPeakDiscount): PeakWindows {
+  const days: Array<[number, number]> = [];
+  for (const day of [...new Set(schedule.peakDays)].sort((a, b) => a - b)) {
+    const run = days.at(-1);
+    if (run !== undefined && run[1] === day - 1) run[1] = day;
+    else days.push([day, day]);
+  }
+  const minutes = Math.abs(schedule.utcOffsetMinutes);
+  const utcOffset =
+    (schedule.utcOffsetMinutes < 0 ? "-" : "+") +
+    String(Math.floor(minutes / 60)) +
+    (minutes % 60 === 0 ? "" : `:${String(minutes % 60).padStart(2, "0")}`);
+  return {
+    days,
+    everyDay: days.length === 1 && days[0]![0] === 1 && days[0]![1] === 7,
+    hours: schedule.peakHours.map(([from, to]): [number, number] => [from, to]),
+    utcOffset,
+  };
 }
 
 /** One bucket as a finite number, or undefined for an unpriced ("" / absent) field. */
@@ -258,7 +302,7 @@ export function discountedPrice(
       cacheWrite: billed.cache_write,
       output: billed.output,
     },
-    scheduled: schedule !== undefined,
+    ...(schedule !== undefined ? { peak: peakWindows(schedule) } : {}),
   };
 }
 

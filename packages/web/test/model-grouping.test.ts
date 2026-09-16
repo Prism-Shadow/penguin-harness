@@ -13,7 +13,9 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  DEEPSEEK_OFF_PEAK,
   MODEL_PROVIDERS,
+  QWEN_OFF_PEAK,
   catalogEntryFor,
   effectivePricing,
 } from "@prismshadow/penguin-core/model-catalog";
@@ -24,9 +26,12 @@ import {
   isFreeModel,
   matchesQuery,
   orderModelsLikeLibrary,
+  peakWindows,
   visibleChatModels,
 } from "../src/features/models/model-grouping";
 import type { ModelCredentialRowLike, ModelRowLike } from "../src/features/models/model-grouping";
+import { zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
 
 const rows: ModelRowLike[] = [
   { provider: "anthropic", modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6" },
@@ -358,7 +363,7 @@ describe("discountedPrice", () => {
     const row = syncedRow("tokendance", "glm-5.3-flash");
     const found = discountedPrice(row)!;
     expect(found.percent).toBe(10);
-    expect(found.scheduled).toBe(false);
+    expect(found.peak).toBeUndefined();
     // A flat promotion is baked in at sync time, so what is billed is what is stored.
     expect(found.billed).toEqual({
       cacheRead: Number(row.cacheRead),
@@ -375,16 +380,61 @@ describe("discountedPrice", () => {
   const OFF_PEAK = new Date("2026-08-31T05:00:00Z");
 
   it("a scheduled row is marked and halved off-peak, and left at list price at peak", () => {
-    const row = syncedRow("deepseek", "deepseek-v4-flash");
-    const entry = catalogEntryFor("deepseek", "deepseek-v4-flash")!;
+    const row = syncedRow("deepseek", "deepseek-flash");
+    const entry = catalogEntryFor("deepseek", "deepseek-flash")!;
 
     const off = discountedPrice(row, OFF_PEAK)!;
     expect(off.percent).toBe(50);
-    expect(off.scheduled).toBe(true);
+    expect(off.peak).toEqual(peakWindows(DEEPSEEK_OFF_PEAK));
     expect(off.billed.output).toBeCloseTo(entry.pricing!.output / 2, 6);
 
     // At peak the row carries no mark at all: the stored price is the price.
     expect(discountedPrice(row, PEAK)).toBeUndefined();
+  });
+
+  it("each scheduled row follows its own seller's windows, and the badge's title names them", () => {
+    // Qwen bills the DeepSeek models it sells at peak 08:00-22:00 Beijing on every day, while
+    // DeepSeek's own peak is weekday office hours: a Saturday morning parts the two.
+    const saturdayMorning = new Date("2026-09-05T02:00:00Z"); // 10:00 Beijing
+    const lateEvening = new Date("2026-08-31T15:00:00Z"); // Monday 23:00 Beijing
+    const qwen = syncedRow("qwen-pay-as-you-go", "deepseek-v4.1-flash");
+    const deepseek = syncedRow("deepseek", "deepseek-flash");
+    expect(discountedPrice(qwen, saturdayMorning)).toBeUndefined();
+    expect(discountedPrice(deepseek, saturdayMorning)?.peak).toEqual(
+      peakWindows(DEEPSEEK_OFF_PEAK),
+    );
+    const qwenOff = discountedPrice(qwen, lateEvening)!;
+    expect(qwenOff.percent).toBe(50);
+    expect(qwenOff.peak).toEqual({
+      days: [[1, 7]],
+      everyDay: true,
+      hours: [[8, 22]],
+      utcOffset: "+8",
+    });
+
+    expect(peakWindows(DEEPSEEK_OFF_PEAK)).toEqual({
+      days: [[1, 5]],
+      everyDay: false,
+      hours: [
+        [9, 12],
+        [14, 18],
+      ],
+      utcOffset: "+8",
+    });
+    // The hover text is spelled from the schedule in both dictionaries, so neither vendor's
+    // windows are described with the other's.
+    expect(zh.models.offPeakTitle(50, peakWindows(DEEPSEEK_OFF_PEAK))).toBe(
+      "空闲时段价：比牌价低 50%。高峰时段按牌价计费——北京时间周一至周五 9:00–12:00、14:00–18:00",
+    );
+    expect(en.models.offPeakTitle(50, peakWindows(DEEPSEEK_OFF_PEAK))).toBe(
+      "Off-peak rate: 50% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday",
+    );
+    expect(zh.models.offPeakTitle(50, peakWindows(QWEN_OFF_PEAK))).toBe(
+      "空闲时段价：比牌价低 50%。高峰时段按牌价计费——北京时间每天 8:00–22:00",
+    );
+    expect(en.models.offPeakTitle(50, peakWindows(QWEN_OFF_PEAK))).toBe(
+      "Off-peak rate: 50% off list. Peak hours bill at list price — 08:00–22:00 Beijing time, every day",
+    );
   });
 
   it("a scheduled row whose price was edited is never halved, at either hour", () => {

@@ -2067,8 +2067,8 @@ function ModelCard({
           {
             key: "discount",
             label: S.models.discountBadge(discount.percent),
-            title: discount.scheduled
-              ? S.models.offPeakTitle(discount.percent)
+            title: discount.peak
+              ? S.models.offPeakTitle(discount.percent, discount.peak)
               : S.models.discountTitle(discount.percent),
             className: TAG_INK.price,
           },

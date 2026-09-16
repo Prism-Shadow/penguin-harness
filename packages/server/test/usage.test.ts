@@ -159,10 +159,10 @@ describe("usage-service (cost computed on the fly)", () => {
     // is a fact about when each request ran, so it is decided from that record's own `ts`.
     //
     // 2026-08-31 is a Monday. 01:30Z is 09:30 in Beijing (peak); 12:00Z is 20:00 (off-peak).
-    const REF = { provider: "deepseek", modelId: "deepseek-v4-flash" };
+    const REF = { provider: "deepseek", modelId: "deepseek-flash" };
     insert("2026-08-31", { ...REF, ts: "2026-08-31T01:30:00.000Z" });
     insert("2026-08-31", { ...REF, ts: "2026-08-31T12:00:00.000Z" });
-    pricing["deepseek-v4-flash"] = { cacheRead: 1, cacheWrite: 2, output: 4 };
+    pricing["deepseek-flash"] = { cacheRead: 1, cacheWrite: 2, output: 4 };
     const tiered = async () => ({
       peak: { cacheRead: 1, cacheWrite: 2, output: 4 },
       offPeak: { cacheRead: 0.5, cacheWrite: 1, output: 2 },
@@ -181,6 +181,33 @@ describe("usage-service (cost computed on the fly)", () => {
       const res = await svc.query("p1", { groupBy: "date", from: "2026-08-31", to: "2026-08-31" });
       expect(res.summary.total.cost, at).toBeCloseTo(expected, 10);
     }
+  });
+
+  it("each scheduled reference is priced by its own seller's windows in the same query", async () => {
+    // Two schedules in the catalog: Qwen's DeepSeek rows bill peak 08:00-22:00 Beijing every
+    // day, DeepSeek's own rows only in weekday office hours. 2026-09-05 is a Saturday: 02:00Z
+    // is 10:00 in Beijing (peak for Qwen, off-peak for DeepSeek), 15:00Z is 23:00 (off-peak for
+    // both).
+    const QWEN = { provider: "qwen-pay-as-you-go", modelId: "deepseek-v4.1-flash" };
+    const DEEPSEEK = { provider: "deepseek", modelId: "deepseek-flash" };
+    insert("2026-09-05", { ...QWEN, ts: "2026-09-05T02:00:00.000Z" });
+    insert("2026-09-05", { ...QWEN, ts: "2026-09-05T15:00:00.000Z" });
+    insert("2026-09-05", { ...DEEPSEEK, ts: "2026-09-05T02:00:00.000Z" });
+    const svc = wire(UsageService, {
+      usage: repo,
+      errors: wire(ErrorsRepo, { db: db }),
+      lookupPricing: async () => ({
+        peak: { cacheRead: 1, cacheWrite: 2, output: 4 },
+        offPeak: { cacheRead: 0.5, cacheWrite: 1, output: 2 },
+      }),
+      clock: { now: () => new Date("2026-09-05T12:00:00Z") },
+    });
+    const res = await svc.query("p1", { groupBy: "model", from: "2026-09-05", to: "2026-09-05" });
+    const costOf = (ref: { provider: string; modelId: string }) =>
+      res.groups.find((g) => g.provider === ref.provider && g.key === ref.modelId)?.cost;
+    const peakCost = (10 * 1 + 1 * 2 + 5 * 4) / 1e6;
+    expect(costOf(QWEN)).toBeCloseTo(peakCost + peakCost / 2, 10);
+    expect(costOf(DEEPSEEK)).toBeCloseTo(peakCost / 2, 10);
   });
 
   it("summary cards: today / last 7 days / cumulative; Models without pricing flag hasUncosted", async () => {

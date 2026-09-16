@@ -11,6 +11,8 @@
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
+import type { PeakWindows } from "../features/models/model-grouping";
+
 export const zh = {
   appName: "PenguinHarness",
 
@@ -1093,9 +1095,22 @@ export const zh = {
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
     discountBadge: (pct: number): string => `省 ${pct}%`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
-    /** Same badge as a flat promotion; only the explanation differs, because this rate comes and goes with the clock. */
-    offPeakTitle: (pct: number): string =>
-      `空闲时段价：比牌价低 ${pct}%。高峰时段按牌价计费——北京时间周一至周五 9:00–12:00、14:00–18:00`,
+    /**
+     * Same badge as a flat promotion; only the explanation differs, because this rate comes and
+     * goes with the clock. `peak` is the row's own schedule (see peakWindows), so each seller's
+     * peak hours are the ones named.
+     */
+    offPeakTitle: (pct: number, peak: PeakWindows): string => {
+      const day = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+      const days = peak.everyDay
+        ? "每天"
+        : peak.days
+            .map(([from, to]) => (from === to ? day[from - 1] : `${day[from - 1]}至${day[to - 1]}`))
+            .join("、");
+      const hours = peak.hours.map(([from, to]) => `${from}:00–${to}:00`).join("、");
+      const zone = peak.utcOffset === "+8" ? "北京时间" : `UTC${peak.utcOffset} `;
+      return `空闲时段价：比牌价低 ${pct}%。高峰时段按牌价计费——${zone}${days} ${hours}`;
+    },
     visionModelBadge: "视觉代理",
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
     usedTokens: (v: string) => `${v} toks`,

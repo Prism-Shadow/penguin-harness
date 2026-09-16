@@ -85,7 +85,7 @@ const PRESET: PresetEntry[] = [
   },
   {
     provider: "qwen-token-plan",
-    model_id: "glm-5.2",
+    model_id: "glm-5.3",
     context_window: 1048576,
     client_type: "openai-chat",
     pricing: { unit: "usd_per_mtok", cache_read: 0.285714, cache_write: 1.142857, output: 4 },
@@ -107,7 +107,7 @@ describe("syncRowsWithCatalog", () => {
     const { rows, added, updated } = syncRowsWithCatalog([], PRESET);
     expect(added).toBe(3);
     expect(updated).toBe(0);
-    const glm = rows.find((r) => r.provider === "qwen-token-plan" && r.modelId === "glm-5.2")!;
+    const glm = rows.find((r) => r.provider === "qwen-token-plan" && r.modelId === "glm-5.3")!;
     expect(glm.original).toBeNull();
     expect(glm.clientType).toBe("openai-chat");
     expect(glm.baseUrl).toBe("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1");
@@ -117,7 +117,7 @@ describe("syncRowsWithCatalog", () => {
     // The catalog's name travels with the new row: a preset entry carries none (the persisted
     // shape only stores a name that differs from the catalog), so a row built without it would
     // reach the PUT nameless and be saved as a model whose name the user cleared.
-    expect(glm.displayName).toBe(catalogName("qwen-token-plan", "glm-5.2"));
+    expect(glm.displayName).toBe(catalogName("qwen-token-plan", "glm-5.3"));
     // The lookup is against the shipped catalog, not against this list: `qwen3.8-max-preview`
     // left the Token Plan lineup, so the pair resolves to nothing and the row stays nameless
     // (falling back to its model id) rather than picking up an empty name.
@@ -193,7 +193,7 @@ describe("syncRowsWithCatalog", () => {
     expect(row.contextWindow).toBe("1000000"); // catalog-owned field reset
     expect(row.maxTokens).toBe("4096"); // user field survives the {...row, ...fields} merge
     // Fresh catalog rows default to inherit (no preset output cap exists).
-    expect(rows.find((r) => r.modelId === "glm-5.2")!.maxTokens).toBe("");
+    expect(rows.find((r) => r.modelId === "glm-5.3")!.maxTokens).toBe("");
   });
 
   it("keeps locally added models (including user-defined groups) verbatim and in place", () => {
@@ -289,7 +289,7 @@ describe("catalogDelta", () => {
       updated: 1,
       refs: [
         "deepseek/deepseek-v4-pro",
-        "qwen-token-plan/glm-5.2",
+        "qwen-token-plan/glm-5.3",
         "qwen-token-plan/qwen3.8-max-preview",
       ],
     });
@@ -305,7 +305,7 @@ describe("catalogDelta", () => {
       updated: 1,
       refs: [
         "deepseek/deepseek-v4-pro",
-        "qwen-token-plan/glm-5.2",
+        "qwen-token-plan/glm-5.3",
         "qwen-token-plan/qwen3.8-max-preview",
       ],
     });
@@ -329,7 +329,7 @@ describe("catalogDelta", () => {
       [
         makeDto({
           provider: "qwen-token-plan",
-          modelId: "glm-5.2",
+          modelId: "glm-5.3",
           clientType: "openai-chat",
           credential: { baseUrl: "http://my-proxy" } as ModelDto["credential"],
         }),
