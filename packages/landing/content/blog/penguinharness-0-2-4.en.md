@@ -5,7 +5,7 @@ category: news
 excerpt: DeepSeek gains a vision model and moves to the Responses protocol. The chat page's panels and terminals are now tabs in two docks, long commands run in the background, and the cost center is rebuilt around a single time range.
 ---
 
-PenguinHarness 0.2.4 is out. It adds a DeepSeek model that reads images, turns the chat page's side panels and terminals into tabs in two docks you arrange, moves long-running commands to the background, and rebuilds the cost center around a single time range. Five changes need a decision from you when you upgrade; they are listed under [Upgrading](#upgrading).
+PenguinHarness 0.2.4 is out. It adds a DeepSeek model that reads images, turns the chat page's side panels and terminals into tabs in two docks you arrange, moves long-running commands to the background, and rebuilds the cost center around a single time range. Five changes need a decision from you when you upgrade; they are listed under Upgrading at the end of this post.
 
 ## DeepSeek gains a vision model
 
@@ -21,7 +21,7 @@ The same release moves the first-party DeepSeek client from Chat Completions to 
 
 ![The model dialog's base URL field, its protocol hint reading /responses](/blog-assets/penguinharness-0-2-4-model-protocol-hint-en.png)
 
-This is a breaking change if a `deepseek-v4*` entry points at anything other than DeepSeek's own endpoint. See [Upgrading](#upgrading) for what to do.
+This is a breaking change if a `deepseek-v4*` entry points at anything other than DeepSeek's own endpoint. See Upgrading at the end of this post for what to do.
 
 Elsewhere in the catalog:
 

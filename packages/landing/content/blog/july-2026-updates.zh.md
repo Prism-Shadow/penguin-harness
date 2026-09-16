@@ -10,12 +10,12 @@ excerpt: 定时任务、支持导出导入的 Agent State 快照、Benchmark 记
 ## 定时任务与 Agent State 快照
 
 - **定时任务。** 每个任务是 `agent_state/schedule/` 下的一个 TOML 文件。按 cron 风格调度，Agent 可以全天候自主工作。
-- **Agent State 快照，支持导出导入。** `system_config.yaml` 记录当前的 `version`。在有风险的修改之前，比如一轮优化或一次覆盖当前状态的导入，Agent State 会先保存到 `snapshots/v<version>.tar.gz`。快照随时可以恢复，恢复时保留当前的 Vault。
+- **Agent State 快照，支持导出导入。** `system_config.yaml` 记录当前的 `version`。在有风险的修改之前，比如一轮优化或一次覆盖当前状态的导入，Agent State 会先保存到 `snapshots/v<version>.tar.gz`。快照随时可以恢复，恢复时保留当前的密钥保险柜。
 
 ## 评估中心
 
-- **Benchmark 记分板。** 内置题库带逐题评分和趋势曲线。评估记录按模型分别绘制，每次运行都能直接跳到对应 Session 的 Trace。
-- **评估记录模型。** 模型引用从 `benchmark_config` 移到了每条评估上，以 `provider` / `model_id` 成对记录，跨模型对比更直接。
+- **Benchmark 记分板。** 评估中心新增内置题库、逐题评分和趋势曲线。评估记录按模型分别绘制，每次运行都能直接跳到对应会话的轨迹观测页面。
+- **每条评估记下所用模型。** 模型引用从 `benchmark_config` 移到了每条评估上，以 `provider` / `model_id` 成对记录，跨模型对比更直接。
 
 ## 模型体系
 
@@ -26,5 +26,5 @@ excerpt: 定时任务、支持导出导入的 Agent State 快照、Benchmark 记
 ## 安装与体验
 
 - **一键安装。** 仓库根目录新增 `install.sh`，用 `curl | sh` 运行，自动识别 Linux / macOS 与 x64 / arm64。发布产物内嵌 Node 运行时，解压即可运行。
-- **Skill 库改版。** Skill 在运行时以文件为准，Skill 卡片重新设计，并支持快捷调用。内置 Agent 合并为一个 `default_agent`，Agent 的构建与优化完全由 Skill 库承担。
+- **技能库改版。** Skill 在运行时以文件为准，Skill 卡片重新设计，并支持快捷调用。内置 Agent 合并为一个 `default_agent`，Agent 的构建与优化完全交给技能库。
 - **稳定性修复。** 修复了三个问题：Gemini 连续调用同一个工具时 `tool_call_id` 冲突；滚动区域较矮时，向上滚动流式输出会抖动；WorkGroup 中并行工具调用的耗时显示不准。

@@ -25,13 +25,13 @@ Agents can now use tools from MCP (Model Context Protocol) servers. Support is b
 
 Server tools appear as `mcp__<server>__<tool>` and follow the existing execution and approval rules. A tool that the server marks with `readOnlyHint` gets read-only permission. Vault values never reach an MCP server process.
 
-You manage servers with forms in the new **MCP Servers** section of the agent settings page: add, edit and delete them, and test a connection on the spot. An unreachable server is skipped with a warning instead of stalling Session creation. While servers connect, the chat shows the progress as step rows instead of silently hanging on your first message.
+The **MCP Servers** section of the agent's **Tools** tab, which used to show the configuration as read-only JSON, now manages servers with forms: add, edit and delete them, and test a connection on the spot. An unreachable server is skipped with a warning instead of stalling Session creation. While servers connect, the chat shows the progress as step rows instead of silently hanging on your first message.
 
 This is the release's one breaking change: the toolset record moves from `session_meta.tools` to a new `tool_list_ready` event. Traces written before the change no longer display their embedded tool record.
 
 ## Prompt sections you can edit and switch off
 
-Memory's way of injecting its prompt now covers the three other subsystems that add text to the system prompt: Vault, Skills and Schedules. The system-prompt template holds only the placeholders `{{VAULT}}`, `{{SKILLS}}` and `{{SCHEDULES}}`. Each one expands to a prompt stored with the agent, which you can edit at the bottom of the matching tab, behind an enable switch at the top.
+Memory's way of injecting its prompt now covers the three other subsystems that add text to the system prompt: Vault, Skills and Schedules. For these sections, the system-prompt template now holds only the placeholders `{{VAULT}}`, `{{SKILLS}}` and `{{SCHEDULES}}`. Each one expands to a prompt stored with the agent, which you can edit at the bottom of the matching tab, behind an enable switch at the top.
 
 The switch only controls what the model sees. Turning a section off removes it from the system prompt, but the feature keeps working: Vault values still reach shell subprocesses as environment variables, installed Skills can still be invoked explicitly, and scheduled tasks still fire on time.
 
@@ -93,7 +93,7 @@ The full list is in [changelog/0.2.2](https://github.com/Prism-Shadow/penguin-ha
 
 ## Install or upgrade
 
-Desktop app: download the installer for your platform at [penguin.ooo/download](https://penguin.ooo/download). Starting with this release, the macOS builds are signed and notarized, so Gatekeeper opens them directly. Windows builds are still unsigned: in SmartScreen, choose "More info → Run anyway".
+Desktop app: download the installer for your platform at [penguin.ooo/download](https://penguin.ooo/download). Starting with this release, the macOS builds are signed and notarized, so Gatekeeper opens them directly. In this release, Windows builds are still unsigned: in SmartScreen, choose "More info → Run anyway".
 
 CLI / server:
 
@@ -102,4 +102,4 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web
 ```
 
-On Windows, run `irm https://penguin.ooo/install.ps1 | iex` in PowerShell. With Node >= 24, you can also install with `npm install -g @prismshadow/penguin-cli`. To upgrade an existing install, run `penguin update`.
+On Windows, run `irm https://penguin.ooo/install.ps1 | iex` in PowerShell. With Node >= 24, you can also install with `npm install -g @prismshadow/penguin-cli`. On Linux and macOS, upgrade an existing install with `penguin update`.

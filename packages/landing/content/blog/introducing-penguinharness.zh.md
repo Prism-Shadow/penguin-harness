@@ -6,13 +6,13 @@ pinned: true
 excerpt: 我们在 GDPevo Benchmark 中验证了 Agent 可以自我进化，现在把这项能力带给所有人：一个支持递归自我进化的开源 Harness，从一句话构建 Agent，到持续自我进化，全部覆盖。
 ---
 
-今天，我们正式发布 **PenguinHarness**，一个用于构建和进化 Agent 的开源 Harness。它提供零代码的 CLI 与 Web App，连接 1000+ 模型。它背后的理念一句话就能说清：
+今天，我们正式发布 **PenguinHarness**，一个用于构建和进化 Agent 的开源 Harness，提供零代码的 CLI 与 Web App，可以连接 1000+ 模型。背后的理念一句话就能说清：
 
 > 使用 LangChain，以 1 倍速度人工构建 Agent；使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。
 
 ## 我们为什么做 PenguinHarness
 
-在 PenguinHarness 之前，我们团队发布了 [GDPevo Benchmark](https://prism-shadow.github.io/GDPevo/)。在 GDPevo 中，我们系统地验证了一件事：**Agent 可以自我进化**。Agent 能给自己的表现打分，找出失分的地方，改写自己的 Prompt 和 Skill，分数随版本一路上升。
+在 PenguinHarness 之前，我们团队发布了 [GDPevo Benchmark](https://prism-shadow.github.io/GDPevo/)。在 GDPevo 中，我们系统地验证了一件事：**Agent 可以自我进化**。Agent 能给自己的表现打分，找出失分的地方，改写自己的提示词和 Skill，分数随版本一路上升。
 
 能力验证了，问题就变成怎么让每个人都用上它。自我进化不该只是论文里的一条曲线，而应该是每个开发者开箱即用的基础设施。让每个人都用上高效的自我进化 Harness，就是我们做 PenguinHarness 的原因，这个目标也写在名字里：Efficient Self-Improving Harness for Everyone。
 
@@ -77,7 +77,7 @@ Token 与成本都是整套题库的合计，不是单次运行的均值。数�
 - 进化严格限制在 Workspace 与 Skill 之内。Harness 核心是安全边界，从不修改。
 - 工具调用先经审批，每次审批都留有审计记录。
 - 有风险的修改之前先留版本快照，任何一轮进化都可以回滚。
-- PenguinHarness 完全开源、本地部署，数据不离开你的机器，满足企业级数据安全要求。
+- PenguinHarness 完全开源、本地部署。除了发往你配置的模型供应商的请求，数据都留在你的机器上，满足企业级数据安全要求。
 
 ## 支持的模型
 
@@ -117,8 +117,8 @@ PenguinHarness 为以下模型提供了预置配置：
 
    ```bash
    curl -fsSL https://penguin.ooo/install.sh | sh
-   penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin，初始密码见首次启动输出）
+   penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin，登录方式见终端输出）
    ```
 
-2. 打开**模型库**页面，在 DeepSeek 或 OpenRouter 分组里填入 API key，把组里的一个模型设为默认。
+2. 打开**模型仓库**页面，在 DeepSeek 或 OpenRouter 分组里填入 API key，把组里的一个模型设为默认。
 3. 回到**对话**页面，把第一个任务交给 Agent，例如「分析 data.csv，输出各季度销售额汇总」。

@@ -15,13 +15,13 @@ Install PenguinHarness on Windows with one line in PowerShell:
 irm https://penguin.ooo/install.ps1 | iex
 ```
 
-The script downloads `penguin-win32-x64.zip`, which bundles the official Windows Node runtime, so you do not need to install anything first. It verifies the archive's SHA256 checksum, installs through a staged swap that never touches your `data\` directory, and adds `penguin` to your user PATH. Existing PATH entries that use variables, such as `%USERPROFILE%`, stay intact. The script at the stable URL downloads completely before it runs, so a truncated download cannot leave a half-finished install. If you prefer npm, `npm install -g @prismshadow/penguin-cli` works anywhere Node ≥ 24 runs.
+The script downloads `penguin-win32-x64.zip`, which bundles the official Windows Node runtime, so you do not need to install anything first. It verifies the archive's SHA256 checksum, installs through a staged swap that never touches your `data\` directory, and adds `penguin` to your user PATH. Existing PATH entries that use variables, such as `%USERPROFILE%`, stay intact. The script at the stable URL is a small forwarder that downloads the full installer before running it, so a truncated download cannot leave a half-finished install. If you prefer npm, `npm install -g @prismshadow/penguin-cli` works anywhere Node ≥ 24 runs.
 
 The harder part was the agent itself. Every `exec_command` used to fail on Windows with `spawn bash ENOENT`, because command sessions always started bash. Command sessions now choose their shell per platform. On Windows they try Git-Bash first, since it works best with Skills written for POSIX shells, then `pwsh`, then `powershell`. Set `PENGUIN_SHELL` to override the choice. A `bash` that resolves into the Windows system directory is skipped, because that is the WSL launcher, which sees a different filesystem.
 
 The model learns which shell it has from a `Shell:` line in the Session environment. When it gets PowerShell, it writes PowerShell syntax instead of bash.
 
-CI keeps all of this working. A `ci-windows` job now runs the full build, typecheck and tests, plus a PowerShell syntax check, beside the required Ubuntu job. Getting it green surfaced and fixed real Windows bugs, including a missing symlink guard on Workspace uploads that POSIX systems had been providing silently.
+CI keeps all of this working. A `ci-windows` job now runs the full build, typecheck and tests, plus a PowerShell syntax check, beside the required Ubuntu job. Getting it green surfaced and fixed real Windows bugs, including a symlink guard on Workspace uploads that POSIX's `O_NOFOLLOW` had been providing silently and that Windows lacked.
 
 A few limits remain, and the docs state them:
 

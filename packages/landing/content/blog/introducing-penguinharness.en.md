@@ -68,7 +68,7 @@ With the PenguinHarness Skills, an agent evaluates and optimizes itself. In each
 2. It uses the scores and the run Traces to find where points were lost.
 3. It upgrades the agent from version N to N+1.
 
-A snapshot is taken before every round, and every request can be replayed on the **Trajectories** page. A demo video of self-evolution is coming soon.
+A snapshot is taken before every round, and every request can be replayed on the **Trajectory** page. A demo video of self-evolution is coming soon.
 
 ## Evolution within bounds, security first
 
@@ -77,7 +77,7 @@ The biggest worry about self-evolution is losing control. PenguinHarness answers
 - Evolution is strictly confined to the Workspace and Skills. The harness core, which is the security boundary, is never modified.
 - Tool calls require approval first, and every approval leaves an audit record.
 - A version snapshot is taken before any risky change, so any round of evolution can be rolled back.
-- PenguinHarness is fully open source and deployed locally, so your data never leaves your machine, which meets enterprise data-security requirements.
+- PenguinHarness is fully open source and deployed locally, so your data stays on your machine, apart from the requests sent to the model provider you configure. This meets enterprise data-security requirements.
 
 ## Supported models
 
@@ -117,7 +117,7 @@ A self-improving harness needs a community that improves with it. Come discuss, 
 
    ```bash
    curl -fsSL https://penguin.ooo/install.sh | sh
-   penguin web        # opens http://127.0.0.1:7364 (first login: admin, initial password printed on first start)
+   penguin web        # opens http://127.0.0.1:7364 (first login: admin, sign-in details printed in the terminal)
    ```
 
 2. Open the **Models** page, add an API key to the DeepSeek or OpenRouter group, and set one of its models as the default.

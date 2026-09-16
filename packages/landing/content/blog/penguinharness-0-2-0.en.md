@@ -33,7 +33,7 @@ On Windows, every path the harness shows the model now uses forward slashes.
 
 A steering message you send during a run now survives a page reload with its content still visible, and reaches the agent exactly once. File attachments can steer a run, just as images can.
 
-The sidebar session list now comes straight from the database, and both the sessions in each group and the groups themselves load page by page. A Project with many agents and Workspaces stays fast and easy to scan. CLI sessions no longer appear in the list by default; a switch in the user menu brings them back.
+The sidebar session list now comes straight from the database, and both the sessions in each group and the groups themselves are shown a page at a time. A Project with many agents and Workspaces stays fast and easy to scan. CLI sessions no longer appear in the list by default; the **Show CLI sessions** switch in the user menu brings them back.
 
 ## One installer per platform, mirrored to Alibaba Cloud OSS
 
@@ -48,7 +48,7 @@ Two install fixes ship with it:
 
 ## A current model catalog
 
-The qianwenai groups move to the current lineup: `qwen3.8-max` and `deepseek-v4-flash-0731` are added, and retired entries such as `qwen3.8-max-preview` are removed. OpenRouter adds `deepseek/deepseek-v4-flash-0731` and `openai/gpt-5.6-luna`, and every OpenRouter price is re-read from its models API.
+The qianwenai groups move to the current lineup: `qwen3.8-max` and `deepseek-v4-flash-0731` are added, and retired entries such as `qwen3.8-max-preview` are removed. OpenRouter adds `deepseek/deepseek-v4-flash-0731` and `openai/gpt-5.6-luna`, and every OpenRouter price has been re-read from its models API.
 
 New Projects default to `deepseek-v4-flash`. Existing Projects keep the models and the default they already have.
 
@@ -57,7 +57,7 @@ New Projects default to `deepseek-v4-flash`. Existing Projects keep the models a
 - `read_file` and `edit_file` diagnose a missing path instead of returning a bare "File not found". They report the deepest existing ancestor, the first missing segment and the nearest matching names.
 - The manual update check reports every outcome: checking, up to date, update found, or failed.
 - Tool-card subtitles appear once they are complete, instead of jittering while the arguments stream in.
-- In the Evaluation Center, case details keep the target agent's task materials separate from the scoring rubrics meant for reviewers.
+- In the Evaluation Center, case details show the task materials the target agent receives separately from the scoring rubrics, which stay hidden from that agent.
 - The file summary in the main conversation now waits for the Task to finish: one card per completed Task.
 
 The full list, entry by entry, is in [changelog/0.2.0](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.0).
@@ -71,4 +71,4 @@ penguin web
 
 On Windows, run `irm https://penguin.ooo/install.ps1 | iex` in PowerShell. With Node >= 24, you can also install from npm: `npm install -g @prismshadow/penguin-cli`.
 
-To upgrade, re-run the installer. From 0.1.3 or later, `penguin update` works too.
+To upgrade, re-run the installer. On Linux and macOS, `penguin update` works too, from 0.1.3 or later.

@@ -15,7 +15,7 @@ Session status is now live in every row. A turning hourglass means the Session i
 
 ![Sidebar with three Session rows: a green unread dot, no marker, and a running hourglass](/blog-assets/penguinharness-0-2-3-sidebar-status-en.png)
 
-First runs are covered too. A Session running its first Task used to go blank the moment the hourglass stopped. It now settles on the green dot like any other.
+First runs are covered too. When a Session's first Task finishes, its row settles on the green dot like any other, instead of going blank.
 
 ## Compaction is a record you can open
 
@@ -73,7 +73,7 @@ Models that can serve fast mode gained a toggle, off by default. Models that can
 
 - The hover actions on a sidebar row are back to archive and delete. The full set is in the right-click menu.
 - You can drag attachments and images onto the chat area to upload them. A file attachment can now be 100MB instead of 10MB, and an admin can change that limit from the user menu.
-- Inline images keep a separate 20MB cap. Their bytes enter the conversation and the Trace, which is re-read whole on every history page. A file attachment is opened by path, so its size never reaches the context.
+- Inline images have their own 20MB cap. Their bytes enter the conversation and the Trace, which is re-read whole on every history page. A file attachment is opened by path, so its size never reaches the context.
 - The CLI gained `/thinking` and `--thinking`. Long tool output now collapses to its first and last lines, and `/verbose` shows all of it. The model and the Trace always receive the full text either way.
 - The model catalog was refreshed with Gemini 3.7, GLM-5.3 and the GPT-5.6 family, plus their OpenRouter counterparts. The nine `openai/*` rows are pinned to the Responses protocol. DeepSeek pricing follows the current official rates, and the delisted `ling-3.0-flash` row is gone.
 - A long generation through a gateway such as one-api or OpenRouter no longer reconnects until it gives up. These gateways inject heartbeat events into a streaming response. The events used to kill the stream, the harness retried, and the retry hit the next heartbeat. Every streaming client in AgentHub 0.4.3 and later skips them.

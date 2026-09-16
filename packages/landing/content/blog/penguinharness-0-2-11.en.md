@@ -5,7 +5,7 @@ category: news
 excerpt: The Files panel becomes a two-pane browser with in-place editing, the context ring measures against a compaction threshold you can drag, and scheduled tasks move into the dock. Hooks become part of the agent loop, and an official Docker image ships.
 ---
 
-PenguinHarness 0.2.11 is out, and most of its changes are inside the conversation. You can edit Workspace files in a two-pane Files panel, the context ring measures against the point where compaction fires, and scheduled tasks and a shortcuts ball join the dock. Hooks are now part of the agent loop, with goal mode and continual learning available as installable plugins. An official Docker image turns a server deployment into one `docker run`, and new Projects start on DeepSeek V4.1 Flash.
+PenguinHarness 0.2.11 is out, and most of its changes are inside the conversation. You can edit Workspace files in a two-pane Files panel, the context ring measures against the point where compaction fires, scheduled tasks move into the dock, and a shortcuts ball on the conversation's edge opens the dock's panels. Hooks are now part of the agent loop, with goal mode and continual learning available as installable plugins. An official Docker image turns a server deployment into one `docker run`, and new Projects start on DeepSeek V4.1 Flash.
 
 ## The Files panel is a two-pane browser you can type into
 
@@ -48,7 +48,7 @@ A new **Scheduled tasks** panel in the dock lists the scheduled tasks bound to t
 
 ## Hooks are part of the loop, and goal mode is a plugin
 
-Sessions now have three hook points: `stop`, `pre_tool_use` and `user_prompt`. A hook is a plain Node script installed into `agent_state/hooks/`. It runs as a subprocess and can answer `continue`, `stop`, a `subagent` request, or nothing.
+Sessions now have three hook points: `stop`, `pre_tool_use` and `user_prompt`. A hook is a plain Node script installed into `agent_state/hooks/`. It runs as a subprocess, and a stop hook can answer `continue`, `stop`, a `subagent` request, or nothing.
 
 - Goal mode is now the `goal` plugin's stop hook.
 - The `continual-learning` plugin sends the findings of a long task to a background subagent, which updates the relevant `SKILL.md` files.
@@ -90,13 +90,13 @@ Existing Projects pick up these rows with **Sync presets** on the models page.
 ## Also in this release
 
 - `exec_command` accepts `command` as well as `cmd`. When a tool rejects a call, it now replies with the fault, the parameters and the correct call shape. `read_image` and `describe_image` fold into `read_file`.
-- Slow turns show where the time went, such as `Elapsed 10.3s (API 5s, tools 5.3s)`. Time spent waiting for approval is not counted.
+- Slow turns show where the time went, such as `Elapsed 10.3s (API 5s, tools 5.3s)`. Neither part counts time spent waiting for approval.
 - The sidebar marks Sessions that have dev servers or background subagents running, and the chat header shows a matching pill.
 - The compaction row shows its status and how long it took, and the thinking and the summary stream into separate rows you can expand.
 - `model.timeoutMs` is now an idle budget between upstream events, with its default raised to 300000, so a request times out on silence rather than on length. The retry ladder starts over once content has been received.
 - Updating runs through one dialog: check, read the release notes, download with a progress bar, then **Restart and update**.
 - A conversation opens on its latest 50 turns, and earlier turns load as you scroll up.
-- The sidebar lists every Workspace, based on counts from the server.
+- Grouped by Workspace, the sidebar lists every Workspace, not only those its loaded conversations belong to.
 - Terminals behave like terminals: a link still opens correctly after the screen redraws, and OSC 52 copy reaches the system clipboard.
 - Plugin versions are now written like `2026.09.10.1`. A copy installed under the old spelling with dashes counts as the same version, so no false update badge appears.
 
@@ -109,7 +109,7 @@ Existing Projects pick up these rows with **Sync presets** on the models page.
 - **One restart.** This release has the first restart-only schema migration, `drop-goal-state`. A hot push onto a running runtime is refused before it touches the database, while a normal install restarts and applies the migration. Downgrading to 0.2.9 still works.
 - **Install the `goal` plugin on agents created before 0.2.10.** Without it, goal mode returns `409 goal_plugin_not_installed`. It takes one click per agent.
 - **Update the kernel to `2026-09-10`** so that agents read images with `read_file`. Until then, calls to the old image tools get unknown-tool replies, and image reads use the stored 30s timeout.
-- **Rename `skills` / `--skills` to `plugins` / `--plugins`** in your scripts.
+- **Rename `skills` / `--skills` to `plugins` / `--plugins`** in scripts that create agents.
 - **API changes.** `POST /api/version/update` now returns a job status instead of blocking until the update ends. Machines routes moved under a Project, so machine lists from 0.2.9 start empty; install again from the Project that owns the machine to get it back.
 
 ## Install

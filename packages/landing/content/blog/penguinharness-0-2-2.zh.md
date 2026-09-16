@@ -13,7 +13,7 @@ PenguinHarness 0.2.2 发布了。之前的版本为 Agent 配齐了干活的工�
 
 只有 `MEMORY.md` 索引会进入上下文，每个作用域最多 200 行、25,000 字符，超出上限时会附上明确的截断说明。主题文件留在磁盘上，模型需要时再用普通的文件工具打开。
 
-写入也是同样的方式。模型通过编辑文件来保存、合并自己的笔记，harness 则把这些写入限制在记忆目录里。为此没有新增任何工具。
+写入也是同样的方式。模型通过编辑文件来保存、合并自己的笔记，Harness 则把这些写入限制在记忆目录里。为此没有新增任何工具。
 
 Agent 设置里多了一个**记忆**标签页，按作用域分组列出所有记忆。你可以查看某条记忆、删除它（对应的索引行会一并移除），也可以通过一段预填好的对话，让 Agent 自己来改。标签页底部还可以编辑两段记忆提示词。
 
@@ -25,13 +25,13 @@ Agent 现在可以使用 MCP（Model Context Protocol）服务器提供的工具
 
 服务器的工具以 `mcp__<server>__<tool>` 的名字出现，沿用现有的执行和审批规则。服务器用 `readOnlyHint` 标记的工具获得只读权限。密钥保险柜里的值永远不会传给 MCP 服务器进程。
 
-在 Agent 设置页新增的 **MCP Server** 分区里，可以用表单管理服务器：添加、编辑、删除，还能当场测试连接。连不上的服务器会直接跳过并给出警告，不会卡住会话创建。服务器连接期间，对话里会以步骤行显示进度，你的第一条消息不会再无声无息地卡住。
+Agent 设置的**工具**标签页里，**MCP Server** 分区过去只以只读 JSON 展示配置，现在可以用表单管理服务器：添加、编辑、删除，还能当场测试连接。连不上的服务器会直接跳过并给出警告，不会卡住会话创建。服务器连接期间，对话里会以步骤行显示进度，你的第一条消息不会再无声无息地卡住。
 
 这是本版唯一的破坏性变更：工具集记录从 `session_meta.tools` 移到了新的 `tool_list_ready` 事件。变更之前写下的 Trace 不再显示其中内嵌的工具记录。
 
 ## 可编辑、可关闭的提示词区块
 
-记忆注入提示词的方式，现在也用到了另外三个会往系统提示词里加内容的子系统上：密钥保险柜、技能和定时任务。系统提示词模板里只保留 `{{VAULT}}`、`{{SKILLS}}` 和 `{{SCHEDULES}}` 三个占位符。每个占位符展开为一段随 Agent 保存的提示词，可以在对应标签页的底部编辑，标签页顶部则有一个启用开关。
+记忆注入提示词的方式，现在也用到了另外三个会往系统提示词里加内容的子系统上：密钥保险柜、技能和定时任务。这三部分在系统提示词模板里只保留 `{{VAULT}}`、`{{SKILLS}}` 和 `{{SCHEDULES}}` 三个占位符。每个占位符展开为一段随 Agent 保存的提示词，可以在对应标签页的底部编辑，标签页顶部则有一个启用开关。
 
 开关只决定模型能看到什么。关掉某个区块，它就从系统提示词里消失，但功能照常运转：密钥保险柜的值仍以环境变量的形式传给 shell 子进程，已安装的 Skill 仍可显式调用，定时任务也照样准时触发。
 
@@ -85,7 +85,7 @@ Web App 积累了一个月的修复，值得一提的有：
 ## 其余改进
 
 - 模型目录新增 Thinking Machines Lab 的 Inkling（上架 OpenRouter 和 Fireworks AI），以及 Fireworks AI 上的 DeepSeek V4 Flash 0731。GLM-5.1 的网关条目已移除，Z.AI 直连条目保留。OpenRouter 的价格按它的 models API 重新刷新。
-- Skill 库新增 `humanizer`：一个需要手动安装的 Skill，用来去除各种语言文字里的机器写作痕迹。
+- 技能库新增 `humanizer`：一个需要手动安装的 Skill，用来去除各种语言文字里的机器写作痕迹。
 - 依赖覆盖把 `@hono/node-server` 强制升到 2.0.5 或更高，以修复一则路径穿越安全通告：问题出在 Windows 上的 `serve-static`，有漏洞的版本经由 MCP SDK 间接引入。`nanoid` 也强制升到 3.3.17 或更高。现在 `pnpm audit` 没有任何需要报告的问题。
 - 发布工作流会拒绝版本号与仓库不一致的 tag。
 
@@ -93,7 +93,7 @@ Web App 积累了一个月的修复，值得一提的有：
 
 ## 安装或升级
 
-桌面应用：到 [penguin.ooo/download](https://penguin.ooo/download) 下载对应平台的安装包。从这个版本起，macOS 安装包已签名并完成公证，Gatekeeper 会直接放行。Windows 版本仍未签名：在 SmartScreen 里选「更多信息 → 仍要运行」。
+桌面应用：到 [penguin.ooo/download](https://penguin.ooo/download) 下载对应平台的安装包。从这个版本起，macOS 安装包已签名并完成公证，Gatekeeper 会直接放行。这一版的 Windows 安装包仍未签名：在 SmartScreen 里选「更多信息 → 仍要运行」。
 
 CLI / 服务端：
 
@@ -102,4 +102,4 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web
 ```
 
-Windows 上请在 PowerShell 中运行 `irm https://penguin.ooo/install.ps1 | iex`。Node >= 24 的环境也可以用 `npm install -g @prismshadow/penguin-cli` 安装。升级已有安装，运行 `penguin update` 即可。
+Windows 上请在 PowerShell 中运行 `irm https://penguin.ooo/install.ps1 | iex`。Node >= 24 的环境也可以用 `npm install -g @prismshadow/penguin-cli` 安装。在 Linux 和 macOS 上升级已有安装，运行 `penguin update` 即可。

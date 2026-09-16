@@ -18,7 +18,7 @@ By the end you will have:
 - a `commit-helper` agent that another agent built for you,
 - a self-improvement run that moves the score from about 4.6 to about 9.8 out of 10 in two rounds.
 
-The tutorial is for developers who are new to PenguinHarness. If you have no AMD GPU, see [No AMD GPU? Use Fireworks credits](#no-amd-gpu-use-fireworks-credits).
+The tutorial is for developers who are new to PenguinHarness. If you have no AMD GPU, the section after Step 5 shows how to use Fireworks credits instead.
 
 ## Prerequisites
 
@@ -101,7 +101,7 @@ The layering in one sentence: *what is editable or recorded lives in files; what
 
 ### Six built-in tools
 
-The first pillar is the easiest to overlook and the one you feel most in practice: the toolset is deliberately tiny. PenguinHarness ships exactly six built-in tools:
+The first pillar is the easiest to overlook and the one you feel most in practice: the toolset is deliberately tiny. When this post was written, PenguinHarness shipped exactly six built-in tools:
 
 | Tool | Purpose |
 | --- | --- |
@@ -112,7 +112,7 @@ The first pillar is the easiest to overlook and the one you feel most in practic
 | `read_image` | Read an image as image content (vision models) |
 | `describe_image` | Have a vision model describe an image for text-only models |
 
-There is no `read_file`, `write_file`, `edit_file`, `list_dir` or `grep` tool, on purpose. The shell is the universal interface, so reading, writing and editing files all go through `exec_command` (`cat`, `>`, `sed` and so on). Every extra tool adds schema to the prompt, Tokens to every call, and one more thing the model can pick wrong. Fewer tools mean fewer wrong calls and less Token overhead.
+There was no `read_file`, `write_file`, `edit_file`, `list_dir` or `grep` tool, on purpose. The shell was the universal interface, so reading, writing and editing files all went through `exec_command` (`cat`, `>`, `sed` and so on). Every extra tool adds schema to the prompt, Tokens to every call, and one more thing the model can pick wrong. Fewer tools mean fewer wrong calls and less Token overhead.
 
 You can read this straight out of a Trace. These are the only three tool calls an agent made to complete a CSV-cleanup case, all of them `exec_command`:
 
@@ -177,7 +177,7 @@ A single command is enough because the core treats any OpenAI-compatible endpoin
 
 In this step an agent builds a new agent for you. This is the second pillar, the harness for building agents, made concrete.
 
-The pillar has two faces. The first is the SDK: you embed an agent in your own program with a few lines, `createAgent()` → `createSession()` → `session.run(...)` (see [Next steps](#next-steps)). The second follows from agents being editable data: if an agent is just files, *an agent can write those files for you*. That is what the built-in `agent-creation` Skill does. Given a plain-language requirement, an agent scaffolds a new agent: its directory layout, its `system_config.yaml` (name and description), and above all its `AGENTS.md`, the file that turns the requirement into behavior.
+The pillar has two faces. The first is the SDK: you embed an agent in your own program with a few lines, `createAgent()` → `createSession()` → `session.run(...)` (see Next steps at the end). The second follows from agents being editable data: if an agent is just files, *an agent can write those files for you*. That is what the built-in `agent-creation` Skill does (renamed `agent-initialization` in PenguinHarness 0.2.4). Given a plain-language requirement, an agent scaffolds a new agent: its directory layout, its `system_config.yaml` (name and description), and above all its `AGENTS.md`, the file that turns the requirement into behavior.
 
 The repository example [`examples/build-agent-with-agent/`](https://github.com/Prism-Shadow/penguin-harness/tree/main/examples/build-agent-with-agent) runs the whole flow as a self-contained, SDK-driven script on the local Ollama + qwen3.6:35b setup, with no cloud API. Its `README.md` covers the one-time Ollama configuration. Run it from the repository root:
 
@@ -241,7 +241,7 @@ The loop has five stages. There is no special engine code behind it: it is ordin
 4. Edit the agent's state: the agent's behavior lives in editable files (`AGENTS.md`, Skills, config). You, or an Optimizer agent, change those files to address the failure, producing version N+1.
 5. Snapshot, then keep or roll back: take a snapshot before each round, and keep N+1 only if the score strictly improves. Otherwise, roll back.
 
-In the example, the script supplies only the failure signal, the accepted example reports and the keep-or-roll-back decision. It never writes the convention itself.
+In the example, the script supplies only the failure signal and the accepted example reports, then reports whether each round raised the score. It never writes the convention itself.
 
 ### Round 1: learn the structure
 
@@ -253,7 +253,7 @@ The agent then writes the convention into its own `AGENTS.md`, producing version
 
 Next, the agent sees *several* accepted reports from different projects that share the same marker and sign-off. It reasons that whatever is identical across all of them must be a fixed constant, reads its *own* N+1 `AGENTS.md`, and refines it, locking `<!-- ACME-DATA-PLATFORM -->` and `Reviewed-by: Aurora Team` to literals. Evaluated again, the score reaches about 9.8 / 10. That is recursion in the true sense: `state_{n+1} = agent.reflect(state_n, new_evidence)`.
 
-The harness keeps each round only because the score strictly improved.
+Each round strictly raised the score, which is the condition stage 5 sets for keeping an edit.
 
 ## No AMD GPU? Use Fireworks credits
 

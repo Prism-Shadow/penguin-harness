@@ -7,9 +7,9 @@ excerpt: AI 基础设施是为人类操作者打造的，如今驱动它的越�
 
 我们用来构建 AI 的这套基础设施，是照着人来设计的。PyTorch 默认有人在读教程；vLLM 默认工程师清楚 GPU 有多少显存；LlamaFactory 默认研究者会看训练曲线，判断训练是否正常；Ollama 则默认你记得服务是不是已经在运行。
 
-这些默认针对的都是人类操作者，而现在，操作者越来越多地换成了 Agent，也就是靠调用工具干活的模型。本文讨论的问题是：驱动这套技术栈的换成程序之后，会发生什么变化。我们的回答是，技术栈本身几乎不用改，它本来就是文本和命令，Agent 通过 shell 就能跑起来。
+这些默认针对的都是人类操作者，而现在，操作者越来越多地换成了 Agent，也就是靠调用工具干活的模型。本文要回答的问题是：驱动这套技术栈的一方换成程序之后，会发生什么变化。我们的回答是，技术栈本身几乎不用改，它本来就是文本和命令，Agent 通过 shell 就能跑起来。
 
-Agent 缺的是称职工程师身上的操作经验。这些经验可以写下来，PenguinHarness 现在就把它们做成了 Skill，并配上支持长任务、让失败以可读文本返回的运行时。另外还有三个问题，目前谁都没有解决。
+Agent 缺的是称职工程师身上的操作经验。这些经验可以写下来，PenguinHarness 现在就把它们做成了 Skill，运行时也支持长任务，失败会以可读文本返回。另外还有三个问题，目前谁都没有解决。
 
 ## 过去：技术栈默认操作者是人
 
@@ -31,13 +31,13 @@ Stripe 评测 Agent 能不能基于自家 API 做出真实集成时，算过这�
 
 ## 现在：技术栈天然适合 Agent
 
-这套技术栈不需要为 Agent 新增接口。它需要的是操作经验，以及一个贴合 AI 工作的运行时，因为 AI 的活和 Web 的活形态不同。
+这套技术栈不需要为 Agent 新增接口。它需要的是操作经验，以及一个贴合 AI 工作的运行时，因为 AI 的活和 Web 的活形态不同。本节提到的 PenguinHarness 细节，以本文发布时的 0.1.1 版本为准。
 
 ### Shell 就是集成层
 
 AI 基础设施比大多数软件更适合 Agent，而且纯属无心插柳。它本来就是命令行工具、YAML 配置和 Python 文件：文本进，文本出，可以自由组合。`nvidia-smi` 这类工具用不着再包一层，一个拿着 shell 的 Agent 已经能驱动整个技术栈。
 
-所以 PenguinHarness 把 shell 当作通用接口：`exec_command` 就是全部的文件系统与进程接口，没有单独的文件工具。驱动 vLLM 算不上一次集成，它就是一条命令。
+所以 PenguinHarness 把 shell 当作通用接口：在 0.1.1 版本里，`exec_command` 就是全部的文件系统与进程接口，还没有单独的文件工具。驱动 vLLM 算不上一次集成，它就是一条命令。
 
 ### 缺的是操作经验
 
@@ -49,9 +49,9 @@ AI 基础设施比大多数软件更适合 Agent，而且纯属无心插柳。�
 | `vllm` | 在 GPU 上做高吞吐服务，并为 Agent 负载打开工具调用参数 |
 | `llamafactory` | 用 YAML 配置做 LoRA/QLoRA、SFT 或 DPO 微调 |
 
-比起「有这几个 Skill」，更值得说的是它们里面写了什么。每个 Skill 都写下了一条规则，而这些规则，人类操作者从来不需要别人叮嘱：
+比起「有这几个 Skill」，更值得说的是它们里面写了什么。它们写下的规则，人类操作者从来不需要别人叮嘱：
 
-1. **动手之前，先看清现场。** `ollama` Skill 让 Agent 先运行 `ollama --version` 和 `ollama ps`，然后把规矩挑明：如果 11434 端口上已经有服务，就复用这个实例，*绝不杀掉已经在运行的 Ollama 进程*。人知道不该动同事的服务，Agent 却得有人明确告诉它。
+1. **动手之前，先看清现场。** `ollama` Skill 让 Agent 先运行 `ollama --version` 和 `ollama ps`，然后把规矩挑明：如果 11434 端口上已经有服务，就复用这个实例，绝不杀掉已经在运行的 Ollama 进程。人知道不该动同事的服务，Agent 却得有人明确告诉它。
 2. **先确认真正的约束。** `vllm` Skill 在启动服务之前，先用 `nvidia-smi`（AMD 上是 `rocm-smi`）确认硬件，因为模型大小和上下文长度都受显存限制。教程里埋在中间的那句话，在这里成了第 0 步。
 3. **要验证，别想当然。** 两个服务类 Skill 都以一次真实检查收尾，比如 vLLM 的 `curl http://localhost:8000/v1/models`，检查通过才算完成任务。这正是对 Stripe 那个失败模式的直接回应：「成功」由一次观测来定义，而不是「没崩溃就算成功」。
 4. **把活干完。** 模型启动后不注册，PenguinHarness 就看不见它。所以这些 Skill 会用 `penguin config model add --client-type openai --base-url ...` 把这一步闭环，再用 `penguin config model list` 确认结果。启动一个服务不算完成任务，拿到一个能用的模型才算。
@@ -63,7 +63,7 @@ AI 基础设施比大多数软件更适合 Agent，而且纯属无心插柳。�
 
 ### 失败以文本返回
 
-工具永远不会把异常抛进 Agent 循环。非零退出、超时、内存耗尽（OOM），最后都变成工具输出，由模型读取并据此反应。退出码追加在截断窗口之外，哪怕长日志截断了，退出码也还在。这个细节比听上去更要紧：说明这次运行失败了的那一行，通常就是最后一行。
+工具永远不会把异常抛进 Agent 循环。非零退出、超时、内存耗尽（OOM），最后都会变成工具输出，交给模型读取和应对。退出码追加在截断窗口之外，哪怕长日志截断了，退出码也还在。这个细节比听上去更要紧：表明运行失败的那一行，通常就是最后一行。
 
 ## 未来：三个尚未解决的问题
 
@@ -94,7 +94,7 @@ penguin run -m "用 Ollama 启动 Qwen3.5-0.8B 并注册到 Penguin"
 
 ---
 
-- **文档**：[Skills](https://penguin.ooo/docs/skills) · [工具与审批](https://penguin.ooo/docs/tools) · [模型与供应商](https://penguin.ooo/docs/models)
+- **文档**：[技能与插件](https://penguin.ooo/docs/skills) · [工具与审批](https://penguin.ooo/docs/tools) · [模型与供应商](https://penguin.ooo/docs/models)
 - **社区**：[GitHub](https://github.com/Prism-Shadow/penguin-harness) · [Discord](https://discord.gg/eFHKqqcU3D)
 
 **参考来源**：[vLLM](https://docs.vllm.ai/) · [Ollama](https://ollama.com/) · [LlamaFactory](https://github.com/hiyouga/LlamaFactory) · [Stripe, Can AI agents build real Stripe integrations?](https://stripe.com/blog/can-ai-agents-build-real-stripe-integrations) · [Anthropic, Writing effective tools for AI agents](https://www.anthropic.com/engineering/writing-tools-for-agents)

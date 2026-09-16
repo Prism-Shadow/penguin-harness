@@ -2,14 +2,14 @@
 title: "PenguinHarness 0.1.5: offline installs, file attachments, and runs that recover"
 date: 2026-07-30
 category: news
-excerpt: 0.1.5 adds five self-contained offline install bundles, lets the composer attach any file and send images with steering and goals, and retries nearly every LLM failure inside the run. Two built-in Skills gain a second visual theme and guidance for thinking and image messages.
+excerpt: 0.1.5 adds five self-contained offline install bundles, lets the composer attach any file and send images with steering and goals, and retries nearly every LLM failure inside the run. The web-design Skill gains a second visual theme, and penguin-sdk documents thinking and image messages.
 ---
 
 PenguinHarness 0.1.5 is out. You can now install it on machines with no network at all, attach any type of file in the Web composer, and send images with steering messages and goal objectives. Runs are sturdier too: almost every LLM failure now recovers inside the run, and pressing Stop mid-request can no longer leave a Session stuck.
 
 ## Install without a network
 
-Every GitHub Release now attaches five self-contained offline bundles: Linux and macOS, each for x64 and arm64, and Windows for x64. Each bundle carries the program archive, its SHA256 checksum and the platform's own installer. Download a bundle on any machine with network access, copy it to the target machine, and run one command.
+The 0.1.5 GitHub Release attaches five self-contained offline bundles: Linux and macOS, each for x64 and arm64, and Windows for x64. Each bundle carries the program archive, its SHA256 checksum and the platform's own installer. Download a bundle on any machine with network access, copy it to the target machine, and run one command.
 
 On Linux or macOS, extract the bundle and run its installer. For the Linux x64 bundle:
 
@@ -29,11 +29,11 @@ The install instructions were rewritten to match. The README now gives every met
 
 ## Attach any file, steer with images
 
-The Web composer now attaches files of any type, not just images. Attachments are written to the Session scratchpad and passed to the model as `[attached file: <path>]` lines, with non-ASCII file names preserved, so the model reads them with its usual file tools. Attaching works mid-run too.
+The Web composer now attaches files of any type, not just images. Attachments are written to the Session scratchpad and passed to the model as `[attached file: <path>]` lines, with non-ASCII file names preserved, so the model reads them with its usual file tools.
 
-Images now reach every kind of input. A steering message sent mid-run can carry images, and an image with no caption is a complete steering message on its own. A goal objective accepts images as scratchpad paths. The paths are re-injected as text every round, so they work with every model, with or without vision.
+Images now reach every kind of input. A steering message sent mid-run can carry images, and an image with no caption is a complete steering message on its own. Steering does not carry files; an attached file waits for your next regular message. A goal objective accepts images as scratchpad paths. The paths are re-injected as text every round, so they work with every model, with or without vision.
 
-The composer's `@` mention is now an `/agent` command. Both switch commands, `/agent` and `/model`, place your pick as a chip beside the text. The chip is saved with the draft, takes effect only when you press Enter to send, and applies only to the current Session.
+The composer's `@` mention is now an `/agent` command. Both switch commands, `/agent` and `/model`, are available inside an existing Session, not on a new-chat draft, and each places your pick as a chip above the text. The chip is saved with the draft and takes effect only when you press Enter to send: an agent chip hands the conversation off to a new chat with that agent, and a model chip forks the conversation onto the chosen model.
 
 ## Runs that recover instead of failing
 
@@ -59,11 +59,11 @@ It also follows a "ship complete" contract. A one-line request is the whole spec
 `penguin-sdk` now documents the thinking and image message kinds that current models emit and accept, along with patterns for building on them:
 
 - Stream `partial_thinking` into its own collapsed channel.
-- Build image input with `imageUrlMessage`. When the model config's `vision` flag is off, images fall back gracefully to the Project's `vision_model`.
+- Build image input with `imageUrlMessage`. When the model config's `vision` flag is off, the image is passed as a file path that the built-in image tools read through the Project's `vision_model`, so the app still works.
 - Fix the output format in the persona instead of shipping a Markdown renderer.
 - Bridge cross-language BM25 retrieval with a bilingual keyword map built at ingest time.
 
-Building on both Skills, the Web App's draft page adds an end-to-end example of tuning an agent: it creates, benchmarks and optimizes an agent through isolated CLI sessions. The draft page's example prompts are also shorter, because the Skills now carry the knowledge those prompts used to spell out.
+Because these two Skills now carry the knowledge the draft page's example prompts used to spell out, those prompts are shorter. The draft page also adds an end-to-end example of tuning an agent, built on the agent creation, Benchmark design, evaluation and optimization Skills: it creates, benchmarks and optimizes an agent through isolated CLI sessions.
 
 ## Also in 0.1.5
 
@@ -73,7 +73,7 @@ Building on both Skills, the Web App's draft page adds an end-to-end example of 
 - Pasting CJK text or emoji into `penguin chat` no longer corrupts characters that arrive split across stdin chunks.
 - Durations and byte sizes roll over into the next unit instead of printing `1m60s` or `1024KB`.
 - `PORT` and `HOST` no longer leak into the commands an agent runs, and the development backend moved to port 7368, out of the way of an installed `penguin web`.
-- The docs now cover three more reference topics: `run_subagent`'s `provider` argument, the gateway credential table and the Project model entry's `max_tokens`.
+- Three reference blocks in the docs caught up with the code: `run_subagent`'s `provider` argument, the gateway credential table and the Project model entry's `max_tokens`.
 
 ## Install or upgrade
 
@@ -89,4 +89,4 @@ irm https://penguin.ooo/install.ps1 | iex
 penguin web
 ```
 
-You can also install from npm with Node >= 24: `npm install -g @prismshadow/penguin-cli`. From this release, you can install fully offline as well, with the bundles in the [Release assets](https://github.com/Prism-Shadow/penguin-harness/releases); see [Install without a network](#install-without-a-network). Every change is described in detail in [changelog/0.1.5](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.1.5).
+You can also install from npm with Node >= 24: `npm install -g @prismshadow/penguin-cli`. From this release, you can also install fully offline with the bundles attached to the [v0.1.5 Release](https://github.com/Prism-Shadow/penguin-harness/releases/tag/v0.1.5); the steps are under "Install without a network" above. Every change is described in detail in [changelog/0.1.5](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.1.5).

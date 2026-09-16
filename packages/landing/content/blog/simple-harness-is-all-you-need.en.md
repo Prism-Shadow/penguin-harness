@@ -7,7 +7,7 @@ excerpt: Databricks benchmarked coding agents on roughly a hundred real pull req
 
 An **agent harness** is the software around a language model that decides what goes into each request: the system prompt, the tool definitions, and the message history. The common intuition is that a bigger harness makes a better agent. More tools, more context, and more scaffolding should lead to better decisions, and the whole category was built on that belief.
 
-This essay argues the opposite. In a Databricks benchmark on real pull requests, the simplest harness produced the highest score at about half the cost, and Databricks attributes the result to sending less context per turn. We treat a harness as an **information budget** rather than a feature list, show where that budget goes, describe how PenguinHarness is built around the same bet, and mark where minimalism has to stop.
+This essay argues the opposite. In a Databricks benchmark on real pull requests, the simplest harness produced the highest score at about half the cost, and Databricks attributes the result to sending less context per turn. We treat a harness as an **information budget** rather than a feature list, show where that budget goes, describe how PenguinHarness is built around that idea, and mark where minimalism has to stop.
 
 ## The evidence: a benchmark on real pull requests
 
@@ -25,13 +25,11 @@ Databricks is careful not to overclaim, and so are we. Its stated lesson is not 
 
 > "Pi sent about 3x less context per turn. It managed context better, keeping a tighter working set and finishing the tasks in fewer runs."
 
-One detail of the method is rarer than it should be: Databricks refused to grade with a model, on the grounds that doing so "rewards sounding right over being right."
+One choice in the method deserves mention, because few benchmarks make it: Databricks refused to grade with a model, on the grounds that doing so "rewards sounding right over being right."
 
 ## A harness is an information budget
 
-A harness makes exactly one kind of decision: what occupies the model's context window on each turn.
-
-A model is a function behind an API. It receives a system prompt, tool definitions, and a message history, and it returns text and tool calls. That contract is fixed and public. Everything else, every piece of software that decides what goes into the request, is the harness.
+A model is a function behind an API. It receives a system prompt, tool definitions, and a message history, and it returns text and tool calls. That contract is fixed and public, so a harness makes exactly one kind of decision: what occupies the model's context window on each turn.
 
 The context window, the text a model can attend to in one request, is finite. Everything a harness does is therefore allocation: it spends a budget on the model's behalf, on every turn. Two harnesses that call the same model are not running different intelligence. They are running different budgets, and in the Databricks data, the one that spent less scored higher.
 
@@ -59,11 +57,11 @@ None of these is a wrong idea. The problem is that nobody puts a price on them.
 
 ## How PenguinHarness is built
 
-We made this bet before the benchmark existed, and it shows in the source code rather than in marketing copy. The numbers below describe PenguinHarness when this post was published, and each one could be checked in the repository at the time.
+We made this bet before the benchmark existed, and it shows in the source code rather than in marketing copy. This section describes PenguinHarness as of 0.1.1, the release this post was published with, and each detail can be checked in the repository at the `v0.1.1` tag.
 
 ### Six tools, and no file tools
 
-PenguinHarness ships [six built-in tools](https://penguin.ooo/docs/tools). Any one Session sees five of them, because the two image tools are mutually exclusive by model class.
+PenguinHarness 0.1.1 ships [six built-in tools](https://github.com/Prism-Shadow/penguin-harness/blob/v0.1.1/packages/docs/content/tools.en.md). Any one Session sees five of them, because the two image tools are mutually exclusive by model class.
 
 | Tool | Purpose |
 | --- | --- |
@@ -72,11 +70,11 @@ PenguinHarness ships [six built-in tools](https://penguin.ooo/docs/tools). Any o
 | `run_subagent` / `input_subagent` | Delegate a subtask to a child agent, then poll or follow up |
 | `read_image` / `describe_image` | Return an image, or have a vision model describe it in text |
 
-There is no read tool, write tool, edit tool, glob, or grep. Reading, writing, editing, and searching all go through the shell, because the shell already does them and the model already knows how. A four-tool minimal core spends three tools (read, write, and edit) on the filesystem; PenguinHarness spends one. We do not claim the smallest absolute tool count, since Pi's core has one tool fewer. We claim the smallest schema surface for what agents actually do all day.
+In 0.1.1 there is no read tool, write tool, edit tool, glob, or grep. Reading, writing, editing, and searching all go through the shell, because the shell already does them and the model already knows how. A four-tool minimal core spends three tools (read, write, and edit) on the filesystem; PenguinHarness spends one. We do not claim the smallest absolute tool count, since Pi's core has one tool fewer. We claim the smallest schema surface for what agents actually do all day.
 
 ### A 72-line system prompt
 
-The default template is 72 lines, about 6,600 characters before placeholder substitution ([source](https://github.com/Prism-Shadow/penguin-harness/blob/main/packages/core/src/state/default-config.ts)). It covers the role, success criteria, constraints, stop rules, the filesystem layout, and a short list of suggested workflows. Then it stops.
+The 0.1.1 default template is 72 lines, about 6,500 characters before placeholder substitution ([source](https://github.com/Prism-Shadow/penguin-harness/blob/v0.1.1/packages/core/src/state/default-config.ts)). It covers the role, success criteria, constraints, stop rules, the filesystem layout, and a short list of suggested workflows. Then it stops.
 
 ### Output capped by default
 
@@ -96,7 +94,7 @@ No environment metadata is stapled to user messages. The model receives the conv
 
 ## Why less context wins
 
-The intuition that more context improves decisions is reasonable. It is wrong at the margin, for three reasons.
+The intuition that more context improves decisions is reasonable. It is wrong at the margin for two reasons, and a third, practical reason also favors a lean harness.
 
 The first reason is mechanical: attention is a fixed budget that gets divided. Self-attention weighs every Token against every other. When a request grows from 20K to 60K Tokens, the decisive parts, such as the actual error and the actual constraint, hold a smaller share. Five rules that are followed beat fifty that compete, and five tools chosen correctly beat thirty that widen the search.
 
@@ -145,7 +143,7 @@ penguin web
 
 ---
 
-- **Read the internals**: [Tools & Approval](https://penguin.ooo/docs/tools) · [The Agent Loop](https://penguin.ooo/docs/agent-loop) · [Skills](https://penguin.ooo/docs/skills)
+- **Read the internals**: [Tools & Approval](https://penguin.ooo/docs/tools) · [The Agent Loop](https://penguin.ooo/docs/agent-loop) · [Skills & Plugins](https://penguin.ooo/docs/skills)
 - **Come argue with us**: [GitHub](https://github.com/Prism-Shadow/penguin-harness) · [Discord](https://discord.gg/eFHKqqcU3D)
 
 **Sources**: [Databricks — Benchmarking Coding Agents on Databricks' Multi-Million Line Codebase](https://www.databricks.com/blog/benchmarking-coding-agents-databricks-multi-million-line-codebase) · [Pi (earendil-works/pi)](https://github.com/earendil-works/pi) · [SaladDay, "Less is More"](https://x.com/Salad95238547/status/2079508549382644194)

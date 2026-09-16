@@ -65,13 +65,13 @@ This tutorial splits the work between two models:
 | Purpose | Agent | Model |
 |---|---|---|
 | Create the Agent, design the Benchmark, and perform optimization | `default_agent` | Fireworks API model |
-| Undergo evaluation and improvement | `meeting-summary-agent` | Qwen3:8B on an AMD GPU |
+| Undergo evaluation and improvement | `meeting_summary_agent` | Qwen3:8B on an AMD GPU |
 
 Qwen3:8B runs through Ollama on the AMD GPU and serves as the Target Agent model. A model on the Fireworks API runs `default_agent`, which creates the agent, designs the Benchmark and performs the optimization. You first establish a v1 baseline, let the Optimizer improve the agent using evidence from real Traces, and then use the same Benchmark to decide whether to accept the new version or roll it back.
 
 ## What you will build
 
-You create `meeting-summary-agent`. It reads a small collection of text files and writes the following file in its Workspace:
+You create `meeting_summary_agent`. It reads a small collection of text files and writes the following file in its Workspace:
 
 ```markdown
 # Summary
@@ -122,7 +122,7 @@ Next, configure the Fireworks API key and set DeepSeek V4 Flash as the default m
 
 <img width="498" height="479" alt="PenguinHarness Fireworks API model configuration" src="https://github.com/user-attachments/assets/3b392317-615d-46d3-95c9-f9e3b4ad61a5" />
 
-New top-level `default_agent` chats now use the Project default, which is the Fireworks model. When the Benchmark runs `meeting-summary-agent`, it explicitly selects this local model pair:
+New top-level `default_agent` chats now use the Project default, which is the Fireworks model. When the Benchmark runs `meeting_summary_agent`, it explicitly selects this local model pair:
 
 ```text
 provider: custom
@@ -135,17 +135,17 @@ The baseline and every candidate must use this same `(provider, model_id)` pair.
 
 In this step you create the first version of the Target Agent and save a Snapshot of it as a recovery point.
 
-1. In the Web App, create a new agent named `meeting-summary-agent`.
+1. In the Web App, create a new agent with the id `meeting_summary_agent`. An agent id takes only lowercase letters, digits and underscores, so a hyphenated id is rejected.
 2. Start a new top-level chat with `default_agent`, and select the Fireworks model you just set as the Project default.
-3. Invoke the `agent-creation` Skill and submit the prompt below.
+3. Invoke the `agent-creation` Skill (renamed `agent-initialization` in PenguinHarness 0.2.4) and submit the prompt below.
 
-The prompt creates v1 of `meeting-summary-agent`. Version 1 defines only the basic responsibilities and safety boundaries. It does not preload a complete summarization workflow, so the Benchmark can expose the operating habits the agent lacks through actual runs.
+The prompt creates v1 of `meeting_summary_agent`. Version 1 defines only the basic responsibilities and safety boundaries. It does not preload a complete summarization workflow, so the Benchmark can expose the operating habits the agent lacks through actual runs.
 
 <details>
 <summary><strong>Expand: Complete Prompt for Creating the v1 Agent</strong></summary>
 
 ```text
-Use the agent-creation Skill to configure the Agent `meeting-summary-agent`.
+Use the agent-creation Skill to configure the Agent `meeting_summary_agent`.
 
 Goal:
 This is a simple local-file summarization Agent. It reads the task instructions
@@ -181,7 +181,7 @@ State version.
 
 </details>
 
-When the operation completes, the new agent appears in the Agents list:
+When the operation completes, the new agent appears in the Agents list. The screenshot comes from the original run, in which the agent's id was `meeting-summary-agent`:
 
 <img width="1376" height="464" alt="Meeting Summary Agent in the Agents list" src="https://github.com/user-attachments/assets/7e3f70d2-2164-4f90-8507-6c2d1cd9085c" />
 
@@ -209,7 +209,7 @@ Use the benchmark-design Skill to create and calibrate a Benchmark for the
 following Test Agent.
 
 Test Agent:
-meeting-summary-agent
+meeting_summary_agent
 
 Benchmark ID:
 simple-file-summary-2case-v1
@@ -324,7 +324,7 @@ Use the agent-optimization Skill in Benchmark optimization mode to improve
 the target Agent.
 
 Test Agent:
-meeting-summary-agent
+meeting_summary_agent
 
 Benchmark:
 simple-file-summary-2case-v1
@@ -381,7 +381,7 @@ candidate total <= reference total
 → roll back to v1
 ```
 
-In this run, the optimized agent updates `AGENTS.md` with an added operating procedure, reruns the Cases and produces the new score:
+In this run, the Optimizer adds an operating procedure to `AGENTS.md`, reruns the Cases and reports the new score:
 
 <img width="857" height="413" alt="Optimization result and updated Agent State" src="https://github.com/user-attachments/assets/f046ca42-e7ef-4063-8c10-babce816eba4" />
 

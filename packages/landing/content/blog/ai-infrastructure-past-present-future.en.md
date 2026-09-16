@@ -31,13 +31,13 @@ The third assumption is that documentation is read once, by someone who will rem
 
 ## Present: the stack is already agent-shaped
 
-The stack needs no new interfaces for agents. It needs operating knowledge and a runtime built for AI work, which is shaped differently from web work.
+The stack needs no new interfaces for agents. It needs operating knowledge and a runtime built for AI work, which is shaped differently from web work. The PenguinHarness details in this section describe version 0.1.1, current when this post was published.
 
 ### The shell is the integration layer
 
 AI infrastructure is, by accident, better suited to agents than most software. It already consists of command-line tools, YAML configs, and Python files: text in, text out, and composable. A tool like `nvidia-smi` needs no wrapper, because an agent with a shell can already drive the entire stack.
 
-That is why PenguinHarness uses the shell as its universal interface. `exec_command` is the whole filesystem and process interface, and there are no separate file tools. Driving vLLM is not an integration; it is a command.
+That is why PenguinHarness uses the shell as its universal interface. In 0.1.1, `exec_command` was the whole filesystem and process interface, and there were no separate file tools. Driving vLLM is not an integration; it is a command.
 
 ### What is missing is operating knowledge
 
@@ -49,7 +49,7 @@ What is missing is not connectivity. It is the operating knowledge a competent e
 | `vllm` | Serve on GPU for high throughput, with tool-calling flags enabled for agent workloads |
 | `llamafactory` | Fine-tune with LoRA/QLoRA, SFT or DPO through YAML configs |
 
-What these Skills contain matters more than the fact that they exist. Each one encodes a rule that a human operator never needed to be told:
+What these Skills contain matters more than the fact that they exist. They encode rules that a human operator never needed to be told:
 
 1. **Check the world before changing it.** The `ollama` Skill has the agent run `ollama --version` and `ollama ps` first. Then it states the rule plainly: if port 11434 is already serving, reuse that instance, and *never kill an existing Ollama process*. A human knows not to kill a colleague's server. An agent has to be told.
 2. **Check the real constraint first.** The `vllm` Skill confirms the hardware with `nvidia-smi` (or `rocm-smi` on AMD) before it serves anything, because VRAM limits both model size and context length. The sentence buried in the tutorial becomes step zero.
@@ -94,7 +94,7 @@ penguin run -m "Serve Qwen3.5-0.8B with Ollama and register it with Penguin"
 
 ---
 
-- **Docs**: [Skills](https://penguin.ooo/docs/skills) · [Tools & Approval](https://penguin.ooo/docs/tools) · [Models & Providers](https://penguin.ooo/docs/models)
+- **Docs**: [Skills & Plugins](https://penguin.ooo/docs/skills) · [Tools & Approval](https://penguin.ooo/docs/tools) · [Models & Providers](https://penguin.ooo/docs/models)
 - **Community**: [GitHub](https://github.com/Prism-Shadow/penguin-harness) · [Discord](https://discord.gg/eFHKqqcU3D)
 
 **Sources**: [vLLM](https://docs.vllm.ai/) · [Ollama](https://ollama.com/) · [LlamaFactory](https://github.com/hiyouga/LlamaFactory) · [Stripe, Can AI agents build real Stripe integrations?](https://stripe.com/blog/can-ai-agents-build-real-stripe-integrations) · [Anthropic, Writing effective tools for AI agents](https://www.anthropic.com/engineering/writing-tools-for-agents)

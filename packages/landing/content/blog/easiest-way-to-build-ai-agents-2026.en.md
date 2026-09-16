@@ -101,7 +101,7 @@ This works because **agents are editable data, not hardcoded constants**: prompt
 
 ### The tuning loop is automated too
 
-This answers the last step of the LangChain example, where a person reads the traces and tunes the prompts. Built-in Skills for Benchmark design, evaluation, and optimization let the agent score its own output, find where it lost points, and ship version N+1. A snapshot is taken before every round, and every request can be replayed in the Trace view.
+This answers the last step of the LangChain example, where a person reads the traces and tunes the prompts. Built-in Skills for Benchmark design, evaluation, and optimization let the agent score its own output, find where it lost points, and ship version N+1. No round starts until a snapshot of the current version exists, and every request can be replayed in the Trace view.
 
 On other stacks, *you* are the optimizer: you read the traces, tune the prompts, and rerun the evals. Here that loop is the agent's job, so you do not have to learn to be good at it.
 
@@ -113,7 +113,7 @@ Removing the assembly step does not remove oversight. Every tool call gets exact
 
 A comparison in which one option wins every row is an advertisement, not an analysis. In two cases, you should pick something else:
 
-- **Python shops.** The PenguinHarness SDK is TypeScript. The CLI and server are language-agnostic, but if your team works in Python and wants to subclass and extend these classes, most of the options above will fit better.
+- **Python shops.** The PenguinHarness SDK is TypeScript. The CLI and server are language-agnostic, but if your team works in Python and wants to extend agents by subclassing framework classes, most of the options above will fit better.
 - **Deep cloud integration.** If you are already all-in on Azure, Microsoft Agent Framework is the path of least resistance. On Vertex, ADK is.
 
 ## Conclusion
@@ -124,7 +124,7 @@ PenguinHarness collapses those layers into one install and hands the optimizatio
 
 ---
 
-- **Docs**: [Quickstart](https://penguin.ooo/docs/quickstart) · [Skills](https://penguin.ooo/docs/skills) · [Sessions & Traces](https://penguin.ooo/docs/sessions-and-traces)
+- **Docs**: [Quickstart](https://penguin.ooo/docs/quickstart) · [Skills & Plugins](https://penguin.ooo/docs/skills) · [Sessions & Traces](https://penguin.ooo/docs/sessions-and-traces)
 - **Community**: [GitHub](https://github.com/Prism-Shadow/penguin-harness) · [Discord](https://discord.gg/eFHKqqcU3D)
 
 **Sources** — figures checked 2026-07-22: [LangChain v1 release notes](https://docs.langchain.com/oss/python/releases/langchain-v1) · [Langfuse](https://github.com/langfuse/langfuse) · [AutoGen README](https://github.com/microsoft/autogen) · [Microsoft Agent Framework](https://learn.microsoft.com/en-us/agent-framework/overview/) · [Google ADK](https://adk.dev/) · [CrewAI](https://docs.crewai.com/en/quickstart) · [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/quickstart/) · [Dify LICENSE](https://github.com/langgenius/dify/blob/main/LICENSE) · [n8n LICENSE](https://github.com/n8n-io/n8n/blob/master/LICENSE.md) · [Anthropic, Building Effective AI Agents](https://www.anthropic.com/engineering/building-effective-agents)

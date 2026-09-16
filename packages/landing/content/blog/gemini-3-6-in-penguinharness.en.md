@@ -66,7 +66,7 @@ penguin config model list
 
 Two related corrections landed with the new rows:
 
-- Gemini pricing now records the vendor's real cache-hit rate instead of repeating the input price in the cache bucket: $0.15 per million cached input Tokens for 3.6 Flash, and $0.03 for 3.5 Flash-Lite. The **Cost Center** no longer overstates cache-heavy spend by an order of magnitude.
+- Gemini pricing now records the vendor's real cache-hit rate instead of repeating the input price in the cache bucket: $0.15 per million cached input Tokens for 3.6 Flash, and $0.03 for 3.5 Flash-Lite. The **Costs** page no longer overstates cache-heavy spend by an order of magnitude.
 - `google/gemini-3.5-flash` had its context window recorded as 1,000,000. The real figure, on both the gateway and the direct endpoint, is 1,048,576.
 
 ### 3.5 Flash-Lite for fan-out work
@@ -87,7 +87,7 @@ The Gemini rows are one part of a much larger catalog refresh, and the catalog i
 
 ### Models and core
 
-The SDK moved to **AgentHub 0.4.1**, a type-compatible upgrade. Its new supported-model registry lists model, base URL and client triples with modalities, context windows and per-million pricing, and it became the authoritative source for refreshing the catalog. Every context window, vision flag and price came from the registry rather than a vendor marketing page. The catalog grew from 59 to 70 entries. The new rows are:
+The SDK moved to **AgentHub 0.4.1**, a type-compatible upgrade. Its new supported-model registry lists model, base URL and client triples with modalities, context windows and per-million pricing, and it became the authoritative source for refreshing the catalog. Every context window, vision flag and price came from the registry rather than a vendor marketing page. The catalog grew from 57 to 70 entries. The new rows are:
 
 - Gemini 3.6 Flash and 3.5 Flash-Lite, on both routes above
 - Claude Fable 5 and Claude Sonnet 5 on Anthropic
@@ -112,7 +112,7 @@ Two runtime settings changed shape:
 
 The chat sidebar now groups conversations by Workspace by default. Each group is labeled with its directory name and ordered by newest Session, and auto-created temporary Workspaces share a single group instead of getting one each. You can pin groups to the top, and collapse state is saved per Project. Sessions created by subagents and scheduled tasks go into their own folders, and each group loads more Sessions on demand instead of fetching an unbounded list. Grouping by agent is still one toggle away.
 
-The model dropdown now lists models that have a configured key first, with the rest one click below. The collapsed sidebar is now a full eight-entry navigation rail with bilingual tooltips; before, it had no Benchmark entry at all. Custom provider groups and agents show initial-letter avatars on a background tinted by their name, with WCAG AA contrast in both themes, so same-named models in different groups are no longer indistinguishable.
+The model dropdown now lists models that have a configured key first, with the rest one click below. The collapsed sidebar is now a full eight-entry navigation rail with bilingual tooltips; before, it had no Benchmark entry at all. Custom provider groups and agents show initial-letter avatars on a background tinted by their id, with WCAG AA contrast in both themes, so same-named models in different groups are no longer indistinguishable.
 
 Chat rendering got a pass:
 
@@ -122,7 +122,7 @@ Chat rendering got a pass:
 - Expanded subagent conversations render below the tool call's own output.
 - Three mobile dropdowns that overflowed the viewport by up to 143px now stay inside it.
 
-The daily Token tooltip in the **Cost Center** follows the pointer and shows the cache hit rate. The task-stats line added when you copy a message was hardcoded in Chinese; it now goes through the dictionaries like everything else.
+The daily Token tooltip on the **Costs** page follows the pointer and shows the cache hit rate. The task-stats line added when you copy a message was hardcoded in Chinese; it now goes through the dictionaries like everything else.
 
 ### Skills
 

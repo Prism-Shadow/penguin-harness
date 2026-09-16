@@ -61,7 +61,7 @@ Each of these bugs caused a provider to return a 4xx error that the engine treat
 
 The harness gained a sandbox interface that confines shell commands along three dimensions: `fs-write`, `network` and `mask-paths`. Backends rewrite the command's argv and report honestly what they enforce. Routing fails closed: if no backend covers a requirement, the command is not started, rather than running unconfined.
 
-No backend is built into the harness. Four ship as plugin packages, published as `@prismshadow/penguin-plugin-<backend>`, which a deployment installs and names in `plugins.json`:
+No backend is built into the harness. Four ship as plugin packages named `@prismshadow/penguin-plugin-<backend>`, which a deployment installs and names in `plugins.json`:
 
 | Backend | Platform |
 | --- | --- |
@@ -102,7 +102,7 @@ Six pages, **Overview**, **Org Chart**, **Calendar**, **Tickets**, **Finance** a
 ## The board, the calendar, and who decides
 
 - The ticket board has five columns: `proposed`, `in_progress`, `review`, `done` and `rejected`.
-- The CEO is meant to propose while you decide, but this is guidance, not a rule the server enforces. The CEO's Skill and the organization's handbook tell the CEO to post one proposal in the all-hands channel and wait for the board's answer before it hires (roles, budgets, models), sets or raises a budget, rejects someone else's ticket, closes a P0 or P1 ticket without review, or does anything outside the organization.
+- The CEO is meant to propose while you decide, but this is guidance, not a rule the server enforces. The CEO's Skill and the organization's handbook tell the CEO to post one proposal in the all-hands channel and wait for your answer before it hires (roles, budgets, models), sets or raises a budget, rejects someone else's ticket, closes a P0 or P1 ticket without review, or does anything outside the organization.
 - A server-side scheduler reconciles every organization every 30 seconds, and again right after each API write. It fires due calendar events at desks, delivers channel mentions and recomputes budgets. An event that came due while the organization was paused is not run later when it resumes.
 - Ticket changes never start a run. They queue up and reach the employee at its next calendar sweep, under `## Since your last sweep`.
 - In a channel, a message reaches someone only through an `@` mention.

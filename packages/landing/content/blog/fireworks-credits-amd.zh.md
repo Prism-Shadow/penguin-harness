@@ -5,7 +5,7 @@ category: news
 excerpt: 我们与 AMD AI Developer Program 合作，为大家提供免费的 Fireworks 兑换码。本文介绍如何在 AMD 国际站或中国站申请 $50 Credits，再在 PenguinHarness 里三步用起来。
 ---
 
-我们与 **AMD AI Developer Program**（AMD 开发者计划）合作，为大家带来免费的 Fireworks 兑换码。加入计划并通过审核，就能获得一个可兑换 **$50 Fireworks AI Credits** 的兑换码。PenguinHarness 内置 Fireworks AI 网关分组，OpenAI 协议、base URL 和五个模型都已预置，额度到手就能用。
+我们与 **AMD AI Developer Program**（AMD 开发者计划）合作，为大家带来免费的 Fireworks 兑换码。加入计划并通过审核，就能拿到一个兑换码，可兑换 **$50 Fireworks AI Credits**。PenguinHarness 内置 Fireworks AI 网关分组，OpenAI 协议、base URL 和五个模型都已预置，额度到手就能用。
 
 这个计划有国际站和中国站两个站点。两边的前两步不同，从填写申请表开始，步骤完全相同。
 
@@ -63,10 +63,10 @@ AMD 会验证你的账号和申请资料，通常需要 2–3 个工作日。实
 
    ```bash
    curl -fsSL https://penguin.ooo/install.sh | sh
-   penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin，初始密码见首次启动输出）
+   penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin，登录方式见终端输出）
    ```
 
-2. 打开**模型库**页面，找到 **Fireworks AI** 分组，点击**手动设置密钥**，粘贴刚创建的 API key。分组预置了五个模型：GLM 5.2、Kimi K2.7 Code、DeepSeek V4 Pro、MiniMax M3 和 DeepSeek V4 Flash，base URL 与价格都已填好，任选一个设为默认即可。想先比较各模型的实测 TTFT 与 TPS，可以点击分组上的**测速**。
+2. 打开**模型仓库**页面，找到 **Fireworks AI** 分组，点击**统一配置 API key**，粘贴刚创建的 API key。分组预置了五个模型：GLM 5.2、Kimi K2.7 Code、DeepSeek V4 Pro、MiniMax M3 和 DeepSeek V4 Flash，base URL 与价格都已填好，任选一个设为默认即可。想先比较各模型的实测 TTFT 与 TPS，可以点击分组上的**测速**。
 3. 回到**对话**页面，把第一个任务交给 Agent，例如「分析 data.csv，输出各季度销售额汇总」。
 
 ## 参考链接

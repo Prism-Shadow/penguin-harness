@@ -5,7 +5,7 @@ category: news
 excerpt: 0.2.1 为 macOS、Windows 和 Linux 带来桌面应用，打开即已登录，数据与 CLI 共享。同时上线由 OSS 镜像提供安装包的下载页，安装和更新可以选择下载源，登录也做了加固。
 ---
 
-PenguinHarness 0.2.1 发布了，主角是桌面应用：不用终端，没有登录页，双击图标就能打开完整的 PenguinHarness。分发体验也一并改进：新的下载页从阿里云 OSS 镜像提供安装包，安装脚本和 `penguin update` 可以选择下载源，压缩失败不再卡死会话，首次启动的管理员密码也改为随机生成。
+PenguinHarness 0.2.1 发布了，主角是桌面应用：不用终端，没有登录页，双击图标就能打开完整的 PenguinHarness。分发体验也一并改进：新的下载页从阿里云 OSS 镜像提供安装包，安装脚本和 `penguin update` 可以选择下载源。此外，压缩失败不再卡死会话，首次启动的管理员密码也改为随机生成。
 
 ## 桌面应用
 
@@ -21,19 +21,19 @@ PenguinHarness 0.2.1 发布了，主角是桌面应用：不用终端，没有�
 - Windows：NSIS
 - Linux：AppImage 和 deb
 
-当前构建尚未签名。在 macOS 上首次启动时，右键点击应用并选择「打开」。在 Windows 上，遇到 SmartScreen 提示时选「更多信息 → 仍要运行」。
+0.2.1 的构建尚未签名。在 macOS 上首次启动时，右键点击应用并选择「打开」。在 Windows 上，遇到 SmartScreen 提示时选「更多信息 → 仍要运行」。
 
 ## 下载页，以及镜像到 OSS 的桌面安装包
 
-[penguin.ooo/download](https://penguin.ooo/download) 是一个经典的软件下载页：每个平台一张卡片，自动识别并标出你的系统，点一下即可下载。
+0.2.1 新增了 [penguin.ooo/download](https://penguin.ooo/download)，这是一个经典的软件下载页：每个平台一张卡片，自动识别并标出你的系统，点一下即可下载。
 
-安装包的文件名不再带版本号，所以按钮可以先指向 GitHub 的静态 `releases/latest/download` 链接。页面同时在后台读取 OSS 镜像的 `latest.json`，读取成功后，按钮切换到镜像上这个版本的固定目录，页面显示解析出的版本号，并提供开关让你手动切换下载源。桌面安装包和 CLI 包一样，逐字节镜像到阿里云 OSS。
+安装包的文件名不再带版本号，所以页面上的按钮可以先指向 GitHub 的静态 `releases/latest/download` 链接。页面刚上线时，会在后台读取 OSS 镜像的 `latest.json`，读取成功后，按钮切换到镜像上这个版本的固定目录，页面显示解析出的版本号，并提供开关让你手动切换下载源。桌面安装包和 CLI 包一样，逐字节镜像到阿里云 OSS。
 
 ## 安装脚本和 penguin update 自选下载源
 
 从 Release 页面保存的 `install.sh` 或 `install.ps1`，现在遵循与 penguin.ooo 安装脚本相同的策略：`PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`，`auto` 优先使用 OSS，并回退到 GitHub 上的同一版本。新发布的安装脚本还会内嵌自己的 Release tag，无论保存多久，下载的都是与之匹配的版本，不会悄悄跟着后来的新版本走。
 
-`penguin update` 遵循同样的规则。升级不再从 GitHub 起步：版本发现优先读取 OSS 的 `latest.json`，`oss` 和 `github` 两种模式绝不回退，失败信息也会用你的语言显示。
+`penguin update` 遵循同样的规则。升级时不再先访问 GitHub：查询最新版本时优先读取 OSS 的 `latest.json`，`oss` 和 `github` 两种模式绝不回退，失败信息也会用你的语言显示。
 
 ## 压缩失败不再卡死会话
 
@@ -61,15 +61,14 @@ PenguinHarness 0.2.1 发布了，主角是桌面应用：不用终端，没有�
 
 ### 对话页
 
-- 大纲刻度条只显示当前位置前后各 20 轮，也不再与输入框重叠。
+- 对话索引的刻度条只显示当前位置前后各 20 轮，也不再与输入框重叠。
 - 成本统计不再在 Task 之间消失。
 - 上传的文件附件显示为你消息的一部分，靠右对齐，时间戳样式与图片一致，插话标签里也能看到。
 - ANSI 颜色代码不再混进工具输出。
 
 ## 其余改进
 
-- 服务端最后两个磁盘 IO 热点已经消除：每 30 秒一次的调度器 tick 和 schedules 路由改为读取缓存，缓存只在文件变化时刷新。
-- `GET /messages` 支持游标分页，Web App 加载对话时先取最新的消息。
+- 服务端最后两个磁盘 IO 热点已经消除。每 30 秒一次的调度器 tick 和 schedules 路由改为读取缓存，缓存只在文件变化时刷新；`GET /messages` 支持游标分页，Web App 加载对话时因此先取最新的消息。
 - `hono` 升级到不受 CORS 预检 ReDoS 安全通告影响的版本。
 - OpenRouter 模型目录新增 `qwen/qwen3.8-max`。
 
@@ -86,4 +85,4 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web
 ```
 
-Windows 上请在 PowerShell 中运行 `irm https://penguin.ooo/install.ps1 | iex`。Node >= 24 的环境也可以用 `npm install -g @prismshadow/penguin-cli` 安装。升级已有安装，运行 `penguin update` 即可，它现在同样通过镜像下载。
+Windows 上请在 PowerShell 中运行 `irm https://penguin.ooo/install.ps1 | iex`。Node >= 24 的环境也可以用 `npm install -g @prismshadow/penguin-cli` 安装。在 Linux 和 macOS 上升级已有安装，运行 `penguin update` 即可，它现在同样通过镜像下载。

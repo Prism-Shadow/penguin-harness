@@ -5,7 +5,7 @@ category: news
 excerpt: 0.2.1 adds a desktop app for macOS, Windows and Linux that opens already signed in and shares its data with the CLI. It also brings a download page backed by an OSS mirror, download-source control for installs and updates, and a hardened login.
 ---
 
-PenguinHarness 0.2.1 is out, and the headline is the desktop app: no terminal and no login page, just double-click an icon to open the full PenguinHarness. Around it, distribution improves too. A new download page serves installers from an Alibaba Cloud OSS mirror, install scripts and `penguin update` can choose their download source, compaction failures no longer trap Sessions, and the first-start admin password is now random.
+PenguinHarness 0.2.1 is out, and the headline is the desktop app: no terminal and no login page, just double-click an icon to open the full PenguinHarness. Around it, distribution improves too: a new download page serves installers from an Alibaba Cloud OSS mirror, and install scripts and `penguin update` can choose their download source. Compaction failures no longer trap Sessions, and the first-start admin password is now random.
 
 ## The desktop app
 
@@ -21,13 +21,13 @@ Installers are available for:
 - Windows: NSIS
 - Linux: AppImage and deb
 
-Current builds are unsigned. On first launch on macOS, right-click the app and choose "Open". On Windows, get past SmartScreen with "More info → Run anyway".
+The 0.2.1 builds are unsigned. On first launch on macOS, right-click the app and choose "Open". On Windows, get past SmartScreen with "More info → Run anyway".
 
 ## A download page, with desktop installers on the OSS mirror
 
-[penguin.ooo/download](https://penguin.ooo/download) is a classic software download page: one card per platform, with your system detected and marked, and a click to download.
+0.2.1 adds [penguin.ooo/download](https://penguin.ooo/download), a classic software download page: one card per platform, with your system detected and marked, and a click to download.
 
-Installers now have version-less file names, so the buttons can start on GitHub's static `releases/latest/download` links. In the background, the page reads the OSS mirror's `latest.json`. If that succeeds, the buttons switch to the mirror's fixed per-version directory, and the page shows the resolved version with a toggle to switch the source by hand. Desktop installers are mirrored byte for byte to Alibaba Cloud OSS, just like the CLI bundles.
+Installers now have version-less file names, which let the page's buttons start on GitHub's static `releases/latest/download` links. At launch, the page read the OSS mirror's `latest.json` in the background. If that succeeded, the buttons switched to the mirror's fixed per-version directory, and the page showed the resolved version with a toggle to switch the source by hand. Desktop installers are mirrored byte for byte to Alibaba Cloud OSS, just like the CLI bundles.
 
 ## Install scripts and penguin update choose their download source
 
@@ -68,8 +68,7 @@ The **Trajectories** page shares the sidebar's grouping components, pages its se
 
 ## Everything else
 
-- The server's last two disk-IO hotspots are gone: the 30-second scheduler tick and the schedules routes read from caches that refresh only when files change.
-- `GET /messages` supports cursor pagination, and the Web App loads a conversation from its newest messages first.
+- The server's last two disk-IO hotspots are gone. The 30-second scheduler tick and the schedules routes read from caches that refresh only when files change, and `GET /messages` supports cursor pagination, so the Web App loads a conversation from its newest messages first.
 - `hono` moves past the CORS-preflight ReDoS advisory.
 - The OpenRouter catalog adds `qwen/qwen3.8-max`.
 
@@ -86,4 +85,4 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web
 ```
 
-On Windows, run `irm https://penguin.ooo/install.ps1 | iex` in PowerShell. With Node >= 24, you can also install with `npm install -g @prismshadow/penguin-cli`. To upgrade an existing install, run `penguin update`, which now downloads through the mirror as well.
+On Windows, run `irm https://penguin.ooo/install.ps1 | iex` in PowerShell. With Node >= 24, you can also install with `npm install -g @prismshadow/penguin-cli`. On Linux and macOS, upgrade an existing install with `penguin update`, which now downloads through the mirror as well.

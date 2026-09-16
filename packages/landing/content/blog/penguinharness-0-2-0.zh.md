@@ -5,7 +5,7 @@ category: news
 excerpt: 0.2.0 让长时间运行的 Agent 更好用：对话页新增历史输入回填、吸顶的运行标题和迷你地图，超出上限的工具输出可以找回，插话刷新后依然保留。安装包现在优先从阿里云 OSS 镜像下载。
 ---
 
-PenguinHarness 0.2.0 发布了，这一版围绕长时间运行的工作。长对话多了三种导航方式，超出上限的工具输出可以找回，插话在刷新页面后也不会丢。每个 Release 现在为每个平台只提供一个安装包，并镜像到阿里云 OSS；模型目录也换成了当前的阵容。
+PenguinHarness 0.2.0 发布了，这一版的重点是长时间运行的任务。长对话多了三种导航方式，超出上限的工具输出可以找回，插话在刷新页面后也不会丢。每个 Release 现在为每个平台只提供一个安装包，并镜像到阿里云 OSS；模型目录也换成了当前的阵容。
 
 ## 浏览长对话
 
@@ -27,13 +27,13 @@ PenguinHarness 0.2.0 发布了，这一版围绕长时间运行的工作。长�
 
 在由 Agent 运行的会话里，单次调用超出上限的输出现在会保存到会话的 scratchpad 中。模型、Web App 和 CLI 看到的截断结果末尾会附上这个文件的路径，模型需要时可以按路径读取其余内容。这不需要新工具，协议不变，可见的上限也不变。
 
-在 Windows 上，harness 交给模型的所有路径现在都统一使用正斜杠。
+在 Windows 上，Harness 交给模型的所有路径现在都统一使用正斜杠。
 
 ## 刷新不丢的插话，以及更快的会话列表
 
 运行中发送的插话，现在刷新页面后仍会保留、内容可见，并且只会送达 Agent 一次。和图片一样，文件附件现在也可以随插话发送。
 
-侧栏的会话列表现在直接从数据库读取，分组内的会话和分组本身都分页加载，Agent 和 Workspace 再多的 Project 也能保持流畅、便于浏览。CLI 会话默认不再显示在列表里，用户菜单中的开关可以让它们重新出现。
+侧栏的会话列表现在直接从数据库读取，分组内的会话和分组本身都分页显示，Agent 和 Workspace 再多的 Project 也能保持流畅、便于浏览。CLI 会话默认不再显示在列表里，打开用户菜单中的**显示 CLI 会话**开关，就能让它们重新出现。
 
 ## 每个平台一个安装包，镜像到阿里云 OSS
 
@@ -48,7 +48,7 @@ PenguinHarness 0.2.0 发布了，这一版围绕长时间运行的工作。长�
 
 ## 模型目录换到当前阵容
 
-qianwenai 分组换到当前阵容：新增 `qwen3.8-max` 和 `deepseek-v4-flash-0731`，移除 `qwen3.8-max-preview` 等已下线的条目。OpenRouter 新增 `deepseek/deepseek-v4-flash-0731` 和 `openai/gpt-5.6-luna`，OpenRouter 的全部价格改为从 models API 重新读取。
+qianwenai 分组换到当前阵容：新增 `qwen3.8-max` 和 `deepseek-v4-flash-0731`，移除 `qwen3.8-max-preview` 等已下线的条目。OpenRouter 新增 `deepseek/deepseek-v4-flash-0731` 和 `openai/gpt-5.6-luna`，OpenRouter 的全部价格也按它的 models API 重新核对了一遍。
 
 新建的 Project 默认使用 `deepseek-v4-flash`。已有 Project 保留原来的模型和默认模型。
 
@@ -57,7 +57,7 @@ qianwenai 分组换到当前阵容：新增 `qwen3.8-max` 和 `deepseek-v4-flash
 - `read_file` 和 `edit_file` 遇到不存在的路径时会给出诊断，不再只返回一句「File not found」：它们会指出最深一级仍然存在的上级路径、第一个缺失的路径段，以及名称最接近的条目。
 - 手动检查更新会反馈每一种结果：检查中、已是最新、发现新版本或检查失败。
 - 工具卡片的副标题等内容完整后才显示，不再随参数流式传入而抖动。
-- 评估中心的题目详情把目标 Agent 的任务材料和给评审看的评分标准分开展示。
+- 评估中心的题目详情把目标 Agent 拿到的任务材料和评分标准分开展示，评分标准对目标 Agent 始终不可见。
 - 主对话里的文件摘要现在等 Task 结束后才出现：每个完成的 Task 一张卡片。
 
 完整清单逐条见 [changelog/0.2.0](https://github.com/Prism-Shadow/penguin-harness/tree/main/changelog/0.2.0)。
@@ -71,4 +71,4 @@ penguin web
 
 Windows 上请在 PowerShell 中运行 `irm https://penguin.ooo/install.ps1 | iex`。Node >= 24 的环境也可以从 npm 安装：`npm install -g @prismshadow/penguin-cli`。
 
-升级只需重新运行安装器；0.1.3 及以上版本也可以直接运行 `penguin update`。
+升级只需重新运行安装器；在 Linux 和 macOS 上，0.1.3 及以上版本也可以直接运行 `penguin update`。

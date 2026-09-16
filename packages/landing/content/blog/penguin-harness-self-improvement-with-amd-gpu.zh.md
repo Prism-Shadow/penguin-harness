@@ -7,7 +7,7 @@ excerpt: "用 AMD GPU 上的本地 Qwen3:8B 和 Fireworks API 上的模型，跑
 description: "介绍 PenguinHarness 如何通过 Benchmark、Trace、可编辑的 Agent State 与 Snapshot 回滚构建自我进化闭环，并用本地 Qwen3:8B 与 Fireworks API 完成一次双模型实验。"
 ---
 
-*AMD × PrismShadow——高钰洋、张宁（AMD），郑耀威（PrismShadow）。*
+AMD × PrismShadow——高钰洋、张宁（AMD），郑耀威（PrismShadow）。
 
 在本教程中，你会用 [PenguinHarness](https://github.com/Prism-Shadow/penguin-harness) 跑通一个完整的自我进化闭环：创建一个小 Agent，用 Benchmark 评估它，让 Optimizer 根据真实 Trace 中的证据改进它，分数更高才保留新版本。被测 Agent 使用 AMD GPU 上的 Qwen3:8B；负责创建、评估和优化的 Agent 则使用 Fireworks API 上的模型。
 
@@ -22,7 +22,7 @@ description: "介绍 PenguinHarness 如何通过 Benchmark、Trace、可编辑�
 
 PenguinHarness 是一个开源的 Agent Harness。它把模型接入、Agent 配置、Workspace 工具、Session、Trace、Skill 和 Benchmark 放在同一套运行环境中，同时提供 CLI 与 Web App；在线模型和通过 OpenAI 兼容端点暴露的本地模型，都可以用作推理后端。
 
-PenguinHarness 把 Agent 的行为定义为一组可读、可编辑、带版本的状态文件，而不是一段只能由开发者手工维护的固定 Prompt。角色说明、工作流程、可复用的 Skill 和运行参数都属于 Agent State，每次任务也都会留下完整的 Session 与 Trace。因此，一个 Agent 可以先评估另一个 Agent，再根据真实运行记录修改它的 State，最后用同一套评估验证修改是否有效。
+PenguinHarness 把 Agent 的行为定义为一组可读、可编辑、带版本的状态文件，而不是一段只能由开发者手工维护的固定提示词。角色说明、工作流程、可复用的 Skill 和运行参数都属于 Agent State，每次任务也都会留下完整的 Session 与 Trace。因此，一个 Agent 可以先评估另一个 Agent，再根据真实运行记录修改它的 State，最后用同一套评估验证修改是否有效。
 
 这就是 PenguinHarness 所说的自我进化：它不重新训练模型，也不更新模型权重，而是改进模型外围的 Agent Harness，并用可重复的测量结果决定新版本能否保留。
 
@@ -56,7 +56,7 @@ Agent State 中主要的可编辑部分包括：
 - `agent-evaluation`：隔离执行一道题目的一次运行并打分；
 - `agent-optimization`：分析基线和 Trace，修改 Agent State，评估候选版本并处理回滚。
 
-关键不只是让一个模型改写另一个模型的 Prompt，而是让每次修改都在相同条件下重新评估。Benchmark 提供测量，Trace 提供证据，快照提供恢复点，State 版本号则把每个分数对应到实际产生它的 Agent State。优化没有带来严格提升时，候选修改就不算一次成功的进化。
+关键不只是让一个模型改写另一个模型的提示词，而是让每次修改都在相同条件下重新评估。Benchmark 提供测量，Trace 提供证据，快照提供恢复点，State 版本号则把每个分数对应到实际产生它的 Agent State。优化没有带来严格提升时，候选修改就不算一次成功的进化。
 
 ### 两个模型，各司其职
 
@@ -65,13 +65,13 @@ Agent State 中主要的可编辑部分包括：
 | 用途 | Agent | 模型 |
 |---|---|---|
 | 创建 Agent、设计 Benchmark 和执行优化 | `default_agent` | Fireworks API 模型 |
-| 接受评估和改进 | `meeting-summary-agent` | AMD GPU 上的 Qwen3:8B |
+| 接受评估和改进 | `meeting_summary_agent` | AMD GPU 上的 Qwen3:8B |
 
 Qwen3:8B 通过 Ollama 在 AMD GPU 上运行，作为 Target Agent 的模型；通过 Fireworks API 调用的模型运行 `default_agent`，负责创建 Agent、设计 Benchmark 和执行优化。你会先测出 v1 的基线，再让 Optimizer 根据真实 Trace 改进 Agent，最后由同一个 Benchmark 决定接受新版本还是回滚。
 
 ## 本文要完成的实验
 
-你要创建的是 `meeting-summary-agent`。它读取少量文本文件，并在 Workspace 中生成下面这个文件：
+你要创建的是 `meeting_summary_agent`。它读取少量文本文件，并在 Workspace 中生成下面这个文件：
 
 ```markdown
 # 摘要
@@ -114,7 +114,7 @@ curl -fsSL https://penguin.ooo/install.sh | sh
 penguin web
 ```
 
-在 Web App 中打开**模型库**页面，添加本地 Qwen3:8B：
+在 Web App 中打开**模型仓库**页面，添加本地 Qwen3:8B：
 
 <img width="491" height="481" alt="PenguinHarness 本地 Qwen3:8B 模型配置" src="https://github.com/user-attachments/assets/a0d866e9-21e6-4b89-8ec1-b50710aed0db" />
 
@@ -122,7 +122,7 @@ penguin web
 
 <img width="498" height="479" alt="PenguinHarness Fireworks API 模型配置" src="https://github.com/user-attachments/assets/3b392317-615d-46d3-95c9-f9e3b4ad61a5" />
 
-这样，新建的 `default_agent` 顶层对话会使用 Project 默认模型，也就是 Fireworks 模型；Benchmark 运行 `meeting-summary-agent` 时，则显式指定下面这组本地模型配置：
+这样，新建的 `default_agent` 顶层对话会使用 Project 默认模型，也就是 Fireworks 模型；Benchmark 运行 `meeting_summary_agent` 时，则显式指定下面这组本地模型配置：
 
 ```text
 provider: custom
@@ -135,17 +135,17 @@ model_id: qwen3:8b
 
 这一步创建 Target Agent 的第一个版本，并保存一份快照作为恢复点。
 
-1. 在 Web App 中创建一个名为 `meeting-summary-agent` 的新 Agent。
+1. 在 Web App 中创建一个新 Agent，Agent id 填 `meeting_summary_agent`。Agent id 只能包含小写字母、数字和下划线，带短横线的 id 会被拒绝。
 2. 与 `default_agent` 新建一个顶层对话，模型选择刚刚设为 Project 默认模型的 Fireworks 模型。
-3. 调用 `agent-creation` Skill，并提交下面的 Prompt。
+3. 调用 `agent-creation` Skill（0.2.4 起更名为 `agent-initialization`），并提交下面的提示词。
 
-这段 Prompt 会生成 `meeting-summary-agent` 的 v1 版本。v1 只定义基本职责和安全边界，不提前写入完整的总结流程，这样 Benchmark 才能在真实运行中暴露它缺少的工作习惯。
+这段提示词会生成 `meeting_summary_agent` 的 v1 版本。v1 只定义基本职责和安全边界，不提前写入完整的总结流程，这样 Benchmark 才能在真实运行中暴露它缺少的工作习惯。
 
 <details>
-<summary><strong>展开：创建 v1 Agent 的完整 Prompt</strong></summary>
+<summary><strong>展开：创建 v1 Agent 的完整提示词</strong></summary>
 
 ```text
-请使用 agent-creation Skill 配置 Agent `meeting-summary-agent`。
+请使用 agent-creation Skill 配置 Agent `meeting_summary_agent`。
 
 目标：
 这是一个简单的本地文件总结 Agent。它读取当前工作区中的任务说明和文本文件，并创建题目要求的总结文件。
@@ -177,9 +177,9 @@ model_id: qwen3:8b
 
 </details>
 
-创建完成后，可以在 Agent 列表中看到新 Agent：
+创建完成后，可以在 Agent 列表中看到新 Agent。下图来自最初的那次运行，当时的 Agent id 是 `meeting-summary-agent`：
 
-<img width="1376" height="464" alt="Agent 列表中的 meeting-summary-agent" src="https://github.com/user-attachments/assets/7e3f70d2-2164-4f90-8507-6c2d1cd9085c" />
+<img width="1376" height="464" alt="Agent 列表中的 Meeting Summary Agent" src="https://github.com/user-attachments/assets/7e3f70d2-2164-4f90-8507-6c2d1cd9085c" />
 
 打开这个 Agent 的设置页面，在**概览**标签页点击**导出快照**，导出 v1 快照。后续候选版本失败时，这份快照就是恢复点；在它存在之前，`agent-optimization` Skill 不会改动 Agent State：
 
@@ -189,7 +189,7 @@ model_id: qwen3:8b
 
 这一步创建并校准 Benchmark，然后跑完 v1 的完整基线。
 
-仍然在使用 Fireworks 模型的 `default_agent` 顶层对话中调用 `benchmark-design` Skill，并提交下面的 Prompt。它会创建并校准 v1 版本的 Benchmark，Benchmark ID 为：
+仍然在使用 Fireworks 模型的 `default_agent` 顶层对话中调用 `benchmark-design` Skill，并提交下面的提示词。它会创建并校准 v1 版本的 Benchmark，Benchmark ID 为：
 
 ```text
 simple-file-summary-2case-v1
@@ -198,13 +198,13 @@ simple-file-summary-2case-v1
 两道题目的满分合计 100 分，每道题目运行三次。Target Agent 只能看到公开的题干，看不到私有评分细则。
 
 <details>
-<summary><strong>展开：创建并校准 Benchmark 的完整 Prompt</strong></summary>
+<summary><strong>展开：创建并校准 Benchmark 的完整提示词</strong></summary>
 
 ```text
 请使用 benchmark-design Skill，为下面的 Test Agent 创建并校准 Benchmark。
 
 Test Agent:
-meeting-summary-agent
+meeting_summary_agent
 
 Benchmark ID:
 simple-file-summary-2case-v1
@@ -307,16 +307,16 @@ Rubric 应检查：
 
 这一步由 Optimizer 分析全部六次运行及其关联的 Trace，再根据证据对 Agent State 做一处小的修改。
 
-在使用 Fireworks 模型的 `default_agent` 顶层对话中调用 `agent-optimization` Skill，并提交下面的 Prompt。它要求 Optimizer 提出一个可泛化的行为假设，再修改 `AGENTS.md`，或者创建一个职责明确、范围有限的 Skill。
+在使用 Fireworks 模型的 `default_agent` 顶层对话中调用 `agent-optimization` Skill，并提交下面的提示词。它要求 Optimizer 提出一个可泛化的行为假设，再修改 `AGENTS.md`，或者创建一个职责明确、范围有限的 Skill。
 
 <details>
-<summary><strong>展开：优化 Agent 的完整 Prompt</strong></summary>
+<summary><strong>展开：优化 Agent 的完整提示词</strong></summary>
 
 ```text
 请使用 agent-optimization Skill，以 Benchmark optimization mode 优化目标 Agent。
 
 Test Agent:
-meeting-summary-agent
+meeting_summary_agent
 
 Benchmark:
 simple-file-summary-2case-v1
@@ -367,7 +367,7 @@ candidate 总分 <= reference 总分
 → 回滚到 v1
 ```
 
-这次运行中，优化后的 Agent 在 `AGENTS.md` 里新增了工作流程，重新运行全部题目，得到新的分数：
+这次运行中，Optimizer 在 `AGENTS.md` 里新增了工作流程，重新运行全部题目，并报告了新的分数：
 
 <img width="857" height="413" alt="Agent 优化结果与更新后的 Agent State" src="https://github.com/user-attachments/assets/f046ca42-e7ef-4063-8c10-babce816eba4" />
 

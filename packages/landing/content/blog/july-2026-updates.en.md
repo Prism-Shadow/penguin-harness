@@ -14,7 +14,7 @@ This month, a batch of updates aimed at stable self-evolution landed on main. Ag
 
 ## Evaluation Center
 
-- **Benchmark scoreboards.** Bundled suites come with per-case scores and trend curves. Evaluations are charted per model, and each run links straight to its Session's Trace.
+- **Benchmark scoreboards.** The Evaluation Center gains bundled suites, per-case scores and trend curves. Evaluations are charted per model, and each run links straight to its Session's Trace.
 - **Evaluations record the model.** The model reference moved from `benchmark_config` onto each evaluation, stored as a `provider` / `model_id` pair, so comparing models is direct.
 
 ## Model system

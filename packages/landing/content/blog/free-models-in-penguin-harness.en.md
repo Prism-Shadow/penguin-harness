@@ -47,20 +47,20 @@ Two decisions in the catalog are worth knowing:
 
 1. Create an API key at [openrouter.ai](https://openrouter.ai/). The free tier needs no payment method.
 2. Open the **Models** page:
-   - A new Project already has the presets. Click **Set key** on the OpenRouter group and paste the key once for the whole group.
+   - A new Project already has the presets. Click **Set API key for group** on the OpenRouter group and paste the key once for the whole group.
    - An existing Project picks up the new rows with one click on **Sync presets**, next to the search box. Locally added models and stored API keys stay as they are.
 3. Or add a model from the terminal:
 
-```bash
-penguin config model add --provider openrouter --model-id inclusionai/ling-3.0-flash:free --api-key <your-key> --set-default
-penguin config model list
-```
+   ```bash
+   penguin config model add --provider openrouter --model-id inclusionai/ling-3.0-flash:free --api-key <your-key> --set-default
+   penguin config model list
+   ```
 
 Set a free row as the Project default, or keep your default and pick a free row in the model picker when you start a Session. Models are chosen per Session, not tied to an agent. Free rows carry a light-yellow **Free** badge on the **Models** page and in the model picker, so they are easy to spot.
 
 ## What free gives you, and what it does not
 
-Free models let you try the full harness: Workspaces, tools, Skills, subagents, and a **Cost Center** that reads $0. They also handle light automation. The limits:
+Free models let you try the full harness: Workspaces, tools, Skills, subagents, and a **Costs** page that reads $0. They also handle light automation. The limits:
 
 - **Rate limits.** OpenRouter's free tier caps requests per minute and per day. A long Session or a Benchmark run can hit those caps.
 - **Data policy.** Free models run under OpenRouter's free-model terms, and the upstream provider may use your prompts as its terms allow. Send nothing you would not share.
