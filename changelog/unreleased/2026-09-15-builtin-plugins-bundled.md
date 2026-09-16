@@ -16,6 +16,10 @@ CommonJS and type copies behind the Discord bot's route. Enough small transfers 
   DSH chain; those packages move to `devDependencies`. The prefix is now 167 files (6MB).
 - What stays a runtime dependency is a native module: `koffi` and the landlock launcher, both
   sandbox-dsh's, whose per-platform binaries cannot live inside a bundle.
+- Those binaries now ship for every target a push can reach — Linux x64/arm64, Windows x64 and
+  macOS arm64 — not only for the machine that ran the build. A prefix built on Linux carried no
+  Windows binary, so sandbox-dsh's Windows runner failed there with "Cannot find the native Koffi
+  module"; the platform packages each native dependency declares are installed alongside it.
 - `scripts/build-plugins.mjs` refuses a builtin plugin that declares any other runtime
   dependency, naming it, before anything is packed.
 - **Assets travel as archives.** The deploy packs every package it pushes — each package of
