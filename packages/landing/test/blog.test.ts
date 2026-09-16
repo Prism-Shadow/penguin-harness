@@ -96,7 +96,7 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   it("reads the pinned flag and sorts the pinned post first", () => {
     for (const locale of ["en", "zh"] as const) {
       const posts = postsFor(locale);
-      expect(posts.length).toBe(21);
+      expect(posts.length).toBe(24);
       // The launch post stays the single pinned post; newer posts sort under it by date.
       expect(posts.filter((p) => p.pinned).map((p) => p.slug)).toEqual([
         "introducing-penguinharness",
@@ -111,6 +111,9 @@ describe("frontmatter mapping (author / pinned / category)", () => {
 
   it("filters by the practice category, newest first", () => {
     expect(postsFor("en", "practice").map((p) => p.slug)).toEqual([
+      // Both share 2026-09-16, so slug ascending is the tie-break.
+      "connect-agents-to-feishu-qq-telegram-wechat",
+      "create-evaluate-evolve-agents",
       "natural-language-training-loop",
       "penguin-harness-self-improvement-with-amd-gpu",
       "local-agents-on-amd-gpus",
@@ -138,7 +141,8 @@ describe("frontmatter mapping (author / pinned / category)", () => {
 
   it("filters by the perspectives category", () => {
     expect(postsFor("en", "perspectives").map((p) => p.slug)).toEqual([
-      // All three share 2026-07-22, so slug ascending is the tie-break.
+      "agent-company-mode",
+      // The next three share 2026-07-22, so slug ascending is the tie-break.
       "ai-infrastructure-past-present-future",
       "easiest-way-to-build-ai-agents-2026",
       "simple-harness-is-all-you-need",
