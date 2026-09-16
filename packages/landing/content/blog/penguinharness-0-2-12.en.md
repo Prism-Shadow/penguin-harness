@@ -1,32 +1,11 @@
 ---
-title: "PenguinHarness 0.2.12: company mode, a rebuilt Evaluation Center, a working file manager, and a tray icon"
+title: "PenguinHarness 0.2.12: a rebuilt Evaluation Center, a working file manager, a tray icon, and a company-mode beta"
 date: 2026-09-15
 category: news
-excerpt: A Project can become an organization. Company mode — a beta, off until an admin turns it on — gives a Project's Agents a CEO, a reporting tree, a calendar, a five-column ticket board and channels, each of them a file on disk. Beside it, a Benchmark became a peer of an agent rather than something an agent owns, the Workspace browser grew a context menu and lost its size ceilings, a running tool call can be handed to the background, and the desktop app keeps working from the system tray after you close its window. Three gateway bugs that used to end a task mid-run are gone.
+excerpt: The Evaluation Center was rebuilt around a Benchmark that became a peer of an agent rather than something an agent owns. The Workspace browser grew a context menu and lost its size ceilings, the desktop app keeps working from the system tray after you close its window, and a running tool call can be handed to the background. Three gateway bugs that used to end a task mid-run are gone. Last, a Project can become an organization: company mode — a beta, off until an admin turns it on — gives a Project's Agents a CEO, a reporting tree, a calendar, a five-column ticket board and channels, each of them a file on disk.
 ---
 
-PenguinHarness 0.2.12 is the release where a Project can become an organization: a CEO that proposes and a human who decides, with the whole company living as files under the Project. The rest of the release is the workbench around it — the Evaluation Center rebuilt around the loop it exists to serve, the Files panel turned into something you can actually manage a Workspace with, a tray icon for the desktop app, and three provider-gateway bugs that used to stop a Task where it stood.
-
-## A Project's Agents can become a company
-
-- Company mode is a **beta, and off until an admin turns it on** in System settings › Server › Company mode. It takes effect the moment it is flipped, and it is marked Beta both in the mode switch and under the master switch — it is new, and you will find things.
-- An organization has a CEO at the root of a reporting tree, one standing desk session per employee, a calendar, a ticket board, channels, and a monthly budget per employee that warns at 80% and pauses that employee's calendar at 100%.
-- Every one of those is a file under `<project>/organizations/<org_id>/`. SQLite holds only caches, rebuilt from those files on every pass.
-- Creating an organization takes one sentence — the mission — and produces only the CEO, with a default budget of 100 USD/month compared on the cumulative line, so that one number caps the whole company from the first minute.
-- Six pages — overview, org chart, calendar, tickets, finance, handbook — sit behind a Development | Company switch above the Project switcher, and `penguin org` covers the whole API from the command line, with `--json` everywhere.
-
-![Company mode's overview page: the inbox, today's schedule and the budget alerts](/blog-assets/penguinharness-0-2-12-company-overview-en.png)
-
-## The board, the calendar, and who decides
-
-- The ticket board has five columns: `proposed`, `in_progress`, `review`, `done`, `rejected`.
-- The CEO proposes — how it reads the mission, the first tickets, who to hire with what budget and model, how to split the workspace — and you decide. Hiring, budgets, and closing a P0 or P1 ticket all wait for your confirmation in the all-hands channel.
-- A server-side scheduler reconciles every organization every 30 seconds and immediately after an API write: it fires due calendar events at desks, delivers channel mentions, and recomputes budgets. An event that came due while the organization was paused is not backfilled when it resumes.
-- Ticket changes never start a run. They queue and arrive in the employee's next calendar sweep, under `## Since your last sweep`.
-- In a channel, only an `@` mention reaches anyone.
-- A desk or ticket conversation is an ordinary conversation — the same message list, tool cards, approvals and composer as development mode. Company mode has no chat view of its own.
-
-![The five-column ticket board: proposed, in progress, review, done and rejected](/blog-assets/penguinharness-0-2-12-company-tickets-en.png)
+PenguinHarness 0.2.12 is a release about the workbench: the Evaluation Center rebuilt around the loop it exists to serve, the Files panel turned into something you can actually manage a Workspace with, a tray icon for the desktop app, and three provider-gateway bugs that used to stop a Task where it stood. Behind an admin switch it also opens a beta — a Project can become an organization, with a CEO that proposes, a human who decides, and the whole company living as files under the Project.
 
 ## The Evaluation Center, rebuilt around the loop
 
@@ -49,6 +28,12 @@ PenguinHarness 0.2.12 is the release where a Project can become an organization:
 
 ![The Files panel with its context menu open over a tree row](/blog-assets/penguinharness-0-2-12-files-panel-en.png)
 
+## The desktop app stays running when you close the window
+
+- It takes a place in the system tray on Windows, macOS and Linux, and closing the main window hides it there by default, leaving the embedded server and its background tasks running.
+- Left click brings the window back; right click offers Open, New Session, Models, a **Keep running in the tray when the window closes** checkbox, and Quit. A **Tray icon** switch in Settings › Appearance turns it off with no restart.
+- **Show in folder** joins the Files panel's preview header, drawn only in the desktop app's own window and enforced server-side — a browser signed into the same server does not get it, even when it is running on that very machine. macOS and Windows select the file; Linux opens the directory.
+
 ## Send a running tool call to the background
 
 - While an `exec_command` or `run_subagent` is executing, its row offers **Send to background**: the call closes with a `process_id` or `subagent_id`, nothing is killed, and the turn continues instead of waiting out the command.
@@ -56,12 +41,6 @@ PenguinHarness 0.2.12 is the release where a Project can become an organization:
 - The action appears once the call has been running for ten seconds, so a command that returns in a few seconds no longer flashes it and takes it away again.
 
 ![A running exec_command row offering Send to background](/blog-assets/penguinharness-0-2-12-send-to-background-en.png)
-
-## The desktop app stays running when you close the window
-
-- It takes a place in the system tray on Windows, macOS and Linux, and closing the main window hides it there by default, leaving the embedded server and its background tasks running.
-- Left click brings the window back; right click offers Open, New Session, Models, a **Keep running in the tray when the window closes** checkbox, and Quit. A **Tray icon** switch in Settings › Appearance turns it off with no restart.
-- **Show in folder** joins the Files panel's preview header, drawn only in the desktop app's own window and enforced server-side — a browser signed into the same server does not get it, even when it is running on that very machine. macOS and Windows select the file; Linux opens the directory.
 
 ## Three gateway bugs that used to end a task mid-run
 
@@ -82,6 +61,27 @@ PenguinHarness 0.2.12 is the release where a Project can become an organization:
 - **Atria-Dawn-Preview** joins the custom group: Anthropic Messages, 256K context, text only.
 - The free **dots-3-note-preview** joins the TokenDance group: 512K context, vision.
 - Protocol detection stopped taking a typed URL literally. An extra `/v1`, a missing one, or a whole endpoint path copied out of a provider's docs all detect correctly now, and the Models page writes the corrected URL back into the field.
+
+## A Project's Agents can become a company
+
+- Company mode is a **beta, and off until an admin turns it on** in System settings › Server › Company mode. It takes effect the moment it is flipped, and it is marked Beta both in the mode switch and under the master switch — it is new, and you will find things.
+- An organization has a CEO at the root of a reporting tree, one standing desk session per employee, a calendar, a ticket board, channels, and a monthly budget per employee that warns at 80% and pauses that employee's calendar at 100%.
+- Every one of those is a file under `<project>/organizations/<org_id>/`. SQLite holds only caches, rebuilt from those files on every pass.
+- Creating an organization takes one sentence — the mission — and produces only the CEO, with a default budget of 100 USD/month compared on the cumulative line, so that one number caps the whole company from the first minute.
+- Six pages — overview, org chart, calendar, tickets, finance, handbook — sit behind a Development | Company switch above the Project switcher, and `penguin org` covers the whole API from the command line, with `--json` everywhere.
+
+![Company mode's overview page: the inbox, today's schedule and the budget alerts](/blog-assets/penguinharness-0-2-12-company-overview-en.png)
+
+## The board, the calendar, and who decides
+
+- The ticket board has five columns: `proposed`, `in_progress`, `review`, `done`, `rejected`.
+- The CEO proposes — how it reads the mission, the first tickets, who to hire with what budget and model, how to split the workspace — and you decide. Hiring, budgets, and closing a P0 or P1 ticket all wait for your confirmation in the all-hands channel.
+- A server-side scheduler reconciles every organization every 30 seconds and immediately after an API write: it fires due calendar events at desks, delivers channel mentions, and recomputes budgets. An event that came due while the organization was paused is not backfilled when it resumes.
+- Ticket changes never start a run. They queue and arrive in the employee's next calendar sweep, under `## Since your last sweep`.
+- In a channel, only an `@` mention reaches anyone.
+- A desk or ticket conversation is an ordinary conversation — the same message list, tool cards, approvals and composer as development mode. Company mode has no chat view of its own.
+
+![The five-column ticket board: proposed, in progress, review, done and rejected](/blog-assets/penguinharness-0-2-12-company-tickets-en.png)
 
 ## Also in this release
 
