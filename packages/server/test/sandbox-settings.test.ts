@@ -40,6 +40,8 @@ function backend(seen: Seen[]): ModuleDef {
             name: "test-backend",
             dimensions: ["fs-write", "network", "mask-paths"],
           },
+          // Installed for another platform: it declines here, and says nothing on the card.
+          { id: "elsewhere.provider", name: "other-platform", dimensions: ["fs-write"] },
         ],
         "PluginConfigProvider.groups": [
           {
@@ -57,6 +59,7 @@ function backend(seen: Seen[]): ModuleDef {
       return {
         api: {},
         bind: {
+          "elsewhere.provider": Promise.resolve(null),
           "test.provider": {
             dimensions: ["fs-write", "network", "mask-paths"],
             confine(argv: readonly string[], policy: SandboxPolicy) {
@@ -94,7 +97,7 @@ describe("sandbox settings group", () => {
     for (const t of apps.splice(0)) await t.cleanup();
   });
 
-  it("lists the sandbox with its backends' notice, and a backend's group inside it", async () => {
+  it("lists the sandbox with its backends' notice (a backend for another platform is not a notice), and a backend's group inside it", async () => {
     const { t, list } = await appWith([]);
     apps.push(t);
     const entries = await list();
@@ -167,7 +170,7 @@ describe("sandbox settings group", () => {
     expect(sandbox.currentSettings().mode).toBe("read-only");
   });
 
-  it("names a backend that is not in use with its reason, and warns when the saved mode cannot be enforced", async () => {
+  it("names a failed backend with its reason and the ones meant for another platform, and warns when the saved mode cannot be enforced", async () => {
     const host = new PluginHost();
     host.use({
       specifier: "wrong-platform",
@@ -180,6 +183,7 @@ describe("sandbox settings group", () => {
             contributes: {
               "SandboxModule.providers": [
                 { id: "wrong.provider", name: "wrong-backend", dimensions: ["fs-write"] },
+                { id: "elsewhere.provider", name: "other-platform", dimensions: ["fs-write"] },
               ],
             },
             children: [],
@@ -187,9 +191,9 @@ describe("sandbox settings group", () => {
           create: () => ({
             api: {},
             bind: {
-              "wrong.provider": Promise.reject(
-                new Error("wrong-backend runs on Linux only; this host is win32"),
-              ),
+              "wrong.provider": Promise.reject(new Error("'bwrap' is missing")),
+              // A backend for another platform declines: not a failure, and not named on its own.
+              "elsewhere.provider": Promise.resolve(null),
             },
           }),
         },
@@ -217,12 +221,9 @@ describe("sandbox settings group", () => {
       ],
       [
         "attention",
-        "This deployment has no usable sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.",
+        "This deployment has no usable sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page. other-platform is installed, but for another platform.",
       ],
-      [
-        "attention",
-        "wrong-backend is not in use: wrong-backend runs on Linux only; this host is win32",
-      ],
+      ["attention", "wrong-backend is not in use: 'bwrap' is missing"],
     ]);
   });
 

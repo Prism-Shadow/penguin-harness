@@ -76,6 +76,8 @@ describe("sandbox service — the built-in interface and its optional dimensions
       ["loud", Promise.reject(new Error("'bwrap' is missing"))],
     ]);
     expect(svc.backends()).toEqual([]);
+    expect(svc.declined()).toEqual(["quiet"]);
+    expect(svc.failures()).toEqual([{ name: "loud", reason: "'bwrap' is missing" }]);
     svc.configure({ mode: "read-only" });
     expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(
       /loud \('bwrap' is missing\); quiet \(not for this host\)/,

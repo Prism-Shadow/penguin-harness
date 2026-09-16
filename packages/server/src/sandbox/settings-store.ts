@@ -117,7 +117,9 @@ export class SandboxSettings {
 /**
  * The sandbox card's live notices: a warning when the saved mode needs isolation no usable
  * backend implements (every command would be refused), the backends in use, and each backend
- * that is not, with its reason.
+ * that failed to load, with its reason. A backend that declined because this host is not its
+ * platform is no fault of the deployment — it is named only when nothing else serves, where
+ * it explains why.
  */
 @Component({
   contributes: {
@@ -147,19 +149,28 @@ export class SandboxSettingsStatus {
           }
         }
         if (backends.length === 0) {
+          const declined = sandbox.declined();
+          const elsewhere =
+            declined.length === 0
+              ? ""
+              : ` ${declined.join(", ")} ${declined.length === 1 ? "is" : "are"} installed, but for another platform.`;
+          const elsewhereZh =
+            declined.length === 0 ? "" : `已安装 ${declined.join("、")}，但它们适用于其他平台。`;
           notices.push({
             tone: "attention",
-            text: "This deployment has no usable sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.",
-            textZh:
-              "当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，选择任何模式都不会产生约束。",
+            text: `This deployment has no usable sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.${elsewhere}`,
+            textZh: `当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，选择任何模式都不会产生约束。${elsewhereZh}`,
           });
         } else {
           const list = backends.map((b) => `${b.name} (${b.dimensions.join(", ")})`).join(" · ");
           notices.push({ tone: "muted", text: `Backends: ${list}`, textZh: `后端：${list}` });
         }
+        // A failure while another backend serves is worth saying, but it is not the card's
+        // headline — confinement works. With nothing serving it is the headline.
+        const tone = backends.length === 0 ? "attention" : "muted";
         for (const { name, reason } of sandbox.failures()) {
           notices.push({
-            tone: "attention",
+            tone,
             text: `${name} is not in use: ${reason}`,
             textZh: `${name} 未启用：${reason}`,
           });

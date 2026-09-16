@@ -120,6 +120,11 @@ export class SandboxService {
     return [...this.loadErrors].map(([name, reason]) => ({ name, reason }));
   }
 
+  /** The backends that declined because this host is not theirs (the config surface). */
+  declined(): string[] {
+    return [...this.declinedNames];
+  }
+
   /** The mounted backends and what each implements (diagnostics / the config surface). */
   backends(): Array<{ name: string; dimensions: readonly SandboxDimension[] }> {
     return this.mounted.map(({ name, provider }) => ({
@@ -209,6 +214,7 @@ export abstract class Sandbox extends Interface<
     | "parkedSettings"
     | "backends"
     | "failures"
+    | "declined"
     | "confiner"
     | "whenReady"
   >
