@@ -1,13 +1,19 @@
 ---
 title: CLI and Web App
-description: One line installs penguin; configure a model and open the browser interface with penguin web — with the full installation reference.
+description: Install the penguin command, configure a model, open the Web App, and run your first Task from the terminal or the browser.
 ---
 
-One line installs `penguin`; `penguin web` then opens the same interface as the [desktop app](/quickstart-desktop) in your browser. The online installers bundle an official Node.js runtime — unpack and run, no local Node needed.
+Install the `penguin` command with one line, configure a model, and run your first Task from the terminal or the browser. `penguin web` opens the same interface as the [desktop app](/quickstart-desktop), in your browser.
 
-## Install
+## Before you begin
 
-Pick your platform. The first two bundle their own Node.js runtime; the npm route needs Node.js >= 24 already installed.
+- Linux or macOS (x64 or arm64), or Windows 10 or later (x64) with PowerShell 5.1 or later. The installers for these platforms bundle an official Node.js runtime, so you don't need Node.js on the machine.
+- Node.js >= 24, if you install with npm, build from source, or use another platform.
+- An API key for one model provider.
+
+## Install the CLI
+
+Run the installer for your platform. The Linux / macOS and Windows installers bundle their own Node.js runtime; the npm route needs Node.js >= 24 already installed.
 
 ```bash tab="Linux / macOS"
 curl -fsSL https://penguin.ooo/install.sh | sh
@@ -21,24 +27,28 @@ irm https://penguin.ooo/install.ps1 | iex
 npm install -g @prismshadow/penguin-cli
 ```
 
-Verify the install:
+Check the install:
 
 ```bash
 penguin -v
 ```
 
-Offline installs, installing from source, install locations, version pinning and Windows specifics are all in the [installation reference](#installation-reference) at the end of this page.
+The command prints the version you installed.
+
+For offline installs, building from source, install locations, version pinning and Windows details, see the [Installation reference](#installation-reference) at the end of this page.
 
 ## Configure a model
 
-Use the Models page in the Web UI, or the CLI:
+PenguinHarness ships with no model credentials, so add a model before your first Task. This command adds DeepSeek's `deepseek-flash` and makes it the default:
 
 ```bash
 penguin config model add --provider deepseek --model-id deepseek-flash --api-key sk-... --set-default
 ```
 
-- A model is always referenced as a `(provider, model_id)` pair, so `--provider` and `--model-id` are both required — the Provider is never inferred from the model id. See [Models & Providers](/models) for the built-in groups.
-- The API key can also come from environment variables: when a model entry has no inline api_key, AgentHub (the LLM gateway library) reads variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.
+You can also add models later on the **Models** page of the Web App.
+
+- A model is always named by a `(provider, model_id)` pair, so `--provider` and `--model-id` are both required. PenguinHarness never infers the provider from the model id. See [Models & Providers](/models) for the built-in groups.
+- The API key can also come from an environment variable. When a model entry has no inline `api_key`, AgentHub (the LLM gateway library) reads variables such as `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY`. A `.env` file in the working directory is loaded automatically.
 
 ## Start the Web App
 
@@ -46,49 +56,70 @@ penguin config model add --provider deepseek --model-id deepseek-flash --api-key
 penguin web
 ```
 
-The service runs at http://127.0.0.1:7364 and opens your browser (`--no-open` to skip). The account is `admin`, and it has no password yet: the server prints a first-login link in a framed notice, which opens the browser signed in so you can set one. The link works until a password exists (30-day ceiling — a restart prints a fresh one), and you can reopen it as often as you need. `penguin server` starts the same process headless.
+The service starts at http://127.0.0.1:7364 and opens your browser. Add `--no-open` to skip opening the browser. `penguin server` starts the same process headless.
 
-The [Web App Guide](/web-app) covers the interface in full.
+The account is `admin`, and it has no password yet. The server prints a first-login link in a framed notice. Open the link: the browser signs in, and you set a password.
 
-## One-shot run
+> [!NOTE]
+> The first-login link works until a password is set, for at most 30 days. You can open it as often as you need, and a restart prints a fresh one.
+
+To find your way around the interface, see [Web App](/web-app).
+
+## Run your first Task
+
+Run a single Task from the terminal, or start a chat. Both work the same way underneath, described in [How terminal Sessions work](#how-terminal-sessions-work).
+
+### Run a single Task
 
 ```bash
 penguin run -m "Create hello.txt containing Hello, Penguin"
 ```
 
-The Workspace defaults to the current directory; pass `--workspace /path` to change it. The target directory must already exist.
+The command streams the agent's work and exits when the Task ends. The Task runs in the current directory, which becomes its Workspace. Pass `--workspace /path` to use another directory; it must already exist.
 
-`run`, `chat` and the other session commands are thin clients of the server: they attach to the local server when one is running and quietly start one when none is (no login needed on the local machine — see the [CLI Reference](/cli) for the connection rules). Everything they create shows up in the Web App too, and `penguin ls` / `penguin logs` / `penguin input` address those sessions from the terminal.
-
-## Interactive chat
+### Chat in the terminal
 
 ```bash
 penguin chat
 ```
 
-- Each input line starts a Task.
-- `/compact` compacts the context; `/clear` starts a fresh Session (the old one stays resumable); `/exit` or `/quit` quits; Ctrl-C interrupts the running Task.
-- On exit it prints a `penguin chat --resume <sessionId>` hint for resuming this Session; `--resume` without an id resumes the Agent's latest Session.
+Each line you enter starts a Task. While chatting:
 
-The full command and option list is in the [CLI Reference](/cli).
+- `/compact` compacts the context.
+- `/clear` starts a fresh Session. The old one can still be resumed.
+- `/exit` or `/quit` quits.
+- Ctrl-C interrupts the running Task.
+
+When you quit, the chat prints a `penguin chat --resume <sessionId>` command that resumes this Session. `--resume` without an id resumes the agent's latest Session.
+
+### How terminal Sessions work
+
+`run`, `chat` and the other Session commands are thin clients of the server. They attach to the local server when one is running, and quietly start one when none is. On the local machine they need no login; the [CLI Reference](/cli) describes the connection rules.
+
+Everything these commands create also shows up in the Web App, and `penguin ls`, `penguin logs` and `penguin input` work with those Sessions from the terminal. The [CLI Reference](/cli) lists every command and option.
 
 ## Installation reference
 
-The three commands above cover nearly every case; the rest of the options and details follow.
-
-### Requirements
-
-- Linux / macOS (x64 or arm64): the install script ships platform tarballs with an official Node.js runtime bundled — no local Node needed.
-- Windows 10 or later (x64) with PowerShell 5.1+: the Windows installer ships `penguin-win32-x64.zip` with the runtime bundled — no local Node needed.
-- Other platforms, or installing via npm / from source: system Node.js >= 24.
+The install commands above cover nearly every case. This section holds the remaining options and details.
 
 ### Install script details
 
-The script downloads the matching `penguin-{linux,darwin}-{x64,arm64}.tar.gz` — the canonical installer bundle, sealing the program payload (with an official Node.js runtime), the payload's SHA256 checksum and this same installer. The download is verified against its published `.sha256`, then the sealed payload checksum is verified again before anything is staged. Other POSIX platforms do **not** fall back automatically: the script exits and asks you to install Node.js >= 24 and re-run with `--universal`, which selects the runtime-less `penguin-universal.tar.gz` bundle (Windows is served by its own installer, not by `--universal`).
+On Linux and macOS, the script downloads the bundle for your platform, `penguin-{linux,darwin}-{x64,arm64}.tar.gz`. This is the canonical installer bundle. It seals the program payload (with an official Node.js runtime), the payload's SHA256 checksum, and a copy of this same installer. The script verifies the download against its published `.sha256`, then verifies the sealed payload checksum before it stages anything. On Windows, the installer downloads `penguin-win32-x64.zip`, which bundles the runtime in the same way.
 
-The stable entry point defaults to `PENGUIN_DOWNLOAD_SOURCE=auto`: it resolves the target through an immutable OSS release directory only after that release has been completely uploaded and verified, and falls back to the matching GitHub Release if the metadata is unavailable. Which source then serves the package is measured, not assumed. The installer times a probe file on GitHub and keeps GitHub whenever it reaches 256 KB/s; only below that does it measure the OSS mirror, and it switches only when the mirror is more than 1.5x faster — a mirror that is merely a little quicker is not worth its bandwidth bill, and a slow GitHub download still resumes. Set `PENGUIN_DOWNLOAD_SPEED_PROBE=0` to skip the measurement, or `PENGUIN_DOWNLOAD_SOURCE` to `oss` or `github` to force either source. Normal installer output names the source without printing the mirror's full URL.
+Other POSIX platforms do not fall back automatically. The script exits and asks you to install Node.js >= 24 and run it again with `--universal`, which selects the runtime-less `penguin-universal.tar.gz` bundle. Windows has its own installer and does not use `--universal`.
 
-The `penguin.ooo` stable entry resolves the current stable version each time it runs. A standalone script downloaded from a versioned GitHub or OSS Release is stamped with that Release tag and defaults to the same version, keeping the installer and package format matched; set `PENGUIN_VERSION` (or `--version` on POSIX) to override it explicitly. To pin a version on Windows, set the env var before running the installer:
+### Download source and version
+
+The stable entry point defaults to `PENGUIN_DOWNLOAD_SOURCE=auto`. It resolves the target through an immutable OSS release directory, and only after that release has been completely uploaded and verified. If the metadata is unavailable, it falls back to the matching GitHub Release.
+
+Which source then serves the package is measured, not assumed:
+
+- The installer times a probe file on GitHub and keeps GitHub whenever the download reaches 256 KB/s.
+- Only below that does it measure the OSS mirror, and it switches only when the mirror is more than 1.5x faster. A mirror that is only a little quicker is not worth its bandwidth bill, and a slow GitHub download still resumes.
+
+Set `PENGUIN_DOWNLOAD_SPEED_PROBE=0` to skip the measurement, or set `PENGUIN_DOWNLOAD_SOURCE` to `oss` or `github` to force a source. The normal installer output names the source without printing the mirror's full URL.
+
+The `penguin.ooo` stable entry resolves the current stable version each time it runs. A standalone script downloaded from a versioned GitHub or OSS Release is stamped with that Release's tag and installs the same version by default, which keeps the installer and the package format matched. To override the version, set `PENGUIN_VERSION`, or pass `--version` on POSIX systems. On Windows, set the variable before you run the installer:
 
 ```powershell
 $env:PENGUIN_VERSION = "vX.Y.Z"; irm https://penguin.ooo/install.ps1 | iex
@@ -96,25 +127,27 @@ $env:PENGUIN_VERSION = "vX.Y.Z"; irm https://penguin.ooo/install.ps1 | iex
 
 ### Offline install
 
-The same Release artifacts serve offline installation — there is no separate offline package. Download the file matching the target computer on a connected machine (`penguin-<target>.tar.gz`, or `penguin-win32-x64.zip` for Windows), transfer that one file, then extract it once.
+Offline installs use the same Release files as online installs; there is no separate offline package.
 
-On Windows, double-click `install.cmd`, or run:
+1. On a connected machine, download the file that matches the target computer: `penguin-<target>.tar.gz`, or `penguin-win32-x64.zip` for Windows.
+2. Transfer that one file to the target computer and extract it.
+3. In the extracted directory, run the installer. On Windows, double-click `install.cmd` or run `.\install.ps1`. On Linux and macOS, run `./install.sh`.
 
-```powershell
+```powershell tab="Windows"
 .\install.ps1
 ```
 
-On Linux / macOS, run:
-
-```bash
+```bash tab="Linux / macOS"
 ./install.sh
 ```
 
-The extracted bundle keeps the installer, the program payload (`payload.tar.gz` / `payload.zip`) and the payload's `.sha256` together; the installer finds the sibling payload by itself, always verifies the sealed checksum and performs no network requests — no separate checksum file needs to be transferred. You can also point the installer at a file explicitly: `install.sh --archive <file>`, `PENGUIN_ARCHIVE=<file>`, `install.ps1 -ArchivePath <file>`, or `$env:PENGUIN_ARCHIVE` — accepting a Release bundle, its inner payload, or a pre-0.1.6 legacy program archive alike.
+The extracted bundle holds the installer, the program payload (`payload.tar.gz` / `payload.zip`) and the payload's `.sha256`. The installer finds the payload next to it by itself, always verifies the sealed checksum, and makes no network requests, so you don't need to transfer a separate checksum file.
 
-### From source
+You can also point the installer at a file explicitly: `install.sh --archive <file>`, `PENGUIN_ARCHIVE=<file>`, `install.ps1 -ArchivePath <file>`, or `$env:PENGUIN_ARCHIVE`. Each accepts a Release bundle, its inner payload, or a legacy program archive from before 0.1.6.
 
-Requires Node.js >= 24 and pnpm:
+### Install from source
+
+Building from source requires Node.js >= 24 and pnpm:
 
 ```bash
 git clone https://github.com/Prism-Shadow/penguin-harness.git
@@ -122,56 +155,61 @@ cd penguin-harness
 pnpm install && pnpm build
 ```
 
-After the build, run `pnpm penguin <args>` inside the repo as the dev runner, or use the globally linked `penguin` command. Dev entry points (`pnpm penguin`, `pnpm dev`, `pnpm desktop`) default to a separate data root `~/.penguin/dev-data`, while the linked/installed `penguin` keeps `~/.penguin/data`; export `PENGUIN_HOME` to override. The desktop dev run also uses its own app identity (`PenguinHarness-Dev`), so it can run alongside an installed desktop build without conflicts.
+After the build, run `pnpm penguin <args>` inside the repository as the dev runner, or use the globally linked `penguin` command.
+
+The dev entry points (`pnpm penguin`, `pnpm dev`, `pnpm desktop`) default to a separate data root, `~/.penguin/dev-data`, while the linked or installed `penguin` keeps `~/.penguin/data`. Set `PENGUIN_HOME` to override. The desktop dev run also uses its own app identity (`PenguinHarness-Dev`), so it can run alongside an installed desktop app without conflicts.
 
 ### Install location and options
 
 | Item | Details |
 | --- | --- |
-| Install dir | `~/.penguin` by default; override with the `PENGUIN_INSTALL_DIR` env var |
-| Command entry | A symlink `~/.local/bin/penguin` is created (the script warns if `~/.local/bin` is not on PATH) |
-| Version selection | `PENGUIN_VERSION=vX.Y.Z` env var, or the `--version vX.Y.Z` script flag; the stable entry defaults to the latest Release, while a versioned Release installer defaults to its own tag |
-| Download source | `PENGUIN_DOWNLOAD_SOURCE=auto` (default), `oss`, or `github`; auto times a probe file and keeps the free GitHub download unless the OSS mirror is clearly faster, falling back to the same version on the other source (`PENGUIN_DOWNLOAD_SPEED_PROBE=0` skips the measurement) |
-| Local archive | `PENGUIN_ARCHIVE=<file>` or `--archive <file>`; accepts a Release bundle (self-verifying via its sealed payload checksum) or a payload/legacy program archive with an adjacent `<file>.sha256` (renamed legacy files may use the platform asset's canonical `.sha256`) |
-| Integrity check | Always on: online downloads are verified against the published `.sha256`, and bundle payloads against the checksum sealed inside the bundle |
-| Upgrade | Re-run the install script; files are swapped atomically |
+| Install directory | `~/.penguin` by default; override it with the `PENGUIN_INSTALL_DIR` environment variable |
+| Command entry | A symlink, `~/.local/bin/penguin`. The script warns if `~/.local/bin` is not on `PATH` |
+| Version | The `PENGUIN_VERSION=vX.Y.Z` environment variable, or the `--version vX.Y.Z` script flag. The stable entry installs the latest Release by default; a versioned Release installer installs its own tag |
+| Download source | `PENGUIN_DOWNLOAD_SOURCE=auto` (default), `oss` or `github`. `auto` times a probe file and keeps the free GitHub download unless the OSS mirror is clearly faster, and falls back to the same version on the other source. `PENGUIN_DOWNLOAD_SPEED_PROBE=0` skips the measurement |
+| Local archive | `PENGUIN_ARCHIVE=<file>` or `--archive <file>`. Accepts a Release bundle, which verifies itself with its sealed payload checksum, or a payload or legacy program archive with a `<file>.sha256` next to it. A renamed legacy file may use the platform asset's canonical `.sha256` |
+| Integrity check | Always on. Online downloads are verified against the published `.sha256`, and bundle payloads against the checksum sealed inside the bundle |
+| Upgrade | Run the install script again; files are swapped atomically |
 
-Script flags go after `sh -s --`, e.g. `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal`.
+Script flags go after `sh -s --`, for example `curl -fsSL https://penguin.ooo/install.sh | sh -s -- --universal`.
 
 ### Windows specifics
 
 | Item | Details |
 | --- | --- |
-| Install dir | `%USERPROFILE%\.penguin` by default; override with the `PENGUIN_INSTALL_DIR` env var |
-| Command entry | the `bin\penguin.cmd` launcher (deliberately no `.ps1` launcher — batch files are exempt from the PowerShell execution policy, so `penguin` works even under the default Restricted policy); the installer adds `%USERPROFILE%\.penguin\bin` to your **user** Path and broadcasts the change — open a **new terminal window** once (a new tab of an already-running terminal keeps the old Path) |
-| Version pin | `$env:PENGUIN_VERSION = "vX.Y.Z"` before running the installer |
-| Local archive | `$env:PENGUIN_ARCHIVE = "<file>"` or `-ArchivePath <file>`; accepts the Release bundle (self-verifying via its sealed payload checksum) or a payload/legacy zip with an adjacent `<file>.sha256` (renamed legacy files may use `penguin-win32-x64.zip.sha256`) |
-| Integrity check | Always on: online downloads are verified against the published `.sha256`, and bundle payloads against the checksum sealed inside the bundle |
-| Upgrade | Re-run the installer; it swaps `bin`/`lib`/`web`/`node` and never touches `data` |
+| Install directory | `%USERPROFILE%\.penguin` by default; override it with the `PENGUIN_INSTALL_DIR` environment variable |
+| Command entry | The `bin\penguin.cmd` launcher. There is deliberately no `.ps1` launcher: batch files are exempt from the PowerShell execution policy, so `penguin` works even under the default Restricted policy. The installer adds `%USERPROFILE%\.penguin\bin` to your **user** Path and broadcasts the change. Open a **new terminal window** once; a new tab of an already-running terminal keeps the old Path |
+| Version pin | Set `$env:PENGUIN_VERSION = "vX.Y.Z"` before running the installer |
+| Local archive | `$env:PENGUIN_ARCHIVE = "<file>"` or `-ArchivePath <file>`. Accepts the Release bundle, which verifies itself with its sealed payload checksum, or a payload or legacy zip with a `<file>.sha256` next to it. A renamed legacy file may use `penguin-win32-x64.zip.sha256` |
+| Integrity check | Always on. Online downloads are verified against the published `.sha256`, and bundle payloads against the checksum sealed inside the bundle |
+| Upgrade | Run the installer again. It swaps `bin`/`lib`/`web`/`node` and never touches `data` |
 
-- **Agent shell**: on Windows, the agent's `exec_command` runs in a POSIX shell, for compatibility with skills written for one. It picks, in order: `bash` on PATH (your own [Git for Windows](https://gitforwindows.org/), preferred because it carries the full MSYS userland); then the **bundled bash** — the Windows zip ships MinGit under `git\`, so a machine with no Git for Windows still gets a POSIX shell, about sixty core utilities and `git.exe`; then PowerShell (`pwsh`, then `powershell`). The PowerShell fallback is only reached by npm installs, which bundle nothing. The `PENGUIN_SHELL` env var overrides the pick; the session's system prompt tells the model which shell is active. The bundled shell's licensing is recorded in [THIRD-PARTY-NOTICES.md](https://github.com/Prism-Shadow/penguin-harness/blob/main/THIRD-PARTY-NOTICES.md).
-- **Ctrl-C semantics**: on Windows, sending Ctrl-C to a running command session (`input_command` with `"\u0003"`) terminates the whole command session tree instead of interrupting the foreground command — Windows cannot deliver a console Ctrl-C to a piped child process, so the interrupt degrades to a hard tree kill.
-- **In-place update**: `penguin update` is not yet supported on Windows — upgrade by re-running the installer above.
-- **Config file permissions**: on POSIX, config/credential files are written with `0600` (owner-only) permissions; Windows has no such mode bits, so files fall under your profile's default NTFS ACLs.
-- If PowerShell refuses to run `penguin` with "running scripts is disabled", the blocked file is a `penguin.ps1` launcher — from an install older than 0.1.6 (re-run the installer: upgrades replace `bin\` and remove it) or generated by an npm global install (call `penguin.cmd` explicitly, or allow local scripts with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`). The packaged install itself ships only `penguin.cmd`, which runs under any execution policy.
+Other differences on Windows:
 
-### Data directory
+- **Agent shell**: the agent's `exec_command` runs in a POSIX shell, so Skills written for one keep working. The shell is picked in this order: `bash` on PATH, which is preferred because your own [Git for Windows](https://gitforwindows.org/) carries the full MSYS userland; then the **bundled bash**, since the Windows zip ships MinGit under `git\` and gives a machine without Git for Windows a POSIX shell, about sixty core utilities and `git.exe`; then PowerShell (`pwsh`, then `powershell`). Only npm installs, which bundle nothing, reach the PowerShell fallback. The `PENGUIN_SHELL` environment variable overrides the pick, and the Session's system prompt tells the model which shell is active. The bundled shell's licensing is recorded in [THIRD-PARTY-NOTICES.md](https://github.com/Prism-Shadow/penguin-harness/blob/main/THIRD-PARTY-NOTICES.md).
+- **Ctrl-C**: sending Ctrl-C to a running command session (`input_command` with `"\u0003"`) terminates the whole command session tree instead of interrupting the foreground command. Windows cannot deliver a console Ctrl-C to a piped child process, so the interrupt becomes a hard kill of the tree.
+- **In-place update**: `penguin update` is not yet supported on Windows. To upgrade, run the installer again.
+- **Config file permissions**: on POSIX systems, config and credential files are written with `0600` (owner-only) permissions. Windows has no such mode bits, so these files fall under your profile's default NTFS ACLs.
+- **"running scripts is disabled"**: if PowerShell refuses to run `penguin` with this error, the blocked file is a `penguin.ps1` launcher. It comes either from an install older than 0.1.6, which you fix by running the installer again (the upgrade replaces `bin\` and removes it), or from an npm global install, where you call `penguin.cmd` explicitly or allow local scripts with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. The packaged install ships only `penguin.cmd`, which runs under any execution policy.
 
-The data directory defaults to `~/.penguin/data` (`%USERPROFILE%\.penguin\data` on Windows) — under the install home, but never modified by install or upgrade — and is overridable with the `PENGUIN_HOME` env var. Model configuration, Session records, and other data are preserved across upgrades.
+### Data root
+
+The data root is `~/.penguin/data` by default (`%USERPROFILE%\.penguin\data` on Windows). It sits under the install directory, but installing and upgrading never modify it. Set the `PENGUIN_HOME` environment variable to use another directory. Model configuration, Session records and other data are kept across upgrades.
 
 ### Published npm packages
 
 | Package | Description |
 | --- | --- |
-| `@prismshadow/penguin-cli` | Command-line tool providing the `penguin` command |
-| `@prismshadow/penguin-core` | SDK for creating Agents and Sessions programmatically |
-| `@prismshadow/penguin-server` | Web service, including the Web UI assets |
-| `@penguinharness/*` | The built-in plugins, one package each (skills and session hooks); core loads them |
+| `@prismshadow/penguin-cli` | Command-line tool that provides the `penguin` command |
+| `@prismshadow/penguin-core` | SDK for creating agents and Sessions from code |
+| `@prismshadow/penguin-server` | Web service, including the Web App assets |
+| `@penguinharness/*` | The built-in plugins, one package each (Skills and session hooks); core loads them |
 
 All packages are published under the Apache-2.0 license.
 
 ## Next steps
 
-- [Web App Guide](/web-app): use PenguinHarness from the browser.
-- [CLI Reference](/cli): the full list of commands and options.
+- [Web App](/web-app): use PenguinHarness from the browser.
+- [CLI Reference](/cli): every command and option.
+- [Update PenguinHarness](/updates): check your version and upgrade.
 - [SDK](/quickstart-sdk): embed the engine in your own program.

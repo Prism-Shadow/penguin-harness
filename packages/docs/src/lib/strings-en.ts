@@ -37,8 +37,9 @@ export const en: Strings = {
 
   sections: {
     start: "Get Started",
-    design: "Core Design",
     guides: "Guides",
+    advanced: "Advanced",
+    design: "How It Works",
     reference: "Reference",
   } as Record<string, string>,
 

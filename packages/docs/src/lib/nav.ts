@@ -19,7 +19,7 @@ export interface DocsPageDef {
 
 export interface DocsSectionDef {
   /** Section id — also the key into S.sections for the localized label. */
-  id: "start" | "design" | "guides" | "reference";
+  id: "start" | "guides" | "advanced" | "design" | "reference";
   /** Pages in display order. */
   pages: DocsPageDef[];
 }
@@ -38,9 +38,29 @@ export const DOCS_NAV: DocsSectionDef[] = [
         slug: "quickstart",
         children: ["quickstart-desktop", "quickstart-cli", "quickstart-docker", "quickstart-sdk"],
       },
+      { slug: "concepts" },
+      { slug: "updates" },
     ],
   },
-  { id: "guides", pages: pages("web-app", "goal-mode", "company-mode", "self-improvement") },
+  {
+    id: "guides",
+    pages: pages(
+      "web-app",
+      "chat",
+      "files",
+      "schedules",
+      "remote-control",
+      "agents",
+      "skills",
+      "models",
+      "usage",
+      "settings",
+    ),
+  },
+  {
+    id: "advanced",
+    pages: pages("evaluation-center", "self-improvement", "goal-mode", "company-mode"),
+  },
   {
     id: "design",
     pages: pages(
@@ -51,8 +71,6 @@ export const DOCS_NAV: DocsSectionDef[] = [
       "message-flow",
       "interfaces",
       "tools",
-      "skills",
-      "models",
       "sessions-and-traces",
     ),
   },

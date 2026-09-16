@@ -682,7 +682,7 @@ function hookManifestText(manifest: HookManifest): string {
  * installed skill does), plus the package's files (relative path → content, subdirectories
  * preserved), replacing the whole directory like a skill install does. Each file path is
  * checked to stay within the directory.
- * Docs: /docs/skills § "Hooks".
+ * Docs: /docs/skills § "Hook packages".
  */
 export async function installHook(
   root: string,

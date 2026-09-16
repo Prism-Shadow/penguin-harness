@@ -1,11 +1,20 @@
 ---
 title: Core Interfaces
-description: A top-down tour of the contracts — full LLMInterface and EnvironmentInterface signatures, inner types field by field, and every swappable seam.
+description: The Human, LLM and Environment contracts behind the engine, with their full signatures, inner types and extension seams.
 ---
 
-The context_engine depends on three interfaces: Human, LLM and Environment. All protocol conversion happens inside the implementations — the engine sees only [OmniMessage](/omni-message). This page goes top-down: the two big interface signatures and the Human boundary first, then each interface's inner types layer by layer. All types are exported by `@prismshadow/penguin-core`; source: `packages/core/src/interfaces/` — `llm.ts` (what the model side needs), `environment.ts` (what the Environment side needs), `shared.ts` (the vocabulary both genuinely need), and `index.ts`, the barrel behind the `@prismshadow/penguin-core/interfaces` subpath.
+The `context_engine` depends on three interfaces: Human, LLM and Environment. All protocol conversion happens inside the implementations, so the engine sees only [OmniMessage](/omni-message).
 
-## Overview
+This page follows a turn's control flow: [the Human boundary](#the-human-boundary), the [LLM contract](#llminterface), the [approval callback](#approvefn) and the [Environment contract](#environmentinterface). It ends with the [subagent](#subagent-interfaces) and [vision](#visiondescriberservice) services and the [extension seams](#extension-seams).
+
+All types are exported by `@prismshadow/penguin-core`. The source lives in `packages/core/src/interfaces/`:
+
+- `llm.ts`: what the model side needs.
+- `environment.ts`: what the Environment side needs.
+- `shared.ts`: the vocabulary both sides genuinely need.
+- `index.ts`: the barrel behind the `@prismshadow/penguin-core/interfaces` subpath.
+
+## The three boundaries
 
 ```text
             Human (a boundary, not a class)
@@ -26,23 +35,60 @@ The context_engine depends on three interfaces: Human, LLM and Environment. All 
 | LLM | `LLMInterface.streamGenerate` | `GenerativeModel` (over AgentHub) |
 | Environment | `EnvironmentInterface.executeTool` et al. | `Environment` + the builtin tool registry |
 
-Two iron rules run through every interface: **never throw into the engine** (errors converge into messages/returns carrying a `stop_reason`), and **the streaming discipline** (`start → delta → stop`, complete message immediately after).
+Every interface follows two rules:
+
+- **Never throw into the engine.** Errors become messages or return values that carry a `stop_reason`.
+- **Follow the streaming discipline.** A stream goes `start → delta → stop`, and the complete message follows immediately.
 
 ### Message plane and control plane
 
-The **content** crossing all three boundaries is OmniMessage and nothing else — `session.run`'s input and streamed output, `streamGenerate`'s input array and yielded stream, `executeTool`'s approved call and its output stream, a subagent round's input and its forwarded messages, and every Trace write.
+The **content** that crosses all three boundaries is OmniMessage and nothing else:
 
-What travels *alongside* it is the **control plane**, deliberately not message-shaped, because none of it is conversation content:
+- `session.run`'s input and its streamed output
+- `streamGenerate`'s input array and its yielded stream
+- `executeTool`'s approved tool call and its output stream
+- a subagent round's input and its forwarded messages
+- every Trace write
+
+What travels alongside it is the **control plane**. It is deliberately not message-shaped, because none of it is conversation content:
 
 | Control-plane item | Where | Why it is not a message |
 | --- | --- | --- |
 | `signal: AbortSignal` | `RunOptions`, `GenerativeModelParameters`, `ToolExecutionRequest` | An interruption that had to wait its turn in a message queue would not be an interruption. |
-| `thinkingLevel` | `GenerativeModelParameters` | A per-request parameter, like a timeout — it says how to run the request, not what to say. The engine holds the live value as its own state (`ContextEngine.setThinkingLevel`, fed by the `Session.thinkingLevel` setter — the soft-limited knob); unset, the LLM object's construction default — the context's opening level — applies (`RunOptions` carries no level). |
-| `approve` and its `ApprovalDecision` | `RunOptions`, `ToolExecutionRequest` | The callback takes an OmniMessage tool call; the answer is a three-value enum the engine turns into an `approval_decision` message the moment it has it. |
-| `LLMOutcome` | `streamGenerate`'s generator return value | The request's terminal state, which the engine's retry and reconnect policy branches on. A generator's return value is statically guaranteed to exist; "the last message yielded must be a `request_end`" would only ever be a runtime convention. The engine writes that `request_end` from it. |
+| `thinkingLevel` | `GenerativeModelParameters` | A per-request parameter, like a timeout: it says how to run the request, not what to say. The engine holds the live value as its own state (`ContextEngine.setThinkingLevel`, fed by the `Session.thinkingLevel` setter, the soft-limited knob). When a request omits it, the LLM object's construction default applies, which is the context's opening level. `RunOptions` carries no level. |
+| `approve` and its `ApprovalDecision` | `RunOptions`, `ToolExecutionRequest` | The callback takes an OmniMessage tool call. The answer is a three-value enum, which the engine turns into an `approval_decision` message as soon as it has it. |
+| `LLMOutcome` | `streamGenerate`'s generator return value | The request's terminal state, which the engine's retry and reconnect policy branches on. A generator's return value is guaranteed by the type system; "the last message yielded must be a `request_end`" could only ever be a runtime convention. The engine writes that `request_end` from it. |
 
-Everything else that is not OmniMessage is Environment's management plane, described below.
+Everything else that is not OmniMessage belongs to the Environment's management plane, described under [EnvironmentInterface](#environmentinterface).
 
+## The Human boundary
+
+Human is deliberately not an interface class. The SDK caller *is* the Human:
+
+```ts
+const session = await agent.createSession({ workspaceDir, provider, modelId });
+
+session.run(
+  newMessages: OmniMessage[],                    // input: the Prompt
+  opts?: RunOptions,
+): AsyncGenerator<OmniMessage, RunCutoff | null>; // output: streamed OmniMessage; returns null when the run completed
+
+interface RunOptions {
+  signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
+  approve?: ApproveFn;     // per-tool approval; denies everything when omitted
+  preToolUse?: PreToolUseFn; // pre-tool-use hook consult; the Session wires it from installed hook packages
+}
+
+interface RunCutoff {       // how a run was cut off early
+  kind: "abort" | "llm_failure" | "compaction_failure" | "max_turns";
+  errorCode?: ErrorCode;    // mirrors the terminal record's error_code (none for max_turns)
+  errorMessage?: string;    // mirrors the terminal record's error_message
+}
+```
+
+The CLI wires terminal I/O onto this boundary. The Server wires HTTP requests and SSE channels onto it. Any programmatic caller that connects becomes a new Human implementation, with nothing to register.
+
+The return value tells a consumer whether the run really finished. Failures emit no abort event, only their terminal `request_end` or `compaction_end` record, so code that must not treat a cut-off run as finished reads `RunCutoff` instead of inspecting the stream.
 
 ## LLMInterface
 
@@ -60,32 +106,35 @@ interface GenerativeModelParameters {
 }
 ```
 
-The generator yields `partial_*` fragments and complete messages, emits Token usage as `token_usage` events, and reports the terminal state via its **return value** (not a yielded message).
+The generator yields `partial_*` fragments and complete messages, and emits Token usage as `token_usage` events. It reports the terminal state through its **return value**, not a yielded message.
 
 ### LLMOutcome semantics
 
 ```ts
 interface LLMOutcome {
-  status: StopReason;   // completed | timeout | malformed | aborted | failed | auth
-  message?: string;     // failure detail: on failed/auth, and on timeout/malformed when a
-                        // concrete error was caught — carried onto request_end so the
-                        // errors panel shows the real reason behind a retried request
-  permanent?: boolean;  // marks a failed as deterministic (client-side rejection thrown before
-                        // any network I/O, e.g. fast_mode on a model without a fast tier):
-                        // the engine aborts with the message instead of retrying
+  status: StopReason;      // completed | aborted | retryable | fatal
+  errorCode?: ErrorCode;   // classified cause on a non-completed failure; carried onto request_end as error_code
+  errorMessage?: string;   // failure detail: on fatal, and on retryable when a concrete error was caught;
+                           // carried onto request_end as error_message, so the errors panel shows
+                           // the real reason behind a retried request
 }
 ```
 
 | status | Meaning | Engine reaction |
 | --- | --- | --- |
-| `completed` | finished normally (token_usage already emitted) | proceed |
-| `timeout` | timeout / transport disconnect | auto-reconnect within the run |
-| `malformed` | response parse failure | auto-reconnect within the run |
-| `failed` | an error the classifier did not judge transient (params, …) | auto-reconnect within the run as well — the status is still reported as `failed`. Exception: with `permanent: true` (a deterministic client-side rejection, e.g. fast mode on a model without a fast tier) the run stops immediately with the message |
-| `aborted` | user interrupt | stop, hand back to the user |
-| `auth` | credentials rejected | stop, hand back to the user — the one LLM status that never retries; hosts gate input until the model's API key is updated |
+| `completed` | Finished normally (`token_usage` already emitted) | Proceed |
+| `retryable` | A failure worth retrying: transport drops, idle timeouts, 408/429/5xx, malformed or truncated responses, and anything unclassifiable | Reconnect within the run on the backoff ladder |
+| `fatal` | A failure no retry can fix: a provider 4xx rejection (408 and 429 excluded), rejected credentials, or a deterministic client-side rejection before any network I/O (for example, fast mode on a model without a fast tier) | Stop the run and surface `errorMessage` |
+| `aborted` | User interrupt | Stop and hand back to the user |
 
-Implementation constraints: never throw; no internal retries — reconnecting is the engine's job (see [The Agent Loop](/agent-loop)).
+The status answers one question: should this request be retried? `errorCode` says what kind of failure it was. Unclassifiable errors are `retryable` on purpose: the fatal detector is an allowlist, so a gateway that words a transient fault its own way keeps its retries.
+
+The fix for a `fatal` outcome is a configuration or credential change, then a new request. Only the model reference is fixed at Session creation. Credentials come from the current Project config, so after a key update the Session can continue.
+
+Implementation constraints:
+
+- Never throw.
+- Do no internal retries. Reconnecting is the engine's job; see [The Agent Loop](/agent-loop).
 
 ### GenerativeModelConfig
 
@@ -96,7 +145,7 @@ interface GenerativeModelConfig {
   modelId: string;
   apiKey?: string;
   baseUrl?: string;
-  clientType?: string;             // AgentHub client protocol (openai / …); inferred from modelId when omitted
+  clientType?: string;             // AgentHub client protocol (openai-chat / openai-responses / …); inferred from modelId when omitted
   tools: ToolDefinition[];
   systemPrompt?: string;           // fully assembled system prompt, placeholders substituted
   contextWindow?: number;
@@ -104,23 +153,55 @@ interface GenerativeModelConfig {
   fastMode?: boolean;              // per-model fast mode (AgentHub fast_mode; premium faster tier), off by default
   thinkingLevel?: ThinkingLevelName;   // construction default (a per-request parameter can override); "none" | "low" | "medium" | "high" | "xhigh" | "max"
   requestTimeoutMs?: number;       // Request idle budget: the longest wait for the next upstream event, default 300000; <=0 disables
+  sessionId?: string;              // the Session's id, sent only to endpoints whose attribution header names the conversation
   toolCallIds?: ToolCallIdAllocator;   // Session-level tool_call_id registry (pass the same instance across compaction)
 }
 ```
 
 ### The built-in implementation: GenerativeModel
 
-`GenerativeModel` (`packages/core/src/llm/generative-model.ts`) grounds the contract on the `AutoLLMClient` of the `@prismshadow/agenthub` model gateway:
+`GenerativeModel` (`packages/core/src/llm/generative-model.ts`) builds the contract on the `AutoLLMClient` of the `@prismshadow/agenthub` model gateway.
 
-- the gateway maintains conversation history **statefully**, receiving only new messages each turn; resuming a Session replays committed history through a one-time `setHistory`;
-- an internal `EventTranslator` translates gateway stream events into `partial_*` fragments plus complete messages, preserving each item's opaque `fidelity` payload verbatim; segmentation mirrors the gateway's own aggregation — a thinking block is closed by its fidelity payload and a run of equal fidelity stays one block (OpenAI-compatible clients stamp every delta with the same `{ reasoning_field }`, which must not split blocks), while a text segment splits on a differing `fidelity.phase` and closes on a `fidelity.signature`, fidelity keys accumulating on merge; complete messages settle in thinking → text → tool_call order;
-- every request asks the gateway for thought summaries (`thinking_summary`), which no provider rejects — it is dropped where the family has no such thing, and read as "summarized thinking" by the Claude family. Besides letting the reader watch the model reason, it keeps events arriving during a reasoning phase, which is what `requestTimeoutMs` measures: the timer runs only while awaiting the next upstream event, resets on each one, and never counts consumer-side time (yielding, approvals, Trace writes), so it bounds silence rather than the length of a response;
-- `ToolCallIdAllocator` disambiguates providers that use the function name as the call id (append `#n` inbound, strip outbound), scoped to the whole Session;
-- provider differences (tool-call formats, reasoning content, streaming events) are absorbed entirely inside the gateway — see [Models & Providers](/models).
+**History.** The gateway keeps conversation history **statefully** and receives only the new messages each turn. Resuming a Session replays the committed history through a one-time `setHistory`.
+
+**Event translation.** An internal `EventTranslator` turns gateway stream events into `partial_*` fragments plus complete messages, and keeps each item's opaque `fidelity` payload verbatim. Segmentation mirrors the gateway's own aggregation:
+
+- A thinking block is closed by its fidelity payload.
+- A run of equal fidelity stays one block. OpenAI-compatible clients stamp every delta with the same `{ reasoning_field }`, which must not split blocks.
+- A text segment splits on a differing `fidelity.phase` and closes on a `fidelity.signature`. Fidelity keys accumulate on merge.
+- Complete messages settle in thinking → text → tool_call order.
+
+**Thought summaries.** Every request asks the gateway for thought summaries (`thinking_summary`). No provider rejects the flag: the gateway drops it for families without such a feature, and the Claude family reads it as summarized thinking. Besides letting the reader watch the model reason, it keeps events arriving during a reasoning phase.
+
+**Idle timeout.** Those events are what `requestTimeoutMs` measures. The timer runs only while awaiting the next upstream event and resets on each one. It never counts consumer-side time such as yielding, approvals or Trace writes. It bounds silence, not the length of a response.
+
+**Tool call ids.** `ToolCallIdAllocator` handles providers that use the function name as the call id: it appends `#n` inbound and strips it outbound. Its scope is the whole Session.
+
+**Provider differences.** Tool-call formats, reasoning content and streaming events are absorbed entirely inside the gateway. See [Models & Providers](/models).
+
+## ApproveFn
+
+`RunOptions` and `ToolExecutionRequest` both carry this callback type:
+
+```ts
+type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
+type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
+```
+
+| Rule | Behavior |
+| --- | --- |
+| Call frequency | Called exactly once per complete `tool_call` |
+| Callback throws | Counts as `deny` |
+| No callback injected | The engine denies everything (the conservative default) |
+| Subagents | A subagent inherits its parent's approval callback, invoked with an `origin` tag, so the approval policy spans the whole delegation tree |
+
+`"forbidden"` is never a host's answer. `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), so a vetoed command gets `"forbidden"` before the host is asked at all.
+
+Either denial produces one fixed `aborted` output line: "Tool call denied by user." for `"deny"`, and "Tool call denied by policy." for `"forbidden"`. The decision value itself rides the `approval_decision` event, so the Trace names the decider without an extra field. An existing callback that returns only `"allow"` or `"deny"` needs no change.
 
 ## EnvironmentInterface
 
-The complete tool-execution contract:
+The core of the tool-execution contract:
 
 ```ts
 interface EnvironmentInterface {
@@ -131,12 +212,28 @@ interface EnvironmentInterface {
 }
 ```
 
-This interface carries two planes, and only the first one belongs to the agent loop:
+The interface carries two planes, and only the first belongs to the agent loop:
 
-- the **message plane** — `executeTool`, the one method `context_engine` ever calls here: an OmniMessage tool call in, a stream of OmniMessage out;
-- the **management plane** — `listTools` and `toolPermission`, plus the optional background-command and subagent members (the listings, `killBackgroundCommand`, `sendToBackgroundSubagent`, `abortBackgroundSubagentRun`, the listener attachments and `dispose`). None of these pass through the engine: they serve Session assembly and a host's own UI — the Web App's process and subagents panels, an approval mode's permission lookup — and are ordinary method calls returning ordinary data. That is why they are not message-shaped, and why widening them would not make the engine's boundary any purer.
+- **The message plane** is `executeTool`, the only method `context_engine` calls here. An OmniMessage tool call goes in; a stream of OmniMessage comes out.
+- **The management plane** is `listTools`, `toolPermission`, `dispose` and the optional members below. None of them pass through the engine. They serve Session assembly and a host's own UI, such as the Web App's process and subagents panels or an approval mode's permission lookup. They are ordinary method calls that return ordinary data, which is why they are not message-shaped: making them messages would not make the engine's boundary any purer.
 
-`executeTool` yields `partial_tool_call_output` fragments and ends with exactly one complete `tool_call_output`; `origin`-tagged nested messages (e.g. forwarded by `run_subagent`) pass through unchanged. The built-in Environment can keep truncated text in the Session scratchpad without exposing storage lifecycle hooks through this public interface. Its model-visible recovery path is a plain absolute path; on Windows it is written with forward slashes, which Node's fs APIs and the package's (Git) Bash tool shell both accept, so the same spelling works as a `read_file` argument and inside shell commands. Rendering is explicitly not this interface's concern — streaming rendering belongs to the CLI / Web front ends.
+| Optional management member | Purpose |
+| --- | --- |
+| `listBackgroundCommands()`, `killBackgroundCommand(processId)` | List the background command processes; kill one by id (the whole process group) |
+| `probeBackgroundCommandServices()` | Refresh the listen-port probe behind a command's detected service URL |
+| `detachToolCall(toolCallId)` | Ask one running call to continue as a background task (the Web App's per-card button); answers `detached`, `not_running` or `not_detachable` |
+| `listBackgroundSubagents()`, `hasRunningBackgroundSubagents()` | List the live child sessions; report whether a background child is mid-round |
+| `sendToBackgroundSubagent(childSessionId, messages, opts?)` | Steer a running child, start a follow-up round on an idle one, or revive a released one (`opts.resume`); answers `steered`, `started`, `resumed`, `busy` or `gone` |
+| `abortBackgroundSubagentRun(childSessionId)` | Stop a child's current run; the session survives |
+| `setBackgroundSubagentThinkingLevel(childSessionId, level)` | Pin a live child's thinking level |
+| `setSubagentApprovalFallback(approve)` | Attach the host's session-lifetime fallback approval sink for child sessions |
+| `setSubagentStateListener`, `setBackgroundStateListener`, `setBackgroundTaskListener`, `setBackgroundMessageListener` | Attach the single listener for subagent run-state changes, background-task state changes, completion reports and live background-subagent messages |
+
+`executeTool` yields `partial_tool_call_output` fragments and ends with exactly one complete `tool_call_output`. Nested messages tagged with `origin`, such as those `run_subagent` forwards, pass through unchanged.
+
+The built-in Environment can keep truncated text in the Session scratchpad without exposing storage lifecycle hooks through this public interface. The recovery path it shows the model is a plain absolute path. On Windows the path uses forward slashes, which Node's fs APIs and the package's (Git) Bash tool shell both accept, so the same spelling works as a `read_file` argument and inside shell commands.
+
+Rendering is not this interface's concern. Streaming rendering belongs to the CLI and Web front ends.
 
 ### ToolExecutionRequest and EnvironmentConfig
 
@@ -154,12 +251,24 @@ interface EnvironmentConfig {
   services?: EnvironmentServices;           // runtime services injected into individual tools
   vault?: Record<string, string>;           // Vault env vars, injected into exec_command / input_command subprocesses
   proxyEnv?: () => ProxyEnvPolicy | null;   // command-subprocess proxy policy; re-read per spawn, absent or null = pass through
+  controlEnv?: () => Record<string, string>; // host control variables (API address, token, Session coordinates); re-read per
+                                            // spawn; override vault entries, never the hardened ones
+  pathPrepend?: () => string[];             // directories put at the front of PATH for command subprocesses; re-read per spawn
+  confineSpawn?: () => SpawnConfiner | null; // sandbox confinement for command subprocesses; re-read per spawn,
+                                            // absent or null = commands spawn unconfined
 }
 
 // "strip" removes HTTP(S)_PROXY/ALL_PROXY (NO_PROXY kept); "inject" forces the explicit
 // proxy over the inherited env: HTTP(S)_PROXY (+ lowercase twins) = url, NO_PROXY = noProxy
 // (supplied pre-merged by the caller), inherited ALL_PROXY removed. Vault entries still win.
 type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; noProxy: string };
+
+// Rewrites the exact argv a command is about to spawn so it runs confined. Fail-closed: a
+// confiner that cannot enforce its policy throws, and the command fails to spawn.
+type SpawnConfiner = (
+  argv: readonly string[],
+  opts: { cwd: string; workspaceDir: string },
+) => readonly string[];
 
 interface EnvironmentServices {
   subagentRunner?: SubagentRunner;          // needed by run_subagent
@@ -178,9 +287,7 @@ interface MCPServerConfig {
 }
 ```
 
-`Agent.createSession()` and `resumeSession()` pass the Session scratchpad directory
-automatically. A standalone embedder that owns a stable per-Session directory opts in by
-supplying it — no archive-specific type is exposed:
+`Agent.createSession()` and `resumeSession()` pass the Session scratchpad directory automatically. A standalone embedder that owns a stable per-Session directory opts in by supplying it. No archive-specific type is exposed:
 
 ```ts
 const environment = new Environment({
@@ -192,15 +299,16 @@ const environment = new Environment({
 
 ### The inner tool contract: BuiltinTool
 
-Inside the Environment, an individual tool follows a deliberately narrower contract ("loose tool, strict framework"):
+Inside the Environment, each tool follows a deliberately narrower contract ("loose tool, strict framework"):
 
 ```ts
 interface BuiltinTool {
   name: string;
   definition: ToolDefinitionConfig;
+  detachable?: boolean;              // has a background form a running call can be moved to
   execute(
     args: Record<string, unknown>,
-    ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, approve? }
+    ctx: ToolExecutionContext,       // { workspaceDir, toolCallId, signal?, detachSignal?, approve? }
   ): AsyncGenerator<OmniMessage, ToolResult | void>;
 }
 
@@ -212,75 +320,53 @@ interface ToolDefinitionConfig {
   forModel?: "vision" | "text-only";      // assembled per session-model class (unset by the built-in entries)
   timeoutMs?: number;                     // default 120000; <=0 disables
   maxOutputLength?: number;               // default 16000, head-kept truncation; <=0 disables
+  call_description?: boolean;             // false filters the `description` call argument out of the schema; missing = kept
 }
 ```
 
-A tool emits only content deltas; framing, timeouts, truncation, `stop_reason` priority and errors-to-messages are all handled centrally by the Environment — it is close to impossible for a tool author to break the protocol. Extension is registration: add one `name → factory` entry to `BUILTIN_TOOL_FACTORIES` (`packages/core/src/environment/tools/registry.ts`). Per-tool parameters and behavior: [Tools & Approval](/tools).
+A tool emits only content deltas. The Environment handles framing, timeouts, truncation, `stop_reason` priority and turning errors into messages centrally, so a tool author can hardly break the protocol.
 
-## The Human boundary
-
-Human is deliberately not an interface class. The SDK caller *is* the Human:
-
-```ts
-const session = await agent.createSession({ workspaceDir, provider, modelId });
-
-session.run(
-  newMessages: OmniMessage[],                    // input: the Prompt
-  opts?: RunOptions,
-): AsyncGenerator<OmniMessage>;                  // output: streamed OmniMessage
-
-interface RunOptions {
-  signal?: AbortSignal;    // interrupt (e.g. Ctrl-C)
-  approve?: ApproveFn;     // per-tool approval; denies everything when omitted
-}
-```
-
-The CLI wires terminal I/O onto this boundary; the Server wires HTTP requests and SSE channels onto it. Any programmatic caller that connects becomes a new Human implementation — nothing to register.
-
-## ApproveFn
-
-```ts
-type ApprovalDecision = "allow" | "deny" | "forbidden"; // "forbidden" = the command policy's veto
-type ApproveFn = (toolCall: OmniMessage<ToolCallPayload>) => Promise<ApprovalDecision>;
-```
-
-Constraints: called exactly once per complete `tool_call`; a throwing callback counts as `deny`; when none is injected the engine denies everything (conservative default). A Subagent inherits its parent's approval callback (invoked with an `origin` tag), so the approval policy spans the whole delegation tree.
-
-`"forbidden"` is never a host's answer: `Session.run` wraps the injected callback with the [Project command policy](/configuration#command-policy), and a vetoed command answers `"forbidden"` before the host is asked at all. The denial output is one fixed `aborted` line either way — "Tool call denied by user." for `"deny"`, "Tool call denied by policy." for `"forbidden"` — and the decision value itself rides the `approval_decision` event, so the Trace names the decider with no extra field. An existing callback returning `"allow"` / `"deny"` needs no change.
+Adding a tool is registration: add one `name → factory` entry to `BUILTIN_TOOL_FACTORIES` (`packages/core/src/environment/tools/registry.ts`). For each tool's parameters and behavior, see [Tools & Approval](/tools).
 
 ## Subagent interfaces
 
-Subagent creation is injected at the `createAgent` composition layer, so the Environment never back-depends on the layers above it:
+Subagent creation is injected at the `createAgent` composition layer, so the Environment never depends on the layers above it:
 
 ```ts
 interface SubagentRunner {
-  // Precheck errors (depth limit, unknown agent) are thrown — Environment collapses them to failed
+  // Precheck errors (depth limit, unknown agent) are thrown — Environment collapses them to a fatal result
   spawn(input: {
     agentId?: string;     // defaults to the current Agent (self-spawn)
     modelId?: string;     // paired with provider; both omitted = inherit the parent Session's model
     provider?: string;    // required whenever modelId is given (a model reference is the pair)
     thinkingLevel?: ThinkingLevelName; // omitted = inherit the parent Session's effective level
   }): Promise<SubagentHandle>;
+  resume?(input: { agentId?: string; sessionId: string }): Promise<SubagentHandle>; // revive a released child Session
 }
 
 interface SubagentHandle {
   sessionId: string;      // the child Session id: the origin hop; subagent_id derives from its tail
+  takeMeta?(): OmniMessage | null; // one-shot take of the child's session_meta (a background launch forwards it upfront)
   run(input: {
     messages: OmniMessage[];  // the round's input, the shape Session.run takes a Prompt in
     signal?: AbortSignal;
     approve?: ApproveFn;  // the parent's approval callback — forwarding is inheritance
-  }): AsyncGenerator<OmniMessage>;
+  }): AsyncGenerator<OmniMessage, RunCutoff | null>; // returns null when the round completed
+  steer?(messages: OmniMessage[]): boolean; // queue a steering message for a running round; false when none is running
+  setThinkingLevel?(level: ThinkingLevelName): void; // pin the child's thinking level from its next request
   dispose(): void;        // release the child Session's runtime resources; idempotent
 }
 ```
 
-Spawning and running are separate, so the same child Session can accept a follow-up Prompt after a turn ends (a long-running Subagent, driven via `input_subagent`). Child Sessions run in the same Workspace with their own Trace; nesting depth is currently capped at 1.
+Spawning and running are separate, so the same child Session can accept a follow-up Prompt after a round ends. This is how `input_subagent` drives a long-running subagent. A released child Session can be revived with `resume`, which restores its own history, model and Workspace. Child Sessions run in the same Workspace, each with its own Trace. Nesting depth is currently capped at 1.
 
-A round's input is an OmniMessage list — the same shape `steer` takes, and the same shape `EnvironmentInterface.sendToBackgroundSubagent` takes from a host — so both ways into a child session speak one vocabulary. The caller owns each message's `sender`: the model's own dispatch (`run_subagent`, `input_subagent`) stamps `parent_agent`, while a human's message from a host panel carries none, and the child's Trace records who actually spoke.
+A round reports a cut-off through its return value, so the parent reports that round as failed instead of handing the model half an answer.
+
+A round's input is an OmniMessage list: the same shape `steer` takes, and the same shape a host passes to `EnvironmentInterface.sendToBackgroundSubagent`. Both ways into a child session speak one vocabulary. The caller owns each message's `sender`. The model's own dispatch (`run_subagent`, `input_subagent`) stamps `parent_agent`, while a human's message from a host panel carries none, so the child's Trace records who actually spoke.
 
 ## VisionDescriberService
 
-The image proxy-reading service for text-only models (needed by `read_file` when the Session model cannot view images — its presence is how the tool knows):
+The image proxy-reading service for text-only models. `read_file` needs it when the Session model cannot view images, and its presence is how the tool knows:
 
 ```ts
 interface VisionDescriberService {
@@ -293,8 +379,9 @@ interface VisionDescriberService {
 
 | To … | Do … |
 | --- | --- |
-| Swap or customize model access | implement `LLMInterface` (or just set `client_type` for OpenAI-compatible endpoints) |
-| Swap the execution sandbox | implement `EnvironmentInterface` |
-| Add a tool | implement `BuiltinTool` + register a factory; or declare it under `tools.builtin` in `system_config.yaml` |
-| Customize approval policy | inject an `ApproveFn` (the CLI/Web modes are wrappers over it) |
-| Change an Agent's behavior | edit its Agent State: `system_config.yaml`, `AGENTS.md`, Skills — see the [Configuration Reference](/configuration) |
+| Swap or customize model access | Implement `LLMInterface` (or just set `client_type` for OpenAI-compatible endpoints) |
+| Swap the execution sandbox | Implement `EnvironmentInterface` |
+| Confine the commands an agent runs | Supply `confineSpawn` with a `SpawnConfiner` |
+| Add a tool | Implement `BuiltinTool`, register a factory, and list the tool under `tools.builtin` in `system_config.yaml` (entries without a registered factory are skipped); or connect an MCP server under `tools.mcpServers` |
+| Customize approval policy | Inject an `ApproveFn` (the CLI and Web approval modes are wrappers over it) |
+| Change an agent's behavior | Edit its Agent State (`system_config.yaml`, `AGENTS.md`, Skills); see the [Configuration Reference](/configuration) |
