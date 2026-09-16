@@ -36,7 +36,27 @@ export interface LaunchJob {
 }
 
 const STARTF_USESTDHANDLES = 0x0000_0100;
+/**
+ * The window the new logon session's console would otherwise show.
+ *
+ * `CreateProcessWithLogonW` hands the work to the secondary logon service, which creates the
+ * process itself — and ignores CREATE_NO_WINDOW while doing it, so every confined command
+ * flashed a console window on the desktop. What that service DOES honour is the startup info:
+ * `STARTF_USESHOWWINDOW` with `SW_HIDE` is the ask it passes on.
+ */
+const STARTF_USESHOWWINDOW = 0x0000_0001;
+const SW_HIDE = 0;
 const CREATE_UNICODE_ENVIRONMENT = 0x0000_0400;
+/**
+ * No console for the confined command.
+ *
+ * The command runs in ANOTHER logon session, so Windows will not let it share this process's
+ * console and gives it one of its own — a window that pops up (minimized, if the harness runs
+ * without a desktop of its own) for every command an agent runs, and whose buffer is where the
+ * output goes when the standard handles do not reach the child. Denying the console keeps the
+ * window away; the handles below are what carry the output.
+ */
+const CREATE_NO_WINDOW = 0x0800_0000;
 const HANDLE_FLAG_INHERIT = 0x0000_0001;
 const INFINITE = 0xffff_ffff;
 /** The command inherits the caller's streams; it must NOT get a console of its own. */
@@ -179,6 +199,42 @@ export function applyPolicy(job: LaunchJob, group: string, home: string): string
   return failures;
 }
 
+/**
+ * One line per confined command, where the harness can read it afterwards.
+ *
+ * A launcher writes to the streams its caller gave it, and when those streams are the thing
+ * under suspicion — a command that returns nothing at all — there is nowhere else for a
+ * diagnosis to go. This file is that place: what the standard handles were, whether the command
+ * started, and how it ended.
+ */
+function trace(line: string): void {
+  try {
+    const file = path.win32.join(path.win32.dirname(sandboxHome()), "sandbox-launch.log");
+    fs.appendFileSync(file, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // A diagnosis that cannot be written is not worth failing a command over.
+  }
+}
+
+/** A handle as the trace shows it: a value, and whether Windows considers it one. */
+function describe(handle: unknown): string {
+  const value = koffi.address(handle as never);
+  return value === 0n || value === 0xffff_ffff_ffff_ffffn ? `INVALID(${value})` : `ok(${value})`;
+}
+
+/**
+ * Where the confined command runs: this process's own directory, which the harness set to the
+ * command's cwd, and the Workspace root when that is somehow gone (a deleted directory would
+ * otherwise fail the spawn with a Win32 error rather than a reason).
+ */
+export function workingDirectory(
+  job: LaunchJob,
+  cwd: string = process.cwd(),
+  exists: (p: string) => boolean = fs.existsSync,
+): string {
+  return exists(cwd) ? cwd : job.workspaceRoot;
+}
+
 /** Runs the job, returning the command's exit code. */
 function launch(job: LaunchJob): number {
   const state = readState();
@@ -199,6 +255,9 @@ function launch(job: LaunchJob): number {
   const api = win32();
   const handles = [-10, -11, -12].map((id) => api.getStdHandle(id));
   for (const handle of handles) api.setHandleInformation(handle, HANDLE_FLAG_INHERIT, 1);
+  trace(
+    `handles in=${describe(handles[0])} out=${describe(handles[1])} err=${describe(handles[2])}`,
+  );
   const startup = {
     cb: 0,
     lpReserved: null,
@@ -211,8 +270,8 @@ function launch(job: LaunchJob): number {
     dwXCountChars: 0,
     dwYCountChars: 0,
     dwFillAttribute: 0,
-    dwFlags: STARTF_USESTDHANDLES,
-    wShowWindow: 0,
+    dwFlags: STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW,
+    wShowWindow: SW_HIDE,
     cbReserved2: 0,
     lpReserved2: null,
     hStdInput: handles[0],
@@ -227,12 +286,16 @@ function launch(job: LaunchJob): number {
     LOGON_WITH_PROFILE,
     null,
     wide(job.commandLine),
-    CREATE_UNICODE_ENVIRONMENT,
+    CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
     environmentBlock(sandboxEnvironment(process.env, home, job.network === "none")),
-    job.workspaceRoot,
+    // The directory the HARNESS put this launcher in, which is the command's own working
+    // directory — a command may run in a subdirectory of the Workspace, and handing the child
+    // the Workspace root instead would silently run it somewhere else.
+    workingDirectory(job),
     startup,
     info,
   );
+  trace(`started=${ok} user=${account.user} lastError=${ok ? 0 : api.getLastError()}`);
   if (!ok) {
     process.stderr.write(
       `penguin-winuser: could not start the command as ${account.user} (Win32 error ${api.getLastError()}); refusing to run it unconfined.\n`,
@@ -256,6 +319,7 @@ function launch(job: LaunchJob): number {
   }
   api.closeHandle(info.hThread as unknown);
   api.closeHandle(process_);
+  trace(`exit=${code}`);
   return code;
 }
 

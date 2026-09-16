@@ -15,7 +15,7 @@ import {
   readState,
 } from "../src/index.js";
 import type { WinUserState } from "../src/index.js";
-import { sandboxEnvironment } from "../src/launch.js";
+import { sandboxEnvironment, workingDirectory } from "../src/launch.js";
 import { elevationCommand, powershellPath, runSetup, setupScript } from "../src/setup.js";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -323,5 +323,19 @@ describe("a cut network stays cut", () => {
   it("leaves them alone when the policy did not ask for isolation", () => {
     const open = sandboxEnvironment({ http_proxy: "http://127.0.0.1:10809" }, "C:\\home", false);
     expect(open.http_proxy).toBe("http://127.0.0.1:10809");
+  });
+});
+
+describe("where a confined command runs", () => {
+  it("is the directory the harness gave the launcher, not the Workspace root", () => {
+    const job = { access: "modify" as const, workspaceRoot: WS, commandLine: "x" };
+    expect(workingDirectory(job, "C:\\work\\project\\sub", () => true)).toBe(
+      "C:\\work\\project\\sub",
+    );
+  });
+
+  it("falls back to the Workspace when that directory is gone", () => {
+    const job = { access: "modify" as const, workspaceRoot: WS, commandLine: "x" };
+    expect(workingDirectory(job, "C:\\work\\project\\deleted", () => false)).toBe(WS);
   });
 });
