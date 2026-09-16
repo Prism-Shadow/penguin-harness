@@ -40,7 +40,7 @@ const PLUGINS_SRC = path.join(ROOT, "plugins");
 const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 5;
+const PACK_FORMAT = 6;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -54,6 +54,49 @@ const NATIVE_DEPENDENCIES = new Map([
     "resolves its per-platform launcher binary package at run time (sandbox-dsh)",
   ],
 ]);
+
+/**
+ * The hosts a pushed prefix may land on. npm installs a native module's binary for the machine
+ * doing the install, and this build runs wherever CI or a developer happens to be — so a prefix
+ * built on Linux carried no Windows binary, and sandbox-dsh's Windows runner failed there with
+ * "Cannot find the native Koffi module". The per-platform packages of every NATIVE_DEPENDENCIES
+ * entry are installed for each of these as well; they are small next to the plugins themselves,
+ * and one prefix then serves every target a push can reach.
+ */
+const TARGET_PLATFORMS = [
+  { os: "linux", cpu: "x64" },
+  { os: "linux", cpu: "arm64" },
+  { os: "win32", cpu: "x64" },
+  { os: "darwin", cpu: "arm64" },
+];
+
+/**
+ * The per-platform packages a native dependency declares as optional dependencies, as
+ * `name@version` specifiers, for the targets above. A native module publishes one package per
+ * `<os>-<cpu>` (koffi: `@koromix/koffi-win32-x64`) and depends on all of them optionally, so its
+ * own manifest — installed above — is the list, and this build never hardcodes a platform triple.
+ */
+async function platformPackagesOf(prefix) {
+  const wanted = TARGET_PLATFORMS.map(({ os: o, cpu }) => `${o}-${cpu}`);
+  const specs = [];
+  for (const dep of NATIVE_DEPENDENCIES.keys()) {
+    let manifest;
+    try {
+      manifest = JSON.parse(
+        await fsp.readFile(
+          path.join(prefix, "node_modules", ...dep.split("/"), "package.json"),
+          "utf8",
+        ),
+      );
+    } catch {
+      continue; // not installed: no plugin in this build declares it
+    }
+    for (const [name, version] of Object.entries(manifest.optionalDependencies ?? {})) {
+      if (wanted.some((triple) => name.endsWith(`-${triple}`))) specs.push(`${name}@${version}`);
+    }
+  }
+  return specs.sort();
+}
 
 /** What npm leaves in the prefix that is not a package: its hidden lockfile. Never shipped. */
 const NOT_SHIPPED = new Set(["node_modules/.package-lock.json"]);
@@ -202,6 +245,31 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
           ],
           out,
         );
+        // One call for every target: npm reconciles the tree on each install, so a second
+        // install would prune the first target's package as extraneous. --force is what makes
+        // npm accept a package whose `os`/`cpu` is not this machine's — the point of the call.
+        const platformPackages = await platformPackagesOf(out);
+        if (platformPackages.length > 0) {
+          run(
+            "npm",
+            [
+              "install",
+              "--no-save",
+              "--no-package-lock",
+              "--omit=dev",
+              "--no-audit",
+              "--no-fund",
+              "--ignore-scripts",
+              "--force",
+              "--",
+              ...platformPackages,
+            ],
+            out,
+          );
+        }
+        if (platformPackages.length > 0) {
+          log(`${platformPackages.length} per-platform native binaries: installed`);
+        }
       }
       await fsp.writeFile(path.join(out, COMPLETE), hash);
       log(`${plugins.length} builtin plugins: installed (${hash})`);

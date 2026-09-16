@@ -11,5 +11,6 @@
 
 - Discord 机器人把 Hono 打进自己的包，语言插件把五种语法打进去，sandbox-dsh 把 DSH 整条依赖链打进去；这些包移到 `devDependencies`。内置插件目录现在是 167 个文件（6MB）。
 - 仍保留为运行时依赖的只有原生模块：sandbox-dsh 的 `koffi` 与 landlock 启动器，它们按平台分发的二进制放不进打包文件。
+- 这些二进制现在会为推送可能抵达的每个目标一并装入——Linux x64/arm64、Windows x64 与 macOS arm64——而不再只装构建机自己那一份。在 Linux 上构建的 prefix 不含 Windows 二进制，sandbox-dsh 的 Windows 运行器因此在那里报 “Cannot find the native Koffi module”；现在按各原生依赖自己声明的分平台包一并安装。
 - `scripts/build-plugins.mjs` 在打包任何东西之前，拒绝声明了其他运行时依赖的内置插件，并点名该依赖。
 - **资产以压缩包传输。** 部署把推送的每个包——插件目录里的每个包，以及 node-pty——各打成 `archives/` 下的一个确定性 `.tgz`（同样的文件得到同样的字节，没变的包就是没变的 blob），平台在加载插件或 node-pty 之前把它们解压一次到 `.unpacked/`。一次推送的资产从 433 个文件降到 19 个。把构建转交给其他机器时，转交的是压缩包，而不是本机解压出的文件。
