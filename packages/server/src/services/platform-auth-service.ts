@@ -230,7 +230,6 @@ function platformCatalog(value: unknown, requireEnvelope: boolean): PlatformMode
       modelId,
       displayName,
       contextWindow: Number(contextWindow),
-      ...(maxOutputTokens === undefined ? {} : { maxOutputTokens: Number(maxOutputTokens) }),
       supportsVision: model.supportsVision,
       pricing,
       ...promotion,

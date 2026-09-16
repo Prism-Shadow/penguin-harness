@@ -1451,7 +1451,6 @@ export class ProjectConfigService implements ProjectConfigStore {
         model_id: model.modelId,
         display_name: model.displayName,
         context_window: model.contextWindow,
-        ...(model.maxOutputTokens !== undefined ? { max_tokens: model.maxOutputTokens } : {}),
         vision: model.supportsVision,
         pricing: platformPricingTable(model.pricing),
         ...(model.discount !== undefined && model.listPricing !== undefined

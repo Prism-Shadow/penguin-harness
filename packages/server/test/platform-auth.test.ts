@@ -92,7 +92,6 @@ describe("Penguin Go key delivery validation", () => {
         models: [
           {
             modelId: "gemini-3.8-flash",
-            maxOutputTokens: 65_536,
             clientType: "gemini-3.8",
             discount: 0.5,
             pricing: {
@@ -108,7 +107,7 @@ describe("Penguin Go key delivery validation", () => {
               output: 10,
             },
           },
-          { modelId: "deepseek-future", maxOutputTokens: 65_536, clientType: "deepseek-v4" },
+          { modelId: "deepseek-future", clientType: "deepseek-v4" },
         ],
       },
     });
@@ -293,12 +292,14 @@ describe("Penguin Go key authorization routes", () => {
     expect(penguinGoModels.find((model) => model.modelId === "deepseek-future")).toMatchObject({
       displayName: "DeepSeek Future",
       contextWindow: 1_000_000,
-      maxTokens: 65_536,
       clientType: "deepseek-v4",
       vision: false,
       pricing: { cacheRead: 0.03, cacheWrite: 0.15, output: 0.6 },
       credential: { baseUrl: "https://token.penguin.ooo/api" },
     });
+    expect(penguinGoModels.find((model) => model.modelId === "deepseek-future")).not.toHaveProperty(
+      "maxTokens",
+    );
     expect(penguinGoModels.find((model) => model.modelId === "gemini-3.8-flash")).toMatchObject({
       clientType: "gemini-3.8",
       pricing: { cacheRead: 0, cacheWrite: 0.625, output: 5 },
@@ -386,7 +387,6 @@ describe("Penguin Go key authorization routes", () => {
     expect(added.models.find((model) => model.modelId === "gemini-future")).toMatchObject({
       displayName: "Gemini Future",
       contextWindow: 1_048_576,
-      maxTokens: 65_536,
       clientType: "gemini-3.8",
       vision: true,
       pricing: { cacheRead: 0.05, cacheWrite: 0.25, output: 1 },
@@ -397,6 +397,9 @@ describe("Penguin Go key authorization routes", () => {
         baseUrl: "https://token.penguin.ooo/api",
       },
     });
+    expect(added.models.find((model) => model.modelId === "gemini-future")).not.toHaveProperty(
+      "maxTokens",
+    );
     expect((await owner.get(base)).status).toBe(404);
     expect((await owner.post(`${base}/refresh`, {})).status).toBe(404);
     expect((await owner.post(`${base}/logout`, {})).status).toBe(404);

@@ -14,7 +14,6 @@ export interface PlatformCatalogModel {
   modelId: string;
   displayName: string;
   contextWindow: number;
-  maxOutputTokens?: number;
   supportsVision: boolean;
   /** Effective price Penguin Go actually bills. */
   pricing: PlatformCatalogPricing;
