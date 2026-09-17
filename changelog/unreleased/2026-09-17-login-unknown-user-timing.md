@@ -3,6 +3,7 @@
 - **Date:** 2026-09-17
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#774](https://github.com/Prism-Shadow/penguin-harness/pull/774)
 
 [中文版](2026-09-17-login-unknown-user-timing.zh.md)
 
