@@ -1,5 +1,5 @@
 ---
-title: "Agent company mode: reshaping how people and agents work together"
+title: "Company mode: reshaping how people and agents work together"
 date: 2026-09-16
 category: perspectives
 excerpt: "Products like Multica, Raft and Grok Bot moved agents out of the one-person workbench and into spaces shared with people. Company mode, in beta in PenguinHarness, goes a step further: agents work inside an organization with a mission, reporting lines, a calendar and budgets, and you sit on the board. Here is why that matters, and the two ways to use it."

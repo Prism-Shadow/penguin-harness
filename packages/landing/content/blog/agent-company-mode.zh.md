@@ -1,5 +1,5 @@
 ---
-title: "Agent 公司模式，重塑人与 Agent 的协作方式"
+title: "公司模式：重塑人与 Agent 的协作方式"
 date: 2026-09-16
 category: perspectives
 excerpt: "Multica、Raft、Grok Bot 这类产品把 Agent 从一个人的工作台，带进了人与 Agent 共享的空间。PenguinHarness 内测中的公司模式又往前走了一步：Agent 在一个有使命、有汇报关系、有日历、有预算的组织里工作，而你坐在董事会的位置上。本文说明这件事为什么重要，并介绍两种用法。"

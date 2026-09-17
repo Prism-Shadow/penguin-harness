@@ -1,5 +1,5 @@
 ---
-title: "Create, evaluate and evolve as many agents as you like on your local workbench"
+title: "Create, evaluate and evolve as many agents as you like"
 date: 2026-09-16
 category: practice
 excerpt: Have AI write a Benchmark and take a baseline score, ask AI what a case tests, replace the Benchmark when it needs to change, then evaluate your agents and optimize them, with an Optimizer that improves the agent and an Evaluator that scores it strictly.

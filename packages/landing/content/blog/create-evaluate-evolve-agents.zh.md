@@ -1,5 +1,5 @@
 ---
-title: "在本地工作台上，自由创建、评估、进化多个智能体，数量没有上限"
+title: "自由创建、评估、进化任意多个 Agent"
 date: 2026-09-16
 category: practice
 excerpt: "让 AI 编写 Benchmark 并测出基线分，问 AI 一道题在考什么，Benchmark 需要调整时用新的替换旧的，再评估和优化你的 Agent：Optimizer 负责改进，Evaluator 负责严格打分。"

@@ -1,5 +1,5 @@
 ---
-title: "把你的 Agent 会话连接到飞书、QQ、Telegram 或微信，随时随地调用 AI"
+title: "把你的 Agent 接入飞书、QQ、Telegram 或微信，随时随地使用"
 date: 2026-09-16
 category: practice
 excerpt: "把 PenguinHarness 对话绑定到聊天机器人，随时用手机和 Agent 对话。本教程从配置最快的微信讲起，同一个对话框也支持飞书、Telegram 和 QQ。"
