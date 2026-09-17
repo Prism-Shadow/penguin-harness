@@ -14,6 +14,7 @@ import {
   defaultRunner,
   loadSeatbeltProvider,
   seatbeltProfile,
+  seatbeltSettingsOf,
   SYSTEM_RUNNER,
   writableRoots,
 } from "../src/index.js";
@@ -193,5 +194,13 @@ describe("the sandbox-exec it runs", () => {
     // A host without it (or any non-macOS machine running these tests) falls back to a lookup,
     // and the load-time probe is what rejects a host where nothing answers.
     expect(defaultRunner(() => false)).toBe("sandbox-exec");
+  });
+
+  it("what the deployment names wins over the OS's own", () => {
+    expect(seatbeltSettingsOf({ runner: " /opt/sandbox-exec " }, SYSTEM_RUNNER).runner).toBe(
+      "/opt/sandbox-exec",
+    );
+    expect(seatbeltSettingsOf({}, SYSTEM_RUNNER).runner).toBe(SYSTEM_RUNNER);
+    expect(seatbeltSettingsOf({ runner: "" }, "sandbox-exec").runner).toBe("sandbox-exec");
   });
 });

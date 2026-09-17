@@ -4875,6 +4875,26 @@ export interface PluginConfigEntry {
   parent?: string;
   /** Live status beside the fields; absent when there is none. */
   notices?: PluginConfigNotice[];
+  /** What this group can DO once, on the machine, drawn as buttons beneath its notices. */
+  actions?: PluginConfigActionDecl[];
+}
+
+/** One button under a settings group: what it is called, and what pressing it will do. */
+export interface PluginConfigActionDecl {
+  id: string;
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+}
+
+/** POST /api/admin/plugin-config/action — what running one reported. */
+export interface PluginConfigActionResponse {
+  ok: boolean;
+  message: string;
+  messageZh?: string;
+  /** The groups as they stand after it ran: a setup that worked changes what the page says. */
+  plugins: PluginConfigEntry[];
 }
 
 export interface PluginConfigResponse {

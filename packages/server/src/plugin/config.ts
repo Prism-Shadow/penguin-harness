@@ -346,7 +346,15 @@ export interface SettingsGroup {
   parent?: string;
 }
 
-/** The code half of a `status` contribution: a group's live notices, asked per read. */
+/**
+ * The code half of a `status` contribution: a group's live notices, asked per read, and the
+ * ACTIONS it offers.
+ *
+ * An action is for what a person cannot express as a field: something the deployment must DO
+ * once, on the machine, before the settings above mean anything — the Windows sandbox's local
+ * accounts, which need an administrator's consent. Naming the command in a notice puts the work
+ * on whoever reads it; an action lets the module do it and report back.
+ */
 export interface SettingsGroupStatus {
   notices(): PluginConfigNotice[];
   /**
@@ -355,6 +363,27 @@ export interface SettingsGroupStatus {
    * the save answers with are current.
    */
   saved?(): Promise<void>;
+  /** What this group offers to do, drawn as buttons beneath its notices. */
+  actions?(): PluginConfigAction[];
+  /** Runs one, by its id. Told what happened, in words the page shows as they are. */
+  run?(action: string): Promise<PluginConfigActionResult>;
+}
+
+/** One thing a settings group can do, named for the button that runs it. */
+export interface PluginConfigAction {
+  id: string;
+  title: string;
+  titleZh?: string;
+  /** What pressing it will do, shown beside the button — a person consents to what they read. */
+  description?: string;
+  descriptionZh?: string;
+}
+
+/** What an action reports: whether it did what it said, and what to tell the person. */
+export interface PluginConfigActionResult {
+  ok: boolean;
+  message: string;
+  messageZh?: string;
 }
 
 /** What a module reads: the group it declared, and a watch on it. */
@@ -384,6 +413,8 @@ export abstract class PluginConfigAdmin extends Interface<{
   describe(): PluginConfigEntry[];
   /** Validates and stores one update; answers that entry, masked, with its notices once its card's status has settled. */
   set(name: string, update: Record<string, unknown>): Promise<PluginConfigEntry>;
+  /** Runs one group's action and says what happened; throws PluginConfigError for an unknown one. */
+  run(name: string, action: string): Promise<PluginConfigActionResult>;
 }>() {}
 
 export interface PluginConfigAdminSlots {
@@ -515,16 +546,30 @@ export class PluginConfigPage {
     for (const c of contributions.status ?? []) {
       status.set(c.data.group as string, c.code as SettingsGroupStatus);
     }
-    const withNotices = (entry: PluginConfigEntry): PluginConfigEntry => {
-      const notices = status.get(entry.name)?.notices() ?? [];
-      return notices.length > 0 ? { ...entry, notices } : entry;
+    const withStatus = (entry: PluginConfigEntry): PluginConfigEntry => {
+      const group = status.get(entry.name);
+      const notices = group?.notices() ?? [];
+      const actions = group?.actions?.() ?? [];
+      return {
+        ...entry,
+        ...(notices.length > 0 ? { notices } : {}),
+        ...(actions.length > 0 ? { actions } : {}),
+      };
     };
     this.pluginConfigAdmin = {
-      describe: () => entries.describe().map(withNotices),
+      describe: () => entries.describe().map(withStatus),
       set: async (name, update) => {
         const saved = entries.set(name, update);
         await status.get(saved.parent ?? name)?.saved?.();
-        return withNotices(saved);
+        return withStatus(saved);
+      },
+      run: async (name, action) => {
+        const group = status.get(name);
+        const offered = group?.actions?.() ?? [];
+        if (group?.run === undefined || !offered.some((a) => a.id === action)) {
+          throw new PluginConfigError(null, `"${name}" offers no action "${action}".`);
+        }
+        return group.run(action);
       },
     };
   }

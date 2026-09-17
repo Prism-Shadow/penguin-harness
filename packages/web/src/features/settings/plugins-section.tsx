@@ -193,6 +193,27 @@ export function PluginsSection() {
     }
   };
 
+  /**
+   * Runs a group's action: what the deployment must DO once on the machine (the Windows
+   * sandbox's local accounts). The result's own words are what the person sees — the module
+   * knows what happened, this page does not — and the groups it answers with replace ours,
+   * because a setup that worked changes what the card says about itself.
+   */
+  const runAction = async (entry: PluginConfigEntry, action: string) => {
+    setBusy(`${entry.name}\0${action}`);
+    try {
+      const res = await api.adminRunPluginConfigAction({ name: entry.name, action });
+      adopt(res.plugins);
+      const message = localized(res.message, res.messageZh) ?? res.message;
+      if (res.ok) toastSuccess(message);
+      else toastError(message);
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (entries === null) return <SectionShell>{null}</SectionShell>;
 
   const patch = (plugin: string, name: string, value: unknown) => {
@@ -360,6 +381,28 @@ export function PluginsSection() {
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{description}</p>
           )}
         </div>
+        {(entry.actions ?? []).length > 0 && (
+          <div className="space-y-2">
+            {(entry.actions ?? []).map((action) => {
+              const description = localized(action.description, action.descriptionZh);
+              return (
+                <div key={action.id} className="flex items-start gap-3">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy !== null}
+                    onClick={() => void runAction(entry, action.id)}
+                  >
+                    {localized(action.title, action.titleZh) ?? action.title}
+                  </Button>
+                  {description !== undefined && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         {(entry.notices ?? []).map((notice, i) =>
           notice.tone === "attention" ? (
             <p key={i} className={`rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>

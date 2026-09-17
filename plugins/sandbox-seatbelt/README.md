@@ -10,8 +10,8 @@ network isolation and path masking — as policy rules rather than mounts.
 Apple's to distribute, not this project's — so unlike the Linux backend, which ships its own
 bubblewrap, there is nothing here to vendor. What that buys elsewhere, this buys by naming the
 absolute path rather than a bare command: a PATH without `/usr/bin`, or one that puts something
-else called `sandbox-exec` first, no longer decides what confines a command. A host where it does not work is caught by the
-load-time probe.
+else called `sandbox-exec` first, no longer decides what confines a command. The settings can
+still name another program, and a host where it does not work is caught by the load-time probe.
 
 ## Requirements
 

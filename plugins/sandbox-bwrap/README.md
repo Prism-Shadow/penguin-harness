@@ -19,7 +19,8 @@ skew between hosts, and no sandbox that is quietly off because a machine lacked 
 binary finds its library through an `$ORIGIN/../lib` rpath, which is what makes it usable from a
 backend that only rewrites an argv and never sets an environment.
 
-Precedence, when a command is confined: the one shipped here, else a `bwrap` on PATH.
+Precedence, when a command is confined: the program named in the settings, else the one shipped
+here, else a `bwrap` on PATH.
 
 ## How the profile is built
 

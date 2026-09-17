@@ -179,7 +179,8 @@ describe("penguin-bwrap provider", () => {
         probed.push([timeoutMs, runner]);
         return runner !== "/missing/bwrap";
       },
-      settings: () => bwrapSettingsOf(doc),
+      // "" for the shipped binary: this is about the settings, not about what the package carries.
+      settings: () => bwrapSettingsOf(doc, ""),
     });
     const policy = { mode: "read-only", workspaceRoot: WS } as const;
     expect(provider.confine([...ARGV], policy).argv[0]).toBe("bwrap");
@@ -226,5 +227,13 @@ describe("the bwrap it runs", () => {
 
   it("carries none for a host it has no binary for, and says so with an empty path", () => {
     expect(vendoredRunner("win32", "x64", () => false)).toBe("");
+  });
+
+  it("what the deployment names wins; then the shipped one; then a bwrap on PATH", () => {
+    const shipped = "/pkg/vendor/linux-x64/bin/bwrap";
+    expect(bwrapSettingsOf({ runner: "/usr/bin/bwrap" }, shipped).runner).toBe("/usr/bin/bwrap");
+    expect(bwrapSettingsOf({}, shipped).runner).toBe(shipped);
+    expect(bwrapSettingsOf({ runner: "  " }, shipped).runner).toBe(shipped);
+    expect(bwrapSettingsOf({}, "").runner).toBe("bwrap");
   });
 });
