@@ -6,9 +6,10 @@
  * element — subagents, Workspace files, Memory, Trace, terminals — is a tab in the right
  * or bottom dock, arranged by the user and persisted globally. This page contributes the
  * panel BODIES (they need its session/stream state) through DockPanel's renderPanel, and
- * the stream's jump commands: a message file card opens the Workspace tab on that file
- * (onOpenFile), a subagent chip opens the agents tab focused (onOpenSubagent), a
- * memory-change row opens the Memory tab located (onLocateMemoryChange).
+ * the stream's jump commands: a message file card, or a reply's link to a Workspace file,
+ * opens the Workspace tab on that file (onOpenFile), a subagent chip opens the agents tab
+ * focused (onOpenSubagent), a memory-change row opens the Memory tab located
+ * (onLocateMemoryChange).
  * Approval mode and Model/context usage live in the input area's toolbar; context is compacted
  * via the /compact slash command.
  * Draft state (/chat/new) is carried by DraftView: Agent / Workspace / approval mode / Model are
@@ -352,8 +353,18 @@ export function ChatPage() {
   // the conversation on screen.
   useSyncExternalStore(subscribeDock, dockVersion);
   useSyncExternalStore(subscribeTerminals, terminalApiSupported);
-  /** Workspace tab: locate this file in the tree (a message file card's click). */
+  /** Workspace tab: locate this file in the tree (a message file card's click, or a reply's link to a file). */
   const [fileOpenRequest, setFileOpenRequest] = useState<{ path: string } | null>(null);
+  /**
+   * Brings the Workspace tab up on a Workspace-relative path. Both callers have already
+   * normalized the text they hold (toWorkspaceRelative strips an absolute prefix and converts
+   * Windows separators). Stable on purpose: every link rendered in the transcript reads it
+   * through context, so a fresh function per render would re-render them all on every frame.
+   */
+  const openWorkspaceFile = useCallback((path: string) => {
+    openPanel("workspace");
+    setFileOpenRequest({ path });
+  }, []);
   /** Memory tab: land on this memory's detail (a card row), or the list (null target). */
   const [memoryRequest, setMemoryRequest] = useState<{
     target: MemoryLocateTarget | null;
@@ -1568,13 +1579,7 @@ export function ChatPage() {
     onGiveUp: () => {
       void onStop();
     },
-    onOpenFile: (path) => {
-      // The file card has already normalized the text path to a Workspace-relative path
-      // (toWorkspaceRelative, including stripping absolute-path prefixes and converting
-      // Windows separators), so this just brings the Workspace tab up and navigates to it.
-      openPanel("workspace");
-      setFileOpenRequest({ path });
-    },
+    onOpenFile: openWorkspaceFile,
     onOpenSubagent: (sessionId, origin) => {
       // Chip click: the agents tab focused on that child (the focus chain ends with the
       // child's own id), with the graph pinned to this chip's Task.
