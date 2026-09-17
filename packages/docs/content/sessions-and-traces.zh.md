@@ -18,7 +18,7 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 | Task | 由一个 Prompt 启动的一个执行目标；由一个或多个连续 Request 组成 |
 | Request | 一次 LLM API 调用：输入上下文和工具定义，输出流式结果 |
 
-各层如何协同工作，见[架构总览](/architecture)。Request 如何在 Task 内推进，见[Agent 运行循环](/agent-loop)。
+各层如何协同工作，见[架构总览](/architecture)。Request 如何在 Task 内推进，见 [Agent 运行循环](/agent-loop)。
 
 ## 数据目录
 

@@ -378,7 +378,7 @@ PKCE verifier 由服务器生成，只在内存中保存 10 分钟，从不发�
 
 ### Agent 路由
 
-- `POST /agents` 接受 `{agentId, name?, description?, plugins?, skillsDirectory?, directorySkills?, dataBase64?}`，返回 201 和 `{agent}`。`plugins` 指定要预装的插件库插件；遇到未知名称会拒绝请求，且不会创建 Agent 目录。`skillsDirectory` 和 `directorySkills` 从用户选择的目录导入 Skill（参见[Session 创建与目录浏览](#session-创建与目录浏览)中的 `GET /dir-skills`），两者必须一起发送。`dataBase64` 让 Agent 从导出的快照启动，而不是使用默认模板。
+- `POST /agents` 接受 `{agentId, name?, description?, plugins?, skillsDirectory?, directorySkills?, dataBase64?}`，返回 201 和 `{agent}`。`plugins` 指定要预装的插件库插件；遇到未知名称会拒绝请求，且不会创建 Agent 目录。`skillsDirectory` 和 `directorySkills` 从用户选择的目录导入 Skill（参见 [Session 创建与目录浏览](#session-创建与目录浏览)中的 `GET /dir-skills`），两者必须一起发送。`dataBase64` 让 Agent 从导出的快照启动，而不是使用默认模板。
 - `POST …/config/mcp-test` 从本机连接一条 MCP 服务器配置，列出它的工具后断开，不写入任何 Agent State。配置条目格式有误时返回 400。服务器连不上不算 HTTP 错误，照常返回 `{ok: false, error}`。
 - `POST …/config/kernel-update` 是 `reset` 的无损版本。它把缺失或仍保持旧默认值的设置标签页升级到当前默认值（记入 `advanced`），完整保留已自定义的标签页（记入 `kept`），并写入新的默认值版本（`kernelVersion`）。
 - `template-placeholder` 路由都是幂等的。Vault 和 Skills 两个路由会在 Prompt 模板中插入 `{{VAULT}}` 或 `{{SKILLS}}`；如果模板里是旧版硬编码的 `# Vault` 或 `# Skills` 小节，则替换成对应的占位符。记忆路由插入 `{{MEMORY}}`，在记忆功能推出之前创建的 Agent 就是通过它接入记忆的。
@@ -450,8 +450,8 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content` | 读取评分标准中的一个文件，参数与上一条相同 |
 
 - `GET /benchmarks` 只列出含有 `benchmark_config.toml` 的目录；评估过程中删除 Benchmark 留下的目录没有这个文件，因此不会出现在列表里。每个条目都带 `status`：Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`。
-- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark_config.toml`（其中 `status = "published"`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
-- 这些读取文件内容的路由采用与 Workspace 文件相同的内联加固；参见[Workspace 文件响应](#workspace-文件响应)。
+- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark_config.toml`（其中 `status = "published"`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
+- 这些读取文件内容的路由采用与 Workspace 文件相同的内联加固；参见 [Workspace 文件响应](#workspace-文件响应)。
 
 ## 组织（公司模式）
 
@@ -494,7 +494,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 ### 组织
 
-- `POST /` 接收 `{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?, language?}`，返回 201 和组织详情。创建组织的同时会创建 CEO Agent，并以一次初始化运行打开它的工位。id 或 CEO 的 agent id 已被占用时，路由返回 409。CEO 的组织架构条目以 `workspace: ceo` 写入，也就是共享 Workspace 下的一个分区，其他员工也都是这样。
+- `POST /` 接收 `{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?, language?}`，返回 201 和组织详情。创建组织的同时会创建 CEO Agent，并以一次初始化运行打开它的工位。id 或 CEO 的 Agent id 已被占用时，路由返回 409。CEO 的组织架构条目以 `workspace: ceo` 写入，也就是共享 Workspace 下的一个分区，其他员工也都是这样。
 - `ceoBudget` 是 CEO 的月度预算，单位为美元，写入 CEO 在 `org_chart.yaml` 中条目的 `budget`。不能为负数，默认 100。预算沿累计线比较，所以这个值是全公司的上限。
 - `language` 取 `zh` 或 `en`，是组织所有产出内容的工作语言。省略时根据使命判断。
 - `GET /:orgId` 返回概览：设置、看板计数、今日日程、待办事项、全员频道的最近消息、`inbox` 和告警。设置里始终带有生效的 `language`；文件里没有记录时，从使命推断得出。
@@ -511,7 +511,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 ### 员工
 
 - `POST /:orgId/employees` 招聘已有 Agent 时传 `{agentId}`，新建 Agent 时传 `{newAgent: {agentId, name?, description?, plugins?}}`；另外还可以带 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?` 和 `model?`。
-- `workspace` 缺省为以员工 agent id 命名的子目录，因为共享 Workspace 的根目录存放共享输入，不属于任何人的工位。相对路径 `workspace` 会先规范化（`./hr` → `hr`），再在共享 Workspace 下创建。绝对路径必须已经存在。包含 `..` 而逃出共享 Workspace 的路径返回 400 `invalid_workspace`。
+- `workspace` 缺省为以员工 Agent id 命名的子目录，因为共享 Workspace 的根目录存放共享输入，不属于任何人的工位。相对路径 `workspace` 会先规范化（`./hr` → `hr`），再在共享 Workspace 下创建。绝对路径必须已经存在。包含 `..` 而逃出共享 Workspace 的路径返回 400 `invalid_workspace`。
 - `PATCH /:orgId/employees/:agentId` 修改职位、上级、Workspace（创建与校验规则和招聘时相同）、预算（传 `null` 即清除）、职责和模型。
 - `DELETE /:orgId/employees/:agentId` 将员工移出组织：下属上移，改归这名员工的上级管理。CEO 不能移出组织。
 
@@ -528,7 +528,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 ### 工单
 
 - `POST /:orgId/tickets` 接收 `{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}`。
-- `owner` 是唯一的责任主体：员工（直接写 agent id，或 `agent:<id>`）或 Project 成员（`user:<id>`）。缺省为调用者。不传 `notify` 时，负责人一人就是整份 `notify` 列表，但前提是负责人为员工，这样人不会因为自己名下的工单被 @。谁提交了工单，记录在 `history` 的 `created` 条目里。
+- `owner` 是唯一的责任主体：员工（直接写 Agent id，或 `agent:<id>`）或 Project 成员（`user:<id>`）。缺省为调用者。不传 `notify` 时，负责人一人就是整份 `notify` 列表，但前提是负责人为员工，这样人不会因为自己名下的工单被 @。谁提交了工单，记录在 `history` 的 `created` 条目里。
 - id 的 slug 优先取 `slug`，它必须是由连字符连接的小写英文单词（否则返回 400）。不传 `slug` 时从标题提取。标题凑不出两个单词时，交给 Project 的模型处理；模型也失败时，返回 400 `slug_required`，让调用者自己指定 slug。
 - `GET /:orgId/tickets/:ticketId` 返回 frontmatter 字段、正文各节、纯文本形式的 `progress`、`history`、贡献会话、子工单和逐级汇总的成本。
 - `PUT /:orgId/tickets/:ticketId` 接收 `{title?, owner?, parent?, notify?, priority?, due?, goal?, acceptanceCriteria?, result?}`。`owner` 不接受 `null`：工单始终有负责人，负责人可以更换，但不能取消。`parent` 和 `due` 接受 `null`，用于清空这两项。
@@ -588,7 +588,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。它从不用于过滤列表。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。
 - `source` 只接受 `"benchmark"`，用于 Benchmark 评估或优化创建的 Session。`subagent` 和 `schedule` 由服务器自己设置。
 - `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries}`，只包含子目录；读不了的目录按空列表返回，用户仍然可以向上返回。
-- `GET /dir-skills` 只读取绝对路径下的 `<path>/.agents/skills` 和 `<path>/.claude/skills`，响应为 `{path, skills}`。没有 Skill 的目录返回空列表。参见[Agent](#agent)一节中的 `POST /agents`。
+- `GET /dir-skills` 只读取绝对路径下的 `<path>/.agents/skills` 和 `<path>/.claude/skills`，响应为 `{path, skills}`。没有 Skill 的目录返回空列表。参见 [Agent](#agent) 一节中的 `POST /agents`。
 
 ## 用量与 Trace（Agent 级别）
 
@@ -623,7 +623,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 ## Session 级端点
 
-下面这些路径省略了 `/api/sessions/:sessionId` 前缀。Session 和 Trace 背后的存储模型见[Session 与 Trace](/sessions-and-traces)。
+下面这些路径省略了 `/api/sessions/:sessionId` 前缀。Session 和 Trace 背后的存储模型见 [Session 与 Trace](/sessions-and-traces)。
 
 这里的每条路由都遵循两条约定。调用方无权访问的 Session 一律返回 `404` `session_not_found`，因此不会暴露它是否存在。一个 Session 同一时间只能运行一个 Task 或一次压缩：冲突的请求返回 409（`task_in_progress` / `compacting`）。
 
@@ -642,7 +642,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 - `GET /` 返回 Session 的信息。与列表行不同，单个 Session 的响应还带 `tracePath`，即最新 Trace 文件的绝对路径。`orgId` 标记公司模式缓存持有的会话（工位会话，或这个组织某个工单的贡献会话）；普通 Session 一律不带这个字段，列表路由同样会设置它。
 - `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
-- `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。内置 Web App 打开一段对话时先显示最近 50 轮，滚动时再加载更早的内容。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）和此前累计的统计（`prior`）。Task 运行期间，响应还会带 `live`；见[GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。内置 Web App 打开一段对话时先显示最近 50 轮，滚动时再加载更早的内容。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）和此前累计的统计（`prior`）。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
 - `GET /context` 返回当前模型上下文的各个组成部分，外加 `compactionThreshold`：上下文达到多大（以 Token 计）时，Session 的下一个请求会开始压缩。这个阈值就是 Agent 的 `compaction.max_context_length`，上限不超过模型上下文窗口的剩余空间。压缩未启用、读不到 Agent 配置，或阈值不低于窗口时，这个值是 `null`。这条路由每次调用都读取最新的 Trace 文件，所以数值是快照，不是实时计数器。
 - `GET /goal` 返回 `{goal}`：Session 从未跑过目标时为 `null`，否则为 `{objective, status, budget, used, rounds}`。`status` 取值为 `active`、`complete`、`blocked`、`budget_limited` 或 `aborted`，`budget` 为 -1 表示不限制。目标只存活在它的运行期间，所以 Session 已停止运行、目标却仍是 active 时，会报告为 `aborted`。见[目标模式](/goal-mode)。
 
@@ -752,7 +752,7 @@ Web App 的 `/model` 切换没有专用端点。和 `/agent` 交接一样，它�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/files?path=` | 浏览一个 Workspace 目录 |
-| GET | `/files/content?path=&download=&preview=` | 读取一个 Workspace 文件（见[Workspace 文件响应](#workspace-文件响应)） |
+| GET | `/files/content?path=&download=&preview=` | 读取一个 Workspace 文件（见 [Workspace 文件响应](#workspace-文件响应)） |
 | GET | `/files/preview-redirect?path=` | 在独立的预览源上打开 HTML 文件：签发签名 token 并以 302 重定向 |
 | POST | `/files/stat` | 检查文件是否存在：`{paths}` |
 | PUT | `/files/content?path=` | 上传文件：`{dataBase64}`，最大 14MB |
@@ -879,7 +879,7 @@ Session 可以连接消息机器人。目前支持的渠道是飞书、Telegram�
 
 - 飞书：`baseDomain` 默认为 `https://open.feishu.cn`。
 - Telegram：凭据就是 @BotFather 签发的那一个 `<bot id>:<secret>` 格式的 Token。解析不出数字 id 的 Token 返回 400 `telegram_token_invalid`。测试成功时会给出 Token 登录的机器人名（`botUsername`），并在 @BotFather 的 Group Privacy 开启时报告 `groupPrivacy: true`，这个选项默认开启。Group Privacy 开启时，机器人收不到自己不担任管理员的群里的普通消息。
-- QQ：凭据是 QQ 开放平台开发设置中的 App ID 和 App Secret。没有域名字段，因为 API v2 只有一个主机。测试不报告账号名，因为平台没有能识别机器人的调用。没有最近的 QQ 消息可回复时，test-message 还会返回 502 `qq_send_failed`；见[QQ](#qq)。
+- QQ：凭据是 QQ 开放平台开发设置中的 App ID 和 App Secret。没有域名字段，因为 API v2 只有一个主机。测试不报告账号名，因为平台没有能识别机器人的调用。没有最近的 QQ 消息可回复时，test-message 还会返回 502 `qq_send_failed`；见 [QQ](#qq)。
 - 微信：微信的 PUT 是唯一不含凭据的。微信 bot token 只存在于扫码写入的地方，也没有控制台可供复制，因此 PUT 要求已存在绑定，绑定存在之前返回 400 `wechat_token_required`。清除后的微信配置只有重新扫码才能再次连接。test 路由是唯一不接受请求体的：这个渠道没有任何手动输入的内容，已存储的绑定就是全部可探测的对象（没有绑定时返回 400 `wechat_token_required`）。测试既不给出机器人名，也不给出扫码者信息。
 
 ### QQ
@@ -1010,7 +1010,7 @@ Telegram 连接时会先清空积压，跳过无连接期间发送的消息。�
 
 ### 传输格式
 
-默认（未命名）的 SSE 事件以单行 JSON 携带原始 OmniMessage 信封：SDK 产出、Trace 存储的就是这个协议（见[OmniMessage 协议](/omni-message)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
+默认（未命名）的 SSE 事件以单行 JSON 携带原始 OmniMessage 信封：SDK 产出、Trace 存储的就是这个协议（见 [OmniMessage 协议](/omni-message)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
 
 ```ts
 export type ServerEvent =

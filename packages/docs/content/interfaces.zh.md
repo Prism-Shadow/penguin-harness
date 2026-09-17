@@ -5,7 +5,7 @@ description: 引擎背后的 Human、LLM 与 Environment 契约，附完整签�
 
 `context_engine` 依赖三个接口：Human、LLM 和 Environment。协议转换全部发生在实现内部，引擎能看到的只有 [OmniMessage](/omni-message)。
 
-本页沿一轮运行的控制流展开：[Human 边界](#human-边界)、[LLM 契约](#llminterface)、[审批回调](#approvefn)和 [Environment 契约](#environmentinterface)。结尾介绍[子 Agent](#子-agent-接口)和[视觉](#visiondescriberservice)服务，以及[扩展点](#扩展点)。
+本页沿一轮运行的控制流展开：[Human 边界](#human-边界)、[LLM 契约](#llminterface)、[审批回调](#approvefn)和 [Environment 契约](#environmentinterface)。结尾介绍[子 Agent](#子-agent-接口) 和[视觉](#visiondescriberservice)服务，以及[扩展点](#扩展点)。
 
 所有类型都从 `@prismshadow/penguin-core` 导出。源码位于 `packages/core/src/interfaces/`：
 
@@ -134,7 +134,7 @@ status 只回答一个问题：这个请求要不要重试？errorCode 则说明
 实现约束：
 
 - 绝不抛异常。
-- 不做内部重试。重连是引擎的职责，见[Agent 运行循环](/agent-loop)。
+- 不做内部重试。重连是引擎的职责，见 [Agent 运行循环](/agent-loop)。
 
 ### GenerativeModelConfig
 

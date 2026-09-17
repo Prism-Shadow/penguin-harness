@@ -190,7 +190,7 @@ Windows 上还有以下不同：
 - **Ctrl-C**：向运行中的命令会话发送 Ctrl-C（`input_command` 传入 `"\u0003"`），会终止整棵命令会话进程树，而不是中断前台命令。Windows 无法把控制台 Ctrl-C 投递给通过管道连接的子进程，中断因此退化为强制结束整棵进程树。
 - **就地更新**：Windows 暂不支持 `penguin update`，升级请重新运行安装器。
 - **配置文件权限**：在 POSIX 系统上，配置文件与凭据文件以 `0600`（仅属主可读写）权限写入。Windows 没有这类权限位，这些文件遵循你用户目录的默认 NTFS ACL。
-- **"running scripts is disabled"**：PowerShell 报这个错误、拒绝运行 `penguin` 时，PowerShell 拦下的其实是某个 `penguin.ps1` 启动器。它可能来自 0.1.6 之前的旧安装，重新运行安装器即可（升级会替换 `bin\` 并删除它）；也可能是 npm 全局安装生成的，这时可以显式调用 `penguin.cmd`，或用 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 允许运行本地脚本。安装包本身只带 `penguin.cmd`，在任何执行策略下都能运行。
+- **「running scripts is disabled」**：PowerShell 报这个错误、拒绝运行 `penguin` 时，PowerShell 拦下的其实是某个 `penguin.ps1` 启动器。它可能来自 0.1.6 之前的旧安装，重新运行安装器即可（升级会替换 `bin\` 并删除它）；也可能是 npm 全局安装生成的，这时可以显式调用 `penguin.cmd`，或用 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 允许运行本地脚本。安装包本身只带 `penguin.cmd`，在任何执行策略下都能运行。
 
 ### 数据目录
 

@@ -358,7 +358,7 @@ A refused call gets a synthetic `aborted` `tool_call_output` for the model to re
 | The command policy (`forbidden`) | `Tool call denied by policy.` |
 | A pre-tool-use hook | `Tool call denied by the <hook> hook[: <reason>].` |
 
-A policy hit therefore never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event, with a policy veto recorded as `forbidden`, which makes the Trace a complete audit record. Approval happens in the tool-execution phase of the [Agent Loop](/agent-loop).
+A policy hit therefore never reads as a person cancelling. See [ApproveFn](/interfaces#approvefn). Every decision is written to the Trace as an `approval_decision` event, with a policy veto recorded as `forbidden`, which makes the Trace a complete audit record. Approval happens in the tool-execution phase of the [agent loop](/agent-loop).
 
 **Subagent approvals.** Ending the parent's task never auto-denies a child's approval. The server attaches a session-lifetime fallback approval sink to every Session it runs, CLI-driven Sessions included. It escalates to the user any child approval that has no active poll window and no background-launch sink, even while the parent Session sits idle. When a parent task ends or is stopped, only the **main** Session's pending approvals are resolved. A child approval tagged with `origin` stays pending, with its card on screen, until the user decides. An SDK embedder that never calls `Session.setSubagentApprovalFallback` keeps the poll-window-only behavior: the child's requests wait until a `run_subagent` or `input_subagent` call is active.
 

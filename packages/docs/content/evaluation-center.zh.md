@@ -5,11 +5,11 @@ description: 在 Web App 中创建 Benchmark、给 Agent 打分，并根据分�
 
 评估中心是 Web App 里衡量和改进 Agent 的地方。**Benchmark** 是一组题目，每道题包含任务题干和一份私有的评分细则。Benchmark 属于 Project，不属于某个 Agent，所以它可以给 Project 里的任何 Agent 打分。
 
-- 要创建 Benchmark，见[让 AI 创建 Benchmark](#让-ai-创建-benchmark)或[手动创建 Benchmark](#手动创建-benchmark)。
+- 要创建 Benchmark，见[让 AI 创建 Benchmark](#让-ai-创建-benchmark) 或[手动创建 Benchmark](#手动创建-benchmark)。
 - 要查看题目、分数曲线和历次评估，见[查看 Benchmark](#查看-benchmark)。
 - 要给 Agent 打分，见[评估 Agent](#评估-agent)。
 - 要根据分数改进 Agent，见[优化 Agent](#优化-agent)。
-- 要换一批题目或清理 Benchmark，见[替换 Benchmark](#替换-benchmark)和[删除 Benchmark](#删除-benchmark)。
+- 要换一批题目或清理 Benchmark，见[替换 Benchmark](#替换-benchmark) 和[删除 Benchmark](#删除-benchmark)。
 
 这些页面背后的评估与优化机制，见[自我进化](/self-improvement)。
 

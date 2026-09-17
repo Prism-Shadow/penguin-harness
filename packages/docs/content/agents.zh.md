@@ -6,7 +6,7 @@ description: 创建 Agent，配置它的提示词、工具、Skill、钩子、�
 Agent 是 Project 里配置好的助手。每个 Agent 都有自己的指令、运行参数、工具、Skill、钩子包、记忆、密钥保险柜变量和定时任务，这些内容存放在一起，构成它的 Agent State。创建 Agent、修改设置，都在**智能体**页面上完成。
 
 - 要查看 Project 里的 Agent，见[智能体页面](#智能体页面)。
-- 要添加 Agent，见[用 AI 创建 Agent](#用-ai-创建-agent)或[手动创建 Agent](#手动创建-agent)。
+- 要添加 Agent，见[用 AI 创建 Agent](#用-ai-创建-agent) 或[手动创建 Agent](#手动创建-agent)。
 - 要修改 Agent，见 [Agent 设置](#agent-设置)和各标签页对应的章节。
 - 要备份、迁移或重置 Agent，见[概览标签页](#概览标签页)。
 - 要删除 Agent，见[删除 Agent](#删除-agent)。
@@ -38,7 +38,7 @@ Agent 是 Project 里配置好的助手。每个 Agent 都有自己的指令、�
 4. 选择**在新对话中编辑**。会打开一个新对话，提示词已填好，此时还没有发送。
 5. 检查提示词并发送。
 
-对话框会写明由哪个 Agent 执行：「将由『*agent*』在新对话中完成」。执行者是 Project 的 `default_agent`；没有 `default_agent` 时，用第一个 Agent。
+对话框会写明由哪个 Agent 执行：「将由『*Agent*』在新对话中完成」。执行者是 Project 的 `default_agent`；没有 `default_agent` 时，用第一个 Agent。
 
 固定指令要求执行 Agent 使用 `agent-initialization` Skill，并且：
 
@@ -53,7 +53,7 @@ Agent 是 Project 里配置好的助手。每个 Agent 都有自己的指令、�
 
 1. 在**智能体**页面选择**手动创建**，打开**创建 Agent** 对话框。
 2. 在 **Agent id** 中输入 id。长度为 2–64 个字符，以小写字母开头，只能用小写字母、数字和下划线。创建后不能修改。
-3. 可选：填写**名称**和**描述**。名称留空时用 agent id。
+3. 可选：填写**名称**和**描述**。名称留空时用 Agent id。
 4. 可选：在**插件**中从插件库选择要装到新 Agent 上的插件。Agent 创建时会一并装上这些插件的 Skill 和钩子包。
 5. 可选：在**从项目目录导入技能**中选择一个目录。PenguinHarness 会读取这个目录下 `.agents/skills` 和 `.claude/skills` 文件夹里的 Skill，从中勾选要安装的。目录里的 Skill 与所选插件里的 Skill 同名时，装的是目录里的那个。
 6. 选择**创建**，打开新 Agent 的设置。

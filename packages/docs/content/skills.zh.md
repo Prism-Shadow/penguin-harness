@@ -8,7 +8,7 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 - **想给 Agent 添加新能力？** 见[浏览插件](#浏览插件)和[在 Agent 上安装插件](#在-agent-上安装插件)。
 - **有更新可装？** 见[更新已安装的插件](#更新已安装的插件)。
 - **想让 Agent 用上指定的 Skill？** 见[在对话中使用 Skill](#在对话中使用-skill)。
-- **要管理某个 Agent 的 Skill 和钩子？** 见[管理 Agent 的 Skill](#管理-agent-的-skill)和[钩子包](#钩子包)。
+- **要管理某个 Agent 的 Skill 和钩子？** 见[管理 Agent 的 Skill](#管理-agent-的-skill) 和[钩子包](#钩子包)。
 - **要添加沙箱后端或其他服务端插件？** 见[服务端插件](#服务端插件)。
 - **想自己写 Skill？** 见[编写 Skill](#编写-skill)。
 - **想了解文件格式和内部机制？** 见[工作原理](#工作原理)。
@@ -47,7 +47,7 @@ description: 浏览插件，为 Agent 安装 Skill 和钩子包，为 Project �
 
 - 创建 Agent 时，在**创建 Agent** 对话框的**插件**字段里选择插件，见[智能体](/agents)。
 - 内置 Agent `default_agent` 初始化时会装上整个插件库，标记了 `preinstall: false` 的插件除外。[内置插件库](#内置插件库)的表格注明了哪些插件不预装。
-- 插件库之外的 Skill 或钩子包，可以在 Agent 的设置页导入，见[导入 Skill](#导入-skill)和[导入钩子包](#导入钩子包)。
+- 插件库之外的 Skill 或钩子包，可以在 Agent 的设置页导入，见[导入 Skill](#导入-skill) 和[导入钩子包](#导入钩子包)。
 
 ## 更新已安装的插件
 
@@ -183,7 +183,7 @@ Skill 自身没有图标。已安装的 Skill 或钩子包显示来源插件的�
 
 Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和优化，这就形成了完整的改进闭环；参见[自我进化](/self-improvement)。修改 Skill 时，把 `version` 设为当天的日期加下一个序号。
 
-长 Task 也能把经验沉淀回来。装上 `continual-learning` 插件后，一个 Task 运行超过 30 轮才结束时，插件的 stop 钩子会把这个 Task 的精简摘录交给一个后台子 Agent，由它把有长期价值的发现写进相关的 `SKILL.md` 文件，见[Agent 循环](/agent-loop#stop-hook)。
+长 Task 也能把经验沉淀回来。装上 `continual-learning` 插件后，一个 Task 运行超过 30 轮才结束时，插件的 stop 钩子会把这个 Task 的精简摘录交给一个后台子 Agent，由它把有长期价值的发现写进相关的 `SKILL.md` 文件，见 [Agent 循环](/agent-loop#stop-hook)。
 
 ## 内置插件库
 
