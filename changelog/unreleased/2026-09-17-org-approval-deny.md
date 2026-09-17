@@ -3,6 +3,7 @@
 - **Date:** 2026-09-17
 - **Type:** fix
 - **Scope:** `server`, `skills`
+- **PR:** [#785](https://github.com/Prism-Shadow/penguin-harness/pull/785)
 
 [中文版](2026-09-17-org-approval-deny.zh.md)
 
