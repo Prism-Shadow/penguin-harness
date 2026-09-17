@@ -420,18 +420,16 @@ function SkillSelect({
           disabled={disabled}
           // The panel is unmounted while closed, so its search box starts empty on every open.
           onClick={() => setOpen(!open)}
-          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          // Icon only, the + button's square; the selected count rides the corner.
+          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          <GlyphIcon d={BOOK_ICON} className="shrink-0" />
-          {/* When the card is narrower than @md, only the icon + badge remain (title shows the full name). */}
-          <span className="hidden min-w-0 truncate @md:block">{S.chat.skillsSelect}</span>
+          <GlyphIcon d={BOOK_ICON} size={15} className="shrink-0" />
           {/* Selected-count badge (the chip row above the input mirrors the selection too). */}
           {selected.length > 0 && (
-            <span className="shrink-0 rounded-full bg-gray-200/80 px-1.5 py-px font-mono text-[10px] font-semibold text-gray-700 dark:bg-gray-700/60 dark:text-gray-200">
+            <span className="absolute -top-0.5 -right-0.5 min-w-3.5 rounded-full bg-gray-200 px-1 text-center font-mono text-[9px] leading-3.5 font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">
               {selected.length}
             </span>
           )}
-          <ChevronDown size={ICON_SIZE.caretDense} />
         </button>
       }
     >
@@ -923,10 +921,11 @@ export function ChatInput({
   /** Whether the current model supports image input (models config's vision; assumed supported by default). */
   vision: boolean;
   approvalMode: ApprovalMode;
-  onChangeApprovalMode: (mode: ApprovalMode) => void;
+  /** A returned promise keeps the permission button's pick on screen until the save settles. */
+  onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<unknown>;
   /** The Session's own sandbox policy (the draft's pick before there is a Session). */
   sandbox: SessionSandbox;
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void;
+  onChangeSandbox: (pick: Partial<SessionSandbox>) => void | Promise<unknown>;
   modeSaving: boolean;
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */

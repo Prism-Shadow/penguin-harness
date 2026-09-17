@@ -1506,7 +1506,8 @@ export function ChatPage() {
     (mode: ApprovalMode) => {
       if (!selected || modeSaving) return;
       setModeSaving(true);
-      void api
+      // Returned so the permission button keeps the pick on screen until the save settles.
+      return api
         .patchSession(selected.sessionId, { approvalMode: mode })
         .then((res) => replace(res.session))
         .catch((e: unknown) => {
@@ -1524,7 +1525,8 @@ export function ChatPage() {
     (pick: Partial<SessionSandbox>) => {
       if (!selected || modeSaving) return;
       setModeSaving(true);
-      void api
+      // Returned so the permission button keeps the pick on screen until the save settles.
+      return api
         .patchSession(selected.sessionId, { sandbox: pick })
         .then((res) => replace(res.session))
         .catch((e: unknown) => {

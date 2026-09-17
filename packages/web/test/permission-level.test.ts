@@ -40,7 +40,9 @@ describe("permission level", () => {
     const glyphs = Object.values(PERMISSION_LEVEL_GLYPH);
     expect(glyphs).toHaveLength(4);
     expect(new Set(glyphs).size).toBe(4);
-    // One family: every mark sits inside the same shield.
-    for (const glyph of glyphs) expect(glyph.startsWith(SHIELD)).toBe(true);
+    // lucide's shield family: the three that keep the whole outline start with it.
+    for (const level of ["all", "partial", "read-only"] as const) {
+      expect(PERMISSION_LEVEL_GLYPH[level].startsWith(SHIELD)).toBe(true);
+    }
   });
 });

@@ -91,10 +91,14 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
   await page.getByPlaceholder(/搜索模型/).fill("mini");
   await page.getByRole("button", { name: /claude-4-8-mini/ }).click();
 
-  // Switch the approval mode to read-only (the trigger button shows the Chinese description).
-  await page.getByRole("button", { name: "审批模式" }).click();
-  await page.getByRole("button", { name: /放行只读/ }).click();
-  await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
+  // Switch the approval mode to read-only from the permission button's Approval section (the
+  // button is icon-only; its title spells out the three values).
+  await page.getByRole("button", { name: /^权限/ }).click();
+  await page.getByRole("menuitemradio", { name: /放行只读/ }).click();
+  await expect(page.getByRole("button", { name: /^权限/ })).toHaveAttribute(
+    "title",
+    /审批: 放行只读/,
+  );
 
   // Conversation-time thinking level (backed by the Agent settings): the picker shows the
   // seeded default (medium); the menu carries a title bar and the rows 低/中/高/极高/最高
@@ -142,7 +146,10 @@ test("draft: pick model/approval -> reload restores them -> send creates the ses
     )
     .toBe(true);
   await expect(page.getByRole("button", { name: "选择模型" })).toContainText("claude-4-8-mini");
-  await expect(page.getByRole("button", { name: "审批模式" })).toContainText("放行只读");
+  await expect(page.getByRole("button", { name: /^权限/ })).toHaveAttribute(
+    "title",
+    /审批: 放行只读/,
+  );
   // The thinking level is NOT draft state: it restores from the Agent config (written through above), not the cache.
   await expect(page.getByRole("button", { name: "思考等级" })).toContainText("高 (high)");
   // Send: the Session is only created now, and the selections land faithfully in its meta.

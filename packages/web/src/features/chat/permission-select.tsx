@@ -1,8 +1,7 @@
 /**
- * The composer's permission button: ONE shield glyph whose colour says how much the Agent may do
- * on its own (see lib/permission-level.ts), with the level's name beside it when the card is
- * wide enough, and a different mark inside the shield per level so it never depends on colour
- * alone. The menu has three sections — Filesystem, Network and Approval — and, for an
+ * The composer's permission button: an icon-only square like the + button, wearing lucide's
+ * shield icon for the level (see lib/permission-level.ts) — a different icon per level, coloured
+ * by it, so the level never depends on colour alone. The menu has three sections — Filesystem, Network and Approval — and, for an
  * administrator, More…, which opens the Settings page's Sandbox card.
  *
  * Filesystem and Network edit the Session's own sandbox policy: a Session keeps the policy it
@@ -17,7 +16,6 @@ import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/a
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ChevronDown } from "../../components/ui/icons";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import {
@@ -32,9 +30,9 @@ const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", 
 const FS_MODES: SessionSandbox["mode"][] = ["read-only", "workspace-write", "danger-full-access"];
 const NETWORK_MODES: SessionSandbox["network"][] = ["open", "none"];
 
-/** An arrow leaving a box: More… leaves the menu for the Settings page. */
+/** lucide `external-link`: More… leaves the menu for the Settings page. */
 const OPEN_SETTINGS_GLYPH =
-  "M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5";
+  "M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6";
 
 /** A section's small heading inside the panel. */
 function Heading({ children }: { children: ReactNode }) {
@@ -73,9 +71,15 @@ function Choice({
   );
 }
 
+/** A pick not yet confirmed by its save: shown at once, dropped when the save settles. */
+interface PendingPick {
+  approvalMode?: ApprovalMode;
+  sandbox?: Partial<SessionSandbox>;
+}
+
 export function PermissionSelect({
-  approvalMode,
-  sandbox,
+  approvalMode: savedApprovalMode,
+  sandbox: savedSandbox,
   onChangeApprovalMode,
   onChangeSandbox,
   disabled,
@@ -83,26 +87,45 @@ export function PermissionSelect({
 }: {
   approvalMode: ApprovalMode;
   sandbox: SessionSandbox;
-  onChangeApprovalMode: (mode: ApprovalMode) => void;
-  onChangeSandbox: (pick: Partial<SessionSandbox>) => void;
+  /** A save that returns a promise keeps the pick on screen until it settles. */
+  onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<unknown>;
+  onChangeSandbox: (pick: Partial<SessionSandbox>) => void | Promise<unknown>;
+  /** Blocks a second pick while one saves; deliberately NOT drawn dimmed (that read as a flicker). */
   disabled: boolean;
   direction?: "up" | "down";
 }) {
   const [open, setOpen] = useState(false);
+  // The pick shows the moment it is made: waiting for the server's row would draw the old
+  // level, then the new one — the flicker. When the save settles the saved values take over
+  // (on a refusal those are the old ones, and the toast says why).
+  const [pending, setPending] = useState<PendingPick | null>(null);
+  const approvalMode = pending?.approvalMode ?? savedApprovalMode;
+  const sandbox: SessionSandbox = { ...savedSandbox, ...pending?.sandbox };
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The Sandbox card lives on the Plugins page, which only an administrator can open.
   const isAdmin = useAuth().user?.isAdmin === true;
   const P = S.chat.permission;
   const level = permissionLevel(approvalMode, sandbox);
+  // The swap animation plays only for a CHANGE of level, never on the first paint — React's
+  // "adjust state while rendering" pattern for information from the previous render.
+  const [shownLevel, setShownLevel] = useState(level);
+  const [animate, setAnimate] = useState(false);
+  if (shownLevel !== level) {
+    setShownLevel(level);
+    setAnimate(true);
+  }
   const levelName = P.levels[level] ?? level;
   const summary = [
     `${P.fs}: ${P.fsModes[sandbox.mode] ?? sandbox.mode}`,
     `${P.network}: ${P.networkModes[sandbox.network] ?? sandbox.network}`,
     `${P.approval}: ${S.chat.approvalModeNames[approvalMode] ?? approvalMode}`,
   ].join(" · ");
-  const pick = (apply: () => void) => {
-    apply();
+  const pick = (next: PendingPick, save: () => void | Promise<unknown>) => {
     setOpen(false);
+    setPending(next);
+    const saved = save();
+    if (saved instanceof Promise) void saved.finally(() => setPending(null));
+    else setPending(null);
   };
   return (
     <>
@@ -119,15 +142,18 @@ export function PermissionSelect({
             data-level={level}
             disabled={disabled}
             onClick={() => setOpen((v) => !v)}
-            className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+            // Icon only, the + button's square: the level is in the icon's shape and colour, and
+            // spelled out in the accessible name and the title.
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           >
-            <GlyphIcon
-              d={PERMISSION_LEVEL_GLYPH[level]}
-              className={toneInk[PERMISSION_LEVEL_TONE[level]]}
-            />
-            {/* The level's name only when the card is wide enough; the title carries it always. */}
-            <span className="hidden min-w-0 truncate @md:block">{levelName}</span>
-            <ChevronDown size={ICON_SIZE.caretDense} />
+            {/* Keyed by level: a new level mounts a new icon, which swaps in. */}
+            <span key={level} className={animate ? "anim-icon-swap" : undefined}>
+              <GlyphIcon
+                d={PERMISSION_LEVEL_GLYPH[level]}
+                size={15}
+                className={toneInk[PERMISSION_LEVEL_TONE[level]]}
+              />
+            </span>
           </button>
         }
       >
@@ -138,7 +164,11 @@ export function PermissionSelect({
               key={mode}
               label={P.fsModes[mode] ?? mode}
               selected={sandbox.mode === mode}
-              onPick={() => pick(() => mode !== sandbox.mode && onChangeSandbox({ mode }))}
+              onPick={() =>
+                mode === sandbox.mode
+                  ? setOpen(false)
+                  : pick({ sandbox: { mode } }, () => onChangeSandbox({ mode }))
+              }
             />
           ))}
           <Heading>{P.network}</Heading>
@@ -147,7 +177,11 @@ export function PermissionSelect({
               key={network}
               label={P.networkModes[network] ?? network}
               selected={sandbox.network === network}
-              onPick={() => pick(() => network !== sandbox.network && onChangeSandbox({ network }))}
+              onPick={() =>
+                network === sandbox.network
+                  ? setOpen(false)
+                  : pick({ sandbox: { network } }, () => onChangeSandbox({ network }))
+              }
             />
           ))}
           <Heading>{P.approval}</Heading>
@@ -156,7 +190,11 @@ export function PermissionSelect({
               key={mode}
               label={S.chat.approvalModes[mode] ?? mode}
               selected={approvalMode === mode}
-              onPick={() => pick(() => mode !== approvalMode && onChangeApprovalMode(mode))}
+              onPick={() =>
+                mode === approvalMode
+                  ? setOpen(false)
+                  : pick({ approvalMode: mode }, () => onChangeApprovalMode(mode))
+              }
             />
           ))}
           {isAdmin && (
