@@ -41,6 +41,13 @@ export function isAppUrl(url: string, origin: string | null): boolean {
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 /**
+ * The host Workspace previews are served from. On loopback the server always puts the App on
+ * `localhost` and previews on this name (loopbackHostRoles in the server's preview-token
+ * service), and the desktop always loads the App on `localhost` (appOriginFor, attach mode).
+ */
+const PREVIEW_HOST = "127.0.0.1";
+
+/**
  * Whether a URL belongs to this instance's local surface: the app origin itself or its
  * loopback counterpart on the same port, which is where Workspace previews are served.
  * Preview windows navigate freely within it; anything else is external and belongs in
@@ -58,17 +65,6 @@ export function isLocalSurfaceUrl(url: string, origin: string | null): boolean {
   }
   if (target.protocol !== app.protocol || target.port !== app.port) return false;
   return LOOPBACK_HOSTS.has(target.hostname) && LOOPBACK_HOSTS.has(app.hostname);
-}
-
-/**
- * The host Workspace previews are served from while the App is on `appHost`: the server
- * canonicalizes the App onto one loopback name and serves previews only from the other
- * (loopbackHostRoles in the server's preview-token service).
- */
-function previewHostFor(appHost: string): string | null {
-  if (appHost === "localhost") return "127.0.0.1";
-  if (appHost === "127.0.0.1") return "localhost";
-  return null;
 }
 
 /** "Open in a new tab" for a Workspace HTML file: mints a preview token, then 302s to the preview host. */
@@ -128,7 +124,7 @@ export function classifyWindowOpen(url: string, origin: string | null): WindowOp
       ? "window"
       : "deny";
   }
-  return target.hostname === previewHostFor(appHost) && target.pathname.startsWith("/preview/")
+  return target.hostname === PREVIEW_HOST && target.pathname.startsWith("/preview/")
     ? "window"
     : "deny";
 }
