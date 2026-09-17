@@ -13,9 +13,12 @@
  * exactly four sends for a run that completed six messages, the last carrying the
  * remainder; `msg_seq` increasing without repeating; the approval notice taking the
  * reserved slot rather than being lost behind it; one-message-per-line clamped to the
- * budget instead of the channel-neutral 20; and a send with nothing to reply to failing
- * loudly rather than pretending. No test opens a socket.
+ * budget instead of the channel-neutral 20; a reply's file, which QQ cannot take, filed as an
+ * error record without spending a slot; and a send with nothing to reply to failing loudly
+ * rather than pretending. No test opens a socket.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
@@ -720,6 +723,44 @@ describe("qq binding routes and the passive reply budget", () => {
       "line 2",
       "line 3",
       lines.slice(3).join("\n"),
+    ]);
+  });
+
+  // —— Outbound files ——————————————————————————————————————————————————————
+
+  it("a file the reply mentions is filed as an expected error record and spends no reply slot", async () => {
+    const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
+    const row = sessionRowOf(SID2, projectId);
+    row.workspace = ws;
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["The notes are in xx.md."]));
+    await bindEnabled(SID2, APP_ID, { renderMarkdown: false });
+    // Written just before the run, so it counts as the run's own output.
+    await fs.writeFile(path.join(ws, "xx.md"), "notes");
+    await fake.lastGateway().fire(c2cText("write the notes", "msg_file"));
+    await waitFor(() =>
+      t.deps.errorsRepo.recent(projectId).some((r) => r.code === "messaging_file_send_failed"),
+    );
+    await new Promise((r) => setTimeout(r, TAIL_MS * 3));
+    // The reply alone, in the first slot. QQ counts every message against the passive-reply
+    // budget, and nothing about the refused file is sent into the chat.
+    expect(fake.allSends().map((s) => [s.content, s.msgSeq])).toEqual([
+      ["The notes are in xx.md.", 1],
+    ]);
+    // The refusal is filed under the Project instead, naming the file, the channel and QQ's
+    // own reason — expected, because the platform will refuse the next file identically and
+    // nobody has anything to fix.
+    expect(
+      t.deps.errorsRepo
+        .recent(projectId)
+        .map(({ code, kind, message }) => ({ code, kind, message })),
+    ).toEqual([
+      {
+        code: "messaging_file_send_failed",
+        kind: "expected",
+        message:
+          '"xx.md" was not sent to the qq chat: QQ cannot receive "xx.md": sending a file to QQ requires a publicly reachable URL for it, which this server has no way to provide',
+      },
     ]);
   });
 

@@ -176,13 +176,13 @@ interface QQOutboundFile {
  * identical every time, and nothing an operator reads a dashboard to find (see error-kind.ts).
  *
  * The passive-reply-window refusal in `enqueue` deliberately stays a BARE `Error`, and the
- * split is the point rather than an oversight: this one costs nothing, since the chat gets the
- * reply text carrying its own explanation of the missing file, while that one IS the reply —
- * the text is dropped and the chat cannot be told, because the message that would carry the
- * reason is the message being refused. Somebody therefore does have to notice it, which is
- * what `unexpected` is for; and `MessagingUnsupportedError` promises the opposite in its own
- * contract ("`message` must say what could not be carried and why, because that text reaches
- * the chat"), which for a send outside the window it cannot keep.
+ * split is the point rather than an oversight: this one costs nothing, since the reply text
+ * still reaches the chat and the record names the file that did not follow it, while that one
+ * IS the reply — the text is dropped and the chat cannot be told, because the message that
+ * would carry the reason is the message being refused. Somebody therefore does have to notice
+ * it, which is what `unexpected` is for; and `MessagingUnsupportedError` promises the opposite
+ * in its own contract (a refusal the platform repeats identically, with no fault to chase and
+ * no fix to deploy), which a reply lost to an expired window does not keep.
  */
 function refuseMedia(file: QQOutboundFile): Promise<never> {
   return Promise.reject(
