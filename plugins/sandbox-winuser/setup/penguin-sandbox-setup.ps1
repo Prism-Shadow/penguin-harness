@@ -209,8 +209,11 @@ function Set-BlockFirewall([string] $User, [string[]] $Names) {
   Each target is tiny, so this finishes in seconds no matter how large the profile is — the
   opposite of `icacls $UserProfile /T`, which stamps every cache file a developer owns.
 
-  A directory takes the inheritance flags so files created later are covered; a file cannot,
-  and icacls refuses (OI)(CI) on one — hence the two spellings.
+  The profile ROOT is granted WITHOUT inheritance flags, and that is the load-bearing detail.
+  An inheritable ACE on the root makes Windows propagate it to every existing child — the whole
+  million-file tree — even with no /T. Measured here: minutes of CPU and still going. Without the
+  flags the ACE applies to the directory object alone, which is all a command needs to traverse
+  and list `~`; the files it must actually READ are granted one by one just below.
 #>
 function Set-ConfigAccess([switch] $Revoke) {
   if (-not (Test-Path -LiteralPath $UserProfile)) {
@@ -218,14 +221,16 @@ function Set-ConfigAccess([switch] $Revoke) {
     return
   }
   $targets = @()
-  $targets += [pscustomobject]@{ Path = $UserProfile; Container = $true; Recurse = $false }
+  # The root: traverse and list only, NEVER inheritable (see the note above).
+  $targets += [pscustomobject]@{ Path = $UserProfile; Inherit = $false; Recurse = $false }
   foreach ($file in (Get-ChildItem -LiteralPath $UserProfile -File -Force -ErrorAction SilentlyContinue)) {
-    $targets += [pscustomobject]@{ Path = $file.FullName; Container = $false; Recurse = $false }
+    $targets += [pscustomobject]@{ Path = $file.FullName; Inherit = $false; Recurse = $false }
   }
   foreach ($rel in $ConfigDirs) {
     $dir = Join-Path $UserProfile $rel
     if (Test-Path -LiteralPath $dir) {
-      $targets += [pscustomobject]@{ Path = $dir; Container = $true; Recurse = $true }
+      # Small by construction, so inheritance here propagates over a handful of files.
+      $targets += [pscustomobject]@{ Path = $dir; Inherit = $true; Recurse = $true }
     }
   }
   foreach ($target in $targets) {
@@ -234,7 +239,7 @@ function Set-ConfigAccess([switch] $Revoke) {
       foreach ($who in @($GroupName, $FullOnlineUser, $FullOfflineUser)) {
         $arguments += @('/remove:g', $who)
       }
-    } elseif ($target.Container) {
+    } elseif ($target.Inherit) {
       $arguments += @('/grant', "${GroupName}:(OI)(CI)(RX)")
       $arguments += @('/grant', "${FullOnlineUser}:(OI)(CI)(M)")
       $arguments += @('/grant', "${FullOfflineUser}:(OI)(CI)(M)")
