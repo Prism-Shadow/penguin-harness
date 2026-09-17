@@ -1819,6 +1819,21 @@ export const zh = {
     applyConfirmRemove: (name: string) => `移除 ${name}？`,
     applyConfirmBody: "所有 Project 中正在进行的 Agent 运行都会被中止。",
     pageTitle: "插件",
+    /** The header's machine picker: which machine's plugins the page shows and edits. */
+    viewMachine: "机器",
+    allMachines: "所有机器",
+    allMachinesDesc: "每台机器都运行的插件。在此安装即对所有机器启用。",
+    thisServer: "本机",
+    machineDesc: "这台机器运行的插件。在此安装只对这台机器启用，也只有这台机器会下载它。",
+    /** A row listed for some machines only, by alias. */
+    onlyOn: (names: string) => `仅在 ${names}`,
+    /** An all-machines row listed only for other machines. */
+    notHere: "本机不运行",
+    /** A row the Project lists for a machine that has not reported it running yet. */
+    notSynced: "尚未同步到该机器",
+    /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
+    sharedCannotRemove: "已对所有机器启用：请在「所有机器」视图中移除。",
+    machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
     /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
     openSettings: "插件设置",
     pageDesc:

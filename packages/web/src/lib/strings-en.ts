@@ -1800,6 +1800,23 @@ export const en: Strings = {
     applyConfirmRemove: (name: string) => `Remove ${name}?`,
     applyConfirmBody: "Agent runs in progress in every Project will be stopped.",
     pageTitle: "Plugins",
+    /** The header's machine picker: which machine's plugins the page shows and edits. */
+    viewMachine: "Machine",
+    allMachines: "All machines",
+    allMachinesDesc: "What every machine runs. Installing here enables a plugin on all of them.",
+    thisServer: "This server",
+    machineDesc:
+      "What this machine runs. Installing here enables a plugin on this machine only, and only this machine downloads it.",
+    /** A row listed for some machines only, by alias. */
+    onlyOn: (names: string) => `only on ${names}`,
+    /** An all-machines row listed only for other machines. */
+    notHere: "not on this server",
+    /** A row the Project lists for a machine that has not reported it running yet. */
+    notSynced: "not on that machine yet",
+    /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
+    sharedCannotRemove: "Enabled on all machines: remove it in the All machines view.",
+    machineUnreadable: (name: string, reason: string) =>
+      `Could not read what ${name} runs: ${reason}`,
     /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
     openSettings: "Plugin settings",
     pageDesc:

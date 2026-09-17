@@ -25,7 +25,12 @@
  */
 import fs from "node:fs";
 import os from "node:os";
-import { DEFAULT_PROJECT_ID, VERSION, loadProjectConfig } from "@prismshadow/penguin-core";
+import {
+  DEFAULT_PROJECT_ID,
+  VERSION,
+  effectivePluginTable,
+  loadProjectConfig,
+} from "@prismshadow/penguin-core";
 import type { ProjectConfig } from "@prismshadow/penguin-core";
 import type {
   MachineInfo,
@@ -64,7 +69,7 @@ import { upgradeRemote } from "./upgrade.js";
 import type { UpgradeOutcome } from "./upgrade.js";
 import { mintTokenOnRemote } from "./remote-token.js";
 import { syncModelsToMachine } from "./models-sync.js";
-import { syncPluginsToMachine } from "./plugins-sync.js";
+import { syncPluginsToMachine, type WantedPlugin } from "./plugins-sync.js";
 import type { LocalModels } from "./models-sync.js";
 import { machineApi } from "./machine-api.js";
 import { startRemoteServer, stopRemoteServer } from "./server-control.js";
@@ -1146,7 +1151,10 @@ export class MachinesService {
     // a path this product has (PRFC-0010).
     const plugins = await syncPluginsToMachine({
       api: machineApi(this.#effects.agent(target, port), port, session.cookie),
-      loadLocal: (projectId) => this.#localPlugins(projectId),
+      // Asked of THIS machine: its own table joins the shared one, keyed by the id its server
+      // minted — null (no server there has reported one) reads the shared table alone.
+      loadLocal: (projectId) =>
+        this.#localPlugins(projectId, this.repo.get(address)?.machineId ?? null),
       projects,
     });
     if (plugins.kind === "failed") {
@@ -1168,12 +1176,15 @@ export class MachinesService {
   }
 
   /**
-   * What a Project asks for, by package name — the machine's list takes names; an unreadable
-   * config syncs nothing rather than emptying the machine.
+   * What a Project asks of one machine, by package name with its pinned version; an
+   * unreadable config syncs nothing rather than emptying the machine.
    */
-  async #localPlugins(projectId: string): Promise<string[]> {
+  async #localPlugins(projectId: string, machineId: string | null): Promise<WantedPlugin[]> {
     const config = await this.#effects.loadConfig(projectId);
-    return Object.keys(config.plugins ?? {});
+    const table = effectivePluginTable(config.plugins ?? { all: {}, machines: {} }, machineId);
+    return Object.entries(table).map(([name, req]) =>
+      req.version === undefined ? { name } : { name, version: req.version },
+    );
   }
 
   /**

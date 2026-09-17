@@ -2072,8 +2072,12 @@ export const installAgentPackage = (body: {
  */
 const pluginsPath = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/plugins/installed`;
-export const getInstalledPlugins = (projectId: string) =>
-  apiFetch<InstalledPluginsResponse>(pluginsPath(projectId));
+/**
+ * `server` reads a machine's own list through this server's tunnel — what it actually runs —
+ * and null reads this server's, which holds the Project's tables for the whole fleet.
+ */
+export const getInstalledPlugins = (projectId: string, server: string | null = null) =>
+  apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), { server });
 /** Admin only; applied without a restart where the runtime can re-assemble the App. */
 export const putInstalledPlugins = (projectId: string, plugins: readonly string[]) =>
   apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), {
@@ -2081,19 +2085,33 @@ export const putInstalledPlugins = (projectId: string, plugins: readonly string[
     body: { plugins },
   });
 /**
- * Admin only: npm-installs the package into the data root unless the build ships it, then
- * lists it and re-assembles the App. Slow for a cold registry fetch — and listing a package
- * that is not on the machine means nothing, which is why the two happen together.
+ * Admin only: lists the package in the shared table, or with `machineId` in that machine's
+ * own table. The machines that will run it install it — this server npm-installs it into its
+ * data root unless the build ships it, and only when it runs it itself — then the App is
+ * re-assembled. Slow for a cold registry fetch.
  */
-export const installPlugin = (projectId: string, specifier: string) =>
+export const installPlugin = (
+  projectId: string,
+  specifier: string,
+  machineId: string | null = null,
+) =>
   apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), {
     method: "POST",
-    body: { specifier },
+    body: machineId === null ? { specifier } : { specifier, machineId },
   });
-/** Admin only: drops it from this Project's list and re-assembles the App; the package leaves disk once no Project asks for it. */
-export const uninstallPlugin = (projectId: string, specifier: string) =>
+/**
+ * Admin only: drops it from every table of this Project, or with `machineId` from that
+ * machine's own table; the package leaves this server's disk once nothing asks it to run here.
+ */
+export const uninstallPlugin = (
+  projectId: string,
+  specifier: string,
+  machineId: string | null = null,
+) =>
   apiFetch<InstalledPluginsResponse>(
-    `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}`,
+    `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}${
+      machineId === null ? "" : `&machineId=${encodeURIComponent(machineId)}`
+    }`,
     { method: "DELETE" },
   );
 

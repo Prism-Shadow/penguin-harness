@@ -12,7 +12,17 @@ import type { InstalledPluginsResponse } from "../src/api/types.js";
 import { syncPluginsToMachine } from "../src/machines/plugins-sync.js";
 
 /** A machine whose list is whatever was last written to it. */
-function fakeMachine(initial: Record<string, string[]>, opts: { restartPending?: boolean } = {}) {
+function fakeMachine(
+  initial: Record<string, string[]>,
+  opts: {
+    restartPending?: boolean;
+    shipped?: string[];
+    /** Packages npm cannot fetch over there. */
+    unfetchable?: string[];
+    /** Rows that machine's own `[plugins.<id>]` tables add, per Project. */
+    ownRows?: Record<string, string[]>;
+  } = {},
+) {
   const state = new Map(Object.entries(initial));
   const calls: { method: string; path: string; body?: unknown }[] = [];
   const body = (list: string[]): InstalledPluginsResponse => ({
@@ -24,9 +34,13 @@ function fakeMachine(initial: Record<string, string[]>, opts: { restartPending?:
       modules: [],
       replaces: [],
       ...(specifier.includes("not-there") ? { error: "not installed on this machine" } : {}),
+      everywhere: true,
+      machines: [],
+      here: true,
     })),
-    shipped: [],
+    shipped: opts.shipped ?? [],
     file: ".project_config.toml",
+    machineId: "Theirs0000000000",
     restartPending: opts.restartPending === true,
   });
   const api: MachineApi = {
@@ -44,15 +58,37 @@ function fakeMachine(initial: Record<string, string[]>, opts: { restartPending?:
       if (method === "PUT") {
         state.set(projectId, [...((payload as { plugins: string[] }).plugins ?? [])]);
       }
-      return { status: 200, text: JSON.stringify(body(state.get(projectId) ?? [])) };
+      if (method === "POST") {
+        const specifier = (payload as { specifier: string }).specifier;
+        if (opts.unfetchable?.includes(specifier)) {
+          return { status: 400, text: "npm: 404 Not Found" };
+        }
+        const name = specifier.replace(/(.)@.*$/, "$1");
+        state.set(projectId, [...(state.get(projectId) ?? []), name]);
+      }
+      const reply = body(state.get(projectId) ?? []);
+      for (const specifier of opts.ownRows?.[projectId] ?? []) {
+        reply.plugins.push({
+          specifier,
+          active: true,
+          builtin: false,
+          modules: [],
+          replaces: [],
+          everywhere: false,
+          machines: ["Theirs0000000000"],
+          here: true,
+        });
+      }
+      return { status: 200, text: JSON.stringify(reply) };
     },
     postBytes: async () => ({ status: 500, text: "unused" }),
   };
   return { api, calls, state };
 }
 
-const local = (lists: Record<string, string[]>) => (projectId: string) =>
-  Promise.resolve(lists[projectId] ?? []);
+const local =
+  (lists: Record<string, (string | { name: string; version: string })[]>) => (projectId: string) =>
+    Promise.resolve((lists[projectId] ?? []).map((p) => (typeof p === "string" ? { name: p } : p)));
 
 describe("syncPluginsToMachine", () => {
   it("writes what the Project asks for, and removes what the machine has beyond it", async () => {
@@ -158,5 +194,55 @@ describe("syncPluginsToMachine", () => {
     expect(out.kind === "synced" && out.projects).toEqual(["p2"]);
     expect(out.kind === "synced" && out.refused.map((r) => r.projectId)).toEqual(["p1"]);
     expect(m.state.get("p2")).toEqual(["@acme/two"]);
+  });
+  it("installs over there only what that machine is asked for and lacks, pinned as asked", async () => {
+    // A plugin listed for other machines never reaches this one's loadLocal, so nothing
+    // fetches it here; what does reach it is fetched by the machine's own POST.
+    const m = fakeMachine({ p1: ["@acme/had"] });
+    const out = await syncPluginsToMachine({
+      api: m.api,
+      loadLocal: local({ p1: ["@acme/had", { name: "@acme/new", version: "1.2.3" }] }),
+      projects: ["p1"],
+    });
+    expect(m.calls.filter((c) => c.method === "POST").map((c) => c.body)).toEqual([
+      { specifier: "@acme/new@1.2.3" },
+    ]);
+    expect(out.kind === "synced" && out.added).toEqual(["@acme/new"]);
+    expect(m.state.get("p1")).toEqual(["@acme/had", "@acme/new"]);
+  });
+
+  it("lists a plugin the machine's build ships without a download", async () => {
+    const m = fakeMachine({ p1: [] }, { shipped: ["@acme/builtin"] });
+    await syncPluginsToMachine({
+      api: m.api,
+      loadLocal: local({ p1: ["@acme/builtin"] }),
+      projects: ["p1"],
+    });
+    expect(m.calls.some((c) => c.method === "POST")).toBe(false);
+    expect(m.state.get("p1")).toEqual(["@acme/builtin"]);
+  });
+
+  it("reports a package that machine cannot fetch and still delivers the rest", async () => {
+    const m = fakeMachine({ p1: [] }, { unfetchable: ["@acme/gone"] });
+    const out = await syncPluginsToMachine({
+      api: m.api,
+      loadLocal: local({ p1: ["@acme/gone", "@acme/ok"] }),
+      projects: ["p1"],
+    });
+    expect(out.kind === "synced" && out.refused.map((r) => r.detail)).toEqual([
+      "installing @acme/gone → 400: npm: 404 Not Found",
+    ]);
+    expect(m.state.get("p1")).toEqual(["@acme/ok"]);
+  });
+
+  it("leaves rows the machine's own tables add out of the comparison", async () => {
+    const m = fakeMachine({ p1: ["@acme/same"] }, { ownRows: { p1: ["@acme/its-own"] } });
+    const out = await syncPluginsToMachine({
+      api: m.api,
+      loadLocal: local({ p1: ["@acme/same"] }),
+      projects: ["p1"],
+    });
+    expect(out.kind === "synced" && out.removed).toEqual([]);
+    expect(m.calls.some((c) => c.method === "PUT")).toBe(false);
   });
 });

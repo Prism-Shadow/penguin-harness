@@ -170,6 +170,69 @@ describe("installed plugins", () => {
     ).toBe(403);
   });
 
+  it("a plugin asked of another machine only is listed there, and neither installed nor loaded here", async () => {
+    const other = "Other00000000000";
+    const res = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "@acme/elsewhere@1.2.3",
+      machineId: other,
+    });
+    // Nothing fetched it here — a local npm install of a package that does not exist would
+    // have answered plugin_install_failed.
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as InstalledPluginsResponse;
+    expect(body.plugins).toEqual([
+      expect.objectContaining({
+        specifier: "@acme/elsewhere",
+        active: false,
+        everywhere: false,
+        machines: [other],
+        here: false,
+      }),
+    ]);
+    expect(body.plugins[0]!.error).toBeUndefined();
+    expect(body.restartPending).toBe(false);
+    expect(await fs.readFile(listFile(), "utf8")).toContain(
+      `[plugins.${other}]\n"@acme/elsewhere" = "1.2.3"`,
+    );
+
+    // Removing it from that machine's table leaves the shared table alone.
+    await ship({ name: "@acme/one", module: "One" });
+    await admin.put("/api/projects/default_project/plugins/installed", { plugins: ["@acme/one"] });
+    const removed = await admin.delete(
+      `/api/projects/default_project/plugins/installed?specifier=@acme/elsewhere&machineId=${other}`,
+    );
+    expect(removed.status).toBe(200);
+    expect((await view()).plugins.map((p) => [p.specifier, p.everywhere])).toEqual([
+      ["@acme/one", true],
+    ]);
+    expect(
+      (
+        await admin.post("/api/projects/default_project/plugins/installed", {
+          specifier: "@acme/one",
+          machineId: "ssh:not-an-id",
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it("a plugin listed for this server's own id runs here", async () => {
+    await ship({ name: "@acme/mine", module: "Mine" });
+    const self = (await view()).machineId;
+    const res = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "@acme/mine",
+      machineId: self,
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as InstalledPluginsResponse;
+    expect(body.plugins[0]).toMatchObject({
+      specifier: "@acme/mine",
+      active: true,
+      everywhere: false,
+      machines: [self],
+      here: true,
+    });
+  });
+
   it("reports why a listed plugin failed to load, not a restart that would not help", async () => {
     // A shipped package that throws on import.
     await ship({
