@@ -254,6 +254,14 @@ function New-SandboxAccount([string] $Name) {
   if (-not (Get-LocalGroupMember -Group $GroupName -Member $Name -ErrorAction SilentlyContinue)) {
     Add-LocalGroupMember -Group $GroupName -Member $Name
   }
+  # ALSO the built-in Users group, and without it nothing runs at all: an account in no group
+  # holds no logon right, so CreateProcessWithLogonW refuses it with ACCESS_DENIED (Win32 5),
+  # and it could not read System32 or Program Files to start a shell even if it logged on.
+  # Users is what makes it an ordinary local account — the floor every confined command needs.
+  if (-not (Get-LocalGroupMember -Group 'Users' -Member $Name -ErrorAction SilentlyContinue)) {
+    Add-LocalGroupMember -Group 'Users' -Member $Name -ErrorAction SilentlyContinue
+    Write-Host "account ${Name}: added to Users"
+  }
   return $password
 }
 
