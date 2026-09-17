@@ -3,7 +3,7 @@
 - **Date:** 2026-09-14
 - **Type:** improvement
 - **Scope:** `web`, `docs`
-- **PR:** [#674](https://github.com/Prism-Shadow/penguin-harness/pull/674)
+- **PR:** [#769](https://github.com/Prism-Shadow/penguin-harness/pull/769)
 
 [中文版](2026-09-14-settings-dialog-name.zh.md)
 
