@@ -107,6 +107,7 @@ export function testConfig(root: string): ServerConfig {
     port: 7364,
     dbPath: ":memory:",
     previewOrigin: null,
+    penguinGoOrigin: "https://token.penguin.ooo",
     // Points to a nonexistent directory: static hosting is disabled in tests.
     webDist: path.join(root, "__no_web_dist__"),
     // Fixed seed password so loginAdmin needs no seed-time capture.

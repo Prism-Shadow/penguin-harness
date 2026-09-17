@@ -4,6 +4,7 @@ import {
   desktopLoginUrl,
   hidesOnClose,
   isAppUrl,
+  isAuthorizationBridgeUrl,
   isLocalSurfaceUrl,
   parsePortFile,
   restartDelayMs,
@@ -58,6 +59,15 @@ describe("isLocalSurfaceUrl", () => {
     expect(isLocalSurfaceUrl("https://localhost:7364/", origin)).toBe(false);
     expect(isLocalSurfaceUrl("not a url", origin)).toBe(false);
     expect(isLocalSurfaceUrl("http://localhost:7364/", null)).toBe(false);
+  });
+});
+
+describe("isAuthorizationBridgeUrl", () => {
+  it("accepts only the inert blank window used while authorization starts", () => {
+    expect(isAuthorizationBridgeUrl("about:blank")).toBe(true);
+    expect(isAuthorizationBridgeUrl("about:blank#other")).toBe(false);
+    expect(isAuthorizationBridgeUrl("about:srcdoc")).toBe(false);
+    expect(isAuthorizationBridgeUrl("https://example.com")).toBe(false);
   });
 });
 

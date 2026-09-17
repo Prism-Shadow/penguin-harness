@@ -152,7 +152,7 @@ Refusals decided before any ssh runs have their own codes: `409` `install_runnin
 | POST | /api/version/update | **Admin only.** Starts the self-update job — `penguin update --yes` on the server host, in the background — unless one is running (then it is joined); answers with the status exactly as GET does. A finished run may be started again (a retry) |
 | POST | /api/version/restart | **Admin only.** Asks the process to exit with the supervisor's restart code after a graceful shutdown, so `penguin server \| penguin web` relaunches it on the installed release: `{restarting: true}`; `{restarting: false, reason: "no_supervisor"}` when nothing supervises the process |
 
-`update-check` is the server's only outbound internet call and is strictly fail-soft: a failed lookup still returns 200 with `error` set (`network` / `rate_limited` / `bad_response`) and `latestVersion: null`, results are cached in memory (success 1 h, failure 10 min), and setting `PENGUIN_UPDATE_CHECK=off` disables the lookup entirely (`disabled: true`, no network call). The update `status` is `updated` (restart the service to run the new version), `failed`, or `unsupported` — the latter both when the server was not started via `penguin server|web` (`reason: "not_launched_via_cli"`) and when the CLI refuses (source checkout, unrecognized install layout, Windows); `output` carries the tail of the CLI's own output.
+`update-check` is the server's only automatic outbound internet call and is strictly fail-soft: a failed lookup still returns 200 with `error` set (`network` / `rate_limited` / `bad_response`) and `latestVersion: null`, results are cached in memory (success 1 h, failure 10 min), and setting `PENGUIN_UPDATE_CHECK=off` disables the lookup entirely (`disabled: true`, no network call). Owner-initiated provider key authorization makes its own outbound requests. The update `status` is `updated` (restart the service to run the new version), `failed`, or `unsupported` — the latter both when the server was not started via `penguin server|web` (`reason: "not_launched_via_cli"`) and when the CLI refuses (source checkout, unrecognized install layout, Windows); `output` carries the tail of the CLI's own output.
 
 ### Projects and Members
 
@@ -171,8 +171,8 @@ Member writes are owner-only. The member routes also answer `403 desktop_single_
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | /api/projects/:projectId/models | List models (api_key masked) |
-| PUT | /api/projects/:projectId/models | Full-table replace, keyed by `(provider, modelId)` |
+| GET | /api/projects/:projectId/models | List models (api_key masked); a row with a running promotion carries it as `discount` |
+| PUT | /api/projects/:projectId/models | Full-table replace, keyed by `(provider, modelId)`; an entry's `discount` stores or clears its promotion (see below) |
 | POST | /api/projects/:projectId/models/test | Connectivity test: `{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | /api/projects/:projectId/models/detect | Protocol auto-detection for a custom base URL: probes `openai-responses` → `ant-messages` → `openai-chat` in order, first on the URL as typed (normalized, a pasted endpoint path stripped) and then on its neighbouring `/v1` form, reporting the first served protocol and the base URL that served it: `{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}` |
 | POST | /api/projects/:projectId/models/list | Endpoint model listing for the add-group import: the ids the endpoint serves on a detected protocol: `{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
@@ -180,7 +180,23 @@ Member writes are owner-only. The member routes also answer `403 desktop_single_
 
 Every endpoint that names a model takes the complete `(provider, modelId)` pair. Nothing is inferred: a request carrying only one half is a 400, never a lookup. Where the reference itself is optional (Session creation, Schedules), omitting both halves selects the Project's default model.
 
+A row's `pricing` is always the list price. A promotion — a fraction in (0, 1) off that price — is not written to `.project_config.toml`: the server keeps it per row in `web.db` and takes it off when it prices usage. On `PUT /models`, an entry that carries `discount` gets exactly that: a number stores it, `null` clears it, and any other value is a 400 before anything is written. An entry that omits it keeps the stored promotion, unless the entry renames the row (`renamedFrom` naming a different pair) or its `pricing` differs from the stored one — then the promotion is cleared. Rows absent from the new table lose theirs.
+
 `PUT /models` also invalidates the Project's cached Session runtimes (same effective-value semantics as a vault update): no hot swap into a run already in flight, but the next Task on any Session of the Project re-resumes and reads the new `api_key` / `base_url`. It additionally publishes a `credentials_updated` event to the Project's open Session channels (see Streaming below), and the models response carries `updatedAt` (the config file's mtime) — the Web App compares it against the last auth failure to decide whether an auth-dead composer should stay disabled.
+
+#### Penguin Go key authorization
+
+All routes are owner-only. The browser receives a local flow id and authorization URL, never the device secret, delivered API key, or other platform response fields. PenguinHarness validates the platform catalog server-side, writes the delivered key across existing `penguin-go` entries, and creates locally missing models from the platform metadata. Existing models refresh their platform list price and client protocol; endpoints and other Project-owned configuration are not overwritten, and models are never deleted. Once the Project model table is written, the platform's discounts replace the group's stored promotions in `web.db`; they are never persisted in `.project_config.toml`.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | /api/projects/:projectId/platform-auth/start | Start a one-time authorization flow; its platform deadline is capped locally at ten minutes |
+| POST | /api/projects/:projectId/platform-auth/sync | Fetch the platform catalog with the stored key, add locally missing models, and refresh existing platform-owned metadata; returns `added` / `updated` counts, or `platform_reauthorization_required` when that key is invalid |
+| GET | /api/projects/:projectId/platform-auth/:flowId/status | Poll Penguin Go server-side, write the delivered key to the group, and add platform models |
+| POST | /api/projects/:projectId/platform-auth/:flowId/retry | Retry only the local atomic write after an apply failure; does not request the single-use delivery again |
+| POST | /api/projects/:projectId/platform-auth/:flowId/cancel | Cancel the local flow; the platform-side pending record expires by its TTL |
+
+A completed write invalidates cached Project runtimes and publishes `credentials_updated`. A non-empty platform catalog can create the group when it is absent; `apply_failed` means the validated delivery could not be applied to local configuration, and its retry route repeats only that local write.
 
 #### Provider key minting
 

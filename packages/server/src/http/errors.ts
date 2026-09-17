@@ -14,6 +14,7 @@ export class HttpError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "HttpError";
@@ -47,6 +48,9 @@ export function modelCredentialMissing(modelId: string): HttpError {
 /** app.onError handler: maps HttpError through as-is; everything else is logged and converged to 500. */
 export function handleError(err: Error, c: Context): Response {
   if (err instanceof HttpError) {
+    if (err.retryAfterSeconds !== undefined) {
+      c.header("Retry-After", String(err.retryAfterSeconds));
+    }
     return c.json(errorBody(err.code, err.message), err.status as 400);
   }
   // Unknown error: print the stack for diagnosis, but never expose details externally.

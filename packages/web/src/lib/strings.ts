@@ -80,7 +80,7 @@ export const zh = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "终端",
-    newShell: "新建 Shell",
+    newShell: "新建终端",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
@@ -457,7 +457,7 @@ export const zh = {
       "首次使用请打开服务端启动输出中的首次登录链接，认领内置管理员 admin 并设置密码。这里没有可输入的初始密码",
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
-      "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password 重置为新的初始密码",
+      "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password；再次启动时会打印新的首次登录链接，打开它即可设置新密码",
     /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
     claimFailedTitle: "登录链接已失效",
     /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
@@ -998,6 +998,7 @@ export const zh = {
         "- 不要读取或改动 .project_config.toml，配置只经 penguin 命令。",
         `- 最后运行 \`penguin config model list --project-id ${projectId} --root <数据根目录>\` 把结果列给我。`,
       ].join("\n"),
+    platformSync: "同步",
     homepage: "模型主页",
     speedTest: "测速",
     speedTestTitle: "分组测速",
@@ -1109,6 +1110,9 @@ export const zh = {
     priceCacheRead: "缓存命中价格",
     priceCacheWrite: "缓存未命中价格",
     priceOutput: "输出价格",
+    /** Line under the model dialog's price fields on a row with a running promotion: the fields hold the list price, and changing it cancels the promotion. */
+    promotionPriceHint: (pct: number): string =>
+      `此处为牌价，当前促销在此基础上省 ${pct}%；修改价格会取消促销`,
     currency: "币种",
     currencyUsd: "美元 $",
     currencyCny: "人民币 ¥",
@@ -1160,6 +1164,21 @@ export const zh = {
       upstream_failed: "供应商没有返回可用的 key，请重新开始。",
       unreachable: "连不上供应商，请检查网络后重新开始。",
       apply_failed: "key 已创建但未能保存。请重新授权，并到供应商控制台删掉那个没用上的 key。",
+    },
+    platformKeyIntro: (n: number): string =>
+      `授权后会自动获取一个 Penguin Go API key，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key。`,
+    platformKeyAppliedBody: (n: number): string =>
+      `已完成授权：Penguin Go API key 已配置到 ${n} 个模型上，可以直接使用了。`,
+    platformKeyStarting: "正在创建授权请求…",
+    platformKeyApplying: "授权已完成，正在写入模型组…",
+    platformKeyErrors: {
+      unreachable: "无法连接 Penguin Go，请检查网络后重新开始。",
+      upstream_failed: "Penguin Go 未能完成授权，请重新开始。",
+      invalid_key: "Penguin Go 未返回可用的 API key，请重新开始。",
+      expired: "授权已过期，请重新开始。",
+      locked: "授权已锁定，请重新开始。",
+      already_delivered: "该授权结果已经交付，请重新开始。",
+      apply_failed: "API key 已取得，但未能写入模型组。可以直接重试，无需再次授权。",
     },
     // Providers with separate domestic / international endpoints: note on the default
     // endpoint used when left blank via env var (the other side's key needs an explicit
@@ -2988,6 +3007,8 @@ Benchmark：
         text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本。",
       },
     ],
+    /** The first step card's text for a Project member: no Create manually, which is the owner's. */
+    guideCreateMember: "点右上角「用 AI 创建」，让 AI 为某个智能体出一套题并取得基线分。",
     searchPlaceholder: "搜索标题、描述或被测智能体",
     noMatches: "没有匹配的 Benchmark",
     /** The chip shown when the address filters the list to one Agent's Benchmarks. */
@@ -3008,6 +3029,9 @@ Benchmark：
     creationFailedHint: "题目难度未能校准完成，请删除后重新创建",
     creationFailedDetail:
       "这套题的难度校准没有完成，无法评估或优化；请删除这个 Benchmark，然后重新创建。",
+    /** The two lines above for a Project member: no delete step, since deleting is the owner's. */
+    creationFailedHintMember: "题目难度未能校准完成",
+    creationFailedDetailMember: "这套题的难度校准没有完成，无法评估或优化。",
     /** The avatars on a card: which Agents this Benchmark has scored so far. */
     testedAgents: "被测过的智能体",
     lastEvaluated: (when: string): string => `最近评估 ${when}`,
@@ -3050,7 +3074,7 @@ Benchmark：
     colVersion: "版本",
     colModel: "模型 ID",
     colThinkingLevel: "推理强度",
-    colScore: "Score",
+    colScore: "分数",
     colDuration: "耗时",
     colCase: "题目",
     colRun: "运行",
@@ -3060,7 +3084,7 @@ Benchmark：
     evaluationDetailTitle: (time: string): string => `评估 · ${time}`,
     askEvaluationTitle: "问 AI：这次评估",
     askEvaluationDescription:
-      "这次评估的总分、逐题得分与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
+      "这次评估的总分、逐题结果与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
     askEvaluationDefault: "解释这次评估的结果。",
     /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
     askEvaluationExamples: {
@@ -3070,11 +3094,11 @@ Benchmark：
       },
       whyLow: {
         label: "为什么这次分数低？",
-        prompt: "为什么这次评估的分数偏低？请结合逐题得分与运行记录说明主要失分在哪里。",
+        prompt: "为什么这次评估的分数偏低？请结合逐题分数与运行记录说明主要失分在哪里。",
       },
       weakest: {
         label: "哪些题最弱、该改什么？",
-        prompt: "哪几道题得分最弱？分别是什么原因，被测智能体改哪一处才有机会提上去？",
+        prompt: "哪几道题分数最低？分别是什么原因，被测智能体改哪一处才有机会提上去？",
       },
       againstPrevious: {
         label: "与上一次评估相比变化在哪？",
@@ -3106,7 +3130,7 @@ Benchmark：
       `- 总分 ${p.score}；成本 ${p.cost}；耗时 ${p.duration}\n` +
       (p.summaryTitle !== "" ? `- 评估说明标题：${p.summaryTitle}\n` : "") +
       (p.summary !== "" ? `- 评估说明：${p.summary}\n` : "") +
-      "- 逐题得分（分数、成本、耗时，以及逐次运行的 Session id）：\n" +
+      "- 逐题结果（分数、成本、耗时，以及逐次运行的 Session id）：\n" +
       p.cases
         .map(
           (c) =>
@@ -3131,8 +3155,8 @@ Benchmark：
         prompt: "这道题的评分细则把分数主要放在哪些地方？哪些条目最能把优秀与及格区分开？",
       },
       whyRunLow: {
-        label: "为什么有的运行在这道题上得分低？",
-        prompt: "最近一次评估在这道题上得分不高，可能是被测智能体在哪一步做丢了？",
+        label: "为什么有的运行在这道题上分数低？",
+        prompt: "最近一次评估在这道题上分数不高，可能是被测智能体在哪一步做丢了？",
       },
       clearerStatement: {
         label: "题干怎样才能更清楚？",
@@ -3205,7 +3229,7 @@ Benchmark：
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
       "每一次试测都必须通过 `run_subagent` 派发子会话，并在子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
-      "逐题试测以校准难度，定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题得分。",
+      "逐题试测以校准难度，定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题分数。",
     // New Benchmark, manual mode: the form.
     manualCreateTitle: "手动创建 Benchmark",
     manualCreateIntro:
@@ -3270,7 +3294,7 @@ Benchmark：
       "评测 Runtime 取被测智能体当前配置的模型与思考等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
       "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
       "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
-      "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题得分与本条记录的标签。",
+      "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题分数与本条记录的标签。",
     // Optimize tab.
     optimizeDescription: "AI 会按可证伪的假设修改被测智能体并重新评测，分数严格提升才保留新版本。",
     optimizerAgent: "执行优化的智能体",
@@ -4144,6 +4168,7 @@ Benchmark：
       task_in_progress: "该 Session 已有任务在运行。",
       compacting: "该 Session 正在压缩上下文，暂不接受新的输入。",
       shutting_down: "服务正在关闭，请稍后重试。",
+      platform_rate_limited: "平台授权请求过于频繁，请等待倒计时结束后重试。",
       // The three "cannot compact" reasons each have their own server code, so each keeps its
       // own explanation here — collapsing them into one sentence would tell a user who just
       // compacted that they have never spoken.
