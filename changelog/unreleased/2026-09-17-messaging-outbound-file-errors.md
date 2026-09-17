@@ -22,10 +22,12 @@ approval reminder, still go to the chat.
 - A reply files one record per cause, naming every file it covers, the channel and the reason — one
   line per file when their reasons differ: `messaging_file_send_failed` for refused uploads, in
   separate records for uploads the channel can never carry, a missing permission (the scopes and the
-  console link listed once) and any other refusal; the new `messaging_file_too_large` for the files
-  over a ceiling, each with its limit; and the new `messaging_files_skipped` for the files past the
-  count. A lone file reads `"<file>" was not sent to the <channel> chat: <reason>`. Each message is
-  kept under the recorder's 500-character cap by shortening the file list first.
+  console link listed once, in place of the channel's reason for each file) and any other refusal;
+  the new `messaging_file_too_large` for the files over a ceiling, each with its limit; and the new
+  `messaging_files_skipped` for the files past the count. A lone file reads
+  `"<file>" was not sent to the <channel> chat: <reason>`. Every message, the skipped files' record
+  included, is kept under the recorder's 500-character cap by shortening its file list first, down
+  to `…`.
 - QQ's refusal of an outbound file no longer names the file, so a reply's refused files share one
   reason line: `QQ cannot receive files: sending a file to QQ requires a publicly reachable URL for
   it, which this server has no way to provide`.

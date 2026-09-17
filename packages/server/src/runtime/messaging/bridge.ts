@@ -357,13 +357,16 @@ export interface MessagingErrorRecord {
  * first alone. None of them is posted into the chat, so these records are the only place any
  * of it is said. The causes, in the order they are returned:
  *
- * - `messaging_file_send_failed`, in up to three records by what was thrown, each keeping that
- *   type because error-kind.ts reads the kind off it: a missing permission (unexpected — the
- *   scopes and console links are listed once, ahead of the reasons, because they are the fix),
- *   any other refusal (unexpected), and a refusal the channel repeats for every file (expected
- *   — any file on QQ). The three share a code, so a reply failing for two of these causes at
- *   once reaches the recorder's window twice and keeps only the first record: the causes
- *   somebody has to act on are therefore the ones that come first.
+ * - `messaging_file_send_failed`, in up to three records by what was thrown: a missing
+ *   permission (unexpected), any other refusal (unexpected), and a refusal the channel repeats
+ *   for every file (expected — any file on QQ), the one record that keeps the type thrown,
+ *   because error-kind.ts reads its kind off it. The permission record names the files, then
+ *   lists the scopes and console links once, and quotes nothing that was thrown: Feishu's
+ *   refusal carries the same scopes and link and ends in a log_id that is new on every request,
+ *   so quoting it would give each file its own line repeating the fix — and nobody needs a
+ *   log_id to grant a scope. The three share a code, so a reply failing for two of these
+ *   causes at once reaches the recorder's window twice and keeps only the first record: the
+ *   causes somebody has to act on are therefore the ones that come first.
  * - `messaging_file_too_large`, the files over an outbound ceiling, each with its limit
  *   (expected).
  *
@@ -399,26 +402,26 @@ export function messagingFilesNotSentRecords(
     );
     records.push({
       code: "messaging_file_send_failed",
-      err: new MessagingPermissionError(
-        scopes,
-        grantUrls[0] ?? null,
-        filesNotSentMessage(channel, permission.map(thrownReason), AS_THROWN, fix),
+      err: new Error(
+        filesNotSentMessage(
+          channel,
+          permission.map((file) => ({ fileName: file.fileName, reason: fix })),
+          VERBATIM,
+        ),
       ),
     });
   }
   if (other.length > 0) {
     records.push({
       code: "messaging_file_send_failed",
-      err: new Error(filesNotSentMessage(channel, other.map(thrownReason), AS_THROWN), {
-        cause: other.map((file) => file.err),
-      }),
+      err: new Error(filesNotSentMessage(channel, other.map(thrownReason), VERBATIM)),
     });
   }
   if (unsupported.length > 0) {
     records.push({
       code: "messaging_file_send_failed",
       err: new MessagingUnsupportedError(
-        filesNotSentMessage(channel, unsupported.map(thrownReason), AS_THROWN),
+        filesNotSentMessage(channel, unsupported.map(thrownReason), VERBATIM),
       ),
     });
   }
@@ -455,8 +458,8 @@ interface ReasonWording {
   shared(reason: string): string;
 }
 
-/** A refusal, quoted as it was thrown. */
-const AS_THROWN: ReasonWording = { lone: (reason) => reason, shared: (reason) => reason };
+/** A reason that reads the same either way: a refusal as it was thrown, or a permission's fix. */
+const VERBATIM: ReasonWording = { lone: (reason) => reason, shared: (reason) => reason };
 
 /** A ceiling, which reads as a property of the file, or of each file, it held back. */
 const OVER_LIMIT: ReasonWording = {
@@ -479,8 +482,8 @@ function fileNotSentHead(channel: string, fileName: string): string {
  * The message of one record covering `files`, fitted under the recorder's MESSAGE_MAX.
  *
  * A lone file reads `"<file>" was not sent to the <channel> chat: <reason>`. Several read
- * `<n> files were not sent to the <channel> chat: "<a>", "<b>"`, then `fix` when there is one,
- * then the reason they share — or, when their reasons differ, one `"<file>": <reason>` line each.
+ * `<n> files were not sent to the <channel> chat: "<a>", "<b>"`, then the reason they share —
+ * or, when their reasons differ, one `"<file>": <reason>` line each.
  *
  * Fitted here rather than left to the recorder, which cuts from the end, where the reasons are.
  * The list of names gives way first, down to "…": a reason is worth more than the fifth name,
@@ -491,13 +494,11 @@ function filesNotSentMessage(
   channel: string,
   files: readonly FileReason[],
   wording: ReasonWording,
-  fix: string | null = null,
 ): string {
   const first = files[0]!;
   if (files.length === 1) {
-    const lead = fix === null ? "" : `${fix}\n`;
     return clip(
-      `${fileNotSentHead(channel, first.fileName)}: ${lead}${wording.lone(first.reason)}`,
+      `${fileNotSentHead(channel, first.fileName)}: ${wording.lone(first.reason)}`,
       MESSAGE_MAX,
     );
   }
@@ -506,15 +507,14 @@ function filesNotSentMessage(
   const lines = files.every((file) => file.reason === first.reason)
     ? [wording.shared(first.reason)]
     : files.map((file) => `"${file.fileName}": ${file.reason}`);
-  const lead = fix === null ? "" : `\n${fix}`;
-  const body = `${lead}\n${lines.join("\n")}`;
+  const body = `\n${lines.join("\n")}`;
   const names = files.map((file) => file.fileName);
   const listRoom = MESSAGE_MAX - head("").length - body.length;
   if (listRoom >= 1) return head(quotedNames(names, listRoom)) + body;
   // One "\n" goes in front of each line.
-  const lineRoom = MESSAGE_MAX - head("…").length - lead.length - lines.length;
+  const lineRoom = MESSAGE_MAX - head("…").length - lines.length;
   const fitted = fitLines(lines, lineRoom).map((line) => `\n${line}`);
-  return clip(head("…") + lead + fitted.join(""), MESSAGE_MAX);
+  return clip(head("…") + fitted.join(""), MESSAGE_MAX);
 }
 
 /** The names quoted and joined, as many as fit in `max` characters, the rest marked "…". */
@@ -538,7 +538,7 @@ function quotedNames(names: readonly string[], max: number): string {
 function fitLines(lines: readonly string[], room: number): string[] {
   const out = [...lines];
   const shortestFirst = lines.map((_, i) => i).sort((a, b) => lines[a]!.length - lines[b]!.length);
-  let left = Math.max(0, room);
+  let left = room;
   shortestFirst.forEach((index, done) => {
     out[index] = clip(lines[index]!, Math.floor(left / (shortestFirst.length - done)));
     left -= out[index]!.length;
@@ -578,18 +578,16 @@ const MESSAGING_NOTICE_NAMES_MAX = 5;
  * will ask, and the server log answers it without charging every other reader for it.
  */
 export function messagingFilesMissingLog(names: readonly string[]): string {
-  return `[messaging] reply named files the Workspace does not have, nothing sent: ${nameList(names)}`;
-}
-
-/** Names for a line about dropped files, cut at MESSAGING_NOTICE_NAMES_MAX. */
-function nameList(names: readonly string[]): string {
   const shown = names.slice(0, MESSAGING_NOTICE_NAMES_MAX);
-  return shown.join(", ") + (names.length > shown.length ? ", …" : "");
+  const list = shown.join(", ") + (names.length > shown.length ? ", …" : "");
+  return `[messaging] reply named files the Workspace does not have, nothing sent: ${list}`;
 }
 
 /**
  * The error record for the tail of a batch the count cap cut off — one per reply, however many
- * files it holds: how many, the cap, and which.
+ * files it holds: how many, the cap, and which. The names are quoted like every other record's
+ * and give way to "…" where the whole list would run past the recorder's MESSAGE_MAX, which
+ * would otherwise cut it mid-name, closing bracket and all.
  */
 function filesSkippedError(
   channel: string,
@@ -598,8 +596,10 @@ function filesSkippedError(
   const n = fileNames.length;
   const files =
     n === 1 ? "1 more file the reply mentioned was" : `${n} more files the reply mentioned were`;
+  const message = (list: string): string =>
+    `${files} not sent to the ${channel} chat: at most ${MESSAGING_OUTBOUND_FILE_MAX_COUNT} ride along with one reply (${list})`;
   return new MessagingOutboundCapError(
-    `${files} not sent to the ${channel} chat: at most ${MESSAGING_OUTBOUND_FILE_MAX_COUNT} ride along with one reply (${nameList(fileNames)})`,
+    message(quotedNames(fileNames, MESSAGE_MAX - message("").length)),
   );
 }
 

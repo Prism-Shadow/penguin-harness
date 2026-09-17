@@ -642,12 +642,21 @@ describe("messaging media helpers", () => {
 });
 
 describe("messagingFilesNotSentRecords", () => {
-  /** Feishu's scope denial for an upload: the same fix every time, a new log_id per request. */
+  /** The console link Feishu hands out for `scopes`, on an app id of real length. */
+  const grantUrl = (scopes: readonly string[]) =>
+    `https://open.feishu.cn/app/cli_a5f8b2c3d4e6f00b/auth?q=${scopes.join(",")}&op_from=openapi&token_type=tenant`;
+  /**
+   * Feishu's scope denial for an upload, as larkFailure builds it off the wire (see
+   * messaging-wire.test.ts): Feishu's own bilingual `msg`, verbatim, which already names the
+   * scopes and the console link, then the code and a log_id that is new on every request.
+   */
   const uploadDenied = (logId: number, scopes = ["im:resource:upload", "im:resource"]) =>
     new MessagingPermissionError(
       scopes,
-      `https://open.feishu.cn/app/cli_x/auth?q=${scopes[0]}`,
-      `Access denied (code 99991672, log_id ${logId})`,
+      grantUrl(scopes),
+      `Access denied. One of the following scopes is required: [${scopes.join(", ")}]. ` +
+        `应用尚未开通所需的应用身份权限：[${scopes.join(", ")}]，点击链接申请并开通任一权限即可：` +
+        `${grantUrl(scopes)} (code 99991672, log_id 2026091710101${logId}ABCDEF0123456789ABCD)`,
     );
   const picture = (fileName: string) => ({
     fileName,
@@ -655,7 +664,7 @@ describe("messagingFilesNotSentRecords", () => {
     asImage: true,
   });
 
-  it("files one record per cause, not per file, each keeping the type its kind is read from", () => {
+  it("files one record per cause, not per file, each under its own kind", () => {
     const records = messagingFilesNotSentRecords(
       "feishu",
       [picture("huge.png")],
@@ -680,8 +689,7 @@ describe("messagingFilesNotSentRecords", () => {
         "unexpected",
         '"c.png" was not sent to the feishu chat: this bot\'s app is missing a permission.\n' +
           "im:resource:upload, im:resource\n" +
-          "https://open.feishu.cn/app/cli_x/auth?q=im:resource:upload\n" +
-          "Access denied (code 99991672, log_id 1)",
+          grantUrl(["im:resource:upload", "im:resource"]),
       ],
       [
         "messaging_file_send_failed",
@@ -753,7 +761,8 @@ describe("messagingFilesNotSentRecords", () => {
     ]);
   });
 
-  it("lists a permission's scopes and console links once, ahead of each file's reason", () => {
+  it("names every file a permission held back, then lists its scopes and console links once", () => {
+    const files = ["chart.png", "notes.md", "data.csv"];
     const [record] = messagingFilesNotSentRecords(
       "feishu",
       [],
@@ -763,16 +772,22 @@ describe("messagingFilesNotSentRecords", () => {
         { fileName: "data.csv", err: uploadDenied(3, ["im:resource"]) },
       ],
     );
-    expect(record!.err.message).toBe(
+    const text = record!.err.message;
+    // Nothing Feishu said is quoted: its sentence repeats the fix and its log_id differs on every
+    // request, so quoting it gave each file its own line and ran the record into the cap.
+    expect(text).toBe(
       '3 files were not sent to the feishu chat: "chart.png", "notes.md", "data.csv"\n' +
         "this bot's app is missing a permission.\n" +
         "im:resource:upload, im:resource\n" +
-        "https://open.feishu.cn/app/cli_x/auth?q=im:resource:upload\n" +
-        "https://open.feishu.cn/app/cli_x/auth?q=im:resource\n" +
-        '"chart.png": Access denied (code 99991672, log_id 1)\n' +
-        '"notes.md": Access denied (code 99991672, log_id 2)\n' +
-        '"data.csv": Access denied (code 99991672, log_id 3)',
+        `${grantUrl(["im:resource:upload", "im:resource"])}\n` +
+        grantUrl(["im:resource"]),
     );
+    expect(text.length).toBeLessThanOrEqual(MESSAGE_MAX);
+    const occurrences = (part: string): number => text.split(part).length - 1;
+    expect(occurrences("im:resource:upload, im:resource")).toBe(1);
+    expect(occurrences(grantUrl(["im:resource:upload", "im:resource"]))).toBe(1);
+    expect(occurrences(grantUrl(["im:resource"]))).toBe(1);
+    for (const fileName of files) expect(occurrences(`"${fileName}"`)).toBe(1);
   });
 
   it("stays under the recorder's cap, giving up names before any reason", () => {
@@ -791,32 +806,24 @@ describe("messagingFilesNotSentRecords", () => {
     expect(sharedText).not.toContain(names[4]);
 
     // Reasons too long to fit even without the list are cut alike, so every file keeps its
-    // line, its name and the start of its reason — and the fix, which leads, stays whole.
+    // line, its name and the start of its reason.
     const files = ["chart.png", "notes.md", "data.csv", "report.pdf", "summary.md"];
     const [perFile] = messagingFilesNotSentRecords(
       "feishu",
       [],
-      files.map((fileName, i) => {
-        const denied = uploadDenied(i);
-        return {
-          fileName,
-          err: new MessagingPermissionError(
-            denied.scopes,
-            denied.grantUrl,
-            `${denied.message} ${"Apply for the permission in the developer console. ".repeat(6)}`,
-          ),
-        };
-      }),
+      files.map((fileName, i) => ({
+        fileName,
+        err: new Error(
+          `Upload failed (log_id ${i}): ${"The platform answered 502 Bad Gateway. ".repeat(6)}`,
+        ),
+      })),
     );
     const perFileText = perFile!.err.message;
     expect(perFileText.length).toBeLessThanOrEqual(MESSAGE_MAX);
-    expect(perFileText).toContain(
-      "5 files were not sent to the feishu chat: …\n" +
-        "this bot's app is missing a permission.\n" +
-        "im:resource:upload, im:resource\n" +
-        "https://open.feishu.cn/app/cli_x/auth?q=im:resource:upload\n",
-    );
-    for (const fileName of files) expect(perFileText).toContain(`\n"${fileName}": Access denied`);
+    expect(perFileText.startsWith("5 files were not sent to the feishu chat: …\n")).toBe(true);
+    for (const fileName of files) {
+      expect(perFileText).toContain(`\n"${fileName}": Upload failed (log_id `);
+    }
 
     // A lone file has no list to give up: its reason is cut, and marked as cut.
     const [lone] = messagingFilesNotSentRecords(
@@ -2952,10 +2959,10 @@ describe("messaging binding routes and bridge", () => {
     expect(fake.allSends()).toEqual([
       { kind: "send", target: "oc_chat_files", text: "Written up in `notes.md`." },
     ]);
-    // One record that names the file and the channel, then what to grant and where — ahead of
-    // the channel's own sentence, since the recorder shortens a long message from its end.
-    // UNEXPECTED, where the same denial on an inbound download is expected: nobody in the chat
-    // is handed the fix any more, so a human still has to grant the scope, and the cost
+    // One record that names the file and the channel, then what to grant and where, and none of
+    // the channel's own sentence, which says the same and adds a log_id nobody needs to grant a
+    // scope. UNEXPECTED, where the same denial on an inbound download is expected: nobody in the
+    // chat is handed the fix any more, so a human still has to grant the scope, and the cost
     // center's highlight is how they find out.
     expect(messagingErrorRecords()).toEqual([
       filedBySid2({
@@ -2964,8 +2971,7 @@ describe("messaging binding routes and bridge", () => {
         message:
           '"notes.md" was not sent to the feishu chat: this bot\'s app is missing a permission.\n' +
           "im:resource:upload, im:resource\n" +
-          "https://open.feishu.cn/app/cli_scope/auth?q=im:resource:upload\n" +
-          "Access denied (code 99991672)",
+          "https://open.feishu.cn/app/cli_scope/auth?q=im:resource:upload",
       }),
     ]);
   });
@@ -2993,9 +2999,37 @@ describe("messaging binding routes and bridge", () => {
         code: "messaging_files_skipped",
         kind: "expected",
         message:
-          "2 more files the reply mentioned were not sent to the feishu chat: at most 5 ride along with one reply (f.md, g.md)",
+          '2 more files the reply mentioned were not sent to the feishu chat: at most 5 ride along with one reply ("f.md", "g.md")',
       }),
     ]);
+  });
+
+  it("fits a skipped tail of long names under the recorder's cap, the list cut and marked as cut", async () => {
+    const sent = ["a.md", "b.md", "c.md", "d.md", "e.md"];
+    // Five names of about a hundred characters: listed whole, the record runs past MESSAGE_MAX,
+    // and the recorder cuts it mid-name with no "…" and no closing bracket.
+    const skipped = [1, 2, 3, 4, 5].map(
+      (n) =>
+        `quarterly-revenue-breakdown-by-region-and-product-line-2026-q3-final-reviewed-by-finance-v${n}.xlsx`,
+    );
+    const ws = await makeWorkspace();
+    for (const name of [...sent, ...skipped]) await fs.writeFile(path.join(ws, name), name);
+    const reply = `Wrote ${[...sent, ...skipped].map((n) => `\`${n}\``).join(", ")}.`;
+    await bindWithWorkspace(ws, reply, "cli_many_long");
+    await askAndSettle();
+    await waitFor(() => messagingErrorRecords().length === 1);
+    await settle(80);
+    const [record] = messagingErrorRecords();
+    expect([record!.code, record!.kind]).toEqual(["messaging_files_skipped", "expected"]);
+    const { message } = record!;
+    expect(message.length).toBeLessThanOrEqual(MESSAGE_MAX);
+    expect(message).toMatch(
+      /^5 more files the reply mentioned were not sent to the feishu chat: at most 5 ride along with one reply \("/,
+    );
+    // Quoted like every other record's names, as many as fit, and the rest marked as cut.
+    expect(message).toContain(`("${skipped[0]}", "${skipped[1]}", `);
+    expect(message.endsWith(", …)")).toBe(true);
+    expect(message).not.toContain(skipped[4]);
   });
 
   it("files an oversize file instead of sending it, keeps sending the rest, and tells the chat nothing", async () => {
