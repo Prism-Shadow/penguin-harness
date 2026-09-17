@@ -15,14 +15,16 @@ import {
   offPeakAt,
   DEEPSEEK_OFF_PEAK,
   presetModelEntries,
+  presetPromotions,
   providerClientType,
   providerInfo,
   fastModeProtocol,
   resolveModelEnv,
+  resolveProviderModelEnv,
 } from "../src/state/index.js";
 
 describe("model-catalog", () => {
-  it("(provider, model_id) pairs are unique; DeepSeek comes first (the default model's provider)", () => {
+  it("(provider, model_id) pairs are unique and provider order keeps the recommendation first", () => {
     // Bare model ids may repeat across providers (a gateway reselling a vendor model keeps the
     // vendor's upstream id, e.g. Qwen Token Plan's glm-5.2 / deepseek-v4-pro) — uniqueness is
     // the (provider, model_id) pair, matching the catalog's sole lookup key (catalogEntryFor).
@@ -30,13 +32,15 @@ describe("model-catalog", () => {
     expect(new Set(pairs).size).toBe(pairs.length);
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
-    // Group order is hand-curated, interleaving gateways and first-party vendors: TokenDance
-    // first (the recommended group), DeepSeek next (the default model's provider), vLLM last
+    // Group order is hand-curated, interleaving gateways and first-party vendors: the
+    // recommended TokenDance first, the prebuilt Penguin Go group next, DeepSeek after it,
+    // and vLLM last
     // among the vendors (self-hosted, so nothing in it runs until the user names a server)
     // and custom always last. This is the page's DEFAULT only — a Project that has reordered
     // its groups stores every key and keeps its own arrangement (web's model-group-order.ts).
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "tokendance",
+      "penguin-go",
       "deepseek",
       "openrouter",
       "fireworks",
@@ -55,10 +59,11 @@ describe("model-catalog", () => {
     // Exactly one group is marked recommended, and it is the one that leads the default
     // order: the caption and the placement are two statements of the same curation.
     expect(MODEL_PROVIDERS.filter((p) => p.recommended).map((p) => p.id)).toEqual(["tokendance"]);
-    expect(MODEL_PROVIDERS[0]!.recommended).toBe(true);
+    expect(providerInfo("tokendance")!.recommended).toBe(true);
     expect(providerInfo("siliconflow")!.label).toBe("SiliconFlow");
     expect(providerInfo("minimax")!.label).toBe("MiniMax");
     expect(providerInfo("minimax")!.envKey).toBe("MINIMAX_API_KEY");
+    expect(providerInfo("penguin-go")!.label).toBe("Penguin Go");
     // The catalog no longer includes GLM-5-Turbo.
     expect(ids).not.toContain("glm-5-turbo");
     // The OpenRouter and SiliconFlow gateway listings of GLM-5.1 were delisted 2026-08-06;
@@ -113,6 +118,65 @@ describe("model-catalog", () => {
     expect(oauth.exchangeUrl).toBe("https://tokendance.space/portal/api/v1/auth/keys");
     // The key's name is also the app name the authorization page shows.
     expect(oauth.keyName).toBe("PenguinHarness");
+  });
+
+  it("prebuilds Penguin Go with fixed relay routes and list prices, leaving promotions to the platform", () => {
+    const penguinGoModels = MODEL_CATALOG.filter((model) => model.provider === "penguin-go");
+    // The DeepSeek rows follow DeepSeek's own lineup: V4.1 Flash and V4 Pro 0813. The two
+    // retired V4 Flash ids are not resold.
+    expect(penguinGoModels.map((model) => model.modelId)).toEqual([
+      "gemini-3.8-flash",
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-3.1-pro-preview",
+      "deepseek-flash",
+      "deepseek-v4-pro",
+    ]);
+    expect(
+      penguinGoModels.every((model) => model.baseUrl === "https://token.penguin.ooo/api"),
+    ).toBe(true);
+    expect(
+      penguinGoModels.every(
+        (model) => model.pricing !== undefined && model.pricing.unit === "usd_per_mtok",
+      ),
+    ).toBe(true);
+    expect(
+      penguinGoModels
+        .filter((model) => model.modelId.startsWith("gemini-"))
+        .every((model) => model.clientType === "gemini-3.8"),
+    ).toBe(true);
+    expect(
+      penguinGoModels
+        .filter((model) => model.modelId.startsWith("deepseek-"))
+        .every((model) => model.clientType === "deepseek-v4"),
+    ).toBe(true);
+    expect(catalogEntryFor("penguin-go", "deepseek-flash")?.supportsVision).toBe(true);
+    expect(catalogEntryFor("penguin-go", "deepseek-v4-pro")).toMatchObject({
+      displayName: "DeepSeek V4 Pro 0813",
+      supportsVision: false,
+    });
+    // No static promotion: the platform delivers whatever it runs at authorization and Sync,
+    // so every row here is its list price and nothing else.
+    expect(penguinGoModels.filter((model) => model.discount !== undefined)).toEqual([]);
+    for (const modelId of ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]) {
+      expect(catalogEntryFor("penguin-go", modelId)!.pricing, modelId).toEqual({
+        unit: "usd_per_mtok",
+        cache_read: 0.075,
+        cache_write: 0.75,
+        output: 3.75,
+      });
+    }
+    expect(catalogEntryFor("penguin-go", "deepseek-flash")).toMatchObject({
+      pricing: {
+        cache_read: 0.005714,
+        cache_write: 0.285714,
+        output: 1.142857,
+      },
+      offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    });
   });
 
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
@@ -321,14 +385,11 @@ describe("model-catalog", () => {
       expect(entry.provider).toBe(cat.provider);
       expect(entry.model_id).toBe(cat.modelId);
       expect(entry.context_window).toBe(cat.contextWindow);
-      // A Project stores the BILLED rate, not the catalog's list price: the cost center
-      // prices only against what is written here, so a promoted row must arrive discounted.
-      // The exception is a row on a peak/off-peak schedule, which stores the PEAK price: the
-      // rate changes twice a day, so baking one in would make the number on disk depend on the
-      // hour the Project happened to be created or re-synced in.
-      expect(entry.pricing, entry.model_id).toEqual(
-        cat.offPeakDiscount !== undefined ? cat.pricing : effectivePricing(cat),
-      );
+      // A Project stores the catalog's LIST price (a scheduled row's PEAK price), never a
+      // discounted one: a promotion is seeded beside it as a fraction (presetPromotions), and
+      // baking either rate in would make the number on disk depend on which promotion was
+      // live, or which hour it was, when the Project was created or re-synced.
+      expect(entry.pricing, entry.model_id).toEqual(cat.pricing);
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
       // Gateway presets pin a client protocol, and so do the two direct rows whose own id
       // does not route (MiniMax M3, DeepSeek deepseek-flash); other direct models auto-route.
@@ -339,6 +400,17 @@ describe("model-catalog", () => {
       // The concatenated storage id and request_model_id have been removed and no longer appear.
       expect(Object.hasOwn(entry, "request_model_id")).toBe(false);
     }
+  });
+
+  it("presetPromotions: a promoted row is seeded with its fraction, a Penguin Go row never is", () => {
+    const promotions = presetPromotions();
+    expect(promotions).toContainEqual({
+      provider: "tokendance",
+      modelId: "glm-5.3-flash",
+      discount: 0.1,
+    });
+    // Penguin Go's promotions are the platform's to deliver, at authorization and Sync.
+    expect(promotions.filter((p) => p.provider === "penguin-go")).toEqual([]);
   });
 
   it("gateway models (OpenRouter / SiliconFlow / Qwen Token Plan): OpenRouter pins Responses and the rest Chat Completions, all on a preset base URL; env fallback is OPENAI_API_KEY", () => {
@@ -714,7 +786,13 @@ describe("model-catalog", () => {
     const customPresets = MODEL_CATALOG.filter((m) => m.provider === "custom");
     const withBaseUrl = presetModelEntries().filter((e) => e.base_url !== undefined);
     expect(withBaseUrl.map((e) => [e.provider, e.model_id]).sort()).toEqual(
-      [...gateway, ...minimax, ...pinnedDirect, ...customPresets]
+      [
+        ...gateway,
+        ...minimax,
+        ...pinnedDirect,
+        ...customPresets,
+        ...MODEL_CATALOG.filter((m) => m.provider === "penguin-go"),
+      ]
         .map((m) => [m.provider, m.modelId])
         .sort(),
     );
@@ -1096,6 +1174,19 @@ describe("model-catalog", () => {
 });
 
 describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
+  it("keeps Penguin Go relay credentials separate from both vendor protocols", () => {
+    expect(resolveProviderModelEnv("penguin-go", "gemini-3.8-flash")?.envKey).toBe(
+      "PENGUIN_GO_API_KEY",
+    );
+    expect(resolveProviderModelEnv("penguin-go", "deepseek-flash", "openai-chat")?.envKey).toBe(
+      "PENGUIN_GO_API_KEY",
+    );
+    expect(resolveProviderModelEnv("deepseek", "deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
+    expect(resolveProviderModelEnv("openrouter", "any-model", "openai-chat")?.envKey).toBe(
+      "OPENAI_API_KEY",
+    );
+  });
+
   it("first-party model ids route to the provider client's env var", () => {
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
     // The dotted V4.1 spelling still carries the deepseek-v4 substring AutoLLMClient routes
@@ -1183,6 +1274,12 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
       const env = resolveModelEnv(m.modelId, m.clientType);
       const provider = providerInfo(m.provider)!;
       expect(env, `${m.provider}/${m.modelId}`).toBeDefined();
+      if (m.provider === "penguin-go") {
+        // Penguin Go mixes routed clients behind one relay, so its provider-scoped
+        // environment name intentionally differs from each client's vendor variable.
+        expect(provider.envKey).toBe("PENGUIN_GO_API_KEY");
+        continue;
+      }
       if (m.provider === "custom") {
         // The custom group's pair is the fallback for its OpenAI-protocol default; an entry
         // pinned to another generic protocol reads that protocol's pair instead, exactly as a
@@ -1437,12 +1534,13 @@ describe("off-peak schedules", () => {
   const beijing = (iso: string): Date => new Date(`${iso}+08:00`);
 
   it("the DeepSeek rows store the peak price and declare the schedule", () => {
-    // Every direct row, plus the three resold rows whose sellers pass DeepSeek's own windows
-    // through: two on TokenDance and one on OpenRouter. A gateway row on the schedule carries
-    // no flat `discount` — the two are mutually exclusive, pinned by the last case here.
+    // Every direct row, plus the resold rows whose sellers pass DeepSeek's own windows through:
+    // two on Penguin Go, two on TokenDance and one on OpenRouter. A gateway row on the schedule
+    // carries no flat `discount` — the two are mutually exclusive, pinned by the last case here.
     const rows = MODEL_CATALOG.filter(
       (m) =>
         m.provider === "deepseek" ||
+        (m.provider === "penguin-go" && m.modelId.startsWith("deepseek-")) ||
         (m.provider === "tokendance" &&
           ["deepseek-v4.1-flash", "deepseek-v4-flash-vision-exp"].includes(m.modelId)) ||
         (m.provider === "openrouter" && m.modelId === "deepseek/deepseek-v4.1-flash"),
@@ -1511,9 +1609,10 @@ describe("off-peak schedules", () => {
     ]);
   });
   it("no entry declares both a flat discount and a schedule", () => {
-    // effectivePricing, discountedPrice and presetModelEntries all silently prefer the schedule,
-    // so a row declaring both would be billed at its list price during peak with nothing failing.
-    // The rule is stated in the field's doc; this is what makes it true.
+    // effectivePricing silently prefers the schedule, while the cost center would apply the
+    // seeded promotion on top of it, so a row declaring both would be shown at one rate and
+    // billed at another with nothing failing. The rule is stated in the field's doc; this is
+    // what makes it true.
     const both = MODEL_CATALOG.filter(
       (m) => m.discount !== undefined && m.offPeakDiscount !== undefined,
     ).map((m) => `${m.provider}/${m.modelId}`);

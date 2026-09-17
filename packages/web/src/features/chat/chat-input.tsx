@@ -949,7 +949,7 @@ export function ChatInput({
    */
   onHandoff?: (target: AgentSummary, input: TaskInputPart[]) => Promise<boolean>;
   onStop: () => Promise<void>;
-  /** Manual context compaction (/compact). Optional: without it the command is not offered (the subagent variant has no compaction surface). */
+  /** Manual context compaction (/compact). Optional: without it the command is not offered (the draft has no Session to compact, and the subagent variant has no compaction surface). */
   onCompact?: () => Promise<void>;
   /** Currently selected model reference ((provider, modelId) is the unique key); null = not yet chosen. */
   modelRef: ModelRefDto | null;
@@ -1160,9 +1160,10 @@ export function ChatInput({
     pendingModel !== null ||
     selectedSkills.length > 0;
   // Goal mode (engaged via the "+" menu or /goal): the text body becomes the objective. It is
-  // exclusive with a staged /agent or /model switch (engaging either clears the other); attached
-  // images ride along (core folds them into the objective as path lines) and selected skills ride
-  // round-1 message as a [use_skills] block, exactly like a normal send.
+  // exclusive with a staged /agent or /model switch (engaging either clears the other). Attached
+  // images and selected skills ride the round-1 message exactly as in a normal send: the images
+  // as image input (path lines only on a model without vision), the skills as a [use_skills]
+  // block. Later rounds restate the objective text alone.
   const [goalOn, setGoalOn] = useState(false);
   const [goalBudgetText, setGoalBudgetText] = useState("");
   const [goalBudgetOpen, setGoalBudgetOpen] = useState(false);
@@ -1195,9 +1196,8 @@ export function ChatInput({
   // parseable budget — and an open editor showing an invalid draft disables Send outright:
   // combined with the editor refusing to close over an invalid draft (below), no click sequence
   // can fire a goal with a stale committed budget.
-  // Images may come along with a goal objective (core folds them into `[attached image: …]`
-  // lines so they survive the rounds), but they don't substitute for the text; file
-  // attachments cannot — nothing folds those into a re-injected objective.
+  // Images may come along with a goal objective (they ride its round-1 message), but they don't
+  // substitute for the text; file attachments cannot — the server refuses them on a goal.
   const canSend =
     !running &&
     !compacting &&
@@ -1250,10 +1250,10 @@ export function ChatInput({
   }, [goalBudgetDraft]);
 
   /**
-   * Engage/exit goal mode; engaging clears any staged switch chip and every attachment
+   * Engage/exit goal mode; engaging clears any staged switch chip and every file attachment
    * (genuinely exclusive: a handoff or a model switch opens another session, and the server
-   * rejects non-text goal input). Selected skills stay — they ride the round-1 message as a
-   * [use_skills] block, like a normal send.
+   * refuses file attachments on a goal). Attached images and selected skills stay — they ride
+   * the round-1 message, like a normal send.
    */
   const toggleGoal = useCallback(
     (on: boolean) => {
@@ -1266,9 +1266,9 @@ export function ChatInput({
         onHandoffTargetChange?.(null);
         setPendingModel(null);
         onPendingModelChange?.(null);
-        // Images ride a goal (folded into the objective as path lines), file attachments do not
-        // — the server refuses those, so clear them or canSend would stay silently false with
-        // the objective looking ready.
+        // Images ride a goal's round-1 message, file attachments do not — the server refuses
+        // those, so clear them or canSend would stay silently false with the objective looking
+        // ready.
         setAttachments([]);
       }
     },
@@ -1536,8 +1536,9 @@ export function ChatInput({
             },
           ]
         : []),
-      // Goal mode is a main-session concept: the subagent variant offers no way in.
-      ...(variant === "session"
+      // Goal mode is offered wherever a main conversation is composed, the draft included (its
+      // first send starts the goal): only the subagent variant offers no way in.
+      ...(variant !== "subagent"
         ? [
             {
               cmd: "/goal",
@@ -1593,8 +1594,10 @@ export function ChatInput({
       })),
     ];
   }, [
+    variant,
     onCompact,
     onSwitchModel,
+    onHandoff,
     models,
     agents,
     onTextChange,
@@ -1850,16 +1853,16 @@ export function ChatInput({
     post: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean> = onSend,
   ) => {
     const t = text.trim();
-    // Goal mode: the trimmed text is the objective (no images, no staged switch — both are
-    // cleared when the chip goes on). Selected skills prefix the round-1 message as a
+    // Goal mode: the trimmed text is the objective (no file attachments, no staged switch —
+    // both are cleared when the chip goes on). Selected skills prefix the round-1 message as a
     // [use_skills] block, exactly like a normal send — the server strips leading marker blocks
     // when recording the objective, and rounds after the first re-inject the objective alone.
     if (goalOn) {
-      // Objective only: attachments were already cleared when goal mode engaged (and blocked
+      // No file attachments: they were already cleared when goal mode engaged (and blocked
       // from being added since), so there is nothing to carry here.
       setBusy(true);
       try {
-        // Attached images go with the objective (see the goalOn declaration above).
+        // Attached images ride the round-1 message (see the goalOn declaration above).
         const goalInput: TaskInputPart[] = [
           { type: "text", text: buildSkillsMessage(selectedSkills, t) },
         ];
@@ -2123,7 +2126,7 @@ export function ChatInput({
    * picked in, not the order the reads happened to finish in.
    */
   const addAttachments = (files: Iterable<File>) => {
-    if (goalOn) return; // goal input is text-only, same rule as images
+    if (goalOn) return; // a goal takes no file attachments: the server refuses them
     const { accepted: picked, rejected } = splitBySize(files, uploadLimits.attachmentMaxMb);
     for (const file of rejected) {
       toastError(S.chat.attachmentTooLarge(file.name, uploadLimits.attachmentMaxMb));
@@ -2728,9 +2731,10 @@ export function ChatInput({
                     label: S.chat.uploadImage,
                     // Without vision the images still send — as scratchpad file paths — so the
                     // entry stays usable and the hint says what will happen instead. Goal mode
-                    // sends them that way on any model, since the objective is re-injected as
-                    // text every round.
-                    desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                    // changes nothing here: a goal's images ride its first message as ordinary
+                    // image input, so the model's vision decides how they arrive, exactly as
+                    // for any other send.
+                    desc: vision ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
                     active: images.length > 0,
                     onSelect: () => imageInputRef.current?.click(),
                   },
@@ -2743,8 +2747,8 @@ export function ChatInput({
                     // inlined into the conversation.
                     desc: S.chat.uploadFileDesc,
                     active: attachments.length > 0,
-                    // Unlike images, a file cannot ride a goal: nothing folds it into the
-                    // objective that every round re-injects, so the server refuses it.
+                    // Unlike images, a file cannot ride a goal: the server refuses file
+                    // attachments on a goal request.
                     disabled: goalOn,
                     onSelect: () => attachmentInputRef.current?.click(),
                   },

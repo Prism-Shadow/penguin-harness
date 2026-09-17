@@ -13,12 +13,14 @@ import { S } from "../lib/strings";
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly retryAfterSeconds?: number;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, retryAfterSeconds?: number) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -102,7 +104,10 @@ export async function apiFetchWithMeta<T>(
       // Non-JSON error body: fall back to the default message.
     }
     if (response.status === 401 && !isAuthEndpoint(path)) onUnauthorized?.();
-    throw new ApiError(response.status, code, message);
+    const retryAfter = response.headers.get("retry-after");
+    const retryAfterSeconds =
+      retryAfter !== null && /^\d+$/.test(retryAfter) ? Number(retryAfter) : undefined;
+    throw new ApiError(response.status, code, message, retryAfterSeconds);
   }
 
   const headerDate = Date.parse(response.headers.get("date") ?? "");

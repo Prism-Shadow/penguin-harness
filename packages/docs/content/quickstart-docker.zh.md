@@ -118,7 +118,7 @@ USER penguin
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 钉死初始管理员密码，仅首次启动生效（见上文） |
 | `PENGUIN_TRUST_PROXY` | 在终结 TLS 的反向代理之后设为 `1`，使会话 Cookie 带上 `Secure` |
 | `PENGUIN_PREVIEW_ORIGIN` | 指向同一容器的第二个主机名，用于 Workspace 的 HTML 预览 |
-| `PENGUIN_UPDATE_CHECK` | `off` 关闭新版本检查——服务端唯一一个非模型的出网请求 |
+| `PENGUIN_UPDATE_CHECK` | `off` 关闭自动版本检查；Owner 主动发起的供应商 Key 授权仍可能产生出网请求 |
 
 ### 反向代理之后
 

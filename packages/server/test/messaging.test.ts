@@ -2034,23 +2034,6 @@ describe("messaging binding routes and bridge", () => {
     expect(fake.connections[1]!.closed).toBe(true);
   });
 
-  it("the session list marks rows with the ENABLED channel only", async () => {
-    // Saved but disabled: no indicator — the row marks live connections, not stored configs.
-    await api.put(BASE(SID), PUT_BODY);
-    const saved = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
-    const savedBody = (await saved.json()) as {
-      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
-    };
-    expect("messagingChannel" in savedBody.sessions.find((s) => s.sessionId === SID)!).toBe(false);
-
-    await api.post(`${BASE(SID)}/state`, { enabled: true });
-    const res = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
-    const body = (await res.json()) as {
-      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
-    };
-    expect(body.sessions.find((s) => s.sessionId === SID)?.messagingChannel).toBe("feishu");
-  });
-
   it("start() connects only enabled bindings and reconciles away rows whose Session is gone", async () => {
     t.deps.messagingRepo.upsert({
       sessionId: SID,
@@ -3104,6 +3087,52 @@ describe("messaging binding routes and bridge", () => {
 });
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The session list's messaging mark, every channel in one table: a row carries the channel of
+ * its ENABLED binding, and a saved-but-disabled config marks nothing. The mark reads the stored
+ * binding alone (enabledMessagingChannel), so each case writes the binding straight into the
+ * repo and no connector ever connects.
+ */
+describe("the session list's messaging mark", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  const projectId = "birder-default_project";
+
+  beforeEach(async () => {
+    t = await createTestApp();
+    api = apiClient(t.app, (await provisionUser(t.app, "birder")).cookie);
+    t.deps.sessionsRepo.insert(sessionRowOf(SID, projectId));
+  });
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  /** The Session's row as the development list serves it. */
+  const listedRow = async () => {
+    const res = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
+    const body = (await res.json()) as {
+      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
+    };
+    return body.sessions.find((s) => s.sessionId === SID);
+  };
+
+  it.each(["feishu", "telegram", "qq", "wechat"] as const)(
+    "marks a %s row once its binding is enabled, and not while it is only saved",
+    async (channel) => {
+      t.deps.messagingRepo.upsert({
+        sessionId: SID,
+        channel,
+        accountId: `${channel}-bot`,
+        config: {},
+      });
+      expect(await listedRow()).not.toHaveProperty("messagingChannel");
+
+      t.deps.messagingRepo.setEnabled(SID, channel, true);
+      expect((await listedRow())?.messagingChannel).toBe(channel);
+    },
+  );
+});
 
 /**
  * The failure #484 named and left open: an inbound message arrives, `startTask` throws, the

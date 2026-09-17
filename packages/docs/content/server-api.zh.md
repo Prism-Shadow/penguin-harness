@@ -152,7 +152,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | POST | /api/version/update | **仅管理员。**启动在线更新任务——在服务器上后台运行 `penguin update --yes`——已有任务在跑则并入；应答与 GET 完全一致。已结束的任务可以再次启动（即重试） |
 | POST | /api/version/restart | **仅管理员。**请求进程在优雅关闭后以托管进程约定的重启退出码退出，由 `penguin server \| penguin web` 在已安装的版本上重新拉起：`{restarting: true}`；没有托管进程时为 `{restarting: false, reason: "no_supervisor"}` |
 
-`update-check` 是服务端唯一的对外网络请求，并且严格失败兜底：查询失败仍返回 200，只是设置 `error`（`network` / `rate_limited` / `bad_response`）且 `latestVersion` 为 null；结果在内存中缓存（成功 1 小时、失败 10 分钟）；设置 `PENGUIN_UPDATE_CHECK=off` 可完全关闭该查询（返回 `disabled: true`，不发起任何网络请求）。更新的 `status` 为 `updated`（需重启服务才能运行新版本）、`failed` 或 `unsupported` —— 后者包括服务不是通过 `penguin server|web` 启动（`reason: "not_launched_via_cli"`），以及 CLI 自身拒绝执行（源码运行、无法识别的安装方式、Windows）；`output` 携带 CLI 输出的末尾片段。
+`update-check` 是服务端唯一自动发起的对外网络请求，并且严格失败兜底：查询失败仍返回 200，只是设置 `error`（`network` / `rate_limited` / `bad_response`）且 `latestVersion` 为 null；结果在内存中缓存（成功 1 小时、失败 10 分钟）；设置 `PENGUIN_UPDATE_CHECK=off` 可完全关闭该查询（返回 `disabled: true`，不发起任何网络请求）。Owner 主动发起的供应商 Key 授权会另外产生对外请求。更新的 `status` 为 `updated`（需重启服务才能运行新版本）、`failed` 或 `unsupported` —— 后者包括服务不是通过 `penguin server|web` 启动（`reason: "not_launched_via_cli"`），以及 CLI 自身拒绝执行（源码运行、无法识别的安装方式、Windows）；`output` 携带 CLI 输出的末尾片段。
 
 ### Project 与成员
 
@@ -171,8 +171,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/projects/:projectId/models | 模型列表（api_key 掩码显示） |
-| PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键 |
+| GET | /api/projects/:projectId/models | 模型列表（api_key 掩码显示）；有促销的行以 `discount` 携带其折扣 |
+| PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键；条目的 `discount` 写入或清除其促销折扣（见下文） |
 | POST | /api/projects/:projectId/models/test | 连通性测试：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测，先用整理后的 URL（整段端点路径会先被剥掉），再用它增删 `/v1` 后的形式，返回第一个被提供的协议与实际应答的 base URL：`{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}` |
 | POST | /api/projects/:projectId/models/list | 新增分组导入所用的端点模型列表：按检测出的协议列出端点服务的全部模型 id：`{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
@@ -180,7 +180,23 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
 
+行上的 `pricing` 恒为牌价。促销折扣是从牌价中扣除的比例，取值在 0 与 1 之间（不含两端），不写入 `.project_config.toml`，而由服务端按行存于 `web.db`、在计算成本时扣除。`PUT /models` 时，条目带 `discount` 即按其写入：数字写入，`null` 清除，其他取值在写入任何内容之前即返回 400。省略 `discount` 的条目保留已存折扣，但若条目改名（`renamedFrom` 指向另一对引用）或 `pricing` 与已存价格不同，则一并清除；新表中不再出现的行，折扣随之删除。
+
 `PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
+
+#### Penguin Go Key 授权
+
+以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-go` 既有条目，并按平台元数据创建本地缺失模型；已有模型会刷新平台牌价和客户端协议，端点及其他由 Project 管理的配置不会被覆盖，模型也不会被删除。Project 模型表写入后，平台返回的折扣会整体替换该分组存于 `web.db` 的促销折扣，从不写入 `.project_config.toml`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | /api/projects/:projectId/platform-auth/start | 开启一次性授权流程；按平台截止时间过期，本地最长保留十分钟 |
+| POST | /api/projects/:projectId/platform-auth/sync | 使用已保存的 Key 获取平台模型清单，新增本地缺失模型并刷新已有模型的平台元数据；响应以 `added` / `updated` 返回数量，Key 无效时返回 `platform_reauthorization_required` |
+| GET | /api/projects/:projectId/platform-auth/:flowId/status | 由服务端轮询中转站，把已交付 Key 写入模型组并新增平台模型 |
+| POST | /api/projects/:projectId/platform-auth/:flowId/retry | 写入失败时仅重试本地原子写，不重复请求一次性交付 |
+| POST | /api/projects/:projectId/platform-auth/:flowId/cancel | 取消本地流程；中转站的 pending 记录按自身 TTL 过期 |
+
+成功写入后会使该 Project 的缓存运行时失效，并发布 `credentials_updated`。只要平台返回非空模型清单，分组不存在时也可以直接创建；`apply_failed` 表示通过校验的交付内容未能写入本地配置，重试接口只会再次执行这一步本地写入。
 
 #### 授权新建 API key
 
@@ -200,6 +216,18 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 这条路由能做的事还有第二重边界：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、以及写入该 Project 模型的动作，都发生在 `GET /:flowId`——Owner 自己的轮询，仍在会话校验之内。因此没有 Owner 主动查询流程状态，就不会有 key 落进任何 Project；兑换失败也在那里以 `{status: error, error}` 报出，而不是显示在跳回页面上。周边的一切同样不在豁免之内：更长的路径、其它任何请求方法（该字面路径上的 `HEAD` 返回 405），以及另外三条同级路由，仍然都需要会话。
 
 `mode: manual` 不传回调地址，授权页改为显示一次性授权码供用户手动带回，适用于跳转回不来的部署。无论由哪条路由完成兑换，流程完成后同样会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 一致。
+### 插件注册表
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/plugins/registry | 插件市场页的插件索引：`{plugins: PluginIndexEntry[]}`——所有已配置注册表（当前仅内置注册表）合并后的索引 |
+| GET | /api/plugins/registry/readme?name=… | 某个已列出条目的说明文档：`{name, readme}`（注册表没有时 `readme` 为 null）；索引未列出的名字返回 404 |
+| GET | /api/projects/:projectId/plugins/installed | 该 Project 要求的插件，并联上进程实际在跑的状态：`{plugins: [{specifier, active, builtin, modules, replaces, error?}], shipped, file, restartPending}`（成员即可） |
+| POST | /api/projects/:projectId/plugins/installed | `{specifier}`——为该 Project 要求一个随构建发布的插件（否则 400 `plugin_not_shipped`），无需重启即生效，App 自行重组——这会中止所有 Project 正在进行的 Agent 运行；启动失败的改动会被撤销（管理员） |
+| PUT | /api/projects/:projectId/plugins/installed | `{plugins}`——重写该 Project 的列表并应用；新增的名字须是随构建发布的包（管理员） |
+| DELETE | /api/projects/:projectId/plugins/installed?specifier=… | 从该 Project 的列表中去掉并应用；磁盘上什么都不变（管理员） |
+
+索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。注册表仅用于发现，不会导入任何插件代码；Project 通过上面的路由要求某个条目，其列表存在自己的 `.project_config.toml` 的 `[plugins]` 表里——包名 → 要求，形状同 Cargo 的 `[dependencies]`（`"@scope/name" = "*"`、版本字符串，或 `{ version = "…" }`）。进程运行的是所有 Project 表的并集。
 
 ### Agent
 

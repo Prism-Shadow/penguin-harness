@@ -7,13 +7,14 @@
  * runtime are the trend the loop exists to show, so they stay on one line, and each point
  * carries its version in the chart's hover label and in the evaluation table's own column.
  */
+import type { LinePoint } from "../usage/chart-geom";
 
 /** Minimal Evaluation shape needed to read Score (BenchmarkEvaluation is a superset). */
 export interface MetricSourceLike {
   score: number;
 }
 
-/** Each Evaluation's authoritative stored Score; non-finite malformed values become chart gaps. */
+/** Each Evaluation's authoritative stored Score; a non-finite malformed value is null. */
 export function scoreValues(evaluations: readonly MetricSourceLike[]): (number | null)[] {
   return evaluations.map((e) => {
     return typeof e.score === "number" && Number.isFinite(e.score) ? e.score : null;
@@ -130,13 +131,18 @@ export function labelSeries(evaluations: readonly EvaluationLabelLike[]): Evalua
   return [...all.filter((x) => !x.unlabeled), ...all.filter((x) => x.unlabeled)];
 }
 
-/** A series' Score sequence; indices outside this series are null, keeping the global time axis. */
-export function seriesValues(
-  evaluations: readonly (MetricSourceLike & EvaluationLabelLike)[],
+/**
+ * The points one series' line is drawn through: its own evaluations, in scoreboard order, each
+ * at its own slot on the time axis every series shares. The line joins each point to the next
+ * and does not break between them. Where another label's evaluation holds the slot between two
+ * points, that slot is the other series' point, not a gap in this one. A series with a single
+ * evaluation is a lone point.
+ */
+export function seriesPoints(
+  evaluations: readonly MetricSourceLike[],
   series: EvaluationSeries,
-): (number | null)[] {
-  const own = new Set(series.indices);
-  return scoreValues(evaluations).map((v, i) => (own.has(i) ? v : null));
+): LinePoint[] {
+  return series.indices.map((index) => ({ index, value: evaluations[index]!.score }));
 }
 
 /** Minimal evaluation shape for the list rows: the stored Score and when it was recorded. */
