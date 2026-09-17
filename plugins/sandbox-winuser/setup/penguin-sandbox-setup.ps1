@@ -27,6 +27,11 @@
   those files anyway — they are not its own. NTUSER.DAT and its logs (the registry hive) are
   skipped among the root files for the same reason: nothing but you should appear on them.
 
+  Every run also clears what an earlier build of this script left behind: an inheritable grant
+  on the profile root (which every file below, ~/.ssh included, inherited), and that build's
+  accounts, group, firewall rules and decoy home. Nothing of an earlier layout survives a run
+  except entries stamped on individual files, which -RemoveLegacyProfileGrant walks for.
+
   Nothing here is a service, a driver or a reboot. What it leaves behind is: the group, the four
   accounts, their firewall rules, two grants on your profile, one writable temp folder, and one
   state file naming them. Pass -Remove to take all of it away again.
@@ -68,7 +73,8 @@ param(
   # earlier build left, inherited ones included (see Clear-PrivateDirs).
   [string[]] $PrivateDirs = @('.ssh'),
   [switch] $Remove,
-  # Also strip the whole-profile grant an earlier build made (a slow tree walk; off by default).
+  # Also walk the whole profile for grants an earlier build stamped on individual files (slow;
+  # off by default). The inheritable root grant such a build made is withdrawn on every run.
   [switch] $RemoveLegacyProfileGrant
 )
 
@@ -125,26 +131,17 @@ function New-RandomPassword {
   -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
 }
 
-function Remove-Everything {
-  foreach ($rule in ($firewallRules.Values | ForEach-Object { $_ }) + $legacyRules) {
+function Remove-Rules([string[]] $Names) {
+  foreach ($rule in $Names) {
     if (Get-NetFirewallRule -Name $rule -ErrorAction SilentlyContinue) {
       Remove-NetFirewallRule -Name $rule
       Write-Host "removed firewall rule $rule"
     }
   }
-  # The curated config grants come off the same short list they went on — seconds, not a walk.
-  Set-ConfigAccess -Revoke
-  Clear-PrivateDirs
-  # An earlier build granted the whole profile with /T. Undoing THAT is the slow walk it always
-  # was, so it is offered rather than assumed: -RemoveLegacyProfileGrant does it.
-  if ($RemoveLegacyProfileGrant -and (Test-Path $UserProfile)) {
-    Write-Host "removing the legacy whole-profile grant (this walks the tree; slow)..."
-    foreach ($who in @($GroupName, $FullOnlineUser, $FullOfflineUser) + $legacyGroups) {
-      & icacls $UserProfile /remove:g $who /T /C /Q 2>$null | Out-Null
-    }
-    Write-Host "removed the legacy whole-profile grant on $UserProfile"
-  }
-  foreach ($user in $allUsers + $legacyUsers) {
+}
+
+function Remove-Accounts([string[]] $Names) {
+  foreach ($user in $Names) {
     if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) {
       Remove-LocalUser -Name $user
       Write-Host "removed account $user"
@@ -157,18 +154,84 @@ function Remove-Everything {
       Write-Host "removed leftover profile $profileDir"
     }
   }
-  foreach ($group in @($GroupName) + $legacyGroups) {
+}
+
+function Remove-Groups([string[]] $Names) {
+  foreach ($group in $Names) {
     if (Get-LocalGroup -Name $group -ErrorAction SilentlyContinue) {
       Remove-LocalGroup -Name $group
       Write-Host "removed group $group"
     }
   }
-  foreach ($dir in @($tempDir, $legacyHome)) {
+}
+
+function Remove-Dirs([string[]] $Paths) {
+  foreach ($dir in $Paths) {
     if (Test-Path $dir) {
       Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
       Write-Host "removed $dir"
     }
   }
+}
+
+<#
+  Every sandbox principal off the profile ROOT — current names and earlier ones. An earlier
+  build granted the root WITH inheritance, so every file under the profile inherited it,
+  ~/.ssh included — the "Bad permissions" ssh then refuses with, and one that /remove on the
+  file cannot touch, since the entry is not the file's own. Withdrawing the entry at the root
+  makes Windows withdraw it from every descendant: that is the propagation an inheritable entry
+  carries, it takes minutes on a large profile, and it is paid only when such an entry is found.
+  Entries an earlier /T stamped on individual files are not inherited and are not reached this
+  way; -RemoveLegacyProfileGrant walks the tree for those. Runs before the accounts are removed,
+  while their names still resolve.
+#>
+function Clear-ProfileRootGrants {
+  if (-not (Test-Path -LiteralPath $UserProfile)) { return }
+  $principals = @($GroupName) + $allUsers + $legacyGroups + $legacyUsers
+  $listing = (& icacls $UserProfile 2>$null) -join "`n"
+  $present = @($principals | Where-Object { $listing -match [regex]::Escape("\${_}:") })
+  if ($present.Count -eq 0) { return }
+  $inheritable = @($present | Where-Object { $listing -match ([regex]::Escape("\${_}:") + '(\(\w+\))*\((OI|CI)\)') })
+  if ($inheritable.Count -gt 0) {
+    Write-Host "profile root: withdrawing an inheritable grant for $($inheritable -join ', ') — Windows withdraws it from every file below, which can take minutes on a large profile..."
+  }
+  foreach ($who in $present) {
+    & icacls $UserProfile /remove:g $who /C /Q 2>$null | Out-Null
+  }
+  Write-Host "profile root: removed $($present -join ', ')"
+}
+
+<#
+  What an earlier build left that this one does not use: its accounts (and the profile
+  directories a login gave them), its group, its firewall rules and its decoy home. Setup
+  retires them, since the new accounts replace them; -Remove takes them along with everything.
+#>
+function Remove-Legacy {
+  Remove-Rules $legacyRules
+  Remove-Accounts $legacyUsers
+  Remove-Groups $legacyGroups
+  Remove-Dirs @($legacyHome)
+}
+
+function Remove-Everything {
+  # Grants first, while every account name still resolves; the root grant before the curated
+  # set, since an inheritable root entry is what the set's entries would otherwise re-inherit.
+  Clear-ProfileRootGrants
+  Set-ConfigAccess -Revoke
+  Clear-PrivateDirs
+  # Entries an earlier build stamped on individual files with /T: the slow walk it always was,
+  # so it is offered rather than assumed.
+  if ($RemoveLegacyProfileGrant -and (Test-Path $UserProfile)) {
+    Write-Host "removing per-file legacy grants (this walks the whole profile; slow)..."
+    foreach ($who in @($GroupName) + $allUsers + $legacyGroups + $legacyUsers) {
+      & icacls $UserProfile /remove:g $who /T /C /Q 2>$null | Out-Null
+    }
+    Write-Host "removed per-file legacy grants under $UserProfile"
+  }
+  Remove-Rules (@($firewallRules.Values | ForEach-Object { $_ }) + $legacyRules)
+  Remove-Accounts ($allUsers + $legacyUsers)
+  Remove-Groups (@($GroupName) + $legacyGroups)
+  Remove-Dirs @($tempDir, $legacyHome)
   if (Test-Path $stateFile) {
     Remove-Item $stateFile -Force
     Write-Host "removed $stateFile"
@@ -353,6 +416,11 @@ if ($Remove) {
   Remove-Everything
   return
 }
+
+# What earlier builds left comes off first: an inheritable root grant (before the curated set
+# is granted, or the set would inherit it again), then the accounts it named.
+Clear-ProfileRootGrants
+Remove-Legacy
 
 if (-not (Get-LocalGroup -Name $GroupName -ErrorAction SilentlyContinue)) {
   New-LocalGroup -Name $GroupName -Description 'PenguinHarness sandbox accounts.' | Out-Null
