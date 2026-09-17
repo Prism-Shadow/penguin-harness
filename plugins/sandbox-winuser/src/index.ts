@@ -261,9 +261,9 @@ export class SandboxWinUserStatus {
                 title: "Set up sandbox accounts",
                 titleZh: "创建沙盒账户",
                 description:
-                  "Windows asks for permission, then two local accounts and the firewall rules that cut the network for one of them are created. Nothing else on this machine changes.",
+                  "Windows asks for permission, then the sandbox accounts, their firewall rules, and read access on your profile (so a confined command sees your real home) are created. The first run is slower while it grants that access.",
                 descriptionZh:
-                  "Windows 会请求授权，然后创建两个本地账户，以及让其中一个断网的防火墙规则。本机的其他部分不受影响。",
+                  "Windows 会请求授权，然后创建沙盒账户及其防火墙规则，并授予它们对你用户目录的读取权（这样被封禁的命令能看到真实的 home）。首次运行会因授予该权限而稍慢。",
               },
             ],
       run: async () => runSetup(),
