@@ -62,7 +62,7 @@ import {
 } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { parkActiveDraft } from "../chat/draft-sessions";
+import { prepareNewChatDraft } from "../chat/new-chat";
 import { ActivitySparkline } from "./activity-sparkline";
 import {
   SNAPSHOT_ACCEPT,
@@ -345,8 +345,9 @@ export function AgentsPage() {
    * rather than the previous one from the cache.
    */
   const newChat = (agentId: string) => {
-    // Typed-but-unsent draft text becomes a parked draft conversation first (draft-sessions.ts).
-    if (user && projectId) parkActiveDraft(user.userId, projectId);
+    // Typed-but-unsent draft text becomes a parked draft conversation first, and every field
+    // but the Agent starts on the Project's new-chat defaults (new-chat.ts).
+    if (user && projectId) prepareNewChatDraft(user.userId, projectId);
     setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
   };

@@ -4,8 +4,9 @@
  * The face carries no primary action: it is a plain card that reads, and the personnel menu —
  * opening the desk session and every personnel action — is the one thing it can do. A
  * whole-card link would promise one of those many actions and steal the click from the rest.
- * Three rows: avatar with the name and title (the CEO wears a chip); the live state dot and
- * its label, the workspace tail, this period's spend against the budget; a thin ratio bar.
+ * Three rows: avatar with the name and title; the live state dot and its label, the workspace
+ * tail, this period's spend against the budget; a thin ratio bar. The CEO's card carries no mark of
+ * its own: the CEO is the tree's root, and an organization is created with the CEO titled "CEO".
  * The state the dot draws is passed in rather than read off the employee: the chart is a
  * snapshot re-read on organization events, and no event says a run ended (org-sessions.ts,
  * liveEmployeeStates).
@@ -42,7 +43,6 @@ import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
-import { Badge } from "../../components/ui/badge";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ELLIPSIS_ICON } from "../../components/ui/session-row-menu";
@@ -92,7 +92,6 @@ export function ChartLegend() {
 export function ChartCard({
   employee,
   state,
-  isCeo,
   currency,
   x,
   y,
@@ -103,7 +102,6 @@ export function ChartCard({
   employee: OrgEmployeeItem;
   /** The state the dot draws — the live one, which the chart's own `state` cannot be. */
   state: OrgEmployeeState;
-  isCeo: boolean;
   currency: Currency;
   /** Top-left corner inside the drawing. */
   x: number;
@@ -170,11 +168,8 @@ export function ChartCard({
             className="shrink-0 rounded-md"
           />
           <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1.5">
-              <span className="min-w-0 truncate text-[13px] leading-4 font-semibold text-gray-900 dark:text-gray-100">
-                {employee.name}
-              </span>
-              {isCeo && <Badge tone="brand">{S.company.ceo}</Badge>}
+            <span className="block truncate text-[13px] leading-4 font-semibold text-gray-900 dark:text-gray-100">
+              {employee.name}
             </span>
             <span className="block truncate text-[11px] leading-4 text-gray-500 dark:text-gray-400">
               {employee.title}

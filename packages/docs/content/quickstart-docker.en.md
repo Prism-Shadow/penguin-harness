@@ -118,7 +118,7 @@ The full list is in the [Configuration Reference](/configuration); these are the
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Pins the initial admin password, first boot only (see above) |
 | `PENGUIN_TRUST_PROXY` | Set to `1` behind a TLS-terminating reverse proxy, so session cookies are marked `Secure` |
 | `PENGUIN_PREVIEW_ORIGIN` | A second hostname routed to the same container, for Workspace HTML previews |
-| `PENGUIN_UPDATE_CHECK` | `off` disables the release check — the server's only outbound non-model request |
+| `PENGUIN_UPDATE_CHECK` | `off` disables the automatic release check; owner-initiated provider key authorization may still make outbound requests |
 
 ### Behind a reverse proxy
 

@@ -2397,12 +2397,16 @@ export class SessionsModule {
       traceStore: this.traceStore,
       proxyEnv: env.proxyEnv,
       controlEnv: env.controlEnv,
+      // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
+      // the row); a point query per row keeps the repo out of the service. An unknown
+      // stored channel reads as none (same defensive skip as the bridge and the routes).
       messagingChannel: (sessionId) => {
         const enabled = this.messagingRepo.findEnabled(sessionId);
         return enabled !== null &&
           (enabled.channel === "feishu" ||
             enabled.channel === "telegram" ||
-            enabled.channel === "qq")
+            enabled.channel === "qq" ||
+            enabled.channel === "wechat")
           ? enabled.channel
           : null;
       },

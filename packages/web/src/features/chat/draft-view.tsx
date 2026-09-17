@@ -21,14 +21,14 @@
  * The one thing that does not resume is a prompt a "Create with AI" surface composed
  * (`aiPrefill`, draft-cache.ts): nobody typed it, so leaving this page without editing
  * or sending it clears the slot exactly as a send would (see dropAiPrefill).
- * The sidebar group header "+" / menu "New conversation" explicitly specify an
- * Agent via route state (overriding the cached selection); the workspace-mode
- * group header "+" additionally carries a Workspace path pre-filling the
- * Workspace selection ("" = temporary workspace). A direct visit or refresh
- * falls back to the cache. When neither route state nor the mount-time cache claims a
- * field, the Project's new-chat defaults ([default_chat]) prefill Agent / Workspace /
- * approval mode (precedence: route state > draft cache > project default > built-in
- * fallback); the model default already flows through models.defaultModel.
+ * Every "New chat" entry point first rewrites the slot to the model carry-over and staged
+ * skills, releasing whatever else an earlier visit left in the cache (prepareNewChatDraft,
+ * new-chat.ts), then names in route state only what it is about: an Agent group's "+" or
+ * an Agent card names its Agent, a Workspace group's "+" its path ("" = temporary
+ * workspace), and the plain "New chat" names nothing. A direct visit or refresh keeps the
+ * cache. Precedence per field: route state > draft cache > the Project's new-chat defaults
+ * ([default_chat]) > built-in fallback (for the Agent: default_agent, then the first —
+ * newChatAgentId); the model default already flows through models.defaultModel.
  *
  * Saving the Project's new-chat defaults resets the seeded selections so new chats pick
  * the change up: the project-settings dialog strips the cached pins (next visits reseed
@@ -88,6 +88,7 @@ import {
   chatDefaultsChangedDetail,
   type ChatDefaultsChangedDetail,
 } from "./chat-defaults-event";
+import { newChatAgentId } from "./new-chat";
 import { effectiveThinkingLevel } from "./thinking-level";
 import { WorkspaceSelect, pillClass } from "./workspace-select";
 import { sameModelRef } from "../models/model-grouping";
@@ -156,7 +157,7 @@ export function DraftView({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { agents, currentAgent, setCurrentAgentId } = useProject();
+  const { agents, setCurrentAgentId } = useProject();
   const { add } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
@@ -185,9 +186,9 @@ export function DraftView({
     if (parkedMissing) navigate("/chat/new", { replace: true });
   }, [parkedMissing, navigate]);
 
-  const [agentId, setAgentId] = useState<string | null>(
-    cached.agentId ?? currentAgent?.agentId ?? null,
-  );
+  // Null until something names an Agent: the cache here, otherwise the resolution effect below
+  // once the Agent list and the Project's defaults are in — never a stand-in it would swap out.
+  const [agentId, setAgentId] = useState<string | null>(cached.agentId ?? null);
   const [workspace, setWorkspace] = useState(cached.workspace ?? "");
   // A terminal opened while drafting starts in the Workspace chosen here; "" is the
   // temporary Workspace, whose directory the server only creates with the Session, so
@@ -247,28 +248,28 @@ export function DraftView({
    * Fields the user already touched this mount: the project defaults arrive async (after
    * mount), and an explicit pick made in the meantime must never be clobbered by them.
    * The mount-time cache (`cached`) covers everything picked in PREVIOUS visits; these
-   * refs cover the window between mount and the defaults resolving.
+   * refs cover the window between mount and the defaults resolving. The Agent needs no flag:
+   * the resolution below never replaces a valid selection.
    */
-  const touchedRef = useRef({ agent: false, workspace: false, approval: false });
+  const touchedRef = useRef({ workspace: false, approval: false });
 
   // Unified resolution of the Agent selection (a single effect, single writer):
-  // explicit route state > current valid value (from cache / panel selection) >
-  // default_agent > the first one. Explicit intent (sidebar group header "+" / menu
-  // "New conversation") is applied only once per location.key — clicking "+" again
-  // for the same Agent gets a new key and re-aligns, while the user's subsequent
-  // reselection in the panel won't keep getting overridden. Merging this into one
-  // effect is essential: splitting it into an "apply state" effect and a "fallback
-  // on invalid value" effect would let the former write B in one render while the
-  // latter, still judging by the stale closure's invalid value, writes the default
-  // Agent and clobbers B.
+  // explicit route state > current valid value (from cache / panel selection) > the
+  // new-chat default Agent (newChatAgentId: the Project's `[default_chat].agent_id`, then
+  // default_agent, then the first one), which waits for the Project's defaults to resolve.
+  // Explicit intent (an Agent group's "+", an Agent card) is applied only once per
+  // location.key — clicking "+" again for the same Agent gets a new key and re-aligns, while
+  // the user's subsequent reselection in the panel won't keep getting overridden. Merging
+  // this into one effect is essential: splitting it into an "apply state" effect and a
+  // "fallback on invalid value" effect would let the former write B in one render while the
+  // latter, still judging by the stale closure's invalid value, writes the default Agent and
+  // clobbers B.
   const routeState = location.state as {
     agentId?: string;
     workspace?: string;
   } | null;
   const stateAgentId = routeState?.agentId;
   const appliedStateKey = useRef<string | null>(null);
-  /** One-shot marker for the project-default Agent (seeding precedence, see below). */
-  const appliedDefaultAgent = useRef(false);
   useEffect(() => {
     if (agents.length === 0) return; // list not ready yet, nothing to validate against — wait for the next pass
     const valid = (id: string | null | undefined): id is string =>
@@ -285,26 +286,12 @@ export function DraftView({
         return;
       }
     }
-    // Project default ([default_chat].agent_id), inserted ahead of the fallback chain:
-    // applied at most once per mount, and only when nothing above it claims the field —
-    // no route override consumed this mount, no mount-time cached selection, no panel pick
-    // since mount (precedence: route state > draft cache > project default > the
-    // currentAgent/default_agent/first fallback the initial state and the line below give).
-    if (chatDefaults?.agentId !== undefined && !appliedDefaultAgent.current) {
-      appliedDefaultAgent.current = true;
-      if (
-        appliedStateKey.current === null &&
-        cached.agentId === undefined &&
-        !touchedRef.current.agent &&
-        valid(chatDefaults.agentId)
-      ) {
-        setAgentId(chatDefaults.agentId);
-        return;
-      }
-    }
     if (valid(agentId)) return;
-    setAgentId((agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId ?? null);
-  }, [agents, agentId, location.key, stateAgentId, chatDefaults, cached.agentId]);
+    // Nothing names a valid Agent (no route override, no cached or picked one, or the one
+    // there was is gone): the new-chat default, once the Project's defaults are known.
+    if (chatDefaults === null) return;
+    setAgentId(newChatAgentId(agents, chatDefaults));
+  }, [agents, agentId, location.key, stateAgentId, chatDefaults]);
 
   // Explicit Workspace from route state (the workspace-mode group header "+"): applied once per
   // location.key, same convention as the Agent above, overriding the cached selection ("" pre-fills
@@ -383,30 +370,19 @@ export function DraftView({
         const d = detail.defaults;
         defaultsFromEventRef.current = true;
         setChatDefaults(d);
-        touchedRef.current = { agent: false, workspace: false, approval: false };
+        touchedRef.current = { workspace: false, approval: false };
         setWorkspace(d.workspace ?? "");
         setApprovalMode(d.approvalMode ?? "allow-all");
-        const valid = (id: string | undefined): id is string =>
-          id !== undefined && agents.some((a) => a.agentId === id);
-        if (valid(d.agentId)) {
-          setAgentId(d.agentId);
-        } else if (agents.length > 0) {
-          // No (valid) default Agent in the new block: the same fallback chain a fresh
-          // mount runs — the global current Agent, then default_agent, then the first.
-          // Skipped while the list is empty (nothing to validate against; keep the pick).
-          setAgentId(
-            currentAgent?.agentId ??
-              (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId ??
-              null,
-          );
-        }
+        // The Agent a fresh mount would now start on (the new block's default while it names
+        // an Agent, then default_agent, then the first).
+        setAgentId(newChatAgentId(agents, d));
       }
       // New default model: adopt it directly (the event carries the authoritative pair).
       // Setting null and leaning on the fallback effect would race ChatPage's models
       // refetch and re-pin the STALE default from the old models prop.
       if (detail.defaultModel !== undefined) setModelRef(detail.defaultModel);
     },
-    [agents, currentAgent],
+    [agents],
   );
   /** Latest-closure mirror for the window listener (same convention as persistRef). */
   const onDefaultsChangedRef = useRef(onDefaultsChanged);
@@ -648,7 +624,6 @@ export function DraftView({
   }, [cancelPendingSave, userId, projectId, draftId, modelRef]);
 
   const selectAgent = (a: AgentSummary) => {
-    touchedRef.current.agent = true; // an explicit pick outranks a late-arriving project default
     setAgentId(a.agentId);
     // Follow through to the global current Agent: keeps the sidebar memory and stats convention consistent.
     setCurrentAgentId(a.agentId);
@@ -804,7 +779,6 @@ export function DraftView({
           controlRef={composerRef}
           onSend={onSend}
           onStop={async () => undefined}
-          onCompact={async () => undefined}
           modelRef={modelRef}
           models={models?.models ?? []}
           onChangeModel={setModelRef}

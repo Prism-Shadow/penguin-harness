@@ -26,12 +26,32 @@ import { UseBenchmarkModal } from "./use-benchmark-modal";
 /** Back to the list: the arrow-left every detail page's back button carries. */
 const BACK_ICON = "M15 18l-6-6 6-6M9 12h12";
 
+/**
+ * What stands in place of the detail for a Benchmark that is not published: still being built,
+ * or creation failed. Deleting and creating again is a failed Benchmark's only way out, and only
+ * the owner may delete, so a member is told what happened without being sent to that step.
+ */
+export function UnpublishedNotice({ failed, isOwner }: { failed: boolean; isOwner: boolean }) {
+  if (!failed) {
+    return <EmptyState title={S.benchmark.building} description={S.benchmark.buildingDetail} />;
+  }
+  return (
+    <EmptyState
+      title={S.benchmark.creationFailed}
+      description={
+        isOwner ? S.benchmark.creationFailedDetail : S.benchmark.creationFailedDetailMember
+      }
+    />
+  );
+}
+
 export function BenchmarkDetailPage() {
   const params = useParams<{ benchmarkId: string }>();
   const benchmarkId = params.benchmarkId ?? "";
   const navigate = useNavigate();
   const { currentProject, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
+  const isOwner = currentProject?.role === "owner";
 
   const [benchmark, setBenchmark] = useState<BenchmarkSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -103,14 +123,7 @@ export function BenchmarkDetailPage() {
       </div>
     );
   } else if (masked) {
-    body = failed ? (
-      <EmptyState
-        title={S.benchmark.creationFailed}
-        description={S.benchmark.creationFailedDetail}
-      />
-    ) : (
-      <EmptyState title={S.benchmark.building} description={S.benchmark.buildingDetail} />
-    );
+    body = <UnpublishedNotice failed={failed} isOwner={isOwner} />;
   } else {
     body = <BenchmarkDetail projectId={projectId} benchmark={benchmark} />;
   }

@@ -34,7 +34,7 @@ import {
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { UserMenu } from "./user-menu";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
-import { parkActiveDraft } from "../../features/chat/draft-sessions";
+import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
@@ -70,7 +70,7 @@ const railItemClass = (active: boolean) =>
 function CollapsedRail({ onExpand }: { onExpand: () => void }) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { agents, currentProject, setCurrentAgentId } = useProject();
+  const { currentProject, setCurrentAgentId } = useProject();
   const { sessions, loading } = useSessions();
   /**
    * Passive: the layout above owns the one fetch per session, so the rail only reads the
@@ -108,15 +108,13 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${lastSession.sessionId}`);
   };
 
-  /** Mirrors the pinned sidebar's "New chat": parks any typed-but-unsent draft text first (draft-sessions.ts), then a default_agent draft, falling back to the first Agent (an unresolved list defers resolution to the draft page). */
+  /** Mirrors the pinned sidebar's "New chat": parks any typed-but-unsent draft text first, then opens a draft that names nothing, so it starts on the Project's new-chat defaults (new-chat.ts). */
   const newChat = () => {
-    if (user && currentProject) parkActiveDraft(user.userId, currentProject.projectId);
-    const agentId = (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId;
-    if (agentId) setCurrentAgentId(agentId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`, agentId ? { state: { agentId } } : undefined);
+    if (user && currentProject) prepareNewChatDraft(user.userId, currentProject.projectId);
+    navigate(`/chat/${DRAFT_SESSION_ID}`);
   };
 
-  /** Page entries (rail positions 3-7): same routes, same labels as the pinned nav.
+  /** Page entries (rail positions 3-8): same routes, same labels as the pinned nav.
       Traces is not among them: reading a Trace happens in the chat toolbar's panel
       switcher, which is the only place it happens. */
   const pages: ReadonlyArray<{
