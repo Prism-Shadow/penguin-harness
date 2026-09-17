@@ -3,6 +3,7 @@
 - **Date:** 2026-09-17
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#783](https://github.com/Prism-Shadow/penguin-harness/pull/783)
 
 [中文版](2026-09-17-memory-card-text-action.zh.md)
 
