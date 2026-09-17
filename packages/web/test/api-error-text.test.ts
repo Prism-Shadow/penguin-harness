@@ -7,8 +7,8 @@
  * meets, and pin that the three "cannot compact" reasons stay three distinct explanations
  * rather than collapsing into one.
  */
-import { afterEach, describe, expect, it } from "vitest";
-import { ApiError } from "../src/api/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError, apiFetch } from "../src/api/client";
 import { apiErrorText } from "../src/lib/api-error";
 import { S, setActiveStrings, zh as ZH } from "../src/lib/strings";
 import { en as EN } from "../src/lib/strings-en";
@@ -17,7 +17,10 @@ import { en as EN } from "../src/lib/strings-en";
 const serverError = (code: string): ApiError =>
   new ApiError(409, code, "RAW ENGLISH SERVER MESSAGE");
 
-afterEach(() => setActiveStrings(ZH));
+afterEach(() => {
+  setActiveStrings(ZH);
+  vi.unstubAllGlobals();
+});
 
 describe("apiErrorText", () => {
   it("localizes each compaction refusal separately in both locales", () => {
@@ -49,6 +52,7 @@ describe("apiErrorText", () => {
       "memory_file_not_found",
       "memory_scope_not_found",
       "trace_not_found",
+      "platform_rate_limited",
       "internal",
     ];
     for (const code of reachable) {
@@ -78,5 +82,27 @@ describe("apiErrorText", () => {
   it("reports a non-ApiError as the generic failure, not a stray object", () => {
     setActiveStrings(ZH);
     expect(apiErrorText(new Error("boom"))).toBe(S.common.unknownError);
+  });
+
+  it("keeps a numeric Retry-After header on the ApiError", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ error: { code: "platform_rate_limited", message: "slow down" } }),
+            {
+              status: 429,
+              headers: { "content-type": "application/json", "retry-after": "7" },
+            },
+          ),
+      ),
+    );
+
+    await expect(apiFetch("/api/platform-rate-limit-test")).rejects.toMatchObject({
+      status: 429,
+      code: "platform_rate_limited",
+      retryAfterSeconds: 7,
+    });
   });
 });

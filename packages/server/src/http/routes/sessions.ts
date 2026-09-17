@@ -117,11 +117,13 @@ import { agentConfigRoutes } from "./agent-config.js";
 import { vaultRoutes } from "./vault.js";
 import { modelsRoutes } from "./models.js";
 import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./model-oauth.js";
+import { platformAuthRoutes } from "./platform-auth.js";
 import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
 import { usageRoutes } from "./usage.js";
 import { PreviewTokens } from "./preview.js";
 import type { Access, ModelOAuth, ProjectConfigStore } from "../../mechanisms/projects.js";
+import type { PlatformAuth } from "../../services/platform-auth-service.js";
 import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/sessions.js";
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
@@ -475,7 +477,8 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Serves every row straight from the DB, whichever client created it (legacy CLI-direct
-  // Traces were adopted by the boot sweep; see SessionService.listSessions).
+  // Traces were adopted by the boot sweep; see SessionService.listSessions) — unless the
+  // caller asks for the user's own rows only (`excludeOrg=1`, development mode's list).
   app.get("/", async (c) => {
     // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
@@ -500,12 +503,19 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     const rawCounts = c.req.query("counts");
     if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
+    // Optional own-rows filter: leaves an organization's desk, ticket and sub-sessions out of
+    // the page AND the totals (a total the page can never fill is a group the sidebar draws).
+    const rawExcludeOrg = c.req.query("excludeOrg");
+    if (rawExcludeOrg !== undefined && rawExcludeOrg !== "1") {
+      throw badRequest("excludeOrg only accepts 1.");
+    }
     const { sessions, counts, workspaceCounts, workspaceLatest } =
       await deps.sessionService.listSessions(projectId, agentId, {
         ...(paging ? { paging } : {}),
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
+        ...(rawExcludeOrg !== undefined ? { excludeOrg: true } : {}),
       });
     return c.json({
       sessions,
@@ -1591,6 +1601,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 110,
       },
       {
+        id: "session-api.platform-auth",
+        prefix: "/api/projects/:projectId/platform-auth",
+        auth: "user",
+        order: 115,
+      },
+      {
         id: "session-api.chat-defaults",
         prefix: "/api/projects/:projectId/chat-defaults",
         auth: "user",
@@ -1654,6 +1670,7 @@ export class SessionApiRoutes {
   @Use() private readonly access!: Access;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly modelOAuth!: ModelOAuth;
+  @Use() private readonly platformAuth!: PlatformAuth;
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traces!: Traces;
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
@@ -1668,6 +1685,7 @@ export class SessionApiRoutes {
   @Bind("session-api.model-oauth-callback") modelOauthCallbackRoutes!: Hono<AppEnv>;
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
+  @Bind("session-api.platform-auth") platformAuthRoutes!: Hono<AppEnv>;
   @Bind("session-api.chat-defaults") chatDefaultsRoutes!: Hono<AppEnv>;
   @Bind("session-api.command-policy") commandPolicyRoutes!: Hono<AppEnv>;
   @Bind("session-api.agents") agentsRoutes!: Hono<AppEnv>;
@@ -1714,16 +1732,18 @@ export class SessionApiRoutes {
       projectConfigService,
       sessionsRepo,
     };
-    this.modelOauthCallbackRoutes = modelOAuthCallbackRoutes(modelOAuthDeps);
-    this.modelsRoutes = modelsRoutes({
+    const modelDeps = {
       channels,
       manager,
       machines: this.machines,
       projectConfigService,
       access,
       sessionsRepo,
-    });
+    };
+    this.modelOauthCallbackRoutes = modelOAuthCallbackRoutes(modelOAuthDeps);
+    this.modelsRoutes = modelsRoutes(modelDeps);
     this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
+    this.platformAuthRoutes = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });
     this.chatDefaultsRoutes = chatDefaultsRoutes({
       agentConfigService,
       projectConfigService,

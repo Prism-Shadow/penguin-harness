@@ -19,7 +19,6 @@
 import {
   MODEL_PROVIDERS,
   catalogEntryFor,
-  effectivePricing,
   offPeakAt,
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
@@ -47,6 +46,12 @@ export interface ModelRowLike {
   /** Upstream model id (i.e. the stored model_id). */
   modelId: string;
   displayName?: string;
+  /**
+   * The row's running promotion, as the models endpoint reports it: a fraction off the stored
+   * price, which is the list price (0.5 = half price). The server keeps it apart from the config
+   * file and applies it when it prices usage. Absent when the row has none.
+   */
+  discount?: number;
 }
 
 /** Synthesized vendor info for a user-defined group: OpenAI protocol semantics (env fallback OPENAI_*), no external links or gateway endpoint. */
@@ -190,16 +195,30 @@ export interface PricingBucketsLike {
 
 /** The discount decoration for one model card, and the price it makes the row cost right now. */
 export interface DiscountedPrice {
-  /** Whole-percent rate off list, as the badge shows it (50 for a half-price row). */
+  /**
+   * Whole-percent saving off the list price, as the badge shows it (50 for a half-price row). A
+   * promotion and a live off-peak tier combine into one figure: 20% off, then half of the rest,
+   * is 60.
+   */
   percent: number;
   /**
    * What the seller bills for this row right now, in USD per million tokens — the figure the
-   * card prints. For a flat promotion this is the stored price, already discounted at sync
-   * time; for a scheduled one the stored price is the peak price and this is the reduced rate.
+   * card prints: the stored list price less the running promotion and, while the off-peak tier
+   * is live, less its rate as well.
    */
-  billed: { cacheRead: number; cacheWrite: number; output: number };
-  /** True when the rate is a time-of-day one, so the badge can explain when it applies. */
+  billed: BucketPrices;
+  /**
+   * True when the saving is the time-of-day tier alone, so the badge can explain when it
+   * applies. A row that also runs a promotion is explained as the promotion.
+   */
   scheduled: boolean;
+}
+
+/** The three price buckets in USD per million tokens, in the numeric shape the DTO carries. */
+export interface BucketPrices {
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
 }
 
 /** One bucket as a finite number, or undefined for an unpriced ("" / absent) field. */
@@ -211,54 +230,78 @@ function bucketValue(v: number | string | undefined): number | undefined {
 }
 
 /**
- * The discount decoration for one model row, or undefined for a row that carries none.
+ * `value` as a fraction off a price, or undefined when it is not one. Only (0, 1) says anything:
+ * a badge built from a value outside that range reads as `-0%`, as `-100%` beside a "Free" tag,
+ * or as `--20%`.
+ */
+export function fractionOff(value: number | undefined): number | undefined {
+  return value !== undefined && value > 0 && value < 1 ? value : undefined;
+}
+
+/**
+ * A price as the row's running promotion bills it: every bucket less `discount`, or `pricing`
+ * itself when there is no promotion. Stored prices are list prices, so anything estimating what
+ * usage costs from them has to take off the promotion the server takes off when it records that
+ * cost. A time-of-day tier is not applied here.
+ */
+export function promotedPricing(
+  pricing: BucketPrices | undefined,
+  discount: number | undefined,
+): BucketPrices | undefined {
+  const promotion = fractionOff(discount);
+  if (pricing === undefined || promotion === undefined) return pricing;
+  return {
+    cacheRead: pricing.cacheRead * (1 - promotion),
+    cacheWrite: pricing.cacheWrite * (1 - promotion),
+    output: pricing.output * (1 - promotion),
+  };
+}
+
+/**
+ * The discount decoration for one model row, or undefined for a row billed at its stored price.
  *
- * A row qualifies only when its (provider, modelId) names a catalog entry on a promotion AND
- * its stored price is still exactly the price that entry expects to be stored. Prices are
- * editable, and a hand-typed number has nothing to do with the seller's list price — marking it
- * would invent a saving the user is not getting. The same guard covers a Project that has not
- * run "sync presets" yet: its rows still hold whatever price they were created with.
+ * The stored price is always the list price, and two things can take something off it:
  *
- * Which price that is differs by promotion kind, and the difference is the point:
+ * - A **promotion** is the row's `discount`, which the server keeps apart from the config file:
+ *   presets are seeded and synced with the catalog's, a platform sync writes the platform's, and
+ *   a save that changes the row's price clears it. Keeping it true to the price stored beside
+ *   it is the server's job, so it is taken as given here.
+ * - An **off-peak tier** comes from the catalog entry's schedule. It changes twice a day, so
+ *   nothing stores it: the reduction is applied here, against `now`, and inside the peak windows
+ *   the row is simply at list price. It applies only while the stored price is still exactly the
+ *   catalog's peak price. Prices are editable, and a hand-typed number has nothing to do with the
+ *   seller's peak price — halving it would invent a saving the user is not getting.
  *
- * - A **flat** promotion is a single rate the seller bills until it lapses, so `sync presets`
- *   bakes it in and the stored number is already the discounted one.
- * - A **scheduled** one changes twice a day. Baking it in would put a number on disk that meant
- *   something different an hour later, and would make re-syncing rewrite prices by the clock —
- *   so the peak price is stored and the reduction is applied here, against `now`. Inside the
- *   peak windows the row is simply at list price and carries no mark at all.
+ * When both apply, the two reductions multiply.
  */
 export function discountedPrice(
   row: ModelRowLike & PricingBucketsLike,
   now: Date = new Date(),
 ): DiscountedPrice | undefined {
+  const cacheRead = bucketValue(row.cacheRead);
+  const cacheWrite = bucketValue(row.cacheWrite);
+  const output = bucketValue(row.output);
+  // An unpriced row has no price to take anything off.
+  if (cacheRead === undefined || cacheWrite === undefined || output === undefined) return undefined;
+  const promotion = fractionOff(row.discount) ?? 0;
   const entry = catalogEntryFor(row.provider, row.modelId);
-  if (entry?.pricing === undefined) return undefined;
-  const schedule = entry.offPeakDiscount;
-  const rate = schedule?.rate ?? entry.discount;
-  // A fraction off, so only (0, 1) says anything: `effectivePricing` already ignores 0, and a
-  // badge built from a value outside that range reads as `-0%`, `-100%` beside a "Free" tag, or
-  // `--20%`. A stray 0 is the plausible one — the field's own doc says a lapsed promotion is one
-  // field to delete, and deleting a digit is the near miss.
-  if (rate === undefined || rate <= 0 || rate >= 1) return undefined;
-  const expected = schedule !== undefined ? entry.pricing : effectivePricing(entry);
-  if (expected === undefined) return undefined;
-  const same =
-    bucketValue(row.cacheRead) === expected.cache_read &&
-    bucketValue(row.cacheWrite) === expected.cache_write &&
-    bucketValue(row.output) === expected.output;
-  if (!same) return undefined;
-  if (schedule !== undefined && !offPeakAt(schedule, now)) return undefined;
-  const billed = effectivePricing(entry, now);
-  if (billed === undefined) return undefined;
+  const schedule = entry?.offPeakDiscount;
+  const peak = entry?.pricing;
+  const tier =
+    schedule !== undefined &&
+    peak !== undefined &&
+    cacheRead === peak.cache_read &&
+    cacheWrite === peak.cache_write &&
+    output === peak.output &&
+    offPeakAt(schedule, now)
+      ? (fractionOff(schedule.rate) ?? 0)
+      : 0;
+  if (promotion === 0 && tier === 0) return undefined;
+  const off = (v: number): number => Math.round(v * (1 - promotion) * (1 - tier) * 1e6) / 1e6;
   return {
-    percent: Math.round(rate * 100),
-    billed: {
-      cacheRead: billed.cache_read,
-      cacheWrite: billed.cache_write,
-      output: billed.output,
-    },
-    scheduled: schedule !== undefined,
+    percent: Math.round((promotion + tier - promotion * tier) * 100),
+    billed: { cacheRead: off(cacheRead), cacheWrite: off(cacheWrite), output: off(output) },
+    scheduled: tier > 0 && promotion === 0,
   };
 }
 

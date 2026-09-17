@@ -14,7 +14,7 @@ import type { UserRow } from "../db/repos/users.js";
 import { sessionTokenHash } from "../db/repos/auth-sessions.js";
 import type { SessionViaValue, AuthSessionsRepo } from "../db/repos/auth-sessions.js";
 import type { AuthRuntimeState } from "./runtime-state.js";
-import { verifyPassword } from "./password.js";
+import { verifyAccountPassword, verifyPassword } from "./password.js";
 import type { PasswordHasher } from "./password.js";
 import { Component, Use, Interface } from "@prismshadow/penguin-core/kernel";
 import type { AuthState, Clock, Config } from "../hmr/capabilities.js";
@@ -28,9 +28,10 @@ export const ADMIN_USER_ID = "admin";
 /**
  * Login throttling, per userId. After LOGIN_FREE_ATTEMPTS failures each attempt waits an
  * exponentially growing delay (1s doubling to a 60s cap), settling at a guess per minute.
- * Kept for nonexistent userIds too, so it is not an account-existence oracle. Deliberately NOT
- * covered: a concurrent burst before the first failure lands, and guesses spread across many
- * accounts.
+ * Kept for nonexistent userIds too, so it is not an account-existence oracle — and neither is
+ * the time a failure takes: a nonexistent userId is checked against a dummy hash (loginDummyHash).
+ * Deliberately NOT covered: a concurrent burst before the first failure lands, and guesses
+ * spread across many accounts.
  */
 const LOGIN_FREE_ATTEMPTS = 5;
 const LOGIN_BACKOFF_START_MS = 1000;
@@ -177,6 +178,20 @@ export class AuthService implements Auth {
   /** Consecutive login failures per userId (see the throttling comment on the constants). */
   private readonly loginFailures = new Map<string, { failures: number; lastFailureAt: number }>();
 
+  /** Cache for loginDummyHash. */
+  private dummyHash: string | null = null;
+
+  /**
+   * The hash a sign-in with no account to check is verified against (verifyAccountPassword), so
+   * it costs what a wrong password costs. Made by this server's own hasher, hence at the cost its
+   * real hashes carry, from a random password nobody holds; computed on the first such sign-in
+   * and kept.
+   */
+  private async loginDummyHash(): Promise<string> {
+    this.dummyHash ??= await this.hasher.hash(randomBytes(18).toString("base64url"));
+    return this.dummyHash;
+  }
+
   /** The wait imposed after `failures` consecutive failures (0 while within the free attempts). */
   private loginDelayMs(failures: number): number {
     const excess = failures - LOGIN_FREE_ATTEMPTS;
@@ -201,7 +216,11 @@ export class AuthService implements Auth {
       }
     }
     const row = this.users.findById(userId);
-    const ok = row !== null && (await verifyPassword(password, row.passwordHash));
+    // A missing account, or one whose hash cannot be checked, still costs one scrypt
+    // derivation, and fails with the same 401 as a wrong password.
+    const ok = await verifyAccountPassword(password, row?.passwordHash ?? null, () =>
+      this.loginDummyHash(),
+    );
     if (!row || !ok) {
       this.loginFailures.set(userId, {
         failures: (failed?.failures ?? 0) + 1,

@@ -533,7 +533,6 @@ export function OrgChartPage() {
                     key={node.id}
                     employee={employee}
                     state={employeeStates.get(employee.agentId) ?? employee.state}
-                    isCeo={isCeo}
                     currency={currency}
                     x={node.x}
                     y={node.y}

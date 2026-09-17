@@ -55,21 +55,22 @@ The experiment directory lives in your workspace partition, one per ticket:
 
 ```text
 <partition>/experiments/<ticket_id>/
+  .gitignore        # lists results.tsv and logs/
   eval.*            # the harness — fixed
-  <surface>         # the one editable file
-  results.tsv       # one line per experiment
-  logs/<tag>.log    # each run's output
+  <surface>         # the one editable file — the only file a run commits
+  results.tsv       # one line per experiment — never committed
+  logs/<tag>.log    # each run's output — never committed
 ```
 
-Initialize it as a git repository (or a sub-tree of one) so that a run is a commit. Then, one experiment at a time, in a ticket session:
+Initialize it as a git repository (or a sub-tree of one) so that a run is a commit of the surface, never of the record. Write the `.gitignore` first, listing `results.tsv` and `logs/`, and commit it with the harness and the untouched surface as the baseline; from then on `results.tsv` and `logs/` stay untracked. A tracked `results.tsv` makes the checkout that discards a run abort, and forcing past it — `checkout -f`, `reset --hard` — throws away the discard line the reviewer reads. Then, one experiment at a time, in a ticket session:
 
 1. **Hypothesis** — one line: what you change and why it should move the metric.
-2. **Branch and edit** — `git checkout -b run-<tag>` from the last kept commit; change the surface; commit.
+2. **Branch and edit** — `git checkout -b run-<tag>` from the last kept commit; change the surface; commit the surface alone: `git add <surface> && git commit -m "<tag>: <hypothesis>"`.
 3. **Run under the budget** — `timeout <2×budget> <command> > logs/<tag>.log 2>&1`; read the metric from the harness output.
 4. **Log one line** in `results.tsv`: `commit<TAB>metric<TAB>peak memory<TAB>status<TAB>description`, status one of `keep`, `discard`, `crash`.
-5. **Keep or reset** — `keep` only when the metric beats the best kept result so far; the branch then becomes the new base. Otherwise `discard`: `git checkout <last kept>` and delete the branch.
+5. **Keep or reset** — `keep` only when the metric beats the best kept result so far; the branch then becomes the new base. Otherwise `discard`: `git checkout <last kept commit>`, then `git branch -D run-<tag>` (`-D`: a discarded run is never merged). The untracked `results.tsv` and `logs/` stay as they are, discard line included.
 6. **Crashes** — read the tail of the log (`tail -n 60 logs/<tag>.log`); fix a bug in your own edit and re-run under a new tag, or `discard` a hypothesis that cannot be made to run. Three crashes in a row are a stop: write what you learned in a progress line and pick a different direction, or block the ticket.
-7. **Stop** when the envelope's total is reached, when the acceptance criteria are met, or after a run of discards long enough to say the direction is exhausted (ten is a reasonable default). Then a progress line, `## Result` with the best kept commit and its metric, and the ticket to `review`.
+7. **Stop** when the envelope's total is reached, when the acceptance criteria are met, or after a run of discards long enough to say the direction is exhausted (ten is a reasonable default). Then a progress line, `## Result` with the best kept commit and its metric, and the hand-off to review below.
 
 Run the loop in the foreground of the ticket session — never in the background beyond it, never from the desk. A sweep that finds a loop's session ended without a final progress line reads `results.tsv` and the log tail before starting the next session.
 
@@ -79,11 +80,18 @@ Run the loop in the foreground of the ticket session — never in the background
 
 ## Adversarial review
 
-A claim goes through the board's `review` column, and the reviewer's job is to try to break it. The author moves the ticket to `review` with `## Result` complete and the reviewer in the ticket's `notify` list (`--notify agent:<reviewer>` at creation, or the `notify` field edited with your file tools — the ticket is an intent file), and @-mentions the reviewer in the stream's channel with `--ref-ticket`.
+A claim goes through the board's `review` column, and the reviewer's job is to try to break it. The move itself starts nothing — `notify` hears only of a ticket's close, only the owner may open a session on the ticket, and the owner's sweep starts sessions only for `in_progress` tickets — so on every round the author starts the review itself, right after moving the ticket to `review` with `## Result` complete:
 
-**The reviewer** works in a ticket session on the claim's ticket — started by the author, the owner, with `--agent-id <reviewer>`, or at the CEO's request on a review ticket of its own — and works down this list, writing what it finds:
+```bash
+penguin org ticket move 2026-09-01-dep-eval --to review
+penguin org ticket start 2026-09-01-dep-eval --agent-id co_lab_reviewer -m "Review round 1: the claim is in ## Result; results.tsv, logs/ and the harness are in <app_data_dir>/organizations/co_lab/workspace/co_lab_researcher/experiments/2026-09-01-dep-eval/"
+```
 
-- **Reproduce** the key numbers: check out the kept commit, run the harness within the envelope's re-run allowance (one run per headline number is the default; more is a new ask), compare against `results.tsv`;
+That session runs as the reviewer, in the reviewer's own partition, with the whole ticket and the note as its first message: name the round and the experiment directory by full path. No mention is needed — it would only wake a desk that cannot open the session.
+
+**The reviewer** works in that session — or, at the CEO's request, in a session on a review ticket of its own — and works down this list, writing what it finds:
+
+- **Reproduce** the key numbers: clone the experiment directory into your partition (`git clone <experiment directory> reviews/<ticket_id>/repro`), check out the kept commit there and run the harness within the envelope's re-run allowance (one run per headline number is the default; more is a new ask); compare against the author's `results.tsv` and logs, read in place by full path — nothing is checked out or run in the author's directory;
 - **Baselines and ablations**: is the baseline the untouched surface under the same budget? does each claimed ingredient have an ablation? were the seeds enough for the size of the gain?
 - **Leakage and gaming**: any test data in training or tuning? any change to the harness, the metric or the budget between runs? any cherry-picked seed, or a "best of N" reported as one run?
 - **Claims against evidence**: does every sentence in `## Result` or the paper have a line in the log behind it? does the novelty stand against the prior work the author cites — and the prior work it does not?
@@ -94,7 +102,7 @@ The review is a file in the reviewer's partition, `reviews/<ticket_id>/round-<n>
 - `minor` or `major` — `penguin org ticket move <id> --to in_progress` with a progress line naming the round and the review file; the author's desk picks it up in its next sweep;
 - `reject` — a recommendation, not a move: rejecting someone else's ticket is the CEO's proposal to the board. Say so in the stream's channel, @-mentioning the CEO with the review's path.
 
-**The author** answers point by point in `reviews/<ticket_id>/round-<n>-response.md` beside its deliverable — each required change either done (with the commit or the path) or rebutted (with the evidence) — revises, and moves the ticket back to `review`. Silence on a point is agreement to fix it.
+**The author** answers point by point in `reviews/<ticket_id>/round-<n>-response.md` beside its deliverable — each required change either done (with the commit or the path) or rebutted (with the evidence) — revises, moves the ticket back to `review` and starts the next round's review session the same way. Silence on a point is agreement to fix it.
 
 **The cap**: three rounds. If the third review is not an `accept`, the reviewer blocks the ticket on the CEO — `penguin org ticket block <id> --reason "Not accepted after three review rounds: <the open points>" --by agent:<org_id>_ceo` — and says so in the stream's channel. The CEO decides — accept as it stands, one more round, or split the claim — or takes it to the board in the all-hands channel; the board's word is final.
 

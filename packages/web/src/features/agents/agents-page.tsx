@@ -52,6 +52,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { UpdatePill } from "../../components/ui/update-dot";
 import { TodoNotice } from "../../components/ui/todo-notice";
+import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import {
   CloseIcon,
   GEAR_ICON,
@@ -62,7 +63,7 @@ import {
 } from "../../components/ui/icons";
 import { STAT_ICONS } from "../../lib/stat-icons";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
-import { parkActiveDraft } from "../chat/draft-sessions";
+import { prepareNewChatDraft } from "../chat/new-chat";
 import { ActivitySparkline } from "./activity-sparkline";
 import {
   SNAPSHOT_ACCEPT,
@@ -345,8 +346,9 @@ export function AgentsPage() {
    * rather than the previous one from the cache.
    */
   const newChat = (agentId: string) => {
-    // Typed-but-unsent draft text becomes a parked draft conversation first (draft-sessions.ts).
-    if (user && projectId) parkActiveDraft(user.userId, projectId);
+    // Typed-but-unsent draft text becomes a parked draft conversation first, and every field
+    // but the Agent starts on the Project's new-chat defaults (new-chat.ts).
+    if (user && projectId) prepareNewChatDraft(user.userId, projectId);
     setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
   };
@@ -722,25 +724,30 @@ export function AgentsPage() {
         }
       >
         <div className="space-y-3">
-          <Input
-            label={S.agent.id}
-            required
-            size="sm"
-            value={agentId}
-            onChange={(e) => {
-              setAgentId(e.target.value);
-              setIdError(undefined);
-            }}
-            error={idError}
-            hint={S.agent.idHint}
-            autoFocus
-          />
+          {/* The name comes first and the id is derived from it: an id is the harder half to
+              invent, and naming the Agent is where anyone starts anyway. */}
           <Input
             label={S.common.name}
             size="sm"
             value={name}
             onChange={(e) => setName(e.target.value)}
             hint={S.agent.nameHint}
+            autoFocus
+          />
+          <SemanticIdField
+            projectId={projectId ?? null}
+            kind="agent"
+            label={S.agent.id}
+            hint={S.agent.idHint}
+            generateHint={S.agent.idGenerateHint}
+            value={agentId}
+            source={name.trim() || description}
+            error={idError}
+            disabled={busy}
+            onChange={(id) => {
+              setAgentId(id);
+              setIdError(undefined);
+            }}
           />
           <Textarea
             label={S.agent.description}

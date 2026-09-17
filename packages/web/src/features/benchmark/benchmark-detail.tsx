@@ -28,7 +28,7 @@ import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { MAGIC_WAND_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
 import { NEUTRAL_SERIES, seriesColor } from "../../lib/category-colors";
-import { lineSegments, makeRangeGeom, segmentPath } from "../usage/chart-geom";
+import { makeRangeGeom, segmentPath } from "../usage/chart-geom";
 import { ChartFrame, useChartWidth } from "../usage/chart-svg";
 import { AskAiModal } from "./ask-ai-modal";
 import { BenchmarkCaseBrowser } from "./benchmark-case-browser";
@@ -37,7 +37,7 @@ import {
   labelSeries,
   scoreScale,
   scoreValues,
-  seriesValues,
+  seriesPoints,
 } from "./benchmark-metrics";
 import type { EvaluationSeries } from "./benchmark-metrics";
 import { askCaseExamples, askCaseTail } from "./benchmark-prompts";
@@ -49,7 +49,9 @@ import { EvaluationDetailModal } from "./evaluation-detail-modal";
  * timestamp. Scores remain valid on 0..100, while the visible y-axis is padded around the
  * observed range and clamped to those limits. Evaluations are grouped by label, so a change of
  * tested Agent or of runtime starts its own series instead of bending one, while a new Agent
- * State version of the same agent continues the line and names its version in the bubble.
+ * State version of the same agent continues the line and names its version in the bubble. Each
+ * series is one line through its own points (seriesPoints): the slots other series hold in
+ * between do not break it.
  */
 function ScoreTrendChart({
   evaluations,
@@ -100,37 +102,31 @@ function ScoreTrendChart({
           }}
         >
           {series.map((s, si) => {
-            const segments = lineSegments(seriesValues(evaluations, s));
+            const points = seriesPoints(evaluations, s);
             return (
               <g
                 key={s.unlabeled ? "unlabeled" : s.key}
                 className={(s.unlabeled ? NEUTRAL_SERIES : seriesColor(si)).text}
               >
-                {segments.map((seg, k) => {
-                  return (
-                    <g key={k}>
-                      {seg.length > 1 && (
-                        <path
-                          d={segmentPath(geom, seg)}
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          opacity={hover !== null ? 0.35 : 1}
-                        />
-                      )}
-                      {seg.map((p) => (
-                        <circle
-                          key={p.index}
-                          cx={geom.x(p.index)}
-                          cy={geom.y(p.value)}
-                          r={hover === p.index ? 4 : 2.5}
-                          className="fill-current"
-                          opacity={hover !== null && hover !== p.index ? 0.25 : 1}
-                        />
-                      ))}
-                    </g>
-                  );
-                })}
+                {points.length > 1 && (
+                  <path
+                    d={segmentPath(geom, points)}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    opacity={hover !== null ? 0.35 : 1}
+                  />
+                )}
+                {points.map((p) => (
+                  <circle
+                    key={p.index}
+                    cx={geom.x(p.index)}
+                    cy={geom.y(p.value)}
+                    r={hover === p.index ? 4 : 2.5}
+                    className="fill-current"
+                    opacity={hover !== null && hover !== p.index ? 0.25 : 1}
+                  />
+                ))}
               </g>
             );
           })}

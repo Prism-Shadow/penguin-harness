@@ -519,6 +519,8 @@ export interface ModelInfo {
    */
   fastMode?: boolean;
   pricing?: ModelPricingDto;
+  /** Running promotion for this row — a fraction in (0, 1) off `pricing`, which is the list price — read from web.db. Absent when the row has none. */
+  discount?: number;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
   /**
@@ -577,6 +579,12 @@ export interface ModelUpdateEntry {
   /** Per-model fast mode: only `true` is persisted; omitted or `false` clears the annotation (absent = off). */
   fastMode?: boolean;
   pricing?: ModelPricingDto;
+  /**
+   * Promotion to store for this row, a fraction in (0, 1) off `pricing`; `null` clears it. Omitted
+   * keeps the stored promotion — unless this entry renames the row or changes its pricing, which
+   * clears it.
+   */
+  discount?: number | null;
   /** Providing it overwrites and updates createdAt; omitting it keeps the existing value. */
   apiKey?: string;
   /** When true, clears the stored api_key. */
@@ -846,6 +854,37 @@ export interface ModelOAuthCodeResponse {
   ok: boolean;
   applied?: number;
   error?: ModelOAuthErrorCode;
+}
+
+// ---------------------------------------------------------------------------
+// Penguin Go key authorization (/api/projects/:p/platform-auth, owner)
+// ---------------------------------------------------------------------------
+
+export interface PlatformAuthStartResponse {
+  flowId: string;
+  authorizeUrl: string;
+  expiresAt: string;
+}
+
+export type PlatformAuthFlowErrorCode =
+  | "unreachable"
+  | "upstream_failed"
+  | "invalid_key"
+  | "expired"
+  | "locked"
+  | "already_delivered"
+  | "apply_failed";
+
+export interface PlatformAuthFlowStatusResponse {
+  status: "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
+  error?: PlatformAuthFlowErrorCode;
+  applied?: number;
+}
+
+/** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */
+export interface PlatformModelSyncResponse extends ModelsResponse {
+  added: number;
+  updated: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1372,16 +1411,17 @@ export interface SessionInfo {
   /**
    * Company mode: the organization that owns this Session — a desk session of one of its
    * employees, or a session contributing to one of its tickets — read from the organization
-   * caches. Absent for every ordinary Session. Development mode's list and its time buckets
-   * hide every row that carries it (only while company mode is available to that user: it is
-   * stamped either way, and company mode is what lists these Sessions instead), and the
-   * company sidebar's 工位 / 工单会话 groups are where they are listed.
+   * caches. Absent for every ordinary Session. Development mode's list asks the server to
+   * leave every such row out (`excludeOrg=1` on the list route — page and totals alike) and
+   * still drops one that reaches it by another door; the company sidebar's 工位 group and the
+   * tickets are where these Sessions are reached instead.
    */
   orgId?: string;
   /**
    * Which client opened the Session, as stored on the index row: "cli" from the CLI (a
    * Session adopted from a legacy CLI-direct Trace included), "org" from the organization
-   * runtime (a desk or a ticket session), "web" otherwise. Absent only on a row that
+   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "web"
+   * otherwise. Absent only on a row that
    * predates the column, which reads as "web". Unlike {@link SessionInfo.orgId} — projected
    * from the organization caches, so it disappears with the organization and is not read
    * while company mode is off — this is a durable stamp on the row: development mode's list
@@ -1419,6 +1459,13 @@ export type SessionCategory = "active" | SessionSource | "archived";
 export type SessionCategoryCounts = Record<SessionCategory, number>;
 
 export interface SessionsResponse {
+  /**
+   * The page. With `excludeOrg=1` on the request, the rows an organization owns — its desk
+   * and ticket sessions and the sub-sessions they spawned — are left out of it and of every
+   * total below, so a caller drawing the user's own conversations is never handed a total
+   * for rows it will not be handed. Without the flag every row is served, whichever client
+   * created it.
+   */
   sessions: SessionInfo[];
   /** Present when the request asked for counts (`counts=1`): totals per category over the full list, not just the returned page. */
   counts?: SessionCategoryCounts;
@@ -1486,7 +1533,8 @@ export interface SessionCreateRequest {
    * not the organization still exists); defaults to "web". A REQUEST may send only "web" or
    * "cli": the runtime writes "org" by calling the service directly, so no caller can claim
    * an organization's provenance for its own Session. Lists serve every row regardless of
-   * client; only development mode's session list filters on it.
+   * client unless asked for the user's own rows only (`excludeOrg=1`), which is what
+   * development mode's session list asks for.
    */
   client?: "web" | "cli" | "org";
   /**
@@ -3564,6 +3612,49 @@ export interface SkillArchiveInstallRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Plugin registry index
+// ---------------------------------------------------------------------------
+
+/**
+ * One published version of a plugin — the index entry format every plugin registry
+ * speaks (modeled on the typst/packages `index.json` schema: a flat array of
+ * per-version entries; a plugin published at several versions appears once per
+ * version). Installation is out of scope here: an entry's `name` is the package
+ * specifier a Project's plugin list names.
+ */
+export interface PluginIndexEntry {
+  /** Package specifier — the string a Project's plugin list names. */
+  name: string;
+  /** Semantic version of this entry. */
+  version: string;
+  description: string;
+  authors: string[];
+  /** SPDX license identifier. */
+  license: string;
+  /** Source repository URL. */
+  repository?: string;
+  homepage?: string;
+  /** Free-form searchable terms; the Web App renders them as chips (e.g. the target OS). */
+  keywords?: string[];
+  /** Capability floor(s) the plugin provides on (e.g. "sandbox"). */
+  categories?: string[];
+  /** Unix timestamp (seconds) of the entry's last update. */
+  updatedAt?: number;
+}
+
+/** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
+export interface PluginIndexResponse {
+  plugins: PluginIndexEntry[];
+}
+
+/** GET /api/plugins/registry/readme — long-form docs for one entry; `readme` is null when none exists. */
+export interface PluginReadmeResponse {
+  name: string;
+  /** Markdown, rendered by the Web App. Null when this entry has no readme. */
+  readme: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Version and self-update
 // ---------------------------------------------------------------------------
 
@@ -4321,6 +4412,12 @@ export interface OrgDeskItem {
   status: SessionStatus;
   workspace: string;
   lastActiveAt?: string;
+  /**
+   * Present when the desk session has an ENABLED messaging binding: its channel, read as
+   * `SessionInfo.messagingChannel` is (the company sidebar's desk row draws the same mark as a
+   * development row, and the development list never holds a desk).
+   */
+  messagingChannel?: MessagingChannel;
 }
 
 export interface OrgSessionsResponse {
@@ -4412,19 +4509,31 @@ export interface OrganizationPatchRequest {
 }
 
 /**
- * A semantic id proposed for a display name — the organization and channel dialogs let the
- * user name the thing first and derive the id from that name. The server asks the Project's
- * default model for a short English snake_case id (a Chinese name has no mechanical
+ * What a proposed semantic id names. Each kind has its own shape — organization and channel
+ * ids carry a `co_` / `ch_` prefix, a non-admin's Project id its owner's `<username>-`, a
+ * Benchmark id is kebab-case — and its own set of ids to avoid.
+ */
+export type SemanticIdKind = "org" | "channel" | "project" | "agent" | "benchmark";
+
+/**
+ * A semantic id proposed for a display name — every create dialog that names an object with a
+ * semantic id (a Project, an Agent, a Benchmark, an organization, a channel) lets the user name
+ * the thing first and derive the id from that name. The server asks the Project's default
+ * model for a short English id in the kind's spelling (a Chinese name has no mechanical
  * transliteration), falling back to an ASCII slug of the name when the model is unavailable,
  * and to a dated placeholder when neither can name it. The request never fails for a name it
  * cannot translate: a dialog that asked for an id always gets one back.
  */
 export interface SemanticIdSuggestRequest {
-  /** The display name typed so far (or the mission, when nothing else names the thing). */
+  /** The display name typed so far (or the mission / description, when nothing else names the thing). */
   name: string;
-  /** What the id is for: decides the prompt's examples and the fallback's prefix. */
-  kind: "org" | "channel";
-  /** Ids already in use in the target scope; the proposal avoids them. */
+  /** What the id is for: decides the id's shape, the prompt's examples and the ids avoided. */
+  kind: SemanticIdKind;
+  /**
+   * Ids already in use in the target scope; the proposal avoids them. For a Project, an Agent or
+   * a Benchmark, the server also avoids, on its own, every id that kind's create route refuses
+   * as taken, a leftover folder no list shows included.
+   */
   taken?: string[];
 }
 
@@ -4439,7 +4548,10 @@ export type SemanticIdSuggestReason =
   "no_default_model" | "model_failed" | "unusable_answer" | "no_ascii";
 
 export interface SemanticIdSuggestResponse {
-  /** A valid semantic id (`^[a-z][a-z0-9_]{1,63}$`), not in `taken`. */
+  /**
+   * An id the kind's create route accepts, not in `taken`: `^[a-z][a-z0-9_]{1,63}$` for most
+   * kinds, `<username>-<suffix>` for a non-admin's Project, kebab-case for a Benchmark.
+   */
   id: string;
   /** Who produced it: the model, the ASCII fallback, or the dated placeholder that names nothing. */
   source: "model" | "fallback" | "placeholder";
@@ -4665,4 +4777,40 @@ export interface ContributionsResponse {
   pages: WebContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+}
+
+/** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
+export interface InstalledPlugin {
+  /** The package specifier as written in the file. */
+  specifier: string;
+  /** Whether the running process holds this package — its modules are in the tree. */
+  active: boolean;
+  /**
+   * Where the package came from: shipped with the build (a hot push's assets, or the
+   * installation's own `plugins/`) rather than fetched from npm. A tag on an installed
+   * plugin — being shipped is not being installed.
+   */
+  builtin: boolean;
+  /** Module names the package declares it adds. */
+  modules: string[];
+  /** Node names the package declares it stands in for. */
+  replaces: string[];
+  /**
+   * Why the package is not running: unresolvable, or a load that
+   * failed (an import that threw, a module name another plugin already took).
+   */
+  error?: string;
+}
+
+export interface InstalledPluginsResponse {
+  plugins: InstalledPlugin[];
+  /**
+   * Specifiers this build SHIPS (the hot push's assets, or the installation's own
+   * `plugins/`): installable without a download, and not installed until listed.
+   */
+  shipped: string[];
+  /** The file the list lives in, named for the page that explains where to edit it by hand. */
+  file: string;
+  /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
+  restartPending: boolean;
 }

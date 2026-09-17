@@ -152,7 +152,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | POST | /api/version/update | **仅管理员。**启动在线更新任务——在服务器上后台运行 `penguin update --yes`——已有任务在跑则并入；应答与 GET 完全一致。已结束的任务可以再次启动（即重试） |
 | POST | /api/version/restart | **仅管理员。**请求进程在优雅关闭后以托管进程约定的重启退出码退出，由 `penguin server \| penguin web` 在已安装的版本上重新拉起：`{restarting: true}`；没有托管进程时为 `{restarting: false, reason: "no_supervisor"}` |
 
-`update-check` 是服务端唯一的对外网络请求，并且严格失败兜底：查询失败仍返回 200，只是设置 `error`（`network` / `rate_limited` / `bad_response`）且 `latestVersion` 为 null；结果在内存中缓存（成功 1 小时、失败 10 分钟）；设置 `PENGUIN_UPDATE_CHECK=off` 可完全关闭该查询（返回 `disabled: true`，不发起任何网络请求）。更新的 `status` 为 `updated`（需重启服务才能运行新版本）、`failed` 或 `unsupported` —— 后者包括服务不是通过 `penguin server|web` 启动（`reason: "not_launched_via_cli"`），以及 CLI 自身拒绝执行（源码运行、无法识别的安装方式、Windows）；`output` 携带 CLI 输出的末尾片段。
+`update-check` 是服务端唯一自动发起的对外网络请求，并且严格失败兜底：查询失败仍返回 200，只是设置 `error`（`network` / `rate_limited` / `bad_response`）且 `latestVersion` 为 null；结果在内存中缓存（成功 1 小时、失败 10 分钟）；设置 `PENGUIN_UPDATE_CHECK=off` 可完全关闭该查询（返回 `disabled: true`，不发起任何网络请求）。Owner 主动发起的供应商 Key 授权会另外产生对外请求。更新的 `status` 为 `updated`（需重启服务才能运行新版本）、`failed` 或 `unsupported` —— 后者包括服务不是通过 `penguin server|web` 启动（`reason: "not_launched_via_cli"`），以及 CLI 自身拒绝执行（源码运行、无法识别的安装方式、Windows）；`output` 携带 CLI 输出的末尾片段。
 
 ### Project 与成员
 
@@ -161,6 +161,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | GET | /api/projects | 当前用户可见的 Project 列表 |
 | POST | /api/projects | 创建 Project |
 | DELETE | /api/projects/:projectId | 删除 Project |
+| POST | /api/projects/:projectId/suggest-id | 为新建对象的显示名提议一个语义 id：`{name, kind, taken?}`，`kind` 为 `project`、`agent`、`benchmark`、`org` 或 `channel`，`taken` 为提议须避开的 id → `{id, source, reason?}`。路径中 Project 的缺省 Model 把名称译成该 kind 拼写的英文 id（`source: model`）——新建 Project 的对话框借用打开它的那个 Project；首次回答拼不出 id 时，会带上「只回答标识符本身」的格式要求再问一次；未配置 Model 或两次回答都无法用时，以名称的 ASCII slug 兜底（`source: fallback`）；两条路都命名不了的名称回一个带日期的占位 id（`source: placeholder`），并带上 `reason`：`no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`。该路由不会因为「名称译不出来」而失败——问了 id 的对话框一定拿得到一个。各 kind 只在 id 的形状、服务端自行避开的 id 与调用权限上不同：`project` 在 admin 名下是 snake_case，其他用户是 `<用户名>-<后缀>`，避开服务器上已有的全部 Project id；`agent` 是 snake_case，避开该 Project 的 Agent；`benchmark` 是 kebab-case，避开该 Project 的 Benchmark，仅 Owner 可调用；`org` 与 `channel` 带 `co_` / `ch_` 前缀，模型的回答本就带前缀时不会加第二遍，公司模式关闭时回 404 `company_mode_off`。其余调用者须是该 Project 的成员。服务端自行避开的是该 kind 的创建路由会以「已占用」拒绝的全部名称——列表里看不到的残留目录（如没有配置文件的 Benchmark 目录）也算在内——它们不写进提示词，撞名时只加 `_2` / `-2` 后缀；以数字开头或只有一个字符、因而不合规则的 id 前面补上类型名（如 `agent_3d_viewer`）；占位 id 为 `project_<yyyymmdd>`、`agent_<yyyymmdd>`、`benchmark-<yyyymmdd>`、`co_org_<yyyymmdd>` 与 `ch_channel_<yyyymmdd>`（非 admin 的 Project 带用户名前缀）。Model 一侧的每一次落空都记为 `id_suggest_failed` 错误，`org` / `channel` 的来源为 `organization`，其余为 `id_suggest`；该次补全关闭思考、使用共享的元请求预算，不属于任何 Session，也不计量 |
 | GET | /api/projects/:projectId/members | 成员列表 |
 | POST | /api/projects/:projectId/members | 添加成员：`{userId}` |
 | DELETE | /api/projects/:projectId/members/:userId | 移除成员 |
@@ -171,8 +172,8 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/projects/:projectId/models | 模型列表（api_key 掩码显示） |
-| PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键 |
+| GET | /api/projects/:projectId/models | 模型列表（api_key 掩码显示）；有促销的行以 `discount` 携带其折扣 |
+| PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键；条目的 `discount` 写入或清除其促销折扣（见下文） |
 | POST | /api/projects/:projectId/models/test | 连通性测试：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测，先用整理后的 URL（整段端点路径会先被剥掉），再用它增删 `/v1` 后的形式，返回第一个被提供的协议与实际应答的 base URL：`{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}` |
 | POST | /api/projects/:projectId/models/list | 新增分组导入所用的端点模型列表：按检测出的协议列出端点服务的全部模型 id：`{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
@@ -180,7 +181,23 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
 
+行上的 `pricing` 恒为牌价。促销折扣是从牌价中扣除的比例，取值在 0 与 1 之间（不含两端），不写入 `.project_config.toml`，而由服务端按行存于 `web.db`、在计算成本时扣除。`PUT /models` 时，条目带 `discount` 即按其写入：数字写入，`null` 清除，其他取值在写入任何内容之前即返回 400。省略 `discount` 的条目保留已存折扣，但若条目改名（`renamedFrom` 指向另一对引用）或 `pricing` 与已存价格不同，则一并清除；新表中不再出现的行，折扣随之删除。
+
 `PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
+
+#### Penguin Go Key 授权
+
+以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-go` 既有条目，并按平台元数据创建本地缺失模型；已有模型会刷新平台牌价和客户端协议，端点及其他由 Project 管理的配置不会被覆盖，模型也不会被删除。Project 模型表写入后，平台返回的折扣会整体替换该分组存于 `web.db` 的促销折扣，从不写入 `.project_config.toml`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | /api/projects/:projectId/platform-auth/start | 开启一次性授权流程；按平台截止时间过期，本地最长保留十分钟 |
+| POST | /api/projects/:projectId/platform-auth/sync | 使用已保存的 Key 获取平台模型清单，新增本地缺失模型并刷新已有模型的平台元数据；响应以 `added` / `updated` 返回数量，Key 无效时返回 `platform_reauthorization_required` |
+| GET | /api/projects/:projectId/platform-auth/:flowId/status | 由服务端轮询中转站，把已交付 Key 写入模型组并新增平台模型 |
+| POST | /api/projects/:projectId/platform-auth/:flowId/retry | 写入失败时仅重试本地原子写，不重复请求一次性交付 |
+| POST | /api/projects/:projectId/platform-auth/:flowId/cancel | 取消本地流程；中转站的 pending 记录按自身 TTL 过期 |
+
+成功写入后会使该 Project 的缓存运行时失效，并发布 `credentials_updated`。只要平台返回非空模型清单，分组不存在时也可以直接创建；`apply_failed` 表示通过校验的交付内容未能写入本地配置，重试接口只会再次执行这一步本地写入。
 
 #### 授权新建 API key
 
@@ -200,6 +217,18 @@ PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不�
 这条路由能做的事还有第二重边界：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、以及写入该 Project 模型的动作，都发生在 `GET /:flowId`——Owner 自己的轮询，仍在会话校验之内。因此没有 Owner 主动查询流程状态，就不会有 key 落进任何 Project；兑换失败也在那里以 `{status: error, error}` 报出，而不是显示在跳回页面上。周边的一切同样不在豁免之内：更长的路径、其它任何请求方法（该字面路径上的 `HEAD` 返回 405），以及另外三条同级路由，仍然都需要会话。
 
 `mode: manual` 不传回调地址，授权页改为显示一次性授权码供用户手动带回，适用于跳转回不来的部署。无论由哪条路由完成兑换，流程完成后同样会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 一致。
+### 插件注册表
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /api/plugins/registry | 插件市场页的插件索引：`{plugins: PluginIndexEntry[]}`——所有已配置注册表（当前仅内置注册表）合并后的索引 |
+| GET | /api/plugins/registry/readme?name=… | 某个已列出条目的说明文档：`{name, readme}`（注册表没有时 `readme` 为 null）；索引未列出的名字返回 404 |
+| GET | /api/projects/:projectId/plugins/installed | 该 Project 要求的插件，并联上进程实际在跑的状态：`{plugins: [{specifier, active, builtin, modules, replaces, error?}], shipped, file, restartPending}`（成员即可） |
+| POST | /api/projects/:projectId/plugins/installed | `{specifier}`——为该 Project 要求一个随构建发布的插件（否则 400 `plugin_not_shipped`），无需重启即生效，App 自行重组——这会中止所有 Project 正在进行的 Agent 运行；启动失败的改动会被撤销（管理员） |
+| PUT | /api/projects/:projectId/plugins/installed | `{plugins}`——重写该 Project 的列表并应用；新增的名字须是随构建发布的包（管理员） |
+| DELETE | /api/projects/:projectId/plugins/installed?specifier=… | 从该 Project 的列表中去掉并应用；磁盘上什么都不变（管理员） |
+
+索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。注册表仅用于发现，不会导入任何插件代码；Project 通过上面的路由要求某个条目，其列表存在自己的 `.project_config.toml` 的 `[plugins]` 表里——包名 → 要求，形状同 Cargo 的 `[dependencies]`（`"@scope/name" = "*"`、版本字符串，或 `{ version = "…" }`）。进程运行的是所有 Project 表的并集。
 
 ### Agent
 
@@ -259,7 +288,6 @@ Benchmark 挂在 Project 上而非某个 Agent 上：一个 Benchmark 评测过�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?, language?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409）。CEO 的组织图条目写入 `workspace: ceo`，与其他员工一样是公共工作区下的一个分区。`ceoBudget` 是 CEO 的月预算（美元），写入其 `org_chart.yaml` 条目的 `budget`——非负，不给则为 100；按累计线比较，即整家公司的上限。`language` 取 `zh` 或 `en`，是组织书写一切内容所用的工作语言；不给则从使命判定 |
-| POST | /suggest-id | 为显示名提议一个语义 id：`{name, kind}`——`kind` 为 `org` 或 `channel`——外加 `taken?`（提议须避开的 id）→ `{id, source, reason?}`。Project 的缺省 Model 把名称译成一个 snake_case 英文词干（`source: model`）；首次回答拼不出 id 时，会带上「只回答标识符本身」的格式要求再问一次；未配置 Model 或两次回答都无法用时，以名称的 ASCII slug 兜底（`source: fallback`）；两条路都命名不了的名称回一个占位 id `co_org_<yyyymmdd>` / `ch_channel_<yyyymmdd>`（`source: placeholder`），并带上 `reason`：`no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`。该路由不会因为「名称译不出来」而失败——问了 id 的对话框一定拿得到一个；Model 一侧的每一次落空都记为 `organization` / `id_suggest_failed` 错误。随后服务端按 kind 给词干加前缀——`org` 加 `co_`、`channel` 加 `ch_`，词干本就带前缀时不会加第二遍——再截长度、再避开 `taken`，因此提议出来的 id 一定带前缀，而手工输入的 id 一律按原样接受。该次补全关闭思考、使用共享的元请求预算，不属于任何 Session，也不计量 |
 | GET / PATCH | /:orgId | 概览（设置、看板计数、今日日程、待处理、全员频道最近消息、`inbox`、告警；设置里的 `language` 一律是生效值，文件里没有该字段时从使命读出）/ 修改名称、使命、`status`（`active` / `paused`——暂停即停止一切自动触发）、`approvalMode`、`timezone`、`language` 与阈值 |
 | GET | /:orgId/chart | 员工树，含每位员工的实况状态、工位与本周期支出 |
 | POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?`。`workspace` 不给则缺省为以该员工 Agent id 命名的子目录——公共工作区的根目录放共享输入，不是任何人的工位。相对 `workspace` 会归一化（`./hr` → `hr`）并在公共工作区下创建，绝对路径必须已经存在，用 `..` 爬出公共工作区的写法回 400 `invalid_workspace` |
@@ -285,7 +313,7 @@ Benchmark 挂在 Project 上而非某个 Agent 上：一个 Benchmark 评测过�
 | GET / POST | /:orgId/channels/:channelId/messages | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析，且必须都是频道成员。`system` 消息在英文 `text` 之外还带 `notice`——一个 `kind`（`employee_joined`、`employee_left`、`channel_created`、`channel_archived`、`channel_unarchived`、`channel_joined`、`channel_invited`、`channel_left`、`channel_removed`、`budget_warned`、`budget_paused`，以及遗留的 `ticket_blocked`、`ticket_done`、`ticket_rejected`——这三种已不再写入，保留只是为了让磁盘上已有的行仍能渲染）与一组字符串 `params`——客户端据此按读者的语言渲染该句；该字段出现之前写下的消息没有它 |
 | POST | /:orgId/channels/:channelId/read | `{upTo}`——调用方在该频道的已读游标 |
 | GET | /:orgId/finance | 按员工（本人与沿汇报线累计）、按工单（沿 `Parent` 上卷）的支出、逐日趋势与告警；`?period=yyyy-mm` |
-| GET | /:orgId/sessions | 组织的工位会话与按工单分组的工单会话 |
+| GET | /:orgId/sessions | 组织的工位会话与按工单分组的工单会话；工位会话启用了消息渠道绑定时带 `messagingChannel`，与该 Session 自身的列表行一致 |
 
 频道相关错误：`channel_not_found`（404，频道 id 不合法时同样如此）、`channel_exists`（409）、`channel_archived`（409，归档频道在取消归档前不接受写入）、`not_a_member`（403，无成员身份的读取、发言与邀请，以及员工尝试仅限人的操作）、`all_hands_immutable`（400，归档 `default_channel` 或编辑其成员）、`mention_not_member`（400，消息提及了不在该频道的对象，整条不写入）、`invalid_principal`（400）。
 
@@ -297,7 +325,7 @@ Benchmark 挂在 Project 上而非某个 Agent 上：一个 Benchmark 评测过�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /agents/:agentId/sessions | Session 列表（含运行状态）；无论由哪个客户端创建，所有行都会列出 |
+| GET | /agents/:agentId/sessions | Session 列表（含运行状态）；无论由哪个客户端创建，所有行都会列出；带 `excludeOrg=1` 时只列用户自己的行——组织的工位会话、工单会话及其派生的子会话同时从分页与 `counts=1` 的统计中剔除（开发模式的会话列表即以此请求） |
 | POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201。`client` 是存入索引行的创建客户端标记（CLI 传 `"cli"`，缺省 `"web"`）——仅作来源信息，绝不参与列表过滤；`source` 只接受 `"benchmark"`（Benchmark 评估或优化创建），`subagent` 与 `schedule` 由服务端自己写入 `org` 是服务端为组织的工位与工单会话（公司模式）自行写入的值，客户端不能传。 |
 | GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
 
@@ -432,7 +460,7 @@ Session 可以接入消息软件机器人——目前的渠道是飞书、Telegr
 | POST | /messaging/wechat/scan/cancel | `{taskId}`——用户中途离开时丢弃该任务，立即忘记其句柄，而不是等待过期清扫 |
 | POST | /messaging/wechat/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在微信里给机器人发过消息之前返回 409 `wechat_no_chat` |
 
-没有已存密钥的配置（被清除过的）不返回掩码字段，也无法启用。`linePerMessage`、`finalReplyOnly` 与 `renderMarkdown` 是仅有的三个不属于凭据的已存字段。开启 `linePerMessage` 后，转发的助手回复中每个非空行各自作为一条消息发出（空行忽略，单行仍按长度上限分段，超出每条回复的消息条数上限的部分合并为最后一条）。开启 `finalReplyOnly` 后，一次运行只转发它**最后**完成的那条助手消息，并在运行结束时发送，而不是每完成一条就转发一条——运行过程中在工具调用之间写下的记录留在网页端；随回复发送的文件也只从这条最终消息中读取提及，因为聊天只收到了它。两者可叠加：同时开启时，被按行拆分的就是这条最终回复。两者默认均为 false，PUT 省略则保持已存值，且都不作用于通知与测试消息——审批提醒尤其不属于回复，无论 `finalReplyOnly` 如何都会立即到达。开启 `renderMarkdown` 后，转发回复中的 Markdown 按各渠道自身的标记语言渲染，而不是把字符原样发出；它**默认为 true**，PUT 省略同样保持已存值，同样不作用于通知与测试消息。各渠道各自渲染力所能及的部分，其余按既定方式降级而非泄漏源码：Telegram 使用 `parse_mode: "HTML"`，没有标题、列表和表格（标题渲染为一行粗体，列表符号作为文本保留，表格改用 `<pre>` 块）；飞书发送携带 JSON 2.0 富文本组件的交互卡片，全部构件均可渲染，超长表格改为代码块以免整行被静默丢弃；QQ 使用 `msg_type: 2` 自定义 markdown，没有代码格式也没有表格（代码块按转义后的普通文本行发出，表格按其行发出）；微信自己就读 Markdown，因此渲染是**做减法**而不是翻译——客户端不会呈现的部分保留文字、去掉标记（四级以上的标题、CJK 两侧的强调，以及内联图片，后者改为链接）。分段随该设置改变：在块边界切分，跨消息的代码块会重新加围栏，因此任何一条消息都不会打开一个它没有闭合的构件。**渠道拒绝的格式化发送会退回为同一条消息的纯文本发送**，因此该设置只可能损失排版，绝不会损失回复。唯一的跨 Session 规则按渠道内机器人账号计，且只作用于连接：一个账号只有一条事件流，因此至多一个 Session 能将其启用。飞书的账号身份是 `app_id`，Telegram 是 Token 冒号前的数字机器人 id（换发 Token 也不会改变），微信则是扫码返回的机器人 id。读取与两个测试接口对任意 Project 成员开放；PUT、state 开关与 DELETE 仅限所有者（与 Vault 同口径——绑定写操作携带或作用于密钥）。密钥永不回传。删除 Session 会连带删除其全部渠道配置。入站处理文本、图片与文件：图片按普通 `image_url` 输入部分送入，单张受服务端的内联图片上限约束，总量再受每个绑定一个滚动窗口的字节预算约束——内联图片会原样写入 Trace，而这条路径不像网页输入框，前面没有任何鉴权。文件按输入框的另一种附件形态送入——写进该 Session 的 Scratchpad，并以 `[attached file: <path>]` 行交给模型，其字节不进入对话——上限沿用管理员可设的单个文件与单条消息附件上限（与经过鉴权的上传同一组数值），并再取渠道自身更紧的那个上限（Telegram 不向机器人提供超过 20MB 的文件）。飞书取 `file` 消息类型，Telegram 取 `document` 字段：发送者主动**以文件形式**发出的那一个，也是 Telegram 各媒体字段中唯一携带发送者原始文件名的。在这两个渠道上，视频、音频与语音有意不予送达——下游没有任何环节能解码或转写它们，而发送者真正想交给智能体的东西，只要按文件发送就会到达。微信是例外，且仅仅因为解码由平台自己完成：语音消息随附它自己的转写文本，视频则作为普通文件到达。附件**确实会被送达**的消息（图片、文件），其说明文字即该消息的文本；其他媒体类型的说明文字则不是——其字节并不会送达，仅凭说明文字运行只会让模型对一个它从未收到的文件侃侃而谈。图片超过单张上限、超出窗口预算与渠道拒绝下载分别回复三种不同的双语提示；文件超过单个上限、一条消息的文件总量超限与渠道拒绝下载同样各有其提示。它们都不会把半条消息交给模型；因机器人自身权限被拒时，提示会点名所需权限并带上渠道给出的授权链接——飞书通常正是此种情况（接收消息与下载其中的附件是两项独立权限）。其余类型仍收到双语的“暂不支持”回复。出站方向，一次运行结束后会在回复文本之后发送该回复**提及且由本次运行产出**的文件——回复中形如路径、能解析到 Workspace 之内、确实存在、且修改时间不早于本次运行开始的片段，出现在回复的任何位置皆可（「提及」挑出这次真正要交付的那个产物；「修改时间」则确保一条可被会话中任何人引导的回复不会变成读取原语——拒绝粘贴某个文件的回复同样会点到它的名字）——图片按图片发送、其余按文件发送，且按**读取时实际拿到的文件名**分类，而非回复中写下的那个名字；每次运行最多 5 个，单个图片上限 10MB、单个文件上限 30MB（取两个渠道各自限制中更紧的一个）。被提及的文件凡是没送到，都会在会话中说明原因——超过上限、超出数量上限、Workspace 内没有该文件、渠道拒绝上传——唯独「本次运行没有写过」是静默跳过的，因为回复中提到自己读过的配置文件属于常态。Telegram 建立连接时先清空积压：无连接期间发来的消息会被跳过，与飞书“错过的事件即消失”同口径。绑定的运行时状态另外报出该连接**实际见到**的情况——`lastInboundAt`（最近一条消息到达的时间；自本次连接建立以来还没有收到过时该字段缺席）、`lastDeliveryError`（`{at, stage, detail}`，`stage` 为 `inbound` 表示消息已到达但其 Task 没能开始，为 `send` 表示回复没能送达聊天；后续的成功不会把它清掉），以及 `lastConnectionError`（`{at, detail}`，最近一次连接失败，并在连接恢复之后依然保留——不同于属于 `error` 状态、状态一离开就被抹掉的 `lastError`）。三者都只存在于进程内，且每次（重新）建立连接都会清空——重新启用连接或再保存一次凭证，都会开启一条新连接——所以 `lastInboundAt` 缺席只意味着「本次连接以来没有收到过」，而不是「从来没有收到过」。它们的存在是因为一个扣着消息不投递的渠道，表现出来正是 `connected` 且毫无报错。
+没有已存密钥的配置（被清除过的）不返回掩码字段，也无法启用。`linePerMessage`、`finalReplyOnly` 与 `renderMarkdown` 是仅有的三个不属于凭据的已存字段。开启 `linePerMessage` 后，转发的助手回复中每个非空行各自作为一条消息发出（空行忽略，单行仍按长度上限分段，超出每条回复的消息条数上限的部分合并为最后一条）。开启 `finalReplyOnly` 后，一次运行只转发它**最后**完成的那条助手消息，并在运行结束时发送，而不是每完成一条就转发一条——运行过程中在工具调用之间写下的记录留在网页端；随回复发送的文件也只从这条最终消息中读取提及，因为聊天只收到了它。两者可叠加：同时开启时，被按行拆分的就是这条最终回复。两者默认均为 false，PUT 省略则保持已存值，且都不作用于通知与测试消息——审批提醒尤其不属于回复，无论 `finalReplyOnly` 如何都会立即到达。开启 `renderMarkdown` 后，转发回复中的 Markdown 按各渠道自身的标记语言渲染，而不是把字符原样发出；它**默认为 true**，PUT 省略同样保持已存值，同样不作用于通知与测试消息。各渠道各自渲染力所能及的部分，其余按既定方式降级而非泄漏源码：Telegram 使用 `parse_mode: "HTML"`，没有标题、列表和表格（标题渲染为一行粗体，列表符号作为文本保留，表格改用 `<pre>` 块）；飞书发送携带 JSON 2.0 富文本组件的交互卡片，全部构件均可渲染，超长表格改为代码块以免整行被静默丢弃；QQ 使用 `msg_type: 2` 自定义 markdown，没有代码格式也没有表格（代码块按转义后的普通文本行发出，表格按其行发出）；微信自己就读 Markdown，因此渲染是**做减法**而不是翻译——客户端不会呈现的部分保留文字、去掉标记（四级以上的标题、CJK 两侧的强调，以及内联图片，后者改为链接）。分段随该设置改变：在块边界切分，跨消息的代码块会重新加围栏，因此任何一条消息都不会打开一个它没有闭合的构件。**渠道拒绝的格式化发送会退回为同一条消息的纯文本发送**，因此该设置只可能损失排版，绝不会损失回复。唯一的跨 Session 规则按渠道内机器人账号计，且只作用于连接：一个账号只有一条事件流，因此至多一个 Session 能将其启用。飞书的账号身份是 `app_id`，Telegram 是 Token 冒号前的数字机器人 id（换发 Token 也不会改变），微信则是扫码返回的机器人 id。读取与两个测试接口对任意 Project 成员开放；PUT、state 开关与 DELETE 仅限所有者（与 Vault 同口径——绑定写操作携带或作用于密钥）。密钥永不回传。删除 Session 会连带删除其全部渠道配置。入站处理文本、图片与文件：图片按普通 `image_url` 输入部分送入，单张受服务端的内联图片上限约束，总量再受每个绑定一个滚动窗口的字节预算约束——内联图片会原样写入 Trace，而这条路径不像网页输入框，前面没有任何鉴权。文件按输入框的另一种附件形态送入——写进该 Session 的 Scratchpad，并以 `[attached file: <path>]` 行交给模型，其字节不进入对话——上限沿用管理员可设的单个文件与单条消息附件上限（与经过鉴权的上传同一组数值），并再取渠道自身更紧的那个上限（Telegram 不向机器人提供超过 20MB 的文件）。飞书取 `file` 消息类型，Telegram 取 `document` 字段：发送者主动**以文件形式**发出的那一个，也是 Telegram 各媒体字段中唯一携带发送者原始文件名的。在这两个渠道上，视频、音频与语音有意不予送达——下游没有任何环节能解码或转写它们，而发送者真正想交给智能体的东西，只要按文件发送就会到达。微信是例外，且仅仅因为解码由平台自己完成：语音消息随附它自己的转写文本，视频则作为普通文件到达。附件**确实会被送达**的消息（图片、文件），其说明文字即该消息的文本；其他媒体类型的说明文字则不是——其字节并不会送达，仅凭说明文字运行只会让模型对一个它从未收到的文件侃侃而谈。图片超过单张上限、超出窗口预算与渠道拒绝下载分别回复三种不同的双语提示；文件超过单个上限、一条消息的文件总量超限与渠道拒绝下载同样各有其提示。它们都不会把半条消息交给模型；因机器人自身权限被拒时，提示会点名所需权限并带上渠道给出的授权链接——飞书通常正是此种情况（接收消息与下载其中的附件是两项独立权限）。其余类型仍收到双语的“暂不支持”回复。出站方向，一次运行结束后会在回复文本之后发送该回复**提及且由本次运行产出**的文件——回复中形如路径、能解析到 Workspace 之内、确实存在、且修改时间不早于本次运行开始的片段，出现在回复的任何位置皆可（「提及」挑出这次真正要交付的那个产物；「修改时间」则确保一条可被会话中任何人引导的回复不会变成读取原语——拒绝粘贴某个文件的回复同样会点到它的名字）——图片按图片发送、其余按文件发送，且按**读取时实际拿到的文件名**分类，而非回复中写下的那个名字；每次运行最多 5 个，单个图片上限 10MB、单个文件上限 30MB（取两个渠道各自限制中更紧的一个）。被提及的文件没送到时，聊天里不会出现任何说明。它们记为该 Project 下的错误记录，显示在成本中心的异常表中：每条回复按原因各记一条，写明其涵盖的每个文件、渠道与原因——超过上限的文件记 `messaging_file_too_large`，超出数量上限的记 `messaging_files_skipped`，被拒绝的上传记 `messaging_file_send_failed`，其中渠道根本无法承载的上传（QQ 上的任何文件）、缺少权限（所需权限与控制台授权链接只列一次，取代渠道对每个文件给出的原因）与其余拒绝各记一条。前两种与渠道无法承载的上传记为 `expected`；缺少权限与其余拒绝记为 `unexpected`。Workspace 内对不上任何文件的名字只写入服务端日志，本次运行没有写过的文件则静默跳过，因为回复中提到自己读过的配置文件属于常态。Telegram 建立连接时先清空积压：无连接期间发来的消息会被跳过，与飞书“错过的事件即消失”同口径。绑定的运行时状态另外报出该连接**实际见到**的情况——`lastInboundAt`（最近一条消息到达的时间；自本次连接建立以来还没有收到过时该字段缺席）、`lastDeliveryError`（`{at, stage, detail}`，`stage` 为 `inbound` 表示消息已到达但其 Task 没能开始，为 `send` 表示回复没能送达聊天；后续的成功不会把它清掉），以及 `lastConnectionError`（`{at, detail}`，最近一次连接失败，并在连接恢复之后依然保留——不同于属于 `error` 状态、状态一离开就被抹掉的 `lastError`）。三者都只存在于进程内，且每次（重新）建立连接都会清空——重新启用连接或再保存一次凭证，都会开启一条新连接——所以 `lastInboundAt` 缺席只意味着「本次连接以来没有收到过」，而不是「从来没有收到过」。它们的存在是因为一个扣着消息不投递的渠道，表现出来正是 `connected` 且毫无报错。
 **QQ 是只能被动回复的渠道，这改变了「送达」的含义。** 平台不提供本产品可用的主动推送：每一条外发消息都是携带入站 `msg_id` 的*被动回复*，有效期只有几分钟，且单聊对同一条消息最多 4 条回复（群聊 5 条）。由此有三点在 API 上可见。一次运行完成的助手消息超过该额度时会被**合并**——前 `budget - 1` 条随完成即时发出，其余合并为最后一条送达，内容不丢。`linePerMessage` 的拆分上限**收敛到该额度**，而不是渠道无关的 20；被平台拒绝的 `renderMarkdown` 发送，其纯文本重试会再占用一次额度。`finalReplyOnly` 在这里有利有弊：它把一次运行的额度消耗压到最低——只发一条；但被动回复的有效期只有几分钟，把回复扣到运行结束才发，等于把这个窗口花在了运行本身上，运行时长超过窗口时将什么都送不出去，而逐条转发至少能把窗口之内完成的部分发出去。而没有可回复对象的发送——在网页端发起的对话，或窗口关闭之后的回复——会被**拒绝而非主动推送**：测试接口上表现为 502 `qq_send_failed`，转发回复则记为一条 `messaging_send_failed` 错误记录。QQ 的账号身份是 App ID。该渠道拒绝外发文件：平台的富媒体接口要求为文件提供公网可达地址。
 **微信只承载单聊，但媒体能力是四个渠道里最全的。** 该机器人渠道完全不接收群消息：在群里 @机器人的消息根本不会到达本 API，因此单聊正常、群聊沉默是渠道形态而非配置错误。作为交换，它是这里唯一能**双向**传输文字、图片与文件的渠道——回复中的图片与附件会上传到平台 CDN（每个文件一把 AES-128-ECB 密钥），以真正的图片和文件到达，而不是被拒绝。两类入站消息被折叠处理：语音消息按微信自带的语音转文字结果进入对话，视频按文件到达；微信没能转写的语音则以共用的「不支持」提示回到聊天。
 

@@ -18,9 +18,9 @@ export const zh = {
     chat: "对话",
     newChat: "新对话",
     agents: "智能体",
-    plugins: "插件库",
     models: "模型库",
     machines: "机器",
+    plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
@@ -80,7 +80,7 @@ export const zh = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "终端",
-    newShell: "新建 Shell",
+    newShell: "新建终端",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "关闭此终端",
     /** Pane body when creating/attaching a shell failed (the server message follows). */
@@ -202,7 +202,6 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
-    /** Admin-only sub-page (server-global). */
     uploadLimitsTitle: "上传限制",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
@@ -442,6 +441,39 @@ export const zh = {
     time: "时间",
   },
 
+  /**
+   * The id field every create dialog with a semantic id wears (features/semantic-id): a Project's,
+   * an Agent's, a Benchmark's, an organization's and a channel's.
+   */
+  semanticId: {
+    /**
+     * The id field's generate button — its label says who proposes the id, its tooltip says
+     * what the proposal is derived from — and the clause the hint appends for it. The clause
+     * carries its own leading separator: what joins two clauses is punctuation, and
+     * punctuation belongs to the language.
+     */
+    generateIdLabel: "用 AI 生成",
+    generateId: "从名称生成 ID",
+    idGenerateHint: "；也可以从显示名生成",
+    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
+    idSuggest: {
+      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
+      fromName: "按名称转写生成",
+      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
+      placeholder: (reason: string): string =>
+        `模型没有给出可用的 ID（${reason}），已填入占位 ID，请改成有含义的英文名`,
+      /** Why the proposal fell through, keyed by the server's reason code. */
+      reasons: {
+        no_default_model: "未配置默认模型",
+        model_failed: "模型调用失败",
+        unusable_answer: "模型回答不可用",
+        no_ascii: "名称里没有可转写的英文",
+      },
+      /** A reason a newer server named and this build does not know. */
+      reasonUnknown: "原因未知",
+    },
+  },
+
   auth: {
     usernameHint: "2~32 位：小写字母开头，仅小写字母、数字与下划线",
     password: "密码",
@@ -458,7 +490,7 @@ export const zh = {
       "首次使用请打开服务端启动输出中的首次登录链接，认领内置管理员 admin 并设置密码。这里没有可输入的初始密码",
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
-      "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password 重置为新的初始密码",
+      "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password；再次启动时会打印新的首次登录链接，打开它即可设置新密码",
     /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
     claimFailedTitle: "登录链接已失效",
     /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
@@ -619,6 +651,8 @@ export const zh = {
     createTitle: "创建 Agent",
     id: "Agent id",
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
+    /** The id field's generation clause: the create dialog's name field is labelled Name, not display name. */
+    idGenerateHint: "；也可以从名称生成",
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
     /** Create dialog's skill picker: the library skills installed into the new Agent. */
@@ -999,6 +1033,7 @@ export const zh = {
         "- 不要读取或改动 .project_config.toml，配置只经 penguin 命令。",
         `- 最后运行 \`penguin config model list --project-id ${projectId} --root <数据根目录>\` 把结果列给我。`,
       ].join("\n"),
+    platformSync: "同步",
     homepage: "模型主页",
     speedTest: "测速",
     speedTestTitle: "分组测速",
@@ -1110,6 +1145,9 @@ export const zh = {
     priceCacheRead: "缓存命中价格",
     priceCacheWrite: "缓存未命中价格",
     priceOutput: "输出价格",
+    /** Line under the model dialog's price fields on a row with a running promotion: the fields hold the list price, and changing it cancels the promotion. */
+    promotionPriceHint: (pct: number): string =>
+      `此处为牌价，当前促销在此基础上省 ${pct}%；修改价格会取消促销`,
     currency: "币种",
     currencyUsd: "美元 $",
     currencyCny: "人民币 ¥",
@@ -1161,6 +1199,21 @@ export const zh = {
       upstream_failed: "供应商没有返回可用的 key，请重新开始。",
       unreachable: "连不上供应商，请检查网络后重新开始。",
       apply_failed: "key 已创建但未能保存。请重新授权，并到供应商控制台删掉那个没用上的 key。",
+    },
+    platformKeyIntro: (n: number): string =>
+      `授权后会自动获取一个 Penguin Go API key，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key。`,
+    platformKeyAppliedBody: (n: number): string =>
+      `已完成授权：Penguin Go API key 已配置到 ${n} 个模型上，可以直接使用了。`,
+    platformKeyStarting: "正在创建授权请求…",
+    platformKeyApplying: "授权已完成，正在写入模型组…",
+    platformKeyErrors: {
+      unreachable: "无法连接 Penguin Go，请检查网络后重新开始。",
+      upstream_failed: "Penguin Go 未能完成授权，请重新开始。",
+      invalid_key: "Penguin Go 未返回可用的 API key，请重新开始。",
+      expired: "授权已过期，请重新开始。",
+      locked: "授权已锁定，请重新开始。",
+      already_delivered: "该授权结果已经交付，请重新开始。",
+      apply_failed: "API key 已取得，但未能写入模型组。可以直接重试，无需再次授权。",
     },
     // Providers with separate domestic / international endpoints: note on the default
     // endpoint used when left blank via env var (the other side's key needs an explicit
@@ -1525,8 +1578,53 @@ export const zh = {
 
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
-    pageTitle: "插件库",
-    pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
+    installedTitle: "已安装的插件",
+    installedDesc:
+      "当前 Project 要求的插件，以及其中哪些正在被本进程运行。服务器能自行重组时，改动无需重启即可生效；重组会中止所有 Project 正在进行的 Agent 运行。",
+    installedEmpty: "还没有安装任何插件。",
+    stateActive: "运行中",
+    builtin: "内置",
+    builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
+    installedRestart: "待重启",
+    stateFailed: "加载失败",
+    replacesLabel: "替换",
+    restartPending: "有已列出但未运行的插件，且本服务器无法免重启应用：重启服务器后加载。",
+    uninstall: "移除",
+    install: "安装",
+    installing: "安装中…",
+    /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
+    deploymentInstalledToast: (name: string) => `已安装 ${name}`,
+    /** Listed, but the process could not load it: the reason, not a success. */
+    deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
+    applyConfirmInstall: (name: string) => `安装 ${name}？`,
+    applyConfirmRemove: (name: string) => `移除 ${name}？`,
+    applyConfirmBody: "所有 Project 中正在进行的 Agent 运行都会被中止。",
+    pageTitle: "插件",
+    pageDesc:
+      "所有插件在一个列表里。插件库里的随本次构建自带（技能和／或钩子包——快捷调用，或安装到 Agent）；当前 Project 要求的模块插件在服务端运行，市场里其余的可以为它安装。",
+    /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
+    installedSection: (n: number): string => `已安装的插件 (${n})`,
+    /** The second list: registry entries this Project does not ask for yet. */
+    availableSection: (n: number): string => `可安装 (${n})`,
+    notInstalled: "未安装",
+    /** The filter column beside the lists, and the empty result. */
+    filterCategories: "分类",
+    filterKind: "包含",
+    filterState: "状态",
+    filterClear: "清除筛选",
+    kindLabel: { skills: "技能", hooks: "钩子", modules: "模块" },
+    stateLabel: {
+      installed: "已安装",
+      available: "可安装",
+      running: "运行中",
+      restart: "待重启",
+      failed: "加载失败",
+    },
+    noMatch: "没有匹配的插件。",
+    /** The description of a shipped package the registry has no entry for. */
+    shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
+    /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
+    libraryBuiltinHint: "随本次构建自带；安装到 Agent 即可在那里使用。",
     /** Plugin count in the group header (small text to the right of the category name). */
     pluginCount: (n: number): string => `${n} 个插件`,
     /** Search box of the create dialog's plugin picker. */
@@ -1607,6 +1705,23 @@ export const zh = {
         "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置。",
       savedToast: "已保存，自下一轮对话起生效",
     },
+  },
+
+  pluginRegistry: {
+    pageTitle: "插件市场",
+    empty: "暂无插件",
+    /** Card metadata: the entry's package specifier doubles as the install string. */
+    specifierHint: "包名，即 Project 插件列表里写的那串",
+    back: "返回插件市场",
+    readme: "说明文档",
+    noReadme: "该插件暂无说明文档。",
+    notFound: "找不到这个插件。",
+    repository: "源码仓库",
+    homepage: "主页",
+    authors: "作者",
+    license: "许可证",
+    copySpecifier: "复制包名",
+    installHint: "在插件市场页安装：该行的「安装」按钮会为当前 Project 要求它。",
   },
 
   skills: {
@@ -2927,6 +3042,8 @@ Benchmark：
         text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本。",
       },
     ],
+    /** The first step card's text for a Project member: no Create manually, which is the owner's. */
+    guideCreateMember: "点右上角「用 AI 创建」，让 AI 为某个智能体出一套题并取得基线分。",
     searchPlaceholder: "搜索标题、描述或被测智能体",
     noMatches: "没有匹配的 Benchmark",
     /** The chip shown when the address filters the list to one Agent's Benchmarks. */
@@ -2947,6 +3064,9 @@ Benchmark：
     creationFailedHint: "题目难度未能校准完成，请删除后重新创建",
     creationFailedDetail:
       "这套题的难度校准没有完成，无法评估或优化；请删除这个 Benchmark，然后重新创建。",
+    /** The two lines above for a Project member: no delete step, since deleting is the owner's. */
+    creationFailedHintMember: "题目难度未能校准完成",
+    creationFailedDetailMember: "这套题的难度校准没有完成，无法评估或优化。",
     /** The avatars on a card: which Agents this Benchmark has scored so far. */
     testedAgents: "被测过的智能体",
     lastEvaluated: (when: string): string => `最近评估 ${when}`,
@@ -2989,7 +3109,7 @@ Benchmark：
     colVersion: "版本",
     colModel: "模型 ID",
     colThinkingLevel: "推理强度",
-    colScore: "Score",
+    colScore: "分数",
     colDuration: "耗时",
     colCase: "题目",
     colRun: "运行",
@@ -2999,7 +3119,7 @@ Benchmark：
     evaluationDetailTitle: (time: string): string => `评估 · ${time}`,
     askEvaluationTitle: "问 AI：这次评估",
     askEvaluationDescription:
-      "这次评估的总分、逐题得分与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
+      "这次评估的总分、逐题结果与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
     askEvaluationDefault: "解释这次评估的结果。",
     /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
     askEvaluationExamples: {
@@ -3009,11 +3129,11 @@ Benchmark：
       },
       whyLow: {
         label: "为什么这次分数低？",
-        prompt: "为什么这次评估的分数偏低？请结合逐题得分与运行记录说明主要失分在哪里。",
+        prompt: "为什么这次评估的分数偏低？请结合逐题分数与运行记录说明主要失分在哪里。",
       },
       weakest: {
         label: "哪些题最弱、该改什么？",
-        prompt: "哪几道题得分最弱？分别是什么原因，被测智能体改哪一处才有机会提上去？",
+        prompt: "哪几道题分数最低？分别是什么原因，被测智能体改哪一处才有机会提上去？",
       },
       againstPrevious: {
         label: "与上一次评估相比变化在哪？",
@@ -3045,7 +3165,7 @@ Benchmark：
       `- 总分 ${p.score}；成本 ${p.cost}；耗时 ${p.duration}\n` +
       (p.summaryTitle !== "" ? `- 评估说明标题：${p.summaryTitle}\n` : "") +
       (p.summary !== "" ? `- 评估说明：${p.summary}\n` : "") +
-      "- 逐题得分（分数、成本、耗时，以及逐次运行的 Session id）：\n" +
+      "- 逐题结果（分数、成本、耗时，以及逐次运行的 Session id）：\n" +
       p.cases
         .map(
           (c) =>
@@ -3070,8 +3190,8 @@ Benchmark：
         prompt: "这道题的评分细则把分数主要放在哪些地方？哪些条目最能把优秀与及格区分开？",
       },
       whyRunLow: {
-        label: "为什么有的运行在这道题上得分低？",
-        prompt: "最近一次评估在这道题上得分不高，可能是被测智能体在哪一步做丢了？",
+        label: "为什么有的运行在这道题上分数低？",
+        prompt: "最近一次评估在这道题上分数不高，可能是被测智能体在哪一步做丢了？",
       },
       clearerStatement: {
         label: "题干怎样才能更清楚？",
@@ -3144,13 +3264,15 @@ Benchmark：
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
       "每一次试测都必须通过 `run_subagent` 派发子会话，并在子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
-      "逐题试测以校准难度，定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题得分。",
+      "逐题试测以校准难度，定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题分数。",
     // New Benchmark, manual mode: the form.
     manualCreateTitle: "手动创建 Benchmark",
     manualCreateIntro:
       "填好标题、题干与评分细则后，目录结构会按技能约定写入 Project 的 benchmarks/ 下；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
     idField: "Benchmark id",
     idHint: "目录名即标识：仅字母、数字、_ 和 -，例如 report-writing-v1",
+    /** The id field's generation clause: a Benchmark is named by its title, not a display name. */
+    idGenerateHint: "；也可以从标题生成",
     idExists: "已有同名 Benchmark，请换一个 id",
     titleField: "标题",
     descriptionField: "描述",
@@ -3209,7 +3331,7 @@ Benchmark：
       "评测 Runtime 取被测智能体当前配置的模型与思考等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
       "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
       "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
-      "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题得分与本条记录的标签。",
+      "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题分数与本条记录的标签。",
     // Optimize tab.
     optimizeDescription: "AI 会按可证伪的假设修改被测智能体并重新评测，分数严格提升才保留新版本。",
     optimizerAgent: "执行优化的智能体",
@@ -3291,32 +3413,6 @@ Benchmark：
     createTitle: "新建组织",
     orgId: "组织 id",
     orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；也是目录名，创建后不可修改",
-    /**
-     * The id field's generate button — its label says who proposes the id, its tooltip says
-     * what the proposal is derived from — and the clause the hint appends for it. The clause
-     * carries its own leading separator: what joins two clauses is punctuation, and
-     * punctuation belongs to the language.
-     */
-    generateIdLabel: "用 AI 生成",
-    generateId: "从名称生成 ID",
-    idGenerateHint: "；也可以从显示名生成",
-    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
-    idSuggest: {
-      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
-      fromName: "按名称转写生成",
-      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
-      placeholder: (reason: string): string =>
-        `模型没有给出可用的 ID（${reason}），已填入占位 ID，请改成有含义的英文名`,
-      /** Why the proposal fell through, keyed by the server's reason code. */
-      reasons: {
-        no_default_model: "未配置默认模型",
-        model_failed: "模型调用失败",
-        unusable_answer: "模型回答不可用",
-        no_ascii: "名称里没有可转写的英文",
-      },
-      /** A reason a newer server named and this build does not know. */
-      reasonUnknown: "原因未知",
-    },
     displayName: "显示名",
     displayNameHint: "留空则使用组织 id",
     mission: "使命",
@@ -4084,6 +4180,7 @@ Benchmark：
       task_in_progress: "该 Session 已有任务在运行。",
       compacting: "该 Session 正在压缩上下文，暂不接受新的输入。",
       shutting_down: "服务正在关闭，请稍后重试。",
+      platform_rate_limited: "平台授权请求过于频繁，请等待倒计时结束后重试。",
       // The three "cannot compact" reasons each have their own server code, so each keeps its
       // own explanation here — collapsing them into one sentence would tell a user who just
       // compacted that they have never spoken.

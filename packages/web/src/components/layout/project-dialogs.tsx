@@ -43,6 +43,7 @@ import { Modal } from "../ui/modal";
 import { ConfirmModal } from "../ui/confirm-modal";
 import { Badge } from "../ui/badge";
 import { InfoPopover } from "../ui/info-popover";
+import { SemanticIdField } from "../../features/semantic-id/semantic-id-field";
 
 /** Approval modes offered by the new-chat-defaults select, in the composer menu's order. */
 const APPROVAL_MODES: readonly ApprovalMode[] = [
@@ -62,6 +63,7 @@ export function CreateProjectDialog({
   onCreated: (projectId: string) => void;
 }) {
   const { user } = useAuth();
+  const { currentProject } = useProject();
   // Non-admin Project ids are forced to have a "<username>-" prefix: the input locks the prefix segment, only the rest is editable.
   const prefix = user && !user.isAdmin ? `${user.userId}-` : "";
   const [idInput, setIdInput] = useState("");
@@ -124,52 +126,33 @@ export function CreateProjectDialog({
       }
     >
       <div className="space-y-3">
-        {prefix ? (
-          <div>
-            <FieldLabel required>{S.project.id}</FieldLabel>
-            <div className="flex items-stretch">
-              <span className="flex shrink-0 items-center rounded-l-md border border-r-0 border-gray-300 bg-gray-100 px-2 font-mono text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
-                {prefix}
-              </span>
-              <Input
-                size="sm"
-                className="rounded-l-none"
-                value={idInput}
-                invalid={Boolean(idError)}
-                onChange={(e) => {
-                  setIdInput(e.target.value);
-                  setIdError(undefined);
-                }}
-                autoFocus
-              />
-            </div>
-            {idError ? (
-              <FieldError>{idError}</FieldError>
-            ) : (
-              <FieldHint>{S.project.idPrefixHint}</FieldHint>
-            )}
-          </div>
-        ) : (
-          <Input
-            label={S.project.id}
-            required
-            size="sm"
-            value={idInput}
-            error={idError}
-            onChange={(e) => {
-              setIdInput(e.target.value);
-              setIdError(undefined);
-            }}
-            hint={S.project.idHint}
-            autoFocus
-          />
-        )}
+        {/* The name comes first and the id is derived from it: an id is the harder half to
+            invent, and naming the thing is where anyone starts anyway. */}
         <Input
           label={S.project.displayName}
           hint={S.project.displayNameHint}
           size="sm"
           value={name}
+          autoFocus
+          disabled={busy}
           onChange={(e) => setName(e.target.value)}
+        />
+        {/* A Project is not inside a Project: the one this dialog was opened from lends its
+            default model to the proposal. A non-admin types only what follows "<username>-". */}
+        <SemanticIdField
+          projectId={currentProject?.projectId ?? null}
+          kind="project"
+          label={S.project.id}
+          hint={prefix ? S.project.idPrefixHint : S.project.idHint}
+          value={idInput}
+          source={name}
+          error={idError}
+          disabled={busy}
+          {...(prefix ? { lockedPrefix: prefix } : {})}
+          onChange={(id) => {
+            setIdInput(id);
+            setIdError(undefined);
+          }}
         />
       </div>
     </Modal>

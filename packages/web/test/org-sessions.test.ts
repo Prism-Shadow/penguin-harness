@@ -2,26 +2,26 @@
  * The company sidebar's 工位 group (features/company/org-sessions.ts) and the development
  * list's organization filter (session-grouping): a desk row per employee in chart order
  * whether or not a desk exists, the session list's live status winning over both snapshots,
+ * the messaging mark read from the sessions route and patched by a bind or an unbind,
  * the glyph a row draws, an employee's own state read from every Session the organization
  * attributes to it — its ticket sessions included, though no list shows them as a group —
- * the split of a loaded list into the user's own rows and the organizations', and the totals
- * corrected by what that split hid.
+ * and the render-time guard that keeps an organization's row out of the development list when
+ * one still reaches it (the server leaves them out of the list's own fetches; see
+ * sessions-own-rows.test.ts).
  */
 import { describe, expect, it } from "vitest";
 import type {
   OrgChartResponse,
   OrgSessionsResponse,
-  SessionCategoryCounts,
-  SessionInfo,
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
-import { deskRows, liveEmployeeStates, orgRowActivity } from "../src/features/company/org-sessions";
 import {
-  countsWithoutOrgSessions,
-  isOrgSession,
-  splitDevelopmentList,
-  withoutOrgSessions,
-} from "../src/lib/session-grouping";
+  deskRows,
+  liveEmployeeStates,
+  orgRowActivity,
+  withDeskMessagingChannel,
+} from "../src/features/company/org-sessions";
+import { isOrgSession, withoutOrgSessions } from "../src/lib/session-grouping";
 
 const liveStatuses = (entries: Record<string, SessionStatus>): ReadonlyMap<string, SessionStatus> =>
   new Map(Object.entries(entries));
@@ -155,6 +155,53 @@ describe("deskRows", () => {
   });
 });
 
+describe("the desk row's messaging mark", () => {
+  const bound: OrgSessionsResponse = {
+    ...sessions,
+    desks: sessions.desks.map((d) =>
+      d.agentId === "ceo" ? { ...d, messagingChannel: "telegram" as const } : d,
+    ),
+  };
+
+  // The development list never holds a desk, so the sessions route is the only place the
+  // binding is read from — with or without a chart.
+  it("carries the sessions route's channel onto the desk it names, and nothing onto the rest", () => {
+    const rows = deskRows(chart, bound);
+    expect(rows[0]).toMatchObject({ agentId: "ceo", messagingChannel: "telegram" });
+    expect(rows[1]).not.toHaveProperty("messagingChannel");
+    expect(rows[2]).not.toHaveProperty("messagingChannel");
+    expect(deskRows(null, bound).find((d) => d.agentId === "ceo")).toMatchObject({
+      messagingChannel: "telegram",
+    });
+    // A desk only the chart names yet has no sessions-route row to be marked by.
+    expect(deskRows(chart, { desks: [], tickets: [] })[0]).not.toHaveProperty("messagingChannel");
+  });
+
+  it("follows a bind, a switch of channel and an unbind written into the loaded answer", () => {
+    const pm = (r: OrgSessionsResponse) => r.desks.find((d) => d.sessionId === "s-pm");
+    const onPm = withDeskMessagingChannel(bound, "s-pm", "feishu");
+    expect(pm(onPm)?.messagingChannel).toBe("feishu");
+    expect(deskRows(chart, onPm)[1]).toMatchObject({ agentId: "pm", messagingChannel: "feishu" });
+    // The input is left as it was: the store's previous copy is never written into.
+    expect(pm(bound)).not.toHaveProperty("messagingChannel");
+
+    expect(pm(withDeskMessagingChannel(onPm, "s-pm", "qq"))?.messagingChannel).toBe("qq");
+    const off = withDeskMessagingChannel(onPm, "s-pm", null);
+    expect(pm(off)).not.toHaveProperty("messagingChannel");
+    expect(deskRows(chart, off)[1]).not.toHaveProperty("messagingChannel");
+    // The other desk and the tickets ride through untouched.
+    expect(off.desks.find((d) => d.agentId === "ceo")?.messagingChannel).toBe("telegram");
+    expect(off.tickets).toBe(bound.tickets);
+  });
+
+  it("hands back the same answer when no desk is that Session or the mark already says so", () => {
+    // A ticket session is not a desk: the sidebar draws no mark for it.
+    expect(withDeskMessagingChannel(bound, "s-t1", "telegram")).toBe(bound);
+    expect(withDeskMessagingChannel(bound, "s-ceo", "telegram")).toBe(bound);
+    expect(withDeskMessagingChannel(bound, "s-pm", null)).toBe(bound);
+  });
+});
+
 describe("orgRowActivity", () => {
   it("draws the live states and nothing when settled", () => {
     expect(orgRowActivity("running")).toBe("running");
@@ -232,7 +279,7 @@ describe("isOrgSession", () => {
   });
 });
 
-describe("splitDevelopmentList", () => {
+describe("withoutOrgSessions", () => {
   const rows = [
     { sessionId: "a" },
     { sessionId: "s-ceo", orgId: "acme" },
@@ -242,15 +289,11 @@ describe("splitDevelopmentList", () => {
     { sessionId: "s-orphan", client: "org" },
   ];
 
-  it("moves the organizations' rows into their own list, keeping order on both sides", () => {
-    expect(splitDevelopmentList(rows)).toEqual({
-      own: [{ sessionId: "a" }, { sessionId: "b", client: "web" }],
-      organization: [
-        { sessionId: "s-ceo", orgId: "acme" },
-        { sessionId: "s-t1", orgId: "acme" },
-        { sessionId: "s-orphan", client: "org" },
-      ],
-    });
+  it("keeps the user's own rows in order and drops the organizations' by either mark", () => {
+    expect(withoutOrgSessions(rows)).toEqual([
+      { sessionId: "a" },
+      { sessionId: "b", client: "web" },
+    ]);
   });
 
   it("treats an empty orgId as no organization", () => {
@@ -261,84 +304,8 @@ describe("splitDevelopmentList", () => {
   });
 
   it("hides the organizations' rows whatever the company-mode switches say", () => {
-    // There is no switch to pass any more: this list is the user's own conversations, and a
-    // Session the scheduler drives is not one whether or not company mode is on screen.
+    // There is no switch to pass: this list is the user's own conversations, and a Session
+    // the scheduler drives is not one whether or not company mode is on screen.
     expect(withoutOrgSessions(rows).map((s) => s.sessionId)).toEqual(["a", "b"]);
-  });
-});
-
-describe("countsWithoutOrgSessions", () => {
-  const row = (over: Partial<SessionInfo>): SessionInfo =>
-    ({
-      sessionId: "s",
-      projectId: "p",
-      agentId: "ceo",
-      provider: "custom",
-      modelId: "m",
-      workspace: "/org",
-      approvalMode: "allow-all",
-      createdAt: "2026-09-02T00:00:00Z",
-      lastActiveAt: "2026-09-02T00:00:00Z",
-      status: "idle",
-      pendingApprovalCount: 0,
-      pendingFollowUpCount: 0,
-      hasTrace: true,
-      archived: false,
-      ...over,
-    }) as SessionInfo;
-  const counts = new Map<string, SessionCategoryCounts>([
-    ["ceo", { active: 3, subagent: 0, schedule: 0, benchmark: 0, archived: 1 }],
-    ["other", { active: 2, subagent: 0, schedule: 0, benchmark: 0, archived: 0 }],
-  ]);
-  const workspaceCounts = new Map<string, Readonly<Record<string, SessionCategoryCounts>>>([
-    ["ceo", { "/org": { active: 3, subagent: 0, schedule: 0, benchmark: 0, archived: 1 } }],
-    ["other", { "/w": { active: 2, subagent: 0, schedule: 0, benchmark: 0, archived: 0 } }],
-  ]);
-
-  it("subtracts each hidden row from its Agent's totals and from its Workspace's share", () => {
-    const out = countsWithoutOrgSessions(counts, workspaceCounts, [
-      row({ sessionId: "s-desk", orgId: "acme" }),
-      row({ sessionId: "s-old", orgId: "acme", archived: true }),
-    ]);
-    expect(out.byAgent.get("ceo")).toEqual({
-      active: 2,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    });
-    expect(out.byWorkspace.get("ceo")?.["/org"]).toEqual({
-      active: 2,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    });
-    // Another Agent's totals are untouched, and the store's own maps are never written into.
-    expect(out.byAgent.get("other")).toEqual({
-      active: 2,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 0,
-    });
-    expect(counts.get("ceo")).toEqual({
-      active: 3,
-      subagent: 0,
-      schedule: 0,
-      benchmark: 0,
-      archived: 1,
-    });
-  });
-
-  it("gives the maps straight back when nothing is hidden, and never counts below zero", () => {
-    expect(countsWithoutOrgSessions(counts, workspaceCounts, []).byAgent).toBe(counts);
-    const out = countsWithoutOrgSessions(counts, workspaceCounts, [
-      row({ agentId: "other", workspace: "/w", orgId: "acme" }),
-      row({ agentId: "other", workspace: "/w", orgId: "acme" }),
-      row({ agentId: "other", workspace: "/w", orgId: "acme" }),
-    ]);
-    expect(out.byAgent.get("other")?.active).toBe(0);
-    expect(out.byWorkspace.get("other")?.["/w"]?.active).toBe(0);
   });
 });
