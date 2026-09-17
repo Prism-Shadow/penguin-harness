@@ -155,8 +155,10 @@ function createWindow(url: string): void {
     // The one addition, and this window's alone: Penguin Go's authorization bridge. The Web
     // App opens it from the Authorize click, then points it at the platform or closes it when
     // `/start` fails. It is an implementation detail, not a second app window, so it stays
-    // hidden. It is decided here and not in openWindowFor, which every opened window shares:
-    // Agent-written preview HTML must not be able to open hidden windows.
+    // hidden. It is decided here and not in openWindowFor, which every opened window shares, so
+    // HTML in a preview window cannot open hidden windows. An HTML preview in this window's own
+    // Files panel still can: its iframe allows popups, and this handler is not told which frame
+    // asked.
     if (isAuthorizationBridgeUrl(target)) {
       return {
         action: "allow",
