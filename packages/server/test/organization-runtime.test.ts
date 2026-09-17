@@ -362,8 +362,10 @@ describe("organization runtime", () => {
     expect(parsed?.rest).toContain("END THIS RUN");
     expect(parsed?.rest).toContain("@user:alice");
     // The plan names roles and budgets, never a model per role: every hire runs on the
-    // Project's default unless the board asked for another.
-    expect(parsed?.rest).toContain("Project's default model");
+    // organization's model, or the Project's default when the organization names none.
+    expect(parsed?.rest).toContain(
+      "every one on the organization's model, or the Project's default model when the organization names none",
+    );
     expect(parsed?.rest).not.toContain("budgets and model");
     // Whatever touches the machine or the outside is the board's for every employee.
     expect(parsed?.rest).toContain("What you may not decide alone");
@@ -415,6 +417,12 @@ describe("organization runtime", () => {
       workspace: "site",
     });
     expect(item.resolvedWorkspace).toBe(path.join(shared, "site"));
+    // The organization's model reaches a hire that names none without being pinned on its
+    // entry: the chart carries no model, and the desk opens on the organization's pair.
+    expect(
+      (await service.chart(P, ORG)).employees.find((e) => e.agentId === HR),
+    ).not.toHaveProperty("model");
+    expect(created.at(-1)).toMatchObject({ agentId: HR, provider: "custom", modelId: "m-bench" });
     await expect(
       service.create(
         P,
@@ -943,6 +951,70 @@ describe("organization runtime", () => {
         { userId: "alice" },
       );
       expect(sessions.findById(byPerson.sessionId)?.agentId).toBe(CEO);
+    });
+
+    it("hands a claim in review to a reviewer: the owner's ticket session starts the review, and the reviewer's session sends the ticket back", async () => {
+      await createOrg();
+      const REVIEWER = `${ORG}_reviewer`;
+      await service.hire(P, ORG, {
+        newAgent: { agentId: HR },
+        title: "Researcher",
+        reportsTo: CEO,
+      });
+      await service.hire(P, ORG, {
+        newAgent: { agentId: REVIEWER },
+        title: "Reviewer",
+        reportsTo: CEO,
+      });
+      const hrDesk = (await service.desk(P, ORG, HR, {})).sessionId;
+      const reviewerDesk = (await service.desk(P, ORG, REVIEWER, {})).sessionId;
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Dependency eval", owner: `agent:${HR}` },
+        { userId: "alice" },
+      );
+      await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
+      const loop = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        {},
+        { userId: "alice", sessionId: hrDesk },
+      );
+
+      // The author's ticket session moves the claim to review. The reviewer's desk may not
+      // open a session on a ticket it does not own …
+      const author = { userId: "alice", sessionId: loop.sessionId };
+      await service.moveTicket(P, ORG, t.ticketId, "review", undefined, author);
+      await expect(
+        service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice", sessionId: reviewerDesk }),
+      ).rejects.toMatchObject({ status: 403, code: "not_ticket_owner" });
+
+      // … so the author's ticket session starts the round, which runs as the reviewer in the
+      // reviewer's own partition.
+      const review = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        { agentId: REVIEWER, message: "Review round 1" },
+        author,
+      );
+      expect(sessions.findById(review.sessionId)).toMatchObject({
+        agentId: REVIEWER,
+        workspace: path.join(orgDir(), "workspace", REVIEWER),
+      });
+
+      // The reviewer's session writes its verdict and sends the ticket back to the owner.
+      const reviewer = { userId: "alice", sessionId: review.sessionId };
+      await service.progressTicket(P, ORG, t.ticketId, "Round 1: major revision", reviewer);
+      const back = await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, reviewer);
+      expect(back.status).toBe("in_progress");
+      expect(back.sessions).toEqual([loop.sessionId, review.sessionId]);
+      expect(back.history.slice(-2).map((h) => [h.by, h.action])).toEqual([
+        [`agent:${REVIEWER}`, "progress"],
+        [`agent:${REVIEWER}`, "moved"],
+      ]);
     });
 
     it("leaves nothing on the ticket when the session cannot be started", async () => {

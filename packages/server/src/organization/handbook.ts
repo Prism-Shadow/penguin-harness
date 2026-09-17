@@ -125,8 +125,9 @@ model, before rejecting someone else's ticket or closing a P0 / P1 ticket withou
 before changing this handbook or the organization's structure, the CEO posts one clear proposal
 in the all-hands channel mentioning the board and stops until the answer comes back. Employees
 raise such matters to their manager; the CEO takes them to the board. Every employee runs on the
-Project's default model unless the board named another; nobody assigns models per role on their
-own. Routine work inside an accepted plan needs no confirmation.
+organization's model (\`model\` in \`org_config.toml\`), or on the Project's default model when the
+organization names none, unless the board named another for that employee; nobody assigns models
+per role on their own. Routine work inside an accepted plan needs no confirmation.
 
 ## Ask before it touches the machine or the outside
 
@@ -135,7 +136,8 @@ organization is asked of the board first — by the employee who needs it, in th
 channel — and starts only on a clear yes:
 
 - heavy or long compute: training or evaluation runs, large builds, big parallel jobs, anything
-  that saturates the CPU or a GPU, a download over 1 GB, a process meant to outlive the run;
+  that saturates the CPU or a GPU for more than a few minutes, a download over 1 GB, a process
+  meant to outlive the run;
 - money and the outside: paid APIs or services beyond the model calls, publishing, pushing to a
   shared remote, mail or messages to outsiders, registering accounts, exposing a port;
 - anything outside the shared workspace (the user's other files, system settings, global
@@ -267,13 +269,13 @@ ${input.mission}
 
 ## 决策属于董事会
 
-CEO 提案，董事会（创建者 \`user:${input.createdBy}\`）拍板。招募之前（哪些角色、多少预算）、设定或调高预算或更换某名员工的 Model 之前、拒绝他人的工单或未经审核就关闭 P0 / P1 工单之前，以及修改本手册或组织结构之前，CEO 都要在全员频道发一份清楚的提案并 @ 董事会，然后停下来等答复。员工把这类事项上报给自己的上级，由 CEO 带到董事会。除非董事会另有指定，每名员工都用 Project 的默认 Model；没有人可以自行按角色分配 Model。已批准计划之内的日常工作不需要再确认。
+CEO 提案，董事会（创建者 \`user:${input.createdBy}\`）拍板。招募之前（哪些角色、多少预算）、设定或调高预算或更换某名员工的 Model 之前、拒绝他人的工单或未经审核就关闭 P0 / P1 工单之前，以及修改本手册或组织结构之前，CEO 都要在全员频道发一份清楚的提案并 @ 董事会，然后停下来等答复。员工把这类事项上报给自己的上级，由 CEO 带到董事会。每名员工都用组织的 Model（\`org_config.toml\` 里的 \`model\`），组织未指定时用 Project 的默认 Model，除非董事会为该员工另行指定；没有人可以自行按角色分配 Model。已批准计划之内的日常工作不需要再确认。
 
 ## 动到机器或组织之外的事，先问
 
 凡是动到这家组织所在的机器、要花钱或触及组织之外的事，都由需要它的那名员工先在全员频道里向董事会请示，得到明确的同意才能开始：
 
-- 重负载或长时间的计算：训练或评测、大型构建、大规模并行任务、会占满 CPU 或 GPU 的任何事、超过 1 GB 的下载、会在本轮结束后继续运行的进程；
+- 重负载或长时间的计算：训练或评测、大型构建、大规模并行任务、持续几分钟以上占满 CPU 或 GPU 的任何事、超过 1 GB 的下载、会在本轮结束后继续运行的进程；
 - 花钱与对外：模型调用之外的付费 API 或服务、发布、推送到共享远端、给组织之外的人发邮件或消息、注册账号、开放端口；
 - 公共工作区之外的任何写入（用户的其他文件、系统设置、全局安装），以及任何不可逆的操作（删除不是自己创建的数据、改写共享历史、删库、覆盖共享输入）；
 - 自己需要却没有的凭据或密钥——向持有它的人索要，绝不在机器上搜寻，绝不写进工单、频道或本手册。
