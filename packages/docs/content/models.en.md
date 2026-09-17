@@ -194,24 +194,31 @@ A key you type is stored in the hidden Project config file, which has mode 0600.
 
 ### Authorize a new API key
 
-A provider that publishes an authorization flow adds **Authorize key** to its group header. TokenDance is the one built-in group that does. The flow creates a **new** key on your account; it does not read a key you already have. The key is written to every model in the group, replacing the key those models use now.
+A provider that supports automatic key authorization adds **Authorize key** to its group header. Two built-in groups do: TokenDance and Penguin Go. The key is written to every model in the group, replacing the key those models use now.
 
-1. On the TokenDance group's header, select **Authorize key**.
+1. On the group's header, select **Authorize key**.
 2. Select **Open authorization page**. The provider's authorization page opens in a new tab.
-3. Authorize there. The provider sends the browser back to PenguinHarness, which exchanges the one-time code and saves the key. The dialog, which shows "Waiting for the authorization to finish in the other tab…", reports the result on its own.
+3. Authorize there. The dialog, which shows "Waiting for the authorization to finish in the other tab…", reports the result on its own.
 
-If the page cannot redirect back, for example because the browser cannot reach the server at the address it was given, select **Page can't redirect back? Enter the code by hand**. The authorization page then shows a one-time code instead of redirecting.
+TokenDance creates a **new** key on your account; it does not read a key you already have. The provider sends the browser back to PenguinHarness, which exchanges the one-time code and saves the key. If the page cannot redirect back, for example because the browser cannot reach the server at the address it was given, select **Page can't redirect back? Enter the code by hand**. The authorization page then shows a one-time code instead of redirecting.
 
 1. Paste the code into **Authorization code**.
 2. Select **Submit code**.
 
+Penguin Go differs in four ways:
+
+- The server polls Penguin Go for the result, so this group has no manual-code mode.
+- Once the group has a key, a **Sync** action sits on the header just before **Add model** and reads the platform's catalog again; see [The Penguin Go group](#the-penguin-go-group). **Authorize key** stays available, so you can switch to another platform account.
+- A key the platform reports as invalid or revoked reopens authorization on the **Models** page.
+- If writing the delivered key locally fails, the server keeps that one delivery for a short while, so the write can be retried without authorizing again.
+
 Keep in mind:
 
-- Only the Project owner can start an authorization, and only their own signed-in session can finish it, which in practice is the tab the dialog is open in. The redirect itself is received without a session, because the browser the provider sends back is not always the one you started in, but it only hands the code over: nothing is exchanged and no key is saved until the dialog asks for the result.
-- The whole exchange runs on the server. The PKCE verifier is generated there and never reaches the browser, and the new key goes straight into the model table without passing through the browser.
-- An authorization is good for one key and expires in ten minutes.
-- The provider hands over the new key only once. If saving it fails, authorize again and delete the unused key in the provider's console.
-- The key carries PenguinHarness's app URL from the [App attribution](#app-attribution) table, so calls made with it stay attributed even from another tool.
+- Only the Project owner can start an authorization. With TokenDance, only their own signed-in session can finish it, which in practice is the tab the dialog is open in. The redirect itself is received without a session, because the browser the provider sends back is not always the one you started in, but it only hands the code over: nothing is exchanged and no key is saved until the dialog asks for the result.
+- The whole exchange runs on the server. Neither TokenDance's PKCE verifier nor Penguin Go's device secret ever reaches the browser, and the new key goes straight into the model table without passing through it.
+- An authorization delivers one key and expires at the provider's own deadline, and never later than ten minutes.
+- TokenDance hands over the new key only once. If saving it fails, authorize again and delete the unused key in the provider's console.
+- A TokenDance key carries PenguinHarness's app URL from the [App attribution](#app-attribution) table, so calls made with it stay attributed even from another tool.
 
 ## Set the default model
 
@@ -261,7 +268,7 @@ PenguinHarness updates can change the built-in catalog of preset models. When th
 
 Syncing:
 
-- adds catalog models the Project does not have;
+- adds catalog models the Project does not have, retired rows excepted: one the Project already has is kept current, but a Project without it never gets it (see [Preset models](#preset-models));
 - resets each existing catalog model's vision flag, context window, protocol, prices, and base URL to the catalog's values;
 - fills in an empty display name, but never overwrites one;
 - never touches API keys, **Max output tokens**, fast mode, or models and groups you added yourself.
@@ -276,12 +283,7 @@ The pickers offer `low` and above. Many models cannot turn thinking off, but a s
 
 - `max` is the deepest tier. Each client maps it to the deepest effort its vendor accepts and falls back silently where there is no such tier, so picking it never fails. On Gemini and MiniMax M3 it lands on the same effort as `xhigh`.
 - For MiniMax M3, `none` maps directly to `reasoning.effort = "none"`.
-- DeepSeek V4 accepts `low`, `high` and `max`, and folds `medium` and `xhigh` into `high` on its side.
-
-AgentHub 0.4.4 aligned the client with DeepSeek's vocabulary: on DeepSeek models, `low` now sends `low` (it used to send `high`), and `xhigh` sends `high` (it used to send `max`).
-
-> [!NOTE]
-> A conversation left on `low` now reasons less, and costs less, than before. A conversation on `xhigh` reasons less deeply than before. Pick `max` for DeepSeek's deepest effort.
+- DeepSeek V4 accepts `low`, `high` and `max`, and folds `medium` and `xhigh` into `high` on its side. Pick `max` for DeepSeek's deepest effort.
 
 ### In a new chat
 
@@ -393,7 +395,8 @@ The table below lists the built-in groups and the environment variables their mo
 
 | Provider | API key env var | Notes |
 | --- | --- | --- |
-| tokendance | `OPENAI_API_KEY` | The recommended group, listed first. OpenAI-compatible gateway, preset base URL `https://tokendance.space/gateway/v1`; model ids are bare, with no vendor prefix (e.g. `glm-5.3`, `kimi-k3`); pricing is the gateway's own CNY rates, several of them currently discounted |
+| tokendance | `OPENAI_API_KEY` | The recommended group. OpenAI-compatible gateway, preset base URL `https://tokendance.space/gateway/v1`; model ids are bare, with no vendor prefix (e.g. `glm-5.3`, `kimi-k3`); pricing is the gateway's own CNY rates, several of them currently discounted |
+| penguin-go | `PENGUIN_GO_API_KEY` | Preset relay group, fixed base URL `https://token.penguin.ooo/api`; its header authorizes a key for you or takes one you set by hand. See [The Penguin Go group](#the-penguin-go-group) |
 | deepseek | `DEEPSEEK_API_KEY` | Group of the default model |
 | openrouter | `OPENAI_API_KEY` | OpenAI-compatible gateway, preset base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI (OpenAI-compatible), preset base URL `https://api.fireworks.ai/inference/v1`; API model ids look like `accounts/fireworks/models/<slug>` |
@@ -417,11 +420,23 @@ The gateway groups (openrouter / fireworks / siliconflow / tokendance / qwen-pay
 
 The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset uses `https://api.minimax.io/v1`. `MINIMAX_BASE_URL` is read only for entries without their own `base_url`.
 
+### The Penguin Go group
+
+`penguin-go` is a built-in group like TokenDance: a relay behind the fixed base URL `https://token.penguin.ooo/api`. A new Project gets the group's catalog models right away; a Project created before the group adds them with **Sync presets**.
+
+The group's key comes from its header; see [Authorize a new API key](#authorize-a-new-api-key). Authorization, and the **Sync** action that follows it, also read the platform's own model catalog:
+
+- Models the platform offers and the Project does not have are added, with their protocol, endpoint, display name, context window, vision flag and list price. Pure embedding models are left out.
+- Models the Project already has keep their endpoint and everything else you configured. Only their three prices and their client protocol are refreshed, `max_tokens` stays unset so the agent's setting applies, and nothing is ever deleted.
+- The platform's promotions replace the ones stored for this group. As in every other group, `.project_config.toml` holds the list price and the promotion lives in the server's database; **Sync presets** never sets one, and each authorization or **Sync** replaces them. If that record is lost, usage is priced at the list price until the next one writes it back.
+
+The platform quotes peak rates in USD per million Tokens. The group's DeepSeek rows follow DeepSeek's current line-up, `deepseek-flash` and `deepseek-v4-pro`, and declare the same off-peak schedule as the direct DeepSeek group, so their cards and cost records use half price outside Beijing weekday 9:00–12:00 and 14:00–18:00.
+
 ### Preset models
 
 The preset catalog includes, among others:
 
-- `deepseek-flash` / `deepseek-v4-pro` / `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp`
+- `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3`
 - `gemini-3.8-flash`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
@@ -434,9 +449,10 @@ The preset catalog includes, among others:
 
 The list is not exhaustive.
 
-- **DeepSeek images.** `deepseek-flash` and `deepseek-v4-flash-vision-exp` read images; `deepseek-v4-flash` and `deepseek-v4-pro` are text-only. Since 2026-09-10 the two legacy Flash ids are retired names that DeepSeek serves from V4.1 Flash at the Flash price. That changes what they cost, not what V4 Flash reads: to send an image, use `deepseek-flash`.
+- **DeepSeek images.** `deepseek-flash` is V4.1 Flash and reads images; `deepseek-v4-pro` is the V4 Pro 0813 release and is text-only. To send an image, use `deepseek-flash`.
+- **Retired rows.** DeepSeek still accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, and serves both from V4.1 Flash. They are no longer presets, but the catalog keeps them, together with TokenDance's `deepseek-v4-flash-vision-exp`, as retired rows: a Project that still carries one keeps its display name, and **Sync presets** keeps its price current. A retired row is never added to a Project that does not have it, and a new Project never gets one.
 - **OpenAI twice.** The whole OpenAI line-up is listed twice: directly (your own OpenAI key, list prices) and on OpenRouter as `openai/<id>` (the gateway's rates, which follow its running promotions).
-- **GLM-5.3 Flash three times.** `glm-5.3-flash` appears three times, and all three rows accept images. AgentHub's GLM client forwards image parts for this one GLM id; every other GLM id refuses them. The OpenRouter row `z-ai/glm-5.3-flash` and the TokenDance row go through the generic OpenAI-compatible client, which carries images for any id. The three rows differ in price: each records what its own seller charges, so they disagree while a promotion runs.
+- **GLM-5.3 Flash five times.** It appears directly as `glm-5.3-flash`, under the same id on TokenDance, and as OpenRouter's `z-ai/glm-5.3-flash`, Fireworks AI's `accounts/fireworks/models/glm-5p3-flash` and Qwen pay-as-you-go's `ZHIPU/GLM-5.3-Flash`. Every row accepts images: AgentHub's GLM client forwards image parts for this one GLM id, every other GLM id refuses them, and the gateway rows go through the generic OpenAI-compatible clients, which carry images for any id. What the rows do not share is the price: each records what its own seller charges, so they disagree while a promotion runs.
 - **OpenRouter free tier.** The catalog carries the `:free` model variant `nvidia/nemotron-3-ultra-550b-a55b:free` and the `openrouter/free` unified Free Models Router. They cost nothing, but OpenRouter's free-tier rate limits and data policy apply.
 
 ### Prices and promotions
@@ -444,15 +460,16 @@ The list is not exhaustive.
 - **Three price buckets.** Each model records `cache_read`, `cache_write` and `output` prices in USD per million Tokens. The cost center bills usage against them.
 - **Base tier only.** Where a vendor's prices step up with input size, the catalog records the base tier. MiniMax M3 records MiniMax's standard pay-as-you-go tier at 512K input tokens or below; above that, every rate doubles, and the priority tier is 1.5x, so long-context and priority usage is underestimated. OpenAI (above 272K) and Gemini 3.1 Pro (above 200K) follow the same convention.
 - **DeepSeek off-peak.** The direct DeepSeek rows record the official peak prices and declare DeepSeek's off-peak schedule: outside Beijing time 9:00–12:00 and 14:00–18:00 on weekdays, every bucket is halved. The **Models** page shows a `50% off` tag during those hours, and the cost center bills at that rate.
-  - Three resold rows follow the same schedule because their sellers pass DeepSeek's windows through: TokenDance's `deepseek-v4.1-flash` and `deepseek-v4-flash-vision-exp`, and OpenRouter's `deepseek/deepseek-v4.1-flash`.
+  - Four resold rows follow the same schedule because their sellers pass DeepSeek's windows through: TokenDance's `deepseek-v4.1-flash`, OpenRouter's `deepseek/deepseek-v4.1-flash`, and Penguin Go's `deepseek-flash` and `deepseek-v4-pro`.
+  - Qwen bills the DeepSeek models it resells on a schedule of its own, half price from 22:00 to 8:00 Beijing time every day. `deepseek-v4.1-flash` in both Qwen groups, and the Token Plan's `deepseek-v4-pro-0813`, declare that one instead, and the tag's tooltip names the windows of whichever schedule the row follows.
   - The stored price is always the peak price, so what is on disk does not depend on the hour a Project was created or synced.
 - **Flat promotions.** Nine TokenDance models are discounted today:
-  - `deepseek-v4-flash-0731`, `deepseek-v4-pro-0813` and `kimi-k3` at 20% off
-  - `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
+  - `kimi-k3` at 40% off
+  - `deepseek-v4-flash-0731`, `deepseek-v4-pro-0813`, `glm-5.3`, `glm-5.3-flash` and `qwen3.8-max` at 10%
   - the three Doubao Seed rows (`seed-2.1-pro`, `seed-2.1-turbo`, `seed-evolving`) at 50%
 
-  Gemini 3.8 Flash, 3.7 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.7-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. A Project is preset with the **discounted** price, so the cost center charges what the seller charges, and the model card shows the rate as a tag.
-- **Your own prices.** A price you edit yourself removes the discount tag from the card: the figure is then yours, not the seller's.
+  Gemini 3.8 Flash, 3.7 Flash and 3.6 Flash are also 50% off, both in the google group and on OpenRouter (`google/gemini-3.8-flash`, `google/gemini-3.7-flash`, `google/gemini-3.6-flash`), because Google halves them through 2026-12-31. A Project is preset with the **list** price: the server keeps the promotion beside it, in its own database rather than in `.project_config.toml`, and takes it off when usage is priced, so the cost center charges what the seller charges. The model card shows the rate being billed right now as a tag, and the model dialog says **These are list prices. A running promotion takes N% off them; changing a price cancels it**.
+- **Your own prices.** Editing a row's price cancels its promotion and takes the discount tag off the card: the figure is then yours, not the seller's.
 
 ## The per-Project model table
 

@@ -17,6 +17,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 | `PENGUIN_WEB_DB` | 服务器 SQLite 数据库路径 | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | 前端静态资源目录 | 服务器包自带的 `web-dist`（源码检出中为 `packages/web/dist`） |
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的源，例如 `https://preview.example.com` | 未设置：每次请求推导对应的回环地址 |
+| `PENGUIN_GO_ORIGIN` | 服务端发起 Penguin Go Key 授权时调用的可信源 | `https://token.penguin.ooo` |
 | `PENGUIN_TRUST_PROXY` | 设为 `1` 时信任 `x-forwarded-proto` 请求头 | 未设置：忽略请求头 |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 预置内置管理员的固定初始密码（自动化测试 / e2e） | 未设置：生成随机密码 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
@@ -29,7 +30,8 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 
 - `PENGUIN_TRUST_PROXY`：只在反向代理终结 TLS、并由代理自己设置或清除这个请求头时启用。启用后，会话 Cookie 会带上 `Secure` 标记，热更新的网络检查也能识别出 HTTPS。
 - `PENGUIN_SEED_ADMIN_PASSWORD`：不设置时，预置管理员时会生成一个随机密码，哈希后立即丢弃，没有人见过；账号通过首次登录链接认领。
-- `PENGUIN_UPDATE_CHECK`：除模型请求外，版本检查是服务器唯一的对外请求。
+- `PENGUIN_GO_ORIGIN`：它是服务端配置，不接受浏览器指定的端点。取值必须是不带路径的 HTTPS 源；只有 `localhost`、`127.0.0.1` 和 `[::1]` 这类集成环境可以用明文 HTTP。带路径、凭据、查询参数或 fragment 的取值会在启动时被拒绝。见[授权获取新 API key](/models#授权获取新-api-key)。
+- `PENGUIN_UPDATE_CHECK`：设为 `off` 只关闭自动的版本检查，不影响其他对外请求：模型请求、已启用的远程控制连接、Key 授权和代理测试照常联网。
 - `PENGUIN_NO_LOGIN_SHELL_ENV`：不设置时，导入只填补启动过程没有设置的变量。见[桌面应用快速开始](/quickstart-desktop)。
 - `PENGUIN_CLI_ENTRY`：服务器从源码检出启动时，会回退到检出目录中的 `packages/cli/dist/penguin.js`。
 
@@ -69,12 +71,13 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
 | openai、openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
+openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 
@@ -102,7 +105,7 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 | `vision` | 布尔 | `true` | 模型是否接受图像输入 |
 | `max_tokens` | 数字 | Agent 的 `model.max_tokens` | 单个模型的最大输出 Token；设置后覆盖 Agent 的 `model.max_tokens` |
 | `fast_mode` | 布尔 | 关闭 | 单个模型的快速模式（供应商收取溢价的快速服务档位） |
-| `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`） |
+| `pricing` | 表 | — | 三档价格 `cache_read` / `cache_write` / `output`，以美元每百万 Token 计价（`unit = "usd_per_mtok"`）。这里记的始终是牌价 |
 | `api_key` | 字符串 | 供应商的环境变量 | 内联凭证 |
 | `base_url` | 字符串 | 部分模型目录条目有预设 | 自定义 base URL |
 | `created_at` | 字符串 | — | `api_key` 的写入时间（ISO 8601）；由界面层维护的展示字段 |
@@ -111,6 +114,7 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 
 - `client_type`：自定义端点使用通用协议客户端：`openai-responses`、`ant-messages` 或 `openai-chat`。Web 对话框能根据 base URL 识别用的是哪一种。0.4.2 之前的写法 `openai` 是 `openai-chat` 的废弃别名，读取时会规范化。
 - `fast_mode`：只持久化 `true`。只有 AgentHub 客户端能支持快速模式的模型才会提供这个选项，其他模型会拒绝携带它的请求。见[模型](/models#快速模式)。
+- `pricing`：这里记的是牌价。正在进行的促销不写入这个文件：服务端把它保存在 `web.db` 里，计算成本时再从牌价中扣除。见[价格与促销](/models#价格与促销)。
 - `base_url`：内置模型目录为网关以及固定客户端的直连条目预设了这个字段，即 MiniMax M3 和 DeepSeek 的 `deepseek-flash`。
 - `api_key`：为空时，AgentHub 回退到供应商的环境变量。
 
@@ -387,7 +391,7 @@ compaction:
 
 **App Data Dir。** `{{PROJECT_DIR}}` 会以 **App Data Dir** 的名义展示给模型：这是 PenguinHarness 的应用数据根目录，存放所有 Agent 的数据文件（`agents/<agent_id>/…`）和 Project 级数据。刻意不把它描述成 Project 或 Task 目录，避免模型误以为它是任务的工作目录（`CWD`）。
 
-**Windows 路径。** 在 Windows 上，`{{PROJECT_DIR}}` 和 `{{CWD}}` 一律以正斜杠注入；core 为模型拼出的其他路径也是如此（附件行、目标模式的 goal 文件行、截断输出的恢复路径）。模型会把这种写法照搬进 JSON 工具参数和 shell 命令。Node 的 fs API 和包内工具所用的 (Git) Bash 都接受正斜杠，还能避开 JSON 反斜杠转义错误。
+**Windows 路径。** 在 Windows 上，`{{PROJECT_DIR}}` 和 `{{CWD}}` 一律以正斜杠注入；core 为模型拼出的其他路径也是如此（附件行、目标模式的 goal 文件行、截断输出的恢复路径）。模型会把这种写法照搬进 JSON 工具参数和 shell 命令。Node 的 fs API 和包内工具所用的 Git Bash 都接受正斜杠，还能避开 JSON 反斜杠转义错误。
 
 **AGENTS.md。** `agent_state/AGENTS.md` 是开发者可编辑的指令文件，通过 `{{AGENTS_MD}}` 注入，默认为空。它也是优化器编辑最多的文件；参见[自我进化](/self-improvement)。与 Agent State 的其余内容（包括 `system_config.yaml`）一样，它在每次模型上下文开启时读取：创建 Session 时读一次，压缩开启下一个上下文时再读一次。因此，修改会在运行中 Session 的下一次压缩时生效，而不只对新建 Session 生效，且绝不会影响正在运行的上下文。`compaction` 一节是例外；见[上下文压缩](/agent-loop)。
 

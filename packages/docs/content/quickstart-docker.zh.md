@@ -158,7 +158,7 @@ USER penguin
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 固定初始管理员密码，仅在首次启动时生效，见[提前设置密码](#提前设置密码) |
 | `PENGUIN_TRUST_PROXY` | 放在终结 TLS 的反向代理之后时设为 `1`，会话 Cookie 才会带上 `Secure` 标记 |
 | `PENGUIN_PREVIEW_ORIGIN` | 路由到同一容器的第二个主机名，用于 Workspace 中的 HTML 预览 |
-| `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭新版本检查，这是服务端唯一一个不属于模型请求的出站请求 |
+| `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭自动的版本检查。模型请求、远程控制连接、Key 授权和代理测试照常出站 |
 
 ### 在反向代理后运行
 
@@ -177,7 +177,7 @@ docker compose pull && docker compose up -d
 ```
 
 > [!WARNING]
-> 不要在容器内更新。Web App 的更新弹窗会提示当前安装无法自行更新，因为服务端没有可以再次运行、用来交接更新的 CLI 入口；重启入口也会提示没有进程托管服务端。在容器里运行 `penguin update`，新版本会装进下次重建时就会丢弃的文件系统，而且无论如何都会失败：运行时镜像没有编译器，`node-pty` 也没有可以退而使用的 Linux 预编译版本。
+> 不要在容器内更新。更新弹窗会提示当前安装无法自行更新，而 `penguin update` 在容器里装下的任何东西，都会在下次重建容器时丢失。
 
 服务端会平稳停止：收到 `SIGTERM` 后，它先中断正在运行的 Task，等它们收尾，再关闭数据库。空闲时不到一秒就能停下，繁忙时可能要几秒，所以 compose 示例调大了 Docker 默认 10 秒的宽限期。
 

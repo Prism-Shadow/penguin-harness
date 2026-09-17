@@ -14,7 +14,8 @@
  * copy the Session id, and bind the desk to a messaging bot. A desk's title and its lifecycle are
  * the organization's — the employee names it, hiring and firing open and close it — so
  * rename, archive, delete and pin are not offered here. The binding's own indicator is read
- * from the session list store: the organization's sessions route does not carry it.
+ * from the organization's sessions route, which marks a desk the way the Session's own row is
+ * marked; the session list store never holds a desk, so it cannot say.
  *
  * The group reads the company store's caches (the organization's chart and its sessions
  * route), so opening it costs no request; the session the shell is on is marked in place. The
@@ -22,9 +23,8 @@
  * caches are only re-read on an organization event, and a run ending publishes none
  * (org-sessions.ts).
  */
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
-import type { MessagingChannel } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
@@ -32,7 +32,7 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
-import { useLiveSessionStatuses, useSessions } from "../../state/sessions";
+import { useLiveSessionStatuses } from "../../state/sessions";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { useRowContextMenu } from "../../components/ui/context-menu";
@@ -126,7 +126,6 @@ function DeskRow({
   row,
   active,
   opening,
-  messagingChannel,
   onOpen,
   onMessaging,
 }: {
@@ -134,13 +133,13 @@ function DeskRow({
   active: boolean;
   /** This row's desk is being created right now (the click that creates it is in flight). */
   opening: boolean;
-  /** The enabled messaging binding of this desk's Session, from the session list store. */
-  messagingChannel: MessagingChannel | undefined;
   onOpen: () => void;
   onMessaging: (sessionId: string) => void;
 }) {
   const ctx = useRowContextMenu();
   const sessionId = row.sessionId;
+  /** The enabled messaging binding of this desk's Session, as the organization's sessions route marks it. */
+  const messagingChannel = row.messagingChannel;
   const activity = orgRowActivity(row.status);
   const deskName = S.company.sessionList.deskOf(row.name);
   const label =
@@ -273,16 +272,6 @@ export function OrgSessionGroups({
   /** The desk whose messaging binding is open in the dialog; null when none is. */
   const [messagingSessionId, setMessagingSessionId] = useState<string | null>(null);
   const live = useLiveSessionStatuses();
-  const { sessions, replace } = useSessions();
-  // Which desks relay to a bot. The organization's sessions route has no such field, so the
-  // session list store is the only source — a desk it has not loaded simply shows no mark.
-  const messaging = useMemo(() => {
-    const map = new Map<string, MessagingChannel>();
-    for (const s of sessions) {
-      if (s.messagingChannel !== undefined) map.set(s.sessionId, s.messagingChannel);
-    }
-    return map;
-  }, [sessions]);
   const orgSessions = company.orgSessions.get(orgKey(projectId, orgId));
   const desks = deskRows(company.orgChart, orgSessions, live);
   const { openDesk, opening } = useOpenDesk(projectId, orgId, onNavigate);
@@ -318,7 +307,6 @@ export function OrgSessionGroups({
                 row={d}
                 active={d.sessionId !== null && d.sessionId === activeSessionId}
                 opening={opening === d.agentId}
-                messagingChannel={d.sessionId === null ? undefined : messaging.get(d.sessionId)}
                 onOpen={() => void openDesk(d.agentId, d.sessionId)}
                 onMessaging={setMessagingSessionId}
               />
@@ -327,7 +315,8 @@ export function OrgSessionGroups({
         )}
       </FolderSection>
       {/* Messaging binding dialog (the row menu's "Messaging binding…"): the row's indicator
-          follows the dialog's own save/unbind outcome through the session list store. */}
+          follows the dialog's own enable/disable outcome, written into the company store's
+          copy of the sessions route. */}
       {messagingSessionId !== null && (
         <MessagingBindingModal
           sessionId={messagingSessionId}
@@ -338,14 +327,7 @@ export function OrgSessionGroups({
           // not happen — but when it does, the cache is what is stale: re-read it, and the
           // editor's own toast has already said why the dialog closed.
           onLoadFailed={() => void company.reloadOrgSessions()}
-          onChanged={(sessionId, channel) => {
-            const current = sessions.find((x) => x.sessionId === sessionId);
-            if (!current) return;
-            const updated = { ...current };
-            if (channel !== null) updated.messagingChannel = channel;
-            else delete updated.messagingChannel;
-            replace(updated);
-          }}
+          onChanged={company.setDeskMessagingChannel}
         />
       )}
     </div>

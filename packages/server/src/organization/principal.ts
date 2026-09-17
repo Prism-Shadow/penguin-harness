@@ -54,13 +54,3 @@ export function principalUserId(raw: string): string | null {
   const p = parsePrincipal(raw);
   return p?.kind === "user" ? p.id : null;
 }
-
-/** Splits a `Notify`-style list: comma separated, blanks dropped, order kept, duplicates removed. */
-export function splitPrincipalList(raw: string): string[] {
-  const out: string[] = [];
-  for (const part of raw.split(",")) {
-    const v = part.trim();
-    if (v !== "" && !out.includes(v)) out.push(v);
-  }
-  return out;
-}

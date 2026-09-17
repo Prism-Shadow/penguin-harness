@@ -96,6 +96,8 @@ export abstract class Memory extends Interface<{
 /** Benchmarks: the mechanism BenchmarkService implements. */
 export abstract class Benchmarks extends Interface<{
   list(projectId: string): Promise<BenchmarksResponse>;
+  /** Every id `create` refuses as taken, as names only, including a folder that does not list. */
+  takenIds(projectId: string): Promise<string[]>;
   create(projectId: string, input: BenchmarkCreateInput): Promise<BenchmarkSummary>;
   remove(projectId: string, benchmarkId: string): Promise<void>;
   listCases(projectId: string, benchmarkId: string): Promise<BenchmarkCasesResponse>;
@@ -119,6 +121,8 @@ export abstract class Benchmarks extends Interface<{
 /** AgentLifecycle: the mechanism AgentService implements. */
 export abstract class AgentLifecycle extends Interface<{
   listAgents(projectId: string): Promise<AgentListItem[]>;
+  /** Every id `createAgent` refuses as taken, as names only, including a folder that does not list. */
+  takenAgentIds(projectId: string): Promise<string[]>;
   deleteAgent(projectId: string, agentId: string): Promise<void>;
   createAgent(
     projectId: string,

@@ -158,7 +158,7 @@ These are the variables a container deployment touches. The full list is in the 
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Pins the initial admin password, on the first boot only. See [Set the password in advance](#set-the-password-in-advance) |
 | `PENGUIN_TRUST_PROXY` | Set to `1` behind a reverse proxy that terminates TLS, so session cookies are marked `Secure` |
 | `PENGUIN_PREVIEW_ORIGIN` | A second hostname routed to the same container, for Workspace HTML previews |
-| `PENGUIN_UPDATE_CHECK` | `off` disables the release check, the server's only outbound request that is not a model request |
+| `PENGUIN_UPDATE_CHECK` | `off` turns off the automatic release check. Model requests, remote-control connections, key authorization and the proxy test still go out |
 
 ### Run behind a reverse proxy
 
@@ -177,7 +177,7 @@ docker compose pull && docker compose up -d
 ```
 
 > [!WARNING]
-> Do not update from inside the container. The Web App's update dialog reports that this install cannot update itself, because the server has no re-runnable CLI entry to hand an update to, and its restart control reports that nothing supervises the server. Running `penguin update` in the container would install into a filesystem the next recreate throws away, and it fails anyway: the runtime image has no compiler, and `node-pty` has no Linux prebuild to fall back on.
+> Do not update from inside the container. The update dialog reports that this install cannot update itself, and anything `penguin update` installs there is lost when the container is recreated.
 
 Stopping is graceful. On `SIGTERM` the server interrupts running Tasks, waits for them to wrap up, then closes the database. An idle server stops in well under a second, and a busy one can take several seconds, which is why the compose example raises Docker's 10-second grace period.
 

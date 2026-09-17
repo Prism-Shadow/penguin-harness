@@ -249,11 +249,13 @@ Returns the identity of the running build plus this root's pushed harness: `{ver
 
 Compares the newest GitHub release with the running version: `{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`. `?force=1`, which the manual **Check for updates** action sends, bypasses the TTL cache, and the result is cached as usual.
 
-This is the server's only outbound internet call, and it fails softly:
+The lookup fails softly:
 
 - A failed lookup still returns 200, with `error` set (`network`, `rate_limited` or `bad_response`) and `latestVersion: null`.
 - Results are cached in memory: for 1 h after a success and 10 min after a failure.
 - `PENGUIN_UPDATE_CHECK=off` disables the lookup entirely: the response carries `disabled: true`, and no network call is made.
+
+That switch turns off this check and nothing else. Model requests, an enabled remote-control connection, owner-initiated provider key authorization and the proxy test go out whatever it is set to.
 
 ### GET /api/version/update
 
@@ -293,6 +295,7 @@ Projects, their members, and the Project-wide settings stored in `.project_confi
 | DELETE | `/api/projects/:projectId/members/:userId` | Removes a member |
 | GET / PUT | `/api/projects/:projectId/chat-defaults` | Reads / replaces the defaults a new chat starts with |
 | GET / PUT | `/api/projects/:projectId/command-policy` | Reads / replaces the sandbox command policy |
+| POST | `/api/projects/:projectId/suggest-id` | Proposes a semantic id for the display name of an object being created |
 
 - `PATCH /api/projects/:projectId` is owner only and changes only the display name (1–100 characters). The Project id names its directory and never changes.
 - `DELETE /api/projects/:projectId` is owner only. `default_project` is shared with the CLI and cannot be deleted: `409` `cannot_delete_default_project`.
@@ -300,14 +303,25 @@ Projects, their members, and the Project-wide settings stored in `.project_confi
 - `chat-defaults` is the `[default_chat]` block: `{agentId?, workspace?, approvalMode?, thinkingLevel?}`. Any member can read it, and only the owner can replace it. A PUT replaces the whole block: an omitted key clears that default, and an empty body removes the block. `agentId` must name an existing agent of the Project (otherwise `400` `unknown_agent`). `workspace` is a prefill and is not checked until a Session is created; an empty value means a temporary Workspace. `thinkingLevel` is the fallback for agents whose config sets none, and `none` is not accepted. The default model is not part of this block; it stays with the model routes.
 - `command-policy` is the `[command_policy]` block: `{enabled?, rules: [{name, pattern, description?, enabled?}]}`. Any member can read it, and only the owner can replace it. A PUT always carries the full rule list (an empty array means no rules), with at most 64 rules. Each rule needs a name of up to 64 characters and a pattern of up to 512 characters that compiles as a regular expression, and a description may have up to 300 characters. A pattern that does not compile returns `400` `invalid_rule_pattern`, any other malformed rule returns `400` `invalid_rules`, and a non-boolean `enabled` returns `400` `invalid_enabled`. See [Command policy](/configuration#command-policy).
 
+### Semantic id proposals
+
+`POST /api/projects/:projectId/suggest-id` takes `{name, kind, taken?}` and returns `{id, source, reason?}`. `kind` is `project`, `agent`, `benchmark`, `org` or `channel`, and `taken` names the ids the proposal must avoid. It is the one route behind every **Generate with AI** button beside an id field.
+
+- The default model of the Project in the path translates the name into one English id in the kind's spelling (`source: model`); the **New Project** dialog borrows the Project it was opened from. An answer that yields no id has the model asked once more, with the format spelled out.
+- An ASCII slug of the name answers when no model is configured or neither answer is usable (`source: fallback`).
+- A name neither path can name gets a dated placeholder (`source: placeholder`) with a `reason` of `no_default_model`, `model_failed`, `unusable_answer` or `no_ascii`: `project_<yyyymmdd>`, `agent_<yyyymmdd>`, `benchmark-<yyyymmdd>`, `co_org_<yyyymmdd>` or `ch_channel_<yyyymmdd>`, with the username in front for a non-admin's Project.
+- The kinds differ only in the id's shape, the ids the server avoids on its own, and who may ask. `project` is snake_case for an admin and `<username>-<suffix>` for everyone else, and avoids every Project id on the server; `agent` is snake_case and avoids the Project's agents; `benchmark` is kebab-case, avoids the Project's Benchmarks and is owner only; `org` and `channel` carry the `co_` and `ch_` prefix, never doubled when the answer already has it, and return `404` `company_mode_off` while company mode is off. Every other caller must be a member of the Project.
+- The ids the server avoids on its own are the names the kind's create route would refuse as taken, a leftover folder no list shows included. They never reach the prompt; a collision only adds a `_2` / `-2` suffix. A core the kind's rule rejects for starting with a digit or being one character long is retried behind the kind's noun (`3D Viewer` → `agent_3d_viewer`).
+- The route never fails for a name it cannot translate, so a dialog that asked for an id always gets one. Every model dead end is recorded as an `id_suggest_failed` error, under the source `organization` for `org` and `channel` and `id_suggest` for the rest. The completion runs with thinking off and within the shared meta budget, belongs to no Session and is not metered.
+
 ## Models
 
 Manage a Project's model table and probe model endpoints. Reading the table is open to any member; every other route here is owner only.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/models` | Lists models (`api_key` masked) |
-| PUT | `/api/projects/:projectId/models` | Replaces the whole table, keyed by `(provider, modelId)` |
+| GET | `/api/projects/:projectId/models` | Lists models (`api_key` masked); a row with a running promotion carries it as `discount` |
+| PUT | `/api/projects/:projectId/models` | Replaces the whole table, keyed by `(provider, modelId)`; an entry's `discount` stores or clears its promotion |
 | PUT | `/api/projects/:projectId/models/default` | Sets the default model: `{provider, modelId}` → `{defaultModel}` |
 | POST | `/api/projects/:projectId/models/test` | Tests connectivity: `{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | `/api/projects/:projectId/models/detect` | Detects the protocol a custom base URL speaks |
@@ -315,6 +329,8 @@ Manage a Project's model table and probe model endpoints. Reading the table is o
 | POST | `/api/projects/:projectId/models/detect-vision` | Probes whether a model accepts images |
 
 Every route that names a model takes the complete `(provider, modelId)` pair. Nothing is inferred: a request that carries only half the pair is a 400, never a lookup. Where the model reference itself is optional (Session creation, schedules), omitting both halves selects the Project's default model.
+
+A row's `pricing` is always the list price. A promotion, a fraction above 0 and below 1 taken off that price, is never written to `.project_config.toml`: the server keeps it per row in `web.db` and applies it when it prices usage. On `PUT /models`, an entry's `discount` decides it outright — a number stores the promotion, `null` clears it, and any other value is a `400` before anything is written. An entry that omits `discount` keeps the stored promotion, unless it renames the row (`renamedFrom` naming another pair) or its `pricing` differs from the stored one, in which case the promotion is cleared. A row left out of the new table takes its promotion with it.
 
 - `PUT /models` also invalidates the Project's cached Session runtimes, with the same effective-value semantics as a vault update. A run already in progress is not switched over, but the next Task on any Session of the Project reloads its runtime and reads the new `api_key` / `base_url`. The route also publishes a `credentials_updated` event to the Project's open Session channels (see [Streaming (SSE)](#streaming-sse)). The models response carries `updatedAt`, the config file's modification time, which the Web App compares with the last auth failure to decide whether a composer disabled by that failure stays disabled.
 - `PUT /models/default` changes only the default model, without resending the table or its credentials. The pair must name a configured entry, otherwise the route returns 400. Existing Sessions keep the model they were created with, so the route neither invalidates runtimes nor publishes `credentials_updated`.
@@ -340,6 +356,22 @@ The server generates the PKCE verifier, keeps it in memory for ten minutes and n
 What the callback may do is limited a second time: it stores the code on the flow and nothing else. The exchange with the provider and the write into the Project's models both happen on `GET /:flowId`, the owner's own poll, behind the session gate. No key reaches a Project unless its owner asks for the flow's status, and a failed exchange is reported there as `{status: error, error}` rather than on the redirect page. Nothing next to the callback is exempt either: a longer path, any other method (`HEAD` on the exact path answers 405), and the three sibling routes all still require a session.
 
 `mode: manual` sends no callback URL, so the authorization page shows a one-time code for the user to paste back, for deployments the redirect cannot reach. Whichever route redeems the code, a completed flow invalidates cached runtimes and publishes `credentials_updated`, exactly as `PUT /models` does.
+
+### Penguin Go key authorization
+
+Penguin Go delivers its key through a device authorization the server polls, not through a redirect, so it has routes of its own. All of them are owner only. The browser is handed a local flow id and an authorization URL, and never the device secret, the delivered key or anything else the platform returns.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/projects/:projectId/platform-auth/start` | Opens a one-time flow, with the platform's deadline capped locally at ten minutes: → 201 `{flowId, authorizeUrl, expiresAt}` |
+| POST | `/api/projects/:projectId/platform-auth/sync` | Fetches the platform catalog with the stored key, adds the models the Project lacks and refreshes platform-owned fields: → the model table plus `added` and `updated` counts |
+| GET | `/api/projects/:projectId/platform-auth/:flowId/status` | Polls Penguin Go from the server, then writes the delivered key across the group and adds the platform's models: `{status: pending\|applying\|completed\|cancelled\|apply_failed\|error, error?, applied?}` |
+| POST | `/api/projects/:projectId/platform-auth/:flowId/retry` | Retries the local write after it failed; the single-use delivery is not requested again, and a flow in any other state answers `409 platform_auth_not_retryable` |
+| POST | `/api/projects/:projectId/platform-auth/:flowId/cancel` | Cancels the local flow; the platform's pending record expires on its own TTL |
+
+The server validates the delivered key, the endpoints and the catalog before it writes anything. It then writes the key to every existing `penguin-go` entry, creates the models the platform advertises and the Project does not have, refreshes the list price and client protocol of the ones it does, and replaces the group's stored promotions with the platform's. Endpoints and other Project-owned fields are preserved, nothing is deleted, and a non-empty catalog creates the group when it is missing. A completed write invalidates cached runtimes and publishes `credentials_updated`, exactly as `PUT /models` does.
+
+A flow id that names no live flow is `404 platform_auth_flow_not_found`. `sync` answers `409 platform_reauthorization_required` when there is no stored key or the platform rejects it, and `502 platform_sync_failed` when the platform refuses the catalog or returns one that does not parse; the platform being unreachable is `502 platform_unreachable`. A delivery the server could not write locally leaves the flow in `apply_failed`, which is what the retry route is for.
 
 ## Agents
 
@@ -460,7 +492,6 @@ All paths below are under `/api/projects/:projectId/organizations`. While the se
 | Method | Path | Description |
 | --- | --- | --- |
 | GET / POST | `/` | Lists organizations / creates one |
-| POST | `/suggest-id` | Proposes a semantic id for a display name |
 | GET / PATCH | `/:orgId` | The organization's overview / changes its settings |
 | GET | `/:orgId/chart` | The employee tree, with each employee's live state, desk and spend for the period |
 | POST | `/:orgId/employees` | Hires an employee: an existing agent or a new one |
@@ -468,7 +499,7 @@ All paths below are under `/api/projects/:projectId/organizations`. While the se
 | GET / POST | `/:orgId/employees/:agentId/desk` | The desk session, opened when missing / a renewed desk session |
 | GET / PUT | `/:orgId/handbook` | The handbook index (`handbook/README.md`) |
 | GET | `/:orgId/handbook/files` | The knowledge-base files, the index first |
-| GET / PUT / DELETE | `/:orgId/handbook/files/\<path\>` | One document by relative path; the index cannot be deleted |
+| GET / PUT / DELETE | `/:orgId/handbook/files/<path>` | One document by relative path; the index cannot be deleted |
 | GET / POST | `/:orgId/calendar` | Every employee's events with their run state / creates an event |
 | GET / PUT / DELETE | `/:orgId/calendar/:agentId/:name` | One event |
 | GET / POST | `/:orgId/tickets` | The board by column, plus files that could not be parsed / creates a ticket |
@@ -486,7 +517,7 @@ All paths below are under `/api/projects/:projectId/organizations`. While the se
 | GET / POST | `/:orgId/channels/:channelId/messages` | A day's messages with the caller's unread and mention counts / sends a message |
 | POST | `/:orgId/channels/:channelId/read` | `{upTo}`: the caller's read cursor in this channel |
 | GET | `/:orgId/finance` | Spend per employee (own and cumulative along the reporting line) and per ticket (rolled up along `Parent`), the daily trend and alerts; `?period=yyyy-mm` |
-| GET | `/:orgId/sessions` | The organization's desk sessions, and its ticket sessions grouped by ticket |
+| GET | `/:orgId/sessions` | The organization's desk sessions, and its ticket sessions grouped by ticket. A desk whose Session has an enabled messaging binding carries its `messagingChannel`, as the Session's own row does |
 
 ### Caller identity
 
@@ -500,13 +531,7 @@ Write bodies may carry `agentId` and `sessionId`, the calling employee and the c
 - `GET /:orgId` returns the overview: settings, board counts, today's calendar, pending items, the all-hands channel's recent messages, `inbox` and alerts. The settings always carry the effective `language`, read from the mission when the file has none.
 - `PATCH /:orgId` changes the name, mission, `status` (`active` / `paused`; pausing stops every automatic trigger), `approvalMode`, `timezone`, `language` and thresholds.
 
-`POST /suggest-id` takes `{name, kind}`, where `kind` is `org` or `channel`, plus `taken?`, the ids the proposal must avoid, and returns `{id, source, reason?}`:
-
-- The Project's default model translates the name into one snake_case English core (`source: model`). If the first answer yields no id, the model is asked once more with the format spelled out.
-- If no model is configured, or neither answer is usable, an ASCII slug of the name is used (`source: fallback`).
-- A name that neither path can turn into an id gets `co_org_<yyyymmdd>` / `ch_channel_<yyyymmdd>` (`source: placeholder`), with a `reason` of `no_default_model`, `model_failed`, `unusable_answer` or `no_ascii`.
-
-The route never fails because a name cannot be translated, so a dialog that asks for an id always gets one, and every dead end on the model side is recorded as an `organization` / `id_suggest_failed` error. The server then adds the prefix for the kind (`co_` for `org`, `ch_` for `channel`, never twice if the core already has it), caps the length and avoids `taken`. A proposed id therefore always carries the prefix, while a hand-typed id is used as typed. The completion runs with thinking off and within the shared meta budget, belongs to no Session, and is not metered.
+An organization's and a channel's id proposals come from the Project-level route, `POST /api/projects/:projectId/suggest-id` with `kind: org` or `kind: channel`; see [Semantic id proposals](#semantic-id-proposals).
 
 ### Employees
 
@@ -577,15 +602,16 @@ The paths below omit the `/api/projects/:projectId` prefix.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/agents/:agentId/sessions` | Lists the agent's Sessions with their run state, whichever client created them |
+| GET | `/agents/:agentId/sessions` | Lists the agent's Sessions with their run state, whichever client created them, unless `excludeOrg=1` asks for the user's own rows only |
 | POST | `/agents/:agentId/sessions` | Creates a Session: `{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201 `{session}` |
 | GET | `/dirs?path=` | Server-side directory browser behind the Workspace picker |
 | GET | `/dir-skills?path=` | The Skills a directory carries, for importing them into a new agent |
 
 - The Session list accepts optional query parameters. `limit` and `offset` page the list (`offset` requires `limit`). `category` (`active`, `subagent`, `schedule`, `benchmark` or `archived`) filters it before paging, and `workspaceGroup` filters it to one Workspace. `counts=1` adds `counts` (totals per category over the whole list), `workspaceCounts` (the same totals per Workspace path) and `workspaceLatest` (each Workspace's newest Session). Without paging parameters, the full list is returned.
+- `excludeOrg=1` leaves an organization's desk, ticket and subagent Sessions out of the page and out of the `counts=1` totals together, which is what development mode's list asks for. Any other value is a 400.
 - On creation, `modelId` and `provider` go together: send the complete pair to pick a model, or omit both to use the Project's default model. Sending only one is a 400.
 - An explicit `workspace` must be an existing directory; it is never created. When omitted, the Workspace is a temporary one created automatically. The approval mode defaults to `allow-all`.
-- `client` is a provenance hint stored on the row: `"cli"` from the CLI, `"web"` by default. It never filters a list. The server itself writes `"org"` on an organization's desk and ticket sessions, and a client cannot send that value.
+- `client` is a provenance hint stored on the row: `"cli"` from the CLI, `"web"` by default. The server itself writes `"org"` on an organization's desk and ticket sessions, and a client cannot send that value. Only `excludeOrg` reads it as a filter, and only to drop those rows.
 - `source` accepts only `"benchmark"`, for a Session created by a Benchmark evaluation or optimization. The server sets `subagent` and `schedule` itself.
 - `GET /dirs` starts at the home directory when `path` is omitted; an explicit `path` must be absolute. It answers `{path, parent, entries}` with the subdirectories only, and an unreadable directory lists as empty so the user can still go back up.
 - `GET /dir-skills` reads only `<path>/.agents/skills` and `<path>/.claude/skills` of an absolute `path`, and answers `{path, skills}`. A directory without Skills answers with an empty list. See `POST /agents` under [Agents](#agents).
@@ -947,7 +973,10 @@ After a run finishes, its reply is followed by the files the reply mentioned and
 
 - Images are sent as images and everything else as attachments, classified by the file actually read rather than by the name the reply wrote.
 - A run sends at most 5 files, at most 10MB per image and 30MB per file (the tighter of each channel's own limits).
-- A mentioned file that fails to arrive is never reported in the chat. Over a size cap, past the count cap, or an upload the channel refused is recorded in the Project's error records in the Cost Center, one record per reply. A name that matches no file in the Workspace and a file the run did not write are skipped silently and only logged, because a reply that names a file it read or merely described is the ordinary case.
+- A mentioned file that fails to arrive is never reported in the chat. It is filed under the Project as an error record instead, which the Cost Center's errors table shows: one record per reply for each cause, naming every file it covers, the channel and the reason.
+  - `messaging_file_too_large` covers the files over a cap, `messaging_files_skipped` those past the count cap. Both are `expected`.
+  - `messaging_file_send_failed` covers the uploads the channel refused, grouped by cause: uploads the channel can never carry (any file on QQ), a missing permission, and any other refusal. The permission record lists the scopes to grant and the console link once, in place of each file's own reason. Uploads the channel can never carry are `expected`; a missing permission and any other refusal are `unexpected`.
+  - A name that matches no file in the Workspace, and a file the run did not write, are skipped silently and only logged, because a reply that names a file it read or merely described is the ordinary case.
 
 ### Connection status
 

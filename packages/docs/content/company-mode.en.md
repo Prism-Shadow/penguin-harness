@@ -12,6 +12,7 @@ Development mode is one person talking to one agent. Company mode, the Web App's
 - To start a company, see [Create an organization](#create-an-organization).
 - To understand how a company works, see [What an organization is made of](#what-an-organization-is-made-of), [How work flows](#how-work-flows) and [Channels](#channels).
 - To know what is guaranteed and what is only guidance, see [Budgets](#budgets) and [What the server enforces](#what-the-server-enforces).
+- To run experiments and write papers, see [Research organizations](#research-organizations).
 - To build a company that mirrors a real one, see [Mirror organizations](#mirror-organizations).
 
 ## Turn on company mode
@@ -87,7 +88,7 @@ Each employee gets one standing desk session the moment it is hired. Calendar ev
 
 ### Tickets
 
-A ticket file has YAML frontmatter (`title`, `status`, `owner`, `notify`, `priority`, `due`, `blocked`, `sessions`, `history`), followed by four sections: `## Goal`, `## Acceptance criteria`, `## Progress` and `## Result`. The column directory the file is in is its status. The slug in the file name is lowercase English words joined by hyphens.
+A ticket file has YAML frontmatter (`title`, `status`, `owner`, `parent`, `notify`, `priority`, `due`, `blocked`, `blocked_by`, `sessions`, `history`), followed by four sections: `## Goal`, `## Acceptance criteria`, `## Progress` and `## Result`. The column directory the file is in is its status. The slug in the file name is lowercase English words joined by hyphens.
 
 ### The shared workspace
 
@@ -121,7 +122,11 @@ People and employees are named the same way everywhere: `user:<user_id>` and `ag
 
 4. **Closing a ticket notifies.** When a ticket reaches done or rejected, its `notify` list hears about it, and so does its owner if an employee owns it, each in its own next sweep. A ticket that was waiting on the closed one tells its owner that the blocker closed. **Ticket changes are never posted in a channel**: channels hold what people and employees say to each other, and a board narrating itself would bury the conversation. You see closed tickets on the board, and in the overview's **Inbox**, which lists the tickets closed this period.
 
-5. **People decide in the channels and on the board.** The Skills and the handbook tell the CEO not to take an important decision alone, such as a hiring plan, a budget, rejecting someone else's ticket, or anything that reaches outside the organization. It posts a proposal in the all-hands channel mentioning you, and waits for your answer before acting. Accepting, rejecting and reviewing tickets is yours or the CEO's, as the handbook says. These are instructions to the agents, not checks the server makes; see [What the server enforces](#what-the-server-enforces).
+5. **People decide in the channels and on the board.** The Skills and the handbook tell the CEO not to take an important decision alone, such as a hiring plan, a budget, rejecting someone else's ticket, or anything that reaches outside the organization. It posts a proposal in the all-hands channel mentioning you, and waits for your answer before acting. A hiring plan names roles and budgets only: every employee runs on the organization's model, or on the Project's default model when the organization names none, unless you asked for particular ones.
+
+   The same gate binds every employee before heavy or irreversible work: long compute, spending money, writing outside the shared workspace, deleting what it did not create, a process that outlives the run, or a credential it lacks. It asks you in the all-hands channel with what it wants to run, for how long, on what and how to stop it, blocks its ticket on you and ends its run. The overview lists that ticket as waiting on you, and only a clear yes starts the work.
+
+   Accepting, rejecting and reviewing tickets is yours or the CEO's, as the handbook says. These are instructions to the agents, not checks the server makes; see [What the server enforces](#what-the-server-enforces).
 
 ## Channels
 
@@ -133,7 +138,7 @@ Talk is partitioned like the Workspace. Every organization is created with one *
 - **Chain limit**: a message that reaches the organization's mention chain limit is recorded but delivers nothing, so two employees cannot mention each other back and forth forever. A person's message starts a fresh chain.
 - **Lifecycle**: any member can rename a channel or change its purpose. People archive and unarchive channels; an archived channel is read-only and folded away. The all-hands channel cannot be archived or left, and its membership cannot be edited: everyone is in it by definition, and the Web App always shows it as **All hands**.
 
-The `system` lines in a channel (hires and departures; a channel created, joined, left or archived; budget warnings and pauses; a ticket blocked, done or rejected) appear in the reader's language and with display names, both in the Web App and in `penguin org channel tail`. Message bodies render as Markdown in the Web App.
+The `system` lines in a channel (hires and departures; a channel created, joined, left or archived; budget warnings and pauses) appear in the reader's language and with display names, both in the Web App and in `penguin org channel tail`. Message bodies render as Markdown in the Web App.
 
 Unread counts and each person's read position are kept per channel. Keeping the channel membership of new hires and departing employees straight is HR's job.
 
@@ -175,6 +180,7 @@ The server enforces these rules:
 These are guidance only, followed by the agents but not checked by the server:
 
 - The CEO proposes and waits for the board's answer before it acts on its reading of the mission, a hiring plan, setting or raising a budget, rejecting someone else's ticket or closing a P0 or P1 ticket without review, anything that reaches outside the organization (publishing, accounts, mail, money), or a change to the handbook's rules or the organization's structure.
+- Every employee asks the board before heavy or irreversible work, blocks its ticket on the person it asked, and ends its run.
 - Who accepts, rejects and reviews tickets.
 - Escalating to a manager.
 - Writing in the organization's working language.
@@ -199,6 +205,20 @@ The mission *"Build a DeepSeek Harness plugin marketplace, promote it on social 
 7. Paid featured slots ship, and the CEO reports to the board in the all-hands channel, mentioning you.
 
 The server test `organization-scenario.test.ts` runs exactly this story on the runtime's seams.
+
+## Research organizations
+
+The first mission example, **Research Paper Lab**, is a company that runs experiments and writes papers:
+
+> *"Set up a company that does research for me and produces papers fit for top-tier conferences. Experiments run autoresearch-style: fix the evaluation script and the metric first, edit one file only, give every experiment the same time budget, log each result as one line and keep only the changes that improve the metric. Before any experiment loop starts, the researcher asks me in the channel for resources — the machine and its GPU/CPU, concurrency, total hours, disk and data, paid APIs — then runs unattended inside what I approved and asks again before exceeding it. Papers go through adversarial review between two kinds of employee: reviewers reproduce the results, check baselines and ablations, hunt for test-set leakage and metric gaming, and return a score with required changes; authors revise or rebut point by point until the reviewer accepts."*
+
+Such a mission keeps the CEO on the standard checklist and puts the researchers and the reviewers on the `company-research` Skill, which adds three rules to the employee protocol:
+
+- **The resource envelope comes first.** Before a ticket's first experiment, its owner asks you in the all-hands channel for the envelope: which machine and GPU or CPU, how many runs at once, total hours or experiments, disk and data, paid APIs or keys, together with the estimated load and the way to stop the loop. It then blocks the ticket on you and ends its run. Inside an approved envelope the loop runs unattended. Exceeding it, or needing something new such as a dataset, a key or a second GPU, is a new request; an employee asks for what it lacks instead of working around it.
+- **The loop is autoresearch's.** One evaluation harness and one metric, frozen before the loop and never edited during it. One editable surface, the same wall-clock budget for every experiment, and a branch per run. Each experiment is one line in `results.tsv` (commit, metric, memory, keep / discard / crash, a description), and the commit is kept only when the metric improves and reset otherwise. A run past twice its budget is killed and counted as a crash, and crashes are diagnosed from the log tail.
+- **Authors and reviewers are different employees.** The CEO hires at least one dedicated reviewer. A claim goes to `review` and the reviewer tries to break it: reproducing the key numbers from the kept commit, checking baselines and ablations, looking for test-set leakage and metric gaming, and weighing the claims against the evidence and the novelty against prior work. It writes a scored review with the changes it requires, and the author revises or rebuts point by point. The ticket travels between `in_progress` and `review` until the reviewer accepts, and a research ticket is never closed without that acceptance in its `history`. After three rounds without one, the reviewer blocks the ticket on the CEO, who decides or brings it to you.
+
+Like the rest of the protocol, this is Skill and handbook guidance rather than something the server checks.
 
 ## Mirror organizations
 

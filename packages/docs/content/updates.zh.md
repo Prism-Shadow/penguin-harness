@@ -109,4 +109,4 @@ docker compose pull && docker compose up -d
 
 ## 关闭更新检查
 
-设置 `PENGUIN_UPDATE_CHECK=off` 可以彻底关闭新版本检查。这是服务端唯一一个不属于模型请求的出站请求；关闭后，更新弹窗会显示**更新检查已关闭（PENGUIN_UPDATE_CHECK=off）**。见[配置参考](/configuration#环境变量)。
+设置 `PENGUIN_UPDATE_CHECK=off` 可以关闭自动的版本检查。它只关掉这一项：模型请求、已启用的远程控制连接、Key 授权和代理测试照常联网。关闭后，更新弹窗会显示**更新检查已关闭（PENGUIN_UPDATE_CHECK=off）**。见[配置参考](/configuration#环境变量)。

@@ -144,11 +144,11 @@ Any signed-in user can create a Project and becomes its owner.
 
 1. Open the Project switcher at the top of the sidebar.
 2. Select **New Project**.
-3. In **Project id**, enter an id.
-4. In **Display name**, enter an optional display name. If you leave it empty, the id is shown.
+3. In **Display name**, enter an optional display name. If you leave it empty, the id is shown.
+4. In **Project id**, enter an id, or select **Generate with AI** beside the field to derive one from the display name. The current Project's default model writes the proposal, since a Project is not inside a Project.
 5. Select **Create**. You are now the Project's owner.
 
-The id is 2–64 characters long. It starts with a lowercase letter and uses only lowercase letters, digits, and underscores. For a user other than the admin, it starts with the username and a hyphen.
+The id is 2–64 characters long. It starts with a lowercase letter and uses only lowercase letters, digits, and underscores. For a user other than the admin, it starts with the username and a hyphen, and only the part after that prefix is typed.
 
 > [!NOTE]
 > The Project id cannot be changed later.

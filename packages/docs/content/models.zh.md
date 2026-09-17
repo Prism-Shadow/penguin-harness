@@ -194,24 +194,31 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 ### 授权获取新 API key
 
-提供授权流程的供应商，会在分组标题栏上加上**自动获取密钥**。内置分组里只有 TokenDance 提供了这个流程。它会为你的账号创建一把**新** key，不会读取你已有的 key。新 key 会写入分组里的每个模型，替换它们现在使用的 key。
+支持自动授权取 key 的供应商，会在分组标题栏上加上**自动获取密钥**。内置分组里有两个提供了这个流程：TokenDance 和 Penguin Go。取得的 key 会写入分组里的每个模型，替换它们现在使用的 key。
 
-1. 在 TokenDance 分组的标题栏上，点击**自动获取密钥**。
+1. 在分组的标题栏上，点击**自动获取密钥**。
 2. 点击**打开授权页**。供应商的授权页会在新标签页中打开。
-3. 在授权页完成授权。供应商会把浏览器带回 PenguinHarness，由 PenguinHarness 用一次性授权码换取并保存 key。弹窗显示「等待在新标签页中完成授权…」，并自动报告结果。
+3. 在授权页完成授权。弹窗显示「等待在新标签页中完成授权…」，并自动报告结果。
 
-如果授权页跳不回来，比如浏览器无法访问重定向给出的服务器地址，点击**授权页跳不回来？改为手动填写授权码**。授权页随后不再重定向，改为直接显示一次性授权码。
+TokenDance 会为你的账号创建一把**新** key，不会读取你已有的 key。供应商会把浏览器带回 PenguinHarness，由 PenguinHarness 用一次性授权码换取并保存 key。如果授权页跳不回来，比如浏览器无法访问重定向给出的服务器地址，点击**授权页跳不回来？改为手动填写授权码**。授权页随后不再重定向，改为直接显示一次性授权码。
 
 1. 把授权码粘贴进**授权码**输入框。
 2. 点击**提交授权码**。
 
+Penguin Go 有四处不同：
+
+- 结果由服务端向 Penguin Go 轮询获取，因此这个分组没有手动填写授权码的方式。
+- 分组有 key 之后，标题栏上**添加模型**之前会出现**同步**，用它再次读取平台的模型目录，见 [Penguin Go 分组](#penguin-go-分组)。**自动获取密钥**依然保留，可以换成另一个平台账号的 key。
+- 平台报告 key 失效或被吊销时，**模型库**页面会重新打开授权。
+- 取到的 key 写入本地失败时，服务端会把这一次交付短暂保留，可以直接重试写入，不必再次授权。
+
 注意事项：
 
-- 只有 Project owner 能发起授权，也只有他本人已登录的会话能完成授权，实际上就是打开着弹窗的那个标签页。重定向本身不要求会话就能接收，因为供应商带回的浏览器未必是你发起授权时用的那个；但它只交回授权码：在弹窗来取结果之前，不会发生任何换取，也不会保存任何 key。
-- 整个换取过程都在服务端完成。PKCE verifier 在服务端生成，从不进入浏览器；新 key 直接写入模型表，同样不经过浏览器。
-- 一次授权只能换取一把 key，有效期十分钟。
-- 供应商只交付一次新 key。如果保存失败，请重新授权，并到供应商的控制台删除没用上的那把 key。
-- 这把 key 携带[应用归因](#应用归因)表中 PenguinHarness 的应用 URL，所以即使用其他工具发起调用，用量也仍会归到 PenguinHarness 名下。
+- 只有 Project owner 能发起授权。TokenDance 还要求由他本人已登录的会话完成授权，实际上就是打开着弹窗的那个标签页。重定向本身不要求会话就能接收，因为供应商带回的浏览器未必是你发起授权时用的那个；但它只交回授权码：在弹窗来取结果之前，不会发生任何换取，也不会保存任何 key。
+- 整个换取过程都在服务端完成。TokenDance 的 PKCE verifier 和 Penguin Go 的设备密钥都不会进入浏览器；新 key 直接写入模型表，同样不经过浏览器。
+- 一次授权只交付一把 key，有效期取供应商给出的截止时间，且不超过十分钟。
+- TokenDance 只交付一次新 key。如果保存失败，请重新授权，并到供应商的控制台删除没用上的那把 key。
+- TokenDance 的 key 携带[应用归因](#应用归因)表中 PenguinHarness 的应用 URL，所以即使用其他工具发起调用，用量也仍会归到 PenguinHarness 名下。
 
 ## 设置默认模型
 
@@ -261,7 +268,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 
 同步时会：
 
-- 添加 Project 还没有的目录模型；
+- 添加 Project 还没有的目录模型，退役条目除外：Project 已有的退役条目照常更新，没有它的 Project 则不会被补上（见[预置模型](#预置模型)）；
 - 把已有目录模型的视觉标记、上下文窗口、协议、价格和 base URL 重置为目录里的值；
 - 模型名称为空时自动补全，但绝不覆盖已有名称；
 - 绝不动 API key、**最大输出长度**、快速模式，以及你自己添加的模型和分组。
@@ -276,12 +283,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 
 - `max` 是最深的档位。各客户端会把它映射到供应商支持的最深推理档位，没有这个档位时静默回退，所以选它不会失败。在 Gemini 和 MiniMax M3 上，它的档位和 `xhigh` 相同。
 - 对 MiniMax M3，`none` 直接映射为 `reasoning.effort = "none"`。
-- DeepSeek V4 接受 `low`、`high` 和 `max`，`medium` 和 `xhigh` 会在它那边归并为 `high`。
-
-AgentHub 0.4.4 把客户端的档位用词对齐到 DeepSeek：在 DeepSeek 模型上，`low` 现在发送 `low`（以前发送 `high`），`xhigh` 发送 `high`（以前发送 `max`）。
-
-> [!NOTE]
-> 停在 `low` 的对话，现在思考得比以前少，花费也更低。停在 `xhigh` 的对话，思考深度不如从前。要 DeepSeek 最深的推理，请选 `max`。
+- DeepSeek V4 接受 `low`、`high` 和 `max`，`medium` 和 `xhigh` 会在它那边归并为 `high`。要 DeepSeek 最深的推理，请选 `max`。
 
 ### 在新对话中
 
@@ -393,7 +395,8 @@ AgentHub 0.4.4 把客户端的档位用词对齐到 DeepSeek：在 DeepSeek 模�
 
 | 供应商 | API key 环境变量 | 说明 |
 | --- | --- | --- |
-| tokendance | `OPENAI_API_KEY` | 推荐分组，排在首位。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为裸名称，不带供应商前缀（如 `glm-5.3`、`kimi-k3`）；价格采用网关自己的人民币费率，目前有几项在打折 |
+| tokendance | `OPENAI_API_KEY` | 推荐分组。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为裸名称，不带供应商前缀（如 `glm-5.3`、`kimi-k3`）；价格采用网关自己的人民币费率，目前有几项在打折 |
+| penguin-go | `PENGUIN_GO_API_KEY` | 预置的中转分组，固定 base URL `https://token.penguin.ooo/api`；分组标题栏可以为你自动授权一把 key，也可以手动设置。见 [Penguin Go 分组](#penguin-go-分组) |
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在的分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI（OpenAI 兼容），预置 base URL `https://api.fireworks.ai/inference/v1`；API 模型 id 形如 `accounts/fireworks/models/<slug>` |
@@ -417,11 +420,23 @@ AgentHub 0.4.4 把客户端的档位用词对齐到 DeepSeek：在 DeepSeek 模�
 
 直连 MiniMax M3 的客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型使用 `https://api.minimax.io/v1`。只有条目没有自己的 `base_url` 时，才会读取 `MINIMAX_BASE_URL`。
 
+### Penguin Go 分组
+
+`penguin-go` 和 TokenDance 一样是内置分组：一个中转服务，base URL 固定为 `https://token.penguin.ooo/api`。新建的 Project 立即带上这个分组的目录模型；在该分组之前创建的 Project，用**同步预置**把它们补上。
+
+分组的 key 从标题栏取得，见[授权获取新 API key](#授权获取新-api-key)。授权以及随后的**同步**还会读取平台自己的模型目录：
+
+- 平台提供而 Project 没有的模型会被添加进来，连同协议、端点、显示名、上下文窗口、视觉能力和牌价。纯向量（embedding）模型不收录。
+- Project 已有的模型保留自己的端点和你配置过的其他内容。只刷新三项价格和客户端协议，`max_tokens` 保持未设置，沿用 Agent 的设定；任何模型都不会被删除。
+- 平台的促销会替换这个分组已存的促销。和其他分组一样，`.project_config.toml` 里存的是牌价，促销存在服务端的数据库里；**同步预置**从不设置促销，每次授权或**同步**都会整体替换它们。这条记录丢失后，用量按牌价计价，直到下一次授权或同步把它写回来。
+
+平台报的是高峰档费率，单位是每百万 Token 多少美元。分组里的 DeepSeek 条目跟随 DeepSeek 当前的模型阵容，只有 `deepseek-flash` 和 `deepseek-v4-pro`，并声明与直连 DeepSeek 分组相同的空闲时段，因此在北京时间工作日 9:00–12:00、14:00–18:00 之外，卡片和成本记录都按半价计算。
+
 ### 预置模型
 
 预置模型目录包含以下模型：
 
-- `deepseek-flash` / `deepseek-v4-pro` / `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp`
+- `deepseek-flash` / `deepseek-v4-pro`
 - `MiniMax-M3`
 - `gemini-3.8-flash`
 - `claude-opus-5` / `claude-opus-4-8` / `claude-sonnet-5`
@@ -434,9 +449,10 @@ AgentHub 0.4.4 把客户端的档位用词对齐到 DeepSeek：在 DeepSeek 模�
 
 列表并未穷尽所有模型。
 
-- **DeepSeek 图像能力。** `deepseek-flash` 和 `deepseek-v4-flash-vision-exp` 支持读图；`deepseek-v4-flash` 和 `deepseek-v4-pro` 仅支持文本。自 2026-09-10 起，两个旧的 Flash id 成为退役名称，DeepSeek 用 V4.1 Flash 按 Flash 价格继续对外服务。这改变的是价格，而不是 V4 Flash 能读的内容：要发送图像，请使用 `deepseek-flash`。
+- **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
+- **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，**同步预置**也会继续更新它的价格。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
 - **OpenAI 出现两次。** OpenAI 全系模型出现了两遍：一次直连（用你自己的 OpenAI key，官方牌价），一次在 OpenRouter 上以 `openai/<id>` 形式（网关费率，随其当前促销活动浮动）。
-- **GLM-5.3 Flash 出现三次。** `glm-5.3-flash` 出现了三次，三行都接受图像。AgentHub 的 GLM 客户端只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像。OpenRouter 上的 `z-ai/glm-5.3-flash` 和 TokenDance 上的那条走通用的 OpenAI 兼容客户端，这种客户端对任何 id 都会携带图像。三行的价格各不相同：每条记录的都是自己卖家收取的价格，所以促销期间三者会不一致。
+- **GLM-5.3 Flash 出现五次。** 分别是直连的 `glm-5.3-flash`、TokenDance 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：AgentHub 的 GLM 客户端只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
 - **OpenRouter 免费档。** 目录收录了 `:free` 变体 `nvidia/nemotron-3-ultra-550b-a55b:free`，以及 `openrouter/free` 这个统一的免费模型路由（Free Models Router）。它们不花钱，但 OpenRouter 免费档的限流和数据政策仍然适用。
 
 ### 价格与促销
@@ -444,15 +460,16 @@ AgentHub 0.4.4 把客户端的档位用词对齐到 DeepSeek：在 DeepSeek 模�
 - **三类价格。** 每个模型都记录 `cache_read`、`cache_write` 和 `output` 三项价格，单位是每百万 Token 多少美元。成本中心按这些价格结算用量。
 - **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）和 Gemini 3.1 Pro（200K 以上）遵循同样的约定。
 - **DeepSeek 空闲时段。** 直连 DeepSeek 的条目记录官方高峰价格，并声明 DeepSeek 的空闲时段规则：工作日北京时间 9:00–12:00 和 14:00–18:00 以外的时段，三项价格全部减半。**模型库**页面在这些时段显示 `省 50%` 标签，成本中心也按这个费率计费。
-  - 三条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash` 和 `deepseek-v4-flash-vision-exp`，以及 OpenRouter 的 `deepseek/deepseek-v4.1-flash`。
+  - 四条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、OpenRouter 的 `deepseek/deepseek-v4.1-flash`，以及 Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`。
+  - Qwen 转售的 DeepSeek 模型按它自己的时段计费：北京时间每天 22:00 至次日 8:00 半价。两个 Qwen 分组的 `deepseek-v4.1-flash` 和 Token Plan 的 `deepseek-v4-pro-0813` 声明的是这一套，折扣标签的悬停说明写的也是该条目所遵循时段的窗口。
   - 存储的价格始终是高峰价格，所以磁盘上的数值与 Project 创建或同步的时间无关。
 - **固定折扣。** 目前有九个 TokenDance 模型在打折：
-  - `deepseek-v4-flash-0731`、`deepseek-v4-pro-0813` 和 `kimi-k3` 打 8 折
-  - `glm-5.3`、`glm-5.3-flash` 和 `qwen3.8-max` 打 9 折
+  - `kimi-k3` 打 6 折
+  - `deepseek-v4-flash-0731`、`deepseek-v4-pro-0813`、`glm-5.3`、`glm-5.3-flash` 和 `qwen3.8-max` 打 9 折
   - 三条 Doubao Seed 条目（`seed-2.1-pro`、`seed-2.1-turbo`、`seed-evolving`）打 5 折
 
-  Gemini 3.8 Flash、3.7 Flash 和 3.6 Flash 也打 5 折，google 分组和 OpenRouter 上（`google/gemini-3.8-flash`、`google/gemini-3.7-flash`、`google/gemini-3.6-flash`）都是如此，因为 Google 在 2026-12-31 之前对它们一律减半。Project 预置的是**折后**价格，所以成本中心按卖家收取的价格计费，模型卡片也会用标签标出这个费率。
-- **你自己的价格。** 你手动修改的价格会让卡片上的折扣标签消失：此后这个数字由你自己定，不再代表卖家。
+  Gemini 3.8 Flash、3.7 Flash 和 3.6 Flash 也打 5 折，google 分组和 OpenRouter 上（`google/gemini-3.8-flash`、`google/gemini-3.7-flash`、`google/gemini-3.6-flash`）都是如此，因为 Google 在 2026-12-31 之前对它们一律减半。Project 预置的是**牌价**：折扣率由服务端另行保存，存在它自己的数据库里，而不写入 `.project_config.toml`，计算成本时再从牌价中扣除，因此成本中心按卖家实际收取的价格计费。模型卡片用标签标出当前实际计费的费率，模型弹窗则写明**此处为牌价，当前促销在此基础上省 N%；修改价格会取消促销**。
+- **你自己的价格。** 修改条目的价格会取消它的促销，卡片上的折扣标签也随之消失：此后这个数字由你自己定，不再代表卖家。
 
 ## Project 模型表
 

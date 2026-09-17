@@ -104,7 +104,7 @@ The admin account returns to the unclaimed state, and all of its sessions are re
 
 ### Sign-in attempt limits
 
-Password logins, wherever they come from, are throttled per username with exponential backoff. After five failed attempts, each further attempt waits 1 second, doubling up to 60 seconds. Unknown usernames are throttled identically, so the throttling does not reveal whether an account exists.
+Password logins, wherever they come from, are throttled per username with exponential backoff. After five failed attempts, each further attempt waits 1 second, doubling up to 60 seconds. Unknown usernames are throttled identically, so the throttling does not reveal whether an account exists. Neither does the response time: an unknown username is checked against a dummy hash, so every attempt costs exactly one scrypt derivation.
 
 ## Automate on the local machine
 

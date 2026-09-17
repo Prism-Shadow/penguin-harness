@@ -1,7 +1,7 @@
 /**
  * Spend attribution for an organization: every cost figure is derived from usage records
  * joined to the sessions the organization's files claim — desk sessions from the ledger,
- * contributing sessions from the tickets' `Sessions` headers. Nothing is stored; the
+ * contributing sessions from the tickets' `sessions` fields. Nothing is stored; the
  * budget marks in SQLite only remember which alerts already fired.
  */
 import type { TicketDoc } from "../../organization/files.js";

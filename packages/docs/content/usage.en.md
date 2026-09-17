@@ -51,17 +51,9 @@ Every chart responds to the pointer the same way:
 - Hover a line to single that line out.
 - In a requests chart, hover an agent or model in the legend to highlight its bars and line together.
 
-Lines are straight segments, never smoothed, and all have the same stroke width. Each chart fits its card and never scrolls.
-
 ## Gaps in the charts
 
-A chart cannot draw two kinds of bucket.
-
-**A bucket with no rate.** An agent or model has no success rate in a bucket where it made no request, or where every request it made was aborted. The Token trend has no cache hit rate in a bucket with no cache traffic. The line crosses such a bucket at the top of the axis, so the stroke stays continuous, and the hover table prints a dash there instead of a percentage. A real 0%, where requests were made and all of them failed, still prints 0%.
-
-**A bucket with nothing recorded.** A bucket that recorded nothing at all is not plotted. Every chart drops it and packs the remaining buckets left to right, so all four charts share one x axis that skips the quiet intervals and, where there is room, marks each skip with a break.
-
-Emptiness is judged per bucket, never per agent or model. An interval in which anything ran stays on the axis, and whatever was idle in it shows its zeros and dashes.
+A dash in the hover table means there is no rate for that bucket: no requests, every request aborted, or no cache traffic. A bucket in which nothing at all was recorded is left out of every chart, and a break mark shows the skip.
 
 ## Review and clear server errors
 

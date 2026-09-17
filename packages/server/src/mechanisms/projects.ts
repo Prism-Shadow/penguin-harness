@@ -33,6 +33,10 @@ import type {
 } from "@prismshadow/penguin-core";
 import type { TieredRates } from "../services/usage-service.js";
 import type {
+  PlatformModelApplyResult,
+  PlatformModelCatalog,
+} from "../services/platform-auth-types.js";
+import type {
   ModelOAuthErrorCode,
   ModelOAuthMode,
   ModelOAuthStartResult,
@@ -84,6 +88,8 @@ export abstract class ProjectLifecycle extends Interface<{
   accessibleProjectIds(userId: string): string[];
   listProjects(userId: string): Promise<ProjectSummary[]>;
   createProject(owner: UserRow, projectId: string, name?: string): Promise<ProjectSummary>;
+  /** Every id `createProject` refuses as taken, as names only: the rows and the data root's entries. */
+  takenProjectIds(): Promise<string[]>;
   provisionInitialProject(user: UserRow, isAdmin: boolean): Promise<void>;
   renameProject(userId: string, projectId: string, name: string): Promise<ProjectSummary>;
   deleteProject(userId: string, projectId: string): Promise<void>;
@@ -99,7 +105,8 @@ export abstract class ProjectConfigStore extends Interface<{
   loadConfig(projectId: string): Promise<ProjectConfig>;
   writeRaw(projectId: string, data: RawTable): Promise<void>;
   writeInitialConfig(projectId: string, name: string): Promise<void>;
-  ensurePresetModels(projectId: string): Promise<void>;
+  ensurePresetModels(projectId: string): Promise<boolean>;
+  seedPresetPromotions(projectId: string): Promise<void>;
   getName(projectId: string): Promise<string | undefined>;
   setName(projectId: string, name: string): Promise<void>;
   getDefaultModelRef(projectId: string): Promise<ModelRef | undefined>;
@@ -140,7 +147,31 @@ export abstract class ProjectConfigStore extends Interface<{
   getModels(projectId: string): Promise<ModelsResponse>;
   updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse>;
   setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number>;
+  getGroupApiKey(projectId: string, provider: string): Promise<string | undefined>;
+  mergePlatformModels(
+    projectId: string,
+    provider: string,
+    catalog: PlatformModelCatalog,
+    apiKey: string,
+    applyKeyToExisting: boolean,
+  ): Promise<PlatformModelApplyResult>;
   completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
+}>() {}
+
+export interface ModelPromotion {
+  provider: string;
+  modelId: string;
+  discount: number;
+}
+
+/** Per-Project model promotions (web.db `model_promotions`). */
+export abstract class ModelPromotions extends Interface<{
+  get(projectId: string, provider: string, modelId: string): number | undefined;
+  list(projectId: string): ModelPromotion[];
+  /** Replaces every promotion of the Project, in one transaction. */
+  replaceAll(projectId: string, rows: readonly ModelPromotion[]): void;
+  /** Replaces the promotions of one provider group, in one transaction. */
+  replaceProvider(projectId: string, provider: string, rows: readonly ModelPromotion[]): void;
 }>() {}
 
 /** ModelOAuth: the mechanism ModelOAuthService implements. */

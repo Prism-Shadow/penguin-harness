@@ -14,6 +14,7 @@ import type { TaskStats } from "../../lib/omni/task-stats";
 import type { PendingApproval } from "./use-session-stream";
 import { EmptyState } from "../../components/ui/empty-state";
 import { MessageItem } from "./message-item";
+import { WorkspaceLinksProvider } from "./md";
 import { WorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
@@ -50,7 +51,12 @@ export interface StreamRenderContext {
   onRetryNow?: () => void;
   /** "Give up" on the live reconnect countdown: the ordinary session abort (same call as the Stop button). */
   onGiveUp?: () => void;
-  /** Opens the Files panel and navigates to this file (triggered by clicking the file-summary card at the end of a message; takes a Workspace-relative path); the card doesn't render if this isn't wired up. */
+  /**
+   * Opens the Files panel and navigates to this file (a file-summary card's row, or a link in
+   * the stream's Markdown naming a Workspace file; takes a Workspace-relative path). The card
+   * doesn't render and links keep opening a new tab if this isn't wired up. Must be stable:
+   * every rendered link reads it through context (see WorkspaceLinksProvider).
+   */
   onOpenFile?: (path: string) => void;
   /** Opens the subagents panel focused on this child session (subagent chip click); `origin` is the ctx.origin at the chip's render level — the child's ancestor chain, excluding its own id. */
   onOpenSubagent?: (sessionId: string, origin: string[]) => void;
@@ -436,7 +442,11 @@ export function MessageStream({
           {items.length === 0 ? (
             <EmptyState title={S.chat.emptyStream} />
           ) : (
-            <MessageItems items={items} ctx={ctx} />
+            // Links in replies, reasoning and compaction summaries name files of this Session's
+            // Workspace: they open in its Files panel rather than a new tab (see md.tsx).
+            <WorkspaceLinksProvider workspace={ctx.workspace ?? null} onOpenFile={ctx.onOpenFile}>
+              <MessageItems items={items} ctx={ctx} />
+            </WorkspaceLinksProvider>
           )}
         </div>
       </div>

@@ -231,7 +231,7 @@ interface EnvironmentInterface {
 
 `executeTool` 产出 `partial_tool_call_output` 片段，最后恰好以一条完整的 `tool_call_output` 收尾。带 `origin` 标记的嵌套消息（例如 `run_subagent` 转发的那些）原样通过。
 
-内置 Environment 可以把截断的文本保存在 Session scratchpad 里，而不必通过这个公开接口暴露存储生命周期钩子。展示给模型的恢复路径是普通的绝对路径。Windows 上路径使用正斜杠，Node 的 fs API 和包内工具所用的 (Git) Bash 都接受这种写法，所以同一个写法既能直接用作 `read_file` 的参数，也能直接写进 shell 命令。
+内置 Environment 可以把截断的文本保存在 Session scratchpad 里，而不必通过这个公开接口暴露存储生命周期钩子。展示给模型的恢复路径是普通的绝对路径。Windows 上路径使用正斜杠，Node 的 fs API 和包内工具所用的 Git Bash 都接受这种写法，所以同一个写法既能直接用作 `read_file` 的参数，也能直接写进 shell 命令。
 
 渲染不在这个接口的职责范围内。流式渲染属于 CLI 和 Web 前端。
 

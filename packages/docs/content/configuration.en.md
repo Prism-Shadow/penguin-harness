@@ -17,6 +17,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | The server package's bundled `web-dist` (in a source checkout, `packages/web/dist`) |
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | Unset: the loopback counterpart is derived per request |
+| `PENGUIN_GO_ORIGIN` | Trusted origin the server-side Penguin Go key authorization calls | `https://token.penguin.ooo` |
 | `PENGUIN_TRUST_PROXY` | `1` trusts the `x-forwarded-proto` header | Unset: the header is ignored |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | Unset: a random password is generated |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set with `penguin config lang` | `en` |
@@ -29,7 +30,8 @@ Notes:
 
 - `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS and sets or strips the header itself. Session cookies are then marked `Secure`, and the hot-update network gate sees HTTPS.
 - `PENGUIN_SEED_ADMIN_PASSWORD`: without it, the seed generates a random password that is hashed and discarded unseen, and you claim the account through the first-login link.
-- `PENGUIN_UPDATE_CHECK`: the release check is the server's only outbound request that is not a model request.
+- `PENGUIN_GO_ORIGIN`: server configuration, not an endpoint the browser can name. It must be a bare HTTPS origin; plain HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`, for integration environments. A path, credentials, a query string or a fragment is rejected at startup. See [Authorize a new API key](/models#authorize-a-new-api-key).
+- `PENGUIN_UPDATE_CHECK`: `off` turns off the automatic release check, nothing else. Model requests, an enabled remote-control connection, provider key authorization and the proxy test still reach the network.
 - `PENGUIN_NO_LOGIN_SHELL_ENV`: without it, the import fills only variables the launch left unset. See [Desktop quickstart](/quickstart-desktop).
 - `PENGUIN_CLI_ENTRY`: when the server was started from a source checkout, it falls back to that checkout's `packages/cli/dist/penguin.js`.
 
@@ -69,12 +71,13 @@ When a model entry has no inline `api_key`, AgentHub falls back to the provider'
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
 | openai, openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, vllm, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. The direct MiniMax M3 Responses client uses `MINIMAX_*`, and the built-in MiniMax preset already pins the official endpoint. For provider groups and the built-in model catalog, see [Models & Providers](/models).
+The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. The direct MiniMax M3 Responses client uses `MINIMAX_*`, and the built-in MiniMax preset already pins the official endpoint. For provider groups and the built-in model catalog, see [Models & Providers](/models).
 
 ## Project config
 
@@ -102,7 +105,7 @@ The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-tok
 | `vision` | boolean | `true` | Whether the model accepts image input |
 | `max_tokens` | number | The agent's `model.max_tokens` | Per-model max output Tokens; overrides the agent's `model.max_tokens` when set |
 | `fast_mode` | boolean | Off | Per-model fast mode (the provider's premium faster serving tier) |
-| `pricing` | table | — | Three price buckets, `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`) |
+| `pricing` | table | — | Three price buckets, `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`). Always the list price |
 | `api_key` | string | The provider's environment variable | Inline credential |
 | `base_url` | string | Preset for some catalog entries | Custom base URL |
 | `created_at` | string | — | When `api_key` was written (ISO 8601); a display field maintained by the interface layer |
@@ -111,6 +114,7 @@ Field notes:
 
 - `client_type`: custom endpoints use a generic protocol client: `openai-responses`, `ant-messages` or `openai-chat`. The Web dialog can detect which one a base URL serves. The pre-0.4.2 spelling `openai` is a deprecated alias of `openai-chat`, normalized on read.
 - `fast_mode`: only `true` is persisted. It is offered only for models whose AgentHub client can serve it, and the others reject requests that carry it. See [Models](/models#fast-mode).
+- `pricing`: the figure here is the list price. A running promotion is not written to this file: the server keeps it in `web.db` and takes it off when it computes cost. See [Prices and promotions](/models#prices-and-promotions).
 - `base_url`: the built-in catalog presets it for gateways and for the direct rows that pin a client, MiniMax M3 and DeepSeek `deepseek-flash`.
 - `api_key`: when empty, AgentHub falls back to the provider's environment variable.
 

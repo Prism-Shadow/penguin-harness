@@ -64,7 +64,7 @@ Agent Session 中的工具文本超过 `maxOutputLength` 时，模型、Web App 
 
 普通的多行归档，Agent 用现成的 `read_file`（`offset` / `limit`）读取。要读字节尾部或超长行，它会构造针对性的 shell 命令，比如 `rg` 或 `tail`；没有专门的取回工具。
 
-note 里带一个普通绝对路径，总是括号内的最后一个元素。在 Windows 上路径使用正斜杠：`exec_command` 经 (Git) Bash 运行，Node 的 fs API 也接受正斜杠，所以同一种写法在 JSON 工具参数和 shell 命令里都能用。POSIX 路径原样保留，Session 路径本来就是普通绝对路径（从不带 `\\?\` 前缀），因此更换分隔符不会丢失任何内容。和其他路径一样，里面有空格时，在 shell 命令中要加引号。
+note 里带一个普通绝对路径，总是括号内的最后一个元素。在 Windows 上路径使用正斜杠：`exec_command` 经 Git Bash 运行，Node 的 fs API 也接受正斜杠，所以同一种写法在 JSON 工具参数和 shell 命令里都能用。POSIX 路径原样保留，Session 路径本来就是普通绝对路径（从不带 `\\?\` 前缀），因此更换分隔符不会丢失任何内容。和其他路径一样，里面有空格时，在 shell 命令中要加引号。
 
 core 为模型拼出的每一条路径都遵循同一写法规则：
 

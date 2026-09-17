@@ -5,6 +5,7 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
  * of a label/sentence or in a proper name (Agent State, AgentHub).
  */
+import type { PeakWindows } from "../features/models/model-grouping";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
@@ -76,7 +77,7 @@ export const en: Strings = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
-    newShell: "New shell",
+    newShell: "New terminal",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
@@ -435,6 +436,39 @@ export const en: Strings = {
     time: "Time",
   },
 
+  /**
+   * The id field every create dialog with a semantic id wears (features/semantic-id): a Project's,
+   * an Agent's, a Benchmark's, an organization's and a channel's.
+   */
+  semanticId: {
+    /**
+     * The id field's generate button — its label says who proposes the id, its tooltip says
+     * what the proposal is derived from — and the clause the hint appends for it. The clause
+     * carries its own leading separator: what joins two clauses is punctuation, and
+     * punctuation belongs to the language.
+     */
+    generateIdLabel: "Generate with AI",
+    generateId: "Generate an id from the name",
+    idGenerateHint: "; you can also generate one from the display name",
+    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
+    idSuggest: {
+      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
+      fromName: "Transliterated from the name",
+      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
+      placeholder: (reason: string): string =>
+        `The model gave no usable id (${reason}); a placeholder was filled in — please change it to something meaningful`,
+      /** Why the proposal fell through, keyed by the server's reason code. */
+      reasons: {
+        no_default_model: "no default model configured",
+        model_failed: "the model request failed",
+        unusable_answer: "the model's answer was unusable",
+        no_ascii: "the name carries no ASCII to transliterate",
+      },
+      /** A reason a newer server named and this build does not know. */
+      reasonUnknown: "reason unknown",
+    },
+  },
+
   auth: {
     usernameHint:
       "2–32 chars: starts with a lowercase letter; lowercase letters, digits and underscores only",
@@ -453,7 +487,7 @@ export const en: Strings = {
       "First run: the server prints a first-login link in its startup output — open it to claim the built-in admin “admin” and set a password. No initial password exists to type here",
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
-      "Forgot the admin password? Stop the server and run penguin server reset-admin-password to issue a fresh initial one",
+      "Forgot the admin password? Stop the server and run penguin server reset-admin-password; its next start prints a new first-login link — open it to set a new password",
     /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
     claimFailedTitle: "Sign-in link no longer works",
     /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
@@ -528,9 +562,9 @@ export const en: Strings = {
     createTitle: "New Project",
     id: "Project id",
     idHint:
-      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
+      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only; cannot be changed later",
     idPrefixHint:
-      "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores. Cannot be changed later.",
+      "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores; cannot be changed later",
     displayName: "Display name",
     /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
     displayNameHint: "Leave empty to use the Project id as the name",
@@ -617,7 +651,9 @@ export const en: Strings = {
     createTitle: "Create agent",
     id: "Agent id",
     idHint:
-      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
+      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only; cannot be changed later",
+    /** The id field's generation clause: the create dialog's name field is labelled Name, not display name. */
+    idGenerateHint: "; you can also generate one from the name",
     nameHint: "Leave empty to use the agent id as the name",
     description: "Description",
     createPlugins: "Plugins",
@@ -1011,6 +1047,7 @@ export const en: Strings = {
         "- Never read or edit .project_config.toml; configuration goes through penguin commands only.",
         `- Finish with \`penguin config model list --project-id ${projectId} --root <data root>\` and show me the result.`,
       ].join("\n"),
+    platformSync: "Sync",
     homepage: "Model page",
     speedTest: "Speed test",
     speedTestTitle: "Speed test",
@@ -1091,8 +1128,19 @@ export const en: Strings = {
     recommendedGroup: "Recommended",
     discountBadge: (pct: number): string => `${pct}% off`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
-    offPeakTitle: (pct: number): string =>
-      `Off-peak rate: ${pct}% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday`,
+    offPeakTitle: (pct: number, peak: PeakWindows): string => {
+      const day = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+      const days = peak.everyDay
+        ? "every day"
+        : peak.days
+            .map(([from, to]) =>
+              from === to ? day[from - 1] : `${day[from - 1]} to ${day[to - 1]}`,
+            )
+            .join(", ");
+      const clock = (hour: number): string => `${String(hour).padStart(2, "0")}:00`;
+      const hours = peak.hours.map(([from, to]) => `${clock(from)}–${clock(to)}`).join(" and ");
+      return `Off-peak rate: ${pct}% off list. Peak hours bill at list price — ${hours} Beijing time, ${days}`;
+    },
     visionModelBadge: "Proxy vision",
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",
@@ -1106,6 +1154,8 @@ export const en: Strings = {
     priceCacheRead: "Cache read price",
     priceCacheWrite: "Cache write price",
     priceOutput: "Output price",
+    promotionPriceHint: (pct: number): string =>
+      `These are list prices. A running promotion takes ${pct}% off them; changing a price cancels it`,
     currency: "Currency",
     currencyUsd: "USD $",
     currencyCny: "CNY ¥",
@@ -1158,6 +1208,22 @@ export const en: Strings = {
       unreachable: "The provider could not be reached. Check the network and start again.",
       apply_failed:
         "A key was created but could not be saved. Authorize again, then delete the unused key in the provider's console.",
+    },
+    platformKeyIntro: (n: number): string =>
+      `Authorization automatically obtains a Penguin Go API key and writes it to all ${n} preset models in this group, replacing their current key.`,
+    platformKeyAppliedBody: (n: number): string =>
+      `Authorized. The Penguin Go API key is set on ${n} model${n === 1 ? "" : "s"} and ready to use.`,
+    platformKeyStarting: "Starting authorization…",
+    platformKeyApplying: "Authorization completed. Writing the key to the model group…",
+    platformKeyErrors: {
+      unreachable: "Penguin Go could not be reached. Check the network and start again.",
+      upstream_failed: "Penguin Go could not complete authorization. Start again.",
+      invalid_key: "Penguin Go returned no usable API key. Start again.",
+      expired: "The authorization expired. Start again.",
+      locked: "The authorization was locked. Start again.",
+      already_delivered: "That authorization was already delivered. Start again.",
+      apply_failed:
+        "The API key was received but could not be written to the model group. Retry without authorizing again.",
     },
     providerEnvNotes: {
       zhipu:
@@ -3007,6 +3073,9 @@ Scenarios:
         text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves.",
       },
     ],
+    /** The first step card's text for a Project member: no Create manually, which is the owner's. */
+    guideCreateMember:
+      "Press Create with AI at the top right to have AI write a set of cases for an agent and take its baseline score.",
     searchPlaceholder: "Search titles, descriptions or tested agents",
     noMatches: "No Benchmark matches",
     filterByAgent: (agentId: string): string => `Benchmarks that evaluated ${agentId}`,
@@ -3029,6 +3098,10 @@ Scenarios:
       "The cases' difficulty could not be calibrated; delete this Benchmark and create it again",
     creationFailedDetail:
       "Calibration of this Benchmark never completed, so it cannot be evaluated or optimized; delete it and create it again.",
+    /** The two lines above for a Project member: no delete step, since deleting is the owner's. */
+    creationFailedHintMember: "The cases' difficulty could not be calibrated",
+    creationFailedDetailMember:
+      "Calibration of this Benchmark never completed, so it cannot be evaluated or optimized.",
     testedAgents: "Tested agents",
     lastEvaluated: (when: string): string => `last evaluated ${when}`,
     sparklineLabel: (n: number): string => `Score trend over ${n} evaluation${n === 1 ? "" : "s"}`,
@@ -3231,6 +3304,8 @@ Scenarios:
     idField: "Benchmark id",
     idHint:
       "The directory name is the identifier: letters, digits, _ and - only, e.g. report-writing-v1",
+    /** The id field's generation clause: a Benchmark is named by its title, not a display name. */
+    idGenerateHint: "; you can also generate one from the title",
     idExists: "A Benchmark with this id already exists; pick another",
     titleField: "Title",
     descriptionField: "Description",
@@ -3377,32 +3452,6 @@ Scenarios:
     orgId: "Organization id",
     orgIdHint:
       "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores; also the directory name, fixed once created",
-    /**
-     * The id field's generate button — its label says who proposes the id, its tooltip says
-     * what the proposal is derived from — and the clause the hint appends for it. The clause
-     * carries its own leading separator: what joins two clauses is punctuation, and
-     * punctuation belongs to the language.
-     */
-    generateIdLabel: "Generate with AI",
-    generateId: "Generate an id from the name",
-    idGenerateHint: "; you can also generate one from the display name",
-    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
-    idSuggest: {
-      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
-      fromName: "Transliterated from the name",
-      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
-      placeholder: (reason: string): string =>
-        `The model gave no usable id (${reason}); a placeholder was filled in — please change it to something meaningful`,
-      /** Why the proposal fell through, keyed by the server's reason code. */
-      reasons: {
-        no_default_model: "no default model configured",
-        model_failed: "the model request failed",
-        unusable_answer: "the model's answer was unusable",
-        no_ascii: "the name carries no ASCII to transliterate",
-      },
-      /** A reason a newer server named and this build does not know. */
-      reasonUnknown: "reason unknown",
-    },
     displayName: "Display name",
     displayNameHint: "Leave empty to use the organization id",
     mission: "Mission",
@@ -3416,7 +3465,7 @@ Scenarios:
       research: {
         name: "Research Paper Lab",
         mission:
-          "Set up a company that does research for me: keeps drafting and reviewing papers and produces work that can be submitted to top-tier conferences.",
+          "Set up a company that does research for me and produces papers fit for top-tier conferences. Experiments run autoresearch-style: fix the evaluation script and the metric first, edit one file only, give every experiment the same time budget, log each result as one line and keep only the changes that improve the metric. Before any experiment loop starts, the researcher asks me in the channel for resources — the machine and its GPU/CPU, concurrency, total hours, disk and data, paid APIs — then runs unattended inside what I approved and asks again before exceeding it. Papers go through adversarial review between two kinds of employee: reviewers reproduce the results, check baselines and ablations, hunt for test-set leakage and metric gaming, and return a score with required changes; authors revise or rebut point by point until the reviewer accepts.",
       },
       agentTuning: {
         name: "Agent Tuning Studio",
@@ -4184,6 +4233,8 @@ Scenarios:
       task_in_progress: "This Session already has a task running.",
       compacting: "This Session is compacting its context and is not accepting new input.",
       shutting_down: "The server is shutting down. Please try again shortly.",
+      platform_rate_limited:
+        "Too many platform authorization requests. Try again when the countdown ends.",
       // The three "cannot compact" reasons each have their own server code, so each keeps its
       // own explanation here — collapsing them into one sentence would tell a user who just
       // compacted that they have never spoken.

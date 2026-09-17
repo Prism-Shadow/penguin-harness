@@ -16,7 +16,7 @@ description: 与 Agent 开始对话，实时跟进它的工作，并在 Task 运
 
 新对话从草稿开始，发送第一条消息时才创建 Session。
 
-1. 在侧边栏选择**新建对话**。草稿默认使用 Project 的 `default_agent`，没有这个 Agent 时使用第一个 Agent。
+1. 在侧边栏选择**新建对话**。草稿默认使用 Project **新对话默认值**里的那个 Agent，前提是它还在这个 Project 里；否则用 `default_agent`，再没有就用第一个 Agent。
 2. 在输入框上方选择 **Agent**、**Workspace**（服务器上的一个目录，在目录浏览器中选取）、**审批模式**、**Model** 和**思考等级**。
 3. 输入消息，按 Enter 发送。
 
@@ -24,7 +24,7 @@ Session 创建后，模型和 Workspace 就锁定了。之后想换模型，见[
 
 几点说明：
 
-- Project 的**新对话默认值**（在 **Project 设置**中，见 [Web App](/web-app#project-与成员)）会预填新草稿的 Workspace 和审批模式，模型则默认为 Project 的默认模型。思考等级优先显示 Agent 自己的等级，没有时用 Project 的默认值，再没有就是 medium（中）。
+- Project 的**新对话默认值**（在 **Project 设置**中，见 [Web App](/web-app#project-与成员)）会预填新草稿的 Agent、Workspace 和审批模式，模型则默认为 Project 的默认模型。思考等级优先显示 Agent 自己的等级，没有时用 Project 的默认值，再没有就是 medium（中）。
 - 在草稿里切换思考等级或模型，切换后的值就成为新的默认值：思考等级立即写回所选 Agent 的 `model.thinking_level`，模型则沿用到你的下一个对话。
 - 草稿按用户和 Project 保存所选项、正文和选中的 Skill。草稿里有已输入的文字时再点**新建对话**，这份草稿会移到侧边栏的**草稿**分组。
 
@@ -94,7 +94,7 @@ Session 创建后，模型和 Workspace 就锁定了。之后想换模型，见[
 | `/goal` | 开启目标模式，见[设定目标](#设定目标) |
 | Skill 名称 | 选中或取消一个已安装的 Skill；选中的 Skill 随消息一起发送 |
 
-`/agent` 和 `/model` 只在已经开始的对话里出现：草稿在一开始就选定了 Agent 和模型。
+`/compact`、`/agent` 和 `/model` 只在已经开始的对话里出现：草稿没有可压缩的上下文，Agent 和模型也在一开始就选定了。
 
 ### 设定目标
 

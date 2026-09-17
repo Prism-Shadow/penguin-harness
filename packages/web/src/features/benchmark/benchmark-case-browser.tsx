@@ -22,6 +22,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { joinWorkspacePath } from "../../lib/file-path";
 import { formatBytes } from "../../lib/format";
 import { S } from "../../lib/strings";
+import { useLocale } from "../../state/locale";
 import {
   ancestorDirs,
   baseName,
@@ -137,6 +138,7 @@ interface Props {
 }
 
 export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Props) {
+  const { locale } = useLocale();
   /** Listings by tree path; a missing key means "not fetched yet". */
   const [listings, setListings] = useState<Listings>(() => new Map());
   /** Both materials start open, so the case's files are in view without a click. */
@@ -334,6 +336,10 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Pr
     );
   };
 
+  // One fixed width per language, so opening or closing a folder never moves the preview beside
+  // the tree. It is sized to the rubric folder's row, whose name shares the row with the
+  // hidden-from-agent badge: the English pair takes about 320px at the default 18px root and the
+  // Chinese pair about 230px. A longer file name is cut, and its row's tooltip holds the path.
   return (
     <FileBrowser
       rows={caseTreeRows(materials, listings, expanded)}
@@ -349,7 +355,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Pr
       preview={preview}
       emptyPreview={S.benchmark.caseFileUnavailable}
       resolveRef={resolveRef}
-      treeWidth={240}
+      treeWidth={locale === "en" ? 330 : 240}
       treeMaxHeight={53}
       previewHeight={52}
       minHeight={58}

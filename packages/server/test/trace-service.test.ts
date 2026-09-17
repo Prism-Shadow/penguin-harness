@@ -223,7 +223,7 @@ describe("trace-service", () => {
   it("prices each Request at the tier its own timestamp ran in, and the file adds up to what the cost center bills the same rows", async () => {
     // A DeepSeek reference carries the catalog's Beijing-hours schedule; the lookup answers
     // both tiers, as project-config-service does for a row still at the catalog's price.
-    const REF = { provider: "deepseek", model_id: "deepseek-v4-flash" };
+    const REF = { provider: "deepseek", model_id: "deepseek-flash" };
     const lookups: string[] = [];
     const lookup: PricingLookup = async (projectId, provider, modelId) => {
       lookups.push(`${projectId}/${provider}/${modelId}`);
@@ -250,7 +250,7 @@ describe("trace-service", () => {
       const peakCost = (10 * 1 + 1 * 2 + 5 * 4) / 1e6;
       expect(a.tasks.map((t) => t.cost)).toEqual([peakCost, peakCost / 2, peakCost / 2]);
       expect(a.cost).toBeCloseTo(peakCost * 2, 12);
-      expect(lookups).toEqual([`${P}/deepseek/deepseek-v4-flash`]);
+      expect(lookups).toEqual([`${P}/deepseek/deepseek-flash`]);
 
       // The same three requests as usage rows, priced by the cost center's session grouping —
       // the figure the conversation toolbar shows — land on the file's total.

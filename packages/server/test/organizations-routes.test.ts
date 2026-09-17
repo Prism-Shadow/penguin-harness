@@ -6,10 +6,21 @@
  * calling session and employee ride write bodies as `sessionId` / `agentId` (a read's query
  * string), but only from the control environment's API token — a signed-in member's claim is
  * dropped. The service itself is a recording fake here — its semantics have their
- * own suites — so no Agent is created and no session runs.
+ * own suites — so no Agent is created and no session runs. The one exception is the sessions
+ * route's desk mark, which is wiring rather than semantics: an organization written straight to
+ * disk is served by the real service, and a desk's enabled messaging binding has to reach its
+ * row from the real bindings table.
  */
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { MeResponse, ServerSettingsResponse } from "../src/api/types.js";
+import type {
+  MeResponse,
+  OrgSessionsResponse,
+  ServerSettingsResponse,
+  SessionResponse,
+} from "../src/api/types.js";
+import { ORG_CONFIG_DEFAULTS } from "../src/organization/files.js";
+import { OrgStore } from "../src/organization/store.js";
 import type { OrganizationService } from "../src/runtime/organization/service.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -51,10 +62,6 @@ function fakeService(calls: Call[]): OrganizationService {
             return { channelId: "site", name: "Site", members: [] };
           case "startTicket":
             return { sessionId: "session-x" };
-          // A proposal that fell all the way through: the route must serve `reason` too, and
-          // must not turn a name nothing could translate into an error.
-          case "suggestId":
-            return { id: "co_org_20260909", source: "placeholder", reason: "no_default_model" };
           case "handbook":
             return "# Handbook";
           case "handbookFiles":
@@ -245,31 +252,8 @@ describe("organization routes", () => {
     });
   });
 
-  it("validates an id proposal and carries the organization's language both ways", async () => {
+  it("carries the organization's language both ways", async () => {
     const base = `/api/projects/${ownerProject}/organizations`;
-    // The proposal needs no organization, only the Project — and a kind the server knows.
-    expect((await owner.post(`${base}/suggest-id`, { kind: "org" })).status).toBe(400);
-    expect((await owner.post(`${base}/suggest-id`, { name: "科研公司" })).status).toBe(400);
-    expect(
-      (await owner.post(`${base}/suggest-id`, { name: "科研公司", kind: "team" })).status,
-    ).toBe(400);
-    expect(calls).toEqual([]);
-    const proposal = await owner.post(`${base}/suggest-id`, {
-      name: "科研公司",
-      kind: "org",
-      taken: ["research_lab"],
-    });
-    expect(proposal.status).toBe(200);
-    expect(await proposal.json()).toEqual({
-      id: "co_org_20260909",
-      source: "placeholder",
-      reason: "no_default_model",
-    });
-    expect(calls.at(-1)).toEqual({
-      method: "suggestId",
-      args: [ownerProject, { name: "科研公司", kind: "org", taken: ["research_lab"] }],
-    });
-
     expect((await owner.post(base, { orgId: "acme", mission: "x", language: "fr" })).status).toBe(
       400,
     );
@@ -585,5 +569,95 @@ describe("organization routes", () => {
       "session-dev",
       { userId: "mallory" },
     ]);
+  });
+});
+
+describe("organization sessions route over the real service", () => {
+  it("marks a desk whose Session has an enabled messaging binding, as the Session's own row is marked", async () => {
+    const t = await createTestApp();
+    try {
+      t.deps.serverSettingsRepo.setCompanyMode(true);
+      const u = await provisionUser(t.app, "olivia");
+      const api = apiClient(t.app, u.cookie);
+      const projectId = "olivia-default_project";
+      const ceoDesk = "session-2026-09-01-09-00-00-0abc0021";
+      const devDesk = "session-2026-09-01-09-05-00-0abc0022";
+
+      // The organization as its files describe it: a CEO and one report, each with a desk.
+      const store = new OrgStore(t.deps.config.root);
+      const dir = store.dir(projectId, "acme");
+      await store.createLayout(dir);
+      await store.writeConfig(dir, {
+        ...ORG_CONFIG_DEFAULTS,
+        name: "Acme",
+        mission: "Ship the site",
+        timezone: "UTC",
+        createdBy: "olivia",
+      });
+      await store.writeChart(dir, {
+        employees: [
+          { agentId: "acme_ceo", title: "CEO", reportsTo: null, workspace: "." },
+          { agentId: "acme_dev", title: "Developer", reportsTo: "acme_ceo", workspace: "." },
+        ],
+      });
+      const openedAt = "2026-09-01T09:00:00.000Z";
+      const workspace = path.join(dir, "workspace");
+      await store.writeDesks(dir, {
+        acme_ceo: { sessionId: ceoDesk, workspace, openedAt, previous: [] },
+        acme_dev: { sessionId: devDesk, workspace, openedAt, previous: [] },
+      });
+      for (const [sessionId, agentId] of [
+        [ceoDesk, "acme_ceo"],
+        [devDesk, "acme_dev"],
+      ] as const) {
+        t.deps.sessionsRepo.insert({
+          sessionId,
+          projectId,
+          agentId,
+          provider: "custom",
+          modelId: "m-org",
+          workspace,
+          approvalMode: "allow-all",
+          title: null,
+          client: "org",
+          createdAt: openedAt,
+          lastActiveAt: openedAt,
+        });
+      }
+      const desks = async () => {
+        const res = await api.get(`/api/projects/${projectId}/organizations/acme/sessions`);
+        expect(res.status).toBe(200);
+        return new Map(
+          ((await res.json()) as OrgSessionsResponse).desks.map((d) => [d.agentId, d]),
+        );
+      };
+
+      // A saved config is not a binding until it is enabled: no mark yet.
+      t.deps.messagingRepo.upsert({
+        sessionId: ceoDesk,
+        channel: "telegram",
+        accountId: "12345",
+        config: { botToken: "12345:secret" },
+      });
+      expect((await desks()).get("acme_ceo")).not.toHaveProperty("messagingChannel");
+
+      t.deps.messagingRepo.setEnabled(ceoDesk, "telegram", true);
+      const bound = await desks();
+      expect(bound.get("acme_ceo")).toMatchObject({
+        sessionId: ceoDesk,
+        messagingChannel: "telegram",
+      });
+      expect(bound.get("acme_dev")).toMatchObject({ sessionId: devDesk });
+      expect(bound.get("acme_dev")).not.toHaveProperty("messagingChannel");
+      // One reading behind both marks: the Session's own row says the same.
+      const own = (await (await api.get(`/api/sessions/${ceoDesk}`)).json()) as SessionResponse;
+      expect(own.session.messagingChannel).toBe("telegram");
+
+      // Unbinding takes the mark away with it.
+      t.deps.messagingRepo.setEnabled(ceoDesk, "telegram", false);
+      expect((await desks()).get("acme_ceo")).not.toHaveProperty("messagingChannel");
+    } finally {
+      await t.cleanup();
+    }
   });
 });

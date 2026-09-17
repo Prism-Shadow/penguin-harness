@@ -50,8 +50,10 @@ import type {
   ModelVisionDetectRequest,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
+import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { ICON_SIZE } from "../../lib/icon-scale";
 import { useDocumentTitle } from "../../lib/use-document-title";
 import { useProject } from "../../state/project";
 import { useAuth } from "../../state/auth";
@@ -77,18 +79,21 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { formatDateTime, humanizeTokens } from "../../lib/format";
 import {
   MODEL_PROVIDERS,
+  PENGUIN_GO_BASE_URL,
+  PENGUIN_GO_PROVIDER_ID,
   canonicalClientType,
   catalogEntryFor,
   fastModeProtocol,
   modelHomepageUrl,
   providerClientType,
   providerInfo,
-  resolveModelEnv,
+  resolveProviderModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
 import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
 import {
   allGroupKeys,
   discountedPrice,
+  fractionOff,
   groupModelRows,
   hasConfiguredKey,
   isFreeModel,
@@ -132,6 +137,7 @@ import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
+import { PlatformKeyAuthDialog } from "./platform-key-auth-dialog";
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
 const CURRENCY_SYMBOL: Record<Currency, string> = { USD: "$", CNY: "¥" };
@@ -182,6 +188,8 @@ const KEY_ICON =
   "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4";
 /** Arrow entering a door: authorize with the provider and come back with a key. */
 const SIGN_IN_ICON = "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3";
+/** Rotate clockwise: refresh an already-authorized platform catalog. */
+const SYNC_ICON = "M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10";
 
 /** Speed-test glyphs (24x24 line paths): gauge for the group action, clock = TTFT, zap = TPS. */
 const GAUGE_ICON = "M12 14l3.5-3.5M20.49 17A10 10 0 1 0 3.5 17";
@@ -313,9 +321,22 @@ export interface RowState {
    * their preset pin. Never persisted empty for a custom-like entry — see protocolForPersist.
    */
   clientType: string;
+  /** Price buckets in USD per million tokens: the list price, any promotion kept in `discount`. */
   cacheRead: string;
   cacheWrite: string;
   output: string;
+  /**
+   * The running promotion the server reports for this row: a fraction off the list price above
+   * (0.5 = half price), stored outside the config file and applied when usage is priced. Absent
+   * when the row has none.
+   */
+  discount?: number;
+  /**
+   * Set only by the "sync presets" merge: the row states its catalog promotion on save —
+   * `discount`, or none to clear one — instead of leaving the server to keep or clear what it
+   * has stored (see rowToEntry and catalog-sync.ts).
+   */
+  discountDeclared?: boolean;
   /** Current base_url input; compared against originalBaseUrl to decide omit/override/clear (null). */
   baseUrl: string;
   originalBaseUrl: string;
@@ -460,10 +481,10 @@ export function modelLabelOf(displayName: string | undefined, modelId: string): 
  *
  * Loading rounds the stored USD to four decimals so it is typeable (`usdToInput`), so
  * re-encoding an untouched field would commit that rounding as the new price: a silent edit of
- * a number nobody changed. Small, but not nothing — a catalog row billed at CNY 0.05 per
- * million lands on $0.0071 instead of $0.00714285…, enough to move a promoted row off the
- * figure its seller bills and drop the discount mark that says so. Editing the field is what
- * makes the typed value authoritative.
+ * a number nobody changed. Small, but not nothing — a catalog row listed at CNY 0.05 per
+ * million lands on $0.0071 instead of $0.00714285…, which is a price change: the save would
+ * cancel the row's promotion, and a scheduled row would leave the catalog's peak price and
+ * lose its off-peak mark. Editing the field is what makes the typed value authoritative.
  */
 export function priceToSubmit(
   formValue: string,
@@ -503,6 +524,7 @@ export function toRow(m: ModelsResponse["models"][number]): RowState {
   if (m.envKey !== undefined) row.envKey = m.envKey;
   if (m.envKeyMasked !== undefined) row.envKeyMasked = m.envKeyMasked;
   if (m.credential) row.credential = m.credential;
+  if (m.discount !== undefined) row.discount = m.discount;
   return row;
 }
 
@@ -614,6 +636,10 @@ export function rowToEntry(row: RowState): ModelUpdateEntry {
   ) {
     entry.pricing = { cacheRead: cr, cacheWrite: cwr, output: out };
   }
+  // Promotion: sent only when the preset sync declared one (a number stores it, null clears it).
+  // Every other save omits it and leaves the stored promotion to the server, which keeps it
+  // unless this entry renames the row or changes its price.
+  if (row.discountDeclared) entry.discount = row.discount ?? null;
   if (row.apiKeyInput.trim()) entry.apiKey = row.apiKeyInput.trim();
   if (row.clearApiKey) entry.clearApiKey = true;
   const baseUrl = row.baseUrl.trim();
@@ -860,6 +886,28 @@ export function ModelsPage() {
     refreshProjectTodos(projectId);
   };
 
+  const syncPlatformModels = async () => {
+    if (!projectId) return;
+    setBusy(true);
+    try {
+      const res = await api.syncPlatformModels(projectId);
+      setRows(res.models.map(toRow));
+      setDefaultModel(res.defaultModel);
+      setVisionModel(res.visionModel);
+      if (res.added === 0 && res.updated === 0) toastInfo(S.models.syncUpToDate);
+      else toastSuccess(S.models.syncDone(res.added, res.updated));
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "platform_reauthorization_required") {
+        keyLanded.current = false;
+        setOauthFor(PENGUIN_GO_PROVIDER_ID);
+      } else {
+        toastError(apiErrorText(error));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /**
    * Group speed test: one real request per model, strictly sequential (concurrent probes
    * trip provider rate limits), each result written to the card as it lands. The
@@ -999,7 +1047,7 @@ export function ModelsPage() {
           );
         },
         // dragleave also fires when the pointer merely crosses onto one of the header's OWN
-        // children — the collapse button spans most of the row, and up to five actions
+        // children — the collapse button spans most of the row, and up to six actions
         // follow it — so clearing unconditionally strobes the indicator. relatedTarget is
         // where the drag is going: still inside means nothing changed.
         onDragLeave: (e: ReactDragEvent) => {
@@ -1125,13 +1173,16 @@ export function ModelsPage() {
             {groups.map((group) => {
               const open = isGroupExpanded(expanded, group.provider.id, searching);
               const drag = groupDragProps(group.provider.id);
+              const platformAuthorized =
+                group.provider.id === PENGUIN_GO_PROVIDER_ID &&
+                group.rows.some((row) => Boolean(row.credential?.apiKeyMasked));
               return (
                 // The drop indicator is drawn against the WHOLE group, so "below" reads as
                 // after this group and its model cards rather than between the header and
                 // its own first card. It needs this wrapper to live in: the section clips
                 // its children (overflow-hidden carries the expand/collapse transition).
                 // Absolutely positioned, so it costs no layout width and cannot push the
-                // header's up-to-five actions out of a narrow page.
+                // header's up-to-six actions out of a narrow page.
                 <div key={group.provider.id} className="relative">
                   {drag.dropEdge !== null && (
                     <div
@@ -1205,6 +1256,23 @@ export function ModelsPage() {
                           </span>
                         )}
                       </button>
+                      {isOwner && platformAuthorized && (
+                        // A stored Penguin Go key enables catalog refresh, but authorization remains
+                        // a separate action so the owner can replace it with another account.
+                        // Sync leads the group actions and sits immediately before Add model.
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="shrink-0"
+                          disabled={busy}
+                          aria-label={`${S.models.platformSync} ${group.provider.label}`}
+                          title={S.models.platformSync}
+                          onClick={() => void syncPlatformModels()}
+                        >
+                          <GlyphIcon d={SYNC_ICON} size={ICON_SIZE.groupHeaderAction} />
+                          <span className="hidden @3xl:inline">{S.models.platformSync}</span>
+                        </Button>
+                      )}
                       {isOwner && (
                         // Add-model entry point: present on every group header (including
                         // custom), new models belong to that group. Narrow rows never hide a
@@ -1219,29 +1287,30 @@ export function ModelsPage() {
                           title={S.models.addToGroup}
                           onClick={() => setAddingTo(group.provider.id)}
                         >
-                          <GlyphIcon d={PLUS_ICON} size={13} />
+                          <GlyphIcon d={PLUS_ICON} size={ICON_SIZE.groupHeaderAction} />
                           <span className="hidden @3xl:inline">{S.models.addToGroup}</span>
                         </Button>
                       )}
-                      {isOwner && group.provider.oauth && (
-                        // Authorize-a-key action: rendered off the group's own catalog
-                        // descriptor, so a provider gains this button by publishing a flow
-                        // rather than by being named here. Same narrow-row rule as its
-                        // neighbours — the label goes, the icon and its names stay. It leads the
-                        // manual key action: where a group can mint a key, that is the shorter path.
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="shrink-0"
-                          disabled={busy}
-                          aria-label={`${S.models.oauthKey} ${group.provider.label}`}
-                          title={S.models.oauthKey}
-                          onClick={() => setOauthFor(group.provider.id)}
-                        >
-                          <GlyphIcon d={SIGN_IN_ICON} size={13} />
-                          <span className="hidden @3xl:inline">{S.models.oauthKey}</span>
-                        </Button>
-                      )}
+                      {isOwner &&
+                        (group.provider.oauth || group.provider.id === PENGUIN_GO_PROVIDER_ID) && (
+                          // Authorize-a-key action: rendered off the group's own catalog
+                          // descriptor, so a provider gains this button by publishing a flow
+                          // rather than by being named here. Same narrow-row rule as its
+                          // neighbours — the label goes, the icon and its names stay. It leads the
+                          // manual key action: where a group can mint a key, that is the shorter path.
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="shrink-0"
+                            disabled={busy}
+                            aria-label={`${S.models.oauthKey} ${group.provider.label}`}
+                            title={S.models.oauthKey}
+                            onClick={() => setOauthFor(group.provider.id)}
+                          >
+                            <GlyphIcon d={SIGN_IN_ICON} size={ICON_SIZE.groupHeaderAction} />
+                            <span className="hidden @3xl:inline">{S.models.oauthKey}</span>
+                          </Button>
+                        )}
                       {isOwner && group.provider.id !== "custom" && (
                         // Bulk key action: icon-only while this row is narrow, labeled from
                         // @3xl up. The button itself never disappears — aria-label + title
@@ -1255,7 +1324,7 @@ export function ModelsPage() {
                           title={S.models.groupApiKey}
                           onClick={() => setGroupKeyFor(group.provider.id)}
                         >
-                          <GlyphIcon d={KEY_ICON} size={13} />
+                          <GlyphIcon d={KEY_ICON} size={ICON_SIZE.groupHeaderAction} />
                           <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
                         </Button>
                       )}
@@ -1273,7 +1342,7 @@ export function ModelsPage() {
                           }
                           onClick={() => setSpeedFor(group.provider.id)}
                         >
-                          <GlyphIcon d={GAUGE_ICON} size={13} />
+                          <GlyphIcon d={GAUGE_ICON} size={ICON_SIZE.groupHeaderAction} />
                           {/* Compact rows keep this accessible action icon-only. */}
                           <span className="hidden @3xl:inline">
                             {speedRunning === group.provider.id
@@ -1295,7 +1364,7 @@ export function ModelsPage() {
                           title={S.models.deleteGroup}
                           onClick={() => setDeleteGroupFor(group.provider.id)}
                         >
-                          <GlyphIcon d={TRASH_ICON} size={13} />
+                          <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.groupHeaderAction} />
                           <span className="hidden @3xl:inline">{S.models.deleteGroup}</span>
                         </Button>
                       )}
@@ -1418,30 +1487,48 @@ export function ModelsPage() {
           opens a NEW authorization, which is how a completed authorization ended up offering
           itself again. `count` is only read while the flow is still running, so a reload's
           momentary absence of rows reads as zero and is never seen. */}
-      {projectId && oauthFor !== null && (
-        <ModelOAuthDialog
-          projectId={projectId}
-          provider={MODEL_PROVIDERS.find((p) => p.id === oauthFor) ?? userProviderInfo(oauthFor)}
-          count={rows?.filter((r) => r.provider === oauthFor).length ?? 0}
-          onClose={() => {
-            setOauthFor(null);
-            // The reload waits for the dismissal rather than racing the open dialog: the key
-            // was written server-side, so the table in hand is stale in exactly one place, and
-            // reloading brings the masked key back. Gated on a key having landed, because
-            // `load` also drops this Project's speed results — measurements that cost real API
-            // quota and live only in page memory — and a cancelled flow changed nothing.
-            if (keyLanded.current) void load();
-            keyLanded.current = false;
-          }}
-          onApplied={() => {
-            // The dialog stays open and reports the outcome itself (its `done` phase), because
-            // the authorization ran in another tab and a toast would be announced to a window
-            // nobody is looking at. All this seam does is record that the dismissal has a
-            // reload to do.
-            keyLanded.current = true;
-          }}
-        />
-      )}
+      {projectId &&
+        oauthFor !== null &&
+        (oauthFor === PENGUIN_GO_PROVIDER_ID ? (
+          <PlatformKeyAuthDialog
+            projectId={projectId}
+            providerLabel={
+              MODEL_PROVIDERS.find((provider) => provider.id === oauthFor)?.label ?? oauthFor
+            }
+            count={rows?.filter((row) => row.provider === oauthFor).length ?? 0}
+            onClose={() => {
+              setOauthFor(null);
+              if (keyLanded.current) void load();
+              keyLanded.current = false;
+            }}
+            onApplied={() => {
+              keyLanded.current = true;
+            }}
+          />
+        ) : (
+          <ModelOAuthDialog
+            projectId={projectId}
+            provider={MODEL_PROVIDERS.find((p) => p.id === oauthFor) ?? userProviderInfo(oauthFor)}
+            count={rows?.filter((r) => r.provider === oauthFor).length ?? 0}
+            onClose={() => {
+              setOauthFor(null);
+              // The reload waits for the dismissal rather than racing the open dialog: the key
+              // was written server-side, so the table in hand is stale in exactly one place, and
+              // reloading brings the masked key back. Gated on a key having landed, because
+              // `load` also drops this Project's speed results — measurements that cost real API
+              // quota and live only in page memory — and a cancelled flow changed nothing.
+              if (keyLanded.current) void load();
+              keyLanded.current = false;
+            }}
+            onApplied={() => {
+              // The dialog stays open and reports the outcome itself (its `done` phase), because
+              // the authorization ran in another tab and a toast would be announced to a window
+              // nobody is looking at. All this seam does is record that the dismissal has a
+              // reload to do.
+              keyLanded.current = true;
+            }}
+          />
+        ))}
 
       {rows && deleteGroupFor !== null && (
         <ConfirmModal
@@ -1987,17 +2074,18 @@ function ModelCard({
 }) {
   const priced = row.cacheRead || row.cacheWrite || row.output;
   /**
-   * A promoted catalog row. `discountedPrice` returns nothing once the price has been edited
-   * away from the catalog's, and nothing for a row on a time-of-day schedule while it is inside
-   * its peak windows — at peak it is simply at list price, which is what is stored.
+   * What is taken off this row's list price right now: its running promotion, its live
+   * off-peak tier, or both. `discountedPrice` returns nothing for a row with neither — no
+   * promotion, and a schedule that is inside its peak windows or on a price edited away from
+   * the catalog's peak price.
    *
-   * `hourTick` is in the dependency list for that second case: a scheduled row's price changes
-   * on the hour with nobody touching the page, and a card left open would otherwise keep
-   * printing a rate that stopped applying.
+   * `hourTick` is in the dependency list for the schedule: a scheduled row's price changes on
+   * the hour with nobody touching the page, and a card left open would otherwise keep printing
+   * a rate that stopped applying.
    */
   const discount = useMemo(() => discountedPrice(row), [row, hourTick]);
-  // The buckets to print: what the seller bills right now. They differ from the stored numbers
-  // only for a scheduled discount, whose stored price is the peak one.
+  // The buckets to print: what the seller bills right now. The stored numbers are the list
+  // price, so they differ whenever a discount applies.
   const shownPrice = discount
     ? {
         cacheRead: String(discount.billed.cacheRead),
@@ -2067,8 +2155,8 @@ function ModelCard({
           {
             key: "discount",
             label: S.models.discountBadge(discount.percent),
-            title: discount.scheduled
-              ? S.models.offPeakTitle(discount.percent)
+            title: discount.peak
+              ? S.models.offPeakTitle(discount.percent, discount.peak)
               : S.models.discountTitle(discount.percent),
             className: TAG_INK.price,
           },
@@ -2314,7 +2402,8 @@ function ModelDialog({
       cacheRead: "",
       cacheWrite: "",
       output: "",
-      baseUrl: info?.gatewayBaseUrl ?? "",
+      baseUrl:
+        addProvider === PENGUIN_GO_PROVIDER_ID ? PENGUIN_GO_BASE_URL : (info?.gatewayBaseUrl ?? ""),
       originalBaseUrl: "",
       apiKeyInput: "",
       clearApiKey: false,
@@ -2364,6 +2453,8 @@ function ModelDialog({
   const [tokenUnitRef, tokenUnitWidth] = useAffixWidth();
   const isNew = row === null;
   const preset = row !== null && isPreset(row);
+  /** The loaded row's running promotion, explained under the price fields. */
+  const promotion = fractionOff(row?.discount);
 
   // Read from the live form, not the saved row, so editing the upstream id, the protocol or
   // the base URL updates the answer as it is typed.
@@ -2605,12 +2696,13 @@ function ModelDialog({
   // inferred — required for custom / user-defined groups and entries with an explicit
   // openai protocol (gateway groups already have it pre-filled); optional for entries
   // auto-routed within a first-party vendor group (the client has its own official
-  // default endpoint). Shared by validation and the label's required "*" mark.
+  // default endpoint). The Penguin Go relay is also required: its shared key must never
+  // fall through to a vendor default. Shared by validation and the label's required "*" mark.
   const openAiLike =
     form.clientType.trim().toLowerCase().includes("openai") ||
     form.provider === "custom" ||
     providerInfo(form.provider) === undefined;
-  const baseUrlRequired = !preset && openAiLike;
+  const baseUrlRequired = form.provider === PENGUIN_GO_PROVIDER_ID || (!preset && openAiLike);
   // Custom-like groups (custom + user-defined) pick among AgentHub's generic protocol
   // clients: the base URL field's suffix becomes the protocol picker there, unless the
   // entry carries a legacy vendor-pinned client_type — that keeps the read-only note below
@@ -2681,15 +2773,30 @@ function ModelDialog({
       return null;
     }
     setFieldErrors({});
+    const cacheRead = priceToSubmit(form.cacheRead, row?.cacheRead, currency);
+    const cacheWrite = priceToSubmit(form.cacheWrite, row?.cacheWrite, currency);
+    const output = priceToSubmit(form.output, row?.output, currency);
+    // The server cancels the promotion of a row saved with a new price or identity. A promotion
+    // the preset sync declared (still on the row when that sync's save failed) would restate it
+    // instead, so the declaration goes, and with it the promotion the card would otherwise keep
+    // showing until the save lands.
+    const cancelsPromotion =
+      row !== null &&
+      (cacheRead !== row.cacheRead ||
+        cacheWrite !== row.cacheWrite ||
+        output !== row.output ||
+        form.provider !== row.provider ||
+        modelId !== row.modelId);
     return {
       ...form,
       modelId,
       // Custom models with an empty context window fall back to the default value (preset models left empty just mean "unknown", not auto-filled).
       contextWindow:
         !preset && !contextWindow ? String(CUSTOM_CONTEXT_DEFAULT) : form.contextWindow,
-      cacheRead: priceToSubmit(form.cacheRead, row?.cacheRead, currency),
-      cacheWrite: priceToSubmit(form.cacheWrite, row?.cacheWrite, currency),
-      output: priceToSubmit(form.output, row?.output, currency),
+      cacheRead,
+      cacheWrite,
+      output,
+      ...(cancelsPromotion ? { discount: undefined, discountDeclared: undefined } : {}),
     };
   };
 
@@ -2735,15 +2842,16 @@ function ModelDialog({
   // and self-defined groups have no link).
   const dialogProvider = providerInfo(form.provider);
   // env fallback resolves live from the current form (uses the same
-  // resolveModelEnv as the server's getModels): explicit client_type takes
-  // priority, otherwise auto-route by model_id; no fallback if it can't be routed.
+  // the same provider-aware resolver as the server's getModels): the Penguin Go relay
+  // keeps its own key while ordinary groups follow client routing.
   //
   // Custom and user-defined groups opt out of the model_id half (per maintainer): typing
   // `claude-sonnet-5` into a custom group must not quietly imply the Anthropic client and
   // its ANTHROPIC_* key. Those groups default to the compatible client, which is also what
   // gets persisted when nothing is picked or detected — so keying the hint off it is what
   // the entry will actually read after saving.
-  const liveEnvKey = resolveModelEnv(
+  const liveEnvKey = resolveProviderModelEnv(
+    form.provider,
     form.modelId.trim(),
     envHintClientType(form.provider, form.clientType),
   )?.envKey;
@@ -3359,6 +3467,14 @@ function ModelDialog({
             </label>
           ))}
         </div>
+        {/* The fields hold the list price, not the promotional price the card prints: the
+            promotion is stored apart and taken off when usage is priced. It is said here, in
+            view while the prices are typed, because typing a different price cancels it. */}
+        {promotion !== undefined && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {S.models.promotionPriceHint(Math.round(promotion * 100))}
+          </p>
+        )}
 
         {/* 5) Identity: model id (renamable) + display name and group (side by side) */}
         {!isNew && identityFields}

@@ -52,11 +52,12 @@ The **Report-writing agent** example creates an agent with the id `report-writer
 ## Create an agent manually
 
 1. On the **Agents** page, select **Create manually**. The **Create agent** dialog opens.
-2. In **Agent id**, enter an id. It is 2–64 characters long, starts with a lowercase letter, and uses only lowercase letters, digits and underscores. You cannot change it later.
-3. Optional: fill in **Name** and **Description**. An empty name uses the agent id.
-4. Optional: in **Plugins**, select plugins from the plugin library to install on the new agent. Their Skills and hook packages are installed when the agent is created.
-5. Optional: in **Import Skills from a project directory**, select a directory. PenguinHarness reads the Skills under its `.agents/skills` and `.claude/skills` folders; select the ones to install. If a Skill from the directory has the same name as a Skill from a selected plugin, the directory's Skill is installed.
-6. Select **Create**. The new agent's settings open.
+2. Optional: in **Name**, enter a name. An empty name uses the agent id.
+3. In **Agent id**, enter an id, or select **Generate with AI** beside the field to have the Project's default model derive one from the name, or from the description while the name is empty. An id is 2–64 characters long, starts with a lowercase letter, and uses only lowercase letters, digits and underscores. A proposal replaces what is in the box and stays editable. You cannot change the id later.
+4. Optional: fill in **Description**.
+5. Optional: in **Plugins**, select plugins from the plugin library to install on the new agent. Their Skills and hook packages are installed when the agent is created.
+6. Optional: in **Import Skills from a project directory**, select a directory. PenguinHarness reads the Skills under its `.agents/skills` and `.claude/skills` folders; select the ones to install. If a Skill from the directory has the same name as a Skill from a selected plugin, the directory's Skill is installed.
+7. Select **Create**. The new agent's settings open.
 
 Any Project member can create an agent.
 

@@ -249,11 +249,13 @@ URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只�
 
 将 GitHub 上的最新 release 与当前运行版本对比：`{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`。手动**检查更新**发送的 `?force=1` 可绕过 TTL 缓存，结果仍按常规缓存。
 
-这是服务器唯一一处访问外网的调用，失败时平稳降级：
+这次查询失败时平稳降级：
 
 - 查询失败仍返回 200，只是 `error` 会带值（`network`、`rate_limited` 或 `bad_response`），且 `latestVersion` 为 null。
 - 结果缓存在内存中：成功后缓存 1 小时，失败后缓存 10 分钟。
 - `PENGUIN_UPDATE_CHECK=off` 可彻底关闭查询：响应带 `disabled: true`，且不发起任何网络请求。
+
+这个开关只关掉这一项检查。无论它取什么值，模型请求、已启用的远程控制连接、由所有者发起的供应商 Key 授权和代理测试都照常出站。
 
 ### GET /api/version/update
 
@@ -293,6 +295,7 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 | DELETE | `/api/projects/:projectId/members/:userId` | 移除成员 |
 | GET / PUT | `/api/projects/:projectId/chat-defaults` | 读取 / 替换新建对话的默认值 |
 | GET / PUT | `/api/projects/:projectId/command-policy` | 读取 / 替换沙箱命令策略 |
+| POST | `/api/projects/:projectId/suggest-id` | 为正在创建的对象的显示名提议一个语义化 id |
 
 - `PATCH /api/projects/:projectId` 仅限所有者，且只能修改显示名称（1–100 个字符）。Project id 就是它的目录名，永不改变。
 - `DELETE /api/projects/:projectId` 仅限所有者。`default_project` 与 CLI 共享，无法删除：返回 `409` `cannot_delete_default_project`。
@@ -300,14 +303,25 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 - `chat-defaults` 对应 `[default_chat]` 配置块：`{agentId?, workspace?, approvalMode?, thinkingLevel?}`。任何成员都可以读取，只有所有者可以替换。PUT 会替换整个块：省略的键清除对应默认值，空请求体则移除整个块。`agentId` 必须指向 Project 中已存在的 Agent（否则返回 `400` `unknown_agent`）。`workspace` 只是预填值，创建 Session 时才会校验；留空表示临时 Workspace。`thinkingLevel` 用作未在自身配置里设置思考等级的 Agent 的兜底值，不接受 `none`。默认模型不属于这个块，由模型相关路由管理。
 - `command-policy` 对应 `[command_policy]` 配置块：`{enabled?, rules: [{name, pattern, description?, enabled?}]}`。任何成员都可以读取，只有所有者可以替换。PUT 必须携带完整的规则列表（空数组表示没有任何规则），规则最多 64 条。每条规则需要名称（最多 64 个字符）和 pattern（最多 512 个字符，且必须能编译为正则表达式），description 最多 300 个字符。pattern 编译失败返回 `400` `invalid_rule_pattern`，其他格式错误的规则返回 `400` `invalid_rules`，`enabled` 不是布尔值返回 `400` `invalid_enabled`。参见[命令策略](/configuration#命令策略)。
 
+### 语义化 id 提议
+
+`POST /api/projects/:projectId/suggest-id` 接收 `{name, kind, taken?}`，返回 `{id, source, reason?}`。`kind` 取 `project`、`agent`、`benchmark`、`org` 或 `channel`，`taken` 是提议必须避开的一批 id。id 输入框旁边的**用 AI 生成**按钮，背后都是这一条路由。
+
+- 路径里这个 Project 的默认模型把名称翻译成一个符合该 kind 拼写风格的英文 id（`source: model`）；**新建 Project** 对话框借用的是打开它时所在的那个 Project。回答没有得出 id 时，会带着明确的格式要求再问模型一次。
+- 没有配置模型，或两次回答都不可用时，改用名称生成的 ASCII slug（`source: fallback`）。
+- 两条路径都生成不出 id 时，给出一个带日期的占位 id（`source: placeholder`），`reason` 为 `no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`：`project_<yyyymmdd>`、`agent_<yyyymmdd>`、`benchmark-<yyyymmdd>`、`co_org_<yyyymmdd>` 或 `ch_channel_<yyyymmdd>`；非管理员的 Project id 前面还带用户名。
+- 各个 kind 的差别只有三处：id 的形状、服务端自己要避开的 id，以及谁可以请求。`project` 对管理员是 snake_case，对其他人是 `<username>-<后缀>`，要避开服务器上的每一个 Project id；`agent` 是 snake_case，要避开这个 Project 的 Agent；`benchmark` 是 kebab-case，要避开这个 Project 的 Benchmark，且仅限所有者；`org` 和 `channel` 带 `co_`、`ch_` 前缀，回答里已有前缀时不会重复添加，公司模式关闭时返回 `404` `company_mode_off`。其余情况下调用者必须是这个 Project 的成员。
+- 服务端自己要避开的，是该 kind 的创建路由会以「已占用」拒绝的那些名称，包括任何列表都不显示的残留目录。它们不会进入提示词；发生冲突时只会加上 `_2` / `-2` 后缀。核心词因为以数字开头或只有一个字符而被该 kind 的规则拒绝时，会放到这个 kind 的名词后面再试一次（`3D Viewer` → `agent_3d_viewer`）。
+- 名称翻译不出来时路由也不会失败，因此请求 id 的对话框总能拿到结果。模型侧的每一次失败都会记录为 `id_suggest_failed` 错误，`org` 和 `channel` 记在 `organization` 来源下，其余记在 `id_suggest` 下。这次补全关闭思考运行，使用共享的元请求预算，不属于任何 Session，也不计量。
+
 ## 模型
 
 管理 Project 的模型表，并探测模型端点。模型表对所有成员开放读取；本节其余路由仅限所有者。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/projects/:projectId/models` | 列出模型（`api_key` 做掩码处理） |
-| PUT | `/api/projects/:projectId/models` | 整表替换，以 `(provider, modelId)` 为键 |
+| GET | `/api/projects/:projectId/models` | 列出模型（`api_key` 做掩码处理）；正在促销的条目会带上促销折扣 `discount` |
+| PUT | `/api/projects/:projectId/models` | 整表替换，以 `(provider, modelId)` 为键；条目的 `discount` 用来保存或清除它的促销 |
 | PUT | `/api/projects/:projectId/models/default` | 设置默认模型：`{provider, modelId}` → `{defaultModel}` |
 | POST | `/api/projects/:projectId/models/test` | 测试连通性：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
 | POST | `/api/projects/:projectId/models/detect` | 检测自定义 base URL 使用的协议 |
@@ -315,6 +329,8 @@ Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project
 | POST | `/api/projects/:projectId/models/detect-vision` | 探测模型是否接受图片 |
 
 凡是指定模型的路由都要求完整的 `(provider, modelId)` 组合，不做任何推断：只带一半的请求一律返回 400，绝不会退化为一次查找。在模型引用本身可选的场景（创建 Session、定时任务）里，两个都不填则使用 Project 的默认模型。
+
+条目的 `pricing` 记的始终是牌价。促销是一个大于 0、小于 1 的折扣率，从牌价中扣除，但从不写进 `.project_config.toml`：服务端按条目把它保存在 `web.db` 里，计算用量成本时再扣除。`PUT /models` 里，条目带的 `discount` 说了算——数字表示保存这个促销，`null` 表示清除，其他取值会在写入任何内容之前返回 `400`。条目不带 `discount` 时保留已存的促销，除非它改名（`renamedFrom` 指向另一对引用）或 `pricing` 与已存的不同，这两种情况下促销会被清除。新表里没有的条目，其促销随之删除。
 
 - `PUT /models` 还会使 Project 缓存的 Session 运行时失效，生效值的语义与 vault 更新相同。已经开始的运行不会切换，但 Project 内任何 Session 的下一个 Task 都会重新加载运行时，读取新的 `api_key` / `base_url`。这条路由还会向 Project 已打开的 Session 通道发布 `credentials_updated` 事件（参见[流式传输（SSE）](#流式传输sse)）。模型响应带有 `updatedAt`，即配置文件的修改时间；Web App 拿它和最近一次认证失败的时间对比，决定那次失败导致禁用的输入框是否继续保持禁用。
 - `PUT /models/default` 只修改默认模型，无需重发模型表或凭证。这对组合必须指向一条已配置的条目，否则返回 400。已有的 Session 沿用创建时的模型，因此这条路由既不会使运行时失效，也不会发布 `credentials_updated`。
@@ -340,6 +356,22 @@ PKCE verifier 由服务器生成，只在内存中保存 10 分钟，从不发�
 回调能做的事还有第二重限制：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、写入 Project 模型，都发生在 `GET /:flowId`，也就是所有者自己的轮询里，仍在会话校验之后。除非所有者主动查询流程状态，否则任何 key 都进不了 Project；兑换失败也在那里以 `{status: error, error}` 报告，而不是显示在跳转页面上。回调周边的一切同样不在豁免之列：更长的路径、其他任何请求方法（这一路径本身的 `HEAD` 返回 405），以及另外三条同组路由，都仍然需要会话。
 
 `mode: manual` 不发送回调 URL，授权页会显示一个一次性授权码，由用户手动粘贴回来，适用于跳转回不来的部署。无论由哪条路由兑换授权码，流程完成后都会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
+
+### Penguin Go Key 授权
+
+Penguin Go 的 key 通过服务端轮询的设备授权交付，而不是浏览器跳转，因此它有自己的一组路由。这些路由都仅限所有者。浏览器只拿到本地的 flow id 和授权 URL，拿不到设备密钥、交付的 key，也拿不到平台返回的其他内容。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/projects/:projectId/platform-auth/start` | 开启一次性授权流程，平台给出的截止时间在本地最多按十分钟计：→ 201 `{flowId, authorizeUrl, expiresAt}` |
+| POST | `/api/projects/:projectId/platform-auth/sync` | 用已存的 key 拉取平台模型目录，补齐 Project 缺少的模型并刷新平台维护的字段：→ 模型表，外加 `added` 与 `updated` 计数 |
+| GET | `/api/projects/:projectId/platform-auth/:flowId/status` | 由服务端向 Penguin Go 轮询，随后把交付的 key 写入整个分组并补齐平台的模型：`{status: pending\|applying\|completed\|cancelled\|apply_failed\|error, error?, applied?}` |
+| POST | `/api/projects/:projectId/platform-auth/:flowId/retry` | 本地写入失败后重试写入；不会再次索取这次一次性交付，流程处于其他状态时返回 `409 platform_auth_not_retryable` |
+| POST | `/api/projects/:projectId/platform-auth/:flowId/cancel` | 取消本地流程；平台侧的待处理记录按自己的 TTL 过期 |
+
+服务端先校验交付的 key、端点和模型目录，然后才写入任何内容。校验通过后，它把 key 写入 `penguin-go` 分组下已有的每个条目，创建平台提供而 Project 没有的模型，刷新已有模型的牌价与客户端协议，并用平台的促销替换这个分组已存的促销。端点和其他由 Project 自己维护的字段保持不变，任何模型都不会被删除；目录非空时，分组不存在也会被建出来。写入完成后会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
+
+flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`sync` 在没有已存 key 或平台拒绝这把 key 时返回 `409 platform_reauthorization_required`，平台拒绝提供目录或返回的目录无法解析时返回 `502 platform_sync_failed`，平台不可达则是 `502 platform_unreachable`。交付的 key 未能写入本地时，流程停在 `apply_failed`，重试路由正是为此准备的。
 
 ## Agent
 
@@ -460,7 +492,6 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET / POST | `/` | 列出组织 / 创建组织 |
-| POST | `/suggest-id` | 为显示名提议一个语义化 id |
 | GET / PATCH | `/:orgId` | 组织概览 / 修改组织设置 |
 | GET | `/:orgId/chart` | 员工树，含每名员工的实时状态、工位和本期花费 |
 | POST | `/:orgId/employees` | 招聘员工：已有 Agent 或新建 Agent |
@@ -468,7 +499,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET / POST | `/:orgId/employees/:agentId/desk` | 工位会话（缺失时自动打开）/ 续期后的工位会话 |
 | GET / PUT | `/:orgId/handbook` | 手册索引（`handbook/README.md`） |
 | GET | `/:orgId/handbook/files` | 知识库文件，索引排在最前 |
-| GET / PUT / DELETE | `/:orgId/handbook/files/\<path\>` | 按相对路径访问单个文档；索引不可删除 |
+| GET / PUT / DELETE | `/:orgId/handbook/files/<path>` | 按相对路径访问单个文档；索引不可删除 |
 | GET / POST | `/:orgId/calendar` | 全体员工的事件和运行状态 / 创建事件 |
 | GET / PUT / DELETE | `/:orgId/calendar/:agentId/:name` | 单个事件 |
 | GET / POST | `/:orgId/tickets` | 按列组织的看板，附无法解析的文件 / 创建工单 |
@@ -486,7 +517,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 | GET / POST | `/:orgId/channels/:channelId/messages` | 一天的消息，附调用者的未读数和提及数 / 发送消息 |
 | POST | `/:orgId/channels/:channelId/read` | `{upTo}`：调用者在此频道的已读游标 |
 | GET | `/:orgId/finance` | 每名员工的花费（自身及沿汇报线累计）和每个工单的花费（沿 `Parent` 逐级汇总）、每日趋势和告警；`?period=yyyy-mm` |
-| GET | `/:orgId/sessions` | 组织的工位会话，以及按工单分组的工单会话 |
+| GET | `/:orgId/sessions` | 组织的工位会话，以及按工单分组的工单会话。工位会话启用了消息绑定时，这一行也带上它的 `messagingChannel`，与会话自己的行一致 |
 
 ### 调用者身份
 
@@ -500,13 +531,7 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 - `GET /:orgId` 返回概览：设置、看板计数、今日日程、待办事项、全员频道的最近消息、`inbox` 和告警。设置里始终带有生效的 `language`；文件里没有记录时，从使命推断得出。
 - `PATCH /:orgId` 修改名称、使命、`status`（`active` / `paused`；暂停会停止所有自动触发器）、`approvalMode`、`timezone`、`language` 和各项阈值。
 
-`POST /suggest-id` 接收 `{name, kind}`，`kind` 取 `org` 或 `channel`，另可带 `taken?`（提议必须避开的一批 id），返回 `{id, source, reason?}`：
-
-- Project 的默认模型会把名称翻译成一个 snake_case 英文核心词（`source: model`）。第一次回答没有得出 id 时，会带着明确的格式要求再问模型一次。
-- 没有配置模型，或两次回答都不可用时，改用名称生成的 ASCII slug（`source: fallback`）。
-- 两条路径都生成不出 id 时，名称改用 `co_org_<yyyymmdd>` / `ch_channel_<yyyymmdd>`（`source: placeholder`），`reason` 为 `no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`。
-
-名称翻译不出来时，路由也不会失败，因此请求 id 的对话框总能拿到结果；模型侧的每一次失败都会记录为 `organization` / `id_suggest_failed` 错误。服务器随后为结果加上对应 kind 的前缀（`org` 用 `co_`，`channel` 用 `ch_`；核心词已带前缀时不会重复添加），限制长度，并避开 `taken` 中的 id。所以提议生成的 id 总是带前缀，手动输入的 id 则按原样使用。这次补全关闭思考运行，使用共享的元请求预算，不属于任何 Session，也不计量。
+组织和频道的 id 提议由 Project 级路由给出，即带 `kind: org` 或 `kind: channel` 的 `POST /api/projects/:projectId/suggest-id`，见[语义化 id 提议](#语义化-id-提议)。
 
 ### 员工
 
@@ -577,15 +602,16 @@ Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/agents/:agentId/sessions` | 列出 Agent 的 Session 及运行状态，不论由哪个客户端创建 |
+| GET | `/agents/:agentId/sessions` | 列出 Agent 的 Session 及运行状态，不论由哪个客户端创建；`excludeOrg=1` 则只要用户自己的那些 |
 | POST | `/agents/:agentId/sessions` | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201 `{session}` |
 | GET | `/dirs?path=` | Workspace 选择器背后的服务器端目录浏览器 |
 | GET | `/dir-skills?path=` | 目录所带的 Skill，用于导入到新 Agent |
 
 - Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`subagent`、`schedule`、`benchmark` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
+- `excludeOrg=1` 会把组织的工位会话、工单会话和子 Session 一并移出这一页以及 `counts=1` 的总数，这正是开发模式的列表所要的。取其他值返回 400。
 - 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
 - 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
-- `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。它从不用于过滤列表。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。
+- `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。只有 `excludeOrg` 会把它当作过滤条件，而且只用来剔除这些行。
 - `source` 只接受 `"benchmark"`，用于 Benchmark 评估或优化创建的 Session。`subagent` 和 `schedule` 由服务器自己设置。
 - `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries}`，只包含子目录；读不了的目录按空列表返回，用户仍然可以向上返回。
 - `GET /dir-skills` 只读取绝对路径下的 `<path>/.agents/skills` 和 `<path>/.claude/skills`，响应为 `{path, skills}`。没有 Skill 的目录返回空列表。参见 [Agent](#agent) 一节中的 `POST /agents`。
@@ -947,7 +973,10 @@ QQ 是只能回复的渠道，这一点改变了投递的含义。平台没有�
 
 - 图片以图片形式发送，其余以附件形式发送；分类依据是实际读取的文件，而不是回复里写的名字。
 - 一次运行最多发送 5 个文件：每张图片最多 10MB，每个文件最多 30MB（取各渠道自身限制中更严的一个）。
-- 提及的文件未能送达时一律不在聊天中报告：超过大小上限、超过数量上限或渠道拒绝上传，会记入该 Project 在成本中心的异常记录，每次回复一条；Workspace 中对不上文件的名字与运行没有写过的文件则静默跳过、只写服务端日志，因为回复提到自己读过或只是描述过的文件是常态。
+- 提及的文件未能送达时一律不在聊天中报告，而是作为异常记录挂在这个 Project 下，由成本中心的异常表展示：同一次回复里每个原因一条记录，写明它覆盖的每个文件、渠道和原因。
+  - `messaging_file_too_large` 覆盖超过大小上限的文件，`messaging_files_skipped` 覆盖超过数量上限的那些。两者都属于 `expected`。
+  - `messaging_file_send_failed` 覆盖渠道拒绝的上传，按原因分组：渠道根本承载不了的上传（QQ 上的任何文件）、缺少权限，以及其他任何拒绝。缺少权限的那条只列一次要授予的权限范围和控制台链接，取代每个文件各自的原因。渠道根本承载不了的上传属于 `expected`；缺少权限和其他任何拒绝属于 `unexpected`。
+  - Workspace 中对不上文件的名字，以及运行没有写过的文件，静默跳过、只写服务端日志，因为回复提到自己读过或只是描述过的文件是常态。
 
 ### 连接状态
 

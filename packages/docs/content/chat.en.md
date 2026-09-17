@@ -16,7 +16,7 @@ The chat page is where you work with an agent. You start a conversation, follow 
 
 A new conversation starts as a draft. The Session is created when you send the first message.
 
-1. In the sidebar, select **New chat**. The draft opens with the Project's `default_agent`, or the first agent when there is none.
+1. In the sidebar, select **New chat**. The draft opens on the agent in the Project's **New chat defaults**, as long as that agent still exists in the Project; otherwise on `default_agent`, and otherwise on the first agent.
 2. Above the composer, pick the **Agent**, the **Workspace** (a directory on the server, chosen in a directory browser), the **Approval mode**, the **Model** and the **Thinking level**.
 3. Type your message and press Enter.
 
@@ -24,7 +24,7 @@ Once the Session exists, its model and Workspace are locked. To move to another 
 
 Good to know:
 
-- The Project's **New chat defaults** (in **Project settings**, see [Web App](/web-app#projects-and-members)) prefill a new draft's Workspace and approval mode, and the model starts as the Project's default model. The thinking level shows the agent's own level, else the Project default, else medium.
+- The Project's **New chat defaults** (in **Project settings**, see [Web App](/web-app#projects-and-members)) prefill a new draft's agent, Workspace and approval mode, and the model starts as the Project's default model. The thinking level shows the agent's own level, else the Project default, else medium.
 - Switching the thinking level or the model in a draft makes it the new default: the level is written back to the selected agent's `model.thinking_level` immediately, and the model carries over to your next conversation.
 - A draft keeps its selections, text and Skills per user and Project. If you select **New chat** while a draft holds typed text, that draft moves to a **Drafts** group in the sidebar.
 
@@ -94,7 +94,7 @@ Type `/` to open the slash menu. Press Enter or Tab to run the highlighted entry
 | `/goal` | Turns on goal mode; see [Set a goal](#set-a-goal) |
 | A Skill's name | Selects or clears an installed Skill; selected Skills are sent with the message |
 
-`/agent` and `/model` appear only in a started conversation: a draft picks its agent and model up front.
+`/compact`, `/agent` and `/model` appear only in a started conversation: a draft has no context to compact, and it picks its agent and model up front.
 
 ### Set a goal
 

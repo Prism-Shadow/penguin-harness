@@ -109,4 +109,4 @@ Updating from inside the container is not supported. See [Upgrade the container]
 
 ## Turn off the update check
 
-Set `PENGUIN_UPDATE_CHECK=off` to disable the update check entirely. It is the server's only outbound request that is not a model request, and with it off, the update dialog says **Update checks are disabled (PENGUIN_UPDATE_CHECK=off)**. See the [Configuration Reference](/configuration#environment-variables).
+Set `PENGUIN_UPDATE_CHECK=off` to turn off the automatic release check. That is all it turns off: model requests, an enabled remote-control connection, provider key authorization and the proxy test still reach the network. With the check off, the update dialog says **Update checks are disabled (PENGUIN_UPDATE_CHECK=off)**. See the [Configuration Reference](/configuration#environment-variables).

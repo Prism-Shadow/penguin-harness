@@ -16,7 +16,7 @@ Open the panel from any of these places:
 
 - The top right of the chat toolbar: select **Right sidebar** or **Bottom panel**, then choose **Files**. If the dock already shows other panels, use its **Add panel** menu.
 - The **Shortcuts** launcher on the conversation's right edge.
-- A message: select a file chip or file card to open the panel at that file.
+- A message: select a file chip or file card to open the panel at that file. A link in a reply that names a file in the Workspace opens it here too, instead of navigating the browser; whether the file exists is not checked first, so the panel says when it is missing.
 
 The panel is available once the conversation has started. See [Use side panels](/chat#use-side-panels).
 
@@ -37,8 +37,6 @@ The tree and the open preview re-read when a turn finishes. The tree also re-rea
 - Left closes a directory or steps out.
 - Home and End jump to the first or last row.
 - Enter and Space act like a click.
-
-Opening or closing a directory grows its subtree out of its row, or shrinks it back in, over about 200ms. With reduced motion, the change is immediate.
 
 ### Hide the tree or change its width
 

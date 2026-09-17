@@ -1,0 +1,19 @@
+# Company mode: one model for every hire, the board asked before heavy or irreversible work, and a research protocol
+
+- **Date:** 2026-09-16
+- **Type:** feature
+- **Scope:** `skills`, `server`, `web`, `landing`, `docs`
+- **PR:** [#750](https://github.com/Prism-Shadow/penguin-harness/pull/750)
+
+[中文版](2026-09-16-company-ask-before-heavy-work.zh.md)
+
+The `agent-company` plugin (now `2026.09.16.1`), the handbook template and the CEO's initialization run were changed so that a new organization's CEO proposes roles and budgets only — every hire runs on the organization's model, or the Project's default when the organization names none, unless the board asked for particular ones — and so that every employee asks the board in the all-hands channel, and waits, before anything that touches the user's machine, spends money or reaches outside the organization. A `company-research` skill was added for research organizations, and the research mission example was rewritten around it.
+
+## Details
+
+- `company-ceo`, `company-hr`, `company-finance` and `company-setup` no longer nudge the CEO toward a model per role: `penguin org hire` takes none, the hiring plan names roles and budgets, and a particular model on a role became a board decision the CEO carries. The hire path was left as it was — an employee hired without a model has no `model` entry, and its desk and ticket sessions run on the organization's model, or resolve the Project's default at the moment each session opens when the organization names none — and server tests now pin both.
+- `company-employee` gained "What you may not decide alone" — four rules by what an action touches: ask the board first and wait (heavy or long compute, money and the outside, anything outside the shared workspace, irreversible operations, missing credentials); propose to the manager, who takes it to the board (roles, budgets, models, rejections, handbook rules, structure); notify, then proceed (noticeable steps inside the accepted plan); just do it (routine work in one's own partition) — and "Asking the board": one message mentioning the creator in the all-hands channel with what will run, its duration and resources, how to stop it and the alternative, then `penguin org ticket block … --by user:<id>` and the end of the run. `company-ceo` binds the CEO to the same list and forbids answering for the board.
+- The handbook template gained the section "Ask before it touches the machine or the outside" in both languages, and its "Decisions belong to the board" section names the default-model rule; the CEO's init body names both rules and the research branch.
+- `company-research`: fix the harness and the metric first; one editable surface, the same time budget per experiment, a `results.tsv` with `keep` / `discard` / `crash` that, like the run logs, stays out of git, keep only improvements, kill at twice the budget, diagnose crashes from the log tail; a resource envelope (machine, concurrency, total, disk and data, keys) asked of the board before the loop and re-asked to exceed it; adversarial review between authors and reviewers who are different employees (the author opens each round's review session for the reviewer with `penguin org ticket start --agent-id`), with a scored review, point-by-point responses, and a three-round cap that escalates to the CEO and then the board — all on the existing `review` column, `blocked` / `blocked_by`, progress lines and channels.
+- The research mission example (`S.company.missionExamples.research`, zh and en) names the loop, the resource ask and the adversarial review; the skills lists on the docs and landing pages, `plugins/README.md` and the plugin manifest enumerate the seventh skill; the company-mode docs describe the gate and the research organization.
+- Existing organizations' handbooks were left as written; their employees receive the changed skills through the reconcile pass that reinstalls a plugin behind the library's version.

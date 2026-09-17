@@ -692,4 +692,41 @@ describe("POST /api/projects/:p/models/detect", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+
+  it("a Penguin Go probe never sends vendor environment keys to the relay endpoint", async () => {
+    const seen: Array<{ path: string; auth?: string; xApiKey?: string }> = [];
+    const server = antOnlyServer(seen);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    const saved = {
+      anthropic: process.env.ANTHROPIC_API_KEY,
+      openai: process.env.OPENAI_API_KEY,
+      penguin: process.env.PENGUIN_GO_API_KEY,
+    };
+    process.env.ANTHROPIC_API_KEY = "vendor-anthropic-must-not-cross";
+    process.env.OPENAI_API_KEY = "vendor-openai-must-not-cross";
+    delete process.env.PENGUIN_GO_API_KEY;
+    try {
+      const response = await api.post(detectUrl(), {
+        baseUrl: `http://127.0.0.1:${port}`,
+        provider: "penguin-go",
+        modelId: "deepseek-flash",
+      });
+      expect(response.status).toBe(200);
+      expect(((await response.json()) as ModelProtocolDetectResponse).detected).toBe(
+        "ant-messages",
+      );
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.every((request) => request.auth === undefined)).toBe(true);
+      expect(seen.every((request) => request.xApiKey === undefined)).toBe(true);
+    } finally {
+      if (saved.anthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = saved.anthropic;
+      if (saved.openai === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = saved.openai;
+      if (saved.penguin === undefined) delete process.env.PENGUIN_GO_API_KEY;
+      else process.env.PENGUIN_GO_API_KEY = saved.penguin;
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 });

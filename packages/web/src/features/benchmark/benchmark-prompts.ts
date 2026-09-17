@@ -156,18 +156,6 @@ export function benchmarkPath(benchmarkId: string): string {
   return `benchmarks/${benchmarkId}`;
 }
 
-/**
- * A directory-name proposal from a title: ASCII letters and digits kept (lowercased), any run
- * of other characters folded into one hyphen, edges trimmed. A title with no ASCII word — a
- * Chinese one — yields "", and the form then asks for an id outright.
- */
-export function slugFromTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 /** `CASE-NNN-<slug>`: the case directory name from its 1-based position and slug. */
 export function caseId(index: number, slug: string): string {
   return `CASE-${String(index).padStart(3, "0")}-${slug}`;

@@ -96,6 +96,7 @@ import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
+import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -2045,6 +2046,13 @@ export class SessionManager {
     const source = asSessionSource(p.source) ?? "subagent";
     this.deps.sources.set(childSid, source);
     const createdAt = this.now().toISOString();
+    // A sub-session of an organization's Session is company mode's own as much as the desk
+    // or ticket session that spawned it: it inherits the durable "org" stamp, which is the
+    // only mark it can carry — the organization caches name desks and ticket sessions, never
+    // what those spawn — and the one development mode's list leaves out. Every other parent
+    // leaves the marker blank (read as web): the child was spawned by this server's run, not
+    // opened through the CLI, whatever opened its parent.
+    const parentClient = this.deps.sessions.findById(entry.sessionId)?.client;
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
       projectId: entry.projectId,
@@ -2056,7 +2064,8 @@ export class SessionManager {
       // inserted with defaults (matches the convention for Sessions discovered by the CLI).
       approvalMode: "allow-all",
       title: null,
-      // Spawned by this server's run (client NULL = web); its Trace exists by construction.
+      ...(parentClient === "org" ? { client: "org" as const } : {}),
+      // Its Trace exists by construction.
       hasTrace: true,
       // A subagent's own runs are driven through the PARENT entry's drive, so nothing ever
       // stamps this row: it stays at its registration time (see SessionRow.lastActiveAt).
@@ -2397,15 +2406,7 @@ export class SessionsModule {
       traceStore: this.traceStore,
       proxyEnv: env.proxyEnv,
       controlEnv: env.controlEnv,
-      messagingChannel: (sessionId) => {
-        const enabled = this.messagingRepo.findEnabled(sessionId);
-        return enabled !== null &&
-          (enabled.channel === "feishu" ||
-            enabled.channel === "telegram" ||
-            enabled.channel === "qq")
-          ? enabled.channel
-          : null;
-      },
+      messagingChannel: (sessionId) => enabledMessagingChannel(this.messagingRepo, sessionId),
       // Company mode: which organization owns a Session, so development mode's list can hide
       // organization sessions and the company sidebar can group its own. The caches are a
       // projection of the organization's files, rebuilt every reconcile pass, so a row that

@@ -467,7 +467,7 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     const set = await runModel([
       "default",
       "--model-id",
-      "deepseek-v4-flash",
+      "deepseek-v4-pro",
       "--provider",
       "deepseek",
       "--root",
@@ -475,14 +475,14 @@ describe("penguin config model add/list (--root plus provider / model_id stored 
     ]);
     expect(set.code).toBe(0);
     expect(set.out).toContain(
-      "Default model set to (provider=deepseek, model_id=deepseek-v4-flash).",
+      "Default model set to (provider=deepseek, model_id=deepseek-v4-pro).",
     );
     const parsed = parseToml(
       await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8"),
     ) as unknown as { default_model: TomlModelRef };
     expect(parsed.default_model).toEqual({
       provider: "deepseek",
-      model_id: "deepseek-v4-flash",
+      model_id: "deepseek-v4-pro",
     });
   });
 });

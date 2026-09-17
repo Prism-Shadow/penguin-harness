@@ -71,6 +71,9 @@ import type {
   ModelOAuthStartRequest,
   ModelOAuthStartResponse,
   ModelOAuthStatusResponse,
+  PlatformAuthFlowStatusResponse,
+  PlatformAuthStartResponse,
+  PlatformModelSyncResponse,
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   ModelsResponse,
@@ -403,6 +406,37 @@ export const submitModelOAuthCode = (projectId: string, flowId: string, code: st
     { method: "POST", body: { code } },
   );
 
+// Penguin Go key authorization (owner) -------------------------------------------
+
+export const startPlatformAuth = (projectId: string) =>
+  apiFetch<PlatformAuthStartResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/start`,
+    { method: "POST", body: {} },
+  );
+
+export const getPlatformAuthFlow = (projectId: string, flowId: string) =>
+  apiFetch<PlatformAuthFlowStatusResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/${encodeURIComponent(flowId)}/status`,
+  );
+
+export const retryPlatformAuthApply = (projectId: string, flowId: string) =>
+  apiFetch<PlatformAuthFlowStatusResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/${encodeURIComponent(flowId)}/retry`,
+    { method: "POST", body: {} },
+  );
+
+export const cancelPlatformAuth = (projectId: string, flowId: string) =>
+  apiFetch<{ ok: boolean }>(
+    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/${encodeURIComponent(flowId)}/cancel`,
+    { method: "POST", body: {} },
+  );
+
+export const syncPlatformModels = (projectId: string) =>
+  apiFetch<PlatformModelSyncResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/sync`,
+    { method: "POST", body: {} },
+  );
+
 // Vault environment variables (Agent-level) -------------------------------------------------------
 
 export const getVault = (projectId: string, agentId: string) =>
@@ -563,13 +597,16 @@ export const listSessions = (
     /** One Workspace group's rows only: its path, or the merged temporary group's sentinel (session-grouping.ts). */
     workspaceGroup?: string;
     withCounts?: boolean;
+    /** The user's own rows only: an organization's desk, ticket and sub-sessions leave the page and the totals together (the development list's contract). */
+    excludeOrg?: boolean;
   },
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}&offset=${opts.offset}` +
       (opts.category ? `&category=${opts.category}` : "") +
       (opts.workspaceGroup ? `&workspaceGroup=${encodeURIComponent(opts.workspaceGroup)}` : "") +
-      (opts.withCounts ? "&counts=1" : "")
+      (opts.withCounts ? "&counts=1" : "") +
+      (opts.excludeOrg ? "&excludeOrg=1" : "")
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,
@@ -1431,9 +1468,16 @@ export const listOrganizations = (projectId: string) =>
 export const createOrganization = (projectId: string, body: OrganizationCreateRequest) =>
   apiFetch<OrganizationDetail>(orgBase(projectId), { method: "POST", body });
 
-/** A semantic id for a display name (organization or channel), from the Project's default model with an ASCII fallback. */
+/**
+ * A semantic id for a display name — a Project's, an Agent's, a Benchmark's, an organization's or
+ * a channel's, by `kind` — from the default model of the Project in the path, with an ASCII
+ * fallback and a dated placeholder behind it.
+ */
 export const suggestSemanticId = (projectId: string, body: SemanticIdSuggestRequest) =>
-  apiFetch<SemanticIdSuggestResponse>(`${orgBase(projectId)}/suggest-id`, { method: "POST", body });
+  apiFetch<SemanticIdSuggestResponse>(`/api/projects/${encodeURIComponent(projectId)}/suggest-id`, {
+    method: "POST",
+    body,
+  });
 
 export const getOrganization = (projectId: string, orgId: string) =>
   apiFetch<OrganizationDetail>(orgBase(projectId, orgId));

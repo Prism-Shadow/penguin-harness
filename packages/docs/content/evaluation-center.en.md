@@ -17,7 +17,7 @@ For how evaluation and optimization work behind these pages, see [Self-Improveme
 
 In the sidebar, select **Evaluation Center**. The page (`/benchmark`) lists every Benchmark of the current Project as a card.
 
-Under the title, three numbered step cards outline the loop: **Create**, **Evaluate** and **Optimize**. Each says where to do that step: with the two create buttons at the top right, or with **Use** on a Benchmark followed by the matching tab.
+Under the title, three numbered step cards outline the loop: **Create**, **Evaluate** and **Optimize**. Each says where to do that step: with the create buttons at the top right, or with **Use** on a Benchmark followed by the matching tab. The owner gets two create buttons, **Create with AI** and **Create manually**; a member gets **Create with AI** alone, and the first card names only that.
 
 Each Benchmark card shows:
 
@@ -35,7 +35,7 @@ To narrow the list, type in the search box; it matches titles, descriptions and 
 A Benchmark that is not finished is masked. Its card is dimmed under a notice, **Use** and **View** are disabled, and its page shows the same notice in place of the cases and the chart. Only the owner's delete icon still works.
 
 - **Being built**: AI is still writing the cases and calibrating their difficulty. The Benchmark opens once that is done.
-- **Creation failed**: the difficulty calibration never finished. Delete the Benchmark and create it again.
+- **Creation failed**: the difficulty calibration never finished. The owner deletes the Benchmark and creates it again; a member is only told that calibration did not finish, because deleting is the owner's to do.
 
 ### The example Benchmark
 
@@ -55,7 +55,7 @@ The dialog's "Done by … in a new conversation" line names the agent that does 
 
 The Builder runs the Test Agent on the model of this new conversation, for the trial runs and for the baseline. Evaluations started later from the **Evaluate** tab run the agent on the model it is configured with, and the chart gives each model its own line. To keep the baseline on the same line as later scores, pick the Test Agent's configured model in the composer before you send.
 
-While the cases are being written, the Benchmark's card shows **Being built**. The Benchmark opens once the baseline is recorded. If calibration fails, the card shows **Creation failed**: delete the Benchmark and create it again.
+While the cases are being written, the Benchmark's card shows **Being built**. The Benchmark opens once the baseline is recorded. If calibration fails, the card shows **Creation failed**; the owner then deletes the Benchmark and creates it again.
 
 ## Create a Benchmark manually
 
@@ -64,7 +64,7 @@ While the cases are being written, the Benchmark's card shows **Being built**. T
 - Only the Project owner can create a Benchmark manually.
 
 1. At the top right of the Evaluation Center, select **Create manually**.
-2. In the **Create a Benchmark manually** form, fill in **Title**, **Benchmark id** and **Description**. The id is also the directory name: letters, digits, `_` and `-` only.
+2. In the **Create a Benchmark manually** form, fill in **Title**, **Benchmark id** and **Description**. The id is also the directory name: letters, digits, `_` and `-` only. It does not follow the title as you type; select **Generate with AI** beside the field to derive a kebab-case id from the title.
 3. Set **Runs per case**, an integer from 1 to 1000. Evaluations and optimizations run every case this many times by default and average the results.
 4. For each case, fill in **Directory suffix**, **Case title**, **Statement** and **Scoring rubric**. The statement goes to the agent under test. The rubric lists observable scoring items that total 100 points, and never reaches the agent under test. Select **Add case** to add another case.
 5. Select **Create Benchmark**. The Benchmark's page opens.

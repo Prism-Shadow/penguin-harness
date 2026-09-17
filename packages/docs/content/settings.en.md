@@ -37,7 +37,7 @@ Where your personal preferences are stored:
 - In this browser: language, currency, notifications, theme, terminal theme, font size, accent, the shortcuts launcher, and tool short names.
 - With your account on the server: your profile and your personal Company mode switch.
 
-The Server pages are admin-only and server-global. A non-admin sees neither those entries nor any hint that they exist. The APIs behind them (`GET|PUT /api/admin/settings` and the admin user routes) answer a non-admin with 403, whatever the browser renders, so a non-admin is left with the Personal pages alone, and the rail draws no group headings at all.
+The Server pages are admin-only and server-global. A non-admin sees neither those entries nor any hint that they exist: they are left with the Personal pages alone, and the rail draws no group headings at all.
 
 In the desktop app the **Users** page is absent, because the server runs single-user. The desktop app's own window also has no **Account** page: it signs in through the shell's token and holds no password to change. A browser signed into the same server with a password keeps the page.
 
@@ -55,8 +55,6 @@ Both fields start unset. Until you set them, your account shows your user id and
 
 Once set, your avatar and nickname replace that pair in all three places. Your user id stays visible under the nickname at the head of the account menu. The nickname also shows under the id in the **Users** list.
 
-Nothing is applied optimistically. The preview always shows the stored avatar, so a write that fails leaves every surface agreeing with the server, and the page says so inline.
-
 ### Change your avatar
 
 **Before you begin**
@@ -66,7 +64,7 @@ Nothing is applied optimistically. The preview always shows the stored avatar, s
 1. On the **Profile** page, select **Change avatar**.
 2. Choose a PNG, JPEG, or WebP image.
 
-The avatar applies at once. It is centre-cropped to a square and re-encoded at 128×128, as PNG or, when the PNG would pass 100 KB, as JPEG. A result still over 128 KiB is refused in the browser rather than sent for the server to reject.
+The avatar applies at once. It is centre-cropped to a square and re-encoded at 128×128.
 
 To put the letter tile back, select **Restore default** beside **Change avatar**.
 
@@ -89,7 +87,7 @@ The **General** page is personal.
 | **Currency** | USD $ / CNY ¥ | The display currency for prices. Storage is always USD. Conversion happens only at the edge of the screen. |
 | **Task completion notifications** | On / Off (off by default) | Shows a system notification when a Task finishes while the window is hidden or unfocused. Clicking the notification opens that Session. |
 | **Company mode** | On / Off (on by default) | Shown only while an admin has turned company mode on for the server. Off hides your own **Development** / **Company** switch and nothing else; organizations keep running. See [Company mode](/company-mode). |
-| **Import Trace** | — | Turns a Trace file into a conversation. See [Import a Trace](#import-a-trace). |
+| **Import Trace** | — | Turns a Trace file into a conversation. The row is there only if you own a Project. See [Import a Trace](#import-a-trace). |
 
 > [!NOTE]
 > Turning on **Task completion notifications** asks the system for permission on the spot. The system asks only once: after a refusal the switch stays off with a hint, and the only way back is the system's own notification settings. A browser without system notifications shows the switch disabled.
@@ -103,9 +101,9 @@ The **General** page is personal.
 - A `.jsonl` Trace exported from another install, at most 14MB.
 - You must be an owner of the destination Project.
 
-You choose both the destination Project and the destination agent. The agent is asked for because a Trace file cannot name a local agent of its own. The Project is asked for because this dialog does not show which Project is open, which also means a Trace can go to a Project other than the open one.
+You choose both the destination Project and the destination agent. The agent is asked for because a Trace file cannot name a local agent of its own. The Project is asked for because this dialog does not show which Project is open, which also means a Trace can go to a Project other than the open one. The picker lists only the Projects you own, since importing is an owner's action; with none owned, the row is absent.
 
-1. On the **General** page, in **Import Trace**, select the destination Project. It defaults to the open Project.
+1. On the **General** page, in **Import Trace**, select the destination Project. It defaults to the open Project when you own it, and otherwise to the first Project you own.
 2. Select the destination agent. It defaults to the open Project's `default_agent`.
 3. Select **Choose file** and pick your `.jsonl` file. The import starts at once.
 
@@ -231,12 +229,6 @@ The total may not sit below the per-file cap, because that combination would mak
 3. Select **Save**.
 
 Saving takes effect immediately, with no restart: the attachment validators and the request body cap both read the setting per request.
-
-### How upload limits work
-
-- **The request body cap is derived from the total.** It is not configured separately. Attachments ride the request as base64 `data:` URLs, which inflates them by 4/3, so the cap has to rise with the total. Otherwise a request whose every attachment was individually legal would die at the HTTP layer instead.
-- **The per-message file count stays at 20 and is not exposed.** It bounds how usable the composer's chip row is, not what the server can survive. The byte budgets do that.
-- **An inline image stays capped at 20MB and does not follow the attachment limit up.** An image placed inline enters the conversation and the Trace, where its size is paid again on every history page and every Session resume. The model side is lower still: providers commonly cap around 5MB, and `read_file` reads an image of at most 5MB. Raising the inline cap would only trade a clear refusal for a later, more confusing failure.
 
 ## Company mode
 
