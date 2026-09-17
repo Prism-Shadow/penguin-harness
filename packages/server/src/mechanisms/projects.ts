@@ -29,7 +29,7 @@ import type { RawTable, UtilityCompletion } from "../services/project-config-ser
 import type {
   ListEndpointModelsOptions,
   ModelRef,
-  PluginTable,
+  PluginTables,
   ProjectConfig,
 } from "@prismshadow/penguin-core";
 import type { TieredRates } from "../services/usage-service.js";
@@ -107,10 +107,10 @@ export abstract class ProjectConfigStore extends Interface<{
   setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto>;
   getChatDefaults(projectId: string): Promise<ChatDefaultsDto>;
   setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto>;
-  /** The `[plugins]` table this Project asks for: package name → requirement, in the file's order. */
-  getPlugins(projectId: string): Promise<PluginTable>;
-  /** Replaces the table (a declarative PUT); answers what was written. */
-  setPlugins(projectId: string, plugins: PluginTable): Promise<PluginTable>;
+  /** The `[plugins]` key: the shared table and each machine's own, package name → requirement, in the file's order. */
+  getPluginTables(projectId: string): Promise<PluginTables>;
+  /** Replaces the tables (a declarative PUT); answers what was written. */
+  setPluginTables(projectId: string, tables: PluginTables): Promise<PluginTables>;
   getCommandPolicy(projectId: string): Promise<CommandPolicyDto>;
   setCommandPolicy(
     projectId: string,
