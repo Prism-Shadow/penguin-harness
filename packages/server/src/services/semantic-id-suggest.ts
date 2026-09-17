@@ -117,7 +117,7 @@ async function modelSemanticId(
  * examples. A kind whose ids carry a prefix tells the model not to add one; the ids a dialog
  * passed in are named so the model can pick different words rather than collect a `_2`.
  */
-export function semanticIdPrompt(input: SemanticIdSuggestInput): string {
+function semanticIdPrompt(input: SemanticIdSuggestInput): string {
   const { rule } = input;
   const taken = input.taken.join(", ");
   const format =

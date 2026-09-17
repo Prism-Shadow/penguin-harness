@@ -45,7 +45,7 @@ export function idSuggestNotice(
  * caller's validation names the problem instead of the field hiding it.
  */
 export function proposalValue(id: string, lockedPrefix: string | undefined): string {
-  return lockedPrefix !== undefined && lockedPrefix !== "" && id.startsWith(lockedPrefix)
+  return lockedPrefix !== undefined && id.startsWith(lockedPrefix)
     ? id.slice(lockedPrefix.length)
     : id;
 }

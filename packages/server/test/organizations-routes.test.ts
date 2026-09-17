@@ -51,10 +51,6 @@ function fakeService(calls: Call[]): OrganizationService {
             return { channelId: "site", name: "Site", members: [] };
           case "startTicket":
             return { sessionId: "session-x" };
-          // A proposal that fell all the way through: the route must serve `reason` too, and
-          // must not turn a name nothing could translate into an error.
-          case "suggestId":
-            return { id: "co_org_20260909", source: "placeholder", reason: "no_default_model" };
           case "handbook":
             return "# Handbook";
           case "handbookFiles":
@@ -245,31 +241,8 @@ describe("organization routes", () => {
     });
   });
 
-  it("validates an id proposal and carries the organization's language both ways", async () => {
+  it("carries the organization's language both ways", async () => {
     const base = `/api/projects/${ownerProject}/organizations`;
-    // The proposal needs no organization, only the Project — and a kind the server knows.
-    expect((await owner.post(`${base}/suggest-id`, { kind: "org" })).status).toBe(400);
-    expect((await owner.post(`${base}/suggest-id`, { name: "科研公司" })).status).toBe(400);
-    expect(
-      (await owner.post(`${base}/suggest-id`, { name: "科研公司", kind: "team" })).status,
-    ).toBe(400);
-    expect(calls).toEqual([]);
-    const proposal = await owner.post(`${base}/suggest-id`, {
-      name: "科研公司",
-      kind: "org",
-      taken: ["research_lab"],
-    });
-    expect(proposal.status).toBe(200);
-    expect(await proposal.json()).toEqual({
-      id: "co_org_20260909",
-      source: "placeholder",
-      reason: "no_default_model",
-    });
-    expect(calls.at(-1)).toEqual({
-      method: "suggestId",
-      args: [ownerProject, { name: "科研公司", kind: "org", taken: ["research_lab"] }],
-    });
-
     expect((await owner.post(base, { orgId: "acme", mission: "x", language: "fr" })).status).toBe(
       400,
     );

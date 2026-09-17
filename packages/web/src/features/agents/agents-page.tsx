@@ -739,6 +739,7 @@ export function AgentsPage() {
             kind="agent"
             label={S.agent.id}
             hint={S.agent.idHint}
+            generateHint={S.agent.idGenerateHint}
             value={agentId}
             source={name.trim() || description}
             error={idError}

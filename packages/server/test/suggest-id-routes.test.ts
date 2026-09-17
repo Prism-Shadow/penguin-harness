@@ -1,14 +1,24 @@
 /**
  * `POST /api/projects/:p/suggest-id` over the real app: one route proposes the id of every
  * kind a create dialog names. Each kind gets the id shape its create route accepts (a
- * non-admin's Project in the caller's namespace, a kebab-case Benchmark), steps around what
- * already exists (every Project, the Project's Agents, its Benchmarks), asks only whoever that
- * create route admits, and falls through model → slug → placeholder like the organization
- * proposal. `org` and `channel` delegate to the organization service. The model is never
- * reached: the Project's utility completion is replaced by a scripted one for every case.
+ * non-admin's Project in the caller's namespace, a kebab-case Benchmark), steps around every
+ * name that create route refuses (every Project, the Project's Agents, its Benchmarks — a
+ * folder no list shows included), asks only whoever that create route admits, and falls
+ * through model → slug → placeholder. `org` and `channel` delegate to the organization
+ * service. The model is never reached: the Project's utility completion is replaced by a
+ * scripted one for every case.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { BenchmarkCreateRequest, SemanticIdSuggestResponse } from "../src/api/types.js";
+import { agentsDir, benchmarksDir } from "@prismshadow/penguin-core";
+import type {
+  AgentsResponse,
+  BenchmarkCreateRequest,
+  BenchmarksResponse,
+  ProjectsResponse,
+  SemanticIdSuggestResponse,
+} from "../src/api/types.js";
 import type { UtilityCompletion } from "../src/services/project-config-service.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
@@ -45,9 +55,9 @@ describe("suggest-id routes", () => {
   const suggest = async (
     client: ReturnType<typeof apiClient>,
     body: unknown,
-    path = url,
+    route = url,
   ): Promise<SemanticIdSuggestResponse> => {
-    const res = await client.post(path, body);
+    const res = await client.post(route, body);
     expect(res.status, await res.clone().text()).toBe(200);
     return (await res.json()) as SemanticIdSuggestResponse;
   };
@@ -196,6 +206,50 @@ describe("suggest-id routes", () => {
     ).toEqual({ id: "default_project_2", source: "model" });
   });
 
+  it("steps around a folder the create route refuses even when no list shows it", async () => {
+    // A Benchmark deleted mid-evaluation leaves its directory without a config, an Agent folder
+    // can lack system_config.yaml, and a Project directory its row.
+    await fs.mkdir(path.join(benchmarksDir(t.root, project), "report-writing", "CASE-001-x"), {
+      recursive: true,
+    });
+    await fs.mkdir(path.join(agentsDir(t.root, project), "report_writer"));
+    await fs.mkdir(path.join(t.root, "olivia-research_lab"));
+    const benchmarks = (await (
+      await owner.get(`/api/projects/${project}/benchmarks`)
+    ).json()) as BenchmarksResponse;
+    expect(benchmarks.benchmarks.map((b) => b.id)).not.toContain("report-writing");
+    const agents = (await (
+      await owner.get(`/api/projects/${project}/agents`)
+    ).json()) as AgentsResponse;
+    expect(agents.agents.map((a) => a.agentId)).not.toContain("report_writer");
+    const projects = (await (await owner.get("/api/projects")).json()) as ProjectsResponse;
+    expect(projects.projects.map((p) => p.projectId)).not.toContain("olivia-research_lab");
+    // None of them lists, yet every create route refuses the name.
+    expect(
+      (await owner.post(`/api/projects/${project}/benchmarks`, benchmarkBody("report-writing")))
+        .status,
+    ).toBe(409);
+    expect(
+      (await owner.post(`/api/projects/${project}/agents`, { agentId: "report_writer" })).status,
+    ).toBe(409);
+    expect((await owner.post("/api/projects", { projectId: "olivia-research_lab" })).status).toBe(
+      409,
+    );
+
+    expect(await suggest(owner, { name: "Report Writing", kind: "benchmark" })).toEqual({
+      id: "report-writing-2",
+      source: "fallback",
+    });
+    expect(await suggest(owner, { name: "Report Writer", kind: "agent" })).toEqual({
+      id: "report_writer_2",
+      source: "fallback",
+    });
+    expect(await suggest(owner, { name: "Research Lab", kind: "project" })).toEqual({
+      id: "olivia-research_lab_2",
+      source: "fallback",
+    });
+  });
+
   it("validates the body, and asks nothing of a Project the caller cannot reach", async () => {
     expect((await owner.post(url, { kind: "agent" })).status).toBe(400);
     expect((await owner.post(url, { name: "", kind: "agent" })).status).toBe(400);
@@ -203,9 +257,14 @@ describe("suggest-id routes", () => {
     expect((await owner.post(url, { name: "Report", kind: "team" })).status).toBe(400);
     expect((await owner.post(url, { name: "Report", kind: "agent", taken: "x" })).status).toBe(400);
     const stranger = apiClient(t.app, (await provisionUser(t.app, "stranger")).cookie);
+    // Company mode is on, so an `org` or `channel` 404 can only be the membership check's.
+    t.deps.serverSettingsRepo.setCompanyMode(true);
     for (const kind of ["project", "agent", "benchmark", "org", "channel"]) {
       const res = await stranger.post(url, { name: "Report", kind });
       expect(res.status, kind).toBe(404);
+      expect(((await res.json()) as { error: { code: string } }).error.code, kind).toBe(
+        "project_not_found",
+      );
     }
     expect(completion.prompts).toEqual([]);
   });
@@ -228,15 +287,13 @@ describe("suggest-id routes", () => {
       source: "model",
     });
     expect(completion.prompts[1]).toContain("Those answers are taken, prefix included: ch_site.");
-    // The organization route answers the same thing from the same implementation.
+    // A dead end of an org or channel proposal is recorded as the organization's.
     completion.answers = [failed("connect ETIMEDOUT")];
-    expect(
-      await suggest(
-        owner,
-        { name: "科研公司", kind: "org" },
-        `/api/projects/${project}/organizations/suggest-id`,
-      ),
-    ).toEqual({ id: `co_org_${stamp()}`, source: "placeholder", reason: "model_failed" });
+    expect(await suggest(owner, { name: "科研公司", kind: "org" })).toEqual({
+      id: `co_org_${stamp()}`,
+      source: "placeholder",
+      reason: "model_failed",
+    });
     expect(t.deps.errorsRepo.recent(project)[0]).toMatchObject({
       source: "organization",
       code: "id_suggest_failed",

@@ -651,6 +651,8 @@ export const en: Strings = {
     id: "Agent id",
     idHint:
       "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only; cannot be changed later",
+    /** The id field's generation clause: the create dialog's name field is labelled Name, not display name. */
+    idGenerateHint: "; you can also generate one from the name",
     nameHint: "Leave empty to use the agent id as the name",
     description: "Description",
     createPlugins: "Plugins",

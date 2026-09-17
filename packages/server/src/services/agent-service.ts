@@ -167,6 +167,21 @@ export class AgentService implements AgentLifecycle {
     );
   }
 
+  /**
+   * Every id `createAgent` refuses as taken, as names only: the index rows and every entry under
+   * `agents/`. Unlike `listAgents`, this includes a folder with no `system_config.yaml`, and it
+   * opens no Agent.
+   */
+  async takenAgentIds(projectId: string): Promise<string[]> {
+    let entries: string[] = [];
+    try {
+      entries = await fs.readdir(agentsDir(this.root, projectId));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return [...new Set([...this.agents.list(projectId).map((r) => r.agentId), ...entries])];
+  }
+
   /** Number of vault keys (falls back to 0 on read failure). */
   private async vaultKeyCount(projectId: string, agentId: string): Promise<number> {
     try {

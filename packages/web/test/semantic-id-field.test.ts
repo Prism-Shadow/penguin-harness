@@ -93,7 +93,6 @@ describe("create dialogs with a semantic id", () => {
 describe("proposalValue", () => {
   it("fills the box with the proposal as the server answered it", () => {
     expect(proposalValue("report_writer", undefined)).toBe("report_writer");
-    expect(proposalValue("co_research_lab", "")).toBe("co_research_lab");
   });
 
   it("leaves out the part a non-admin's Project id box draws in front of itself", () => {

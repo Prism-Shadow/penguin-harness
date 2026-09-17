@@ -120,10 +120,6 @@ export function projectIdRule(user: { userId: string; isAdmin: boolean }): Seman
   };
 }
 
-function ruleOf(kind: SemanticIdKind | SemanticIdRule): SemanticIdRule {
-  return typeof kind === "string" ? SEMANTIC_ID_RULES[kind] : kind;
-}
-
 /** The ASCII core of a name: folded, lowercased, joined by `separator`; "" when nothing survives. */
 function asciiCore(name: string, separator: "_" | "-"): string {
   return name
@@ -141,8 +137,8 @@ function asciiCore(name: string, separator: "_" | "-"): string {
 export function uniqueSemanticId(
   base: string,
   taken: Iterable<string>,
-  separator: "_" | "-" = "_",
-  maxLength = 64,
+  separator: "_" | "-",
+  maxLength: number,
 ): string {
   const used = new Set(taken);
   if (!used.has(base)) return base;
@@ -153,10 +149,9 @@ export function uniqueSemanticId(
   }
 }
 
-/** The core with its kind's prefix in front, or unchanged when it already starts with it. */
-export function prefixSemanticId(core: string, kind: SemanticIdKind | SemanticIdRule): string {
-  const { prefix } = ruleOf(kind);
-  return core.startsWith(prefix) ? core : `${prefix}${core}`;
+/** The core with the rule's prefix in front, or unchanged when it already starts with it. */
+export function prefixSemanticId(core: string, rule: SemanticIdRule): string {
+  return core.startsWith(rule.prefix) ? core : `${rule.prefix}${core}`;
 }
 
 /** The prefixed core capped at the kind's length — prefix first, so it survives a long name — with no trailing separator. */
@@ -172,10 +167,9 @@ function capped(core: string, rule: SemanticIdRule): string {
  */
 export function fallbackSemanticId(
   name: string,
-  kind: SemanticIdKind | SemanticIdRule,
+  rule: SemanticIdRule,
   taken: Iterable<string> = [],
 ): string | null {
-  const rule = ruleOf(kind);
   const core = asciiCore(name, rule.separator);
   if (core === "") return null;
   let id = capped(core, rule);
@@ -193,7 +187,7 @@ export function fallbackSemanticId(
  */
 export function sanitizeSuggestedId(
   answer: string,
-  kind: SemanticIdKind | SemanticIdRule,
+  rule: SemanticIdRule,
   taken: Iterable<string> = [],
 ): string | null {
   const line = answer
@@ -201,7 +195,7 @@ export function sanitizeSuggestedId(
     .map((l) => l.trim())
     .find((l) => l !== "");
   if (line === undefined) return null;
-  return fallbackSemanticId(line.replace(/^[`"'“”‘’]+|[`"'“”‘’.]+$/g, ""), kind, taken);
+  return fallbackSemanticId(line.replace(/^[`"'“”‘’]+|[`"'“”‘’.]+$/g, ""), rule, taken);
 }
 
 /** `yyyymmdd` in the host's own local date, the stamp a placeholder id carries. */
@@ -220,11 +214,10 @@ function dateStamp(now: Date): string {
  * a dialog that cannot be completed.
  */
 export function placeholderSemanticId(
-  kind: SemanticIdKind | SemanticIdRule,
+  rule: SemanticIdRule,
   taken: Iterable<string> = [],
   now: Date = new Date(),
 ): string {
-  const rule = ruleOf(kind);
   return uniqueSemanticId(
     prefixSemanticId(`${rule.noun}${rule.separator}${dateStamp(now)}`, rule),
     taken,

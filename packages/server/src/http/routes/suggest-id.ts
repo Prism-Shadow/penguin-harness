@@ -7,21 +7,22 @@
  * then the ASCII slug of the name, then a dated placeholder. What differs by kind is decided
  * here, beside the permission each kind's create route demands:
  *
- * | kind        | who may ask                              | id shape                           | avoided on top of `taken`   |
- * | ----------- | ---------------------------------------- | ---------------------------------- | --------------------------- |
- * | `project`   | a member of `:p`                         | admin: plain; else `<username>-…`  | every Project id            |
- * | `agent`     | a member of `:p`                         | snake_case                         | the Project's Agents        |
- * | `benchmark` | the owner of `:p`                        | kebab-case                         | the Project's Benchmarks    |
- * | `org`       | a member of `:p`, company mode on        | `co_…`                             | nothing (the dialog's list) |
- * | `channel`   | a member of `:p`, company mode on        | `ch_…`                             | nothing (the dialog's list) |
+ * | kind        | who may ask                              | id shape                           | avoided on top of `taken`             |
+ * | ----------- | ---------------------------------------- | ---------------------------------- | ------------------------------------- |
+ * | `project`   | a member of `:p`                         | admin: plain; else `<username>-…`  | every Project row and data-root entry |
+ * | `agent`     | a member of `:p`                         | snake_case                         | the Project's Agent rows and folders  |
+ * | `benchmark` | the owner of `:p`                        | kebab-case                         | the Project's Benchmark folders       |
+ * | `org`       | a member of `:p`, company mode on        | `co_…`                             | nothing (the dialog's list)           |
+ * | `channel`   | a member of `:p`, company mode on        | `ch_…`                             | nothing (the dialog's list)           |
  *
  * A Project is not inside a Project, but its dialog is opened from one, and that Project's
  * default model is the model the user has configured: the path names it. Anyone signed in
  * may create a Project, so membership of the Project whose model is spent is the only gate.
- * The Project ids avoided are every one on the server, because `POST /api/projects` refuses
- * any of them — none of them reaches the prompt, only the collision suffix. `org` and
- * `channel` delegate to the organization service, so they answer exactly what
- * `POST /organizations/suggest-id` answers, recorded as the organization's.
+ * The ids avoided are the names the kind's create route refuses with 409, read as names only —
+ * not the list views, which skip a folder with no config that the create route still refuses,
+ * and open every Agent and Benchmark to answer. For a Project that is every id on the server.
+ * None of them reaches the prompt, only the collision suffix. `org` and `channel` delegate to
+ * the organization service, recorded as the organization's.
  */
 import { Hono } from "hono";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
@@ -30,7 +31,7 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { Log } from "../../hmr/capabilities.js";
 import type { AgentLifecycle, Benchmarks } from "../../mechanisms/agents.js";
 import type { Errors } from "../../mechanisms/observability.js";
-import type { Access, ProjectConfigStore, Projects } from "../../mechanisms/projects.js";
+import type { Access, ProjectConfigStore, ProjectLifecycle } from "../../mechanisms/projects.js";
 import type { Settings } from "../../mechanisms/settings.js";
 import type { OrgService } from "../../runtime/organization/service.js";
 import type { UtilityCompletion } from "../../services/project-config-service.js";
@@ -50,9 +51,9 @@ const KINDS: readonly SemanticIdKind[] = ["project", "agent", "benchmark", "org"
 /** What this route group reaches — declared here, at the consumer. */
 export interface SuggestIdRouteDeps {
   access: Pick<Access, "requireProjectAccess" | "requireProjectOwner">;
-  projects: Pick<Projects, "listAll">;
-  agents: Pick<AgentLifecycle, "listAgents">;
-  benchmarks: Pick<Benchmarks, "list">;
+  projects: Pick<ProjectLifecycle, "takenProjectIds">;
+  agents: Pick<AgentLifecycle, "takenAgentIds">;
+  benchmarks: Pick<Benchmarks, "takenIds">;
   orgService: Pick<OrgService, "suggestId">;
   settings: Pick<Settings, "getCompanyMode">;
   completeOnce: (projectId: string, prompt: string) => Promise<UtilityCompletion>;
@@ -90,10 +91,10 @@ export function suggestIdRoutes(deps: SuggestIdRouteDeps): Hono<AppEnv> {
     if (kind === "benchmark") deps.access.requireProjectOwner(user.userId, projectId);
     const reserved =
       kind === "project"
-        ? deps.projects.listAll().map((p) => p.projectId)
+        ? await deps.projects.takenProjectIds()
         : kind === "agent"
-          ? (await deps.agents.listAgents(projectId)).map((a) => a.agentId)
-          : (await deps.benchmarks.list(projectId)).benchmarks.map((b) => b.id);
+          ? await deps.agents.takenAgentIds(projectId)
+          : await deps.benchmarks.takenIds(projectId);
     const res = await suggestSemanticId(
       { completeOnce: deps.completeOnce, recordFailure: deps.recordFailure },
       projectId,
@@ -125,7 +126,7 @@ export function suggestIdRoutes(deps: SuggestIdRouteDeps): Hono<AppEnv> {
 })
 export class SuggestIdRoutes {
   @Use() private readonly access!: Access;
-  @Use() private readonly projects!: Projects;
+  @Use() private readonly projects!: ProjectLifecycle;
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly agents!: AgentLifecycle;
   @Use() private readonly benchmarks!: Benchmarks;

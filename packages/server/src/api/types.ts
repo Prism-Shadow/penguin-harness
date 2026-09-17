@@ -4515,8 +4515,9 @@ export interface SemanticIdSuggestRequest {
   /** What the id is for: decides the id's shape, the prompt's examples and the ids avoided. */
   kind: SemanticIdKind;
   /**
-   * Ids already in use in the target scope; the proposal avoids them. `POST /suggest-id` also
-   * avoids, on its own, the Projects, the Project's Agents or its Benchmarks that already exist.
+   * Ids already in use in the target scope; the proposal avoids them. For a Project, an Agent or
+   * a Benchmark, the server also avoids, on its own, every id that kind's create route refuses
+   * as taken, a leftover folder no list shows included.
    */
   taken?: string[];
 }

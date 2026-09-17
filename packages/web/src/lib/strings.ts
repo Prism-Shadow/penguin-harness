@@ -651,6 +651,8 @@ export const zh = {
     createTitle: "创建 Agent",
     id: "Agent id",
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
+    /** The id field's generation clause: the create dialog's name field is labelled Name, not display name. */
+    idGenerateHint: "；也可以从名称生成",
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
     /** Create dialog's skill picker: the library skills installed into the new Agent. */
