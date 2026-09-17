@@ -8,15 +8,18 @@
   else: it owns nothing, and reaches only what is granted.
 
   The four accounts are the two axes crossed. Network: two of them are blocked outbound by
-  firewall rules, two have the network open. Filesystem: two are granted READ on your profile
-  (read-only and workspace-write commands, which never write your home), two are granted MODIFY
-  on it (full-access commands, which may). The grant is standing, made here once, so no command
-  ever has to re-permission your profile — which on a large profile would take minutes.
+  firewall rules, two have the network open. Filesystem: what a command may WRITE is granted per
+  command on the Workspace alone (small, so it is fast); everywhere else the account is a
+  stranger and is already denied. That is the whole write-confinement, and it costs nothing.
 
-  Your home is NOT remapped: a confined command sees the real HOME/USERPROFILE, readable (and,
-  under full access, writable) through that grant — the same shape the Linux and macOS sandboxes
-  give. The one thing redirected is the temp directory, to a sandbox-owned folder every account
-  may write, which is where a shell keeps its scratch files.
+  Your home is NOT remapped: a confined command sees the real HOME/USERPROFILE. What it can read
+  there is a CURATED set of config paths — the profile root, its own dotfiles, and a short list
+  of config directories — granted once here. Deliberately NOT the whole profile: a developer's
+  profile holds millions of files in caches, node_modules and AppData\Local, and stamping every
+  one of them would take an age and hand the sandbox your browser data for nothing. The read
+  group gets READ on that set; the two full-access accounts get MODIFY, so full access can write
+  your config. The one thing redirected is the temp directory, to a sandbox-owned folder every
+  account may write, which is where a shell keeps its scratch files.
 
   Nothing here is a service, a driver or a reboot. What it leaves behind is: the group, the four
   accounts, their firewall rules, two grants on your profile, one writable temp folder, and one
@@ -50,7 +53,13 @@ param(
   [string] $FullOfflineUser = 'PenguinSbxFullNoNet',
   [string] $ServerUser = "$env:USERDOMAIN\$env:USERNAME",
   [string] $UserProfile = $env:USERPROFILE,
-  [switch] $Remove
+  # Config directories under the profile opened to the sandbox accounts (each small). Caches,
+  # node_modules, AppData\Local and .penguin are deliberately absent: a command never needs them,
+  # and they are where a developer's millions of files live.
+  [string[]] $ConfigDirs = @('.ssh', '.config', '.aws', '.gnupg', '.docker', '.kube', '.azure'),
+  [switch] $Remove,
+  # Also strip the whole-profile grant an earlier build made (a slow tree walk; off by default).
+  [switch] $RemoveLegacyProfileGrant
 )
 
 $ErrorActionPreference = 'Stop'
@@ -113,13 +122,16 @@ function Remove-Everything {
       Write-Host "removed firewall rule $rule"
     }
   }
-  # The standing grants on the profile: named by the group and the two full accounts. icacls
-  # /remove takes them out without disturbing the profile's own ACL.
-  if (Test-Path $UserProfile) {
+  # The curated config grants come off the same short list they went on — seconds, not a walk.
+  Set-ConfigAccess -Revoke
+  # An earlier build granted the whole profile with /T. Undoing THAT is the slow walk it always
+  # was, so it is offered rather than assumed: -RemoveLegacyProfileGrant does it.
+  if ($RemoveLegacyProfileGrant -and (Test-Path $UserProfile)) {
+    Write-Host "removing the legacy whole-profile grant (this walks the tree; slow)..."
     foreach ($who in @($GroupName, $FullOnlineUser, $FullOfflineUser) + $legacyGroups) {
       & icacls $UserProfile /remove:g $who /T /C /Q 2>$null | Out-Null
     }
-    Write-Host "removed profile grants on $UserProfile"
+    Write-Host "removed the legacy whole-profile grant on $UserProfile"
   }
   foreach ($user in $allUsers + $legacyUsers) {
     if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) {
@@ -191,6 +203,54 @@ function Set-BlockFirewall([string] $User, [string[]] $Names) {
   }
 }
 
+<#
+  The curated read set: the profile root (so a command can traverse and list it), every FILE
+  directly in it (.gitconfig, .npmrc, .bashrc and friends), and the config directories above.
+  Each target is tiny, so this finishes in seconds no matter how large the profile is — the
+  opposite of `icacls $UserProfile /T`, which stamps every cache file a developer owns.
+
+  A directory takes the inheritance flags so files created later are covered; a file cannot,
+  and icacls refuses (OI)(CI) on one — hence the two spellings.
+#>
+function Set-ConfigAccess([switch] $Revoke) {
+  if (-not (Test-Path -LiteralPath $UserProfile)) {
+    Write-Host "profile ${UserProfile}: not found; skipped (a confined command may not read ~)."
+    return
+  }
+  $targets = @()
+  $targets += [pscustomobject]@{ Path = $UserProfile; Container = $true; Recurse = $false }
+  foreach ($file in (Get-ChildItem -LiteralPath $UserProfile -File -Force -ErrorAction SilentlyContinue)) {
+    $targets += [pscustomobject]@{ Path = $file.FullName; Container = $false; Recurse = $false }
+  }
+  foreach ($rel in $ConfigDirs) {
+    $dir = Join-Path $UserProfile $rel
+    if (Test-Path -LiteralPath $dir) {
+      $targets += [pscustomobject]@{ Path = $dir; Container = $true; Recurse = $true }
+    }
+  }
+  foreach ($target in $targets) {
+    $arguments = @($target.Path)
+    if ($Revoke) {
+      foreach ($who in @($GroupName, $FullOnlineUser, $FullOfflineUser)) {
+        $arguments += @('/remove:g', $who)
+      }
+    } elseif ($target.Container) {
+      $arguments += @('/grant', "${GroupName}:(OI)(CI)(RX)")
+      $arguments += @('/grant', "${FullOnlineUser}:(OI)(CI)(M)")
+      $arguments += @('/grant', "${FullOfflineUser}:(OI)(CI)(M)")
+    } else {
+      $arguments += @('/grant', "${GroupName}:(RX)")
+      $arguments += @('/grant', "${FullOnlineUser}:(M)")
+      $arguments += @('/grant', "${FullOfflineUser}:(M)")
+    }
+    if ($target.Recurse) { $arguments += '/T' }
+    $arguments += @('/C', '/Q')
+    & icacls @arguments 2>$null | Out-Null
+  }
+  $verb = if ($Revoke) { 'revoked on' } else { 'granted read (modify for full access) on' }
+  Write-Host "profile config: $verb $($targets.Count) paths under $UserProfile"
+}
+
 function Protect-StateFile([string] $Path) {
   # The passwords' protection is this ACL: the harness's account, administrators, SYSTEM.
   $acl = New-Object System.Security.AccessControl.FileSecurity
@@ -235,21 +295,7 @@ Set-BlockFirewall $FullOfflineUser $firewallRules[$FullOfflineUser]
 New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 & icacls $tempDir /grant "${GroupName}:(OI)(CI)(M)" | Out-Null
 
-# The standing grants on the real profile — the whole point of not remapping HOME. READ for the
-# group (so every account can read ~), MODIFY for the two full accounts (so full-access can
-# write it). ONE icacls call applies all three ACEs in a SINGLE tree walk: /T is slow on a
-# large profile, so it is done once here, never three times and never per command.
-if (Test-Path $UserProfile) {
-  Write-Host "profile ${UserProfile}: granting access (one pass; slow on a large profile)..."
-  & icacls $UserProfile `
-    /grant "${GroupName}:(OI)(CI)(RX)" `
-    /grant "${FullOnlineUser}:(OI)(CI)(M)" `
-    /grant "${FullOfflineUser}:(OI)(CI)(M)" `
-    /T /C /Q | Out-Null
-  Write-Host "profile ${UserProfile}: read to $GroupName, modify to the full accounts"
-} else {
-  Write-Host "profile ${UserProfile}: not found; skipped (a confined command may not read ~)."
-}
+Set-ConfigAccess -Revoke:$false
 
 $state = [ordered]@{
   group       = $GroupName
