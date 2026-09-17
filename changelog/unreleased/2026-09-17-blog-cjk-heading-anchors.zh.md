@@ -3,6 +3,7 @@
 - **Date:** 2026-09-17
 - **Type:** fix
 - **Scope:** `landing`, `docs`
+- **PR:** [#772](https://github.com/Prism-Shadow/penguin-harness/pull/772)
 
 [English](2026-09-17-blog-cjk-heading-anchors.md)
 
