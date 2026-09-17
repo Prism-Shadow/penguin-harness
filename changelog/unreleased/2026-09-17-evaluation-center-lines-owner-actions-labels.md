@@ -3,6 +3,7 @@
 - **Date:** 2026-09-17
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#775](https://github.com/Prism-Shadow/penguin-harness/pull/775)
 
 [中文版](2026-09-17-evaluation-center-lines-owner-actions-labels.zh.md)
 
