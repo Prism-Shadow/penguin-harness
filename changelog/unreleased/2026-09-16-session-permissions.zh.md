@@ -3,6 +3,7 @@
 - **Date:** 2026-09-16
 - **Type:** feat
 - **Scope:** core, server, web
+- **PR:** [#767](https://github.com/Prism-Shadow/penguin-harness/pull/767)
 
 [English](2026-09-16-session-permissions.md)
 
