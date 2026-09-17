@@ -3032,6 +3032,10 @@ Scenarios:
       "The cases' difficulty could not be calibrated; delete this Benchmark and create it again",
     creationFailedDetail:
       "Calibration of this Benchmark never completed, so it cannot be evaluated or optimized; delete it and create it again.",
+    /** The two lines above for a Project member: no delete step, since deleting is the owner's. */
+    creationFailedHintMember: "The cases' difficulty could not be calibrated",
+    creationFailedDetailMember:
+      "Calibration of this Benchmark never completed, so it cannot be evaluated or optimized.",
     testedAgents: "Tested agents",
     lastEvaluated: (when: string): string => `last evaluated ${when}`,
     sparklineLabel: (n: number): string => `Score trend over ${n} evaluation${n === 1 ? "" : "s"}`,

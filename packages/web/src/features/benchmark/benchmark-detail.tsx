@@ -50,8 +50,8 @@ import { EvaluationDetailModal } from "./evaluation-detail-modal";
  * observed range and clamped to those limits. Evaluations are grouped by label, so a change of
  * tested Agent or of runtime starts its own series instead of bending one, while a new Agent
  * State version of the same agent continues the line and names its version in the bubble. Each
- * series is one line through its own scored points (seriesPoints): the slots other series hold
- * in between do not break it.
+ * series is one line through its own points (seriesPoints): the slots other series hold in
+ * between do not break it.
  */
 function ScoreTrendChart({
   evaluations,

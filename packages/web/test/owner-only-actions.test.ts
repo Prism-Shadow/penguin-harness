@@ -1,21 +1,25 @@
 /**
- * Owner-only writes are offered to the Project's owner alone. The server refuses two of them to
+ * Owner-only writes are offered to the Project's owner alone. The server refuses three of them to
  * anyone else with 403 (`requireProjectOwner`): creating a Benchmark by hand
- * (`POST /api/projects/:projectId/benchmarks`) and importing a Trace
- * (`POST /api/projects/:projectId/agents/:agentId/traces/import`). A member offered either one
- * could only fill in the form, or pick the file, for a refusal at the end.
+ * (`POST /api/projects/:projectId/benchmarks`), deleting one
+ * (`DELETE /api/projects/:projectId/benchmarks/:benchmarkId`) and importing a Trace
+ * (`POST /api/projects/:projectId/agents/:agentId/traces/import`). A member offered one could
+ * only fill in the form, or pick the file, for a refusal at the end, and copy that names one of
+ * these steps sends a member to a button they do not have.
  *
- * vitest runs node-only here, so the Evaluation Center's buttons are rendered to static markup,
- * and the Trace import row is checked through the function its Project picker is derived from —
- * the row draws nothing when that function offers no Project.
+ * vitest runs node-only here, so the Evaluation Center's buttons and a failed Benchmark's notices
+ * are rendered to static markup, and the Trace import row is checked through the function its
+ * Project picker is derived from — the row draws nothing when that function offers no Project.
  */
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { ProjectSummary } from "@prismshadow/penguin-server/api";
-import { BenchmarkCreateButtons } from "../src/features/benchmark/benchmark-page";
+import type { BenchmarkSummary, ProjectSummary } from "@prismshadow/penguin-server/api";
+import { UnpublishedNotice } from "../src/features/benchmark/benchmark-detail-page";
+import { BenchmarkCard, BenchmarkCreateButtons } from "../src/features/benchmark/benchmark-page";
 import { traceImportTargets } from "../src/features/settings/trace-import-row";
-import { S } from "../src/lib/strings";
+import { S, zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
 
 const noop = () => {};
 
@@ -37,6 +41,63 @@ describe("the Evaluation Center's create entry points", () => {
     expect(html).toContain(S.aiCreate.withAi);
     expect(html).not.toContain(S.aiCreate.manual);
     expect(html.match(/<button/g)).toHaveLength(1);
+  });
+});
+
+describe("a failed Benchmark's notices", () => {
+  const failed: BenchmarkSummary = {
+    id: "report-writing-v1",
+    title: "Report writing under conflicting sources",
+    status: "failed",
+    caseCount: 3,
+    evaluations: [],
+    agentIds: [],
+  };
+  /** The card on the Evaluation Center, whose delete button is the owner's alone. */
+  const card = (canDelete: boolean) =>
+    renderToStaticMarkup(
+      createElement(BenchmarkCard, {
+        benchmark: failed,
+        locale: "zh",
+        nameOf: (agentId: string) => agentId,
+        canDelete,
+        onOpen: noop,
+        onUse: noop,
+        onDelete: noop,
+      }),
+    );
+  /** The notice on the Benchmark's own page, which stands in place of its detail. */
+  const page = (isOwner: boolean) =>
+    renderToStaticMarkup(createElement(UnpublishedNotice, { failed: true, isOwner }));
+
+  it("tell the owner to delete it and create it again, beside the delete button", () => {
+    const html = card(true);
+    expect(html).toContain(S.benchmark.creationFailedHint);
+    expect(html).toContain(`aria-label="${S.benchmark.deleteBenchmark}"`);
+    expect(page(true)).toContain(S.benchmark.creationFailedDetail);
+  });
+
+  it("tell a member what happened without the delete step, since the member has no delete button", () => {
+    const html = card(false);
+    expect(html).toContain(S.benchmark.creationFailedHintMember);
+    expect(html).not.toContain(S.benchmark.creationFailedHint);
+    expect(html).not.toContain(S.benchmark.deleteBenchmark);
+    const detail = page(false);
+    expect(detail).toContain(S.benchmark.creationFailedDetailMember);
+    expect(detail).not.toContain(S.benchmark.creationFailedDetail);
+    // Neither dictionary words a member's line with the step.
+    for (const line of [
+      zh.benchmark.creationFailedHintMember,
+      zh.benchmark.creationFailedDetailMember,
+    ]) {
+      expect(line).not.toContain("删除");
+    }
+    for (const line of [
+      en.benchmark.creationFailedHintMember,
+      en.benchmark.creationFailedDetailMember,
+    ]) {
+      expect(line).not.toMatch(/delete/i);
+    }
   });
 });
 

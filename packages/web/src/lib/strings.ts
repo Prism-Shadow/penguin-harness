@@ -3010,6 +3010,9 @@ Benchmark：
     creationFailedHint: "题目难度未能校准完成，请删除后重新创建",
     creationFailedDetail:
       "这套题的难度校准没有完成，无法评估或优化；请删除这个 Benchmark，然后重新创建。",
+    /** The two lines above for a Project member: no delete step, since deleting is the owner's. */
+    creationFailedHintMember: "题目难度未能校准完成",
+    creationFailedDetailMember: "这套题的难度校准没有完成，无法评估或优化。",
     /** The avatars on a card: which Agents this Benchmark has scored so far. */
     testedAgents: "被测过的智能体",
     lastEvaluated: (when: string): string => `最近评估 ${when}`,

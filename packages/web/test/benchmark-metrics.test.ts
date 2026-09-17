@@ -3,8 +3,8 @@
  * dynamic y-axis range, and label grouping — the tested Agent, the model and the thinking
  * level, which is also what a score change is measured within. The Agent State version and the
  * provider are on the record and outside the key, so successive versions of one agent stay on
- * one line — and that line is drawn through the series' own scored points, over the slots other
- * series hold between them (seriesPoints, stroked by chart-geom's segmentPath).
+ * one line — and that line is drawn through the series' own points, over the slots other series
+ * hold between them (seriesPoints, stroked by chart-geom's segmentPath).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -233,36 +233,6 @@ describe("seriesPoints (one line per series on the shared time axis)", () => {
     expect(points).toEqual([{ index: 2, value: 58 }]);
     // A bare move: the chart draws this point's dot and strokes nothing.
     expect(segmentPath(geomFor(evaluations.length), points)).toBe(`M${at(3, 2, 58)}`);
-  });
-
-  it("an own evaluation with no finite Score draws no point and does not break the line", () => {
-    const evaluations: Array<{ score: number } & EvaluationLabelLike> = [
-      { score: 60, ...writer, version: 1 },
-      { score: Number.NaN, ...writer, version: 2 },
-      { score: 50, ...support, version: 1 },
-      { score: 72, ...writer, version: 3 },
-    ];
-    const [writerSeries] = labelSeries(evaluations);
-    const points = seriesPoints(evaluations, writerSeries!);
-    // Slot 1 stays on the axis (the unscored record is still in the series) but holds no point.
-    expect(writerSeries!.indices).toEqual([0, 1, 3]);
-    expect(points).toEqual([
-      { index: 0, value: 60 },
-      { index: 3, value: 72 },
-    ]);
-    expect(segmentPath(geomFor(evaluations.length), points)).toBe(
-      `M${at(4, 0, 60)} L${at(4, 3, 72)}`,
-    );
-    // The same two Scores the card's change is measured between.
-    expect(
-      latestWithDelta(evaluations.map((e) => ({ ...e, time: "2026-09-15T00:00:00Z" }))),
-    ).toEqual({ score: 72, delta: 12, time: "2026-09-15T00:00:00Z" });
-    // A series whose every evaluation is unscored has nothing to draw.
-    const unscored: Array<{ score: number } & EvaluationLabelLike> = [
-      { score: Number.NaN, ...support, version: 1 },
-      { score: Number.POSITIVE_INFINITY, ...support, version: 2 },
-    ];
-    expect(seriesPoints(unscored, labelSeries(unscored)[0]!)).toEqual([]);
   });
 });
 

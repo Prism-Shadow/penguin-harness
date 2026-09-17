@@ -14,7 +14,7 @@ export interface MetricSourceLike {
   score: number;
 }
 
-/** Each Evaluation's authoritative stored Score; a non-finite malformed value is null, and no point is drawn for it. */
+/** Each Evaluation's authoritative stored Score; a non-finite malformed value is null. */
 export function scoreValues(evaluations: readonly MetricSourceLike[]): (number | null)[] {
   return evaluations.map((e) => {
     return typeof e.score === "number" && Number.isFinite(e.score) ? e.score : null;
@@ -132,24 +132,17 @@ export function labelSeries(evaluations: readonly EvaluationLabelLike[]): Evalua
 }
 
 /**
- * The points one series' line is drawn through: its own evaluations that carry a finite Score,
- * in scoreboard order, each at its own slot on the time axis every series shares. The line joins
- * each point to the next and does not break between them. Where another label's evaluation holds
- * the slot between two points, that slot is the other series' point, not a gap in this one. Where
- * one of this series' own evaluations has no finite Score, that record measured nothing, so it
- * draws no point and the line joins the scores on either side of it, the way the card's score
- * change compares finite Scores only (latestWithDelta). Its slot stays on the axis, and the hover
- * bubble there shows no score. A series with a single scored evaluation is a lone point.
+ * The points one series' line is drawn through: its own evaluations, in scoreboard order, each
+ * at its own slot on the time axis every series shares. The line joins each point to the next
+ * and does not break between them. Where another label's evaluation holds the slot between two
+ * points, that slot is the other series' point, not a gap in this one. A series with a single
+ * evaluation is a lone point.
  */
 export function seriesPoints(
   evaluations: readonly MetricSourceLike[],
   series: EvaluationSeries,
 ): LinePoint[] {
-  const values = scoreValues(evaluations);
-  return series.indices.flatMap((index) => {
-    const value = values[index];
-    return value === null || value === undefined ? [] : [{ index, value }];
-  });
+  return series.indices.map((index) => ({ index, value: evaluations[index]!.score }));
 }
 
 /** Minimal evaluation shape for the list rows: the stored Score and when it was recorded. */

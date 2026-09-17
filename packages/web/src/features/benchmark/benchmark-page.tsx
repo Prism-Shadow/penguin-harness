@@ -152,7 +152,7 @@ function TestedAgents({
  * draft, creation failed for a Benchmark whose calibration never finished — with only the delete
  * icon left live.
  */
-function BenchmarkCard({
+export function BenchmarkCard({
   benchmark,
   locale,
   nameOf,
@@ -176,6 +176,11 @@ function BenchmarkCard({
   // away. Only the owner's delete stays above the mask, which is how either is cleaned up.
   const masked = benchmark.status !== "published";
   const failed = benchmark.status === "failed";
+  // Deleting and creating again is a failed Benchmark's only way out, and the hint names that
+  // step only to a viewer who has the delete button beside it.
+  const failedHint = canDelete
+    ? S.benchmark.creationFailedHint
+    : S.benchmark.creationFailedHintMember;
   return (
     <div className="relative flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-gray-200 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900">
       <button
@@ -267,7 +272,7 @@ function BenchmarkCard({
       {masked && (
         <div
           role="note"
-          title={failed ? S.benchmark.creationFailedHint : S.benchmark.buildingHint}
+          title={failed ? failedHint : S.benchmark.buildingHint}
           className="absolute inset-0 flex cursor-not-allowed flex-col items-center justify-center gap-1 rounded-md bg-white/75 px-4 text-center backdrop-blur-[1px] dark:bg-gray-900/75"
         >
           {/* A failed creation is the one thing here the user has to act on, so its title takes
@@ -278,7 +283,7 @@ function BenchmarkCard({
             {failed ? S.benchmark.creationFailed : S.benchmark.building}
           </span>
           <span className="text-xs text-gray-500 dark:text-gray-400">
-            {failed ? S.benchmark.creationFailedHint : S.benchmark.buildingHint}
+            {failed ? failedHint : S.benchmark.buildingHint}
           </span>
         </div>
       )}
