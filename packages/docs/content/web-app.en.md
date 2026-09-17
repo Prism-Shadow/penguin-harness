@@ -92,7 +92,7 @@ From top to bottom, the sidebar holds:
 | Entry | What it is for | Guide |
 | --- | --- | --- |
 | **Agents** | Create agents and edit their prompt, memory, runtime, tools, Skills, hooks, Vault and scheduled tasks | [Agents](/agents) |
-| **Plugin library** | Browse plugins and install their Skills and hook packages onto agents | [Skills](/skills) |
+| **Plugins** | Browse plugins, install their Skills and hook packages onto agents, and add server plugins to the Project | [Skills](/skills) |
 | **Models** | Configure the Project's models, providers and credentials | [Models](/models) |
 | **Cost Center** | Token usage, cost and server errors by agent, model and time range | [Cost Center](/usage) |
 | **Evaluation Center** | Benchmarks: evaluate agents and optimize them against a Benchmark | [Evaluation Center](/evaluation-center) |
@@ -110,7 +110,7 @@ A dot on a page entry means something is waiting there:
 | Entry | What the dot means |
 | --- | --- |
 | **Agents** | Agents on an outdated kernel |
-| **Plugin library** | Plugin updates |
+| **Plugins** | Plugin updates |
 | **Models** | Preset models to sync (shown to owners) |
 | **Cost Center** | Unexpected errors |
 

@@ -87,6 +87,7 @@ openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-to
 | `vision_model` | 成对引用 | — | 为纯文本模型读取图像的视觉模型（`read_file` 会把图像交给它）；成对引用 |
 | `[default_chat]` | 表 | — | 新对话的预填默认值；见[新对话默认值](#新对话默认值) |
 | `[command_policy]` | 表 | 出厂规则集 | shell 命令的拒绝规则，先于审批模式生效；见[命令策略](#命令策略) |
+| `[plugins]` | 表 | — | Project 要求的服务端插件；见[插件](#插件) |
 | `[[models]]` | 表数组 | — | 可用的模型条目 |
 
 ### 模型条目
@@ -151,6 +152,22 @@ output = 1.142857
 | `thinking_level` | 字符串 | — | 回退思考等级（`low` / `medium` / `high` / `xhigh` / `max`），供配置里没有设置 `model.thinking_level` 的 Agent 使用 |
 
 默认模型不在这个块里：它仍然是顶层的 `default_model`。
+
+### 插件
+
+`[plugins]` 表列出 Project 要求的[服务端插件](/skills#服务端插件)，在**插件市场**页面管理。每个键是一个包名，值是形如 Cargo `[dependencies]` 的要求：
+
+```toml
+[plugins]
+"@prismshadow/penguin-plugin-sandbox-bwrap" = "*"
+"@scope/name" = "1.2.3"
+"@scope/other" = { version = "1.2" }
+```
+
+- `"*"` 表示部署发布的任意版本。版本字符串和 `{ version = "…" }` 形式会作为要求保留下来；目前加载只看包名。
+- 服务器运行所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
+- 读取文件时，其他形式的条目会被丢弃，文件的其余部分照常加载。`plugins` 键不是表时，视为不要求任何插件。
+- 空表照样写成空表，表示这个 Project 不要求任何插件。
 
 ## 命令策略
 

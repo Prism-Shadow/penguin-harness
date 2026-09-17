@@ -1,24 +1,26 @@
 ---
 title: Skills & Plugins
-description: Browse the plugin library, install Skills and hook packages on an agent, use Skills in a chat, and write your own.
+description: Browse plugins, install Skills and hook packages on an agent, add server plugins to a Project, use Skills in a chat, and write your own.
 ---
 
-A **Skill** is a set of reusable instructions that an agent reads when a task calls for it. A **hook package** is a set of scripts that the harness runs at fixed points of the agent loop. A **plugin** bundles Skills, a hook package, or both, and the **Plugin library** in the Web App holds the built-in plugins.
+A **Skill** is a set of reusable instructions that an agent reads when a task calls for it. A **hook package** is a set of scripts that the harness runs at fixed points of the agent loop. A **plugin** bundles Skills, a hook package, or both. The built-in plugins make up the plugin library, which the Web App's **Plugins** page lists together with [server plugins](#server-plugins), plugins that extend the server rather than an agent.
 
-- **Looking for new abilities?** See [Browse the plugin library](#browse-the-plugin-library) and [Install a plugin on an agent](#install-a-plugin-on-an-agent).
+- **Looking for new abilities?** See [Browse plugins](#browse-plugins) and [Install a plugin on an agent](#install-a-plugin-on-an-agent).
 - **An update is waiting?** See [Update installed plugins](#update-installed-plugins).
 - **Want the agent to use a specific Skill?** See [Use a Skill in a chat](#use-a-skill-in-a-chat).
 - **Managing one agent's Skills and hooks?** See [Manage an agent's Skills](#manage-an-agents-skills) and [Hook packages](#hook-packages).
+- **Adding a sandbox backend or another server plugin?** See [Server plugins](#server-plugins).
 - **Writing your own Skill?** See [Write a Skill](#write-a-skill).
 - **Looking for file formats and internals?** See [How it works](#how-it-works).
 
-## Browse the plugin library
+## Browse plugins
 
-1. In the sidebar, select **Plugin library**.
-2. Browse the plugins. They are grouped by category: Office Productivity, Software Development, AI App Development, Agent Company, and Other. Select a category header to collapse or expand it.
-3. Select a plugin's card to open its details.
+1. In the sidebar, select **Plugins**.
+2. Browse the lists. **Installed plugins** comes first and starts folded; select its header to unfold it. It holds the plugin library, followed by the server plugins the current Project asks for. **Available** lists the server plugins the Project can still add.
+3. To narrow the lists, type in the search box, or pick options in the filter column beside them: **Categories**, **Contains** and **Status**. **Clear filters** clears the picks and the search box. Both lists unfold while a search or filter is active.
+4. Select a library plugin's card to open its details.
 
-Each card shows the plugin's name, a short description, and a line in the form `v<version> · updated N days ago · used by N agents`. The agent count covers the agents in the current Project that have any part of the plugin installed.
+Each card shows the plugin's name, a short description, and a line in the form `v<version> · updated N days ago · used by N agents`. The agent count covers the agents in the current Project that have any part of the plugin installed. The tags below that line give the plugin's category (Office Productivity, Software Development, AI App Development, Agent Company or Other), **built in**, and how many Skills and hook packages it ships.
 
 The details show the full description, the hook points the plugin's hook package runs at, and a file browser. The tree on the left has one folder per Skill, with its `SKILL.md` first and its reference files after it, and a **Hooks** folder for the hook scripts. The preview on the right shows the selected file.
 
@@ -32,7 +34,7 @@ The buttons on the right of a card:
 
 ## Install a plugin on an agent
 
-1. In **Plugin library**, select **Manage installs** on the plugin's card. The dialog lists every agent in the current Project.
+1. On the **Plugins** page, select **Manage installs** on the plugin's card. The dialog lists every agent in the current Project.
 2. Next to the agent, select **Install**.
 
 The whole plugin is installed: all of its Skills and its hook package. New conversations pick it up right away; running ones pick it up after their next compaction.
@@ -51,8 +53,8 @@ Other ways to install:
 
 New versions of the built-in plugins arrive with PenguinHarness updates. An agent keeps its installed copy until you update it. When an install is behind the library, you see:
 
-- a red dot on **Plugin library** in the sidebar;
-- a notice at the top of the plugin library, "Changes detected: N to upgrade", with **Update now** and **Dismiss**;
+- a red dot on **Plugins** in the sidebar;
+- a notice at the top of the **Plugins** page, "Changes detected: N to upgrade", with **Update now** and **Dismiss**;
 - an update button on the plugin's card, and an **Update** button next to the agent in **Manage installs**.
 
 To update:
@@ -79,7 +81,7 @@ The selected Skills appear as chips above the text, and the sent message shows "
 
 The **Skills** menu lists only the Skills installed on the current agent, and it is unavailable while a Task is running.
 
-**Quick start** in the plugin library does the same in one step: it opens a new chat draft with the Skill selected and "use the *name* skill" filled in, without sending it.
+**Quick start** on a plugin's card does the same in one step: it opens a new chat draft with the Skill selected and "use the *name* skill" filled in, without sending it.
 
 ## Manage an agent's Skills
 
@@ -89,7 +91,7 @@ To see the Skills installed on one agent, open **Agents**, select the agent, and
 - **Enable skills** controls whether the agent's system prompt lists the installed Skills. With it off, the agent is not told which Skills exist, but Skills you select in a chat still work.
 - **Skills prompt** is the text that introduces the Skill list in the system prompt. Its `{{SKILL_METADATA}}` placeholder becomes one line per installed Skill.
 
-The Skills tab has no update action and cannot add plugins from the library. Update and install plugins in **Plugin library**.
+The Skills tab has no update action and cannot add plugins from the library. Update and install plugins on the **Plugins** page.
 
 ### Import a Skill
 
@@ -136,6 +138,23 @@ To upload a zip file:
 
 > [!WARNING]
 > An imported hook package takes effect at once. While the agent has hooks on, its scripts run on this machine at every hook point, so import only packages you trust.
+
+## Server plugins
+
+A server plugin extends the server itself rather than an agent: it is an npm package of server modules, such as a sandbox backend. A Project asks for the server plugins it needs, and the server runs every plugin that any of its Projects asks for, so what a plugin contributes is available to every Project.
+
+On the **Plugins** page, a server plugin's row shows its package name, description, version and status, with tags for its categories, **built in** when it ships with PenguinHarness, and its keywords. Select a row to open the plugin's page, with its license, authors, links and documentation. A plugin the registry has no entry for has no page.
+
+To add a server plugin to the current Project:
+
+1. Under **Available**, select **Install** on the plugin's row.
+2. Confirm. Adding or removing a server plugin stops the agent runs in progress in every Project.
+
+To remove one, select **Remove** on its row under **Installed plugins**, and confirm. The plugin leaves the Project's list; nothing is deleted from disk.
+
+Only admins see **Install** and **Remove**. Only plugins that ship with PenguinHarness can be added, so nothing is downloaded. A change applies without restarting the server: the server rebuilds its business surface around the new list, which is why runs in progress stop. Afterwards the row's status reads **running**, **restart to load** when the server could not apply the change without a restart, or **failed to load** with the reason.
+
+The list is the `[plugins]` table of the Project's config; see [Configuration Reference](/configuration#plugins). For the routes, see [Server API](/server-api#plugin-registry-and-project-plugins), and for how the server loads plugins, see [Server Boot and Subsystems](/server-boot#re-assembly).
 
 ## Write a Skill
 

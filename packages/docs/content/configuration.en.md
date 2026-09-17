@@ -87,6 +87,7 @@ The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-tok
 | `vision_model` | pair | — | The vision model that reads images for text-only models (`read_file` hands images to it); a paired reference |
 | `[default_chat]` | table | — | Prefilled defaults for new chats; see [New chat defaults](#new-chat-defaults) |
 | `[command_policy]` | table | Factory set | Deny rules for shell commands, applied ahead of the approval mode; see [Command policy](#command-policy) |
+| `[plugins]` | table | — | The server plugins the Project asks for; see [Plugins](#plugins) |
 | `[[models]]` | array of tables | — | The available model entries |
 
 ### Model entries
@@ -151,6 +152,22 @@ The `[default_chat]` block prefills new chats in the Web App. It is managed on t
 | `thinking_level` | string | — | Fallback thinking level (`low` / `medium` / `high` / `xhigh` / `max`) for agents whose config sets no `model.thinking_level` |
 
 The default model is not part of this block: it stays the top-level `default_model`.
+
+### Plugins
+
+The `[plugins]` table lists the [server plugins](/skills#server-plugins) the Project asks for. It is managed on the **Plugins** page. Each key is a package name, and each value is a requirement in the shape of Cargo's `[dependencies]`:
+
+```toml
+[plugins]
+"@prismshadow/penguin-plugin-sandbox-bwrap" = "*"
+"@scope/name" = "1.2.3"
+"@scope/other" = { version = "1.2" }
+```
+
+- `"*"` asks for whatever version the deployment ships. A version string and the `{ version = "…" }` form are kept as the requirement; loading currently goes by the package name alone.
+- The server runs the union of every Project's table, so a plugin one Project asks for is loaded for all of them.
+- An entry of any other shape is dropped when the file is read, and the rest of the file still loads. A `plugins` key that is not a table asks for no plugins.
+- An empty table is written as an empty table: the Project asks for no plugins.
 
 ## Command policy
 

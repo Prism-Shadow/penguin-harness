@@ -98,7 +98,7 @@ See [Skills & Plugins](/skills).
 
 ### Plugin
 
-A plugin is what the plugin library installs. It ships Skills, a hook package, or both, and installing it on an agent puts them into that agent's Agent State.
+A plugin is what the plugin library installs. It ships Skills, a hook package, or both, and installing it on an agent puts them into that agent's Agent State. A server plugin is a different kind: an npm package of server modules, such as a sandbox backend, that a Project asks the server to run.
 
 See [Skills & Plugins](/skills).
 

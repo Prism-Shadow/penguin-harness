@@ -256,7 +256,7 @@ The **Skills** tab lists the Skills installed on the agent. You can export or un
 
 ## Hooks tab
 
-The **Hooks** tab lists the hook packages installed on the agent. You can export and uninstall hook packages, import one with **Import hook**, and turn hooks on or off for the agent with **Enable hooks**. Installing from the library happens in **Plugin library**. See [Hook packages](/skills#hook-packages).
+The **Hooks** tab lists the hook packages installed on the agent. You can export and uninstall hook packages, import one with **Import hook**, and turn hooks on or off for the agent with **Enable hooks**. Installing from the library happens on the **Plugins** page. See [Hook packages](/skills#hook-packages).
 
 ## Memory tab
 
