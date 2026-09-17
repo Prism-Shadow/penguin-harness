@@ -15,13 +15,15 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   MODEL_CATALOG,
+  PENGUIN_GO_BASE_URL,
   catalogEntryFor,
-  effectivePricing,
+  presetPromotions,
   userText,
 } from "@prismshadow/penguin-core";
 import type {
   ModelsResponse,
   ModelTestResponse,
+  ModelVisionDetectResponse,
   ProjectCreateResponse,
   SessionCreateResponse,
 } from "../src/api/types.js";
@@ -133,36 +135,45 @@ describe("models preset & catalog enrichment", () => {
     expect(mimo.credential?.baseUrl).toBe("https://openrouter.ai/api/v1");
     expect(mimo.credential?.apiKeyMasked).toBeUndefined();
 
-    // A catalog row on a promotion is preset at the rate the seller BILLS, not at the list
-    // price the catalog records. The cost center prices only against what is written into
-    // the Project, so anything else here would report a cost nobody was charged.
+    // A catalog row on a promotion is preset at its LIST price like every other row, and the
+    // promotion is seeded beside it in web.db: the rows reporting a discount are exactly the
+    // catalog's flat promotions.
     const promoted = catalogEntryFor("tokendance", "glm-5.3-flash")!;
-    const billed = effectivePricing(promoted)!;
-    expect(pick(body, "tokendance", "glm-5.3-flash").pricing).toEqual({
-      cacheRead: billed.cache_read,
-      cacheWrite: billed.cache_write,
-      output: billed.output,
+    expect(pick(body, "tokendance", "glm-5.3-flash")).toMatchObject({
+      pricing: {
+        cacheRead: promoted.pricing!.cache_read,
+        cacheWrite: promoted.pricing!.cache_write,
+        output: promoted.pricing!.output,
+      },
+      discount: promoted.discount,
     });
-    expect(billed.output).toBeLessThan(promoted.pricing!.output);
-    // An undiscounted row is preset at its list price, unchanged.
+    expect(
+      body.models
+        .filter((m) => m.discount !== undefined)
+        .map((m) => ({ provider: m.provider, modelId: m.modelId, discount: m.discount })),
+    ).toEqual(presetPromotions());
+    // An undiscounted row is preset at its list price, unchanged, and reports no discount.
     const plain = catalogEntryFor("tokendance", "hy4-preview")!;
     expect(pick(body, "tokendance", "hy4-preview").pricing).toEqual({
       cacheRead: plain.pricing!.cache_read,
       cacheWrite: plain.pricing!.cache_write,
       output: plain.pricing!.output,
     });
+    expect(pick(body, "tokendance", "hy4-preview")).not.toHaveProperty("discount");
   });
 
-  it("masks the env fallback for first-party official entries only, and never leaks the value", async () => {
+  it("masks allowed direct and relay env fallbacks, never gateway fallbacks, and never leaks a value", async () => {
     const saved = {
       anthropic: process.env.ANTHROPIC_API_KEY,
       deepseek: process.env.DEEPSEEK_API_KEY,
       openai: process.env.OPENAI_API_KEY,
+      penguin: process.env.PENGUIN_GO_API_KEY,
     };
     const anthropicValue = "sk-ant-test-secret-value-123456";
     const openaiValue = "sk-openai-test-secret-value-789";
     process.env.ANTHROPIC_API_KEY = anthropicValue;
     process.env.OPENAI_API_KEY = openaiValue;
+    process.env.PENGUIN_GO_API_KEY = "sk-penguin-test-secret-value-456";
     // Empty counts as absent — it would not authenticate either.
     process.env.DEEPSEEK_API_KEY = "";
     try {
@@ -185,6 +196,19 @@ describe("models preset & catalog enrichment", () => {
             baseUrl: "https://openrouter.ai/api/v1",
           },
           { provider: "custom", modelId: "my-model", clientType: "openai" },
+          // Both protocols in the relay group resolve the same provider-scoped key.
+          {
+            provider: "penguin-go",
+            modelId: "gemini-3.8-flash",
+            clientType: "gemini-3.8",
+            baseUrl: PENGUIN_GO_BASE_URL,
+          },
+          {
+            provider: "penguin-go",
+            modelId: "deepseek-flash",
+            clientType: "deepseek-v4",
+            baseUrl: PENGUIN_GO_BASE_URL,
+          },
         ],
       });
       expect(put.status).toBe(200);
@@ -204,11 +228,17 @@ describe("models preset & catalog enrichment", () => {
       expect(gateway.envKey).toBe("OPENAI_API_KEY");
       expect(gateway.envKeyMasked).toBeUndefined();
       expect(pick(body, "custom", "my-model").envKeyMasked).toBeUndefined();
+      const penguinMasked = "sk-p…-456";
+      expect(pick(body, "penguin-go", "gemini-3.8-flash").envKey).toBe("PENGUIN_GO_API_KEY");
+      expect(pick(body, "penguin-go", "gemini-3.8-flash").envKeyMasked).toBe(penguinMasked);
+      expect(pick(body, "penguin-go", "deepseek-flash").envKey).toBe("PENGUIN_GO_API_KEY");
+      expect(pick(body, "penguin-go", "deepseek-flash").envKeyMasked).toBe(penguinMasked);
     } finally {
       for (const [key, value] of [
         ["ANTHROPIC_API_KEY", saved.anthropic],
         ["DEEPSEEK_API_KEY", saved.deepseek],
         ["OPENAI_API_KEY", saved.openai],
+        ["PENGUIN_GO_API_KEY", saved.penguin],
       ] as const) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
@@ -450,6 +480,10 @@ describe("default_project presets", () => {
       modelId: "deepseek-flash",
     });
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
+    // Presets backfilled here bring their promotions too, seeded once the Project row exists.
+    expect(body.models.filter((m) => m.discount !== undefined)).toHaveLength(
+      presetPromotions().length,
+    );
 
     // The point of presets is "works out of the box": creating a Session should succeed without passing a model ref.
     const created = await api.post(
@@ -638,6 +672,112 @@ describe("model-reference rekeying and the connectivity test", () => {
       peak: typed,
       offPeak: typed,
     });
+  });
+
+  it("a stored promotion takes its fraction off the list price on disk, multiplied with a scheduled row's off-peak tier", async () => {
+    const svc = t.deps.projectConfigService;
+    const off = (v: number, fraction: number): number => Math.round(v * (1 - fraction) * 1e6) / 1e6;
+    // Seeded with the Project: TokenDance's glm-5.3-flash is on 10% off.
+    const list = catalogEntryFor("tokendance", "glm-5.3-flash")!.pricing!;
+    const promoted = {
+      cacheRead: off(list.cache_read, 0.1),
+      cacheWrite: off(list.cache_write, 0.1),
+      output: off(list.output, 0.1),
+    };
+    expect(await svc.getPricing(projectId, "tokendance", "glm-5.3-flash")).toEqual({
+      peak: promoted,
+      offPeak: promoted,
+    });
+
+    // A scheduled row still at the catalog's peak price, with a promotion of its own: peak bills
+    // the promotion alone, off-peak the half-price tier with the promotion taken off it too.
+    const peak = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
+    await svc.updateModels(projectId, {
+      models: [
+        {
+          provider: "deepseek",
+          modelId: "deepseek-v4-flash",
+          pricing: {
+            cacheRead: peak.cache_read,
+            cacheWrite: peak.cache_write,
+            output: peak.output,
+          },
+          discount: 0.2,
+        },
+      ],
+    });
+    const rates = (await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash"))!;
+    expect(rates.peak.output).toBe(off(peak.output, 0.2));
+    expect(rates.offPeak.output).toBe(off(off(peak.output, 0.5), 0.2));
+  });
+
+  it("PUT discount: a declared one is stored and null clears it; an omitted one survives only on an unrenamed row at an unchanged price", async () => {
+    const price = { cacheRead: 0.1, cacheWrite: 1, output: 4 };
+    const row = (modelId: string, extra: Record<string, unknown> = {}) => ({
+      provider: "custom",
+      modelId,
+      pricing: price,
+      ...extra,
+    });
+    const stored = () =>
+      t.deps.db
+        .prepare(
+          "SELECT model_id, discount FROM model_promotions WHERE project_id = ? ORDER BY model_id",
+        )
+        .all(projectId);
+
+    const declared = await api.put(url(), {
+      models: ["kept", "repriced", "renamed", "cleared", "dropped"].map((id) =>
+        row(id, { discount: 0.2 }),
+      ),
+    });
+    expect(declared.status).toBe(200);
+    expect(
+      ((await declared.json()) as ModelsResponse).models.map((m) => [m.modelId, m.discount]),
+    ).toEqual([
+      ["kept", 0.2],
+      ["repriced", 0.2],
+      ["renamed", 0.2],
+      ["cleared", 0.2],
+      ["dropped", 0.2],
+    ]);
+
+    const next = await api.put(url(), {
+      models: [
+        row("kept"),
+        row("repriced", { pricing: { ...price, output: 5 } }),
+        row("renamed-to", { renamedFrom: { provider: "custom", modelId: "renamed" } }),
+        row("cleared", { discount: null }),
+      ],
+    });
+    expect(next.status).toBe(200);
+    expect(
+      ((await next.json()) as ModelsResponse).models.map((m) => [m.modelId, m.discount]),
+    ).toEqual([
+      ["kept", 0.2],
+      ["repriced", undefined],
+      ["renamed-to", undefined],
+      ["cleared", undefined],
+    ]);
+    // The dropped row's promotion went with it rather than lingering unseen.
+    expect(stored()).toEqual([{ model_id: "kept", discount: 0.2 }]);
+
+    // Out of range or not a number: 400 before anything is written, so neither the file nor
+    // the table moves — not even for the valid row beside it, whose new price would otherwise
+    // have cleared its promotion.
+    const cfgFile = path.join(t.root, projectId, ".project_config.toml");
+    const before = await readFile(cfgFile, "utf8");
+    for (const bad of [0, 1, -0.2, 1.5, "0.2"]) {
+      const res = await api.put(url(), {
+        models: [
+          row("kept", { pricing: { ...price, output: 9 } }),
+          row("other", { discount: bad }),
+        ],
+      });
+      expect(res.status, String(bad)).toBe(400);
+    }
+    expect(await readFile(cfgFile, "utf8")).toBe(before);
+    expect(stored()).toEqual([{ model_id: "kept", discount: 0.2 }]);
   });
 
   it("an absent display name inherits the catalog's; only an empty one clears it", async () => {
@@ -841,6 +981,57 @@ describe("model-reference rekeying and the connectivity test", () => {
       expect(typeof body.message).toBe("string");
     } finally {
       if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    }
+  });
+
+  it("Penguin Go probes never substitute vendor environment keys", async () => {
+    const saved = {
+      gemini: process.env.GEMINI_API_KEY,
+      openai: process.env.OPENAI_API_KEY,
+      penguin: process.env.PENGUIN_GO_API_KEY,
+    };
+    process.env.GEMINI_API_KEY = "vendor-gemini-must-not-cross";
+    process.env.OPENAI_API_KEY = "vendor-openai-must-not-cross";
+    delete process.env.PENGUIN_GO_API_KEY;
+    try {
+      for (const modelId of ["gemini-3.8-flash", "deepseek-flash"]) {
+        const tested = await api.post(testUrl(), { provider: "penguin-go", modelId });
+        expect(tested.status).toBe(200);
+        expect((await tested.json()) as ModelTestResponse).toMatchObject({
+          ok: false,
+          message: "Missing API key for Penguin Go.",
+        });
+
+        const vision = await api.post(`${url()}/detect-vision`, {
+          provider: "penguin-go",
+          modelId,
+        });
+        expect(vision.status).toBe(200);
+        expect((await vision.json()) as ModelVisionDetectResponse).toMatchObject({
+          outcome: "failed",
+          message: "Missing API key for Penguin Go.",
+        });
+      }
+
+      process.env.PENGUIN_GO_API_KEY = "penguin-go-key-without-endpoint";
+      const noEndpoint = await api.post(testUrl(), {
+        provider: "penguin-go",
+        modelId: "gemini-3.8-flash",
+        baseUrl: null,
+      });
+      expect((await noEndpoint.json()) as ModelTestResponse).toMatchObject({
+        ok: false,
+        message: "Missing API base URL for Penguin Go.",
+      });
+    } finally {
+      for (const [key, value] of [
+        ["GEMINI_API_KEY", saved.gemini],
+        ["OPENAI_API_KEY", saved.openai],
+        ["PENGUIN_GO_API_KEY", saved.penguin],
+      ] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   });
 

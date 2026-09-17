@@ -105,6 +105,12 @@ const implementationDeps = [];
 const types = {};
 /** Module manifests, extracted STATICALLY from each module.ts's defineModule({...}) literal. */
 const manifests = {};
+/**
+ * What a PLUGIN package's default export names — `{ modules: [A, B], replaces: [C] }` —
+ * read off the source, so a surface can say what a listed package adds without importing
+ * it. Absent for a package that has no such default export (the harness itself).
+ */
+let pluginDecl = null;
 
 for (const project of projects) {
   const configPath = path.resolve(project);
@@ -309,6 +315,65 @@ for (const project of projects) {
     // `export default class X` names its symbol "default"; the class keeps its own name.
     if (kind === "component")
       componentKeyBySymbol.set(sym, `${moduleNameOf(node.getSourceFile().fileName)}#${className}`);
+  }
+  // The plugin declaration: `export default { modules: [...], replaces: [...] }`, or a
+  // default-exported binding initialized to that literal (`const plugin: Plugin = {...}`).
+  // Each element must be a module class of this package; anything else is refused.
+  const unwrap = (e) =>
+    ts.isSatisfiesExpression(e) || ts.isAsExpression(e) || ts.isParenthesizedExpression(e)
+      ? unwrap(e.expression)
+      : e;
+  for (const sf of program.getSourceFiles()) {
+    if (sf.isDeclarationFile || sf.fileName.includes("/node_modules/")) continue;
+    for (const st of sf.statements) {
+      if (!ts.isExportAssignment(st) || st.isExportEquals) continue;
+      let literal = unwrap(st.expression);
+      if (ts.isIdentifier(literal)) {
+        const sym0 = checker.getSymbolAtLocation(literal);
+        const sym =
+          sym0 && sym0.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym0) : sym0;
+        const decl = sym?.valueDeclaration;
+        if (decl && ts.isVariableDeclaration(decl) && decl.initializer)
+          literal = unwrap(decl.initializer);
+      }
+      if (!ts.isObjectLiteralExpression(literal)) continue;
+      const lists = { modules: [], replaces: [] };
+      let isPlugin = false;
+      for (const prop of literal.properties) {
+        const key =
+          ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) ? prop.name.text : null;
+        if (key !== "modules" && key !== "replaces") continue;
+        isPlugin = true;
+        const file = path.relative(process.cwd(), sf.fileName);
+        const arr = unwrap(prop.initializer);
+        if (!ts.isArrayLiteralExpression(arr)) {
+          errors.push(
+            `${file}: the default export's ${key} must be an array literal of module classes`,
+          );
+          continue;
+        }
+        for (const el of arr.elements) {
+          const sym0 = ts.isIdentifier(el) ? checker.getSymbolAtLocation(el) : undefined;
+          const sym =
+            sym0 && sym0.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym0) : sym0;
+          const name = sym === undefined ? undefined : moduleNameBySymbol.get(sym);
+          if (name === undefined) {
+            errors.push(
+              `${file}: the default export's ${key} names '${el.getText()}', which is not a @Module or @Component class of this package`,
+            );
+            continue;
+          }
+          lists[key].push(name);
+        }
+      }
+      if (!isPlugin) continue;
+      if (pluginDecl !== null) {
+        errors.push(
+          `${path.relative(process.cwd(), sf.fileName)}: a second default export names modules — a package has one plugin declaration`,
+        );
+      }
+      pluginDecl = lists;
+    }
   }
   /** interfaces with methods, by symbol → key; filled as they are met so references resolve. */
   const keys = new Map();
@@ -1099,7 +1164,12 @@ const sortKeys = (o) =>
 // The table's identity: a sha256 over its canonical content, so two builds can tell at
 // a glance whether they agree on every interface and manifest (the page CI publishes
 // carries it, and a pre-push check compares it). The hash is not part of what it hashes.
-const body = { ifaces: sortKeys(table), types: sortKeys(types), modules: sortKeys(manifests) };
+const body = {
+  ifaces: sortKeys(table),
+  types: sortKeys(types),
+  modules: sortKeys(manifests),
+  ...(pluginDecl === null ? {} : { plugin: pluginDecl }),
+};
 const hash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
 const text = `${JSON.stringify({ hash, ...body }, null, 1)}\n`;
 const existing = fs.existsSync(outPath) ? fs.readFileSync(outPath, "utf8") : null;

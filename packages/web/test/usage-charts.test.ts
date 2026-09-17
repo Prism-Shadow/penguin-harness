@@ -1,7 +1,7 @@
 /**
  * Cost Center chart pure-function unit tests (chart-geom.ts): coordinate mapping, SVG path
- * assembly (straight and gap-split paths — every line on the page is straight segments,
- * nothing is smoothed), container-fitting bar width (charts never scroll), stacked-bar
+ * assembly (straight paths through the points given — every line on the page is straight
+ * segments, nothing is smoothed), container-fitting bar width (charts never scroll), stacked-bar
  * segment geometry and per-segment hit bands, and hover-bubble placement (pointer lower-right, flipping at the edges; the cache hit rate
  * shown in the cacheRead bubble is lib/format's shared cacheHitRate, tested in
  * format.test.ts). Component interaction isn't covered here (vitest runs in a node
@@ -18,7 +18,6 @@ import {
   makeRangeGeom,
   linePath,
   areaPath,
-  lineSegments,
   segmentPath,
   sparseLabelIdx,
   autoLabelIdx,
@@ -85,46 +84,30 @@ describe("linePath / areaPath", () => {
   });
 });
 
-describe("lineSegments / segmentPath (gap segmentation)", () => {
-  it("no gaps: one segment with everything (consecutive indexes)", () => {
-    expect(lineSegments([60, 75.25, 85.5])).toEqual([
-      [
-        { index: 0, value: 60 },
-        { index: 1, value: 75.25 },
-        { index: 2, value: 85.5 },
-      ],
-    ]);
-  });
+describe("segmentPath", () => {
+  const g = makeRangeGeom(3, 0, 100, 640);
+  /** Path coordinates are rounded to 2 decimals (see chart-geom's rnd). */
+  const at = (i: number, v: number) => `${Math.round(g.x(i) * 100) / 100},${g.y(v)}`;
 
-  it("a middle gap breaks into two segments (a lone point still forms a segment: point drawn, no line)", () => {
-    expect(lineSegments([0.12, null, 0.2])).toEqual([
-      [{ index: 0, value: 0.12 }],
-      [{ index: 2, value: 0.2 }],
-    ]);
-    expect(lineSegments([null, 1, 2, null, 3])).toEqual([
-      [
-        { index: 1, value: 1 },
-        { index: 2, value: 2 },
-      ],
-      [{ index: 4, value: 3 }],
-    ]);
-  });
-
-  it("all missing / empty list: no segments", () => {
-    expect(lineSegments([null, null])).toEqual([]);
-    expect(lineSegments([])).toEqual([]);
-  });
-
-  it("a segment strokes only its own indexes, so nothing bridges the hole between two segments", () => {
-    const g = makeRangeGeom(3, 0, 100, 640);
-    /** Path coordinates are rounded to 2 decimals (see chart-geom's rnd). */
-    const at = (i: number, v: number) => `${Math.round(g.x(i) * 100) / 100},${g.y(v)}`;
-    const [first, second] = lineSegments([100, null, 0]);
-    expect(segmentPath(g, first!)).toBe(`M${at(0, 100)}`);
-    expect(segmentPath(g, second!)).toBe(`M${at(2, 0)}`);
+  it("a lone point is a bare move that strokes nothing, and no points is no path", () => {
+    expect(segmentPath(g, [{ index: 2, value: 0 }])).toBe(`M${at(2, 0)}`);
     expect(segmentPath(g, [])).toBe("");
-    // A two-point run is one straight stroke between exactly those two indexes.
-    expect(segmentPath(g, lineSegments([100, 0, null])[0]!)).toBe(`M${at(0, 100)} L${at(1, 0)}`);
+  });
+
+  it("strokes straight from each point to the next, over any slot between them", () => {
+    expect(
+      segmentPath(g, [
+        { index: 0, value: 100 },
+        { index: 1, value: 0 },
+      ]),
+    ).toBe(`M${at(0, 100)} L${at(1, 0)}`);
+    // Slot 1 belongs to another series: the stroke joins slots 0 and 2 directly.
+    expect(
+      segmentPath(g, [
+        { index: 0, value: 100 },
+        { index: 2, value: 0 },
+      ]),
+    ).toBe(`M${at(0, 100)} L${at(2, 0)}`);
   });
 });
 

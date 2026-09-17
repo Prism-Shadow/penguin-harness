@@ -519,6 +519,8 @@ export interface ModelInfo {
    */
   fastMode?: boolean;
   pricing?: ModelPricingDto;
+  /** Running promotion for this row — a fraction in (0, 1) off `pricing`, which is the list price — read from web.db. Absent when the row has none. */
+  discount?: number;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
   /**
@@ -577,6 +579,12 @@ export interface ModelUpdateEntry {
   /** Per-model fast mode: only `true` is persisted; omitted or `false` clears the annotation (absent = off). */
   fastMode?: boolean;
   pricing?: ModelPricingDto;
+  /**
+   * Promotion to store for this row, a fraction in (0, 1) off `pricing`; `null` clears it. Omitted
+   * keeps the stored promotion — unless this entry renames the row or changes its pricing, which
+   * clears it.
+   */
+  discount?: number | null;
   /** Providing it overwrites and updates createdAt; omitting it keeps the existing value. */
   apiKey?: string;
   /** When true, clears the stored api_key. */
@@ -846,6 +854,37 @@ export interface ModelOAuthCodeResponse {
   ok: boolean;
   applied?: number;
   error?: ModelOAuthErrorCode;
+}
+
+// ---------------------------------------------------------------------------
+// Penguin Go key authorization (/api/projects/:p/platform-auth, owner)
+// ---------------------------------------------------------------------------
+
+export interface PlatformAuthStartResponse {
+  flowId: string;
+  authorizeUrl: string;
+  expiresAt: string;
+}
+
+export type PlatformAuthFlowErrorCode =
+  | "unreachable"
+  | "upstream_failed"
+  | "invalid_key"
+  | "expired"
+  | "locked"
+  | "already_delivered"
+  | "apply_failed";
+
+export interface PlatformAuthFlowStatusResponse {
+  status: "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
+  error?: PlatformAuthFlowErrorCode;
+  applied?: number;
+}
+
+/** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */
+export interface PlatformModelSyncResponse extends ModelsResponse {
+  added: number;
+  updated: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -3564,6 +3603,49 @@ export interface SkillArchiveInstallRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Plugin registry index
+// ---------------------------------------------------------------------------
+
+/**
+ * One published version of a plugin — the index entry format every plugin registry
+ * speaks (modeled on the typst/packages `index.json` schema: a flat array of
+ * per-version entries; a plugin published at several versions appears once per
+ * version). Installation is out of scope here: an entry's `name` is the package
+ * specifier a Project's plugin list names.
+ */
+export interface PluginIndexEntry {
+  /** Package specifier — the string a Project's plugin list names. */
+  name: string;
+  /** Semantic version of this entry. */
+  version: string;
+  description: string;
+  authors: string[];
+  /** SPDX license identifier. */
+  license: string;
+  /** Source repository URL. */
+  repository?: string;
+  homepage?: string;
+  /** Free-form searchable terms; the Web App renders them as chips (e.g. the target OS). */
+  keywords?: string[];
+  /** Capability floor(s) the plugin provides on (e.g. "sandbox"). */
+  categories?: string[];
+  /** Unix timestamp (seconds) of the entry's last update. */
+  updatedAt?: number;
+}
+
+/** GET /api/plugins/registry: the merged index of every configured registry (currently the builtin one). */
+export interface PluginIndexResponse {
+  plugins: PluginIndexEntry[];
+}
+
+/** GET /api/plugins/registry/readme — long-form docs for one entry; `readme` is null when none exists. */
+export interface PluginReadmeResponse {
+  name: string;
+  /** Markdown, rendered by the Web App. Null when this entry has no readme. */
+  readme: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Version and self-update
 // ---------------------------------------------------------------------------
 
@@ -4665,4 +4747,40 @@ export interface ContributionsResponse {
   pages: WebContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+}
+
+/** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
+export interface InstalledPlugin {
+  /** The package specifier as written in the file. */
+  specifier: string;
+  /** Whether the running process holds this package — its modules are in the tree. */
+  active: boolean;
+  /**
+   * Where the package came from: shipped with the build (a hot push's assets, or the
+   * installation's own `plugins/`) rather than fetched from npm. A tag on an installed
+   * plugin — being shipped is not being installed.
+   */
+  builtin: boolean;
+  /** Module names the package declares it adds. */
+  modules: string[];
+  /** Node names the package declares it stands in for. */
+  replaces: string[];
+  /**
+   * Why the package is not running: unresolvable, or a load that
+   * failed (an import that threw, a module name another plugin already took).
+   */
+  error?: string;
+}
+
+export interface InstalledPluginsResponse {
+  plugins: InstalledPlugin[];
+  /**
+   * Specifiers this build SHIPS (the hot push's assets, or the installation's own
+   * `plugins/`): installable without a download, and not installed until listed.
+   */
+  shipped: string[];
+  /** The file the list lives in, named for the page that explains where to edit it by hand. */
+  file: string;
+  /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
+  restartPending: boolean;
 }

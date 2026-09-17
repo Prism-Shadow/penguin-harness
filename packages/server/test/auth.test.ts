@@ -7,6 +7,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MeResponse, ProjectsResponse } from "../src/api/types.js";
 import { bootAppDeps } from "../src/app.js";
+import { hashPassword, ScryptHasher } from "../src/auth/password.js";
 import { generateInitialAdminPassword } from "../src/auth/service.js";
 import {
   apiClient,
@@ -266,6 +267,73 @@ describe("auth", () => {
       expect((await attempt()).status).toBe(401);
     } finally {
       await fresh.cleanup();
+    }
+  });
+
+  it("answers an unknown username exactly as it answers a wrong password", async () => {
+    await provisionUser(t.app, "carol");
+    // An account whose stored hash cannot be checked is no different either.
+    await provisionUser(t.app, "grace");
+    t.deps.db.prepare("UPDATE users SET password_hash = ? WHERE user_id = ?").run("", "grace");
+    const attempt = async (userId: string, password: string) => {
+      const res = await t.app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ userId, password }),
+      });
+      return {
+        status: res.status,
+        headers: Object.fromEntries(res.headers),
+        body: await res.text(),
+      };
+    };
+    const wrongPassword = await attempt("carol", "wrong-password");
+    expect(wrongPassword.status).toBe(401);
+    expect(JSON.parse(wrongPassword.body)).toEqual({
+      error: { code: "invalid_credentials", message: "Incorrect username or password." },
+    });
+    expect(wrongPassword.headers["set-cookie"]).toBeUndefined();
+    expect(await attempt("nobody", "wrong-password")).toEqual(wrongPassword);
+    expect(await attempt("grace", "password-123")).toEqual(wrongPassword);
+  });
+
+  it("checks an unknown username against a dummy hash made once, by the server's own hasher", async () => {
+    const root = await makeTempRoot();
+    const hashed: string[] = [];
+    const hasher = {
+      async hash(password: string): Promise<string> {
+        const stored = await hashPassword(password, 2);
+        hashed.push(stored);
+        return stored;
+      },
+    };
+    const deps = flattenForTests(
+      await bootAppDeps(testConfig(root), [
+        ...replacementsFor({ log: () => {} }),
+        [ScryptHasher, hasher],
+      ]),
+    );
+    const invalid = { status: 401, code: "invalid_credentials" };
+    try {
+      await deps.authService.seedAdmin();
+      expect(hashed).toHaveLength(1);
+      // A wrong password on a real account is checked against that account's hash: no dummy.
+      await expect(deps.authService.login("admin", "wrong-password")).rejects.toMatchObject(
+        invalid,
+      );
+      expect(hashed).toHaveLength(1);
+      // The first unknown username makes the dummy, and every later one reuses it.
+      await expect(deps.authService.login("ghost", "whatever-123")).rejects.toMatchObject(invalid);
+      expect(hashed).toHaveLength(2);
+      await expect(deps.authService.login("phantom", "whatever-123")).rejects.toMatchObject(
+        invalid,
+      );
+      expect(hashed).toHaveLength(2);
+    } finally {
+      deps.hmr.dispose();
+      deps.channels.dispose();
+      deps.db.close();
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
 
