@@ -114,6 +114,7 @@ export const HMR_INTERFACES: HmrInterfaces = {
     "portFile",
     "trustProxy",
     "supervised",
+    "penguinGoOrigin",
   ],
   db: ["prepare", "exec", "close"],
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
