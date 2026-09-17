@@ -13,7 +13,8 @@
  * later mount shadows an earlier one:
  *
  *   --ro-bind / /  --dev /dev  --proc /proc  --die-with-parent   the read-only world
- *   [workspace-write]  --tmpfs /tmp  --bind <workspaceRoot> <same>
+ *   [writable temp]    --tmpfs /tmp  --bind <tmpdir> <same>         a private, writable /tmp
+ *   [workspace-write]  --bind <workspaceRoot> <same>
  *   [network: none]    --unshare-net                             no network namespace
  *   [mask-paths]       --tmpfs <dir> | --ro-bind /dev/null <file>  shadowing the above
  *   --  <the caller's argv>
@@ -52,22 +53,26 @@ export interface PenguinBwrapInternals {
   runner?: string;
 }
 
-/** The writable roots `workspace-write` grants: the workspace plus the temp areas, canonical and deduplicated. */
+/**
+ * The writable roots a policy grants, canonical and deduplicated: the workspace under
+ * `workspace-write`, and the temp areas whenever the policy makes temp writable (either mode).
+ */
 export function writableRoots(policy: SandboxPolicy): string[] {
-  if (policy.mode !== "workspace-write") return [];
-  const roots = [policy.workspaceRoot, "/tmp", tmpdir()].map((root) => path.resolve(root));
+  const roots = [
+    ...(policy.mode === "workspace-write" ? [policy.workspaceRoot] : []),
+    ...(policy.writableTemp === true ? ["/tmp", tmpdir()] : []),
+  ].map((root) => path.resolve(root));
   return [...new Set(roots)];
 }
 
 /** The bwrap profile arguments for one policy (everything before `--` and the caller's argv). */
 export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
   const args = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--die-with-parent"];
-  if (policy.mode === "workspace-write") {
-    args.push("--tmpfs", "/tmp");
-    for (const root of writableRoots(policy)) {
-      if (root === "/tmp") continue; // already a writable tmpfs above
-      args.push("--bind", root, root);
-    }
+  const roots = writableRoots(policy);
+  if (policy.writableTemp === true) args.push("--tmpfs", "/tmp");
+  for (const root of roots) {
+    if (root === "/tmp") continue; // already a writable tmpfs above
+    args.push("--bind", root, root);
   }
   if (policy.network === "none") args.push("--unshare-net");
   for (const target of policy.maskPaths ?? []) {

@@ -36,7 +36,8 @@ const mgr = new CommandSessionManager({
   confineSpawn: () => (argv, opts) =>
     policy === null
       ? argv
-      : provider.confine(argv, { ...policy, workspaceRoot: opts.workspaceDir }).argv,
+      : provider.confine(argv, { writableTemp: true, ...policy, workspaceRoot: opts.workspaceDir })
+          .argv,
   workspaceDir: ws,
 });
 

@@ -32,10 +32,22 @@ describe.skipIf(process.platform === "win32")("seatbelt profile", () => {
     expect(profile).not.toContain(`(subpath "${WS}")`);
   });
 
-  it("workspace-write: the workspace and the temp areas become writable", () => {
+  it("workspace-write: the workspace becomes writable, and the temp areas only when temp is", () => {
     const profile = seatbeltProfile({ mode: "workspace-write", workspaceRoot: WS });
     expect(profile).toContain(`(allow file-write* (subpath "${canonicalPath(WS)}")`);
-    expect(profile).toContain(canonicalPath(tmpdir()));
+    expect(profile).not.toContain(`(subpath "${canonicalPath(tmpdir())}")`);
+    const withTemp = seatbeltProfile({
+      mode: "workspace-write",
+      workspaceRoot: WS,
+      writableTemp: true,
+    });
+    expect(withTemp).toContain(`(subpath "${canonicalPath(tmpdir())}")`);
+  });
+
+  it("read-only with writable temp: the temp areas are the only writable roots", () => {
+    expect(writableRoots({ mode: "read-only", workspaceRoot: WS, writableTemp: true })).toEqual([
+      ...new Set(["/tmp", tmpdir()].map(canonicalPath)),
+    ]);
   });
 
   it("network: none denies every socket", () => {

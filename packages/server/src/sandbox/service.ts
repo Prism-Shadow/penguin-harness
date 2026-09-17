@@ -138,6 +138,8 @@ export class SandboxService {
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0
           ? { maskPaths: settings.maskPaths }
           : {}),
+        // Always: without a writable temp directory a shell cannot start.
+        writableTemp: true,
       };
       // ConfinedArgv also carries enforcement / denialSignatures / runnerFailureRules;
       // the classification consumer (denial vs runner failure) lands with escalation.

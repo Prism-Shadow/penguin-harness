@@ -39,15 +39,29 @@ describe("penguin-bwrap profile", () => {
   // skipIf(win32): the profile echoes host path resolution, which turns the POSIX
   // workspace literal into a drive path — and bwrap never runs there anyway.
   it.skipIf(process.platform === "win32")(
-    "workspace-write: the workspace and a tmpfs /tmp become writable",
+    "workspace-write: the workspace becomes writable, and /tmp only when temp is",
     () => {
       const args = bwrapProfileArgs({ mode: "workspace-write", workspaceRoot: WS });
-      expect(args).toContain("--tmpfs");
       expect(args.join(" ")).toContain(`--bind ${WS} ${WS}`);
+      expect(args).not.toContain("--tmpfs");
+
+      const withTemp = bwrapProfileArgs({
+        mode: "workspace-write",
+        workspaceRoot: WS,
+        writableTemp: true,
+      });
+      expect(withTemp.join(" ")).toContain("--tmpfs /tmp");
+      expect(withTemp.join(" ")).toContain(`--bind ${WS} ${WS}`);
       // /tmp is the tmpfs, never also a bind of the host's /tmp.
-      expect(args.join(" ")).not.toContain("--bind /tmp /tmp");
+      expect(withTemp.join(" ")).not.toContain("--bind /tmp /tmp");
     },
   );
+
+  it("read-only with writable temp: a tmpfs /tmp is the only writable place", () => {
+    const args = bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS, writableTemp: true });
+    expect(args.join(" ")).toContain("--tmpfs /tmp");
+    expect(args.join(" ")).not.toContain(`--bind ${WS}`);
+  });
 
   it("network: none adds --unshare-net; absent leaves the network alone", () => {
     expect(bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS, network: "none" })).toContain(

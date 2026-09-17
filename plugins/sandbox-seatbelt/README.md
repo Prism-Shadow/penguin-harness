@@ -15,7 +15,7 @@ network isolation and path masking — as policy rules rather than mounts.
 (allow default)                              ; start from the host's world
 (deny file-write*)                           ; nothing is writable…
 (allow file-write* (literal "/dev/null") …)  ; …beyond the required sinks
-;; workspace-write
+;; workspace-write, and the temp areas when temp is writable
 (allow file-write* (subpath "<workspaceRoot>") …)
 ;; network: none
 (deny network*)
