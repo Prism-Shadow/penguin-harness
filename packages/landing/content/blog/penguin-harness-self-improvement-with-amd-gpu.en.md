@@ -22,11 +22,11 @@ The model is never retrained, and no weights change. The tutorial is for develop
 
 ## How self-improvement works in PenguinHarness
 
-PenguinHarness is an open-source Agent Harness. It brings model integrations, agent configuration, Workspace tools, Sessions, Traces, Skills and Benchmarks into one runtime, with both a CLI and a Web App, and it can use hosted models as well as local models exposed through an OpenAI-compatible endpoint.
+PenguinHarness is an open-source agent harness. It brings model integrations, agent configuration, Workspace tools, Sessions, Traces, Skills and Benchmarks into one runtime, with both a CLI and a Web App, and it can use hosted models as well as local models exposed through an OpenAI-compatible endpoint.
 
 PenguinHarness represents an agent's behavior as a set of readable, editable and versioned state files, rather than as a fixed prompt that only a developer can maintain by hand. Role definitions, operating procedures, reusable Skills and runtime settings all belong to the Agent State, and each task produces a complete Session and Trace. So one agent can evaluate another, update its State using evidence from real executions, and then verify the change against the same evaluation.
 
-That is what PenguinHarness calls self-improvement. It does not retrain the model or update its weights. It improves the Agent Harness around the model, and uses repeatable measurements to decide whether a new version is kept.
+That is what PenguinHarness calls self-improvement. It does not retrain the model or update its weights. It improves the agent harness around the model, and uses repeatable measurements to decide whether a new version is kept.
 
 ### The editable Agent State
 
@@ -66,7 +66,7 @@ This tutorial splits the work between two models:
 
 | Purpose | Agent | Model |
 |---|---|---|
-| Create the Agent, design the Benchmark, and perform optimization | `default_agent` | Fireworks API model |
+| Create the agent, design the Benchmark, and perform optimization | `default_agent` | Fireworks API model |
 | Undergo evaluation and improvement | `meeting_summary_agent` | Qwen3:8B on an AMD GPU |
 
 Qwen3:8B runs through Ollama on the AMD GPU and serves as the Target Agent model. A model on the Fireworks API runs `default_agent`, which creates the agent, designs the Benchmark and performs the optimization. You first establish a v1 baseline, let the Optimizer improve the agent using evidence from real Traces, and then use the same Benchmark to decide whether to accept the new version or roll it back.
@@ -144,7 +144,7 @@ In this step you create the first version of the Target Agent and save a Snapsho
 The prompt creates v1 of `meeting_summary_agent`. Version 1 defines only the basic responsibilities and safety boundaries. It does not preload a complete summarization workflow, so the Benchmark can expose the operating habits the agent lacks through actual runs.
 
 <details>
-<summary><strong>Expand: Complete Prompt for Creating the v1 Agent</strong></summary>
+<summary><strong>Expand: complete prompt for creating the v1 agent</strong></summary>
 
 ```text
 Use the agent-creation Skill to configure the Agent `meeting_summary_agent`.
@@ -204,7 +204,7 @@ simple-file-summary-2case-v1
 The maximum scores of the two Cases total 100 points, and each Case runs three times. The Target Agent sees only the public Statement, never the private Rubric.
 
 <details>
-<summary><strong>Expand: Complete Prompt for Creating and Calibrating the Benchmark</strong></summary>
+<summary><strong>Expand: complete prompt for creating and calibrating the Benchmark</strong></summary>
 
 ```text
 Use the benchmark-design Skill to create and calibrate a Benchmark for the
@@ -319,7 +319,7 @@ In this step the Optimizer analyzes all six runs and their linked Traces, then m
 In the top-level `default_agent` chat on the Fireworks model, invoke the `agent-optimization` Skill and submit the prompt below. It instructs the Optimizer to form one generalizable behavioral hypothesis, and then to update `AGENTS.md` or create a narrowly scoped Skill.
 
 <details>
-<summary><strong>Expand: Complete Prompt for Optimizing the Agent</strong></summary>
+<summary><strong>Expand: complete prompt for optimizing the agent</strong></summary>
 
 ```text
 Use the agent-optimization Skill in Benchmark optimization mode to improve

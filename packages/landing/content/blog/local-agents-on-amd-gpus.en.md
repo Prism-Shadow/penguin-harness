@@ -41,7 +41,7 @@ The word "harness" is deliberate. PenguinHarness is not a heavyweight framework 
 | Pillar | Meaning |
 | --- | --- |
 | **Simplest Is the Best** | A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, complex tasks done efficiently. |
-| **Harness for Building Agents** | Either build one programmatically with the SDK (`createAgent` → `createSession` → `run`), or have an agent build a whole new agent for you from a plain-language requirement. |
+| **Harness for building agents** | Either build one programmatically with the SDK (`createAgent` → `createSession` → `run`), or have an agent build a whole new agent for you from a plain-language requirement. |
 | **Harness for Recursive Self-Improvement** | With Skills, an agent evaluates and optimizes *itself*, improving recursively over time. |
 
 For the latter two, PenguinHarness is the first open-source implementation of its kind.

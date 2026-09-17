@@ -71,7 +71,7 @@ penguin config model list
 
 ### 3.5 Flash-Lite：负责扇出
 
-第二个新模型的目标是吞吐，而不是深度。按 Artificial Analysis 的测量，Gemini 3.5 Flash-Lite 是 3.5 系列中最快的模型，达到 **350 输出 Token/秒**。定价为 **输入 $0.30 / 百万 Token，输出 $2.50 / 百万 Token**。
+第二个新模型的目标是吞吐，而不是深度。按 Artificial Analysis 的测量，Gemini 3.5 Flash-Lite 是 3.5 系列中最快的模型，达到 **350 输出 Token/秒**。定价为**输入 $0.30 / 百万 Token，输出 $2.50 / 百万 Token**。
 
 Google 把它定位在 Agent 检索、文档处理这类高吞吐场景。它的思考等级可以配置，同一个模型既能调低，便宜地跑批量任务，也能调高，承担多步的子 Agent 负载。计算机操作在这里同样是内置工具。
 

@@ -138,7 +138,7 @@ A fourth Skill, `bento-slides`, joins the Office Productivity group. Ask for a p
 
 The docs site and the landing page now share one navbar layout, with the same container width, logo block and right-hand cluster, after drifting apart into two near-identical implementations. The blog gained the **Tech practice** category, pinned posts, and per-post metadata: a date formatted for your language, an author line and a copy-link button. Both READMEs and the landing page now list the built-in Skills where people look for them.
 
-The README roadmap gained two items: Agent company and templates, and company-level self evolving. The self-improvement example under `examples/` is now two runnable scripts in which a local open-weight model scores itself, edits its own files and re-runs, replacing a fixed illustrative transcript. The server now validates paging and date query parameters instead of trusting them.
+The README roadmap gained two items: agent company and templates, and company-level self evolving. The self-improvement example under `examples/` is now two runnable scripts in which a local open-weight model scores itself, edits its own files and re-runs, replacing a fixed illustrative transcript. The server now validates paging and date query parameters instead of trusting them.
 
 ## Upgrading
 
