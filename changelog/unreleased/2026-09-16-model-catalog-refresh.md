@@ -37,13 +37,13 @@ The built-in model catalog was re-read against its providers on 2026-09-16. The 
 ## Qwen Pay-As-You-Go
 
 - Added `deepseek-v4.1-flash` (**DeepSeek V4.1 Flash**, image input) on Qwen's off-peak schedule, `kimi/kimi-k2.8-preview` (**Kimi K2.8 Preview**, image input) at CNY 1.7 / 6.5 / 27 with a 1,048,576-token context window, and `ZHIPU/GLM-5.3-Flash` (**GLM-5.3 Flash**, image input) at CNY 0.23 / 0.8 / 2.8.
-- Retired `deepseek-v4-flash-0731` and `ZHIPU/GLM-5.2`.
+- Removed `deepseek-v4-flash-0731` and `ZHIPU/GLM-5.2`.
 - Re-priced `qwen3.8-flash` to Qwen's new list price, CNY 0.1 / 0.8 / 2.7 (it was 0.1 / 1 / 3).
 
 ## Qwen Token Plan
 
 - Added `deepseek-v4.1-flash` (**DeepSeek V4.1 Flash**, image input) and `deepseek-v4-pro-0813` (**DeepSeek V4 Pro 0813**, text only), both on Qwen's off-peak schedule; `glm-5.3` (**GLM-5.3**) at CNY 2 / 8 / 28 with a 1,048,576-token context window; and `qwen3.8-flash` (**Qwen 3.8 Flash**, image input) at CNY 0.1 / 0.8 / 2.7.
-- Retired `deepseek-v4-flash-0731`, `deepseek-v4-pro` and `glm-5.2`.
+- Removed `deepseek-v4-flash-0731`, `deepseek-v4-pro` and `glm-5.2`.
 
 ## Qwen's off-peak schedule
 
