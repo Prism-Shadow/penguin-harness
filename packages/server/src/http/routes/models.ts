@@ -166,6 +166,13 @@ function parseModelsUpdate(body: Record<string, unknown>): ModelsUpdateRequest {
         output: p.output as number,
       };
     }
+    // The promotion stored for this row (null clears it); the service checks the range.
+    if (m.discount !== undefined) {
+      if (m.discount !== null && typeof m.discount !== "number") {
+        throw badRequest(`models[${i}].discount must be null or a number above 0 and below 1.`);
+      }
+      entry.discount = m.discount;
+    }
     if (m.apiKey !== undefined) {
       if (typeof m.apiKey !== "string" || m.apiKey.length === 0) {
         throw badRequest(`models[${i}].apiKey must be a non-empty string.`);

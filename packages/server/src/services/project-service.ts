@@ -154,6 +154,9 @@ export class ProjectService implements ProjectLifecycle {
     try {
       await fs.mkdir(projectDir(this.root, projectId), { recursive: true });
       await this.projectConfig.writeInitialConfig(projectId, displayName);
+      // The presets' promotions live in web.db, keyed to the row inserted above (and removed
+      // with it by the rollback below).
+      await this.projectConfig.seedPresetPromotions(projectId);
       await this.provisionBuiltinAgents(projectId);
     } catch (err) {
       this.projects.delete(projectId);
@@ -190,12 +193,15 @@ export class ProjectService implements ProjectLifecycle {
     // models and the default model are backfilled instead (only when there are no
     // models at all; a default_project already configured via the CLI is left
     // as-is).
-    await this.projectConfig.ensurePresetModels(projectId);
+    const seeded = await this.projectConfig.ensurePresetModels(projectId);
     this.projects.insert({
       projectId,
       ownerUserId: user.userId,
       createdAt: new Date().toISOString(),
     });
+    // Presets written just now bring their promotions, once the row they reference exists; a
+    // Project that kept its own models keeps its own pricing.
+    if (seeded) await this.projectConfig.seedPresetPromotions(projectId);
   }
 
   /**
@@ -259,7 +265,7 @@ export class ProjectService implements ProjectLifecycle {
         new Promise<void>((resolve) => setTimeout(resolve, ABORT_SETTLE_TIMEOUT_MS).unref?.()),
       ]);
     }
-    this.projects.delete(projectId); // project_members and machine_project cascade-deleted
+    this.projects.delete(projectId); // project_members, machine_project and model_promotions cascade-deleted
     this.agents.deleteByProject(projectId);
     this.sessions.deleteByProject(projectId);
     this.usage.deleteByProject(projectId);

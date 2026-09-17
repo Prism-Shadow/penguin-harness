@@ -39,6 +39,8 @@ export interface ServerConfig {
    * derived per request instead.
    */
   previewOrigin: string | null;
+  /** Trusted Penguin Go origin; never supplied by a browser request. */
+  penguinGoOrigin: string;
   /**
    * Fixed initial password for the seeded built-in admin (PENGUIN_SEED_ADMIN_PASSWORD),
    * used by automated tests and e2e. Null is the norm: the seed then generates a random
@@ -146,7 +148,35 @@ function normalizePreviewOrigin(raw: string | undefined): string | null {
   return url.origin;
 }
 
-/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY). */
+/** HTTPS in production; plain HTTP is accepted only for an explicit loopback integration. */
+export function normalizePenguinGoOrigin(raw: string | undefined): string {
+  const value = raw?.trim() || "https://token.penguin.ooo";
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Invalid PENGUIN_GO_ORIGIN=${value} (expected an absolute HTTP(S) origin)`);
+  }
+  if (
+    url.username !== "" ||
+    url.password !== "" ||
+    url.pathname !== "/" ||
+    url.search !== "" ||
+    url.hash !== ""
+  ) {
+    throw new Error(
+      `Invalid PENGUIN_GO_ORIGIN=${value} (paths, credentials, query and fragment are not allowed)`,
+    );
+  }
+  const loopback =
+    url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
+    throw new Error(`Invalid PENGUIN_GO_ORIGIN=${value} (HTTPS required except for loopback HTTP)`);
+  }
+  return url.origin;
+}
+
+/** Parses server config from environment variables (PORT / HOST / PENGUIN_HOME / PENGUIN_WEB_DIST / PENGUIN_WEB_DB / PENGUIN_PREVIEW_ORIGIN / PENGUIN_GO_ORIGIN / PENGUIN_SEED_ADMIN_PASSWORD / PENGUIN_DESKTOP_TOKEN / PENGUIN_PORT_FILE / PENGUIN_TRUST_PROXY / PENGUIN_CLI_ENTRY). */
 export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const root = env.PENGUIN_HOME ?? resolveRoot();
   // An empty PORT string is treated as unset (the common `.env` case of an empty
@@ -169,6 +199,7 @@ export function resolveServerConfig(env: NodeJS.ProcessEnv = process.env): Serve
     dbPath: env.PENGUIN_WEB_DB ?? path.join(root, "web.db"),
     webDist: env.PENGUIN_WEB_DIST ?? defaultWebDist(),
     previewOrigin: normalizePreviewOrigin(env.PENGUIN_PREVIEW_ORIGIN),
+    penguinGoOrigin: normalizePenguinGoOrigin(env.PENGUIN_GO_ORIGIN),
     // An empty/whitespace value is treated as unset, which leaves the seed to generate one.
     seedAdminPassword: env.PENGUIN_SEED_ADMIN_PASSWORD?.trim() || null,
     authSessionTtlMs: 30 * DAY_MS,

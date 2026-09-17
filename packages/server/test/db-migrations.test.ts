@@ -69,6 +69,7 @@ function dropCompanyModeTables(db: DatabaseSync): void {
 function open024(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_promotions");
   dropCompanyModeTables(db);
   db.exec("DROP TABLE messaging_bindings");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
@@ -109,6 +110,7 @@ const PRE_CHANNEL_CHAT_DDL = `
 function open6(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(PRE_CHANNEL_CHAT_DDL);
   // SCHEMA_SQL declares the CURRENT shape; migration 8's queue came after 6.
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
@@ -121,7 +123,17 @@ function open7(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
+  db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec("PRAGMA user_version = 7");
+  return db;
+}
+
+/** A database stamped at migration 8: desk notices exist, but the promotions table does not. */
+function open8(): DatabaseSync {
+  const db = new sqlite.DatabaseSync(":memory:");
+  db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_promotions");
+  db.exec("PRAGMA user_version = 8");
   return db;
 }
 
@@ -129,6 +141,7 @@ function open7(): DatabaseSync {
 function open029(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_promotions");
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
   // SCHEMA_SQL declares the CURRENT shape, and a 0.2.9 database has no machines tables —
@@ -148,6 +161,7 @@ function open029(): DatabaseSync {
 function openPreProfile(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
+  db.exec("DROP TABLE IF EXISTS model_promotions");
   dropProfileColumns(db);
   // Version 4 predates company mode as well: its three migrations (6–8) come after the
   // profile's, so a database at 4 has none of their tables.
@@ -522,6 +536,37 @@ describe("migration 7 → current: company-mode-desk-notices", () => {
     } finally {
       db.close();
       at7.close();
+    }
+  });
+});
+
+describe("migration 8 → current: model-promotions", () => {
+  it("creates the promotions table, and its down drops it again", () => {
+    const db = open8();
+    const tableExists = () =>
+      db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'model_promotions'")
+        .get();
+    try {
+      expect(migrate(db).applied).toEqual(["model-promotions"]);
+      expect(schemaVersion(db)).toBe(9);
+      expect(tableExists()).toEqual({ "1": 1 });
+
+      rollbackTo(db, 8);
+      expect(schemaVersion(db)).toBe(8);
+      expect(tableExists()).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("is safe to create while a pushed platform boots", () => {
+    const db = open8();
+    try {
+      expect(migrate(db, { swapPath: true }).applied).toEqual(["model-promotions"]);
+      expect(schemaVersion(db)).toBe(9);
+    } finally {
+      db.close();
     }
   });
 });

@@ -6,6 +6,7 @@
 import { useEffect } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router";
 import { DOCS_URL } from "./lib/links";
+import { hashTargetId } from "./lib/hash";
 import { AnnouncementBar } from "./components/announcement-bar";
 import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
@@ -41,12 +42,14 @@ let handledLocationKey = "";
 function Layout() {
   const { pathname, hash, key } = useLocation();
   // Genuine route change: jump to top; with a hash (e.g. /#quickstart after leaving
-  // the blog) scroll to the target once the section is in the DOM.
+  // the blog) scroll to the target once the section is in the DOM. A native #anchor
+  // click (a blog TOC entry) also lands here, through popstate. The hash is decoded
+  // first: an anchor to a CJK heading arrives percent-encoded.
   useEffect(() => {
     if (key === handledLocationKey) return;
     handledLocationKey = key;
     if (hash) {
-      const el = document.getElementById(hash.slice(1));
+      const el = document.getElementById(hashTargetId(hash));
       if (el) {
         el.scrollIntoView();
         return;

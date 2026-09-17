@@ -66,6 +66,7 @@ import {
   desktopLoginUrl,
   hidesOnClose,
   isAppUrl,
+  isAuthorizationBridgeUrl,
   isExternalScheme,
   isLocalSurfaceUrl,
   MAX_SERVER_RESTARTS,
@@ -150,8 +151,26 @@ function createWindow(url: string): void {
   // (classifyWindowOpen): only the Workspace preview hand-off, a preview page and a detached
   // terminal get a window of this app; other sites go to the system browser; anything else
   // on this instance is refused, since every other app path boots a second copy of the App.
-  win.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
-  win.webContents.on("did-create-window", (child) => guardOpenedWindow(child, iconPath));
+  win.webContents.setWindowOpenHandler(({ url: target }) => {
+    // The one addition, and this window's alone: Penguin Go's authorization bridge. The Web
+    // App opens it from the Authorize click, then points it at the platform or closes it when
+    // `/start` fails. It is an implementation detail, not a second app window, so it stays
+    // hidden. It is decided here and not in openWindowFor, which every opened window shares:
+    // Agent-written preview HTML must not be able to open hidden windows.
+    if (isAuthorizationBridgeUrl(target)) {
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          show: false,
+          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+        },
+      };
+    }
+    return openWindowFor(target, iconPath);
+  });
+  win.webContents.on("did-create-window", (child, details) =>
+    guardOpenedWindow(child, iconPath, isAuthorizationBridgeUrl(details.url)),
+  );
   win.webContents.on("will-navigate", (event, target) => {
     if (!isAppUrl(target, appOrigin)) {
       event.preventDefault();
@@ -198,14 +217,24 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  * would otherwise open anything at all. Its navigation policy is "stay within this instance's
  * loopback surface": a child lands on the preview host after the redirect, and the main
  * window's stricter app-origin-only rule would bounce the preview itself out.
+ *
+ * `authorizationBridge` marks the main window's hidden Penguin Go bridge. Only the main window
+ * opens one, so every window further down passes false.
  */
-function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void {
+function guardOpenedWindow(
+  child: BrowserWindow,
+  iconPath: string | null,
+  authorizationBridge: boolean,
+): void {
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
-  child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath));
+  child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath, false));
   child.webContents.on("will-navigate", (event, target) => {
     if (!isLocalSurfaceUrl(target, appOrigin)) {
       event.preventDefault();
       openInSystem(target);
+      // A preview window stays open when one of its links opens externally. The hidden
+      // authorization bridge has completed its only job and must not linger.
+      if (authorizationBridge) child.close();
     }
   });
 }

@@ -38,14 +38,16 @@ import {
   GenerativeModel,
   canonicalClientType,
   listEndpointModels as coreListEndpointModels,
+  PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
   defaultProjectConfig,
   imageUrlMessage,
   metaMaxTokens,
+  presetPromotions,
   projectConfigFromTable,
   projectConfigPath,
   renderProjectConfigToml,
-  resolveModelEnv,
+  resolveProviderModelEnv,
   userText,
 } from "@prismshadow/penguin-core";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
@@ -78,6 +80,11 @@ import type {
 } from "../api/types.js";
 import { badRequest } from "../http/validate.js";
 import { cacheable } from "../internal/mtime-gate.js";
+import type {
+  PlatformCatalogPricing,
+  PlatformModelApplyResult,
+  PlatformModelCatalog,
+} from "./platform-auth-types.js";
 import { detectModelProtocol } from "./protocol-detect.js";
 import {
   VISION_PROBE_IMAGE,
@@ -90,7 +97,11 @@ import {
 import type { PricingRates, TieredRates } from "./usage-service.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Config, Paths } from "../hmr/capabilities.js";
-import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type {
+  ModelPromotion,
+  ModelPromotions,
+  ProjectConfigStore,
+} from "../mechanisms/projects.js";
 
 export type RawTable = Record<string, unknown>;
 
@@ -157,6 +168,90 @@ function asArray(v: unknown): RawTable[] {
 
 function optNum(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+function platformPricingTable(pricing: PlatformCatalogPricing): RawTable {
+  return {
+    unit: pricing.unit,
+    cache_read: pricing.cacheRead,
+    cache_write: pricing.cacheWrite,
+    output: pricing.output,
+  };
+}
+
+function platformPricingMatches(value: unknown, pricing: PlatformCatalogPricing): boolean {
+  const stored = asTable(value);
+  return (
+    stored.unit === pricing.unit &&
+    stored.cache_read === pricing.cacheRead &&
+    stored.cache_write === pricing.cacheWrite &&
+    stored.output === pricing.output
+  );
+}
+
+/**
+ * A stored `pricing` table as the three buckets, or undefined when it holds none: one present
+ * bucket is a price, and a missing one reads as 0.
+ */
+function pricingDtoOf(value: unknown): ModelPricingDto | undefined {
+  const pricing = asTable(value);
+  const cacheRead = optNum(pricing.cache_read);
+  const cacheWrite = optNum(pricing.cache_write);
+  const output = optNum(pricing.output);
+  if (cacheRead === undefined && cacheWrite === undefined && output === undefined) {
+    return undefined;
+  }
+  return { cacheRead: cacheRead ?? 0, cacheWrite: cacheWrite ?? 0, output: output ?? 0 };
+}
+
+/** The same three numbers, or both absent. */
+function samePricing(a: ModelPricingDto | undefined, b: ModelPricingDto | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.cacheRead === b.cacheRead && a.cacheWrite === b.cacheWrite && a.output === b.output;
+}
+
+/** A promotion's fraction off every bucket, rounded to six decimals the way `tieredRates` rounds. */
+function promotedRates(rates: PricingRates, discount: number): PricingRates {
+  const off = (v: number): number => Math.round(v * (1 - discount) * 1e6) / 1e6;
+  return {
+    cacheRead: off(rates.cacheRead),
+    cacheWrite: off(rates.cacheWrite),
+    output: off(rates.output),
+  };
+}
+
+function modelEnvironmentApiKey(
+  provider: string,
+  modelId: string,
+  clientType: string | undefined,
+): string | undefined {
+  const envKey = resolveProviderModelEnv(provider, modelId, clientType)?.envKey;
+  return envKey ? process.env[envKey]?.trim() || undefined : undefined;
+}
+
+function probeApiKey(input: {
+  provider: string;
+  modelId: string;
+  clientType: string | undefined;
+  requestKey: string | undefined;
+  savedKey: string | undefined;
+  clearSavedKey: boolean | undefined;
+}): string | undefined {
+  return (
+    input.requestKey ??
+    (input.clearSavedKey ? undefined : input.savedKey) ??
+    modelEnvironmentApiKey(input.provider, input.modelId, input.clientType)
+  );
+}
+
+function assertRelayConnection(
+  provider: string,
+  apiKey: string | undefined,
+  baseUrl: string | undefined,
+): void {
+  if (provider !== PENGUIN_GO_PROVIDER_ID) return;
+  if (apiKey === undefined) throw new Error("Missing API key for Penguin Go.");
+  if (!baseUrl?.trim()) throw new Error("Missing API base URL for Penguin Go.");
 }
 
 /**
@@ -370,6 +465,8 @@ export class ProjectConfigService implements ProjectConfigStore {
   private readonly cache = new Map<string, { mtimeMs: number; table: RawTable }>();
 
   @Use() private readonly paths!: Paths;
+  /** Optional for narrow service tests; the production Projects module always provides it. */
+  @Use() private readonly promotions?: ModelPromotions;
   private get root(): string {
     return this.paths.root;
   }
@@ -488,11 +585,12 @@ export class ProjectConfigService implements ProjectConfigStore {
    * **Only backfills when there are no models at all**: a Project that already has
    * models configured (via the CLI or edited by the user) is left as-is, and its
    * other fields (name, etc.) are preserved too — existing config is never
-   * overwritten.
+   * overwritten. Returns whether it wrote the presets, which is when their promotions
+   * are to be seeded too (seedPresetPromotions).
    */
-  async ensurePresetModels(projectId: string): Promise<void> {
+  async ensurePresetModels(projectId: string): Promise<boolean> {
     const raw = await this.readRaw(projectId);
-    if (asArray(raw.models).length > 0) return;
+    if (asArray(raw.models).length > 0) return false;
     const preset = defaultProjectConfig();
     await this.writeRaw(projectId, {
       ...raw,
@@ -500,6 +598,17 @@ export class ProjectConfigService implements ProjectConfigStore {
       ...(preset.default_model !== undefined ? { default_model: preset.default_model } : {}),
       models: preset.models,
     });
+    return true;
+  }
+
+  /**
+   * Stores the built-in catalog's flat promotions for a Project just seeded with the preset
+   * models: the file carries their list prices, and these fractions are the rest of what the
+   * presets bill. The rows reference the Project's `projects` row (foreign keys are enforced),
+   * so this runs once that row exists.
+   */
+  async seedPresetPromotions(projectId: string): Promise<void> {
+    this.promotions?.replaceAll(projectId, presetPromotions());
   }
 
   /** Project display name (the toml's name; returns undefined if unset, the frontend falls back to displaying the id). */
@@ -662,7 +771,11 @@ export class ProjectConfigService implements ProjectConfigStore {
     return this.getPlugins(projectId);
   }
 
-  /** Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined if none -> cost is NULL). */
+  /**
+   * Pricing lookup for usage-recorder: the current pricing for this paired reference (undefined
+   * if none -> cost is NULL). The file holds the list price; a stored promotion takes its
+   * fraction off both tiers, so a scheduled row on a promotion bills the two factors multiplied.
+   */
   async getPricing(
     projectId: string,
     provider: string,
@@ -670,15 +783,15 @@ export class ProjectConfigService implements ProjectConfigStore {
   ): Promise<TieredRates | undefined> {
     const raw = await this.readRaw(projectId);
     const entry = asArray(raw.models).find((m) => entryMatches(m, provider, modelId));
-    const pricing = entry ? asTable(entry.pricing) : {};
-    const cacheRead = optNum(pricing.cache_read);
-    const cacheWrite = optNum(pricing.cache_write);
-    const output = optNum(pricing.output);
-    if (cacheRead === undefined && cacheWrite === undefined && output === undefined) {
-      return undefined;
-    }
-    const rates = { cacheRead: cacheRead ?? 0, cacheWrite: cacheWrite ?? 0, output: output ?? 0 };
-    return tieredRates(provider, modelId, rates);
+    const rates = pricingDtoOf(entry?.pricing);
+    if (rates === undefined) return undefined;
+    const tiered = tieredRates(provider, modelId, rates);
+    const discount = this.promotions?.get(projectId, provider, modelId);
+    if (discount === undefined) return tiered;
+    return {
+      peak: promotedRates(tiered.peak, discount),
+      offPeak: promotedRates(tiered.offPeak, discount),
+    };
   }
 
   /**
@@ -718,12 +831,19 @@ export class ProjectConfigService implements ProjectConfigStore {
     const raw = await this.readRaw(projectId);
     // Probeable before the entry exists, so a custom model can be checked while adding it.
     const entry = asArray(raw.models).find((m) => entryMatches(m, req.provider, req.modelId)) ?? {};
-    const savedKey = optStr(entry.api_key);
-    const apiKey = req.clearApiKey ? undefined : (req.apiKey ?? savedKey);
     const savedBaseUrl = optStr(entry.base_url);
     const baseUrl = req.baseUrl === null ? undefined : (req.baseUrl ?? savedBaseUrl);
     const clientType = canonicalClientType(req.clientType ?? optStr(entry.client_type));
+    const apiKey = probeApiKey({
+      provider: req.provider,
+      modelId: req.modelId,
+      clientType,
+      requestKey: req.apiKey,
+      savedKey: optStr(entry.api_key),
+      clearSavedKey: req.clearApiKey,
+    });
     try {
+      assertRelayConnection(req.provider, apiKey, baseUrl);
       // Inside the try for the same reason as testModel: the SDK throws on a missing
       // credential during construction, and that must read as "probe failed", not a 500.
       const llm = new GenerativeModel({
@@ -815,13 +935,19 @@ export class ProjectConfigService implements ProjectConfigStore {
     // Testable even if the model isn't in the config yet (validate before saving when adding a custom model): in that case all parameters come from the request body.
     const entry = asArray(raw.models).find((m) => entryMatches(m, req.provider, req.modelId)) ?? {};
     // Always tests against the **current form draft**: checking "clear" means the saved key is not fallen back to; an explicit null base URL is treated as cleared.
-    const savedKey = optStr(entry.api_key);
-    const apiKey = req.clearApiKey ? undefined : (req.apiKey ?? savedKey);
     const savedBaseUrl = optStr(entry.base_url);
     const baseUrl = req.baseUrl === null ? undefined : (req.baseUrl ?? savedBaseUrl);
     // The pre-0.4.2 "openai" spelling (request or stored entry) is normalized to the
     // canonical "openai-chat" (deprecated upstream alias; see canonicalClientType).
     const clientType = canonicalClientType(req.clientType ?? optStr(entry.client_type));
+    const apiKey = probeApiKey({
+      provider: req.provider,
+      modelId: req.modelId,
+      clientType,
+      requestKey: req.apiKey,
+      savedKey: optStr(entry.api_key),
+      clearSavedKey: req.clearApiKey,
+    });
     // Fast mode follows the form draft like baseUrl (the frontend always sends the current
     // toggle), falling back to the stored annotation: the probe then exercises exactly the
     // serving tier sessions would use, so a model rejecting fast_mode fails the test with
@@ -830,6 +956,7 @@ export class ProjectConfigService implements ProjectConfigStore {
 
     const startedAt = Date.now();
     try {
+      assertRelayConnection(req.provider, apiKey, baseUrl);
       // Construction must be inside the try block: the underlying provider SDK can
       // throw during **client construction** itself when a credential is missing
       // (models on the OpenAI protocol need apiKey/OPENAI_API_KEY) — the whole point
@@ -913,14 +1040,26 @@ export class ProjectConfigService implements ProjectConfigStore {
     req: ModelProtocolDetectRequest,
   ): Promise<ModelProtocolDetectResponse> {
     let apiKey = req.apiKey;
+    let savedClientType: string | undefined;
     if (apiKey === undefined && !req.clearApiKey && req.provider && req.modelId) {
       const raw = await this.readRaw(projectId);
       const entry = asArray(raw.models).find((m) =>
         entryMatches(m, req.provider as string, req.modelId as string),
       );
       apiKey = entry !== undefined ? optStr(entry.api_key) : undefined;
+      savedClientType = entry === undefined ? undefined : optStr(entry.client_type);
     }
-    return detectModelProtocol({ baseUrl: req.baseUrl, ...(apiKey ? { apiKey } : {}) });
+    const relayRequest = req.provider === PENGUIN_GO_PROVIDER_ID;
+    if (apiKey === undefined && relayRequest && req.provider && req.modelId) {
+      apiKey = modelEnvironmentApiKey(req.provider, req.modelId, savedClientType);
+    }
+    return detectModelProtocol({
+      baseUrl: req.baseUrl,
+      ...(apiKey ? { apiKey } : {}),
+      // Without a relay key, anonymous probing is still safe and can identify a route from
+      // its 401. An empty env prevents the lower-level detector from substituting a vendor key.
+      ...(relayRequest ? { env: {} } : {}),
+    });
   }
 
   /**
@@ -974,29 +1113,27 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the catalog are treated as custom models: envKey only has a fallback for the
    * openai protocol). vision follows the TOML annotation when present, otherwise
    * falls back to the catalog annotation (if neither exists, the field is omitted =
-   * supported by default).
+   * supported by default). `pricing` is the file's list price, and a row with a stored
+   * promotion reports its fraction as `discount`.
    */
   async getModels(projectId: string): Promise<ModelsResponse> {
     const raw = await this.readRaw(projectId);
     const defaultRef = optRef(raw.default_model);
     const visionRef = optRef(raw.vision_model);
+    const discounts = new Map(
+      (this.promotions?.list(projectId) ?? []).map((p) => [
+        refKey(p.provider, p.modelId),
+        p.discount,
+      ]),
+    );
     const models: ModelInfo[] = asArray(raw.models)
       // An entry is valid only if both provider and model_id are strings (an entry in the old concatenated format lacks provider and is ignored).
       .filter((m) => typeof m.provider === "string" && typeof m.model_id === "string")
       .map((m) => {
         const provider = m.provider as string;
         const modelId = m.model_id as string;
-        const pricing = asTable(m.pricing);
-        const pricingDto: ModelPricingDto | undefined =
-          optNum(pricing.cache_read) !== undefined ||
-          optNum(pricing.cache_write) !== undefined ||
-          optNum(pricing.output) !== undefined
-            ? {
-                cacheRead: optNum(pricing.cache_read) ?? 0,
-                cacheWrite: optNum(pricing.cache_write) ?? 0,
-                output: optNum(pricing.output) ?? 0,
-              }
-            : undefined;
+        const pricingDto = pricingDtoOf(m.pricing);
+        const discount = discounts.get(refKey(provider, modelId));
         // Normalized on read: entries stored before AgentHub 0.4.2's openai -> openai-chat
         // rename report the canonical spelling without a disk rewrite (the next models PUT
         // persists it).
@@ -1007,7 +1144,7 @@ export class ProjectConfigService implements ProjectConfigStore {
         // protocol reads OPENAI_*, independent of the group), otherwise it's
         // auto-routed to a provider client based on model_id; an id that can't be
         // routed has no fallback (no envKey, and AgentHub will reject that id).
-        const envKey = resolveModelEnv(modelId, clientType)?.envKey;
+        const envKey = resolveProviderModelEnv(provider, modelId, clientType)?.envKey;
         const vision = typeof m.vision === "boolean" ? m.vision : cat?.supportsVision;
         // Output cap: TOML annotation only (user-owned; the built-in catalog never presets it).
         const maxTokens = optNum(m.max_tokens);
@@ -1055,6 +1192,7 @@ export class ProjectConfigService implements ProjectConfigStore {
           ...(envKey ? { envKey } : {}),
           ...(envKeyMasked !== undefined ? { envKeyMasked } : {}),
           ...(pricingDto ? { pricing: pricingDto } : {}),
+          ...(discount !== undefined ? { discount } : {}),
           ...(apiKey !== undefined || credBaseUrl !== undefined
             ? {
                 credential: {
@@ -1089,8 +1227,20 @@ export class ProjectConfigService implements ProjectConfigStore {
    * the upstream id changes) is migrated as a pair via `renamedFrom`: credential and
    * unknown fields migrate along with the base entry, and default/vision pointers
    * follow. Other extension fields in the toml (name, etc.) are preserved.
+   *
+   * Promotions (web.db) follow the new table once the file is written: a declared
+   * `discount` is stored (null clears it); an omitted one keeps the stored promotion unless
+   * the entry renames the row or changes its pricing; a row left out of the table takes its
+   * promotion with it. A `discount` outside (0, 1) rejects the request before any write.
    */
   async updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse> {
+    req.models.forEach((entry, i) => {
+      const { discount } = entry;
+      if (discount === undefined || discount === null) return;
+      if (!(Number.isFinite(discount) && discount > 0 && discount < 1)) {
+        throw badRequest(`models[${i}].discount must be null or a number above 0 and below 1.`);
+      }
+    });
     const raw = await this.readRaw(projectId);
     const prevModels = asArray(raw.models);
 
@@ -1098,6 +1248,13 @@ export class ProjectConfigService implements ProjectConfigStore {
     const nextModels: RawTable[] = [];
     // Rename mapping (old reference key -> new reference): default model / vision model pointers follow a key change instead of being lost on a full table replacement.
     const renamed = new Map<string, ModelRefDto>();
+    // Each row's promotion, settled against the stored set once the file is written.
+    const promotionPlan: Array<{
+      provider: string;
+      modelId: string;
+      declared: number | null | undefined;
+      keep: boolean;
+    }> = [];
     for (const entry of req.models) {
       const key = refKey(entry.provider, entry.modelId);
       if (seen.has(key)) {
@@ -1106,14 +1263,16 @@ export class ProjectConfigService implements ProjectConfigStore {
         );
       }
       seen.add(key);
-      if (
+      const renamedFrom =
         entry.renamedFrom !== undefined &&
         !(
           entry.renamedFrom.provider === entry.provider &&
           entry.renamedFrom.modelId === entry.modelId
         )
-      ) {
-        renamed.set(refKey(entry.renamedFrom.provider, entry.renamedFrom.modelId), {
+          ? entry.renamedFrom
+          : undefined;
+      if (renamedFrom !== undefined) {
+        renamed.set(refKey(renamedFrom.provider, renamedFrom.modelId), {
           provider: entry.provider,
           modelId: entry.modelId,
         });
@@ -1125,6 +1284,17 @@ export class ProjectConfigService implements ProjectConfigStore {
       // means removed).
       const prevRef = entry.renamedFrom ?? { provider: entry.provider, modelId: entry.modelId };
       const prev = prevModels.find((m) => entryMatches(m, prevRef.provider, prevRef.modelId)) ?? {};
+      // An omitted promotion survives only on the row it was taken off, at the price it was
+      // taken off: a renamed row is another row, and a changed price is not that price.
+      promotionPlan.push({
+        provider: entry.provider,
+        modelId: entry.modelId,
+        declared: entry.discount,
+        keep:
+          entry.discount === undefined &&
+          renamedFrom === undefined &&
+          samePricing(entry.pricing, pricingDtoOf(prev.pricing)),
+      });
       const next: RawTable = { ...prev, provider: entry.provider, model_id: entry.modelId };
       delete next.context_window;
       delete next.client_type;
@@ -1173,7 +1343,6 @@ export class ProjectConfigService implements ProjectConfigStore {
           output: entry.pricing.output,
         };
       }
-
       // credential is inlined on the entry; added/removed on top of the old value per the request (migrates automatically with the base entry when the key changes).
       if (entry.clearApiKey) {
         delete next.api_key;
@@ -1250,6 +1419,18 @@ export class ProjectConfigService implements ProjectConfigStore {
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
     else delete next.vision_model;
     await this.writeRaw(projectId, next);
+    if (this.promotions !== undefined) {
+      const stored = new Map(
+        this.promotions.list(projectId).map((p) => [refKey(p.provider, p.modelId), p.discount]),
+      );
+      const rows: ModelPromotion[] = [];
+      for (const { provider, modelId, declared, keep } of promotionPlan) {
+        const discount = keep ? stored.get(refKey(provider, modelId)) : declared;
+        if (discount !== undefined && discount !== null) rows.push({ provider, modelId, discount });
+      }
+      // Built from the new table alone, so a dropped row's promotion is gone with it.
+      this.promotions.replaceAll(projectId, rows);
+    }
     return this.getModels(projectId);
   }
 
@@ -1273,6 +1454,111 @@ export class ProjectConfigService implements ProjectConfigStore {
     if (applied === 0) return 0;
     await this.writeRaw(projectId, { ...raw, models: nextModels });
     return applied;
+  }
+
+  /** Returns one persisted group key without exposing it through an HTTP response. */
+  async getGroupApiKey(projectId: string, provider: string): Promise<string | undefined> {
+    const raw = await this.readRaw(projectId);
+    for (const model of asArray(raw.models)) {
+      if (model.provider !== provider) continue;
+      const apiKey = optStr(model.api_key);
+      if (apiKey !== undefined) return apiKey;
+    }
+    return undefined;
+  }
+
+  /**
+   * Adds newly advertised models and refreshes platform-owned routing and list price on
+   * existing rows, then replaces this group's promotions (web.db) with the platform's. Project
+   * TOML stays in the same shape as every other model group, list price included. Other
+   * annotations remain Project-owned and are never overwritten. Authorization additionally
+   * applies the freshly delivered key to the whole group.
+   */
+  async mergePlatformModels(
+    projectId: string,
+    provider: string,
+    catalog: PlatformModelCatalog,
+    apiKey: string,
+    applyKeyToExisting: boolean,
+  ): Promise<PlatformModelApplyResult> {
+    const raw = await this.readRaw(projectId);
+    const current = asArray(raw.models);
+    const catalogById = new Map(catalog.models.map((model) => [model.modelId, model]));
+    const storedPromotions = new Map(
+      (this.promotions?.list(projectId) ?? [])
+        .filter((promotion) => promotion.provider === provider)
+        .map((promotion) => [promotion.modelId, promotion.discount]),
+    );
+    const known = new Set<string>();
+    const createdAt = new Date().toISOString();
+    let added = 0;
+    let updated = 0;
+    let applied = 0;
+    let configChanged = false;
+    const nextModels = current.map((model): RawTable => {
+      if (model.provider !== provider || typeof model.model_id !== "string") return model;
+      const modelId = String(model.model_id);
+      known.add(modelId);
+      const catalogModel = catalogById.get(modelId);
+      const remotePricing = catalogModel?.pricing;
+      const pricingChanged =
+        remotePricing !== undefined && !platformPricingMatches(model.pricing, remotePricing);
+      const clientTypeChanged =
+        catalogModel !== undefined && model.client_type !== catalogModel.clientType;
+      // A row the platform no longer lists loses its promotion below, which is a change too.
+      const promotionChanged =
+        this.promotions !== undefined && storedPromotions.get(modelId) !== catalogModel?.discount;
+      if (pricingChanged || clientTypeChanged || promotionChanged) updated += 1;
+      if (applyKeyToExisting) applied += 1;
+      if (!pricingChanged && !clientTypeChanged && !applyKeyToExisting) return model;
+      configChanged = true;
+      return {
+        ...model,
+        ...(pricingChanged && remotePricing !== undefined
+          ? { pricing: platformPricingTable(remotePricing) }
+          : {}),
+        ...(clientTypeChanged && catalogModel !== undefined
+          ? { client_type: catalogModel.clientType }
+          : {}),
+        ...(applyKeyToExisting ? { api_key: apiKey, created_at: createdAt } : {}),
+      };
+    });
+
+    for (const model of catalog.models) {
+      if (known.has(model.modelId)) continue;
+      known.add(model.modelId);
+      added += 1;
+      applied += 1;
+      configChanged = true;
+      nextModels.push({
+        provider,
+        model_id: model.modelId,
+        display_name: model.displayName,
+        context_window: model.contextWindow,
+        vision: model.supportsVision,
+        pricing: platformPricingTable(model.pricing),
+        client_type: model.clientType,
+        base_url: model.baseUrl,
+        api_key: apiKey,
+        created_at: createdAt,
+      });
+    }
+
+    if (configChanged) {
+      await this.writeRaw(projectId, { ...raw, models: nextModels });
+    }
+    // After the file write, so a promotion never lands for a row the file failed to take; a
+    // failure here leaves the group's previous promotions until the next authorization or Sync.
+    this.promotions?.replaceProvider(
+      projectId,
+      provider,
+      catalog.models.flatMap((model) =>
+        model.discount !== undefined && known.has(model.modelId)
+          ? [{ provider, modelId: model.modelId, discount: model.discount }]
+          : [],
+      ),
+    );
+    return { added, updated, applied };
   }
 }
 

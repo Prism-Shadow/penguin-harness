@@ -76,7 +76,7 @@ export const en: Strings = {
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
-    newShell: "New shell",
+    newShell: "New terminal",
     /** Tab strip ×: kills the shell itself (server-side), unlike closing the dock. */
     killShell: "Kill this terminal",
     /** Boundary drag handle between the dock and the main content (double-click resets). */
@@ -453,7 +453,7 @@ export const en: Strings = {
       "First run: the server prints a first-login link in its startup output — open it to claim the built-in admin “admin” and set a password. No initial password exists to type here",
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
-      "Forgot the admin password? Stop the server and run penguin server reset-admin-password to issue a fresh initial one",
+      "Forgot the admin password? Stop the server and run penguin server reset-admin-password; its next start prints a new first-login link — open it to set a new password",
     /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
     claimFailedTitle: "Sign-in link no longer works",
     /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
@@ -1011,6 +1011,7 @@ export const en: Strings = {
         "- Never read or edit .project_config.toml; configuration goes through penguin commands only.",
         `- Finish with \`penguin config model list --project-id ${projectId} --root <data root>\` and show me the result.`,
       ].join("\n"),
+    platformSync: "Sync",
     homepage: "Model page",
     speedTest: "Speed test",
     speedTestTitle: "Speed test",
@@ -1106,6 +1107,8 @@ export const en: Strings = {
     priceCacheRead: "Cache read price",
     priceCacheWrite: "Cache write price",
     priceOutput: "Output price",
+    promotionPriceHint: (pct: number): string =>
+      `These are list prices. A running promotion takes ${pct}% off them; changing a price cancels it`,
     currency: "Currency",
     currencyUsd: "USD $",
     currencyCny: "CNY ¥",
@@ -1158,6 +1161,22 @@ export const en: Strings = {
       unreachable: "The provider could not be reached. Check the network and start again.",
       apply_failed:
         "A key was created but could not be saved. Authorize again, then delete the unused key in the provider's console.",
+    },
+    platformKeyIntro: (n: number): string =>
+      `Authorization automatically obtains a Penguin Go API key and writes it to all ${n} preset models in this group, replacing their current key.`,
+    platformKeyAppliedBody: (n: number): string =>
+      `Authorized. The Penguin Go API key is set on ${n} model${n === 1 ? "" : "s"} and ready to use.`,
+    platformKeyStarting: "Starting authorization…",
+    platformKeyApplying: "Authorization completed. Writing the key to the model group…",
+    platformKeyErrors: {
+      unreachable: "Penguin Go could not be reached. Check the network and start again.",
+      upstream_failed: "Penguin Go could not complete authorization. Start again.",
+      invalid_key: "Penguin Go returned no usable API key. Start again.",
+      expired: "The authorization expired. Start again.",
+      locked: "The authorization was locked. Start again.",
+      already_delivered: "That authorization was already delivered. Start again.",
+      apply_failed:
+        "The API key was received but could not be written to the model group. Retry without authorizing again.",
     },
     providerEnvNotes: {
       zhipu:
@@ -3007,6 +3026,9 @@ Scenarios:
         text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves.",
       },
     ],
+    /** The first step card's text for a Project member: no Create manually, which is the owner's. */
+    guideCreateMember:
+      "Press Create with AI at the top right to have AI write a set of cases for an agent and take its baseline score.",
     searchPlaceholder: "Search titles, descriptions or tested agents",
     noMatches: "No Benchmark matches",
     filterByAgent: (agentId: string): string => `Benchmarks that evaluated ${agentId}`,
@@ -3029,6 +3051,10 @@ Scenarios:
       "The cases' difficulty could not be calibrated; delete this Benchmark and create it again",
     creationFailedDetail:
       "Calibration of this Benchmark never completed, so it cannot be evaluated or optimized; delete it and create it again.",
+    /** The two lines above for a Project member: no delete step, since deleting is the owner's. */
+    creationFailedHintMember: "The cases' difficulty could not be calibrated",
+    creationFailedDetailMember:
+      "Calibration of this Benchmark never completed, so it cannot be evaluated or optimized.",
     testedAgents: "Tested agents",
     lastEvaluated: (when: string): string => `last evaluated ${when}`,
     sparklineLabel: (n: number): string => `Score trend over ${n} evaluation${n === 1 ? "" : "s"}`,
@@ -4184,6 +4210,8 @@ Scenarios:
       task_in_progress: "This Session already has a task running.",
       compacting: "This Session is compacting its context and is not accepting new input.",
       shutting_down: "The server is shutting down. Please try again shortly.",
+      platform_rate_limited:
+        "Too many platform authorization requests. Try again when the countdown ends.",
       // The three "cannot compact" reasons each have their own server code, so each keeps its
       // own explanation here — collapsing them into one sentence would tell a user who just
       // compacted that they have never spoken.

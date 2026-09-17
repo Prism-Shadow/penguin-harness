@@ -1397,7 +1397,7 @@ const en: Messages = {
     desc: "Stop the server running on this data root and report the outcome as JSON",
   },
   resetPassword: {
-    desc: "Reset the Web admin password to a fresh initial password (the server must be stopped)",
+    desc: "Reset the Web admin account so the next server start prints a new first-login link (the server must be stopped)",
     serverRunning: (url) =>
       `A PenguinHarness server is running on this data root: ${url}\n` +
       `Stop it first, then run \`penguin server reset-admin-password\` again.`,
@@ -2145,7 +2145,7 @@ const zh: Messages = {
     desc: "停止本数据根目录上运行的服务，并以 JSON 报告结果",
   },
   resetPassword: {
-    desc: "把 Web 管理员密码重置为新的初始密码（须先停止服务）",
+    desc: "重置 Web 管理员账号，下次启动服务时会打印新的首次登录链接（须先停止服务）",
     serverRunning: (url) =>
       `该数据根目录已有 PenguinHarness 服务在运行：${url}\n` +
       `请先停止它，再重新执行 \`penguin server reset-admin-password\`。`,

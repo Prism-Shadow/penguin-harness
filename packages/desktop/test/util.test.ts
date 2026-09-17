@@ -5,6 +5,7 @@ import {
   desktopLoginUrl,
   hidesOnClose,
   isAppUrl,
+  isAuthorizationBridgeUrl,
   isExternalScheme,
   isLocalSurfaceUrl,
   parsePortFile,
@@ -133,7 +134,6 @@ describe("classifyWindowOpen", () => {
     for (const url of [
       "file:///C:/Windows/System32/calc.exe",
       "javascript:alert(1)",
-      "about:blank",
       "vscode://file/home/user/a.ts",
       "not a url",
     ]) {
@@ -144,6 +144,22 @@ describe("classifyWindowOpen", () => {
   it("with no origin yet, nothing is this instance", () => {
     expect(classifyWindowOpen("http://localhost:7364/chat/x.html", null)).toBe("external");
     expect(classifyWindowOpen("file:///etc/passwd", null)).toBe("deny");
+  });
+
+  it("refuses the Penguin Go authorization bridge, which only the main window may open", () => {
+    // The main window's handler allows the bridge before it classifies anything. Every window
+    // shares this classification, so a preview page asking for about:blank gets no window.
+    expect(isAuthorizationBridgeUrl("about:blank")).toBe(true);
+    expect(classifyWindowOpen("about:blank", origin)).toBe("deny");
+  });
+});
+
+describe("isAuthorizationBridgeUrl", () => {
+  it("accepts only the inert blank window used while authorization starts", () => {
+    expect(isAuthorizationBridgeUrl("about:blank")).toBe(true);
+    expect(isAuthorizationBridgeUrl("about:blank#other")).toBe(false);
+    expect(isAuthorizationBridgeUrl("about:srcdoc")).toBe(false);
+    expect(isAuthorizationBridgeUrl("https://example.com")).toBe(false);
   });
 });
 
