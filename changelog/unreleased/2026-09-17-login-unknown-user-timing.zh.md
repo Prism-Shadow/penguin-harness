@@ -12,4 +12,4 @@
 ## 细节
 
 - `verifyAccountPassword` 每次调用恰好执行一次 scrypt 派生。账号不存在、hash 为空，或 hash 无法校验（格式错误，或参数被 scrypt 拒绝）时，它改为拿占位 hash 校验密码，并判定登录失败。
-- `AuthService.login` 用服务端自己的密码哈希器生成占位 hash，因此它与真实 hash 的代价参数相同。占位 hash 在第一次需要时计算，之后一直保留；计算失败时，这次登录照样以同样的 401 失败，下一次登录会重新计算。
+- `AuthService.login` 用服务端自己的密码哈希器生成占位 hash，因此它与真实 hash 的代价参数相同。占位 hash 在第一次需要时计算，之后一直保留。

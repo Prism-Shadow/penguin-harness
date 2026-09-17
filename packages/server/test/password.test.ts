@@ -117,11 +117,4 @@ describe("account password check", () => {
       ]);
     }
   });
-
-  it("fails without throwing when the dummy hash cannot be made", async () => {
-    const { calls, check } = recordingCheck();
-    const broken = () => Promise.reject(new Error("out of memory"));
-    await expect(verifyAccountPassword("guess-123", null, broken, check)).resolves.toBe(false);
-    expect(calls).toEqual([]);
-  });
 });

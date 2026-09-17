@@ -74,14 +74,8 @@ export async function checkPassword(password: string, stored: string): Promise<P
   const r = Number(parts[2]);
   const p = Number(parts[3]);
   if (!Number.isInteger(n) || !Number.isInteger(r) || !Number.isInteger(p)) return "unverifiable";
-  let salt: Buffer;
-  let expected: Buffer;
-  try {
-    salt = Buffer.from(parts[4]!, "base64");
-    expected = Buffer.from(parts[5]!, "base64");
-  } catch {
-    return "unverifiable";
-  }
+  const salt = Buffer.from(parts[4]!, "base64");
+  const expected = Buffer.from(parts[5]!, "base64");
   if (salt.length === 0 || expected.length === 0) return "unverifiable";
   let actual: Buffer;
   try {
@@ -89,9 +83,7 @@ export async function checkPassword(password: string, stored: string): Promise<P
   } catch {
     return "unverifiable";
   }
-  return actual.length === expected.length && timingSafeEqual(actual, expected)
-    ? "match"
-    : "mismatch";
+  return timingSafeEqual(actual, expected) ? "match" : "mismatch";
 }
 
 /** Verifies a password; returns false if the stored string has an invalid format (never throws, so the login path can uniformly treat it as a credential error). */
@@ -105,9 +97,8 @@ export async function verifyPassword(password: string, stored: string): Promise<
  * nothing to derive against — no account, an empty hash, or one `checkPassword` finds
  * unverifiable — the password is checked against `dummyHash` instead and the result is false, so
  * every call runs exactly one scrypt derivation and how long a failure takes does not tell a
- * missing username from a wrong password. Never throws: a dummy hash that cannot be produced
- * fails the sign-in like any other unverifiable check. `check` is a parameter so a test can
- * count the derivations.
+ * missing username from a wrong password. `check` is a parameter so a test can count the
+ * derivations.
  */
 export async function verifyAccountPassword(
   password: string,
@@ -117,11 +108,7 @@ export async function verifyAccountPassword(
 ): Promise<boolean> {
   const outcome = stored === null ? "unverifiable" : await check(password, stored);
   if (outcome !== "unverifiable") return outcome === "match";
-  try {
-    await check(password, await dummyHash());
-  } catch {
-    // The dummy could not be hashed: nothing was derived, and the sign-in fails regardless.
-  }
+  await check(password, await dummyHash());
   return false;
 }
 

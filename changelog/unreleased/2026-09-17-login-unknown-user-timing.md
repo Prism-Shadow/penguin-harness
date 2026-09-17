@@ -12,4 +12,4 @@ A sign-in with a username that has no account returned without running scrypt, w
 ## Details
 
 - `verifyAccountPassword` runs exactly one scrypt derivation per call. If the account is missing, its hash is empty, or its hash cannot be checked (wrong format, or parameters scrypt refuses), it checks the password against the dummy hash instead and fails the sign-in.
-- `AuthService.login` makes the dummy hash with the server's own password hasher, so the dummy carries the same cost parameters as real hashes. The hash is computed on the first sign-in that needs it and then kept. If computing it fails, that sign-in still fails with the same 401, and the next one tries again.
+- `AuthService.login` makes the dummy hash with the server's own password hasher, so the dummy carries the same cost parameters as real hashes. The hash is computed on the first sign-in that needs it and then kept.

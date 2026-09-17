@@ -179,21 +179,16 @@ export class AuthService implements Auth {
   private readonly loginFailures = new Map<string, { failures: number; lastFailureAt: number }>();
 
   /** Cache for loginDummyHash. */
-  private dummyHash: Promise<string> | null = null;
+  private dummyHash: string | null = null;
 
   /**
    * The hash a sign-in with no account to check is verified against (verifyAccountPassword), so
    * it costs what a wrong password costs. Made by this server's own hasher, hence at the cost its
    * real hashes carry, from a random password nobody holds; computed on the first such sign-in
-   * and kept, except that a failed computation is dropped so the next sign-in retries it.
+   * and kept.
    */
-  private loginDummyHash(): Promise<string> {
-    this.dummyHash ??= this.hasher
-      .hash(randomBytes(18).toString("base64url"))
-      .catch((err: unknown) => {
-        this.dummyHash = null;
-        throw err;
-      });
+  private async loginDummyHash(): Promise<string> {
+    this.dummyHash ??= await this.hasher.hash(randomBytes(18).toString("base64url"));
     return this.dummyHash;
   }
 
