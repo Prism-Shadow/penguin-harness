@@ -33,14 +33,20 @@ frontmatter 格式。这样的文件原样留在磁盘上，按任何一个解�
   id，则取下一个后缀。
 - 修复之前，只由它记录的会话不计入任何工单，也不计入任何员工的花费；`parent` 指向它的工单会被标为父工单不存在。
 
-恢复方法：用 0.2.13 对该工单写入一次（追加一条进展或移动一次即完成转换），或手工把标题行与表头替换为 frontmatter 块：
+恢复 slug 为纯字母的工单时，可以用 0.2.13 对它写入一次（追加一条进展或移动一次即完成转换），也可以按下面的对应关系手工转换。这条写入路径对其他工单无效（0.2.13 的路由对其他 id 已经返回 400），这类工单只能手工恢复，分三步：
+
+1. 在文件所在目录内把它改名为 slug 为纯字母的 id：保留 `<yyyy-mm-dd>-` 前缀，slug 写成以连字符连接的小写英文单词；该 id 已被占用时加字母后缀（`-b`、`-c`……）。
+2. 按下面的对应关系，把标题行与表头替换为 frontmatter 块。
+3. 其他工单的 `parent` 或 `blocked_by` 指向旧 id 的（仍是表头格式的文件里为 `Parent` 或 `Blocked-by`），一律改写为新 id。
+
+表头与 frontmatter 的对应关系：
 
 - `# Ticket: <标题>` → `title`；`Status` → `status`（须与所在列目录一致）。
 - `Owner` → `owner`；`Owner` 为空时取 `Initiator` 的值。
 - `Initiator` → `history` 的第一条：`{at: <第一条进展行的时间>, by: <initiator>, action: created}`。
 - `Notify: a, b` 与 `Sessions: a, b` → 列表 `notify: [a, b]` 与 `sessions: [a, b]`。
 - `Parent`、`Priority`、`Due`、`Blocked` → `parent`、`priority`、`due`、`blocked`；`Blocked-by` →
-  `blocked_by`。其中的工单 id 须使用纯字母 slug。
+  `blocked_by`。其中的工单 id 须使用纯字母 slug，改过名的工单写它的新 id。
 - 其余 `Key: value` 表头 → 同名字段。
 - `## Progress` 中每一行 `- <时间> <principal> <文本> session:<id>` → `- <文本>`，并追加一条 `history`
   条目 `{at: <时间>, by: <principal>, action: progress, note: <文本>}`。

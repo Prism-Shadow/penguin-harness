@@ -40,15 +40,26 @@ left on disk untouched and is handled like any other ticket file that does not p
 - Until it is repaired, the sessions only it names count toward no ticket and no employee's spend,
   and a ticket whose `parent` names it is flagged for a missing parent.
 
-To recover, write to the ticket once through 0.2.13 (a progress line or a move converts it), or
-replace the title line and headers by hand with a frontmatter block:
+To recover a ticket whose slug is letters-only, write to it once through 0.2.13 (a progress line
+or a move converts it), or convert it by hand with the mapping below. The 0.2.13 write path helps
+no other ticket, because 0.2.13's routes already answered any other id with 400; recover such a
+ticket by hand, in three steps:
+
+1. Rename the file, in the directory it sits in, to an id with a letters-only slug: keep the
+   `<yyyy-mm-dd>-` prefix, write the slug as lowercase English words joined by hyphens, and add a
+   letter suffix (`-b`, `-c`, …) when that id is taken.
+2. Replace the title line and headers with a frontmatter block, following the mapping below.
+3. Wherever another ticket's `parent` or `blocked_by` names the old id — `Parent` or `Blocked-by`
+   in a file still in the header format — write the new id instead.
+
+The mapping from the headers to the frontmatter:
 
 - `# Ticket: <title>` → `title`; `Status` → `status` (it must match the column directory).
 - `Owner` → `owner`, or the `Initiator` value when `Owner` is empty.
 - `Initiator` → the first `history` entry: `{at: <time of the first progress line>, by: <initiator>, action: created}`.
 - `Notify: a, b` and `Sessions: a, b` → the lists `notify: [a, b]` and `sessions: [a, b]`.
 - `Parent`, `Priority`, `Due`, `Blocked` → `parent`, `priority`, `due`, `blocked`; `Blocked-by` →
-  `blocked_by`. A ticket id there needs a letters-only slug.
+  `blocked_by`. A ticket id there needs a letters-only slug: a renamed ticket's new id.
 - Any other `Key: value` header → a field of the same name.
 - Each `## Progress` line `- <time> <principal> <text> session:<id>` → `- <text>`, plus a
   `history` entry `{at: <time>, by: <principal>, action: progress, note: <text>}`.
