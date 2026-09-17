@@ -3,6 +3,7 @@
 - **Date:** 2026-09-17
 - **Type:** fix
 - **Scope:** `server`, `docs`
+- **PR:** [#776](https://github.com/Prism-Shadow/penguin-harness/pull/776)
 
 [中文版](2026-09-17-messaging-outbound-file-errors.zh.md)
 
