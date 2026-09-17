@@ -140,8 +140,10 @@ import { PanelsToolbar } from "./panels-toolbar";
 import { toneDot, toneInk } from "../../lib/tone";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
+import { BACKGROUND_TASKS_ICON, CLEAR_LIST_ICON, INFO_ICON } from "../../components/ui/icons";
+import { Tooltip } from "../../components/ui/tooltip";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
+import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 
 /** How often the background-process list refreshes while it can still change (a run may promote a command at any time; a running process can exit on its own). */
 const PROCESS_POLL_MS = 15_000;
@@ -323,9 +325,10 @@ export function ChatPage() {
   const [modeSaving, setModeSaving] = useState(false);
   const [models, setModels] = useState<ModelsResponse | null>(null);
   // Background processes the conversation started (the details popover list), refreshed by
-  // the polling effect below; procBusy marks the row whose stop request is in flight.
+  // the polling effect below; procBusy marks the rows whose Stop / Remove requests are in
+  // flight (every exited row at once while "clear exited" runs).
   const [processes, setProcesses] = useState<SessionProcessInfo[]>([]);
-  const [procBusy, setProcBusy] = useState<string | null>(null);
+  const [procBusy, setProcBusy] = useState<readonly string[] | null>(null);
   // Session Token buckets from the last usage fetch (the popover's tokens-line breakdown):
   // server-recorded values — they can trail the live chip mid-run and reconcile on idle.
   const [usageBuckets, setUsageBuckets] = useState<{
@@ -965,29 +968,31 @@ export function ChatPage() {
   }, [selectedSessionId, stream.taskState, processesCanChange, backgroundProcessCount]);
 
   /**
-   * Shared body of the per-row process actions (Stop / Remove): one request at a time
-   * (procBusy), the statuses that only mean "the list was stale" swallowed instead of
-   * toasted, and the list refreshed however the request ended — the truth comes from the
-   * refresh, not from the response. The refresh is applied ONLY while its own session is
-   * still selected: switching sessions mid-request would otherwise paint the previous
-   * session's processes into the new session's card, and with the popover closed and
-   * nothing running there is no poll to correct it.
+   * Shared body of the process actions (a row's Stop / Remove, the list's "clear exited"):
+   * one action at a time (procBusy), one request per entry through the per-entry route, the
+   * statuses that only mean "the list was stale" swallowed instead of toasted (at most one
+   * toast for the whole batch — see reportableProcessFailure), and the list refreshed
+   * however the requests ended — the truth comes from the refresh, not from the responses.
+   * The refresh is applied ONLY while its own session is still selected: switching sessions
+   * mid-request would otherwise paint the previous session's processes into the new
+   * session's card, and with the popover closed and nothing running there is no poll to
+   * correct it.
    */
   const runProcessAction = useCallback(
     async (
-      processId: string,
+      processIds: readonly string[],
       request: (sessionId: string, processId: string) => Promise<void>,
       staleStatuses: readonly number[],
     ) => {
-      if (!selected || procBusy !== null) return;
+      if (!selected || procBusy !== null || processIds.length === 0) return;
       const sessionId = selected.sessionId;
-      setProcBusy(processId);
+      setProcBusy(processIds);
       try {
-        await request(sessionId, processId);
-      } catch (e) {
-        if (!(e instanceof ApiError && staleStatuses.includes(e.status))) {
-          toastError(apiErrorText(e));
-        }
+        const results = await Promise.allSettled(
+          processIds.map((processId) => request(sessionId, processId)),
+        );
+        const failure = reportableProcessFailure(results, staleStatuses);
+        if (failure !== null) toastError(apiErrorText(failure.error));
       } finally {
         setProcBusy(null);
         api
@@ -1005,7 +1010,7 @@ export function ChatPage() {
   // so the follow-up refresh drops the row (a 404 means it already exited/was reaped —
   // same outcome, not an error worth surfacing).
   const onKillProcess = useCallback(
-    (processId: string) => runProcessAction(processId, api.killSessionProcess, [404]),
+    (processId: string) => runProcessAction([processId], api.killSessionProcess, [404]),
     [runProcessAction],
   );
 
@@ -1013,8 +1018,17 @@ export function ChatPage() {
   // A 404 means the entry is already gone, a 409 that it is in fact (still) running —
   // either way the follow-up refresh shows the truth, so neither is surfaced as an error.
   const onRemoveProcess = useCallback(
-    (processId: string) => runProcessAction(processId, api.removeSessionProcess, [404, 409]),
+    (processId: string) => runProcessAction([processId], api.removeSessionProcess, [404, 409]),
     [runProcessAction],
+  );
+
+  // Clear every EXITED entry at once: the rows' own Remove, sent for each of them through the
+  // same route, so every entry meets the same checks (an entry that turns out to be running
+  // stays, one already gone is no error) and running rows are never touched.
+  const exitedIds = useMemo(() => exitedProcessIds(processes), [processes]);
+  const onClearExitedProcesses = useCallback(
+    () => runProcessAction(exitedIds, api.removeSessionProcess, [404, 409]),
+    [runProcessAction, exitedIds],
   );
 
   // Model config (context window + credential guide): fetched once per Project.
@@ -2039,12 +2053,37 @@ export function ChatPage() {
                   localhost:3000): live rows carry a stop button — the kill signals the whole
                   process group and the row drops on the follow-up refresh; exited rows keep
                   their "exited" label and carry a remove button that deletes the entry from
-                  the list (#312). Hidden entirely while there are none. */}
+                  the list (#312), and the heading carries one action removing every exited
+                  row at once. A command too long for its row shows whole in a tooltip. Hidden
+                  entirely while there are none. */}
               {processes.length > 0 && (
                 <div>
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    {S.chat.processList}
-                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      {S.chat.processList}
+                    </p>
+                    {/* Only while something has exited. The same no-confirm tidy-up as a
+                        single row's Remove, and the name says what leaves with the rows. The
+                        negative margin keeps the padded hit area from growing the heading,
+                        so the list does not shift when the first process exits. */}
+                    {exitedIds.length > 0 && (
+                      <Tooltip
+                        label={S.chat.processClearExited}
+                        placement="bottom"
+                        className="shrink-0"
+                      >
+                        <button
+                          type="button"
+                          aria-label={S.chat.processClearExited}
+                          disabled={procBusy !== null}
+                          onClick={() => void onClearExitedProcesses()}
+                          className="-m-1 rounded p-1 text-gray-400 transition-colors duration-150 hover:text-gray-700 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-200"
+                        >
+                          <GlyphIcon d={CLEAR_LIST_ICON} size={ICON_SIZE.iconButton} />
+                        </button>
+                      </Tooltip>
+                    )}
+                  </div>
                   <ul className="mt-1 space-y-1.5">
                     {processes.map((p) => (
                       <li key={p.processId} className="flex items-center gap-2">
@@ -2057,9 +2096,7 @@ export function ChatPage() {
                           }`}
                         />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate font-mono text-xs" title={p.cmd}>
-                            {p.cmd}
-                          </span>
+                          <Truncated text={p.cmd} className="font-mono text-xs" codeTooltip />
                           <span className="block truncate text-[11px] text-gray-400 dark:text-gray-500">
                             {formatDateTime(p.startedAt)}
                             {p.pid !== null && ` · pid ${p.pid}`}
@@ -2089,7 +2126,9 @@ export function ChatPage() {
                             onClick={() => void onKillProcess(p.processId)}
                             className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                           >
-                            {procBusy === p.processId ? S.common.loading : S.chat.processStop}
+                            {procBusy?.includes(p.processId)
+                              ? S.common.loading
+                              : S.chat.processStop}
                           </button>
                         ) : (
                           <>
@@ -2109,7 +2148,9 @@ export function ChatPage() {
                               onClick={() => void onRemoveProcess(p.processId)}
                               className="shrink-0 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-600 transition-colors duration-150 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-default disabled:opacity-60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-red-900 dark:hover:bg-red-950/40 dark:hover:text-red-400"
                             >
-                              {procBusy === p.processId ? S.common.loading : S.chat.processRemove}
+                              {procBusy?.includes(p.processId)
+                                ? S.common.loading
+                                : S.chat.processRemove}
                             </button>
                           </>
                         )}

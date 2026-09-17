@@ -16,6 +16,9 @@
  *  - "background exit test" -> tool_use(exec_command) whose command outlives the yield
  *    window but exits on its own shortly after (processes.spec: the exited row can be
  *    removed from the process list)
+ *  - "background pair test" -> two tool_use(exec_command) in one turn: one that stays up and
+ *    one with a long command line that exits shortly after its yield window (processes.spec:
+ *    "clear exited" removes only the exited row; hovering the long command shows it whole)
  *  - "slow stream test" -> tool_use(exec_command) with a command that prints one line
  *    every 200ms for ~8s (reload-midstream.spec reloads while its output streams)
  *  - "slow text test" -> a long text streamed one delta every 200ms for ~8s
@@ -27,6 +30,9 @@ import http from "node:http";
 
 /** The run_subagent prompt; also the marker the mock uses to detect "this is the child session's own request". */
 const SUBAGENT_PROMPT = "Count the TODO items in the repository";
+/** The long tail of the "background pair test" exited command (processes.spec hovers the row and expects this whole line in the tooltip). */
+const PAIR_LONG_ECHO =
+  "the-exited-process-whose-command-line-runs-far-past-the-width-of-its-row-in-the-details-card";
 /** Background-subagent FAILURE prompt: the child session's every request is rejected 400, so its run fails after the retry ladder. */
 const SUBAGENT_FAIL_PROMPT = "Fail the TODO count on purpose";
 
@@ -422,6 +428,27 @@ const server = http.createServer((req, res) => {
         { type: "input_json_delta", partial_json: ' "yield_time_ms": 300}' },
       ]);
       messageStop(res, "tool_use", 14);
+      return;
+    }
+
+    // A running and an exited background process side by side (processes.spec: the list's
+    // "clear exited" action removes the exited row and leaves the running one). Two calls in
+    // one turn, both past their 300ms yield window: a long sleep that stays up, and a short
+    // one that exits ~200ms later — with a command line too long for its row, so the same
+    // spec can hover it and read the whole command in the tooltip.
+    if (flat.includes("background pair test") && !hasToolResult) {
+      block(res, 0, { type: "tool_use", id: "toolu_bgpair_1", name: "exec_command", input: {} }, [
+        { type: "input_json_delta", partial_json: '{"cmd": "sleep 600",' },
+        { type: "input_json_delta", partial_json: ' "yield_time_ms": 300}' },
+      ]);
+      block(res, 1, { type: "tool_use", id: "toolu_bgpair_2", name: "exec_command", input: {} }, [
+        {
+          type: "input_json_delta",
+          partial_json: `{"cmd": "sleep 0.5 && echo ${PAIR_LONG_ECHO}",`,
+        },
+        { type: "input_json_delta", partial_json: ' "yield_time_ms": 300}' },
+      ]);
+      messageStop(res, "tool_use", 28);
       return;
     }
 

@@ -1,5 +1,6 @@
 /**
- * Hover/focus tooltip for a control whose visible form is an icon alone.
+ * Hover/focus tooltip for a control whose visible form is an icon alone — and for a line of
+ * code a row truncates, whose full text has nowhere else to show (`content="code"`).
  *
  * What it replaces is the native `title` attribute: that one waits about a second before it
  * appears, cannot be styled, and never shows on keyboard focus — so an icon rail labeled
@@ -19,7 +20,8 @@
  * Deliberately NOT `role="tooltip"` + `aria-describedby`: its callers label their triggers
  * with the same words it shows, and a description repeating the accessible name makes a
  * screen reader say the entry twice. The panel is decorative here and hidden from the
- * accessibility tree; the trigger's own `aria-label` stays the one name.
+ * accessibility tree; the trigger's own `aria-label` stays the one name. A truncated line
+ * keeps its whole text in the DOM, so the same holds there.
  *
  * Dismissal mirrors the portal panel's, minus the parts a hover-driven panel has no use for
  * (no outside click, no Esc layer): it closes on pointer leave, on blur, on Escape, on any
@@ -44,15 +46,49 @@ const VIEWPORT_MARGIN = 8;
 export type TooltipPlacement = "right" | "bottom";
 
 /**
+ * What the panel holds, which decides how it sets its text and how wide it may grow.
+ *
+ * - `label`: a control's name — a few words, capped narrow.
+ * - `code`: a line of code its row truncated (a background process's command). Monospace like
+ *   the row it stands for, and wider, because it is read rather than glanced at. It breaks
+ *   anywhere — a path or a run of flags has no space to wrap at — and keeps its own line
+ *   breaks, so a multi-line command reads the way it was written.
+ */
+export type TooltipContent = "label" | "code";
+
+const contentClass: Record<TooltipContent, string> = {
+  label: "",
+  code: "whitespace-pre-wrap wrap-anywhere font-mono",
+};
+
+/** The width each kind wraps at, before the room left on screen caps it further. */
+const contentMaxWidth: Record<TooltipContent, string> = {
+  label: "16rem",
+  code: "24rem",
+};
+
+/** The trigger's viewport box — the part of a DOMRect the geometry reads. */
+export type TriggerRect = Pick<DOMRect, "top" | "bottom" | "left" | "right" | "width" | "height">;
+
+/** The viewport the panel must stay inside, in CSS pixels. */
+export interface Viewport {
+  width: number;
+  height: number;
+}
+
+/**
  * The viewport point the panel is pinned at. Exactly one horizontal edge is given: `left`
  * grows the panel rightward from that point, `right` leftward. Anchoring by the far edge is
  * what keeps a panel on screen without anyone measuring a width that does not exist until
- * after it renders.
+ * after it renders — and `room` is the other half of that: how far the panel may grow from
+ * its edge before it would cross the margin on the opposite side, the width a long text has
+ * to wrap at instead of running off screen.
  */
-interface PanelPosition {
+export interface PanelPosition {
   top: number;
   left?: number;
   right?: number;
+  room: number;
 }
 
 /**
@@ -60,13 +96,15 @@ interface PanelPosition {
  * centred on the trigger and clamped so a rail entry scrolled to the very top or bottom still
  * gets a panel on screen.
  */
-function besideTrigger(rect: DOMRect): PanelPosition {
+export function besideTrigger(rect: TriggerRect, viewport: Viewport): PanelPosition {
+  const left = rect.right + PANEL_GAP;
   return {
     top: Math.min(
       Math.max(rect.top + rect.height / 2, VIEWPORT_MARGIN),
-      window.innerHeight - VIEWPORT_MARGIN,
+      viewport.height - VIEWPORT_MARGIN,
     ),
-    left: rect.right + PANEL_GAP,
+    left,
+    room: Math.max(viewport.width - left - VIEWPORT_MARGIN, 0),
   };
 }
 
@@ -75,16 +113,20 @@ function besideTrigger(rect: DOMRect): PanelPosition {
  * window, so the panel always grows inward. A toolbar button near the right edge of a docked
  * panel is the case this exists for: left-aligned there, the panel would run off screen.
  */
-function belowTrigger(rect: DOMRect): PanelPosition {
+export function belowTrigger(rect: TriggerRect, viewport: Viewport): PanelPosition {
   const top = rect.bottom + PANEL_GAP;
-  return rect.left + rect.width / 2 > window.innerWidth / 2
-    ? { top, right: Math.max(window.innerWidth - rect.right, VIEWPORT_MARGIN) }
-    : { top, left: Math.max(rect.left, VIEWPORT_MARGIN) };
+  if (rect.left + rect.width / 2 > viewport.width / 2) {
+    const right = Math.max(viewport.width - rect.right, VIEWPORT_MARGIN);
+    return { top, right, room: Math.max(viewport.width - right - VIEWPORT_MARGIN, 0) };
+  }
+  const left = Math.max(rect.left, VIEWPORT_MARGIN);
+  return { top, left, room: Math.max(viewport.width - left - VIEWPORT_MARGIN, 0) };
 }
 
 export function Tooltip({
   label,
   placement = "right",
+  content = "label",
   suppressed,
   className,
   children,
@@ -93,6 +135,8 @@ export function Tooltip({
   label: string;
   /** Which side of the trigger the panel hangs off; `right` suits a vertical rail, `bottom` a horizontal toolbar. */
   placement?: TooltipPlacement;
+  /** What `label` is: a control's name (the default), or a truncated line of code shown whole. */
+  content?: TooltipContent;
   /**
    * Hold the panel closed and refuse to open it. For a trigger that owns something else on
    * screen while it is active: the rail avatar's open user menu hangs off the same corner,
@@ -122,7 +166,10 @@ export function Tooltip({
       timerRef.current = null;
       const rect = anchorRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setPosition(placement === "bottom" ? belowTrigger(rect) : besideTrigger(rect));
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      setPosition(
+        placement === "bottom" ? belowTrigger(rect, viewport) : besideTrigger(rect, viewport),
+      );
     }, OPEN_DELAY_MS);
   };
 
@@ -174,8 +221,9 @@ export function Tooltip({
               top: position.top,
               left: position.left,
               right: position.right,
+              maxWidth: `min(${contentMaxWidth[content]}, ${position.room}px)`,
             }}
-            className={`anim-fade pointer-events-none z-[60] w-max max-w-64 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${placement === "right" ? "-translate-y-1/2" : ""}`}
+            className={`anim-fade pointer-events-none z-[60] w-max rounded-md border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-lg dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 ${contentClass[content]} ${placement === "right" ? "-translate-y-1/2" : ""}`}
           >
             {label}
           </div>,

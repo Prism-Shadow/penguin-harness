@@ -26,21 +26,31 @@
  * `title` is attached: having both put a tooltip over the very text sliding past
  * underneath it (#570). The full text always stays in the DOM either way, so the
  * accessible name carries it whole no matter how much of it is visually clipped.
+ *
+ * `codeTooltip` swaps the native `title` for the styled Tooltip panel, set as code, for a
+ * line that is a command rather than a name. A command runs long, and the native tooltip —
+ * slow to appear, unstyled, and laid out however the browser or the desktop shell sees fit —
+ * is no dependable way to read one whole. The same rule decides whether the panel may open:
+ * it is held shut while the text fits, exactly where no `title` would have been attached.
  */
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { revealDistancePx, revealDurationMs, titleDisclosure } from "../../lib/title-reveal";
+import { Tooltip } from "./tooltip";
 import { usePrefersReducedMotion } from "./use-reduced-motion";
 
 export function Truncated({
   text,
   className = "",
   scrollReveal = false,
+  codeTooltip = false,
 }: {
   text: string;
   className?: string;
   /** Scroll the clipped tail into view while a `data-title-reveal` ancestor is hovered / keyboard-focused (sidebar conversation rows). */
   scrollReveal?: boolean;
+  /** Disclose a clipped tail in the styled Tooltip below the text, set as code, instead of a native `title` (a background process's command). */
+  codeTooltip?: boolean;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   /** Measured overflow in px (0 = fits): > 0 drives both the `title` tooltip and the scroll distance. */
@@ -77,7 +87,7 @@ export function Truncated({
     scrollReveal,
     reducedMotion,
   });
-  return (
+  const line = (
     <span
       ref={ref}
       className={`truncate ${className}${disclosure === "scroll" ? " title-scroll" : ""}`}
@@ -89,12 +99,26 @@ export function Truncated({
             } as CSSProperties,
           }
         : {})}
-      {...(disclosure === "tooltip" ? { title: text } : {})}
+      {...(disclosure === "tooltip" && !codeTooltip ? { title: text } : {})}
     >
       {/* The scroll needs a child the keyframes can turn into an inline-block and
           transform; at rest it renders inline, i.e. exactly like the bare text node
           every other caller keeps (native ellipsis included). */}
       {scrollReveal ? <span className="title-scroll-text">{text}</span> : text}
     </span>
+  );
+  if (!codeTooltip) return line;
+  // The wrapper is what the panel measures and hangs below. It is a flex box, so it needs
+  // min-w-0 to let the line inside shrink and truncate rather than widen its column.
+  return (
+    <Tooltip
+      label={text}
+      placement="bottom"
+      content="code"
+      suppressed={disclosure !== "tooltip"}
+      className="min-w-0"
+    >
+      {line}
+    </Tooltip>
   );
 }

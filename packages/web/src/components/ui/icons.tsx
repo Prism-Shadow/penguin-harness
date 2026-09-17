@@ -288,6 +288,13 @@ export const WRAP_TEXT_ICON = "M4 6h16M4 12h12a3 3 0 1 1 0 6h-3m2-2-2 2 2 2M4 18
 export const BACKGROUND_TASKS_ICON = "M2 12h4l3 9 6-18 3 9h4";
 
 /**
+ * Three list lines with a cross beside them: clear the finished entries out of a list — the
+ * details card's "clear exited processes". A cross on the lines rather than a bin, because a
+ * bin reads as deleting the list itself, and the entries still running stay where they are.
+ */
+export const CLEAR_LIST_ICON = "M11 12H3M16 6H3M16 18H3M19 10l-4 4M15 10l4 4";
+
+/**
  * The same bubble with a plus in it: putting something into the conversation rather than
  * sending it — the Files panel's "add to conversation" drops a reference in the composer
  * and stops there. Bubble-plus-plus follows the file pair's own convention (FILE_ICON vs

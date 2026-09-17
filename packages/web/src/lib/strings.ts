@@ -2199,6 +2199,8 @@ Benchmark：
     processRemove: "移除",
     /** Remove button tooltip: removal also drops the output captured from that process. */
     processRemoveHint: "移除该条目——该进程已捕获的输出也会一并丢弃",
+    /** The list heading's icon button (its accessible name and tooltip): removes every exited entry at once, captured output included. */
+    processClearExited: "清除已退出的进程——它们已捕获的输出也会一并丢弃",
     statTokens: "Token 累计",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "总 Token",
