@@ -91,26 +91,12 @@ export function sectionOf(slug: string): DocsSectionDef | undefined {
   );
 }
 
-/**
- * Pages whose successor is not the slug that follows them in the sidebar.
- *
- * The SDK route is the last of Quickstart's three, so linear order hands its reader the
- * Web App guide — a tour of the browser UI, for someone who just embedded the engine in
- * their own program. It continues into the interface contracts instead, which is also
- * where the page's own "next steps" point. Note this redirects only the forward link:
- * Core Interfaces keeps the predecessor its own position gives it.
- */
-const NEXT_OVERRIDE: Record<string, string> = {
-  "quickstart-sdk": "interfaces",
-};
-
-/** Pager targets for a page: sidebar order, unless it overrides its successor. */
+/** Pager targets for a page: its neighbours in sidebar order. */
 export function pagerFor(slug: string): { prev: string | null; next: string | null } {
   const index = DOC_SLUGS.indexOf(slug);
   if (index === -1) return { prev: null, next: null };
-  const linearNext = index < DOC_SLUGS.length - 1 ? DOC_SLUGS[index + 1]! : null;
   return {
     prev: index > 0 ? DOC_SLUGS[index - 1]! : null,
-    next: NEXT_OVERRIDE[slug] ?? linearNext,
+    next: index < DOC_SLUGS.length - 1 ? DOC_SLUGS[index + 1]! : null,
   };
 }
