@@ -9,34 +9,11 @@
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { ANNOUNCEMENTS, type Announcement } from "../lib/announcements";
 import { S } from "../lib/strings";
 import { ArrowRightIcon } from "./icons";
 
 const ROTATE_MS = 6000;
-
-/**
- * Where an announcement leads, exactly one of: `to`, a blog post on this site
- * (content/blog/<slug>.*.md) followed through the router, or `href`, a page on
- * another site, opened in a new tab.
- */
-type AnnouncementTarget =
-  { to: `/blog/${string}`; href?: never } | { href: `https://${string}`; to?: never };
-
-/**
- * Newest first: slide 0 is what a visitor sees before the rotation moves, so the
- * freshest news goes at the front.
- */
-const ITEMS = [
-  { key: "flashModels", to: "/blog/penguinharness-0-2-11" },
-  { key: "penguinGo", href: "https://token.penguin.ooo/" },
-] as const satisfies ReadonlyArray<{ key: string } & AnnouncementTarget>;
-
-/**
- * A slide as the renderer reads it. Typed against the target union rather than the
- * literal list, so reading `to` and `href` still type-checks while the list holds
- * only one kind.
- */
-type Announcement = { key: (typeof ITEMS)[number]["key"] } & AnnouncementTarget;
 
 const LINK_CLASS =
   "inline-flex min-w-0 items-center gap-1.5 text-[13px] font-medium text-brand-800 underline-offset-2 hover:underline dark:text-brand-200";
@@ -48,11 +25,7 @@ function prefersReducedMotion(): boolean {
 }
 
 export function AnnouncementBar() {
-  const texts: Record<Announcement["key"], string> = {
-    flashModels: S.announcement.flashModels,
-    penguinGo: S.announcement.penguinGo,
-  };
-  // pos runs 0..ITEMS.length where ITEMS.length is the clone of slide 0.
+  // pos runs 0..ANNOUNCEMENTS.length where ANNOUNCEMENTS.length is the clone of slide 0.
   const [pos, setPos] = useState(0);
   const [animate, setAnimate] = useState(true);
   // Focus pauses like hover does: tabIndex={-1} never blurs an already focused
@@ -81,8 +54,8 @@ export function AnnouncementBar() {
     // transitionend never arrives and the snap-back below never runs: those
     // users wrap around the real slides instead and never land on the clone.
     const advance = (p: number) => {
-      if (reduced) return (p + 1) % ITEMS.length;
-      return p >= ITEMS.length ? p : p + 1;
+      if (reduced) return (p + 1) % ANNOUNCEMENTS.length;
+      return p >= ANNOUNCEMENTS.length ? p : p + 1;
     };
     const timer = setInterval(() => setPos(advance), ROTATE_MS);
     return () => clearInterval(timer);
@@ -96,7 +69,7 @@ export function AnnouncementBar() {
     return () => cancelAnimationFrame(raf);
   }, [animate]);
 
-  const slides: readonly Announcement[] = [...ITEMS, ITEMS[0]!];
+  const slides: readonly Announcement[] = [...ANNOUNCEMENTS, ANNOUNCEMENTS[0]!];
 
   return (
     <div
@@ -117,7 +90,7 @@ export function AnnouncementBar() {
             style={{ transform: `translateX(-${pos * 100}%)` }}
             onTransitionEnd={(e) => {
               if (e.target !== e.currentTarget || e.propertyName !== "transform") return;
-              if (pos === ITEMS.length) {
+              if (pos === ANNOUNCEMENTS.length) {
                 setAnimate(false);
                 setPos(0);
               }
@@ -127,7 +100,7 @@ export function AnnouncementBar() {
               const tabIndex = i === pos ? 0 : -1;
               const content = (
                 <>
-                  <span className="truncate">{texts[item.key]}</span>
+                  <span className="truncate">{S.announcement[item.key]}</span>
                   <ArrowRightIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 </>
               );
