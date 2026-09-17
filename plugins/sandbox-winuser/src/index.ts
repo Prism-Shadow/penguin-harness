@@ -33,6 +33,7 @@
  * plainly runnable by hand. Until it has run, this backend declines with what to do, never
  * silently and never by failing the first agent command.
  */
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Bind, Component, Interface, Use } from "@prismshadow/penguin-core/plugin";
@@ -97,7 +98,7 @@ export function toCommandLine(argv: readonly string[]): string {
 
 /** The job the launcher is handed: the policy as permissions, and the command under it. */
 export function jobFor(policy: SandboxPolicy, argv: readonly string[]): LaunchJob {
-  const programDir = programRoot(argv[0] ?? "");
+  const programDir = programRoot(resolveProgram(argv[0] ?? ""));
   return {
     // read-only reads the Workspace; workspace-write and full-access both write it — full
     // access differs by ALSO getting an account whose home is writable (see `full`).
@@ -123,6 +124,38 @@ export function programRoot(command: string): string {
   if (!path.win32.isAbsolute(command)) return "";
   const dir = path.win32.dirname(command);
   return path.win32.basename(dir).toLowerCase() === "bin" ? path.win32.dirname(dir) : dir;
+}
+
+/**
+ * The absolute path of the program an argv names — by PATH lookup when it is a bare name.
+ *
+ * On Windows the harness resolves its shell to the NAME "bash", not a path, deliberately: spawn
+ * then finds it on PATH the way a person would (see core's shell.ts). A sandbox account cannot
+ * afford that indifference — it is a stranger to the Git install, and has to be handed read on
+ * the actual directory before it can execute anything out of it. So a bare name is resolved
+ * here; without this the grant targets nothing, and every command dies at
+ * CreateProcessWithLogonW with ACCESS_DENIED, which names neither the file nor the reason.
+ */
+export function resolveProgram(
+  command: string,
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (file: string) => boolean = fs.existsSync,
+): string {
+  if (command === "") return "";
+  if (path.win32.isAbsolute(command)) return command;
+  // A name carrying a separator is a relative path, not something PATH answers for.
+  if (/[\\/]/.test(command)) return "";
+  const extensions = (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter((e) => e !== "");
+  const candidates =
+    path.win32.extname(command) !== "" ? [command] : extensions.map((e) => command + e);
+  for (const dir of (env.PATH ?? "").split(";")) {
+    if (dir === "") continue;
+    for (const candidate of candidates) {
+      const full = path.win32.join(dir, candidate);
+      if (exists(full)) return full;
+    }
+  }
+  return "";
 }
 
 /** Where the launcher lives, beside this module in the built package. */

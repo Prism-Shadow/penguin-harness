@@ -9,6 +9,7 @@ import {
   jobFor,
   loadWinUserProvider,
   programRoot,
+  resolveProgram,
   quoteWindowsArg,
   toCommandLine,
   winUserSettingsOf,
@@ -77,6 +78,28 @@ describe("policy as a job", () => {
     expect(jobFor({ mode: "read-only", workspaceRoot: WS }, [BASH])).not.toHaveProperty(
       "maskPaths",
     );
+  });
+
+  it("resolves a BARE shell name through PATH, or the install is never opened", () => {
+    // core's shell.ts hands Windows the name "bash", not a path. Left unresolved, programRoot
+    // answers "" , nothing is granted, and CreateProcessWithLogonW refuses every command with
+    // ACCESS_DENIED — which is exactly how this failed on a live host.
+    const env = {
+      PATH: "C:\\Windows\\System32;C:\\Users\\k\\Software\\packages\\git-2.49.0\\bin",
+      PATHEXT: ".COM;.EXE;.BAT;.CMD",
+    } as NodeJS.ProcessEnv;
+    // Windows resolves paths case-insensitively, and PATHEXT is spelled in capitals.
+    const onDisk = (f: string) =>
+      f.toLowerCase() === "c:\\users\\k\\software\\packages\\git-2.49.0\\bin\\bash.exe";
+    expect(resolveProgram("bash", env, onDisk).toLowerCase()).toBe(
+      "c:\\users\\k\\software\\packages\\git-2.49.0\\bin\\bash.exe",
+    );
+    expect(programRoot(resolveProgram("bash", env, onDisk))).toBe(
+      "C:\\Users\\k\\Software\\packages\\git-2.49.0",
+    );
+    // An absolute command is taken as it stands; an unfindable name opens nothing.
+    expect(resolveProgram(BASH, env, () => true)).toBe(BASH);
+    expect(resolveProgram("nosuchshell", env, () => false)).toBe("");
   });
 
   it("the program's directory is its install ROOT, since a shell loads DLLs beside bin", () => {
