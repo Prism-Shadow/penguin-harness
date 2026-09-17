@@ -442,7 +442,6 @@ describe("discountedPrice", () => {
       days: [[1, 7]],
       everyDay: true,
       hours: [[8, 22]],
-      utcOffset: "+8",
     });
 
     expect(peakWindows(DEEPSEEK_OFF_PEAK)).toEqual({
@@ -452,7 +451,6 @@ describe("discountedPrice", () => {
         [9, 12],
         [14, 18],
       ],
-      utcOffset: "+8",
     });
     // The hover text is spelled from the schedule in both dictionaries, so neither vendor's
     // windows are described with the other's.

@@ -1744,4 +1744,12 @@ describe("off-peak schedules", () => {
     ).map((m) => `${m.provider}/${m.modelId}`);
     expect(both).toEqual([]);
   });
+
+  it("every schedule is written in Beijing time, the one zone the badge's tooltip names", () => {
+    // Both dictionaries say Beijing time outright rather than spelling out an offset, so a
+    // schedule written in any other zone fails here instead of reaching the tooltip mislabelled.
+    for (const { schedule, refs } of offPeakScheduledRefs()) {
+      expect(schedule.utcOffsetMinutes, `${refs[0]!.provider}/${refs[0]!.modelId}`).toBe(480);
+    }
+  });
 });

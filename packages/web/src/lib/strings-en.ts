@@ -1104,8 +1104,7 @@ export const en: Strings = {
             .join(", ");
       const clock = (hour: number): string => `${String(hour).padStart(2, "0")}:00`;
       const hours = peak.hours.map(([from, to]) => `${clock(from)}–${clock(to)}`).join(" and ");
-      const zone = peak.utcOffset === "+8" ? "Beijing time" : `UTC${peak.utcOffset}`;
-      return `Off-peak rate: ${pct}% off list. Peak hours bill at list price — ${hours} ${zone}, ${days}`;
+      return `Off-peak rate: ${pct}% off list. Peak hours bill at list price — ${hours} Beijing time, ${days}`;
     },
     visionModelBadge: "Proxy vision",
     usedTokens: (v: string) => `${v} toks`,

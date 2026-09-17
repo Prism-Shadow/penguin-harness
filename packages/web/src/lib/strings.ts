@@ -1108,8 +1108,7 @@ export const zh = {
             .map(([from, to]) => (from === to ? day[from - 1] : `${day[from - 1]}至${day[to - 1]}`))
             .join("、");
       const hours = peak.hours.map(([from, to]) => `${from}:00–${to}:00`).join("、");
-      const zone = peak.utcOffset === "+8" ? "北京时间" : `UTC${peak.utcOffset} `;
-      return `空闲时段价：比牌价低 ${pct}%。高峰时段按牌价计费——${zone}${days} ${hours}`;
+      return `空闲时段价：比牌价低 ${pct}%。高峰时段按牌价计费——北京时间${days} ${hours}`;
     },
     visionModelBadge: "视觉代理",
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
