@@ -3,7 +3,8 @@
  * bottom while streaming — an upward swipe immediately pauses follow, and scrolling back near
  * the bottom resumes it (see stream-follow.ts for the exact rule).
  * StreamRenderContext threads the pending-approval map and approval callback down to tool
- * cards at any nesting depth.
+ * cards at any nesting depth. Text selected in the stream gets the app's own context menu
+ * (Copy / Add to conversation — see stream-selection-menu.tsx).
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
@@ -19,6 +20,8 @@ import { WorkGroup, isWorkItem } from "./work-group";
 import { createStreamFollow, stickToBottom } from "./stream-follow";
 import type { StreamFollow } from "./stream-follow";
 import type { ForkTarget } from "./task-stats-line";
+import { useStreamSelectionMenu } from "./stream-selection-menu";
+import type { ComposerReference } from "../../lib/workspace-tree";
 
 /** Context passed down to nested rendering (pending approvals + approval submit callback + current origin chain). */
 export interface StreamRenderContext {
@@ -201,6 +204,7 @@ export function MessageStream({
   scrollElRef,
   outline,
   older,
+  onAddExcerpt,
 }: {
   items: ChatItem[];
   /** View-model version number (a repaint signal for in-place updates that also drives auto-scroll). */
@@ -216,8 +220,15 @@ export function MessageStream({
   outline?: ReactNode;
   /** Scroll-up backfill of older history windows; omitted = the whole transcript is loaded (no top affordance). */
   older?: OlderHistoryControls;
+  /**
+   * Stages text selected in the stream in this conversation's composer, as a chip (the
+   * selection menu's "Add to conversation"). Omitted where the view has no composer: the menu
+   * then offers Copy alone.
+   */
+  onAddExcerpt?: (reference: ComposerReference) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const selectionMenu = useStreamSelectionMenu(onAddExcerpt);
   // An upward-swipe intent immediately exits auto-follow; scrolling back near the bottom resumes it — see stream-follow.ts (#75) for the exact rule.
   const followRef = useRef<StreamFollow | null>(null);
   const follow = (followRef.current ??= createStreamFollow());
@@ -392,7 +403,13 @@ export function MessageStream({
         ref={(el) => {
           scrollRef.current = el;
           if (scrollElRef) scrollElRef.current = el;
+          selectionMenu.hostRef(el);
         }}
+        // A selection inside the stream answers a secondary click with the app's own menu;
+        // everything else keeps the browser's (see stream-selection-menu.tsx).
+        onPointerDown={selectionMenu.hostProps.onPointerDown}
+        onContextMenu={selectionMenu.hostProps.onContextMenu}
+        onKeyDown={selectionMenu.hostProps.onKeyDown}
         onScroll={onScroll}
         onWheel={(e) => {
           follow.wheel(e.deltaY);
@@ -451,6 +468,7 @@ export function MessageStream({
         </div>
       </div>
       {outline}
+      {selectionMenu.panel}
       {/* Back-to-bottom (shows once the user scrolls away from content below the fold): floats
           just above the composer; clicking returns to the bottom and re-enters follow, so the
           view keeps tracking the live stream. */}

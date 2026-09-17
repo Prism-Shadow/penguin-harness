@@ -421,6 +421,8 @@ export const en: Strings = {
     retry: "Retry",
     unknownError: "Request failed, please try again later",
     requiredField: "This field is required",
+    /** A menu row that copies what it acts on (the conversation's selection menu); the confirmation is `copied`. */
+    copy: "Copy",
     copied: "Copied",
     /** Accessible name of the circled "?" that discloses a section or field explanation. */
     moreInfo: "More info",

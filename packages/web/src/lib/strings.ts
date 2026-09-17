@@ -427,6 +427,8 @@ export const zh = {
     retry: "重试",
     unknownError: "请求失败，请稍后重试",
     requiredField: "此项必填",
+    /** A menu row that copies what it acts on (the conversation's selection menu); the confirmation is `copied`. */
+    copy: "复制",
     copied: "已复制",
     /** Accessible name of the circled "?" that discloses a section or field explanation. */
     moreInfo: "说明",

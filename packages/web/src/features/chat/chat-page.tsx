@@ -1295,10 +1295,10 @@ export function ChatPage() {
     composerRef.current?.fillPrompt(text, []);
   }, []);
   /**
-   * The Files panel's exit into the conversation: a `@path` reference, or a fenced block
-   * around what was selected in a preview, spliced into the draft at the caret. Nothing is
-   * sent and nothing already typed is disturbed — the panel contributes a line to a message
-   * the user is writing.
+   * The Files panel's exit into the conversation — a `@path` reference, or a fenced block
+   * around what was selected in a preview — and the message stream's, an excerpt of the
+   * conversation selected in it. Nothing is sent and nothing already typed is disturbed: the
+   * surface contributes a part of a message the user is writing.
    */
   /** Staged as a chip, so the draft keeps whatever the user was in the middle of writing. */
   const addComposerReference = useCallback((reference: ComposerReference) => {
@@ -2196,6 +2196,10 @@ export function ChatPage() {
                           version={stream.version}
                           ctx={ctx}
                           scrollElRef={streamScrollRef}
+                          // The selection menu's "Add to conversation": the excerpt is staged
+                          // in this composer as a chip, the same way the Files panel stages a
+                          // quoted range.
+                          onAddExcerpt={addComposerReference}
                           // Scroll-up backfill of older history windows (tail-first
                           // loading): near-top scrolling prepends the previous window,
                           // scroll position anchored (see MessageStream).

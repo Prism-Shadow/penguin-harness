@@ -124,6 +124,7 @@ import {
 import { Input, noAutofill, panelSearchClass } from "../../components/ui/input";
 import { ZoomableImage } from "../../components/ui/image-zoom";
 import { SkeletonList } from "../../components/ui/skeleton";
+import { restoreSelection } from "../../components/ui/text-selection";
 import { Tooltip } from "../../components/ui/tooltip";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { ICON_SIZE } from "../../lib/icon-scale";
@@ -354,25 +355,6 @@ interface PreviewSelection {
    * selected — so the highlight has to be put back by hand afterwards (restoreSelection).
    */
   range: Range;
-}
-
-/**
- * Puts `range` back as the document's one selection, a frame after the caller hands text to
- * the composer: the composer focuses its textarea inside a requestAnimationFrame of its own,
- * scheduled first, and that focus is what clears the selection this restores.
- *
- * A range whose ends have since left the document is dropped rather than re-applied — the
- * preview it was read from is no longer on screen, and re-selecting detached nodes would
- * either throw or select nothing.
- */
-function restoreSelection(range: Range): void {
-  requestAnimationFrame(() => {
-    if (!range.startContainer.isConnected || !range.endContainer.isConnected) return;
-    const selection = window.getSelection();
-    if (selection === null) return;
-    selection.removeAllRanges();
-    selection.addRange(range);
-  });
 }
 
 /**

@@ -20,7 +20,8 @@
  * conversation visible (found by walking the origin chain); the graph simply has no
  * highlighted node.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useNavigate } from "react-router";
 import type {
   ApprovalMode,
@@ -38,6 +39,7 @@ import { apiErrorText } from "../../lib/api-error";
 import { S } from "../../lib/strings";
 import type { NestedSessionMeta, StreamModel } from "../../lib/omni/stream-model";
 import { ChatInput } from "./chat-input";
+import type { ComposerControl } from "./chat-input";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -57,6 +59,7 @@ import type { TopologyNode } from "./agent-topology";
 import { AgentTopologyView } from "./agent-topology-view";
 import { MessageStream } from "./message-stream";
 import type { StreamRenderContext } from "./message-stream";
+import type { ComposerReference } from "../../lib/workspace-tree";
 
 interface Selection {
   sessionId: string;
@@ -104,6 +107,12 @@ export function SubagentsView({
   const { sessions } = useSessions();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Selection | null>(null);
+  // The selected child's composer, for the stream above it: "Add to conversation" in the
+  // child's selection menu stages the excerpt there, in the conversation it was selected in.
+  const childComposerRef = useRef<ComposerControl | null>(null);
+  const addChildExcerpt = useCallback((reference: ComposerReference) => {
+    childComposerRef.current?.addReference(reference);
+  }, []);
 
   // A chip click focuses that child (fresh-object identity: re-clicking the same chip re-fires).
   useEffect(() => {
@@ -271,12 +280,14 @@ export function SubagentsView({
                 items={activeModel.items}
                 version={version}
                 ctx={childCtx}
+                onAddExcerpt={addChildExcerpt}
               />
             )}
           </div>
           {/* Keyed by child too: switching nodes must not carry a half-typed message over. */}
           <SubagentComposer
             key={`composer-${active.sessionId}`}
+            controlRef={childComposerRef}
             sessionId={session.sessionId}
             childSessionId={active.sessionId}
             running={activeRunning}
@@ -318,6 +329,7 @@ function countDeliveredInputs(model: StreamModel): number {
  * only the child's current run. All of it lands on the same core channel input_subagent uses.
  */
 function SubagentComposer({
+  controlRef,
   sessionId,
   childSessionId,
   running,
@@ -330,6 +342,8 @@ function SubagentComposer({
   modeSaving,
   fallbackThinkingLevel,
 }: {
+  /** Handed to the ChatInput: the child stream's selection menu stages excerpts through it. */
+  controlRef: RefObject<ComposerControl | null>;
   sessionId: string;
   childSessionId: string;
   running: boolean;
@@ -395,6 +409,7 @@ function SubagentComposer({
     <div className="shrink-0 border-t border-gray-100 px-2 pb-2 pt-2 dark:border-gray-800/60">
       <ChatInput
         variant="subagent"
+        controlRef={controlRef}
         status={running ? "running" : "idle"}
         onSend={async (input: TaskInputPart[]) => {
           const text = input

@@ -522,16 +522,20 @@ export function writeWrapLines(wrap: boolean, storage?: TreePreferenceStorage): 
 // -------------------------------------------------------------- composer references
 
 /**
- * Something the Files panel hands the composer: what it points at, and the text the message
- * carries once it is sent.
+ * Something a surface hands the composer: what it points at, and the text the message carries
+ * once it is sent. The Files panel hands a Workspace entry or a quoted range of one; the
+ * conversation's own selection menu hands an excerpt of the conversation.
  *
- * The text is deliberately kept out of the textarea. What the panel contributes is a whole
- * thing — a file, a directory, a quoted range — and the draft is where the person is writing;
- * splicing the one into the other buries what they were saying under what they were pointing
- * at. The composer shows a chip naming it instead, the same shape `/agent` and `/skill` already
- * stage their picks in.
+ * The text is deliberately kept out of the textarea. What a surface contributes is a whole
+ * thing — a file, a directory, a quoted range, an excerpt — and the draft is where the person is
+ * writing; splicing the one into the other buries what they were saying under what they were
+ * pointing at. The composer shows a chip naming it instead, the same shape `/agent` and `/skill`
+ * already stage their picks in.
  */
-export interface ComposerReference {
+export type ComposerReference = WorkspaceReference | ExcerptReference;
+
+/** A Workspace entry, or a quoted range of one — what the Files panel hands the composer. */
+export interface WorkspaceReference {
   /** Which glyph the chip wears, and what its label means. */
   kind: "file" | "dir" | "quote";
   /** Workspace-relative path: the chip's label comes from its last segment, its tooltip from the whole. */
@@ -541,6 +545,18 @@ export interface ComposerReference {
   /** 1-based and inclusive, on a `quote` whose place in the file could be resolved. */
   fromLine?: number;
   toLine?: number;
+}
+
+/**
+ * Text selected in the conversation itself. It has no path to name it by, so the chip is
+ * labelled by the excerpt's own start and its tooltip is the whole excerpt.
+ */
+export interface ExcerptReference {
+  kind: "excerpt";
+  /** The selected text, as the selection read it: the chip's label and tooltip come from this. */
+  excerpt: string;
+  /** What goes into the message: the excerpt as a Markdown blockquote. */
+  text: string;
 }
 
 /**

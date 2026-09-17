@@ -96,8 +96,7 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { CheckIcon, ChevronDown, FILE_ICON, QUOTE_ICON } from "../../components/ui/icons";
-import { FOLDER_ICON } from "../../components/ui/group-list";
+import { CheckIcon, ChevronDown } from "../../components/ui/icons";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { noAutofill } from "../../components/ui/input";
 import { toastError, toastInfo } from "../../components/ui/toast";
@@ -130,8 +129,8 @@ import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { toneStrip } from "../../lib/tone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
-import { lineSuffix } from "../../lib/workspace-tree";
 import type { ComposerReference } from "../../lib/workspace-tree";
+import { ReferenceChip } from "./reference-chip";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -764,39 +763,9 @@ function withReferences(references: readonly ComposerReference[], typed: string)
 }
 
 /**
- * A staged reference, split for display: the entry's own name, and the quoted lines as a
- * `:from-to` suffix. The `file:line` form rather than a worded one — it is the shape every editor
- * and stack trace already uses, it needs no translating, and a chip has no room for a sentence.
- *
- * Returned in two pieces because the chip draws them differently: a long name ellipsizes, and the
- * line numbers must not go with it. They are the smaller half and the half the name does not
- * already say.
- */
-function referenceParts(reference: ComposerReference): { name: string; lines: string } {
-  const name = reference.path.split("/").pop() ?? reference.path;
-  const lines =
-    reference.fromLine === undefined || reference.toLine === undefined
-      ? ""
-      : lineSuffix(reference.fromLine, reference.toLine);
-  return { name, lines };
-}
-
-/** The whole of what a chip stands for, for its tooltip and its accessible name: path and lines. */
-function referenceTitle(reference: ComposerReference): string {
-  return `${reference.path}${referenceParts(reference).lines}`;
-}
-
-/** A directory, a file, or a passage carried in from one — each says what the chip stands for. */
-const REFERENCE_ICON: Record<ComposerReference["kind"], string> = {
-  dir: FOLDER_ICON,
-  file: FILE_ICON,
-  quote: QUOTE_ICON,
-};
-
-/**
  * What a parent can ask of a mounted composer, handed over through ChatInput's `controlRef`.
  * Two entries: a surface that composes a whole prompt puts it in this composer instead of
- * submitting it on its own, and a surface that contributes one reference splices it into
+ * submitting it on its own, and a surface that contributes one reference stages it beside
  * whatever is already being typed.
  */
 export interface ComposerControl {
@@ -808,9 +777,9 @@ export interface ComposerControl {
    */
   fillPrompt: (prompt: string, pinnedSkills: readonly string[]) => void;
   /**
-   * Stage what the Files panel contributes as a chip rather than typing it into the draft — a
-   * file, a directory, or a quoted range. The text rides the message when it is sent; what the
-   * composer shows is the thing it points at.
+   * Stage a contribution as a chip rather than typing it into the draft — a file, a directory
+   * or a quoted range from the Files panel, or an excerpt selected in the conversation. The
+   * text rides the message when it is sent; what the composer shows is the thing it points at.
    */
   addReference: (reference: ComposerReference) => void;
 }
@@ -2604,42 +2573,19 @@ export function ChatInput({
                 </span>
               );
             })}
-            {/* Staged from the Files panel: a file, a directory, or a quoted range. The text
-                itself never enters the draft — the chip names what it points at, and the
-                message carries it on send. */}
-            {references.map((reference, i) => {
-              const { name, lines } = referenceParts(reference);
-              const title = referenceTitle(reference);
-              return (
-                <span
-                  key={i}
-                  title={title}
-                  className="anim-pop flex max-w-48 items-center gap-1 rounded-md bg-gray-100 py-0.5 pl-2 pr-1 font-mono text-xs text-gray-800 dark:bg-gray-800 dark:text-gray-200"
-                >
-                  <GlyphIcon
-                    d={REFERENCE_ICON[reference.kind]}
-                    size={13}
-                    className="shrink-0 text-gray-500 dark:text-gray-400"
-                  />
-                  {/* The name gives way, the line numbers do not: they are four characters, and
-                      they are the half the truncated name cannot tell you. The tooltip carries
-                      the whole path and the range together. */}
-                  <span className="min-w-0 truncate">{name}</span>
-                  {lines !== "" && <span className="shrink-0">{lines}</span>}
-                  <button
-                    type="button"
-                    aria-label={`${S.files.removeReference} ${title}`}
-                    onClick={() => {
-                      setReferences((prev) => prev.filter((_, j) => j !== i));
-                      textareaRef.current?.focus();
-                    }}
-                    className="shrink-0 rounded p-0.5 text-gray-400 transition-colors duration-150 hover:text-gray-700 dark:hover:text-gray-200"
-                  >
-                    ×
-                  </button>
-                </span>
-              );
-            })}
+            {/* Staged from the Files panel (a file, a directory, a quoted range) or from the
+                conversation's selection menu (an excerpt). The text itself never enters the
+                draft — the chip names what it points at, and the message carries it on send. */}
+            {references.map((reference, i) => (
+              <ReferenceChip
+                key={i}
+                reference={reference}
+                onRemove={() => {
+                  setReferences((prev) => prev.filter((_, j) => j !== i));
+                  textareaRef.current?.focus();
+                }}
+              />
+            ))}
           </div>
         )}
 
