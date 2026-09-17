@@ -371,6 +371,7 @@ export async function createTestApp(options: TestAppOptions = {}): Promise<TestA
       messagingLineDelayMs: 0,
       ...overrides,
     }),
+    undefined,
     plugins,
   );
   // Consistent with the startup entrypoint: seed the built-in admin (owning default_project).

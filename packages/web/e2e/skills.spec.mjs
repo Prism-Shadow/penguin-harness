@@ -1,6 +1,6 @@
 /**
  * End-to-end test for the plugin library (locale zh-CN):
- * - the sidebar nav shows "插件库" ("Plugin library"), and the page renders the library's plugin
+ * - the sidebar nav shows "插件市场" ("Plugins"), and the page renders the library's plugin
  *   cards across group sections (a collapsible group header: category name + plugin count,
  *   **no icon**; the group name follows the UI language — when the server ships a Chinese
  *   group name it's "办公效率 / 软件开发 / AI 应用开发 / Agent 调优", falling back to
@@ -34,14 +34,16 @@ const MOCK = process.env.MOCK_URL;
 const U = "skillsuser";
 const P = "password123";
 
-// Group names follow the UI language: Chinese when the server dist ships titleZh, otherwise
-// falling back to English (both states are asserted).
-// The group header is a collapsible button (category name + plugin count); matched by a substring of its accessible name.
-const GROUPS = [
+// Category names follow the UI language: Chinese when the server dist ships titleZh, otherwise
+// falling back to English (both states are asserted). A category is a tag on each library
+// plugin's row now; the page is one flat list, with the installed section folded by default.
+const CATEGORIES = [
   /Office Productivity|办公效率/,
   /Software Development|软件开发/,
   /AI App Development|AI 应用开发/,
 ];
+// The "Installed plugins (N)" section header: a collapsible button, folded on entry.
+const INSTALLED_HEADER = /已安装的插件|Installed plugins/;
 // Library plugin cards the page renders (merged plugins carry several skills each).
 const PLUGINS = [
   "agent-tuning",
@@ -68,7 +70,7 @@ const SKILLS = [
 // and the card renders a custom icon.svg — neither spot should show this fallback path.
 const BOOK_PATH_PREFIX = "M2 3h6a4";
 
-test("skills: library groups and cards -> manage-install Modal -> quick-invoke prefill -> dropdown filter and slash selection", async ({
+test("skills: library list and cards -> manage-install Modal -> quick-invoke prefill -> dropdown filter and slash selection", async ({
   page,
 }) => {
   await provisionAndLogin(page.request, U, P);
@@ -100,18 +102,21 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   });
   expect(created.ok(), "create helper agent").toBeTruthy();
 
-  // —— Plugin library page: sidebar nav entry + grouped cards (group headers are collapsible buttons, all expanded by default) ——
+  // —— Plugin library page: sidebar nav entry + one list of cards under a folded "Installed plugins" header ——
   await page.goto(`${BASE}/chat`);
-  const navLink = page.getByRole("link", { name: "插件库" });
+  const navLink = page.getByRole("link", { name: "插件市场" });
   await expect(navLink).toBeVisible();
   await navLink.click();
   await expect(page).toHaveURL(/\/plugins$/);
-  for (const g of GROUPS) {
-    const header = page.getByRole("button", { name: g });
-    await expect(header).toBeVisible();
-    await expect(header).toHaveAttribute("aria-expanded", "true");
-    // The group header no longer has an icon: the book path must not appear in the group header button.
-    await expect(header.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
+  const installedHeader = page.getByRole("button", { name: INSTALLED_HEADER });
+  await expect(installedHeader).toBeVisible();
+  await expect(installedHeader).toHaveAttribute("aria-expanded", "false");
+  await installedHeader.click();
+  await expect(installedHeader).toHaveAttribute("aria-expanded", "true");
+  // The section header carries no icon: the book path must not appear in it.
+  await expect(installedHeader.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
+  for (const c of CATEGORIES) {
+    await expect(page.getByText(c).first()).toBeVisible();
   }
   for (const s of PLUGINS) {
     await expect(page.getByText(s, { exact: true })).toBeVisible();
@@ -140,18 +145,17 @@ test("skills: library groups and cards -> manage-install Modal -> quick-invoke p
   await expect(creationCard.locator("span[aria-hidden] > svg")).toHaveCount(1);
   await expect(creationCard.locator(`svg path[d^="${BOOK_PATH_PREFIX}"]`)).toHaveCount(0);
 
-  // Clicking the group header collapses it: aria-expanded flips, and the group's content
-  // becomes inert (a zero-height card can't be interacted with); clicking again expands it back.
-  // The collapsed content is still in the DOM (a grid-rows 0fr height transition), so assert
+  // Clicking the section header folds it: aria-expanded flips, and the section's content
+  // becomes inert (a zero-height card can't be interacted with); clicking again unfolds it.
+  // The folded content is still in the DOM (a grid-rows 0fr height transition), so assert
   // inert rather than visibility.
-  const firstHeader = page.getByRole("button", { name: GROUPS[0] });
-  const firstGroup = page.locator("section").filter({ has: firstHeader });
-  await firstHeader.click();
-  await expect(firstHeader).toHaveAttribute("aria-expanded", "false");
-  await expect(firstGroup.locator("[inert]")).toHaveCount(1);
-  await firstHeader.click();
-  await expect(firstHeader).toHaveAttribute("aria-expanded", "true");
-  await expect(firstGroup.locator("[inert]")).toHaveCount(0);
+  const installedSection = page.locator("section").filter({ has: installedHeader });
+  await installedHeader.click();
+  await expect(installedHeader).toHaveAttribute("aria-expanded", "false");
+  await expect(installedSection.locator("[inert]")).toHaveCount(1);
+  await installedHeader.click();
+  await expect(installedHeader).toHaveAttribute("aria-expanded", "true");
+  await expect(installedSection.locator("[inert]")).toHaveCount(0);
 
   // —— Manage installation Modal: an Agent row + Install/Installed (clicking Installed uninstalls) ——
   await page.getByRole("button", { name: "管理安装 data-analysis" }).click();
