@@ -887,6 +887,30 @@ describe("organization runtime", () => {
       expect(sessions.findById(ceoDesk)?.client).toBe("org");
       expect(sessions.findById(work)?.client).toBe("org");
     });
+
+    it("opens desk and ticket sessions under the organization's approval mode", async () => {
+      await createOrg();
+      await service.patch(P, ORG, { approvalMode: "read-only" }, "alice");
+      // A desk opened after the change carries the mode; the row is what the session
+      // runtime reads per decision (with `client: "org"`, a call that mode would hand to a
+      // person is denied at once — see session-manager.test.ts).
+      const desk = (await service.desk(P, ORG, CEO, { renew: true })).sessionId;
+      expect(sessions.findById(desk)?.approvalMode).toBe("read-only");
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Ship it", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      const { sessionId: work } = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        {},
+        { userId: "alice" },
+      );
+      expect(sessions.findById(work)?.approvalMode).toBe("read-only");
+    });
   });
 
   describe("who starts a ticket session", () => {

@@ -444,7 +444,7 @@ export class OrganizationService {
    *
    * - `mentions`: the all-hands messages of the window `recentMessages` reads (the
    *   organization's current day) that name the caller or `all`, newest first.
-   * - `blockedTickets`: every ticket carrying a `Blocked` reason, whoever it waits on —
+   * - `blockedTickets`: every ticket carrying a `blocked` reason, whoever it waits on —
    *   uncapped, because a blocked ticket is work nobody is doing.
    * - `doneTickets`: tickets in `done` that closed in the current budget period, `closedAt`
    *   taken from the last `moved`-to-`done` history entry. A ticket whose file was moved by
@@ -1189,7 +1189,7 @@ export class OrganizationService {
   // Tickets
   // ---------------------------------------------------------------------------
 
-  /** `known` is every ticket id in the same listing: a `Parent` naming none is flagged invalid. */
+  /** `known` is every ticket id in the same listing: a `parent` naming none is flagged invalid. */
   private ticketItem(t: LoadedTicket, spend: OrgSpend, known: ReadonlySet<string>): OrgTicketItem {
     const d = t.doc;
     const running = d.sessions.some((s) => this.deps.runner.statusOf(s) !== "idle");

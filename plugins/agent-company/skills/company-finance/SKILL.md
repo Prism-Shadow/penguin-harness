@@ -15,7 +15,7 @@ If the message only names this skill without a concrete request, ask what financ
 
 - `budget` is a field of each employee's entry in `org_chart.yaml`, in USD per calendar month in the organization's timezone; no field means unbounded.
 - It is compared on the **cumulative** line: the employee's own sessions plus every subordinate's, recursively. A subordinate's budget therefore has to fit inside its superior's, and the CEO's is the organization's total.
-- Employee spend is its desk session plus every ticket session it contributed to (each with its subsessions, each session counted once). Ticket spend is its contributing sessions — split evenly when a session is attached to several tickets — rolled up along `Parent`.
+- Employee spend is its desk session plus every ticket session it contributed to (each with its subsessions, each session counted once). Ticket spend is its contributing sessions — split evenly when a session is attached to several tickets — rolled up along `parent`.
 - At `budget_warn_ratio` (default 0.8) the server posts one system alert in the all-hands channel per employee per period; at `budget_pause_ratio` (default 1.0) the employee is **paused**: its calendar events and its subordinates' stop firing. Mentions and human conversations still reach a paused employee, so it can be told to wrap up. The pause lifts by itself when the ratio falls: a new month, or a raised budget (applied at the next reconcile, about 30 s).
 - Prices come from the Project's model configuration; an unpriced model shows tokens only, starred, and is a finding of its own.
 

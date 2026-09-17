@@ -22,7 +22,9 @@
  *     event;
  *   - Approval registration and interrupt convergence: each approval decision re-reads
  *     approval_mode from the DB (takes effect immediately); an interrupt first
- *     converges pending approvals to deny, then aborts.
+ *     converges pending approvals to deny, then aborts. An organization's sessions have
+ *     nobody to ask, so a call their mode would hand to a person is denied at once
+ *     (see entryApprove).
  *
  * The underlying implementation of get-or-resume-or-heal is injected via
  * `SessionLoader`: production uses the core SDK (createCoreSessionLoader), tests inject
@@ -863,6 +865,14 @@ export class SessionManager {
    * The entry-lifetime approval callback: the registry, the per-decision approval-mode
    * re-read, and the SSE escalation are all entry-scoped, so one instance serves every run
    * of the entry and the children's session-lifetime fallback sink alike.
+   *
+   * This is also where the one cross-cutting approval override lives — wrapping the callback
+   * handed to `Session.run` rather than teaching the engine anything: an organization's
+   * sessions run with nobody watching, so a call their approval mode would hand to a person
+   * is denied here instead of waiting for an answer that is never coming (see `unattended`
+   * in approvals.ts). The marker is the row's durable `client = "org"` stamp — desk, ticket
+   * and the sub-sessions that inherit it — read per decision, so a row the reconcile pass
+   * stamps later is covered from its next decision on.
    */
   private entryApprove(entry: RuntimeEntry): ApproveFn {
     return makeApprove({
@@ -870,6 +880,7 @@ export class SessionManager {
       getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
       toolPermission: (name) => entry.session.toolPermission(name),
       registry: entry.approvals,
+      unattended: () => this.deps.sessions.findById(entry.sessionId)?.client === "org",
       publishRequest: (pending) =>
         this.publishEvent(entry, {
           type: "approval_request",
