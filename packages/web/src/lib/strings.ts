@@ -2999,7 +2999,7 @@ Benchmark：
     evaluationDetailTitle: (time: string): string => `评估 · ${time}`,
     askEvaluationTitle: "问 AI：这次评估",
     askEvaluationDescription:
-      "这次评估的总分、逐题得分与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
+      "这次评估的总分、逐题结果与逐次运行的 Session id 会一起交给智能体，它读过记分板与相关 Trace 后作答；提示词可以改。",
     askEvaluationDefault: "解释这次评估的结果。",
     /** The default question leads the examples (it is what the box opens with), so a reader who tried another can bring it back. Keep `explain.prompt` equal to askEvaluationDefault. */
     askEvaluationExamples: {
@@ -3009,11 +3009,11 @@ Benchmark：
       },
       whyLow: {
         label: "为什么这次分数低？",
-        prompt: "为什么这次评估的分数偏低？请结合逐题得分与运行记录说明主要失分在哪里。",
+        prompt: "为什么这次评估的分数偏低？请结合逐题分数与运行记录说明主要失分在哪里。",
       },
       weakest: {
         label: "哪些题最弱、该改什么？",
-        prompt: "哪几道题得分最弱？分别是什么原因，被测智能体改哪一处才有机会提上去？",
+        prompt: "哪几道题分数最低？分别是什么原因，被测智能体改哪一处才有机会提上去？",
       },
       againstPrevious: {
         label: "与上一次评估相比变化在哪？",
@@ -3045,7 +3045,7 @@ Benchmark：
       `- 总分 ${p.score}；成本 ${p.cost}；耗时 ${p.duration}\n` +
       (p.summaryTitle !== "" ? `- 评估说明标题：${p.summaryTitle}\n` : "") +
       (p.summary !== "" ? `- 评估说明：${p.summary}\n` : "") +
-      "- 逐题得分（分数、成本、耗时，以及逐次运行的 Session id）：\n" +
+      "- 逐题结果（分数、成本、耗时，以及逐次运行的 Session id）：\n" +
       p.cases
         .map(
           (c) =>
@@ -3070,8 +3070,8 @@ Benchmark：
         prompt: "这道题的评分细则把分数主要放在哪些地方？哪些条目最能把优秀与及格区分开？",
       },
       whyRunLow: {
-        label: "为什么有的运行在这道题上得分低？",
-        prompt: "最近一次评估在这道题上得分不高，可能是被测智能体在哪一步做丢了？",
+        label: "为什么有的运行在这道题上分数低？",
+        prompt: "最近一次评估在这道题上分数不高，可能是被测智能体在哪一步做丢了？",
       },
       clearerStatement: {
         label: "题干怎样才能更清楚？",
@@ -3144,7 +3144,7 @@ Benchmark：
       "每题一个 `CASE-NNN-<slug>/`（`statement/README.md` 为题干，`rubric/README.md` 为评分细则，每题满分 100 分，细则不得泄露到题干）" +
       "以及 `scoreboard.yaml`（初始为 `evaluations: []`；每条 evaluation 记录被测的 `agent_id`、`version`、成对的 `provider` / `model_id` 与 `thinking_level`）。" +
       "每一次试测都必须通过 `run_subagent` 派发子会话，并在子会话的 prompt 里写明使用 `agent-evaluation` Skill——不要自己打分，也不要绕过这个技能；" +
-      "逐题试测以校准难度，定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题得分。",
+      "逐题试测以校准难度，定稿后冻结并把 Formal Baseline 追加进 scoreboard.yaml，最后报告 Benchmark id、基线分数与各题分数。",
     // New Benchmark, manual mode: the form.
     manualCreateTitle: "手动创建 Benchmark",
     manualCreateIntro:
@@ -3209,7 +3209,7 @@ Benchmark：
       "评测 Runtime 取被测智能体当前配置的模型与思考等级。校验每条返回结果的 `agent_id`、`provider`、`model_id` 与 `thinking_level` 完全一致，" +
       "不一致就停下、不要把不同标签混成一条。按记分契约求各题（runs 平均）与整体（各题平均）的分数，" +
       "然后只向 `scoreboard.yaml` 追加一条 evaluation，记上 `agent_id`、`version`、`provider` / `model_id` 与 `thinking_level` 作为标签。" +
-      "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题得分与本条记录的标签。",
+      "不修改被测智能体，也不修改 Benchmark。结束时报告总分、各题分数与本条记录的标签。",
     // Optimize tab.
     optimizeDescription: "AI 会按可证伪的假设修改被测智能体并重新评测，分数严格提升才保留新版本。",
     optimizerAgent: "执行优化的智能体",
