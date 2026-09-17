@@ -457,7 +457,7 @@ export const zh = {
       "首次使用请打开服务端启动输出中的首次登录链接，认领内置管理员 admin 并设置密码。这里没有可输入的初始密码",
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
-      "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password 重置为新的初始密码",
+      "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password；再次启动时会打印新的首次登录链接，打开它即可设置新密码",
     /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
     claimFailedTitle: "登录链接已失效",
     /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */

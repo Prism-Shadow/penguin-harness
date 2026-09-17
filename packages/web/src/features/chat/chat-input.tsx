@@ -110,6 +110,8 @@ import { sameModelRef } from "../models/model-grouping";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { ModelMenuList, ModelSelect, PickerList, modelLabel } from "./model-select";
 import { matchSlash, removeSlashToken } from "./slash-token";
+import { builtinSlashCommands } from "./slash-commands";
+import type { BuiltinSlashCommand, ComposerState } from "./slash-commands";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
@@ -949,7 +951,7 @@ export function ChatInput({
    */
   onHandoff?: (target: AgentSummary, input: TaskInputPart[]) => Promise<boolean>;
   onStop: () => Promise<void>;
-  /** Manual context compaction (/compact). Optional: without it the command is not offered (the subagent variant has no compaction surface). */
+  /** Manual context compaction (/compact). A live Session only: the draft has no Session to compact and the subagent variant has no compaction surface, so neither passes it, and the command is listed for neither (slash-commands.ts). */
   onCompact?: () => Promise<void>;
   /** Currently selected model reference ((provider, modelId) is the unique key); null = not yet chosen. */
   modelRef: ModelRefDto | null;
@@ -1160,9 +1162,10 @@ export function ChatInput({
     pendingModel !== null ||
     selectedSkills.length > 0;
   // Goal mode (engaged via the "+" menu or /goal): the text body becomes the objective. It is
-  // exclusive with a staged /agent or /model switch (engaging either clears the other); attached
-  // images ride along (core folds them into the objective as path lines) and selected skills ride
-  // round-1 message as a [use_skills] block, exactly like a normal send.
+  // exclusive with a staged /agent or /model switch (engaging either clears the other). Attached
+  // images and selected skills ride the round-1 message exactly as in a normal send: the images
+  // as image input (path lines only on a model without vision), the skills as a [use_skills]
+  // block. Later rounds restate the objective text alone.
   const [goalOn, setGoalOn] = useState(false);
   const [goalBudgetText, setGoalBudgetText] = useState("");
   const [goalBudgetOpen, setGoalBudgetOpen] = useState(false);
@@ -1195,9 +1198,8 @@ export function ChatInput({
   // parseable budget — and an open editor showing an invalid draft disables Send outright:
   // combined with the editor refusing to close over an invalid draft (below), no click sequence
   // can fire a goal with a stale committed budget.
-  // Images may come along with a goal objective (core folds them into `[attached image: …]`
-  // lines so they survive the rounds), but they don't substitute for the text; file
-  // attachments cannot — nothing folds those into a re-injected objective.
+  // Images may come along with a goal objective (they ride its round-1 message), but they don't
+  // substitute for the text; file attachments cannot — the server refuses them on a goal.
   const canSend =
     !running &&
     !compacting &&
@@ -1250,10 +1252,10 @@ export function ChatInput({
   }, [goalBudgetDraft]);
 
   /**
-   * Engage/exit goal mode; engaging clears any staged switch chip and every attachment
+   * Engage/exit goal mode; engaging clears any staged switch chip and every file attachment
    * (genuinely exclusive: a handoff or a model switch opens another session, and the server
-   * rejects non-text goal input). Selected skills stay — they ride the round-1 message as a
-   * [use_skills] block, like a normal send.
+   * refuses file attachments on a goal). Attached images and selected skills stay — they ride
+   * the round-1 message, like a normal send.
    */
   const toggleGoal = useCallback(
     (on: boolean) => {
@@ -1266,9 +1268,9 @@ export function ChatInput({
         onHandoffTargetChange?.(null);
         setPendingModel(null);
         onPendingModelChange?.(null);
-        // Images ride a goal (folded into the objective as path lines), file attachments do not
-        // — the server refuses those, so clear them or canSend would stay silently false with
-        // the objective looking ready.
+        // Images ride a goal's round-1 message, file attachments do not — the server refuses
+        // those, so clear them or canSend would stay silently false with the objective looking
+        // ready.
         setAttachments([]);
       }
     },
@@ -1515,6 +1517,13 @@ export function ChatInput({
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
+  /**
+   * Which composer this is, for the slash menu's built-in commands (slash-commands.ts): the
+   * subagent variant, the draft (the only composer that still chooses its model), or a live
+   * Session.
+   */
+  const composerState: ComposerState =
+    variant === "subagent" ? "subagent" : onChangeModel ? "draft" : "session";
   const commands = useMemo<SlashCommand[]>(() => {
     /** Removes just the slash token after a command runs (the rest of the text stays; the height re-measures itself off the new value, see the autoGrow layout effect). */
     const clearInput = () => {
@@ -1523,65 +1532,51 @@ export function ChatInput({
       setText(next);
       onTextChange?.(next);
     };
+    // What each built-in does once picked: it consumes its own token, and the rest of the draft
+    // stays. The two switch commands open their picker, whose pick is staged as a chip and only
+    // acted on at send time.
+    const builtins: Record<BuiltinSlashCommand, SlashCommand> = {
+      "/compact": {
+        cmd: "/compact",
+        desc: S.chat.compact,
+        run: () => {
+          clearInput();
+          void onCompact?.();
+        },
+      },
+      "/goal": {
+        cmd: "/goal",
+        desc: S.chat.goalModeDesc,
+        run: () => {
+          clearInput();
+          toggleGoal(!goalOn);
+        },
+      },
+      "/model": {
+        cmd: "/model",
+        desc: S.chat.switchModel,
+        run: () => {
+          clearInput();
+          setModelSwitchOpen(true);
+        },
+      },
+      "/agent": {
+        cmd: "/agent",
+        desc: S.chat.switchAgent,
+        run: () => {
+          clearInput();
+          setAgentSwitchOpen(true);
+        },
+      },
+    };
     return [
-      ...(onCompact
-        ? [
-            {
-              cmd: "/compact",
-              desc: S.chat.compact,
-              run: () => {
-                clearInput();
-                void onCompact();
-              },
-            },
-          ]
-        : []),
-      // Goal mode is a main-session concept: the subagent variant offers no way in.
-      ...(variant === "session"
-        ? [
-            {
-              cmd: "/goal",
-              desc: S.chat.goalModeDesc,
-              run: () => {
-                clearInput();
-                toggleGoal(!goalOn);
-              },
-            },
-          ]
-        : []),
-      // Model switch (active idle session only — the parent passes onSwitchModel just there;
-      // draft state has its own model picker). Gated on the model list being loaded: without
-      // it the picker would open empty. Running the command consumes the /model token (like
-      // /compact) and opens the picker; the rest of the draft stays.
-      ...(onSwitchModel && models && models.length > 0
-        ? [
-            {
-              cmd: "/model",
-              desc: S.chat.switchModel,
-              run: () => {
-                clearInput();
-                setModelSwitchOpen(true);
-              },
-            },
-          ]
-        : []),
-      // Agent handoff: same shape as /model — the command consumes its token and opens the
-      // agent picker, whose pick is staged as a chip and only acted on at send time. Gated the
-      // same way too: the parent passes onHandoff for an active Session only, because a draft
-      // has nothing to hand over (and already picks its Agent in the draft page's own
-      // selector). Candidates must exist, or the picker would open empty.
-      ...(onHandoff && agents.length > 0
-        ? [
-            {
-              cmd: "/agent",
-              desc: S.chat.switchAgent,
-              run: () => {
-                clearInput();
-                setAgentSwitchOpen(true);
-              },
-            },
-          ]
-        : []),
+      ...builtinSlashCommands(composerState, {
+        compact: onCompact !== undefined,
+        // A switch picker with no candidates would open empty: the model list has to be
+        // loaded, and there has to be an Agent to hand over to.
+        switchModel: onSwitchModel !== undefined && models !== undefined && models.length > 0,
+        handoff: onHandoff !== undefined && agents.length > 0,
+      }).map((cmd) => builtins[cmd]),
       // Each installed skill gets its own entry: `/<skill_name>` toggles that skill's selection (without sending), description follows the UI language.
       ...skillSlashItems(skills, locale).map((s) => ({
         cmd: s.cmd,
@@ -1593,8 +1588,10 @@ export function ChatInput({
       })),
     ];
   }, [
+    composerState,
     onCompact,
     onSwitchModel,
+    onHandoff,
     models,
     agents,
     onTextChange,
@@ -1850,16 +1847,16 @@ export function ChatInput({
     post: (input: TaskInputPart[], goal: { budget: number } | null) => Promise<boolean> = onSend,
   ) => {
     const t = text.trim();
-    // Goal mode: the trimmed text is the objective (no images, no staged switch — both are
-    // cleared when the chip goes on). Selected skills prefix the round-1 message as a
+    // Goal mode: the trimmed text is the objective (no file attachments, no staged switch —
+    // both are cleared when the chip goes on). Selected skills prefix the round-1 message as a
     // [use_skills] block, exactly like a normal send — the server strips leading marker blocks
     // when recording the objective, and rounds after the first re-inject the objective alone.
     if (goalOn) {
-      // Objective only: attachments were already cleared when goal mode engaged (and blocked
+      // No file attachments: they were already cleared when goal mode engaged (and blocked
       // from being added since), so there is nothing to carry here.
       setBusy(true);
       try {
-        // Attached images go with the objective (see the goalOn declaration above).
+        // Attached images ride the round-1 message (see the goalOn declaration above).
         const goalInput: TaskInputPart[] = [
           { type: "text", text: buildSkillsMessage(selectedSkills, t) },
         ];
@@ -2123,7 +2120,7 @@ export function ChatInput({
    * picked in, not the order the reads happened to finish in.
    */
   const addAttachments = (files: Iterable<File>) => {
-    if (goalOn) return; // goal input is text-only, same rule as images
+    if (goalOn) return; // a goal takes no file attachments: the server refuses them
     const { accepted: picked, rejected } = splitBySize(files, uploadLimits.attachmentMaxMb);
     for (const file of rejected) {
       toastError(S.chat.attachmentTooLarge(file.name, uploadLimits.attachmentMaxMb));
@@ -2728,9 +2725,10 @@ export function ChatInput({
                     label: S.chat.uploadImage,
                     // Without vision the images still send — as scratchpad file paths — so the
                     // entry stays usable and the hint says what will happen instead. Goal mode
-                    // sends them that way on any model, since the objective is re-injected as
-                    // text every round.
-                    desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                    // changes nothing here: a goal's images ride its first message as ordinary
+                    // image input, so the model's vision decides how they arrive, exactly as
+                    // for any other send.
+                    desc: vision ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
                     active: images.length > 0,
                     onSelect: () => imageInputRef.current?.click(),
                   },
@@ -2743,8 +2741,8 @@ export function ChatInput({
                     // inlined into the conversation.
                     desc: S.chat.uploadFileDesc,
                     active: attachments.length > 0,
-                    // Unlike images, a file cannot ride a goal: nothing folds it into the
-                    // objective that every round re-injects, so the server refuses it.
+                    // Unlike images, a file cannot ride a goal: the server refuses file
+                    // attachments on a goal request.
                     disabled: goalOn,
                     onSelect: () => attachmentInputRef.current?.click(),
                   },

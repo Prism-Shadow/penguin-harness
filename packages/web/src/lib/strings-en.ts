@@ -453,7 +453,7 @@ export const en: Strings = {
       "First run: the server prints a first-login link in its startup output — open it to claim the built-in admin “admin” and set a password. No initial password exists to type here",
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
-      "Forgot the admin password? Stop the server and run penguin server reset-admin-password to issue a fresh initial one",
+      "Forgot the admin password? Stop the server and run penguin server reset-admin-password; its next start prints a new first-login link — open it to set a new password",
     /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
     claimFailedTitle: "Sign-in link no longer works",
     /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
