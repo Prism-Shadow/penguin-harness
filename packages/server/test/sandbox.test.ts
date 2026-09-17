@@ -15,6 +15,7 @@ import type {
   SandboxDimension,
   SandboxPolicy,
   SandboxProvider,
+  SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
 
 const ARGV = ["bash", "-lc", "echo hi"] as const;
@@ -38,9 +39,7 @@ function fake(label: string, dimensions?: readonly SandboxDimension[]) {
   return { provider, calls };
 }
 
-async function service(
-  entries: Array<[string, SandboxProvider | PromiseLike<SandboxProvider | null> | null]>,
-): Promise<SandboxService> {
+async function service(entries: Array<[string, SandboxProviderSource]>): Promise<SandboxService> {
   const svc = new SandboxService(entries);
   await svc.whenReady();
   return svc;
@@ -82,6 +81,62 @@ describe("sandbox service — the built-in interface and its optional dimensions
     expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(
       /loud \('bwrap' is missing\); quiet \(not for this host\)/,
     );
+  });
+
+  it("a failed loader loads again on retry and mounts in its routing place; a failed promise cannot", async () => {
+    const bwrap = fake("bwrap", ["fs-write", "network"]);
+    const dsh = fake("dsh");
+    let runner = "/opt/bwarp";
+    const loader = vi.fn(async () => {
+      if (runner !== "bwrap") throw new Error(`'${runner}' is missing`);
+      return bwrap.provider;
+    });
+    const svc = await service([
+      ["bwrap", loader],
+      ["gone", Promise.reject(new Error("MODULE_NOT_FOUND"))],
+      ["dsh-local", dsh.provider],
+    ]);
+    expect(svc.failures().map((f) => f.name)).toEqual(["bwrap", "gone"]);
+    runner = "bwrap";
+    await svc.retryFailed();
+    expect(loader).toHaveBeenCalledTimes(2);
+    expect(svc.failures()).toEqual([{ name: "gone", reason: "MODULE_NOT_FOUND" }]);
+    // Registration order is routing order: the recovered backend comes before dsh-local.
+    expect(svc.backends().map((b) => b.name)).toEqual(["bwrap", "dsh-local"]);
+    svc.configure({ mode: "read-only" });
+    expect(svc.confiner()([...ARGV], OPTS)[0]).toBe("bwrap");
+    // A mounted backend is not loaded again.
+    await svc.retryFailed();
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
+
+  it("of two retries in flight, the later one's outcome stands even if it settles first", async () => {
+    const good = fake("bwrap");
+    const pending: Array<(p: SandboxProvider | null) => void> = [];
+    const rejecting: Array<(e: Error) => void> = [];
+    let calls = 0;
+    const svc = await service([
+      [
+        "bwrap",
+        () => {
+          calls += 1;
+          if (calls === 1) return Promise.reject(new Error("'/opt/bwarp' is missing"));
+          return new Promise<SandboxProvider | null>((resolve, reject) => {
+            pending.push(resolve);
+            rejecting.push(reject);
+          });
+        },
+      ],
+    ]);
+    const older = svc.retryFailed();
+    const newer = svc.retryFailed();
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    pending[1]!(good.provider);
+    await newer;
+    rejecting[0]!(new Error("'/opt/bwarp' is missing"));
+    await older;
+    expect(svc.failures()).toEqual([]);
+    expect(svc.backends().map((b) => b.name)).toEqual(["bwrap"]);
   });
 
   it("an installation missing a backend package keeps the platform usable, sandbox aside", async () => {

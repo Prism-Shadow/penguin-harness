@@ -47,7 +47,7 @@ subpath rule silently matches nothing.
 
 ## Settings
 
-On **Settings → Plugins**, inside the Sandbox card: the **sandbox-exec program** (a path or a command on PATH; empty uses `sandbox-exec`). It applies at the next command spawn; a changed program is probed afresh.
+On **Settings → Plugins**, inside the Sandbox card: the **sandbox-exec program** (a path or a command on PATH; empty uses `sandbox-exec`). It applies at the next command spawn; a changed program is probed afresh. If Seatbelt failed its check at boot, saving the card loads it again, no restart.
 
 ## Install
 

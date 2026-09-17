@@ -135,6 +135,9 @@ export class SandboxSettingsStatus {
   setup() {
     const sandbox = this.sandbox;
     this.status = {
+      // A backend reads its own group (drawn inside this card) at load: after a save of the
+      // card, one that failed its check — a wrong program path — loads again, no restart.
+      saved: () => sandbox.retryFailed(),
       notices: (): PluginConfigNotice[] => {
         const notices: PluginConfigNotice[] = [];
         const backends = sandbox.backends();

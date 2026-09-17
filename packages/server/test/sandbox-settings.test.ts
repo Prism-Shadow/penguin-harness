@@ -234,6 +234,88 @@ describe("sandbox settings group", () => {
     ]);
   });
 
+  it("loads a backend that failed its check again when its group is saved, and answers with the outcome", async () => {
+    const host = new PluginHost();
+    host.use({
+      specifier: "probed-backend",
+      modules: [
+        {
+          manifest: parseManifest({
+            name: "ProbedBackend",
+            requires: {
+              config: {
+                iface: "@prismshadow/penguin-server#PluginConfig",
+                from: "PluginConfigModule",
+              },
+            },
+            provides: {},
+            contributes: {
+              "SandboxModule.providers": [
+                { id: "probed.provider", name: "probed", dimensions: ["fs-write"] },
+              ],
+              "PluginConfigProvider.groups": [
+                {
+                  id: "sandbox-probed",
+                  parent: "sandbox",
+                  title: "Probed backend",
+                  properties: {
+                    runner: { type: "string", title: "Runner", default: "/opt/bwarp" },
+                  },
+                },
+              ],
+            },
+            children: [],
+          }),
+          create({ use }) {
+            const config = use.config as PluginConfig;
+            return {
+              api: {},
+              bind: {
+                // A loader, the way bwrap binds one: it checks the runner its group names.
+                "probed.provider": async () => {
+                  const runner = config.get("sandbox-probed").runner;
+                  if (runner !== "/usr/bin/bwrap")
+                    throw new Error(`'${String(runner)}' is missing`);
+                  return {
+                    confine: (argv: readonly string[]) => ({
+                      argv: ["probed", ...argv],
+                      enforcement: "full" as const,
+                      denialSignatures: [],
+                      runnerFailureRules: [],
+                    }),
+                  };
+                },
+              },
+            };
+          },
+        },
+      ],
+      replaces: [],
+    });
+    const t = await createTestApp({ plugins: host });
+    apps.push(t);
+    const admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
+    const sandbox = t.deps.tree.api<SandboxService>("SandboxModule", "sandbox");
+    await sandbox.whenReady();
+    expect(sandbox.failures()).toEqual([{ name: "probed", reason: "'/opt/bwarp' is missing" }]);
+
+    const saved = await admin.put("/api/admin/plugin-config", {
+      name: "sandbox-probed",
+      values: { runner: "/usr/bin/bwrap" },
+    });
+    expect(saved.status).toBe(200);
+    const card = ((await saved.json()) as PluginConfigResponse).plugins.find(
+      (e) => e.name === "sandbox",
+    )!;
+    expect(card.notices?.map((n) => n.text)).toEqual(["Backends: probed (fs-write)"]);
+    expect(sandbox.failures()).toEqual([]);
+    sandbox.configure({ mode: "read-only" });
+    expect(sandbox.confiner()(["true"], { workspaceDir: "/w" } as never)).toEqual([
+      "probed",
+      "true",
+    ]);
+  });
+
   it("keeps what was saved across a restart", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-sandbox-settings-"));
     const dbPath = path.join(dir, "web.db");

@@ -160,8 +160,8 @@ function probeAsync(timeoutMs: number, runner: string): Promise<boolean> {
  * reason, when it cannot: it runs on Linux only, and needs a bwrap that accepts the base profile.
  * A backend mounted without being able to serve would be routed policies and fail every command;
  * one that declined without a reason would leave nobody able to tell why. The sandbox service
- * records the rejection and the settings page shows it. The confine-time probe stays, for a
- * runner changed later in the settings.
+ * records the rejection and the settings page shows it, and loads it again after the next save
+ * of the sandbox card. The confine-time probe stays, for a runner changed while mounted.
  */
 export async function loadPenguinBwrapProvider(
   internals: PenguinBwrapInternals & { platform?: NodeJS.Platform } = {},
@@ -276,9 +276,12 @@ export class SandboxBwrap {
 
   setup() {
     const config = this.config;
-    this.provider = loadPenguinBwrapProvider({
-      settings: () => bwrapSettingsOf(config.get(BWRAP_GROUP)),
-    });
+    // A loader, not a load: after a save of the sandbox card the service calls it again if the
+    // check failed, so a corrected program mounts the backend without a restart.
+    this.provider = () =>
+      loadPenguinBwrapProvider({
+        settings: () => bwrapSettingsOf(config.get(BWRAP_GROUP)),
+      });
   }
 }
 

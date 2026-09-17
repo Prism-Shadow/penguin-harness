@@ -169,7 +169,8 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
  * Loads the backend, checking first that it can serve on this host — and rejecting, with the
  * reason, when it cannot: it runs on macOS only, and needs a sandbox-exec that accepts its
  * profile. The sandbox service records the rejection and the settings page shows it, so the
- * backend is never silently absent; the confine-time probe stays, for a runner changed later.
+ * backend is never silently absent, and loads it again after the next save of the sandbox card;
+ * the confine-time probe stays, for a runner changed while mounted.
  */
 export async function loadSeatbeltProvider(
   internals: SeatbeltInternals & { platform?: NodeJS.Platform } = {},
@@ -264,9 +265,11 @@ export class SandboxSeatbelt {
 
   setup() {
     const config = this.config;
-    this.provider = loadSeatbeltProvider({
-      settings: () => seatbeltSettingsOf(config.get(SEATBELT_GROUP)),
-    });
+    // A loader: after a save of the sandbox card a failed check runs again (see penguin-bwrap).
+    this.provider = () =>
+      loadSeatbeltProvider({
+        settings: () => seatbeltSettingsOf(config.get(SEATBELT_GROUP)),
+      });
   }
 }
 

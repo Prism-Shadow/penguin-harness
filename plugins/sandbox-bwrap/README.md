@@ -42,7 +42,7 @@ than restrict it.
 
 ## Settings
 
-On **Settings → Plugins**, inside the Sandbox card: the **bwrap program** (a path or a command on PATH; empty uses `bwrap`) and the **probe timeout** in seconds (1–30, default 5; the confine-time probe blocks the server while it runs). Both apply at the next command spawn; a changed program is probed afresh.
+On **Settings → Plugins**, inside the Sandbox card: the **bwrap program** (a path or a command on PATH; empty uses `bwrap`) and the **probe timeout** in seconds (1–30, default 5; the confine-time probe blocks the server while it runs). Both apply at the next command spawn; a changed program is probed afresh. If bwrap failed its check at boot (a wrong program, or bubblewrap installed later), saving the card loads it again, no restart.
 
 ## Install
 

@@ -33,7 +33,7 @@ export function adminPluginConfigRoutes(store: PluginConfigAdmin): Hono<AppEnv> 
       throw badRequest("values must be an object of fields.");
     }
     try {
-      store.set(name, values as Record<string, unknown>);
+      await store.set(name, values as Record<string, unknown>);
     } catch (err) {
       if (err instanceof PluginConfigError) {
         if (err.field === null) throw new HttpError(404, "plugin_config_unknown", err.message);

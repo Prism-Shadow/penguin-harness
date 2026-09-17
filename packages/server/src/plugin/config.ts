@@ -349,6 +349,12 @@ export interface SettingsGroup {
 /** The code half of a `status` contribution: a group's live notices, asked per read. */
 export interface SettingsGroupStatus {
   notices(): PluginConfigNotice[];
+  /**
+   * After a save of this group or of one drawn inside its card: does what that save sets in
+   * motion beyond the group's own watchers, and resolves once it has settled, so the notices
+   * the save answers with are current.
+   */
+  saved?(): Promise<void>;
 }
 
 /** What a module reads: the group it declared, and a watch on it. */
@@ -376,8 +382,8 @@ export abstract class PluginConfigEntries extends Interface<{
 export abstract class PluginConfigAdmin extends Interface<{
   /** Every declared group, in order, with its live notices; values masked. */
   describe(): PluginConfigEntry[];
-  /** Validates and stores one update; answers that entry, masked, with its notices. */
-  set(name: string, update: Record<string, unknown>): PluginConfigEntry;
+  /** Validates and stores one update; answers that entry, masked, with its notices once its card's status has settled. */
+  set(name: string, update: Record<string, unknown>): Promise<PluginConfigEntry>;
 }>() {}
 
 export interface PluginConfigAdminSlots {
@@ -515,7 +521,11 @@ export class PluginConfigPage {
     };
     this.pluginConfigAdmin = {
       describe: () => entries.describe().map(withNotices),
-      set: (name, update) => withNotices(entries.set(name, update)),
+      set: async (name, update) => {
+        const saved = entries.set(name, update);
+        await status.get(saved.parent ?? name)?.saved?.();
+        return withNotices(saved);
+      },
     };
   }
 }
