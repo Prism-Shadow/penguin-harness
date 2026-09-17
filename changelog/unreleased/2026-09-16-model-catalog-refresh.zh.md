@@ -52,4 +52,4 @@
 
 ## 既有 Project
 
-预置条目在创建 Project 时复制进去；模型页的**同步预置**会加入新增条目并更新价格，但从不删除：本次移除的条目会留在既有 Project 中，直到用户自己删掉。三条退役的 DeepSeek 条目在这些 Project 中照旧显示名称、按空闲时段计价（见[向后兼容](2026-09-16-backward-compatibility.zh.md)）；被移除的 Qwen 条目保留其存储价格，显示原始模型 id。新显示名 **DeepSeek V4 Pro 0813** 无需同步即可出现在各 Project 中，除非该 Project 为 `deepseek-v4-pro` 存有自己的名称——同步从不覆盖这类名称。
+预置条目在创建 Project 时复制进去；模型页的**同步预置**会加入新增条目并更新价格，但从不删除：本次移除的条目会留在既有 Project 中，直到用户自己删掉。三条退役的 DeepSeek 条目在这些 Project 中照旧显示名称，**同步预置**会继续更新它们的价格、但从不把它们补进没有它们的 Project，因此行上存的是目录价时按空闲时段计价（见[向后兼容](2026-09-16-backward-compatibility.zh.md)）；被移除的 Qwen 条目保留其存储价格，显示原始模型 id。新显示名 **DeepSeek V4 Pro 0813** 无需同步即可出现在各 Project 中，除非该 Project 为 `deepseek-v4-pro` 存有自己的名称——同步从不覆盖这类名称。

@@ -16,6 +16,7 @@ import {
   offPeakScheduledRefs,
   DEEPSEEK_OFF_PEAK,
   QWEN_OFF_PEAK,
+  catalogModelEntries,
   presetModelEntries,
   presetPromotions,
   providerClientType,
@@ -1600,7 +1601,7 @@ describe("off-peak schedules", () => {
     ]);
   });
 
-  it("a retired row is never a preset, but still prices a Project's usage on its schedule", () => {
+  it("a retired row is never a preset, but a sync still compares it and it still prices a Project's usage on its schedule", () => {
     const retired = MODEL_CATALOG.filter((m) => m.retired === true);
     const refs = retired.map((m) => `${m.provider}/${m.modelId}`);
     expect(refs).toEqual([
@@ -1609,6 +1610,16 @@ describe("off-peak schedules", () => {
       "tokendance/deepseek-v4-flash-vision-exp",
     ]);
     const presets = new Set(presetModelEntries().map((e) => `${e.provider}/${e.model_id}`));
+    // "Sync presets" compares a Project's table against the whole catalog, retired rows
+    // included, so it keeps updating a retired row the Project carries; the presets a new
+    // Project gets are that same list without them.
+    const all = catalogModelEntries();
+    expect(all.map((e) => `${e.provider}/${e.model_id}`)).toEqual(
+      MODEL_CATALOG.map((m) => `${m.provider}/${m.modelId}`),
+    );
+    expect(presetModelEntries()).toEqual(
+      all.filter((e) => !refs.includes(`${e.provider}/${e.model_id}`)),
+    );
     const scheduled = new Set(
       offPeakScheduledRefs().flatMap((g) => g.refs.map((r) => `${r.provider}/${r.modelId}`)),
     );

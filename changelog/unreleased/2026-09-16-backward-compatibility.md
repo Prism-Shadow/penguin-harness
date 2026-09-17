@@ -15,12 +15,14 @@ Cost is priced when it is read, and a row's off-peak tier comes from its catalog
 
 ## What was done
 
-The three rows stay in the catalog marked `retired`. A retired row is not a preset: a new Project never gets it, and **Sync presets** neither adds nor updates it. Lookups still find it, so a Project that carries it keeps its name, its vision flag and its off-peak pricing. Nothing on disk changed.
+The three rows stay in the catalog marked `retired`. A retired row is not a preset: a new Project never gets it, and **Sync presets** never adds it. A Project that already carries one keeps it maintained: **Sync presets** still updates the row like any preset, and the preset-update badge counts that update, so a price an older release stored is put back to the catalog's. Lookups still find the row, so the Project keeps its name and vision flag, and usage on it is priced on the off-peak schedule whenever the row stores the catalog price, the only price that tier applies to. Nothing on disk changed.
 
 ## What users need to do
 
-Nothing. A Project can keep the old ids for as long as DeepSeek accepts them, or switch to `deepseek-flash` (DeepSeek V4.1 Flash) and delete the old rows.
+Run **Sync presets** when the preset-update badge offers it. On a Project whose retired row stores an out-of-date price, that is what puts the row back on the catalog price and its off-peak pricing. Beyond that, a Project can keep the old ids for as long as DeepSeek accepts them, or switch to `deepseek-flash` (DeepSeek V4.1 Flash) and delete the old rows.
 
 ## When it can be removed
 
 A retired row comes out only after its seller stops accepting the id, and only with a release note saying that usage recorded on it is priced without its off-peak tier from then on. The catalog refresh that finds the id rejected makes that call.
+
+The upkeep **Sync presets** gives retired rows (core's `catalogModelEntries` and the retired check in the web's `catalog-sync.ts`) goes with them: it can be removed at the catalog refresh that deletes these three rows, unless another row has been retired by then.

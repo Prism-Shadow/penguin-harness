@@ -112,6 +112,11 @@ describe("models preset & catalog enrichment", () => {
       modelId: "deepseek-flash",
     });
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
+    // A retired catalog row is kept only for the Projects that already carry it, so a new
+    // Project gets none of them.
+    const retired = MODEL_CATALOG.filter((m) => m.retired === true).map(pairKey);
+    expect(retired.length).toBeGreaterThan(0);
+    expect(body.models.map(pairKey).filter((key) => retired.includes(key))).toEqual([]);
 
     const sonnet = pick(body, "anthropic", "claude-sonnet-4-6");
     expect(sonnet.isDefault).toBe(false);

@@ -4,7 +4,9 @@
  * entries present on both sides are reset to the catalog's fields (context window, pricing,
  * protocol, base URL, vision, and the promotion — the catalog wins wherever the two differ).
  * Missing catalog pricing removes local pricing, and a missing catalog promotion removes the
- * stored one. Locally added models (including user-defined groups) are kept untouched.
+ * stored one. Locally added models (including user-defined groups) are kept untouched. A retired
+ * catalog entry (see `ModelCatalogEntry.retired`) is never added, but one configured locally is
+ * reset like any other preset, which is what keeps its stored price on the catalog's.
  * Credentials are never touched: merged rows carry no apiKey input (the PUT keeps the stored
  * key) and existing rows keep their credential display state.
  *
@@ -17,13 +19,13 @@
 import {
   PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
-  presetModelEntries,
+  catalogModelEntries,
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
 import { fractionOff } from "./model-grouping";
 import type { RowState } from "./models-page";
 
-type PresetEntry = ReturnType<typeof presetModelEntries>[number];
+type PresetEntry = ReturnType<typeof catalogModelEntries>[number];
 
 /** One saved model entry, as the models endpoint sends it. */
 type ModelDto = ModelsResponse["models"][number];
@@ -60,7 +62,7 @@ function presetFields(p: PresetEntry) {
  * reported as "") leaves the row labelled by its raw model id and is worth repairing. The cost
  * of that trade is that a deliberately cleared name comes back on the next sync.
  *
- * The name comes from the catalog rather than from `p`: `presetModelEntries` emits the
+ * The name comes from the catalog rather than from `p`: `catalogModelEntries` emits the
  * PERSISTED entry shape, whose `display_name` is only written when it differs from the
  * catalog, so a preset entry never carries one. Every catalog entry is named
  * (`ModelCatalogEntry.displayName` is required), so the undefined result means the pair is not
@@ -110,6 +112,15 @@ function promotionDiffers(
 /** The fields that make a row declare `promotion` on save (see rowToEntry). */
 function declared(promotion: CatalogPromotion): Pick<RowState, "discount" | "discountDeclared"> {
   return { discount: promotion.discount, discountDeclared: true };
+}
+
+/**
+ * Whether the catalog keeps `p` only for the Projects that already carry it (see
+ * `ModelCatalogEntry.retired`): a sync updates such an entry where it is configured and never adds
+ * it where it is not. Looked up in the catalog, like the name and the promotion.
+ */
+function isRetired(p: PresetEntry): boolean {
+  return catalogEntryFor(p.provider, p.model_id)?.retired === true;
 }
 
 /** A brand-new row for a catalog entry not configured locally (original: null -> added on PUT). */
@@ -173,21 +184,23 @@ export interface CatalogDelta {
  * anyone opens the page.
  *
  * The same union `syncRowsWithCatalog` applies, so the two cannot disagree about whether there
- * is anything to do: catalog entries the table does not carry are additions, entries it does
- * carry whose catalog-owned fields differ — a promotion-only difference included, outside the
- * Penguin Go group — or whose display name is blank are updates, and locally added models are
- * invisible to both. `refs` is what a dismissal is stamped against, so a later catalog release
- * touching a different model raises the badge again (see `lib/todo-badges.ts`).
+ * is anything to do: catalog entries the table does not carry are additions (retired ones
+ * never are), entries it does carry whose catalog-owned fields differ — a promotion-only
+ * difference included, outside the Penguin Go group — or whose display name is blank are
+ * updates, and locally added models are invisible to both. `refs` is what a dismissal is stamped
+ * against, so a later catalog release touching a different model raises the badge again (see
+ * `lib/todo-badges.ts`).
  */
 export function catalogDelta(
   models: readonly ModelDto[],
-  preset: PresetEntry[] = presetModelEntries(),
+  preset: PresetEntry[] = catalogModelEntries(),
 ): CatalogDelta {
   const saved = new Map(models.map((m) => [`${m.provider}\0${m.modelId}`, m]));
   const delta: CatalogDelta = { added: 0, updated: 0, refs: [] };
   for (const p of preset) {
     const entry = saved.get(`${p.provider}\0${p.model_id}`);
     if (entry === undefined) {
+      if (isRetired(p)) continue;
       delta.added += 1;
       delta.refs.push(`${p.provider}/${p.model_id}`);
       continue;
@@ -211,8 +224,9 @@ export function catalogDelta(
 /**
  * Merges the current rows with the built-in catalog. Existing rows keep their identity,
  * credential state, and list position (fields are updated in place); catalog-only entries
- * are appended in catalog order. Returns the merged rows plus added/updated counts for the
- * success toast (updated counts only rows the merge actually rewrote).
+ * other than retired ones are appended in catalog order. Returns the merged rows plus
+ * added/updated counts for the success toast (updated counts only rows the merge actually
+ * rewrote).
  *
  * Every preset row outside the Penguin Go group leaves the merge declaring its catalog
  * promotion, rewritten or not (see catalogPromotion), so such a row is a new object even when
@@ -221,7 +235,7 @@ export function catalogDelta(
  */
 export function syncRowsWithCatalog(
   rows: RowState[],
-  preset: PresetEntry[] = presetModelEntries(),
+  preset: PresetEntry[] = catalogModelEntries(),
 ): { rows: RowState[]; added: number; updated: number } {
   const key = (provider: string, modelId: string) => `${provider}\0${modelId}`;
   const index = new Map(rows.map((r, i) => [key(r.provider, r.modelId), i]));
@@ -231,6 +245,7 @@ export function syncRowsWithCatalog(
   for (const p of preset) {
     const i = index.get(key(p.provider, p.model_id));
     if (i === undefined) {
+      if (isRetired(p)) continue;
       next.push(presetToRow(p));
       added += 1;
       continue;

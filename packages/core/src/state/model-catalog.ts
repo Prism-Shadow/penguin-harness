@@ -178,10 +178,13 @@ export interface ModelCatalogEntry {
    * row a Project has is never deleted by "Sync presets", and several of these were the default
    * model of new Projects. A retired row is not a preset — `presetModelEntries` and
    * `presetPromotions` skip it, so a new Project never gets it or a promotion for it, and a sync
-   * neither adds nor updates it — but lookups by `(provider, modelId)` still find it, so those
-   * Projects keep its display name, its vision flag and its off-peak schedule. The schedule is
-   * the part that matters: cost is priced when it is read, so deleting a scheduled row would
-   * reprice every off-peak record already on those Projects at the peak rate.
+   * never adds it — but it is still in `catalogModelEntries`, so a sync keeps updating the row
+   * on a Project that carries it, and lookups by `(provider, modelId)` still find it. Those
+   * Projects keep its display name and vision flag, and their usage on it is priced on its
+   * off-peak schedule whenever the row stores the catalog's price: the tier only applies to that
+   * price, and a sync puts back a price an older release stored. The schedule is the part that
+   * matters: cost is priced when it is read, so deleting a scheduled row would reprice every
+   * off-peak record already on those Projects at the peak rate.
    *
    * Compatibility, not catalog data: remove a retired row only after its seller has stopped
    * accepting the id AND the release notes have told users that usage recorded on it will be
@@ -1446,8 +1449,8 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   },
   {
     // Retired from TokenDance's line-up 2026-09-16 (see ModelCatalogEntry.retired). It was sold
-    // on DeepSeek's own peak/off-peak schedule at the peak tier CNY 0.04 / 2 / 8, which is what
-    // the Projects still carrying it are priced on.
+    // on DeepSeek's own peak/off-peak schedule at the peak tier CNY 0.04 / 2 / 8, the price a
+    // sync keeps on the Projects still carrying it.
     modelId: "deepseek-v4-flash-vision-exp",
     displayName: "DeepSeek V4 Flash Vision Exp",
     provider: "tokendance",
@@ -2605,7 +2608,22 @@ export function fastModeProtocol(
  */
 export function presetModelEntries(): ModelEntry[] {
   // A retired row stays in the catalog for the Projects that still carry it, and only for them.
-  return MODEL_CATALOG.filter((m) => m.retired !== true).map((m) => ({
+  return MODEL_CATALOG.filter((m) => m.retired !== true).map(catalogModelEntry);
+}
+
+/**
+ * Every catalog row as a ModelEntry, retired rows included, in the shape presetModelEntries
+ * writes. This is the list "Sync presets" compares a Project's table against: the sync never adds
+ * a retired row, but it updates one the Project already carries like any preset, so a price an
+ * older release stored returns to the catalog's (see ModelCatalogEntry.retired).
+ */
+export function catalogModelEntries(): ModelEntry[] {
+  return MODEL_CATALOG.map(catalogModelEntry);
+}
+
+/** One catalog row as the ModelEntry a Project stores (see presetModelEntries). */
+function catalogModelEntry(m: ModelCatalogEntry): ModelEntry {
+  return {
     provider: m.provider,
     model_id: m.modelId,
     ...(m.contextWindow !== undefined ? { context_window: m.contextWindow } : {}),
@@ -2616,7 +2634,7 @@ export function presetModelEntries(): ModelEntry[] {
     // image hand-off, see project-config.ts).
     ...(m.supportsVision ? {} : { vision: false }),
     ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
-  }));
+  };
 }
 
 /**
