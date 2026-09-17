@@ -200,8 +200,16 @@ export class SandboxService {
    * serving during a hot-swap freeze window.
    */
   confiner(): SpawnConfiner {
+    return this.confinerFor(() => this.settings);
+  }
+
+  /**
+   * The same closure under a policy the caller keeps — a Session's own snapshot. The
+   * backends are still this service's, so a backend change reaches every Session.
+   */
+  confinerFor(policyOf: () => SandboxSettings): SpawnConfiner {
     return (argv, opts) => {
-      const settings = this.settings;
+      const settings = policyOf();
       const required = requestedDimensions(settings);
       // Full access with nothing else asked (no network cut, no masked paths) is genuinely
       // unconfined — spawn as-is. But full access that STILL cuts the network or masks a path
@@ -278,6 +286,7 @@ export abstract class Sandbox extends Interface<
     | "declined"
     | "retryFailed"
     | "confiner"
+    | "confinerFor"
     | "whenReady"
   >
 >() {}

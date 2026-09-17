@@ -39,6 +39,7 @@ import type {
   SubagentMessageResponse,
   RetryNowResponse,
   TaskCreateResponse,
+  SessionSandbox,
 } from "../../api/types.js";
 import { compactionThresholdFor } from "../../services/context-breakdown.js";
 import { decodeCursor } from "../../services/message-window.js";
@@ -68,7 +69,7 @@ import type { ChannelHub } from "../../runtime/channel.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { SessionManager, RecallStore } from "../../runtime/session-manager.js";
 import type { PreviewTokenSigner } from "../../services/preview-token.js";
-import type { SessionService } from "../../services/session-service.js";
+import { sessionSandboxOf, type SessionService } from "../../services/session-service.js";
 
 /** What this route group reaches — bound by its module (src/modules). */
 export interface SessionsRouteDeps {
@@ -140,6 +141,31 @@ const SESSION_TITLE_MAX = 120;
 /** Max path count and per-path length for a single files/stat check (message file-card candidates never exceed this scale). */
 const STAT_MAX_PATHS = 100;
 const STAT_MAX_PATH_LEN = 512;
+
+/** The composer's sandbox picks from a request body: absent, or a checked partial. */
+function parseSandboxPick(body: unknown): Partial<SessionSandbox> | undefined {
+  const raw = (body as Record<string, unknown>).sandbox;
+  if (raw === undefined) return undefined;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw badRequest("sandbox must be an object with mode and/or network.");
+  }
+  const pick: Partial<SessionSandbox> = {};
+  const mode = optionalEnum(raw as Record<string, unknown>, "mode", [
+    "read-only",
+    "workspace-write",
+    "danger-full-access",
+  ] as const);
+  const network = optionalEnum(raw as Record<string, unknown>, "network", [
+    "open",
+    "none",
+  ] as const);
+  if (mode !== undefined) pick.mode = mode;
+  if (network !== undefined) pick.network = network;
+  if (mode === undefined && network === undefined) {
+    throw badRequest("sandbox must set mode and/or network.");
+  }
+  return pick;
+}
 
 /** The four approval modes (shared with the chat-defaults route's validation). */
 export const APPROVAL_MODES: readonly ApprovalMode[] = [
@@ -545,6 +571,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       );
     }
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
+    const sandbox = parseSandboxPick(body);
     // Creating-client hint stored on the row ("cli" from the CLI; default "web").
     // Informational provenance only — lists serve every row regardless.
     const client = optionalEnum(body, "client", ["web", "cli"] as const);
@@ -563,6 +590,7 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       ...(provider !== undefined ? { provider } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
       ...(approvalMode !== undefined ? { approvalMode } : {}),
+      ...(sandbox !== undefined ? { sandbox, isAdmin: c.var.user.isAdmin } : {}),
       ...(client !== undefined ? { client } : {}),
       ...(source !== undefined ? { source } : {}),
     });
@@ -617,6 +645,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const approvalMode = optionalEnum(body, "approvalMode", APPROVAL_MODES);
     const thinkingLevel = optionalEnum(body, "thinkingLevel", THINKING_LEVEL_NAMES);
+    const sandbox = parseSandboxPick(body);
     const archivedRaw = (body as Record<string, unknown>).archived;
     const archived = typeof archivedRaw === "boolean" ? archivedRaw : undefined;
     const titleRaw = (body as Record<string, unknown>).title;
@@ -636,6 +665,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     if (
       approvalMode === undefined &&
+      sandbox === undefined &&
       thinkingLevel === undefined &&
       archived === undefined &&
       title === undefined
@@ -643,7 +673,7 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       throw new HttpError(
         400,
         "no_update",
-        "No updatable field provided (approvalMode / thinkingLevel / archived / title).",
+        "No updatable field provided (approvalMode / sandbox / thinkingLevel / archived / title).",
       );
     }
     let updated: SessionRow = { ...row };
@@ -656,6 +686,11 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       // Takes effect immediately: a running approve callback re-reads the DB on every decision.
       deps.sessionsRepo.updateApprovalMode(row.sessionId, approvalMode);
       updated = { ...updated, approvalMode };
+    }
+    if (sandbox !== undefined) {
+      // Takes effect at the Session's next command: its confiner reads the row at every spawn.
+      const next = deps.sessionService.updateSandbox(row, sandbox, c.var.user.isAdmin);
+      updated = { ...updated, sandbox: next };
     }
     if (thinkingLevel !== undefined) {
       // The row is what the loader applies at load; a runtime already loaded is assigned
@@ -713,6 +748,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       modelId: row.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
+      // A fork carries the source's policy on, as it carries its approval mode.
+      sandbox: row.sandbox ?? null,
       // insertFork replaces this with the source's current title plus its persistent number.
       title: null,
       client: "web",
@@ -1762,6 +1799,7 @@ export class SessionApiRoutes {
       agentConfigService,
       projectConfigService,
       access,
+      sandboxDefaults: () => sessionSandboxOf(sessionService.defaultSandbox()),
     });
     this.commandPolicyRoutes = commandPolicyRoutes({ projectConfigService, access });
     this.agentsRoutes = agentsRoutes({

@@ -34,6 +34,7 @@ function session(sessionId: string, over: Partial<SessionInfo> = {}): SessionInf
     modelId: "claude-sonnet-4",
     workspace: "/w",
     approvalMode: "allow-all",
+    sandbox: { mode: "danger-full-access", network: "open" },
     createdAt: "2026-09-16T09:00:00.000Z",
     lastActiveAt: "2026-09-16T09:00:00.000Z",
     status: "idle",

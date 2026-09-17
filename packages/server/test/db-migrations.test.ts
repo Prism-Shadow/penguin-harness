@@ -569,8 +569,12 @@ describe("migration 8 → current: model-promotions", () => {
         )
         .get();
     try {
-      expect(migrate(db).applied).toEqual(["model-promotions", "model-provider-auth-tokens"]);
-      expect(schemaVersion(db)).toBe(10);
+      expect(migrate(db).applied).toEqual([
+        "model-promotions",
+        "model-provider-auth-tokens",
+        "sessions-sandbox",
+      ]);
+      expect(schemaVersion(db)).toBe(11);
       expect(promotionsTableExists()).toEqual({ "1": 1 });
       expect(authTokensTableExists()).toEqual({ "1": 1 });
 
@@ -589,8 +593,9 @@ describe("migration 8 → current: model-promotions", () => {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "model-promotions",
         "model-provider-auth-tokens",
+        "sessions-sandbox",
       ]);
-      expect(schemaVersion(db)).toBe(10);
+      expect(schemaVersion(db)).toBe(11);
     } finally {
       db.close();
     }
@@ -607,8 +612,8 @@ describe("migration 9 → current: model-provider-auth-tokens", () => {
         )
         .get();
     try {
-      expect(migrate(db).applied).toEqual(["model-provider-auth-tokens"]);
-      expect(schemaVersion(db)).toBe(10);
+      expect(migrate(db).applied).toEqual(["model-provider-auth-tokens", "sessions-sandbox"]);
+      expect(schemaVersion(db)).toBe(11);
       expect(tableExists()).toEqual({ "1": 1 });
       db.exec(
         "INSERT INTO users (user_id, password_hash, is_admin, created_at)" +

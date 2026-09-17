@@ -58,6 +58,7 @@ function session(
     modelId: "claude-4-8",
     workspace,
     approvalMode: "allow-all",
+    sandbox: { mode: "danger-full-access", network: "open" },
     createdAt,
     lastActiveAt: over.lastActiveAt ?? createdAt,
     status: "idle",

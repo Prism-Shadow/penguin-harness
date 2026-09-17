@@ -14,7 +14,7 @@
  * baseline, the proxy page's rule; the plugin picks the change up through its watch, so
  * nothing here says "restart".
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PluginConfigEntry, PluginConfigField } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
@@ -73,7 +73,28 @@ function valueOf(field: PluginConfigField, draft: unknown): unknown {
 const sameValue = (a: unknown, b: unknown) =>
   JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
-export function PluginsSection() {
+/**
+ * Brings one card into view once the list has loaded — an opening that names a card (the
+ * composer's permission menu names `sandbox`) lands on it rather than on the top of the page.
+ * Once per opening: scrolling away afterwards is the person's choice.
+ */
+function FocusCard({ focus, ready }: { focus: string | undefined; ready: boolean }) {
+  const anchor = useRef<HTMLSpanElement>(null);
+  const done = useRef(false);
+  useEffect(() => {
+    if (focus === undefined || !ready || done.current) return;
+    const card = anchor.current?.parentElement?.querySelector(
+      `[data-plugin-config="${CSS.escape(focus)}"]`,
+    );
+    if (card) {
+      card.scrollIntoView({ block: "start" });
+      done.current = true;
+    }
+  }, [focus, ready]);
+  return <span ref={anchor} hidden />;
+}
+
+export function PluginsSection({ focus }: { focus?: string } = {}) {
   const { locale } = useLocale();
   const localized = (en: string | undefined, zhText: string | undefined) =>
     en === undefined ? undefined : localizedText(locale, en, zhText);
@@ -424,11 +445,13 @@ export function PluginsSection() {
   const cards = entries.filter((e) => e.parent === undefined || !names.has(e.parent));
   return (
     <SectionShell>
+      <FocusCard focus={focus} ready={entries.length > 0} />
       {cards.map((card) => {
         const children = entries.filter((e) => e.parent === card.name);
         return (
           <section
             key={card.name}
+            data-plugin-config={card.name}
             className="space-y-3 rounded-md border border-gray-200 p-4 dark:border-gray-800"
           >
             {heading(card, false)}

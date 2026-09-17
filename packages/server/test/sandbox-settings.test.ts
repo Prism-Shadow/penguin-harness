@@ -310,7 +310,7 @@ describe("sandbox settings group", () => {
     expect(card.notices?.map((n) => n.text)).toEqual(["Backends: probed (fs-write)"]);
     expect(sandbox.failures()).toEqual([]);
     sandbox.configure({ mode: "read-only" });
-    expect(sandbox.confiner()(["true"], { workspaceDir: "/w" } as never)).toEqual([
+    expect(sandbox.confiner()(["true"], { workspaceDir: "/w" } as never).argv).toEqual([
       "probed",
       "true",
     ]);

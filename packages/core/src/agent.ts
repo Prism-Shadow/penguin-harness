@@ -148,9 +148,10 @@ export interface CreateAgentOptions {
    * creates or resumes — and of its subagents' Sessions, which inherit the getter (see
    * {@link SpawnConfiner}). Host policy exactly like `proxyEnv`: re-read at every
    * spawn, so the hosting server can swap the active confiner without restarting
-   * Sessions. Absent = commands spawn unconfined.
+   * Sessions. Evaluated with the Session's coordinates, like `controlEnv`, so a host can
+   * keep a policy per Session. Absent = commands spawn unconfined.
    */
-  confineSpawn?: () => SpawnConfiner | null;
+  confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
   /**
    * What a host adds to every Session this Agent assembles — see {@link AgentAssembly}.
    * Host policy like
@@ -396,8 +397,8 @@ export class Agent {
     private readonly controlEnv?: (ctx: ControlEnvContext) => Record<string, string>,
     /** See {@link CreateAgentOptions.pathPrepend}; forwarded into every Session's Environment and hooks. */
     private readonly pathPrepend?: () => string[],
-    /** See {@link CreateAgentOptions.confineSpawn}; forwarded into every Session's Environment. */
-    private readonly confineSpawn?: () => SpawnConfiner | null,
+    /** See {@link CreateAgentOptions.confineSpawn}; evaluated per Session with that Session's coordinates. */
+    private readonly confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null,
     /** See {@link CreateAgentOptions.assembly}; read at every Session creation. */
     private readonly assembly?: AgentAssembly,
   ) {}
@@ -1202,7 +1203,18 @@ export class Agent {
           }
         : {}),
       ...(this.pathPrepend ? { pathPrepend: this.pathPrepend } : {}),
-      ...(this.confineSpawn ? { confineSpawn: this.confineSpawn } : {}),
+      // Bound to THIS Session's coordinates like controlEnv: the host may confine each
+      // Session under its own policy, and the getter is still re-read at every spawn.
+      ...(this.confineSpawn
+        ? {
+            confineSpawn: () =>
+              this.confineSpawn!({
+                projectId: this.state.projectId,
+                agentId: this.state.agentId,
+                sessionId,
+              }),
+          }
+        : {}),
     });
 
     // The tool_call_id uniqueness registry is shared by every context's LLM object: its

@@ -104,7 +104,7 @@ describe("sandbox service — the built-in interface and its optional dimensions
     // Registration order is routing order: the recovered backend comes before dsh-local.
     expect(svc.backends().map((b) => b.name)).toEqual(["bwrap", "dsh-local"]);
     svc.configure({ mode: "read-only" });
-    expect(svc.confiner()([...ARGV], OPTS)[0]).toBe("bwrap");
+    expect(svc.confiner()([...ARGV], OPTS).argv[0]).toBe("bwrap");
     // A mounted backend is not loaded again.
     await svc.retryFailed();
     expect(loader).toHaveBeenCalledTimes(2);
