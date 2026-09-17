@@ -3,6 +3,7 @@
 - **Date:** 2026-09-17
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#782](https://github.com/Prism-Shadow/penguin-harness/pull/782)
 
 [English](2026-09-17-process-list-clear-exited.md)
 
