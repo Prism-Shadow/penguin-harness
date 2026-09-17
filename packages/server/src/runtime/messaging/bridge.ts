@@ -68,8 +68,9 @@
  * pictures sent as pictures and everything else as attachments. Not "every file the run
  * wrote": the Agent's own words are what say which output was the point, and a chat window
  * is a bad place to receive a directory. What the caps drop and what the channel refuses is
- * filed as an error record under the Session's Project rather than dropped quietly, and none
- * of it is posted into the chat (see recordFileNotSent).
+ * filed as error records under the Session's Project, one per cause for the whole reply,
+ * rather than dropped quietly, and none of it is posted into the chat (see
+ * messagingFilesNotSentRecords).
  */
 import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-core";
 import type { OmniMessage } from "@prismshadow/penguin-core";
@@ -80,6 +81,7 @@ import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
 import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
+import { MESSAGE_MAX } from "../error-recorder.js";
 import type { ErrorSink } from "../error-recorder.js";
 import { recallStoreOf } from "../session-manager.js";
 import type { RecallStore } from "../session-manager.js";
@@ -326,58 +328,232 @@ function baseNameOf(rel: string): string {
   return rel.slice(rel.lastIndexOf("/") + 1);
 }
 
+/** A mentioned file held back at an outbound ceiling, and the ceiling (see deliverOneFile). */
+export interface OversizeOutboundFile {
+  fileName: string;
+  maxBytes: number;
+  asImage: boolean;
+}
+
+/** A mentioned file the read or the channel refused, and what was thrown. */
+export interface RefusedOutboundFile {
+  fileName: string;
+  err: unknown;
+}
+
+/** One error record to file: the capture point's code and the error it carries. */
+export interface MessagingErrorRecord {
+  code: string;
+  err: Error;
+}
+
 /**
- * The head of the error record for a reply's file that did not reach the chat: which file,
- * and which channel it was going to.
+ * The error records for the files of one reply that did not go out: ONE per cause, naming every
+ * file that cause held back — never one per file.
  *
- * None of these failures is posted into the chat, so the record is the one place any of them
- * is said, and it has to read on its own in the cost center's error table — where nothing
- * else on the row names the file or the channel. `channel` is the binding's discriminant, the
- * same name the bridge's log lines use.
+ * Per reply rather than per file because the recorder keeps a single record per code and
+ * Project inside a two-second window (see error-recorder.ts), and a reply's files fail within
+ * milliseconds of each other: filed one by one, five files QQ refused would surface as the
+ * first alone. None of them is posted into the chat, so these records are the only place any
+ * of it is said. The causes, in the order they are returned:
+ *
+ * - `messaging_file_send_failed`, in up to three records by what was thrown, each keeping that
+ *   type because error-kind.ts reads the kind off it: a missing permission (unexpected — the
+ *   scopes and console links are listed once, ahead of the reasons, because they are the fix),
+ *   any other refusal (unexpected), and a refusal the channel repeats for every file (expected
+ *   — any file on QQ). The three share a code, so a reply failing for two of these causes at
+ *   once reaches the recorder's window twice and keeps only the first record: the causes
+ *   somebody has to act on are therefore the ones that come first.
+ * - `messaging_file_too_large`, the files over an outbound ceiling, each with its limit
+ *   (expected).
+ *
+ * The files past the per-reply count are recorded apart from these (see filesSkippedError).
+ */
+export function messagingFilesNotSentRecords(
+  channel: string,
+  oversize: readonly OversizeOutboundFile[],
+  refused: readonly RefusedOutboundFile[],
+): MessagingErrorRecord[] {
+  const permission: Array<{ fileName: string; err: MessagingPermissionError }> = [];
+  const other: RefusedOutboundFile[] = [];
+  const unsupported: RefusedOutboundFile[] = [];
+  for (const file of refused) {
+    if (file.err instanceof MessagingPermissionError) {
+      permission.push({ fileName: file.fileName, err: file.err });
+    } else if (file.err instanceof MessagingUnsupportedError) {
+      unsupported.push(file);
+    } else {
+      other.push(file);
+    }
+  }
+  const records: MessagingErrorRecord[] = [];
+  if (permission.length > 0) {
+    const scopes = [...new Set(permission.flatMap((file) => file.err.scopes))];
+    const grantUrls = [
+      ...new Set(
+        permission.flatMap((file) => (file.err.grantUrl === null ? [] : [file.err.grantUrl])),
+      ),
+    ];
+    const fix = ["this bot's app is missing a permission.", scopes.join(", "), ...grantUrls].join(
+      "\n",
+    );
+    records.push({
+      code: "messaging_file_send_failed",
+      err: new MessagingPermissionError(
+        scopes,
+        grantUrls[0] ?? null,
+        filesNotSentMessage(channel, permission.map(thrownReason), AS_THROWN, fix),
+      ),
+    });
+  }
+  if (other.length > 0) {
+    records.push({
+      code: "messaging_file_send_failed",
+      err: new Error(filesNotSentMessage(channel, other.map(thrownReason), AS_THROWN), {
+        cause: other.map((file) => file.err),
+      }),
+    });
+  }
+  if (unsupported.length > 0) {
+    records.push({
+      code: "messaging_file_send_failed",
+      err: new MessagingUnsupportedError(
+        filesNotSentMessage(channel, unsupported.map(thrownReason), AS_THROWN),
+      ),
+    });
+  }
+  if (oversize.length > 0) {
+    const overLimit = oversize.map((file) => ({
+      fileName: file.fileName,
+      reason: `larger than the ${Math.floor(file.maxBytes / (1024 * 1024))}MB limit for ${file.asImage ? "a picture" : "a file"}`,
+    }));
+    records.push({
+      code: "messaging_file_too_large",
+      err: new MessagingOutboundCapError(filesNotSentMessage(channel, overLimit, OVER_LIMIT)),
+    });
+  }
+  return records;
+}
+
+/** One file's part in a record: its name, and why it did not go out. */
+interface FileReason {
+  fileName: string;
+  reason: string;
+}
+
+/** A refused file's reason: what the read or the channel said. */
+function thrownReason(file: { fileName: string; err: unknown }): FileReason {
+  return {
+    fileName: file.fileName,
+    reason: file.err instanceof Error ? file.err.message : String(file.err),
+  };
+}
+
+/** How a record's reason reads after a lone file's head, and as the one reason several files share. */
+interface ReasonWording {
+  lone(reason: string): string;
+  shared(reason: string): string;
+}
+
+/** A refusal, quoted as it was thrown. */
+const AS_THROWN: ReasonWording = { lone: (reason) => reason, shared: (reason) => reason };
+
+/** A ceiling, which reads as a property of the file, or of each file, it held back. */
+const OVER_LIMIT: ReasonWording = {
+  lone: (reason) => `it is ${reason}`,
+  shared: (reason) => `each is ${reason}`,
+};
+
+/**
+ * The head of a record about one file: which file, and which channel it was going to.
+ *
+ * The record has to read on its own in the cost center's error table, where nothing else on the
+ * row names the file or the channel. `channel` is the binding's discriminant, the same name the
+ * bridge's log lines use.
  */
 function fileNotSentHead(channel: string, fileName: string): string {
   return `"${fileName}" was not sent to the ${channel} chat`;
 }
 
 /**
- * The error record for one file over an outbound ceiling (see deliverOneFile), naming the
- * ceiling that held it back.
+ * The message of one record covering `files`, fitted under the recorder's MESSAGE_MAX.
+ *
+ * A lone file reads `"<file>" was not sent to the <channel> chat: <reason>`. Several read
+ * `<n> files were not sent to the <channel> chat: "<a>", "<b>"`, then `fix` when there is one,
+ * then the reason they share — or, when their reasons differ, one `"<file>": <reason>` line each.
+ *
+ * Fitted here rather than left to the recorder, which cuts from the end, where the reasons are.
+ * The list of names gives way first, down to "…": a reason is worth more than the fifth name,
+ * and a line per file names its own file anyway. Only then are the reasons cut, all of them
+ * alike, so each keeps its file's name and the start of what went wrong.
  */
-function fileTooLargeError(
+function filesNotSentMessage(
   channel: string,
-  fileName: string,
-  maxBytes: number,
-  asImage: boolean,
-): MessagingOutboundCapError {
-  const mb = Math.floor(maxBytes / (1024 * 1024));
-  return new MessagingOutboundCapError(
-    `${fileNotSentHead(channel, fileName)}: it is larger than the ${mb}MB limit for ${asImage ? "a picture" : "a file"}`,
-  );
+  files: readonly FileReason[],
+  wording: ReasonWording,
+  fix: string | null = null,
+): string {
+  const first = files[0]!;
+  if (files.length === 1) {
+    const lead = fix === null ? "" : `${fix}\n`;
+    return clip(
+      `${fileNotSentHead(channel, first.fileName)}: ${lead}${wording.lone(first.reason)}`,
+      MESSAGE_MAX,
+    );
+  }
+  const head = (list: string): string =>
+    `${files.length} files were not sent to the ${channel} chat: ${list}`;
+  const lines = files.every((file) => file.reason === first.reason)
+    ? [wording.shared(first.reason)]
+    : files.map((file) => `"${file.fileName}": ${file.reason}`);
+  const lead = fix === null ? "" : `\n${fix}`;
+  const body = `${lead}\n${lines.join("\n")}`;
+  const names = files.map((file) => file.fileName);
+  const listRoom = MESSAGE_MAX - head("").length - body.length;
+  if (listRoom >= 1) return head(quotedNames(names, listRoom)) + body;
+  // One "\n" goes in front of each line.
+  const lineRoom = MESSAGE_MAX - head("…").length - lead.length - lines.length;
+  const fitted = fitLines(lines, lineRoom).map((line) => `\n${line}`);
+  return clip(head("…") + lead + fitted.join(""), MESSAGE_MAX);
+}
+
+/** The names quoted and joined, as many as fit in `max` characters, the rest marked "…". */
+function quotedNames(names: readonly string[], max: number): string {
+  const quoted = names.map((name) => `"${name}"`);
+  const all = quoted.join(", ");
+  if (all.length <= max) return all;
+  let shown = "";
+  for (const name of quoted) {
+    const next = shown === "" ? name : `${shown}, ${name}`;
+    if (next.length + ", …".length > max) break;
+    shown = next;
+  }
+  return shown === "" ? "…" : `${shown}, …`;
 }
 
 /**
- * The error record for a file the read or the CHANNEL refused: the head, then the reason.
- *
- * The refusal keeps its type, because the type is half of how error-kind.ts files it — QQ's
- * MessagingUnsupportedError is a limit nobody can fix, anything else waits for someone. A
- * missing permission puts the scopes and the console link (what permissionDetail spells for
- * the inbound notices) AHEAD of the channel's own sentence: they are the fix, and the recorder
- * shortens a long message from its end.
+ * `lines` cut to share `room` characters alike: a line shorter than an equal share stays whole,
+ * and what it leaves over goes to the longer ones.
  */
-function fileSendFailedError(channel: string, fileName: string, err: unknown): Error {
-  const head = fileNotSentHead(channel, fileName);
-  const reason = err instanceof Error ? err.message : String(err);
-  if (err instanceof MessagingPermissionError) {
-    return new MessagingPermissionError(
-      err.scopes,
-      err.grantUrl,
-      `${head}: this bot's app is missing a permission.\n${permissionDetail(err.scopes, err.grantUrl)}\n${reason}`,
-    );
-  }
-  if (err instanceof MessagingUnsupportedError) {
-    return new MessagingUnsupportedError(`${head}: ${reason}`);
-  }
-  return new Error(`${head}: ${reason}`, { cause: err });
+function fitLines(lines: readonly string[], room: number): string[] {
+  const out = [...lines];
+  const shortestFirst = lines.map((_, i) => i).sort((a, b) => lines[a]!.length - lines[b]!.length);
+  let left = Math.max(0, room);
+  shortestFirst.forEach((index, done) => {
+    out[index] = clip(lines[index]!, Math.floor(left / (shortestFirst.length - done)));
+    left -= out[index]!.length;
+  });
+  return out;
+}
+
+/** `text` cut to at most `max` characters, the cut marked "…", never between a surrogate pair. */
+function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  if (max < 1) return "";
+  let end = max - 1;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}…`;
 }
 
 /** How many names a line about dropped files lists before it stops: a signal, not an inventory. */
@@ -394,9 +570,9 @@ const MESSAGING_NOTICE_NAMES_MAX = 5;
  * failed, and announcing them puts an error-shaped line under replies that were entirely
  * correct — with no move for the reader to make, because nothing was ever going to arrive.
  *
- * Contrast `recordFileNotSent`: there the file exists and did not go out, so something the
- * reply promised is genuinely missing, and it is filed as an error record under the Session's
- * Project. Neither reaches the chat.
+ * Contrast messagingFilesNotSentRecords: there the files exist and did not go out, so something
+ * the reply promised is genuinely missing, and that is filed as an error record under the
+ * Session's Project. Neither reaches the chat.
  *
  * Still recorded, because "it mentioned a file and I never got it" is a real question someone
  * will ask, and the server log answers it without charging every other reader for it.
@@ -1752,9 +1928,9 @@ export class MessagingBridge {
    * error-shaped line under correct answers. Both are logged instead. What IS recorded is a
    * file that exists and still did not go out — over a ceiling, past the count cap, or
    * refused on the way: the reply promised something that then did not arrive, so it is filed
-   * as an error record under the Session's Project (see recordFileNotSent). None of it is
-   * posted into the chat, which carries the reply and its files and nothing about the ones
-   * that stayed behind.
+   * under the Session's Project, once the batch is done, in one record per cause naming every
+   * file it held back (see messagingFilesNotSentRecords). None of it is posted into the chat,
+   * which carries the reply and its files and nothing about the ones that stayed behind.
    *
    * Always plain sends, never a threaded reply: a run that mentions a file has by
    * definition already sent the text that mentions it, and that message took the group's
@@ -1790,12 +1966,21 @@ export class MessagingBridge {
       }
       if (produced.length === 0 && missing.length === 0) return;
       const client = await this.clientFor(entry.sessionId, row);
+      const oversize: OversizeOutboundFile[] = [];
+      const refused: RefusedOutboundFile[] = [];
       for (const rel of produced.slice(0, MESSAGING_OUTBOUND_FILE_MAX_COUNT)) {
         try {
-          await this.deliverOneFile(entry.channel, client, chatId, session.workspace, rel);
+          const heldBack = await this.deliverOneFile(client, chatId, session.workspace, rel);
+          if (heldBack !== null) oversize.push(heldBack);
         } catch (err) {
-          this.recordFileNotSent(entry, rel, err);
+          refused.push({ fileName: baseNameOf(rel), err });
         }
+      }
+      // Filed only once the batch is done, and one record per cause rather than per file: the
+      // recorder would keep only the first of several same-code records filed this close
+      // together (see messagingFilesNotSentRecords).
+      for (const record of messagingFilesNotSentRecords(entry.channel, oversize, refused)) {
+        this.recordError(entry.sessionId, record.err, record.code);
       }
       // One record for the whole tail, not one per file: the cap is a single decision about
       // this reply, and a row per file would read as that many separate failures.
@@ -1816,39 +2001,17 @@ export class MessagingBridge {
   }
 
   /**
-   * Files one mentioned file that did not go out, under its Session's Project — and posts
-   * nothing about it into the chat.
-   *
-   * Two codes, by who held it back: `messaging_file_too_large` for a file over this bridge's
-   * own ceiling (deliverOneFile throws a MessagingOutboundCapError for it before the channel is
-   * asked), and `messaging_file_send_failed` for whatever the read or the channel threw. The
-   * record names the file, the channel and the reason, because it is the only place that is
-   * said (see fileNotSentHead); error-kind.ts decides from the type which of them need someone.
-   */
-  private recordFileNotSent(entry: BridgeEntry, rel: string, err: unknown): void {
-    if (err instanceof MessagingOutboundCapError) {
-      this.recordError(entry.sessionId, err, "messaging_file_too_large");
-      return;
-    }
-    this.recordError(
-      entry.sessionId,
-      fileSendFailedError(entry.channel, baseNameOf(rel), err),
-      "messaging_file_send_failed",
-    );
-  }
-
-  /**
    * One mirrored file: read under the outer ceiling, then sent as a picture or an attachment.
-   * A file over the ceiling for its kind is not sent, and throws a MessagingOutboundCapError
-   * naming it for the caller to record (see recordFileNotSent).
+   * Resolves null once the file went out. A file over the ceiling for its kind is not sent and
+   * resolves to that ceiling instead; a read or a send the channel refused throws. The caller
+   * records both (see messagingFilesNotSentRecords).
    */
   private async deliverOneFile(
-    channel: string,
     client: MessagingClient,
     chatId: string,
     workspace: string,
     rel: string,
-  ): Promise<void> {
+  ): Promise<OversizeOutboundFile | null> {
     // Read first, classify second. `rel` is the path the REPLY spelled, and the canonical
     // file behind it may not share its extension: an in-Workspace `report.png -> report.pdf`
     // (the everyday "latest" symlink) classified by the mention would go to the image
@@ -1863,12 +2026,11 @@ export class MessagingBridge {
     const maxBytes = asImage
       ? MESSAGING_OUTBOUND_IMAGE_MAX_BYTES
       : MESSAGING_OUTBOUND_FILE_MAX_BYTES;
-    if (file.data.length > maxBytes) {
-      throw fileTooLargeError(channel, file.fileName, maxBytes, asImage);
-    }
+    if (file.data.length > maxBytes) return { fileName: file.fileName, maxBytes, asImage };
     const outbound = { fileName: file.fileName, data: file.data };
     if (asImage) await client.sendImage(chatId, outbound);
     else await client.sendFile(chatId, outbound);
+    return null;
   }
 
   /** One-line notice (approval waiting) to the last known chat; silent before one exists. */

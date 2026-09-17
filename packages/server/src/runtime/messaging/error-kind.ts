@@ -69,9 +69,9 @@ type RefusalType = new (message: string) => Error;
 /**
  * The outbound file capture points, each with the one type it files as routine.
  *
- * The chat is told nothing at any of them — a reply's file that did not go out is recorded and
- * never posted (see the bridge's recordFileNotSent) — so `expected` here cannot mean "the person
- * who can act was told". It means nobody has anything to do:
+ * The chat is told nothing at any of them — a reply's files that did not go out are recorded and
+ * never posted (see the bridge's messagingFilesNotSentRecords) — so `expected` here cannot mean
+ * "the person who can act was told". It means nobody has anything to do:
  *
  * - `messaging_file_send_failed` + {@link MessagingUnsupportedError} — the channel structurally
  *   cannot carry a file (QQ's rich-media path needs a publicly reachable URL this server does

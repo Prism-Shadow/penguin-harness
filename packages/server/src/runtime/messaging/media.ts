@@ -150,7 +150,7 @@ export class MessagingUnsupportedError extends Error {
  * Its own class so `error-kind.ts` can file it as `expected` by type at the two capture points
  * that record it (`messaging_file_too_large`, `messaging_files_skipped`): the caps are known
  * limits, nothing is broken, and the Web App still has every file. `message` must name the
- * file (or how many), the channel and the cap, because that text is the whole of what the
+ * files (or how many), the channel and the cap, because that text is the whole of what the
  * error record says — none of it is posted into the chat.
  */
 export class MessagingOutboundCapError extends Error {

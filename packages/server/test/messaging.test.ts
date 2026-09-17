@@ -44,9 +44,11 @@ import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../src/services/attachment-limits.js";
+import { MESSAGE_MAX } from "../src/runtime/error-recorder.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_MAX_LINE_MESSAGES,
+  MESSAGING_OUTBOUND_FILE_MAX_BYTES,
   MESSAGING_OUTBOUND_FILE_MAX_COUNT,
   MESSAGING_OUTBOUND_IMAGE_MAX_BYTES,
   MESSAGING_TEST_MESSAGE,
@@ -55,6 +57,7 @@ import {
   MessagingBridge,
   chunkMessagingText,
   messagingFilesMissingLog,
+  messagingFilesNotSentRecords,
   messagingImageBudgetNotice,
   messagingImageFailedNotice,
   messagingImagePermissionNotice,
@@ -72,6 +75,7 @@ import type {
   MessagingInboundImage,
   MessagingInboundMessage,
 } from "../src/runtime/messaging/connector.js";
+import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
 import { FeishuConnector } from "../src/runtime/messaging/feishu-connector.js";
 import type { FeishuCard } from "../src/runtime/messaging/feishu-card.js";
 import { FeishuApiError } from "../src/runtime/messaging/feishu-sdk.js";
@@ -634,6 +638,197 @@ describe("messaging media helpers", () => {
       throw new Error("socket hang up");
     };
     await expect(collectUnderCap(dies(), 1024, "The image")).rejects.toThrow("socket hang up");
+  });
+});
+
+describe("messagingFilesNotSentRecords", () => {
+  /** Feishu's scope denial for an upload: the same fix every time, a new log_id per request. */
+  const uploadDenied = (logId: number, scopes = ["im:resource:upload", "im:resource"]) =>
+    new MessagingPermissionError(
+      scopes,
+      `https://open.feishu.cn/app/cli_x/auth?q=${scopes[0]}`,
+      `Access denied (code 99991672, log_id ${logId})`,
+    );
+  const picture = (fileName: string) => ({
+    fileName,
+    maxBytes: MESSAGING_OUTBOUND_IMAGE_MAX_BYTES,
+    asImage: true,
+  });
+
+  it("files one record per cause, not per file, each keeping the type its kind is read from", () => {
+    const records = messagingFilesNotSentRecords(
+      "feishu",
+      [picture("huge.png")],
+      [
+        { fileName: "a.md", err: new MessagingUnsupportedError("This channel takes no files") },
+        { fileName: "b.md", err: new Error("socket hang up") },
+        { fileName: "c.png", err: uploadDenied(1) },
+        { fileName: "d.md", err: new MessagingUnsupportedError("This channel takes no files") },
+      ],
+    );
+    // The causes somebody has to act on come first: the three send failures share a code, and
+    // the recorder keeps only the first same-code record inside its window.
+    expect(
+      records.map((record) => [
+        record.code,
+        messagingErrorKind(record.err, record.code),
+        record.err.message,
+      ]),
+    ).toEqual([
+      [
+        "messaging_file_send_failed",
+        "unexpected",
+        '"c.png" was not sent to the feishu chat: this bot\'s app is missing a permission.\n' +
+          "im:resource:upload, im:resource\n" +
+          "https://open.feishu.cn/app/cli_x/auth?q=im:resource:upload\n" +
+          "Access denied (code 99991672, log_id 1)",
+      ],
+      [
+        "messaging_file_send_failed",
+        "unexpected",
+        '"b.md" was not sent to the feishu chat: socket hang up',
+      ],
+      [
+        "messaging_file_send_failed",
+        "expected",
+        '2 files were not sent to the feishu chat: "a.md", "d.md"\nThis channel takes no files',
+      ],
+      [
+        "messaging_file_too_large",
+        "expected",
+        '"huge.png" was not sent to the feishu chat: it is larger than the 10MB limit for a picture',
+      ],
+    ]);
+  });
+
+  it("names every file once, then the reason they share, or a line each where it differs", () => {
+    const messages = (
+      oversize: Parameters<typeof messagingFilesNotSentRecords>[1],
+      refused: Parameters<typeof messagingFilesNotSentRecords>[2],
+    ): string[] =>
+      messagingFilesNotSentRecords("telegram", oversize, refused).map(
+        (record) => record.err.message,
+      );
+    expect(
+      messages(
+        [],
+        ["a.md", "b.md", "c.md"].map((fileName) => ({
+          fileName,
+          err: new Error("upload rejected"),
+        })),
+      ),
+    ).toEqual([
+      '3 files were not sent to the telegram chat: "a.md", "b.md", "c.md"\nupload rejected',
+    ]);
+    expect(
+      messages(
+        [],
+        [
+          { fileName: "a.md", err: new Error("Request Entity Too Large") },
+          { fileName: "b.md", err: new Error("socket hang up") },
+        ],
+      ),
+    ).toEqual([
+      '2 files were not sent to the telegram chat: "a.md", "b.md"\n' +
+        '"a.md": Request Entity Too Large\n' +
+        '"b.md": socket hang up',
+    ]);
+    expect(messages([picture("a.png"), picture("b.png")], [])).toEqual([
+      '2 files were not sent to the telegram chat: "a.png", "b.png"\n' +
+        "each is larger than the 10MB limit for a picture",
+    ]);
+    // A picture and a document are held back by different ceilings, so each names its own.
+    expect(
+      messages(
+        [
+          picture("chart.png"),
+          { fileName: "dump.csv", maxBytes: MESSAGING_OUTBOUND_FILE_MAX_BYTES, asImage: false },
+        ],
+        [],
+      ),
+    ).toEqual([
+      '2 files were not sent to the telegram chat: "chart.png", "dump.csv"\n' +
+        '"chart.png": larger than the 10MB limit for a picture\n' +
+        '"dump.csv": larger than the 30MB limit for a file',
+    ]);
+  });
+
+  it("lists a permission's scopes and console links once, ahead of each file's reason", () => {
+    const [record] = messagingFilesNotSentRecords(
+      "feishu",
+      [],
+      [
+        { fileName: "chart.png", err: uploadDenied(1) },
+        { fileName: "notes.md", err: uploadDenied(2) },
+        { fileName: "data.csv", err: uploadDenied(3, ["im:resource"]) },
+      ],
+    );
+    expect(record!.err.message).toBe(
+      '3 files were not sent to the feishu chat: "chart.png", "notes.md", "data.csv"\n' +
+        "this bot's app is missing a permission.\n" +
+        "im:resource:upload, im:resource\n" +
+        "https://open.feishu.cn/app/cli_x/auth?q=im:resource:upload\n" +
+        "https://open.feishu.cn/app/cli_x/auth?q=im:resource\n" +
+        '"chart.png": Access denied (code 99991672, log_id 1)\n' +
+        '"notes.md": Access denied (code 99991672, log_id 2)\n' +
+        '"data.csv": Access denied (code 99991672, log_id 3)',
+    );
+  });
+
+  it("stays under the recorder's cap, giving up names before any reason", () => {
+    // The recorder cuts a long message from its end, which is where the reasons are.
+    const names = ["a", "b", "c", "d", "e"].map((letter) => `${letter.repeat(120)}.md`);
+    const [shared] = messagingFilesNotSentRecords(
+      "wechat",
+      [],
+      names.map((fileName) => ({ fileName, err: new Error("upload rejected") })),
+    );
+    const sharedText = shared!.err.message;
+    expect(sharedText.length).toBeLessThanOrEqual(MESSAGE_MAX);
+    // The reason whole; the list cut short, and marked as cut.
+    expect(sharedText.endsWith('", …\nupload rejected')).toBe(true);
+    expect(sharedText).toContain(`"${names[0]}", `);
+    expect(sharedText).not.toContain(names[4]);
+
+    // Reasons too long to fit even without the list are cut alike, so every file keeps its
+    // line, its name and the start of its reason — and the fix, which leads, stays whole.
+    const files = ["chart.png", "notes.md", "data.csv", "report.pdf", "summary.md"];
+    const [perFile] = messagingFilesNotSentRecords(
+      "feishu",
+      [],
+      files.map((fileName, i) => {
+        const denied = uploadDenied(i);
+        return {
+          fileName,
+          err: new MessagingPermissionError(
+            denied.scopes,
+            denied.grantUrl,
+            `${denied.message} ${"Apply for the permission in the developer console. ".repeat(6)}`,
+          ),
+        };
+      }),
+    );
+    const perFileText = perFile!.err.message;
+    expect(perFileText.length).toBeLessThanOrEqual(MESSAGE_MAX);
+    expect(perFileText).toContain(
+      "5 files were not sent to the feishu chat: …\n" +
+        "this bot's app is missing a permission.\n" +
+        "im:resource:upload, im:resource\n" +
+        "https://open.feishu.cn/app/cli_x/auth?q=im:resource:upload\n",
+    );
+    for (const fileName of files) expect(perFileText).toContain(`\n"${fileName}": Access denied`);
+
+    // A lone file has no list to give up: its reason is cut, and marked as cut.
+    const [lone] = messagingFilesNotSentRecords(
+      "telegram",
+      [],
+      [{ fileName: "a.md", err: new Error("x".repeat(600)) }],
+    );
+    expect(lone!.err.message.length).toBeLessThanOrEqual(MESSAGE_MAX);
+    expect(lone!.err.message.startsWith('"a.md" was not sent to the telegram chat: xxx')).toBe(
+      true,
+    );
+    expect(lone!.err.message.endsWith("x…")).toBe(true);
   });
 });
 
@@ -2886,6 +3081,55 @@ describe("messaging binding routes and bridge", () => {
     const page = (await res.json()) as { items: Array<{ code: string; kind: string }> };
     expect(page.items.map((item) => [item.code, item.kind])).toEqual([
       ["messaging_file_send_failed", "expected"],
+    ]);
+  });
+
+  it("three uploads refused in one reply file ONE record naming all three, and the chat hears only the reply", async () => {
+    const ws = await makeWorkspace();
+    for (const name of ["a.md", "b.md", "c.md"]) await fs.writeFile(path.join(ws, name), name);
+    await bindWithWorkspace(ws, "Wrote `a.md`, `b.md` and `c.md`.", "cli_upload_burst");
+    // Every upload refused within milliseconds of the last. Filed one per file, the recorder
+    // keeps the first record of a code inside its two-second window and drops the other two.
+    fake.failMediaSends = 3;
+    await askAndSettle();
+    await waitFor(() => messagingErrorRecords().length === 1);
+    await settle(80);
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_chat_files", text: "Wrote `a.md`, `b.md` and `c.md`." },
+    ]);
+    expect(messagingErrorRecords()).toEqual([
+      filedBySid2({
+        code: "messaging_file_send_failed",
+        kind: "unexpected",
+        message:
+          '3 files were not sent to the feishu chat: "a.md", "b.md", "c.md"\nupload rejected',
+      }),
+    ]);
+  });
+
+  it("two oversized files in one reply file ONE record naming both, and the rest still goes", async () => {
+    const ws = await makeWorkspace();
+    const oversize = Buffer.alloc(MESSAGING_OUTBOUND_IMAGE_MAX_BYTES + 1);
+    await fs.writeFile(path.join(ws, "huge.png"), oversize);
+    await fs.writeFile(path.join(ws, "vast.png"), oversize);
+    await fs.writeFile(path.join(ws, "small.md"), "ok");
+    const reply = "See `huge.png`, `vast.png` and `small.md`.";
+    await bindWithWorkspace(ws, reply, "cli_huge_pair");
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 2 && messagingErrorRecords().length === 1);
+    await settle(80);
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_chat_files", text: reply },
+      { kind: "file", target: "oc_chat_files", fileName: "small.md", bytes: 2 },
+    ]);
+    expect(messagingErrorRecords()).toEqual([
+      filedBySid2({
+        code: "messaging_file_too_large",
+        kind: "expected",
+        message:
+          '2 files were not sent to the feishu chat: "huge.png", "vast.png"\n' +
+          "each is larger than the 10MB limit for a picture",
+      }),
     ]);
   });
 
