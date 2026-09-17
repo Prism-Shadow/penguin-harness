@@ -5,6 +5,8 @@ category: news
 excerpt: 预置目录现有四个免费的 OpenRouter 条目，其中三个是新加入的，一个免费的 OpenRouter API key 就能让 Agent 跑起来。本文介绍这套免费阵容、开启方法，以及免费档能提供什么、不能提供什么。
 ---
 
+> 本文基于 PenguinHarness 0.1.2 撰写，之后的版本在部分细节上可能有所不同。
+
 PenguinHarness 的预置目录现在带有免费模型：这些条目每百万 Token 价格为 $0，和其他预置条目一样，协议、base URL、价格和上下文窗口都已填好。要跑起一个 Agent，只需要一个 OpenRouter API key。创建 API key 本身免费，也不需要账户余额。
 
 截至今天，免费阵容共四个条目，全部在 OpenRouter 分组下。Nemotron 3 Ultra 之前就在目录里，Ling 3.0 Flash、Laguna M.1 和 Free Models Router 是新加入的。

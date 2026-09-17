@@ -5,6 +5,8 @@ category: perspectives
 excerpt: Databricks benchmarked coding agents on roughly a hundred real pull requests, and the highest pass rate went to the simplest harness at about half the cost. This essay argues that a harness is an information budget, and shows how PenguinHarness is built around that idea.
 ---
 
+> Written for PenguinHarness 0.1.1. Later releases may differ in some details.
+
 An **agent harness** is the software around a language model that decides what goes into each request: the system prompt, the tool definitions, and the message history. The common intuition is that a bigger harness makes a better agent. More tools, more context, and more scaffolding should lead to better decisions, and the whole category was built on that belief.
 
 This essay argues the opposite. In a Databricks benchmark on real pull requests, the simplest harness produced the highest score at about half the cost, and Databricks attributes the result to sending less context per turn. We treat a harness as an **information budget** rather than a feature list, show where that budget goes, describe how PenguinHarness is built around that idea, and mark where minimalism has to stop.
@@ -57,7 +59,7 @@ None of these is a wrong idea. The problem is that nobody puts a price on them.
 
 ## How PenguinHarness is built
 
-We made this bet before the benchmark existed, and it shows in the source code rather than in marketing copy. This section describes PenguinHarness as of 0.1.1, the release this post was published with, and each detail can be checked in the repository at the `v0.1.1` tag.
+We made this bet before the benchmark existed, and it shows in the source code rather than in marketing copy. Each detail in this section can be checked in the repository at the `v0.1.1` tag.
 
 ### Six tools, and no file tools
 

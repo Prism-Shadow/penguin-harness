@@ -7,6 +7,8 @@ excerpt: "Run a complete PenguinHarness self-improvement loop, from baseline eva
 description: "Learn how PenguinHarness combines Benchmarks, Traces, editable Agent State, Snapshots, and rollback in a dual-model experiment with local Qwen3:8B and the Fireworks API."
 ---
 
+> Written for PenguinHarness 0.1.1. Later releases may differ in some details.
+
 *AMD × PrismShadow — Yuyang Gao and Ning Zhang (AMD), Yaowei Zheng (PrismShadow).*
 
 In this tutorial you run a complete self-improvement loop with [PenguinHarness](https://github.com/Prism-Shadow/penguin-harness). You create a small agent, measure it with a Benchmark, let an Optimizer improve it using evidence from real Traces, and keep the new version only if it scores higher. The agent under test runs on Qwen3:8B on an AMD GPU; the agent that creates, measures and optimizes it runs on a model from the Fireworks API.

@@ -5,6 +5,8 @@ category: news
 excerpt: We have partnered with the AMD AI Developer Program to offer free Fireworks coupon codes. This guide shows how to apply for $50 in credits on AMD's global or China site, then set them up in PenguinHarness in three steps.
 ---
 
+> Written for PenguinHarness 0.1.0. Later releases may differ in some details.
+
 We have partnered with the **AMD AI Developer Program** to bring you free Fireworks redemption codes. Join the program and pass its review, and you receive a coupon code worth **$50 in Fireworks AI Credits**. PenguinHarness has a built-in Fireworks AI gateway group, with the OpenAI protocol, the base URL and five models preset, so you can use the credits as soon as they arrive.
 
 The program has a global site and a China site. The first two steps differ between them; from the application form onward, the steps are the same.

@@ -6,6 +6,8 @@ author: Ning Zhang (AMD), Yuyang Gao (AMD), Yaowei Zheng (PrismShadow)
 excerpt: "Learn how PenguinHarness is built, then run it on an AMD GPU with a local open-weight model: have an agent build another agent, and watch an agent raise its own score from about 4.6 to 9.8 out of 10, entirely on-device."
 ---
 
+> Written for PenguinHarness 0.1.1. Later releases may differ in some details.
+
 *AMD × PrismShadow — by Ning Zhang, Yuyang Gao (AMD) and Yaowei Zheng (PrismShadow).*
 
 In this tutorial you run PenguinHarness on fully local, open-weight infrastructure with an AMD GPU. Every Token is generated on the machine, and nothing is sent to a cloud API.

@@ -5,6 +5,8 @@ category: news
 excerpt: The preset catalog now has four free OpenRouter entries, three of them new, so one free OpenRouter API key is all an agent needs. Here is the lineup, how to switch it on, and what the free tier does and does not give you.
 ---
 
+> Written for PenguinHarness 0.1.2. Later releases may differ in some details.
+
 PenguinHarness now ships free models in its preset catalog: rows priced at $0 per million Tokens, set up like every other preset with the protocol, base URL, pricing and context window filled in. The only thing between you and a running agent is an OpenRouter API key, which is itself free to create, and no balance is required.
 
 As of today, the free lineup has four entries, all in the OpenRouter group. Nemotron 3 Ultra was already in the catalog. Ling 3.0 Flash, Laguna M.1 and the Free Models Router are new.

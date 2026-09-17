@@ -5,6 +5,8 @@ category: changelog
 excerpt: 定时任务、支持导出导入的 Agent State 快照、Benchmark 记分板、模型确定原则与一键安装已合入 main。
 ---
 
+> 本文基于 PenguinHarness 0.0.1 撰写，之后的版本在部分细节上可能有所不同。
+
 本月有一批面向「稳定进化」的更新合入了 main。Agent 现在可以按计划定时运行，Agent State 会在有风险的修改之前自动快照，评估中心按模型绘制 Benchmark 结果。要点如下。
 
 ## 定时任务与 Agent State 快照

@@ -6,6 +6,8 @@ pinned: true
 excerpt: 我们在 GDPevo Benchmark 中验证了 Agent 可以自我进化，现在把这项能力带给所有人：一个支持递归自我进化的开源 Harness，从一句话构建 Agent，到持续自我进化，全部覆盖。
 ---
 
+> 本文基于 PenguinHarness 0.1.0 撰写，之后的版本在部分细节上可能有所不同。
+
 今天，我们正式发布 **PenguinHarness**，一个用于构建和进化 Agent 的开源 Harness，提供零代码的 CLI 与 Web App，可以连接 1000+ 模型。背后的理念一句话就能说清：
 
 > 使用 LangChain，以 1 倍速度人工构建 Agent；使用 PenguinHarness，以 100 倍速度用 Agent 构建 Agent。

@@ -30,6 +30,8 @@ the old post, the product's UI strings and the code before it replaced the old t
   showed on each post's date (for example **Set API key for group**, **Costs**, **Trajectory**),
   and claims that no longer hold today are tied to the version they describe.
 - In-page anchor links were replaced by plain references to the section they pointed at.
+- Posts whose title names no release open with a note saying which version they were written for
+  (0.0.1, 0.1.0, 0.1.1 or 0.1.2).
 - The Chinese posts use the Chinese UI's own labels and the product's term 插话 for steering, keep
   their China-specific material (the China ADP route in the Fireworks guide, localized prompts
   and screenshots), and render every bold span next to CJK punctuation.

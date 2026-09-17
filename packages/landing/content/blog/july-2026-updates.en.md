@@ -5,6 +5,8 @@ category: changelog
 excerpt: Scheduled tasks, Agent State snapshots with export and import, Benchmark scoreboards, the model identity principle and a one-line install have landed on main.
 ---
 
+> Written for PenguinHarness 0.0.1. Later releases may differ in some details.
+
 This month, a batch of updates aimed at stable self-evolution landed on main. Agents can now run on a schedule, Agent State is snapshotted before risky changes, and the Evaluation Center charts Benchmark results per model. The highlights are below.
 
 ## Scheduled tasks and Agent State snapshots

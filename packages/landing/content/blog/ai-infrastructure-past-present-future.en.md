@@ -5,6 +5,8 @@ category: perspectives
 excerpt: AI infrastructure was built for human operators, and agents increasingly drive it. The stack already suits agents; what they lack is an engineer's operating knowledge, which PenguinHarness ships as Skills.
 ---
 
+> Written for PenguinHarness 0.1.1. Later releases may differ in some details.
+
 The infrastructure we use to build AI was designed for people. PyTorch assumes someone reading a tutorial. vLLM assumes an engineer who knows how much VRAM the GPU has. LlamaFactory assumes a researcher who reads the training curve and decides whether training is going well. Ollama assumes you remember whether the service is already running.
 
 Every one of these assumptions is about a human operator, and the operator is increasingly an agent: a model that does its work by calling tools. This post asks what changes when a program drives the stack. Our answer is that the stack itself needs little change, because it is already text and commands that an agent can run through a shell.
@@ -31,7 +33,7 @@ The third assumption is that documentation is read once, by someone who will rem
 
 ## Present: the stack is already agent-shaped
 
-The stack needs no new interfaces for agents. It needs operating knowledge and a runtime built for AI work, which is shaped differently from web work. The PenguinHarness details in this section describe version 0.1.1, current when this post was published.
+The stack needs no new interfaces for agents. It needs operating knowledge and a runtime built for AI work, which is shaped differently from web work.
 
 ### The shell is the integration layer
 

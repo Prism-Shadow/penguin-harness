@@ -5,6 +5,8 @@ category: news
 excerpt: 我们与 AMD AI Developer Program 合作，为大家提供免费的 Fireworks 兑换码。本文介绍如何在 AMD 国际站或中国站申请 $50 Credits，再在 PenguinHarness 里三步用起来。
 ---
 
+> 本文基于 PenguinHarness 0.1.0 撰写，之后的版本在部分细节上可能有所不同。
+
 我们与 **AMD AI Developer Program**（AMD 开发者计划）合作，为大家带来免费的 Fireworks 兑换码。加入计划并通过审核，就能拿到一个兑换码，可兑换 **$50 Fireworks AI Credits**。PenguinHarness 内置 Fireworks AI 网关分组，OpenAI 协议、base URL 和五个模型都已预置，额度到手就能用。
 
 这个计划有国际站和中国站两个站点。两边的前两步不同，从填写申请表开始，步骤完全相同。

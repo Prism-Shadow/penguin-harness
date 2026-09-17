@@ -6,6 +6,8 @@ author: 张宁（AMD）、高钰洋（AMD）、郑耀威（PrismShadow）
 excerpt: "先了解 PenguinHarness 的架构，再在 AMD GPU 上用本地开源权重模型运行它：让一个 Agent 构建另一个 Agent，再看 Agent 把自己的分数从约 4.6 提升到 9.8（满分 10），全程在本机完成。"
 ---
 
+> 本文基于 PenguinHarness 0.1.1 撰写，之后的版本在部分细节上可能有所不同。
+
 AMD × PrismShadow——张宁、高钰洋（AMD），郑耀威（PrismShadow）。
 
 在这篇教程里，你将在 AMD GPU 上，用完全本地、开源权重的环境运行 PenguinHarness。每个 Token 都在本机生成，不向任何云端 API 发送内容。

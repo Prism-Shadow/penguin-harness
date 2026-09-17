@@ -6,6 +6,8 @@ pinned: true
 excerpt: Our GDPevo Benchmark showed that agents can evolve themselves. PenguinHarness brings that to everyone as an open-source harness with recursive self-improvement, covering everything from building an agent in one sentence to improving it continuously.
 ---
 
+> Written for PenguinHarness 0.1.0. Later releases may differ in some details.
+
 Today we are releasing **PenguinHarness**, an open-source harness for building and evolving agents. It gives you a zero-code CLI and Web App, connected to 1000+ models. The idea behind it fits in one line:
 
 > With LangChain, you build agents by hand — at 1× speed. With PenguinHarness, agents build agents — at 100×.

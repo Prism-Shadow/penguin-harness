@@ -5,6 +5,8 @@ category: perspectives
 excerpt: Writing an agent now takes about ten lines of code. The cost has moved into the stack around it, where building, observability and evaluation are separate products to learn; this essay compares that cost and argues for automating it away.
 ---
 
+> Written for PenguinHarness 0.1.1. Later releases may differ in some details.
+
 The usual way to measure how hard it is to build an AI agent is to count the lines in a quickstart. By that measure the problem is solved: the leading toolkits reach a working agent in as few as four to fifteen lines.
 
 This essay asks what building an agent actually costs in 2026. Our answer is that the cost did not disappear; it moved into the stack around the agent. The better response is to remove that assembly cost rather than pay it. We show what the cost looks like on the most popular stack, how PenguinHarness removes it, and when you should choose something else.

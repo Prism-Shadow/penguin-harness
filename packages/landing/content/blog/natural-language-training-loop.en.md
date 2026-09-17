@@ -5,6 +5,8 @@ category: practice
 excerpt: "Ask a PenguinHarness agent to serve a model with Ollama or vLLM, measure it with a Benchmark, fine-tune it with LlamaFactory and measure it again. You write two requests, approve tool calls and provide the training data, and with a local model driving the agent, your data never leaves your environment."
 ---
 
+> Written for PenguinHarness 0.1.1. Later releases may differ in some details.
+
 PenguinHarness 0.1.1 ships three Skills for working with models on your own hardware: `ollama`, `vllm` and `llamafactory`. They are not three more command-line tools for you to learn. They are written for the agent, so that you stop running the commands. You say what you want in a sentence, and the agent picks the tool, asks the questions it is required to ask, runs the commands, checks that they worked and tells you what happened.
 
 In this tutorial you use them to close a training loop on your own hardware. You send the agent two messages: the first asks it to serve a model, the second to fine-tune that model until it passes an evaluation. The agent serves the model, builds a Benchmark and measures a baseline, fine-tunes the model on the training data you point it to, redeploys it and measures again. You answer its questions, approve its tool calls, provide the training data and read the scoreboard. The commands shown along the way are what the agent ran, not a checklist for you.

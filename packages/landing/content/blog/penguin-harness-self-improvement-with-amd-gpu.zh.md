@@ -7,6 +7,8 @@ excerpt: "用 AMD GPU 上的本地 Qwen3:8B 和 Fireworks API 上的模型，跑
 description: "介绍 PenguinHarness 如何通过 Benchmark、Trace、可编辑的 Agent State 与 Snapshot 回滚构建自我进化闭环，并用本地 Qwen3:8B 与 Fireworks API 完成一次双模型实验。"
 ---
 
+> 本文基于 PenguinHarness 0.1.1 撰写，之后的版本在部分细节上可能有所不同。
+
 AMD × PrismShadow——高钰洋、张宁（AMD），郑耀威（PrismShadow）。
 
 在本教程中，你会用 [PenguinHarness](https://github.com/Prism-Shadow/penguin-harness) 跑通一个完整的自我进化闭环：创建一个小 Agent，用 Benchmark 评估它，让 Optimizer 根据真实 Trace 中的证据改进它，分数更高才保留新版本。被测 Agent 使用 AMD GPU 上的 Qwen3:8B；负责创建、评估和优化的 Agent 则使用 Fireworks API 上的模型。
