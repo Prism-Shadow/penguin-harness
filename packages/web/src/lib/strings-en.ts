@@ -2316,6 +2316,26 @@ Scenarios:
     /** The same rule as `workspaceHint`, short enough to sit under a form field. */
     workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
+    /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
+    permission: {
+      label: "Permissions",
+      levels: {
+        all: "Full access",
+        partial: "Partial",
+        "read-only": "Read only",
+        off: "Off",
+      } as Record<string, string>,
+      fs: "Filesystem",
+      fsModes: {
+        "read-only": "Read only",
+        "workspace-write": "Workspace write",
+        "danger-full-access": "Full access",
+      } as Record<string, string>,
+      network: "Network",
+      networkModes: { open: "Allowed", none: "Cut off" } as Record<string, string>,
+      more: "More…",
+      approval: "Approval",
+    },
     approvalModeNames: {
       "allow-all": "Approve everything",
       "deny-all": "Deny everything",

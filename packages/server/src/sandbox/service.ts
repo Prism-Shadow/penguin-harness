@@ -139,8 +139,16 @@ export class SandboxService {
    * serving during a hot-swap freeze window.
    */
   confiner(): SpawnConfiner {
+    return this.confinerFor(() => this.settings);
+  }
+
+  /**
+   * The same closure under a policy the caller keeps — a Session's own snapshot. The
+   * backends are still this service's, so a backend change reaches every Session.
+   */
+  confinerFor(policyOf: () => SandboxSettings): SpawnConfiner {
     return (argv, opts) => {
-      const settings = this.settings;
+      const settings = policyOf();
       if (settings.mode === "danger-full-access") return { argv };
       const required = requestedDimensions(settings);
       const provider = this.pick(required, settings.mode);
@@ -212,6 +220,7 @@ export abstract class Sandbox extends Interface<
     | "failures"
     | "declined"
     | "confiner"
+    | "confinerFor"
     | "whenReady"
   >
 >() {}

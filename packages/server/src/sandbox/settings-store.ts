@@ -52,8 +52,9 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
         title: "Sandbox",
         titleZh: "沙盒",
         description:
-          "The confinement agent commands run under, enforced by a sandbox backend plugin. Applies to the next command spawn.",
-        descriptionZh: "Agent 执行命令时的封禁策略，由沙盒后端插件实施。对下一次命令启动生效。",
+          "The confinement new sessions start with, enforced by a sandbox backend plugin. A session keeps the policy it started with; change it from that session's permission button.",
+        descriptionZh:
+          "新建会话的初始封禁策略，由沙盒后端插件实施。已有会话保留创建时的策略，可在该会话的权限按钮中修改。",
         properties: {
           mode: {
             type: "enum",

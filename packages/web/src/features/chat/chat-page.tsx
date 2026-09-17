@@ -25,6 +25,7 @@ import type {
   ModelsResponse,
   SessionInfo,
   SessionPatchRequest,
+  SessionSandbox,
   SessionProcessInfo,
   SessionStatus,
   SkillMetadataItem,
@@ -1263,6 +1264,7 @@ export function ChatPage() {
             modelId: ref.modelId,
             workspace: selected.workspace,
             approvalMode: selected.approvalMode,
+            sandbox: selected.sandbox,
           },
           // On the machine the source Session is on: the Workspace being carried over is a
           // directory THERE, and this server would refuse a path it does not have
@@ -1309,6 +1311,7 @@ export function ChatPage() {
       try {
         const created = await api.createSession(projectId, target.agentId, {
           approvalMode: selected.approvalMode,
+          sandbox: selected.sandbox,
         });
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
@@ -1505,6 +1508,24 @@ export function ChatPage() {
       setModeSaving(true);
       void api
         .patchSession(selected.sessionId, { approvalMode: mode })
+        .then((res) => replace(res.session))
+        .catch((e: unknown) => {
+          toastError(apiErrorText(e));
+        })
+        .finally(() => setModeSaving(false));
+    },
+    [selected, modeSaving, replace],
+  );
+
+  // The Session's own sandbox policy: saved on the Session and applied from its next command.
+  // The same save shape as the approval mode — a refused change (a non-admin loosening past
+  // the server's settings) is a toast, and the button keeps showing what the server has.
+  const onChangeSandbox = useCallback(
+    (pick: Partial<SessionSandbox>) => {
+      if (!selected || modeSaving) return;
+      setModeSaving(true);
+      void api
+        .patchSession(selected.sessionId, { sandbox: pick })
         .then((res) => replace(res.session))
         .catch((e: unknown) => {
           toastError(apiErrorText(e));
@@ -1777,6 +1798,7 @@ export function ChatPage() {
             models={models?.models ?? []}
             approvalMode={selected.approvalMode}
             onChangeApprovalMode={onChangeApprovalMode}
+            onChangeSandbox={onChangeSandbox}
             modeSaving={modeSaving}
             parentThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
           />
@@ -1929,6 +1951,8 @@ export function ChatPage() {
       vision={vision}
       approvalMode={selected.approvalMode}
       onChangeApprovalMode={onChangeApprovalMode}
+      sandbox={selected.sandbox}
+      onChangeSandbox={onChangeSandbox}
       modeSaving={modeSaving}
       autoFocus
       agents={agents}

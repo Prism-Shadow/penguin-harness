@@ -33,6 +33,7 @@ import type {
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
+  SessionSandbox,
   SessionSource,
   SessionStatus,
   ServerEvent,
@@ -48,6 +49,51 @@ import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
+
+const SANDBOX_MODE_RANK: Record<SandboxSettings["mode"], number> = {
+  "read-only": 0,
+  "workspace-write": 1,
+  "danger-full-access": 2,
+};
+
+/** A stored policy as the composer sees it. */
+export function sessionSandboxOf(policy: SandboxSettings): SessionSandbox {
+  return { mode: policy.mode, network: policy.network === "none" ? "none" : "open" };
+}
+
+/**
+ * `base` with the composer's picks laid over it — the mask paths and the temp directory stay
+ * what the snapshot holds. A non-admin may tighten but never loosen past the server's settings
+ * (`defaults`): the admin's sandbox is the ceiling for everyone else, per Session or not.
+ */
+export function applySandboxPick(
+  base: SandboxSettings,
+  pick: Partial<SessionSandbox>,
+  defaults: SandboxSettings,
+  isAdmin: boolean,
+): SandboxSettings {
+  const mode = pick.mode ?? base.mode;
+  const network = pick.network ?? (base.network === "none" ? "none" : "open");
+  if (!isAdmin) {
+    if (SANDBOX_MODE_RANK[mode] > SANDBOX_MODE_RANK[defaults.mode]) {
+      throw new HttpError(
+        403,
+        "sandbox_forbidden",
+        `Only an administrator can give a Session more filesystem access than the server's sandbox settings (${defaults.mode}).`,
+      );
+    }
+    if (network === "open" && defaults.network === "none") {
+      throw new HttpError(
+        403,
+        "sandbox_forbidden",
+        "Only an administrator can open the network for a Session while the server's sandbox settings cut it.",
+      );
+    }
+  }
+  const { network: _dropped, ...rest } = base;
+  return { ...rest, mode, ...(network === "none" ? { network: "none" as const } : {}) };
+}
 
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
 
@@ -119,13 +165,32 @@ export interface SessionServiceDeps {
   orgIdOfSession?: (sessionId: string) => string | undefined;
   orgIdsOfProject?: (projectId: string) => ReadonlyMap<string, string>;
   /** Spawn-confinement getter (the sandbox module's), forwarded into core beside proxyEnv. */
-  confineSpawn?: () => SpawnConfiner | null;
+  confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
+  /** The server's Sandbox settings: what a new Session's policy is snapshotted from. */
+  sandboxDefaults?: () => SandboxSettings;
   /** The host's assembly additions (core AgentAssembly), forwarded like the getters above. */
   assembly?: AgentAssembly;
 }
 
 export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
+
+  /** The policy a new Session starts with: the server's Sandbox settings. */
+  defaultSandbox(): SandboxSettings {
+    return this.deps.sandboxDefaults?.() ?? { mode: "danger-full-access" };
+  }
+
+  /** A Session's policy: its snapshot, or — for a row from before snapshots — the settings. */
+  sandboxOf(row: SessionRow): SandboxSettings {
+    return row.sandbox ?? this.defaultSandbox();
+  }
+
+  /** Changes one Session's policy (its next command runs under it); returns the new policy. */
+  updateSandbox(row: SessionRow, pick: Partial<SessionSandbox>, isAdmin: boolean): SandboxSettings {
+    const next = applySandboxPick(this.sandboxOf(row), pick, this.defaultSandbox(), isAdmin);
+    this.deps.sessions.updateSandbox(row.sessionId, next);
+    return next;
+  }
 
   /**
    * The dashboard's read: every non-archived Session of the Project over every Agent, as the
@@ -184,6 +249,7 @@ export class SessionService {
       modelId: row.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
+      sandbox: sessionSandboxOf(this.sandboxOf(row)),
       ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
@@ -426,6 +492,10 @@ export class SessionService {
     provider?: string;
     workspace?: string;
     approvalMode?: ApprovalMode;
+    /** The composer's sandbox picks; omitted halves take the server's settings. */
+    sandbox?: Partial<SessionSandbox>;
+    /** Whether the creator is an administrator (may loosen past the settings). Default false. */
+    isAdmin?: boolean;
     /**
      * Session source marker: `schedule` when triggered by a scheduled task, `benchmark` when
      * created by a Benchmark evaluation or optimization (the only value a client may send);
@@ -453,6 +523,8 @@ export class SessionService {
         "modelId and provider must be given together as a (provider, modelId) pair: specify both, or neither to use the Project's default model.",
       );
     }
+    // Checked before anything is created: a refused pick must not leave a Session behind.
+    const sandbox = this.snapshotSandbox(args);
     let modelId: string;
     let provider: string;
     if (args.modelId !== undefined && args.provider !== undefined) {
@@ -518,6 +590,7 @@ export class SessionService {
       modelId: session.modelId,
       workspace: session.workspaceDir,
       approvalMode: args.approvalMode ?? "allow-all",
+      sandbox,
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,
       // "org" when the organization runtime opened a desk or a ticket session, otherwise
@@ -541,6 +614,17 @@ export class SessionService {
     return this.toInfo(row, false);
   }
 
+  /** A new Session's snapshot: the settings, with the creator's picks (checked) on top. */
+  private snapshotSandbox(args: {
+    sandbox?: Partial<SessionSandbox>;
+    isAdmin?: boolean;
+  }): SandboxSettings {
+    const defaults = this.defaultSandbox();
+    return args.sandbox === undefined
+      ? defaults
+      : applySandboxPick(defaults, args.sandbox, defaults, args.isAdmin ?? false);
+  }
+
   /**
    * A surface Session: a row with an empty model reference, a Workspace (the given one, or a
    * temporary one shaped like every other Session's) and the surface's kind. Nothing is
@@ -552,6 +636,8 @@ export class SessionService {
     agentId: string;
     workspace?: string;
     approvalMode?: ApprovalMode;
+    sandbox?: Partial<SessionSandbox>;
+    isAdmin?: boolean;
     client?: "web" | "cli" | "org";
     surface: string;
   }): Promise<SessionInfo> {
@@ -566,6 +652,7 @@ export class SessionService {
       modelId: "",
       workspace,
       approvalMode: args.approvalMode ?? "allow-all",
+      sandbox: this.snapshotSandbox(args),
       title: null,
       client: args.client ?? "web",
       lastActiveAt: createdAt,

@@ -2334,6 +2334,26 @@ Benchmark：
     /** The same rule as `workspaceHint`, short enough to sit under a form field. */
     workspaceHintShort: "留空自动创建临时工作区",
     approvalMode: "审批模式",
+    /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
+    permission: {
+      label: "权限",
+      levels: {
+        all: "完全访问",
+        partial: "部分权限",
+        "read-only": "只读",
+        off: "关闭",
+      } as Record<string, string>,
+      fs: "文件系统",
+      fsModes: {
+        "read-only": "只读",
+        "workspace-write": "仅工作区可写",
+        "danger-full-access": "完全访问",
+      } as Record<string, string>,
+      network: "网络",
+      networkModes: { open: "放行", none: "断开" } as Record<string, string>,
+      more: "更多…",
+      approval: "审批",
+    },
     /** Short description (the trigger button shows only the description, not the mode id). */
     approvalModeNames: {
       "allow-all": "全部放行",

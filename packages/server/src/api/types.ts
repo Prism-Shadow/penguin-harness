@@ -887,6 +887,11 @@ export interface ChatDefaultsDto {
    * "none" — only the selectable tiers.
    */
   thinkingLevel?: Exclude<ThinkingLevelName, "none">;
+  /**
+   * Read-only, GET only: the sandbox policy a new Session starts with — the server's Sandbox
+   * settings. Not part of the Project's block; PUT ignores it.
+   */
+  sandbox?: SessionSandbox;
 }
 
 // ---------------------------------------------------------------------------
@@ -1323,6 +1328,20 @@ export interface MemoryImportResponse {
 // Session
 // ---------------------------------------------------------------------------
 
+/** How far a Session's commands may reach the filesystem (the sandbox's confinement mode). */
+export type SessionSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+
+/**
+ * The part of a Session's sandbox policy a person picks from the composer: the filesystem
+ * mode and whether the network is open. The Session keeps its own copy — taken from the
+ * server's Sandbox settings when it was created — so editing those settings only changes
+ * what NEW Sessions start with.
+ */
+export interface SessionSandbox {
+  mode: SessionSandboxMode;
+  network: "open" | "none";
+}
+
 export interface SessionInfo {
   sessionId: string;
   projectId: string;
@@ -1333,6 +1352,8 @@ export interface SessionInfo {
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;
+  /** The Session's own sandbox policy (see {@link SessionSandbox}). */
+  sandbox: SessionSandbox;
   /**
    * Thinking level pinned for this Session (set via PATCH; the Web App's in-chat picker).
    * Unset = never pinned: each model context the Session opens reads the Agent config's
@@ -1537,6 +1558,11 @@ export interface SessionCreateRequest {
   /** Defaults to allow-all. */
   approvalMode?: ApprovalMode;
   /**
+   * The Session's sandbox policy; either half omitted takes the server's Sandbox settings.
+   * A non-admin may not pick anything looser than those settings (403 `sandbox_forbidden`).
+   */
+  sandbox?: Partial<SessionSandbox>;
+  /**
    * Creating-client hint stored on the Session row: "cli" when the CLI creates the
    * Session through the API, "org" when the organization runtime opened it (a desk or a
    * ticket session — company mode's own, kept out of development mode's lists whether or
@@ -1591,6 +1617,11 @@ export interface SessionResponse {
 
 export interface SessionPatchRequest {
   approvalMode?: ApprovalMode;
+  /**
+   * Change this Session's sandbox policy; applies from its next command. A non-admin may not
+   * pick anything looser than the server's Sandbox settings (403 `sandbox_forbidden`).
+   */
+  sandbox?: Partial<SessionSandbox>;
   /**
    * Pin this Session's thinking level (`none | low | medium | high | xhigh | max`, anything else
    * is a 400). It replaces the Agent-config fallback for this Session and applies from the

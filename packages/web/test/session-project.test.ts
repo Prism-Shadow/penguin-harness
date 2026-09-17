@@ -19,6 +19,7 @@ const SESSION: SessionInfo = {
   modelId: "claude-sonnet-4",
   workspace: "/workspace",
   approvalMode: "allow-all",
+  sandbox: { mode: "danger-full-access", network: "open" },
   createdAt: "2026-08-24T00:00:00.000Z",
   lastActiveAt: "2026-08-24T00:00:00.000Z",
   status: "idle",

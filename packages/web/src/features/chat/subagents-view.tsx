@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import type {
   ApprovalMode,
+  SessionSandbox,
   ModelInfo,
   SessionInfo,
   SessionPatchRequest,
@@ -76,6 +77,7 @@ export function SubagentsView({
   models,
   approvalMode,
   onChangeApprovalMode,
+  onChangeSandbox,
   modeSaving,
   parentThinkingLevel,
 }: {
@@ -96,6 +98,8 @@ export function SubagentsView({
   /** The PARENT session's approval mode — child approvals are judged by it (the same value the main composer edits). */
   approvalMode: ApprovalMode;
   onChangeApprovalMode: (mode: ApprovalMode) => void;
+  /** Edits the PARENT session's sandbox policy — a child runs under its root's. */
+  onChangeSandbox: (pick: Partial<SessionSandbox>) => void;
   modeSaving: boolean;
   /** The parent session's effective thinking level ("" = unknown): the child composer's display fallback — a child inherits it at spawn unless the spawning call pinned its own. */
   parentThinkingLevel: string;
@@ -286,6 +290,8 @@ export function SubagentsView({
             models={models}
             approvalMode={approvalMode}
             onChangeApprovalMode={onChangeApprovalMode}
+            sandbox={session.sandbox}
+            onChangeSandbox={onChangeSandbox}
             modeSaving={modeSaving}
             fallbackThinkingLevel={activeNode?.spawnThinkingLevel ?? parentThinkingLevel}
           />
@@ -327,6 +333,8 @@ function SubagentComposer({
   models,
   approvalMode,
   onChangeApprovalMode,
+  sandbox,
+  onChangeSandbox,
   modeSaving,
   fallbackThinkingLevel,
 }: {
@@ -339,6 +347,10 @@ function SubagentComposer({
   models: ModelInfo[];
   approvalMode: ApprovalMode;
   onChangeApprovalMode: (mode: ApprovalMode) => void;
+  /** The PARENT session's sandbox policy. */
+  sandbox: SessionSandbox;
+  /** Edits the PARENT session's sandbox policy — a child runs under its root's. */
+  onChangeSandbox: (pick: Partial<SessionSandbox>) => void;
   modeSaving: boolean;
   /** Display fallback for the thinking picker while the user hasn't picked: the spawn call's explicit level, else the parent session's effective level (what the child inherited). */
   fallbackThinkingLevel: string;
@@ -439,6 +451,8 @@ function SubagentComposer({
         vision={false}
         approvalMode={approvalMode}
         onChangeApprovalMode={onChangeApprovalMode}
+        sandbox={sandbox}
+        onChangeSandbox={onChangeSandbox}
         modeSaving={modeSaving}
         agents={[]}
         skills={skills}
