@@ -21,6 +21,12 @@
   your config. The one thing redirected is the temp directory, to a sandbox-owned folder every
   account may write, which is where a shell keeps its scratch files.
 
+  ~/.ssh is never in that set, and every run of this script (setup and -Remove alike) takes any
+  sandbox account OFF it: OpenSSH refuses a config or a private key another account can read
+  ("Bad permissions"), so a grant there breaks ssh for you, and a sandboxed ssh could not use
+  those files anyway — they are not its own. NTUSER.DAT and its logs (the registry hive) are
+  skipped among the root files for the same reason: nothing but you should appear on them.
+
   Nothing here is a service, a driver or a reboot. What it leaves behind is: the group, the four
   accounts, their firewall rules, two grants on your profile, one writable temp folder, and one
   state file naming them. Pass -Remove to take all of it away again.
@@ -55,8 +61,12 @@ param(
   [string] $UserProfile = $env:USERPROFILE,
   # Config directories under the profile opened to the sandbox accounts (each small). Caches,
   # node_modules, AppData\Local and .penguin are deliberately absent: a command never needs them,
-  # and they are where a developer's millions of files live.
-  [string[]] $ConfigDirs = @('.ssh', '.config', '.aws', '.gnupg', '.docker', '.kube', '.azure'),
+  # and they are where a developer's millions of files live. .ssh is absent on purpose, see
+  # $PrivateDirs.
+  [string[]] $ConfigDirs = @('.config', '.aws', '.gnupg', '.docker', '.kube', '.azure'),
+  # Directories no sandbox account may appear on at all. Every run strips them of any grant an
+  # earlier build left, inherited ones included (see Clear-PrivateDirs).
+  [string[]] $PrivateDirs = @('.ssh'),
   [switch] $Remove,
   # Also strip the whole-profile grant an earlier build made (a slow tree walk; off by default).
   [switch] $RemoveLegacyProfileGrant
@@ -124,6 +134,7 @@ function Remove-Everything {
   }
   # The curated config grants come off the same short list they went on — seconds, not a walk.
   Set-ConfigAccess -Revoke
+  Clear-PrivateDirs
   # An earlier build granted the whole profile with /T. Undoing THAT is the slow walk it always
   # was, so it is offered rather than assumed: -RemoveLegacyProfileGrant does it.
   if ($RemoveLegacyProfileGrant -and (Test-Path $UserProfile)) {
@@ -224,6 +235,8 @@ function Set-ConfigAccess([switch] $Revoke) {
   # The root: traverse and list only, NEVER inheritable (see the note above).
   $targets += [pscustomobject]@{ Path = $UserProfile; Inherit = $false; Recurse = $false }
   foreach ($file in (Get-ChildItem -LiteralPath $UserProfile -File -Force -ErrorAction SilentlyContinue)) {
+    # The registry hive and its transaction logs: yours alone, whatever else is granted.
+    if ($file.Name -like 'ntuser*') { continue }
     $targets += [pscustomobject]@{ Path = $file.FullName; Inherit = $false; Recurse = $false }
   }
   foreach ($rel in $ConfigDirs) {
@@ -254,6 +267,65 @@ function Set-ConfigAccess([switch] $Revoke) {
   }
   $verb = if ($Revoke) { 'revoked on' } else { 'granted read (modify for full access) on' }
   Write-Host "profile config: $verb $($targets.Count) paths under $UserProfile"
+}
+
+<#
+  What on a private directory names a sandbox account: our current and earlier account and group
+  names, and a bare SID of a LOCAL account on this machine — an account an earlier -Remove
+  already deleted leaves its entries behind as an unresolvable SID, and on ~/.ssh that is the same
+  "Bad permissions" as a named one. Only this machine's own account SIDs, never yours: a domain
+  account can show as a bare SID merely because its domain is unreachable.
+#>
+function Get-SandboxEntries([string] $Dir, [string[]] $Principals) {
+  $listing = (& icacls $Dir /T /C 2>$null) -join "`n"
+  $found = @($Principals | Where-Object { $listing -match [regex]::Escape("\${_}:") })
+  $machineSid = (Get-LocalUser | Select-Object -First 1).SID.AccountDomainSid.Value
+  $me = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+  foreach ($match in [regex]::Matches($listing, '(?m)\s(S-1-5-21-[0-9-]+):')) {
+    $sid = $match.Groups[1].Value
+    if ($machineSid -and $sid.StartsWith("$machineSid-") -and $sid -ne $me) {
+      $found += "*$sid"
+    }
+  }
+  return @($found | Select-Object -Unique)
+}
+
+<#
+  Takes every sandbox account off the private directories, so OpenSSH accepts ~/.ssh again
+  ("Bad permissions ... on file ~/.ssh/config" is what a leftover grant looks like). Explicit
+  grants go first. An INHERITED one — an earlier build granted the whole profile with
+  inheritance — cannot be removed where it lands, so the directory then stops inheriting
+  (keeping copies of everything else it inherited) and the copies naming a sandbox account are
+  removed; that is the shape OpenSSH's own guidance gives ~/.ssh. Small directories, and a clean
+  one costs a single listing. Runs before -Remove deletes the accounts, while names still resolve.
+#>
+function Clear-PrivateDirs {
+  $principals = @($GroupName) + $allUsers + $legacyGroups + $legacyUsers
+  foreach ($rel in $PrivateDirs) {
+    $dir = Join-Path $UserProfile $rel
+    if (-not (Test-Path -LiteralPath $dir)) { continue }
+    $entries = Get-SandboxEntries $dir $principals
+    if ($entries.Count -eq 0) {
+      Write-Host "${dir}: no sandbox account has access"
+      continue
+    }
+    foreach ($who in $entries) {
+      & icacls $dir /remove:g $who /T /C /Q 2>$null | Out-Null
+    }
+    $inherited = Get-SandboxEntries $dir $principals
+    if ($inherited.Count -gt 0) {
+      & icacls $dir /inheritance:d /C /Q 2>$null | Out-Null
+      foreach ($who in $inherited) {
+        & icacls $dir /remove:g $who /T /C /Q 2>$null | Out-Null
+      }
+    }
+    $left = Get-SandboxEntries $dir $principals
+    if ($left.Count -gt 0) {
+      Write-Warning "${dir}: could not remove $($left -join ', '); run: icacls `"$dir`" /remove:g <name> /T"
+    } else {
+      Write-Host "${dir}: removed sandbox access ($($entries -join ', '))"
+    }
+  }
 }
 
 function Protect-StateFile([string] $Path) {
@@ -301,6 +373,7 @@ New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 & icacls $tempDir /grant "${GroupName}:(OI)(CI)(M)" | Out-Null
 
 Set-ConfigAccess -Revoke:$false
+Clear-PrivateDirs
 
 $state = [ordered]@{
   group       = $GroupName
