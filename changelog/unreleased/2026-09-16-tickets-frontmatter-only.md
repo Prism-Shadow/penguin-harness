@@ -34,8 +34,9 @@ left on disk untouched and is handled like any other ticket file that does not p
   `penguin org ticket ls` prints it as an `invalid` row (`invalidFiles` under `--json`), and the
   reconcile pass records an `org_ticket_invalid` error.
 - Opening it answers 404 `ticket_not_found`; every write to it is refused with 409
-  `ticket_invalid` (404 when its id still carries a digit), so nothing converts or overwrites it.
-  A new ticket that would take its id gets the next suffix.
+  `ticket_invalid` (400 `bad_request` on read and write alike when its slug still carries a
+  digit or is otherwise not letters-only), so nothing converts or overwrites it. A new ticket that
+  would take its id gets the next suffix.
 - Until it is repaired, the sessions only it names count toward no ticket and no employee's spend,
   and a ticket whose `parent` names it is flagged for a missing parent.
 
