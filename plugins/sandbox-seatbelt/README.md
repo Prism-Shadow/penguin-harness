@@ -6,7 +6,8 @@ network isolation and path masking — as policy rules rather than mounts.
 
 ## Requirements
 
-- macOS, with `sandbox-exec` available (part of the base system).
+- macOS, with `sandbox-exec` available (part of the base system). On any other platform the
+  backend declines to mount, so a policy is routed to a backend that host has.
 
 ## How the profile is built
 

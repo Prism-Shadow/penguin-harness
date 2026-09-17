@@ -7,7 +7,11 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { bwrapProfileArgs, createPenguinBwrapProvider } from "../src/index.js";
+import {
+  bwrapProfileArgs,
+  createPenguinBwrapProvider,
+  loadPenguinBwrapProvider,
+} from "../src/index.js";
 
 const ARGV = ["bash", "-lc", "echo hi"] as const;
 const WS = "/work/project";
@@ -130,5 +134,20 @@ describe("penguin-bwrap provider", () => {
     expect(() => provider.confine([...ARGV], policy)).toThrow(/cannot confine on this host/);
     expect(() => provider.confine([...ARGV], policy)).toThrow(/cannot confine on this host/);
     expect(probes).toBe(1);
+  });
+});
+
+describe("bwrap on another platform", () => {
+  it("declines off Linux (not a failure), and fails with a reason on Linux it cannot serve", async () => {
+    const other = "win32" as const;
+    await expect(
+      loadPenguinBwrapProvider({ platform: other, probe: () => true }),
+    ).resolves.toBeNull();
+    await expect(
+      loadPenguinBwrapProvider({ platform: "linux", probe: () => false }),
+    ).rejects.toThrow(/is missing or refuses/);
+    await expect(
+      loadPenguinBwrapProvider({ platform: "linux", probe: () => true }),
+    ).resolves.toBeDefined();
   });
 });

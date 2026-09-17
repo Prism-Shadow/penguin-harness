@@ -66,7 +66,19 @@ describe("sandbox service — the built-in interface and its optional dimensions
     ]);
     svc.configure({ mode: "read-only" });
     expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(
-      /failed to load: dsh-local \(Cannot find module 'landlock-run'\)/,
+      /not in use: dsh-local \(Cannot find module 'landlock-run'\)/,
+    );
+  });
+
+  it("separates a backend that declines this host from one that failed on it", async () => {
+    const svc = await service([
+      ["quiet", Promise.resolve(null)],
+      ["loud", Promise.reject(new Error("'bwrap' is missing"))],
+    ]);
+    expect(svc.backends()).toEqual([]);
+    svc.configure({ mode: "read-only" });
+    expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(
+      /loud \('bwrap' is missing\); quiet \(not for this host\)/,
     );
   });
 

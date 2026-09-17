@@ -29,7 +29,7 @@
  * working, the probe below is what turns that into a fail-closed refusal rather than an
  * unconfined run.
  */
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -39,6 +39,7 @@ import type {
   Plugin,
   SandboxPolicy,
   SandboxProvider,
+  SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
 
 /** Default probe budget; a probe that hangs must not hang the first spawn forever. */
@@ -49,7 +50,7 @@ const REQUIRED_WRITE_SINKS = ["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/d
 
 /** Test seams: inject the probe verdict and the runner name. */
 export interface SeatbeltInternals {
-  probe?: (timeoutMs: number) => boolean;
+  probe?: (timeoutMs: number, runner: string) => boolean;
   runner?: string;
 }
 
@@ -121,17 +122,44 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
 }
 
 /**
+ * Loads the backend, checking first that it can serve on this host — and rejecting, with the
+ * reason, when it cannot: it runs on macOS only, and needs a sandbox-exec that accepts its
+ * profile. The sandbox service records the rejection and names it when a command fails closed,
+ * so the backend is never silently absent.
+ */
+export async function loadSeatbeltProvider(
+  internals: SeatbeltInternals & { platform?: NodeJS.Platform } = {},
+): Promise<SandboxProvider | null> {
+  const platform = internals.platform ?? process.platform;
+  // Not this host's backend: a decline, not a failure (see penguin-bwrap's loader).
+  if (platform !== "darwin") return null;
+  const runner = internals.runner ?? "sandbox-exec";
+  const usable = internals.probe
+    ? internals.probe(PROBE_TIMEOUT_MS, runner)
+    : await new Promise<boolean>((resolve) => {
+        execFile(
+          runner,
+          [...seatbeltArgs({ mode: "read-only", workspaceRoot: "/" }), "--", "true"],
+          { timeout: PROBE_TIMEOUT_MS },
+          (err) => resolve(err === null),
+        );
+      });
+  if (!usable) throw new Error(`'${runner}' is missing or refuses the Seatbelt profile`);
+  return createSeatbeltProvider(internals);
+}
+
+/**
  * The backend. The probe runs once, lazily (first confine), and is cached; an
  * unusable Seatbelt throws — fail-closed — rather than degrading to a weaker profile.
  */
 export function createSeatbeltProvider(internals: SeatbeltInternals = {}): SandboxProvider {
   const runner = internals.runner ?? "sandbox-exec";
-  const probe = internals.probe ?? ((timeoutMs: number) => defaultProbe(timeoutMs, runner));
+  const probe = internals.probe ?? defaultProbe;
   let usable: boolean | undefined;
   return {
     dimensions: ["fs-write", "network", "mask-paths"],
     confine(argv, policy): ConfinedArgv {
-      usable ??= probe(PROBE_TIMEOUT_MS);
+      usable ??= probe(PROBE_TIMEOUT_MS, runner);
       if (!usable) {
         throw new Error(
           `penguin-seatbelt cannot confine on this host: '${runner}' is missing or refuses the ` +
@@ -168,10 +196,10 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
   },
 })
 export class SandboxSeatbelt {
-  @Bind("sandbox-seatbelt.provider") provider!: SandboxProvider;
+  @Bind("sandbox-seatbelt.provider") provider!: SandboxProviderSource;
 
   setup() {
-    this.provider = createSeatbeltProvider();
+    this.provider = loadSeatbeltProvider();
   }
 }
 

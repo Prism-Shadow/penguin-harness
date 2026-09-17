@@ -6,7 +6,8 @@ interface — filesystem writes, network isolation and path masking.
 
 ## Requirements
 
-- Linux, with `bwrap` on PATH.
+- Linux, with `bwrap` on PATH. On any other platform the backend declines to mount, so a policy
+  is routed to a backend that host has.
 - Unprivileged user namespaces enabled. The backend probes functionally at load and
   declines when the kernel will not grant them, rather than confining less than asked.
 

@@ -30,7 +30,7 @@
  * remains readable as stale metadata. Mask it explicitly with `maskPaths` if that
  * matters for a deployment.
  */
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { statSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -40,14 +40,15 @@ import type {
   Plugin,
   SandboxPolicy,
   SandboxProvider,
+  SandboxProviderSource,
 } from "@prismshadow/penguin-core/plugin";
 
 /** Default probe budget; a probe that hangs must not hang the first spawn forever. */
 const PROBE_TIMEOUT_MS = 5_000;
 
-/** Test seams: inject the probe verdict and capture the runner name. */
+/** Test seams: inject the probe verdict and the runner name. */
 export interface PenguinBwrapInternals {
-  probe?: (timeoutMs: number) => boolean;
+  probe?: (timeoutMs: number, runner: string) => boolean;
   runner?: string;
 }
 
@@ -84,13 +85,56 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
 }
 
 /** Functional probe: can bwrap actually create the base profile on this host? */
+/** The argv that checks bwrap can build the base profile at all. */
+const BASE_PROFILE_PROBE = [
+  "--ro-bind",
+  "/",
+  "/",
+  "--dev",
+  "/dev",
+  "--proc",
+  "/proc",
+  "--die-with-parent",
+  "--",
+  "true",
+];
+
 function defaultProbe(timeoutMs: number, runner: string): boolean {
-  const probe = spawnSync(
-    runner,
-    ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--die-with-parent", "--", "true"],
-    { timeout: timeoutMs, stdio: "ignore" },
-  );
+  const probe = spawnSync(runner, BASE_PROFILE_PROBE, { timeout: timeoutMs, stdio: "ignore" });
   return probe.status === 0;
+}
+
+/** The base-profile probe, without blocking the process: what the load-time check runs. */
+function probeAsync(timeoutMs: number, runner: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile(runner, BASE_PROFILE_PROBE, { timeout: timeoutMs }, (err) => resolve(err === null));
+  });
+}
+
+/**
+ * Loads the backend, checking first that it can serve on this host — and rejecting, with the
+ * reason, when it cannot: it runs on Linux only, and needs a bwrap that accepts the base profile.
+ * A backend mounted without being able to serve would be routed policies and fail every command;
+ * one that declined without a reason would leave nobody able to tell why. The sandbox service
+ * records the rejection and names it when a command fails closed.
+ */
+export async function loadPenguinBwrapProvider(
+  internals: PenguinBwrapInternals & { platform?: NodeJS.Platform } = {},
+): Promise<SandboxProvider | null> {
+  const platform = internals.platform ?? process.platform;
+  // Not this host's backend: a decline, not a failure — the deployment installed it for
+  // its Linux machines, and saying so on every Windows card would be noise.
+  if (platform !== "linux") return null;
+  const runner = internals.runner ?? "bwrap";
+  const usable = internals.probe
+    ? internals.probe(PROBE_TIMEOUT_MS, runner)
+    : await probeAsync(PROBE_TIMEOUT_MS, runner);
+  if (!usable) {
+    throw new Error(
+      `'${runner}' is missing or refuses the base profile (is bubblewrap installed, with unprivileged user namespaces enabled?)`,
+    );
+  }
+  return createPenguinBwrapProvider(internals);
 }
 
 /**
@@ -100,12 +144,12 @@ function defaultProbe(timeoutMs: number, runner: string): boolean {
  */
 export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}): SandboxProvider {
   const runner = internals.runner ?? "bwrap";
-  const probe = internals.probe ?? ((timeoutMs: number) => defaultProbe(timeoutMs, runner));
+  const probe = internals.probe ?? defaultProbe;
   let usable: boolean | undefined;
   return {
     dimensions: ["fs-write", "network", "mask-paths"],
     confine(argv, policy): ConfinedArgv {
-      usable ??= probe(PROBE_TIMEOUT_MS);
+      usable ??= probe(PROBE_TIMEOUT_MS, runner);
       if (!usable) {
         throw new Error(
           `penguin-bwrap cannot confine on this host: '${runner}' is missing or refuses the ` +
@@ -145,10 +189,10 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
   },
 })
 export class SandboxBwrap {
-  @Bind("sandbox-bwrap.provider") provider!: SandboxProvider;
+  @Bind("sandbox-bwrap.provider") provider!: SandboxProviderSource;
 
   setup() {
-    this.provider = createPenguinBwrapProvider();
+    this.provider = loadPenguinBwrapProvider();
   }
 }
 
