@@ -129,13 +129,18 @@ function sbplString(value: string): string {
 
 /** The SBPL profile for one policy: the exact text handed to `sandbox-exec -p`. */
 export function seatbeltProfile(policy: SandboxPolicy): string {
-  const forms = [
-    "(version 1)",
-    "(allow default)",
-    "(deny file-write*)",
-    `(allow file-write* ${REQUIRED_WRITE_SINKS.map((sink) => `(literal ${sbplString(sink)})`).join(" ")})`,
-  ];
-  const roots = writableRoots(policy);
+  // Full access denies no writes: "(allow default)" already permits them, and only the network
+  // and mask forms below still bite. A confining mode denies writes and re-allows the sinks.
+  const full = policy.mode === "danger-full-access";
+  const forms = full
+    ? ["(version 1)", "(allow default)"]
+    : [
+        "(version 1)",
+        "(allow default)",
+        "(deny file-write*)",
+        `(allow file-write* ${REQUIRED_WRITE_SINKS.map((sink) => `(literal ${sbplString(sink)})`).join(" ")})`,
+      ];
+  const roots = full ? [] : writableRoots(policy);
   if (roots.length > 0) {
     forms.push(
       `(allow file-write* ${roots.map((root) => `(subpath ${sbplString(root)})`).join(" ")})`,

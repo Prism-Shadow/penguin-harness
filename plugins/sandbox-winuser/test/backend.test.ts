@@ -16,15 +16,24 @@ import {
 } from "../src/index.js";
 import type { WinUserState } from "../src/index.js";
 import { sandboxEnvironment, workingDirectory } from "../src/launch.js";
-import { elevationCommand, powershellPath, runSetup, setupScript } from "../src/setup.js";
+import {
+  elevationCommand,
+  powershellPath,
+  runSetup,
+  setupArgs,
+  setupScript,
+} from "../src/setup.js";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 const STATE: WinUserState = {
-  group: "PenguinSandboxUsers",
-  offline: { user: "PenguinSandboxNoNet", password: "secret-offline" },
-  online: { user: "PenguinSandboxNet", password: "secret-online" },
+  group: "PenguinSbxUsers",
+  home: "C:\\Users\\k",
+  online: { user: "PenguinSbxNet", password: "secret-online" },
+  offline: { user: "PenguinSbxNoNet", password: "secret-offline" },
+  fullOnline: { user: "PenguinSbxFullNet", password: "secret-full-online" },
+  fullOffline: { user: "PenguinSbxFullNoNet", password: "secret-full-offline" },
 };
 const WS = "C:\\work\\project";
 const BASH = "C:\\Users\\k\\tools\\git\\bin\\bash.exe";
@@ -44,9 +53,13 @@ describe("windows command line", () => {
 });
 
 describe("policy as a job", () => {
-  it("workspace-write opens the Workspace for writing, read-only for reading", () => {
-    expect(jobFor({ mode: "workspace-write", workspaceRoot: WS }, [BASH]).access).toBe("modify");
-    expect(jobFor({ mode: "read-only", workspaceRoot: WS }, [BASH]).access).toBe("read");
+  it("maps each mode to a Workspace grant and whether the home is writable (full)", () => {
+    const j = (mode: "read-only" | "workspace-write" | "danger-full-access") =>
+      jobFor({ mode, workspaceRoot: WS }, [BASH]);
+    expect(j("read-only")).toMatchObject({ access: "read", full: false });
+    expect(j("workspace-write")).toMatchObject({ access: "modify", full: false });
+    // Full access writes the Workspace like workspace-write, and ALSO gets a home-writable account.
+    expect(j("danger-full-access")).toMatchObject({ access: "modify", full: true });
   });
 
   it("carries the network choice and the masked paths, and nothing it was not given", () => {
@@ -95,9 +108,22 @@ describe("confining", () => {
     expect(confined.argv.join(" ")).not.toContain("secret-offline");
     expect(jobOf(confined.argv)).toMatchObject({
       access: "modify",
+      full: false,
       network: "none",
       programDir: "C:\\Users\\k\\tools\\git",
     });
+  });
+
+  it("full access + network off asks for a home-writable, network-cut account", () => {
+    const provider = createWinUserProvider({ state: STATE, node: "node", launcher: "launch.js" });
+    const job = jobOf(
+      provider.confine([BASH, "-lc", "true"], {
+        mode: "danger-full-access",
+        workspaceRoot: WS,
+        network: "none",
+      }).argv,
+    );
+    expect(job).toMatchObject({ access: "modify", full: true, network: "none" });
   });
 
   it("the setting withholds the shell's directory when a deployment wants it withheld", () => {
@@ -134,23 +160,33 @@ describe("loading", () => {
 });
 
 describe("the confined environment", () => {
-  it("points HOME and the temp variables at the sandbox's own home, keeping the rest", () => {
-    const env = sandboxEnvironment(
-      {
-        PATH: "C:\\Windows",
-        USERPROFILE: "C:\\Users\\k",
-        HOME: "C:\\Users\\k",
-        ELECTRON_RUN_AS_NODE: "1",
-      },
-      "C:\\ProgramData\\penguin\\sandbox-home",
-    );
+  const REAL = {
+    PATH: "C:\\Windows",
+    USERPROFILE: "C:\\Users\\k",
+    HOME: "C:\\Users\\k",
+    APPDATA: "C:\\Users\\k\\AppData\\Roaming",
+    ELECTRON_RUN_AS_NODE: "1",
+  };
+  const TEMP = "C:\\ProgramData\\penguin\\sandbox-temp";
+
+  it("keeps HOME and USERPROFILE real, and only redirects TEMP to the writable sandbox temp", () => {
+    const env = sandboxEnvironment(REAL, TEMP);
+    // The home is NOT remapped: the setup granted the accounts access to the real one.
+    expect(env.HOME).toBe("C:\\Users\\k");
+    expect(env.USERPROFILE).toBe("C:\\Users\\k");
+    expect(env.APPDATA).toBe("C:\\Users\\k\\AppData\\Roaming");
     expect(env.PATH).toBe("C:\\Windows");
     // The launcher's own interpreter switch stays with the launcher.
     expect(env.ELECTRON_RUN_AS_NODE).toBeUndefined();
-    expect(env.HOME).toBe("C:\\ProgramData\\penguin\\sandbox-home");
-    expect(env.USERPROFILE).toBe("C:\\ProgramData\\penguin\\sandbox-home");
-    expect(env.TEMP).toBe("C:\\ProgramData\\penguin\\sandbox-home\\temp");
-    expect(env.TMP).toBe(env.TEMP);
+    // Only the temp is redirected, and to the shared sandbox temp, not a remapped home.
+    expect(env.TEMP).toBe(TEMP);
+    expect(env.TMP).toBe(TEMP);
+  });
+
+  it("leaves the real temp in place when the policy grants no writable temp", () => {
+    const env = sandboxEnvironment({ ...REAL, TEMP: "C:\\Users\\k\\AppData\\Local\\Temp" }, null);
+    expect(env.HOME).toBe("C:\\Users\\k");
+    expect(env.TEMP).toBe("C:\\Users\\k\\AppData\\Local\\Temp");
   });
 });
 
@@ -191,6 +227,17 @@ describe("asking Windows for the accounts", () => {
 
   it("ships the script the prompt runs", () => {
     expect(existsSync(setupScript())).toBe(true);
+  });
+});
+
+describe("who the setup grants access to", () => {
+  it("names the harness's own user and home, not the elevated administrator's", () => {
+    const args = setupArgs({
+      USERDOMAIN: "PRISM",
+      USERNAME: "k",
+      USERPROFILE: "C:\\Users\\k",
+    } as NodeJS.ProcessEnv);
+    expect(args).toEqual(["-ServerUser", "PRISM\\k", "-UserProfile", "C:\\Users\\k"]);
   });
 });
 
@@ -321,7 +368,7 @@ describe("a cut network stays cut", () => {
       no_proxy: "localhost",
       PATH: "C:\\Windows",
     };
-    const cut = sandboxEnvironment(parent, "C:\\home", true);
+    const cut = sandboxEnvironment(parent, "C:\\temp", true);
     expect(cut.http_proxy).toBeUndefined();
     expect(cut.HTTPS_PROXY).toBeUndefined();
     expect(cut.all_proxy).toBeUndefined();
@@ -330,21 +377,21 @@ describe("a cut network stays cut", () => {
   });
 
   it("leaves them alone when the policy did not ask for isolation", () => {
-    const open = sandboxEnvironment({ http_proxy: "http://127.0.0.1:10809" }, "C:\\home", false);
+    const open = sandboxEnvironment({ http_proxy: "http://127.0.0.1:10809" }, "C:\\temp", false);
     expect(open.http_proxy).toBe("http://127.0.0.1:10809");
   });
 });
 
 describe("where a confined command runs", () => {
   it("is the directory the harness gave the launcher, not the Workspace root", () => {
-    const job = { access: "modify" as const, workspaceRoot: WS, commandLine: "x" };
+    const job = { access: "modify" as const, full: false, workspaceRoot: WS, commandLine: "x" };
     expect(workingDirectory(job, "C:\\work\\project\\sub", () => true)).toBe(
       "C:\\work\\project\\sub",
     );
   });
 
   it("falls back to the Workspace when that directory is gone", () => {
-    const job = { access: "modify" as const, workspaceRoot: WS, commandLine: "x" };
+    const job = { access: "modify" as const, full: false, workspaceRoot: WS, commandLine: "x" };
     expect(workingDirectory(job, "C:\\work\\project\\deleted", () => false)).toBe(WS);
   });
 });

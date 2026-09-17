@@ -48,7 +48,7 @@ import type { WinUserState } from "./state.js";
 import type { LaunchJob } from "./launch.js";
 import { runSetup } from "./setup.js";
 
-export { readState, stateFile, sandboxHome } from "./state.js";
+export { readState, stateFile, sandboxTemp } from "./state.js";
 export type { WinUserState, SandboxAccount } from "./state.js";
 
 /** The settings group this backend declares (its contribution id), drawn inside the Sandbox card. */
@@ -99,9 +99,13 @@ export function toCommandLine(argv: readonly string[]): string {
 export function jobFor(policy: SandboxPolicy, argv: readonly string[]): LaunchJob {
   const programDir = programRoot(argv[0] ?? "");
   return {
-    access: policy.mode === "workspace-write" ? "modify" : "read",
+    // read-only reads the Workspace; workspace-write and full-access both write it — full
+    // access differs by ALSO getting an account whose home is writable (see `full`).
+    access: policy.mode === "read-only" ? "read" : "modify",
+    full: policy.mode === "danger-full-access",
     workspaceRoot: policy.workspaceRoot,
     ...(policy.network !== undefined ? { network: policy.network } : {}),
+    ...(policy.writableTemp !== undefined ? { writableTemp: policy.writableTemp } : {}),
     ...(policy.maskPaths !== undefined && policy.maskPaths.length > 0
       ? { maskPaths: [...policy.maskPaths] }
       : {}),

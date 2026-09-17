@@ -65,6 +65,19 @@ describe("penguin-bwrap profile", () => {
     expect(args.join(" ")).not.toContain(`--bind ${WS}`);
   });
 
+  it("full access binds the root read-WRITE, but still cuts the network when asked", () => {
+    const args = bwrapProfileArgs({
+      mode: "danger-full-access",
+      workspaceRoot: WS,
+      network: "none",
+    });
+    // The whole filesystem is writable: --bind / /, never --ro-bind / /.
+    expect(args.slice(0, 3)).toEqual(["--bind", "/", "/"]);
+    expect(args.join(" ")).not.toContain("--ro-bind / /");
+    // The network cut still applies — that is why the policy reached a backend at all.
+    expect(args).toContain("--unshare-net");
+  });
+
   it("network: none adds --unshare-net; absent leaves the network alone", () => {
     expect(bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS, network: "none" })).toContain(
       "--unshare-net",

@@ -145,6 +145,23 @@ describe("sandbox service — capability routing across backends", () => {
     expect(bwrap.calls[0]).toMatchObject({ network: "none", maskPaths: ["/home/u/.ssh"] });
   });
 
+  it("full access still routes to a backend when it cuts the network (never dropped)", async () => {
+    const { dsh, bwrap } = entries();
+    const svc = await service([
+      ["dsh-local", dsh.provider],
+      ["penguin-bwrap", bwrap.provider],
+    ]);
+    // Full access + no network is genuinely unconfined: it passes through.
+    svc.configure({ mode: "danger-full-access" });
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual([...ARGV]);
+    expect(bwrap.calls).toHaveLength(0);
+    // But full access that ALSO cuts the network must reach a backend that can cut it — the
+    // filesystem stays unrestricted, the network does not.
+    svc.configure({ mode: "danger-full-access", network: "none" });
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["bwrap", "--", ...ARGV]);
+    expect(bwrap.calls[0]).toMatchObject({ mode: "danger-full-access", network: "none" });
+  });
+
   it("an empty maskPaths list does not require the dimension", async () => {
     const { dsh, bwrap } = entries();
     const svc = await service([

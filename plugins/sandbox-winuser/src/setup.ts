@@ -53,11 +53,11 @@ export interface SetupInternals {
  * button that reports and a button that hangs. So this fires and lets go; whether it worked is
  * read from the machine afterwards, not from this process.
  */
-export function elevationCommand(script: string): string {
+export function elevationCommand(script: string, extra: readonly string[] = []): string {
   // Each argument quoted once, as its own element of a PowerShell array: quoting the script
   // AND wrapping the list produced `'…ps1''`, a parse error that raised no prompt at all and
   // looked exactly like a prompt nobody had answered. Hence the test beside this.
-  const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script]
+  const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, ...extra]
     .map((arg) => `'${arg.replace(/'/g, "''")}'`)
     .join(",");
   // No redirection here on purpose: -Verb RunAs goes through ShellExecute, which cannot
@@ -92,9 +92,23 @@ interface RaisedPrompt {
   failure: string;
 }
 
+/**
+ * Who the setup grants the profile to, and which profile. Elevation runs the script as an
+ * administrator, which may not be the account the harness runs as — so the harness names its
+ * OWN user and home here, rather than letting the script default to the elevated identity's.
+ */
+export function setupArgs(env: NodeJS.ProcessEnv = process.env): string[] {
+  const args: string[] = [];
+  const domain = env.USERDOMAIN;
+  const user = env.USERNAME;
+  if (user) args.push("-ServerUser", domain ? `${domain}\\${user}` : user);
+  if (env.USERPROFILE) args.push("-UserProfile", env.USERPROFILE);
+  return args;
+}
+
 function raisePrompt(script: string): RaisedPrompt {
   const raised: RaisedPrompt = { failure: "" };
-  const command = elevationCommand(script);
+  const command = elevationCommand(script, setupArgs());
   // NOT detached: a detached child on Windows has no console and no usable window station, and
   // ShellExecute's RunAs verb then does nothing at all — the outer PowerShell exits 0, no prompt
   // is raised, no elevated process starts, and nothing anywhere says why. Measured on a Windows
@@ -158,7 +172,9 @@ export async function runSetup(internals: SetupInternals = {}): Promise<SetupOut
   const present = internals.state ?? (() => readState() !== null);
   // Long enough for a prompt answered right away to finish, short enough that a page waiting on
   // this never feels stuck. An unanswered prompt is reported as what it is, not waited out.
-  const waitMs = internals.waitMs ?? 20_000;
+  // The first run also grants the accounts access to the profile — an icacls tree walk that
+  // is slow on a large one — so the wait is generous before it falls back to "reopen later".
+  const waitMs = internals.waitMs ?? 60_000;
   const pollMs = internals.pollMs ?? 500;
   for (let waited = 0; waited <= waitMs; waited += pollMs) {
     if (present()) {
@@ -194,9 +210,11 @@ export async function runSetup(internals: SetupInternals = {}): Promise<SetupOut
     ok: false,
     message:
       "Windows is asking for permission on the machine's own screen — accept the prompt, then reopen these settings. " +
+      "The first setup grants the sandbox accounts access to your profile, which can take a minute on a large one. " +
       `If no prompt appeared (a server that is not on that desktop cannot raise one), run ${script} from an elevated PowerShell instead.`,
     messageZh:
       "Windows 正在这台机器的屏幕上请求授权——确认那个弹窗，然后重新打开本页设置。" +
+      "首次安装还会把用户目录的访问权授予沙盒账户，目录较大时可能需要一分钟。" +
       `如果没有看到弹窗（不在该桌面会话中的服务端无法弹出它），请改为在管理员 PowerShell 中执行 ${script}。`,
   };
 }

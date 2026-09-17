@@ -3,14 +3,24 @@
   Creates the local accounts the penguin-winuser sandbox runs agent commands as.
 
 .DESCRIPTION
-  Run this ONCE, from an elevated PowerShell. It creates a local group and two accounts in it:
-  one whose outbound traffic three firewall rules block, one with the network open. The harness
-  then runs each confined command as whichever the policy asks for, and the command is confined
-  by being someone else — it owns nothing, and reaches only what is granted to the group.
+  Run this ONCE, from an elevated PowerShell. It creates a local group and four accounts in it,
+  and each confined command runs as whichever the policy asks for — confined by being someone
+  else: it owns nothing, and reaches only what is granted.
 
-  Nothing here is a service, a driver or a reboot. What it leaves behind is: the group, the two
-  accounts, three firewall rules, and one state file naming them. Pass -Remove to take all of it
-  away again.
+  The four accounts are the two axes crossed. Network: two of them are blocked outbound by
+  firewall rules, two have the network open. Filesystem: two are granted READ on your profile
+  (read-only and workspace-write commands, which never write your home), two are granted MODIFY
+  on it (full-access commands, which may). The grant is standing, made here once, so no command
+  ever has to re-permission your profile — which on a large profile would take minutes.
+
+  Your home is NOT remapped: a confined command sees the real HOME/USERPROFILE, readable (and,
+  under full access, writable) through that grant — the same shape the Linux and macOS sandboxes
+  give. The one thing redirected is the temp directory, to a sandbox-owned folder every account
+  may write, which is where a shell keeps its scratch files.
+
+  Nothing here is a service, a driver or a reboot. What it leaves behind is: the group, the four
+  accounts, their firewall rules, two grants on your profile, one writable temp folder, and one
+  state file naming them. Pass -Remove to take all of it away again.
 
   The accounts' passwords are random, never displayed, and stored in the state file, whose
   permissions are their protection: Administrators, SYSTEM, and the account that runs the
@@ -19,19 +29,27 @@
 .PARAMETER ServerUser
   The account the harness runs as, which must be able to read the state file. Default: you.
 
+.PARAMETER UserProfile
+  The home directory the sandbox accounts are granted access to (the harness user's profile).
+  Default: this session's own profile.
+
 .PARAMETER Remove
-  Delete the accounts, the group, the firewall rules and the state file.
+  Delete the accounts, the group, the firewall rules, the profile grants, the temp folder and
+  the state file.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\penguin-sandbox-setup.ps1
 #>
 [CmdletBinding()]
 param(
-  [string] $GroupName = 'PenguinSandboxUsers',
-  # Windows caps a local account name at 20 characters, which is why these are not spelled out.
-  [string] $OfflineUser = 'PenguinSandboxNoNet',
-  [string] $OnlineUser = 'PenguinSandboxNet',
+  [string] $GroupName = 'PenguinSbxUsers',
+  # Windows caps a local account name at 20 characters, which is why these are abbreviated.
+  [string] $OnlineUser = 'PenguinSbxNet',
+  [string] $OfflineUser = 'PenguinSbxNoNet',
+  [string] $FullOnlineUser = 'PenguinSbxFullNet',
+  [string] $FullOfflineUser = 'PenguinSbxFullNoNet',
   [string] $ServerUser = "$env:USERDOMAIN\$env:USERNAME",
+  [string] $UserProfile = $env:USERPROFILE,
   [switch] $Remove
 )
 
@@ -39,18 +57,26 @@ $ErrorActionPreference = 'Stop'
 
 $stateDir = Join-Path $env:ProgramData 'penguin'
 $stateFile = Join-Path $stateDir 'sandbox-winuser.json'
-$homeDir = Join-Path $stateDir 'sandbox-home'
-$ruleNames = @(
-  'penguin_sandbox_offline_block_outbound',
-  'penguin_sandbox_offline_block_loopback_tcp',
-  'penguin_sandbox_offline_block_loopback_udp'
-)
+$tempDir = Join-Path $stateDir 'sandbox-temp'
+
+# The two blocked accounts each get their own three rules, named after the account they scope.
+$firewallRules = @{
+  $OfflineUser     = @('penguin_sbx_nonet_block_outbound', 'penguin_sbx_nonet_block_loopback_tcp', 'penguin_sbx_nonet_block_loopback_udp')
+  $FullOfflineUser = @('penguin_sbx_fullnonet_block_outbound', 'penguin_sbx_fullnonet_block_loopback_tcp', 'penguin_sbx_fullnonet_block_loopback_udp')
+}
+
+# What earlier versions of this script named, so -Remove takes their leavings too.
+$legacyGroups = @('PenguinSandboxUsers')
+$legacyUsers = @('PenguinSandboxNoNet', 'PenguinSandboxNet')
+$legacyRules = @('penguin_sandbox_offline_block_outbound', 'penguin_sandbox_offline_block_loopback_tcp', 'penguin_sandbox_offline_block_loopback_udp')
+$legacyHome = Join-Path $stateDir 'sandbox-home'
 
 # What Windows refuses, said before it refuses: New-LocalUser names neither the value nor the
 # rule, and its refusal reaches a page that can only repeat it. Both limits are its own.
 $accountNameLimit = 20
 $accountDescriptionLimit = 48
 $accountDescription = 'PenguinHarness sandbox account.'
+$allUsers = @($OnlineUser, $OfflineUser, $FullOnlineUser, $FullOfflineUser)
 
 function Assert-AccountName([string] $Name) {
   if ($Name.Length -gt $accountNameLimit) {
@@ -81,13 +107,21 @@ function New-RandomPassword {
 }
 
 function Remove-Everything {
-  foreach ($rule in $ruleNames) {
+  foreach ($rule in ($firewallRules.Values | ForEach-Object { $_ }) + $legacyRules) {
     if (Get-NetFirewallRule -Name $rule -ErrorAction SilentlyContinue) {
       Remove-NetFirewallRule -Name $rule
       Write-Host "removed firewall rule $rule"
     }
   }
-  foreach ($user in @($OfflineUser, $OnlineUser)) {
+  # The standing grants on the profile: named by the group and the two full accounts. icacls
+  # /remove takes them out without disturbing the profile's own ACL.
+  if (Test-Path $UserProfile) {
+    foreach ($who in @($GroupName, $FullOnlineUser, $FullOfflineUser) + $legacyGroups) {
+      & icacls $UserProfile /remove:g $who /T /C /Q 2>$null | Out-Null
+    }
+    Write-Host "removed profile grants on $UserProfile"
+  }
+  foreach ($user in $allUsers + $legacyUsers) {
     if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) {
       Remove-LocalUser -Name $user
       Write-Host "removed account $user"
@@ -100,9 +134,17 @@ function Remove-Everything {
       Write-Host "removed leftover profile $profileDir"
     }
   }
-  if (Get-LocalGroup -Name $GroupName -ErrorAction SilentlyContinue) {
-    Remove-LocalGroup -Name $GroupName
-    Write-Host "removed group $GroupName"
+  foreach ($group in @($GroupName) + $legacyGroups) {
+    if (Get-LocalGroup -Name $group -ErrorAction SilentlyContinue) {
+      Remove-LocalGroup -Name $group
+      Write-Host "removed group $group"
+    }
+  }
+  foreach ($dir in @($tempDir, $legacyHome)) {
+    if (Test-Path $dir) {
+      Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+      Write-Host "removed $dir"
+    }
   }
   if (Test-Path $stateFile) {
     Remove-Item $stateFile -Force
@@ -129,13 +171,14 @@ function New-SandboxAccount([string] $Name) {
   return $password
 }
 
-function Set-OfflineFirewall([string] $Sid) {
-  # Scoped to the offline account's SID: the online account is untouched by these rules.
-  $filter = "O:LSD:(A;;CC;;;$Sid)"
+function Set-BlockFirewall([string] $User, [string[]] $Names) {
+  # Scoped to the account's SID: the open accounts are untouched by these rules.
+  $sid = (Get-LocalUser -Name $User).SID.Value
+  $filter = "O:LSD:(A;;CC;;;$sid)"
   $rules = @(
-    @{ Name = $ruleNames[0]; Display = 'Penguin sandbox (offline): block outbound'; Protocol = 'Any'; Address = 'Any' },
-    @{ Name = $ruleNames[1]; Display = 'Penguin sandbox (offline): block loopback TCP'; Protocol = 'TCP'; Address = '127.0.0.1' },
-    @{ Name = $ruleNames[2]; Display = 'Penguin sandbox (offline): block loopback UDP'; Protocol = 'UDP'; Address = '127.0.0.1' }
+    @{ Name = $Names[0]; Display = "Penguin sandbox ($User): block outbound"; Protocol = 'Any'; Address = 'Any' },
+    @{ Name = $Names[1]; Display = "Penguin sandbox ($User): block loopback TCP"; Protocol = 'TCP'; Address = '127.0.0.1' },
+    @{ Name = $Names[2]; Display = "Penguin sandbox ($User): block loopback UDP"; Protocol = 'UDP'; Address = '127.0.0.1' }
   )
   foreach ($rule in $rules) {
     if (Get-NetFirewallRule -Name $rule.Name -ErrorAction SilentlyContinue) {
@@ -160,8 +203,7 @@ function Protect-StateFile([string] $Path) {
 }
 
 Assert-Elevated
-Assert-AccountName $OfflineUser
-Assert-AccountName $OnlineUser
+foreach ($u in $allUsers) { Assert-AccountName $u }
 Assert-AccountDescription $accountDescription
 
 # Elevation goes through ShellExecute, which cannot hand a stream back to whoever asked for it,
@@ -180,21 +222,43 @@ if (-not (Get-LocalGroup -Name $GroupName -ErrorAction SilentlyContinue)) {
   Write-Host "group ${GroupName}: created"
 }
 
-$offlinePassword = New-SandboxAccount $OfflineUser
 $onlinePassword = New-SandboxAccount $OnlineUser
+$offlinePassword = New-SandboxAccount $OfflineUser
+$fullOnlinePassword = New-SandboxAccount $FullOnlineUser
+$fullOfflinePassword = New-SandboxAccount $FullOfflineUser
 
-$offlineSid = (Get-LocalUser -Name $OfflineUser).SID.Value
-Set-OfflineFirewall $offlineSid
+Set-BlockFirewall $OfflineUser $firewallRules[$OfflineUser]
+Set-BlockFirewall $FullOfflineUser $firewallRules[$FullOfflineUser]
 
-New-Item -ItemType Directory -Force -Path $stateDir, $homeDir | Out-Null
-# The accounts' own home: they have no profile, and a shell needs somewhere to write.
-& icacls $homeDir /grant "${GroupName}:(OI)(CI)(M)" | Out-Null
+# A writable temp every account shares (they are all in the group). The command's HOME is left
+# real; this is the one directory redirected, so a shell has somewhere to write.
+New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+& icacls $tempDir /grant "${GroupName}:(OI)(CI)(M)" | Out-Null
+
+# The standing grants on the real profile — the whole point of not remapping HOME. READ for the
+# group (so every account can read ~), MODIFY for the two full accounts (so full-access can
+# write it). /T walks the tree once, which is slow on a large profile and is why it is done
+# here and never per command.
+if (Test-Path $UserProfile) {
+  & icacls $UserProfile /grant "${GroupName}:(OI)(CI)(RX)" /T /C /Q | Out-Null
+  Write-Host "profile ${UserProfile}: granted read to $GroupName"
+  foreach ($full in @($FullOnlineUser, $FullOfflineUser)) {
+    & icacls $UserProfile /grant "${full}:(OI)(CI)(M)" /T /C /Q | Out-Null
+    Write-Host "profile ${UserProfile}: granted modify to $full"
+  }
+} else {
+  Write-Host "profile ${UserProfile}: not found; skipped (a confined command may not read ~)."
+}
 
 $state = [ordered]@{
-  group   = $GroupName
-  offline = [ordered]@{ user = $OfflineUser; password = $offlinePassword }
-  online  = [ordered]@{ user = $OnlineUser; password = $onlinePassword }
-  createdAt = (Get-Date).ToString('o')
+  group       = $GroupName
+  home        = $UserProfile
+  temp        = $tempDir
+  online      = [ordered]@{ user = $OnlineUser; password = $onlinePassword }
+  offline     = [ordered]@{ user = $OfflineUser; password = $offlinePassword }
+  fullOnline  = [ordered]@{ user = $FullOnlineUser; password = $fullOnlinePassword }
+  fullOffline = [ordered]@{ user = $FullOfflineUser; password = $fullOfflinePassword }
+  createdAt   = (Get-Date).ToString('o')
 }
 # Written without a byte-order mark: Set-Content -Encoding UTF8 adds one here, and a BOM is not
 # valid JSON to most readers, this plugin's own included.

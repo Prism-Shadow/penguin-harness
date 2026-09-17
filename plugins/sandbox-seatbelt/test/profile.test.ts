@@ -53,6 +53,18 @@ describe.skipIf(process.platform === "win32")("seatbelt profile", () => {
     ]);
   });
 
+  it("full access denies no writes, yet still cuts the network when asked", () => {
+    const profile = seatbeltProfile({
+      mode: "danger-full-access",
+      workspaceRoot: WS,
+      network: "none",
+    });
+    // No write denial at all — "(allow default)" already permits every file write.
+    expect(profile).not.toContain("(deny file-write*)");
+    // The network cut still applies.
+    expect(profile).toContain("(deny network*)");
+  });
+
   it("network: none denies every socket", () => {
     expect(seatbeltProfile({ mode: "read-only", workspaceRoot: WS, network: "none" })).toContain(
       "(deny network*)",

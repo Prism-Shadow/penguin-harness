@@ -19,15 +19,22 @@ import fs from "node:fs";
 import path from "node:path";
 import koffi from "koffi";
 import { deny, grant } from "./grants.js";
-import { readState, sandboxHome } from "./state.js";
+import { readState, sandboxBase, sandboxTemp } from "./state.js";
 
 /** What the provider hands the launcher: the policy, and the command to run under it. */
 export interface LaunchJob {
-  /** The confinement the Workspace gets: `modify` for workspace-write, `read` for read-only. */
+  /** The confinement the Workspace gets: `modify` for workspace-write and full-access, `read` for read-only. */
   access: "modify" | "read";
+  /**
+   * Full filesystem access: picks an account the setup granted MODIFY on the real home, so the
+   * command may write `~`. `false` picks one granted only READ, so the home stays read-only.
+   */
+  full: boolean;
   workspaceRoot: string;
-  /** "none" picks the account the firewall blocks; anything else picks the open one. */
+  /** "none" picks an account the firewall blocks; anything else picks an open one. */
   network?: "none";
+  /** Redirect TEMP/TMP to the shared writable sandbox temp; off leaves the real (read-only) temp. */
+  writableTemp?: boolean;
   maskPaths?: string[];
   /** The command line, already quoted the way `CommandLineToArgvW` will parse it. */
   commandLine: string;
@@ -155,14 +162,15 @@ function environmentBlock(env: Record<string, string>): Buffer {
 }
 
 /**
- * The environment the confined command runs in: the harness's own, minus the places that
- * belong to the account the harness runs as. A sandbox account has no profile directory, so
- * HOME and the temp variables point into the sandbox's own home — which the group may write,
- * and which is where an MSYS shell puts its files.
+ * The environment the confined command runs in: the harness's own, unchanged, EXCEPT the temp
+ * directory. HOME, USERPROFILE and the AppData variables are left real — the setup granted the
+ * sandbox accounts access to that profile, so `~` reads (and, under full access, writes) as
+ * itself, the same shape the Linux and macOS sandboxes give. Only the temp is redirected, to a
+ * folder every account may write, and only when the policy allows a writable temp.
  */
 export function sandboxEnvironment(
   parent: NodeJS.ProcessEnv,
-  home: string,
+  tempDir: string | null,
   cutNetwork = false,
 ): Record<string, string> {
   const out: Record<string, string> = {};
@@ -182,26 +190,21 @@ export function sandboxEnvironment(
   // The provider's switch for THIS launcher's interpreter (see index.ts): it describes the
   // runner, and a confined command that inherited it would run the desktop app as Node.
   delete out.ELECTRON_RUN_AS_NODE;
-  const temp = path.win32.join(home, "temp");
-  return {
-    ...out,
-    HOME: home,
-    USERPROFILE: home,
-    APPDATA: path.win32.join(home, "AppData", "Roaming"),
-    LOCALAPPDATA: path.win32.join(home, "AppData", "Local"),
-    TEMP: temp,
-    TMP: temp,
-  };
+  // A writable temp when the policy grants one; otherwise the real temp, which the account
+  // cannot write — which is what "temp not writable" means. HOME is never touched.
+  return tempDir === null ? out : { ...out, TEMP: tempDir, TMP: tempDir };
 }
 
-/** Opens the paths the policy allows, and hides the ones it masks. Returns what failed. */
-export function applyPolicy(job: LaunchJob, group: string, home: string): string[] {
+/**
+ * Opens the paths the policy allows, and hides the ones it masks. Returns what failed. The
+ * home is NOT among them: the setup granted it to the accounts once, standing, so no command
+ * re-permissions the profile (which on a large one would take minutes). Only the Workspace,
+ * the program directory and the masked paths are per-command.
+ */
+export function applyPolicy(job: LaunchJob, group: string): string[] {
   const failures: string[] = [];
-  for (const dir of [home, path.win32.join(home, "temp")]) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  if (job.writableTemp !== false) fs.mkdirSync(sandboxTemp(), { recursive: true });
   const steps: Array<string | null> = [
-    grant(home, group, "modify"),
     grant(job.workspaceRoot, group, job.access),
     ...(job.programDir !== undefined && job.programDir !== ""
       ? [grant(job.programDir, group, "read")]
@@ -222,7 +225,7 @@ export function applyPolicy(job: LaunchJob, group: string, home: string): string
  */
 function trace(line: string): void {
   try {
-    const file = path.win32.join(path.win32.dirname(sandboxHome()), "sandbox-launch.log");
+    const file = path.win32.join(sandboxBase(), "sandbox-launch.log");
     fs.appendFileSync(file, `${new Date().toISOString()} ${line}\n`);
   } catch {
     // A diagnosis that cannot be written is not worth failing a command over.
@@ -257,14 +260,20 @@ function launch(job: LaunchJob): number {
     );
     return 126;
   }
-  const home = sandboxHome();
-  const failures = applyPolicy(job, state.group, home);
+  const failures = applyPolicy(job, state.group);
   if (failures.length > 0) {
     // Fail closed: a policy that could not be applied must never run the command anyway.
     process.stderr.write(`penguin-winuser: ${failures.join("; ")}\n`);
     return 126;
   }
-  const account = job.network === "none" ? state.offline : state.online;
+  // The account is the filesystem axis (full = home writable) crossed with the network axis.
+  const account = job.full
+    ? job.network === "none"
+      ? state.fullOffline
+      : state.fullOnline
+    : job.network === "none"
+      ? state.offline
+      : state.online;
   const api = win32();
   const handles = [-10, -11, -12].map((id) => api.getStdHandle(id));
   for (const handle of handles) api.setHandleInformation(handle, HANDLE_FLAG_INHERIT, 1);
@@ -300,7 +309,13 @@ function launch(job: LaunchJob): number {
     null,
     wide(job.commandLine),
     CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
-    environmentBlock(sandboxEnvironment(process.env, home, job.network === "none")),
+    environmentBlock(
+      sandboxEnvironment(
+        process.env,
+        job.writableTemp !== false ? sandboxTemp() : null,
+        job.network === "none",
+      ),
+    ),
     // The directory the HARNESS put this launcher in, which is the command's own working
     // directory — a command may run in a subdirectory of the Workspace, and handing the child
     // the Workspace root instead would silently run it somewhere else.
