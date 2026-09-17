@@ -6,7 +6,8 @@
  * it forgets when the organization list comes back without the organization it is aimed at,
  * a desk's messaging mark written into the loaded sessions route by a bind or an unbind, and the
  * user-channel forwarding in state/sessions.tsx's applyUserEvent — a company event reaches
- * every subscriber, and a work run refreshes the session list of the Project it belongs to.
+ * every subscriber, a work run refreshes the session list of the Project it belongs to, and a
+ * resync re-reads the company snapshots.
  */
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -16,7 +17,12 @@ import type {
   OrgSessionsResponse,
   OrganizationSummary,
 } from "@prismshadow/penguin-server/api";
-import { createCompanyStore, isCompanyEvent, subscribeCompanyEvents } from "../src/state/company";
+import {
+  createCompanyStore,
+  isCompanyEvent,
+  subscribeCompanyEvents,
+  subscribeCompanyResync,
+} from "../src/state/company";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
 
 const message = (over: Partial<OrgChannelMessage> = {}): OrgChannelMessage => ({
@@ -409,6 +415,26 @@ describe("applyUserEvent forwarding", () => {
       expect(seen.map((e) => e.type)).toEqual(["org_run", "org_run", "org_channel"]);
       // Only the run of the current Project refreshes; a channel message changes no session row.
       expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+    }
+  });
+
+  it("a resync has the company store re-read the snapshots its surfaces now fall back to", () => {
+    const sessions = createSessionsStore();
+    sessions.setState({ projectId: "p1", reload: vi.fn(() => Promise.resolve()) });
+    const company = createCompanyStore();
+    const stop = subscribeCompanyResync(() => company.getState().resync());
+    try {
+      applyUserEvent(sessions, { type: "resync_required" }, () => undefined);
+      // `runs` re-reads the sessions route; `orgs` the organization list and the open chart.
+      expect(company.getState().versions).toEqual({
+        orgs: 1,
+        messages: 0,
+        tickets: 0,
+        runs: 1,
+        budget: 0,
+      });
     } finally {
       stop();
     }

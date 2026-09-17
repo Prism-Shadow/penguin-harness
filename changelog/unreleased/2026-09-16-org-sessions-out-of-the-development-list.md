@@ -27,12 +27,18 @@ the server for the user's own rows only, and a sub-session inherits its parent's
   stamp; one registered under any other Session keeps the blank marker it always had.
 - The Web App's session list store passes `excludeOrg` on every fetch and no longer corrects
   the server's totals on its side; a row that still enters through the chat page's deep-link
-  self-heal is dropped at render and leaves the totals alone.
+  self-heal is dropped at render, leaves the totals alone and is kept across list reloads, so
+  the desk or ticket session open in the chat page keeps its approval-mode, thinking-level,
+  title and status updates.
 - The store remembers every run status the user channel reports (`session_state`), whether or
   not a loaded page holds the row, and company mode's desk rows, org chart and overview read
-  those — so a desk past the first page of an employee's stream shows its run ending too.
+  those — so a desk past the first page of an employee's stream shows its run ending too. A
+  `resync_required` clears them, and company mode re-reads its sessions route, organization
+  list and open chart, so a desk whose run ended among the lost events does not stay running.
 - `GET /api/projects/:projectId/organizations/:orgId/sessions` marks a desk whose Session has
   an enabled messaging binding with `messagingChannel`, read as the Session's own row reads it.
   The company sidebar's desk rows draw their messaging mark from it — every bound desk, where
   the mark used to come from whichever desks the development list happened to hold — and a
   bind or unbind from a desk's row menu updates the row at once.
+- Both marks go through one channel check covering Feishu, Telegram, QQ and WeChat, keyed by
+  `MessagingChannel`, so a channel left out of it fails typecheck.

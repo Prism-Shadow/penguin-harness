@@ -147,10 +147,9 @@ export interface OrgDeps {
   /**
    * The channel of a Session's ENABLED messaging binding, or null when none is enabled — the
    * same reading behind `SessionInfo.messagingChannel`, so the company sidebar's desk row can
-   * carry the development row's mark without the development list holding the desk. Optional
-   * so a test binds nothing, and then no desk carries the field.
+   * carry the development row's mark without the development list holding the desk.
    */
-  messagingChannel?: (sessionId: string) => MessagingChannel | null;
+  messagingChannel: (sessionId: string) => MessagingChannel | null;
   errors: ErrorSink;
   /** Company-mode notifications go to the Project's owner and members (app.ts binds the user channels). */
   notifyProject: (projectId: string, event: ServerEvent) => void;

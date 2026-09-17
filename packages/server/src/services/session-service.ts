@@ -100,22 +100,6 @@ export interface SessionServiceDeps {
   confineSpawn?: () => SpawnConfiner | null;
 }
 
-/**
- * Whether a row is an organization's — a desk session, a session contributing to a ticket, or
- * a sub-session one of those spawned. The durable `client` stamp answers first (it survives
- * the organization and is inherited by sub-sessions, which no cache names); the organization
- * caches (`orgIds`, session id → orgId) catch a row the reconcile pass has not stamped yet.
- * The one predicate the list's `excludeOrg` applies to its page, its totals and its
- * Workspace stamps alike, so the development list can never be handed a total for rows it
- * will not be handed.
- */
-export function isOrganizationRow(
-  row: Pick<SessionRow, "sessionId" | "client">,
-  orgIds: ReadonlyMap<string, string>,
-): boolean {
-  return row.client === "org" || orgIds.has(row.sessionId);
-}
-
 export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
 
@@ -228,13 +212,13 @@ export class SessionService {
    * its siblings were about to read, and their rows move on screen untouched. The two
    * filters compose; the returned counts stay whole-Agent either way.
    *
-   * `excludeOrg` drops the rows an organization owns (isOrganizationRow) from the stream
-   * BEFORE anything else looks at it — the page, `counts`, `workspaceCounts`,
-   * `workspaceLatest` and the limit+1 "has more" all describe the same own-rows stream. It is
-   * what development mode's list asks for: that list draws the user's own conversations, and
-   * a total or a stamp that still counted a desk or a ticket session would make its Workspace
-   * appear as a group the list can never fill. Without the flag every row is served,
-   * whichever client created it.
+   * `excludeOrg` drops the rows an organization owns (its desk and ticket sessions, and the
+   * sub-sessions they spawned) from the stream BEFORE anything else looks at it — the page,
+   * `counts`, `workspaceCounts`, `workspaceLatest` and the limit+1 "has more" all describe the
+   * same own-rows stream. It is what development mode's list asks for: that list draws the
+   * user's own conversations, and a total or a stamp that still counted a desk or a ticket
+   * session would make its Workspace appear as a group the list can never fill. Without the
+   * flag every row is served, whichever client created it.
    */
   async listSessions(
     projectId: string,
@@ -261,9 +245,10 @@ export class SessionService {
     // behind every entry of a long sidebar list.
     const orgIds = this.deps.orgIdsOfProject?.(projectId) ?? EMPTY_ORG_IDS;
     if (excludeOrg) {
-      for (const row of [...rows.values()]) {
-        if (isOrganizationRow(row, orgIds)) rows.delete(row.sessionId);
-      }
+      // The durable `client` stamp answers first: it survives the organization and is
+      // inherited by sub-sessions, which no cache names. The caches catch a row the
+      // reconcile pass has not stamped yet.
+      for (const [id, row] of rows) if (row.client === "org" || orgIds.has(id)) rows.delete(id);
     }
 
     let traces: ReadonlySet<string> | undefined;

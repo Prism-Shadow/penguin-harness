@@ -16,10 +16,11 @@
  * **Own rows only**: every fetch asks the server for the user's own conversations
  * (`excludeOrg`), so an organization's desk, ticket and sub-sessions are in neither the rows
  * nor the totals the sidebar builds its groups from. One can still enter through `add()` (the
- * chat page's deep-link self-heal): the sidebar drops it at render (withoutOrgSessions) and
- * the totals are left alone for it. Live statuses are remembered for EVERY `session_state`
- * the user channel reports (`liveStatuses`), row or no row — company mode's surfaces read
- * them for the Sessions this list deliberately does not hold (useLiveSessionStatuses).
+ * chat page's deep-link self-heal): the sidebar drops it at render (withoutOrgSessions), the
+ * totals are left alone for it, and a reload carries it over. Live statuses are remembered for
+ * EVERY `session_state` the user channel reports (`liveStatuses`), row or no row — company
+ * mode's surfaces read them for the Sessions this list deliberately does not fetch
+ * (useLiveSessionStatuses).
  *
  * **Sessions are not auto-created here**: a new conversation starts as a draft (chat page `/chat/new`),
  * and the Session is only actually created when the first message is sent — after landing, the user
@@ -45,7 +46,7 @@ import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
 import { openUserEvents } from "../api/sse";
-import { isCompanyEvent, publishCompanyEvent } from "./company";
+import { isCompanyEvent, publishCompanyEvent, publishCompanyResync } from "./company";
 import {
   FOLDER_CATEGORIES,
   SIDEBAR_PAGE_SIZE,
@@ -195,6 +196,7 @@ interface SessionsStoreState {
    * only source that reports a run ENDING, so company mode's surfaces read this for the
    * Sessions the development list deliberately leaves out. Not reset on a Project switch:
    * ids are globally unique and a status is a fact about the Session, not about the list.
+   * Cleared on `resync_required`, which says flips were lost (see applyUserEvent).
    */
   liveStatuses: ReadonlyMap<string, SessionStatus>;
   loading: boolean;
@@ -244,11 +246,7 @@ function rememberStatus(
   const next = new Map(live);
   next.delete(sessionId);
   next.set(sessionId, status);
-  while (next.size > LIVE_STATUS_MAX) {
-    const oldest = next.keys().next();
-    if (oldest.done) break;
-    next.delete(oldest.value);
-  }
+  while (next.size > LIVE_STATUS_MAX) next.delete(next.keys().next().value!);
   return next;
 }
 
@@ -392,8 +390,12 @@ export function createSessionsStore() {
               }
             }
           }
+          // No fetch returns an organization row (`excludeOrg`), so one held here entered
+          // through add() for the page showing it (an open desk or ticket session) and no
+          // reload can bring it back: carry it over, or that page's writes stop reaching it.
+          const held = get().sessions.filter((s) => isOrgSession(s) && !seen.has(s.sessionId));
           set({
-            sessions: nextSessions,
+            sessions: [...nextSessions, ...held],
             pageState: nextPageState,
             countsByAgent: nextCounts,
             workspaceCountsByAgent: nextWorkspaceCounts,
@@ -712,9 +714,13 @@ export function applyUserEvent(
   }
   // The reconnect landed outside the channel's replay buffer, so an unknown number of the flips
   // above were lost — away long enough and a row sits on an hourglass that will never stop.
-  // Refetch once, on the event that says so, rather than polling for it.
+  // Refetch once, on the event that says so, rather than polling for it. The remembered
+  // statuses go too: no fetch here refreshes them, and a stale entry beats every fresh snapshot
+  // company mode reads, so those surfaces re-read their snapshots and fall back to them.
   if (ev.type === "resync_required") {
+    store.setState({ liveStatuses: new Map() });
     void store.getState().reload();
+    publishCompanyResync();
     return;
   }
   // Company-mode notifications fan out to the company store and any mounted organization page
@@ -878,15 +884,17 @@ export function useSessions(): SessionsContextValue {
  * Run status by Session id as this page knows it: every status the user channel has reported
  * (`live`, loaded row or not), with a loaded row's own status winning — a row is written by
  * the same events AND by every list fetch, so it is never older than the remembered entry,
- * while an id the list does not hold has only the remembered one. Pure, so the merge the hook
- * below publishes is testable without a React tree.
+ * while an id the list does not hold has only the remembered one. An organization row held for
+ * the page showing it is the exception: no list fetch refreshes it, so it speaks for nothing
+ * and its Session has the remembered entry alone (which a resync clears). Pure, so the merge
+ * the hook below publishes is testable without a React tree.
  */
 export function liveSessionStatuses(
   sessions: readonly SessionInfo[],
   live: ReadonlyMap<string, SessionStatus>,
 ): ReadonlyMap<string, SessionStatus> {
   const out = new Map(live);
-  for (const s of sessions) out.set(s.sessionId, s.status);
+  for (const s of sessions) if (!isOrgSession(s)) out.set(s.sessionId, s.status);
   return out;
 }
 
@@ -895,9 +903,10 @@ export function liveSessionStatuses(
  * reports a run ENDING. Surfaces built on a server-side snapshot (company mode's desk and
  * ticket rows, the org chart's state dots, the overview's employee counts) read this first and
  * keep their snapshot for a Session no event has named yet: their snapshots are re-read on
- * organization events, and no event announces that a run finished. The development list never
- * fetches an organization's Sessions, so for them this is the remembered `session_state`
- * alone — which reaches every one of them, not only the first page of an employee's stream.
+ * organization events and on a resync, and no event announces that a run finished. The
+ * development list never fetches an organization's Sessions, so for them this is the
+ * remembered `session_state` alone — which reaches every one of them, not only the first page
+ * of an employee's stream.
  *
  * Memoized on the rows and the remembered statuses, so a consumer re-shapes only when one
  * actually moves.

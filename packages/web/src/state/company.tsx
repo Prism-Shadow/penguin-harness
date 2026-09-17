@@ -97,6 +97,25 @@ export function subscribeCompanyEvents(listener: CompanyEventListener): () => vo
   };
 }
 
+/**
+ * The user channel reconnected past its replay buffer (`resync_required`): any number of the
+ * events above were lost, and so were the `session_state` flips company surfaces take run state
+ * from — the session list store forgets those on the same event, and the company store re-reads
+ * the snapshots they would otherwise have corrected (`resync`).
+ */
+const resyncListeners = new Set<() => void>();
+
+export function publishCompanyResync(): void {
+  for (const listener of resyncListeners) listener();
+}
+
+export function subscribeCompanyResync(listener: () => void): () => void {
+  resyncListeners.add(listener);
+  return () => {
+    resyncListeners.delete(listener);
+  };
+}
+
 /** Subscribes a component to company events for its mounted lifetime; the latest handler is always the one called. */
 export function useCompanyEvents(handler: CompanyEventListener): void {
   const ref = useRef(handler);
@@ -113,12 +132,12 @@ export interface TicketDialogTarget {
 
 /** Version counters, one per event family: a page refetches when the one it depends on moves. */
 export interface CompanyVersions {
-  /** The organization list (an org's summary counts changed: a budget pause, a run). */
+  /** The organization list (an org's summary counts changed: a budget pause, a run, a resync). */
   orgs: number;
   /** A new message landed in one of the organization's channels. */
   messages: number;
   tickets: number;
-  /** A desk or ticket Session was opened by the scheduler. */
+  /** A desk or ticket Session was opened by the scheduler, or a resync may have lost that news. */
   runs: number;
   budget: number;
 }
@@ -191,6 +210,7 @@ interface CompanyStoreState {
   backTicket: () => void;
   ticketsChanged: () => void;
   applyCompanyEvent: (ev: CompanyServerEvent, userId: string | null) => void;
+  resync: () => void;
 }
 
 /** The two badge numbers of a channel listing (channel-list.ts), in the shape the store stores them. */
@@ -515,6 +535,16 @@ export function createCompanyStore() {
       }
       set({ versions });
     },
+
+    /**
+     * Events were lost (see publishCompanyResync): re-read the snapshots that carry run state
+     * through the versions that already drive them — `runs` the sessions route, `orgs` the
+     * organization list and the open chart — so the surfaces stand on current state again.
+     */
+    resync: () => {
+      const versions = get().versions;
+      set({ versions: { ...versions, runs: versions.runs + 1, orgs: versions.orgs + 1 } });
+    },
   }));
 }
 
@@ -683,6 +713,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     () => subscribeCompanyEvents((ev) => store.getState().applyCompanyEvent(ev, userId)),
     [store, userId],
   );
+  useEffect(() => subscribeCompanyResync(() => store.getState().resync()), [store]);
 
   const value = useMemo<CompanyContextValue>(() => {
     const available = serverEnabled && state.personalEnabled;

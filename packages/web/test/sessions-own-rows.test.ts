@@ -5,9 +5,10 @@
  * reach development mode's list — not as rows, and not as the totals and Workspace stamps
  * the sidebar builds groups from. The store therefore asks the server for its own rows only
  * on every fetch, keeps the server's totals as they are when an organization row still
- * enters by another door (a deep link's self-heal), and remembers every live status the user
- * channel reports whether or not a loaded page holds the row — which is what company mode's
- * surfaces read, now that the rows themselves are no longer fetched here.
+ * enters by another door (a deep link's self-heal) and carries that row across reloads, and
+ * remembers every live status the user channel reports whether or not a loaded page holds the
+ * row — which is what company mode's surfaces read, now that the rows themselves are no longer
+ * fetched here — until a resync says flips were lost.
  *
  * The store is exercised directly (node, no DOM); the API module is mocked at the seam.
  */
@@ -116,6 +117,14 @@ describe("an organization row that enters by another door", () => {
     store.getState().add(session("own-2"));
     expect(store.getState().countsByAgent.get("default_agent")?.active).toBe(2);
   });
+
+  it("survives a reload, which can never fetch it back for the page showing it", async () => {
+    const store = await loadedStore();
+    store.getState().add(session("s-desk", { client: "org", orgId: "acme" }));
+    await store.getState().reload();
+    expect(store.getState().sessions.map((s) => s.sessionId)).toEqual(["own", "s-desk"]);
+    expect(store.getState().countsByAgent.get("default_agent")?.active).toBe(1);
+  });
 });
 
 describe("live statuses outlive the rows", () => {
@@ -141,5 +150,35 @@ describe("live statuses outlive the rows", () => {
     store.setState({ sessions: [session("own", { status: "idle" })] });
     const state = store.getState();
     expect(liveSessionStatuses(state.sessions, state.liveStatuses).get("own")).toBe("idle");
+  });
+
+  it("a resync forgets them: the flip that ended a run may be among the ones it lost", () => {
+    const store = createSessionsStore();
+    store.setState({
+      projectId: "proj",
+      agentIds: ["default_agent"],
+      reload: vi.fn(() => Promise.resolve()),
+    });
+    applyUserEvent(store, stateEvent("s-desk", "running"), () => undefined);
+    applyUserEvent(store, { type: "resync_required" }, () => undefined);
+    const state = store.getState();
+    expect(state.liveStatuses.has("s-desk")).toBe(false);
+    expect(liveSessionStatuses(state.sessions, state.liveStatuses).has("s-desk")).toBe(false);
+  });
+
+  it("an organization row held for its page does not stand in for them", () => {
+    const store = createSessionsStore();
+    store.setState({
+      projectId: "proj",
+      agentIds: ["default_agent"],
+      reload: vi.fn(() => Promise.resolve()),
+    });
+    // The desk the chat page opened while it ran: no list fetch ever refreshes this row, so
+    // after a resync its status is as stale as the forgotten entry.
+    store.getState().add(session("s-desk", { client: "org", orgId: "acme", status: "running" }));
+    applyUserEvent(store, { type: "resync_required" }, () => undefined);
+    const state = store.getState();
+    expect(state.sessions.map((s) => s.sessionId)).toEqual(["s-desk"]);
+    expect(liveSessionStatuses(state.sessions, state.liveStatuses).has("s-desk")).toBe(false);
   });
 });

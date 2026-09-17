@@ -2460,7 +2460,7 @@ export class OrganizationService {
       const desk = org.desks[e.agentId];
       if (!desk) continue;
       const row = this.deps.sessions.findById(desk.sessionId);
-      const messagingChannel = this.deps.messagingChannel?.(desk.sessionId) ?? null;
+      const messagingChannel = this.deps.messagingChannel(desk.sessionId);
       desks.push({
         agentId: e.agentId,
         name: (await this.deps.agents.exists(projectId, e.agentId))
