@@ -3,6 +3,7 @@
 - **Date:** 2026-09-17
 - **Type:** fix
 - **Scope:** `web`, `desktop`
+- **PR:** [#780](https://github.com/Prism-Shadow/penguin-harness/pull/780)
 
 [中文版](2026-09-17-chat-file-links-open-in-files.zh.md)
 
