@@ -64,11 +64,14 @@ export function SettingsDialog({
   open,
   onClose,
   section,
+  pluginFocus,
 }: {
   open: boolean;
   onClose: () => void;
   /** The page an opening starts on; a page this viewer may not open falls back like any other. */
   section?: SettingsSectionKey;
+  /** On the Plugins page: the card an opening scrolls to (e.g. `sandbox`). */
+  pluginFocus?: string;
 }) {
   // uploadLimits feeds the Upload limits page's "?" (sectionInfo below); the rest pick pages.
   const { user, desktopMode, sessionVia, uploadLimits } = useAuth();
@@ -149,7 +152,9 @@ export function SettingsDialog({
       {current === "uploads" && <UploadsSection />}
       {current === "company" && <CompanySection />}
       {current === "sharing" && <SharingSection />}
-      {current === "plugins" && <PluginsSection />}
+      {current === "plugins" && (
+        <PluginsSection {...(pluginFocus !== undefined ? { focus: pluginFocus } : {})} />
+      )}
       {current === "users" && <AdminUsersSection />}
     </PagedDialog>
   );

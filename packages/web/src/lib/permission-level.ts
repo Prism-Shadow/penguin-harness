@@ -35,5 +35,21 @@ export const PERMISSION_LEVEL_TONE: Record<PermissionLevel, Tone> = {
   off: "muted",
 };
 
+/** The shield every level is drawn on. */
+export const SHIELD = "M12 3 5 6v6c0 4.4 3 7.9 7 9 4-1.1 7-4.6 7-9V6l-7-3z";
+
+/**
+ * A different mark inside the shield per level, so the level reads without colour — for
+ * colour-blind viewers and in any theme where the tint is hard to tell apart:
+ * all = an exclamation, partial = the shield split in half, read-only = a check,
+ * off = struck through.
+ */
+export const PERMISSION_LEVEL_GLYPH: Record<PermissionLevel, string> = {
+  all: `${SHIELD}M12 8v4.5M12 16h.01`,
+  partial: `${SHIELD}M12 3v18`,
+  "read-only": `${SHIELD}m9 12 2 2 4-4`,
+  off: `${SHIELD}M4 4l16 16`,
+};
+
 /** What a Session starts from when the server has not said: confinement off, network open. */
 export const UNCONFINED: SessionSandbox = { mode: "danger-full-access", network: "open" };

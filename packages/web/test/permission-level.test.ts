@@ -3,7 +3,12 @@
  */
 import { describe, expect, it } from "vitest";
 import type { SessionSandbox } from "@prismshadow/penguin-server/api";
-import { PERMISSION_LEVEL_TONE, permissionLevel } from "../src/lib/permission-level";
+import {
+  PERMISSION_LEVEL_GLYPH,
+  PERMISSION_LEVEL_TONE,
+  SHIELD,
+  permissionLevel,
+} from "../src/lib/permission-level";
 
 const FULL: SessionSandbox = { mode: "danger-full-access", network: "open" };
 
@@ -29,5 +34,13 @@ describe("permission level", () => {
       "read-only": "success",
       off: "muted",
     });
+  });
+
+  it("draws each level with its own mark, so the level never depends on colour alone", () => {
+    const glyphs = Object.values(PERMISSION_LEVEL_GLYPH);
+    expect(glyphs).toHaveLength(4);
+    expect(new Set(glyphs).size).toBe(4);
+    // One family: every mark sits inside the same shield.
+    for (const glyph of glyphs) expect(glyph.startsWith(SHIELD)).toBe(true);
   });
 });
