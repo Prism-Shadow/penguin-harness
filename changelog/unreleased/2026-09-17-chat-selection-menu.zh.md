@@ -3,6 +3,7 @@
 - **Date:** 2026-09-17
 - **Type:** feature
 - **Scope:** `web`
+- **PR:** [#784](https://github.com/Prism-Shadow/penguin-harness/pull/784)
 
 [English](2026-09-17-chat-selection-menu.md)
 
