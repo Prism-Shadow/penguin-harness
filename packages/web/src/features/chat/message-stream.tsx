@@ -304,9 +304,27 @@ export function MessageStream({
     syncJump();
   };
 
+  // The selection menu holds the view while it is open: it hangs off a point in the content, and
+  // a snap during a live reply would scroll that point out from under it (the menu then closes,
+  // as it does for any scroll that moves its anchor). Declared before the commit snap below so a
+  // commit that opens the menu applies the hold first. Releasing it catches a view that was
+  // following up with whatever arrived meanwhile; the user's own scrolling during the hold still
+  // decides whether it was following (see stream-follow.ts).
+  const menuOpen = selectionMenu.open;
+  useLayoutEffect(() => {
+    follow.hold(menuOpen);
+    if (menuOpen) return;
+    const el = scrollRef.current;
+    if (el && follow.snaps && !returningRef.current) stickToBottom(el, follow);
+    syncJump();
+    // syncJump is recreated per render; the effect keys on the menu's open state only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuOpen, follow]);
+
   // Layout effect (not useEffect): the stick-to-bottom snap must land before paint, otherwise
   // fast streams show the bottom edge "catching up" by the growth of each commit. Suppressed
-  // during the animated return — the glide owns the scroll position until it arrives.
+  // during the animated return — the glide owns the scroll position until it arrives — and
+  // while the selection menu holds the view (follow.snaps).
   // Every snap goes through stickToBottom, which reports the landed position to the follow
   // model synchronously — the snap's async scroll event otherwise races late content growth
   // and could misinitialize follow as "parked above the bottom" right after entering a
@@ -318,15 +336,16 @@ export function MessageStream({
     // content growth (same pre-paint timing as the stick snap, so nothing flashes).
     // Keyed on the prepend count — ordinary streaming growth at the bottom must not
     // shift the view. lastHeightRef is refreshed every commit, so at the prepend commit
-    // it still holds the pre-prepend height. Skipped while sticking (the snap below
-    // owns the position; a prepend while stuck at the bottom cannot move the tail).
+    // it still holds the pre-prepend height. Skipped while the snap below owns the
+    // position (a prepend while stuck at the bottom cannot move the tail); a held view is
+    // anchored like any other, since nothing snaps it.
     const prepended = older?.prependedCount ?? 0;
-    if (el && prepended > lastPrependedRef.current && !follow.stick && !returningRef.current) {
+    if (el && prepended > lastPrependedRef.current && !follow.snaps && !returningRef.current) {
       el.scrollTop += el.scrollHeight - lastHeightRef.current;
     }
     lastPrependedRef.current = prepended;
     if (el) lastHeightRef.current = el.scrollHeight;
-    if (el && follow.stick && !returningRef.current) stickToBottom(el, follow);
+    if (el && follow.snaps && !returningRef.current) stickToBottom(el, follow);
     syncJump();
     // syncJump is recreated per render; the effect intentionally keys on stream growth only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -344,7 +363,7 @@ export function MessageStream({
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
       lastHeightRef.current = el.scrollHeight;
-      if (follow.stick && !returningRef.current) stickToBottom(el, follow);
+      if (follow.snaps && !returningRef.current) stickToBottom(el, follow);
       syncJump();
     });
     ro.observe(el);

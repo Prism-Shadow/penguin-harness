@@ -22,6 +22,9 @@ gained a way to copy conversation text through it.
   and its tooltip shows the whole excerpt. Nothing already typed changes and nothing is sent; on
   send, the excerpt goes as a Markdown blockquote ahead of the typed text.
 - The text stays selected after either action.
+- While the menu is open, the stream stops auto-scrolling to follow new output, so during a live
+  reply the menu stays where it opened. Scrolling the stream yourself still closes it. Closing the
+  menu resumes following, and a view that was at the bottom catches up to it.
 - The browser's own menu stays where the app's does not apply: with nothing selected, when the
   selection runs outside the stream (into the composer, for example), and on editable fields.
   A touch or pen press-and-hold is left to the operating system's selection menu.
@@ -33,5 +36,7 @@ gained a way to copy conversation text through it.
 - `ComposerReference` gained an `excerpt` kind with no path. The composer chip moved into its own
   `ReferenceChip` component, which draws the excerpt with the quotation glyph.
 - `restoreSelection` moved out of the Files panel into a shared module that both menus use.
+- The stream's follow model (`stream-follow.ts`) gained a hold. While held, no streaming update
+  snaps the view to the bottom; the user's own scrolling still decides whether the view follows.
 - A new dictionary key `common.copy` ("复制" / "Copy") labels the Copy row. The add row reuses
   `files.addToChat`.

@@ -5,8 +5,13 @@
  * user can scroll back down to resume; content-shrink clamping isn't
  * misread as an upward scroll. Plus stickToBottom: programmatic snaps report the
  * landed position synchronously, so content growth racing the snap's async scroll
- * event can't make entering a conversation land off-bottom.
+ * event can't make entering a conversation land off-bottom. Plus the hold: while the
+ * selection menu is open the view does not snap, the user's own scrolling still decides
+ * the intent, and a release catches a following view up with what arrived meanwhile.
  */
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createStreamFollow, stickToBottom } from "../src/features/chat/stream-follow";
 
@@ -167,5 +172,80 @@ describe("stickToBottom", () => {
     el.scrollHeight += 300;
     f.scrolled(el.metrics());
     expect(f.stick).toBe(true);
+  });
+});
+
+describe("hold", () => {
+  it("defers the snap without touching the intent, and the release catches a following view up", () => {
+    const f = createStreamFollow();
+    const el = fakeContainer(2000, 460);
+    stickToBottom(el, f);
+    expect(f.snaps).toBe(true);
+    // The selection menu opens during a live reply: nothing may snap now.
+    f.hold(true);
+    expect(f.snaps).toBe(false);
+    // Chunks grow the content below the view; the view stays put, and staying put is not an
+    // upward scroll, so the intent to follow survives the hold.
+    el.scrollHeight += 300;
+    f.scrolled(el.metrics());
+    expect(f.stick).toBe(true);
+    expect(f.snaps).toBe(false);
+    expect(el.scrollTop).toBe(1540);
+    // The menu closes: the view snaps again, straight to the new bottom.
+    f.hold(false);
+    expect(f.snaps).toBe(true);
+    stickToBottom(el, f);
+    expect(el.scrollTop).toBe(1840);
+    expect(f.stick).toBe(true);
+  });
+
+  it("lets the user's own upward scroll during a hold exit follow, so the release leaves the view there", () => {
+    const f = createStreamFollow();
+    const el = fakeContainer(2000, 460);
+    stickToBottom(el, f);
+    f.hold(true);
+    f.wheel(-3);
+    el.scrollTop = 900;
+    f.scrolled(el.metrics());
+    f.hold(false);
+    expect(f.stick).toBe(false);
+    expect(f.snaps).toBe(false);
+  });
+
+  it("lets the user's own return to the bottom during a hold resume follow, which the release acts on", () => {
+    const f = createStreamFollow();
+    const el = fakeContainer(2000, 460);
+    stickToBottom(el, f);
+    el.scrollTop = 900; // parked above the bottom before the menu opened
+    f.scrolled(el.metrics());
+    f.hold(true);
+    el.scrollTop = 1500; // scrolled back within 80px of the bottom
+    f.scrolled(el.metrics());
+    expect(f.snaps).toBe(false);
+    f.hold(false);
+    expect(f.snaps).toBe(true);
+  });
+
+  it("releases a view that was not following to not following", () => {
+    const f = createStreamFollow();
+    f.scrolled({ scrollHeight: 2000, clientHeight: 460, scrollTop: 1000 });
+    f.hold(true);
+    f.hold(false);
+    expect(f.stick).toBe(false);
+    expect(f.snaps).toBe(false);
+  });
+
+  it("is what the message stream snaps by, held while its selection menu is open", () => {
+    // The rules above bind the stream only while every snap it makes asks `snaps` rather than
+    // `stick`, and the hold follows the menu's open state.
+    const stream = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), "../src/features/chat/message-stream.tsx"),
+      "utf8",
+    );
+    expect(stream).toContain("const menuOpen = selectionMenu.open;");
+    expect(stream).toContain("follow.hold(menuOpen);");
+    const snaps = stream.match(/if \(([^)]*?)\) stickToBottom\(el, follow\);/g) ?? [];
+    expect(snaps.length).toBeGreaterThanOrEqual(3);
+    for (const snap of snaps) expect(snap).toContain("follow.snaps");
   });
 });

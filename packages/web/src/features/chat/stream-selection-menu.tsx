@@ -127,6 +127,8 @@ function inEditable(node: Node): boolean {
 }
 
 export interface StreamSelectionMenu {
+  /** Whether the menu is open: the stream holds its auto-follow while it is (see stream-follow.ts). */
+  open: boolean;
   /** Attach to the stream's scroll container: the element a selection has to lie inside. */
   hostRef: (el: HTMLElement | null) => void;
   /** Spread onto the same element. */
@@ -240,5 +242,5 @@ export function useStreamSelectionMenu(
     </Dropdown>
   );
 
-  return { hostRef: menu.rowRef, hostProps, panel };
+  return { open: menu.open && captured !== null, hostRef: menu.rowRef, hostProps, panel };
 }

@@ -20,6 +20,11 @@
  *   landed position synchronously: the snap's own scroll event only arrives at the next
  *   rendering update, and content growing in between (an image decoding, a font swap) would
  *   otherwise make that first event look like a historical position and wrongly exit follow.
+ * - Hold: something anchored to the content can hold the view still — the selection menu hangs
+ *   off a point in the stream, and a snap would move that point out from under it. A hold only
+ *   defers acting on the intent (`snaps`); it never changes the intent (`stick`), so the user's
+ *   own scrolling still exits or resumes follow during a hold, and releasing it lets a view that
+ *   was following catch up with whatever arrived meanwhile.
  */
 export interface ScrollMetrics {
   scrollTop: number;
@@ -28,8 +33,12 @@ export interface ScrollMetrics {
 }
 
 export interface StreamFollow {
-  /** Whether it should currently auto-stick to bottom on streaming updates. */
+  /** Whether the user's intent is to follow: auto-stick to bottom on streaming updates. */
   readonly stick: boolean;
+  /** Whether a streaming update may snap the view to the bottom right now: following, and not held. */
+  readonly snaps: boolean;
+  /** Hold the view where it is (true) or release it (false); see the header for what a hold leaves alone. */
+  hold(held: boolean): void;
   /** wheel: deltaY < 0 is scroll-up intent, exits follow immediately. */
   wheel(deltaY: number): void;
   touchStart(clientY: number): void;
@@ -44,11 +53,18 @@ export interface StreamFollow {
 
 export function createStreamFollow(): StreamFollow {
   let stick = true;
+  let held = false;
   let lastTop: number | null = null;
   let touchY: number | null = null;
   return {
     get stick() {
       return stick;
+    },
+    get snaps() {
+      return stick && !held;
+    },
+    hold(next) {
+      held = next;
     },
     wheel(deltaY) {
       if (deltaY < 0) stick = false;
