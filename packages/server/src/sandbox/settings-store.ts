@@ -94,6 +94,9 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
               "One absolute path per line, hidden from confined commands (reads included).",
             descriptionZh: "每行一个绝对路径，对被封禁的命令隐藏（包括读取）。",
             maxItems: 64,
+            // POSIX `/…`, Windows `C:\…` or `C:/…`, or a UNC `\\server\…`.
+            pattern: "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\)",
+            patternErrorMessage: "must list absolute paths",
           },
         },
       },
@@ -158,8 +161,8 @@ export class SandboxSettingsStatus {
             declined.length === 0 ? "" : `已安装 ${declined.join("、")}，但它们适用于其他平台。`;
           notices.push({
             tone: "attention",
-            text: `This deployment has no usable sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page.${elsewhere}`,
-            textZh: `当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，选择任何模式都不会产生约束。${elsewhereZh}`,
+            text: `This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command.${elsewhere}`,
+            textZh: `当前部署没有可用的沙盒后端：在插件页安装适用于本平台的后端之前，除「关闭」外的任何模式都会拒绝 Agent 的每条命令。${elsewhereZh}`,
           });
         } else {
           const list = backends.map((b) => `${b.name} (${b.dimensions.join(", ")})`).join(" · ");

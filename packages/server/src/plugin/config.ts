@@ -133,6 +133,37 @@ export function parsePluginConfiguration(
       }
       field.maxItems = f.maxItems;
     }
+    if (field.type === "number") {
+      for (const key of ["minimum", "maximum"] as const) {
+        const v = f[key];
+        if (v === undefined) continue;
+        if (typeof v !== "number" || !Number.isFinite(v)) {
+          throw new Error(`${where}: configuration.properties.${name}.${key} must be a number`);
+        }
+        field[key] = v;
+      }
+    }
+    if ((field.type === "string" || field.type === "list") && f.pattern !== undefined) {
+      if (typeof f.pattern !== "string") {
+        throw new Error(`${where}: configuration.properties.${name}.pattern must be a string`);
+      }
+      try {
+        new RegExp(f.pattern, "u");
+      } catch {
+        throw new Error(
+          `${where}: configuration.properties.${name}.pattern is not a valid regular expression`,
+        );
+      }
+      field.pattern = f.pattern;
+      if (f.patternErrorMessage !== undefined) {
+        if (typeof f.patternErrorMessage !== "string") {
+          throw new Error(
+            `${where}: configuration.properties.${name}.patternErrorMessage must be a string`,
+          );
+        }
+        field.patternErrorMessage = f.patternErrorMessage;
+      }
+    }
     if (f.required !== undefined) {
       if (typeof f.required !== "boolean") {
         throw new Error(`${where}: configuration.properties.${name}.required must be a boolean`);
@@ -140,7 +171,7 @@ export function parsePluginConfiguration(
       field.required = f.required;
     }
     if (f.default !== undefined) {
-      if (!valueFits(field, f.default)) {
+      if (!valueFits(field, f.default) || valueViolation(name, field, f.default) !== undefined) {
         throw new Error(
           `${where}: configuration.properties.${name}.default does not fit a ${field.type} field`,
         );
@@ -172,6 +203,35 @@ export function valueFits(field: PluginConfigField, value: unknown): boolean {
     default:
       return typeof value === "string";
   }
+}
+
+/**
+ * Why a value of the right type is still refused — outside the field's range, or a value (a
+ * list's line) that does not match its pattern — or undefined when it is accepted.
+ */
+export function valueViolation(
+  name: string,
+  field: PluginConfigField,
+  value: unknown,
+): string | undefined {
+  if (typeof value === "number") {
+    if (field.minimum !== undefined && value < field.minimum) {
+      return `"${name}" must be at least ${field.minimum}`;
+    }
+    if (field.maximum !== undefined && value > field.maximum) {
+      return `"${name}" must be at most ${field.maximum}`;
+    }
+    return undefined;
+  }
+  if (field.pattern === undefined) return undefined;
+  const pattern = new RegExp(field.pattern, "u");
+  const bad = (Array.isArray(value) ? value : [value]).find(
+    (v) => typeof v === "string" && !pattern.test(v),
+  );
+  if (bad === undefined) return undefined;
+  return field.patternErrorMessage !== undefined
+    ? `"${name}" ${field.patternErrorMessage}: ${bad}`
+    : `"${name}" does not match ${field.pattern}: ${bad}`;
 }
 
 /** The schema's defaults, as the document a plugin with nothing stored reads. */
@@ -249,12 +309,19 @@ export function applyUpdate(
       if (field.maxItems !== undefined && items.length > field.maxItems) {
         throw new PluginConfigError(name, `"${name}" may hold at most ${field.maxItems} entries`);
       }
+      const violation = valueViolation(name, field, items);
+      if (violation !== undefined) throw new PluginConfigError(name, violation);
       if (items.length === 0) delete next[name];
       else next[name] = items;
       continue;
     }
     next[name] = typeof value === "string" ? value.trim() : value;
-    if (next[name] === "") delete next[name];
+    if (next[name] === "") {
+      delete next[name];
+      continue;
+    }
+    const violation = valueViolation(name, field, next[name]);
+    if (violation !== undefined) throw new PluginConfigError(name, violation);
   }
   for (const [name, field] of Object.entries(schema.properties)) {
     if (field.required === true && next[name] === undefined && field.default === undefined) {

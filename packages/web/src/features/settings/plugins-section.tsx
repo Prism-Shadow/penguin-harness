@@ -144,8 +144,11 @@ export function PluginsSection() {
         }));
         return false;
       }
-      if (!sameValue(v, entry.values[name])) changed = true;
+      // Only what changed: sending an untouched field would store its default as a value,
+      // pinning it against a later change of the default.
+      if (sameValue(v, entry.values[name])) continue;
       values[name] = v;
+      changed = true;
     }
     return changed ? values : null;
   };

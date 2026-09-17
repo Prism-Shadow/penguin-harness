@@ -4832,6 +4832,13 @@ export interface PluginConfigField {
   options?: PluginConfigOption[];
   /** `list` only: the most entries a save may leave (after trimming and de-duplicating). */
   maxItems?: number;
+  /** `number` only: the smallest and largest value a save may store. */
+  minimum?: number;
+  maximum?: number;
+  /** `string` / `list` only: a regular expression every value (every line) must match. */
+  pattern?: string;
+  /** What a save refused by `pattern` says, after the field's name (e.g. "must be an absolute path"). */
+  patternErrorMessage?: string;
 }
 
 /** One choice of an `enum` field. */

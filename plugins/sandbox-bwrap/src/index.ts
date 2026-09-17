@@ -257,9 +257,13 @@ export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}
             title: "Probe timeout (seconds)",
             titleZh: "探测超时（秒）",
             description:
-              "How long the first check that bwrap works may take before it counts as unusable.",
-            descriptionZh: "首次检查 bwrap 是否可用时最多等待多久，超时即视为不可用。",
+              "How long the first check that bwrap works may take before it counts as unusable (1–30).",
+            descriptionZh: "首次检查 bwrap 是否可用时最多等待多久（1–30），超时即视为不可用。",
             default: 5,
+            // The confine-time probe blocks the server while it runs; a hanging runner must
+            // not stall it for longer than this.
+            minimum: 1,
+            maximum: 30,
           },
         },
       },

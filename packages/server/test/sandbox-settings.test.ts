@@ -167,6 +167,13 @@ describe("sandbox settings group", () => {
       values: { mode: "wide-open" },
     });
     expect(refused.status).toBe(400);
+    // A relative masked path would resolve against the server's working directory.
+    const relative = await admin.put("/api/admin/plugin-config", {
+      name: "sandbox",
+      values: { maskPaths: ["/etc/x", ".ssh"] },
+    });
+    expect(relative.status).toBe(400);
+    expect(sandbox.currentSettings().maskPaths).toBeUndefined();
     expect(sandbox.currentSettings().mode).toBe("read-only");
   });
 
@@ -221,7 +228,7 @@ describe("sandbox settings group", () => {
       ],
       [
         "attention",
-        "This deployment has no usable sandbox backend: a mode confines nothing until one for this platform is installed from the Plugins page. other-platform is installed, but for another platform.",
+        "This deployment has no usable sandbox backend: until one for this platform is installed from the Plugins page, every mode but Off refuses every agent command. other-platform is installed, but for another platform.",
       ],
       ["attention", "wrong-backend is not in use: 'bwrap' is missing"],
     ]);

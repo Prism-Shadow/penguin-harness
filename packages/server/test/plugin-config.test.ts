@@ -76,6 +76,15 @@ describe("parsePluginConfiguration", () => {
     expect(bad({ a: { type: "list", title: "A", maxItems: 0 } })).toThrow(
       /maxItems must be a positive integer/,
     );
+    expect(bad({ a: { type: "number", title: "A", maximum: "30" } })).toThrow(
+      /\.a\.maximum must be a number/,
+    );
+    expect(bad({ a: { type: "number", title: "A", maximum: 3, default: 5 } })).toThrow(
+      /\.a\.default does not fit/,
+    );
+    expect(bad({ a: { type: "string", title: "A", pattern: "(" } })).toThrow(
+      /\.a\.pattern is not a valid regular expression/,
+    );
   });
 });
 
@@ -127,6 +136,39 @@ describe("applyUpdate", () => {
     );
     // An empty list clears the field.
     expect(applyUpdate(schema, { paths: ["/x"] }, { paths: [] })).toEqual({});
+  });
+
+  it("holds a number to its range and every line of a patterned field to its pattern", () => {
+    const schema = parsePluginConfiguration(
+      {
+        properties: {
+          seconds: { type: "number", title: "Seconds", minimum: 1, maximum: 30, default: 5 },
+          paths: {
+            type: "list",
+            title: "Paths",
+            pattern: "^/",
+            patternErrorMessage: "must list absolute paths",
+          },
+          host: { type: "string", title: "Host", pattern: "^[a-z]+$" },
+        },
+      },
+      "x",
+    )!;
+    expect(applyUpdate(schema, {}, { seconds: 30, paths: ["/a"], host: "box" })).toEqual({
+      seconds: 30,
+      paths: ["/a"],
+      host: "box",
+    });
+    expect(() => applyUpdate(schema, {}, { seconds: 0 })).toThrow('"seconds" must be at least 1');
+    expect(() => applyUpdate(schema, {}, { seconds: 600 })).toThrow('"seconds" must be at most 30');
+    expect(() => applyUpdate(schema, {}, { paths: ["/a", " .ssh "] })).toThrow(
+      '"paths" must list absolute paths: .ssh',
+    );
+    expect(() => applyUpdate(schema, {}, { host: "Box" })).toThrow(
+      '"host" does not match ^[a-z]+$: Box',
+    );
+    // Clearing is never a violation.
+    expect(applyUpdate(schema, { host: "box" }, { host: "" })).toEqual({});
   });
 });
 
