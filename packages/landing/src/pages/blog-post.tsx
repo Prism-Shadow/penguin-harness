@@ -83,7 +83,7 @@ export function MdImage({
  * that subtree instead of updating it. None of these adapters closes over render state, so a single
  * frozen map is enough.
  */
-const MD_COMPONENTS: Components = {
+export const MD_COMPONENTS: Components = {
   h2: ({ children }) => (
     <h2 id={slugifyHeading(nodeText(children))} className="scroll-mt-20">
       {children}
