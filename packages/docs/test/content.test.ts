@@ -15,14 +15,15 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DOCS_NAV, DOC_SLUGS, pagerFor } from "../src/lib/nav";
 import { parseFrontmatter } from "../src/lib/frontmatter";
+import { hashTargetId } from "../src/lib/hash";
 import { extractToc } from "../src/lib/toc";
 
 const contentDir = join(__dirname, "..", "content");
 const files = readdirSync(contentDir).filter((f) => f.endsWith(".md"));
 
-/** In-page targets of Markdown links, i.e. "[label](#anchor)" (percent-decoded). */
+/** In-page targets of Markdown links, i.e. "[label](#anchor)", resolved as the router does. */
 function inPageAnchors(body: string): string[] {
-  return [...body.matchAll(/\]\(#([^)\s]+)\)/g)].map((match) => decodeURIComponent(match[1]!));
+  return [...body.matchAll(/\]\(#([^)\s]+)\)/g)].map((match) => hashTargetId(match[1]!));
 }
 
 /** Slugs of absolute doc links, i.e. "[label](/slug)" or "[label](/slug#anchor)". */

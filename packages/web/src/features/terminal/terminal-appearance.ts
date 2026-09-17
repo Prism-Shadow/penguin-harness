@@ -19,7 +19,7 @@ export interface TerminalChrome {
   surface: string;
   /** Border colour for the pane edge and the header rule (pair with border-b/border-t/…). */
   border: string;
-  /** Header icon buttons (detach, new shell, close). */
+  /** Header icon buttons (detach, new terminal, close). */
   iconButton: string;
   /** The header's drag grip. */
   grip: string;
