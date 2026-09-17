@@ -32,8 +32,9 @@
  * matters for a deployment.
  */
 import { execFile, spawnSync } from "node:child_process";
-import { statSync } from "node:fs";
+import { accessSync, constants, statSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { Bind, Component } from "@prismshadow/penguin-core/plugin";
 import type {
@@ -46,6 +47,37 @@ import type {
 
 /** Default probe budget; a probe that hangs must not hang the first spawn forever. */
 const PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * The bwrap this plugin SHIPS for the host it is running on, or "" when it carries none.
+ *
+ * A deployment must not depend on the distribution having bubblewrap — most do not install it,
+ * and an operator who has to run `apt install bubblewrap` before the sandbox works is an
+ * operator whose sandbox is off. The binary lives beside the built module
+ * (`vendor/<platform>-<arch>/bin/bwrap`, see scripts/vendor-bwrap.mjs) and finds its own
+ * libcap through an `$ORIGIN/../lib` rpath, which is what lets a backend that only rewrites an
+ * argv use it: there is no environment to set.
+ */
+export function vendoredRunner(
+  platform: NodeJS.Platform = process.platform,
+  arch: string = process.arch,
+  runnable: (p: string) => boolean = executable,
+): string {
+  const candidate = fileURLToPath(
+    new URL(`../vendor/${platform}-${arch}/bin/bwrap`, import.meta.url),
+  );
+  return runnable(candidate) ? candidate : "";
+}
+
+/** Present AND executable: a package installer may drop the exec bit, and then it is not ours to run. */
+function executable(target: string): boolean {
+  try {
+    accessSync(target, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Test seams: inject the probe verdict and the runner name. */
 export interface PenguinBwrapInternals {
@@ -67,7 +99,11 @@ export function writableRoots(policy: SandboxPolicy): string[] {
 
 /** The bwrap profile arguments for one policy (everything before `--` and the caller's argv). */
 export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
-  const args = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--die-with-parent"];
+  // Full access binds the root read-WRITE: the filesystem is unrestricted, and only the other
+  // dimensions below (a network cut, a masked path) still apply — which is the whole reason a
+  // full-access policy reached a backend at all.
+  const rootBind = policy.mode === "danger-full-access" ? "--bind" : "--ro-bind";
+  const args = [rootBind, "/", "/", "--dev", "/dev", "--proc", "/proc", "--die-with-parent"];
   const roots = writableRoots(policy);
   if (policy.writableTemp === true) args.push("--tmpfs", "/tmp");
   for (const root of roots) {
@@ -130,13 +166,13 @@ export async function loadPenguinBwrapProvider(
   // Not this host's backend: a decline, not a failure — the deployment installed it for
   // its Linux machines, and saying so on every Windows card would be noise.
   if (platform !== "linux") return null;
-  const runner = internals.runner ?? "bwrap";
+  const runner = internals.runner ?? (vendoredRunner() || "bwrap");
   const usable = internals.probe
     ? internals.probe(PROBE_TIMEOUT_MS, runner)
     : await probeAsync(PROBE_TIMEOUT_MS, runner);
   if (!usable) {
     throw new Error(
-      `'${runner}' is missing or refuses the base profile (is bubblewrap installed, with unprivileged user namespaces enabled?)`,
+      `'${runner}' is missing or refuses the base profile (are unprivileged user namespaces enabled on this host? \`sysctl kernel.unprivileged_userns_clone\`)`,
     );
   }
   return createPenguinBwrapProvider(internals);
@@ -148,7 +184,7 @@ export async function loadPenguinBwrapProvider(
  * because the dimensions routed here (network, mask-paths) have no weaker form.
  */
 export function createPenguinBwrapProvider(internals: PenguinBwrapInternals = {}): SandboxProvider {
-  const runner = internals.runner ?? "bwrap";
+  const runner = internals.runner ?? (vendoredRunner() || "bwrap");
   const probe = internals.probe ?? defaultProbe;
   let usable: boolean | undefined;
   return {

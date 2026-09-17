@@ -30,7 +30,7 @@
  * unconfined run.
  */
 import { execFile, spawnSync } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Bind, Component } from "@prismshadow/penguin-core/plugin";
@@ -47,6 +47,23 @@ const PROBE_TIMEOUT_MS = 5_000;
 
 /** The write sinks a confined process needs even under read-only. */
 const REQUIRED_WRITE_SINKS = ["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/dtracehelper"];
+
+/**
+ * Where macOS keeps the program this backend runs.
+ *
+ * Unlike the Linux backend, which ships its own bubblewrap, there is nothing to vendor here:
+ * `sandbox-exec` is part of macOS, lives at a fixed path on every install, and is Apple's to
+ * distribute, not ours. What the shipped binary bought there — never depending on the host's
+ * setup — this buys by naming the absolute path instead of a bare command: a PATH that lacks
+ * `/usr/bin`, or that puts something else called `sandbox-exec` earlier, no longer decides what
+ * confines a command. A host missing it is caught by the probe at load, with the reason.
+ */
+export const SYSTEM_RUNNER = "/usr/bin/sandbox-exec";
+
+/** The program to run when the settings name none: the OS's own, else a PATH lookup. */
+export function defaultRunner(exists: (p: string) => boolean = existsSync): string {
+  return exists(SYSTEM_RUNNER) ? SYSTEM_RUNNER : "sandbox-exec";
+}
 
 /** Test seams: inject the probe verdict and the runner name. */
 export interface SeatbeltInternals {
@@ -85,13 +102,18 @@ function sbplString(value: string): string {
 
 /** The SBPL profile for one policy: the exact text handed to `sandbox-exec -p`. */
 export function seatbeltProfile(policy: SandboxPolicy): string {
-  const forms = [
-    "(version 1)",
-    "(allow default)",
-    "(deny file-write*)",
-    `(allow file-write* ${REQUIRED_WRITE_SINKS.map((sink) => `(literal ${sbplString(sink)})`).join(" ")})`,
-  ];
-  const roots = writableRoots(policy);
+  // Full access denies no writes: "(allow default)" already permits them, and only the network
+  // and mask forms below still bite. A confining mode denies writes and re-allows the sinks.
+  const full = policy.mode === "danger-full-access";
+  const forms = full
+    ? ["(version 1)", "(allow default)"]
+    : [
+        "(version 1)",
+        "(allow default)",
+        "(deny file-write*)",
+        `(allow file-write* ${REQUIRED_WRITE_SINKS.map((sink) => `(literal ${sbplString(sink)})`).join(" ")})`,
+      ];
+  const roots = full ? [] : writableRoots(policy);
   if (roots.length > 0) {
     forms.push(
       `(allow file-write* ${roots.map((root) => `(subpath ${sbplString(root)})`).join(" ")})`,
@@ -142,7 +164,7 @@ export async function loadSeatbeltProvider(
   const platform = internals.platform ?? process.platform;
   // Not this host's backend: a decline, not a failure (see penguin-bwrap's loader).
   if (platform !== "darwin") return null;
-  const runner = internals.runner ?? "sandbox-exec";
+  const runner = internals.runner ?? defaultRunner();
   const usable = internals.probe
     ? internals.probe(PROBE_TIMEOUT_MS, runner)
     : await new Promise<boolean>((resolve) => {
@@ -162,7 +184,7 @@ export async function loadSeatbeltProvider(
  * unusable Seatbelt throws — fail-closed — rather than degrading to a weaker profile.
  */
 export function createSeatbeltProvider(internals: SeatbeltInternals = {}): SandboxProvider {
-  const runner = internals.runner ?? "sandbox-exec";
+  const runner = internals.runner ?? defaultRunner();
   const probe = internals.probe ?? defaultProbe;
   let usable: boolean | undefined;
   return {

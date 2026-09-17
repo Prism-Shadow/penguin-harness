@@ -50,7 +50,7 @@ describe("sandbox service — the built-in interface and its optional dimensions
   it("default settings are danger-full-access: argv passes through, no backend is consulted", async () => {
     const dsh = fake("dsh");
     const svc = await service([["dsh-local", dsh.provider]]);
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual([...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual([...ARGV]);
     expect(dsh.calls).toHaveLength(0);
   });
 
@@ -86,7 +86,7 @@ describe("sandbox service — the built-in interface and its optional dimensions
     // The deployed-machine shape (see scripts/deploy.mjs): the load fails, the default
     // settings keep working, and only a confining mode fails.
     const svc = await service([["dsh-local", Promise.reject(new Error("MODULE_NOT_FOUND"))]]);
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual([...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual([...ARGV]);
     svc.configure({ mode: "workspace-write" });
     expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(/MODULE_NOT_FOUND/);
   });
@@ -95,7 +95,7 @@ describe("sandbox service — the built-in interface and its optional dimensions
     const dsh = fake("dsh");
     const svc = await service([["dsh-local", dsh.provider]]);
     svc.configure({ mode: "workspace-write" });
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual(["dsh", "--", ...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["dsh", "--", ...ARGV]);
     // workspaceRoot is the Workspace, never the per-command cwd.
     expect(dsh.calls[0]).toMatchObject({ mode: "workspace-write", workspaceRoot: "/work/project" });
     expect(svc.backends()).toEqual([{ name: "dsh-local", dimensions: ["fs-write"] }]);
@@ -127,7 +127,7 @@ describe("sandbox service — capability routing across backends", () => {
       ["penguin-bwrap", bwrap.provider],
     ]);
     svc.configure({ mode: "workspace-write" });
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual(["dsh", "--", ...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["dsh", "--", ...ARGV]);
     expect(bwrap.calls).toHaveLength(0);
   });
 
@@ -138,9 +138,26 @@ describe("sandbox service — capability routing across backends", () => {
       ["penguin-bwrap", bwrap.provider],
     ]);
     svc.configure({ mode: "workspace-write", network: "none", maskPaths: ["/home/u/.ssh"] });
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual(["bwrap", "--", ...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["bwrap", "--", ...ARGV]);
     expect(dsh.calls).toHaveLength(0);
     expect(bwrap.calls[0]).toMatchObject({ network: "none", maskPaths: ["/home/u/.ssh"] });
+  });
+
+  it("full access still routes to a backend when it cuts the network (never dropped)", async () => {
+    const { dsh, bwrap } = entries();
+    const svc = await service([
+      ["dsh-local", dsh.provider],
+      ["penguin-bwrap", bwrap.provider],
+    ]);
+    // Full access + no network is genuinely unconfined: it passes through.
+    svc.configure({ mode: "danger-full-access" });
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual([...ARGV]);
+    expect(bwrap.calls).toHaveLength(0);
+    // But full access that ALSO cuts the network must reach a backend that can cut it — the
+    // filesystem stays unrestricted, the network does not.
+    svc.configure({ mode: "danger-full-access", network: "none" });
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["bwrap", "--", ...ARGV]);
+    expect(bwrap.calls[0]).toMatchObject({ mode: "danger-full-access", network: "none" });
   });
 
   it("an empty maskPaths list does not require the dimension", async () => {
@@ -150,7 +167,7 @@ describe("sandbox service — capability routing across backends", () => {
       ["penguin-bwrap", bwrap.provider],
     ]);
     svc.configure({ mode: "read-only", maskPaths: [] });
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual(["dsh", "--", ...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["dsh", "--", ...ARGV]);
   });
 
   it("a backend throw (unusable runner, etc.) propagates — fail-closed end to end", async () => {

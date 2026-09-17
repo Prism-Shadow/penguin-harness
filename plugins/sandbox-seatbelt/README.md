@@ -4,6 +4,15 @@ The macOS counterpart to the bubblewrap backend, built on `sandbox-exec` (Seatbe
 Implements **all three** dimensions of the harness sandbox interface — filesystem writes,
 network isolation and path masking — as policy rules rather than mounts.
 
+## The program it runs
+
+`sandbox-exec` is part of macOS: it lives at `/usr/bin/sandbox-exec` on every install, and it is
+Apple's to distribute, not this project's — so unlike the Linux backend, which ships its own
+bubblewrap, there is nothing here to vendor. What that buys elsewhere, this buys by naming the
+absolute path rather than a bare command: a PATH without `/usr/bin`, or one that puts something
+else called `sandbox-exec` first, no longer decides what confines a command. A host where it does not work is caught by the
+load-time probe.
+
 ## Requirements
 
 - macOS, with `sandbox-exec` available (part of the base system). On any other platform the

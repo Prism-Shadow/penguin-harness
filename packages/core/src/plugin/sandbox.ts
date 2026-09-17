@@ -41,8 +41,14 @@ export type SandboxDimension = "fs-write" | "network" | "mask-paths";
  * implements it (never silently dropped).
  */
 export interface SandboxPolicy {
-  /** The file-effect mode this execution runs under (`fs-write`). */
-  mode: ConfinedSandboxMode;
+  /**
+   * The file-effect mode this execution runs under (`fs-write`). A provider is normally
+   * consulted only for a confining mode; it is handed `danger-full-access` ONLY when the
+   * policy still requires another dimension (a network cut, a masked path). Then it must
+   * leave the filesystem unrestricted while enforcing that other dimension — "everything
+   * writable, but no network" is a real, expressible policy.
+   */
+  mode: SandboxMode;
   /** Absolute root directory `workspace-write` may write under. */
   workspaceRoot: string;
   /** `network`: "none" = the confined process gets no network at all. */
@@ -89,6 +95,14 @@ export interface ConfinedArgv {
   denialSignatures: readonly string[];
   /** Structured runner-failure evidence (see {@link RunnerFailureRule}). */
   runnerFailureRules: readonly RunnerFailureRule[];
+  /**
+   * Environment entries the RUNNER needs, laid over the command's own environment at
+   * spawn. A runner that is a script has to tell its interpreter how to behave — the
+   * desktop app's own binary runs a script only under `ELECTRON_RUN_AS_NODE`, and
+   * nothing in an argv can say so. These describe the runner, not the command: a runner
+   * that hands the environment on keeps them from the command it confines.
+   */
+  env?: Readonly<Record<string, string>>;
 }
 
 /**

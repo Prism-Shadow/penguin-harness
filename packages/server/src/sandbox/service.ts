@@ -126,8 +126,12 @@ export class SandboxService {
   confiner(): SpawnConfiner {
     return (argv, opts) => {
       const settings = this.settings;
-      if (settings.mode === "danger-full-access") return argv;
       const required = requestedDimensions(settings);
+      // Full access with nothing else asked (no network cut, no masked paths) is genuinely
+      // unconfined — spawn as-is. But full access that STILL cuts the network or masks a path
+      // needs a backend: returning here would silently drop that half of the policy. So the
+      // short-circuit is "no confinement dimension beyond fs-write", not "mode is full".
+      if (settings.mode === "danger-full-access" && required.length === 1) return { argv };
       const provider = this.pick(required, settings.mode);
       // workspaceRoot is the Session's Workspace, never the per-command cwd: a command
       // running in a workdir outside the Workspace must not widen the writable roots.
@@ -143,7 +147,10 @@ export class SandboxService {
       };
       // ConfinedArgv also carries enforcement / denialSignatures / runnerFailureRules;
       // the classification consumer (denial vs runner failure) lands with escalation.
-      return provider.confine(argv, policy).argv;
+      const confined = provider.confine(argv, policy);
+      return confined.env === undefined
+        ? { argv: confined.argv }
+        : { argv: confined.argv, env: confined.env };
     };
   }
 

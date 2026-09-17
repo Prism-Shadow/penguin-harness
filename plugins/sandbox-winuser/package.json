@@ -1,9 +1,9 @@
 {
-  "name": "@prismshadow/penguin-plugin-sandbox-bwrap",
+  "name": "@prismshadow/penguin-plugin-sandbox-winuser",
   "version": "0.2.2",
   "private": true,
   "type": "module",
-  "description": "Bubblewrap sandbox backend for PenguinHarness: filesystem confinement plus network isolation and path masking.",
+  "description": "Windows sandbox backend for PenguinHarness: commands run as a dedicated local account, confined by NTFS permissions and per-account firewall rules.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,14 +15,17 @@
   "license": "Apache-2.0",
   "files": [
     "dist",
-    "vendor",
+    "setup",
     "README.md",
     "ifaces.json"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "build": "node ../../scripts/vendor-bwrap.mjs && node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+    "build": "node ../../scripts/gen-ifaces.mjs --project tsconfig.json --out ifaces.json && tsup"
+  },
+  "dependencies": {
+    "koffi": "^3.1.0"
   },
   "devDependencies": {
     "@prismshadow/penguin-core": "workspace:*",

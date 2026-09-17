@@ -11,8 +11,10 @@ import path from "node:path";
 import {
   canonicalPath,
   createSeatbeltProvider,
+  defaultRunner,
   loadSeatbeltProvider,
   seatbeltProfile,
+  SYSTEM_RUNNER,
   writableRoots,
 } from "../src/index.js";
 
@@ -48,6 +50,18 @@ describe.skipIf(process.platform === "win32")("seatbelt profile", () => {
     expect(writableRoots({ mode: "read-only", workspaceRoot: WS, writableTemp: true })).toEqual([
       ...new Set(["/tmp", tmpdir()].map(canonicalPath)),
     ]);
+  });
+
+  it("full access denies no writes, yet still cuts the network when asked", () => {
+    const profile = seatbeltProfile({
+      mode: "danger-full-access",
+      workspaceRoot: WS,
+      network: "none",
+    });
+    // No write denial at all — "(allow default)" already permits every file write.
+    expect(profile).not.toContain("(deny file-write*)");
+    // The network cut still applies.
+    expect(profile).toContain("(deny network*)");
   });
 
   it("network: none denies every socket", () => {
@@ -150,5 +164,15 @@ describe("seatbelt on another platform", () => {
     await expect(
       loadSeatbeltProvider({ platform: "darwin", probe: () => true }),
     ).resolves.toBeDefined();
+  });
+});
+
+describe("the sandbox-exec it runs", () => {
+  it("names the macOS program by its absolute path, so PATH cannot decide what confines", () => {
+    expect(SYSTEM_RUNNER).toBe("/usr/bin/sandbox-exec");
+    expect(defaultRunner(() => true)).toBe(SYSTEM_RUNNER);
+    // A host without it (or any non-macOS machine running these tests) falls back to a lookup,
+    // and the load-time probe is what rejects a host where nothing answers.
+    expect(defaultRunner(() => false)).toBe("sandbox-exec");
   });
 });

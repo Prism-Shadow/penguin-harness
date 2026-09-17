@@ -18,7 +18,7 @@ functionally:
 DSH's policy vocabulary governs **file-write effects only**, so this adaptor declares
 exactly `fs-write`. The sandbox service therefore never routes a `network` or
 `mask-paths` policy here, and the adaptor never has to silently drop a dimension it
-cannot honor — for those, use the bubblewrap backend on Linux or the Seatbelt backend on macOS.
+cannot honor — for those, use the bubblewrap, Seatbelt or account (winuser) backend for your platform.
 
 ## Requirements
 

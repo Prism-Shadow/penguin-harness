@@ -367,12 +367,24 @@ export type ProxyEnvPolicy = { mode: "strip" } | { mode: "inject"; url: string; 
  *   may differ from the workspace); `workspaceDir` is the Session's Workspace root — the
  *   directory a workspace-scoped confinement policy should treat as writable, never
  *   inferred from `cwd` (a command may run in a workdir outside the Workspace).
- * @returns the argv to spawn instead.
+ * @returns what to spawn instead: the argv, and any environment entries the runner
+ *   itself needs (see {@link ConfinedSpawn}).
  */
 export type SpawnConfiner = (
   argv: readonly string[],
   opts: { cwd: string; workspaceDir: string },
-) => readonly string[];
+) => ConfinedSpawn;
+
+/**
+ * A confiner's answer. `argv` replaces the spawn's argv wholesale; `env` is laid over
+ * the environment the manager assembled for the command — entries the runner needs to
+ * be a runner at all (an interpreter switch, say), never the command's own settings,
+ * which stay the manager's to decide.
+ */
+export interface ConfinedSpawn {
+  argv: readonly string[];
+  env?: Readonly<Record<string, string>>;
+}
 
 /**
  * An approved tool-call execution request.

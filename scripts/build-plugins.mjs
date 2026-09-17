@@ -40,7 +40,7 @@ const PLUGINS_SRC = path.join(ROOT, "plugins");
 const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 7;
+const PACK_FORMAT = 13;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
 /**
@@ -140,7 +140,15 @@ function run(name, args, cwd) {
   }
 }
 
-/** What a plugin's pack depends on: its sources, its manifest, its README and its build config. */
+/**
+ * What a plugin's pack depends on: its sources, its manifest, its README, its build config —
+ * and every other directory the package SHIPS.
+ *
+ * That last part is not decoration. A plugin may carry files its code never imports (the Windows
+ * backend ships the PowerShell script its setup runs), and hashing only `src/` meant editing one
+ * of them changed nothing the cache could see: the build happily served a stale pack, and the
+ * fix nobody could find on the host was a file that had never left this machine.
+ */
 async function sourceHash(dir, into) {
   for (const rel of ["package.json", "README.md", "tsup.config.ts"]) {
     const file = path.join(dir, rel);
@@ -151,13 +159,17 @@ async function sourceHash(dir, into) {
         .update(await fsp.readFile(file))
         .update("\0");
   }
-  const src = path.join(dir, "src");
-  if (fs.existsSync(src)) {
-    for (const rel of await walk(src)) {
+  const manifest = JSON.parse(await fsp.readFile(path.join(dir, "package.json"), "utf8"));
+  // `dist` and `vendor` are built or fetched from what is hashed here, never edited by hand.
+  const shipped = (manifest.files ?? []).filter((f) => !["dist", "vendor"].includes(f));
+  for (const name of ["src", ...shipped]) {
+    const sub = path.join(dir, name);
+    if (!fs.existsSync(sub) || !fs.statSync(sub).isDirectory()) continue;
+    for (const rel of await walk(sub)) {
       into
-        .update(`src/${rel}`)
+        .update(`${name}/${rel}`)
         .update("\0")
-        .update(await fsp.readFile(path.join(src, rel)))
+        .update(await fsp.readFile(path.join(sub, rel)))
         .update("\0");
     }
   }
@@ -274,6 +286,13 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
         }
         if (platformPackages.length > 0) {
           log(`${platformPackages.length} per-platform native binaries: installed`);
+        }
+      }
+      // npm installs a package's files with the mode it pleases, and a vendored program
+      // arrives without its exec bit — which no consumer of the prefix can guess back.
+      for (const rel of await walk(out)) {
+        if (/(^|\/)vendor\/[^/]+\/bin\/[^/]+$/.test(rel)) {
+          await fsp.chmod(path.join(out, rel), 0o755);
         }
       }
       await fsp.writeFile(path.join(out, COMPLETE), hash);

@@ -4,13 +4,14 @@
  * paths are deterministic on any host (a real-bwrap host also runs sandbox-live).
  */
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   bwrapProfileArgs,
   createPenguinBwrapProvider,
   loadPenguinBwrapProvider,
+  vendoredRunner,
 } from "../src/index.js";
 
 const ARGV = ["bash", "-lc", "echo hi"] as const;
@@ -61,6 +62,19 @@ describe("penguin-bwrap profile", () => {
     const args = bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS, writableTemp: true });
     expect(args.join(" ")).toContain("--tmpfs /tmp");
     expect(args.join(" ")).not.toContain(`--bind ${WS}`);
+  });
+
+  it("full access binds the root read-WRITE, but still cuts the network when asked", () => {
+    const args = bwrapProfileArgs({
+      mode: "danger-full-access",
+      workspaceRoot: WS,
+      network: "none",
+    });
+    // The whole filesystem is writable: --bind / /, never --ro-bind / /.
+    expect(args.slice(0, 3)).toEqual(["--bind", "/", "/"]);
+    expect(args.join(" ")).not.toContain("--ro-bind / /");
+    // The network cut still applies — that is why the policy reached a backend at all.
+    expect(args).toContain("--unshare-net");
   });
 
   it("network: none adds --unshare-net; absent leaves the network alone", () => {
@@ -163,5 +177,18 @@ describe("bwrap on another platform", () => {
     await expect(
       loadPenguinBwrapProvider({ platform: "linux", probe: () => true }),
     ).resolves.toBeDefined();
+  });
+});
+
+describe("the bwrap it runs", () => {
+  it("ships its own, so a host without bubblewrap still confines", () => {
+    // The real thing: the package carries a binary for THIS host (scripts/vendor-bwrap.mjs).
+    const shipped = vendoredRunner();
+    expect(shipped).toMatch(/vendor[\\/]linux-(x64|arm64)[\\/]bin[\\/]bwrap$/);
+    expect(existsSync(shipped)).toBe(true);
+  });
+
+  it("carries none for a host it has no binary for, and says so with an empty path", () => {
+    expect(vendoredRunner("win32", "x64", () => false)).toBe("");
   });
 });
