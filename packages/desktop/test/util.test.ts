@@ -141,8 +141,7 @@ describe("classifyWindowOpen", () => {
     }
   });
 
-  it("with no origin yet, nothing is this instance", () => {
-    expect(classifyWindowOpen("http://localhost:7364/chat/x.html", null)).toBe("external");
+  it("with no origin yet, a non-web scheme is still refused", () => {
     expect(classifyWindowOpen("file:///etc/passwd", null)).toBe("deny");
   });
 

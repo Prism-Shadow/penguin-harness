@@ -110,13 +110,13 @@ export type WindowOpenAction = "window" | "external" | "deny";
  * preview host redirects every non-preview path back to it, so a relative link in a chat reply
  * (`/chat/x.html`) would boot a second copy of the App in a new window on a page that does not
  * exist — one more window per click. Other schemes (`file:`, custom protocol handlers) are
- * refused outright rather than handed to the OS (isExternalScheme).
+ * refused outright rather than handed to the OS (isExternalScheme). With no origin, which no
+ * window ever sees, everything is refused.
  */
 export function classifyWindowOpen(url: string, origin: string | null): WindowOpenAction {
-  if (!isExternalScheme(url)) return "deny";
+  if (origin === null || !isExternalScheme(url)) return "deny";
   const target = new URL(url);
-  if (target.protocol === "mailto:") return "external";
-  if (origin === null || !isLocalSurfaceUrl(url, origin)) return "external";
+  if (!isLocalSurfaceUrl(url, origin)) return "external";
   // Parses: isLocalSurfaceUrl answers false for an origin that does not.
   const appHost = new URL(origin).hostname;
   if (target.hostname === appHost) {
