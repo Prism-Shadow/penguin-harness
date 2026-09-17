@@ -74,7 +74,7 @@ import { Skeleton, SkeletonCard } from "../../components/ui/skeleton";
 import { toastError, toastSuccess } from "../../components/ui/toast";
 import { DRAFT_SESSION_ID } from "../chat/chat-page";
 import { draftKey, loadDraft, saveDraft } from "../chat/draft-cache";
-import { parkActiveDraft } from "../chat/draft-sessions";
+import { prepareNewChatDraft } from "../chat/new-chat";
 import { localizedShortText, localizedText } from "../chat/skill-use";
 import { PluginDetailModal } from "./plugin-detail";
 import { formatRelativeDate } from "../../lib/format";
@@ -510,8 +510,9 @@ export function PluginsPage() {
     if (!agentId) return;
     if (userId && projectId) {
       // Typed-but-unsent draft text becomes a parked draft conversation instead of being
-      // clobbered by the canned invocation body (draft-sessions.ts).
-      parkActiveDraft(userId, projectId);
+      // clobbered by the canned invocation body, and the Workspace and approval mode start on
+      // the Project's new-chat defaults (new-chat.ts).
+      prepareNewChatDraft(userId, projectId);
       const key = draftKey(userId, projectId);
       saveDraft(key, {
         ...loadDraft(key),

@@ -3,8 +3,8 @@
  * dynamic y-axis range, and label grouping — the tested Agent, the model and the thinking
  * level, which is also what a score change is measured within. The Agent State version and the
  * provider are on the record and outside the key, so successive versions of one agent stay on
- * one line. The gap segmentation these series are drawn with is shared chart geometry
- * (chart-geom's lineSegments, covered in usage-charts.test.ts).
+ * one line — and that line is drawn through the series' own points, over the slots other series
+ * hold between them (seriesPoints, stroked by chart-geom's segmentPath).
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -16,15 +16,16 @@ import {
   matchesBenchmarkQuery,
   scoreScale,
   scoreValues,
-  seriesValues,
+  seriesPoints,
   sparklineSeries,
 } from "../src/features/benchmark/benchmark-metrics";
 import type { EvaluationLabelLike } from "../src/features/benchmark/benchmark-metrics";
+import { makeRangeGeom, segmentPath } from "../src/features/usage/chart-geom";
 
 const evaluations = [{ score: 60 }, { score: 75.25 }, { score: 85.5 }];
 
 describe("scoreValues", () => {
-  it("extracts stored Scores and treats non-finite input as a gap", () => {
+  it("extracts stored Scores and reads non-finite input as missing", () => {
     expect(scoreValues(evaluations)).toEqual([60, 75.25, 85.5]);
     expect(scoreValues([{ score: Number.NaN }, { score: Infinity }])).toEqual([null, null]);
   });
@@ -127,7 +128,7 @@ describe("evaluationLabel", () => {
   });
 });
 
-describe("labelSeries / seriesValues (curves split by label)", () => {
+describe("labelSeries (curves split by label)", () => {
   const runtime = { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "xhigh" };
   // Annotated: an untagged `{ score }` shares no property with the all-optional label type,
   // so the inferred union would trip the weak-type check when handed to labelSeries.
@@ -174,17 +175,64 @@ describe("labelSeries / seriesValues (curves split by label)", () => {
     expect(series[0]!.indices).toEqual([0, 1]);
   });
 
-  it("seriesValues: indexes outside the series are null (skipped points), keeping the global time axis", () => {
-    const series = labelSeries(mixed);
-    expect(seriesValues(mixed, series[0]!)).toEqual([6, null, 7.5, 8.5, null]);
-    expect(seriesValues(mixed, series[2]!)).toEqual([null, 7, null, null, null]);
-  });
-
   it("all untagged defensive input forms one unnamed series", () => {
     const series = labelSeries([{}, {}]);
     expect(series).toHaveLength(1);
     expect(series[0]!.key).toBe("");
     expect(series[0]!.indices).toEqual([0, 1]);
+  });
+});
+
+describe("seriesPoints (one line per series on the shared time axis)", () => {
+  const runtime = { provider: "deepseek", modelId: "deepseek-v4-pro", thinkingLevel: "xhigh" };
+  const writer = { agentId: "report-writer", ...runtime };
+  const support = { agentId: "support", ...runtime };
+  // Scored on 0..100, so the geometry below maps each Score straight onto the chart's own scale.
+  const geomFor = (n: number) => makeRangeGeom(n, 0, 100, 640);
+  /** A path vertex as segmentPath writes it: both coordinates rounded to 2 decimals. */
+  const at = (n: number, index: number, value: number) => {
+    const g = geomFor(n);
+    return `${Math.round(g.x(index) * 100) / 100},${Math.round(g.y(value) * 100) / 100}`;
+  };
+
+  it("joins a series' consecutive points across another agent's evaluations, each at its own slot", () => {
+    const interleaved: Array<{ score: number } & EvaluationLabelLike> = [
+      { score: 60, ...writer, version: 1 },
+      { score: 40, ...support, version: 1 },
+      { score: 70, ...writer, version: 2 },
+      { score: 45, ...support, version: 2 },
+      { score: 80, ...writer, version: 3 },
+    ];
+    const [writerSeries, supportSeries] = labelSeries(interleaved);
+    const writerPoints = seriesPoints(interleaved, writerSeries!);
+    const supportPoints = seriesPoints(interleaved, supportSeries!);
+    // The x slot of every point is its position in the scoreboard, not in its series.
+    expect(writerPoints).toEqual([
+      { index: 0, value: 60 },
+      { index: 2, value: 70 },
+      { index: 4, value: 80 },
+    ]);
+    expect(supportPoints).toEqual([
+      { index: 1, value: 40 },
+      { index: 3, value: 45 },
+    ]);
+    // One unbroken stroke per series, straight over the slots the other series holds.
+    const g = geomFor(interleaved.length);
+    expect(segmentPath(g, writerPoints)).toBe(`M${at(5, 0, 60)} L${at(5, 2, 70)} L${at(5, 4, 80)}`);
+    expect(segmentPath(g, supportPoints)).toBe(`M${at(5, 1, 40)} L${at(5, 3, 45)}`);
+  });
+
+  it("a series with a single evaluation is a lone point with no stroke", () => {
+    const evaluations: Array<{ score: number } & EvaluationLabelLike> = [
+      { score: 60, ...writer, version: 1 },
+      { score: 72, ...writer, version: 2 },
+      { score: 58, ...support, version: 1 },
+    ];
+    const [, supportSeries] = labelSeries(evaluations);
+    const points = seriesPoints(evaluations, supportSeries!);
+    expect(points).toEqual([{ index: 2, value: 58 }]);
+    // A bare move: the chart draws this point's dot and strokes nothing.
+    expect(segmentPath(geomFor(evaluations.length), points)).toBe(`M${at(3, 2, 58)}`);
   });
 });
 

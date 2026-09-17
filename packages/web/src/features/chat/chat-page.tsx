@@ -95,7 +95,7 @@ import type { StagedThinkingSwitch } from "./thinking-level";
 import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
-import { parkActiveDraft } from "./draft-sessions";
+import { prepareNewChatDraft } from "./new-chat";
 import { resolveRoutedSession, sessionForProject, sessionProbeKey } from "./session-project";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
@@ -1500,9 +1500,10 @@ export function ChatPage() {
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
   // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft
   // conversation (a sidebar row, sendable anytime) instead of lingering invisibly in the
-  // cache — the sidebar's own new-chat entries do the same (sidebar.tsx).
+  // cache, and the draft starts on the Project's new-chat defaults — the sidebar's own
+  // new-chat entries do the same (new-chat.ts).
   const newChat = useCallback(() => {
-    if (user && projectId) parkActiveDraft(user.userId, projectId);
+    if (user && projectId) prepareNewChatDraft(user.userId, projectId);
     navigate(`/chat/${DRAFT_SESSION_ID}`);
   }, [user, projectId, navigate]);
 

@@ -457,7 +457,7 @@ export const zh = {
       "首次使用请打开服务端启动输出中的首次登录链接，认领内置管理员 admin 并设置密码。这里没有可输入的初始密码",
     /** Login footer line 2: the offline rescue for a forgotten admin password (other users ask the admin instead). */
     forgotAdminNote:
-      "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password 重置为新的初始密码",
+      "忘记管理员密码时，停止服务后执行 penguin server reset-admin-password；再次启动时会打印新的首次登录链接，打开它即可设置新密码",
     /** Dialog raised over the login form when the server refused a sign-in link (spent, expired, or never valid). */
     claimFailedTitle: "登录链接已失效",
     /** Desktop deployment: the shell mints a fresh link every time it starts, so restarting it is the way back in. */
@@ -3007,6 +3007,8 @@ Benchmark：
         text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本。",
       },
     ],
+    /** The first step card's text for a Project member: no Create manually, which is the owner's. */
+    guideCreateMember: "点右上角「用 AI 创建」，让 AI 为某个智能体出一套题并取得基线分。",
     searchPlaceholder: "搜索标题、描述或被测智能体",
     noMatches: "没有匹配的 Benchmark",
     /** The chip shown when the address filters the list to one Agent's Benchmarks. */
@@ -3027,6 +3029,9 @@ Benchmark：
     creationFailedHint: "题目难度未能校准完成，请删除后重新创建",
     creationFailedDetail:
       "这套题的难度校准没有完成，无法评估或优化；请删除这个 Benchmark，然后重新创建。",
+    /** The two lines above for a Project member: no delete step, since deleting is the owner's. */
+    creationFailedHintMember: "题目难度未能校准完成",
+    creationFailedDetailMember: "这套题的难度校准没有完成，无法评估或优化。",
     /** The avatars on a card: which Agents this Benchmark has scored so far. */
     testedAgents: "被测过的智能体",
     lastEvaluated: (when: string): string => `最近评估 ${when}`,
