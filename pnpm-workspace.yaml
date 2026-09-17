@@ -1,6 +1,6 @@
 packages:
   - "packages/*"
-  # Plugin packages a deployment installs and lists in plugins.json. They sit at the top
+  # Plugin packages a Project asks for (the [plugins] table of its config). They sit at the top
   # level, outside packages/, because they are not part of the harness: nothing under
   # packages/ depends on one, and the platform bundle carries none of them — what ships
   # them is scripts/build-plugins.mjs, which packs each self-contained.

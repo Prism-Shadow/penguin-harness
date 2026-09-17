@@ -48,7 +48,8 @@ main()  —— one PenguinServer method per line
 ├─ ④ listen                        bind the port now; answer 503 "starting" until ⑧. The callback writes back
 │                                  the real port, takes the lock, and opens the ::1 companion on a loopback bind
 ├─ hmrMain(createHost(), replace, start)          the HMR layer's entry runs start, then makes the first generation current
-│  ├─ ⑤ loadPlugins                read <root>/plugins.json → import → fill this process's one PluginHost
+│  ├─ ⑤ loadPlugins                a shim for platforms that predate loading their own plugins: import what the
+│  │                               Projects' [plugins] tables name into a host the first App can reuse
 │  ├─ ⑥ buildDeps = bootAppDeps    open the DB → process core (ChannelHub, auth state + local API token, CLI shim) →
 │  │                               publish the capabilities (interfaces descriptor, config, db, auth state, channels,
 │  │                               proxy, HMR host + control, desktop, lifecycle, plugin host) → hmr.ensure() boots
@@ -65,7 +66,7 @@ The order is not arbitrary, and its constraints are hard:
 
 - The proxy takes over global `fetch` before any outbound request can happen.
 - The instance lock is checked **before** the database opens, because `web.db` is single-writer.
-- Plugins finish loading **before** ⑥, and the plugin host enters the registry with the other capabilities before the platform boots, so the plugins are present for the very first App creation.
+- The plugin host enters the registry with the other capabilities before the platform boots, so the plugin objects ⑤ imported are there for the first App to reuse, as each App's are for the next.
 - The platform, with the whole business surface in it, finishes booting before ⑧ hands the listener its app.
 - The port is bound early on purpose. Until ⑧, every request gets `503 penguin-server is starting` with `retry-after: 1`, so a client that arrives early sees "starting" rather than a refused connection. **No business request is ever served before the platform and plugins are in place.**
 - The port announcement comes last, because the desktop shell opens its window on it.
@@ -75,20 +76,20 @@ Plugin loading sits after `ensureSoleInstance` by design as well: a process abou
 
 ## Process and App lifecycles
 
-The process core is built once and lives until the process exits. It contains the SQLite handle, the ChannelHub, the process-scoped auth values such as the local API token, the HMR host with its resource registry, and the plugin host loaded in ⑤.
+The process core is built once and lives until the process exits. It contains the SQLite handle, the ChannelHub, the process-scoped auth values such as the local API token, and the HMR host with its resource registry.
 
-Everything else is platform-level. The whole business surface — services, routes, the AuthService, the SessionManager, the Scheduler — is rebuilt at every App creation, together with the terminal manager and the plugin modules. An App creation happens at every boot and at every hot swap, where a new bundle is pushed via `POST /api/hmr/upgrade`.
+Everything else is platform-level. The whole business surface — services, routes, the AuthService, the SessionManager, the Scheduler — is rebuilt at every App creation, together with the terminal manager, the plugin host and the plugin modules. An App creation happens at every boot, at every hot swap, where a new bundle is pushed via `POST /api/hmr/upgrade`, and at every change to a Project's plugin list, where the App [re-assembles itself](#re-assembly) from the same bundle.
 
 ```text
-Process-level (HMR layer, once)           App-level (the business surface, re-run per boot + per hot swap)
+Process-level (HMR layer, once)           App-level (the business surface, re-run per boot + per hot swap + per re-assembly)
 ───────────────────────────────           ─────────────────────────────────────────────────
 SQLite · auth state (API token …)         every business service and route (AuthService included)
 ChannelHub (SSE survives swaps)           SessionManager · Scheduler · messaging bridge
 HmrHost · the resource registry           TerminalManager (adopts parked ptys)
-plugins.json load (⑤, published in ⑥)     plugin modules created as children of the tree
+the plugin host (imported objects)        plugin lists read + imported, modules created as children of the tree
 ```
 
-The dividing line between the two levels is the **resource registry**. It sits outside the reloadable platform tree, so it survives across Apps. The pty processes are parked in it, and a new App merely reclaims their handles; that is why a hot swap is invisible to whoever is typing in a terminal. The plugin host, the DB handle, the auth state and the SSE hub travel the same road: published by the process, claimed by each App.
+The dividing line between the two levels is the **resource registry**. It sits outside the reloadable platform tree, so it survives across Apps. The pty processes are parked in it, and a new App merely reclaims their handles; that is why a hot swap is invisible to whoever is typing in a terminal. The DB handle, the auth state and the SSE hub travel the same road: published by the process, claimed by each App. The plugin host is handed on the same way: each App registers the host it built, and the next App claims it to reuse the plugin objects it holds.
 
 ### Swap semantics
 
@@ -123,20 +124,22 @@ The process capabilities get the symmetric defense on their side. The process pu
 
 A mismatch refuses the claim, so the boot fails and the push is rolled back, instead of surfacing as a `TypeError` at use time. A descriptor of the same family that offers none of the capabilities declares a bare kernel, which boots terminals only.
 
-Claiming from the registry, rather than importing, is not merely tidiness. A pushed bundle is compiled **standalone**: a self-contained ESM file (`bundle: true`, no externals) with its own module graph. A module-level host singleton on the platform side would, after a push, be that bundle's own empty host, and every configured plugin would silently vanish on the first hot push. Claiming rather than importing is what makes the packaged App and the pushed App drive the same host. When the process published none, the fallback is an empty host — the honest reading of "this runtime knows nothing about plugins".
+Claiming from the registry, rather than importing, is not merely tidiness. A pushed bundle is compiled **standalone**: a self-contained ESM file (`bundle: true`, no externals) with its own module graph. A module-level singleton on the platform side would, after a push, be that bundle's own fresh copy, holding none of what the process built. Claiming rather than importing is what makes the packaged App and the pushed App drive the same database, channel hub and auth state. The plugin host follows the same rule: a pushed App can reuse the plugin objects an earlier App imported only because it claims them. When nothing was published, the claim yields an empty host — the honest reading of "this runtime knows nothing about plugins".
 
 ## App creation
 
-The full App-creation order is `platformImpl.create` in `server/src/hmr/platform.ts`:
+App creation lives in `server/src/hmr/platform.ts`. `platformImpl.create` boots the App proper, `createInner`, as an inner instance behind a shell the runtime holds, which is what lets the App [re-assemble itself](#re-assembly). The full order of `createInner`:
 
 ```text
-platformImpl.create
+createInner
 │
 ├─ claim = claimHmrCapabilities(resources)   # refused → throw (the boot fails); bare → terminals only
 ├─ migrate(caps.db, { swapPath: true })      # a pushed platform brings its own migrations
 ├─ decide which parked resource groups to adopt (platform.resourceInterfaces)
-├─ plugins = pluginHostFrom(resources)  # claim the host loaded in ⑤ (empty host if none was published)
-├─ tree = bootModules(platformDef(caps, adoptable, plugin modules, replacements), { ifaces, resources, parked })
+├─ plugins = loadPluginHost(resources, root, assetsDir)
+│    # read the Projects' [plugins] tables and import what they name, reusing the objects of the
+│    # host an earlier App registered; a bare kernel keeps the claimed host (empty if none)
+├─ tree = bootModules(platformDef(caps, adoptable, plugin modules, replacements, reassemble), { ifaces, resources, parked })
 │    # THE TREE (server/src/platform.ts): every service and repo is a @Component
 │    # (a class that exports itself), the session runtime, the terminal manager and the
 │    # http assembly are @Modules (classes that export others). Their manifests (read off
@@ -144,14 +147,14 @@ platformImpl.create
 │    # contributions validated against their slots — then setup() runs in dependency
 │    # order. Plugin modules (a package's ifaces.json) are children of the same tree.
 ├─ ctx.effect: manager.shutdown drain + tree.dispose() (every module's effects, reverse order)
-└─ commit: dispose the groups not adopted, register this build's resource declaration
+└─ commit: dispose the groups not adopted, register this build's resource declaration and this App's plugin host
 ```
 
 ### What a plugin is
 
 A plugin is a set of modules: the unit the harness itself is built from, written the same way. Plugin code uses `@Component` / `@Module` classes with `@Use` / `@Provide` / `@Bind` fields.
 
-A package's manifests are generated, not written. The package's build runs `gen-ifaces` over its own tsconfig and ships the resulting `ifaces.json` beside its `package.json`. That table is the package's module payload, and a package is a plugin by being listed in `<root>/plugins.json`.
+A package's manifests are generated, not written. The package's build runs `gen-ifaces` over its own tsconfig and ships the resulting `ifaces.json` beside its `package.json`. That table is the package's module payload, and a package is a plugin by being listed in a Project's `[plugins]` table.
 
 The default export is `{ modules?: [<class>, …], replaces?: [<class>, …] }`:
 
@@ -166,9 +169,15 @@ Split by frequency:
 
 | Moment | Frequency | What happens |
 | --- | --- | --- |
-| Load | Once per process | Boot step ⑤ `loadPlugins`: resolve and import each specifier in `plugins.json`, read the `ifaces.json` beside its `package.json` (absent = no modules), check each class the default export names against its manifest there. A package that names classes without a table (never built), or one whose class and table disagree (a stale build), is skipped with its reason; an unreadable or malformed `plugins.json` fails the boot |
-| Check + create | Once per App | The platform adds the plugin modules to its tree; the whole tree is checked as data first (requirements resolved by signature, contributions validated against their slots), then created in dependency order — so a module is created fresh per boot and per hot swap |
+| Load | Once per App | The platform's `create()` reads the closure, the union of every Project's `[plugins]` table. It resolves each specifier (from the data root's `plugins/` prefix, the plugins shipped with the version being booted, or the installation) and imports it, reads the `ifaces.json` beside its `package.json` (absent = no modules), and checks each class the default export names against its manifest there. An entry an earlier App imported from the same, unchanged file is reused instead of imported again. A package that names classes without a table (never built), or one whose class and table disagree (a stale build), is skipped with its reason, which the Project's plugin list reports; a Project whose `.project_config.toml` cannot be read or parsed contributes nothing |
+| Check + create | Once per App | The platform adds the plugin modules to its tree; the whole tree is checked as data first (requirements resolved by signature, contributions validated against their slots), then created in dependency order — so a module is created fresh per boot, per hot swap and per re-assembly |
 | Dispose | Once per App | A module's `effect()` registrations run in reverse creation order when the App is disposed; nothing of a plugin survives into the next generation |
+
+### Re-assembly
+
+A change to a Project's plugin list applies without restarting the process. The runtime holds the shell that `platformImpl.create` returns, and every member of its API forwards to the inner App of the moment. `reassemble()` runs the kernel's own `upgrade` over that inner instance with the same bundle and the same parked document: the swap a hot push performs, without a new bundle. Everything under [Swap semantics](#swap-semantics) applies, so agent runs in progress are stopped in every Project.
+
+The plugin routes hand their edit to the re-assembly, which writes it in its own queue, so two edits of one file never interleave. When the new App fails to boot, the edit is undone first and the previous App is booted again from its document, so the list reads as it did before the change. Nothing in `packages/hmr` takes part, which is why re-assembly works on every runtime. The routes are listed in [Server API](/server-api#plugin-registry-and-project-plugins).
 
 ### The plugin contract
 
@@ -176,7 +185,7 @@ The plugin contract — `Plugin`, the decorators, and the sandbox vocabulary —
 
 The decorators are the SDK's only runtime a plugin carries. They record on the class itself, so the copy in a plugin's bundle and the host's read the same thing.
 
-Which plugins exist is the deployment's `<root>/plugins.json`; the harness itself imports no plugin.
+Which plugins run is decided by the Projects' `[plugins]` tables, which the Web App's **Plugins** page writes; the harness itself imports no plugin.
 
 A component's interface is its class's public surface. A module's provisions and a consumer's narrow requirements are abstract classes (`extends Interface<…>()`) declared beside the code that owns them. `pnpm gen:ifaces` projects both into `src/ifaces.json` — generated, not committed; `typecheck`, `build` and `test` regenerate it. That is the table the tree is checked against.
 
@@ -196,7 +205,7 @@ Each subsystem's construction site and external surface. Step numbers ① to ⑫
 | Scheduler | `runtime/scheduler.ts` — **App-level** (started/stopped by create) | The schedules routes; publishes results into the ChannelHub |
 | HMR host / platform | `@prismshadow/penguin-hmr` (`HmrHost`, `hmrMain`) and `hmr/platform.ts` (the platform) | `PlatformApi` (`info` / `log` / `http` / `terminals` / `attachStream` / `business` / `shutdown` / `drained`, plus the kernel's `park`); `/api/hmr/*`, including `POST /api/hmr/upgrade`, is a route group the platform contributes — a pushed generation that does not serve it is refused before commit |
 | Terminals | `terminal/` — **App-level** | `/api/terminals*` route group, WS `GET /api/terminals/:id/stream`; ptys are parked and survive swaps |
-| Plugin host | built by ⑤ `loadPlugins`, published to the registry in ⑥ | an npm package: its generated `ifaces.json` (the module payload), a default export `{ modules?: [<class>, …], replaces?: [<class>, …] }`; the configuration surface is `<root>/plugins.json` |
+| Plugin host | built by each App's `create()` and registered at its commit for the next App to reuse; ⑤ `loadPlugins` publishes one in ⑥ for platforms that predate this | an npm package: its generated `ifaces.json` (the module payload), a default export `{ modules?: [<class>, …], replaces?: [<class>, …] }`; the configuration surface is the `[plugins]` table of each Project's `.project_config.toml`, written through `/api/projects/:projectId/plugins/installed` |
 | Sandbox | `sandbox/service.ts` — **App-level** (a module; backends contribute to its `providers` slot) | a `SandboxModule.providers` contribution from a plugin module; enforcement reaches commands through core's spawn seam |
 | Module tree | `src/platform.ts` — **App-level** (booted by create over the claimed capabilities) | `@Component()` on each service / repo class (a node is named by its class) with `@Use()` fields for its dependencies; `@Module({ children, exports })` groups (`IdentityModule`, `ProjectsModule`, …) whose exports are what their children offer the rest of the tree; `@Module({ … })` classes with `@Provide()` fields where one class builds several things; narrow consumer interfaces as abstract classes beside their consumer (`extends Interface<…>()`); no `modules/` directory — each node lives in the file of the thing it is; `src/ifaces.json` generated; `GET /api/contributions` lists what reached the web slots |
 | Model catalog | No boot-time construction — static core data | `/api/projects/:projectId/models`; the catalog itself lives in `core/src/state/model-catalog.ts` |

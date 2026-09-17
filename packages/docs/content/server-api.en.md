@@ -401,6 +401,26 @@ The paths below omit the `/api/projects/:projectId` prefix, except the two globa
 - `GET /api/plugins` returns every library plugin by category, with its Skills' metadata and hook points.
 - `GET /api/plugins/:plugin/files` returns everything one library plugin ships, as text keyed by path: each Skill's installable `SKILL.md` and reference files under `skills/<name>/`, and the hook scripts under `hooks/`. The plugin detail view's file browser uses it.
 
+## Plugin Registry and Project Plugins
+
+The plugins in this section are server-side packages: modules the server loads into its own module tree, such as the sandbox backends. They are not the library plugins installed on an agent, which are covered under [Plugins and hooks](#plugins-and-hooks). The registry routes are global and open to any signed-in user; the installed-plugin routes belong to one Project.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/plugins/registry` | The plugin index: `{plugins: PluginIndexEntry[]}` |
+| GET | `/api/plugins/registry/readme?name=…` | One listed entry's readme: `{name, readme}` |
+| GET | `/api/projects/:projectId/plugins/installed` | The plugins this Project asks for, joined with what the process runs: `{plugins, shipped, file, restartPending}` |
+| POST | `/api/projects/:projectId/plugins/installed` | Admin only. Adds a plugin the build ships: `{specifier}` |
+| PUT | `/api/projects/:projectId/plugins/installed` | Admin only. Replaces the list: `{plugins}` |
+| DELETE | `/api/projects/:projectId/plugins/installed?specifier=…` | Admin only. Removes a plugin from the list |
+
+- The index follows the schema of typst/packages' `index.json`: a flat array of per-version entries with `name`, `version`, `description`, `authors` and `license`, plus optional `repository`, `homepage`, `keywords`, `categories` and `updatedAt`. An entry's `name` is the package name a Project's list uses. The index currently comes from a single registry built into the server, which lists the four sandbox backends. A registry is for discovery only and never imports plugin code.
+- `GET …/readme` returns the package's own `README.md`, read from the copy on this machine; `readme` is `null` when there is none. A name the index does not list returns `404` `not_found`, and a request without `name` returns `400` `bad_request`.
+- `GET …/installed` is open to any member of the Project. Each entry in `plugins` is `{specifier, active, builtin, modules, replaces, error?}`: `active` means the process has loaded the package, `builtin` that it ships with this build, `modules` and `replaces` are the nodes its generated `ifaces.json` declares, and `error` says why it is not running, such as a package that is not on this machine or a load that failed. `shipped` lists every plugin package the build ships, asked for or not. `file` names the file that holds the list. `restartPending` is true when a listed plugin is neither running nor failed, which a server restart resolves. A Project whose `.project_config.toml` cannot be read returns `400` `invalid_plugins_file`.
+- The writes answer with the same body as the GET. A specifier must be a package name, never a path, a URL or a version range (`400` `bad_request`). A name that enters the list must be a package the build ships, otherwise the route returns `400` `plugin_not_shipped`: nothing is downloaded. `PUT` sends names only, and a name that stays in the list keeps the requirement the file records for it. `DELETE` edits the list only and removes nothing from disk.
+- A write takes effect without a restart: the App [re-assembles itself](/server-boot#re-assembly) around the new list, with the effects of a hot swap. Agent runs in progress are stopped in every Project, because all Projects share one module tree. If the new App fails to boot, the edit is undone and the previous App is restored.
+- The list is the `[plugins]` table of the Project's `.project_config.toml` (see [Project config](/configuration#project-config)). The process loads the union of every Project's table, so a plugin one Project asks for is loaded for all of them.
+
 ## Schedules
 
 The paths below omit the `/api/projects/:projectId` prefix.

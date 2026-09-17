@@ -18,9 +18,9 @@ export const zh = {
     chat: "对话",
     newChat: "新对话",
     agents: "智能体",
-    plugins: "插件库",
     models: "模型库",
     machines: "机器",
+    plugins: "插件市场",
     usage: "成本中心",
     traces: "轨迹观测",
     benchmark: "评估中心",
@@ -202,7 +202,6 @@ export const zh = {
       tls: "TLS 握手失败",
       network: "无法连接",
     },
-    /** Admin-only sub-page (server-global). */
     uploadLimitsTitle: "上传限制",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "单个附件上限（MB）",
@@ -1525,8 +1524,53 @@ export const zh = {
 
   /** Plugin library page (features/plugins/plugins-page.tsx): one card per library plugin, installed on Agents as a whole. */
   plugins: {
-    pageTitle: "插件库",
-    pageDesc: "内置插件库：每个插件带有技能和／或钩子包，可浏览、快捷调用，或安装到 Agent。",
+    installedTitle: "已安装的插件",
+    installedDesc:
+      "当前 Project 要求的插件，以及其中哪些正在被本进程运行。服务器能自行重组时，改动无需重启即可生效；重组会中止所有 Project 正在进行的 Agent 运行。",
+    installedEmpty: "还没有安装任何插件。",
+    stateActive: "运行中",
+    builtin: "内置",
+    builtinHint: "随本次构建自带：安装它不需要下载，但仍需你点安装才会加载。",
+    installedRestart: "待重启",
+    stateFailed: "加载失败",
+    replacesLabel: "替换",
+    restartPending: "有已列出但未运行的插件，且本服务器无法免重启应用：重启服务器后加载。",
+    uninstall: "移除",
+    install: "安装",
+    installing: "安装中…",
+    /** The Project-level install: the plugin is listed, and running unless the row says otherwise. */
+    deploymentInstalledToast: (name: string) => `已安装 ${name}`,
+    /** Listed, but the process could not load it: the reason, not a success. */
+    deploymentFailedToast: (name: string, reason: string) => `${name} 加载失败：${reason}`,
+    applyConfirmInstall: (name: string) => `安装 ${name}？`,
+    applyConfirmRemove: (name: string) => `移除 ${name}？`,
+    applyConfirmBody: "所有 Project 中正在进行的 Agent 运行都会被中止。",
+    pageTitle: "插件",
+    pageDesc:
+      "所有插件在一个列表里。插件库里的随本次构建自带（技能和／或钩子包——快捷调用，或安装到 Agent）；当前 Project 要求的模块插件在服务端运行，市场里其余的可以为它安装。",
+    /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
+    installedSection: (n: number): string => `已安装的插件 (${n})`,
+    /** The second list: registry entries this Project does not ask for yet. */
+    availableSection: (n: number): string => `可安装 (${n})`,
+    notInstalled: "未安装",
+    /** The filter column beside the lists, and the empty result. */
+    filterCategories: "分类",
+    filterKind: "包含",
+    filterState: "状态",
+    filterClear: "清除筛选",
+    kindLabel: { skills: "技能", hooks: "钩子", modules: "模块" },
+    stateLabel: {
+      installed: "已安装",
+      available: "可安装",
+      running: "运行中",
+      restart: "待重启",
+      failed: "加载失败",
+    },
+    noMatch: "没有匹配的插件。",
+    /** The description of a shipped package the registry has no entry for. */
+    shippedNoEntry: "随本次构建自带；市场里还没有它的条目。",
+    /** The "built in" tag on a library plugin: it ships with the build and needs no download. */
+    libraryBuiltinHint: "随本次构建自带；安装到 Agent 即可在那里使用。",
     /** Plugin count in the group header (small text to the right of the category name). */
     pluginCount: (n: number): string => `${n} 个插件`,
     /** Search box of the create dialog's plugin picker. */
@@ -1607,6 +1651,23 @@ export const zh = {
         "开启后，该 Agent 新建的 Session 会在钩子点运行全部已安装的钩子包；关闭后新建的 Session 不运行任何钩子，已安装的包仍保留在磁盘上。进行中的 Task 保持开始时的设置。",
       savedToast: "已保存，自下一轮对话起生效",
     },
+  },
+
+  pluginRegistry: {
+    pageTitle: "插件市场",
+    empty: "暂无插件",
+    /** Card metadata: the entry's package specifier doubles as the install string. */
+    specifierHint: "包名，即 Project 插件列表里写的那串",
+    back: "返回插件市场",
+    readme: "说明文档",
+    noReadme: "该插件暂无说明文档。",
+    notFound: "找不到这个插件。",
+    repository: "源码仓库",
+    homepage: "主页",
+    authors: "作者",
+    license: "许可证",
+    copySpecifier: "复制包名",
+    installHint: "在插件市场页安装：该行的「安装」按钮会为当前 Project 要求它。",
   },
 
   skills: {

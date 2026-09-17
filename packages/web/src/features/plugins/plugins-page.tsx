@@ -37,12 +37,14 @@
  *   which is why the page fetches both lists per Agent. Uninstall takes the plugin apart the
  *   same way: one DELETE per skill and one for the hook package.
  */
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import type {
   AgentSummary,
   HookItem,
+  InstalledPluginsResponse,
   PluginGroupItem,
+  PluginIndexEntry,
   PluginItem,
   SkillMetadataItem,
 } from "@prismshadow/penguin-server/api";
@@ -61,8 +63,10 @@ import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { PLUGIN_ICON } from "../../components/ui/icons";
+import { NAV_ICONS, PLUGIN_ICON } from "../../components/ui/icons";
 import { Modal } from "../../components/ui/modal";
+import { TRASH_ICON } from "../../components/ui/session-row-menu";
+import { StatusIcon } from "../../components/ui/status-icon";
 import { TodoNotice } from "../../components/ui/todo-notice";
 import { UpdateDot } from "../../components/ui/update-dot";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -77,6 +81,8 @@ import { formatRelativeDate } from "../../lib/format";
 import { SkillTile } from "../skills/skill-icon-view";
 import { InfoPopover } from "../../components/ui/info-popover";
 import { ICON_SIZE } from "../../lib/icon-scale";
+import { toneInk, toneStrip, toneSurface } from "../../lib/tone";
+import { Input } from "../../components/ui/input";
 
 /**
  * What one Agent has installed, by name → the installed copy's version (`YYYY.MM.DD.N`, or ""
@@ -194,12 +200,12 @@ export function pluginUpdatePlan(
   }
   return { perAgent, plugins: [...plugins].sort() };
 }
-
 export function PluginsPage() {
   useDocumentTitle(S.nav.plugins);
   const navigate = useNavigate();
   const { locale } = useLocale();
-  const userId = useAuth().user?.userId ?? null;
+  const { user } = useAuth();
+  const userId = user?.userId ?? null;
   const { currentProject, agents, currentAgent, setCurrentAgentId, reloadAgents } = useProject();
   const projectId = currentProject?.projectId ?? null;
 
@@ -212,8 +218,82 @@ export function PluginsPage() {
   const [groups, setGroups] = useState<PluginGroupItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [installed, setInstalled] = useState<InstalledMap>(new Map());
-  /** Collapsed groups (all expanded by default; same convention as the model page's provider groups). */
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /** What this Project asks for of the module plugins, and which of those the process runs. */
+  const [deployment, setDeployment] = useState<InstalledPluginsResponse | null>(null);
+  /** The registry: every module plugin this deployment could ask for. */
+  const [index, setIndex] = useState<PluginIndexEntry[] | null>(null);
+  /** The specifier whose install or removal is running: the list is written one verb at a time. */
+  const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
+  const isAdmin = user?.isAdmin === true;
+  /** Free text over name, specifier and description. */
+  const [query, setQuery] = useState("");
+  /** The filter column's choices: a row shows when it carries one selected category and every selected tag. */
+  const [pickedCategories, setPickedCategories] = useState<ReadonlySet<string>>(new Set());
+  const [pickedKinds, setPickedKinds] = useState<ReadonlySet<PluginKind>>(new Set());
+  const [pickedStates, setPickedStates] = useState<ReadonlySet<PluginState>>(new Set());
+  /** The installed list starts folded — it is the long one; a search or a filter opens both. */
+  const [installedOpen, setInstalledOpen] = useState(false);
+  const [availableOpen, setAvailableOpen] = useState(true);
+
+  // The Project's list, re-read whenever the Project changes; a read that fails leaves the
+  // module rows without their state rather than failing the page.
+  const reloadDeployment = useCallback(() => {
+    if (projectId === null) return;
+    api.getInstalledPlugins(projectId).then(setDeployment, () => setDeployment(null));
+  }, [projectId]);
+  useEffect(reloadDeployment, [reloadDeployment]);
+
+  // The registry, fetched once on page entry.
+  useEffect(() => {
+    let cancelled = false;
+    api.getPluginIndex().then(
+      (res) => {
+        if (!cancelled) setIndex(res.plugins);
+      },
+      () => {
+        if (!cancelled) setIndex([]);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * A module plugin change waiting for its confirmation (null = none). Applying one
+   * re-assembles the App, which stops the agent runs in flight in EVERY Project — the same
+   * cost a hot push has — so it is said before it is done.
+   */
+  const [pendingApply, setPendingApply] = useState<{ specifier: string; install: boolean } | null>(
+    null,
+  );
+
+  /**
+   * Asks this Project for a module plugin (or drops it); the server lists it and re-assembles
+   * the App, so the row's state afterwards is what the running process has — including a
+   * load that failed, which is reported as such rather than toasted as installed.
+   */
+  const runDeploymentInstall = async (specifier: string, install: boolean) => {
+    if (pendingSpecifier !== null || projectId === null) return;
+    setPendingSpecifier(specifier);
+    try {
+      const next = install
+        ? await api.installPlugin(projectId, specifier)
+        : await api.uninstallPlugin(projectId, specifier);
+      setDeployment(next);
+      const row = next.plugins.find((p) => p.specifier === specifier);
+      if (install && row?.error !== undefined) {
+        toastError(S.plugins.deploymentFailedToast(specifier, row.error));
+      } else {
+        toastSuccess(install ? S.plugins.deploymentInstalledToast(specifier) : S.common.saved);
+      }
+    } catch (e) {
+      toastError(apiErrorText(e));
+    } finally {
+      setPendingSpecifier(null);
+      setPendingApply(null);
+    }
+  };
 
   // Library list: readable once logged in, fetched once on page entry.
   useEffect(() => {
@@ -445,13 +525,36 @@ export function PluginsPage() {
     navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
   };
 
+  const allInstalled = installedPluginRows(groups ?? [], locale, deployment, index ?? []);
+  const allAvailable = availablePluginRows(deployment, index ?? []);
+  const facets = pluginFacets([...allInstalled, ...allAvailable]);
+  const picked = { categories: pickedCategories, kinds: pickedKinds, states: pickedStates };
+  const filtering =
+    query.trim() !== "" ||
+    pickedCategories.size > 0 ||
+    pickedKinds.size > 0 ||
+    pickedStates.size > 0;
+  const keep = (row: PluginRow) => rowMatches(row, query, picked);
+  const installedRows = allInstalled.filter(keep);
+  const availableRows = allAvailable.filter(keep);
+  const toggle = <T,>(set: ReadonlySet<T>, value: T): Set<T> => {
+    const next = new Set(set);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    return next;
+  };
+
+  // The scrollbar gutter stays reserved: a filter that shortens the page below the viewport
+  // would otherwise take the scrollbar with it and shift everything sideways at the click.
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6">
+    <div className="h-full overflow-y-auto p-4 [scrollbar-gutter:stable] md:p-6">
       <div className="mx-auto max-w-5xl">
-        <h1 className="flex items-center gap-1.5 text-xl font-semibold">
-          {S.plugins.pageTitle}
-          <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
-        </h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="flex items-center gap-1.5 text-xl font-semibold">
+            {S.plugins.pageTitle}
+            <InfoPopover label={S.plugins.pageTitle}>{S.plugins.pageDesc}</InfoPopover>
+          </h1>
+        </div>
         {/* Last stop on the plugins trail: what the sidebar's dot was pointing at, the control
             that takes all of it in one press, and the way to clear it for someone who has looked
             and decided to stay on the installed copies. A plugin is never NEW here — one nobody
@@ -469,15 +572,21 @@ export function PluginsPage() {
           />
         )}
 
+        {deployment !== null && deployment.restartPending && (
+          <div className={`mt-4 rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
+            {S.plugins.restartPending}
+          </div>
+        )}
+
         {error ? (
           <div className="mt-6 flex items-center gap-3">
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            <p className={`text-sm ${toneInk.danger}`}>{error}</p>
             <Button size="sm" onClick={() => window.location.reload()}>
               {S.common.retry}
             </Button>
           </div>
         ) : groups === null ? (
-          <div className="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <div className="mt-6 grid grid-cols-1 gap-2.5">
             {Array.from({ length: 4 }, (_, i) => (
               <SkeletonCard key={i} className="p-4">
                 <Skeleton className="h-4 w-32" />
@@ -487,80 +596,124 @@ export function PluginsPage() {
             ))}
           </div>
         ) : (
-          <div className="mt-6 space-y-3">
-            {groups.map((group) => {
-              const open = !collapsed.has(group.id);
-              return (
-                <section
-                  key={group.id}
-                  className="overflow-hidden rounded-md bg-white dark:bg-gray-900"
+          <div className="mt-6 md:grid md:grid-cols-[minmax(0,1fr)_12rem] md:gap-4">
+            <div className="min-w-0 space-y-3">
+              <Input
+                size="sm"
+                type="search"
+                value={query}
+                placeholder={S.plugins.searchPlaceholder}
+                aria-label={S.plugins.searchPlaceholder}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              {/* ONE list, one plugin per row, every kind in the same card: what is installed
+                  first — the library's plugins (they ship with the build and every Agent may use
+                  them) and the module plugins this Project asks for — then what could be. A
+                  plugin's category is a tag on its row, not a group around it. */}
+              <PluginList
+                title={S.plugins.installedSection(installedRows.length)}
+                open={installedOpen || filtering}
+                onToggle={() => setInstalledOpen((v) => !v)}
+              >
+                {installedRows.map((row) =>
+                  row.kind === "library" ? (
+                    <PluginCard
+                      key={`library:${row.plugin.name}`}
+                      plugin={row.plugin}
+                      category={row.category}
+                      installed={installed}
+                      onQuickInvoke={quickInvoke}
+                      onToggleInstall={toggleInstall}
+                      onUpdateOutdated={updateOutdated}
+                    />
+                  ) : (
+                    <ModuleRow
+                      key={`module:${row.specifier}`}
+                      specifier={row.specifier}
+                      entry={row.entry}
+                      state={row.state}
+                      error={row.error}
+                      shipped={row.shipped}
+                      busy={pendingSpecifier === row.specifier}
+                      blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
+                      onInstall={null}
+                      onRemove={
+                        isAdmin
+                          ? () => setPendingApply({ specifier: row.specifier, install: false })
+                          : null
+                      }
+                    />
+                  ),
+                )}
+              </PluginList>
+              {availableRows.length > 0 && (
+                <PluginList
+                  title={S.plugins.availableSection(availableRows.length)}
+                  open={availableOpen || filtering}
+                  onToggle={() => setAvailableOpen((v) => !v)}
                 >
-                  {/* Group header (styled like the model page's provider groups): category name +
-                      plugin count (no icon, no description); the whole row toggles
-                      collapse on click and highlights on hover. */}
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() =>
-                      setCollapsed((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(group.id)) next.delete(group.id);
-                        else next.add(group.id);
-                        return next;
-                      })
-                    }
-                    className="flex w-full items-center gap-2.5 bg-gray-50 px-3 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
-                  >
-                    {/* Group name can truncate (min-w-0): the count and collapse arrow must not shrink. */}
-                    <span className="min-w-0 truncate text-sm font-semibold">
-                      {localizedText(locale, group.title, group.titleZh)}
-                    </span>
-                    <span className="shrink-0 whitespace-nowrap font-mono text-xs text-gray-400">
-                      {S.plugins.pluginCount(group.plugins.length)}
-                    </span>
-                    <span className="min-w-0 flex-1" />
-                    <Chevron open={open} className="text-gray-400" />
-                  </button>
-
-                  {/* Expand/collapse height transition: grid-template-rows tweens between
-                      0fr and 1fr, with the inner overflow-hidden clipping the content
-                      (same convention as the model page). */}
-                  <div
-                    className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
-                  >
-                    {/* inert while collapsed: cards at zero height shouldn't still be Tab-focusable or clickable. */}
-                    <div className="overflow-hidden" inert={!open}>
-                      {/* Generously sized cards: 2 columns ≥sm, 1 column on narrow screens.
-                          `grid-cols-1` is load-bearing, not redundant: with no declared track the
-                          single implicit column is `auto`-sized, and an auto track never goes below
-                          the widest card's min-content width — which `truncate` does not lower,
-                          since `nowrap` leaves no wrap opportunity and `overflow: hidden` only
-                          clips at paint time. A card then overflows the section's `overflow-hidden`
-                          and its action buttons land off-viewport, unreachable. Tailwind's
-                          `grid-cols-*` is `minmax(0, 1fr)`, which clamps that floor to 0. */}
-                      <div
-                        className={`grid grid-cols-1 gap-2.5 p-2.5 transition-opacity duration-200 sm:grid-cols-2 ${open ? "opacity-100" : "opacity-0"}`}
-                      >
-                        {group.plugins.map((plugin) => (
-                          <PluginCard
-                            key={plugin.name}
-                            plugin={plugin}
-                            installed={installed}
-                            onQuickInvoke={quickInvoke}
-                            onToggleInstall={toggleInstall}
-                            onUpdateOutdated={updateOutdated}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </section>
-              );
-            })}
+                  {availableRows.map((row) => (
+                    <ModuleRow
+                      key={`module:${row.specifier}`}
+                      specifier={row.specifier}
+                      entry={row.entry}
+                      state={row.state}
+                      shipped={row.shipped}
+                      busy={pendingSpecifier === row.specifier}
+                      blocked={pendingSpecifier !== null && pendingSpecifier !== row.specifier}
+                      onInstall={
+                        isAdmin
+                          ? () => setPendingApply({ specifier: row.specifier, install: true })
+                          : null
+                      }
+                      onRemove={null}
+                    />
+                  ))}
+                </PluginList>
+              )}
+              {filtering && installedRows.length === 0 && availableRows.length === 0 && (
+                <p className="px-1 text-sm text-gray-400 dark:text-gray-500">{S.plugins.noMatch}</p>
+              )}
+            </div>
+            {/* The filter column: the categories on the page, then two attributes with a
+                handful of values each (what a plugin carries, what it is here). Free-form
+                keywords are not a facet — they feed the search box. A pick narrows both lists,
+                and the lists unfold while anything is picked or typed. */}
+            <PluginFilters
+              facets={facets}
+              picked={picked}
+              onCategory={(c) => setPickedCategories((prev) => toggle(prev, c))}
+              onKind={(k) => setPickedKinds((prev) => toggle(prev, k))}
+              onState={(st) => setPickedStates((prev) => toggle(prev, st))}
+              onClear={() => {
+                setPickedCategories(new Set());
+                setPickedKinds(new Set());
+                setPickedStates(new Set());
+                setQuery("");
+              }}
+            />
           </div>
         )}
       </div>
 
+      {/* A module plugin change: what it costs is said before it runs. */}
+      {pendingApply !== null && (
+        <ConfirmModal
+          open
+          title={
+            pendingApply.install
+              ? S.plugins.applyConfirmInstall(pendingApply.specifier)
+              : S.plugins.applyConfirmRemove(pendingApply.specifier)
+          }
+          tone="primary"
+          confirmLabel={pendingApply.install ? S.plugins.install : S.plugins.uninstall}
+          busy={pendingSpecifier !== null}
+          onClose={() => setPendingApply(null)}
+          onConfirm={() => void runDeploymentInstall(pendingApply.specifier, pendingApply.install)}
+        >
+          <p>{S.plugins.applyConfirmBody}</p>
+        </ConfirmModal>
+      )}
       {/* Bulk update confirmation. Same warning as the per-plugin confirm — an update is an
           overwriting reinstall — and the same primary (overwrite) tone, with the list naming
           every plugin the batch would rewrite. Confirm-first is the point of the button: it
@@ -592,15 +745,336 @@ export function PluginsPage() {
   );
 }
 
+/** One row of the page: a library plugin (skills / hooks, installed per Agent) or a module plugin (listed per Project). */
+type PluginRow = { kind: "library"; plugin: PluginItem; category: string } | ModulePluginRow;
+interface ModulePluginRow {
+  kind: "module";
+  specifier: string;
+  entry: PluginIndexEntry | undefined;
+  state: ModuleState;
+  /** Why the process could not load it, when `state` is `failed`. */
+  error?: string;
+  shipped: boolean;
+}
+/**
+ * What a listed module plugin is here: running; waiting for a runtime that can re-assemble
+ * (`pending`); or FAILED — the process tried and could not load it, for the reason the
+ * server sends, which no restart would change.
+ */
+type ModuleState = "none" | "pending" | "active" | "failed";
+
+/**
+ * What is installed, in one list: the library's plugins — they ship with the build, so
+ * every Agent may use them, and the category their group gave them rides along as a tag —
+ * followed by the module plugins this Project asks for, each with its registry entry
+ * (description, version, categories) when the registry has one.
+ */
+export function installedPluginRows(
+  groups: readonly PluginGroupItem[],
+  locale: Parameters<typeof localizedText>[0],
+  deployment: InstalledPluginsResponse | null,
+  index: readonly PluginIndexEntry[],
+): PluginRow[] {
+  const rows: PluginRow[] = [];
+  for (const group of groups) {
+    const category = localizedText(locale, group.title, group.titleZh);
+    for (const plugin of group.plugins) rows.push({ kind: "library", plugin, category });
+  }
+  for (const listed of deployment?.plugins ?? []) {
+    rows.push({
+      kind: "module",
+      specifier: listed.specifier,
+      entry: index.find((e) => e.name === listed.specifier),
+      state: listed.active ? "active" : listed.error !== undefined ? "failed" : "pending",
+      ...(listed.error !== undefined ? { error: listed.error } : {}),
+      shipped: listed.builtin || deployment?.shipped.includes(listed.specifier) === true,
+    });
+  }
+  return rows;
+}
+
+/**
+ * What could be asked for: the registry's entries this Project does not list yet, and what
+ * the build ships that the registry does not know (offered with no description — the build
+ * has it, so it is installable without a download).
+ */
+export function availablePluginRows(
+  deployment: InstalledPluginsResponse | null,
+  index: readonly PluginIndexEntry[],
+): ModulePluginRow[] {
+  const listed = new Set((deployment?.plugins ?? []).map((p) => p.specifier));
+  const seen = new Set<string>();
+  const rows: ModulePluginRow[] = [];
+  for (const entry of index) {
+    if (listed.has(entry.name) || seen.has(entry.name)) continue;
+    seen.add(entry.name);
+    rows.push({
+      kind: "module",
+      specifier: entry.name,
+      entry,
+      state: "none",
+      shipped: deployment?.shipped.includes(entry.name) === true,
+    });
+  }
+  for (const name of deployment?.shipped ?? []) {
+    if (listed.has(name) || seen.has(name)) continue;
+    seen.add(name);
+    rows.push({ kind: "module", specifier: name, entry: undefined, state: "none", shipped: true });
+  }
+  return rows;
+}
+
+/**
+ * A titled list of rows: the header bar the library's groups had — the whole row toggles
+ * the fold, as on the model page — with one column of cards under it.
+ */
+function PluginList({
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-md bg-white dark:bg-gray-900">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex w-full items-center gap-2.5 bg-gray-50 px-3 py-2.5 text-left transition-colors duration-150 hover:bg-gray-100 dark:bg-gray-900/60 dark:hover:bg-gray-800/60"
+      >
+        <span className="min-w-0 truncate text-sm font-semibold">{title}</span>
+        <span className="min-w-0 flex-1" />
+        <Chevron open={open} className="text-gray-400" />
+      </button>
+      <div
+        className={`grid transition-[grid-template-rows] duration-200 ease-out ${open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+      >
+        <div className="overflow-hidden" inert={!open}>
+          <div
+            className={`grid grid-cols-1 gap-2.5 p-2.5 transition-opacity duration-200 ${open ? "opacity-100" : "opacity-0"}`}
+          >
+            {children}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** What a plugin carries: the payload kinds a row is filtered by. */
+export type PluginKind = "skills" | "hooks" | "modules";
+/** What a plugin is for this deployment. */
+export type PluginState = "installed" | "available" | "running" | "restart" | "failed";
+export const PLUGIN_KINDS: readonly PluginKind[] = ["skills", "hooks", "modules"];
+export const PLUGIN_STATES: readonly PluginState[] = [
+  "installed",
+  "available",
+  "running",
+  "restart",
+  "failed",
+];
+
+/** The category a row belongs to, what it carries and what it is here — the three facets the filter column offers. */
+export function rowFacets(row: PluginRow): {
+  categories: string[];
+  kinds: PluginKind[];
+  states: PluginState[];
+} {
+  if (row.kind === "library") {
+    const kinds: PluginKind[] = [];
+    if (row.plugin.skills.length > 0) kinds.push("skills");
+    if (row.plugin.hooks.length > 0) kinds.push("hooks");
+    return { categories: [row.category], kinds, states: ["installed"] };
+  }
+  const states: PluginState[] =
+    row.state === "active"
+      ? ["installed", "running"]
+      : row.state === "pending"
+        ? ["installed", "restart"]
+        : row.state === "failed"
+          ? ["installed", "failed"]
+          : ["available"];
+  return { categories: row.entry?.categories ?? [], kinds: ["modules"], states };
+}
+
+export interface PluginFacets {
+  /** Every category on the page, each once, in first-seen order, with how many rows carry it. */
+  categories: { value: string; count: number }[];
+  kinds: { value: PluginKind; count: number }[];
+  states: { value: PluginState; count: number }[];
+}
+export interface PickedFacets {
+  categories: ReadonlySet<string>;
+  kinds: ReadonlySet<PluginKind>;
+  states: ReadonlySet<PluginState>;
+}
+
+export function pluginFacets(rows: readonly PluginRow[]): PluginFacets {
+  const categories = new Map<string, number>();
+  const kinds = new Map<PluginKind, number>(PLUGIN_KINDS.map((k) => [k, 0]));
+  const states = new Map<PluginState, number>(PLUGIN_STATES.map((st) => [st, 0]));
+  for (const row of rows) {
+    const f = rowFacets(row);
+    for (const c of f.categories) categories.set(c, (categories.get(c) ?? 0) + 1);
+    for (const k of f.kinds) kinds.set(k, (kinds.get(k) ?? 0) + 1);
+    for (const st of f.states) states.set(st, (states.get(st) ?? 0) + 1);
+  }
+  const list = <T,>(m: Map<T, number>) =>
+    [...m].filter(([, count]) => count > 0).map(([value, count]) => ({ value, count }));
+  return { categories: list(categories), kinds: list(kinds), states: list(states) };
+}
+
+/**
+ * Whether a row survives the search box and the filter column: text anywhere in its name,
+ * description or keywords; within a facet any picked value matches, across facets all must.
+ */
+export function rowMatches(row: PluginRow, query: string, picked: PickedFacets): boolean {
+  const f = rowFacets(row);
+  if (picked.categories.size > 0 && !f.categories.some((c) => picked.categories.has(c)))
+    return false;
+  if (picked.kinds.size > 0 && !f.kinds.some((k) => picked.kinds.has(k))) return false;
+  if (picked.states.size > 0 && !f.states.some((st) => picked.states.has(st))) return false;
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  const text =
+    row.kind === "library"
+      ? `${row.plugin.name} ${row.plugin.description} ${row.plugin.descriptionZh ?? ""} ${row.plugin.shortDescription ?? ""} ${row.plugin.shortDescriptionZh ?? ""}`
+      : `${row.specifier} ${row.entry?.description ?? ""} ${(row.entry?.keywords ?? []).join(" ")}`;
+  return text.toLowerCase().includes(q);
+}
+
+/**
+ * The filter column: three groups, each a vertical list of options with its count — the
+ * marketplace sidebar shape. A picked option is filled and carries a check; the heading
+ * offers Clear while anything is picked.
+ */
+function PluginFilters({
+  facets,
+  picked,
+  onCategory,
+  onKind,
+  onState,
+  onClear,
+}: {
+  facets: PluginFacets;
+  picked: PickedFacets;
+  onCategory: (category: string) => void;
+  onKind: (kind: PluginKind) => void;
+  onState: (state: PluginState) => void;
+  onClear: () => void;
+}) {
+  const option = (key: string, label: string, count: number, on: boolean, onClick: () => void) => (
+    <button
+      key={key}
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] transition-colors duration-150 ${
+        on
+          ? "bg-gray-200/70 font-medium text-gray-900 dark:bg-gray-700/70 dark:text-gray-100"
+          : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800/70"
+      }`}
+    >
+      <span
+        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border ${
+          on
+            ? "border-gray-800 bg-gray-800 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900"
+            : "border-gray-300 dark:border-gray-600"
+        }`}
+      >
+        {on && <GlyphIcon d="M20 6 9 17l-5-5" size={10} />}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="shrink-0 font-mono text-[11px] text-gray-400 dark:text-gray-500">
+        {count}
+      </span>
+    </button>
+  );
+  const group = (title: string, children: React.ReactNode) => (
+    <div>
+      <div className="mb-1 px-2 text-[11px] font-semibold tracking-wide text-gray-400 uppercase dark:text-gray-500">
+        {title}
+      </div>
+      <div className="space-y-0.5">{children}</div>
+    </div>
+  );
+  const active = picked.categories.size > 0 || picked.kinds.size > 0 || picked.states.size > 0;
+  return (
+    <aside className="mt-3 space-y-4 md:mt-0 md:sticky md:top-0 md:self-start">
+      {/* Always in the flow, hidden until a pick is made: appearing and vanishing would shift
+          every option below by a line at the moment of the click. */}
+      <button
+        type="button"
+        onClick={onClear}
+        tabIndex={active ? 0 : -1}
+        aria-hidden={!active}
+        className={`px-2 text-[11px] text-gray-400 underline-offset-2 hover:underline dark:text-gray-500 ${active ? "" : "invisible"}`}
+      >
+        {S.plugins.filterClear}
+      </button>
+      {group(
+        S.plugins.filterCategories,
+        facets.categories.map(({ value, count }) =>
+          option(value, value, count, picked.categories.has(value), () => onCategory(value)),
+        ),
+      )}
+      {group(
+        S.plugins.filterKind,
+        facets.kinds.map(({ value, count }) =>
+          option(value, S.plugins.kindLabel[value], count, picked.kinds.has(value), () =>
+            onKind(value),
+          ),
+        ),
+      )}
+      {group(
+        S.plugins.filterState,
+        facets.states.map(({ value, count }) =>
+          option(value, S.plugins.stateLabel[value], count, picked.states.has(value), () =>
+            onState(value),
+          ),
+        ),
+      )}
+    </aside>
+  );
+}
+
+/** One tag on a row's tag line: a category, "built in", a license, a keyword. */
+function Tag({
+  children,
+  mono,
+  title,
+}: {
+  children: React.ReactNode;
+  mono?: boolean;
+  title?: string;
+}) {
+  return (
+    <span
+      title={title}
+      className={`rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800 ${mono ? "font-mono text-gray-500 dark:text-gray-400" : "font-medium text-gray-600 dark:text-gray-300"}`}
+    >
+      {children}
+    </span>
+  );
+}
+
 /** A single plugin card: metadata display (contents badges + a semantic metadata line) + update reminder + quick start + "manage installs" Modal. */
 function PluginCard({
   plugin,
+  category,
   installed,
   onQuickInvoke,
   onToggleInstall,
   onUpdateOutdated,
 }: {
   plugin: PluginItem;
+  /** The library's category, shown as the row's first tag (the page has no groups). */
+  category: string;
   installed: InstalledMap;
   onQuickInvoke: (skillName: string) => void;
   onToggleInstall: (agentId: string, plugin: PluginItem, on: boolean) => Promise<void>;
@@ -664,7 +1138,7 @@ function PluginCard({
     .filter((v): v is string => v !== null)
     .join(" · ");
   return (
-    <div className="flex h-full items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+    <div className="flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
       <button
         type="button"
         onClick={() => setDetailOpen(true)}
@@ -702,6 +1176,13 @@ function PluginCard({
         <p className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500" title={meta}>
           {meta}
         </p>
+        {/* Tag line: the category, "built in" (the library ships with the build), what it carries. */}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+          <Tag>{category}</Tag>
+          <Tag title={S.plugins.libraryBuiltinHint}>{S.plugins.builtin}</Tag>
+          {plugin.skills.length > 0 && <Tag mono>{S.skills.skillCount(plugin.skills.length)}</Tag>}
+          {plugin.hooks.length > 0 && <Tag mono>{S.hooks.hookCount(plugin.hooks.length)}</Tag>}
+        </div>
       </button>
       {detailOpen && (
         <PluginDetailModal plugin={plugin} meta={meta} onClose={() => setDetailOpen(false)} />
@@ -904,6 +1385,168 @@ function InstallRow({
           {S.skills.install}
         </Button>
       )}
+    </div>
+  );
+}
+
+/**
+ * A module plugin as a row in the library card's shape: the icon tile, the specifier and
+ * version, the description, a metadata line saying what the deployment's own state is (not
+ * installed → nothing yet; installed but not loaded → the restart it waits for; running → the
+ * modules it holds), then the tag line — its categories, "built in" when this build ships
+ * it, the license, the keywords. The trailing cluster is the verb: Install on an available
+ * row, Remove on an installed one. The row is a link to the registry page when the registry
+ * knows the package; the cluster sits BESIDE that link — a button inside an anchor is invalid
+ * markup, and the click would have two meanings.
+ */
+function ModuleRow({
+  specifier,
+  entry,
+  state,
+  error,
+  shipped,
+  busy,
+  blocked,
+  onInstall,
+  onRemove,
+}: {
+  specifier: string;
+  entry: PluginIndexEntry | undefined;
+  state: ModuleState;
+  /** Why it failed to load, when it did. */
+  error?: string;
+  /** The build carries this one: installing it copies nothing over the network. */
+  shipped: boolean;
+  /** This row's own install or removal is running. */
+  busy: boolean;
+  /** Another row's is: one at a time, so the rest are held rather than queued. */
+  blocked: boolean;
+  onInstall: (() => void) | null;
+  onRemove: (() => void) | null;
+}) {
+  const { locale } = useLocale();
+  const stateText =
+    state === "active"
+      ? S.plugins.stateActive
+      : state === "pending"
+        ? S.plugins.installedRestart
+        : state === "failed"
+          ? S.plugins.stateFailed
+          : S.plugins.notInstalled;
+  // Metadata line, the library card's shape: version · updated · what it is here.
+  const updated =
+    entry?.updatedAt === undefined
+      ? null
+      : formatRelativeDate(new Date(entry.updatedAt * 1000).toISOString().slice(0, 10), locale);
+  const meta = [entry === undefined ? null : `v${entry.version}`, updated]
+    .filter((v): v is string => v !== null)
+    .join(" · ");
+  const body = (
+    <>
+      <div className="flex items-center gap-3">
+        <SkillTile name={specifier} fallback={PLUGIN_ICON} size={36} glyph={20} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span
+              className="min-w-0 truncate font-mono text-[13px] font-semibold"
+              title={`${S.pluginRegistry.specifierHint}: ${specifier}`}
+            >
+              {specifier}
+            </span>
+          </div>
+          <p
+            className="mt-0.5 truncate text-xs leading-5 text-gray-500 dark:text-gray-400"
+            title={entry?.description}
+          >
+            {entry?.description ?? S.plugins.shippedNoEntry}
+          </p>
+        </div>
+      </div>
+      <p
+        className="mt-2.5 truncate text-[11px] text-gray-400 dark:text-gray-500"
+        title={`${meta}${meta === "" ? "" : " · "}${stateText}`}
+      >
+        {meta !== "" && <span>{meta} · </span>}
+        <span
+          className={
+            state === "active"
+              ? toneInk.success
+              : state === "pending"
+                ? toneInk.attention
+                : state === "failed"
+                  ? toneInk.danger
+                  : undefined
+          }
+        >
+          {stateText}
+        </span>
+      </p>
+      {state === "failed" && error !== undefined && (
+        <p className={`mt-1 truncate text-[11px] ${toneInk.danger}`} title={error}>
+          {error}
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+        {(entry?.categories ?? []).map((category) => (
+          <Tag key={category}>{category}</Tag>
+        ))}
+        {shipped && <Tag title={S.plugins.builtinHint}>{S.plugins.builtin}</Tag>}
+        {(entry?.keywords ?? []).map((keyword) => (
+          <Tag key={keyword} mono>
+            {keyword}
+          </Tag>
+        ))}
+      </div>
+    </>
+  );
+  return (
+    <div className="flex items-center gap-3 rounded-md p-4 transition-colors hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+      {entry !== undefined ? (
+        <Link to={`/plugins/registry/${specifier}`} className="min-w-0 flex-1">
+          {body}
+        </Link>
+      ) : (
+        <div className="min-w-0 flex-1">{body}</div>
+      )}
+      {/* The verb, in the library card's shape: one square light icon button, its copy in
+          aria-label and title. While it runs, a spinner stands in for the glyph. */}
+      <div className="flex shrink-0 items-center justify-center gap-1.5">
+        {state === "none"
+          ? onInstall !== null && (
+              <Button
+                size="sm"
+                className="h-8 w-8 shrink-0 justify-center p-0"
+                aria-label={`${busy ? S.plugins.installing : S.plugins.install} ${specifier}`}
+                aria-busy={busy}
+                title={busy ? S.plugins.installing : S.plugins.install}
+                disabled={busy || blocked}
+                onClick={onInstall}
+              >
+                {busy ? (
+                  <StatusIcon state="running" size={ICON_SIZE.iconButton} />
+                ) : (
+                  <GlyphIcon d={INSTALL_ICON} size={ICON_SIZE.iconButton} />
+                )}
+              </Button>
+            )
+          : onRemove !== null && (
+              <Button
+                size="sm"
+                className="h-8 w-8 shrink-0 justify-center p-0"
+                aria-label={`${S.plugins.uninstall} ${specifier}`}
+                aria-busy={busy}
+                title={S.plugins.uninstall}
+                disabled={busy || blocked}
+                onClick={onRemove}
+              >
+                {busy ? (
+                  <StatusIcon state="running" size={ICON_SIZE.iconButton} />
+                ) : (
+                  <GlyphIcon d={TRASH_ICON} size={ICON_SIZE.iconButton} />
+                )}
+              </Button>
+            )}
+      </div>
     </div>
   );
 }
