@@ -256,6 +256,11 @@ export const en: Strings = {
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",
     pluginSecretClear: "Clear stored value",
+    /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
+    pluginConfigMachine: "Machine",
+    pluginConfigThisServerDesc: "The settings this server's plugins read, stored on this server.",
+    pluginConfigMachineDesc:
+      "The settings that machine's plugins read, stored on that machine. Nothing is copied between machines.",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "Must be a number",
     sharingTitle: "Sharing",

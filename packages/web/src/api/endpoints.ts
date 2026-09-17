@@ -271,19 +271,31 @@ export const adminDeleteUser = (userId: string) =>
 /** Server-global settings (admin only): currently the "use system HTTP proxy" switch. */
 export const adminGetSettings = () => apiFetch<ServerSettingsResponse>("/api/admin/settings");
 
+/*
+ * Plugin configuration is kept by each server in its own database, so `server` names the
+ * machine whose settings are read or written — through this server's tunnel to it — and null
+ * is this server's own. Nothing copies these values between machines.
+ */
+
 /** Every loaded plugin that declares a configuration, with its schema and masked values (admin). */
-export const adminGetPluginConfig = () =>
-  apiFetch<PluginConfigResponse>("/api/admin/plugin-config");
+export const adminGetPluginConfig = (server: string | null = null) =>
+  apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { server });
 
 /** One package's update (admin): omitted fields keep their value, a masked secret sent back keeps the stored one. */
-export const adminPutPluginConfig = (body: PluginConfigUpdateRequest) =>
-  apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { method: "PUT", body });
+export const adminPutPluginConfig = (
+  body: PluginConfigUpdateRequest,
+  server: string | null = null,
+) => apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { method: "PUT", body, server });
 
 /** Runs one settings group's action (admin): what a deployment must DO on the machine, once. */
-export const adminRunPluginConfigAction = (body: { name: string; action: string }) =>
+export const adminRunPluginConfigAction = (
+  body: { name: string; action: string },
+  server: string | null = null,
+) =>
   apiFetch<PluginConfigActionResponse>("/api/admin/plugin-config/action", {
     method: "POST",
     body,
+    server,
   });
 
 /** Omitted fields keep their current value; applies immediately (no restart). */

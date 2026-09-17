@@ -303,6 +303,10 @@ export const zh = {
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "留空保持已保存的值不变",
     pluginSecretClear: "清除已存值",
+    /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
+    pluginConfigMachine: "机器",
+    pluginConfigThisServerDesc: "本机插件读取的设置，保存在本机。",
+    pluginConfigMachineDesc: "那台机器上插件读取的设置，保存在那台机器上；机器之间不互相复制。",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "必须是数字",
     uploadLimitsTitle: "上传限制",
