@@ -237,15 +237,16 @@ New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 
 # The standing grants on the real profile — the whole point of not remapping HOME. READ for the
 # group (so every account can read ~), MODIFY for the two full accounts (so full-access can
-# write it). /T walks the tree once, which is slow on a large profile and is why it is done
-# here and never per command.
+# write it). ONE icacls call applies all three ACEs in a SINGLE tree walk: /T is slow on a
+# large profile, so it is done once here, never three times and never per command.
 if (Test-Path $UserProfile) {
-  & icacls $UserProfile /grant "${GroupName}:(OI)(CI)(RX)" /T /C /Q | Out-Null
-  Write-Host "profile ${UserProfile}: granted read to $GroupName"
-  foreach ($full in @($FullOnlineUser, $FullOfflineUser)) {
-    & icacls $UserProfile /grant "${full}:(OI)(CI)(M)" /T /C /Q | Out-Null
-    Write-Host "profile ${UserProfile}: granted modify to $full"
-  }
+  Write-Host "profile ${UserProfile}: granting access (one pass; slow on a large profile)..."
+  & icacls $UserProfile `
+    /grant "${GroupName}:(OI)(CI)(RX)" `
+    /grant "${FullOnlineUser}:(OI)(CI)(M)" `
+    /grant "${FullOfflineUser}:(OI)(CI)(M)" `
+    /T /C /Q | Out-Null
+  Write-Host "profile ${UserProfile}: read to $GroupName, modify to the full accounts"
 } else {
   Write-Host "profile ${UserProfile}: not found; skipped (a confined command may not read ~)."
 }
