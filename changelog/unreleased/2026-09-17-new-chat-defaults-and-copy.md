@@ -2,7 +2,7 @@
 
 - **Date:** 2026-09-17
 - **Type:** fix
-- **Scope:** `web`
+- **Scope:** `web`, `cli`
 - **PR:** [#773](https://github.com/Prism-Shadow/penguin-harness/pull/773)
 
 [中文版](2026-09-17-new-chat-defaults-and-copy.zh.md)
@@ -34,7 +34,8 @@ mode, and `/compact` in the draft page's slash menu.
 
 - The login page's second footer line said `penguin server reset-admin-password` issues a fresh
   initial password. It now says the server's next start prints a new first-login link, and that
-  opening it is how a new password is set.
+  opening it is how a new password is set. The command's own `--help` description in the CLI made the
+  same claim and now says the same thing.
 - In goal mode, the "+" menu's **Upload image** entry described images as sent as file paths on
   every model. It now reads as it does outside goal mode, since a goal's images ride its first
   message as ordinary image input and only a model without vision receives them as paths.
