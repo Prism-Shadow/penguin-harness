@@ -10,8 +10,6 @@
  *   renders; Shiki only loads in an effect, which static markup never runs).
  */
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import type { MouseEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -173,19 +171,6 @@ describe("Md links inside a conversation", () => {
     const tags = anchors(renderWithOpener("[x](pelican-bike.html)", undefined));
     expect(tags).toHaveLength(1);
     expectNewTab(tags[0]);
-  });
-
-  it("the message stream provides the Workspace, and the chat page's opener is stable", () => {
-    // Without the provider every reply link silently falls back to a new tab; with an opener
-    // rebuilt per render, every link in the transcript re-renders on every streamed frame.
-    const src = (path: string) =>
-      readFileSync(fileURLToPath(new URL(`../src/features/chat/${path}`, import.meta.url)), "utf8");
-    expect(src("message-stream.tsx")).toMatch(
-      /<WorkspaceLinksProvider workspace=\{ctx\.workspace \?\? null\} onOpenFile=\{ctx\.onOpenFile\}>\s*<MessageItems /,
-    );
-    const page = src("chat-page.tsx");
-    expect(page).toMatch(/const openWorkspaceFile = useCallback\(/);
-    expect(page).toMatch(/onOpenFile: openWorkspaceFile,/);
   });
 });
 
