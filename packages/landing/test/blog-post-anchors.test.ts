@@ -29,21 +29,13 @@ const render = (body: string) =>
     ),
   );
 
-const unescapeAttr = (value: string) =>
-  value
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
-
 /** Ids of the rendered h2/h3 headings, in document order. */
 const headingIds = (html: string) =>
-  [...html.matchAll(/<h[23] id="([^"]*)"/g)].map((match) => unescapeAttr(match[1]!));
+  [...html.matchAll(/<h[23] id="([^"]*)"/g)].map((match) => match[1]!);
 
 /** Hrefs of the rendered in-page links ("#..."), in document order. */
 const inPageHrefs = (html: string) =>
-  [...html.matchAll(/<a\b[^>]*\bhref="(#[^"]*)"/g)].map((match) => unescapeAttr(match[1]!));
+  [...html.matchAll(/<a\b[^>]*\bhref="(#[^"]*)"/g)].map((match) => match[1]!);
 
 /** The element id a click on `href` targets: the hash the browser reports, then hashTargetId. */
 const targetOf = (href: string) =>
