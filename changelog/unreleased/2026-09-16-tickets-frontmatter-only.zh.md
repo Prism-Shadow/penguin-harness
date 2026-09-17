@@ -18,7 +18,8 @@
 - 从 `packages/server/src/organization/` 删除了 `parseLegacyTicket`、它的表头与进展行辅助函数、它在
   `Parent` 与 `Blocked-by` 中接受的旧版工单 id 模式，以及只有它在用的服务端 `splitPrincipalList`。
 - `company-employee` Skill 不再提旧表头：`penguin org ticket block` 改述为写入 `blocked` /
-  `blocked_by`；该 Skill 与新建组织生成的手册把「工单头部」改称「工单字段」。
+  `blocked_by`；该 Skill 与新建组织生成的手册把「工单头部」改称「工单字段」。`agent-company` 插件版本升至
+  `2026.09.17.1`。
 
 ## 兼容性
 

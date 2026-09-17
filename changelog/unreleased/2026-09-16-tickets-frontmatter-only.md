@@ -21,7 +21,8 @@ not open with `---` now fails to parse with ``the file must start with `---` (YA
   were deleted from `packages/server/src/organization/`.
 - The `company-employee` skill stopped naming the old headers: `penguin org ticket block` is
   described as writing `blocked` / `blocked_by`, and the skill and the handbook a new organization
-  is created with say "ticket fields" where they said "ticket headers".
+  is created with say "ticket fields" where they said "ticket headers". The `agent-company` plugin
+  version moved to `2026.09.17.1`.
 
 ## Compatibility
 
