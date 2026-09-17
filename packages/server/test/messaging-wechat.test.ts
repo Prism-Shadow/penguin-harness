@@ -481,6 +481,15 @@ describe("wechat binding routes and the long poll", () => {
     expect(body.bindings.map((b) => b.binding.channel).sort()).toEqual(["telegram", "wechat"]);
   });
 
+  it("the session list marks a wechat-ENABLED row with messagingChannel wechat", async () => {
+    await bindEnabled(SID);
+    const res = await api.get(`/api/projects/${PROJECT}/agents/default_agent/sessions`);
+    const body = (await res.json()) as {
+      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
+    };
+    expect(body.sessions.find((s) => s.sessionId === SID)?.messagingChannel).toBe("wechat");
+  });
+
   // —— The long poll ————————————————————————————————————————————————————————
 
   it("reports the connection ready before any poll has answered", async () => {

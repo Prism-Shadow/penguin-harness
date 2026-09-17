@@ -1,8 +1,8 @@
 /**
  * @prismshadow/penguin-plugin-sandbox-seatbelt — a macOS Seatbelt sandbox backend.
  *
- * A PLUGIN PACKAGE, not part of the platform: a deployment lists it in plugins.json and
- * the harness resolves it from the installation. It compiles against the
+ * A PLUGIN PACKAGE, not part of the platform: a Project asks for it on the Plugins page
+ * and the harness resolves it from the installation. It compiles against the
  * `@prismshadow/penguin-core/plugin` surface (types, plus the decorators its bundle
  * carries) and has no runtime dependency on the
  * harness or on any other backend.

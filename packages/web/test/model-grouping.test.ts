@@ -13,6 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  MODEL_CATALOG,
   MODEL_PROVIDERS,
   catalogEntryFor,
   effectivePricing,
@@ -24,6 +25,7 @@ import {
   isFreeModel,
   matchesQuery,
   orderModelsLikeLibrary,
+  promotedPricing,
   visibleChatModels,
 } from "../src/features/models/model-grouping";
 import type { ModelCredentialRowLike, ModelRowLike } from "../src/features/models/model-grouping";
@@ -81,11 +83,13 @@ describe("groupModelRows", () => {
     expect(groups[4]!.provider.envKey).toBe("OPENAI_API_KEY");
     expect(groups[4]!.rows.map((r) => r.modelId)).toEqual(["weird-model"]);
     // Group order matches MODEL_PROVIDERS, whose sequence is hand-curated (gateways and
-    // first-party vendors interleaved): TokenDance first as the recommended group, DeepSeek
-    // next as the default model's provider, custom last. This is the page's DEFAULT — the
+    // first-party vendors interleaved): the managed Penguin Go group first when present,
+    // then TokenDance
+    // and DeepSeek, with custom last. This is the page's DEFAULT — the
     // stored per-Project order applied below overrides it.
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "tokendance",
+      "penguin-go",
       "deepseek",
       "openrouter",
       "fireworks",
@@ -339,43 +343,73 @@ describe("isFreeModel", () => {
 });
 describe("discountedPrice", () => {
   /**
-   * A row carrying exactly what "sync presets" would write for a catalog entry: the discounted
-   * price for a flat promotion, the peak price for a scheduled one (which is never baked in).
+   * A row carrying what the catalog hands a Project: its list price (the peak one for a scheduled
+   * entry) and no promotion. The promotion is the server's to report, so each case adds its own.
    */
-  const syncedRow = (provider: string, modelId: string) => {
-    const entry = catalogEntryFor(provider, modelId)!;
-    const billed = (entry.offPeakDiscount !== undefined ? entry.pricing : effectivePricing(entry))!;
+  const presetRow = (provider: string, modelId: string) => {
+    const pricing = catalogEntryFor(provider, modelId)!.pricing!;
     return {
       provider,
       modelId,
-      cacheRead: String(billed.cache_read),
-      cacheWrite: String(billed.cache_write),
-      output: String(billed.output),
+      cacheRead: String(pricing.cache_read),
+      cacheWrite: String(pricing.cache_write),
+      output: String(pricing.output),
     };
   };
-
-  it("a synced row on a flat promotion reports the rate, and bills at the stored price", () => {
-    const row = syncedRow("tokendance", "glm-5.3-flash");
-    const found = discountedPrice(row)!;
-    expect(found.percent).toBe(10);
-    expect(found.scheduled).toBe(false);
-    // A flat promotion is baked in at sync time, so what is billed is what is stored.
-    expect(found.billed).toEqual({
-      cacheRead: Number(row.cacheRead),
-      cacheWrite: Number(row.cacheWrite),
-      output: Number(row.output),
-    });
-    // And it really is below the catalog's list price.
-    const entry = catalogEntryFor("tokendance", "glm-5.3-flash")!;
-    expect(entry.pricing!.cache_write).toBeGreaterThan(found.billed.cacheWrite);
-  });
 
   // Beijing is UTC+8, so 01:00Z is 09:00 there. 2026-08-31 is a Monday.
   const PEAK = new Date("2026-08-31T01:30:00Z");
   const OFF_PEAK = new Date("2026-08-31T05:00:00Z");
 
+  it("a promotion takes its rate off the stored list price, on any row", () => {
+    // Off the catalog on purpose: the promotion is the row's own, as a platform sync reports it
+    // for a model the built-in catalog has never heard of.
+    const row = {
+      provider: "penguin-go",
+      modelId: "gemini-future",
+      cacheRead: "0.1",
+      cacheWrite: "0.5",
+      output: "2",
+      discount: 0.5,
+    };
+    expect(discountedPrice(row)).toEqual({
+      percent: 50,
+      billed: { cacheRead: 0.05, cacheWrite: 0.25, output: 1 },
+      scheduled: false,
+    });
+    // No price check of its own: the server clears a promotion whose price a save changes.
+    expect(discountedPrice({ ...row, output: "4" })?.billed.output).toBe(2);
+  });
+
+  it("reads the promotion off the row, never off the catalog entry", () => {
+    const promoted = MODEL_CATALOG.find(
+      (e) =>
+        e.pricing !== undefined &&
+        e.offPeakDiscount === undefined &&
+        e.discount !== undefined &&
+        e.discount > 0 &&
+        e.discount < 1,
+    )!;
+    const row = presetRow(promoted.provider, promoted.modelId);
+    expect(discountedPrice(row)).toBeUndefined();
+    expect(discountedPrice({ ...row, discount: promoted.discount })?.percent).toBe(
+      Math.round(promoted.discount! * 100),
+    );
+    // A file still holding the promotional price itself, with nothing reported beside it, is
+    // billed at that number and says nothing about a saving.
+    const effective = effectivePricing(promoted)!;
+    expect(
+      discountedPrice({
+        ...row,
+        cacheRead: String(effective.cache_read),
+        cacheWrite: String(effective.cache_write),
+        output: String(effective.output),
+      }),
+    ).toBeUndefined();
+  });
+
   it("a scheduled row is marked and halved off-peak, and left at list price at peak", () => {
-    const row = syncedRow("deepseek", "deepseek-v4-flash");
+    const row = presetRow("deepseek", "deepseek-v4-flash");
     const entry = catalogEntryFor("deepseek", "deepseek-v4-flash")!;
 
     const off = discountedPrice(row, OFF_PEAK)!;
@@ -387,15 +421,52 @@ describe("discountedPrice", () => {
     expect(discountedPrice(row, PEAK)).toBeUndefined();
   });
 
-  it("a scheduled row whose price was edited is never halved, at either hour", () => {
-    const row = { ...syncedRow("deepseek", "deepseek-v4-pro"), output: "1.234" };
-    expect(discountedPrice(row, OFF_PEAK)).toBeUndefined();
-    expect(discountedPrice(row, PEAK)).toBeUndefined();
+  it("a promotion on a scheduled row multiplies with the live off-peak tier", () => {
+    const row = { ...presetRow("deepseek", "deepseek-flash"), discount: 0.2 };
+    const output = catalogEntryFor("deepseek", "deepseek-flash")!.pricing!.output;
+
+    // 20% off, then half of the rest: 60% off, explained as the promotion.
+    const off = discountedPrice(row, OFF_PEAK)!;
+    expect(off.percent).toBe(60);
+    expect(off.scheduled).toBe(false);
+    expect(off.billed.output).toBeCloseTo(output * 0.8 * 0.5, 5);
+
+    const peak = discountedPrice(row, PEAK)!;
+    expect(peak.percent).toBe(20);
+    expect(peak.billed.output).toBeCloseTo(output * 0.8, 5);
   });
 
-  it("undiscounted catalog rows, off-catalog rows and unpriced rows report nothing", () => {
-    expect(discountedPrice(syncedRow("tokendance", "qwen3.8-flash"))).toBeUndefined();
-    expect(discountedPrice(syncedRow("tokendance", "hy4-preview"))).toBeUndefined();
+  it("a scheduled row whose price was edited is never halved, though a promotion still applies", () => {
+    const row = { ...presetRow("deepseek", "deepseek-v4-pro"), output: "1.234" };
+    expect(discountedPrice(row, OFF_PEAK)).toBeUndefined();
+    expect(discountedPrice(row, PEAK)).toBeUndefined();
+    expect(discountedPrice({ ...row, discount: 0.2 }, OFF_PEAK)).toEqual({
+      percent: 20,
+      billed: expect.objectContaining({ output: 0.9872 }),
+      scheduled: false,
+    });
+  });
+
+  it("ignores a discount outside (0, 1)", () => {
+    const priced = {
+      provider: "custom",
+      modelId: "my-proxy",
+      cacheRead: "1",
+      cacheWrite: "2",
+      output: "3",
+    };
+    const scheduled = presetRow("deepseek", "deepseek-v4-flash");
+    for (const discount of [0, 1, -0.2, 1.5, Number.NaN]) {
+      expect(discountedPrice({ ...priced, discount })).toBeUndefined();
+      // Only the tier is left to report.
+      expect(discountedPrice({ ...scheduled, discount }, OFF_PEAK)).toMatchObject({
+        percent: 50,
+        scheduled: true,
+      });
+    }
+  });
+
+  it("rows with nothing to take off, and unpriced rows, report nothing", () => {
     expect(
       discountedPrice({
         provider: "custom",
@@ -405,7 +476,10 @@ describe("discountedPrice", () => {
         output: "3",
       }),
     ).toBeUndefined();
-    expect(discountedPrice({ provider: "tokendance", modelId: "kimi-k3" })).toBeUndefined();
+    // A promotion needs a price to come off.
+    expect(
+      discountedPrice({ provider: "tokendance", modelId: "kimi-k3", discount: 0.2 }),
+    ).toBeUndefined();
     expect(
       discountedPrice({
         provider: "tokendance",
@@ -413,38 +487,33 @@ describe("discountedPrice", () => {
         cacheRead: "",
         cacheWrite: "",
         output: "",
-      }),
-    ).toBeUndefined();
-  });
-
-  it("an edited price drops the decoration: a hand-typed number is not a discount off list", () => {
-    const row = syncedRow("tokendance", "kimi-k3");
-    expect(discountedPrice(row)).toBeDefined();
-    expect(discountedPrice({ ...row, output: "9.99" })).toBeUndefined();
-    // A row still holding the LIST price (a Project that has not synced presets) is not
-    // being billed the promotional rate, so it gets no badge either.
-    const entry = catalogEntryFor("tokendance", "kimi-k3")!;
-    expect(
-      discountedPrice({
-        ...row,
-        cacheRead: String(entry.pricing!.cache_read),
-        cacheWrite: String(entry.pricing!.cache_write),
-        output: String(entry.pricing!.output),
+        discount: 0.2,
       }),
     ).toBeUndefined();
   });
 
   it("accepts the DTO's numeric buckets as well as the edit form's strings", () => {
-    const row = syncedRow("tokendance", "qwen3.8-max");
-    expect(discountedPrice(row)?.percent).toBe(10);
-    expect(
-      discountedPrice({
-        provider: row.provider,
-        modelId: row.modelId,
-        cacheRead: Number(row.cacheRead),
-        cacheWrite: Number(row.cacheWrite),
-        output: Number(row.output),
-      })?.percent,
-    ).toBe(10);
+    const strings = {
+      provider: "custom",
+      modelId: "my-proxy",
+      cacheRead: "1",
+      cacheWrite: "2",
+      output: "3",
+      discount: 0.1,
+    };
+    expect(discountedPrice(strings)?.percent).toBe(10);
+    expect(discountedPrice({ ...strings, cacheRead: 1, cacheWrite: 2, output: 3 })?.billed).toEqual(
+      { cacheRead: 0.9, cacheWrite: 1.8, output: 2.7 },
+    );
+  });
+});
+
+describe("promotedPricing", () => {
+  it("takes a running promotion off every bucket, and leaves a price without one as it is", () => {
+    const list = { cacheRead: 0.5, cacheWrite: 2, output: 8 };
+    expect(promotedPricing(list, 0.25)).toEqual({ cacheRead: 0.375, cacheWrite: 1.5, output: 6 });
+    expect(promotedPricing(list, undefined)).toBe(list);
+    expect(promotedPricing(list, 1)).toBe(list);
+    expect(promotedPricing(undefined, 0.25)).toBeUndefined();
   });
 });
