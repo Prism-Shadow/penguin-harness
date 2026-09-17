@@ -21,14 +21,14 @@
  * The one thing that does not resume is a prompt a "Create with AI" surface composed
  * (`aiPrefill`, draft-cache.ts): nobody typed it, so leaving this page without editing
  * or sending it clears the slot exactly as a send would (see dropAiPrefill).
- * Every "New chat" entry point first releases the Agent / Workspace / approval-mode
- * selections an earlier visit left in the cache (prepareNewChatDraft, new-chat.ts), then
- * names in route state only what it is about: an Agent group's "+" or an Agent card names
- * its Agent, a Workspace group's "+" its path ("" = temporary workspace), and the plain
- * "New chat" names nothing. A direct visit or refresh keeps the cache. Precedence per
- * field: route state > draft cache > the Project's new-chat defaults ([default_chat]) >
- * built-in fallback (for the Agent: default_agent, then the first — newChatAgentId); the
- * model default already flows through models.defaultModel.
+ * Every "New chat" entry point first rewrites the slot to the model carry-over and staged
+ * skills, releasing whatever else an earlier visit left in the cache (prepareNewChatDraft,
+ * new-chat.ts), then names in route state only what it is about: an Agent group's "+" or
+ * an Agent card names its Agent, a Workspace group's "+" its path ("" = temporary
+ * workspace), and the plain "New chat" names nothing. A direct visit or refresh keeps the
+ * cache. Precedence per field: route state > draft cache > the Project's new-chat defaults
+ * ([default_chat]) > built-in fallback (for the Agent: default_agent, then the first —
+ * newChatAgentId); the model default already flows through models.defaultModel.
  *
  * Saving the Project's new-chat defaults resets the seeded selections so new chats pick
  * the change up: the project-settings dialog strips the cached pins (next visits reseed
@@ -374,9 +374,8 @@ export function DraftView({
         setWorkspace(d.workspace ?? "");
         setApprovalMode(d.approvalMode ?? "allow-all");
         // The Agent a fresh mount would now start on (the new block's default while it names
-        // an Agent, then default_agent, then the first). Skipped while the list is empty:
-        // nothing to validate against, so the pick stays.
-        if (agents.length > 0) setAgentId(newChatAgentId(agents, d));
+        // an Agent, then default_agent, then the first).
+        setAgentId(newChatAgentId(agents, d));
       }
       // New default model: adopt it directly (the event carries the authoritative pair).
       // Setting null and leaning on the fallback effect would race ChatPage's models

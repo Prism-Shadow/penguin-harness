@@ -12,8 +12,8 @@
  */
 import type { AgentSummary, ChatDefaultsDto } from "@prismshadow/penguin-server/api";
 import { pickDefaultAgent } from "../ai-create/default-agent";
-import { clearDraftChatDefaults } from "./draft-cache";
-import type { DraftStorage } from "./draft-cache";
+import { clearDraft, draftKey, loadDraft, saveDraft } from "./draft-cache";
+import type { DraftCache, DraftStorage } from "./draft-cache";
 import { parkActiveDraft } from "./draft-sessions";
 
 /**
@@ -23,19 +23,22 @@ import { parkActiveDraft } from "./draft-sessions";
  */
 export function newChatAgentId(
   agents: readonly AgentSummary[],
-  defaults: ChatDefaultsDto | null,
+  defaults: ChatDefaultsDto,
 ): string | null {
-  const preferred = defaults?.agentId;
+  const preferred = defaults.agentId;
   if (preferred !== undefined && agents.some((a) => a.agentId === preferred)) return preferred;
   return pickDefaultAgent(agents)?.agentId ?? null;
 }
 
 /**
  * Clears the active new-chat slot for an entry point about to navigate to it: typed text is
- * parked as a draft conversation (parkActiveDraft), then the Agent / Workspace / approval-mode
- * selections still in the slot are released (clearDraftChatDefaults), so the draft seeds them
- * afresh. What stays is the model carry-over, as after any park or send, and staged skills.
- * Returns the parked entry's id, or null when nothing was typed.
+ * parked as a draft conversation (parkActiveDraft), then the slot is rewritten to the two things
+ * a new chat carries over, the model (as after any park or send) and staged skills. Everything
+ * else a text-less draft left there is released: its Agent / Workspace / approval-mode
+ * selections, so the draft seeds them afresh, and the evaluation-run mark (`source`), which
+ * would otherwise file the next ordinary conversation under Evaluations. The slot is rebuilt
+ * from what stays rather than stripped of what goes, so a field the cache gains later starts
+ * released too. Returns the parked entry's id, or null when nothing was typed.
  */
 export function prepareNewChatDraft(
   userId: string,
@@ -43,6 +46,12 @@ export function prepareNewChatDraft(
   storage?: DraftStorage,
 ): string | null {
   const parked = parkActiveDraft(userId, projectId, storage);
-  clearDraftChatDefaults(userId, projectId, storage);
+  const key = draftKey(userId, projectId);
+  const { modelRef, skills } = loadDraft(key, storage);
+  const kept: DraftCache = {};
+  if (modelRef) kept.modelRef = modelRef;
+  if (skills) kept.skills = skills;
+  if (kept.modelRef || kept.skills) saveDraft(key, kept, storage);
+  else clearDraft(key, storage);
   return parked;
 }

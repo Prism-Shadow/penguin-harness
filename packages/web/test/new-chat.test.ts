@@ -2,9 +2,8 @@
  * What a "New chat" entry point starts (src/features/chat/new-chat.ts):
  * - newChatAgentId: the Project's `[default_chat].agent_id` while it names a listed Agent, else
  *   default_agent, else the first Agent;
- * - prepareNewChatDraft: parks typed text, then releases the Agent / Workspace / approval-mode
- *   selections an earlier visit left in the active slot, keeping the model carry-over and
- *   staged skills.
+ * - prepareNewChatDraft: parks typed text, then rewrites the active slot to the model carry-over
+ *   and staged skills alone, releasing everything else an earlier visit left there.
  *
  * Note: draft-sessions.ts keeps an in-memory mirror keyed by storage key, so every test uses
  * its own user id to stay isolated from the others' keys.
@@ -40,7 +39,6 @@ describe("newChatAgentId", () => {
     expect(newChatAgentId(agents, { workspace: "/srv/repo", approvalMode: "read-only" })).toBe(
       "default_agent",
     );
-    expect(newChatAgentId(agents, null)).toBe("default_agent");
   });
 
   it("ignores a default that no longer names an Agent of the Project", () => {
@@ -73,10 +71,48 @@ describe("prepareNewChatDraft", () => {
     );
     expect(prepareNewChatDraft("u-release", "proj", s)).toBeNull();
     expect(loadDraft(draftKey("u-release", "proj"), s)).toEqual({
-      text: "",
       modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
       skills: ["ship-it"],
     });
+  });
+
+  it("drops an emptied evaluation draft's run mark, so the next New chat is not an evaluation run", () => {
+    const s = memStorage();
+    // Evaluation Center -> Use -> Evaluate seeds the slot with a composed prompt marked as an
+    // evaluation run. Editing the prompt drops aiPrefill, and deleting all of it leaves this
+    // behind (the draft page's persist): no text to park, but the run mark is still set, and a
+    // draft that reads it creates its Session with `source: "benchmark"`.
+    saveDraft(
+      draftKey("u-eval", "proj"),
+      {
+        text: "",
+        agentId: "evaluator",
+        workspace: "",
+        approvalMode: "allow-all",
+        modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
+        skills: ["agent-evaluation"],
+        source: "benchmark",
+      },
+      s,
+    );
+    expect(prepareNewChatDraft("u-eval", "proj", s)).toBeNull();
+    const slot = loadDraft(draftKey("u-eval", "proj"), s);
+    expect(slot.source).toBeUndefined();
+    expect(slot).toEqual({
+      modelRef: { provider: "deepseek", modelId: "deepseek-v4-pro" },
+      skills: ["agent-evaluation"],
+    });
+  });
+
+  it("empties a slot that holds nothing it keeps", () => {
+    const s = memStorage();
+    saveDraft(
+      draftKey("u-nothing-kept", "proj"),
+      { text: "  ", agentId: "coder", handoffAgentId: "writer", source: "benchmark" },
+      s,
+    );
+    expect(prepareNewChatDraft("u-nothing-kept", "proj", s)).toBeNull();
+    expect(s.getItem(draftKey("u-nothing-kept", "proj"))).toBeNull();
   });
 
   it("parks typed text with its selections, leaving only the model carry-over in the slot", () => {

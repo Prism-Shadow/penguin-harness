@@ -24,11 +24,12 @@ mode, and `/compact` in the draft page's slash menu.
   while that names an Agent of the Project, then `default_agent`, then the first Agent
   (`newChatAgentId`). The Agent picker waits for the Project's defaults instead of first showing
   the last-used Agent, and saving new defaults over an open draft applies the same order.
-- Before navigating, these entry points also release the Agent, Workspace and approval-mode
-  selections an earlier draft with no typed text left in the new-chat slot
-  (`prepareNewChatDraft`), so an abandoned group "+" no longer stands in for the defaults on the
-  next "New chat". Typed text is still parked as a draft conversation, and the model carry-over
-  and staged skills stay.
+- Before navigating, these entry points also clear what an earlier draft with no typed text left
+  in the new-chat slot, keeping only the model carry-over and staged skills
+  (`prepareNewChatDraft`). An abandoned group "+" no longer stands in for the defaults on the next
+  "New chat", and an Evaluation Center draft whose prompt was deleted no longer files the next
+  ordinary conversation under **Evaluations** as an evaluation run. Typed text is still parked as
+  a draft conversation.
 
 ## Copy
 
@@ -39,6 +40,5 @@ mode, and `/compact` in the draft page's slash menu.
 - In goal mode, the "+" menu's **Upload image** entry described images as sent as file paths on
   every model. It now reads as it does outside goal mode, since a goal's images ride its first
   message as ordinary image input and only a model without vision receives them as paths.
-- The draft page's slash menu stopped listing `/compact`, which did nothing there. Which built-in
-  commands each composer state offers — the draft, a live Session, a subagent child — is decided
-  by `builtinSlashCommands`; the draft offers `/goal` and the installed skills.
+- The draft page's slash menu stopped listing `/compact`, which did nothing there. The draft
+  offers `/goal` and the installed skills.

@@ -110,8 +110,6 @@ import { sameModelRef } from "../models/model-grouping";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { ModelMenuList, ModelSelect, PickerList, modelLabel } from "./model-select";
 import { matchSlash, removeSlashToken } from "./slash-token";
-import { builtinSlashCommands } from "./slash-commands";
-import type { BuiltinSlashCommand, ComposerState } from "./slash-commands";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
 import { GOAL_ICON, UNLIMITED_BUDGET, parseBudgetInput } from "./goal-use";
@@ -951,7 +949,7 @@ export function ChatInput({
    */
   onHandoff?: (target: AgentSummary, input: TaskInputPart[]) => Promise<boolean>;
   onStop: () => Promise<void>;
-  /** Manual context compaction (/compact). A live Session only: the draft has no Session to compact and the subagent variant has no compaction surface, so neither passes it, and the command is listed for neither (slash-commands.ts). */
+  /** Manual context compaction (/compact). Optional: without it the command is not offered (the draft has no Session to compact, and the subagent variant has no compaction surface). */
   onCompact?: () => Promise<void>;
   /** Currently selected model reference ((provider, modelId) is the unique key); null = not yet chosen. */
   modelRef: ModelRefDto | null;
@@ -1517,13 +1515,6 @@ export function ChatInput({
 
   /** The slash token currently under the caret (kept in a ref so command run() closures always remove the live token). */
   const slashMatchRef = useRef<ReturnType<typeof matchSlash>>(null);
-  /**
-   * Which composer this is, for the slash menu's built-in commands (slash-commands.ts): the
-   * subagent variant, the draft (the only composer that still chooses its model), or a live
-   * Session.
-   */
-  const composerState: ComposerState =
-    variant === "subagent" ? "subagent" : onChangeModel ? "draft" : "session";
   const commands = useMemo<SlashCommand[]>(() => {
     /** Removes just the slash token after a command runs (the rest of the text stays; the height re-measures itself off the new value, see the autoGrow layout effect). */
     const clearInput = () => {
@@ -1532,51 +1523,66 @@ export function ChatInput({
       setText(next);
       onTextChange?.(next);
     };
-    // What each built-in does once picked: it consumes its own token, and the rest of the draft
-    // stays. The two switch commands open their picker, whose pick is staged as a chip and only
-    // acted on at send time.
-    const builtins: Record<BuiltinSlashCommand, SlashCommand> = {
-      "/compact": {
-        cmd: "/compact",
-        desc: S.chat.compact,
-        run: () => {
-          clearInput();
-          void onCompact?.();
-        },
-      },
-      "/goal": {
-        cmd: "/goal",
-        desc: S.chat.goalModeDesc,
-        run: () => {
-          clearInput();
-          toggleGoal(!goalOn);
-        },
-      },
-      "/model": {
-        cmd: "/model",
-        desc: S.chat.switchModel,
-        run: () => {
-          clearInput();
-          setModelSwitchOpen(true);
-        },
-      },
-      "/agent": {
-        cmd: "/agent",
-        desc: S.chat.switchAgent,
-        run: () => {
-          clearInput();
-          setAgentSwitchOpen(true);
-        },
-      },
-    };
     return [
-      ...builtinSlashCommands(composerState, {
-        compact: onCompact !== undefined,
-        // A switch picker with no candidates would open empty: the model list has to be
-        // loaded, and there has to be an Agent to hand over to.
-        switchModel: onSwitchModel !== undefined && models !== undefined && models.length > 0,
-        handoff: onHandoff !== undefined && agents.length > 0,
-      }).map((cmd) => builtins[cmd]),
+      ...(onCompact
+        ? [
+            {
+              cmd: "/compact",
+              desc: S.chat.compact,
+              run: () => {
+                clearInput();
+                void onCompact();
+              },
+            },
+          ]
+        : []),
+      // Goal mode is offered wherever a main conversation is composed, the draft included (its
+      // first send starts the goal): only the subagent variant offers no way in.
+      ...(variant !== "subagent"
+        ? [
+            {
+              cmd: "/goal",
+              desc: S.chat.goalModeDesc,
+              run: () => {
+                clearInput();
+                toggleGoal(!goalOn);
+              },
+            },
+          ]
+        : []),
+      // Model switch (active idle session only — the parent passes onSwitchModel just there;
+      // draft state has its own model picker). Gated on the model list being loaded: without
+      // it the picker would open empty. Running the command consumes the /model token (like
+      // /compact) and opens the picker; the rest of the draft stays.
+      ...(onSwitchModel && models && models.length > 0
+        ? [
+            {
+              cmd: "/model",
+              desc: S.chat.switchModel,
+              run: () => {
+                clearInput();
+                setModelSwitchOpen(true);
+              },
+            },
+          ]
+        : []),
+      // Agent handoff: same shape as /model — the command consumes its token and opens the
+      // agent picker, whose pick is staged as a chip and only acted on at send time. Gated the
+      // same way too: the parent passes onHandoff for an active Session only, because a draft
+      // has nothing to hand over (and already picks its Agent in the draft page's own
+      // selector). Candidates must exist, or the picker would open empty.
+      ...(onHandoff && agents.length > 0
+        ? [
+            {
+              cmd: "/agent",
+              desc: S.chat.switchAgent,
+              run: () => {
+                clearInput();
+                setAgentSwitchOpen(true);
+              },
+            },
+          ]
+        : []),
       // Each installed skill gets its own entry: `/<skill_name>` toggles that skill's selection (without sending), description follows the UI language.
       ...skillSlashItems(skills, locale).map((s) => ({
         cmd: s.cmd,
@@ -1588,7 +1594,7 @@ export function ChatInput({
       })),
     ];
   }, [
-    composerState,
+    variant,
     onCompact,
     onSwitchModel,
     onHandoff,
