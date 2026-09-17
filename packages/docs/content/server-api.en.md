@@ -947,7 +947,7 @@ After a run finishes, its reply is followed by the files the reply mentioned and
 
 - Images are sent as images and everything else as attachments, classified by the file actually read rather than by the name the reply wrote.
 - A run sends at most 5 files, at most 10MB per image and 30MB per file (the tighter of each channel's own limits).
-- Every way a mentioned file can fail to arrive is reported in the chat: over a size cap, past the count cap, no such file in the Workspace, or an upload the channel refused. The one exception is a file the run did not write, which is skipped silently, because a reply that names a config file it read is the ordinary case.
+- A mentioned file that fails to arrive is never reported in the chat. Over a size cap, past the count cap, or an upload the channel refused is recorded in the Project's error records in the Cost Center, one record per reply. A name that matches no file in the Workspace and a file the run did not write are skipped silently and only logged, because a reply that names a file it read or merely described is the ordinary case.
 
 ### Connection status
 

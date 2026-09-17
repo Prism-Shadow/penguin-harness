@@ -178,7 +178,7 @@ A connected conversation shows a paper-plane icon on its row in the sidebar. Poi
 - Turns you start in the Web App are sent to the chat too, except on QQ.
 - In a group, the first reply of a run replies to the message that started it.
 - A long reply is split into several messages of up to 4000 characters.
-- When a reply mentions a file that the run created or changed in the Workspace, the file follows the reply into the chat. A run sends at most 5 files, with images up to 10 MB and other files up to 30 MB. The chat is told about any file that could not be sent.
+- When a reply mentions a file that the run created or changed in the Workspace, the file follows the reply into the chat. A run sends at most 5 files, with images up to 10 MB and other files up to 30 MB. A file that could not be sent is not announced in the chat; it is recorded in the Cost Center's error records.
 
 ### Approvals
 
