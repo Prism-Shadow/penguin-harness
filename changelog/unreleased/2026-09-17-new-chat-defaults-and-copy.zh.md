@@ -3,6 +3,7 @@
 - **Date:** 2026-09-17
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#773](https://github.com/Prism-Shadow/penguin-harness/pull/773)
 
 [English](2026-09-17-new-chat-defaults-and-copy.md)
 
