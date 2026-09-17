@@ -235,6 +235,7 @@ describe("organization runtime", () => {
         }),
         dailyCostForSessions: async () => [],
       },
+      messagingChannel: () => null,
       errors: { record: (e) => void errors.push(e) },
       notifyProject: (_p, event) => void events.push(event),
       companyModeEnabled: () => companyMode,

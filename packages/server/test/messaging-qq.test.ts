@@ -13,9 +13,12 @@
  * exactly four sends for a run that completed six messages, the last carrying the
  * remainder; `msg_seq` increasing without repeating; the approval notice taking the
  * reserved slot rather than being lost behind it; one-message-per-line clamped to the
- * budget instead of the channel-neutral 20; and a send with nothing to reply to failing
- * loudly rather than pretending. No test opens a socket.
+ * budget instead of the channel-neutral 20; a reply's files, which QQ cannot take, filed as one
+ * error record without spending a slot; and a send with nothing to reply to failing loudly
+ * rather than pretending. No test opens a socket.
  */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { approvalDecision, assistantText, toolCall } from "@prismshadow/penguin-core";
 import type { ApproveFn, OmniMessage, TextPayload } from "@prismshadow/penguin-core";
@@ -723,6 +726,77 @@ describe("qq binding routes and the passive reply budget", () => {
     ]);
   });
 
+  // —— Outbound files ——————————————————————————————————————————————————————
+
+  it("a file the reply mentions is filed as an expected error record and spends no reply slot", async () => {
+    const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
+    const row = sessionRowOf(SID2, projectId);
+    row.workspace = ws;
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["The notes are in xx.md."]));
+    await bindEnabled(SID2, APP_ID, { renderMarkdown: false });
+    // Written just before the run, so it counts as the run's own output.
+    await fs.writeFile(path.join(ws, "xx.md"), "notes");
+    await fake.lastGateway().fire(c2cText("write the notes", "msg_file"));
+    await waitFor(() =>
+      t.deps.errorsRepo.recent(projectId).some((r) => r.code === "messaging_file_send_failed"),
+    );
+    await new Promise((r) => setTimeout(r, TAIL_MS * 3));
+    // The reply alone, in the first slot. QQ counts every message against the passive-reply
+    // budget, and nothing about the refused file is sent into the chat.
+    expect(fake.allSends().map((s) => [s.content, s.msgSeq])).toEqual([
+      ["The notes are in xx.md.", 1],
+    ]);
+    // The refusal is filed under the Project instead, naming the file, the channel and QQ's
+    // own reason — expected, because the platform will refuse the next file identically and
+    // nobody has anything to fix.
+    expect(
+      t.deps.errorsRepo
+        .recent(projectId)
+        .map(({ code, kind, message }) => ({ code, kind, message })),
+    ).toEqual([
+      {
+        code: "messaging_file_send_failed",
+        kind: "expected",
+        message:
+          '"xx.md" was not sent to the qq chat: QQ cannot receive files: sending a file to QQ requires a publicly reachable URL for it, which this server has no way to provide',
+      },
+    ]);
+  });
+
+  it("three files in one reply are ONE expected record naming all three, and QQ hears only the reply", async () => {
+    const ws = await fs.mkdtemp(path.join(t.root, "ws-"));
+    const row = sessionRowOf(SID2, projectId);
+    row.workspace = ws;
+    t.deps.sessionsRepo.insert(row);
+    t.deps.manager.adopt(row, multiMessageFakeSession(SID2, ["Wrote a.md, b.md and c.md."]));
+    await bindEnabled(SID2, APP_ID, { renderMarkdown: false });
+    for (const name of ["a.md", "b.md", "c.md"]) await fs.writeFile(path.join(ws, name), name);
+    await fake.lastGateway().fire(c2cText("write three notes", "msg_files"));
+    await waitFor(() =>
+      t.deps.errorsRepo.recent(projectId).some((r) => r.code === "messaging_file_send_failed"),
+    );
+    await new Promise((r) => setTimeout(r, TAIL_MS * 3));
+    expect(fake.allSends().map((s) => [s.content, s.msgSeq])).toEqual([
+      ["Wrote a.md, b.md and c.md.", 1],
+    ]);
+    // QQ refuses every file with the same sentence, so the three share one reason line under a
+    // head naming them all — one record, rather than three racing the recorder's window.
+    expect(
+      t.deps.errorsRepo
+        .recent(projectId)
+        .map(({ code, kind, message }) => ({ code, kind, message })),
+    ).toEqual([
+      {
+        code: "messaging_file_send_failed",
+        kind: "expected",
+        message:
+          '3 files were not sent to the qq chat: "a.md", "b.md", "c.md"\n' +
+          "QQ cannot receive files: sending a file to QQ requires a publicly reachable URL for it, which this server has no way to provide",
+      },
+    ]);
+  });
+
   // —— Nothing to reply to ——————————————————————————————————————————————————
 
   it("a send with no repliable message fails loudly instead of pretending", async () => {
@@ -777,7 +851,7 @@ describe("the QQ client's media half", () => {
     const media = client as unknown as MediaHalf;
     const file = { fileName: "chart.png", data: Buffer.from("x") };
     await expect(media.sendImage(qqChatIdOf("c2c", USER_OPENID), file)).rejects.toThrow(
-      /chart\.png/,
+      /QQ cannot receive files/,
     );
     await expect(media.sendFile(qqChatIdOf("c2c", USER_OPENID), file)).rejects.toThrow(
       /publicly reachable URL/,
@@ -787,6 +861,20 @@ describe("the QQ client's media half", () => {
     await expect(media.sendImage(qqChatIdOf("c2c", USER_OPENID), file)).rejects.toBeInstanceOf(
       MessagingUnsupportedError,
     );
+    // The same sentence for every file, naming none: the bridge's record names the files
+    // itself, and a reason that reads alike for each is what lets one reply's refusals share
+    // one line.
+    const refusal = async (fileName: string): Promise<string> => {
+      try {
+        await media.sendFile(qqChatIdOf("c2c", USER_OPENID), { fileName, data: Buffer.from("x") });
+      } catch (err) {
+        return (err as Error).message;
+      }
+      throw new Error(`the upload of ${fileName} was not refused`);
+    };
+    const first = await refusal("a.md");
+    expect(await refusal("b.md")).toBe(first);
+    expect(first).not.toContain("a.md");
   });
 
   it("refuses a text send before the bot has ever been messaged in that chat", async () => {

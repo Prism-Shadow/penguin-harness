@@ -63,6 +63,7 @@ import type {
   ProjectConfigStore,
   Projects,
 } from "../../mechanisms/projects.js";
+import type { MessagingBindings } from "../../mechanisms/messaging.js";
 import type { SessionIndex } from "../../mechanisms/sessions.js";
 import type { Settings } from "../../mechanisms/settings.js";
 import type { Errors, UsageQueries } from "../../mechanisms/observability.js";
@@ -107,6 +108,7 @@ import { isValidTimeZone, zonedDate, zonedDayRange } from "../../organization/zo
 import { SEMANTIC_ID_RULES } from "../../services/semantic-id.js";
 import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { SEMANTIC_ID_PATTERN } from "../../services/ids.js";
+import { enabledMessagingChannel } from "../messaging/enabled-channel.js";
 import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
 import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget.js";
@@ -2415,6 +2417,7 @@ export class OrganizationService {
       const desk = org.desks[e.agentId];
       if (!desk) continue;
       const row = this.deps.sessions.findById(desk.sessionId);
+      const messagingChannel = this.deps.messagingChannel(desk.sessionId);
       desks.push({
         agentId: e.agentId,
         name: (await this.deps.agents.exists(projectId, e.agentId))
@@ -2425,6 +2428,7 @@ export class OrganizationService {
         status: this.deps.runner.statusOf(desk.sessionId),
         workspace: desk.workspace,
         ...(row?.lastActiveAt ? { lastActiveAt: row.lastActiveAt } : {}),
+        ...(messagingChannel !== null ? { messagingChannel } : {}),
       });
     }
     const ticketGroups: OrgSessionsResponse["tickets"] = [];
@@ -2700,6 +2704,7 @@ export class OrganizationModule {
   @Use() private readonly usage!: UsageQueries;
   @Use() private readonly errors!: Errors;
   @Use() private readonly settings!: Settings;
+  @Use() private readonly messagingRepo!: MessagingBindings;
   @Provide() orgService!: OrgService;
   @Provide() orgScheduler!: OrgScheduler;
   setup({ effect }: ClassCtx) {
@@ -2741,6 +2746,7 @@ export class OrganizationModule {
       projectConfig,
       completeOnce: (projectId, prompt) => projectConfig.completeOnce(projectId, prompt),
       usage: this.usage,
+      messagingChannel: (sessionId) => enabledMessagingChannel(this.messagingRepo, sessionId),
       errors: this.errors,
       notifyProject: (projectId, event) => {
         const ownerUserId = this.projects.findById(projectId)?.ownerUserId;

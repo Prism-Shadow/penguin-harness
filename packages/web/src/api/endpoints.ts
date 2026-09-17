@@ -597,13 +597,16 @@ export const listSessions = (
     /** One Workspace group's rows only: its path, or the merged temporary group's sentinel (session-grouping.ts). */
     workspaceGroup?: string;
     withCounts?: boolean;
+    /** The user's own rows only: an organization's desk, ticket and sub-sessions leave the page and the totals together (the development list's contract). */
+    excludeOrg?: boolean;
   },
 ) => {
   const qs = opts
     ? `?limit=${opts.limit}&offset=${opts.offset}` +
       (opts.category ? `&category=${opts.category}` : "") +
       (opts.workspaceGroup ? `&workspaceGroup=${encodeURIComponent(opts.workspaceGroup)}` : "") +
-      (opts.withCounts ? "&counts=1" : "")
+      (opts.withCounts ? "&counts=1" : "") +
+      (opts.excludeOrg ? "&excludeOrg=1" : "")
     : "";
   return apiFetch<SessionsResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/sessions${qs}`,

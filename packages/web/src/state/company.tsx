@@ -40,6 +40,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import type { ReactNode } from "react";
 import type {
   CompanyServerEvent,
+  MessagingChannel,
   OrgChannelItem,
   OrgChartResponse,
   OrgSessionsResponse,
@@ -56,6 +57,7 @@ import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/b
 import { channelBadgeCounts } from "../features/company/channel-list";
 import { orgKey, parseOrgKey } from "../features/company/company-nav";
 import type { WorkMode } from "../features/company/company-nav";
+import { withDeskMessagingChannel } from "../features/company/org-sessions";
 import {
   clearLastOrgKey,
   initialLastOrgKey,
@@ -95,6 +97,25 @@ export function subscribeCompanyEvents(listener: CompanyEventListener): () => vo
   };
 }
 
+/**
+ * The user channel reconnected past its replay buffer (`resync_required`): any number of the
+ * events above were lost, and so were the `session_state` flips company surfaces take run state
+ * from — the session list store forgets those on the same event, and the company store re-reads
+ * the snapshots they would otherwise have corrected (`resync`).
+ */
+const resyncListeners = new Set<() => void>();
+
+export function publishCompanyResync(): void {
+  for (const listener of resyncListeners) listener();
+}
+
+export function subscribeCompanyResync(listener: () => void): () => void {
+  resyncListeners.add(listener);
+  return () => {
+    resyncListeners.delete(listener);
+  };
+}
+
 /** Subscribes a component to company events for its mounted lifetime; the latest handler is always the one called. */
 export function useCompanyEvents(handler: CompanyEventListener): void {
   const ref = useRef(handler);
@@ -111,12 +132,12 @@ export interface TicketDialogTarget {
 
 /** Version counters, one per event family: a page refetches when the one it depends on moves. */
 export interface CompanyVersions {
-  /** The organization list (an org's summary counts changed: a budget pause, a run). */
+  /** The organization list (an org's summary counts changed: a budget pause, a run, a resync). */
   orgs: number;
   /** A new message landed in one of the organization's channels. */
   messages: number;
   tickets: number;
-  /** A desk or ticket Session was opened by the scheduler. */
+  /** A desk or ticket Session was opened by the scheduler, or a resync may have lost that news. */
   runs: number;
   budget: number;
 }
@@ -181,12 +202,15 @@ interface CompanyStoreState {
   reloadOrganizations: (projectIds: readonly string[]) => Promise<void>;
   forgetMissingOrganizations: () => void;
   reloadOrgSessions: (projectId: string) => Promise<void>;
+  /** A desk was bound to a messaging bot here (or unbound: null): its row's mark follows without a re-read. */
+  setDeskMessagingChannel: (sessionId: string, channel: MessagingChannel | null) => void;
   reloadOrgChart: (projectId: string, orgId: string) => Promise<void>;
   openTicket: (projectId: string, orgId: string, ticketId: string) => void;
   closeTicket: () => void;
   backTicket: () => void;
   ticketsChanged: () => void;
   applyCompanyEvent: (ev: CompanyServerEvent, userId: string | null) => void;
+  resync: () => void;
 }
 
 /** The two badge numbers of a channel listing (channel-list.ts), in the shape the store stores them. */
@@ -393,6 +417,19 @@ export function createCompanyStore() {
       set({ orgSessions: next });
     },
 
+    setDeskMessagingChannel: (sessionId, channel) => {
+      // A Session id is unique across organizations, so every entry is asked and at most one
+      // changes; nothing is set when none does.
+      let changed = false;
+      const next = new Map<string, OrgSessionsResponse>();
+      for (const [key, sessions] of get().orgSessions) {
+        const patched = withDeskMessagingChannel(sessions, sessionId, channel);
+        if (patched !== sessions) changed = true;
+        next.set(key, patched);
+      }
+      if (changed) set({ orgSessions: next });
+    },
+
     /**
      * Re-reads the open organization's chart (the 工位 group's roster). A response for an
      * organization the shell has since left is dropped, and a failure leaves whatever the
@@ -498,6 +535,16 @@ export function createCompanyStore() {
       }
       set({ versions });
     },
+
+    /**
+     * Events were lost (see publishCompanyResync): re-read the snapshots that carry run state
+     * through the versions that already drive them — `runs` the sessions route, `orgs` the
+     * organization list and the open chart — so the surfaces stand on current state again.
+     */
+    resync: () => {
+      const versions = get().versions;
+      set({ versions: { ...versions, runs: versions.runs + 1, orgs: versions.orgs + 1 } });
+    },
   }));
 }
 
@@ -532,6 +579,8 @@ interface CompanyContextValue {
   markChannelRead: (channelId: string) => void;
   /** Desk and ticket Sessions of every organization of the current Project, keyed by org key. */
   orgSessions: ReadonlyMap<string, OrgSessionsResponse>;
+  /** Writes a desk's messaging binding change into `orgSessions` (null = unbound), so its row's mark follows at once. */
+  setDeskMessagingChannel: (sessionId: string, channel: MessagingChannel | null) => void;
   /** The open organization's employees, in chart order; null until the first read. */
   orgChart: OrgChartResponse | null;
   orgChartError: string | null;
@@ -664,6 +713,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     () => subscribeCompanyEvents((ev) => store.getState().applyCompanyEvent(ev, userId)),
     [store, userId],
   );
+  useEffect(() => subscribeCompanyResync(() => store.getState().resync()), [store]);
 
   const value = useMemo<CompanyContextValue>(() => {
     const available = serverEnabled && state.personalEnabled;
@@ -699,6 +749,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       },
       markChannelRead: state.markChannelRead,
       orgSessions: state.orgSessions,
+      setDeskMessagingChannel: state.setDeskMessagingChannel,
       orgChart: state.orgChart,
       orgChartError: state.orgChartError,
       reloadOrgChart: () => {

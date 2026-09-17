@@ -31,11 +31,12 @@ export interface SessionRow {
   /**
    * Creating client: "web" (created via the Web App), "cli" (created through the API by
    * the CLI, or adopted from a Trace a legacy CLI-direct run left behind), "org" (opened by
-   * the organization runtime — a desk or a ticket session); NULL = legacy row from before
-   * the column existed, treated as web. Free text in SQLite, so a new value needs no
-   * migration. Provenance that outlives its organization: development mode's list is the
-   * one reader that filters on it, and it hides "org" rows whether or not the organization
-   * still exists. The schedule/subagent SOURCE is deliberately NOT a row field — core
+   * the organization runtime — a desk or a ticket session — or spawned as a sub-session of
+   * one, which inherits the stamp at registration); NULL = legacy row from before the column
+   * existed, treated as web. Free text in SQLite, so a new value needs no migration.
+   * Provenance that outlives its organization: development mode's list is the one reader
+   * that filters on it (through the list's `excludeOrg`), and it hides "org" rows whether or
+   * not the organization still exists. The schedule/subagent SOURCE is deliberately NOT a row field — core
    * session_meta in the Trace stays the single source of truth for it
    * (runtime/session-sources.ts); `client` is a separate, DB-only axis that meta never
    * records.

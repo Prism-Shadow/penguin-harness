@@ -875,6 +875,50 @@ describe("session-manager", () => {
     );
   });
 
+  it("a sub-session registered under an organization's Session inherits its org stamp; one under an ordinary Session stays unmarked", async () => {
+    // A desk session: the organization runtime stamped it at creation.
+    sessions.insert({ ...ROW, sessionId: "session-org", client: "org" });
+    const spawning = (sessionId: string, childId: string): RuntimeSession => ({
+      sessionId,
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      async *run() {
+        yield withOrigin(
+          sessionMeta({
+            session_id: childId,
+            model_id: "m-child",
+            provider: "custom",
+            model_context_window: 1000,
+            system_prompt: "sys",
+            agent_state: "/root/p1/child_agent/agent_state",
+            workspace: "/tmp/w-child",
+            source: "subagent",
+          }),
+          childId,
+        );
+        yield withOrigin(assistantText("child done"), childId);
+        yield assistantText("done");
+      },
+      async *compact() {},
+    });
+    const manager = makeManager({
+      load: async (row) =>
+        spawning(row.sessionId, row.sessionId === "session-org" ? "child-org" : "child-plain"),
+    });
+    await manager.startTask("session-org", [userText("go")]);
+    await waitFor(() => manager.statusOf("session-org") === "idle");
+    await manager.startTask("session-1", [userText("go")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    // The child is company mode's own as much as the desk that spawned it: development
+    // mode's list reads the stamp, and no organization cache ever names a sub-session.
+    expect(sessions.findById("child-org")?.client).toBe("org");
+    // An ordinary Session's child keeps the registration path's blank marker (read as web).
+    expect(sessions.findById("child-plain")?.client).toBeNull();
+  });
+
   it("sub-session (origin) registration: session_meta persists; the title is generated from the spawning prompt", async () => {
     const fake: RuntimeSession = {
       sessionId: "session-1",

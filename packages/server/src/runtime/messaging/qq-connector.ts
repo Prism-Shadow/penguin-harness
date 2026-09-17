@@ -169,25 +169,30 @@ interface QQOutboundFile {
  * platform lists a file type and does not open it. And any such message would spend a slot
  * from the same passive-reply budget the text is already rationing.
  *
- * So the honest answer is a refusal that names the reason. The bridge records one error per
- * undeliverable file and the reply's text still arrives — quietly resolving would tell it a
- * picture reached a chat that never received one. It is a `MessagingUnsupportedError` rather
- * than a bare one so that record is filed as expected: this refusal is the platform's shape,
- * identical every time, and nothing an operator reads a dashboard to find (see error-kind.ts).
+ * So the honest answer is a refusal that names the reason. The bridge files the refusals of one
+ * reply as one error record naming every file, and the reply's text still arrives — quietly
+ * resolving would tell it a picture reached a chat that never received one. It is a
+ * `MessagingUnsupportedError` rather than a bare one so that record is filed as expected: this
+ * refusal is the platform's shape, identical every time, and nothing an operator reads a
+ * dashboard to find (see error-kind.ts).
+ *
+ * The text names no file, and that is deliberate: the record's head names every file it covers,
+ * and a refusal that reads the same for each is what lets them share the one reason line (see
+ * the bridge's messagingFilesNotSentRecords) instead of repeating it once per file.
  *
  * The passive-reply-window refusal in `enqueue` deliberately stays a BARE `Error`, and the
- * split is the point rather than an oversight: this one costs nothing, since the chat gets the
- * reply text carrying its own explanation of the missing file, while that one IS the reply —
- * the text is dropped and the chat cannot be told, because the message that would carry the
- * reason is the message being refused. Somebody therefore does have to notice it, which is
- * what `unexpected` is for; and `MessagingUnsupportedError` promises the opposite in its own
- * contract ("`message` must say what could not be carried and why, because that text reaches
- * the chat"), which for a send outside the window it cannot keep.
+ * split is the point rather than an oversight: this one costs nothing, since the reply text
+ * still reaches the chat and the record names the file that did not follow it, while that one
+ * IS the reply — the text is dropped and the chat cannot be told, because the message that
+ * would carry the reason is the message being refused. Somebody therefore does have to notice
+ * it, which is what `unexpected` is for; and `MessagingUnsupportedError` promises the opposite
+ * in its own contract (a refusal the platform repeats identically, with no fault to chase and
+ * no fix to deploy), which a reply lost to an expired window does not keep.
  */
-function refuseMedia(file: QQOutboundFile): Promise<never> {
+function refuseMedia(): Promise<never> {
   return Promise.reject(
     new MessagingUnsupportedError(
-      `QQ cannot receive "${file.fileName}": sending a file to QQ requires a publicly reachable URL for it, which this server has no way to provide`,
+      "QQ cannot receive files: sending a file to QQ requires a publicly reachable URL for it, which this server has no way to provide",
     ),
   );
 }
@@ -346,8 +351,8 @@ export class QQConnector implements MessagingChannelConnector {
         const { kind, openid } = chatOfReplyRef(ref);
         return this.enqueue(creds, bot, kind, openid, text, opts?.markdown === true);
       },
-      sendImage: (_chatId: string, file: QQOutboundFile) => refuseMedia(file),
-      sendFile: (_chatId: string, file: QQOutboundFile) => refuseMedia(file),
+      sendImage: (_chatId: string, _file: QQOutboundFile) => refuseMedia(),
+      sendFile: (_chatId: string, _file: QQOutboundFile) => refuseMedia(),
     };
     return client;
   }

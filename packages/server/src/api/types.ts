@@ -1411,16 +1411,17 @@ export interface SessionInfo {
   /**
    * Company mode: the organization that owns this Session — a desk session of one of its
    * employees, or a session contributing to one of its tickets — read from the organization
-   * caches. Absent for every ordinary Session. Development mode's list and its time buckets
-   * hide every row that carries it (only while company mode is available to that user: it is
-   * stamped either way, and company mode is what lists these Sessions instead), and the
-   * company sidebar's 工位 / 工单会话 groups are where they are listed.
+   * caches. Absent for every ordinary Session. Development mode's list asks the server to
+   * leave every such row out (`excludeOrg=1` on the list route — page and totals alike) and
+   * still drops one that reaches it by another door; the company sidebar's 工位 group and the
+   * tickets are where these Sessions are reached instead.
    */
   orgId?: string;
   /**
    * Which client opened the Session, as stored on the index row: "cli" from the CLI (a
    * Session adopted from a legacy CLI-direct Trace included), "org" from the organization
-   * runtime (a desk or a ticket session), "web" otherwise. Absent only on a row that
+   * runtime (a desk or a ticket session, and every sub-session one of those spawns), "web"
+   * otherwise. Absent only on a row that
    * predates the column, which reads as "web". Unlike {@link SessionInfo.orgId} — projected
    * from the organization caches, so it disappears with the organization and is not read
    * while company mode is off — this is a durable stamp on the row: development mode's list
@@ -1458,6 +1459,13 @@ export type SessionCategory = "active" | SessionSource | "archived";
 export type SessionCategoryCounts = Record<SessionCategory, number>;
 
 export interface SessionsResponse {
+  /**
+   * The page. With `excludeOrg=1` on the request, the rows an organization owns — its desk
+   * and ticket sessions and the sub-sessions they spawned — are left out of it and of every
+   * total below, so a caller drawing the user's own conversations is never handed a total
+   * for rows it will not be handed. Without the flag every row is served, whichever client
+   * created it.
+   */
   sessions: SessionInfo[];
   /** Present when the request asked for counts (`counts=1`): totals per category over the full list, not just the returned page. */
   counts?: SessionCategoryCounts;
@@ -1525,7 +1533,8 @@ export interface SessionCreateRequest {
    * not the organization still exists); defaults to "web". A REQUEST may send only "web" or
    * "cli": the runtime writes "org" by calling the service directly, so no caller can claim
    * an organization's provenance for its own Session. Lists serve every row regardless of
-   * client; only development mode's session list filters on it.
+   * client unless asked for the user's own rows only (`excludeOrg=1`), which is what
+   * development mode's session list asks for.
    */
   client?: "web" | "cli" | "org";
   /**
@@ -4403,6 +4412,12 @@ export interface OrgDeskItem {
   status: SessionStatus;
   workspace: string;
   lastActiveAt?: string;
+  /**
+   * Present when the desk session has an ENABLED messaging binding: its channel, read as
+   * `SessionInfo.messagingChannel` is (the company sidebar's desk row draws the same mark as a
+   * development row, and the development list never holds a desk).
+   */
+  messagingChannel?: MessagingChannel;
 }
 
 export interface OrgSessionsResponse {

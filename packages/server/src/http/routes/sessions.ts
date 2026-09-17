@@ -477,7 +477,8 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   // Serves every row straight from the DB, whichever client created it (legacy CLI-direct
-  // Traces were adopted by the boot sweep; see SessionService.listSessions).
+  // Traces were adopted by the boot sweep; see SessionService.listSessions) — unless the
+  // caller asks for the user's own rows only (`excludeOrg=1`, development mode's list).
   app.get("/", async (c) => {
     // Id validity is checked before any path is constructed: guards against agentId path traversal across Projects.
     const projectId = requireValidId(c, "projectId");
@@ -502,12 +503,19 @@ export function agentSessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     }
     const rawCounts = c.req.query("counts");
     if (rawCounts !== undefined && rawCounts !== "1") throw badRequest("counts only accepts 1.");
+    // Optional own-rows filter: leaves an organization's desk, ticket and sub-sessions out of
+    // the page AND the totals (a total the page can never fill is a group the sidebar draws).
+    const rawExcludeOrg = c.req.query("excludeOrg");
+    if (rawExcludeOrg !== undefined && rawExcludeOrg !== "1") {
+      throw badRequest("excludeOrg only accepts 1.");
+    }
     const { sessions, counts, workspaceCounts, workspaceLatest } =
       await deps.sessionService.listSessions(projectId, agentId, {
         ...(paging ? { paging } : {}),
         ...(rawCategory !== undefined ? { category: rawCategory as SessionCategory } : {}),
         ...(rawWorkspaceGroup !== undefined ? { workspaceGroup: rawWorkspaceGroup } : {}),
         ...(rawCounts !== undefined ? { withCounts: true } : {}),
+        ...(rawExcludeOrg !== undefined ? { excludeOrg: true } : {}),
       });
     return c.json({
       sessions,
