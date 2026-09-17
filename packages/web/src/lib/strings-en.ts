@@ -2210,8 +2210,10 @@ Scenarios:
     processRemove: "Remove",
     /** Remove button tooltip: removal also drops the output captured from that process. */
     processRemoveHint: "Remove this entry — the output captured from it is discarded too",
-    /** The list heading's icon button (its accessible name and tooltip): removes every exited entry at once, captured output included. */
-    processClearExited: "Clear exited processes — the output captured from them is discarded too",
+    /** The list heading's text action: removes every exited entry at once; its hint says the captured output goes too. */
+    processClearExited: "Clear exited",
+    processClearExitedHint:
+      "Clear every exited process — the output captured from them is discarded too",
     statTokens: "Total Tokens",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "Total Tokens",

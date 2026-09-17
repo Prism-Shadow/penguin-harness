@@ -12,9 +12,10 @@ every exited process, and a command too long for its row became readable by hove
 
 ## Details
 
-- While at least one listed process has exited, the list heading shows an icon button, **Clear
-  exited processes**. Its tooltip notes that the output captured from those processes is discarded
-  too. One click removes every exited entry, with no confirmation step. It sends each entry's own
+- While at least one listed process has exited, the list heading shows a text action, **Clear
+  exited**: small gray text that darkens on hover, with no background or border. Its hover hint
+  notes that the output captured from those processes is discarded too. One click removes every
+  exited entry, with no confirmation step. It sends each entry's own
   Remove request, the same route as a row's **Remove** button, so running processes are never
   touched. An entry that has already gone, or turns out to be still running, is not reported as an
   error. Any other failure produces one toast for the whole batch, and the list refreshes

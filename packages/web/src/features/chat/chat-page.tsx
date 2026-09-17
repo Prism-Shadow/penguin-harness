@@ -140,8 +140,7 @@ import { PanelsToolbar } from "./panels-toolbar";
 import { toneDot, toneInk } from "../../lib/tone";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { STAT_ICONS } from "../../lib/stat-icons";
-import { BACKGROUND_TASKS_ICON, CLEAR_LIST_ICON, INFO_ICON } from "../../components/ui/icons";
-import { Tooltip } from "../../components/ui/tooltip";
+import { BACKGROUND_TASKS_ICON, INFO_ICON } from "../../components/ui/icons";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { exitedProcessIds, reportableProcessFailure } from "./process-list";
 
@@ -2062,26 +2061,22 @@ export function ChatPage() {
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                       {S.chat.processList}
                     </p>
-                    {/* Only while something has exited. The same no-confirm tidy-up as a
-                        single row's Remove, and the name says what leaves with the rows. The
-                        negative margin keeps the padded hit area from growing the heading,
-                        so the list does not shift when the first process exits. */}
+                    {/* Only while something has exited. Words rather than a glyph, in the quiet
+                        text-action style of the memory card's "Open memory list": the same
+                        text size as the heading beside it, so the heading row keeps its height
+                        when the first process exits. The same no-confirm tidy-up as a single
+                        row's Remove, and its hint, like that button's, says what leaves with
+                        the rows. */}
                     {exitedIds.length > 0 && (
-                      <Tooltip
-                        label={S.chat.processClearExited}
-                        placement="bottom"
-                        className="shrink-0"
+                      <button
+                        type="button"
+                        title={S.chat.processClearExitedHint}
+                        disabled={procBusy !== null}
+                        onClick={() => void onClearExitedProcesses()}
+                        className="shrink-0 cursor-pointer text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-300"
                       >
-                        <button
-                          type="button"
-                          aria-label={S.chat.processClearExited}
-                          disabled={procBusy !== null}
-                          onClick={() => void onClearExitedProcesses()}
-                          className="-m-1 rounded p-1 text-gray-400 transition-colors duration-150 hover:text-gray-700 disabled:cursor-default disabled:opacity-60 dark:text-gray-500 dark:hover:text-gray-200"
-                        >
-                          <GlyphIcon d={CLEAR_LIST_ICON} size={ICON_SIZE.iconButton} />
-                        </button>
-                      </Tooltip>
+                        {S.chat.processClearExited}
+                      </button>
                     )}
                   </div>
                   <ul className="mt-1 space-y-1.5">
