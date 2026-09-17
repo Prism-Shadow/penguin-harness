@@ -17,10 +17,11 @@ The CLI and the server automatically load a `.env` file from the working directo
 | `PENGUIN_WEB_DB` | Server SQLite database path | `<root>/web.db` |
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | the npm server package falls back to its bundled web-dist |
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | unset — the loopback counterpart is derived per request |
+| `PENGUIN_GO_ORIGIN` | Trusted origin used by the server-side Penguin Go key authorization flow | `https://token.penguin.ooo` |
 | `PENGUIN_TRUST_PROXY` | `1` trusts the `x-forwarded-proto` header — set it behind a reverse proxy that terminates TLS (and sets/strips the header itself) so session cookies are marked `Secure` and the hot-update network gate sees HTTPS | unset — the header is ignored |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | unset — the seed generates a random password, hashed and discarded unseen; the account is claimed through the first-login link |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set via `penguin config lang` | `en` |
-| `PENGUIN_UPDATE_CHECK` | `off` disables the web app's new-release check (the server's only outbound internet call) | enabled |
+| `PENGUIN_UPDATE_CHECK` | `off` disables the web app's new-release check | enabled |
 | `PENGUIN_NO_LOGIN_SHELL_ENV` | Any non-empty value stops the desktop app from importing the login shell's environment on macOS/Linux GUI launches (see [Desktop quickstart](/quickstart-desktop)) | unset — the import runs, filling only variables the launch left unset |
 | `PENGUIN_CLI_ENTRY` | The CLI entry script this installation offers the Agents it runs (see below) | set for you by `penguin server` / `penguin web` and by the desktop app; falls back to the checkout's own `packages/cli/dist/penguin.js` when the server was started from one |
 
@@ -29,6 +30,8 @@ These configure PenguinHarness itself, so `PORT`, `HOST`, `PENGUIN_WEB_DIST` and
 One thing travels the other way: **this installation's own `penguin` is first on the PATH of every command an Agent runs**. At startup the server writes a launcher script at `<root>/bin/penguin` — it runs the CLI entry named above, on the server's own Node — and puts that directory at the front of PATH for each command. So `penguin` inside a command is the harness the Agent is running in, whatever version happens to be installed globally on the machine. The directory is prepended inside the shell as well as in the environment, because commands run through a login shell whose profile routinely rewrites PATH afterwards; that also puts it ahead of a `PATH` set in the [vault](#vault), which otherwise replaces the inherited value outright. The launcher is rewritten at every start, so a moved installation is picked up by the next one, and when there is no entry to point at none is written and `penguin` resolves however it did before.
 
 `PENGUIN_PREVIEW_ORIGIN` must differ from the app's origin by **hostname**, not just port: cookies ignore ports, so a second port would still share the session cookie. Leave it unset for local use — the app is canonicalized onto `localhost` and previews are served from `127.0.0.1`, which needs no configuration and no DNS. Set it when the app is reached over a LAN address or a real domain; otherwise previews there fall back to a same-origin sandbox where `localStorage`, cookies and third-party embeds do not work. When you do set it on a real domain, keep the session cookie host-only (no `Domain=`), or a sibling subdomain shares it. An unparseable value is a startup error rather than a silent fallback.
+
+`PENGUIN_GO_ORIGIN` is server configuration, not a browser-supplied endpoint. It must be a bare HTTPS origin; plain HTTP is accepted only for `localhost`, `127.0.0.1`, or `[::1]` integration environments. Paths, credentials, query strings, and fragments are rejected at startup.
 
 ### Provider credential variables
 
@@ -70,7 +73,7 @@ Model entry (`[[models]]`) fields:
 | `vision` | Whether image input is supported; defaults to supported |
 | `max_tokens` | Per-model max output tokens; overrides the Agent's `model.max_tokens` when set, omitted = inherit it |
 | `fast_mode` | Per-model fast mode (premium faster serving tier); off by default, only `true` is persisted. Offered only for models whose AgentHub client can serve it; the others reject requests carrying it — see [Models](/models#fast-mode) |
-| `pricing` | Three price buckets `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`) |
+| `pricing` | Three price buckets `cache_read` / `cache_write` / `output`, in USD per million Tokens (`unit = "usd_per_mtok"`). Always the list price: a running promotion is stored by the server in `web.db` and taken off when cost is computed — see [Models](/models#built-in-provider-groups) |
 | `api_key` | Inline credential; when empty, falls back to the provider environment variable |
 | `base_url` | Custom base URL; preset by the built-in catalog for gateways and for the direct rows that pin a client — MiniMax M3 and DeepSeek `deepseek-flash` |
 | `created_at` | Write timestamp of `api_key` (ISO 8601; a display field maintained by the interface layer) |

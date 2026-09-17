@@ -25,8 +25,17 @@ import type {
 } from "../api/types.js";
 import type { UserRow } from "../db/repos/users.js";
 import type { RawTable, UtilityCompletion } from "../services/project-config-service.js";
-import type { ListEndpointModelsOptions, ModelRef, ProjectConfig } from "@prismshadow/penguin-core";
+import type {
+  ListEndpointModelsOptions,
+  ModelRef,
+  PluginTable,
+  ProjectConfig,
+} from "@prismshadow/penguin-core";
 import type { TieredRates } from "../services/usage-service.js";
+import type {
+  PlatformModelApplyResult,
+  PlatformModelCatalog,
+} from "../services/platform-auth-types.js";
 import type {
   ModelOAuthErrorCode,
   ModelOAuthMode,
@@ -94,13 +103,18 @@ export abstract class ProjectConfigStore extends Interface<{
   loadConfig(projectId: string): Promise<ProjectConfig>;
   writeRaw(projectId: string, data: RawTable): Promise<void>;
   writeInitialConfig(projectId: string, name: string): Promise<void>;
-  ensurePresetModels(projectId: string): Promise<void>;
+  ensurePresetModels(projectId: string): Promise<boolean>;
+  seedPresetPromotions(projectId: string): Promise<void>;
   getName(projectId: string): Promise<string | undefined>;
   setName(projectId: string, name: string): Promise<void>;
   getDefaultModelRef(projectId: string): Promise<ModelRef | undefined>;
   setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto>;
   getChatDefaults(projectId: string): Promise<ChatDefaultsDto>;
   setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto>;
+  /** The `[plugins]` table this Project asks for: package name → requirement, in the file's order. */
+  getPlugins(projectId: string): Promise<PluginTable>;
+  /** Replaces the table (a declarative PUT); answers what was written. */
+  setPlugins(projectId: string, plugins: PluginTable): Promise<PluginTable>;
   getCommandPolicy(projectId: string): Promise<CommandPolicyDto>;
   setCommandPolicy(
     projectId: string,
@@ -131,7 +145,31 @@ export abstract class ProjectConfigStore extends Interface<{
   getModels(projectId: string): Promise<ModelsResponse>;
   updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse>;
   setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number>;
+  getGroupApiKey(projectId: string, provider: string): Promise<string | undefined>;
+  mergePlatformModels(
+    projectId: string,
+    provider: string,
+    catalog: PlatformModelCatalog,
+    apiKey: string,
+    applyKeyToExisting: boolean,
+  ): Promise<PlatformModelApplyResult>;
   completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
+}>() {}
+
+export interface ModelPromotion {
+  provider: string;
+  modelId: string;
+  discount: number;
+}
+
+/** Per-Project model promotions (web.db `model_promotions`). */
+export abstract class ModelPromotions extends Interface<{
+  get(projectId: string, provider: string, modelId: string): number | undefined;
+  list(projectId: string): ModelPromotion[];
+  /** Replaces every promotion of the Project, in one transaction. */
+  replaceAll(projectId: string, rows: readonly ModelPromotion[]): void;
+  /** Replaces the promotions of one provider group, in one transaction. */
+  replaceProvider(projectId: string, provider: string, rows: readonly ModelPromotion[]): void;
 }>() {}
 
 /** ModelOAuth: the mechanism ModelOAuthService implements. */

@@ -12,8 +12,8 @@ export const en: Strings = {
     label: "Announcements",
     prev: "Previous announcement",
     next: "Next announcement",
-    flashModels: "GLM-5.3 Flash and Qwen 3.8 Flash are now available in PenguinHarness",
-    fireworks: "Claim $50 in Fireworks API credits with the AMD Developer Program",
+    flashModels: "DeepSeek V4.1 Flash and Gemini 3.8 Flash are now live in PenguinHarness",
+    penguinGo: "Penguin Go official Token packs are live: 50% off every Gemini model",
   },
 
   nav: {

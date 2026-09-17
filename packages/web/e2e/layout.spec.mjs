@@ -27,7 +27,7 @@
  *   chrome used to stop fitting below ~412px;
  * - the sidebar's "New chat" button has no background fill (same gray-scale style as nav items);
  * - the collapsed rail shows, in product-specified order, last conversation / new chat /
- *   Agents / Plugin library / Models / Cost Center / Evaluation Center, each labeled by a
+ *   Agents / Plugins / Models / Cost Center / Evaluation Center, each labeled by a
  *   localized (en + zh) styled tooltip on hover and by no native `title` (two tooltips would
  *   stack); "last conversation" targets the most recently active non-archived session and is
  *   disabled while none exists; expanding from the rail restores the pinned sidebar;
@@ -419,7 +419,7 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
     "Last conversation",
     "New chat",
     "Agents",
-    "Plugin library",
+    "Plugins",
     "Models",
     "Cost Center",
     "Evaluation Center",
@@ -482,15 +482,15 @@ test("layout: collapsed rail — order, bilingual tooltips, last conversation", 
   );
 
   // --- Page entries navigate and highlight like the pinned nav ---
-  await rail.getByRole("link", { name: "Plugin library" }).click();
+  await rail.getByRole("link", { name: "Plugins" }).click();
   await expect(page).toHaveURL(`${BASE}/plugins`);
-  await expect(rail.getByRole("link", { name: "Plugin library" })).toHaveClass(ACTIVE_FILL);
+  await expect(rail.getByRole("link", { name: "Plugins" })).toHaveClass(ACTIVE_FILL);
 
   // --- zh: tooltips follow the product-specified wording ---
   await page.addInitScript(() => localStorage.setItem("penguin.lang", "zh"));
   await page.reload();
   await expect(entries).toHaveCount(7);
-  const ZH = ["最近一次对话", "新建对话", "智能体", "插件库", "模型库", "成本中心", "评估中心"];
+  const ZH = ["最近一次对话", "新建对话", "智能体", "插件市场", "模型库", "成本中心", "评估中心"];
   expect(await attrs("aria-label"), "rail order (zh)").toEqual(ZH);
   expect(await attrs("title"), "rail carries no native tooltips (zh)").toEqual(ZH.map(() => null));
   await rail.getByRole("link", { name: "模型库" }).hover();

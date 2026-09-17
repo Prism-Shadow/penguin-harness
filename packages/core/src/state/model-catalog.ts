@@ -17,8 +17,10 @@
  * group (V4.1 Flash released as `deepseek-flash`, the two V4 Flash ids retired into it —
  * `deepseek-v4-flash` text-only even so, AgentHub's DeepSeek client refusing image parts for
  * that id), the OpenRouter and TokenDance V4.1 Flash rows, and TokenDance's running promotions
- * plus its Doubao Seed display names: 2026-09-10; the OpenRouter z-ai/glm-5.3-flash row:
- * 2026-09-16 — per each provider's docs).
+ * plus its Doubao Seed display names: 2026-09-10; the Penguin Go resale lineup, matched to the
+ * relay's current generic-client model export: 2026-09-11, its DeepSeek rows to DeepSeek's own
+ * lineup: 2026-09-16; the OpenRouter z-ai/glm-5.3-flash row: 2026-09-16 — per each provider's
+ * docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -148,8 +150,9 @@ export interface ModelCatalogEntry {
    * Fraction off the list price the seller is currently running (0.5 = 50% off), applied to
    * every bucket. `pricing` stays the LIST price whatever promotion is live, so a lapsed
    * promotion is one field to delete rather than three numbers to reconstruct;
-   * effectivePricing is the rate actually billed, and presetModelEntries writes THAT into a
-   * Project so the cost center charges what the seller charges.
+   * effectivePricing is the rate actually billed. A Project stores the list price too: the
+   * fraction is seeded beside it as a promotion (presetPromotions), which the cost center
+   * applies when it prices usage, so it charges what the seller charges.
    */
   discount?: number;
   /**
@@ -157,8 +160,9 @@ export interface ModelCatalogEntry {
    * cheaper off-hours. `pricing` holds the PEAK price, the one billed inside the windows, and
    * the rate applies everywhere else.
    *
-   * Unlike `discount`, this one changes twice a day, so it is never baked into a Project:
-   * `presetModelEntries` writes the peak price and the rate is applied when a price is read.
+   * Like `discount`, this one is never baked into a Project, and here there is no choice: it
+   * changes twice a day. `presetModelEntries` writes the peak price and the rate is applied
+   * when a price is read.
    * A number on disk that silently meant something different at 09:00 than at 08:00 would be
    * unreadable, and re-syncing presets would rewrite prices by the clock. Mutually exclusive
    * with `discount`; an entry declaring both is a catalog error.
@@ -191,12 +195,17 @@ const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 const TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1";
 const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+export const PENGUIN_GO_BASE_URL = "https://token.penguin.ooo/api";
+
+/** Provider id for the preconfigured Penguin Go relay group. */
+export const PENGUIN_GO_PROVIDER_ID = "penguin-go";
 
 /**
  * Provider list (web model page groups in this order BY DEFAULT — a user's dragged
  * arrangement is stored per Project and wins over this sequence; see the web's
  * model-group-order.ts). The sequence is a hand-curated display order: TokenDance leads as
- * the recommended group, DeepSeek follows as the default model's provider, and custom
+ * the recommended group, Penguin Go follows, then DeepSeek as the default model's
+ * provider, and custom
  * (custom OpenAI-protocol models) is always last; in between, gateways and first-party
  * vendors are interleaved by expected use rather than sorted by kind. Only this default
  * moves when the curation changes: a Project that has ever reordered its groups has every
@@ -225,6 +234,16 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
       exchangeUrl: "https://tokendance.space/portal/api/v1/auth/keys",
       keyName: "PenguinHarness",
     },
+  },
+  {
+    id: PENGUIN_GO_PROVIDER_ID,
+    label: "Penguin Go",
+    // The authorization flow writes one inlined relay key across the group. Keep the env
+    // names private to this relay so the UI never suggests using a vendor credential here.
+    envKey: "PENGUIN_GO_API_KEY",
+    envBaseUrlKey: "PENGUIN_GO_BASE_URL",
+    apiKeyUrl: "https://token.penguin.ooo/",
+    modelsUrl: "https://token.penguin.ooo/",
   },
   {
     id: "deepseek",
@@ -435,13 +454,14 @@ export function offPeakScheduledRefs(): Array<{
 
 /**
  * What the seller actually bills for an entry: its list `pricing` less any running `discount`,
- * on every bucket. Rounded to the six decimals cny() already stores at, so a promotional rate is
- * written into a Project as a price rather than as a float artifact. An entry with no discount
- * (or no pricing at all) is returned untouched.
+ * on every bucket. Rounded to the six decimals cny() already stores at, so a promotional rate
+ * reads as a price rather than as a float artifact. An entry with no discount (or no pricing at
+ * all) is returned untouched.
  *
- * A row on a SCHEDULE is a deliberate exception: `presetModelEntries` writes its peak price,
- * because which tier a request ran in is decided from that request's own timestamp when the
- * usage is aggregated, not from what a Project happened to store.
+ * Nothing writes this rate into a Project: `presetModelEntries` writes the list price (a
+ * scheduled row's peak price), a flat promotion is stored beside it as a fraction, and which
+ * tier a request ran in is decided from that request's own timestamp when the usage is
+ * aggregated.
  */
 export function effectivePricing(
   entry: ModelCatalogEntry,
@@ -1269,8 +1289,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   // Discounts: every row here stores the official LIST price, the convention of the two Qwen
   // groups below, and a promoted row declares its rate in `discount` rather than having its
   // price rewritten — a promotion that lapses is then one field to delete, with the rate to
-  // return to still on the row. effectivePricing() applies it and presetModelEntries writes
-  // that billed rate into a Project, so the cost center charges what the gateway charges.
+  // return to still on the row. effectivePricing() applies it; a new Project stores the list
+  // price and the fraction as a promotion beside it, which the cost center applies, so it
+  // charges what the gateway charges.
   // Nine rows are promoted (rates re-confirmed 2026-09-10): deepseek-v4-flash-0731,
   // deepseek-v4-pro-0813 and kimi-k3 at 20% off; glm-5.3, glm-5.3-flash and qwen3.8-max at
   // 10%; the three Doubao Seed rows (seed-2.1-pro, seed-2.1-turbo, seed-evolving) at 50%.
@@ -1502,6 +1523,107 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     clientType: "openai-chat",
     baseUrl: TOKENDANCE_BASE_URL,
   },
+  // -- Penguin Go (mixed-protocol relay). The model ids are the generation rows
+  // provisioned by Penguin Go's generic-client authorization contract. Both
+  // protocols share the /api base: the Google client appends /v1beta itself, while the
+  // DeepSeek Responses client appends /responses. The rows carry Penguin Go's current list
+  // prices so a new Project is complete before its first authorization, and no `discount`:
+  // the platform delivers any promotion it runs at authorization and Sync, and both stay
+  // authoritative when the relay later publishes changed metadata. The DeepSeek rows follow
+  // DeepSeek's own lineup (re-read 2026-09-16): V4.1 Flash as `deepseek-flash` and V4 Pro 0813
+  // as `deepseek-v4-pro`; the two retired V4 Flash ids, served from V4.1 Flash, are not resold.
+  {
+    modelId: "gemini-3.8-flash",
+    displayName: "Gemini 3.8 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    pricing: usd(0.075, 0.75, 3.75),
+    supportsVision: true,
+    clientType: "gemini-3.8",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.7-flash",
+    displayName: "Gemini 3.7 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    pricing: usd(0.075, 0.75, 3.75),
+    supportsVision: true,
+    clientType: "gemini-3.8",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.6-flash",
+    displayName: "Gemini 3.6 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    pricing: usd(0.075, 0.75, 3.75),
+    supportsVision: true,
+    clientType: "gemini-3.8",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.5-flash",
+    displayName: "Gemini 3.5 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    pricing: usd(0.15, 1.5, 9),
+    supportsVision: true,
+    clientType: "gemini-3.8",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.5-flash-lite",
+    displayName: "Gemini 3.5 Flash-Lite",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    pricing: usd(0.03, 0.3, 2.5),
+    supportsVision: true,
+    clientType: "gemini-3.8",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.1-flash-lite",
+    displayName: "Gemini 3.1 Flash-Lite",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    pricing: usd(0.025, 0.25, 1.5),
+    supportsVision: true,
+    clientType: "gemini-3.8",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "gemini-3.1-pro-preview",
+    displayName: "Gemini 3.1 Pro (Preview)",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1048576,
+    pricing: usd(0.2, 2, 12),
+    supportsVision: true,
+    clientType: "gemini-3.8",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-flash",
+    displayName: "DeepSeek V4.1 Flash",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1000000,
+    pricing: cny(0.04, 2, 8),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: true,
+    clientType: "deepseek-v4",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
+  {
+    modelId: "deepseek-v4-pro",
+    displayName: "DeepSeek V4 Pro 0813",
+    provider: PENGUIN_GO_PROVIDER_ID,
+    contextWindow: 1000000,
+    pricing: cny(0.3, 9, 27),
+    offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    supportsVision: false,
+    clientType: "deepseek-v4",
+    baseUrl: PENGUIN_GO_BASE_URL,
+  },
   // -- Qwen Token Plan (subscription gateway; vision flags per the plan's supported-model
   // table). Pricing and context windows from each model's page at
   // www.qianwenai.com/models/<id> (official CNY list prices; limited-time promotions such as
@@ -1641,9 +1763,10 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   {
     // Same list price and same launch discount as the gemini-3.7-flash and gemini-3.6-flash
     // rows below: Google halves all three rates through 2026-12-31. Like those rows this one
-    // declares the promotion in `discount`, so the list price stays on file while a Project is
-    // preset with — and the cost center bills — the 0.075/0.75/3.75 Google actually charges
-    // today. One field to delete when the promotion lapses.
+    // declares the promotion in `discount`, so the list price stays on file — here and in a
+    // Project, which is seeded with the fraction beside it — while the cost center bills the
+    // 0.075/0.75/3.75 Google actually charges today. One field to delete when the promotion
+    // lapses.
     modelId: "gemini-3.8-flash",
     displayName: "Gemini 3.8 Flash",
     provider: "google",
@@ -2182,6 +2305,26 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
 }
 
 /**
+ * Resolves the credential environment for a configured model entry. Most groups follow the
+ * AgentHub client selected by model id / protocol. The Penguin Go relay is deliberately
+ * different: its Google and OpenAI routes share one relay credential, so its provider-scoped
+ * variable must win over both clients' vendor variables everywhere the harness resolves a key.
+ */
+export function resolveProviderModelEnv(
+  provider: string,
+  modelId: string,
+  clientType?: string,
+): ModelEnvInfo | undefined {
+  if (provider === PENGUIN_GO_PROVIDER_ID) {
+    const group = providerInfo(provider);
+    return group === undefined
+      ? undefined
+      : { envKey: group.envKey, envBaseUrlKey: group.envBaseUrlKey };
+  }
+  return resolveModelEnv(modelId, clientType);
+}
+
+/**
  * The wire protocol that would carry AgentHub's `fast_mode` for a model: `"openai"` for the
  * OpenAI-protocol clients (openai_chat / openai_responses / gpt6 / minimax_m3), which send
  * `service_tier: "priority"`, and `"anthropic"` for the Anthropic-protocol ones (ant_messages
@@ -2277,31 +2420,34 @@ export function fastModeProtocol(
  * rest — and inline a preset base_url. The direct MiniMax M3 entry also pins its protocol and
  * endpoint. No secrets are included, so only an API key is needed.
  *
- * Pricing is written as the EFFECTIVE rate (effectivePricing: list less any running
- * discount), not the list price the catalog records. A Project's stored pricing is the only
- * thing the cost center ever prices against, so writing anything but what the seller bills
- * would report a cost nobody was charged; the list price and the promotion that produced the
- * difference stay in the catalog, where they can be read and restored.
+ * Pricing is written as the LIST price the catalog records (a scheduled row's PEAK price),
+ * never a discounted number. What is on disk then stays true whatever promotion is live and
+ * whatever hour the Project is created or re-synced in: a flat promotion is stored beside the
+ * file as a per-Project fraction (presetPromotions), and both it and an off-peak tier are
+ * applied when the price is read, by the models page and by the cost center alike.
  */
 export function presetModelEntries(): ModelEntry[] {
-  return MODEL_CATALOG.map((m) => {
-    // A scheduled discount writes the PEAK price, which is the same number whatever hour the
-    // Project is created or re-synced in. What is on disk has to be stable: the off-peak rate
-    // is applied when the price is read, by the models page and by the cost center alike.
-    const pricing = m.offPeakDiscount !== undefined ? m.pricing : effectivePricing(m);
-    return {
-      provider: m.provider,
-      model_id: m.modelId,
-      ...(m.contextWindow !== undefined ? { context_window: m.contextWindow } : {}),
-      ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
-      ...(pricing ? { pricing: { ...pricing } } : {}),
-      // ModelEntry.vision defaults to supported: only models that don't support images
-      // explicitly persist false (drives read_file's hand-off of images to the vision model and input
-      // image hand-off, see project-config.ts).
-      ...(m.supportsVision ? {} : { vision: false }),
-      ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
-    };
-  });
+  return MODEL_CATALOG.map((m) => ({
+    provider: m.provider,
+    model_id: m.modelId,
+    ...(m.contextWindow !== undefined ? { context_window: m.contextWindow } : {}),
+    ...(m.clientType !== undefined ? { client_type: m.clientType } : {}),
+    ...(m.pricing ? { pricing: { ...m.pricing } } : {}),
+    // ModelEntry.vision defaults to supported: only models that don't support images
+    // explicitly persist false (drives read_file's hand-off of images to the vision model and input
+    // image hand-off, see project-config.ts).
+    ...(m.supportsVision ? {} : { vision: false }),
+    ...(m.baseUrl !== undefined ? { base_url: m.baseUrl } : {}),
+  }));
+}
+
+/** The catalog's flat promotions, as a new Project is seeded with them: every row whose `discount` is a fraction in (0, 1). */
+export function presetPromotions(): Array<{ provider: string; modelId: string; discount: number }> {
+  return MODEL_CATALOG.flatMap((m) =>
+    m.discount !== undefined && m.discount > 0 && m.discount < 1
+      ? [{ provider: m.provider, modelId: m.modelId, discount: m.discount }]
+      : [],
+  );
 }
 
 /**

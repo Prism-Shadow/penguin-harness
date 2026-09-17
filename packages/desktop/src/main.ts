@@ -64,6 +64,7 @@ import {
   desktopLoginUrl,
   hidesOnClose,
   isAppUrl,
+  isAuthorizationBridgeUrl,
   isLocalSurfaceUrl,
   MAX_SERVER_RESTARTS,
   restartDelayMs,
@@ -148,6 +149,17 @@ function createWindow(url: string): void {
   // Denying it outright (as this did at first) made the entry silently do nothing.
   // Genuinely external links still go to the system browser.
   win.webContents.setWindowOpenHandler(({ url: target }) => {
+    if (isAuthorizationBridgeUrl(target)) {
+      return {
+        action: "allow",
+        // The bridge is an implementation detail, not a second app window. The Web App
+        // either navigates it to the platform URL or closes it when `/start` fails.
+        overrideBrowserWindowOptions: {
+          show: false,
+          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+        },
+      };
+    }
     if (isLocalSurfaceUrl(target, appOrigin)) {
       return {
         action: "allow",
@@ -168,7 +180,8 @@ function createWindow(url: string): void {
   // The child lands on the preview origin after the redirect, so its policy is "stay
   // within this instance's loopback surface, everything else to the system browser" —
   // the main window's stricter app-origin-only rule would bounce the preview itself out.
-  win.webContents.on("did-create-window", (child) => {
+  win.webContents.on("did-create-window", (child, details) => {
+    const authorizationBridge = isAuthorizationBridgeUrl(details.url);
     child.webContents.setWindowOpenHandler(({ url: target }) => {
       if (isLocalSurfaceUrl(target, appOrigin)) return { action: "allow" };
       void shell.openExternal(target);
@@ -178,6 +191,9 @@ function createWindow(url: string): void {
       if (!isLocalSurfaceUrl(target, appOrigin)) {
         event.preventDefault();
         void shell.openExternal(target);
+        // A preview window stays open when one of its links opens externally. The hidden
+        // authorization bridge has completed its only job and must not linger.
+        if (authorizationBridge) child.close();
       }
     });
   });

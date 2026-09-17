@@ -114,6 +114,7 @@ export const HMR_INTERFACES: HmrInterfaces = {
     "portFile",
     "trustProxy",
     "supervised",
+    "penguinGoOrigin",
   ],
   db: ["prepare", "exec", "close"],
   channels: ["get", "peek", "broadcast", "dispose", "setActivityProbe"],
@@ -199,6 +200,13 @@ export const HMR_LIFECYCLE_RESOURCE_ID = "platform.lifecycle";
 export const HMR_AUTH_STATE_RESOURCE_ID = "platform.authState";
 /** Test-only: the node Replacements bootAppDeps leaves for the platform boot to claim. */
 export const HMR_OVERRIDES_RESOURCE_ID = "platform.overrides";
+
+/**
+ * Test-only: plugin entries a test stands up in process, unioned into the host the platform
+ * builds from the closure. Its own id, not the host's: the closure is read from disk, so a
+ * plugin that exists only as an object in a test has no specifier anyone could import.
+ */
+export const HMR_TEST_PLUGINS_RESOURCE_ID = "platform.pluginsInjected";
 
 /**
  * The {@link Interfaces} descriptor each App leaves for its successor, naming the
@@ -511,6 +519,36 @@ export class RuntimeHmrControl {
   constructor(private readonly caps: HmrCapabilities) {}
   setup() {
     this.hmrControl = this.caps.hmrControl;
+  }
+}
+
+/**
+ * The App re-assembling itself from the same bundle — how a plugin change applies without
+ * a process restart. The PLATFORM's own, above the seam: it re-boots its inner tree with
+ * the kernel's upgrade, and the runtime holds the same outer instance throughout (see
+ * hmr/platform.ts). Nothing here is a runtime capability, so it works on every runtime.
+ */
+/**
+ * A configuration change that a re-assembly applies: written just before the new tree
+ * boots, in the same queue as every other re-assembly (so two edits of one file never
+ * interleave), and undone before the previous tree is restored when that boot fails — the
+ * restore boot reads the same configuration, and a change that broke the tree once would
+ * break it again.
+ */
+export interface ReassemblyChange {
+  write(): Promise<void>;
+  undo(): Promise<void>;
+}
+export abstract class Reassembly extends Interface<{
+  /** Whether the re-assembled tree is the one now running; false when its boot failed and the previous one was restored. */
+  reassemble(change?: ReassemblyChange): Promise<boolean>;
+}>() {}
+@Module()
+export class AppReassembly {
+  @Provide() reassembly!: Reassembly;
+  constructor(private readonly run: (change?: ReassemblyChange) => Promise<boolean>) {}
+  setup() {
+    this.reassembly = { reassemble: this.run };
   }
 }
 @Module()

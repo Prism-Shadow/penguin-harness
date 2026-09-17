@@ -1,7 +1,7 @@
 import { Component, Module, moduleDefOf, Use } from "@prismshadow/penguin-core/kernel";
 import type { ManifestTable, ModuleClass, ModuleDef } from "@prismshadow/penguin-core/kernel";
 import table from "./ifaces.json" with { type: "json" };
-import type { HmrCapabilities } from "./hmr/capabilities.js";
+import type { HmrCapabilities, ReassemblyChange } from "./hmr/capabilities.js";
 import {
   ConfigPaths,
   ConsoleLog,
@@ -13,6 +13,7 @@ import {
   RuntimeDesktop,
   RuntimeHmr,
   RuntimeHmrControl,
+  AppReassembly,
   RuntimeProxy,
   RuntimeResourceGroups,
   SystemClock,
@@ -24,6 +25,7 @@ import {
   Desktop,
   Lifecycle,
   Hmr,
+  Reassembly,
   HmrControl,
   Log,
   Paths,
@@ -65,6 +67,7 @@ import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
+import { ModelPromotionsRepo } from "./db/repos/model-promotions.js";
 import { MembersRepo } from "./db/repos/members.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { UsageRepo } from "./db/repos/usage.js";
@@ -79,6 +82,7 @@ import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthService } from "./services/model-oauth-service.js";
+import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
@@ -109,7 +113,8 @@ import { DesktopRoutes, DesktopTrayRoutes, DesktopUpdateRoutes } from "./http/ro
 import { InstallRoutes } from "./http/routes/install.js";
 import { HmrRoutes } from "./hmr/routes.js";
 import { EventsRoutes } from "./http/routes/events.js";
-import { PluginRoutes } from "./http/routes/plugins.js";
+import { PluginRegistryRoutes, PluginRoutes } from "./http/routes/plugins.js";
+import { InstalledPluginRoutes } from "./http/routes/plugins-installed.js";
 import { TerminalModule } from "./terminal/manager.js";
 import { SessionApiRoutes } from "./http/routes/sessions.js";
 import { Admin, Auth, AuthSessions, Users } from "./mechanisms/identity.js";
@@ -201,6 +206,7 @@ export class Startup {
     RuntimeProxy,
     RuntimeHmr,
     RuntimeHmrControl,
+    AppReassembly,
     RuntimeDesktop,
     RuntimeAuthState,
     RuntimeLifecycle,
@@ -216,6 +222,7 @@ export class Startup {
     Proxy,
     Hmr,
     HmrControl,
+    Reassembly,
     Desktop,
     AuthState,
     Lifecycle,
@@ -245,12 +252,14 @@ export class IdentityModule {}
 @Module({
   children: [
     ProjectsRepo,
+    ModelPromotionsRepo,
     MembersRepo,
     AgentsRepo,
     ProjectAccess,
     ProjectService,
     ProjectConfigService,
     ModelOAuthService,
+    PlatformAuthProvider,
     ProjectsRoutes,
     ProjectAdminRoutes,
   ],
@@ -262,6 +271,7 @@ export class IdentityModule {}
     ProjectLifecycle,
     ProjectConfigStore,
     ModelOAuth,
+    PlatformAuth,
     InitialProjectProvisioner,
   ],
 })
@@ -376,6 +386,8 @@ export class CompanyModule {}
     DesktopUpdateRoutes,
     DesktopTrayRoutes,
     PluginRoutes,
+    PluginRegistryRoutes,
+    InstalledPluginRoutes,
   ],
   exports: [Http, WebShell, UpdateCheck],
 })
@@ -414,6 +426,11 @@ export function platformDef(
   adoptable: (group: string) => boolean,
   plugins: ModuleDef[] = [],
   replace: ReadonlyMap<string, ModuleDef> = new Map(),
+  /** The platform's own re-assembly (hmr/platform.ts); a test tree that never re-assembles writes the change and answers false. */
+  reassemble: (change?: ReassemblyChange) => Promise<boolean> = async (change) => {
+    await change?.write();
+    return false;
+  },
 ): ModuleDef {
   const instances = new Map<ModuleClass, object>([
     [RuntimeConfig, new RuntimeConfig(caps)],
@@ -422,6 +439,7 @@ export function platformDef(
     [RuntimeProxy, new RuntimeProxy(caps)],
     [RuntimeHmr, new RuntimeHmr(caps)],
     [RuntimeHmrControl, new RuntimeHmrControl(caps)],
+    [AppReassembly, new AppReassembly(reassemble)],
     [RuntimeDesktop, new RuntimeDesktop(caps)],
     [RuntimeAuthState, new RuntimeAuthState(caps)],
     [RuntimeLifecycle, new RuntimeLifecycle(caps)],
