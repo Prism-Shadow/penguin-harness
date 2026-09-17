@@ -21,12 +21,12 @@
  *   plugin                            platform   fs-write  network  mask-paths
  *   penguin-plugin-sandbox-bwrap      Linux      yes       yes      yes
  *   penguin-plugin-sandbox-seatbelt   macOS      yes       yes      yes
- *   penguin-plugin-sandbox-mxc        Windows    yes       yes      yes
  *   penguin-plugin-sandbox-dsh        all three  yes       —        —
  *
  * The DSH adaptor is the portable floor covering file effects only (its own chain picks
- * bwrap/Landlock, Seatbelt or the Windows ACL runner per host); the three native
- * backends add the other two dimensions, one per platform. Where none implements a
+ * bwrap/Landlock, Seatbelt or the Windows ACL runner per host); the two native
+ * backends add the other two dimensions on Linux and macOS. Windows has only the file
+ * effects. Where none implements a
  * requested dimension, service.ts fails closed naming what each covers rather than
  * quietly confining less than was asked.
  */

@@ -1,7 +1,7 @@
 /**
  * Plugin registry tests: the shared index format (strict whole-document validation —
  * one malformed row fails the artifact, unlike a plugin list's per-entry tolerance),
- * the builtin registry serving the embedded four sandbox backends (readmes read from the
+ * the builtin registry serving the embedded three sandbox backends (readmes read from the
  * packages as npm shipped them), the HTTP registry
  * running a fetched document through the same validator (fetch stubbed, no network),
  * and GET /api/plugins behind the auth gate.
@@ -63,14 +63,13 @@ describe("parsePluginIndex", () => {
 });
 
 describe("builtinPluginRegistry", () => {
-  it("serves the four sandbox backends, valid under the shared format", async () => {
+  it("serves the three sandbox backends, valid under the shared format", async () => {
     const registry = builtinPluginRegistry();
     expect(registry.source).toBe(BUILTIN_REGISTRY_SOURCE);
     const entries = await registry.index();
     expect(entries.map((e) => e.name)).toEqual([
       "@prismshadow/penguin-plugin-sandbox-bwrap",
       "@prismshadow/penguin-plugin-sandbox-seatbelt",
-      "@prismshadow/penguin-plugin-sandbox-mxc",
       "@prismshadow/penguin-plugin-sandbox-dsh",
     ]);
     for (const entry of entries) {
@@ -128,7 +127,7 @@ describe("GET /api/plugins/registry", () => {
     const res = await apiClient(t.app, admin.cookie).get("/api/plugins/registry");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins).toHaveLength(4);
+    expect(body.plugins).toHaveLength(3);
     expect(body.plugins.every((p) => p.name.startsWith("@prismshadow/penguin-plugin-"))).toBe(true);
   });
 });
