@@ -14,7 +14,7 @@ harness 从头到尾有了插件：服务端的注册表抽象与共享索引格
 
 - **插件注册表（plugin registry）**是一个插件索引条目来源。本次实现两种——服务端包内嵌索引的**内置注册表（builtin registry）**，以及拉取 `index.json` URL 的 **HTTP 注册表**。两者共用同一个校验器，远端索引不会比内嵌索引获得更多信任。
 - 所有注册表共享同一份**插件索引格式**，参考 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目，含 `name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`。条目的 `name` 就是 Project 插件清单里写的包名。
-- `GET /api/plugins/registry`（任何已登录用户可访问）返回已配置注册表合并后的索引。内置注册表列出本构建自带的包：四个沙盒后端——bubblewrap（Linux）、Seatbelt（macOS）、MXC（Windows）与 DSH 适配器——以及语言楼层。
+- `GET /api/plugins/registry`（任何已登录用户可访问）返回已配置注册表合并后的索引。内置注册表列出本构建自带的包：三个沙盒后端——bubblewrap（Linux）、Seatbelt（macOS）与 DSH 适配器——以及语言楼层。
 - 说明文档按条目单独通过 `GET /api/plugins/registry/readme?name=…` 获取，而不随索引下发：列表每次进入页面都要完整发送，而说明文档体积大，且只有被打开的那个条目才需要。该端点只对部署自己列出的条目作答，因此无法用来探测存在哪些插件；注册表没有某条目的说明文档时返回 null，而不是猜一个 URL。说明文档就是各包自己的 `README.md`，从本机的包里读取，因此目录里不存在第二份会与之漂移的副本；测试把每个条目的 name、version、description 与 license 钉在包自己声明的值上。
 
 ## 以 npm 包的本来面目发布

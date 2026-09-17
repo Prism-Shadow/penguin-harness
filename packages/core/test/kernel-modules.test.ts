@@ -265,11 +265,11 @@ describe("parseManifest", () => {
   it("reads an empty requires, provides, contributes or children left out as empty", () => {
     expect(
       parseManifest({
-        name: "SandboxMxc",
+        name: "SandboxBwrap",
         contributes: { "SandboxModule.providers": [{ id: "p" }] },
       }),
     ).toEqual({
-      name: "SandboxMxc",
+      name: "SandboxBwrap",
       requires: {},
       provides: {},
       contributes: { "SandboxModule.providers": [{ id: "p" }] },

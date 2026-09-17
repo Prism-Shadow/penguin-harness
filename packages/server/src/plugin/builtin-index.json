@@ -20,16 +20,6 @@
     "categories": ["sandbox"]
   },
   {
-    "name": "@prismshadow/penguin-plugin-sandbox-mxc",
-    "version": "0.2.2",
-    "description": "Windows sandbox backend for PenguinHarness over Microsoft MXC (Microsoft eXecution Containers): filesystem confinement, network isolation and path masking via the processcontainer backend.",
-    "authors": ["Prism Shadow"],
-    "license": "Apache-2.0",
-    "repository": "https://github.com/Prism-Shadow/penguin-harness",
-    "keywords": ["windows", "mxc", "network-isolation", "path-masking"],
-    "categories": ["sandbox"]
-  },
-  {
     "name": "@prismshadow/penguin-plugin-sandbox-dsh",
     "version": "0.2.2",
     "description": "DeepSeek Harness sandbox adaptor for PenguinHarness: the DSH local backend chain behind the harness's own sandbox interface.",
