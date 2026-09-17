@@ -4,8 +4,8 @@
  * The face carries no primary action: it is a plain card that reads, and the personnel menu —
  * opening the desk session and every personnel action — is the one thing it can do. A
  * whole-card link would promise one of those many actions and steal the click from the rest.
- * Three rows: avatar with the name and title (the CEO wears a chip); the live state dot and
- * its label, the workspace tail, this period's spend against the budget; a thin ratio bar.
+ * Three rows: avatar with the name and title (the CEO's title line wears a chip); the live state
+ * dot and its label, the workspace tail, this period's spend against the budget; a thin ratio bar.
  * The state the dot draws is passed in rather than read off the employee: the chart is a
  * snapshot re-read on organization events, and no event says a run ended (org-sessions.ts,
  * liveEmployeeStates).
@@ -170,14 +170,18 @@ export function ChartCard({
             className="shrink-0 rounded-md"
           />
           <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] leading-4 font-semibold text-gray-900 dark:text-gray-100">
+              {employee.name}
+            </span>
+            {/* The CEO's chip sits on the title line, so the name keeps its whole line as on every
+                other card: a CEO's Agent is created as "<organization name> CEO", which makes its
+                name the likeliest on the chart to be long. A name the card still cuts is in the
+                face's tooltip in full. */}
             <span className="flex items-center gap-1.5">
-              <span className="min-w-0 truncate text-[13px] leading-4 font-semibold text-gray-900 dark:text-gray-100">
-                {employee.name}
+              <span className="min-w-0 truncate text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+                {employee.title}
               </span>
               {isCeo && <Badge tone="brand">{S.company.ceo}</Badge>}
-            </span>
-            <span className="block truncate text-[11px] leading-4 text-gray-500 dark:text-gray-400">
-              {employee.title}
             </span>
           </span>
         </span>

@@ -334,6 +334,9 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Pr
     );
   };
 
+  // The tree grows past 240px to fit its widest row, up to 360px: the rubric folder's name shares
+  // its row with the hidden-from-agent badge, and the English pair needs more width than the
+  // Chinese one, so a width that fits one language truncates the name in the other.
   return (
     <FileBrowser
       rows={caseTreeRows(materials, listings, expanded)}
@@ -350,6 +353,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Pr
       emptyPreview={S.benchmark.caseFileUnavailable}
       resolveRef={resolveRef}
       treeWidth={240}
+      treeMaxWidth={360}
       treeMaxHeight={53}
       previewHeight={52}
       minHeight={58}

@@ -2988,6 +2988,8 @@ Benchmark：
         text: "选一个 Benchmark，点「使用」→「优化」，设定目标分数后在新对话中发送；分数严格提升才保留新版本。",
       },
     ],
+    /** The first step card's text for a Project member: no Create manually, which is the owner's. */
+    guideCreateMember: "点右上角「用 AI 创建」，让 AI 为某个智能体出一套题并取得基线分。",
     searchPlaceholder: "搜索标题、描述或被测智能体",
     noMatches: "没有匹配的 Benchmark",
     /** The chip shown when the address filters the list to one Agent's Benchmarks. */

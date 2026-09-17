@@ -3007,6 +3007,9 @@ Scenarios:
         text: "Pick a Benchmark, press Use → Optimize, set a target score and send; a new version is kept only when the score strictly improves.",
       },
     ],
+    /** The first step card's text for a Project member: no Create manually, which is the owner's. */
+    guideCreateMember:
+      "Press Create with AI at the top right to have AI write a set of cases for an agent and take its baseline score.",
     searchPlaceholder: "Search titles, descriptions or tested agents",
     noMatches: "No Benchmark matches",
     filterByAgent: (agentId: string): string => `Benchmarks that evaluated ${agentId}`,

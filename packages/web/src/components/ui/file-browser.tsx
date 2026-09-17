@@ -94,6 +94,7 @@ export function FileBrowser<Row extends FileTreeRow>({
   stripFrontmatter = false,
   resolveRef,
   treeWidth = DEFAULT_TREE_WIDTH,
+  treeMaxWidth,
   treeMaxHeight = DEFAULT_TREE_MAX_HEIGHT,
   previewHeight = DEFAULT_PREVIEW_HEIGHT,
   minHeight,
@@ -130,8 +131,14 @@ export function FileBrowser<Row extends FileTreeRow>({
    * nor a scheme of its own; null leaves the reference as the file wrote it.
    */
   resolveRef?: (ref: string) => { url: string; treePath?: string } | null;
-  /** Tree column width on a wide screen, in px. */
+  /** Tree column width on a wide screen, in px; the least it takes when `treeMaxWidth` is set. */
   treeWidth?: number;
+  /**
+   * Lets the tree column grow past `treeWidth` to fit its widest row, up to this many px: for a
+   * host whose rows carry translated labels and badges, which no one fixed width fits in every
+   * language. Omitted, the column is exactly `treeWidth`.
+   */
+  treeMaxWidth?: number;
   /** Scroll cap of the tree pane on a wide screen, in vh. */
   treeMaxHeight?: number;
   /** Fixed height of the preview body, in vh. */
@@ -147,6 +154,10 @@ export function FileBrowser<Row extends FileTreeRow>({
   // say, and a class name composed at runtime is one Tailwind never sees to generate.
   const sizes = {
     "--fb-tree-width": `${treeWidth}px`,
+    // A growing column is sized to its rows by `fit-content()`, capped at the maximum; the aside's
+    // own min-width is what holds it at `treeWidth` when every row is narrower than that.
+    "--fb-tree-track":
+      treeMaxWidth === undefined ? `${treeWidth}px` : `fit-content(${treeMaxWidth}px)`,
     "--fb-tree-max-height": `${treeMaxHeight}vh`,
     "--fb-preview-height": `${previewHeight}vh`,
     "--fb-min-height": minHeight === undefined ? "0px" : `${minHeight}vh`,
@@ -279,11 +290,11 @@ export function FileBrowser<Row extends FileTreeRow>({
   return (
     <div
       style={sizes}
-      className={`grid min-h-[var(--fb-min-height)] grid-cols-1 overflow-hidden rounded-md border border-gray-200 md:grid-cols-[var(--fb-tree-width)_minmax(0,1fr)] dark:border-gray-800 ${className}`}
+      className={`grid min-h-[var(--fb-min-height)] grid-cols-1 overflow-hidden rounded-md border border-gray-200 md:grid-cols-[var(--fb-tree-track)_minmax(0,1fr)] dark:border-gray-800 ${className}`}
     >
       {/* Both panes scroll on their own inside fixed heights, so whatever the host draws above
           the browser stays put while a file is read. */}
-      <aside className="border-b border-gray-200 bg-gray-50/60 md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-950/30">
+      <aside className="border-b border-gray-200 bg-gray-50/60 md:min-w-[var(--fb-tree-width)] md:border-b-0 md:border-r dark:border-gray-800 dark:bg-gray-950/30">
         <div className="max-h-44 overflow-y-auto md:max-h-[var(--fb-tree-max-height)]">
           {treeError !== null && <p className="px-3 py-2 text-xs text-red-500">{treeError}</p>}
           {/* A `tree` with no `treeitem` in it is not one: while the listing is in flight, or
