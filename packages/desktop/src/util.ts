@@ -59,6 +59,16 @@ export function isLocalSurfaceUrl(url: string, origin: string | null): boolean {
   return loopback.has(target.hostname) && loopback.has(app.hostname);
 }
 
+/**
+ * The one inert window the Web App opens synchronously while Penguin Go creates an
+ * authorization flow. It must stay inside Electron until the real HTTPS URL arrives:
+ * handing `about:blank` to Windows asks the OS to find an application for the `about:`
+ * scheme and raises a system dialog instead of opening the user's browser.
+ */
+export function isAuthorizationBridgeUrl(url: string): boolean {
+  return url === "about:blank";
+}
+
 /** Max automatic server restarts before giving up with an error dialog. */
 export const MAX_SERVER_RESTARTS = 3;
 

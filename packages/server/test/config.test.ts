@@ -89,3 +89,26 @@ describe("resolveServerConfig: PENGUIN_CLI_ENTRY parsing", () => {
     expect(blank === null || blank.endsWith(`${path.sep}penguin.js`)).toBe(true);
   });
 });
+
+describe("resolveServerConfig: PENGUIN_GO_ORIGIN parsing", () => {
+  it("defaults to the production HTTPS origin and accepts loopback HTTP for integration", () => {
+    expect(resolveServerConfig({ ...base }).penguinGoOrigin).toBe("https://token.penguin.ooo");
+    expect(
+      resolveServerConfig({ ...base, PENGUIN_GO_ORIGIN: " http://127.0.0.1:3000 " })
+        .penguinGoOrigin,
+    ).toBe("http://127.0.0.1:3000");
+  });
+
+  it("rejects non-origin input and non-loopback plaintext HTTP", () => {
+    for (const bad of [
+      "http://token.penguin.ooo",
+      "https://token.penguin.ooo/path",
+      "https://user:pass@token.penguin.ooo",
+      "https://token.penguin.ooo?next=x",
+    ]) {
+      expect(() => resolveServerConfig({ ...base, PENGUIN_GO_ORIGIN: bad }), bad).toThrow(
+        /Invalid PENGUIN_GO_ORIGIN/,
+      );
+    }
+  });
+});

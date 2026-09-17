@@ -71,6 +71,9 @@ import type {
   ModelOAuthStartRequest,
   ModelOAuthStartResponse,
   ModelOAuthStatusResponse,
+  PlatformAuthFlowStatusResponse,
+  PlatformAuthStartResponse,
+  PlatformModelSyncResponse,
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   ModelsResponse,
@@ -401,6 +404,37 @@ export const submitModelOAuthCode = (projectId: string, flowId: string, code: st
   apiFetch<ModelOAuthCodeResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/model-oauth/${encodeURIComponent(flowId)}/code`,
     { method: "POST", body: { code } },
+  );
+
+// Penguin Go key authorization (owner) -------------------------------------------
+
+export const startPlatformAuth = (projectId: string) =>
+  apiFetch<PlatformAuthStartResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/start`,
+    { method: "POST", body: {} },
+  );
+
+export const getPlatformAuthFlow = (projectId: string, flowId: string) =>
+  apiFetch<PlatformAuthFlowStatusResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/${encodeURIComponent(flowId)}/status`,
+  );
+
+export const retryPlatformAuthApply = (projectId: string, flowId: string) =>
+  apiFetch<PlatformAuthFlowStatusResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/${encodeURIComponent(flowId)}/retry`,
+    { method: "POST", body: {} },
+  );
+
+export const cancelPlatformAuth = (projectId: string, flowId: string) =>
+  apiFetch<{ ok: boolean }>(
+    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/${encodeURIComponent(flowId)}/cancel`,
+    { method: "POST", body: {} },
+  );
+
+export const syncPlatformModels = (projectId: string) =>
+  apiFetch<PlatformModelSyncResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/sync`,
+    { method: "POST", body: {} },
   );
 
 // Vault environment variables (Agent-level) -------------------------------------------------------

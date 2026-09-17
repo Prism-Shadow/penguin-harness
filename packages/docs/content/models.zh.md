@@ -61,7 +61,8 @@ api_key = "sk-..."
 
 | Provider | API Key 环境变量 | 说明 |
 | --- | --- | --- |
-| tokendance | `OPENAI_API_KEY` | 官方推荐分组，默认排在首位。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为不带厂商前缀的裸 id(如 `glm-5.3`、`kimi-k3`)；价格取该网关自己的 CNY 牌价，其中若干条目当前处于折扣中 |
+| tokendance | `OPENAI_API_KEY` | 官方推荐的厂商分组。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为不带厂商前缀的裸 id(如 `glm-5.3`、`kimi-k3`)；价格取该网关自己的 CNY 牌价，其中若干条目当前处于折扣中 |
+| penguin-go | `PENGUIN_GO_API_KEY` | 预置中转站分组，固定 base URL `https://token.penguin.ooo/api`；未授权时可自动获取密钥，授权后可同步平台新增模型，也可以手动统一设置 |
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI(OpenAI 兼容)，预置 base URL `https://api.fireworks.ai/inference/v1`；API 模型 id 形如 `accounts/fireworks/models/<slug>` |
@@ -80,9 +81,9 @@ api_key = "sk-..."
 
 预置目录还收录了 OpenRouter 的免费档：`:free` 模型变体 `nvidia/nemotron-3-ultra-550b-a55b:free` 与统一路由 `openrouter/free`(Free Models Router)，零成本可用，但受 OpenRouter 免费档速率限制与数据政策约束。
 
-预置目录中的部分模型：deepseek-flash / deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(其中 `deepseek-flash`、`deepseek-v4-flash-vision-exp` 支持图像输入，`deepseek-v4-flash` 与 `deepseek-v4-pro` 为纯文本。自 2026-09-10 起，两个 V4 Flash id 已是退役名称，DeepSeek 改由 V4.1 Flash 承接、按 Flash 价计费——变的是价格，不是 V4 Flash 能读什么：要发图请用 `deepseek-flash`)、MiniMax-M3、gemini-3.8-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-6-astra / gpt-5.6 / gpt-5.5、glm-5.3 / glm-5.3-flash、kimi-k3、qwen3.8-max / qwen3.8-flash、seed-2.1-pro / seed-2.1-turbo / seed-evolving、dots-3-note-preview（TokenDance 上免费，512K 上下文）等(非完整清单)。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的条目记录官方高峰档，并声明其空闲时段规则：在北京时间周一至周五 9:00–12:00、14:00–18:00 之外，各档价格减半——模型页以「省 50%」徽标标记，成本中心按此计价。另有三条转售条目沿用同一套时段，因为卖家原样传递了 DeepSeek 自己的窗口：TokenDance 的 `deepseek-v4.1-flash` 与 `deepseek-v4-flash-vision-exp`，以及 OpenRouter 的 `deepseek/deepseek-v4.1-flash`。存盘的始终是高峰价，因此磁盘上的数字不会随 Project 创建或同步预置的时刻而变。`glm-5.3-flash` 收录了三份，三条都支持图像输入：AgentHub 的 GLM 客户端只为这一个 GLM id 转发图像部件(其余 GLM id 一律拒绝)，而 OpenRouter 上的 `z-ai/glm-5.3-flash` 与 TokenDance 分组的同名条目走通用 OpenAI 兼容客户端，对任何 id 都能携带图片。三条不一致的是价格：每一条都记录各自卖家的收费，因此促销期间三者不同。
+预置目录中的部分模型：deepseek-flash / deepseek-v4-pro / deepseek-v4-flash / deepseek-v4-flash-vision-exp(其中 `deepseek-flash`、`deepseek-v4-flash-vision-exp` 支持图像输入，`deepseek-v4-flash` 与 `deepseek-v4-pro` 为纯文本。自 2026-09-10 起，两个 V4 Flash id 已是退役名称，DeepSeek 改由 V4.1 Flash 承接、按 Flash 价计费——变的是价格，不是 V4 Flash 能读什么：要发图请用 `deepseek-flash`)、MiniMax-M3、gemini-3.8-flash、claude-opus-5 / claude-opus-4-8 / claude-sonnet-5、gpt-6-astra / gpt-5.6 / gpt-5.5、glm-5.3 / glm-5.3-flash、kimi-k3、qwen3.8-max / qwen3.8-flash、seed-2.1-pro / seed-2.1-turbo / seed-evolving、dots-3-note-preview（TokenDance 上免费，512K 上下文）等(非完整清单)。Penguin Go 分组的 DeepSeek 条目跟随 DeepSeek 当前的模型阵容，只收录 `deepseek-flash` 与 `deepseek-v4-pro`。OpenAI 全系列都收录了两份——直连(用自己的 OpenAI Key，记牌价)与 OpenRouter 上的 `openai/<id>`(记网关实际计费价，会随其促销浮动)。DeepSeek 直连分组的条目记录官方高峰档，并声明其空闲时段规则：在北京时间周一至周五 9:00–12:00、14:00–18:00 之外，各档价格减半——模型页以「省 50%」徽标标记，成本中心按此计价。另有三条转售条目沿用同一套时段，因为卖家原样传递了 DeepSeek 自己的窗口：TokenDance 的 `deepseek-v4.1-flash` 与 `deepseek-v4-flash-vision-exp`，以及 OpenRouter 的 `deepseek/deepseek-v4.1-flash`。存盘的始终是高峰价，因此磁盘上的数字不会随 Project 创建或同步预置的时刻而变。`glm-5.3-flash` 收录了三份，三条都支持图像输入：AgentHub 的 GLM 客户端只为这一个 GLM id 转发图像部件(其余 GLM id 一律拒绝)，而 OpenRouter 上的 `z-ai/glm-5.3-flash` 与 TokenDance 分组的同名条目走通用 OpenAI 兼容客户端，对任何 id 都能携带图片。三条不一致的是价格：每一条都记录各自卖家的收费，因此促销期间三者不同。
 
-TokenDance 分组的条目记录该网关的牌价，并在有促销时记录折扣率。当前有九个模型处于折扣中——`deepseek-v4-flash-0731`、`deepseek-v4-pro-0813` 与 `kimi-k3` 八折，`glm-5.3`、`glm-5.3-flash` 与 `qwen3.8-max` 九折，三条 Doubao Seed 条目（`seed-2.1-pro`、`seed-2.1-turbo`、`seed-evolving`）五折。另有两条条目不走固定折扣，而是沿用上文所述 DeepSeek 自己的空闲时段规则。它们的模型卡片显示当前实际计费的那个价格，并以徽标标出折扣率；新建 Project 预置的是**折后价**，因此成本中心按网关实际收费计价。自行修改过价格的条目不再显示折扣标记：此时那个数字属于你，而不是网关。
+TokenDance 分组的条目记录该网关的牌价，并在有促销时记录折扣率。当前有九个模型处于折扣中——`deepseek-v4-flash-0731`、`deepseek-v4-pro-0813` 与 `kimi-k3` 八折，`glm-5.3`、`glm-5.3-flash` 与 `qwen3.8-max` 九折，三条 Doubao Seed 条目（`seed-2.1-pro`、`seed-2.1-turbo`、`seed-evolving`）五折。另有两条条目不走固定折扣，而是沿用上文所述 DeepSeek 自己的空闲时段规则。它们的模型卡片显示当前实际计费的那个价格，并以徽标标出折扣率。新建 Project 预置的是**牌价**：折扣率由服务端另行保存（存于 `web.db`，不写入 `.project_config.toml`），计算成本时再从牌价中扣除，因此成本中心按网关实际收费计价。自行修改条目的价格会取消其促销，也不再显示空闲时段折扣标记：此时那个数字属于你，而不是网关。
 
 ## 应用归因
 
@@ -97,17 +98,25 @@ TokenDance 分组的条目记录该网关的牌价，并在有促销时记录折
 
 其余端点(所有直连厂商，以及不读归因头的网关)不会收到任何额外请求头。归因头只声明应用身份，不携带用户、Agent 或会话信息。
 
+## Penguin Go 预置分组
+
+`penguin-go` 与 TokenDance 一样是内置模型分组。新建 Project 会直接带上该分组在目录中的模型；已有 Project 通过模型页的「同步预置」补入。内置条目提供指向 `https://token.penguin.ooo/api` 的稳定初始路由；授权或「同步」时返回的平台模型清单还可以把本地缺失的模型 id 连同协议、端点、显示名称、上下文窗口、视觉能力和平台价格一起补入。与其他内置分组一样，同步新增的模型不会设置由用户管理的 `max_tokens` 覆盖值，而是沿用 Agent 设置。对已有条目会刷新三档平台价格和客户端协议；端点及其他由 Project 管理的配置不被覆盖，条目也不会被删除；纯 Embedding 条目不加入。与其他分组一样，`.project_config.toml` 记录的是牌价；平台的固定促销折扣由服务端存入 `web.db`，计算成本时从牌价中扣除，并显示为模型卡片的折扣标识。这些折扣只来自平台：「同步预置」不会写入，每次授权或「同步」都会整体替换。折扣记录丢失时按牌价计价，直到下一次授权或「同步」写回。平台返回的是 USD 每百万 Token 的峰值价格。当前内置的 Penguin Go DeepSeek 条目声明了与 DeepSeek 直连分组相同的北京时间空闲时段规则，因此模型卡片和成本记录会在工作日 9:00–12:00、14:00–18:00 之外按半价计算。
+
+分组尚未配置平台 Key 时，「自动获取密钥」会在用户点击授权后创建一次性请求，并在新标签页打开 Penguin Go 授权页，由本地服务端完成轮询。浏览器只拿到授权 URL 和本地 flow id；设备密钥与交付的 API Key 都留在服务端。授权成功后会校验 `connection.apiKey`、端点和模型清单：Key 写入该分组全部既有模型，平台新增模型则连同推荐协议、端点、名称、上下文窗口、视觉能力和牌价一起加入，已有平台模型的价格和客户端协议同步为平台返回值，随后用平台返回的折扣整体替换该分组的促销折扣。同步会保留既有端点和其他由 Project 管理的配置，也不会删除模型；账户和余额不保存也不展示。
+
+配置过平台 Key 后，分组会在「添加模型」左侧显示独立的「同步」动作，「自动获取密钥」仍然保留，方便改用另一个平台账户的 Key。「同步」使用已保存的 Key 请求平台最新模型清单，并补充新增模型、刷新已有模型的平台元数据；模型清单没有产生变化时保持配置文件不变。若平台返回 Key 已失效或被撤销，模型页会自动重新打开授权流程。Penguin Go 的网页登录会话和 API Key 是两套状态：网页登录过期不会阻止有效 Key 继续同步，只有 Key 本身无效时才需要重新授权。
+
 ## 授权新建 API key
 
-若某个供应商公开了授权流程，模型页的该分组头部会多出一个动作：**自动获取密钥**。内置分组中只有 TokenDance 提供。它会在你的账户下**新建**一个 key，而不是读取你已有的 key，并写入该分组下的每一个模型，覆盖这些条目当前的 key。
+若某个供应商提供自动授权取 Key，模型页的该分组头部会多出一个动作：**自动获取密钥**。内置分组中 TokenDance 与 Penguin Go 都提供，成功后都会把新 Key 写入该分组下每一个模型，覆盖这些条目当前的 Key。Penguin Go 授权成功后还会显示独立的「同步」动作，用于增量获取平台后来开放的模型；原授权动作仍可用于更换账户。
 
-点击后会在新标签页打开供应商的授权页。在那里完成授权，供应商会把浏览器送回 PenguinHarness，由服务端兑换一次性授权码并保存 key；发起的那个标签页会自行报告结果。上文归因表中的同一个应用 URL 会写到这个 key 上，因此即便换用其他工具，用它发出的调用依然带着归因。
+点击后会在新标签页打开供应商的授权页，发起操作的模型页对话框会等待并报告结果。TokenDance 使用 PKCE 回调与兑换；Penguin Go 使用设备授权的 start / poll 接口。协议差异只存在于服务端，前端交互与写入分组 Key 的结果一致。
 
-整个兑换过程都在服务端进行：PKCE 的 verifier 在服务端生成、从不进入浏览器，新建出的 key 也直接写入模型表，不经过浏览器。一次授权只能换一个 key，且十分钟后过期。
+整个过程都在服务端进行：PKCE verifier 或设备密钥从不进入浏览器，新建出的 Key 直接写入模型表。一次授权只能交付一个 Key，并按供应商返回的截止时间过期；PenguinHarness 本地流程最长保留十分钟。
 
-如果跳转回不来——比如浏览器根本访问不到那个地址的服务——请选择**授权页跳不回来？改为手动填写授权码**。授权页会改为显示一次性授权码，粘贴到对话框即可完成同一套流程。
+TokenDance 在跳转回不来时支持手动填写一次性授权码；Penguin Go 由模型页轮询平台状态，不需要也不提供手动授权码入口。
 
-只有 Project owner 能发起授权，也只有他自己已登录的会话能完成授权——实际上就是打开着对话框的那个标签页。跳回地址本身不要求会话，也只能如此：供应商送回的浏览器未必就是你发起时的那一个。但跳回所做的只是把授权码交出来——在对话框去取结果之前，不会发生任何兑换，也不会有 key 被保存。完整的 key 只会出现一次，因此一旦保存失败，需要重新授权，并到供应商控制台删掉那个没用上的 key。
+只有 Project owner 能发起授权。完整 Key 不会回传 Web 前端；若 Penguin Go 的本地写入失败，服务端会短暂保留这次单次交付，允许直接重试写入而不再次授权。
 
 ## 本地 / 自建 OpenAI 兼容端点（如 vLLM）
 

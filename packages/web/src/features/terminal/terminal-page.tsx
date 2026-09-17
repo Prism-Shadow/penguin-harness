@@ -50,7 +50,7 @@ export function parseTerminalParams(search: string): TerminalPageParams {
   };
 }
 
-/** Rewrites `?id=` in place (keeping cwd/name so "new shell" can recreate alike). */
+/** Rewrites `?id=` in place (keeping cwd/name so "New terminal" can recreate alike). */
 function writeIdToUrl(id: string): void {
   const url = new URL(location.href);
   url.searchParams.set("id", id);
@@ -117,7 +117,7 @@ export function TerminalPage() {
     [generation],
   );
 
-  /** "New shell": drop the current session and recreate from cwd/name (id removed). */
+  /** "New terminal": drop the current session and recreate from cwd/name (id removed). */
   const restart = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     const url = new URL(location.href);
@@ -138,7 +138,7 @@ export function TerminalPage() {
    * Ctrl+W inside the terminal takes the dock tab's × path — confirm, then end the shell —
    * and then closes this window, which exists only to host that shell. A window the browser
    * will not let a script close (one opened by address rather than by the dock's detach)
-   * stays, showing the exited shell with "New shell" one click away. The kill is awaited
+   * stays, showing the exited shell with "New terminal" one click away. The kill is awaited
    * first so the dock's detach watcher, which probes the shell when the window closes, finds
    * it ended rather than restoring a tab for it.
    */

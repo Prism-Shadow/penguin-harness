@@ -519,6 +519,8 @@ export interface ModelInfo {
    */
   fastMode?: boolean;
   pricing?: ModelPricingDto;
+  /** Running promotion for this row — a fraction in (0, 1) off `pricing`, which is the list price — read from web.db. Absent when the row has none. */
+  discount?: number;
   /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
   envKey?: string;
   /**
@@ -577,6 +579,12 @@ export interface ModelUpdateEntry {
   /** Per-model fast mode: only `true` is persisted; omitted or `false` clears the annotation (absent = off). */
   fastMode?: boolean;
   pricing?: ModelPricingDto;
+  /**
+   * Promotion to store for this row, a fraction in (0, 1) off `pricing`; `null` clears it. Omitted
+   * keeps the stored promotion — unless this entry renames the row or changes its pricing, which
+   * clears it.
+   */
+  discount?: number | null;
   /** Providing it overwrites and updates createdAt; omitting it keeps the existing value. */
   apiKey?: string;
   /** When true, clears the stored api_key. */
@@ -846,6 +854,37 @@ export interface ModelOAuthCodeResponse {
   ok: boolean;
   applied?: number;
   error?: ModelOAuthErrorCode;
+}
+
+// ---------------------------------------------------------------------------
+// Penguin Go key authorization (/api/projects/:p/platform-auth, owner)
+// ---------------------------------------------------------------------------
+
+export interface PlatformAuthStartResponse {
+  flowId: string;
+  authorizeUrl: string;
+  expiresAt: string;
+}
+
+export type PlatformAuthFlowErrorCode =
+  | "unreachable"
+  | "upstream_failed"
+  | "invalid_key"
+  | "expired"
+  | "locked"
+  | "already_delivered"
+  | "apply_failed";
+
+export interface PlatformAuthFlowStatusResponse {
+  status: "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
+  error?: PlatformAuthFlowErrorCode;
+  applied?: number;
+}
+
+/** Result of refreshing Penguin Go's catalog with the Project's stored platform key. */
+export interface PlatformModelSyncResponse extends ModelsResponse {
+  added: number;
+  updated: number;
 }
 
 // ---------------------------------------------------------------------------

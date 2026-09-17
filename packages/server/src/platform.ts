@@ -67,6 +67,7 @@ import { ServerSettingsRepo } from "./db/repos/server-settings.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { SessionsRepo } from "./db/repos/sessions.js";
 import { ProjectsRepo } from "./db/repos/projects.js";
+import { ModelPromotionsRepo } from "./db/repos/model-promotions.js";
 import { MembersRepo } from "./db/repos/members.js";
 import { AgentsRepo } from "./db/repos/agents.js";
 import { UsageRepo } from "./db/repos/usage.js";
@@ -81,6 +82,7 @@ import { UsageRecorder } from "./runtime/usage-recorder.js";
 import { UsageService } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthService } from "./services/model-oauth-service.js";
+import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
@@ -250,12 +252,14 @@ export class IdentityModule {}
 @Module({
   children: [
     ProjectsRepo,
+    ModelPromotionsRepo,
     MembersRepo,
     AgentsRepo,
     ProjectAccess,
     ProjectService,
     ProjectConfigService,
     ModelOAuthService,
+    PlatformAuthProvider,
     ProjectsRoutes,
     ProjectAdminRoutes,
   ],
@@ -267,6 +271,7 @@ export class IdentityModule {}
     ProjectLifecycle,
     ProjectConfigStore,
     ModelOAuth,
+    PlatformAuth,
     InitialProjectProvisioner,
   ],
 })
