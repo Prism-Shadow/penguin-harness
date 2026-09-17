@@ -16,7 +16,6 @@ import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/a
 import { S } from "../../lib/strings";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneInk } from "../../lib/tone";
 import {
   PERMISSION_LEVEL_GLYPH,
@@ -29,10 +28,6 @@ import { SettingsDialog } from "../settings/settings-dialog";
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 const FS_MODES: SessionSandbox["mode"][] = ["read-only", "workspace-write", "danger-full-access"];
 const NETWORK_MODES: SessionSandbox["network"][] = ["open", "none"];
-
-/** lucide `external-link`: More… leaves the menu for the Settings page. */
-const OPEN_SETTINGS_GLYPH =
-  "M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6";
 
 /** A section's small heading inside the panel. */
 function Heading({ children }: { children: ReactNode }) {
@@ -212,7 +207,6 @@ export function PermissionSelect({
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-600 transition-colors duration-150 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
               >
                 <span className="min-w-0 flex-1 truncate whitespace-nowrap">{P.more}</span>
-                <GlyphIcon d={OPEN_SETTINGS_GLYPH} size={ICON_SIZE.caretDense + 2} />
               </button>
             </>
           )}

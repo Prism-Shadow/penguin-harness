@@ -2617,71 +2617,75 @@ export function ChatInput({
               className="hidden"
               onChange={onPickAttachments}
             />
-            {/* "+" extension menu, leading the row: input add-ons (image upload, file
+            {/* The three icon buttons — +, permission, skills — sit as one tight cluster: the
+                row's wider gap would read them as unrelated controls. */}
+            <div className="flex shrink-0 items-center gap-0.5">
+              {/* "+" extension menu, leading the row: input add-ons (image upload, file
                 attachment, goal mode) plus the input settings footer (mid-run send mode —
                 usable while running, which is exactly when it matters, so the button itself
                 never disables). The uploads live in here rather than as their own toolbar
                 buttons: one 8x8 slot instead of three, which is the difference between the
                 phone row scrolling and not. */}
-            {variant === "session" && (
-              <PlusMenu
-                items={[
-                  {
-                    key: "image",
-                    icon: IMAGE_ICON,
-                    label: S.chat.uploadImage,
-                    // Without vision the images still send — as scratchpad file paths — so the
-                    // entry stays usable and the hint says what will happen instead. Goal mode
-                    // sends them that way on any model, since the objective is re-injected as
-                    // text every round.
-                    desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
-                    active: images.length > 0,
-                    onSelect: () => imageInputRef.current?.click(),
-                  },
-                  {
-                    key: "file",
-                    icon: PAPERCLIP_ICON,
-                    label: S.chat.uploadFile,
-                    // The description doubles as the explanation of where the file ends up:
-                    // it is filed into the session scratchpad and reached by path, never
-                    // inlined into the conversation.
-                    desc: S.chat.uploadFileDesc,
-                    active: attachments.length > 0,
-                    // Unlike images, a file cannot ride a goal: nothing folds it into the
-                    // objective that every round re-injects, so the server refuses it.
-                    disabled: goalOn,
-                    onSelect: () => attachmentInputRef.current?.click(),
-                  },
-                  {
-                    key: "goal",
-                    icon: GOAL_ICON,
-                    label: S.chat.goalMode,
-                    desc: S.chat.goalModeDesc,
-                    active: goalOn,
-                    disabled: running || compacting || busy,
-                    onSelect: () => toggleGoal(!goalOn),
-                  },
-                ]}
-                footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
+              {variant === "session" && (
+                <PlusMenu
+                  items={[
+                    {
+                      key: "image",
+                      icon: IMAGE_ICON,
+                      label: S.chat.uploadImage,
+                      // Without vision the images still send — as scratchpad file paths — so the
+                      // entry stays usable and the hint says what will happen instead. Goal mode
+                      // sends them that way on any model, since the objective is re-injected as
+                      // text every round.
+                      desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                      active: images.length > 0,
+                      onSelect: () => imageInputRef.current?.click(),
+                    },
+                    {
+                      key: "file",
+                      icon: PAPERCLIP_ICON,
+                      label: S.chat.uploadFile,
+                      // The description doubles as the explanation of where the file ends up:
+                      // it is filed into the session scratchpad and reached by path, never
+                      // inlined into the conversation.
+                      desc: S.chat.uploadFileDesc,
+                      active: attachments.length > 0,
+                      // Unlike images, a file cannot ride a goal: nothing folds it into the
+                      // objective that every round re-injects, so the server refuses it.
+                      disabled: goalOn,
+                      onSelect: () => attachmentInputRef.current?.click(),
+                    },
+                    {
+                      key: "goal",
+                      icon: GOAL_ICON,
+                      label: S.chat.goalMode,
+                      desc: S.chat.goalModeDesc,
+                      active: goalOn,
+                      disabled: running || compacting || busy,
+                      onSelect: () => toggleGoal(!goalOn),
+                    },
+                  ]}
+                  footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
+                  direction={models && onChangeModel ? "down" : "up"}
+                />
+              )}
+              <PermissionSelect
+                approvalMode={approvalMode}
+                sandbox={sandbox}
+                onChangeApprovalMode={onChangeApprovalMode}
+                onChangeSandbox={onChangeSandbox}
+                disabled={modeSaving}
                 direction={models && onChangeModel ? "down" : "up"}
               />
-            )}
-            <PermissionSelect
-              approvalMode={approvalMode}
-              sandbox={sandbox}
-              onChangeApprovalMode={onChangeApprovalMode}
-              onChangeSandbox={onChangeSandbox}
-              disabled={modeSaving}
-              direction={models && onChangeModel ? "down" : "up"}
-            />
-            {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
-            <SkillSelect
-              skills={skills}
-              selected={selectedSkills}
-              onToggle={toggleSkill}
-              disabled={running || compacting || busy}
-              direction={models && onChangeModel ? "down" : "up"}
-            />
+              {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
+              <SkillSelect
+                skills={skills}
+                selected={selectedSkills}
+                onToggle={toggleSkill}
+                disabled={running || compacting || busy}
+                direction={models && onChangeModel ? "down" : "up"}
+              />
+            </div>
             {/* Help text: shown only when the card is wide enough (@lg); it never competes for
                 space on phones, where the group scrolls instead. */}
             <span
