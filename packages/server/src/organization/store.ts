@@ -332,8 +332,11 @@ export class OrgStore {
   // ---- tickets ----
 
   /**
-   * Every ticket file across months and columns. A file whose name is not a ticket id, or
-   * that sits in a directory that is not a column, is skipped — it is not a ticket.
+   * Every `.md` file under a `<yyyy-mm>/<column>/` directory, its name minus the extension
+   * taken as the ticket id. Anything outside that shape — another month directory, a
+   * directory that is not one of the columns, a file that is not Markdown — is skipped.
+   * The id itself is NOT matched against `TICKET_ID_PATTERN` here: a file named by hand is
+   * still a ticket the board has to show, and what it is called is the caller's to judge.
    */
   async listTickets(dir: string): Promise<TicketFile[]> {
     const out: TicketFile[] = [];
@@ -400,7 +403,7 @@ export class OrgStore {
     await writeText(ticketPath(dir, ticketId, column), serializeTicket(doc));
   }
 
-  /** Rewrites the file in its new column and removes the old one (the header was updated by the caller). */
+  /** Rewrites the file in its new column and removes the old one (the frontmatter was updated by the caller). */
   async moveTicket(
     dir: string,
     ticketId: string,

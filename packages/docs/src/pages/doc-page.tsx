@@ -21,6 +21,7 @@ import { useLocale } from "../state/locale";
 import { docMarkdown, docTitle, getDoc } from "../lib/docs";
 import { HOME_SLUG, pagerFor, sectionOf } from "../lib/nav";
 import { extractToc, slugifyHeading } from "../lib/toc";
+import { hashTargetId } from "../lib/hash";
 import { remarkCallout } from "../lib/remark-callout";
 import { remarkTabs } from "../lib/remark-tabs";
 import { CopyMarkdownButton } from "../components/copy-markdown-button";
@@ -189,7 +190,7 @@ export function DocPage() {
   useEffect(() => {
     if (toc.length < 2) return;
     // Deep links carry the anchor percent-encoded (CJK headings); pin it if it is ours.
-    const initialHash = decodeURIComponent(window.location.hash.slice(1));
+    const initialHash = hashTargetId(window.location.hash);
     pinnedId.current = toc.some((entry) => entry.id === initialHash) ? initialHash : null;
     let raf = 0;
     const update = () => {
@@ -227,7 +228,7 @@ export function DocPage() {
     // Same-page hash navigation (address bar / in-content anchors) re-runs no effect,
     // so re-evaluate the pin whenever the hash changes.
     const onHashChange = () => {
-      const hash = decodeURIComponent(window.location.hash.slice(1));
+      const hash = hashTargetId(window.location.hash);
       if (toc.some((entry) => entry.id === hash)) {
         pinnedId.current = hash;
         setActiveId(hash);

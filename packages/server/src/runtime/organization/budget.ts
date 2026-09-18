@@ -1,7 +1,7 @@
 /**
  * Spend attribution for an organization: every cost figure is derived from usage records
  * joined to the sessions the organization's files claim — desk sessions from the ledger,
- * contributing sessions from the tickets' `Sessions` headers. Nothing is stored; the
+ * contributing sessions from the tickets' `sessions` fields. Nothing is stored; the
  * budget marks in SQLite only remember which alerts already fired.
  */
 import type { TicketDoc } from "../../organization/files.js";
@@ -22,7 +22,7 @@ export interface OrgSpend {
   cumulative: Map<string, number>;
   /** A ticket's share of its contributing sessions (a session on n tickets counts 1/n). */
   ticket: Map<string, number>;
-  /** A ticket's share plus its descendants' along `Parent`. */
+  /** A ticket's share plus its descendants' along `parent`. */
   ticketRolledUp: Map<string, number>;
   /** Some usage ran on an unpriced model. */
   unpriced: boolean;

@@ -1,49 +1,57 @@
 ---
 title: Introduction
-description: What PenguinHarness is, what ships in the box, and the design tenets behind it.
+description: What PenguinHarness is, what ships in the box, and where to start.
 ---
 
-PenguinHarness is an open-source AI Agent harness — a complete TypeScript stack built for constructing and evolving agents. It deploys fully locally (your data never leaves the machine), runs on as little as a single CPU, and reaches 1000+ online and local models through one unified model gateway.
+Welcome to the PenguinHarness documentation. PenguinHarness is an open-source agent harness for building, running, evaluating and improving AI agents, built as one TypeScript stack. It deploys fully locally, so everything it stores stays on your machine; it runs on as little as a single CPU, and one unified model gateway reaches 1000+ online and local models.
 
-In one line: **Efficient Self-Improving Harness for Everyone.**
+## Get started
 
-## The three pillars
+Work through these pages in order:
 
-PenguinHarness is organized around three radiating concepts — the message protocol, the SDK, and the skill library — each carrying one pillar:
-
-| Pillar | Meaning |
-| --- | --- |
-| **Simplest Is the Best** | A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, complex tasks done efficiently. |
-| **Harness for Building Agents** | With the PenguinHarness SDK, an Agent builds complete Agent applications for you — autonomously, from scratch. |
-| **Harness for Recursive Self-Improvement** | With PenguinHarness Skills, an Agent evaluates and optimizes itself, improving recursively over time. |
+1. [Quickstart](/quickstart): install PenguinHarness with the desktop app, the CLI, Docker or the SDK, and run your first Task.
+2. [Key concepts](/concepts): learn the terms these docs use, such as Project, Session, Task and Workspace.
+3. [Conversations](/chat): work with an agent in a conversation and follow what it does.
+4. [Agents](/agents): create agents and configure their prompts, Skills, memory and tools.
+5. [Evaluation Center](/evaluation-center): measure an agent against a Benchmark and improve it.
 
 ## What ships in the box
 
-One install gives you four layers that share a single data directory and a single message protocol:
+PenguinHarness is made of these components. They share one data root and one message protocol, so you can mix them freely.
 
 | Component | Package | Description |
 | --- | --- | --- |
-| SDK | `@prismshadow/penguin-core` | The core engine: ReAct loop, the [OmniMessage protocol](/omni-message), the LLM and Environment [interface contracts](/interfaces), Agent State and Trace. |
-| CLI | `@prismshadow/penguin-cli` | The `penguin` command: interactive REPL, one-shot task runs, model and Vault configuration. |
-| Server | `@prismshadow/penguin-server` | The Web backend: HTTP [API and SSE streaming](/server-api), multi-user auth, Project authorization, usage statistics. |
-| Web App | `@prismshadow/penguin-web` | The browser UI: multi-session chat, Agent management, skill library, model configuration, Trace observability and the evaluation center. |
+| SDK | `@prismshadow/penguin-core` | The core engine: the ReAct loop, the [OmniMessage protocol](/omni-message), the LLM and Environment [interface contracts](/interfaces), Agent State and Trace. |
+| CLI | `@prismshadow/penguin-cli` | The `penguin` command: an interactive REPL, one-shot Task runs, and model and Vault configuration. |
+| Server | `@prismshadow/penguin-server` | The Web backend: the HTTP [API and SSE streaming](/server-api), multi-user auth, Project authorization and usage statistics. |
+| Web App | `@prismshadow/penguin-web` | The browser UI: multi-session chat, agent management, the plugin library, model configuration, Trace observability and the Evaluation Center. |
+| Desktop app | `@prismshadow/penguin-desktop` | The Web App as a standalone application for macOS, Windows and Linux. It embeds the server and installs the `penguin` command. |
+
+## The three pillars
+
+PenguinHarness is summed up in one line, **Efficient Self-Improving Harness for Everyone**, and organized around three concepts: the message protocol, the SDK and the skill library. Each concept carries one pillar:
+
+| Pillar | Meaning |
+| --- | --- |
+| **Simplest Is the Best** | A deliberately minimal toolset over clean low-level interfaces: fewer tool calls, fewer Tokens, and complex tasks done efficiently. |
+| **Harness for Building Agents** | With the PenguinHarness SDK, an agent builds complete agent applications for you, autonomously and from scratch. |
+| **Harness for Recursive Self-Improvement** | With PenguinHarness Skills, an agent evaluates and optimizes itself, improving recursively over time. |
 
 ## Design tenets
 
-These principles run through every component; the design pages keep coming back to them:
+These principles run through every component, and the design pages keep coming back to them:
 
-- **A minimal toolset**: dedicated file tools (`read_file` / `edit_file` / `write_file`) for precise reading and editing, with the shell (`exec_command`) as the general-purpose fallback for everything else. See [Tools & Approval](/tools).
-- **Agents are editable data**: prompts, Skills and config are editable files on disk, not hardcoded constants — what you can see, an Agent can improve. See the [Configuration Reference](/configuration).
-- **Everything observable**: every request, tool call and approval decision is appended to the [Trace](/sessions-and-traces); a Session restores fully from it.
-- **Errors converge into messages**: model and tool failures never throw — they become messages the model can react to. See [The Agent Loop](/agent-loop).
-- **Streaming first**: text streams token by token; tool calls and results appear live.
-- **Model ↔ Agent decoupling**: an Agent never binds to a model; you pick one per Session. See [Models & Providers](/models).
+- **A minimal toolset**: dedicated file tools (`read_file` / `edit_file` / `write_file`) handle precise reading and editing, and the shell (`exec_command`) is the general-purpose fallback for everything else. See [Tools & Approval](/tools).
+- **Agents are editable data**: prompts, Skills and config are editable files on disk, not hardcoded constants. What you can see, an agent can improve. See the [Configuration Reference](/configuration).
+- **Everything is observable**: every request, tool call and approval decision is appended to the [Trace](/sessions-and-traces), and a Session restores fully from it.
+- **Errors converge into messages**: model and tool failures never throw. They become messages the model can react to. See [The Agent Loop](/agent-loop).
+- **Streaming first**: text streams token by token, and tool calls and results appear live.
+- **Models and agents are decoupled**: an agent never binds to a model; you pick one per Session. See [Models & Providers](/models).
 
 ## A note on naming
 
-The unified message protocol is called **OmniMessage** in technical writing (marketing materials also call it Penguin Message). This documentation uses OmniMessage throughout.
+The unified message protocol is called **OmniMessage** in technical writing, and marketing materials also call it Penguin Message. This documentation uses OmniMessage throughout.
 
-## Next steps
+## Learn how it works
 
-- Follow the [Quickstart](/quickstart): install PenguinHarness by whichever route fits you — desktop app, CLI, Docker, or SDK — and run your first Task.
-- Start the design docs at the [Architecture](/architecture) overview to see how the pieces fit together.
+To see how the pieces fit together, start the design pages at the [Architecture](/architecture) overview.

@@ -1,7 +1,8 @@
 /**
  * Single-column sidebar, top to bottom:
- * Project switcher -> new chat (default_agent draft) + page nav (Agents → Evaluation Center,
- * one collapsible group behind a nav-row-wide chevron button under its last entry: arrow
+ * Project switcher -> new chat (a draft on the Project's new-chat defaults) + page nav
+ * (Agents → Evaluation Center, one collapsible group behind a nav-row-wide chevron button
+ * under its last entry: arrow
  * up = click to collapse, arrow down while collapsed = the way back; state persists in
  * localStorage, the pinned new-chat block never collapses) -> Session area with three grouping
  * modes (chosen in the section header's list options; the
@@ -26,12 +27,13 @@
  * six pages in the nav group, and the channel list where the conversation list is, followed
  * by the organization's own 工位 group — one row per employee
  * (features/company/channel-sidebar.tsx, features/company/org-session-groups.tsx). The
- * development list is the user's OWN conversations only: an organization's desk and ticket
- * Sessions are filtered out of every group, bucket and folder here.
+ * development list is the user's OWN conversations only: an organization's desk, ticket and
+ * sub-sessions are left out of its fetches and totals by the server, and out of every group,
+ * bucket and folder here should one still arrive.
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
- * New chats always enter draft state (/chat/new, route state specifies the Agent and optionally
- * the Workspace): Model / Workspace / approval mode are all chosen on the draft input card, so
- * there's no longer a separate "quick / advanced" pair of new-chat dialogs.
+ * New chats always enter draft state (/chat/new; a group header's "+" names its group's Agent or
+ * Workspace in route state): Model / Workspace / approval mode are all chosen on the draft input
+ * card, so there's no longer a separate "quick / advanced" pair of new-chat dialogs.
  * Color scheme is white/gray-based: active state uses a solid gray fill, running status uses a small color dot, no large blocks of color.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -60,7 +62,6 @@ import {
   aggregateWorkspaceCounts,
   aggregateWorkspaceLatest,
   clampGroupPage,
-  countsWithoutOrgSessions,
   completeWorkspaceGroups,
   foldedShare,
   groupPageCount,
@@ -73,7 +74,6 @@ import {
   partitionSessions,
   revealPlan,
   sessionCategory,
-  splitDevelopmentList,
   totalCategoryCounts,
   withoutOrgSessions,
   workspaceGroupKey,
@@ -172,11 +172,11 @@ import { WorkspaceSelect } from "../../features/chat/workspace-select";
 import { clearDraft, sessionDraftKey } from "../../features/chat/draft-cache";
 import {
   draftSessionTitle,
-  parkActiveDraft,
   removeDraftSession,
   useDraftSessions,
 } from "../../features/chat/draft-sessions";
 import type { DraftSessionEntry } from "../../features/chat/draft-sessions";
+import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { CreateProjectDialog, ProjectSettingsDialog } from "./project-dialogs";
 import { UserMenu } from "./user-menu";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
@@ -391,14 +391,13 @@ export function Sidebar({
     setCurrentProjectId,
     reloadProjects,
     agents,
-    currentAgent,
     setCurrentAgentId,
   } = useProject();
   const {
     sessions: allSessions,
     byAgent: allByAgent,
-    countsByAgent: serverCountsByAgent,
-    workspaceCountsByAgent: serverWorkspaceCounts,
+    countsByAgent,
+    workspaceCountsByAgent,
     workspaceLatestByAgent,
     isLoadedFor,
     hasMoreFor,
@@ -425,27 +424,21 @@ export function Sidebar({
    * The rows this list renders: the user's OWN conversations. An organization's desk and
    * ticket Sessions (marked by `orgId`, or by the durable `client === "org"` stamp once the
    * organization is gone) are driven by its scheduler and are reached as themselves in company
-   * mode — a desk from the 工位 group, a ticket session from its ticket — so they are
-   * filtered out here — once, at the source, or a
-   * dropped row would still conjure the Workspace group, Agent group or time bucket it belongs
-   * to. They are filtered whatever the company-mode switches say (see withoutOrgSessions):
-   * this list is the user's conversations, and a switch about the shell does not turn a
-   * scheduler's Session into one.
+   * mode — a desk from the 工位 group, a ticket session from its ticket. The store's own
+   * fetches already leave them out, totals and Workspace stamps included (the server's
+   * `excludeOrg`), so the counts below are the list's exact share; this filter is for a row
+   * that entered by another door (the chat page's deep-link self-heal), applied once, at the
+   * source, or the dropped row would still conjure the Workspace group, Agent group or time
+   * bucket it belongs to. It applies whatever the company-mode switches say (see
+   * withoutOrgSessions): this list is the user's conversations, and a switch about the shell
+   * does not turn a scheduler's Session into one.
    */
-  const devList = useMemo(() => splitDevelopmentList(allSessions), [allSessions]);
-  const sessions = devList.own;
+  const sessions = useMemo(() => withoutOrgSessions(allSessions), [allSessions]);
   const byAgent = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
     for (const [agentId, rows] of allByAgent) map.set(agentId, withoutOrgSessions(rows));
     return map;
   }, [allByAgent]);
-  // …and the server totals those rows are counted in, corrected the same way, so a group
-  // header never promises rows this list will not draw.
-  const { byAgent: countsByAgent, byWorkspace: workspaceCountsByAgent } = useMemo(
-    () =>
-      countsWithoutOrgSessions(serverCountsByAgent, serverWorkspaceCounts, devList.organization),
-    [serverCountsByAgent, serverWorkspaceCounts, devList],
-  );
 
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */
@@ -1204,18 +1197,18 @@ export function Sidebar({
   /**
    * New chat: enters draft state (/chat/new) without creating a Session — Model / Workspace /
    * approval mode are all chosen on the draft input card, and the Session is only actually
-   * created when the first message is sent. The route state explicitly carries the target
-   * Agent: the agent-mode group header's "+" uses that group's Agent, while the menu's "New
-   * chat" uses default_agent; this explicit intent overrides the previously selected Agent in
-   * the draft cache (the rest of the draft content, such as the message body, is preserved).
-   * The workspace-mode group header's "+" additionally carries that group's Workspace path
-   * ("" = a temporary workspace), pre-filling the draft's Workspace selection the same way.
+   * created when the first message is sent. Route state carries only what the clicked entry
+   * is about: the agent-mode group header's "+" names that group's Agent, the workspace-mode
+   * group header's "+" names that group's Workspace path ("" = a temporary workspace), and the
+   * pinned "New chat" and the header's create button name nothing. Every field left unnamed
+   * starts on the Project's new-chat defaults, then the built-in fallback (new-chat.ts).
    */
-  const newChat = (agentId?: string, workspace?: string) => {
+  const newChat = ({ agentId, workspace }: { agentId?: string; workspace?: string } = {}) => {
     // Typed-but-unsent text in the ACTIVE new-chat draft becomes a parked draft
     // conversation first (a row in the list below, sendable anytime — draft-sessions.ts),
-    // so this click always lands on an empty composer and never silently shelves content.
-    if (user && currentProjectId) parkActiveDraft(user.userId, currentProjectId);
+    // so this click always lands on an empty composer and never silently shelves content;
+    // the selections a text-less earlier visit left behind are released with it.
+    if (user && currentProjectId) prepareNewChatDraft(user.userId, currentProjectId);
     if (agentId) setCurrentAgentId(agentId);
     const state = {
       ...(agentId ? { agentId } : {}),
@@ -1234,12 +1227,6 @@ export function Sidebar({
     if (activeSessionId === deletingDraft.id) navigate(`/chat/${DRAFT_SESSION_ID}`);
     setDeletingDraft(null);
   };
-
-  /** Target of the menu's "New chat": default_agent, falling back to the first Agent (if the list isn't ready yet, resolution is deferred to the draft page). */
-  const defaultAgentId = (agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId;
-
-  /** A Session always needs an Agent, so the workspace-mode "+" uses the current Agent, falling back to default_agent. */
-  const workspaceNewChatAgentId = currentAgent?.agentId ?? defaultAgentId;
 
   /** What the header's create button makes, and its tooltip (the created object follows the grouping mode). */
   const newEntity = newEntityForGroupMode(groupMode);
@@ -1868,7 +1855,7 @@ export function Sidebar({
         <div className="shrink-0 px-2 pb-2 pt-2">
           <button
             type="button"
-            onClick={() => newChat(defaultAgentId)}
+            onClick={() => newChat()}
             className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors duration-150 ${
               activeSessionId === DRAFT_SESSION_ID
                 ? "bg-gray-200/70 text-gray-900 dark:bg-gray-800 dark:text-gray-100"
@@ -2310,7 +2297,7 @@ export function Sidebar({
                               type="button"
                               title={S.chat.newSessionMenu}
                               aria-label={S.chat.newSessionMenu}
-                              onClick={() => newChat(agent.agentId)}
+                              onClick={() => newChat({ agentId: agent.agentId })}
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                             >
                               <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />
@@ -2411,12 +2398,12 @@ export function Sidebar({
                       actions={
                         <>
                           <GroupPinButton pinned={pinned} onToggle={() => togglePin(group.key)} />
-                          {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the current one, falling back to default_agent */}
+                          {/* New chat in this Workspace: pre-fills the group's path in the draft ("" = temporary workspace); the Agent is the Project's new-chat default, like any other new chat */}
                           <button
                             type="button"
                             title={S.chat.newSessionInWorkspace}
                             aria-label={S.chat.newSessionInWorkspace}
-                            onClick={() => newChat(workspaceNewChatAgentId, group.fullPath ?? "")}
+                            onClick={() => newChat({ workspace: group.fullPath ?? "" })}
                             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                           >
                             <Icon d="M12 5v14M5 12h14" size={ICON_SIZE.groupHeaderAction} />

@@ -2,6 +2,7 @@
  * Unit tests for the Session runtime (a fake Session / Loader is injected; no
  * real LLM requests are made): driving and state transitions, 409 mutual
  * exclusion, the four approval modes and taking effect immediately on change,
+ * an organization's session denying rather than waiting for a person who is not there,
  * abort collapsing to deny, self-healing id swaps, vault invalidation re-resuming
  * stale runtimes, and LLM / tool errors in the message stream being persisted
  * (core doesn't throw, so try/catch can't catch them).
@@ -873,6 +874,102 @@ describe("session-manager", () => {
     expect(recorded.some((m) => (m.payload as { text?: string }).text === "decision=allow")).toBe(
       true,
     );
+  });
+
+  it("an organization's session denies a call its mode would hand to a person, at once", async () => {
+    // A desk or ticket session as the organization runtime opens it: the organization's
+    // approval mode on the row, stamped `client: "org"`. Nobody is watching it.
+    sessions.insert({
+      ...ROW,
+      sessionId: "session-org",
+      approvalMode: "read-only",
+      client: "org",
+    });
+    const manager = makeManager(loaderOf(approvalFakeSession("session-org")));
+    const events = capture("session-org");
+    await manager.startTask("session-org", [userText("go")]);
+    // No decision is ever submitted here: the run settles on its own and ends normally.
+    await waitFor(() => manager.statusOf("session-org") === "idle");
+    expect(manager.pendingApprovalCount("session-org")).toBe(0);
+    expect(serverEvents(events).filter((e) => e.type === "approval_request")).toEqual([]);
+    expect(recorded.some((m) => (m.payload as { text?: string }).text === "decision=deny")).toBe(
+      true,
+    );
+
+    // Only that one route changed: a read-only tool is still auto-approved there.
+    recorded = [];
+    const manager2 = makeManager(loaderOf(approvalFakeSession("session-org", "read_tool")));
+    await manager2.startTask("session-org", [userText("go")]);
+    await waitFor(() => manager2.statusOf("session-org") === "idle");
+    expect(recorded.some((m) => (m.payload as { text?: string }).text === "decision=allow")).toBe(
+      true,
+    );
+  });
+
+  it("a development session under the same mode still waits for the person", async () => {
+    // Same approval mode, same tool — the row carries no organization stamp.
+    sessions.updateApprovalMode("session-1", "read-only");
+    const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
+    const events = capture("session-1");
+    await manager.startTask("session-1", [userText("go")]);
+    await waitFor(() => manager.pendingApprovalCount("session-1") === 1);
+    expect(serverEvents(events).filter((e) => e.type === "approval_request")).toHaveLength(1);
+    // Still parked on the question: no decision was made for it.
+    expect(manager.statusOf("session-1")).toBe("running");
+    expect(
+      recorded.some((m) => (m.payload as { type?: string }).type === "approval_decision"),
+    ).toBe(false);
+
+    // Answer it, so the run finishes rather than hanging.
+    expect(manager.decideApproval("session-1", "tc-1", "deny")).toBe(true);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    expect(recorded.some((m) => (m.payload as { text?: string }).text === "decision=deny")).toBe(
+      true,
+    );
+  });
+
+  it("a sub-session registered under an organization's Session inherits its org stamp; one under an ordinary Session stays unmarked", async () => {
+    // A desk session: the organization runtime stamped it at creation.
+    sessions.insert({ ...ROW, sessionId: "session-org", client: "org" });
+    const spawning = (sessionId: string, childId: string): RuntimeSession => ({
+      sessionId,
+      toolPermission: () => "rw",
+      generateTitle: async () => ({ title: null, usage: null }),
+      compactability: () => "ok" as const,
+      steer: () => false,
+      skipReconnectWait: () => false,
+      async *run() {
+        yield withOrigin(
+          sessionMeta({
+            session_id: childId,
+            model_id: "m-child",
+            provider: "custom",
+            model_context_window: 1000,
+            system_prompt: "sys",
+            agent_state: "/root/p1/child_agent/agent_state",
+            workspace: "/tmp/w-child",
+            source: "subagent",
+          }),
+          childId,
+        );
+        yield withOrigin(assistantText("child done"), childId);
+        yield assistantText("done");
+      },
+      async *compact() {},
+    });
+    const manager = makeManager({
+      load: async (row) =>
+        spawning(row.sessionId, row.sessionId === "session-org" ? "child-org" : "child-plain"),
+    });
+    await manager.startTask("session-org", [userText("go")]);
+    await waitFor(() => manager.statusOf("session-org") === "idle");
+    await manager.startTask("session-1", [userText("go")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle");
+    // The child is company mode's own as much as the desk that spawned it: development
+    // mode's list reads the stamp, and no organization cache ever names a sub-session.
+    expect(sessions.findById("child-org")?.client).toBe("org");
+    // An ordinary Session's child keeps the registration path's blank marker (read as web).
+    expect(sessions.findById("child-plain")?.client).toBeNull();
   });
 
   it("sub-session (origin) registration: session_meta persists; the title is generated from the spawning prompt", async () => {

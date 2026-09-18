@@ -23,7 +23,8 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { TRASH_ICON } from "../../components/ui/session-row-menu";
 import { toastSuccess } from "../../components/ui/toast";
-import { ID_PATTERN, caseId, isValidRuns, slugFromTitle } from "./benchmark-prompts";
+import { SemanticIdField } from "../semantic-id/semantic-id-field";
+import { ID_PATTERN, caseId, isValidRuns } from "./benchmark-prompts";
 
 interface CaseDraft {
   /** Stable React key, independent of position, so removing a case keeps the others' state. */
@@ -71,8 +72,6 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
   });
   const [title, setTitle] = useState("");
   const [id, setId] = useState("");
-  // The id follows the title until it is edited by hand.
-  const [idTouched, setIdTouched] = useState(false);
   const [description, setDescription] = useState("");
   const [runs, setRuns] = useState("1");
   const [cases, setCases] = useState<CaseDraft[]>(() => [newCase()]);
@@ -159,27 +158,29 @@ function CreateBenchmarkDialog({ onClose, projectId, onCreated }: CreateBenchmar
     >
       <div className="space-y-4">
         <p className="text-sm text-gray-600 dark:text-gray-300">{S.benchmark.manualCreateIntro}</p>
+        {/* The title comes first and the id is derived from it on request — by the model, so
+            a Chinese title gets English words — never rewritten while the title is typed. */}
         <Input
           label={S.benchmark.titleField}
           required
           value={title}
-          onChange={(e) => {
-            setTitle(e.target.value);
-            if (!idTouched) setId(slugFromTitle(e.target.value));
-          }}
+          onChange={(e) => setTitle(e.target.value)}
           {...errorProp(errors.title)}
         />
-        <Input
+        <SemanticIdField
+          projectId={projectId}
+          kind="benchmark"
           label={S.benchmark.idField}
           hint={S.benchmark.idHint}
-          required
+          generateHint={S.benchmark.idGenerateHint}
           value={id}
-          className="font-mono"
-          onChange={(e) => {
-            setIdTouched(true);
-            setId(e.target.value);
+          source={title.trim() || description}
+          error={errors.id}
+          disabled={busy}
+          onChange={(next) => {
+            setId(next);
+            setErrors((prev) => ({ ...prev, id: undefined }));
           }}
-          {...errorProp(errors.id)}
         />
         <Textarea
           label={S.benchmark.descriptionField}

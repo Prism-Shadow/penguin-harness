@@ -13,8 +13,8 @@ export const zh = {
     label: "公告",
     prev: "上一条公告",
     next: "下一条公告",
-    flashModels: "GLM-5.3 Flash 与 Qwen 3.8 Flash 现已在 PenguinHarness 可用",
-    fireworks: "携手 AMD 开发者计划：$50 Fireworks API 额度免费领取中",
+    flashModels: "DeepSeek V4.1 Flash 与 Gemini 3.8 Flash 现已在 PenguinHarness 上线",
+    penguinGo: "Penguin Go 官方 Token 包上线，Gemini 全系列模型 5 折",
   },
 
   nav: {
@@ -472,6 +472,7 @@ penguin run --message "分析 data.csv，输出季度销售额"`,
           "company-ceo",
           "company-hr",
           "company-finance",
+          "company-research",
           "company-mirror",
         ],
       },

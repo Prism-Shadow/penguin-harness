@@ -38,6 +38,15 @@ export function isAppUrl(url: string, origin: string | null): boolean {
   }
 }
 
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/**
+ * The host Workspace previews are served from. On loopback the server always puts the App on
+ * `localhost` and previews on this name (loopbackHostRoles in the server's preview-token
+ * service), and the desktop always loads the App on `localhost` (appOriginFor, attach mode).
+ */
+const PREVIEW_HOST = "127.0.0.1";
+
 /**
  * Whether a URL belongs to this instance's local surface: the app origin itself or its
  * loopback counterpart on the same port, which is where Workspace previews are served.
@@ -55,8 +64,95 @@ export function isLocalSurfaceUrl(url: string, origin: string | null): boolean {
     return false;
   }
   if (target.protocol !== app.protocol || target.port !== app.port) return false;
-  const loopback = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
-  return loopback.has(target.hostname) && loopback.has(app.hostname);
+  return LOOPBACK_HOSTS.has(target.hostname) && LOOPBACK_HOSTS.has(app.hostname);
+}
+
+/** "Open in a new tab" for a Workspace HTML file: mints a preview token, then 302s to the preview host. */
+const PREVIEW_REDIRECT_PATH = /^\/api\/sessions\/[^/]+\/files\/preview-redirect$/;
+
+/** A terminal detached from the dock into a window of its own. */
+const TERMINAL_PATH = "/terminal";
+
+/**
+ * Whether a URL may be handed to the operating system: a web page or a mail link. Never a
+ * file, a script or a custom protocol handler — a preview window runs Agent-written HTML, and
+ * `shell.openExternal` on such a URL launches whatever the OS has registered for it.
+ */
+export function isExternalScheme(url: string): boolean {
+  let protocol: string;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    return false;
+  }
+  return protocol === "http:" || protocol === "https:" || protocol === "mailto:";
+}
+
+/** What a window-open request may do; see classifyWindowOpen. */
+export type WindowOpenAction = "window" | "external" | "deny";
+
+/**
+ * Routes a request to open a new window — a `target="_blank"` link or a `window.open` call,
+ * from the main window or from any window it opened.
+ *
+ * `window`, a window of this app, is for the three URL shapes that cannot work anywhere else:
+ * - the Workspace preview hand-off, `/api/sessions/<id>/files/preview-redirect` on the app
+ *   origin. It mints its token with the session cookie, so the system browser would get a 401;
+ * - a preview page, `/preview/…` on the preview host, which is where a preview's own links and
+ *   `window.open` calls land;
+ * - a detached terminal, `/terminal` on the app origin: the page needs the session, and the
+ *   opener watches the window it gets back to return the tab to the dock when it closes.
+ *
+ * `external`, the system browser, is for an http(s) or mailto URL that is not this instance —
+ * another site, or another port on this machine, such as a dev server a conversation started.
+ *
+ * `deny` is everything else. Every other path on the app origin serves the SPA, and the
+ * preview host redirects every non-preview path back to it, so a relative link in a chat reply
+ * (`/chat/x.html`) would boot a second copy of the App in a new window on a page that does not
+ * exist — one more window per click. Other schemes (`file:`, custom protocol handlers) are
+ * refused outright rather than handed to the OS (isExternalScheme). With no origin, which no
+ * window ever sees, everything is refused.
+ */
+export function classifyWindowOpen(url: string, origin: string | null): WindowOpenAction {
+  if (origin === null || !isExternalScheme(url)) return "deny";
+  const target = new URL(url);
+  if (!isLocalSurfaceUrl(url, origin)) return "external";
+  // Parses: isLocalSurfaceUrl answers false for an origin that does not.
+  const appHost = new URL(origin).hostname;
+  if (target.hostname === appHost) {
+    return PREVIEW_REDIRECT_PATH.test(target.pathname) || target.pathname === TERMINAL_PATH
+      ? "window"
+      : "deny";
+  }
+  return target.hostname === PREVIEW_HOST && target.pathname.startsWith("/preview/")
+    ? "window"
+    : "deny";
+}
+
+/**
+ * A URL as a log line may show it: origin and path for a web URL, the scheme alone for any
+ * other. A query or a fragment can carry a token, and neither says where the request went.
+ */
+export function urlForLog(url: string): string {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return "an unparsable URL";
+  }
+  return target.protocol === "http:" || target.protocol === "https:"
+    ? `${target.origin}${target.pathname}`
+    : `a ${target.protocol} URL`;
+}
+
+/**
+ * The one inert window the Web App opens synchronously while Penguin Go creates an
+ * authorization flow. It must stay inside Electron until the real HTTPS URL arrives:
+ * handing `about:blank` to Windows asks the OS to find an application for the `about:`
+ * scheme and raises a system dialog instead of opening the user's browser.
+ */
+export function isAuthorizationBridgeUrl(url: string): boolean {
+  return url === "about:blank";
 }
 
 /** Max automatic server restarts before giving up with an error dialog. */

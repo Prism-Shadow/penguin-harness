@@ -13,30 +13,37 @@ import {
   attributionHeaders,
   effectivePricing,
   offPeakAt,
+  offPeakScheduledRefs,
   DEEPSEEK_OFF_PEAK,
+  QWEN_OFF_PEAK,
+  catalogModelEntries,
   presetModelEntries,
+  presetPromotions,
   providerClientType,
   providerInfo,
   fastModeProtocol,
   resolveModelEnv,
+  resolveProviderModelEnv,
 } from "../src/state/index.js";
 
 describe("model-catalog", () => {
-  it("(provider, model_id) pairs are unique; DeepSeek comes first (the default model's provider)", () => {
+  it("(provider, model_id) pairs are unique and provider order keeps the recommendation first", () => {
     // Bare model ids may repeat across providers (a gateway reselling a vendor model keeps the
-    // vendor's upstream id, e.g. Qwen Token Plan's glm-5.2 / deepseek-v4-pro) — uniqueness is
+    // vendor's upstream id, e.g. Qwen Token Plan's glm-5.3 / qwen3.8-max) — uniqueness is
     // the (provider, model_id) pair, matching the catalog's sole lookup key (catalogEntryFor).
     const pairs = MODEL_CATALOG.map((m) => `${m.provider}\0${m.modelId}`);
     expect(new Set(pairs).size).toBe(pairs.length);
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
-    // Group order is hand-curated, interleaving gateways and first-party vendors: TokenDance
-    // first (the recommended group), DeepSeek next (the default model's provider), vLLM last
+    // Group order is hand-curated, interleaving gateways and first-party vendors: the
+    // recommended TokenDance first, the prebuilt Penguin Go group next, DeepSeek after it,
+    // and vLLM last
     // among the vendors (self-hosted, so nothing in it runs until the user names a server)
     // and custom always last. This is the page's DEFAULT only — a Project that has reordered
     // its groups stores every key and keeps its own arrangement (web's model-group-order.ts).
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "tokendance",
+      "penguin-go",
       "deepseek",
       "openrouter",
       "fireworks",
@@ -55,10 +62,11 @@ describe("model-catalog", () => {
     // Exactly one group is marked recommended, and it is the one that leads the default
     // order: the caption and the placement are two statements of the same curation.
     expect(MODEL_PROVIDERS.filter((p) => p.recommended).map((p) => p.id)).toEqual(["tokendance"]);
-    expect(MODEL_PROVIDERS[0]!.recommended).toBe(true);
+    expect(providerInfo("tokendance")!.recommended).toBe(true);
     expect(providerInfo("siliconflow")!.label).toBe("SiliconFlow");
     expect(providerInfo("minimax")!.label).toBe("MiniMax");
     expect(providerInfo("minimax")!.envKey).toBe("MINIMAX_API_KEY");
+    expect(providerInfo("penguin-go")!.label).toBe("Penguin Go");
     // The catalog no longer includes GLM-5-Turbo.
     expect(ids).not.toContain("glm-5-turbo");
     // The OpenRouter and SiliconFlow gateway listings of GLM-5.1 were delisted 2026-08-06;
@@ -113,6 +121,65 @@ describe("model-catalog", () => {
     expect(oauth.exchangeUrl).toBe("https://tokendance.space/portal/api/v1/auth/keys");
     // The key's name is also the app name the authorization page shows.
     expect(oauth.keyName).toBe("PenguinHarness");
+  });
+
+  it("prebuilds Penguin Go with fixed relay routes and list prices, leaving promotions to the platform", () => {
+    const penguinGoModels = MODEL_CATALOG.filter((model) => model.provider === "penguin-go");
+    // The DeepSeek rows follow DeepSeek's own lineup: V4.1 Flash and V4 Pro 0813. The two
+    // retired V4 Flash ids are not resold.
+    expect(penguinGoModels.map((model) => model.modelId)).toEqual([
+      "gemini-3.8-flash",
+      "gemini-3.7-flash",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-3.1-pro-preview",
+      "deepseek-flash",
+      "deepseek-v4-pro",
+    ]);
+    expect(
+      penguinGoModels.every((model) => model.baseUrl === "https://token.penguin.ooo/api"),
+    ).toBe(true);
+    expect(
+      penguinGoModels.every(
+        (model) => model.pricing !== undefined && model.pricing.unit === "usd_per_mtok",
+      ),
+    ).toBe(true);
+    expect(
+      penguinGoModels
+        .filter((model) => model.modelId.startsWith("gemini-"))
+        .every((model) => model.clientType === "gemini-3.8"),
+    ).toBe(true);
+    expect(
+      penguinGoModels
+        .filter((model) => model.modelId.startsWith("deepseek-"))
+        .every((model) => model.clientType === "deepseek-v4"),
+    ).toBe(true);
+    expect(catalogEntryFor("penguin-go", "deepseek-flash")?.supportsVision).toBe(true);
+    expect(catalogEntryFor("penguin-go", "deepseek-v4-pro")).toMatchObject({
+      displayName: "DeepSeek V4 Pro 0813",
+      supportsVision: false,
+    });
+    // No static promotion: the platform delivers whatever it runs at authorization and Sync,
+    // so every row here is its list price and nothing else.
+    expect(penguinGoModels.filter((model) => model.discount !== undefined)).toEqual([]);
+    for (const modelId of ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"]) {
+      expect(catalogEntryFor("penguin-go", modelId)!.pricing, modelId).toEqual({
+        unit: "usd_per_mtok",
+        cache_read: 0.075,
+        cache_write: 0.75,
+        output: 3.75,
+      });
+    }
+    expect(catalogEntryFor("penguin-go", "deepseek-flash")).toMatchObject({
+      pricing: {
+        cache_read: 0.005714,
+        cache_write: 0.285714,
+        output: 1.142857,
+      },
+      offPeakDiscount: DEEPSEEK_OFF_PEAK,
+    });
   });
 
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
@@ -266,8 +333,8 @@ describe("model-catalog", () => {
     // It matches on (group, upstream id) pairs, so an identically named upstream id never
     // matches across the wrong group. There is no bare-id lookup at all: a gateway reselling a
     // vendor model keeps the vendor's upstream id, so a bare id names no single catalog entry
-    // and the catalog never offers to pick one (`glm-5.2`, `deepseek-v4-pro`, `qwen3.8-max`,
-    // `qwen3.7-plus` and `deepseek-v4-flash-0731` each appear under two groups).
+    // and the catalog never offers to pick one (`qwen3.7-plus` and `deepseek-v4-pro-0813` each
+    // appear under two groups; `glm-5.3`, `qwen3.8-max` and `deepseek-v4.1-flash` under three).
     expect(catalogEntryFor("anthropic", "claude-sonnet-4-6")?.displayName).toBe(
       "Claude Sonnet 4.6",
     );
@@ -280,19 +347,30 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("qwen-pay-as-you-go", "qwen3.8-max")?.provider).toBe(
       "qwen-pay-as-you-go",
     );
-    // The bare resold id never leaks into the vendor's own group (deepseek's flash revision is
-    // sold there as deepseek-v4-flash, without the date suffix).
-    expect(catalogEntryFor("deepseek", "deepseek-v4-flash-0731")).toBeUndefined();
-    expect(catalogEntryFor("deepseek", "deepseek-v4-flash")?.provider).toBe("deepseek");
-    expect(catalogEntryFor("zhipu", "glm-5.2")?.contextWindow).toBe(1000000);
-    expect(catalogEntryFor("qwen-token-plan", "glm-5.2")?.contextWindow).toBe(1048576);
+    // The bare resold id never leaks into the vendor's own group: DeepSeek sells the 0813 Pro
+    // release under its undated `deepseek-v4-pro` name, and the dated spelling is a reseller's.
+    expect(catalogEntryFor("deepseek", "deepseek-v4-pro-0813")).toBeUndefined();
     expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.provider).toBe("deepseek");
-    // deepseek-flash leads the direct group: the released V4.1 Flash, which the vendor names
-    // without a version segment. The dotted spelling is a RESOLD id only — TokenDance and
-    // OpenRouter sell it that way — so it must not appear in the vendor's own group.
-    expect(MODEL_CATALOG.filter((m) => m.provider === "deepseek")[0]!.modelId).toBe(
-      "deepseek-flash",
+    expect(catalogEntryFor("qwen-token-plan", "deepseek-v4-pro-0813")?.provider).toBe(
+      "qwen-token-plan",
     );
+    expect(catalogEntryFor("zhipu", "glm-5.3")?.contextWindow).toBe(1000000);
+    expect(catalogEntryFor("qwen-token-plan", "glm-5.3")?.contextWindow).toBe(1048576);
+    // The direct group presets exactly the two names DeepSeek's pricing page lists, V4.1 Flash
+    // first: the vendor names it without a version segment. The bare V4 Flash names it no longer
+    // lists stay as retired rows, and the dotted V4.1 spelling is a RESOLD id only — TokenDance,
+    // both Qwen groups and OpenRouter sell it that way.
+    expect(MODEL_CATALOG.filter((m) => m.provider === "deepseek").map((m) => m.modelId)).toEqual([
+      "deepseek-flash",
+      "deepseek-v4-flash",
+      "deepseek-v4-flash-vision-exp",
+      "deepseek-v4-pro",
+    ]);
+    expect(
+      presetModelEntries()
+        .filter((e) => e.provider === "deepseek")
+        .map((e) => e.model_id),
+    ).toEqual(["deepseek-flash", "deepseek-v4-pro"]);
     expect(catalogEntryFor("deepseek", "deepseek-v4.1-flash")).toBeUndefined();
     expect(catalogEntryFor("tokendance", "deepseek-v4.1-flash")?.provider).toBe("tokendance");
     expect(catalogEntryFor("openrouter", "deepseek/deepseek-v4.1-flash")?.provider).toBe(
@@ -300,35 +378,31 @@ describe("model-catalog", () => {
     );
     // Vision is a per-row flag, not a property of the id's spelling: it tracks what the client
     // routing the row actually carries. AgentHub's DeepSeek client denies image parts to ids
-    // matching /^deepseek-v4-(flash|pro)(-\d{4})?$/, which covers deepseek-v4-flash and
-    // deepseek-v4-pro but neither the bare deepseek-flash nor the vision-exp revision.
+    // matching /^deepseek-v4-(flash|pro)(-\d{4})?$/, which covers deepseek-v4-pro but not the
+    // bare deepseek-flash; OpenRouter's vision-exp listing goes through the generic Responses
+    // client instead.
     expect(catalogEntryFor("deepseek", "deepseek-flash")?.supportsVision).toBe(true);
-    expect(catalogEntryFor("deepseek", "deepseek-v4-flash")?.supportsVision).toBe(false);
-    expect(catalogEntryFor("deepseek", "deepseek-v4-flash-vision-exp")?.supportsVision).toBe(true);
     expect(catalogEntryFor("deepseek", "deepseek-v4-pro")?.supportsVision).toBe(false);
     expect(
       catalogEntryFor("openrouter", "deepseek/deepseek-v4-flash-vision-exp")?.supportsVision,
     ).toBe(true);
-    expect(catalogEntryFor("qwen-token-plan", "deepseek-v4-pro")?.provider).toBe("qwen-token-plan");
     expect(catalogEntryFor("minimax", "MiniMax-M3")?.displayName).toBe("MiniMax M3");
   });
 
   it("presetModelEntries: provider and bare upstream model_id are separate fields; preset endpoints are inlined", () => {
     const entries = presetModelEntries();
-    expect(entries).toHaveLength(MODEL_CATALOG.length);
+    const presets = MODEL_CATALOG.filter((m) => m.retired !== true);
+    expect(entries).toHaveLength(presets.length);
     for (const [i, entry] of entries.entries()) {
-      const cat = MODEL_CATALOG[i]!;
+      const cat = presets[i]!;
       expect(entry.provider).toBe(cat.provider);
       expect(entry.model_id).toBe(cat.modelId);
       expect(entry.context_window).toBe(cat.contextWindow);
-      // A Project stores the BILLED rate, not the catalog's list price: the cost center
-      // prices only against what is written here, so a promoted row must arrive discounted.
-      // The exception is a row on a peak/off-peak schedule, which stores the PEAK price: the
-      // rate changes twice a day, so baking one in would make the number on disk depend on the
-      // hour the Project happened to be created or re-synced in.
-      expect(entry.pricing, entry.model_id).toEqual(
-        cat.offPeakDiscount !== undefined ? cat.pricing : effectivePricing(cat),
-      );
+      // A Project stores the catalog's LIST price (a scheduled row's PEAK price), never a
+      // discounted one: a promotion is seeded beside it as a fraction (presetPromotions), and
+      // baking either rate in would make the number on disk depend on which promotion was
+      // live, or which hour it was, when the Project was created or re-synced.
+      expect(entry.pricing, entry.model_id).toEqual(cat.pricing);
       expect(entry.vision).toBe(cat.supportsVision ? undefined : false);
       // Gateway presets pin a client protocol, and so do the two direct rows whose own id
       // does not route (MiniMax M3, DeepSeek deepseek-flash); other direct models auto-route.
@@ -339,6 +413,17 @@ describe("model-catalog", () => {
       // The concatenated storage id and request_model_id have been removed and no longer appear.
       expect(Object.hasOwn(entry, "request_model_id")).toBe(false);
     }
+  });
+
+  it("presetPromotions: a promoted row is seeded with its fraction, a Penguin Go row never is", () => {
+    const promotions = presetPromotions();
+    expect(promotions).toContainEqual({
+      provider: "tokendance",
+      modelId: "glm-5.3-flash",
+      discount: 0.1,
+    });
+    // Penguin Go's promotions are the platform's to deliver, at authorization and Sync.
+    expect(promotions.filter((p) => p.provider === "penguin-go")).toEqual([]);
   });
 
   it("gateway models (OpenRouter / SiliconFlow / Qwen Token Plan): OpenRouter pins Responses and the rest Chat Completions, all on a preset base URL; env fallback is OPENAI_API_KEY", () => {
@@ -378,6 +463,7 @@ describe("model-catalog", () => {
       "openai/gpt-5.4-nano",
       "openai/gpt-5.4-pro",
       "openrouter/free",
+      "qwen/qwen3.8-27b",
       "qwen/qwen3.8-max",
       "qwen/qwen3.6-35b-a3b",
       "stepfun/step-3.7-flash",
@@ -405,23 +491,31 @@ describe("model-catalog", () => {
       expect(resolveModelEnv(m.modelId, m.clientType)?.envKey, m.modelId).toBe("OPENAI_API_KEY");
     }
     const fw = MODEL_CATALOG.filter((m) => m.provider === "fireworks");
-    expect(fw.map((m) => [m.modelId, m.supportsVision])).toEqual([
-      ["accounts/fireworks/models/deepseek-v4-flash-0731", false],
-      ["accounts/fireworks/models/deepseek-v4-flash", false],
-      ["accounts/fireworks/models/deepseek-v4-pro", false],
-      ["accounts/fireworks/models/glm-5p2", false],
-      ["accounts/fireworks/models/inkling", true],
-      ["accounts/fireworks/models/kimi-k3", true],
-      ["accounts/fireworks/models/kimi-k2p7-code", true],
-      ["accounts/fireworks/models/minimax-m3", true],
+    // Fireworks spells a version's dot as `p` (deepseek-v4p1-flash, glm-5p3); newer versions of
+    // a series still come first, whatever that spelling does to plain dictionary order.
+    expect(fw.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["accounts/fireworks/models/deepseek-v4p1-flash", 1048576, true],
+      ["accounts/fireworks/models/deepseek-v4-flash-0731", 1000000, false],
+      ["accounts/fireworks/models/deepseek-v4-flash", 1000000, false],
+      ["accounts/fireworks/models/deepseek-v4-pro-0813", 1048576, false],
+      ["accounts/fireworks/models/deepseek-v4-pro", 1000000, false],
+      ["accounts/fireworks/models/glm-5p3", 1048576, false],
+      ["accounts/fireworks/models/glm-5p3-flash", 1048576, true],
+      ["accounts/fireworks/models/glm-5p2", 1000000, false],
+      ["accounts/fireworks/models/inkling", 1000000, true],
+      ["accounts/fireworks/models/kimi-k3", 1000000, true],
+      ["accounts/fireworks/models/kimi-k2p7-code", 262144, true],
+      ["accounts/fireworks/models/minimax-m3", 524288, true],
+      ["accounts/fireworks/models/qwen3p8-max", 1000000, true],
     ]);
     for (const m of fw) {
       expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://api.fireworks.ai/inference/v1");
     }
     const sf = MODEL_CATALOG.filter((m) => m.provider === "siliconflow");
-    // Dictionary order is case-insensitive (as in qwen-pay-as-you-go, where ZHIPU/GLM-5.2
-    // sorts last): Pro/ and Qwen/ fall between moonshotai/ and zai-org/.
+    // Dictionary order is case-insensitive (as in qwen-pay-as-you-go, where ZHIPU/GLM-5.3-Flash
+    // sorts last): Pro/ and Qwen/ fall between moonshotai/ and tencent/, and GLM-5.3 comes before
+    // GLM-5.2 as the newer version.
     expect(sf.map((m) => m.modelId)).toEqual([
       "deepseek-ai/DeepSeek-V4-Flash",
       "deepseek-ai/DeepSeek-V4-Pro",
@@ -429,6 +523,8 @@ describe("model-catalog", () => {
       "moonshotai/Kimi-K2.7-Code",
       "Pro/moonshotai/Kimi-K2.6",
       "Qwen/Qwen3.6-35B-A3B",
+      "tencent/Hy4-preview",
+      "zai-org/GLM-5.3",
       "zai-org/GLM-5.2",
     ]);
     for (const m of sf) {
@@ -437,9 +533,10 @@ describe("model-catalog", () => {
     }
     const qtp = MODEL_CATALOG.filter((m) => m.provider === "qwen-token-plan");
     expect(qtp.map((m) => m.modelId)).toEqual([
-      "deepseek-v4-flash-0731",
-      "deepseek-v4-pro",
-      "glm-5.2",
+      "deepseek-v4.1-flash",
+      "deepseek-v4-pro-0813",
+      "glm-5.3",
+      "qwen3.8-flash",
       "qwen3.8-max",
       "qwen3.7-plus",
     ]);
@@ -447,13 +544,15 @@ describe("model-catalog", () => {
       expect(m.clientType).toBe("openai-chat");
       expect(m.baseUrl).toBe("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1");
     }
-    // Vision flags per the plan's supported-model table: 3.8-max and 3.7-plus see images.
-    expect(qtp.map((m) => [m.modelId, m.supportsVision])).toEqual([
-      ["deepseek-v4-flash-0731", false],
-      ["deepseek-v4-pro", false],
-      ["glm-5.2", false],
-      ["qwen3.8-max", true],
-      ["qwen3.7-plus", true],
+    // Vision flags per the plan's supported-model table and the model pages: V4.1 Flash and
+    // the three Qwen rows see images, the V4 Pro 0813 and GLM-5.3 rows are text only.
+    expect(qtp.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["deepseek-v4.1-flash", 1000000, true],
+      ["deepseek-v4-pro-0813", 1000000, false],
+      ["glm-5.3", 1048576, false],
+      ["qwen3.8-flash", 1000000, true],
+      ["qwen3.8-max", 1000000, true],
+      ["qwen3.7-plus", 1000000, true],
     ]);
     const td = MODEL_CATALOG.filter((m) => m.provider === "tokendance");
     // Dictionary order by upstream id; vision flags and context windows from TokenDance's
@@ -498,9 +597,9 @@ describe("model-catalog", () => {
     const discounted: Array<[string, number, [number, number, number]]> = [
       ["glm-5.3-flash", 0.1, [0.72, 2.52, 0.207]],
       ["glm-5.3", 0.1, [7.2, 25.2, 1.8]],
-      ["deepseek-v4-pro-0813", 0.2, [7.2, 21.6, 0.24]],
-      ["deepseek-v4-flash-0731", 0.2, [2.4, 7.2, 0.08]],
-      ["kimi-k3", 0.2, [16, 80, 1.6]],
+      ["deepseek-v4-pro-0813", 0.1, [4.05, 12.15, 0.405]],
+      ["deepseek-v4-flash-0731", 0.1, [1.35, 4.05, 0.135]],
+      ["kimi-k3", 0.4, [12, 60, 0.96]],
       ["qwen3.8-max", 0.1, [10.8, 32.4, 1.35]],
       ["seed-2.1-pro", 0.5, [3, 15, 0.6]],
       ["seed-2.1-turbo", 0.5, [1.5, 7.5, 0.3]],
@@ -515,9 +614,9 @@ describe("model-catalog", () => {
       expect(cacheHit, `${modelId} cache hit`).toBeCloseTo(cnyBilled[2], 4);
     }
     // Exactly those nine carry a flat discount; every other row bills its list price
-    // unchanged. Two of those others declare DeepSeek's peak/off-peak schedule instead, so
-    // they are compared at a PEAK instant — 2026-09-10 is a Thursday, and 10:00 Beijing is
-    // inside the morning window — because effectivePricing halves them off-peak by design.
+    // unchanged. One of those others declares DeepSeek's peak/off-peak schedule instead, so
+    // the rows are compared at a PEAK instant — 2026-09-10 is a Thursday, and 10:00 Beijing is
+    // inside the morning window — because effectivePricing halves it off-peak by design.
     expect(
       td
         .filter((m) => m.discount !== undefined)
@@ -528,8 +627,8 @@ describe("model-catalog", () => {
     for (const m of td.filter((x) => x.discount === undefined)) {
       expect(effectivePricing(m, peakInstant), m.modelId).toEqual(m.pricing);
     }
-    // The two rows that follow the vendor's schedule instead of a gateway promotion, at the
-    // same peak tier the direct DeepSeek rows store: CNY 0.04 / 2 / 8 per million.
+    // The rows that follow the vendor's schedule instead of a gateway promotion (one of them
+    // retired), at the same peak tier the direct deepseek-flash row stores: CNY 0.04 / 2 / 8.
     const tdScheduled = td.filter((m) => m.offPeakDiscount !== undefined).map((m) => m.modelId);
     expect(tdScheduled).toEqual(["deepseek-v4-flash-vision-exp", "deepseek-v4.1-flash"]);
     for (const id of tdScheduled) {
@@ -566,23 +665,16 @@ describe("model-catalog", () => {
     expect([tdFlash.cache_read, tdFlash.cache_write, tdFlash.output]).toEqual([
       0.032857, 0.114286, 0.4,
     ]);
-    // qwen3.8-flash at 0.1 / 0.8 / 2.7 CNY, undiscounted. The same id also sits in the
-    // qwen-pay-as-you-go group at Qwen's own 0.1 / 1 / 3, and the pair is the point: one
-    // model reached two ways, priced by whoever is selling it, so the two rows must not
-    // silently converge.
+    // qwen3.8-flash at 0.1 / 0.8 / 2.7 CNY, undiscounted: TokenDance's own figures. The same id
+    // also sits in both Qwen groups at Qwen's direct list price, pinned separately further down;
+    // the two sellers happen to charge the same since Qwen's 2026-09-16 re-pricing.
     const tdQwenFlash = td.find((m) => m.modelId === "qwen3.8-flash")!.pricing!;
     expect([tdQwenFlash.cache_read, tdQwenFlash.cache_write, tdQwenFlash.output]).toEqual([
       0.014286, 0.114286, 0.385714,
     ]);
-    const payggFlash = MODEL_CATALOG.find(
-      (m) => m.provider === "qwen-pay-as-you-go" && m.modelId === "qwen3.8-flash",
-    )!.pricing!;
-    expect(payggFlash.cache_write).toBeGreaterThan(tdQwenFlash.cache_write);
-    expect(payggFlash.output).toBeGreaterThan(tdQwenFlash.output);
-    expect(payggFlash.cache_read).toEqual(tdQwenFlash.cache_read);
     // hy4-preview is the same upstream model as OpenRouter's tencent/hy4-preview, sold twice.
-    // Same rule as the qwen3.8-flash pair: each row carries its own seller's price and its own
-    // published context window, so the two must stay apart rather than converge on one number.
+    // Each row carries its own seller's price and its own published context window, so the two
+    // stay apart rather than converge on one number.
     const tdHy4 = td.find((m) => m.modelId === "hy4-preview")!;
     expect(tdHy4.discount).toBeUndefined();
     expect(billedCny("hy4-preview")[0]).toBeCloseTo(6, 4);
@@ -600,13 +692,15 @@ describe("model-catalog", () => {
     expect([tdHy4.supportsVision, orHy4.supportsVision]).toEqual([false, false]);
     expect(orHy4.discount).toBeUndefined();
     const qpayg = MODEL_CATALOG.filter((m) => m.provider === "qwen-pay-as-you-go");
-    expect(qpayg.map((m) => [m.modelId, m.supportsVision])).toEqual([
-      ["deepseek-v4-flash-0731", false],
-      ["kimi/kimi-k3", true],
-      ["qwen3.8-flash", true],
-      ["qwen3.8-max", true],
-      ["qwen3.7-plus", true],
-      ["ZHIPU/GLM-5.2", false],
+    // Case-insensitive dictionary order with newer versions first: kimi-k3 before kimi-k2.8.
+    expect(qpayg.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["deepseek-v4.1-flash", 1000000, true],
+      ["kimi/kimi-k3", 1048576, true],
+      ["kimi/kimi-k2.8-preview", 1048576, true],
+      ["qwen3.8-flash", 1000000, true],
+      ["qwen3.8-max", 1000000, true],
+      ["qwen3.7-plus", 1000000, true],
+      ["ZHIPU/GLM-5.3-Flash", 1000000, true],
     ]);
     for (const m of qpayg) {
       expect(m.clientType).toBe("openai-chat");
@@ -714,7 +808,15 @@ describe("model-catalog", () => {
     const customPresets = MODEL_CATALOG.filter((m) => m.provider === "custom");
     const withBaseUrl = presetModelEntries().filter((e) => e.base_url !== undefined);
     expect(withBaseUrl.map((e) => [e.provider, e.model_id]).sort()).toEqual(
-      [...gateway, ...minimax, ...pinnedDirect, ...customPresets]
+      [
+        ...gateway,
+        ...minimax,
+        ...pinnedDirect,
+        ...customPresets,
+        ...MODEL_CATALOG.filter((m) => m.provider === "penguin-go"),
+      ]
+        // A retired gateway row keeps its pin in the catalog but is not a preset.
+        .filter((m) => m.retired !== true)
         .map((m) => [m.provider, m.modelId])
         .sort(),
     );
@@ -860,17 +962,21 @@ describe("model-catalog", () => {
     // Both rows share one display name, as the other dual-listed models do.
     expect(glm53f.displayName).toBe("GLM-5.3 Flash");
     expect(glm53for.displayName).toBe("GLM-5.3 Flash");
-    // Qwen 3.8 Flash: official CNY list price (1 / 0.1 / 3 per MTok) at the catalog's 7:1
-    // display rate, 1M context, vision through the group's openai-chat client.
-    const q38f = catalogEntryFor("qwen-pay-as-you-go", "qwen3.8-flash")!;
-    expect([q38f.contextWindow, q38f.supportsVision, q38f.displayName]).toEqual([
-      1000000,
-      true,
-      "Qwen 3.8 Flash",
-    ]);
-    expect([q38f.pricing!.cache_read, q38f.pricing!.cache_write, q38f.pricing!.output]).toEqual([
-      0.014286, 0.142857, 0.428571,
-    ]);
+    // Qwen 3.8 Flash in both Qwen groups: official CNY list price (0.8 input / 0.1 cache hit /
+    // 2.7 output per MTok since the 2026-09-16 re-read) at the catalog's 7:1 display rate, 1M
+    // context, vision through the groups' openai-chat client.
+    for (const provider of ["qwen-pay-as-you-go", "qwen-token-plan"]) {
+      const q38f = catalogEntryFor(provider, "qwen3.8-flash")!;
+      expect([q38f.contextWindow, q38f.supportsVision, q38f.displayName], provider).toEqual([
+        1000000,
+        true,
+        "Qwen 3.8 Flash",
+      ]);
+      expect(
+        [q38f.pricing!.cache_read, q38f.pricing!.cache_write, q38f.pricing!.output],
+        provider,
+      ).toEqual([0.014286, 0.114286, 0.385714]);
+    }
     // Grok 4.6 keeps Grok 4.5's input/output rates with a raised cache-hit price.
     const grok46 = catalogEntryFor("openrouter", "x-ai/grok-4.6")!;
     expect([grok46.contextWindow, grok46.supportsVision]).toEqual([500000, true]);
@@ -921,8 +1027,13 @@ describe("model-catalog", () => {
     });
     // The same model resold by a gateway keeps one display name across groups. The bare
     // `gpt-5.6` id is the same tier OpenRouter spells `openai/gpt-5.6-sol`, so it displays
-    // that codename too rather than leaving the variant unnamed.
+    // that codename too rather than leaving the variant unnamed; likewise DeepSeek's undated
+    // `deepseek-v4-pro` is the 0813 release the gateways date, and says so.
     for (const [directProvider, directId, gatewayProvider, gatewayId] of [
+      ["deepseek", "deepseek-flash", "openrouter", "deepseek/deepseek-v4.1-flash"],
+      ["deepseek", "deepseek-flash", "fireworks", "accounts/fireworks/models/deepseek-v4p1-flash"],
+      ["deepseek", "deepseek-v4-pro", "openrouter", "deepseek/deepseek-v4-pro-0813"],
+      ["deepseek", "deepseek-v4-pro", "qwen-token-plan", "deepseek-v4-pro-0813"],
       ["openai", "gpt-6-astra", "openrouter", "openai/gpt-6-astra"],
       ["openai", "gpt-5.6", "openrouter", "openai/gpt-5.6-sol"],
       ["openai", "gpt-5.6-luna", "openrouter", "openai/gpt-5.6-luna"],
@@ -952,13 +1063,15 @@ describe("model-catalog", () => {
     const cnyOf = (usdV: number) => Math.round(usdV * 7 * 1000) / 1000;
     // DeepSeek rows carry the official PEAK tier; the off-peak tier is exactly half, and is
     // applied from the row's schedule rather than stored (see the off-peak schedules block
-    // below). The flash rows were re-read 2026-09-08 for the official price adjustment
-    // effective 2026-09-10; V4 Pro sits outside that adjustment.
-    const flash = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
+    // below). Both were re-read 2026-09-16: V4.1 Flash at CNY 0.04 / 2 / 8, and V4 Pro — the
+    // 0813 release, its display name now says — unchanged at 0.30 / 9 / 27.
+    const flash = catalogEntryFor("deepseek", "deepseek-flash")!.pricing!;
     expect([cnyOf(flash.cache_read), cnyOf(flash.cache_write), cnyOf(flash.output)]).toEqual([
       0.04, 2, 8,
     ]);
-    const pro = catalogEntryFor("deepseek", "deepseek-v4-pro")!.pricing!;
+    const proRow = catalogEntryFor("deepseek", "deepseek-v4-pro")!;
+    expect(proRow.displayName).toBe("DeepSeek V4 Pro 0813");
+    const pro = proRow.pricing!;
     expect([cnyOf(pro.cache_read), cnyOf(pro.cache_write), cnyOf(pro.output)]).toEqual([
       0.3, 9, 27,
     ]);
@@ -1096,13 +1209,26 @@ describe("model-catalog", () => {
 });
 
 describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing rules)", () => {
+  it("keeps Penguin Go relay credentials separate from both vendor protocols", () => {
+    expect(resolveProviderModelEnv("penguin-go", "gemini-3.8-flash")?.envKey).toBe(
+      "PENGUIN_GO_API_KEY",
+    );
+    expect(resolveProviderModelEnv("penguin-go", "deepseek-flash", "openai-chat")?.envKey).toBe(
+      "PENGUIN_GO_API_KEY",
+    );
+    expect(resolveProviderModelEnv("deepseek", "deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
+    expect(resolveProviderModelEnv("openrouter", "any-model", "openai-chat")?.envKey).toBe(
+      "OPENAI_API_KEY",
+    );
+  });
+
   it("first-party model ids route to the provider client's env var", () => {
     expect(resolveModelEnv("deepseek-v4-pro")?.envKey).toBe("DEEPSEEK_API_KEY");
     // The dotted V4.1 spelling still carries the deepseek-v4 substring AutoLLMClient routes
-    // on. It survives in the catalog as a RESOLD id — TokenDance's deepseek-v4.1-flash and
-    // OpenRouter's deepseek/deepseek-v4.1-flash, both of which pin an OpenAI-protocol client
-    // anyway — so this branch is what the bare spelling would resolve to, not what those
-    // rows use.
+    // on. It survives in the catalog as a RESOLD id — deepseek-v4.1-flash on TokenDance and
+    // both Qwen groups, and OpenRouter's deepseek/deepseek-v4.1-flash, all of which pin an
+    // OpenAI-protocol client anyway — so this branch is what the bare spelling would resolve
+    // to, not what those rows use.
     expect(resolveModelEnv("deepseek-v4.1-flash")?.envKey).toBe("DEEPSEEK_API_KEY");
     expect(resolveModelEnv("deepseek-v4.1-flash")?.envBaseUrlKey).toBe("DEEPSEEK_BASE_URL");
     // The released direct id carries no `deepseek-v4` substring, and AgentHub 0.4.11 routes
@@ -1183,6 +1309,12 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
       const env = resolveModelEnv(m.modelId, m.clientType);
       const provider = providerInfo(m.provider)!;
       expect(env, `${m.provider}/${m.modelId}`).toBeDefined();
+      if (m.provider === "penguin-go") {
+        // Penguin Go mixes routed clients behind one relay, so its provider-scoped
+        // environment name intentionally differs from each client's vendor variable.
+        expect(provider.envKey).toBe("PENGUIN_GO_API_KEY");
+        continue;
+      }
       if (m.provider === "custom") {
         // The custom group's pair is the fallback for its OpenAI-protocol default; an entry
         // pinned to another generic protocol reads that protocol's pair instead, exactly as a
@@ -1214,8 +1346,8 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
     );
     expect(modelHomepageUrl("fireworks", "my-own-id")).toBe("https://app.fireworks.ai/models");
     // Pay-as-you-go resells third-party models under slash-prefixed ids: the id is URL-encoded.
-    expect(modelHomepageUrl("qwen-pay-as-you-go", "ZHIPU/GLM-5.2")).toBe(
-      "https://www.qianwenai.com/models/ZHIPU%2FGLM-5.2",
+    expect(modelHomepageUrl("qwen-pay-as-you-go", "ZHIPU/GLM-5.3-Flash")).toBe(
+      "https://www.qianwenai.com/models/ZHIPU%2FGLM-5.3-Flash",
     );
     // Token Plan models link to their qianwenai model page (bare ids, no encoding needed).
     expect(modelHomepageUrl("qwen-token-plan", "qwen3.8-max")).toBe(
@@ -1437,21 +1569,23 @@ describe("off-peak schedules", () => {
   const beijing = (iso: string): Date => new Date(`${iso}+08:00`);
 
   it("the DeepSeek rows store the peak price and declare the schedule", () => {
-    // Every direct row, plus the three resold rows whose sellers pass DeepSeek's own windows
-    // through: two on TokenDance and one on OpenRouter. A gateway row on the schedule carries
-    // no flat `discount` — the two are mutually exclusive, pinned by the last case here.
-    const rows = MODEL_CATALOG.filter(
-      (m) =>
-        m.provider === "deepseek" ||
-        (m.provider === "tokendance" &&
-          ["deepseek-v4.1-flash", "deepseek-v4-flash-vision-exp"].includes(m.modelId)) ||
-        (m.provider === "openrouter" && m.modelId === "deepseek/deepseek-v4.1-flash"),
-    );
-    expect(rows.length).toBeGreaterThan(0);
-    // And nothing else in the catalog is on a schedule at all.
-    expect(MODEL_CATALOG.filter((m) => m.offPeakDiscount !== undefined).length).toBe(rows.length);
+    // Every direct row, plus the resold rows whose sellers pass DeepSeek's own windows through:
+    // two on Penguin Go, two on TokenDance and one on OpenRouter. The retired rows keep the
+    // schedule too. A gateway row on the schedule carries no flat `discount` — the two are
+    // mutually exclusive, pinned by the last case here.
+    const rows = MODEL_CATALOG.filter((m) => m.offPeakDiscount === S);
+    expect(rows.map((m) => `${m.provider}/${m.modelId}`)).toEqual([
+      "deepseek/deepseek-flash",
+      "deepseek/deepseek-v4-flash",
+      "deepseek/deepseek-v4-flash-vision-exp",
+      "deepseek/deepseek-v4-pro",
+      "openrouter/deepseek/deepseek-v4.1-flash",
+      "tokendance/deepseek-v4-flash-vision-exp",
+      "tokendance/deepseek-v4.1-flash",
+      "penguin-go/deepseek-flash",
+      "penguin-go/deepseek-v4-pro",
+    ]);
     for (const m of rows) {
-      expect(m.offPeakDiscount, m.modelId).toBe(S);
       // Peak is exactly double the off-peak tier DeepSeek publishes. Compared at 1e-5: both
       // sides round to six decimals independently, so the last digit can differ by one.
       expect(effectivePricing(m, beijing("2026-08-31T22:00"))!.output * 2).toBeCloseTo(
@@ -1461,10 +1595,100 @@ describe("off-peak schedules", () => {
     }
     // The published peak figures themselves: CNY 0.04 / 2 / 8 per million, at the catalog's 7:1
     // display convention, which is DeepSeek's off-peak 0.02 / 1 / 4 doubled.
-    const flash = MODEL_CATALOG.find((m) => m.modelId === "deepseek-v4-flash")!.pricing!;
+    const flash = catalogEntryFor("deepseek", "deepseek-flash")!.pricing!;
     expect([flash.cache_read, flash.cache_write, flash.output]).toEqual([
       0.005714, 0.285714, 1.142857,
     ]);
+  });
+
+  it("a retired row is never a preset, but a sync still compares it and it still prices a Project's usage on its schedule", () => {
+    const retired = MODEL_CATALOG.filter((m) => m.retired === true);
+    const refs = retired.map((m) => `${m.provider}/${m.modelId}`);
+    expect(refs).toEqual([
+      "deepseek/deepseek-v4-flash",
+      "deepseek/deepseek-v4-flash-vision-exp",
+      "tokendance/deepseek-v4-flash-vision-exp",
+    ]);
+    const presets = new Set(presetModelEntries().map((e) => `${e.provider}/${e.model_id}`));
+    // "Sync presets" compares a Project's table against the whole catalog, retired rows
+    // included, so it keeps updating a retired row the Project carries; the presets a new
+    // Project gets are that same list without them.
+    const all = catalogModelEntries();
+    expect(all.map((e) => `${e.provider}/${e.model_id}`)).toEqual(
+      MODEL_CATALOG.map((m) => `${m.provider}/${m.modelId}`),
+    );
+    expect(presetModelEntries()).toEqual(
+      all.filter((e) => !refs.includes(`${e.provider}/${e.model_id}`)),
+    );
+    const scheduled = new Set(
+      offPeakScheduledRefs().flatMap((g) => g.refs.map((r) => `${r.provider}/${r.modelId}`)),
+    );
+    for (const m of retired) {
+      const ref = `${m.provider}/${m.modelId}`;
+      expect(presets.has(ref), ref).toBe(false);
+      // What a Project still carrying the row reads from the catalog: its name and schedule.
+      expect(catalogEntryFor(m.provider, m.modelId)?.displayName, ref).toBe(m.displayName);
+      expect(scheduled.has(ref), ref).toBe(true);
+      expect(effectivePricing(m, beijing("2026-08-31T22:00"))!.output * 2, ref).toBeCloseTo(
+        m.pricing!.output,
+        5,
+      );
+    }
+  });
+
+  it("the Qwen DeepSeek rows store the peak price and declare Qwen's own schedule", () => {
+    // Qwen bills the DeepSeek models it sells by its own clock, not DeepSeek's: the model pages
+    // list a peak and an off-peak price, the latter exactly half.
+    const rows = MODEL_CATALOG.filter((m) => m.offPeakDiscount === QWEN_OFF_PEAK);
+    expect(rows.map((m) => `${m.provider}/${m.modelId}`)).toEqual([
+      "qwen-token-plan/deepseek-v4.1-flash",
+      "qwen-token-plan/deepseek-v4-pro-0813",
+      "qwen-pay-as-you-go/deepseek-v4.1-flash",
+    ]);
+    // input / output / cache hit, in CNY per million — the order the model page lists them in.
+    const cnyOf = (usdV: number): number => Math.round(usdV * 7 * 1000) / 1000;
+    const tiers = (m: (typeof rows)[number], at: Date): number[] => {
+      const p = effectivePricing(m, at)!;
+      return [cnyOf(p.cache_write), cnyOf(p.output), cnyOf(p.cache_read)];
+    };
+    const peak = beijing("2026-08-31T10:00");
+    const offPeak = beijing("2026-08-31T23:00");
+    for (const m of rows) {
+      expect(m.discount, m.modelId).toBeUndefined();
+      expect(tiers(m, peak), m.modelId).toEqual(
+        m.modelId === "deepseek-v4-pro-0813" ? [9, 27, 0.9] : [2, 8, 0.2],
+      );
+      expect(tiers(m, offPeak), m.modelId).toEqual(
+        m.modelId === "deepseek-v4-pro-0813" ? [4.5, 13.5, 0.45] : [1, 4, 0.1],
+      );
+    }
+    // The cost center splits its aggregations once per schedule, and these are the only two:
+    // each reference lands under its own schedule, never under the other vendor's windows.
+    const grouped = offPeakScheduledRefs();
+    expect(grouped).toHaveLength(2);
+    expect(grouped[0]!.schedule).toBe(S);
+    expect(grouped[1]!.schedule).toBe(QWEN_OFF_PEAK);
+    expect(grouped[1]!.refs.map((r) => `${r.provider}/${r.modelId}`)).toEqual(
+      rows.map((m) => `${m.provider}/${m.modelId}`),
+    );
+    expect(grouped[0]!.refs.map((r) => `${r.provider}/${r.modelId}`)).toEqual(
+      MODEL_CATALOG.filter((m) => m.offPeakDiscount === S).map((m) => `${m.provider}/${m.modelId}`),
+    );
+  });
+
+  it("Qwen's peak is 08:00-22:00 Beijing on every day of the week", () => {
+    const Q = QWEN_OFF_PEAK;
+    // 2026-08-31 is a Monday: the window ends are exclusive, so 22:00 is already off-peak.
+    expect(offPeakAt(Q, beijing("2026-08-31T08:00"))).toBe(false);
+    expect(offPeakAt(Q, beijing("2026-08-31T21:59"))).toBe(false);
+    expect(offPeakAt(Q, beijing("2026-08-31T07:59"))).toBe(true);
+    expect(offPeakAt(Q, beijing("2026-08-31T22:00"))).toBe(true);
+    expect(offPeakAt(Q, beijing("2026-08-31T03:00"))).toBe(true);
+    // Where the two schedules part: DeepSeek's lunch gap and its weekends are Qwen's peak.
+    expect(offPeakAt(Q, beijing("2026-08-31T13:00"))).toBe(false);
+    expect(offPeakAt(S, beijing("2026-08-31T13:00"))).toBe(true);
+    expect(offPeakAt(Q, beijing("2026-09-06T10:00"))).toBe(false);
+    expect(offPeakAt(S, beijing("2026-09-06T10:00"))).toBe(true);
   });
 
   it("peak is Monday to Friday, 09:00-12:00 and 14:00-18:00 Beijing", () => {
@@ -1511,12 +1735,21 @@ describe("off-peak schedules", () => {
     ]);
   });
   it("no entry declares both a flat discount and a schedule", () => {
-    // effectivePricing, discountedPrice and presetModelEntries all silently prefer the schedule,
-    // so a row declaring both would be billed at its list price during peak with nothing failing.
-    // The rule is stated in the field's doc; this is what makes it true.
+    // effectivePricing silently prefers the schedule, while the cost center would apply the
+    // seeded promotion on top of it, so a row declaring both would be shown at one rate and
+    // billed at another with nothing failing. The rule is stated in the field's doc; this is
+    // what makes it true.
     const both = MODEL_CATALOG.filter(
       (m) => m.discount !== undefined && m.offPeakDiscount !== undefined,
     ).map((m) => `${m.provider}/${m.modelId}`);
     expect(both).toEqual([]);
+  });
+
+  it("every schedule is written in Beijing time, the one zone the badge's tooltip names", () => {
+    // Both dictionaries say Beijing time outright rather than spelling out an offset, so a
+    // schedule written in any other zone fails here instead of reaching the tooltip mislabelled.
+    for (const { schedule, refs } of offPeakScheduledRefs()) {
+      expect(schedule.utcOffsetMinutes, `${refs[0]!.provider}/${refs[0]!.modelId}`).toBe(480);
+    }
   });
 });

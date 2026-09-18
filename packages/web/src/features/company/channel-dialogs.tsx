@@ -21,7 +21,7 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Modal } from "../../components/ui/modal";
 import { channelIdProblem } from "./channel-list";
 import type { ChannelIdProblem } from "./channel-list";
-import { SemanticIdField } from "./semantic-id-field";
+import { SemanticIdField } from "../semantic-id/semantic-id-field";
 import { ErrorLine } from "./shared";
 
 /** The error codes that are about the id the user typed; every other failure is the form's. */

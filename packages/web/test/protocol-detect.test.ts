@@ -240,6 +240,17 @@ describe("rowToEntry (the persistence funnel)", () => {
   it("omits clientType for a vendor group so AgentHub keeps inferring it", () => {
     expect(rowToEntry(row({ provider: "openai", modelId: "gpt-5.6" })).clientType).toBeUndefined();
   });
+
+  it("sends a promotion only when the preset sync declared one", () => {
+    // A promotion the page merely loaded is left to the server, which keeps it unless the entry
+    // renames the row or changes its price.
+    expect(rowToEntry(row({ provider: "penguin-go", discount: 0.5 }))).not.toHaveProperty(
+      "discount",
+    );
+    expect(rowToEntry(row({ discount: 0.2, discountDeclared: true })).discount).toBe(0.2);
+    // Declared with no promotion: an explicit clear.
+    expect(rowToEntry(row({ discountDeclared: true })).discount).toBeNull();
+  });
 });
 
 describe("detection copy", () => {

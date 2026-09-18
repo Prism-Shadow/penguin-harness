@@ -77,7 +77,14 @@ describe("organization runtime", () => {
   /** Set by a test to make every task start throw — a runner that refuses the work. */
   let startFails: boolean;
   let started: Started[];
-  let created: Array<{ projectId: string; agentId: string; workspace?: string; client: "org" }>;
+  let created: Array<{
+    projectId: string;
+    agentId: string;
+    workspace?: string;
+    modelId?: string;
+    provider?: string;
+    client: "org";
+  }>;
   let agentsCreated: Array<{ agentId: string; plugins: readonly string[] }>;
   let briefs: Map<string, string>;
   let costs: Map<string, number>;
@@ -173,6 +180,11 @@ describe("organization runtime", () => {
             projectId: args.projectId,
             agentId: args.agentId,
             ...(args.workspace !== undefined ? { workspace: args.workspace } : {}),
+            // Recorded as passed: an absent pair is what makes the real SessionService
+            // resolve the Project's default model at this moment, so a test can tell "no
+            // model asked for" from "the default asked for by name".
+            ...(args.modelId !== undefined ? { modelId: args.modelId } : {}),
+            ...(args.provider !== undefined ? { provider: args.provider } : {}),
             client: args.client,
           });
           const createdAt = new Date(nowMs).toISOString();
@@ -235,6 +247,7 @@ describe("organization runtime", () => {
         }),
         dailyCostForSessions: async () => [],
       },
+      messagingChannel: () => null,
       errors: { record: (e) => void errors.push(e) },
       notifyProject: (_p, event) => void events.push(event),
       companyModeEnabled: () => companyMode,
@@ -349,6 +362,14 @@ describe("organization runtime", () => {
     // The board decides: the init run proposes and stops before hiring anything.
     expect(parsed?.rest).toContain("END THIS RUN");
     expect(parsed?.rest).toContain("@user:alice");
+    // The plan names roles and budgets, never a model per role: every hire runs on the
+    // organization's model, or the Project's default when the organization names none.
+    expect(parsed?.rest).toContain(
+      "every one on the organization's model, or the Project's default model when the organization names none",
+    );
+    expect(parsed?.rest).not.toContain("budgets and model");
+    // Whatever touches the machine or the outside is the board's for every employee.
+    expect(parsed?.rest).toContain("What you may not decide alone");
     // The mission is English, so the organization works in English — its desk titles too.
     expect(sessions.findById(started[0]!.sessionId)?.title).toBe(`Name of ${CEO}'s desk`);
     expect(cache.ownerOfSession(started[0]!.sessionId)).toMatchObject({
@@ -397,6 +418,12 @@ describe("organization runtime", () => {
       workspace: "site",
     });
     expect(item.resolvedWorkspace).toBe(path.join(shared, "site"));
+    // The organization's model reaches a hire that names none without being pinned on its
+    // entry: the chart carries no model, and the desk opens on the organization's pair.
+    expect(
+      (await service.chart(P, ORG)).employees.find((e) => e.agentId === HR),
+    ).not.toHaveProperty("model");
+    expect(created.at(-1)).toMatchObject({ agentId: HR, provider: "custom", modelId: "m-bench" });
     await expect(
       service.create(
         P,
@@ -411,6 +438,44 @@ describe("organization runtime", () => {
         "alice",
       ),
     ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("hires without a model by default: the entry carries none and the hire's sessions open without a model pair, so the Project default is resolved as each session opens", async () => {
+    await createOrg();
+    await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+    const entry = (await service.chart(P, ORG)).employees.find((e) => e.agentId === HR);
+    expect(entry).toBeDefined();
+    expect(entry).not.toHaveProperty("model");
+    // The hire opened the newcomer's desk with no (provider, modelId) pair: that absence is
+    // what makes the real SessionService fall back to the Project's default model at this
+    // moment, rather than to a value baked into the chart at creation.
+    const desk = created.at(-1)!;
+    expect(desk.agentId).toBe(HR);
+    expect(desk).not.toHaveProperty("modelId");
+    expect(desk).not.toHaveProperty("provider");
+    // A ticket session of that employee opens the same way — the default is read per session.
+    const t = await service.createTicket(
+      P,
+      ORG,
+      { title: "Staff the company", owner: `agent:${HR}` },
+      { userId: "alice" },
+    );
+    await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" });
+    const work = created.at(-1)!;
+    expect(work.agentId).toBe(HR);
+    expect(work).not.toHaveProperty("modelId");
+    // A model the board asked for by name still travels with the hire.
+    await service.hire(P, ORG, {
+      newAgent: { agentId: `${ORG}_dev` },
+      title: "Developer",
+      reportsTo: CEO,
+      model: { provider: "custom", modelId: "m-bench" },
+    });
+    expect(created.at(-1)).toMatchObject({
+      agentId: `${ORG}_dev`,
+      provider: "custom",
+      modelId: "m-bench",
+    });
   });
 
   it("refuses a taken organization id and cleans up when the CEO cannot be created", async () => {
@@ -822,6 +887,30 @@ describe("organization runtime", () => {
       expect(sessions.findById(ceoDesk)?.client).toBe("org");
       expect(sessions.findById(work)?.client).toBe("org");
     });
+
+    it("opens desk and ticket sessions under the organization's approval mode", async () => {
+      await createOrg();
+      await service.patch(P, ORG, { approvalMode: "read-only" }, "alice");
+      // A desk opened after the change carries the mode; the row is what the session
+      // runtime reads per decision (with `client: "org"`, a call that mode would hand to a
+      // person is denied at once — see session-manager.test.ts).
+      const desk = (await service.desk(P, ORG, CEO, { renew: true })).sessionId;
+      expect(sessions.findById(desk)?.approvalMode).toBe("read-only");
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Ship it", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      const { sessionId: work } = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        {},
+        { userId: "alice" },
+      );
+      expect(sessions.findById(work)?.approvalMode).toBe("read-only");
+    });
   });
 
   describe("who starts a ticket session", () => {
@@ -887,6 +976,70 @@ describe("organization runtime", () => {
         { userId: "alice" },
       );
       expect(sessions.findById(byPerson.sessionId)?.agentId).toBe(CEO);
+    });
+
+    it("hands a claim in review to a reviewer: the owner's ticket session starts the review, and the reviewer's session sends the ticket back", async () => {
+      await createOrg();
+      const REVIEWER = `${ORG}_reviewer`;
+      await service.hire(P, ORG, {
+        newAgent: { agentId: HR },
+        title: "Researcher",
+        reportsTo: CEO,
+      });
+      await service.hire(P, ORG, {
+        newAgent: { agentId: REVIEWER },
+        title: "Reviewer",
+        reportsTo: CEO,
+      });
+      const hrDesk = (await service.desk(P, ORG, HR, {})).sessionId;
+      const reviewerDesk = (await service.desk(P, ORG, REVIEWER, {})).sessionId;
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Dependency eval", owner: `agent:${HR}` },
+        { userId: "alice" },
+      );
+      await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, { userId: "alice" });
+      const loop = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        {},
+        { userId: "alice", sessionId: hrDesk },
+      );
+
+      // The author's ticket session moves the claim to review. The reviewer's desk may not
+      // open a session on a ticket it does not own …
+      const author = { userId: "alice", sessionId: loop.sessionId };
+      await service.moveTicket(P, ORG, t.ticketId, "review", undefined, author);
+      await expect(
+        service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice", sessionId: reviewerDesk }),
+      ).rejects.toMatchObject({ status: 403, code: "not_ticket_owner" });
+
+      // … so the author's ticket session starts the round, which runs as the reviewer in the
+      // reviewer's own partition.
+      const review = await service.startTicket(
+        P,
+        ORG,
+        t.ticketId,
+        { agentId: REVIEWER, message: "Review round 1" },
+        author,
+      );
+      expect(sessions.findById(review.sessionId)).toMatchObject({
+        agentId: REVIEWER,
+        workspace: path.join(orgDir(), "workspace", REVIEWER),
+      });
+
+      // The reviewer's session writes its verdict and sends the ticket back to the owner.
+      const reviewer = { userId: "alice", sessionId: review.sessionId };
+      await service.progressTicket(P, ORG, t.ticketId, "Round 1: major revision", reviewer);
+      const back = await service.moveTicket(P, ORG, t.ticketId, "in_progress", undefined, reviewer);
+      expect(back.status).toBe("in_progress");
+      expect(back.sessions).toEqual([loop.sessionId, review.sessionId]);
+      expect(back.history.slice(-2).map((h) => [h.by, h.action])).toEqual([
+        [`agent:${REVIEWER}`, "progress"],
+        [`agent:${REVIEWER}`, "moved"],
+      ]);
     });
 
     it("leaves nothing on the ticket when the session cannot be started", async () => {
@@ -1690,6 +1843,65 @@ describe("organization runtime", () => {
       expect(
         board.columns.proposed.find((x) => x.ticketId === t.ticketId)?.blocked,
       ).toBeUndefined();
+    });
+
+    it("reports a `# Ticket:` file as an invalid file: listed nowhere, refused on write, never rewritten", async () => {
+      const valid = await service.createTicket(
+        P,
+        ORG,
+        { title: "Launch the site" },
+        { userId: "alice" },
+      );
+      const headedId = "2026-09-01-legacy-launch";
+      const headedPath = ticketPath(orgDir(), headedId, "in_progress");
+      const headed = [
+        "# Ticket: Legacy launch",
+        "",
+        "Status: in_progress",
+        `Initiator: agent:${CEO}`,
+        `Owner: agent:${HR}`,
+        "",
+        "## Goal",
+        "Ship it",
+        "",
+      ].join("\n");
+      await fs.mkdir(path.dirname(headedPath), { recursive: true });
+      await fs.writeFile(headedPath, headed, "utf8");
+      errors.length = 0;
+
+      // The pass carries on past it and records it.
+      await scheduler.tickOnce();
+      expect(errors.filter((e) => e.code === "org_ticket_invalid").length).toBeGreaterThan(0);
+      // The board lists the valid ticket in its column and the file under invalidFiles only.
+      const board = await service.tickets(P, ORG);
+      expect(Object.values(board.columns).flatMap((c) => c.map((x) => x.ticketId))).toEqual([
+        valid.ticketId,
+      ]);
+      expect(board.invalidFiles).toEqual([
+        {
+          path: path.join("tickets", "2026-09", "in_progress", `${headedId}.md`),
+          error: "the file must start with `---` (YAML frontmatter)",
+        },
+      ]);
+      // The overview counts it in no column either.
+      expect((await service.detail(P, ORG, "alice")).board.in_progress).toBe(0);
+      // Not a ticket to read, and a write asks for a repair instead of converting the file.
+      await expect(service.ticket(P, ORG, headedId)).rejects.toMatchObject({
+        status: 404,
+        code: "ticket_not_found",
+      });
+      await expect(
+        service.progressTicket(P, ORG, headedId, "half done", { userId: "alice" }),
+      ).rejects.toMatchObject({ status: 409, code: "ticket_invalid" });
+      // A new ticket that would take its id takes the next free one instead.
+      const next = await service.createTicket(
+        P,
+        ORG,
+        { title: "Legacy launch", slug: "legacy-launch" },
+        { userId: "alice" },
+      );
+      expect(next.ticketId).toBe(`${headedId}-b`);
+      expect(await fs.readFile(headedPath, "utf8")).toBe(headed);
     });
   });
 

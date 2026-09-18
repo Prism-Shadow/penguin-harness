@@ -1,9 +1,9 @@
 /**
  * The company sidebar's 工位 group, as pure shaping (unit tested) over the organization's
- * chart, its sessions route and the session list's live statuses: one row per EMPLOYEE, in
- * chart order, whether or not these caches already name its desk session. The roster is the
- * chart's (the sessions route only knows employees whose desk is in the ledger); the state is
- * the live one where the session list holds the row.
+ * chart, its sessions route and the live statuses the user channel has reported: one row per
+ * EMPLOYEE, in chart order, whether or not these caches already name its desk session. The
+ * roster is the chart's (the sessions route only knows employees whose desk is in the ledger);
+ * the state is the live one wherever an event has named the desk session.
  *
  * The employees' own states (the chart's dots, the overview's counts) are corrected the same
  * way by `liveEmployeeStates` at the bottom of this file, which reads the sessions attached to
@@ -14,11 +14,12 @@
  * them only move on an organization event: the sessions route is re-read when a run is
  * dispatched (`org_run`) or a ticket moves, and the chart when a summary does — and a run
  * ENDING publishes none of those. A desk would sit on 「运行中」 until some unrelated event
- * happened to arrive. The session list's own statuses come from the user event channel, which
- * reports every flip of every Session, so they are the state that is actually current; the
- * snapshots stand in for the rows that list has not loaded.
+ * happened to arrive. The live statuses are every `session_state` the user event channel has
+ * reported, and that channel reports every flip of every Session, so they are the state that
+ * is actually current; the snapshots stand in for a Session no event has named.
  */
 import type {
+  MessagingChannel,
   OrgChartResponse,
   OrgEmployeeState,
   OrgSessionsResponse,
@@ -27,9 +28,10 @@ import type {
 import type { SessionActivity } from "../../lib/session-activity";
 
 /**
- * Live run statuses by Session id — the session list store's view of them (state/sessions.tsx),
- * which the user event channel keeps in step. A Session the list has not loaded is simply
- * absent, and the caller falls back to the snapshot it does have.
+ * Live run statuses by Session id — every `session_state` the user event channel has reported,
+ * as the session list store remembers them (state/sessions.tsx, useLiveSessionStatuses). A
+ * Session no event has named is simply absent, and the caller falls back to the snapshot it
+ * does have.
  */
 export type LiveSessionStatuses = ReadonlyMap<string, SessionStatus>;
 
@@ -46,6 +48,11 @@ export interface OrgDeskRow {
   jobTitle: string;
   sessionId: string | null;
   status: SessionStatus;
+  /**
+   * The channel of the desk's enabled messaging binding, from the sessions route's own row;
+   * absent when it has none, or while that route has not listed the desk.
+   */
+  messagingChannel?: MessagingChannel;
 }
 
 /**
@@ -56,6 +63,9 @@ export interface OrgDeskRow {
  * chart yet (the first read of an organization) the sessions route stands in: it walks the
  * same chart server-side, so the order holds and only employees without a desk are missing
  * until the chart lands.
+ *
+ * The messaging mark is the sessions route's alone: the chart carries no binding, and the
+ * development list — where a Session's mark used to be read — never holds a desk.
  */
 export function deskRows(
   chart: OrgChartResponse | null,
@@ -70,6 +80,7 @@ export function deskRows(
       jobTitle: "",
       sessionId: d.sessionId,
       status: live?.get(d.sessionId) ?? d.status,
+      ...(d.messagingChannel !== undefined ? { messagingChannel: d.messagingChannel } : {}),
     }));
   }
   return chart.employees.map((e) => {
@@ -82,8 +93,30 @@ export function deskRows(
       jobTitle: e.title,
       sessionId,
       status: liveStatus ?? desk?.status ?? (e.state === "running" ? "running" : "idle"),
+      ...(desk?.messagingChannel !== undefined ? { messagingChannel: desk.messagingChannel } : {}),
     };
   });
+}
+
+/**
+ * The sessions route's answer with one desk's messaging mark set to `channel` (null clears
+ * it) — what binding or unbinding a desk from its row menu writes into the loaded copy, so the
+ * row follows at once instead of at the next organization event. The same object when no desk
+ * names `sessionId` or the mark already says so, so a store holding it spends no render.
+ */
+export function withDeskMessagingChannel(
+  sessions: OrgSessionsResponse,
+  sessionId: string,
+  channel: MessagingChannel | null,
+): OrgSessionsResponse {
+  const at = sessions.desks.findIndex((d) => d.sessionId === sessionId);
+  if (at === -1 || (sessions.desks[at]!.messagingChannel ?? null) === channel) return sessions;
+  const desk = { ...sessions.desks[at]! };
+  if (channel === null) delete desk.messagingChannel;
+  else desk.messagingChannel = channel;
+  const desks = sessions.desks.slice();
+  desks[at] = desk;
+  return { ...sessions, desks };
 }
 
 /**
@@ -102,9 +135,9 @@ export function orgRowActivity(status: SessionStatus): SessionActivity {
  * any of them is running or compacting, idle once all of them have settled, and — when nothing
  * is known about any of them — the state the chart itself reported.
  *
- * Each Session is judged by the live status where the list holds it and by the organization's
- * own snapshot otherwise, which is exactly how the desk and ticket rows draw their marks, so
- * the chart and the sidebar can never say different things about the same run.
+ * Each Session is judged by its live status where an event has named it and by the
+ * organization's own snapshot otherwise, which is exactly how the desk and ticket rows draw
+ * their marks, so the chart and the sidebar can never say different things about the same run.
  *
  * `paused` is not a run state — the budget stopped the employee, and no Session can say
  * otherwise — so it is returned untouched.

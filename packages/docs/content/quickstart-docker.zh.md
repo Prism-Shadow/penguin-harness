@@ -1,17 +1,18 @@
 ---
 title: Docker
-description: 运行官方 PenguinHarness 镜像——一个容器、一个卷，7364 端口上是完整的 Web 应用。
+description: 运行官方 PenguinHarness 镜像，一个容器加一个数据卷，就在 7364 端口提供完整的 Web App。
 ---
 
-官方镜像跑的就是 `penguin server` 启动的那个服务端，Web 应用在里面。整套部署只有一个容器和一个卷，因此它是把 PenguinHarness 装到自己电脑以外的机器上最短的一条路。
+官方镜像运行的就是 `penguin server` 启动的那个服务端，Web App 也在其中。整套部署只有一个容器和一个数据卷，所以要把 PenguinHarness 装到自己电脑以外的机器上，Docker 是最短的一条路。
 
-```
-hiyouga/penguinharness
-```
+## 开始之前
 
-镜像只有两种 tag：`latest` 跟随 `main`——每次 push 都重新构建它；`X.Y.Z` 是某个发布版，由该 tag 自身的源码构建。没有 `main-<sha>`、`X.Y` 或 `stable` 之类会移动或重复的名字。每个 tag 都是覆盖 `linux/amd64` 与 `linux/arm64` 的多平台 manifest，同一个引用在 x86 VPS 与 arm64 机器上通用。下面的示例用 `latest`；只希望随发布版移动的部署应钉住某个版本号。
+- 在要运行 PenguinHarness 的机器上装好 Docker。下面的示例同时给出 Docker Compose 和 `docker run` 两种写法。
+- 一个模型供应商的 API Key。
 
-## 跑起来
+## 启动容器
+
+在下面两个标签页中任选一种：保存 compose 文件，或者直接执行命令。
 
 ```yaml tab="compose.yaml"
 services:
@@ -37,17 +38,25 @@ docker run -d --name penguin \
   hiyouga/penguinharness:latest
 ```
 
-把 compose 文件放在当前目录，`docker compose up -d` 即启动。两种方式启动后，Web 应用都在运行 Docker 的那台机器的 `http://localhost:7364`。
+把 compose 文件保存在当前目录后，执行 `docker compose up -d` 启动。无论用哪种方式，启动后都能在运行 Docker 的那台机器上通过 `http://localhost:7364` 打开 Web App。
 
-两个示例都把端口发布在该机器的回环上，因此新部署在别处一概不可达——要从另一台机器访问，用 ssh 转发（`ssh -L 7364:127.0.0.1:7364 <host>`）。对外开放是一个明确的动作：改为发布到所有接口（`-p 7364:7364` 或 `-p 0.0.0.0:7364:7364`，compose 写 `"7364:7364"`），并尽量置于终结 TLS 的反向代理之后——见[反向代理之后](#反向代理之后)。容器自身始终在自己的网络命名空间里监听 `0.0.0.0`，这正是端口发布得以成立的前提；`-p` 里的地址是宿主机这一侧。
+### 从其他机器访问
+
+两个示例都把端口发布在运行 Docker 那台机器的回环接口上，所以新部署的服务从别处访问不到。要在另一台机器上使用，可以用 ssh 转发端口：`ssh -L 7364:127.0.0.1:7364 <host>`。
+
+对外开放需要你主动去做：改为把端口发布到所有网络接口，`docker run` 用 `-p 7364:7364` 或 `-p 0.0.0.0:7364:7364`，compose 里写 `"7364:7364"`。最好再放到一个终结 TLS 的反向代理之后，见[在反向代理后运行](#在反向代理后运行)。
+
+在容器自己的网络命名空间里，服务始终监听 `0.0.0.0`，端口发布正是靠这一点才能生效。`-p` 里的地址决定的是宿主机这一侧。
 
 ## 首次登录
 
-新数据目录没有密码。在密码被设置之前，服务端每次启动都会以边框提示打印一条登录链接——从容器日志里读它：
+新的数据目录还没有密码。在设置密码之前，服务端每次启动都会以带边框的提示打印一条登录链接。从容器日志里找到它：
 
 ```bash
-docker compose logs penguin        # 或：docker logs penguin
+docker compose logs penguin        # or: docker logs penguin
 ```
+
+提示如下：
 
 ```
 +----------------------------------------------------------------------------------------------+
@@ -59,42 +68,73 @@ docker compose logs penguin        # 或：docker logs penguin
 +----------------------------------------------------------------------------------------------+
 ```
 
-那条 URL 里的 `localhost` 是服务端对自己的称呼。按上面的回环发布，它同时也是你的，因此在运行 Docker 的那台机器上原样打开即可；若你已把容器发布到网络上，则把 `localhost` 换成你实际访问它所用的主机名或 IP。两种情况都要保留整段 `?token=...`。落地即已登录为 `admin`，随即设置密码。链接在每次启动时重新铸造，所以一次重启就会作废你正看着的那条，并打印一条新的。
+链接里的 `localhost` 是服务端对自己的称呼。按上面的方式发布在回环接口上时，它对你来说也是同一台机器，所以在运行 Docker 的机器上原样打开链接即可。如果已经把容器发布到网络上，就把 `localhost` 换成你访问它时用的主机名。两种情况下都要保留完整的 `?token=...`。
 
-如果从日志里读链接不适合你的场景，也可以直接把密码钉死——但必须**在首次启动之前**：
+打开链接即以 `admin` 身份登录，然后设置密码。每次启动都会重新生成链接，所以重启之后，你手上那条链接就失效了，日志里会打印一条新的。
+
+### 提前设置密码
+
+如果不方便从日志里读取链接，可以直接固定密码，但要在首次启动之前设置：
 
 ```yaml
 environment:
   PENGUIN_SEED_ADMIN_PASSWORD: "choose-something-long"
 ```
 
-它以该密码（至少 8 位）种下内置管理员 `admin`，并不再打印提示。它**仅在尚无任何用户时生效**，也就是空数据目录的第一次启动：加到已被认领的数据目录上不会有任何效果，事后改动同样无效。
+服务端会用这个密码（至少 8 个字符）创建内置的 `admin` 账号，并且不再打印登录提示。这个变量只在还没有任何用户时生效，也就是空数据目录第一次启动的时候。给已经认领过的数据目录加上它不会有任何效果，事后修改同样无效。
 
 ## 配置模型
 
-PenguinHarness 不内置任何模型凭据。可以用 Web 应用的**模型**页，也可以用容器里的 CLI：
+PenguinHarness 不内置任何模型凭据。可以在 Web App 的**模型库**页面添加模型，也可以在容器里用 CLI 添加：
 
 ```bash
 docker compose exec -u penguin penguin \
   penguin config model add --provider deepseek --model-id deepseek-flash --api-key sk-... --set-default
 ```
 
-`-u penguin` 是必要的：`docker exec` 默认以 root 执行，它写进 `/data` 的文件会归 root 所有，而服务端是以 uid 1000 运行的。内置分组见[模型与 Provider](/models)。
+命令中的 `-u penguin` 不能省略。`docker exec` 默认以 root 身份执行，写进 `/data` 的文件会归 root 所有，而服务端是以 uid 1000 运行的。
+
+内置分组见[模型与 Provider](/models)。
+
+## 跑通第一个 Task
+
+在 Web App 的侧边栏点击**新建对话**，然后发送第一条消息，例如「创建 hello.txt，内容为 Hello, Penguin」。Agent 执行的命令都在容器内运行；怎样把宿主机上的目录交给 Agent，见 [Agent 能访问什么](#agent-能访问什么)。对话页面的完整说明见[对话](/chat)。
+
+## 选择镜像 tag
+
+镜像名为：
+
+```
+hiyouga/penguinharness
+```
+
+tag 分为两类：
+
+- `latest` 跟随 `main` 分支，每次推送都会重新构建。
+- `X.Y.Z` 是正式发布版，用这个 tag 自身的源码构建。
+
+没有 `main-<sha>`、`X.Y` 或 `stable` 这类 tag，因此不存在换个名字跟着变动的别名。每个 tag 都是覆盖 `linux/amd64` 与 `linux/arm64` 的多平台 manifest，同一个引用在 x86 VPS 和 arm64 VPS 上都能用。本页示例使用 `latest`；如果希望部署只在发布新版本时才更新，就固定到具体版本号。
 
 ## 镜像里有什么
 
-| | |
+| 项目 | 说明 |
 | --- | --- |
-| 基础镜像 | Ubuntu 24.04，加官方 Node.js 运行时，版本与发布包内嵌的一致 |
+| 基础镜像 | Ubuntu 24.04，加上官方 Node.js 运行时，版本与发布包内置的一致 |
 | 启动命令 | `penguin server`，监听 `0.0.0.0:7364` |
-| 数据目录 | `/data`，声明为卷——模型配置、会话、Trace 与 SQLite 数据库都在其中 |
-| 运行用户 | `penguin`，uid/gid 1000；入口脚本仅为接管数据目录的属主而以 root 启动，随即降权 |
-| 健康检查 | 每 30 秒一次 `GET /api/install` |
-| 工具 | `git`、`curl` 与 Ubuntu 标准用户态，供 Agent 执行命令 |
+| 数据目录 | `/data`，声明为数据卷，存放模型配置、Session、Trace 和 SQLite 数据库 |
+| 运行用户 | `penguin`，uid/gid 1000。入口脚本以 root 启动，只为接管数据目录的所有权，随后降权为 `penguin` 用户 |
+| 健康检查 | 每 30 秒请求一次 `GET /api/install` |
+| 工具 | `git`、`curl` 与 Ubuntu 标准用户态工具，供 Agent 执行命令 |
 
-Agent 的 `exec_command` 跑的一切都发生在**这个容器内部**，用的是它的文件系统与它的网络。这既是隔离边界，也是能力边界：容器能访问什么，Agent 就能访问什么，仅此而已。要给它一个 Workspace 就挂一个目录进来（`-v /srv/project:/srv/project`），注意该挂载需要对 uid 1000 可写。
+### Agent 能访问什么
 
-镜像不带编译器，Node 之外也不带其他语言运行时。临时用一下，在容器里 `apt-get install` 是可行的，但下一次 `docker pull` 就没了；凡是要长期依赖的，构建一个派生镜像：
+Agent 通过 `exec_command` 执行的一切都发生在这个容器里，用的是容器的文件系统和网络。这是隔离边界，也是能力的上限：容器能访问到的，Agent 都能访问到，除此之外一概访问不到。
+
+要给 Agent 一个 Workspace，就挂载一个目录，例如 `-v /srv/project:/srv/project`。挂载的目录必须允许 uid 1000 写入。
+
+### 给镜像添加工具
+
+镜像里没有编译器，除 Node 之外也没有其他语言运行时。在容器里执行 `apt-get install` 可以应付一次性的需要，但下一次 `docker pull` 之后装过的包就没了。长期依赖的工具，请构建一个派生镜像：
 
 ```dockerfile
 FROM hiyouga/penguinharness:latest
@@ -104,45 +144,46 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 ripgrep
 USER penguin
 ```
 
-注意运行镜像刻意不含 C/C++ 工具链：那是构建阶段用完即丢的一层。
+运行时镜像刻意不带 C/C++ 工具链：工具链只存在于构建阶段，构建完就丢弃了。
 
 ## 环境变量
 
-完整清单见[配置参考](/configuration)，这里只列容器部署会用到的。
+下表列出容器部署会用到的变量，完整列表见[配置参考](/configuration)。
 
 | 变量 | 在本镜像中 |
 | --- | --- |
-| `PENGUIN_HOME` | `/data`——除非同时改卷的挂载点，否则不要改 |
-| `HOST` | `0.0.0.0`——容器自己的命名空间；宿主机这一侧由 `-p` 决定，示例把它留在回环上 |
-| `PORT` | `7364`；改它会连带把健康检查一起移过去 |
-| `PENGUIN_SEED_ADMIN_PASSWORD` | 钉死初始管理员密码，仅首次启动生效（见上文） |
-| `PENGUIN_TRUST_PROXY` | 在终结 TLS 的反向代理之后设为 `1`，使会话 Cookie 带上 `Secure` |
-| `PENGUIN_PREVIEW_ORIGIN` | 指向同一容器的第二个主机名，用于 Workspace 的 HTML 预览 |
-| `PENGUIN_UPDATE_CHECK` | `off` 关闭新版本检查——服务端唯一一个非模型的出网请求 |
+| `PENGUIN_HOME` | `/data`。除非同时移动数据卷，否则不要修改 |
+| `HOST` | `0.0.0.0`，作用于容器自己的网络命名空间。宿主机一侧由 `-p` 决定，示例都保持在回环接口上 |
+| `PORT` | `7364`。修改后，健康检查会随之改用新端口 |
+| `PENGUIN_SEED_ADMIN_PASSWORD` | 固定初始管理员密码，仅在首次启动时生效，见[提前设置密码](#提前设置密码) |
+| `PENGUIN_TRUST_PROXY` | 放在终结 TLS 的反向代理之后时设为 `1`，会话 Cookie 才会带上 `Secure` 标记 |
+| `PENGUIN_PREVIEW_ORIGIN` | 路由到同一容器的第二个主机名，用于 Workspace 中的 HTML 预览 |
+| `PENGUIN_UPDATE_CHECK` | 设为 `off` 关闭自动的版本检查。模型请求、远程控制连接、Key 授权和代理测试照常出站 |
 
-### 反向代理之后
+### 在反向代理后运行
 
-把容器发布在回环上，在它前面终结 TLS，并设 `PENGUIN_TRUST_PROXY=1`。代理必须自己设置或剥除 `x-forwarded-proto`；该头由调用方提供，这正是服务端在你明说之前不予采信的原因。HTTPS 部署下不设它，签发的会话 Cookie 就不带 `Secure` 标记。
+把容器发布在回环接口上，在它前面终结 TLS，并设置 `PENGUIN_TRUST_PROXY=1`。反向代理必须自己设置或清除 `x-forwarded-proto`：这个请求头由调用方提供，服务端正因如此，在你明确开启之前一直不采信它。HTTPS 部署如果不设置 `PENGUIN_TRUST_PROXY`，签发的会话 Cookie 就不带 `Secure` 标记。
 
-### Workspace 预览
+### 提供 Workspace 预览
 
-Task 产出的 HTML，在有独立来源时会从另一个来源提供。非回环绑定下没有可推导的回环对应地址，预览会退化为同源沙箱，此时 Cookie、`localStorage` 与第三方内嵌都不可用。把 `PENGUIN_PREVIEW_ORIGIN` 指向路由到同一容器的第二个主机名即可恢复隔离版本——它必须在**主机名**上不同，仅端口不同不算。
+Task 生成的 HTML 在有独立来源时，会从独立的来源提供预览。绑定在非回环地址上时，推导不出对应的回环地址，预览会退回同源沙箱，这时 Cookie、`localStorage` 和第三方嵌入内容都不能用。要恢复隔离的预览，把 `PENGUIN_PREVIEW_ORIGIN` 指向路由到同一容器的第二个主机名。它必须在主机名上有所不同，只换端口不行。
 
-## 升级
+## 升级容器
 
-拉一个新 tag 并重建容器。数据目录在卷上，原样保留：
+拉取更新的 tag，然后重建容器。数据目录在数据卷上，会原样保留：
 
 ```bash
 docker compose pull && docker compose up -d
 ```
 
-容器内的自更新**不是**升级路径。Web 应用的升级按钮在这里会报「不支持」——服务端没有可再次运行的 CLI 入口，无从把升级交出去——重启入口也会报没有托管进程。在容器里执行 `penguin update` 则会把新包装进下次重建即丢弃的文件系统，而且无论如何都会失败：运行镜像不含编译器，`node-pty` 也没有可回退的 Linux 预编译产物。
+> [!WARNING]
+> 不要在容器内更新。更新弹窗会提示当前安装无法自行更新，而 `penguin update` 在容器里装下的任何东西，都会在下次重建容器时丢失。
 
-停止是优雅的：`SIGTERM` 会打断运行中的 Task，等它们收尾，再关闭数据库。空闲的服务端远不到一秒就停住，繁忙的可能要几秒——compose 示例把 Docker 默认的 10 秒宽限期调高，正是为此。
+服务端会平稳停止：收到 `SIGTERM` 后，它先中断正在运行的 Task，等它们收尾，再关闭数据库。空闲时不到一秒就能停下，繁忙时可能要几秒，所以 compose 示例调大了 Docker 默认 10 秒的宽限期。
 
-## 救援：忘记管理员密码
+## 重置忘记的管理员密码
 
-授权模型就是数据目录本身——能执行这条命令的人本就持有那个数据库。必须先停掉服务端，因为一个数据目录同一时刻只有一个写者：
+先停止服务端，因为一个数据目录同一时刻只能有一个写入者。然后重置密码，再重新启动：
 
 ```bash
 docker compose stop penguin
@@ -150,10 +191,11 @@ docker compose run --rm penguin penguin server reset-admin-password
 docker compose start penguin
 ```
 
-账号回到未认领状态并清空全部会话，之后照新服务器的流程，从日志里的首次登录链接重新登录。
+重置不需要其他授权：数据目录本身就是授权，能执行这条命令的人本来就拥有这个数据库。`admin` 账号会回到未认领状态，已有的登录会话全部失效。之后按照[首次登录](#首次登录)的做法，用日志里的首次登录链接重新登录。
 
 ## 下一步
 
-- [Web 应用指南](/web-app)：在浏览器里使用 PenguinHarness。
-- [安全模型](/security)：谁能做什么，凭什么。
+- [Web App](/web-app)：在浏览器里使用 PenguinHarness。
+- [更新 PenguinHarness](/updates)：查看版本并升级。
+- [安全模型](/security)：谁能做什么，凭的是什么。
 - [配置参考](/configuration)：全部环境变量与配置字段。

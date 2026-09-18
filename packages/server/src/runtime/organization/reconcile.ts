@@ -97,7 +97,7 @@ export async function listTickets(deps: OrgDeps, org: LoadedOrg): Promise<Ticket
 }
 
 /**
- * Projects the ledger and the tickets' `Sessions` headers into the two session caches, and
+ * Projects the ledger and the tickets' `sessions` fields into the two session caches, and
  * stamps `client = "org"` on every session row those files name. The caches are rebuilt from
  * the files on every pass and vanish with the organization; the stamp is written once per row
  * and stays, which is what keeps a desk or ticket session out of development mode's list

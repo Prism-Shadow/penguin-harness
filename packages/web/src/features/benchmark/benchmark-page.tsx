@@ -59,14 +59,34 @@ function deltaTone(delta: number | null): string {
 }
 
 /**
+ * The page's pair of create entry points, in its header and in its empty state alike. Creating
+ * with AI opens a conversation, which any member of the Project may start; creating by hand posts
+ * the cases for the server to write under the Project's `benchmarks/`, which only the owner may
+ * do (the route answers anyone else with 403). So a member is offered the AI button by itself,
+ * the way the scheduled-tasks tab offers it.
+ */
+export function BenchmarkCreateButtons({
+  isOwner,
+  onAi,
+  onManual,
+}: {
+  isOwner: boolean;
+  onAi: () => void;
+  onManual: () => void;
+}) {
+  return <CreateButtons size="sm" onAi={onAi} {...(isOwner ? { onManual } : {})} />;
+}
+
+/**
  * The three steps of the loop, a card each: three across from `md` up, stacked below. Every card
  * names its step and says where on this page to do it — the create buttons at the top right,
  * Use → Evaluate and Use → Optimize on a Benchmark — and nothing else stands above or beside
  * them: the maintainer wants the three stages alone, without a how-to line or the Skill names
  * in grey. Nothing is drawn between the cards — the numbers already carry the order, and an
- * arrow would only survive one of the two layouts.
+ * arrow would only survive one of the two layouts. A member's first card leaves out Create
+ * manually, since the header does not offer it to them.
  */
-function GuideSteps() {
+function GuideSteps({ isOwner }: { isOwner: boolean }) {
   return (
     <div className="mt-3 grid md:grid-cols-3 gap-3">
       {S.benchmark.guideFlow.map((step, i) => (
@@ -78,7 +98,9 @@ function GuideSteps() {
             <span className="font-mono tabular-nums text-gray-400 dark:text-gray-500">{i + 1}</span>
             <span className="font-semibold text-gray-900 dark:text-gray-100">{step.title}</span>
           </span>
-          <p className="mt-1 leading-relaxed">{step.text}</p>
+          <p className="mt-1 leading-relaxed">
+            {i === 0 && !isOwner ? S.benchmark.guideCreateMember : step.text}
+          </p>
         </div>
       ))}
     </div>
@@ -130,7 +152,7 @@ function TestedAgents({
  * draft, creation failed for a Benchmark whose calibration never finished — with only the delete
  * icon left live.
  */
-function BenchmarkCard({
+export function BenchmarkCard({
   benchmark,
   locale,
   nameOf,
@@ -154,6 +176,11 @@ function BenchmarkCard({
   // away. Only the owner's delete stays above the mask, which is how either is cleaned up.
   const masked = benchmark.status !== "published";
   const failed = benchmark.status === "failed";
+  // Deleting and creating again is a failed Benchmark's only way out, and the hint names that
+  // step only to a viewer who has the delete button beside it.
+  const failedHint = canDelete
+    ? S.benchmark.creationFailedHint
+    : S.benchmark.creationFailedHintMember;
   return (
     <div className="relative flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-gray-200 bg-white px-5 py-4 dark:border-gray-800 dark:bg-gray-900">
       <button
@@ -192,7 +219,10 @@ function BenchmarkCard({
           <ScoreSparkline values={series} label={S.benchmark.sparklineLabel(series.length)} />
         </div>
       )}
-      <div className="w-16 shrink-0 text-right">
+      {/* At least a score's width, and as wide as its label beyond that: the label is a phrase
+          ("first evaluation", "Not evaluated yet") that runs longer than a score in English,
+          and cut short or broken over lines it stops reading as one. */}
+      <div className="min-w-16 shrink-0 text-right">
         {latest ? (
           <>
             <span
@@ -201,7 +231,9 @@ function BenchmarkCard({
             >
               {formatScore(latest.score)}
             </span>
-            <span className={`block truncate text-[11px] tabular-nums ${deltaTone(latest.delta)}`}>
+            <span
+              className={`block whitespace-nowrap text-[11px] tabular-nums ${deltaTone(latest.delta)}`}
+            >
               {latest.delta === null
                 ? S.benchmark.firstEvaluation
                 : latest.delta === 0
@@ -210,7 +242,7 @@ function BenchmarkCard({
             </span>
           </>
         ) : (
-          <span className="block text-xs text-gray-400 dark:text-gray-500">
+          <span className="block whitespace-nowrap text-xs text-gray-400 dark:text-gray-500">
             {S.benchmark.notEvaluated}
           </span>
         )}
@@ -240,7 +272,7 @@ function BenchmarkCard({
       {masked && (
         <div
           role="note"
-          title={failed ? S.benchmark.creationFailedHint : S.benchmark.buildingHint}
+          title={failed ? failedHint : S.benchmark.buildingHint}
           className="absolute inset-0 flex cursor-not-allowed flex-col items-center justify-center gap-1 rounded-md bg-white/75 px-4 text-center backdrop-blur-[1px] dark:bg-gray-900/75"
         >
           {/* A failed creation is the one thing here the user has to act on, so its title takes
@@ -251,7 +283,7 @@ function BenchmarkCard({
             {failed ? S.benchmark.creationFailed : S.benchmark.building}
           </span>
           <span className="text-xs text-gray-500 dark:text-gray-400">
-            {failed ? S.benchmark.creationFailedHint : S.benchmark.buildingHint}
+            {failed ? failedHint : S.benchmark.buildingHint}
           </span>
         </div>
       )}
@@ -397,7 +429,13 @@ export function BenchmarkPage() {
       <EmptyState
         title={S.benchmark.emptyTitle}
         description={S.benchmark.emptyDescription}
-        action={<CreateButtons size="sm" onAi={openAi} onManual={() => setManualOpen(true)} />}
+        action={
+          <BenchmarkCreateButtons
+            isOwner={isOwner}
+            onAi={openAi}
+            onManual={() => setManualOpen(true)}
+          />
+        }
       />
     );
   } else if (rows.length === 0) {
@@ -442,10 +480,14 @@ export function BenchmarkPage() {
                   onChange={(e) => setQuery(e.target.value)}
                 />
               </div>
-              <CreateButtons size="sm" onAi={openAi} onManual={() => setManualOpen(true)} />
+              <BenchmarkCreateButtons
+                isOwner={isOwner}
+                onAi={openAi}
+                onManual={() => setManualOpen(true)}
+              />
             </div>
           </div>
-          <GuideSteps />
+          <GuideSteps isOwner={isOwner} />
         </div>
 
         {/* What the address is filtering by, and the way out of it: the list is narrowed by a

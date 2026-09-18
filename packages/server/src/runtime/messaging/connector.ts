@@ -11,9 +11,14 @@
  * every connector method validates its own shape and throws a readable error on a
  * malformed one — the bridge treats that like any other channel failure.
  */
+import type { MessagingChannel } from "../../api/types.js";
 
-/** Known messaging channels (the DB stores the discriminator as text; unknown values are skipped defensively). */
-export type MessagingChannel = "feishu" | "telegram" | "qq" | "wechat";
+/**
+ * Known messaging channels, declared once with the wire types. The DB stores the discriminator
+ * as text; `isMessagingChannel` (enabled-channel.ts) narrows a stored one, and an unknown value
+ * is skipped defensively.
+ */
+export type { MessagingChannel };
 
 /** One inbound image's bytes, once fetched, with the MIME type the bridge needs for its data URL. */
 export interface MessagingInboundImageData {

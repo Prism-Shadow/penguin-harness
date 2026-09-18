@@ -10,6 +10,7 @@ import { Nav } from "./components/nav";
 import { Sidebar } from "./components/sidebar";
 import { Footer } from "./components/footer";
 import { DocSearchDialog } from "./components/doc-search-dialog";
+import { hashTargetId } from "./lib/hash";
 import { DocPage } from "./pages/doc-page";
 
 /**
@@ -62,7 +63,7 @@ function Layout() {
     handledLocationKey = key;
     if (hash) {
       // Anchors of CJK headings arrive percent-encoded in the URL hash.
-      const el = document.getElementById(decodeURIComponent(hash.slice(1)));
+      const el = document.getElementById(hashTargetId(hash));
       if (el) {
         el.scrollIntoView();
         return;
