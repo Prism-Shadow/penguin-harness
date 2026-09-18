@@ -175,8 +175,10 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   useEffect(() => {
     if (!inProgress) return;
     let cancelled = false;
+    // The machine whose settings are on screen: an install started over there reports its
+    // progress over there.
     const timer = setTimeout(() => {
-      void api.adminGetPluginConfig().then(
+      void api.adminGetPluginConfig(machine).then(
         (config) => {
           if (cancelled) return;
           setEntries((prev) =>
@@ -203,7 +205,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [entries, inProgress]);
+  }, [entries, inProgress, machine]);
 
   /**
    * The update one entry's draft makes, or `null` when it changes nothing; `false` when a
