@@ -98,6 +98,9 @@ import { AgentRoutes } from "./services/agent-routes.js";
 import { AgentService } from "./services/agent-service.js";
 import { MemoryService } from "./services/memory-service.js";
 import { BenchmarkService } from "./services/benchmark-service.js";
+import { ActivityService } from "./activities/service.js";
+import { ActivityRoutes } from "./activities/routes.js";
+import { ActivityAuthoring } from "./mechanisms/activities.js";
 import { ProjectsRoutes } from "./http/routes/dirs.js";
 import { SandboxModule } from "./sandbox/service.js";
 import { SchedulerRoutes } from "./http/routes/schedules.js";
@@ -334,9 +337,11 @@ export class TracesModule {}
     AgentService,
     MemoryService,
     BenchmarkService,
+    ActivityService,
+    ActivityRoutes,
     AgentRoutes,
   ],
-  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks],
+  exports: [AgentConfig, Snapshots, AgentLifecycle, Memory, Benchmarks, ActivityAuthoring],
 })
 export class AgentsModule {}
 
