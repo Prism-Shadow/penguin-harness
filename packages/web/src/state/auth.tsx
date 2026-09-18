@@ -57,7 +57,7 @@ interface AuthContextValue {
   uploadLimits: UploadLimits;
   /**
    * Whether company mode is enabled server-wide (the admin master switch in server settings,
-   * default on). Off hides the work-mode switch for everyone and 404s every organization
+   * default off). Off hides the work-mode switch for everyone and 404s every organization
    * route; the user's own preference (`UiPrefs.companyMode`) only hides the switch for them.
    */
   companyMode: boolean;
@@ -84,8 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [desktopMode, setDesktopMode] = useState(false);
   const [sessionVia, setSessionVia] = useState<MeResponse["sessionVia"]>("password");
   const [uploadLimits, setUploadLimits] = useState<UploadLimits>(DEFAULT_UPLOAD_LIMITS);
-  // Off until /api/me says otherwise: the mode switch must not flash for a server that has
-  // turned company mode off, and the default on the server side is on anyway.
+  // Off until /api/me says otherwise, as it is on a server nobody has turned it on: the mode
+  // switch must not flash for a server that has company mode off.
   const [companyMode, setCompanyMode] = useState(false);
 
   // Any API returning 401 (session expired / database rebuilt) clears the current user, and
@@ -122,7 +122,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (userId: string, password: string) => {
     const res = await api.login({ userId, password });
-    setUser(res.user);
     // previewIsolated only rides on GET /api/me, and the mount-time fetch ran before
     // this session existed — without a refetch, a deployment with no separate preview
     // origin would keep the optimistic `true` after a UI login (navigation is
@@ -130,6 +129,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // preview path it can't actually serve. Never fail the login over it: the session
     // cookie is already set, so a transient /me error just leaves the default in place
     // until the next refresh.
+    //
+    // The user is adopted together with that answer, not before it: the shell mounts the
+    // moment there is a user, and a shell mounted on the pre-login flags acts on them — the
+    // company store reads an "off" master switch as its cue to put the chosen work mode
+    // back to development, which would cost every UI login a company choice.
     try {
       const me = await api.getMe();
       setUser(me.user);
@@ -139,7 +143,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUploadLimits(me.uploadLimits);
       setCompanyMode(me.companyMode);
     } catch {
-      // Login itself succeeded; keep the optimistic default.
+      // Login itself succeeded; adopt the user and keep the optimistic defaults.
+      setUser(res.user);
     }
   }, []);
 

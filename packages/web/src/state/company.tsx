@@ -9,6 +9,15 @@
  * Session's own page; organizations keep running regardless — the personal switch only hides the
  * user's own view of them.
  *
+ * Turning a switch on only offers the mode: the mode switch appears, and the shell stays in
+ * development on the page it is showing. The store holds that by keeping the chosen mode at
+ * development while company mode is unavailable — a stored "company" is written back the moment
+ * the store sees either switch off, whether the switch goes off in this tab, was already off at
+ * load, or the preferences holding the choice arrive while it is. A choice kept through the off
+ * spell would take effect when the switch comes back on, swapping in the company sidebar under
+ * whatever page is open (the new-chat page, say) instead of the company landing. Company mode is
+ * entered only by the user: the mode switch, or an `/org` route.
+ *
  * Entering company mode is also where the shell says the mode is a beta: the first switch
  * into it in a browser raises the notice once (features/company/beta-badge.tsx keeps the
  * flag), which is why `setWorkMode` is the single handler both mode switches call.
@@ -46,6 +55,7 @@ import type {
   OrgSessionsResponse,
   OrganizationSummary,
   ServerEvent,
+  UiPrefs,
 } from "@prismshadow/penguin-server/api";
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
@@ -143,10 +153,13 @@ export interface CompanyVersions {
 }
 
 interface CompanyStoreState {
+  /** The server's master switch (`MeResponse.companyMode`), as the auth context last read it. */
+  serverEnabled: boolean;
   /** The user's own switch (`UiPrefs.companyMode`); on until the preferences say otherwise. */
   personalEnabled: boolean;
   /** The preferences have been read once (before that the mirrors below stand in). */
   prefsLoaded: boolean;
+  /** The mode the user chose, held at development while company mode is unavailable (settleWorkMode). */
   workMode: WorkMode;
   /** `<projectId>/<orgId>` of the organization last opened, or null. */
   lastOrgKey: string | null;
@@ -195,7 +208,9 @@ interface CompanyStoreState {
   versions: CompanyVersions;
 
   setWorkMode: (mode: WorkMode) => void;
+  setServerEnabled: (enabled: boolean) => void;
   setPersonalEnabled: (enabled: boolean) => void;
+  applyPrefs: (prefs: UiPrefs) => void;
   setCurrentOrg: (key: string | null) => void;
   reloadChannels: (projectId: string, orgId: string) => Promise<void>;
   markChannelRead: (channelId: string) => void;
@@ -222,12 +237,47 @@ function counters(channels: readonly OrgChannelItem[]): {
   return { channelUnread: unread, channelMentions: mentions };
 }
 
+/** Both switches on: the mode switch renders and `/org` routes resolve. */
+export function companyModeAvailable(switches: {
+  serverEnabled: boolean;
+  personalEnabled: boolean;
+}): boolean {
+  return switches.serverEnabled && switches.personalEnabled;
+}
+
+/**
+ * The mode the shell stands in: the chosen one while company mode is available, development
+ * otherwise. The store writes the choice itself back to development as soon as it sees a switch
+ * off (settleWorkMode); this covers the renders that come before it has, such as the first one
+ * after a load that finds "company" in the localStorage mirror while the server's switch is off.
+ */
+export function effectiveWorkMode(state: {
+  serverEnabled: boolean;
+  personalEnabled: boolean;
+  workMode: WorkMode;
+}): WorkMode {
+  return companyModeAvailable(state) ? state.workMode : "dev";
+}
+
+/**
+ * Company mode is unavailable, so a company choice goes back to development in the store, the
+ * localStorage mirror and the preference alike (setWorkMode writes all three). Level, not edge:
+ * it runs whenever the store learns a switch's value, so a choice stored before the switch went
+ * off, in a tab or a browser that never saw it go, is settled on the first load that sees it off.
+ */
+function settleWorkMode(state: CompanyStoreState): void {
+  if (state.workMode === "company" && !companyModeAvailable(state)) state.setWorkMode("dev");
+}
+
 /**
  * Builds one Provider's store. Exported as a test seam: the package's vitest runs in Node
  * with no DOM, so the event routing below is exercised against the store directly.
+ * `serverEnabled` seeds the server's master switch (the Provider passes the auth context's), so
+ * the first render already knows whether company mode may be entered.
  */
-export function createCompanyStore() {
+export function createCompanyStore(options: { serverEnabled?: boolean } = {}) {
   return createStore<CompanyStoreState>((set, get) => ({
+    serverEnabled: options.serverEnabled ?? false,
     personalEnabled: true,
     prefsLoaded: false,
     workMode: initialWorkMode(),
@@ -251,6 +301,9 @@ export function createCompanyStore() {
 
     setWorkMode: (mode) => {
       if (mode === get().workMode) return;
+      // Company mode is entered only while it is available: a company choice written while a
+      // switch is off would come into force the moment the switch comes back on.
+      if (mode === "company" && !companyModeAvailable(get())) return;
       storeWorkMode(mode);
       set({ workMode: mode });
       // The mode is a beta, and this is the one place a person enters it: both switches and
@@ -269,11 +322,43 @@ export function createCompanyStore() {
       void api.putPrefs({ workMode: mode }).catch(() => undefined);
     },
 
+    /**
+     * The server's master switch as /api/me last reported it. Seen off, the choice goes back
+     * to development (settleWorkMode), so turning the switch on again offers company mode
+     * instead of entering it.
+     */
+    setServerEnabled: (enabled) => {
+      if (enabled !== get().serverEnabled) set({ serverEnabled: enabled });
+      settleWorkMode(get());
+    },
+
     setPersonalEnabled: (enabled) => {
       set({ personalEnabled: enabled });
-      // Hiding company mode hides its shell with it (see setWorkMode).
+      // Hiding company mode hides its shell with it (see setWorkMode), and takes it off the
+      // user's choice: turning the switch back on offers the mode rather than entering it.
       if (!enabled) get().setCurrentOrg(null);
+      settleWorkMode(get());
       void api.putPrefs({ companyMode: enabled }).catch(() => undefined);
+    },
+
+    /**
+     * The stored preferences have arrived, and they win over the localStorage mirrors: the
+     * user's switch, the mode and the organization last opened. A company choice among them
+     * while company mode is unavailable is settled at once rather than adopted.
+     */
+    applyPrefs: (prefs) => {
+      const patch: Partial<CompanyStoreState> = { prefsLoaded: true };
+      if (prefs.companyMode === false) patch.personalEnabled = false;
+      if (prefs.workMode === "company" || prefs.workMode === "dev") {
+        patch.workMode = prefs.workMode;
+        storeWorkMode(prefs.workMode);
+      }
+      if (typeof prefs.lastOrgKey === "string" && parseOrgKey(prefs.lastOrgKey) !== null) {
+        patch.lastOrgKey = prefs.lastOrgKey;
+        storeLastOrgKey(prefs.lastOrgKey);
+      }
+      set(patch);
+      settleWorkMode(get());
     },
 
     setCurrentOrg: (key) => {
@@ -602,13 +687,21 @@ interface CompanyContextValue {
 const CompanyContext = createContext<CompanyContextValue | null>(null);
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
-  const { user, companyMode: serverEnabled } = useAuth();
+  const { user, companyMode } = useAuth();
   const { projects, currentProject } = useProject();
-  const [store] = useState(createCompanyStore);
+  const [store] = useState(() => createCompanyStore({ serverEnabled: companyMode }));
   const state = useStore(store);
+  const { serverEnabled } = state;
   const userId = user?.userId ?? null;
   const currentProjectId = currentProject?.projectId ?? null;
   const projectIdsKey = projects.map((p) => p.projectId).join(",");
+
+  // The server's master switch reaches the store on mount and on every later read of /api/me
+  // (the admin's own flip refreshes it). Seen off, the store puts the chosen mode back to
+  // development, which is what keeps turning the switch on from entering company mode.
+  useEffect(() => {
+    store.getState().setServerEnabled(companyMode);
+  }, [store, companyMode]);
 
   // Preferences: the stored switch, mode and last organization win over the localStorage
   // mirrors once they arrive. Read once per signed-in user.
@@ -618,19 +711,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     void api
       .getPrefs()
       .then((res) => {
-        if (cancelled) return;
-        const prefs = res.prefs;
-        const patch: Partial<CompanyStoreState> = { prefsLoaded: true };
-        if (prefs.companyMode === false) patch.personalEnabled = false;
-        if (prefs.workMode === "company" || prefs.workMode === "dev") {
-          patch.workMode = prefs.workMode;
-          storeWorkMode(prefs.workMode);
-        }
-        if (typeof prefs.lastOrgKey === "string" && parseOrgKey(prefs.lastOrgKey) !== null) {
-          patch.lastOrgKey = prefs.lastOrgKey;
-          storeLastOrgKey(prefs.lastOrgKey);
-        }
-        store.setState(patch);
+        if (!cancelled) store.getState().applyPrefs(res.prefs);
       })
       .catch(() => {
         // Unreachable preferences leave the mirrors standing; nothing here is critical.
@@ -716,7 +797,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   useEffect(() => subscribeCompanyResync(() => store.getState().resync()), [store]);
 
   const value = useMemo<CompanyContextValue>(() => {
-    const available = serverEnabled && state.personalEnabled;
+    const available = companyModeAvailable(state);
     const shownKey = state.currentOrgKey ?? state.lastOrgKey;
     const shown = parseOrgKey(shownKey);
     const currentOrg =
@@ -726,10 +807,10 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
             (o) => o.projectId === shown.projectId && o.orgId === shown.orgId,
           ) ?? null);
     return {
-      serverEnabled,
+      serverEnabled: state.serverEnabled,
       personalEnabled: state.personalEnabled,
       available,
-      workMode: available ? state.workMode : "dev",
+      workMode: effectiveWorkMode(state),
       setWorkMode: state.setWorkMode,
       setPersonalEnabled: state.setPersonalEnabled,
       organizations: state.organizations,
@@ -768,7 +849,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       reloadOrgSessions: () =>
         currentProjectId === null ? Promise.resolve() : state.reloadOrgSessions(currentProjectId),
     };
-  }, [state, serverEnabled, projectIdsKey, currentProjectId]);
+  }, [state, projectIdsKey, currentProjectId]);
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>;
 }

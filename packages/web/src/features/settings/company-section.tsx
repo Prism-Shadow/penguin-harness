@@ -5,10 +5,11 @@
  * rather than on; it stays disabled until the stored value arrives and again while a write is in
  * flight, so a second flip cannot race the first. Off stops the organization scheduler, 404s
  * every organization route and hides the mode switch for everyone; on again resumes without
- * backfilling what was missed. A write that fails puts the switch back on the stored value and
- * names the reason on a line under it (a toast would leave the switch and the message on
- * separate surfaces). The auth context is refreshed afterwards because the shell reads the flag
- * from /api/me, not from this page. The mode is a beta; the line under the switch says so
+ * backfilling what was missed, and only brings the mode switch back — nobody's shell moves into
+ * company mode by it (state/company.tsx). A write that fails puts the switch back on the stored
+ * value and names the reason on a line under it (a toast would leave the switch and the message
+ * on separate surfaces). The auth context is refreshed afterwards because the shell reads the
+ * flag from /api/me, not from this page. The mode is a beta; the line under the switch says so
  * wherever the switch stands.
  */
 import { useEffect, useState } from "react";
