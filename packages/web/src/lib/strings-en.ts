@@ -262,9 +262,6 @@ export const en: Strings = {
     pluginSecretClear: "Clear stored value",
     /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
     pluginConfigMachine: "Machine",
-    pluginConfigThisServerDesc: "The settings this server's plugins read, stored on this server.",
-    pluginConfigMachineDesc:
-      "The settings that machine's plugins read, stored on that machine. Nothing is copied between machines.",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "Must be a number",
     uploadLimitsTitle: "Upload limits",
@@ -1801,10 +1798,7 @@ export const en: Strings = {
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "Machine",
     allMachines: "All machines",
-    allMachinesDesc: "What every machine runs. Installing here enables a plugin on all of them.",
     thisServer: "This server",
-    machineDesc:
-      "What this machine runs. Installing here enables a plugin on this machine only, and only this machine downloads it.",
     /** A row listed for some machines only, by alias. */
     onlyOn: (names: string) => `only on ${names}`,
     /** An all-machines row listed only for other machines. */

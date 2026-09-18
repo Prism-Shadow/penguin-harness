@@ -296,8 +296,6 @@ export const zh = {
     pluginSecretClear: "清除已存值",
     /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
     pluginConfigMachine: "机器",
-    pluginConfigThisServerDesc: "本机插件读取的设置，保存在本机。",
-    pluginConfigMachineDesc: "那台机器上插件读取的设置，保存在那台机器上；机器之间不互相复制。",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "必须是数字",
     uploadLimitsTitle: "上传限制",
@@ -1811,9 +1809,7 @@ export const zh = {
     /** The header's machine picker: which machine's plugins the page shows and edits. */
     viewMachine: "机器",
     allMachines: "所有机器",
-    allMachinesDesc: "每台机器都运行的插件。在此安装即对所有机器启用。",
     thisServer: "本机",
-    machineDesc: "这台机器运行的插件。在此安装只对这台机器启用，也只有这台机器会下载它。",
     /** A row listed for some machines only, by alias. */
     onlyOn: (names: string) => `仅在 ${names}`,
     /** An all-machines row listed only for other machines. */

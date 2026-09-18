@@ -60,8 +60,7 @@ import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useSessions } from "../../state/sessions";
-import { OptionMenu } from "../../components/ui/option-menu";
-import type { OptionMenuChoice } from "../../components/ui/option-menu";
+import { MachinePicker, type MachineChoice } from "../machines/machine-picker";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Chevron } from "../../components/ui/chevron";
@@ -287,18 +286,11 @@ export function PluginsPage() {
   const otherMachines = [
     ...new Set([...machineIds, ...(deployment?.plugins ?? []).flatMap((p) => p.machines ?? [])]),
   ].filter((id) => id !== selfId);
-  const machineChoices: OptionMenuChoice<string>[] = [
-    {
-      value: ALL_MACHINES_CHOICE,
-      triggerLabel: S.plugins.allMachines,
-      label: S.plugins.allMachines,
-      description: S.plugins.allMachinesDesc,
-    },
+  const machineChoices: MachineChoice[] = [
+    { value: ALL_MACHINES_CHOICE, label: S.plugins.allMachines },
     ...(selfId === undefined ? [] : [selfId, ...otherMachines]).map((id) => ({
       value: id,
-      triggerLabel: nameOf(id),
       label: nameOf(id),
-      description: S.plugins.machineDesc,
     })),
   ];
 
@@ -622,9 +614,9 @@ export function PluginsPage() {
               {/* Which machine's plugins the rows show, and which table an install or a
                   removal edits: the shared one, or that machine's own. */}
               {otherMachines.length > 0 && (
-                <OptionMenu
+                <MachinePicker
                   aria-label={S.plugins.viewMachine}
-                  options={machineChoices}
+                  choices={machineChoices}
                   value={viewMachine ?? ALL_MACHINES_CHOICE}
                   onChange={(v) => setViewMachine(v === ALL_MACHINES_CHOICE ? null : v)}
                 />

@@ -36,7 +36,7 @@ import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { SectionShell } from "./section-shell";
 import { useSessions } from "../../state/sessions";
-import { OptionMenu } from "../../components/ui/option-menu";
+import { MachinePicker } from "../machines/machine-picker";
 
 /** The picker's value for this server; a machine id is never this short. */
 const THIS_SERVER = "*";
@@ -307,21 +307,11 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   const picker =
     machineIds.length > 0 ? (
       <div className="flex justify-end">
-        <OptionMenu
+        <MachinePicker
           aria-label={S.settings.pluginConfigMachine}
-          options={[
-            {
-              value: THIS_SERVER,
-              triggerLabel: S.plugins.thisServer,
-              label: S.plugins.thisServer,
-              description: S.settings.pluginConfigThisServerDesc,
-            },
-            ...machineIds.map((id) => ({
-              value: id,
-              triggerLabel: nameOf(id),
-              label: nameOf(id),
-              description: S.settings.pluginConfigMachineDesc,
-            })),
+          choices={[
+            { value: THIS_SERVER, label: S.plugins.thisServer },
+            ...machineIds.map((id) => ({ value: id, label: nameOf(id) })),
           ]}
           value={machine ?? THIS_SERVER}
           onChange={(v) => {
