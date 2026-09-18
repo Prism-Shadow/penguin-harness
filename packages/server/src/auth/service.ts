@@ -354,6 +354,7 @@ export class AuthService implements Auth {
 }
 
 /** What signing a new user in needs of project administration — declared at the consumer. */
-export abstract class InitialProjectProvisioner extends Interface<{
-  provisionInitialProject(user: UserRow, isAdmin: boolean): Promise<void>;
-}>() {}
+@Interface()
+export abstract class InitialProjectProvisioner {
+  abstract provisionInitialProject(user: UserRow, isAdmin: boolean): Promise<void>;
+}

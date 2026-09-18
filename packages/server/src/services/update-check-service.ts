@@ -37,12 +37,13 @@ export const SUCCESS_TTL_MS = 60 * 60 * 1000;
 export const FAILURE_TTL_MS = 10 * 60 * 1000;
 
 /** The network, as the update check reaches it; a test stands in a canned one. */
-export abstract class HttpFetch extends Interface<{
-  fetch(
+@Interface()
+export abstract class HttpFetch {
+  abstract fetch(
     input: string,
     init?: Opaque<"RequestInit", RequestInit>,
   ): Promise<Opaque<"Response", Response>>;
-}>() {}
+}
 @Component()
 export class GlobalFetch implements HttpFetch {
   fetch(input: string, init?: RequestInit): Promise<Response> {

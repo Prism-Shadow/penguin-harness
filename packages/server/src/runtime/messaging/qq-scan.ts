@@ -436,9 +436,10 @@ export class QQScanService {
 }
 
 /** The scan-to-connect transport as a node, so a test stands in a fake for the network. */
-export abstract class QQScanTransportHandle extends Interface<{
-  transport: Opaque<"QQScanTransport", QQScanTransport>;
-}>() {}
+@Interface()
+export abstract class QQScanTransportHandle {
+  abstract transport: Opaque<"QQScanTransport", QQScanTransport>;
+}
 @Module()
 export class QQScanTransportProvider {
   @Provide() qqScanTransport!: QQScanTransportHandle;

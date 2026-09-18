@@ -2283,13 +2283,14 @@ export abstract class SessionServiceIface extends Interface<
 >() {}
 
 /** The per-spawn policies every Session's command environment is built with. */
-export abstract class SessionEnv extends Interface<{
-  proxyEnv(): ProxyEnvPolicy | null;
-  controlEnv(ctx: ControlEnvContext): Record<string, string>;
+@Interface()
+export abstract class SessionEnv {
+  abstract proxyEnv(): ProxyEnvPolicy | null;
+  abstract controlEnv(ctx: ControlEnvContext): Record<string, string>;
   /** The directories at the FRONT of every command's PATH: the harness's own CLI shim (see CreateAgentOptions.pathPrepend). */
-  pathPrepend(): string[];
-  confineSpawn(): SpawnConfiner | null;
-}>() {}
+  abstract pathPrepend(): string[];
+  abstract confineSpawn(): SpawnConfiner | null;
+}
 
 @Module()
 export class SessionsModule {
@@ -2435,13 +2436,14 @@ export class SessionsModule {
 }
 
 /** Builds the loader a manager runs sessions through; a test stands in a fake session. */
-export abstract class SessionLoaders extends Interface<{
-  create(
+@Interface()
+export abstract class SessionLoaders {
+  abstract create(
     root: string,
     sources: Opaque<"SessionOrigins", SessionOrigins>,
     env: Opaque<"SessionLoaderEnv", Parameters<typeof createCoreSessionLoader>[2]>,
   ): Opaque<"SessionLoader", SessionLoader>;
-}>() {}
+}
 @Component()
 export class CoreSessionLoaders implements SessionLoaders {
   create(
@@ -2454,11 +2456,12 @@ export class CoreSessionLoaders implements SessionLoaders {
 }
 
 /** Builds the title generator; a test stands in a notifier that never calls a model. */
-export abstract class TitleGenerators extends Interface<{
-  create(
+@Interface()
+export abstract class TitleGenerators {
+  abstract create(
     deps: Opaque<"TitleGeneratorDeps", ConstructorParameters<typeof TitleGenerator>[0]>,
   ): Opaque<"TitleNotifier", TitleNotifier>;
-}>() {}
+}
 @Component()
 export class DefaultTitleGenerators implements TitleGenerators {
   create(deps: ConstructorParameters<typeof TitleGenerator>[0]): TitleNotifier {

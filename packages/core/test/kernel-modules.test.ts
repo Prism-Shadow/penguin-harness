@@ -542,11 +542,15 @@ describe("Interface, in both spellings", () => {
 });
 
 describe("class form: @Module / @Use / @Provide / @Bind", () => {
-  abstract class Sessions extends Interface<{
-    startTask(id: string): Promise<{ sessionId: string }>;
-    statusOf(id: string): string;
-  }>() {}
-  abstract class Runner extends Interface<{ statusOf(id: string): string }>() {}
+  @Interface()
+  abstract class Sessions {
+    abstract startTask(id: string): Promise<{ sessionId: string }>;
+    abstract statusOf(id: string): string;
+  }
+  @Interface()
+  abstract class Runner {
+    abstract statusOf(id: string): string;
+  }
   const t: IfaceTable = {
     "SessionsModule#Sessions": {
       name: "Sessions",

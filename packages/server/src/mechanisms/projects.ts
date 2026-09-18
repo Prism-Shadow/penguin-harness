@@ -44,119 +44,131 @@ import type {
 } from "../services/model-oauth-service.js";
 
 /** Projects: the mechanism ProjectsRepo implements. */
-export abstract class Projects extends Interface<{
-  insert(row: ProjectRow): void;
-  findById(projectId: string): ProjectRow | null;
-  listAll(): ProjectRow[];
-  listAccessible(userId: string): AccessibleProjectRow[];
-  listByOwner(userId: string): ProjectRow[];
-  delete(projectId: string): void;
-}>() {}
+@Interface()
+export abstract class Projects {
+  abstract insert(row: ProjectRow): void;
+  abstract findById(projectId: string): ProjectRow | null;
+  abstract listAll(): ProjectRow[];
+  abstract listAccessible(userId: string): AccessibleProjectRow[];
+  abstract listByOwner(userId: string): ProjectRow[];
+  abstract delete(projectId: string): void;
+}
 
 /** Members: the mechanism MembersRepo implements. */
-export abstract class Members extends Interface<{
-  insert(row: MemberRow): void;
-  isMember(projectId: string, userId: string): boolean;
-  list(projectId: string): MemberRow[];
-  delete(projectId: string, userId: string): void;
-}>() {}
+@Interface()
+export abstract class Members {
+  abstract insert(row: MemberRow): void;
+  abstract isMember(projectId: string, userId: string): boolean;
+  abstract list(projectId: string): MemberRow[];
+  abstract delete(projectId: string, userId: string): void;
+}
 
 /** AgentIndex: the mechanism AgentsRepo implements. */
-export abstract class AgentIndex extends Interface<{
-  insertOrIgnore(row: AgentRow): void;
-  exists(projectId: string, agentId: string): boolean;
-  list(projectId: string): AgentRow[];
-  delete(projectId: string, agentId: string): void;
-  deleteByProject(projectId: string): void;
-}>() {}
+@Interface()
+export abstract class AgentIndex {
+  abstract insertOrIgnore(row: AgentRow): void;
+  abstract exists(projectId: string, agentId: string): boolean;
+  abstract list(projectId: string): AgentRow[];
+  abstract delete(projectId: string, agentId: string): void;
+  abstract deleteByProject(projectId: string): void;
+}
 
 /** Access: the mechanism ProjectAccess implements. */
-export abstract class Access extends Interface<{
-  find(userId: string, projectId: string): (ProjectRow & { role: ProjectRole }) | null;
-  requireProjectAccess(userId: string, projectId: string): ProjectRow & { role: ProjectRole };
-  canAccess(userId: string, projectId: string): boolean;
-  requireProjectOwner(userId: string, projectId: string): ProjectRow;
-  accessibleProjectIds(userId: string): string[];
-  listProjects(userId: string): Promise<ProjectSummary[]>;
-}>() {}
+@Interface()
+export abstract class Access {
+  abstract find(userId: string, projectId: string): (ProjectRow & { role: ProjectRole }) | null;
+  abstract requireProjectAccess(
+    userId: string,
+    projectId: string,
+  ): ProjectRow & { role: ProjectRole };
+  abstract canAccess(userId: string, projectId: string): boolean;
+  abstract requireProjectOwner(userId: string, projectId: string): ProjectRow;
+  abstract accessibleProjectIds(userId: string): string[];
+  abstract listProjects(userId: string): Promise<ProjectSummary[]>;
+}
 
 /** ProjectLifecycle: the mechanism ProjectService implements. */
-export abstract class ProjectLifecycle extends Interface<{
-  requireProjectAccess(userId: string, projectId: string): ProjectRow & { role: ProjectRole };
-  canAccess(userId: string, projectId: string): boolean;
-  requireProjectOwner(userId: string, projectId: string): ProjectRow;
-  accessibleProjectIds(userId: string): string[];
-  listProjects(userId: string): Promise<ProjectSummary[]>;
-  createProject(owner: UserRow, projectId: string, name?: string): Promise<ProjectSummary>;
+@Interface()
+export abstract class ProjectLifecycle {
+  abstract requireProjectAccess(
+    userId: string,
+    projectId: string,
+  ): ProjectRow & { role: ProjectRole };
+  abstract canAccess(userId: string, projectId: string): boolean;
+  abstract requireProjectOwner(userId: string, projectId: string): ProjectRow;
+  abstract accessibleProjectIds(userId: string): string[];
+  abstract listProjects(userId: string): Promise<ProjectSummary[]>;
+  abstract createProject(owner: UserRow, projectId: string, name?: string): Promise<ProjectSummary>;
   /** Every id `createProject` refuses as taken, as names only: the rows and the data root's entries. */
-  takenProjectIds(): Promise<string[]>;
-  provisionInitialProject(user: UserRow, isAdmin: boolean): Promise<void>;
-  renameProject(userId: string, projectId: string, name: string): Promise<ProjectSummary>;
-  deleteProject(userId: string, projectId: string): Promise<void>;
-  destroyProject(projectId: string): Promise<void>;
-  listMembers(userId: string, projectId: string): MemberInfo[];
-  addMember(userId: string, projectId: string, targetUserId: string): MemberInfo;
-  removeMember(userId: string, projectId: string, targetUserId: string): void;
-}>() {}
+  abstract takenProjectIds(): Promise<string[]>;
+  abstract provisionInitialProject(user: UserRow, isAdmin: boolean): Promise<void>;
+  abstract renameProject(userId: string, projectId: string, name: string): Promise<ProjectSummary>;
+  abstract deleteProject(userId: string, projectId: string): Promise<void>;
+  abstract destroyProject(projectId: string): Promise<void>;
+  abstract listMembers(userId: string, projectId: string): MemberInfo[];
+  abstract addMember(userId: string, projectId: string, targetUserId: string): MemberInfo;
+  abstract removeMember(userId: string, projectId: string, targetUserId: string): void;
+}
 
 /** ProjectConfigStore: the mechanism ProjectConfigService implements. */
-export abstract class ProjectConfigStore extends Interface<{
-  readRaw(projectId: string): Promise<RawTable>;
-  loadConfig(projectId: string): Promise<ProjectConfig>;
-  writeRaw(projectId: string, data: RawTable): Promise<void>;
-  writeInitialConfig(projectId: string, name: string): Promise<void>;
-  ensurePresetModels(projectId: string): Promise<boolean>;
-  seedPresetPromotions(projectId: string): Promise<void>;
-  getName(projectId: string): Promise<string | undefined>;
-  setName(projectId: string, name: string): Promise<void>;
-  getDefaultModelRef(projectId: string): Promise<ModelRef | undefined>;
-  setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto>;
-  getChatDefaults(projectId: string): Promise<ChatDefaultsDto>;
-  setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto>;
+@Interface()
+export abstract class ProjectConfigStore {
+  abstract readRaw(projectId: string): Promise<RawTable>;
+  abstract loadConfig(projectId: string): Promise<ProjectConfig>;
+  abstract writeRaw(projectId: string, data: RawTable): Promise<void>;
+  abstract writeInitialConfig(projectId: string, name: string): Promise<void>;
+  abstract ensurePresetModels(projectId: string): Promise<boolean>;
+  abstract seedPresetPromotions(projectId: string): Promise<void>;
+  abstract getName(projectId: string): Promise<string | undefined>;
+  abstract setName(projectId: string, name: string): Promise<void>;
+  abstract getDefaultModelRef(projectId: string): Promise<ModelRef | undefined>;
+  abstract setDefaultModelRef(projectId: string, ref: ModelRefDto): Promise<ModelRefDto>;
+  abstract getChatDefaults(projectId: string): Promise<ChatDefaultsDto>;
+  abstract setChatDefaults(projectId: string, req: ChatDefaultsDto): Promise<ChatDefaultsDto>;
   /** The `[plugins]` table this Project asks for: package name → requirement, in the file's order. */
-  getPlugins(projectId: string): Promise<PluginTable>;
+  abstract getPlugins(projectId: string): Promise<PluginTable>;
   /** Replaces the table (a declarative PUT); answers what was written. */
-  setPlugins(projectId: string, plugins: PluginTable): Promise<PluginTable>;
-  getCommandPolicy(projectId: string): Promise<CommandPolicyDto>;
-  setCommandPolicy(
+  abstract setPlugins(projectId: string, plugins: PluginTable): Promise<PluginTable>;
+  abstract getCommandPolicy(projectId: string): Promise<CommandPolicyDto>;
+  abstract setCommandPolicy(
     projectId: string,
     req: {
       enabled?: boolean;
       rules: { name: string; pattern: string; description?: string; enabled?: boolean }[];
     },
   ): Promise<CommandPolicyDto>;
-  getPricing(
+  abstract getPricing(
     projectId: string,
     provider: string,
     modelId: string,
   ): Promise<TieredRates | undefined>;
-  detectVision(
+  abstract detectVision(
     projectId: string,
     req: ModelVisionDetectRequest,
   ): Promise<ModelVisionDetectResponse>;
-  testModel(projectId: string, req: ModelTestRequest): Promise<ModelTestResponse>;
-  detectProtocol(
+  abstract testModel(projectId: string, req: ModelTestRequest): Promise<ModelTestResponse>;
+  abstract detectProtocol(
     projectId: string,
     req: ModelProtocolDetectRequest,
   ): Promise<ModelProtocolDetectResponse>;
-  listEndpointModels(
+  abstract listEndpointModels(
     req: EndpointModelListRequest,
     listImpl?: (options: ListEndpointModelsOptions) => Promise<string[]>,
     timeoutMs?: number,
   ): Promise<EndpointModelListResponse>;
-  getModels(projectId: string): Promise<ModelsResponse>;
-  updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse>;
-  setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number>;
-  getGroupApiKey(projectId: string, provider: string): Promise<string | undefined>;
-  mergePlatformModels(
+  abstract getModels(projectId: string): Promise<ModelsResponse>;
+  abstract updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse>;
+  abstract setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number>;
+  abstract getGroupApiKey(projectId: string, provider: string): Promise<string | undefined>;
+  abstract mergePlatformModels(
     projectId: string,
     provider: string,
     catalog: PlatformModelCatalog,
     apiKey: string,
     applyKeyToExisting: boolean,
   ): Promise<PlatformModelApplyResult>;
-  completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
-}>() {}
+  abstract completeOnce(projectId: string, prompt: string): Promise<UtilityCompletion>;
+}
 
 export interface ModelPromotion {
   provider: string;
@@ -165,35 +177,41 @@ export interface ModelPromotion {
 }
 
 /** Per-Project model promotions (web.db `model_promotions`). */
-export abstract class ModelPromotions extends Interface<{
-  get(projectId: string, provider: string, modelId: string): number | undefined;
-  list(projectId: string): ModelPromotion[];
+@Interface()
+export abstract class ModelPromotions {
+  abstract get(projectId: string, provider: string, modelId: string): number | undefined;
+  abstract list(projectId: string): ModelPromotion[];
   /** Replaces every promotion of the Project, in one transaction. */
-  replaceAll(projectId: string, rows: readonly ModelPromotion[]): void;
+  abstract replaceAll(projectId: string, rows: readonly ModelPromotion[]): void;
   /** Replaces the promotions of one provider group, in one transaction. */
-  replaceProvider(projectId: string, provider: string, rows: readonly ModelPromotion[]): void;
-}>() {}
+  abstract replaceProvider(
+    projectId: string,
+    provider: string,
+    rows: readonly ModelPromotion[],
+  ): void;
+}
 
 /** ModelOAuth: the mechanism ModelOAuthService implements. */
-export abstract class ModelOAuth extends Interface<{
-  start(input: {
+@Interface()
+export abstract class ModelOAuth {
+  abstract start(input: {
     projectId: string;
     userId: string;
     provider: string;
     mode: ModelOAuthMode;
     callbackOrigin: string;
   }): ModelOAuthStartResult;
-  deposit(input: { flowId: string; projectId: string; code: string }): void;
-  poll(input: { flowId: string; userId: string; projectId: string }): Promise<{
+  abstract deposit(input: { flowId: string; projectId: string; code: string }): void;
+  abstract poll(input: { flowId: string; userId: string; projectId: string }): Promise<{
     status: ModelOAuthStatus;
     provider: string;
     error?: ModelOAuthErrorCode;
     applied?: number;
   }>;
-  complete(input: {
+  abstract complete(input: {
     flowId: string;
     userId: string;
     projectId: string;
     code: string;
   }): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }>;
-}>() {}
+}

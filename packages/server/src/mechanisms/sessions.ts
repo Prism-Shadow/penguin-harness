@@ -11,40 +11,43 @@ import type { ScheduleFileCache } from "../runtime/schedule-store.js";
 import type { ScheduleEntryView } from "../runtime/scheduler.js";
 
 /** SessionIndex: the mechanism SessionsRepo implements. */
-export abstract class SessionIndex extends Interface<{
-  insert(row: SessionRow): void;
-  insertOrIgnore(row: SessionRow): void;
-  insertFork(sourceSessionId: string, row: SessionRow): SessionRow;
-  markOrgClient(sessionIds: readonly string[]): void;
-  markHasTrace(sessionId: string): void;
-  markDriven(sessionId: string, at: string): void;
-  touchLastActive(sessionId: string, at: string): void;
-  findById(sessionId: string): SessionRow | null;
-  listByAgent(projectId: string, agentId: string): SessionRow[];
-  listByProject(projectId: string): SessionRow[];
-  updateApprovalMode(sessionId: string, mode: ApprovalMode): void;
-  updateThinkingLevel(sessionId: string, level: ThinkingLevelName): void;
-  updateTitle(sessionId: string, title: string): void;
-  updateTitleIfNull(sessionId: string, title: string): void;
-  setArchived(sessionId: string, archivedAt: string | null): void;
-  replaceId(oldSessionId: string, newSessionId: string): void;
-  deleteByAgent(projectId: string, agentId: string): void;
-  deleteByProject(projectId: string): void;
-  deleteById(sessionId: string): void;
-}>() {}
+@Interface()
+export abstract class SessionIndex {
+  abstract insert(row: SessionRow): void;
+  abstract insertOrIgnore(row: SessionRow): void;
+  abstract insertFork(sourceSessionId: string, row: SessionRow): SessionRow;
+  abstract markOrgClient(sessionIds: readonly string[]): void;
+  abstract markHasTrace(sessionId: string): void;
+  abstract markDriven(sessionId: string, at: string): void;
+  abstract touchLastActive(sessionId: string, at: string): void;
+  abstract findById(sessionId: string): SessionRow | null;
+  abstract listByAgent(projectId: string, agentId: string): SessionRow[];
+  abstract listByProject(projectId: string): SessionRow[];
+  abstract updateApprovalMode(sessionId: string, mode: ApprovalMode): void;
+  abstract updateThinkingLevel(sessionId: string, level: ThinkingLevelName): void;
+  abstract updateTitle(sessionId: string, title: string): void;
+  abstract updateTitleIfNull(sessionId: string, title: string): void;
+  abstract setArchived(sessionId: string, archivedAt: string | null): void;
+  abstract replaceId(oldSessionId: string, newSessionId: string): void;
+  abstract deleteByAgent(projectId: string, agentId: string): void;
+  abstract deleteByProject(projectId: string): void;
+  abstract deleteById(sessionId: string): void;
+}
 
 /** SessionOrigins: the mechanism SessionSources implements. */
-export abstract class SessionOrigins extends Interface<{
-  set(sessionId: string, source: SessionSource | null): void;
-  get(sessionId: string): SessionSource | null | undefined;
-  delete(sessionId: string): void;
-}>() {}
+@Interface()
+export abstract class SessionOrigins {
+  abstract set(sessionId: string, source: SessionSource | null): void;
+  abstract get(sessionId: string): SessionSource | null | undefined;
+  abstract delete(sessionId: string): void;
+}
 
 /** Schedules: the mechanism SchedulesRepo implements. */
-export abstract class Schedules extends Interface<{
-  find(projectId: string, agentId: string, name: string): ScheduleStateRow | null;
-  listByAgent(projectId: string, agentId: string): ScheduleStateRow[];
-  registerOrSync(args: {
+@Interface()
+export abstract class Schedules {
+  abstract find(projectId: string, agentId: string, name: string): ScheduleStateRow | null;
+  abstract listByAgent(projectId: string, agentId: string): ScheduleStateRow[];
+  abstract registerOrSync(args: {
     projectId: string;
     agentId: string;
     name: string;
@@ -52,36 +55,37 @@ export abstract class Schedules extends Interface<{
     defHash: string;
     creatorUserId: string | null;
   }): { row: ScheduleStateRow; fresh: boolean };
-  markSlot(projectId: string, agentId: string, name: string, slotMs: number): void;
-  markFired(
+  abstract markSlot(projectId: string, agentId: string, name: string, slotMs: number): void;
+  abstract markFired(
     projectId: string,
     agentId: string,
     name: string,
     firedAt: string,
     oneShot: boolean,
   ): void;
-  markMissed(projectId: string, agentId: string, name: string): void;
-  markInvalid(projectId: string, agentId: string, name: string, reason: string): void;
-  delete(projectId: string, agentId: string, name: string): void;
-  deleteMissing(projectId: string, agentId: string, presentNames: string[]): string[];
-  deleteByAgent(projectId: string, agentId: string): void;
-  deleteByProject(projectId: string): void;
-}>() {}
+  abstract markMissed(projectId: string, agentId: string, name: string): void;
+  abstract markInvalid(projectId: string, agentId: string, name: string, reason: string): void;
+  abstract delete(projectId: string, agentId: string, name: string): void;
+  abstract deleteMissing(projectId: string, agentId: string, presentNames: string[]): string[];
+  abstract deleteByAgent(projectId: string, agentId: string): void;
+  abstract deleteByProject(projectId: string): void;
+}
 
 /** Scheduling: the mechanism Scheduler implements. */
-export abstract class Scheduling extends Interface<{
-  readonly files: Opaque<"ScheduleFileCache", ScheduleFileCache>;
-  start(): Promise<void>;
-  stop(): void;
-  tickOnce(): Promise<void>;
-  reconcileAgent(projectId: string, agentId: string): Promise<void>;
-  listAgent(
+@Interface()
+export abstract class Scheduling {
+  abstract readonly files: Opaque<"ScheduleFileCache", ScheduleFileCache>;
+  abstract start(): Promise<void>;
+  abstract stop(): void;
+  abstract tickOnce(): Promise<void>;
+  abstract reconcileAgent(projectId: string, agentId: string): Promise<void>;
+  abstract listAgent(
     projectId: string,
     agentId: string,
   ): Promise<{ entries: ScheduleEntryView[]; invalid: Array<{ name: string; error: string }> }>;
-  listProject(projectId: string): Promise<{
+  abstract listProject(projectId: string): Promise<{
     entries: Array<ScheduleEntryView & { agentId: string }>;
     invalid: Array<{ agentId: string; name: string; error: string }>;
   }>;
-  dropEntry(projectId: string, agentId: string, name: string): void;
-}>() {}
+  abstract dropEntry(projectId: string, agentId: string, name: string): void;
+}
