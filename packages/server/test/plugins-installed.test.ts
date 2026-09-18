@@ -176,12 +176,17 @@ describe("installed plugins", () => {
 
   it("a plugin asked of another machine only is listed there, and neither installed nor loaded here", async () => {
     const other = "Other00000000000";
-    const res = await admin.post("/api/projects/default_project/plugins/installed", {
-      specifier: "@acme/elsewhere@1.2.3",
+    // Of any machine, only what the build ships can be asked for.
+    const refused = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "@acme/not-shipped",
       machineId: other,
     });
-    // Nothing fetched it here — a local npm install of a package that does not exist would
-    // have answered plugin_install_failed.
+    expect(refused.status).toBe(400);
+    await ship({ name: "@acme/elsewhere", module: "Elsewhere" });
+    const res = await admin.post("/api/projects/default_project/plugins/installed", {
+      specifier: "@acme/elsewhere",
+      machineId: other,
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as InstalledPluginsResponse;
     expect(body.plugins).toEqual([
@@ -196,7 +201,7 @@ describe("installed plugins", () => {
     expect(body.plugins[0]!.error).toBeUndefined();
     expect(body.restartPending).toBe(false);
     expect(await fs.readFile(listFile(), "utf8")).toContain(
-      `[plugins.${other}]\n"@acme/elsewhere" = "1.2.3"`,
+      `[plugins.${other}]\n"@acme/elsewhere" = "*"`,
     );
 
     // Removing it from that machine's table leaves the shared table alone.
