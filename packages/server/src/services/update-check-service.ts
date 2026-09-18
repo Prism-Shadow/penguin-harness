@@ -23,7 +23,8 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { Hono } from "hono";
 import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
 import { versionRoutes } from "../http/routes/version.js";
-import type { Clock, Config, Lifecycle } from "../hmr/capabilities.js";
+import type { Clock, Config } from "../hmr/capabilities.js";
+import { processRestart } from "./process-restart.js";
 import type { UpdateJob } from "./update-job.js";
 import type { HarnessHistoryIface } from "./harness-history.js";
 
@@ -167,7 +168,6 @@ export class VersionRoutes {
   @Use() private readonly config!: Config;
   @Use() private readonly updateCheck!: UpdateCheck;
   @Use() private readonly updateJob!: UpdateJob;
-  @Use() private readonly lifecycle!: Lifecycle;
   @Use() private readonly history!: HarnessHistoryIface;
   @Bind("VersionModule.routes") routes!: Hono<AppEnv>;
   setup() {
@@ -175,7 +175,8 @@ export class VersionRoutes {
       config: this.config,
       updateCheck: this.updateCheck,
       updateJob: this.updateJob,
-      lifecycle: this.lifecycle,
+      // The platform's own, claimed from nothing: the environment and the process it runs in.
+      restart: processRestart(),
       history: this.history,
     });
   }
