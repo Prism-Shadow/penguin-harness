@@ -21,16 +21,13 @@
  *   plugin                            platform   fs-write  network  mask-paths
  *   penguin-plugin-sandbox-bwrap      Linux      yes       yes      yes
  *   penguin-plugin-sandbox-seatbelt   macOS      yes       yes      yes
- *   penguin-plugin-sandbox-winuser    Windows    yes       yes      yes
  *   penguin-plugin-sandbox-dsh        all three  yes       —        —
  *
  * The DSH adaptor is the portable floor covering file effects only (its own chain picks
- * bwrap/Landlock, Seatbelt or the Windows ACL runner per host); the three native
- * backends add the other two dimensions, one per platform. Windows is served by the
- * account backend rather than a container: measured on a Windows 11 host, no container
- * mechanism available there can run an MSYS2 shell (see sandbox-winuser's README). Where none implements a
- * requested dimension, service.ts fails closed naming what each covers rather than
- * quietly confining less than was asked.
+ * bwrap/Landlock, Seatbelt or the Windows ACL runner per host); the native backends add the
+ * other two dimensions on Linux and macOS. Where none implements a requested dimension,
+ * service.ts fails closed naming what each covers rather than quietly confining less than
+ * was asked.
  */
 export { SandboxService } from "./service.js";
 export { SANDBOX_DIMENSIONS, providerDimensions, requestedDimensions } from "./dimensions.js";
