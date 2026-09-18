@@ -43,9 +43,14 @@ describe("MemoryChangesCard header", () => {
     expect(memoryMarks(html)).toBe(1);
   });
 
-  it("names the action in words the button shows, with no tooltip repeating them", () => {
+  it("names the action in words the button shows, with no tooltip and no glyph beside them", () => {
     const html = render(() => {});
-    const action = html.match(/<button type="button"[^>]*>打开记忆列表<\/button>/)?.[0] ?? "";
+    // The header's action is the card's first button. Matched whole — attributes and content —
+    // rather than pinned to the label, so a glyph creeping back inside it cannot make the
+    // assertions below pass on a string that matched nothing.
+    const action = html.match(/<button[\s\S]*?<\/button>/)?.[0] ?? null;
+    expect(action).not.toBeNull();
+    expect(action).toContain(S.chat.memoryOpenList);
     expect(action).not.toContain("title=");
     expect(action).not.toContain("<svg");
   });
