@@ -44,8 +44,126 @@ import {
 } from "@prismshadow/penguin-core/markers";
 import type { OmniMessage } from "@prismshadow/penguin-core";
 
-/** Bump when any counting/boundary rule changes: cached page_stats records with an older version are recomputed. */
-export const CACHE_VERSION = 4;
+/** Bump when any counting/boundary rule — or the record's shape — changes: cached page_stats records with an older version are recomputed. */
+export const CACHE_VERSION = 6;
+
+/**
+ * One turn of the conversation outline (the Web's quick-jump index), as the scanner sees
+ * it: the same entry rule as the Web's buildOutline, so `turn` numbers agree with the
+ * numbers the Web derives from `earlierTurns`. `question` is the prompt's RAW text (the
+ * Web strips protocol blocks with the same parser it uses for loaded turns; "" for an
+ * image-only prompt), `answer` the turn's accumulated reply text, capped — a preview
+ * source, not a transcript.
+ */
+export interface OutlineIndexEntry {
+  /** Global 1-based turn number. */
+  turn: number;
+  /** Cursor of the turn's unit (`<shardIndex>:<ordinal>`): what a window can be opened at. */
+  cursor: string;
+  question: string;
+  answer: string;
+}
+
+/** Caps on what an index entry carries: a preview needs the head of a text, never the whole of it. */
+export const OUTLINE_QUESTION_CAP = 1000;
+export const OUTLINE_ANSWER_CAP = 500;
+
+/**
+ * The head of a prompt, cut at a LINE boundary: the protocol blocks the Web strips from a
+ * question (`[use_skills]`, `[attached file: …]` lines) are line-shaped, and a cut inside
+ * one would leave half a marker the stripper no longer recognises — cached for good.
+ */
+export function outlineQuestion(raw: string): string {
+  if (raw.length <= OUTLINE_QUESTION_CAP) return raw;
+  const head = raw.slice(0, OUTLINE_QUESTION_CAP);
+  const line = head.lastIndexOf("\n");
+  return line > 0 ? head.slice(0, line) : head;
+}
+
+/**
+ * What a shard's scan owes the turn that opened in the shard BEFORE it: a Task can span a
+ * rotation (compaction with carry-over), so its reply — or the text of an image-first
+ * prompt — can land in the next shard while the entry sits, immutable, in the previous
+ * shard's cached record. The reader of the index applies it to that entry.
+ */
+export interface OutlineCarry {
+  /** A question for the previous entry, if it had none. */
+  question: string | null;
+  /** Reply text to append to the previous entry (capped by the reader). */
+  answer: string;
+}
+
+/**
+ * Receives the outline while a shard is scanned. `entry` fires when a turn opens (the
+ * unit boundary that also counts), `adopt` when a later fragment of the same prompt
+ * carries the text an image-first send lacked, `reply` for every non-blank assistant
+ * text — the collector decides which turn it belongs to (the newest one it holds).
+ */
+export interface OutlineCollector {
+  entry(ordinal: number, turn: number, question: string): void;
+  adopt(question: string): void;
+  reply(text: string): void;
+}
+
+/** The collector as one message's Task start sees it: the ordinal already bound. */
+interface TurnCollector {
+  entry(turn: number, question: string): void;
+  adopt(question: string): void;
+}
+
+/** A collector assembling this shard's entries; `cursorOf` names the shard for the entries' cursors. */
+export function collectOutline(cursorOf: (ordinal: number) => string): {
+  collector: OutlineCollector;
+  entries: OutlineIndexEntry[];
+  carry: OutlineCarry;
+} {
+  const entries: OutlineIndexEntry[] = [];
+  const carry: OutlineCarry = { question: null, answer: "" };
+  const collector: OutlineCollector = {
+    entry(ordinal, turn, question) {
+      entries.push({
+        turn,
+        cursor: cursorOf(ordinal),
+        question: outlineQuestion(question),
+        answer: "",
+      });
+    },
+    adopt(question) {
+      if (question === "") return;
+      const last = entries[entries.length - 1];
+      if (last === undefined) {
+        // The prompt opened in the previous shard: owed to its entry there.
+        if (carry.question === null) carry.question = outlineQuestion(question);
+        return;
+      }
+      if (last.question === "") last.question = outlineQuestion(question);
+    },
+    reply(text) {
+      const last = entries[entries.length - 1];
+      if (last === undefined) {
+        if (carry.answer.length < OUTLINE_ANSWER_CAP)
+          carry.answer = appendReply(carry.answer, text);
+        return;
+      }
+      if (last.answer.length < OUTLINE_ANSWER_CAP) last.answer = appendReply(last.answer, text);
+    },
+  };
+  return { collector, entries, carry };
+}
+
+function appendReply(answer: string, text: string): string {
+  return (answer === "" ? text : `${answer} ${text}`).slice(0, OUTLINE_ANSWER_CAP);
+}
+
+/** Settles a shard's carry onto the entry that opened before it (the reader's side of OutlineCarry). */
+export function applyOutlineCarry(entries: OutlineIndexEntry[], carry: OutlineCarry): void {
+  const last = entries[entries.length - 1];
+  if (last === undefined) return;
+  if (last.question === "" && carry.question !== null) last.question = carry.question;
+  if (carry.answer !== "" && last.answer.length < OUTLINE_ANSWER_CAP) {
+    last.answer = appendReply(last.answer, carry.answer);
+  }
+}
 
 /** Cumulative totals at a point in the trace (all values are "before this point"). */
 export interface WindowPriorStats {
@@ -261,6 +379,8 @@ function onTaskStart(
   ms: number | null,
   entryEligible: boolean,
   onBoundary: (stats: WindowPriorStats) => void,
+  /** The prompt's text ("" for an image) and the outline collector, when one is listening. */
+  outline: { question: string; collector: TurnCollector } | null = null,
 ): void {
   // A stats row emitted while closing the previous Task lands BEFORE this user item and
   // breaks the item run (finalizeOpenTask inserts it ahead of the new prompt) — mirror
@@ -273,6 +393,12 @@ function onTaskStart(
   if (entryEligible) {
     if (boundary) state.totals.turns += 1;
     state.runOpen = true;
+    // The same two moves buildOutline makes: a counting boundary opens the entry, a
+    // later fragment of the same prompt only supplies a question the entry lacks.
+    if (outline !== null) {
+      if (boundary) outline.collector.entry(state.totals.turns, outline.question);
+      else outline.collector.adopt(outline.question);
+    }
   } else {
     state.runOpen = false;
   }
@@ -302,9 +428,22 @@ export async function scanMessages(
   expandChild: ((sessionId: string) => Promise<ChildAggregate | null>) | null,
   fromOrdinal = 0,
   toOrdinal = messages.length,
+  /** Assembles the outline index as a side effect of the same pass; null = not wanted. */
+  outline: OutlineCollector | null = null,
 ): Promise<void> {
   for (let i = fromOrdinal; i < toOrdinal; i++) {
     const msg = messages[i]!;
+    // The collector sees this message's ordinal through the entry hook.
+    const outlineAt =
+      outline === null
+        ? null
+        : (question: string): { question: string; collector: TurnCollector } => ({
+            question,
+            collector: {
+              entry: (turn, q) => outline.entry(i, turn, q),
+              adopt: (q) => outline.adopt(q),
+            },
+          });
     // Shards never contain origin-carrying messages (core's Writer filters them);
     // defensively skip any that appear rather than mis-shaping the counts.
     if (msg.origin !== undefined && msg.origin.length > 0) continue;
@@ -361,6 +500,7 @@ export async function scanMessages(
           ms,
           outlineEligible(text, (p as { sender?: string }).sender, notice !== null),
           (stats) => onBoundary(i, stats),
+          outlineAt === null ? null : outlineAt(text),
         );
         continue;
       }
@@ -370,15 +510,23 @@ export async function scanMessages(
           touchTask(state, ms);
           continue;
         }
-        onTaskStart(state, ms, true, (stats) => onBoundary(i, stats));
+        onTaskStart(
+          state,
+          ms,
+          true,
+          (stats) => onBoundary(i, stats),
+          outlineAt === null ? null : outlineAt(""),
+        );
         continue;
       }
       if (p.type === "text" && p.role === "assistant" && typeof p.text === "string") {
         touchTask(state, ms);
         // Blank fidelity-only messages produce no item (stream-model discards them).
-        if (p.text.trim() !== "") {
+        const reply = p.text.trim();
+        if (reply !== "") {
           state.task.sawReply = true;
           breakRuns(state);
+          outline?.reply(reply);
         }
         continue;
       }
@@ -560,28 +708,48 @@ export function decodeCursor(raw: string): MessageCursor | null {
 
 /**
  * The persisted shape of trace_files.page_stats: the scan state at the END of a shard
- * (cumulative from the very beginning of the session). Only immutable shards are cached
- * — the newest shard still grows. `v` gates rule evolution: a record from an older
- * CACHE_VERSION is recomputed as if absent.
+ * (cumulative from the very beginning of the session) and the outline entries the
+ * shard opened. Only immutable shards are cached — the newest shard still grows. `v`
+ * gates rule evolution: a record from an older CACHE_VERSION is recomputed as if absent.
  */
 export interface ShardPrefixRecord {
   v: number;
   state: ScanState;
+  outline: OutlineIndexEntry[];
+  carry: OutlineCarry;
 }
 
-export function serializePrefix(state: ScanState): string {
-  return JSON.stringify({ v: CACHE_VERSION, state } satisfies ShardPrefixRecord);
+/** What one cached shard contributes: where the scan stands at its end, the turns it opened, and what it owes the turn before it. */
+export interface ShardPrefix {
+  state: ScanState;
+  outline: OutlineIndexEntry[];
+  carry: OutlineCarry;
+}
+
+export function serializePrefix(
+  state: ScanState,
+  outline: OutlineIndexEntry[],
+  carry: OutlineCarry,
+): string {
+  return JSON.stringify({ v: CACHE_VERSION, state, outline, carry } satisfies ShardPrefixRecord);
 }
 
 /** Parse a cached record; null when absent, unparseable, or from another CACHE_VERSION. */
-export function deserializePrefix(raw: string | null): ScanState | null {
+export function deserializePrefix(raw: string | null): ShardPrefix | null {
   if (raw === null) return null;
   try {
     const rec = JSON.parse(raw) as ShardPrefixRecord;
-    if (rec.v !== CACHE_VERSION || typeof rec.state !== "object" || rec.state === null) {
+    if (
+      rec.v !== CACHE_VERSION ||
+      typeof rec.state !== "object" ||
+      rec.state === null ||
+      !Array.isArray(rec.outline) ||
+      typeof rec.carry !== "object" ||
+      rec.carry === null
+    ) {
       return null;
     }
-    return rec.state;
+    return { state: rec.state, outline: rec.outline, carry: rec.carry };
   } catch {
     return null;
   }
