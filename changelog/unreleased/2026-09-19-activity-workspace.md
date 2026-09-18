@@ -3,6 +3,7 @@
 Date: 2026-09-19
 Type: feature
 Scope: server, web
+PR: [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3)
 
 [中文](2026-09-19-activity-workspace.zh.md)
 
