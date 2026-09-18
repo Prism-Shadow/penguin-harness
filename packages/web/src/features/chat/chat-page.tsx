@@ -983,7 +983,7 @@ export function ChatPage() {
       request: (sessionId: string, processId: string) => Promise<void>,
       staleStatuses: readonly number[],
     ) => {
-      if (!selected || procBusy !== null || processIds.length === 0) return;
+      if (!selected || procBusy !== null) return;
       const sessionId = selected.sessionId;
       setProcBusy(processIds);
       try {
