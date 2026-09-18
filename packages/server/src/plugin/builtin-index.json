@@ -20,6 +20,16 @@
     "categories": ["sandbox"]
   },
   {
+    "name": "@prismshadow/penguin-plugin-sandbox-wsl",
+    "version": "0.2.2",
+    "description": "WSL sandbox backend for PenguinHarness on Windows: commands run in a dedicated WSL2 distro under bubblewrap, with Windows interop switched off.",
+    "authors": ["Prism Shadow"],
+    "license": "Apache-2.0",
+    "repository": "https://github.com/Prism-Shadow/penguin-harness",
+    "keywords": ["windows", "wsl", "bubblewrap", "network-isolation", "path-masking"],
+    "categories": ["sandbox"]
+  },
+  {
     "name": "@prismshadow/penguin-plugin-sandbox-dsh",
     "version": "0.2.2",
     "description": "DeepSeek Harness sandbox adaptor for PenguinHarness: the DSH local backend chain behind the harness's own sandbox interface.",

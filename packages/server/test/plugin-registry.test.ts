@@ -70,6 +70,7 @@ describe("builtinPluginRegistry", () => {
     expect(entries.map((e) => e.name)).toEqual([
       "@prismshadow/penguin-plugin-sandbox-bwrap",
       "@prismshadow/penguin-plugin-sandbox-seatbelt",
+      "@prismshadow/penguin-plugin-sandbox-wsl",
       "@prismshadow/penguin-plugin-sandbox-dsh",
     ]);
     for (const entry of entries) {
@@ -127,7 +128,7 @@ describe("GET /api/plugins/registry", () => {
     const res = await apiClient(t.app, admin.cookie).get("/api/plugins/registry");
     expect(res.status).toBe(200);
     const body = (await res.json()) as PluginIndexResponse;
-    expect(body.plugins).toHaveLength(3);
+    expect(body.plugins).toHaveLength(4);
     expect(body.plugins.every((p) => p.name.startsWith("@prismshadow/penguin-plugin-"))).toBe(true);
   });
 });
