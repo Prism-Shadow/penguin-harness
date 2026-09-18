@@ -17,7 +17,7 @@ Each Project has its own model table: the models its conversations can use, grou
 This development integration keeps Penguin's agent loop, tools, approvals, and history.
 It uses a Copilot transport in AgentHub. It is not a Copilot CLI or SDK runtime.
 The checked-in AgentHub patch is for development; npm distribution requires an AgentHub
-release containing the adapter. A custom OAuth App's inference access has not been verified.
+release containing the adapter. Test access with your own connected account.
 
 1. Register your own [GitHub OAuth App](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow) and enable device flow.
 2. Set `PENGUIN_COPILOT_CLIENT_ID` on the Penguin server to that app's client ID and restart it.
@@ -32,9 +32,11 @@ saved credential, open the group's key dialog and select **Disconnect Copilot**.
 This does not clear `GITHUB_COPILOT_API_KEY` if it is set, or revoke the OAuth App on GitHub.
 
 Only non-expiring OAuth App tokens are supported. Discovery imports tool-capable models
-advertising Chat Completions. When endpoint metadata is absent, explicitly typed chat
+advertising Chat Completions or Responses. AgentHub chooses Responses when advertised and
+keeps the protocol stable for the model client. When endpoint metadata is absent, explicitly typed chat
 models with tool support are imported as candidates; run the connection test to verify
-inference access. Explicit Responses-only models and expiring GitHub App tokens are excluded.
+inference access. Models explicitly disabled by policy, models requiring other protocols,
+and expiring GitHub App tokens are excluded.
 No dollar price or remaining subscription quota is inferred. Account and organization
 policies still govern access. GitHub documents custom-app subscription authentication for
 its SDK; that does not establish official support for this standalone transport.

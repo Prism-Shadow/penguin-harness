@@ -30,13 +30,22 @@ diff --git a/dist/github_copilot/client.d.ts b/dist/github_copilot/client.d.ts
 new file mode 100644
 --- /dev/null
 +++ b/dist/github_copilot/client.d.ts
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,18 @@
 +import { OpenaiChatClient } from "../openai_chat";
++import { UniConfig, UniMessage, UniEvent } from "../types";
 +type Options = ConstructorParameters<typeof OpenaiChatClient>[0];
 +/** Experimental transport; the caller owns authorization, tools and the agent loop. */
 +export declare class GitHubCopilotClient extends OpenaiChatClient {
++    private readonly responses;
++    private readonly protocols;
++    private protocol?;
 +    constructor(options: Options);
-+    listModels(): Promise<string[]>;
++    listModels(signal?: AbortSignal): Promise<string[]>;
++    _streamingResponseInternal(options: {
++        messages: UniMessage[];
++        config: UniConfig;
++        signal?: AbortSignal;
++    }): AsyncGenerator<UniEvent>;
 +}
 +export {};
 +//# sourceMappingURL=client.d.ts.map
@@ -46,13 +55,13 @@ new file mode 100644
 --- /dev/null
 +++ b/dist/github_copilot/client.d.ts.map
 @@ -0,0 +1,1 @@
-+{"version":3,"file":"client.d.ts","sourceRoot":"","sources":["../../src/github_copilot/client.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,gBAAgB,EAAE,MAAM,gBAAgB,CAAC;AAGlD,KAAK,OAAO,GAAG,qBAAqB,CAAC,OAAO,gBAAgB,CAAC,CAAC,CAAC,CAAC,CAAC;AAGjE,uFAAuF;AACvF,qBAAa,mBAAoB,SAAQ,gBAAgB;gBAC3C,OAAO,EAAE,OAAO;IAwCtB,UAAU,IAAI,OAAO,CAAC,MAAM,EAAE,CAAC;CAkBtC"}
++{"version":3,"file":"client.d.ts","sourceRoot":"","sources":["../../src/github_copilot/client.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,gBAAgB,EAAE,MAAM,gBAAgB,CAAC;AAElD,OAAO,EAAE,SAAS,EAAE,UAAU,EAAE,QAAQ,EAAE,MAAM,UAAU,CAAC;AAG3D,KAAK,OAAO,GAAG,qBAAqB,CAAC,OAAO,gBAAgB,CAAC,CAAC,CAAC,CAAC,CAAC;AAWjE,uFAAuF;AACvF,qBAAa,mBAAoB,SAAQ,gBAAgB;IACvD,OAAO,CAAC,QAAQ,CAAC,SAAS,CAAyB;IACnD,OAAO,CAAC,QAAQ,CAAC,SAAS,CAA+B;IACzD,OAAO,CAAC,QAAQ,CAAC,CAAW;gBAChB,OAAO,EAAE,OAAO;IA2CtB,UAAU,CAAC,MAAM,CAAC,EAAE,WAAW,GAAG,OAAO,CAAC,MAAM,EAAE,CAAC;IA0BlD,0BAA0B,CAAC,OAAO,EAAE;QACzC,QAAQ,EAAE,UAAU,EAAE,CAAC;QACvB,MAAM,EAAE,SAAS,CAAC;QAClB,MAAM,CAAC,EAAE,WAAW,CAAC;KACtB,GAAG,cAAc,CAAC,QAAQ,CAAC;CAe7B"}
 \ No newline at end of file
 diff --git a/dist/github_copilot/client.js b/dist/github_copilot/client.js
 new file mode 100644
 --- /dev/null
 +++ b/dist/github_copilot/client.js
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,104 @@
 +"use strict";
 +var __importDefault = (this && this.__importDefault) || function (mod) {
 +    return (mod && mod.__esModule) ? mod : { "default": mod };
@@ -61,7 +70,14 @@ new file mode 100644
 +exports.GitHubCopilotClient = void 0;
 +const openai_1 = __importDefault(require("openai"));
 +const openai_chat_1 = require("../openai_chat");
++const openai_responses_1 = require("../openai_responses");
 +const BASE_URL = "https://api.githubcopilot.com";
++class CopilotResponsesClient extends openai_responses_1.OpenaiResponsesClient {
++    constructor(options, client) {
++        super(options);
++        this._client = client;
++    }
++}
 +/** Experimental transport; the caller owns authorization, tools and the agent loop. */
 +class GitHubCopilotClient extends openai_chat_1.OpenaiChatClient {
 +    constructor(options) {
@@ -73,6 +89,7 @@ new file mode 100644
 +            throw new Error("GitHub Copilot requires https://api.githubcopilot.com.");
 +        }
 +        super({ ...options, apiKey, baseUrl });
++        this.protocols = new Map();
 +        this._client = new openai_1.default({
 +            apiKey,
 +            baseURL: BASE_URL,
@@ -80,7 +97,8 @@ new file mode 100644
 +            defaultHeaders: {
 +                ...options.defaultHeaders,
 +                "User-Agent": "PenguinHarness",
-+                "X-GitHub-Api-Version": "2026-06-01",
++                "X-GitHub-Api-Version": "2026-07-01",
++                "Copilot-Integration-Id": "agentic-workflows",
 +                "Openai-Intent": "conversation-edits",
 +            },
 +            fetch: async (url, init) => {
@@ -89,25 +107,28 @@ new file mode 100644
 +                const headers = new Headers(init?.headers);
 +                if (typeof init?.body === "string") {
 +                    const body = JSON.parse(init.body);
-+                    const messages = body.messages || [];
++                    const messages = body.messages || (Array.isArray(body.input) ? body.input : []);
 +                    const last = messages[messages.length - 1];
 +                    // Image-only synthetic user messages can carry a preceding tool result.
 +                    const toolImage = last?.role === "user" && Array.isArray(last.content) &&
-+                        last.content.every((part) => part.type === "image_url") &&
-+                        messages[messages.length - 2]?.role === "tool";
++                        last.content.every((part) => part.type === "image_url" || part.type === "input_image") &&
++                        (messages[messages.length - 2]?.role === "tool" ||
++                            messages[messages.length - 2]?.type === "function_call_output");
 +                    headers.set("X-Initiator", last?.role === "user" && !toolImage ? "user" : "agent");
 +                    if (messages.some((message) => Array.isArray(message.content) &&
-+                        message.content.some((part) => part.type === "image_url"))) {
++                        message.content.some((part) => part.type === "image_url" || part.type === "input_image"))) {
 +                        headers.set("Copilot-Vision-Request", "true");
 +                    }
 +                }
 +                return fetch(url, { ...init, headers, redirect: "error" });
 +            },
 +        });
++        this.responses = new CopilotResponsesClient({ ...options, apiKey, baseUrl }, this._client);
 +    }
-+    async listModels() {
++    async listModels(signal) {
 +        const ids = [];
-+        for await (const entry of this._client.models.list({ timeout: 15000 })) {
++        this.protocols.clear();
++        for await (const entry of this._client.models.list({ timeout: 15000, signal })) {
 +            const model = entry;
 +            // Older catalogs omit endpoint metadata. Treat explicitly chat-capable
 +            // entries as candidates, while honoring any advertised endpoint restrictions.
@@ -115,11 +136,33 @@ new file mode 100644
 +                ? model.capabilities?.type === "chat"
 +                : Array.isArray(model.supported_endpoints) &&
 +                    model.supported_endpoints.includes("/chat/completions");
-+            if (chat &&
-+                model.capabilities?.supports?.tool_calls === true)
++            const responses = Array.isArray(model.supported_endpoints) &&
++                model.supported_endpoints.includes("/responses");
++            if ((chat || responses) && model.capabilities?.supports?.tool_calls === true &&
++                model.policy?.state !== "disabled") {
 +                ids.push(model.id);
++                this.protocols.set(model.id, responses ? "responses" : "chat");
++            }
 +        }
 +        return ids;
++    }
++    async *_streamingResponseInternal(options) {
++        // Pin the wire protocol for this client so a catalog refresh cannot change
++        // how an existing conversation's reasoning and tool history are replayed.
++        if (!this.protocol) {
++            if (!this.protocols.has(this._model))
++                await this.listModels(options.signal);
++            const protocol = this.protocols.get(this._model);
++            if (!protocol)
++                throw new Error("This Copilot model does not advertise a supported tool-capable endpoint.");
++            this.protocol = protocol;
++        }
++        if (this.protocol === "responses") {
++            yield* this.responses._streamingResponseInternal(options);
++        }
++        else {
++            yield* super._streamingResponseInternal(options);
++        }
 +    }
 +}
 +exports.GitHubCopilotClient = GitHubCopilotClient;

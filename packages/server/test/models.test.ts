@@ -64,40 +64,43 @@ describe("models preset & catalog enrichment", () => {
     await t.cleanup();
   });
 
-  it("imports Copilot models through AgentHub, preserves the project and masks its credential", async () => {
-    const before = (await (await api.get(url())).json()) as ModelsResponse;
-    const fetcher = vi.fn<typeof fetch>(async () =>
-      Response.json({
-        data: [
-          {
-            id: "copilot-test-model",
-            supported_endpoints: ["/chat/completions"],
-            capabilities: { supports: { tool_calls: true } },
-          },
-        ],
-      }),
-    );
-    vi.stubGlobal("fetch", fetcher);
-    expect(
-      await t.deps.projectConfigService.connectCopilot(projectId, "gho_private-test-token"),
-    ).toBe(1);
-    const after = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(after.defaultModel).toEqual(before.defaultModel);
-    expect(after.models.filter((model) => model.provider !== "github-copilot")).toEqual(
-      before.models,
-    );
-    const imported = pick(after, "github-copilot", "copilot-test-model");
-    expect(imported.clientType).toBe("github-copilot");
-    expect(imported.pricing).toBeUndefined();
-    expect(JSON.stringify(after)).not.toContain("gho_private-test-token");
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    // A reconnect updates existing credentials and does not duplicate the model.
-    expect(
-      await t.deps.projectConfigService.connectCopilot(projectId, "gho_reconnected-test-token"),
-    ).toBe(1);
-    const again = (await (await api.get(url())).json()) as ModelsResponse;
-    expect(again.models.filter((model) => model.provider === "github-copilot")).toHaveLength(1);
-  });
+  it.each(["/chat/completions", "/responses"])(
+    "imports Copilot %s models through AgentHub, preserves the project and masks its credential",
+    async (endpoint) => {
+      const before = (await (await api.get(url())).json()) as ModelsResponse;
+      const fetcher = vi.fn<typeof fetch>(async () =>
+        Response.json({
+          data: [
+            {
+              id: "copilot-test-model",
+              supported_endpoints: [endpoint],
+              capabilities: { supports: { tool_calls: true } },
+            },
+          ],
+        }),
+      );
+      vi.stubGlobal("fetch", fetcher);
+      expect(
+        await t.deps.projectConfigService.connectCopilot(projectId, "gho_private-test-token"),
+      ).toBe(1);
+      const after = (await (await api.get(url())).json()) as ModelsResponse;
+      expect(after.defaultModel).toEqual(before.defaultModel);
+      expect(after.models.filter((model) => model.provider !== "github-copilot")).toEqual(
+        before.models,
+      );
+      const imported = pick(after, "github-copilot", "copilot-test-model");
+      expect(imported.clientType).toBe("github-copilot");
+      expect(imported.pricing).toBeUndefined();
+      expect(JSON.stringify(after)).not.toContain("gho_private-test-token");
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      // A reconnect updates existing credentials and does not duplicate the model.
+      expect(
+        await t.deps.projectConfigService.connectCopilot(projectId, "gho_reconnected-test-token"),
+      ).toBe(1);
+      const again = (await (await api.get(url())).json()) as ModelsResponse;
+      expect(again.models.filter((model) => model.provider === "github-copilot")).toHaveLength(1);
+    },
+  );
 
   it("does not persist a Copilot credential when no compatible models are accessible", async () => {
     vi.stubGlobal(
