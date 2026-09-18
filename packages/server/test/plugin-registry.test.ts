@@ -70,7 +70,7 @@ describe("builtinPluginRegistry", () => {
     expect(entries.map((e) => e.name)).toEqual([
       "@prismshadow/penguin-plugin-sandbox-bwrap",
       "@prismshadow/penguin-plugin-sandbox-seatbelt",
-      "@prismshadow/penguin-plugin-sandbox-winuser",
+      "@prismshadow/penguin-plugin-sandbox-wsl",
       "@prismshadow/penguin-plugin-sandbox-dsh",
     ]);
     for (const entry of entries) {
