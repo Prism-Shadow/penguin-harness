@@ -80,7 +80,7 @@ Now drive the conversation from your phone. A message you send the bot starts a 
 
 A few behaviors are worth knowing:
 
-- **Text, images and files** travel in both directions on WeChat. A voice message arrives as WeChat's own transcription. When the agent writes a file during a run and names it in its reply, the file follows the text into the chat.
+- **Text, images and files** travel in both directions on WeChat. A voice message arrives as WeChat's own transcription. When the agent writes a file during a run and names it in its reply, the file follows the text into the chat; a run sends at most five files, images up to 10 MB and other files up to 30 MB. A file the channel cannot take is not announced in the chat — it is recorded in the Cost Center's error records.
 - **Approvals stay in the Web App.** In the default **Approve everything** mode, tool calls run without asking. If you switch the conversation to a mode that asks, such as **Approve read-only**, the chat receives a reminder whenever a tool call is waiting, and the run waits until you approve it in the browser.
 - **Runs started in the Web App are mirrored** to the chat too, after the bot has received its first message.
 
@@ -126,6 +126,8 @@ In groups, Telegram's Group Privacy setting is on by default: a bot that is not 
 4. Turn on **Enable connection**, then message the bot in QQ.
 
 QQ lets a bot reply only to a message you have just sent. Runs you start in the Web App are therefore not mirrored to QQ, and a few minutes after your last QQ message, replies can no longer be delivered. Send the bot another message to continue. One QQ message can receive at most four replies (five in a group); when a run produces more, the last reply carries the rest.
+
+QQ also carries text only: the bot does not read images or files you send, and the agent cannot send files to QQ.
 
 ## Limits and safety
 

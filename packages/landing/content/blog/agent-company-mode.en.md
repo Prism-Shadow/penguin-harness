@@ -45,13 +45,13 @@ The first way to use company mode is the one-person company: one person and any 
 
 ![A one-person company: you act as the board, the CEO proposes, the organization works on its calendar](/blog-assets/agent-company-one-person-en.png)
 
-You create an organization with one sentence, its mission, and a monthly budget for the CEO. PenguinHarness creates only the CEO. The CEO's first run reads the mission and posts a proposal in the all-hands channel: how it reads the mission, the first tickets, which employees to hire with which budgets and models, and how to split the work. Then it stops and waits for you.
+You create an organization with one sentence, its mission, and a monthly budget for the CEO. PenguinHarness creates only the CEO. The CEO's first run reads the mission and posts a proposal in the all-hands channel: how it reads the mission, the first tickets, which roles to hire with which budgets, and how to split the work. Then it stops and waits for you. The proposal names no models: every employee runs on the organization's model, or on the Project's default model when the organization names none, unless you ask for particular ones.
 
 From then on, you mostly talk to the CEO. Once you approve the plan and the hires, the organization works on its own schedule:
 
 - **The calendar keeps work moving.** A scheduler checks every organization every 30 seconds. Each employee wakes for its calendar events, for an `@` mention, or when you talk to it directly, so work continues across days without you starting each run.
 - **Tickets carry the state.** A ticket records its goal, acceptance criteria, progress and result. When a ticket changes, its owner picks up the change at its next scheduled round instead of being interrupted.
-- **Decisions come back to you.** The company's Skills and handbook tell the CEO and employees to bring important decisions to the board: the plan, hiring, budget changes, closing high-priority work without review, and anything that acts outside the organization, such as publishing or spending money.
+- **Decisions come back to you.** The company's Skills and handbook tell the CEO and employees to bring important decisions to the board: the plan, hiring, budget changes, closing high-priority work without review, and anything that acts outside the organization, such as publishing or spending money. The same gate stands before heavy or irreversible work — long compute, writing outside the shared workspace, deleting what the employee did not create, or a process meant to outlive the run. The employee asks in the all-hands channel with what it wants to run and how to stop it, blocks its ticket on you, and ends its run until you answer.
 - **Budgets bound the cost.** An employee's monthly budget, in US dollars, includes what its subordinates spend, so the CEO's budget covers the whole company. At 80% of a budget, the organization posts a warning in the all-hands channel; at 100%, the calendars of that employee and its team pause.
 
 ![The org chart of a one-person company: a CEO, three direct reports and a copy editor, each with a monthly budget](/blog-assets/agent-company-org-chart-en.png)
@@ -80,7 +80,7 @@ In effect, the knowledge of who knows what moves out of people's memory into a s
 
 Company mode is a beta and stays off until an administrator turns it on. Several of its current limits should shape how much you rely on it:
 
-- **Approvals are guidance, not enforcement.** The rule that important decisions go to the board is written into the Skills and the handbook. The server does not stop an agent from hiring, changing a budget or moving a ticket on its own. Agent runs inside an organization also never stop to ask a person for tool approval, because nobody is watching them live; by default, every tool call is allowed.
+- **Approvals are guidance, not enforcement.** The rule that important decisions go to the board is written into the Skills and the handbook. The server does not stop an agent from hiring, changing a budget or moving a ticket on its own. Tool approvals never reach you either: an organization's sessions run unattended, so they never wait for a person. A tool call that the organization's approval mode would put to someone is denied the moment it is made — nothing appears in the Web App to approve, and no run is left hanging. Under the default **Allow all**, every call runs; under **Read only**, reads run and everything else is refused, and the employee treats a refusal as the cue to ask the board in the all-hands channel rather than to retry it. An organization meant to run unattended should keep the default mode.
 - **Budget pauses are soft.** Reaching a budget pauses calendars only. Mentions and direct conversations still go through, a run already under way is not stopped, and spending can overshoot between checks. An employee without a budget of its own is limited only by its managers' budgets.
 - **Mirror companies are early.** Twins are created from the org chart you describe, not imported from an HR system, and every bot is bound by hand. A bot can reply only after its person has written to it first, and a binding has no allowlist of senders, so each twin's bot must stay private. Relays between twins happen in the all-hands channel, where every member can read them, and a chain of mentions stops after three hops by default.
 - **Work happens only while the server runs.** Calendar events that come due while PenguinHarness is stopped are not run later.
@@ -91,7 +91,7 @@ Company mode is available in PenguinHarness 0.2.13 and later.
 
 1. As an administrator, open **System settings**. In the **Server** group, open **Company mode** and turn on **Enable company mode**.
 2. In the sidebar, switch from **Development** to **Company**.
-3. Select **New organization**. Write a mission or pick one of the examples, such as **Digital-twin company**, and set the **CEO budget**.
+3. Select **New organization**. Enter a **Display name**, then write a mission or pick one of the examples, such as **Digital-twin company**, and set the **CEO budget**.
 4. Fill in **Organization id**, or select **Generate with AI** to derive one from the display name, then select **Create**.
 
 ![The New organization dialog, filled in from the Digital-twin company example](/blog-assets/agent-company-new-organization-en.png)
