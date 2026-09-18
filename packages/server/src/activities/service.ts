@@ -4,6 +4,7 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { projectDir } from "@prismshadow/penguin-core";
 import type { Config, Db } from "../hmr/capabilities.js";
 import type { ActivityAuthoring } from "../mechanisms/activities.js";
+import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import { HttpError } from "../http/errors.js";
 import {
   contentRevision,
@@ -47,6 +48,7 @@ export async function atomicJson(file: string, value: unknown): Promise<void> {
 
 @Component()
 export class ActivityService implements ActivityAuthoring {
+  @Use() private readonly projectWork!: ProjectActivityWork;
   @Use() private readonly config!: Config;
   @Use() private readonly db!: Db;
   private readonly locks = new ActivityLocks();
@@ -70,6 +72,15 @@ export class ActivityService implements ActivityAuthoring {
   }
 
   async ensureCollection(projectId: string, collectionId?: string): Promise<CollectionManifest> {
+    return this.projectWork.run(projectId, () =>
+      this.ensureCollectionFiles(projectId, collectionId),
+    );
+  }
+
+  private async ensureCollectionFiles(
+    projectId: string,
+    collectionId?: string,
+  ): Promise<CollectionManifest> {
     return this.locks.run(`collection:${projectId}`, async () => {
       const row = (
         collectionId
@@ -129,66 +140,72 @@ export class ActivityService implements ActivityAuthoring {
     }
     const title = input.title.trim();
     if (!title) throw new HttpError(400, "activity_invalid", "title is required.");
-    const collection = await this.ensureCollection(projectId, input.collectionId);
-    return this.locks.run(`create:${collection.collectionId}`, async () => {
-      if (
-        this.db
-          .prepare(
-            "SELECT id FROM activities WHERE collection_id = ? AND product_code = ? AND ref_num = ?",
-          )
-          .get(collection.collectionId, productCode, refNum)
-      )
-        throw new HttpError(409, "activity_exists", "This productCode/refNum is already reserved.");
-      const now = new Date().toISOString();
-      const activity: ActivityRecord = {
-        id: newId("act"),
-        collectionId: collection.collectionId,
-        productCode,
-        refNum,
-        title,
-        activityType: input.activityType ?? "standard",
-        createdAt: now,
-        updatedAt: now,
-        archived: false,
-      };
-      const draft: ActivityDraft = {
-        draftId: newId("draft"),
-        activityId: activity.id,
-        baseVersionId: null,
-        contentRevision: contentRevision({ description: "", spec: null }),
-        status: "draft",
-        description: "",
-        spec: null,
-        updatedAt: now,
-      };
-      await this.writeDraft(projectId, draft, collection.collectionId);
-      this.db.exec("BEGIN");
-      try {
-        this.db
-          .prepare(
-            "INSERT INTO activities (id, collection_id, product_code, ref_num, title, activity_type, created_at, updated_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
-          )
-          .run(
-            activity.id,
-            activity.collectionId,
-            productCode,
-            refNum,
-            title,
-            activity.activityType,
-            now,
-            now,
+    return this.projectWork.run(projectId, async () => {
+      const collection = await this.ensureCollectionFiles(projectId, input.collectionId);
+      return this.locks.run(`create:${collection.collectionId}`, async () => {
+        if (
+          this.db
+            .prepare(
+              "SELECT id FROM activities WHERE collection_id = ? AND product_code = ? AND ref_num = ?",
+            )
+            .get(collection.collectionId, productCode, refNum)
+        )
+          throw new HttpError(
+            409,
+            "activity_exists",
+            "This productCode/refNum is already reserved.",
           );
-        this.db
-          .prepare(
-            "INSERT INTO activity_drafts (draft_id, activity_id, base_version_id, content_revision, status, updated_at) VALUES (?, ?, NULL, ?, ?, ?)",
-          )
-          .run(draft.draftId, activity.id, draft.contentRevision, draft.status, now);
-        this.db.exec("COMMIT");
-      } catch (error) {
-        this.db.exec("ROLLBACK");
-        throw error;
-      }
-      return { ...activity, draft };
+        const now = new Date().toISOString();
+        const activity: ActivityRecord = {
+          id: newId("act"),
+          collectionId: collection.collectionId,
+          productCode,
+          refNum,
+          title,
+          activityType: input.activityType ?? "standard",
+          createdAt: now,
+          updatedAt: now,
+          archived: false,
+        };
+        const draft: ActivityDraft = {
+          draftId: newId("draft"),
+          activityId: activity.id,
+          baseVersionId: null,
+          contentRevision: contentRevision({ description: "", spec: null }),
+          status: "draft",
+          description: "",
+          spec: null,
+          updatedAt: now,
+        };
+        await this.writeDraft(projectId, draft, collection.collectionId);
+        this.db.exec("BEGIN");
+        try {
+          this.db
+            .prepare(
+              "INSERT INTO activities (id, collection_id, product_code, ref_num, title, activity_type, created_at, updated_at, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
+            )
+            .run(
+              activity.id,
+              activity.collectionId,
+              productCode,
+              refNum,
+              title,
+              activity.activityType,
+              now,
+              now,
+            );
+          this.db
+            .prepare(
+              "INSERT INTO activity_drafts (draft_id, activity_id, base_version_id, content_revision, status, updated_at) VALUES (?, ?, NULL, ?, ?, ?)",
+            )
+            .run(draft.draftId, activity.id, draft.contentRevision, draft.status, now);
+          this.db.exec("COMMIT");
+        } catch (error) {
+          this.db.exec("ROLLBACK");
+          throw error;
+        }
+        return { ...activity, draft };
+      });
     });
   }
 
@@ -288,32 +305,37 @@ export class ActivityService implements ActivityAuthoring {
     expectedRevision: string | undefined,
     edit: (draft: ActivityDraft) => ActivityDraft,
   ): Promise<ActivityDraft> {
-    return this.locks.run(activityId, async () => {
-      const current = await this.getActivity(projectId, activityId);
-      if (!expectedRevision || expectedRevision !== current.draft.contentRevision)
-        throw new HttpError(
-          409,
-          "draft_conflict",
-          "Draft changed. Reload it before applying your edit.",
-        );
-      const draft = edit(current.draft);
-      draft.contentRevision = contentRevision({ description: draft.description, spec: draft.spec });
-      draft.updatedAt = new Date().toISOString();
-      await this.writeDraft(projectId, draft, current.collectionId);
-      this.db
-        .prepare(
-          "UPDATE activity_drafts SET content_revision = ?, status = ?, updated_at = ? WHERE draft_id = ?",
-        )
-        .run(draft.contentRevision, draft.status, draft.updatedAt, draft.draftId);
-      this.db
-        .prepare("UPDATE activities SET title = ?, updated_at = ? WHERE id = ?")
-        .run(
-          draft.status === "valid" ? (draft.spec!.title as string) : current.title,
-          draft.updatedAt,
-          activityId,
-        );
-      return draft;
-    });
+    return this.projectWork.run(projectId, () =>
+      this.locks.run(activityId, async () => {
+        const current = await this.getActivity(projectId, activityId);
+        if (!expectedRevision || expectedRevision !== current.draft.contentRevision)
+          throw new HttpError(
+            409,
+            "draft_conflict",
+            "Draft changed. Reload it before applying your edit.",
+          );
+        const draft = edit(current.draft);
+        draft.contentRevision = contentRevision({
+          description: draft.description,
+          spec: draft.spec,
+        });
+        draft.updatedAt = new Date().toISOString();
+        await this.writeDraft(projectId, draft, current.collectionId);
+        this.db
+          .prepare(
+            "UPDATE activity_drafts SET content_revision = ?, status = ?, updated_at = ? WHERE draft_id = ?",
+          )
+          .run(draft.contentRevision, draft.status, draft.updatedAt, draft.draftId);
+        this.db
+          .prepare("UPDATE activities SET title = ?, updated_at = ? WHERE id = ?")
+          .run(
+            draft.status === "valid" ? (draft.spec!.title as string) : current.title,
+            draft.updatedAt,
+            activityId,
+          );
+        return draft;
+      }),
+    );
   }
   private async writeDraft(
     projectId: string,

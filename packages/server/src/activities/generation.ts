@@ -1,10 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { constants } from "node:fs";
 import { userText } from "@prismshadow/penguin-core";
 import { Component, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Db, Channels, Log } from "../hmr/capabilities.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import type { AgentConfig } from "../mechanisms/agents.js";
+import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 import { HttpError } from "../http/errors.js";
 import { ActivityLocks, atomicJson } from "./service.js";
@@ -24,6 +26,7 @@ interface Observer {
 
 @Component()
 export class ActivityGenerationService implements ActivityGeneration {
+  @Use() private readonly projectWork!: ProjectActivityWork;
   @Use() private readonly config!: Config;
   @Use() private readonly db!: Db;
   @Use() private readonly activities!: ActivityAuthoring;
@@ -89,16 +92,33 @@ export class ActivityGenerationService implements ActivityGeneration {
     return path.join(this.config.root, "activity-runs", run.runId);
   }
   private save(run: ActivityRun) {
-    this.db
-      .prepare("UPDATE activity_runs SET status = ?, record_json = ? WHERE run_id = ?")
-      .run(run.status, JSON.stringify(run), run.runId);
+    const { candidate, ...metadata } = run;
+    this.db.exec("BEGIN");
+    try {
+      const hasCandidate =
+        candidate !== null ||
+        !!this.db.prepare("SELECT 1 FROM activity_run_candidates WHERE run_id = ?").get(run.runId);
+      const result = this.db
+        .prepare("UPDATE activity_runs SET status = ?, record_json = ? WHERE run_id = ?")
+        .run(run.status, JSON.stringify({ ...metadata, hasCandidate }), run.runId);
+      if (result.changes && candidate !== null)
+        this.db
+          .prepare(
+            "INSERT INTO activity_run_candidates (run_id, candidate) VALUES (?, ?) ON CONFLICT(run_id) DO UPDATE SET candidate = excluded.candidate",
+          )
+          .run(run.runId, candidate);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
   private running(): ActivityRun[] {
     return (
       this.db.prepare("SELECT record_json FROM activity_runs WHERE status = 'running'").all() as {
         record_json: string;
       }[]
-    ).map((row) => JSON.parse(row.record_json) as ActivityRun);
+    ).map((row) => ({ ...JSON.parse(row.record_json), candidate: null }) as ActivityRun);
   }
   private finish(run: ActivityRun, status: ActivityRun["status"], error: string | null = null) {
     run.status = status;
@@ -119,10 +139,10 @@ export class ActivityGenerationService implements ActivityGeneration {
     return (
       this.db
         .prepare(
-          "SELECT json_remove(record_json, '$.candidate') AS record_json, json_type(record_json, '$.candidate') = 'text' AS has_candidate FROM activity_runs WHERE project_id = ? AND activity_id = ? ORDER BY created_at DESC, run_id DESC LIMIT 50",
+          "SELECT record_json FROM activity_runs WHERE project_id = ? AND activity_id = ? ORDER BY created_at DESC, run_id DESC LIMIT 50",
         )
-        .all(projectId, activityId) as { record_json: string; has_candidate: number }[]
-    ).map((row) => ({ ...JSON.parse(row.record_json), hasCandidate: !!row.has_candidate }));
+        .all(projectId, activityId) as { record_json: string }[]
+    ).map((row) => JSON.parse(row.record_json) as ActivityRunSummary);
   }
 
   private async getRun(projectId: string, activityId: string, runId: string): Promise<ActivityRun> {
@@ -133,7 +153,11 @@ export class ActivityGenerationService implements ActivityGeneration {
       )
       .get(projectId, activityId, runId) as { record_json: string } | undefined;
     if (!row) throw new HttpError(404, "run_not_found", "Generation not found.");
-    return JSON.parse(row.record_json) as ActivityRun;
+    const payload = this.db
+      .prepare("SELECT candidate FROM activity_run_candidates WHERE run_id = ?")
+      .get(runId) as { candidate: string } | undefined;
+    const { hasCandidate: _, ...metadata } = JSON.parse(row.record_json) as ActivityRunSummary;
+    return { ...metadata, candidate: payload?.candidate ?? null };
   }
 
   async candidate(projectId: string, activityId: string, runId: string): Promise<string | null> {
@@ -147,101 +171,119 @@ export class ActivityGenerationService implements ActivityGeneration {
     expectedRevision: string,
   ): Promise<ActivityRun> {
     return this.track(
-      this.locks.run(activityId, async () => {
-        if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
-        const activity = await this.activities.getActivity(projectId, activityId);
-        if (activity.draft.contentRevision !== expectedRevision)
-          throw new HttpError(409, "draft_conflict", "Save or reload the draft before generating.");
-        if (!activity.draft.description.trim())
-          throw new HttpError(400, "description_required", "Add a description before generating.");
-        await this.agents.requireExists(projectId, agentId);
-        if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
-        if (this.running().some((run) => run.activityId === activityId))
-          throw new HttpError(
-            409,
-            "generation_running",
-            "This activity already has a running generation.",
-          );
-        const run: ActivityRun = {
-          runId: newId("run"),
-          activityId,
-          projectId,
-          draftId: activity.draft.draftId,
-          inputRevision: activity.draft.contentRevision,
-          agentId,
-          sessionId: null,
-          status: "running",
-          createdAt: new Date().toISOString(),
-          finishedAt: null,
-          error: null,
-          candidate: null,
-        };
-        this.db
-          .prepare(
-            "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, record_json) VALUES (?, ?, ?, ?, ?, ?)",
-          )
-          .run(run.runId, projectId, activityId, run.status, run.createdAt, JSON.stringify(run));
-        try {
-          const workspace = this.workspace(run);
-          await fs.mkdir(workspace, { recursive: true });
-          await atomicJson(path.join(workspace, "input.json"), activity);
-          await fs.writeFile(
-            path.join(workspace, "description.md"),
-            activity.draft.description,
-            "utf8",
-          );
-          if (this.stopped) {
-            this.finish(run, "interrupted", "Server stopped before generation started.");
-            return run;
-          }
-          const session = await this.sessionService.createSession({
+      this.projectWork.run(projectId, () =>
+        this.locks.run(activityId, async () => {
+          if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          const activity = await this.activities.getActivity(projectId, activityId);
+          if (activity.draft.contentRevision !== expectedRevision)
+            throw new HttpError(
+              409,
+              "draft_conflict",
+              "Save or reload the draft before generating.",
+            );
+          if (!activity.draft.description.trim())
+            throw new HttpError(
+              400,
+              "description_required",
+              "Add a description before generating.",
+            );
+          await this.agents.requireExists(projectId, agentId);
+          if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          if (this.running().some((run) => run.activityId === activityId))
+            throw new HttpError(
+              409,
+              "generation_running",
+              "This activity already has a running generation.",
+            );
+          const run: ActivityRun = {
+            runId: newId("run"),
+            activityId,
             projectId,
+            draftId: activity.draft.draftId,
+            inputRevision: activity.draft.contentRevision,
             agentId,
-            workspace,
-            approvalMode: "always-ask",
-          });
-          run.sessionId = session.sessionId;
-          this.save(run);
-          if (this.stopped) {
-            this.finish(run, "interrupted", "Server stopped before generation started.");
-            return run;
+            sessionId: null,
+            status: "running",
+            createdAt: new Date().toISOString(),
+            finishedAt: null,
+            error: null,
+            candidate: null,
+          };
+          const { candidate: _candidate, ...metadata } = run;
+          this.db
+            .prepare(
+              "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, record_json) VALUES (?, ?, ?, ?, ?, ?)",
+            )
+            .run(
+              run.runId,
+              projectId,
+              activityId,
+              run.status,
+              run.createdAt,
+              JSON.stringify({ ...metadata, hasCandidate: false }),
+            );
+          try {
+            const workspace = this.workspace(run);
+            await fs.mkdir(workspace, { recursive: true });
+            await atomicJson(path.join(workspace, "input.json"), activity);
+            await fs.writeFile(
+              path.join(workspace, "description.md"),
+              activity.draft.description,
+              "utf8",
+            );
+            if (this.stopped) {
+              this.finish(run, "interrupted", "Server stopped before generation started.");
+              return run;
+            }
+            const session = await this.sessionService.createSession({
+              projectId,
+              agentId,
+              workspace,
+              approvalMode: "always-ask",
+            });
+            run.sessionId = session.sessionId;
+            this.save(run);
+            if (this.stopped) {
+              this.finish(run, "interrupted", "Server stopped before generation started.");
+              return run;
+            }
+            const observer: Observer = { unsubscribe: () => {}, completed: false, error: null };
+            observer.unsubscribe = this.channels.get(session.sessionId).subscribe((event) => {
+              if (event.event) return;
+              const msg = JSON.parse(event.data) as {
+                origin?: unknown[];
+                payload?: { type?: string; status?: string; error_message?: string };
+              };
+              if (msg.origin?.length) return;
+              const payload = msg.payload;
+              if (payload?.type === "request_begin") observer.completed = false;
+              if (payload?.type === "request_end") {
+                observer.completed = payload.status === "completed";
+                observer.error = observer.completed
+                  ? null
+                  : (payload.error_message ?? "The model request did not complete.");
+              }
+              if (payload?.type === "abort") {
+                observer.completed = false;
+                observer.error = "Session was stopped.";
+              }
+            });
+            this.observers.set(run.runId, observer);
+            await this.sessions.startTask(session.sessionId, [userText(generationPrompt)], {
+              queueIfBusy: false,
+            });
+          } catch (error) {
+            this.finish(
+              run,
+              this.stopped ? "interrupted" : "failed",
+              error instanceof HttpError
+                ? error.message
+                : "Could not start generation. Check the agent and model configuration.",
+            );
           }
-          const observer: Observer = { unsubscribe: () => {}, completed: false, error: null };
-          observer.unsubscribe = this.channels.get(session.sessionId).subscribe((event) => {
-            if (event.event) return;
-            const msg = JSON.parse(event.data) as {
-              origin?: unknown[];
-              payload?: { type?: string; status?: string; error_message?: string };
-            };
-            if (msg.origin?.length) return;
-            const payload = msg.payload;
-            if (payload?.type === "request_begin") observer.completed = false;
-            if (payload?.type === "request_end") {
-              observer.completed = payload.status === "completed";
-              observer.error = observer.completed
-                ? null
-                : (payload.error_message ?? "The model request did not complete.");
-            }
-            if (payload?.type === "abort") {
-              observer.completed = false;
-              observer.error = "Session was stopped.";
-            }
-          });
-          this.observers.set(run.runId, observer);
-          await this.sessions.startTask(session.sessionId, [userText(generationPrompt)], {
-            queueIfBusy: false,
-          });
-        } catch (error) {
-          this.finish(
-            run,
-            this.stopped ? "interrupted" : "failed",
-            error instanceof HttpError
-              ? error.message
-              : "Could not start generation. Check the agent and model configuration.",
-          );
-        }
-        return run;
-      }),
+          return run;
+        }),
+      ),
     );
   }
 
@@ -268,7 +310,15 @@ export class ActivityGenerationService implements ActivityGeneration {
 
   private async collect(): Promise<void> {
     if (this.stopped) return;
-    for (const initial of this.running()) {
+    const active = this.running();
+    const liveIds = new Set(active.map((run) => run.runId));
+    for (const [runId, observer] of this.observers) {
+      if (!liveIds.has(runId)) {
+        observer.unsubscribe();
+        this.observers.delete(runId);
+      }
+    }
+    for (const initial of active) {
       await this.locks.run(initial.activityId, async () => {
         if (this.stopped) return;
         const run = this.running().find((item) => item.runId === initial.runId);
@@ -283,10 +333,7 @@ export class ActivityGenerationService implements ActivityGeneration {
           await this.sessions.atIdleBoundary(run.sessionId, async () => {
             const file = path.join(this.workspace(run), "activity-spec.json");
             try {
-              const stat = await fs.lstat(file);
-              if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_CANDIDATE_BYTES)
-                throw new Error("The output must be a regular JSON file smaller than 2 MiB.");
-              run.candidate = await fs.readFile(file, "utf8");
+              run.candidate = await readCandidate(file);
               this.save(run);
               if (this.stopped) return;
               const observer = this.observers.get(run.runId);
@@ -323,6 +370,47 @@ export class ActivityGenerationService implements ActivityGeneration {
         }
       });
     }
+  }
+}
+
+/** Validate and read the same opened file; never reopen a task-controlled path to read it. */
+export async function readCandidate(file: string): Promise<string> {
+  const before = await fs.lstat(file);
+  const invalid = () =>
+    new Error("The output must be an unchanged regular JSON file no larger than 2 MiB.");
+  if (!before.isFile() || before.isSymbolicLink() || before.size > MAX_CANDIDATE_BYTES)
+    throw invalid();
+  const handle = await fs.open(
+    file,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+  );
+  try {
+    const opened = await handle.stat();
+    const current = await fs.lstat(file);
+    // Windows lacks O_NOFOLLOW. Check handle identity against both path observations;
+    // a final-segment link swap cannot substitute a different file for the inspected one.
+    if (
+      !opened.isFile() ||
+      current.isSymbolicLink() ||
+      !current.isFile() ||
+      before.dev !== opened.dev ||
+      before.ino !== opened.ino ||
+      current.dev !== opened.dev ||
+      current.ino !== opened.ino ||
+      opened.size > MAX_CANDIDATE_BYTES
+    )
+      throw invalid();
+    const buffer = Buffer.alloc(MAX_CANDIDATE_BYTES + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
+      if (!bytesRead) break;
+      length += bytesRead;
+    }
+    if (length > MAX_CANDIDATE_BYTES) throw invalid();
+    return buffer.subarray(0, length).toString("utf8");
+  } finally {
+    await handle.close();
   }
 }
 

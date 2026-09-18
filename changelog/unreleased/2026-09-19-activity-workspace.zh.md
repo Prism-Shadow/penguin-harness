@@ -1,9 +1,9 @@
 # 原生活动编辑与规格生成
 
-Date: 2026-09-19
-Type: feature
-Scope: server, web
-PR: [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3)
+- **Date:** 2026-09-19
+- **Type:** feature
+- **Scope:** `server`, `web`
+- **PR:** [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3)
 
 [English](2026-09-19-activity-workspace.md)
 
@@ -15,8 +15,12 @@ PR: [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3)
 
 关闭服务或热替换时，会先等待正在发布的结果完成，再将其余运行记录为中断。历史记录加载精简摘要，仅在展开时获取候选 JSON，并降低空闲活动的检查频率。
 
+候选结果通过经过验证的文件句柄读取，并限制为 2 MiB。删除 Project 时会阻止新的活动写入，等待已接纳的发布完成，再移除 Session、记录和文件。候选内容已从历史元数据中分离；参见[向后兼容性](2026-09-19-backward-compatibility.zh.md)。
+
 ## 草稿编辑
 
 描述和经过验证的规格在页面重新加载后仍会保留。修订检查可防止过期编辑覆盖较新的内容。Project 成员可以查看活动；编辑和生成需要 Project 所有者权限。导航和控件支持英文和中文。
 
 通过导航、浏览器历史记录、Session 链接或切换 Project 离开时，未保存的编辑会触发确认提示。取消 Project 切换会保留当前选择和偏好设置。
+
+保护范围扩展到了 Project 删除及刷新后的自动选择。访问权限消失且用户拒绝离开时，编辑器会保留可复制的只读本地文本，并停止活动请求。成功轮询会清除临时加载错误，同时保留操作冲突。活动错误增加了中英文消息，折叠导航栏也提供了活动入口。

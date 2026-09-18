@@ -315,4 +315,8 @@ record_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_activity_runs_activity ON activity_runs(project_id, activity_id, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_runs_active ON activity_runs(activity_id) WHERE status = 'running';
+CREATE TABLE IF NOT EXISTS activity_run_candidates (
+run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE,
+candidate TEXT NOT NULL
+);
 `;

@@ -32,18 +32,32 @@ const runTone: Record<ActivityRun["status"], Tone> = {
 export function ActivitiesPage() {
   useLocale();
   useDocumentTitle(S.activities.title);
-  const { currentProject } = useProject();
-  if (!currentProject) return <p className="p-6 text-sm text-gray-500">{S.activities.noProject}</p>;
+  const { currentProject, unavailableProjectId } = useProject();
+  const previousProject = useRef(currentProject);
+  if (currentProject) previousProject.current = currentProject;
+  const project =
+    currentProject ??
+    (previousProject.current?.projectId === unavailableProjectId ? previousProject.current : null);
+  if (!project) return <p className="p-6 text-sm text-gray-500">{S.activities.noProject}</p>;
   return (
     <ActivityWorkspace
-      key={currentProject.projectId}
-      projectId={currentProject.projectId}
-      editable={currentProject.role === "owner"}
+      key={project.projectId}
+      projectId={project.projectId}
+      available={currentProject !== null}
+      editable={currentProject?.role === "owner"}
     />
   );
 }
 
-function ActivityWorkspace({ projectId, editable }: { projectId: string; editable: boolean }) {
+function ActivityWorkspace({
+  projectId,
+  editable,
+  available,
+}: {
+  projectId: string;
+  editable: boolean;
+  available: boolean;
+}) {
   const { registerProjectChangeGuard } = useProject();
   const { activityId } = useParams();
   const navigate = useNavigate();
@@ -57,6 +71,8 @@ function ActivityWorkspace({ projectId, editable }: { projectId: string; editabl
   const [activityType, setActivityType] = useState("standard");
   const dirty = useRef(false);
   const mounted = useRef(true);
+  const accessible = useRef(available);
+  accessible.current = available;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -64,6 +80,7 @@ function ActivityWorkspace({ projectId, editable }: { projectId: string; editabl
     };
   }, []);
   const reload = useCallback(async () => {
+    if (!accessible.current) return;
     try {
       const result = await apiFetch<{ activities: ActivityRecord[] }>(basePath(projectId));
       if (mounted.current) {
@@ -126,11 +143,16 @@ function ActivityWorkspace({ projectId, editable }: { projectId: string; editabl
       <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
         <header className="flex items-center justify-between gap-3">
           <h1 className="text-lg font-semibold">{S.activities.title}</h1>
-          <Button size="sm" onClick={() => void reload()}>
+          <Button size="sm" disabled={!available} onClick={() => void reload()}>
             {S.activities.refresh}
           </Button>
         </header>
-        {!editable && (
+        {!available && (
+          <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
+            {S.activities.unavailable}
+          </p>
+        )}
+        {available && !editable && (
           <p className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
             {S.activities.readOnly}
           </p>
@@ -192,29 +214,31 @@ function ActivityWorkspace({ projectId, editable }: { projectId: string; editabl
                 </Button>
               </form>
             )}
-            <nav aria-label={S.activities.title} className="space-y-1">
-              {loading ? (
-                <p role="status" className="text-xs text-gray-500">
-                  {S.activities.loading}
-                </p>
-              ) : items.length === 0 ? (
-                <p className="text-xs text-gray-500">{S.activities.empty}</p>
-              ) : (
-                items.map((item) => (
-                  <Link
-                    key={item.id}
-                    to={`/activities/${item.id}`}
-                    aria-current={item.id === activityId ? "page" : undefined}
-                    className={`block rounded-md border p-3 text-sm ${item.id === activityId ? "border-gray-400 bg-gray-100 dark:border-gray-600 dark:bg-gray-800" : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-900"}`}
-                  >
-                    <span className="block break-words font-medium">
-                      {item.productCode} / {item.refNum}
-                    </span>
-                    <span className="block break-words text-xs text-gray-500">{item.title}</span>
-                  </Link>
-                ))
-              )}
-            </nav>
+            {available && (
+              <nav aria-label={S.activities.title} className="space-y-1">
+                {loading ? (
+                  <p role="status" className="text-xs text-gray-500">
+                    {S.activities.loading}
+                  </p>
+                ) : items.length === 0 ? (
+                  <p className="text-xs text-gray-500">{S.activities.empty}</p>
+                ) : (
+                  items.map((item) => (
+                    <Link
+                      key={item.id}
+                      to={`/activities/${item.id}`}
+                      aria-current={item.id === activityId ? "page" : undefined}
+                      className={`block rounded-md border p-3 text-sm ${item.id === activityId ? "border-gray-400 bg-gray-100 dark:border-gray-600 dark:bg-gray-800" : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-900"}`}
+                    >
+                      <span className="block break-words font-medium">
+                        {item.productCode} / {item.refNum}
+                      </span>
+                      <span className="block break-words text-xs text-gray-500">{item.title}</span>
+                    </Link>
+                  ))
+                )}
+              </nav>
+            )}
           </aside>
           {activityId ? (
             <ActivityEditor
@@ -222,6 +246,7 @@ function ActivityWorkspace({ projectId, editable }: { projectId: string; editabl
               projectId={projectId}
               activityId={activityId}
               editable={editable}
+              available={available}
               onDirty={(value) => {
                 dirty.current = value;
               }}
@@ -240,12 +265,14 @@ function ActivityEditor({
   projectId,
   activityId,
   editable,
+  available,
   onDirty,
   onSaved,
 }: {
   projectId: string;
   activityId: string;
   editable: boolean;
+  available: boolean;
   onDirty: (value: boolean) => void;
   onSaved: () => Promise<void>;
 }) {
@@ -256,17 +283,18 @@ function ActivityEditor({
   const [runs, setRuns] = useState<ActivityRunSummary[]>([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [changed, setChanged] = useState(false);
   const [agentId, setAgentId] = useState("");
-  const state = useRef({ dirty: false, busy: false, revision: "" });
+  const state = useRef({ dirty: false, busy: false, revision: "", available });
   const alive = useRef(true);
   const endpoint = `${basePath(projectId)}/${encodeURIComponent(activityId)}`;
   const dirty =
     detail !== null &&
     (description !== detail.draft.description || spec !== pretty(detail.draft.spec));
-  state.current = { dirty, busy, revision: detail?.draft.contentRevision ?? "" };
+  state.current = { dirty, busy, revision: detail?.draft.contentRevision ?? "", available };
   useLayoutEffect(() => {
     onDirty(dirty);
   });
@@ -284,6 +312,7 @@ function ActivityEditor({
     setChanged(false);
   }
   useEffect(() => {
+    if (!available) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     async function refresh() {
@@ -295,6 +324,7 @@ function ActivityEditor({
           apiFetch<{ runs: ActivityRunSummary[] }>(`${endpoint}/runs`),
         ]);
         if (cancelled) return;
+        setLoadError("");
         setRuns(history.runs);
         active = history.runs.some((run) => run.status === "running");
         if (!state.current.busy && state.current.revision === revisionAtStart) {
@@ -302,7 +332,7 @@ function ActivityEditor({
           else if (value.draft.contentRevision !== state.current.revision) setChanged(true);
         }
       } catch (e) {
-        if (!cancelled) setError(apiErrorText(e));
+        if (!cancelled) setLoadError(apiErrorText(e));
       } finally {
         if (!cancelled) timer = setTimeout(() => void refresh(), active ? 2000 : 30_000);
       }
@@ -312,9 +342,9 @@ function ActivityEditor({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [endpoint, refreshVersion]);
+  }, [endpoint, refreshVersion, available]);
   async function action(operation: () => Promise<void>) {
-    if (state.current.busy) return;
+    if (state.current.busy || !state.current.available) return;
     state.current.busy = true;
     setBusy(true);
     setError("");
@@ -356,10 +386,10 @@ function ActivityEditor({
   if (!detail)
     return (
       <p
-        role={error ? "alert" : "status"}
-        className={`text-sm ${error ? toneInk.danger : "text-gray-500"}`}
+        role={error || loadError ? "alert" : "status"}
+        className={`text-sm ${error || loadError ? toneInk.danger : "text-gray-500"}`}
       >
-        {error || S.activities.loading}
+        {error || loadError || S.activities.loading}
       </p>
     );
   return (
@@ -376,6 +406,11 @@ function ActivityEditor({
       {error && (
         <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
           {error}
+        </p>
+      )}
+      {loadError && available && (
+        <p role="alert" className={`rounded-md border p-3 text-xs ${toneStrip.danger}`}>
+          {loadError}
         </p>
       )}
       {notice && (
@@ -396,7 +431,8 @@ function ActivityEditor({
           value={description}
           maxLength={100_000}
           onChange={(e) => setDescription(e.target.value)}
-          disabled={!editable || busy}
+          disabled={available && (!editable || busy)}
+          readOnly={!available}
         />
         <div className="flex flex-wrap gap-2">
           {editable && (
@@ -410,7 +446,7 @@ function ActivityEditor({
           )}
           <Button
             size="sm"
-            disabled={busy}
+            disabled={busy || !available}
             onClick={() => {
               if (!dirty || window.confirm(S.activities.discard))
                 void action(async () => {
@@ -471,7 +507,8 @@ function ActivityEditor({
           className="font-mono"
           value={spec}
           onChange={(e) => setSpec(e.target.value)}
-          disabled={!editable || busy}
+          disabled={available && (!editable || busy)}
+          readOnly={!available}
           spellCheck={false}
         />
         {editable && (
@@ -484,71 +521,73 @@ function ActivityEditor({
           </Button>
         )}
       </div>
-      <section className="space-y-3">
-        <h3 className="text-sm font-semibold">{S.activities.runs}</h3>
-        {runs.length === 0 && <p className="text-xs text-gray-500">{S.activities.noRuns}</p>}
-        {runs.map((run) => (
-          <article
-            key={run.runId}
-            className="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-800"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded px-2 py-0.5 text-xs ${toneSurface[runTone[run.status]]}`}>
-                {S.activities.status[run.status]}
-              </span>
-              <time className="text-xs text-gray-500" dateTime={run.createdAt}>
-                {new Date(run.createdAt).toLocaleString()}
-              </time>
-            </div>
-            {run.error && <p className="break-words text-xs">{run.error}</p>}
-            {run.status === "running" && (
-              <p className="text-xs text-gray-500">{S.activities.runningHelp}</p>
-            )}
-            <div className="flex flex-wrap items-center gap-3">
-              {run.sessionId && (
-                <Link
-                  className="text-xs underline"
-                  to={`/chat/${encodeURIComponent(run.sessionId)}`}
-                >
-                  {S.activities.openSession}
-                </Link>
+      {available && (
+        <section className="space-y-3">
+          <h3 className="text-sm font-semibold">{S.activities.runs}</h3>
+          {runs.length === 0 && <p className="text-xs text-gray-500">{S.activities.noRuns}</p>}
+          {runs.map((run) => (
+            <article
+              key={run.runId}
+              className="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-800"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded px-2 py-0.5 text-xs ${toneSurface[runTone[run.status]]}`}>
+                  {S.activities.status[run.status]}
+                </span>
+                <time className="text-xs text-gray-500" dateTime={run.createdAt}>
+                  {new Date(run.createdAt).toLocaleString()}
+                </time>
+              </div>
+              {run.error && <p className="break-words text-xs">{run.error}</p>}
+              {run.status === "running" && (
+                <p className="text-xs text-gray-500">{S.activities.runningHelp}</p>
               )}
-              {editable && run.status === "running" && (
-                <Button
-                  size="sm"
-                  disabled={busy}
-                  onClick={() =>
-                    void action(async () => {
-                      const result = await apiFetch<ActivityRun>(
-                        `${endpoint}/runs/${run.runId}/cancel`,
-                        { method: "POST", body: {} },
-                      );
-                      if (alive.current)
-                        setRuns((previous) =>
-                          previous.map((item) =>
-                            item.runId === result.runId ? summarize(result) : item,
-                          ),
+              <div className="flex flex-wrap items-center gap-3">
+                {run.sessionId && (
+                  <Link
+                    className="text-xs underline"
+                    to={`/chat/${encodeURIComponent(run.sessionId)}`}
+                  >
+                    {S.activities.openSession}
+                  </Link>
+                )}
+                {editable && run.status === "running" && (
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      void action(async () => {
+                        const result = await apiFetch<ActivityRun>(
+                          `${endpoint}/runs/${run.runId}/cancel`,
+                          { method: "POST", body: {} },
                         );
-                    })
-                  }
-                >
-                  {S.activities.cancel}
-                </Button>
+                        if (alive.current)
+                          setRuns((previous) =>
+                            previous.map((item) =>
+                              item.runId === result.runId ? summarize(result) : item,
+                            ),
+                          );
+                      })
+                    }
+                  >
+                    {S.activities.cancel}
+                  </Button>
+                )}
+              </div>
+              {run.hasCandidate && (
+                <CandidateReview
+                  endpoint={`${endpoint}/runs/${encodeURIComponent(run.runId)}/candidate`}
+                  editable={editable}
+                  busy={busy}
+                  onUse={(candidate) => {
+                    if (!dirty || window.confirm(S.activities.discard)) setSpec(candidate);
+                  }}
+                />
               )}
-            </div>
-            {run.hasCandidate && (
-              <CandidateReview
-                endpoint={`${endpoint}/runs/${encodeURIComponent(run.runId)}/candidate`}
-                editable={editable}
-                busy={busy}
-                onUse={(candidate) => {
-                  if (!dirty || window.confirm(S.activities.discard)) setSpec(candidate);
-                }}
-              />
-            )}
-          </article>
-        ))}
-      </section>
+            </article>
+          ))}
+        </section>
+      )}
     </section>
   );
 }

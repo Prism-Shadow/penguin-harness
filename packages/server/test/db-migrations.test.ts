@@ -71,7 +71,7 @@ function open024(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   dropCompanyModeTables(db);
   db.exec("DROP TABLE messaging_bindings");
@@ -115,7 +115,7 @@ function open6(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   db.exec(PRE_CHANNEL_CHAT_DDL);
   // SCHEMA_SQL declares the CURRENT shape; migration 8's queue came after 6.
@@ -131,7 +131,7 @@ function open7(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   db.exec("PRAGMA user_version = 7");
   return db;
@@ -143,7 +143,7 @@ function open8(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   db.exec("PRAGMA user_version = 8");
   return db;
@@ -155,7 +155,7 @@ function open029(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
@@ -178,7 +178,7 @@ function openPreProfile(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   dropProfileColumns(db);
   // Version 4 predates company mode as well: its three migrations (6–8) come after the
@@ -220,12 +220,13 @@ function userColumns(db: DatabaseSync): string[] {
 /** Runs `fn` with the restart-only migration taken off the list, so a swap-path case can see swap-safe ones apply. */
 function withoutRestartOnly<T>(fn: () => T): T {
   const list = MIGRATIONS as unknown as (typeof MIGRATIONS)[number][];
-  const removed = list.splice(2, 1);
+  const original = [...list];
+  list.splice(0, list.length, ...original.filter((migration) => migration.swapSafe));
   try {
     return fn();
   } finally {
     // Back where it was: appending would reorder the list once later migrations exist.
-    list.splice(2, 0, ...removed);
+    list.splice(0, list.length, ...original);
   }
 }
 
@@ -583,10 +584,60 @@ describe("migration 8 → current: model-promotions", () => {
   it("is safe to create while a pushed platform boots", () => {
     const db = open8();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(
-        MIGRATIONS.filter((m) => m.version > 8).map((m) => m.name),
+      expect(withoutRestartOnly(() => migrate(db, { swapPath: true }).applied)).toEqual(
+        MIGRATIONS.filter((m) => m.version > 8 && m.swapSafe).map((m) => m.name),
       );
-      expect(schemaVersion(db)).toBe(LATEST_VERSION);
+      expect(schemaVersion(db)).toBe(
+        Math.max(...MIGRATIONS.filter((m) => m.swapSafe).map((m) => m.version)),
+      );
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("activity candidate storage", () => {
+  it("moves candidate bytes once, preserves invalid output, and restores it on rollback", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(SCHEMA_SQL);
+      db.exec("DROP TABLE activity_run_candidates; PRAGMA user_version = 11");
+      db.exec(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('u', 'h', 0, 'now'); INSERT INTO projects VALUES ('p', 'u', 'now'); INSERT INTO activities VALUES ('a', 'c', 'p', 0, 'Title', 'standard', 'now', 'now', 0)",
+      );
+      const records = [
+        { runId: "one", candidate: "{invalid 中文 JSON", status: "failed" },
+        { runId: "two", candidate: null, status: "cancelled" },
+      ];
+      for (const record of records)
+        db.prepare("INSERT INTO activity_runs VALUES (?, 'p', 'a', ?, 'now', ?)").run(
+          record.runId,
+          record.status,
+          JSON.stringify(record),
+        );
+      expect(() => migrate(db, { swapPath: true })).toThrow(RestartRequiredError);
+      expect(schemaVersion(db)).toBe(11);
+      migrate(db);
+      expect(db.prepare("SELECT * FROM activity_run_candidates").all()).toEqual([
+        { run_id: "one", candidate: records[0]!.candidate },
+      ]);
+      expect(
+        db
+          .prepare("SELECT record_json FROM activity_runs ORDER BY run_id")
+          .all()
+          .map((row) => JSON.parse(row.record_json as string)),
+      ).toEqual([
+        { runId: "one", status: "failed", hasCandidate: true },
+        { runId: "two", status: "cancelled", hasCandidate: false },
+      ]);
+      expect(migrate(db).applied).toEqual([]);
+      rollbackTo(db, 11);
+      expect(
+        db
+          .prepare("SELECT record_json FROM activity_runs ORDER BY run_id")
+          .all()
+          .map((row) => JSON.parse(row.record_json as string)),
+      ).toEqual(records);
     } finally {
       db.close();
     }

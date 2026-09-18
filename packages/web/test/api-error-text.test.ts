@@ -23,6 +23,30 @@ afterEach(() => {
 });
 
 describe("apiErrorText", () => {
+  it("localizes all activity authoring and generation errors in both locales", () => {
+    const codes = [
+      "activity_invalid",
+      "activity_exists",
+      "activity_not_found",
+      "activity_stopping",
+      "collection_not_found",
+      "draft_conflict",
+      "spec_invalid",
+      "description_required",
+      "generation_running",
+      "run_not_found",
+      "project_deleting",
+    ];
+    for (const dict of [ZH, EN]) {
+      setActiveStrings(dict);
+      for (const code of codes) {
+        const text = apiErrorText(serverError(code));
+        expect(text, code).not.toBe("RAW ENGLISH SERVER MESSAGE");
+        if (dict === ZH) expect(text, code).toMatch(/[一-鿿]/);
+        else expect(text, code).not.toMatch(/[一-鿿]/);
+      }
+    }
+  });
   it("localizes each compaction refusal separately in both locales", () => {
     const codes = ["compaction_not_configured", "nothing_to_compact", "already_compacted"];
 

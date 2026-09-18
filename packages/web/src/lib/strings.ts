@@ -27,6 +27,8 @@ export const zh = {
     empty: "暂无活动。使用产品代码和参考编号创建活动。",
     select: "选择一个活动，编辑描述和规格。",
     noProject: "请选择项目以编写活动。",
+    unavailable:
+      "此 Project 已不可用。未保存的文本仍保留在此，供你复制；保存和生成已禁用。准备离开时，请选择其他 Project。",
     description: "描述",
     saveDescription: "保存描述",
     spec: "规格 JSON",
@@ -613,6 +615,7 @@ export const zh = {
   },
 
   project: {
+    selectProject: "选择 Project",
     switcher: "Project",
     create: "新建 Project",
     createTitle: "新建 Project",
@@ -4198,6 +4201,17 @@ Benchmark：
     noDefaultModel: "该 Project 还没有默认模型，请先在「模型」页添加模型并设为默认",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
+      activity_invalid: "活动信息无效。请检查产品代码、引用编号和标题。",
+      activity_exists: "已有活动使用此产品代码和引用编号。",
+      activity_not_found: "此活动已不存在，或你没有访问权限。",
+      activity_stopping: "活动生成正在停止，请稍后重试。",
+      collection_not_found: "此活动集合已不存在，或你没有访问权限。",
+      draft_conflict: "草稿已更改。请重新加载后再保存或生成；未保存的编辑仍保留在此。",
+      spec_invalid: "规格 JSON 无效。请检查必填字段和值的类型。",
+      description_required: "生成规格前，请先添加并保存描述。",
+      generation_running: "此活动已有正在进行的生成任务。",
+      run_not_found: "此生成尝试已不存在，或你没有访问权限。",
+      project_deleting: "此 Project 正在删除，暂时无法修改活动或生成规格。",
       invalid_credentials: "用户名或密码错误。",
       too_many_attempts: "登录失败次数过多，请稍后重试。",
       password_mismatch: "当前密码不正确。",

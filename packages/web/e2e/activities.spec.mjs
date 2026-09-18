@@ -32,6 +32,10 @@ async function fixture(page) {
   let candidateReads = 0;
   let firstCandidateGate = Promise.resolve();
   let failCandidate = false;
+  let projectAvailable = true;
+  let failedHistoryReads = 0;
+  let activityRequests = 0;
+  let deletedProjects = 0;
   const prefsWrites = [];
   const errors = [];
   page.on("pageerror", (error) => {
@@ -44,6 +48,7 @@ async function fixture(page) {
     const url = new URL(request.url());
     if (url.origin !== origin) return route.abort();
     const p = url.pathname;
+    if (p.startsWith(base)) activityRequests++;
     const json = (value, status = 200) =>
       route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
     if (p === "/api/me")
@@ -83,8 +88,14 @@ async function fixture(page) {
             ownerUserId: "author",
             createdAt: "2026-09-19",
           },
-        ],
+        ].filter((project) => projectAvailable || project.projectId !== projectId),
       });
+    if (p === `/api/projects/${projectId}` && request.method() === "DELETE") {
+      deletedProjects++;
+      projectAvailable = false;
+      return route.fulfill({ status: 204 });
+    }
+    if (p === `/api/projects/${projectId}` && request.method() === "PATCH") return json({});
     if (p === `/api/projects/${projectId}/agents` || p === "/api/projects/second-project/agents")
       return json({
         agents: [
@@ -133,6 +144,10 @@ async function fixture(page) {
     if (p === `${base}/act_test`) return json(activity);
     if (p === `${base}/act_test/runs`) {
       historyReads++;
+      if (failedHistoryReads > 0) {
+        failedHistoryReads--;
+        return json({ error: { code: "internal", message: "Temporary history failure." } }, 503);
+      }
       return json({
         runs: runs.map(({ candidate, ...run }) => ({ ...run, hasCandidate: candidate !== null })),
       });
@@ -225,6 +240,22 @@ async function fixture(page) {
   return {
     errors,
     prefsWrites,
+    removeProject() {
+      projectAvailable = false;
+    },
+    failHistory() {
+      failedHistoryReads++;
+    },
+    changeSavedDescription() {
+      activity.draft.description = "Remote description";
+      activity.draft.contentRevision = String(++revision);
+    },
+    get activityRequests() {
+      return activityRequests;
+    },
+    get deletedProjects() {
+      return deletedProjects;
+    },
     get historyReads() {
       return historyReads;
     },
@@ -443,5 +474,114 @@ test("idle history polls slowly and candidate text is fetched only on expansion"
   const settledReads = f.historyReads;
   await page.waitForTimeout(2500);
   expect(f.historyReads).toBe(settledReads);
+  expect(f.errors).toEqual([]);
+});
+
+test("polling errors recover without clearing a save conflict or unsaved edits", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page.clock.install();
+  f.failHistory();
+  await page.reload();
+  await expect(page.getByRole("alert")).toContainText("The server hit an internal error");
+  await page.clock.fastForward(30_000);
+  const description = page.getByRole("textbox", { name: "Description", exact: true });
+  await expect(description).toHaveValue("Practice common sight words");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await description.fill("Keep this unsaved edit");
+  f.changeSavedDescription();
+  await page.getByRole("button", { name: "Save description", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Draft changed");
+  f.failHistory();
+  await page.clock.fastForward(30_000);
+  await expect(page.getByRole("alert")).toHaveCount(2);
+  await page.clock.fastForward(30_000);
+  await expect(page.getByRole("alert")).toHaveCount(1);
+  await expect(page.getByRole("alert")).toContainText("Draft changed");
+  await expect(description).toHaveValue("Keep this unsaved edit");
+  expect(f.errors).toEqual([]);
+});
+
+test("collapsed rail keeps Activities reachable through the page manifest", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  await page.getByRole("button", { name: "Collapse sidebar", exact: true }).click();
+  const activities = page.getByRole("link", { name: "Activities", exact: true });
+  await expect(activities).toBeVisible();
+  await activities.click();
+  await expect(page).toHaveURL(/\/activities$/);
+  expect(f.errors).toEqual([]);
+});
+
+async function projectSettings(page) {
+  await page.getByRole("button", { name: "Activities test", exact: true }).click();
+  await page.getByRole("button", { name: "Project settings", exact: true }).click();
+  return page.getByRole("dialog", { name: "Project settings", exact: true });
+}
+
+test("canceling the dirty-editor guard prevents Project deletion and remount", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  const description = page.getByRole("textbox", { name: "Description", exact: true });
+  await description.fill("Keep before deletion");
+  const original = await description.elementHandle();
+  const settings = await projectSettings(page);
+  await settings.getByRole("button", { name: "Delete", exact: true }).click();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page
+    .getByRole("dialog", { name: "Delete Project", exact: true })
+    .getByRole("button", { name: "Confirm", exact: true })
+    .click();
+  await expect(page.getByRole("dialog", { name: "Delete Project", exact: true })).toHaveCount(0);
+  expect(f.deletedProjects).toBe(0);
+  await settings.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(description).toHaveValue("Keep before deletion");
+  expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
+  expect(f.errors).toEqual([]);
+});
+
+test("declining a refresh fallback preserves detached text without retaining Project access", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page.clock.install();
+  const description = page.getByRole("textbox", { name: "Description", exact: true });
+  await description.fill("Copy this before leaving");
+  const original = await description.elementHandle();
+  const settings = await projectSettings(page);
+  await settings.getByRole("textbox").fill("Refresh the project list");
+  f.removeProject();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByText("This Project is no longer available.", { exact: false }),
+  ).toBeVisible();
+  await expect(description).toHaveValue("Copy this before leaving");
+  await expect(description).toBeEnabled();
+  await expect(description).toHaveAttribute("readonly", "");
+  expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
+  await expect(page.getByRole("button", { name: "Save description", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Generate specification", exact: true }),
+  ).toHaveCount(0);
+  const requests = f.activityRequests;
+  await page.clock.fastForward(60_000);
+  expect(f.activityRequests).toBe(requests);
+  expect(f.prefsWrites.some((prefs) => prefs.lastProjectId === "second-project")).toBe(false);
+  await page.getByRole("button", { name: "Select a Project", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Activities test owner", exact: true }),
+  ).toHaveCount(0);
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Second project owner", exact: true }).click();
+  await expect(description).toHaveValue("Copy this before leaving");
+  expect(await description.evaluate((element, before) => element === before, original)).toBe(true);
+  await page.getByRole("button", { name: "Select a Project", exact: true }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Second project owner", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Second project", exact: true })).toBeVisible();
   expect(f.errors).toEqual([]);
 });

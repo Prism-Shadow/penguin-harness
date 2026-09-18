@@ -8,6 +8,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { navKeysFor } from "../../lib/nav-group-collapse";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
@@ -59,7 +60,7 @@ const railItemClass = (active: boolean) =>
 
 /**
  * Collapsed narrow rail: expand button on top; below it, in product-specified order, last
- * conversation / new chat / Agents / Skills / Models / Costs / Benchmark; user avatar at the
+ * conversation / new chat / the manifest's released pages; user avatar at the
  * bottom, opening the same account menu the pinned sidebar's avatar does. No Logo shown.
  *
  * Every entry is an icon with no visible label, so each carries a localized aria-label and
@@ -114,7 +115,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${DRAFT_SESSION_ID}`);
   };
 
-  /** Page entries (rail positions 3-8): same routes, same labels as the pinned nav.
+  /** Page entries: same manifest, routes and labels as the pinned nav.
       Traces is not among them: reading a Trace happens in the chat toolbar's panel
       switcher, which is the only place it happens. */
   const pages: ReadonlyArray<{
@@ -134,13 +135,13 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         icon: COMPANY_NAV_ICONS[key],
         note: null,
       }))
-    : [
-        { to: "/agents", label: S.nav.agents, icon: NAV_ICONS.agents },
-        { to: "/plugins", label: S.nav.plugins, icon: NAV_ICONS.plugins },
-        { to: "/models", label: S.nav.models, icon: NAV_ICONS.models },
-        { to: "/usage", label: S.nav.usage, icon: NAV_ICONS.usage },
-        { to: "/benchmark", label: S.nav.benchmark, icon: NAV_ICONS.benchmark },
-      ].map((item) => ({ ...item, key: item.to, note: navNoteFor(badges, item.to) }));
+    : navKeysFor(user?.isAdmin === true).map((key) => ({
+        key,
+        to: `/${key}`,
+        label: S.nav[key],
+        icon: NAV_ICONS[key],
+        note: navNoteFor(badges, `/${key}`),
+      }));
 
   /**
    * The rail's avatar hangs its menu off the rail's OUTER edge rather than over the rail:

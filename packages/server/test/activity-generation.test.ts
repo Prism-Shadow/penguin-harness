@@ -11,6 +11,7 @@ import type {
 import { ActivityGenerationService } from "../src/activities/generation.js";
 import { wire, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { ActivityAuthoring } from "../src/mechanisms/activities.js";
+import type { ProjectActivityWork } from "../src/mechanisms/projects.js";
 import type { Reassembly } from "../src/hmr/capabilities.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
@@ -128,7 +129,21 @@ describe("activity generation through Harness sessions", () => {
       ).json()) as { candidate: string | null };
       return { ...summary, candidate };
     }
-    return { t, client, activity, draft, endpoint, service, start, finish, disposed };
+    return {
+      t,
+      client,
+      activity,
+      draft,
+      endpoint,
+      service,
+      start,
+      finish,
+      disposed,
+      endTask: async (run: ActivityRun) => {
+        complete();
+        await waitFor(() => t.deps.manager.statusOf(run.sessionId!) === "idle");
+      },
+    };
   }
 
   it("captures inputs in a separate workspace, then validates, applies and reopens the saved result", async () => {
@@ -249,7 +264,8 @@ describe("activity generation through Harness sessions", () => {
     // candidate bytes should cross the history endpoint or enter its JSON parsing.
     const large = "x".repeat(256 * 1024);
     for (let i = 0; i < 50; i++) {
-      const stored = { ...run, runId: `run_large_${i}`, status: "failed", candidate: large };
+      const { candidate: _, ...metadata } = run;
+      const stored = { ...metadata, runId: `run_large_${i}`, status: "failed", hasCandidate: true };
       f.t.deps.db
         .prepare(
           "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, record_json) VALUES (?, ?, ?, ?, ?, ?)",
@@ -262,11 +278,16 @@ describe("activity generation through Harness sessions", () => {
           stored.createdAt,
           JSON.stringify(stored),
         );
+      f.t.deps.db
+        .prepare("INSERT INTO activity_run_candidates (run_id, candidate) VALUES (?, ?)")
+        .run(stored.runId, large);
     }
     const page = await (await f.client.get(`${f.endpoint}/runs`)).text();
     expect(JSON.parse(page).runs).toHaveLength(50);
     expect(page.length).toBeLessThan(50_000);
     expect(page).not.toContain('"candidate":');
+    const records = f.t.deps.db.prepare("SELECT record_json FROM activity_runs").all();
+    expect(JSON.stringify(records).length).toBeLessThan(50_000);
   });
 
   it("retains the session reference and releases a creation that finishes during shutdown", async () => {
@@ -347,6 +368,54 @@ describe("activity generation through Harness sessions", () => {
     },
   );
 
+  it("drains an entered publication before deleting a project and rejects new activity writes", async () => {
+    const f = await fixture();
+    const run = await f.start();
+    await f.endTask(run);
+    const entered = deferred();
+    const release = deferred();
+    const rename = fs.rename.bind(fs);
+    vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+      if (String(to).endsWith("draft.json")) {
+        entered.resolve();
+        await release.promise;
+      }
+      return rename(from, to);
+    });
+    const publication = f.service.reconcile();
+    await entered.promise;
+    let deleted = false;
+    const deletion = Promise.resolve(f.client.delete("/api/projects/generator-activities")).then(
+      (response) => {
+        deleted = true;
+        return response;
+      },
+    );
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(deleted).toBe(false);
+      expect(
+        (
+          await f.client.patch(`${f.endpoint}/description`, {
+            description: "Too late",
+            expectedRevision: f.draft.contentRevision,
+          })
+        ).status,
+      ).toBe(409);
+    } finally {
+      release.resolve();
+    }
+    await publication;
+    expect((await deletion).status).toBe(204);
+    await f.service.reconcile();
+    expect((await f.client.get(f.endpoint)).status).toBe(404);
+    await expect(fs.stat(path.join(f.t.root, "generator-activities"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(f.t.deps.db.prepare("SELECT * FROM activity_runs").all()).toEqual([]);
+    expect(f.t.deps.db.prepare("SELECT * FROM activity_run_candidates").all()).toEqual([]);
+  });
+
   it("recovers interrupted attempts without resubmitting or applying their output", async () => {
     const f = await fixture();
     const run = await f.start();
@@ -356,10 +425,15 @@ describe("activity generation through Harness sessions", () => {
     // Simulate the durable record left by abrupt process termination.
     run.candidate = JSON.stringify(activitySpec);
     f.t.deps.db
+      .prepare("INSERT INTO activity_run_candidates (run_id, candidate) VALUES (?, ?)")
+      .run(run.runId, run.candidate);
+    const { candidate: _, ...metadata } = run;
+    f.t.deps.db
       .prepare("UPDATE activity_runs SET status = 'running', record_json = ? WHERE run_id = ?")
-      .run(JSON.stringify(run), run.runId);
+      .run(JSON.stringify({ ...metadata, hasCandidate: true }), run.runId);
     const restarted = wire(ActivityGenerationService, {
       config: f.t.deps.config,
+      projectWork: f.t.deps.tree.api<ProjectActivityWork>("ProjectsModule", "ProjectActivityWork"),
       db: f.t.deps.db,
       activities: f.t.deps.tree.api<ActivityAuthoring>("ActivitiesModule", "ActivityAuthoring"),
       agents: f.t.deps.agentConfigService,

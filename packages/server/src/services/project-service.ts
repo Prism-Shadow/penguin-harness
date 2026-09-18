@@ -32,6 +32,7 @@ import type {
   ProjectConfigStore,
   ProjectLifecycle,
   Projects,
+  ProjectActivityWork,
 } from "../mechanisms/projects.js";
 import type { Users } from "../mechanisms/identity.js";
 import type { Schedules, SessionIndex } from "../mechanisms/sessions.js";
@@ -53,6 +54,7 @@ async function dirExists(path: string): Promise<boolean> {
 
 @Component()
 export class ProjectService implements ProjectLifecycle {
+  @Use() private readonly activityWork!: ProjectActivityWork;
   @Use() private readonly paths!: Paths;
   private get root(): string {
     return this.paths.root;
@@ -273,6 +275,10 @@ export class ProjectService implements ProjectLifecycle {
    * directory, to avoid the Trace writer recreating the directory after deletion.
    */
   async destroyProject(projectId: string): Promise<void> {
+    return this.activityWork.destroy(projectId, () => this.removeProject(projectId));
+  }
+
+  private async removeProject(projectId: string): Promise<void> {
     const runnings = this.manager.abortProject(projectId);
     if (runnings.length > 0) {
       await Promise.race([

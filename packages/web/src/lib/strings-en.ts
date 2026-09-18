@@ -22,6 +22,8 @@ export const en: Strings = {
     empty: "No activities yet. Create one using its product code and reference number.",
     select: "Select an activity to edit its description and specification.",
     noProject: "Select a Project to author activities.",
+    unavailable:
+      "This Project is no longer available. Your unsaved text is kept here for copying; saving and generation are disabled. Select another Project when you are ready to leave.",
     description: "Description",
     saveDescription: "Save description",
     spec: "Specification JSON",
@@ -612,6 +614,7 @@ export const en: Strings = {
   },
 
   project: {
+    selectProject: "Select a Project",
     switcher: "Project",
     create: "New Project",
     createTitle: "New Project",
@@ -4239,6 +4242,20 @@ Scenarios:
     noDefaultModel: "This project has no default model yet — add one on the Models page first",
     /** Localized text for the common server error codes (server error messages are English-only); looked up by ApiError.code in apiErrorText, falling back to the raw message for unmapped codes. */
     byCode: {
+      activity_invalid:
+        "The activity details are invalid. Check the product code, reference number, and title.",
+      activity_exists: "An activity already uses this product code and reference number.",
+      activity_not_found: "This activity no longer exists, or you do not have access.",
+      activity_stopping: "Activity generation is stopping. Please try again shortly.",
+      collection_not_found: "This activity collection no longer exists, or you do not have access.",
+      draft_conflict:
+        "Draft changed. Reload it before saving or generating again; your unsaved edits are still here.",
+      spec_invalid: "The specification JSON is invalid. Check its required fields and value types.",
+      description_required: "Add and save a description before generating a specification.",
+      generation_running: "This activity already has a generation running.",
+      run_not_found: "This generation attempt no longer exists, or you do not have access.",
+      project_deleting:
+        "This Project is being deleted. Activity changes and generation are unavailable.",
       invalid_credentials: "Incorrect username or password.",
       too_many_attempts: "Too many failed sign-in attempts. Try again shortly.",
       password_mismatch: "The current password is incorrect.",

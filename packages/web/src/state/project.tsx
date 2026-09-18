@@ -23,9 +23,12 @@ interface ProjectContextValue {
   projects: ProjectSummary[];
   projectsLoading: boolean;
   currentProject: ProjectSummary | null;
+  /** A removed selection whose local editor declined to leave; never an accessible Project. */
+  unavailableProjectId: string | null;
   setCurrentProjectId: (projectId: string) => void;
   registerProjectChangeGuard: (guard: () => boolean) => () => void;
   reloadProjects: () => Promise<void>;
+  deleteProject: (projectId: string) => Promise<boolean>;
 
   agents: AgentSummary[];
   agentsLoading: boolean;
@@ -51,6 +54,7 @@ interface ProjectStoreState {
   projects: ProjectSummary[];
   projectsLoading: boolean;
   currentProjectId: string | null;
+  unavailableProjectId: string | null;
 
   agents: AgentSummary[];
   agentsLoading: boolean;
@@ -59,16 +63,23 @@ interface ProjectStoreState {
   setCurrentProjectId: (projectId: string) => void;
   registerProjectChangeGuard: (guard: () => boolean) => () => void;
   reloadProjects: () => Promise<void>;
+  deleteProject: (projectId: string) => Promise<boolean>;
   setCurrentAgentId: (agentId: string) => void;
   reloadAgents: () => Promise<void>;
 }
 
-function createProjectStore() {
+export function createProjectStore() {
   const changeGuards = new Set<() => boolean>();
-  return createStore<ProjectStoreState>((set, get) => ({
+  const canLeave = () => [...changeGuards].every((guard) => guard());
+  const rememberProject = (projectId: string) => {
+    localStorage.setItem(PROJECT_KEY, projectId);
+    void api.putPrefs({ lastProjectId: projectId }).catch(() => undefined);
+  };
+  const store = createStore<ProjectStoreState>((set, get) => ({
     projects: [],
     projectsLoading: true,
     currentProjectId: null,
+    unavailableProjectId: null,
 
     agents: [],
     agentsLoading: true,
@@ -81,19 +92,15 @@ function createProjectStore() {
       };
     },
 
-    reloadProjects: async () => {
-      set({ projectsLoading: true });
-      try {
-        const res = await api.listProjects();
-        const wanted = get().currentProjectId ?? localStorage.getItem(PROJECT_KEY);
-        const found = res.projects.find((p) => p.projectId === wanted);
-        set({
-          projects: res.projects,
-          currentProjectId: (found ?? res.projects[0])?.projectId ?? null,
-        });
-      } finally {
-        set({ projectsLoading: false });
-      }
+    reloadProjects: () => loadProjects(),
+    deleteProject: async (projectId) => {
+      // Confirm before the irreversible request. A refresh after this same deletion
+      // must not ask again after the Project is already gone.
+      const selected = get().currentProjectId ?? get().unavailableProjectId;
+      if (projectId === selected && !canLeave()) return false;
+      await api.deleteProject(projectId);
+      await loadProjects(projectId);
+      return true;
     },
 
     setCurrentProjectId: (projectId) => {
@@ -103,21 +110,21 @@ function createProjectStore() {
       // so the Agent list (and the Session list mounted under it) would disappear for good
       // (reproducible by clicking the already-current Project in the dropdown).
       if (projectId === get().currentProjectId) return;
+      if (!get().projects.some((project) => project.projectId === projectId)) return;
       // Project selection is independent of the router. Consult editors before any
       // selection, agent, localStorage, or server preference mutation takes place.
-      if ([...changeGuards].some((canLeave) => !canLeave())) return;
-      localStorage.setItem(PROJECT_KEY, projectId);
+      if (!canLeave()) return;
+      rememberProject(projectId);
       // Clear the Agent list in sync: avoids a transient render with "new projectId + old
       // Project's agents" that would make downstream consumers (Sessions) fetch with the
       // wrong Agent set (which could create spurious Sessions under the new Project).
       set({
         currentProjectId: projectId,
+        unavailableProjectId: null,
         currentAgentId: null,
         agents: [],
         agentsLoading: true,
       });
-      // Sync server-side prefs (best-effort; failure doesn't affect the local experience).
-      void api.putPrefs({ lastProjectId: projectId }).catch(() => undefined);
     },
 
     reloadAgents: async () => {
@@ -126,6 +133,7 @@ function createProjectStore() {
       set({ agentsLoading: true });
       try {
         const res = await api.listAgents(currentProjectId);
+        if (get().currentProjectId !== currentProjectId) return;
         const wanted = get().currentAgentId ?? localStorage.getItem(agentKey(currentProjectId));
         const found = res.agents.find((a) => a.agentId === wanted);
         // Default to conversing with default_agent.
@@ -133,7 +141,7 @@ function createProjectStore() {
           res.agents.find((a) => a.agentId === "default_agent") ?? res.agents[0] ?? null;
         set({ agents: res.agents, currentAgentId: (found ?? fallback)?.agentId ?? null });
       } finally {
-        set({ agentsLoading: false });
+        if (get().currentProjectId === currentProjectId) set({ agentsLoading: false });
       }
     },
 
@@ -143,6 +151,43 @@ function createProjectStore() {
       set({ currentAgentId: agentId });
     },
   }));
+
+  async function loadProjects(approvedRemoval?: string): Promise<void> {
+    store.setState({ projectsLoading: true });
+    try {
+      const { projects } = await api.listProjects();
+      const state = store.getState();
+      const previous = state.currentProjectId ?? state.unavailableProjectId;
+      const wanted = previous ?? localStorage.getItem(PROJECT_KEY);
+      const found = projects.find((project) => project.projectId === wanted);
+      const next = (found ?? projects[0])?.projectId ?? null;
+      if (previous && next !== previous && approvedRemoval !== previous && !canLeave()) {
+        // Access is gone regardless of the answer. Keep only an ID so an editor can
+        // retain its local text, while every other consumer sees no active Project.
+        store.setState({
+          projects,
+          currentProjectId: null,
+          unavailableProjectId: previous,
+          agents: [],
+          currentAgentId: null,
+          agentsLoading: false,
+        });
+        return;
+      }
+      store.setState({
+        projects,
+        currentProjectId: next,
+        unavailableProjectId: null,
+        ...(state.currentProjectId !== next
+          ? { agents: [], currentAgentId: null, agentsLoading: next !== null }
+          : {}),
+      });
+      if (previous && next && next !== previous) rememberProject(next);
+    } finally {
+      store.setState({ projectsLoading: false });
+    }
+  }
+  return store;
 }
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
@@ -167,9 +212,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       projects: state.projects,
       projectsLoading: state.projectsLoading,
       currentProject,
+      unavailableProjectId: state.unavailableProjectId,
       setCurrentProjectId: state.setCurrentProjectId,
       registerProjectChangeGuard: state.registerProjectChangeGuard,
       reloadProjects: state.reloadProjects,
+      deleteProject: state.deleteProject,
       agents: state.agents,
       agentsLoading: state.agentsLoading,
       currentAgent,
