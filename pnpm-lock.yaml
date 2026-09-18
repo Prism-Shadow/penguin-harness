@@ -609,10 +609,6 @@ importers:
   plugins/data-analysis: {}
 
   plugins/discord-bot:
-    dependencies:
-      hono:
-        specifier: ^4.12.34
-        version: 4.12.34
     devDependencies:
       '@prismshadow/penguin-core':
         specifier: workspace:*
@@ -623,6 +619,9 @@ importers:
       '@prismshadow/penguin-server':
         specifier: workspace:*
         version: file:packages/server(supports-color@10.2.2)
+      hono:
+        specifier: ^4.12.34
+        version: 4.12.34
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)

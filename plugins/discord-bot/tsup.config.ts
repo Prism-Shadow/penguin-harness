@@ -10,4 +10,7 @@ export default defineConfig({
   // The SDK is the host's: the plugin compiles against its types and calls its helpers at
   // runtime, and must never carry a second copy (the production pack marks it external too).
   external: ["@prismshadow/penguin-core", /^@prismshadow\/penguin-core\//],
+  // Everything else it runs is inside the bundle: a builtin plugin ships as its own few files,
+  // not as an npm dependency tree the host pushes one file at a time.
+  noExternal: ["hono"],
 });
