@@ -20,7 +20,7 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 此开发集成保留了 Penguin 的代理循环、工具、审批及历史记录，通过 AgentHub 连接
 Copilot，不运行 Copilot CLI 或 SDK。仓库中的 AgentHub 补丁仅用于开发；npm 分发需要
-发布包含适配器的 AgentHub 版本。自定义 OAuth 应用的推理访问权限尚未验证。
+发布包含适配器的 AgentHub 版本。请使用自己连接的账号测试访问权限。
 
 1. 注册自己的 [GitHub OAuth 应用](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow)，并启用设备流程。
 2. 在 Penguin 服务端将 `PENGUIN_COPILOT_CLIENT_ID` 设置为该应用的客户端 ID，然后重启。
@@ -32,9 +32,10 @@ Copilot，不运行 Copilot CLI 或 SDK。仓库中的 AgentHub 补丁仅用于�
 打开分组密钥对话框，选择**断开 Copilot**。这不会清除已设置的 `GITHUB_COPILOT_API_KEY`
 环境变量，也不会撤销 GitHub 上的应用授权。
 
-仅支持不会过期的 OAuth 应用令牌。模型发现会导入声明支持 Chat Completions 和工具调用的模型。
+仅支持不会过期的 OAuth 应用令牌。模型发现会导入声明支持 Chat Completions 或 Responses 且支持工具调用的模型。
+声明支持 Responses 时，AgentHub 会选择该协议，并在模型客户端的生命周期内保持协议稳定。
 缺少端点元数据时，会将明确标记为聊天类型且支持工具调用的模型导入为候选；请运行连接测试验证推理访问。
-不支持明确声明仅有 Responses 接口的模型和会过期的 GitHub App 令牌。不推算美元费用或剩余订阅额度。
+排除策略明确禁用的模型、需要其他协议的模型及会过期的 GitHub App 令牌。不推算美元费用或剩余订阅额度。
 账号及组织策略仍然限制访问。GitHub 为其 SDK 提供了自定义应用订阅认证文档，
 这并不能证明此独立传输接口获得了官方支持。
 
