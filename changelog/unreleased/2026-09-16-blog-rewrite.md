@@ -35,3 +35,6 @@ the old post, the product's UI strings and the code before it replaced the old t
 - The Chinese posts use the Chinese UI's own labels and the product's term 插话 for steering, keep
   their China-specific material (the China ADP route in the Fireworks guide, localized prompts
   and screenshots), and render every bold span next to CJK punctuation.
+- The landing package now checks the blog directory itself: every post ships both languages, the
+  two halves agree on `date`, `category` and `pinned`, and every `penguin.ooo/docs/<slug>` a post
+  links to is a page the docs site navigates.
