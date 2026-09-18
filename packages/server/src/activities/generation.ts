@@ -8,7 +8,12 @@ import type { AgentConfig } from "../mechanisms/agents.js";
 import type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 import { HttpError } from "../http/errors.js";
 import { ActivityLocks, atomicJson } from "./service.js";
-import { newId, validateActivitySpec, type ActivityRun } from "./domain.js";
+import {
+  newId,
+  validateActivitySpec,
+  type ActivityRun,
+  type ActivityRunSummary,
+} from "./domain.js";
 
 const MAX_CANDIDATE_BYTES = 2 * 1024 * 1024;
 interface Observer {
@@ -31,6 +36,7 @@ export class ActivityGenerationService implements ActivityGeneration {
   private readonly observers = new Map<string, Observer>();
   private readonly operations = new Set<Promise<unknown>>();
   private stopped = false;
+  private drained: Promise<void> | null = null;
   private tick: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -56,23 +62,33 @@ export class ActivityGenerationService implements ActivityGeneration {
 
   private stop() {
     if (this.stopped) return;
-    if (this.timer) clearInterval(this.timer);
-    for (const run of this.running())
-      this.finish(run, "interrupted", "Server stopped before the result was published.");
     this.stopped = true;
+    if (this.timer) clearInterval(this.timer);
     for (const observer of this.observers.values()) observer.unsubscribe();
     this.observers.clear();
+    // Effects seal admissions synchronously. The App awaits shutdown's drain before
+    // closing the DB or booting a successor, so an entered publication can commit its
+    // matching terminal record before the remaining attempts become interrupted.
+    const finishRemaining = () => {
+      for (const run of this.running())
+        this.finish(run, "interrupted", "Server stopped before the result was published.");
+    };
+    if (this.operations.size) {
+      this.drained = Promise.allSettled([...this.operations]).then(finishRemaining);
+    } else {
+      finishRemaining();
+      this.drained = Promise.resolve();
+    }
   }
   async shutdown(): Promise<void> {
     this.stop();
-    await Promise.allSettled([...this.operations, ...(this.tick ? [this.tick] : [])]);
+    await this.drained;
   }
 
   private workspace(run: ActivityRun): string {
     return path.join(this.config.root, "activity-runs", run.runId);
   }
   private save(run: ActivityRun) {
-    if (this.stopped) return;
     this.db
       .prepare("UPDATE activity_runs SET status = ?, record_json = ? WHERE run_id = ?")
       .run(run.status, JSON.stringify(run), run.runId);
@@ -98,15 +114,30 @@ export class ActivityGenerationService implements ActivityGeneration {
     return operation;
   }
 
-  async list(projectId: string, activityId: string): Promise<ActivityRun[]> {
+  async list(projectId: string, activityId: string): Promise<ActivityRunSummary[]> {
     await this.activities.getActivity(projectId, activityId);
     return (
       this.db
         .prepare(
-          "SELECT record_json FROM activity_runs WHERE project_id = ? AND activity_id = ? ORDER BY created_at DESC, run_id DESC LIMIT 50",
+          "SELECT json_remove(record_json, '$.candidate') AS record_json, json_type(record_json, '$.candidate') = 'text' AS has_candidate FROM activity_runs WHERE project_id = ? AND activity_id = ? ORDER BY created_at DESC, run_id DESC LIMIT 50",
         )
-        .all(projectId, activityId) as { record_json: string }[]
-    ).map((row) => JSON.parse(row.record_json) as ActivityRun);
+        .all(projectId, activityId) as { record_json: string; has_candidate: number }[]
+    ).map((row) => ({ ...JSON.parse(row.record_json), hasCandidate: !!row.has_candidate }));
+  }
+
+  private async getRun(projectId: string, activityId: string, runId: string): Promise<ActivityRun> {
+    await this.activities.getActivity(projectId, activityId);
+    const row = this.db
+      .prepare(
+        "SELECT record_json FROM activity_runs WHERE project_id = ? AND activity_id = ? AND run_id = ?",
+      )
+      .get(projectId, activityId, runId) as { record_json: string } | undefined;
+    if (!row) throw new HttpError(404, "run_not_found", "Generation not found.");
+    return JSON.parse(row.record_json) as ActivityRun;
+  }
+
+  async candidate(projectId: string, activityId: string, runId: string): Promise<string | null> {
+    return (await this.getRun(projectId, activityId, runId)).candidate;
   }
 
   start(
@@ -159,7 +190,10 @@ export class ActivityGenerationService implements ActivityGeneration {
             activity.draft.description,
             "utf8",
           );
-          if (this.stopped) return { ...run, status: "interrupted" };
+          if (this.stopped) {
+            this.finish(run, "interrupted", "Server stopped before generation started.");
+            return run;
+          }
           const session = await this.sessionService.createSession({
             projectId,
             agentId,
@@ -168,7 +202,10 @@ export class ActivityGenerationService implements ActivityGeneration {
           });
           run.sessionId = session.sessionId;
           this.save(run);
-          if (this.stopped) return { ...run, status: "interrupted" };
+          if (this.stopped) {
+            this.finish(run, "interrupted", "Server stopped before generation started.");
+            return run;
+          }
           const observer: Observer = { unsubscribe: () => {}, completed: false, error: null };
           observer.unsubscribe = this.channels.get(session.sessionId).subscribe((event) => {
             if (event.event) return;
@@ -197,7 +234,7 @@ export class ActivityGenerationService implements ActivityGeneration {
         } catch (error) {
           this.finish(
             run,
-            "failed",
+            this.stopped ? "interrupted" : "failed",
             error instanceof HttpError
               ? error.message
               : "Could not start generation. Check the agent and model configuration.",
@@ -212,8 +249,8 @@ export class ActivityGenerationService implements ActivityGeneration {
     return this.track(
       this.locks.run(activityId, async () => {
         if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
-        const run = (await this.list(projectId, activityId)).find((item) => item.runId === runId);
-        if (!run) throw new HttpError(404, "run_not_found", "Generation not found.");
+        const run = await this.getRun(projectId, activityId, runId);
+        if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
         if (run.status === "running") {
           this.finish(run, "cancelled", "Generation cancelled.");
           if (run.sessionId) this.sessions.abortTask(run.sessionId);
@@ -224,7 +261,12 @@ export class ActivityGenerationService implements ActivityGeneration {
   }
 
   /** Deterministic reconciliation entry used by the timer and lifecycle tests. */
-  async reconcile(): Promise<void> {
+  reconcile(): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    return this.track(this.collect());
+  }
+
+  private async collect(): Promise<void> {
     if (this.stopped) return;
     for (const initial of this.running()) {
       await this.locks.run(initial.activityId, async () => {
@@ -246,6 +288,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                 throw new Error("The output must be a regular JSON file smaller than 2 MiB.");
               run.candidate = await fs.readFile(file, "utf8");
               this.save(run);
+              if (this.stopped) return;
               const observer = this.observers.get(run.runId);
               if (!observer?.completed)
                 throw new Error(
@@ -263,6 +306,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               );
               this.finish(run, "succeeded");
             } catch (error) {
+              if (this.stopped && run.candidate === null) return;
               const conflict = error instanceof HttpError && error.code === "draft_conflict";
               const message =
                 (error as NodeJS.ErrnoException).code === "ENOENT"

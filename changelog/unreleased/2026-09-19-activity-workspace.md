@@ -13,6 +13,10 @@ The Activities page lets Project owners create an activity by product code and r
 
 Each attempt stores its input snapshot, Session reference, status, and collected output. Valid output applies only while the saved draft still matches the input revision. Conflicting or invalid candidates remain available for review. Owners can cancel a run or start a new attempt; interrupted runs are recorded without automatic retry.
 
+Shutdown and hot replacement wait for an in-flight publication to finish before recording remaining runs as interrupted. History loads compact summaries, fetches candidate JSON when opened, and checks idle activities less frequently.
+
 ## Draft editing
 
 Descriptions and validated specifications persist across page reloads. Revision checks prevent stale edits from replacing newer content. Project members can read activities; editing and generation require the Project owner. English and Chinese navigation and controls are included.
+
+Unsaved edits prompt before leaving through navigation, browser history, Session links, or a Project switch. Declining a Project switch preserves the current selection and preferences.

@@ -24,6 +24,7 @@ interface ProjectContextValue {
   projectsLoading: boolean;
   currentProject: ProjectSummary | null;
   setCurrentProjectId: (projectId: string) => void;
+  registerProjectChangeGuard: (guard: () => boolean) => () => void;
   reloadProjects: () => Promise<void>;
 
   agents: AgentSummary[];
@@ -56,12 +57,14 @@ interface ProjectStoreState {
   currentAgentId: string | null;
 
   setCurrentProjectId: (projectId: string) => void;
+  registerProjectChangeGuard: (guard: () => boolean) => () => void;
   reloadProjects: () => Promise<void>;
   setCurrentAgentId: (agentId: string) => void;
   reloadAgents: () => Promise<void>;
 }
 
 function createProjectStore() {
+  const changeGuards = new Set<() => boolean>();
   return createStore<ProjectStoreState>((set, get) => ({
     projects: [],
     projectsLoading: true,
@@ -70,6 +73,13 @@ function createProjectStore() {
     agents: [],
     agentsLoading: true,
     currentAgentId: null,
+
+    registerProjectChangeGuard: (guard) => {
+      changeGuards.add(guard);
+      return () => {
+        changeGuards.delete(guard);
+      };
+    },
 
     reloadProjects: async () => {
       set({ projectsLoading: true });
@@ -93,6 +103,9 @@ function createProjectStore() {
       // so the Agent list (and the Session list mounted under it) would disappear for good
       // (reproducible by clicking the already-current Project in the dropdown).
       if (projectId === get().currentProjectId) return;
+      // Project selection is independent of the router. Consult editors before any
+      // selection, agent, localStorage, or server preference mutation takes place.
+      if ([...changeGuards].some((canLeave) => !canLeave())) return;
       localStorage.setItem(PROJECT_KEY, projectId);
       // Clear the Agent list in sync: avoids a transient render with "new projectId + old
       // Project's agents" that would make downstream consumers (Sessions) fetch with the
@@ -155,6 +168,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       projectsLoading: state.projectsLoading,
       currentProject,
       setCurrentProjectId: state.setCurrentProjectId,
+      registerProjectChangeGuard: state.registerProjectChangeGuard,
       reloadProjects: state.reloadProjects,
       agents: state.agents,
       agentsLoading: state.agentsLoading,

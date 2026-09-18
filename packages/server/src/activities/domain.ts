@@ -96,6 +96,8 @@ export interface ActivityRun {
   candidate: string | null;
 }
 
+export type ActivityRunSummary = Omit<ActivityRun, "candidate"> & { hasCandidate: boolean };
+
 export function validateActivitySpec(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Activity specification must be a JSON object.");

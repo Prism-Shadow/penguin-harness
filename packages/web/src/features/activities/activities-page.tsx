@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Link, useBlocker, useNavigate, useParams } from "react-router";
 import type {
   ActivityDetail,
   ActivityDraft,
   ActivityRecord,
   ActivityRun,
+  ActivityRunSummary,
 } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
@@ -43,6 +44,7 @@ export function ActivitiesPage() {
 }
 
 function ActivityWorkspace({ projectId, editable }: { projectId: string; editable: boolean }) {
+  const { registerProjectChangeGuard } = useProject();
   const { activityId } = useParams();
   const navigate = useNavigate();
   const [items, setItems] = useState<ActivityRecord[]>([]);
@@ -84,7 +86,18 @@ function ActivityWorkspace({ projectId, editable }: { projectId: string; editabl
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, []);
-  const canLeave = () => !dirty.current || window.confirm(S.activities.discard);
+  const canLeave = useCallback(() => !dirty.current || window.confirm(S.activities.discard), []);
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      currentLocation.pathname !== nextLocation.pathname && !canLeave(),
+  );
+  useEffect(() => {
+    if (blocker.state === "blocked") blocker.reset();
+  }, [blocker]);
+  useLayoutEffect(
+    () => registerProjectChangeGuard(canLeave),
+    [registerProjectChangeGuard, canLeave],
+  );
   async function create(event: React.FormEvent) {
     event.preventDefault();
     if (!canLeave()) return;
@@ -96,11 +109,11 @@ function ActivityWorkspace({ projectId, editable }: { projectId: string; editabl
         body: { productCode, refNum: Number(refNum), title, activityType },
       });
       if (!mounted.current) return;
-      dirty.current = false;
       setProductCode("");
       setRefNum("");
       setTitle("");
       await reload();
+      dirty.current = false;
       navigate(`/activities/${result.id}`);
     } catch (e) {
       if (mounted.current) setError(apiErrorText(e));
@@ -191,9 +204,6 @@ function ActivityWorkspace({ projectId, editable }: { projectId: string; editabl
                   <Link
                     key={item.id}
                     to={`/activities/${item.id}`}
-                    onClick={(e) => {
-                      if (item.id !== activityId && !canLeave()) e.preventDefault();
-                    }}
                     aria-current={item.id === activityId ? "page" : undefined}
                     className={`block rounded-md border p-3 text-sm ${item.id === activityId ? "border-gray-400 bg-gray-100 dark:border-gray-600 dark:bg-gray-800" : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-900"}`}
                   >
@@ -243,7 +253,8 @@ function ActivityEditor({
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
   const [description, setDescription] = useState("");
   const [spec, setSpec] = useState("");
-  const [runs, setRuns] = useState<ActivityRun[]>([]);
+  const [runs, setRuns] = useState<ActivityRunSummary[]>([]);
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -256,7 +267,7 @@ function ActivityEditor({
     detail !== null &&
     (description !== detail.draft.description || spec !== pretty(detail.draft.spec));
   state.current = { dirty, busy, revision: detail?.draft.contentRevision ?? "" };
-  useEffect(() => {
+  useLayoutEffect(() => {
     onDirty(dirty);
   });
   useEffect(() => {
@@ -277,13 +288,15 @@ function ActivityEditor({
     let timer: ReturnType<typeof setTimeout>;
     async function refresh() {
       const revisionAtStart = state.current.revision;
+      let active = false;
       try {
         const [value, history] = await Promise.all([
           apiFetch<ActivityDetail>(endpoint),
-          apiFetch<{ runs: ActivityRun[] }>(`${endpoint}/runs`),
+          apiFetch<{ runs: ActivityRunSummary[] }>(`${endpoint}/runs`),
         ]);
         if (cancelled) return;
         setRuns(history.runs);
+        active = history.runs.some((run) => run.status === "running");
         if (!state.current.busy && state.current.revision === revisionAtStart) {
           if (!state.current.dirty) accept(value);
           else if (value.draft.contentRevision !== state.current.revision) setChanged(true);
@@ -291,7 +304,7 @@ function ActivityEditor({
       } catch (e) {
         if (!cancelled) setError(apiErrorText(e));
       } finally {
-        if (!cancelled) timer = setTimeout(() => void refresh(), 2000);
+        if (!cancelled) timer = setTimeout(() => void refresh(), active ? 2000 : 30_000);
       }
     }
     void refresh();
@@ -299,7 +312,7 @@ function ActivityEditor({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [endpoint]);
+  }, [endpoint, refreshVersion]);
   async function action(operation: () => Promise<void>) {
     if (state.current.busy) return;
     state.current.busy = true;
@@ -436,11 +449,13 @@ function ActivityEditor({
                   method: "POST",
                   body: { agentId: selectedAgent, expectedRevision: detail.draft.contentRevision },
                 });
-                if (alive.current)
+                if (alive.current) {
                   setRuns((previous) => [
-                    run,
+                    summarize(run),
                     ...previous.filter((item) => item.runId !== run.runId),
                   ]);
+                  setRefreshVersion((value) => value + 1);
+                }
               })
             }
           >
@@ -510,7 +525,9 @@ function ActivityEditor({
                       );
                       if (alive.current)
                         setRuns((previous) =>
-                          previous.map((item) => (item.runId === result.runId ? result : item)),
+                          previous.map((item) =>
+                            item.runId === result.runId ? summarize(result) : item,
+                          ),
                         );
                     })
                   }
@@ -519,28 +536,88 @@ function ActivityEditor({
                 </Button>
               )}
             </div>
-            {run.candidate !== null && (
-              <details className="text-xs">
-                <summary className="cursor-pointer">{S.activities.candidate}</summary>
-                <pre className="my-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-2 dark:bg-gray-900">
-                  {run.candidate}
-                </pre>
-                {editable && (
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => {
-                      if (!dirty || window.confirm(S.activities.discard)) setSpec(run.candidate!);
-                    }}
-                  >
-                    {S.activities.useCandidate}
-                  </Button>
-                )}
-              </details>
+            {run.hasCandidate && (
+              <CandidateReview
+                endpoint={`${endpoint}/runs/${encodeURIComponent(run.runId)}/candidate`}
+                editable={editable}
+                busy={busy}
+                onUse={(candidate) => {
+                  if (!dirty || window.confirm(S.activities.discard)) setSpec(candidate);
+                }}
+              />
             )}
           </article>
         ))}
       </section>
     </section>
+  );
+}
+
+function summarize({ candidate, ...run }: ActivityRun): ActivityRunSummary {
+  return { ...run, hasCandidate: candidate !== null };
+}
+
+function CandidateReview({
+  endpoint,
+  editable,
+  busy,
+  onUse,
+}: {
+  endpoint: string;
+  editable: boolean;
+  busy: boolean;
+  onUse: (candidate: string) => void;
+}) {
+  const [candidate, setCandidate] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const pending = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  async function load() {
+    if (pending.current || candidate !== null) return;
+    pending.current = true;
+    setError("");
+    try {
+      const result = await apiFetch<{ candidate: string | null }>(endpoint);
+      if (alive.current) setCandidate(result.candidate ?? "");
+    } catch (e) {
+      if (alive.current) setError(apiErrorText(e));
+    } finally {
+      pending.current = false;
+    }
+  }
+  return (
+    <details
+      className="text-xs"
+      onToggle={(event) => {
+        if (event.currentTarget.open) void load();
+      }}
+    >
+      <summary className="cursor-pointer">{S.activities.candidate}</summary>
+      {error ? (
+        <div className="my-2 space-y-2">
+          <p role="alert" className={toneInk.danger}>
+            {error}
+          </p>
+          <Button size="sm" onClick={() => void load()}>
+            {S.common.retry}
+          </Button>
+        </div>
+      ) : (
+        <pre className="my-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-2 dark:bg-gray-900">
+          {candidate ?? S.activities.loading}
+        </pre>
+      )}
+      {editable && (
+        <Button size="sm" disabled={busy || candidate === null} onClick={() => onUse(candidate!)}>
+          {S.activities.useCandidate}
+        </Button>
+      )}
+    </details>
   );
 }

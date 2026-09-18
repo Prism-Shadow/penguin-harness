@@ -4819,5 +4819,6 @@ export type {
   ActivityDraft,
   ActivityDetail,
   ActivityRun,
+  ActivityRunSummary,
   ActivityRunStatus,
 } from "../activities/domain.js";

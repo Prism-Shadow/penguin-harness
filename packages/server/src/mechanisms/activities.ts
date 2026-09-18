@@ -3,6 +3,7 @@ import type {
   ActivityDraft,
   ActivityRecord,
   ActivityRun,
+  ActivityRunSummary,
   CollectionManifest,
 } from "../activities/domain.js";
 
@@ -14,7 +15,8 @@ export abstract class ActivityGeneration extends Interface<{
     agentId: string,
     expectedRevision: string,
   ): Promise<ActivityRun>;
-  list(projectId: string, activityId: string): Promise<ActivityRun[]>;
+  list(projectId: string, activityId: string): Promise<ActivityRunSummary[]>;
+  candidate(projectId: string, activityId: string, runId: string): Promise<string | null>;
   cancel(projectId: string, activityId: string, runId: string): Promise<ActivityRun>;
 }>() {}
 

@@ -28,6 +28,11 @@ async function fixture(page) {
   let runs = [];
   let revision = 0;
   let role = "owner";
+  let historyReads = 0;
+  let candidateReads = 0;
+  let firstCandidateGate = Promise.resolve();
+  let failCandidate = false;
+  const prefsWrites = [];
   const errors = [];
   page.on("pageerror", (error) => {
     errors.push(error.message);
@@ -57,7 +62,10 @@ async function fixture(page) {
           attachmentLimitMaxMb: 200,
         },
       });
-    if (p === "/api/me/prefs") return json({ prefs: {} });
+    if (p === "/api/me/prefs") {
+      if (request.method() === "PUT") prefsWrites.push(request.postDataJSON());
+      return json({ prefs: {} });
+    }
     if (p === "/api/projects")
       return json({
         projects: [
@@ -68,9 +76,16 @@ async function fixture(page) {
             ownerUserId: "author",
             createdAt: "2026-09-19",
           },
+          {
+            projectId: "second-project",
+            name: "Second project",
+            role: "owner",
+            ownerUserId: "author",
+            createdAt: "2026-09-19",
+          },
         ],
       });
-    if (p === `/api/projects/${projectId}/agents`)
+    if (p === `/api/projects/${projectId}/agents` || p === "/api/projects/second-project/agents")
       return json({
         agents: [
           {
@@ -116,7 +131,29 @@ async function fixture(page) {
       return json(activity, 201);
     }
     if (p === `${base}/act_test`) return json(activity);
-    if (p === `${base}/act_test/runs`) return json({ runs });
+    if (p === `${base}/act_test/runs`) {
+      historyReads++;
+      return json({
+        runs: runs.map(({ candidate, ...run }) => ({ ...run, hasCandidate: candidate !== null })),
+      });
+    }
+    if (p.startsWith(`${base}/act_test/runs/`) && p.endsWith("/candidate")) {
+      candidateReads++;
+      if (p.includes("/run_test/")) await firstCandidateGate;
+      if (failCandidate && p.includes("/run_second/")) {
+        failCandidate = false;
+        return json(
+          { error: { code: "unavailable", message: "Candidate temporarily unavailable." } },
+          503,
+        );
+      }
+      return json({
+        candidate: runs.find((run) => p.includes(`/${run.runId}/`))?.candidate ?? null,
+      });
+    }
+    if (p === "/api/projects/second-project/activities") return json({ activities: [] });
+    if (p.startsWith("/api/projects/second-project/activities/"))
+      return json({ error: { code: "activity_not_found", message: "Activity not found." } }, 404);
     if (p === `${base}/act_test/description`) {
       const body = request.postDataJSON();
       if (body.expectedRevision !== activity.draft.contentRevision)
@@ -187,6 +224,30 @@ async function fixture(page) {
   });
   return {
     errors,
+    prefsWrites,
+    get historyReads() {
+      return historyReads;
+    },
+    get candidateReads() {
+      return candidateReads;
+    },
+    secondCandidate() {
+      runs.push({
+        ...runs[0],
+        runId: "run_second",
+        candidate: JSON.stringify({ ...spec, title: "Second candidate" }),
+      });
+    },
+    holdFirstCandidate() {
+      let release;
+      firstCandidateGate = new Promise((resolve) => {
+        release = resolve;
+      });
+      return release;
+    },
+    failSecondCandidate() {
+      failCandidate = true;
+    },
     complete() {
       runs[0] = { ...runs[0], status: "succeeded", candidate: JSON.stringify(spec) };
       activity.draft = {
@@ -296,5 +357,91 @@ test("member view is read-only and mobile layout does not overflow", async ({ pa
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+  expect(f.errors).toEqual([]);
+});
+
+test("dirty drafts block sidebar, Session, browser back, and project switches", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page.getByRole("button", { name: "Generate specification", exact: true }).click();
+  const description = page.getByRole("textbox", { name: "Description", exact: true });
+  await description.fill("Keep this edit");
+  let prompts = 0;
+  const decline = (dialog) => {
+    prompts++;
+    return dialog.dismiss();
+  };
+  page.on("dialog", decline);
+  await page.getByRole("link", { name: "Open Session / approvals" }).click();
+  await expect(page).toHaveURL(/activities\/act_test$/);
+  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await expect(page).toHaveURL(/activities\/act_test$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/activities\/act_test$/);
+  await expect(description).toHaveValue("Keep this edit");
+  await page.getByRole("button", { name: "Activities test", exact: true }).click();
+  await page.getByRole("button", { name: "Second project owner", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Activities test", exact: true })).toBeVisible();
+  await expect(description).toHaveValue("Keep this edit");
+  expect(await page.evaluate(() => localStorage.getItem("penguin.lastProjectId"))).not.toBe(
+    "second-project",
+  );
+  expect(f.prefsWrites.some((prefs) => prefs.lastProjectId === "second-project")).toBe(false);
+  expect(prompts).toBe(4);
+  page.off("dialog", decline);
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goBack();
+  await expect(page).toHaveURL(/\/activities$/);
+  await page.getByRole("link", { name: "words / 12 Sight words" }).click();
+  await description.fill("Another edit");
+  await page.getByRole("button", { name: "Activities test", exact: true }).click();
+  await page.getByRole("button", { name: "Second project owner", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Second project", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("penguin.lastProjectId"))).toBe(
+    "second-project",
+  );
+  await expect
+    .poll(() => f.prefsWrites.some((prefs) => prefs.lastProjectId === "second-project"))
+    .toBe(true);
+  expect(f.errors).toEqual([]);
+});
+
+test("idle history polls slowly and candidate text is fetched only on expansion", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  const reads = f.historyReads;
+  await page.waitForTimeout(2500);
+  expect(f.historyReads).toBe(reads);
+  await page.getByRole("button", { name: "Generate specification", exact: true }).click();
+  await expect.poll(() => f.historyReads).toBeGreaterThan(reads);
+  f.complete();
+  f.secondCandidate();
+  await expect(page.getByText("Applied", { exact: true })).toHaveCount(2);
+  expect(f.candidateReads).toBe(0);
+  const candidates = page.getByText("View candidate JSON", { exact: true });
+  const release = f.holdFirstCandidate();
+  f.failSecondCandidate();
+  await candidates.nth(0).click();
+  await candidates.nth(1).click();
+  await expect(page.getByRole("alert")).toContainText("Candidate temporarily unavailable.");
+  await page.locator("details").nth(1).getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator("details").nth(1).locator("pre")).toContainText(
+    '"title":"Second candidate"',
+  );
+  await expect(page.locator("details").nth(0).locator("pre")).toContainText("Loading");
+  release();
+  await expect(page.locator("details pre").nth(0)).toContainText('"title":"Sight words"');
+  await expect(page.locator("details pre").nth(1)).toContainText('"title":"Second candidate"');
+  expect(f.candidateReads).toBe(3);
+  await candidates.nth(0).click();
+  await candidates.nth(0).click();
+  expect(f.candidateReads).toBe(3);
+  const settledReads = f.historyReads;
+  await page.waitForTimeout(2500);
+  expect(f.historyReads).toBe(settledReads);
   expect(f.errors).toEqual([]);
 });

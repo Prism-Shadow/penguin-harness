@@ -1,9 +1,15 @@
 /**
- * Router (react-router v7 declarative style): /login is public; all other routes go through
+ * Data router: /login is public; all other routes go through
  * the RequireAuth guard (redirects to /login when not authenticated) and are wrapped in
  * ProjectProvider + AppLayout.
  */
-import { BrowserRouter, Navigate, Route, Routes } from "react-router";
+import {
+  createBrowserRouter,
+  createRoutesFromElements,
+  Navigate,
+  Route,
+  RouterProvider,
+} from "react-router";
 import { useAuth } from "./state/auth";
 import { ProjectProvider } from "./state/project";
 import { SessionsProvider } from "./state/sessions";
@@ -96,48 +102,50 @@ function LoginRoute() {
   return <LoginPage />;
 }
 
-export function AppRouter() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginRoute />} />
-        <Route
-          path="/terminal"
-          element={
-            <RequireAuthBare>
-              <TerminalPage />
-            </RequireAuthBare>
-          }
-        />
-        <Route element={<RequireAuth />}>
-          <Route index element={<Navigate to="/chat" replace />} />
-          {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <>
+      <Route path="/login" element={<LoginRoute />} />
+      <Route
+        path="/terminal"
+        element={
+          <RequireAuthBare>
+            <TerminalPage />
+          </RequireAuthBare>
+        }
+      />
+      <Route element={<RequireAuth />}>
+        <Route index element={<Navigate to="/chat" replace />} />
+        {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused
               server-side (403); the sidebar hides their row, so a member only ever reaches
               one by typing the URL. */}
-          {PAGES.map((page) => (
-            <Route key={page.id} path={page.path} element={renderPage(page)} />
-          ))}
-          {/* Company mode: /org resolves to an organization (or the empty landing), and an
+        {PAGES.map((page) => (
+          <Route key={page.id} path={page.path} element={renderPage(page)} />
+        ))}
+        {/* Company mode: /org resolves to an organization (or the empty landing), and an
               organization opens on its overview — the page that says what the whole
               organization is doing; its channels are the sidebar's own list beside it. Both
               fall back to /chat while company mode is unavailable (see OrgLayout). */}
-          <Route path="/org" element={<OrgIndexRedirect />} />
-          <Route path="/org/:projectId/:orgId" element={<OrgLayout />}>
-            <Route index element={<Navigate to="overview" replace />} />
-            <Route path="overview" element={<OverviewPage />} />
-            <Route path="chart" element={<OrgChartPage />} />
-            <Route path="calendar" element={<CalendarPage />} />
-            <Route path="tickets" element={<TicketsPage />} />
-            <Route path="finance" element={<FinancePage />} />
-            <Route path="handbook" element={<HandbookPage />} />
-            <Route path="channels/:channelId" element={<ChannelView />} />
-            <Route path="*" element={<Navigate to="overview" replace />} />
-          </Route>
-          {/* System settings and user management live in the settings dialog now (see
-              SettingsDialog); their old routes fall through to the catch-all. */}
-          <Route path="*" element={<Navigate to="/chat" replace />} />
+        <Route path="/org" element={<OrgIndexRedirect />} />
+        <Route path="/org/:projectId/:orgId" element={<OrgLayout />}>
+          <Route index element={<Navigate to="overview" replace />} />
+          <Route path="overview" element={<OverviewPage />} />
+          <Route path="chart" element={<OrgChartPage />} />
+          <Route path="calendar" element={<CalendarPage />} />
+          <Route path="tickets" element={<TicketsPage />} />
+          <Route path="finance" element={<FinancePage />} />
+          <Route path="handbook" element={<HandbookPage />} />
+          <Route path="channels/:channelId" element={<ChannelView />} />
+          <Route path="*" element={<Navigate to="overview" replace />} />
         </Route>
-      </Routes>
-    </BrowserRouter>
-  );
+        {/* System settings and user management live in the settings dialog now (see
+              SettingsDialog); their old routes fall through to the catch-all. */}
+        <Route path="*" element={<Navigate to="/chat" replace />} />
+      </Route>
+    </>,
+  ),
+);
+
+export function AppRouter() {
+  return <RouterProvider router={router} />;
 }

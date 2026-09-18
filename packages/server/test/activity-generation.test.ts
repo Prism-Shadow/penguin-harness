@@ -2,14 +2,28 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { abortEvent, requestBegin, requestEnd } from "@prismshadow/penguin-core";
-import type { ActivityDetail, ActivityDraft, ActivityRun } from "../src/activities/domain.js";
+import type {
+  ActivityDetail,
+  ActivityDraft,
+  ActivityRun,
+  ActivityRunSummary,
+} from "../src/activities/domain.js";
 import { ActivityGenerationService } from "../src/activities/generation.js";
 import { wire, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { ActivityAuthoring } from "../src/mechanisms/activities.js";
+import type { Reassembly } from "../src/hmr/capabilities.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { activitySpec } from "./activity-fixtures.js";
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 describe("activity generation through Harness sessions", () => {
   const cleanups: (() => Promise<void>)[] = [];
@@ -20,10 +34,14 @@ describe("activity generation through Harness sessions", () => {
   async function fixture() {
     let complete: () => void = () => {};
     const waiting = new Set<string>();
+    const disposed = new Set<string>();
     let output = JSON.stringify(activitySpec);
     let fatal = false;
     const fakeSession = (row: SessionRow): RuntimeSession => ({
       sessionId: row.sessionId,
+      dispose: () => {
+        disposed.add(row.sessionId);
+      },
       toolPermission: () => "rw",
       generateTitle: async () => ({ title: null, usage: null }),
       compactability: () => "ok",
@@ -102,11 +120,15 @@ describe("activity generation through Harness sessions", () => {
       complete();
       await waitFor(() => t.deps.manager.statusOf(run.sessionId!) === "idle");
       await service.reconcile();
-      return (
-        (await (await client.get(`${endpoint}/runs`)).json()) as { runs: ActivityRun[] }
+      const summary = (
+        (await (await client.get(`${endpoint}/runs`)).json()) as { runs: ActivityRunSummary[] }
       ).runs.find((r) => r.runId === run.runId)!;
+      const { candidate } = (await (
+        await client.get(`${endpoint}/runs/${run.runId}/candidate`)
+      ).json()) as { candidate: string | null };
+      return { ...summary, candidate };
     }
-    return { t, client, activity, draft, endpoint, service, start, finish };
+    return { t, client, activity, draft, endpoint, service, start, finish, disposed };
   }
 
   it("captures inputs in a separate workspace, then validates, applies and reopens the saved result", async () => {
@@ -124,7 +146,7 @@ describe("activity generation through Harness sessions", () => {
     const reopened = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
     expect(reopened.draft.spec).toEqual(activitySpec);
     expect(reopened.draft.status).toBe("valid");
-    expect((await f.service.list("generator-activities", f.activity.id))[0]?.candidate).toBe(
+    expect(await f.service.candidate("generator-activities", f.activity.id, run.runId)).toBe(
       JSON.stringify(activitySpec),
     );
   });
@@ -188,6 +210,143 @@ describe("activity generation through Harness sessions", () => {
     ).toBe(f.draft.contentRevision);
   });
 
+  it("lists compact summaries and authorizes candidate retrieval by project and activity", async () => {
+    const f = await fixture();
+    const run = await f.start();
+    await f.finish(run);
+    const response = await f.client.get(`${f.endpoint}/runs`);
+    const { runs } = (await response.json()) as { runs: ActivityRunSummary[] };
+    expect(runs[0]).toMatchObject({ runId: run.runId, hasCandidate: true, status: "succeeded" });
+    expect(runs[0]).not.toHaveProperty("candidate");
+    expect(JSON.stringify(runs)).not.toContain(activitySpec.activityDescription);
+    const candidateUrl = `${f.endpoint}/runs/${run.runId}/candidate`;
+    expect(await (await f.client.get(candidateUrl)).json()).toEqual({
+      candidate: JSON.stringify(activitySpec),
+    });
+    const outsider = await provisionUser(f.t.app, "outsider");
+    const other = apiClient(f.t.app, outsider.cookie);
+    expect((await other.get(candidateUrl)).status).toBe(404);
+    expect((await f.client.post("/api/projects", { projectId: "generator-other" })).status).toBe(
+      201,
+    );
+    expect(
+      (await f.client.get(candidateUrl.replace("generator-activities", "generator-other"))).status,
+    ).toBe(404);
+    const second = (await (
+      await f.client.post("/api/projects/generator-activities/activities", {
+        productCode: "p",
+        refNum: 2,
+        title: "Two",
+      })
+    ).json()) as ActivityDetail;
+    expect((await f.client.get(candidateUrl.replace(f.activity.id, second.id))).status).toBe(404);
+    expect(
+      (await f.client.post("/api/projects/generator-activities/members", { userId: "outsider" }))
+        .status,
+    ).toBe(201);
+    expect((await other.get(candidateUrl)).status).toBe(200);
+    // Fill the page with payloads much larger than their metadata. None of these
+    // candidate bytes should cross the history endpoint or enter its JSON parsing.
+    const large = "x".repeat(256 * 1024);
+    for (let i = 0; i < 50; i++) {
+      const stored = { ...run, runId: `run_large_${i}`, status: "failed", candidate: large };
+      f.t.deps.db
+        .prepare(
+          "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, record_json) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          stored.runId,
+          stored.projectId,
+          stored.activityId,
+          stored.status,
+          stored.createdAt,
+          JSON.stringify(stored),
+        );
+    }
+    const page = await (await f.client.get(`${f.endpoint}/runs`)).text();
+    expect(JSON.parse(page).runs).toHaveLength(50);
+    expect(page.length).toBeLessThan(50_000);
+    expect(page).not.toContain('"candidate":');
+  });
+
+  it("retains the session reference and releases a creation that finishes during shutdown", async () => {
+    const f = await fixture();
+    const createSession = f.t.deps.sessionService.createSession.bind(f.t.deps.sessionService);
+    const entered = deferred();
+    const release = deferred();
+    vi.spyOn(f.t.deps.sessionService, "createSession").mockImplementation(async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return createSession(...args);
+    });
+    const started = f.client.post(`${f.endpoint}/generate-spec`, {
+      agentId: "default_agent",
+      expectedRevision: f.draft.contentRevision,
+    });
+    await entered.promise;
+    const stopping = (await f.t.deps.hmr.ensure()).api.shutdown();
+    release.resolve();
+    await stopping;
+    const run = (await (await started).json()) as ActivityRun;
+    expect(run.status).toBe("interrupted");
+    expect(run.sessionId).not.toBeNull();
+    expect(f.t.deps.sessionsRepo.findById(run.sessionId!)).toBeDefined();
+    expect(f.disposed.has(run.sessionId!)).toBe(true);
+    expect((await f.service.list("generator-activities", f.activity.id))[0]).toMatchObject({
+      status: "interrupted",
+      sessionId: run.sessionId,
+    });
+  });
+
+  it.each(["shutdown", "reassembly"] as const)(
+    "drains an entered publication before %s finishes",
+    async (mode) => {
+      const f = await fixture();
+      const run = await f.start();
+      const activities = f.t.deps.tree.api<ActivityAuthoring>(
+        "ActivitiesModule",
+        "ActivityAuthoring",
+      );
+      const apply = activities.applySpec.bind(activities);
+      const entered = deferred();
+      const release = deferred();
+      vi.spyOn(activities, "applySpec").mockImplementation(async (...args) => {
+        entered.resolve();
+        await release.promise;
+        return apply(...args);
+      });
+      const completion = f.finish(run);
+      await entered.promise;
+      let drained = false;
+      const stopping = (
+        mode === "shutdown"
+          ? (await f.t.deps.hmr.ensure()).api.shutdown()
+          : f.t.deps.tree.api<Reassembly>("RuntimeModule", "Reassembly").reassemble()
+      ).then(() => {
+        drained = true;
+      });
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        expect(drained).toBe(false);
+        expect((await f.service.list("generator-activities", f.activity.id))[0]?.status).toBe(
+          "running",
+        );
+        expect(
+          (await activities.getActivity("generator-activities", f.activity.id)).draft.spec,
+        ).toBeNull();
+      } finally {
+        release.resolve();
+      }
+      await stopping;
+      expect((await completion).status).toBe("succeeded");
+      const current = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+      expect(current.draft.spec).toEqual(activitySpec);
+      expect((await f.service.list("generator-activities", f.activity.id))[0]?.status).toBe(
+        "succeeded",
+      );
+    },
+  );
+
   it("recovers interrupted attempts without resubmitting or applying their output", async () => {
     const f = await fixture();
     const run = await f.start();
@@ -218,7 +377,9 @@ describe("activity generation through Harness sessions", () => {
     try {
       const recovered = (await restarted.list("generator-activities", f.activity.id))[0]!;
       expect(recovered.status).toBe("interrupted");
-      expect(recovered.candidate).toBe(run.candidate);
+      expect(await restarted.candidate("generator-activities", f.activity.id, run.runId)).toBe(
+        run.candidate,
+      );
       expect(recovered.sessionId).toBe(run.sessionId);
       expect(
         ((await (await f.client.get(f.endpoint)).json()) as ActivityDetail).draft.spec,
