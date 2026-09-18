@@ -26,10 +26,11 @@ gained a way to copy conversation text through it.
   reply the menu stays where it opened. Scrolling the stream yourself still closes it. Closing the
   menu resumes following, and a view that was at the bottom catches up to it.
 - The browser's own menu stays where the app's does not apply: with nothing selected, when the
-  selection runs outside the stream (into the composer, for example), and on editable fields.
-  A touch or pen press-and-hold is left to the operating system's selection menu.
+  selection runs outside the stream (into the composer, for example), when it is built from
+  several ranges (Firefox's Ctrl+drag), and on editable fields. A touch or pen press-and-hold is
+  left to the operating system's selection menu.
 - In the Agents panel, a child conversation's stream offers the same menu, and Add to conversation
-  stages into that child's composer. A stream without a composer offers Copy alone.
+  stages into that child's composer.
 
 ## Details
 

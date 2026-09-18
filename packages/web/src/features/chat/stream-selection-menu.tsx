@@ -29,10 +29,10 @@ import { STAT_ICONS } from "../../lib/stat-icons";
 import { contextMenuAnchor, isContextMenuKey } from "../../lib/context-menu";
 import type { AnchorRect, ContextMenuEventLike } from "../../lib/context-menu";
 import {
+  SELECTION_MENU_ITEMS,
   excerptReference,
   opensSelectionMenu,
   selectionEndAnchor,
-  selectionMenuItems,
 } from "../../lib/selection-menu";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { useRowContextMenu } from "../../components/ui/context-menu";
@@ -55,9 +55,9 @@ export interface CapturedSelection {
 }
 
 /**
- * The menu's rows, in the order `selectionMenuItems` gives. Copy writes the selection to the
- * clipboard and confirms with a toast: a row closes under the pointer, so it cannot carry the
- * copy button's at-the-control feedback (the Files panel's copy-path row confirms the same way).
+ * The menu's rows, in SELECTION_MENU_ITEMS order. Copy writes the selection to the clipboard
+ * and confirms with a toast: a row closes under the pointer, so it cannot carry the copy
+ * button's at-the-control feedback (the Files panel's copy-path row confirms the same way).
  * Add to conversation hands the excerpt to the composer as a chip; nothing already typed is
  * touched and nothing is sent.
  */
@@ -67,14 +67,14 @@ export function SelectionMenuRows({
   onDone,
 }: {
   selection: CapturedSelection;
-  /** Stages the excerpt in this conversation's composer. Absent where there is no composer, and the row with it. */
-  onAddExcerpt?: (reference: ComposerReference) => void;
+  /** Stages the excerpt in this conversation's composer. */
+  onAddExcerpt: (reference: ComposerReference) => void;
   /** Runs after either row has acted: closes the panel and puts the highlight back. */
   onDone: (selection: CapturedSelection) => void;
 }) {
   return (
     <>
-      {selectionMenuItems(onAddExcerpt !== undefined).map((item) =>
+      {SELECTION_MENU_ITEMS.map((item) =>
         item === "copy" ? (
           <button
             key={item}
@@ -95,7 +95,7 @@ export function SelectionMenuRows({
             type="button"
             className={overflowMenuRowClass}
             onClick={() => {
-              onAddExcerpt?.(excerptReference(selection.text));
+              onAddExcerpt(excerptReference(selection.text));
               onDone(selection);
             }}
           >
@@ -142,7 +142,7 @@ export interface StreamSelectionMenu {
 }
 
 export function useStreamSelectionMenu(
-  onAddExcerpt?: (reference: ComposerReference) => void,
+  onAddExcerpt: (reference: ComposerReference) => void,
 ): StreamSelectionMenu {
   // The row hook's anchor state and dismissal, with the stream as its "row": its owner is what a
   // scroll must move for the panel to close, and that is the stream's own scroll.
@@ -172,10 +172,13 @@ export function useStreamSelectionMenu(
       selection !== null && selection.rangeCount > 0 && !selection.isCollapsed
         ? selection.getRangeAt(0)
         : null;
+    // The text is the whole selection's, so the rules take its range count too: a selection
+    // of several ranges reads text this one range cannot vouch for (see opensSelectionMenu).
     const selectedText = range !== null && selection !== null ? selection.toString() : "";
     const opens = opensSelectionMenu({
       selectedText,
-      selectionInStream: range !== null && host.contains(range.commonAncestorContainer),
+      rangeCount: selection?.rangeCount ?? 0,
+      firstRangeInStream: range !== null && host.contains(range.commonAncestorContainer),
       pointerType,
       onEditable: inEditable(target),
     });
@@ -233,11 +236,7 @@ export function useStreamSelectionMenu(
       button={null}
     >
       {captured !== null && (
-        <SelectionMenuRows
-          selection={captured}
-          {...(onAddExcerpt ? { onAddExcerpt } : {})}
-          onDone={done}
-        />
+        <SelectionMenuRows selection={captured} onAddExcerpt={onAddExcerpt} onDone={done} />
       )}
     </Dropdown>
   );

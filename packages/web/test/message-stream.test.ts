@@ -55,6 +55,8 @@ describe("MessageStream links", () => {
         ],
         version: 1,
         ctx,
+        // Every stream belongs to a conversation with a composer to stage an excerpt in.
+        onAddExcerpt: () => {},
       }),
     );
     const tags = anchors(html);

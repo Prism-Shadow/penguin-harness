@@ -222,10 +222,10 @@ export function MessageStream({
   older?: OlderHistoryControls;
   /**
    * Stages text selected in the stream in this conversation's composer, as a chip (the
-   * selection menu's "Add to conversation"). Omitted where the view has no composer: the menu
-   * then offers Copy alone.
+   * selection menu's "Add to conversation"). Required: every stream this app renders belongs
+   * to a conversation with a composer.
    */
-  onAddExcerpt?: (reference: ComposerReference) => void;
+  onAddExcerpt: (reference: ComposerReference) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionMenu = useStreamSelectionMenu(onAddExcerpt);

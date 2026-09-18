@@ -10,20 +10,21 @@
 import { describe, expect, it } from "vitest";
 import {
   EXCERPT_LABEL_CHARS,
+  SELECTION_MENU_ITEMS,
   excerptBlockquote,
   excerptLabel,
   excerptReference,
   normalizeExcerpt,
   opensSelectionMenu,
   selectionEndAnchor,
-  selectionMenuItems,
 } from "../src/lib/selection-menu";
 import type { SelectionMenuRequest } from "../src/lib/selection-menu";
 
 /** A right-click on a selection of reply text: the case the menu exists for. */
 const REQUEST: SelectionMenuRequest = {
   selectedText: "npm run build",
-  selectionInStream: true,
+  rangeCount: 1,
+  firstRangeInStream: true,
   pointerType: "mouse",
   onEditable: false,
 };
@@ -48,7 +49,15 @@ describe("opensSelectionMenu", () => {
   });
 
   it("declines a selection that runs out of the stream, into the composer for one", () => {
-    expect(opensSelectionMenu({ ...REQUEST, selectionInStream: false })).toBe(false);
+    expect(opensSelectionMenu({ ...REQUEST, firstRangeInStream: false })).toBe(false);
+  });
+
+  it("declines a selection of several ranges, even with the first one inside the stream", () => {
+    // Firefox's Ctrl+drag builds one: the text read from such a selection is every range's,
+    // so a second range in the composer would ride into the clipboard and into the excerpt,
+    // and the highlight put back afterwards could only be the one range that was captured.
+    expect(opensSelectionMenu({ ...REQUEST, rangeCount: 2 })).toBe(false);
+    expect(opensSelectionMenu({ ...REQUEST, rangeCount: 0 })).toBe(false);
   });
 
   it("declines a gesture on a field, whose own menu (paste, spelling) belongs there", () => {
@@ -56,13 +65,9 @@ describe("opensSelectionMenu", () => {
   });
 });
 
-describe("selectionMenuItems", () => {
-  it("offers Copy, then Add to conversation", () => {
-    expect(selectionMenuItems(true)).toEqual(["copy", "addToConversation"]);
-  });
-
-  it("offers Copy alone where there is no composer to add to", () => {
-    expect(selectionMenuItems(false)).toEqual(["copy"]);
+describe("SELECTION_MENU_ITEMS", () => {
+  it("is Copy, then Add to conversation", () => {
+    expect(SELECTION_MENU_ITEMS).toEqual(["copy", "addToConversation"]);
   });
 });
 

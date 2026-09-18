@@ -20,7 +20,7 @@ import { FILE_ICON, QUOTE_ICON } from "../../components/ui/icons";
  * line numbers must not go with it. They are the smaller half and the half the name does not
  * already say. An excerpt has no path and no lines, so its name is the excerpt's own start.
  */
-export function referenceParts(reference: ComposerReference): { name: string; lines: string } {
+function referenceParts(reference: ComposerReference): { name: string; lines: string } {
   if (reference.kind === "excerpt") return { name: excerptLabel(reference.excerpt), lines: "" };
   const name = reference.path.split("/").pop() ?? reference.path;
   const lines =
@@ -31,7 +31,7 @@ export function referenceParts(reference: ComposerReference): { name: string; li
 }
 
 /** The whole of what a chip stands for, for its tooltip: path and lines, or the whole excerpt. */
-export function referenceTitle(reference: ComposerReference): string {
+function referenceTitle(reference: ComposerReference): string {
   if (reference.kind === "excerpt") return reference.excerpt;
   return `${reference.path}${referenceParts(reference).lines}`;
 }

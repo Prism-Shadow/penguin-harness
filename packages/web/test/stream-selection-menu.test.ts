@@ -1,7 +1,7 @@
 /**
  * The conversation's selection menu, rendered (react-dom/server static markup, and the rows'
- * own element tree for their click handlers — node env, no DOM): which rows it draws, and what
- * its two rows do with the selection they were opened on. "Add to conversation" stages a chip
+ * own element tree for their click handlers — node env, no DOM): the rows it draws, and what
+ * each does with the selection it was opened on. "Add to conversation" stages a chip
  * through the composer's control — the same `addReference` the Files panel stages through —
  * and that chip shows the excerpt rather than a path; Copy writes the selection and confirms
  * with a toast, the menu-row convention.
@@ -75,14 +75,6 @@ describe("SelectionMenuRows", () => {
     const add = html.indexOf(`${S.files.addToChat}</button>`);
     expect(copy).toBeGreaterThan(-1);
     expect(add).toBeGreaterThan(copy);
-  });
-
-  it("draws Copy alone where the view has no composer", () => {
-    const html = renderToStaticMarkup(
-      createElement(SelectionMenuRows, { selection: SELECTION, onDone: () => {} }),
-    );
-    expect(html).toContain(`${S.common.copy}</button>`);
-    expect(html).not.toContain(S.files.addToChat);
   });
 
   it("follows the UI language", () => {

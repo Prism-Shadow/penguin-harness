@@ -13,8 +13,10 @@ import type { ExcerptReference } from "./workspace-tree";
 export interface SelectionMenuRequest {
   /** The document's selected text at the gesture (`Selection.toString()`); "" when nothing is selected. */
   selectedText: string;
-  /** Both ends of the selection lie inside the message stream. */
-  selectionInStream: boolean;
+  /** How many ranges the selection holds (`Selection.rangeCount`). */
+  rangeCount: number;
+  /** Both ends of the selection's first range lie inside the message stream. */
+  firstRangeInStream: boolean;
   /** The pointer behind the gesture ("mouse", "pen", "touch"), or "" when the keyboard asked. */
   pointerType: string;
   /** The gesture landed on an editable field (an input, a textarea, contenteditable). */
@@ -28,24 +30,24 @@ export interface SelectionMenuRequest {
  *   for that gesture, and a second menu would fight it;
  * - a gesture on a field, whose own menu (paste, spelling) is the one that belongs there;
  * - no selection, a blank one, or one that runs past the stream — into the composer, say —
- *   because then there is no conversation text to act on, or not only conversation text.
+ *   because then there is no conversation text to act on, or not only conversation text;
+ * - a selection built from several ranges (Firefox's Ctrl+drag), even when the first of them
+ *   lies inside the stream: the text such a selection reads is every range's text, so one
+ *   range in the composer would ride into the clipboard and into the excerpt, and putting the
+ *   highlight back afterwards can only restore the one range that was captured.
  */
 export function opensSelectionMenu(request: SelectionMenuRequest): boolean {
   if (isLongPressPointer(request.pointerType)) return false;
   if (request.onEditable) return false;
-  return request.selectionInStream && request.selectedText.trim() !== "";
+  if (request.rangeCount !== 1 || !request.firstRangeInStream) return false;
+  return request.selectedText.trim() !== "";
 }
 
 /** One row of the selection menu. */
 export type SelectionMenuItem = "copy" | "addToConversation";
 
-/**
- * The rows, in order. Adding to the conversation stages the excerpt in a composer, so a view
- * with no composer to stage it in offers Copy alone.
- */
-export function selectionMenuItems(hasComposer: boolean): SelectionMenuItem[] {
-  return hasComposer ? ["copy", "addToConversation"] : ["copy"];
-}
+/** The rows, in order. */
+export const SELECTION_MENU_ITEMS: readonly SelectionMenuItem[] = ["copy", "addToConversation"];
 
 /**
  * Where a keyboard-opened menu hangs: a zero-width point at the right edge of the selection's
