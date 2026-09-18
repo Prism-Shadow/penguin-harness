@@ -10,6 +10,11 @@
  * clear checkbox drops it. The server validates against the same schema and answers a
  * rejected field by name, which renders under that field.
  *
+ * Each server keeps its own values, so the page edits one machine at a time: a picker at the
+ * top switches between this server and the machines the Project holds a connection to, and
+ * every read, save and action goes to the picked machine through this server's tunnel.
+ * Nothing is copied between machines.
+ *
  * Values hydrate when the section mounts and the saved response is adopted as the new
  * baseline, the proxy page's rule; the plugin picks the change up through its watch, so
  * nothing here says "restart".
@@ -30,6 +35,11 @@ import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { SectionShell } from "./section-shell";
+import { useSessions } from "../../state/sessions";
+import { OptionMenu } from "../../components/ui/option-menu";
+
+/** The picker's value for this server; a machine id is never this short. */
+const THIS_SERVER = "*";
 
 /**
  * A field's draft: strings and numbers as typed (a number stays the string in the box until
@@ -104,6 +114,12 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   const [clearing, setClearing] = useState<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const { machineIds, machineLabels } = useSessions();
+  /** The machine whose settings the page shows and saves: null for this server. */
+  const [machine, setMachine] = useState<string | null>(null);
+  /** Why the picked machine's settings could not be read, when they could not. */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const nameOf = (id: string) => machineLabels.get(id) ?? id;
 
   const adopt = (list: PluginConfigEntry[]) => {
     setEntries(list);
@@ -124,18 +140,29 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
 
   useEffect(() => {
     let cancelled = false;
-    void api.adminGetPluginConfig().then(
+    setEntries(null);
+    setLoadError(null);
+    setFieldErrors({});
+    void api.adminGetPluginConfig(machine).then(
       (config) => {
         if (!cancelled) adopt(config.plugins);
       },
       (e: unknown) => {
-        if (!cancelled) toastError(apiErrorText(e));
+        if (cancelled) return;
+        if (machine === null) {
+          toastError(apiErrorText(e));
+          return;
+        }
+        // A machine that cannot answer — no connection, or a build without these routes —
+        // shows an empty page with the reason, not this server's settings under its name.
+        adopt([]);
+        setLoadError(apiErrorText(e));
       },
     );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [machine]);
 
   /**
    * While any group reports work in progress (an install it started), its notices and actions
@@ -233,7 +260,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     try {
       for (const [entry, values] of updates) {
         try {
-          const res = await api.adminPutPluginConfig({ name: entry.name, values });
+          const res = await api.adminPutPluginConfig({ name: entry.name, values }, machine);
           const saved = res.plugins.find((e) => e.name === entry.name);
           if (saved !== undefined) adoptOne(saved);
           else adopt(res.plugins);
@@ -264,7 +291,7 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   const runAction = async (entry: PluginConfigEntry, action: string) => {
     setBusy(`${entry.name}\0${action}`);
     try {
-      const res = await api.adminRunPluginConfigAction({ name: entry.name, action });
+      const res = await api.adminRunPluginConfigAction({ name: entry.name, action }, machine);
       adopt(res.plugins);
       const message = localized(res.message, res.messageZh) ?? res.message;
       if (res.ok) toastSuccess(message);
@@ -276,7 +303,35 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
     }
   };
 
-  if (entries === null) return <SectionShell>{null}</SectionShell>;
+  // Only when there is another machine to pick: a single server has nothing to switch to.
+  const picker =
+    machineIds.length > 0 ? (
+      <div className="flex justify-end">
+        <OptionMenu
+          aria-label={S.settings.pluginConfigMachine}
+          options={[
+            {
+              value: THIS_SERVER,
+              triggerLabel: S.plugins.thisServer,
+              label: S.plugins.thisServer,
+              description: S.settings.pluginConfigThisServerDesc,
+            },
+            ...machineIds.map((id) => ({
+              value: id,
+              triggerLabel: nameOf(id),
+              label: nameOf(id),
+              description: S.settings.pluginConfigMachineDesc,
+            })),
+          ]}
+          value={machine ?? THIS_SERVER}
+          onChange={(v) => {
+            if (busy === null) setMachine(v === THIS_SERVER ? null : v);
+          }}
+        />
+      </div>
+    ) : null;
+
+  if (entries === null) return <SectionShell>{picker}</SectionShell>;
 
   const patch = (plugin: string, name: string, value: unknown) => {
     setDrafts((prev) => ({ ...prev, [plugin]: { ...(prev[plugin] ?? {}), [name]: value } }));
@@ -506,6 +561,12 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
   const cards = entries.filter((e) => e.parent === undefined || !names.has(e.parent));
   return (
     <SectionShell>
+      {picker}
+      {machine !== null && loadError !== null && (
+        <p className={`rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
+          {S.plugins.machineUnreadable(nameOf(machine), loadError)}
+        </p>
+      )}
       <FocusCard focus={focus} ready={entries.length > 0} />
       {cards.map((card) => {
         const children = entries.filter((e) => e.parent === card.name);

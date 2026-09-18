@@ -39,6 +39,8 @@ import {
   buildToolConfig,
   selectBuiltinToolsForModel,
   defaultProjectConfig,
+  effectivePluginTable,
+  parsePluginTables,
   defaultSystemConfig,
   resetSystemConfigToDefaults,
   getModel,
@@ -1512,6 +1514,36 @@ describe("command_policy (sandbox command policy block)", () => {
     expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toBeUndefined();
     await fs.writeFile(file, '[command_policy]\nenabled = "banana"\n', "utf8");
     expect((await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID)).command_policy).toBeUndefined();
+  });
+});
+
+describe("plugins (shared and per-machine tables)", () => {
+  it("a machine table survives a load → save round trip, and its entry wins on that machine", async () => {
+    const cfg = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    cfg.plugins = {
+      all: { "@acme/shared": {}, "@acme/pinned": { version: "1.0.0" } },
+      machines: {
+        Xk3v9Qa_bT2mLp0z: { "@acme/only-there": {}, "@acme/pinned": { version: "2.0.0" } },
+      },
+    };
+    await saveProjectConfig(tmpRoot, DEFAULT_PROJECT_ID, cfg);
+    const text = await fs.readFile(projectConfigPath(tmpRoot, DEFAULT_PROJECT_ID), "utf8");
+    expect(text).toContain('[plugins.Xk3v9Qa_bT2mLp0z]\n"@acme/only-there" = "*"');
+    const loaded = await loadProjectConfig(tmpRoot, DEFAULT_PROJECT_ID);
+    expect(loaded.plugins).toEqual(cfg.plugins);
+    expect(effectivePluginTable(loaded.plugins!, "Xk3v9Qa_bT2mLp0z")).toEqual({
+      "@acme/shared": {},
+      "@acme/pinned": { version: "2.0.0" },
+      "@acme/only-there": {},
+    });
+    expect(effectivePluginTable(loaded.plugins!, "Other00000000000")).toEqual(cfg.plugins.all);
+  });
+
+  it("a requirement table on an id-shaped package name is still a requirement", () => {
+    expect(parsePluginTables({ abcdefghijklmnop: { version: "1" } })).toEqual({
+      all: { abcdefghijklmnop: { version: "1" } },
+      machines: {},
+    });
   });
 });
 

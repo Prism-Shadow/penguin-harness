@@ -70,6 +70,7 @@ import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
 import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost } from "../plugin/loader.js";
 import { migrate } from "../db/migrations.js";
+import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
 
 /**
@@ -299,7 +300,14 @@ async function createInner(
   const plugins =
     caps === null
       ? pluginHostFrom(ctx.resources)
-      : await loadPluginHost(ctx.resources, caps.config.root, caps.hmr.assetsDir());
+      : await loadPluginHost(
+          ctx.resources,
+          caps.config.root,
+          caps.hmr.assetsDir(),
+          // A Project may list a plugin for one machine only (`[plugins.<machineId>]`); this
+          // server's own id says which of those tables are its own.
+          new MachinesRepo(caps.db).ownId(),
+        );
   // Plus whatever a test stood up in process, which no closure could name (see the id).
   const injected = ctx.resources.claim<PluginHost | null>(HMR_TEST_PLUGINS_RESOURCE_ID);
   if (injected != null && typeof injected.entries === "function") {

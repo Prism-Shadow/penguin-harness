@@ -3,13 +3,16 @@
  *
  *   GET    /                      this Project's list, joined with what the process runs,
  *                                 plus which plugins the build ships (any member)
- *   POST   / { specifier }        add a plugin the build ships to this Project's list, and
- *                                 apply (admin); nothing is fetched from anywhere
- *   PUT    / { plugins }          rewrite this Project's list, and apply (admin)
- *   DELETE /?specifier=…          drop it from this Project's list, and apply (admin)
+ *   POST   / { specifier,         add a plugin the build ships to this Project's shared table —
+ *            machineId? }         or to that machine's own table — and apply (admin); nothing
+ *                                 is fetched from anywhere
+ *   PUT    / { plugins }          rewrite this Project's shared table, and apply (admin)
+ *   DELETE /?specifier=…          drop it from every table of this Project — or, with
+ *          [&machineId=…]         `machineId`, from that machine's own table — and apply (admin)
  *
  * WHERE THE LIST LIVES. In the Project's own config (the `[plugins]` table of `.project_config.toml`,
- * package name → requirement, Cargo's `[dependencies]` shape),
+ * package name → requirement, Cargo's `[dependencies]` shape, plus a `[plugins.<machineId>]`
+ * table for what one machine runs besides — PluginTables in core),
  * beside its models — because machines are lent to Projects, so a Project's list is what
  * says which machines a plugin has to reach (PRFC-0010). The data root's old `plugins.json`
  * is not read any more, deliberately without a migration: a deployment that had one starts
@@ -36,7 +39,13 @@ import type { AppEnv } from "../../auth/middleware.js";
 import type { InstalledPlugin, InstalledPluginsResponse } from "../../api/types.js";
 import { HttpError } from "../errors.js";
 import { readJson, requireValidId } from "../validate.js";
-import type { Config, Hmr, Reassembly, ReassemblyChange } from "../../hmr/capabilities.js";
+import type { DatabaseSync } from "node:sqlite";
+import {
+  effectivePluginTable,
+  PLUGIN_MACHINE_ID,
+  type PluginTables,
+} from "@prismshadow/penguin-core";
+import type { Config, Db, Hmr, Reassembly, ReassemblyChange } from "../../hmr/capabilities.js";
 import {
   discoverBuiltinPlugins,
   PACKAGE_NAME,
@@ -47,9 +56,12 @@ import {
 import { pluginHostFrom } from "../../plugin/host.js";
 import { Access, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { Machines } from "../../machines/service.js";
+import { MachinesRepo } from "../../db/repos/machines.js";
 
 export interface InstalledPluginsDeps {
   root: string;
+  /** This server's own machine id: the `[plugins.<machineId>]` table that is its own. */
+  machineId: string;
   /** The current version's assets, where the builtin plugins a push carried live. */
   assetsDir: () => string | null;
   /** What the process's plugin host holds, by specifier, and what it could not load, with why. */
@@ -83,8 +95,8 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     return projectId;
   };
 
-  const view = async (projectId: string): Promise<InstalledPluginsResponse> => {
-    const listed = await deps.projectConfig.getPlugins(projectId).catch((err: unknown) => {
+  const tablesOf = (projectId: string): Promise<PluginTables> =>
+    deps.projectConfig.getPluginTables(projectId).catch((err: unknown) => {
       // A Project whose config will not parse cannot be answered for — its models are just
       // as unreadable — and saying "no plugins" would read as a healthy empty deployment.
       throw new HttpError(
@@ -93,15 +105,33 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         `${projectId}: ${PLUGINS_FILE} could not be read: ${err instanceof Error ? err.message : String(err)}`,
       );
     });
+
+  const view = async (projectId: string): Promise<InstalledPluginsResponse> => {
+    const tables = await tablesOf(projectId);
+    const here = effectivePluginTable(tables, deps.machineId);
+    // Every name any table lists, shared ones first: the page shows where each one runs.
+    const names = [
+      ...new Set([
+        ...Object.keys(tables.all),
+        ...Object.values(tables.machines).flatMap((t) => Object.keys(t)),
+      ]),
+    ];
     const { loaded, skipped } = deps.running();
     const bases = pluginBases(deps.root, deps.assetsDir());
-    // Exactly what this Project lists: a plugin the build ships is not asked for until a
-    // Project says so. `builtin` on a row is where the package CAME FROM, a tag, not a
-    // second way of being asked for. What the package declares is read from its files;
-    // whether the process holds it, and why not, is the host's — a load that failed says
-    // so, rather than passing as a restart that would not help.
+    // `builtin` on a row is where the package CAME FROM, a tag, not a second way of being
+    // asked for. What the package declares is read from its files; whether the process holds
+    // it, and why not, is the host's — a load that failed says so, rather than passing as a
+    // restart that would not help. A plugin listed only for other machines is not on this
+    // one by design, so its missing files are not an error here.
     const plugins: InstalledPlugin[] = [];
-    for (const specifier of Object.keys(listed)) {
+    for (const specifier of names) {
+      const where = {
+        everywhere: specifier in tables.all,
+        machines: Object.entries(tables.machines)
+          .filter(([, t]) => specifier in t)
+          .map(([id]) => id),
+        here: specifier in here,
+      };
       const declared = await readPluginDeclaration(specifier, bases);
       if ("error" in declared) {
         plugins.push({
@@ -110,12 +140,13 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
           builtin: false,
           modules: [],
           replaces: [],
-          error: declared.error,
+          ...(where.here ? { error: declared.error } : {}),
+          ...where,
         });
         continue;
       }
-      const active = loaded.has(specifier);
-      const failure = skipped.get(specifier);
+      const active = where.here && loaded.has(specifier);
+      const failure = where.here ? skipped.get(specifier) : undefined;
       plugins.push({
         specifier,
         active,
@@ -123,6 +154,7 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
         modules: declared.modules,
         replaces: declared.replaces,
         ...(!active && failure !== undefined ? { error: failure } : {}),
+        ...where,
       });
     }
     return {
@@ -131,9 +163,10 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       // and asking for one is a list edit rather than a download.
       shipped: await discoverBuiltinPlugins(bases),
       file: PLUGINS_FILE,
-      // A listed plugin that neither runs nor failed is waiting for a runtime that can
-      // re-assemble the App — otherwise applying already loaded it.
-      restartPending: plugins.some((p) => !p.active && p.error === undefined),
+      machineId: deps.machineId,
+      // A plugin this server is asked to run that neither runs nor failed is waiting for a
+      // runtime that can re-assemble the App — otherwise applying already loaded it.
+      restartPending: plugins.some((p) => p.here && !p.active && p.error === undefined),
     };
   };
 
@@ -152,6 +185,15 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
       throw new HttpError(400, "bad_request", "specifier must be a package name.");
     }
     return s;
+  };
+
+  /** The machine a verb is scoped to — its own table — or null for the shared table. */
+  const machineOf = (value: unknown): string | null => {
+    if (value === undefined || value === null || value === "") return null;
+    if (typeof value !== "string" || !PLUGIN_MACHINE_ID.test(value)) {
+      throw new HttpError(400, "bad_request", "machineId must be a machine's own id.");
+    }
+    return value;
   };
 
   /**
@@ -174,33 +216,56 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     }
   };
 
-  type PluginTable = Awaited<ReturnType<ProjectConfigStore["getPlugins"]>>;
   /**
-   * An edit of this Project's table as a re-assembly change: read and written inside the
-   * re-assembly's queue, so two edits never interleave, and undone — the table as it was —
-   * when the new tree fails to boot.
+   * Writes an edit of this Project's tables. When what THIS server runs changes, the edit is a
+   * re-assembly change: read and written inside the re-assembly's queue, so two edits never
+   * interleave, and undone — the tables as they were — when the new tree fails to boot. An
+   * edit that only concerns other machines is written as it is: re-assembling would stop
+   * every agent run in flight here for a tree that stays the same.
    */
-  const edit = (projectId: string, next: (listed: PluginTable) => PluginTable) => {
-    let previous: PluginTable | null = null;
-    const change: ReassemblyChange = {
+  const edit = async (projectId: string, next: (tables: PluginTables) => PluginTables) => {
+    const current = await tablesOf(projectId);
+    const same = (a: PluginTables, b: PluginTables) =>
+      JSON.stringify(effectivePluginTable(a, deps.machineId)) ===
+      JSON.stringify(effectivePluginTable(b, deps.machineId));
+    if (same(current, next(current))) {
+      await deps.projectConfig.setPluginTables(projectId, next(current));
+      return;
+    }
+    let previous: PluginTables | null = null;
+    await deps.apply({
       write: async () => {
-        previous = await deps.projectConfig.getPlugins(projectId);
-        await deps.projectConfig.setPlugins(projectId, next(previous));
+        previous = await deps.projectConfig.getPluginTables(projectId);
+        await deps.projectConfig.setPluginTables(projectId, next(previous));
       },
       undo: async () => {
-        if (previous !== null) await deps.projectConfig.setPlugins(projectId, previous);
+        if (previous !== null) await deps.projectConfig.setPluginTables(projectId, previous);
       },
-    };
-    return change;
+    });
   };
 
   app.post("/", async (c) => {
     requireAdmin(c);
     const projectId = scope(c);
-    const specifier = specifierOf((await readJson(c)).specifier);
+    const body = await readJson(c);
+    const specifier = specifierOf(body.specifier);
+    const machineId = machineOf(body.machineId);
+    // Only a plugin the build ships can be asked for, of any machine: the machines run this
+    // build too, and asking is consent, not a download.
     await requireShipped([specifier]);
-    await deps.apply(
-      edit(projectId, (listed) => (specifier in listed ? listed : { ...listed, [specifier]: {} })),
+    await edit(projectId, (tables) =>
+      machineId === null
+        ? { ...tables, all: { ...tables.all, [specifier]: tables.all[specifier] ?? {} } }
+        : {
+            ...tables,
+            machines: {
+              ...tables.machines,
+              [machineId]: {
+                ...tables.machines[machineId],
+                [specifier]: tables.machines[machineId]?.[specifier] ?? {},
+              },
+            },
+          },
     );
     deps.syncFleet(projectId);
     return c.json(await view(projectId));
@@ -210,12 +275,24 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     requireAdmin(c);
     const projectId = scope(c);
     const specifier = specifierOf(c.req.query("specifier"));
-    await deps.apply(
-      edit(projectId, (listed) => {
-        const kept = { ...listed };
-        delete kept[specifier];
-        return kept;
-      }),
+    const machineId = machineOf(c.req.query("machineId"));
+    const without = (table: PluginTables["all"] | undefined) => {
+      const kept = { ...table };
+      delete kept[specifier];
+      return kept;
+    };
+    await edit(projectId, (tables) =>
+      machineId === null
+        ? {
+            all: without(tables.all),
+            machines: Object.fromEntries(
+              Object.entries(tables.machines).map(([id, t]) => [id, without(t)]),
+            ),
+          }
+        : {
+            ...tables,
+            machines: { ...tables.machines, [machineId]: without(tables.machines[machineId]) },
+          },
     );
     deps.syncFleet(projectId);
     return c.json(await view(projectId));
@@ -229,15 +306,20 @@ export function installedPluginRoutes(deps: InstalledPluginsDeps): Hono<AppEnv> 
     if (!Array.isArray(list)) {
       throw new HttpError(400, "bad_request", "plugins must be an array of package specifiers.");
     }
-    // Names only, over the wire — the same names POST accepts. A name the list already
-    // carries was consented to when it was written; a NEW one is gated exactly as POST
-    // gates it. A name that stays keeps what the file asked of it.
+    // Names only, over the wire — the same names POST accepts. A name the shared table
+    // already carries was consented to when it was written; a NEW one is gated exactly as POST
+    // gates it. A name that stays keeps what the file asked of it. Machine tables are not
+    // touched: this is the verb the fleet sync speaks, and what it hands over is the shared list.
     const names = list.map(specifierOf);
-    const already = await deps.projectConfig.getPlugins(projectId).catch(() => ({}));
+    const already = await deps.projectConfig
+      .getPluginTables(projectId)
+      .then((t) => t.all)
+      .catch(() => ({}));
     await requireShipped(names.filter((s) => !(s in already)));
-    await deps.apply(
-      edit(projectId, (listed) => Object.fromEntries(names.map((s) => [s, listed[s] ?? {}]))),
-    );
+    await edit(projectId, (tables) => ({
+      ...tables,
+      all: Object.fromEntries(names.map((s) => [s, tables.all[s] ?? {}])),
+    }));
     deps.syncFleet(projectId);
     return c.json(await view(projectId));
   });
@@ -265,11 +347,13 @@ export class InstalledPluginRoutes {
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly access!: Access;
   @Use() private readonly machines!: Machines;
+  @Use() private readonly db!: Db;
   @Bind("InstalledPluginRoutes.routes") routes!: Hono<AppEnv>;
   setup() {
     const hmr = this.hmr;
     this.routes = installedPluginRoutes({
       root: this.config.root,
+      machineId: new MachinesRepo(this.db as unknown as DatabaseSync).ownId(),
       assetsDir: () => hmr.assetsDir(),
       // Claimed per call rather than captured: the host belongs to the process, and a hot
       // swap hands the same one to the next platform.

@@ -5082,9 +5082,20 @@ export interface InstalledPlugin {
   replaces: string[];
   /**
    * Why the package is not running: unresolvable, or a load that
-   * failed (an import that threw, a module name another plugin already took).
+   * failed (an import that threw, a module name another plugin already took). Only ever
+   * reported for a plugin this server is asked to run (`here`).
    */
   error?: string;
+  /** Listed in the shared `[plugins]` table: every machine runs it. */
+  everywhere: boolean;
+  /** The machines whose own `[plugins.<machineId>]` table lists it, by machine id. */
+  machines: string[];
+  /**
+   * Whether THIS server is asked to run it — shared, or listed for this server's own id. A
+   * plugin listed only for other machines is neither installed nor loaded here, so `active`
+   * is false and no `error` is reported for it.
+   */
+  here: boolean;
 }
 
 export interface InstalledPluginsResponse {
@@ -5096,6 +5107,8 @@ export interface InstalledPluginsResponse {
   shipped: string[];
   /** The file the list lives in, named for the page that explains where to edit it by hand. */
   file: string;
+  /** This server's own machine id — the key of its `[plugins.<machineId>]` table. */
+  machineId: string;
   /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
 }

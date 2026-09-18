@@ -294,6 +294,10 @@ export const zh = {
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "留空保持已保存的值不变",
     pluginSecretClear: "清除已存值",
+    /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
+    pluginConfigMachine: "机器",
+    pluginConfigThisServerDesc: "本机插件读取的设置，保存在本机。",
+    pluginConfigMachineDesc: "那台机器上插件读取的设置，保存在那台机器上；机器之间不互相复制。",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "必须是数字",
     uploadLimitsTitle: "上传限制",
@@ -1804,6 +1808,21 @@ export const zh = {
     applyConfirmRemove: (name: string) => `移除 ${name}？`,
     applyConfirmBody: "所有 Project 中正在进行的 Agent 运行都会被中止。",
     pageTitle: "插件",
+    /** The header's machine picker: which machine's plugins the page shows and edits. */
+    viewMachine: "机器",
+    allMachines: "所有机器",
+    allMachinesDesc: "每台机器都运行的插件。在此安装即对所有机器启用。",
+    thisServer: "本机",
+    machineDesc: "这台机器运行的插件。在此安装只对这台机器启用，也只有这台机器会下载它。",
+    /** A row listed for some machines only, by alias. */
+    onlyOn: (names: string) => `仅在 ${names}`,
+    /** An all-machines row listed only for other machines. */
+    notHere: "本机不运行",
+    /** A row the Project lists for a machine that has not reported it running yet. */
+    notSynced: "尚未同步到该机器",
+    /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
+    sharedCannotRemove: "已对所有机器启用：请在「所有机器」视图中移除。",
+    machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
     /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
     openSettings: "插件设置",
     pageDesc:

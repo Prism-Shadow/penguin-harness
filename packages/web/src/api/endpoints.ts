@@ -270,19 +270,31 @@ export const adminDeleteUser = (userId: string) =>
 /** Server-global settings (admin only): currently the "use system HTTP proxy" switch. */
 export const adminGetSettings = () => apiFetch<ServerSettingsResponse>("/api/admin/settings");
 
+/*
+ * Plugin configuration is kept by each server in its own database, so `server` names the
+ * machine whose settings are read or written — through this server's tunnel to it — and null
+ * is this server's own. Nothing copies these values between machines.
+ */
+
 /** Every loaded plugin that declares a configuration, with its schema and masked values (admin). */
-export const adminGetPluginConfig = () =>
-  apiFetch<PluginConfigResponse>("/api/admin/plugin-config");
+export const adminGetPluginConfig = (server: string | null = null) =>
+  apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { server });
 
 /** One package's update (admin): omitted fields keep their value, a masked secret sent back keeps the stored one. */
-export const adminPutPluginConfig = (body: PluginConfigUpdateRequest) =>
-  apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { method: "PUT", body });
+export const adminPutPluginConfig = (
+  body: PluginConfigUpdateRequest,
+  server: string | null = null,
+) => apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { method: "PUT", body, server });
 
 /** Runs one settings group's action (admin): what a deployment must DO on the machine, once. */
-export const adminRunPluginConfigAction = (body: { name: string; action: string }) =>
+export const adminRunPluginConfigAction = (
+  body: { name: string; action: string },
+  server: string | null = null,
+) =>
   apiFetch<PluginConfigActionResponse>("/api/admin/plugin-config/action", {
     method: "POST",
     body,
+    server,
   });
 
 /** Omitted fields keep their current value; applies immediately (no restart). */
@@ -2032,8 +2044,12 @@ export const removeWorkflow = (projectId: string, agentId: string, workflowId: s
  */
 const pluginsPath = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/plugins/installed`;
-export const getInstalledPlugins = (projectId: string) =>
-  apiFetch<InstalledPluginsResponse>(pluginsPath(projectId));
+/**
+ * `server` reads a machine's own list through this server's tunnel — what it actually runs —
+ * and null reads this server's, which holds the Project's tables for the whole fleet.
+ */
+export const getInstalledPlugins = (projectId: string, server: string | null = null) =>
+  apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), { server });
 /** Admin only; applied without a restart where the runtime can re-assemble the App. */
 export const putInstalledPlugins = (projectId: string, plugins: readonly string[]) =>
   apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), {
@@ -2041,17 +2057,31 @@ export const putInstalledPlugins = (projectId: string, plugins: readonly string[
     body: { plugins },
   });
 /**
- * Admin only: asks this Project for a plugin the build ships — refused for one it does not,
- * so the list never names a package that is not on the machine — then re-assembles the App.
+ * Admin only: asks this Project for a plugin the build ships — in the shared table, or with
+ * `machineId` in that machine's own table — refused for one it does not, so the list never
+ * names a package that is not on the machine; then re-assembles the App where it runs here.
  */
-export const installPlugin = (projectId: string, specifier: string) =>
+export const installPlugin = (
+  projectId: string,
+  specifier: string,
+  machineId: string | null = null,
+) =>
   apiFetch<InstalledPluginsResponse>(pluginsPath(projectId), {
     method: "POST",
-    body: { specifier },
+    body: machineId === null ? { specifier } : { specifier, machineId },
   });
-/** Admin only: drops it from this Project's list and re-assembles the App; nothing on disk changes. */
-export const uninstallPlugin = (projectId: string, specifier: string) =>
+/**
+ * Admin only: drops it from every table of this Project, or with `machineId` from that
+ * machine's own table; nothing on disk changes.
+ */
+export const uninstallPlugin = (
+  projectId: string,
+  specifier: string,
+  machineId: string | null = null,
+) =>
   apiFetch<InstalledPluginsResponse>(
-    `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}`,
+    `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}${
+      machineId === null ? "" : `&machineId=${encodeURIComponent(machineId)}`
+    }`,
     { method: "DELETE" },
   );
