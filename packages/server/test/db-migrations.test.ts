@@ -70,6 +70,9 @@ function open024(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  db.exec(
+    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+  );
   dropCompanyModeTables(db);
   db.exec("DROP TABLE messaging_bindings");
   db.exec("DROP INDEX IF EXISTS idx_auth_sessions_expires");
@@ -111,6 +114,9 @@ function open6(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  db.exec(
+    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+  );
   db.exec(PRE_CHANNEL_CHAT_DDL);
   // SCHEMA_SQL declares the CURRENT shape; migration 8's queue came after 6.
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
@@ -124,6 +130,9 @@ function open7(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  db.exec(
+    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+  );
   db.exec("PRAGMA user_version = 7");
   return db;
 }
@@ -133,6 +142,9 @@ function open8(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  db.exec(
+    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+  );
   db.exec("PRAGMA user_version = 8");
   return db;
 }
@@ -142,6 +154,9 @@ function open029(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  db.exec(
+    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+  );
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
   // SCHEMA_SQL declares the CURRENT shape, and a 0.2.9 database has no machines tables —
@@ -162,6 +177,9 @@ function openPreProfile(): DatabaseSync {
   const db = new sqlite.DatabaseSync(":memory:");
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
+  db.exec(
+    "DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+  );
   dropProfileColumns(db);
   // Version 4 predates company mode as well: its three migrations (6–8) come after the
   // profile's, so a database at 4 has none of their tables.
@@ -548,8 +566,10 @@ describe("migration 8 → current: model-promotions", () => {
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'model_promotions'")
         .get();
     try {
-      expect(migrate(db).applied).toEqual(["model-promotions"]);
-      expect(schemaVersion(db)).toBe(9);
+      expect(migrate(db).applied).toEqual(
+        MIGRATIONS.filter((m) => m.version > 8).map((m) => m.name),
+      );
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
       expect(tableExists()).toEqual({ "1": 1 });
 
       rollbackTo(db, 8);
@@ -563,8 +583,10 @@ describe("migration 8 → current: model-promotions", () => {
   it("is safe to create while a pushed platform boots", () => {
     const db = open8();
     try {
-      expect(migrate(db, { swapPath: true }).applied).toEqual(["model-promotions"]);
-      expect(schemaVersion(db)).toBe(9);
+      expect(migrate(db, { swapPath: true }).applied).toEqual(
+        MIGRATIONS.filter((m) => m.version > 8).map((m) => m.name),
+      );
+      expect(schemaVersion(db)).toBe(LATEST_VERSION);
     } finally {
       db.close();
     }
