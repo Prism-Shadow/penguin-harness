@@ -1,8 +1,8 @@
-# Run an agent on another machine — its Sessions, Workspaces, Agents, Benchmarks and terminal, in this window
+# Run an agent on another machine — its Sessions, Workspaces, Agents, Benchmarks, plugins and terminal, in this window
 
 - **Date:** 2026-09-09
 - **Type:** feature
-- **Scope:** `server`, `web`
+- **Scope:** `core`, `server`, `web`
 - **PR:** [#450](https://github.com/Prism-Shadow/penguin-harness/pull/450)
 
 [中文版](2026-09-09-machines-run-agent.zh.md)
@@ -56,6 +56,38 @@ A scoreboard's append order *is* its evaluation sequence, and the page trusts it
 ## A terminal, and the files behind it
 
 A terminal opens on the machine its Workspace is on, including the fall-back to home, which is home *there*, and it survives this app restarting: the shell lives on that machine's server, so what is restored is the tab. The list that restores it is assembled from every connected machine, and it only prunes a conversation's stored tabs once every source has answered. Opening a terminal adopts a shell already running on that conversation's own machine before it starts a second one beside it. The stream is this server's own: a remote pty is named in the terminal id as `<terminalId>@<machineId>@<userId>`, and the platform relays the socket through the held connection.
+
+## Plugins, per machine
+
+A Project's plugin list gained per-machine tables: a plugin listed for certain machines runs only on those machines. The Plugins page and the plugin settings in the Settings dialog each gained a machine picker, for viewing and editing each machine in turn.
+
+### Configuration
+
+- **`[plugins.<machineId>]`** sits under the shared `[plugins]` table in `.project_config.toml` and lists what one machine runs in addition to the shared table. For a name both tables list, the machine's entry wins. The key is the machine's own 16-character id, minted by its server on first boot, never an ssh alias. This server uses its own id too.
+- **Loading** reads this server's effective list: the shared table plus its own table. A plugin listed only for other machines is not loaded here.
+
+### API
+
+- `POST /api/projects/:projectId/plugins/installed` accepts `machineId`, which lists the package in that machine's table. Like the shared table, it takes only a plugin the build ships.
+- `DELETE …?specifier=…&machineId=…` drops the package from that machine's table. Without `machineId`, it drops it from every table.
+- An edit that does not change what this server runs is written without re-assembling the App here.
+- `GET` rows carry `everywhere`, `machines` and `here`, and the response carries this server's `machineId`.
+
+### Fleet sync
+
+- A machine is handed the shared table plus its own table. There, the list lands as that Project's shared table.
+- A plugin the machine lacks is added through that machine's own `POST`, which takes only what its build ships. A plugin not listed for a machine is never sent there.
+- A plugin the machine refuses is reported in the connect log and left out of that sync. The other plugins still arrive.
+
+### Plugins page
+
+- **Machine picker.** A picker beside the settings button switches between **All machines**, **This server** and each machine the Project reaches. It appears once there is any machine besides this server.
+- **All machines** lists every plugin. A plugin listed for some machines only is tagged with their names.
+- **A machine's view** lists what that machine is asked to run, in the state that machine itself reports. Installing there enables the plugin on that machine only. A plugin from the shared table cannot be removed there, and its row says so.
+
+### Plugin settings
+
+The Plugins page of the Settings dialog shows its picker once the Project holds a connection to another machine. Picking a machine reads, saves and runs actions on that machine's own plugin settings through `/server/<machineId>/api/admin/plugin-config`. Each server keeps its settings in its own database, and nothing is copied between machines. A machine that cannot answer shows an empty page with the reason.
 
 ## Reach
 
