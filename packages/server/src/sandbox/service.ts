@@ -30,8 +30,17 @@ interface MountedProvider {
 
 export class SandboxService {
   private readonly mounted: MountedProvider[] = [];
-  /** name → why it failed to load; surfaced in the fail-closed message. */
+  /**
+   * name → why it FAILED: it could not load, or failed its check on a host it is meant for —
+   * never silently absent. Surfaced in the fail-closed message.
+   */
   private readonly loadErrors = new Map<string, string>();
+  /**
+   * The backends that declined: this host is not theirs (a Linux backend on Windows). Nothing
+   * is wrong with a deployment that installs one backend per platform, so a decline is not a
+   * failure — it is listed only when NO backend serves, where it is the explanation.
+   */
+  private readonly declinedNames: string[] = [];
   /**
    * Ships with confinement OFF (`danger-full-access`): the default flips to
    * workspace-write together with the deployment-facing config surface, so a
@@ -49,14 +58,23 @@ export class SandboxService {
    *   exists for deployments flipping the mode in the first milliseconds after boot.
    */
   constructor(registrations: Iterable<[string, SandboxProviderSource]> = []) {
+    // Every source is settled at once (a backend's check runs while the others load, and a
+    // rejection is handled the moment it happens); the results are recorded in registration
+    // order, which is routing order.
+    const settled = [...registrations].map(([name, source]) => ({
+      name,
+      result: Promise.resolve(source).then(
+        (provider) => ({ provider }),
+        (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }),
+      ),
+    }));
     this.ready = (async () => {
-      for (const [name, source] of registrations) {
-        try {
-          const provider = await source;
-          if (provider !== null && provider !== undefined) this.mounted.push({ name, provider });
-        } catch (err) {
-          this.loadErrors.set(name, err instanceof Error ? err.message : String(err));
-        }
+      for (const { name, result } of settled) {
+        const outcome = await result;
+        if ("error" in outcome) this.loadErrors.set(name, outcome.error);
+        else if (outcome.provider === null || outcome.provider === undefined) {
+          this.declinedNames.push(name);
+        } else this.mounted.push({ name, provider: outcome.provider });
       }
     })();
   }
@@ -108,8 +126,12 @@ export class SandboxService {
   confiner(): SpawnConfiner {
     return (argv, opts) => {
       const settings = this.settings;
-      if (settings.mode === "danger-full-access") return argv;
       const required = requestedDimensions(settings);
+      // Full access with nothing else asked (no network cut, no masked paths) is genuinely
+      // unconfined — spawn as-is. But full access that STILL cuts the network or masks a path
+      // needs a backend: returning here would silently drop that half of the policy. So the
+      // short-circuit is "no confinement dimension beyond fs-write", not "mode is full".
+      if (settings.mode === "danger-full-access" && required.length === 1) return { argv };
       const provider = this.pick(required, settings.mode);
       // workspaceRoot is the Session's Workspace, never the per-command cwd: a command
       // running in a workdir outside the Workspace must not widen the writable roots.
@@ -120,10 +142,15 @@ export class SandboxService {
         ...(settings.maskPaths !== undefined && settings.maskPaths.length > 0
           ? { maskPaths: settings.maskPaths }
           : {}),
+        // Always: without a writable temp directory a shell cannot start.
+        writableTemp: true,
       };
       // ConfinedArgv also carries enforcement / denialSignatures / runnerFailureRules;
       // the classification consumer (denial vs runner failure) lands with escalation.
-      return provider.confine(argv, policy).argv;
+      const confined = provider.confine(argv, policy);
+      return confined.env === undefined
+        ? { argv: confined.argv }
+        : { argv: confined.argv, env: confined.env };
     };
   }
 
@@ -146,11 +173,11 @@ export class SandboxService {
   }
 
   private failedSuffix(): string {
-    if (this.loadErrors.size === 0) return "";
-    const failures = [...this.loadErrors]
-      .map(([name, message]) => `${name} (${message})`)
-      .join("; ");
-    return `; backends that failed to load: ${failures}`;
+    const parts = [...this.loadErrors].map(([name, message]) => `${name} (${message})`);
+    if (this.declinedNames.length > 0) {
+      parts.push(`${this.declinedNames.join(", ")} (not for this host)`);
+    }
+    return parts.length === 0 ? "" : `; backends not in use: ${parts.join("; ")}`;
   }
 }
 
@@ -184,7 +211,7 @@ export interface SandboxSlots {
     schema: {
       "settings?": {
         mode: "'read-only'|'workspace-write'|'danger-full-access'",
-        "network?": "'none'",
+        "network?": "'none'|'local'",
         "maskPaths?": "string[]",
       },
     },

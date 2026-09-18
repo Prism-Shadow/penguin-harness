@@ -41,6 +41,11 @@ export async function loadDshAdaptor(): Promise<SandboxProvider | null> {
     // DSH's own words: "Network and process visibility are outside this vocabulary."
     dimensions: ["fs-write"],
     confine(argv, policy): ConfinedArgv {
+      if (policy.mode === "danger-full-access") {
+        // Unreachable: this backend implements only fs-write, so the service never hands it a
+        // full-access policy (which only ever arrives with a network/mask dimension it lacks).
+        throw new Error("dsh-local does not implement full filesystem access with confinement");
+      }
       const confined = dsh.confine(argv, {
         mode: policy.mode,
         workspaceRoot: policy.workspaceRoot,

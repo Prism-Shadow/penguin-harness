@@ -47,3 +47,4 @@ packages/server/src/ifaces.json
 plugins/*/ifaces.json
 # rendered by scripts/iface-page.mjs (pnpm ifaces:page); CI publishes it
 dist-ifaces/
+plugins/sandbox-bwrap/vendor/

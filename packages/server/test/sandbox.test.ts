@@ -50,7 +50,7 @@ describe("sandbox service — the built-in interface and its optional dimensions
   it("default settings are danger-full-access: argv passes through, no backend is consulted", async () => {
     const dsh = fake("dsh");
     const svc = await service([["dsh-local", dsh.provider]]);
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual([...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual([...ARGV]);
     expect(dsh.calls).toHaveLength(0);
   });
 
@@ -66,7 +66,19 @@ describe("sandbox service — the built-in interface and its optional dimensions
     ]);
     svc.configure({ mode: "read-only" });
     expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(
-      /failed to load: dsh-local \(Cannot find module 'landlock-run'\)/,
+      /not in use: dsh-local \(Cannot find module 'landlock-run'\)/,
+    );
+  });
+
+  it("separates a backend that declines this host from one that failed on it", async () => {
+    const svc = await service([
+      ["quiet", Promise.resolve(null)],
+      ["loud", Promise.reject(new Error("'bwrap' is missing"))],
+    ]);
+    expect(svc.backends()).toEqual([]);
+    svc.configure({ mode: "read-only" });
+    expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(
+      /loud \('bwrap' is missing\); quiet \(not for this host\)/,
     );
   });
 
@@ -74,7 +86,7 @@ describe("sandbox service — the built-in interface and its optional dimensions
     // The deployed-machine shape (see scripts/deploy.mjs): the load fails, the default
     // settings keep working, and only a confining mode fails.
     const svc = await service([["dsh-local", Promise.reject(new Error("MODULE_NOT_FOUND"))]]);
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual([...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual([...ARGV]);
     svc.configure({ mode: "workspace-write" });
     expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(/MODULE_NOT_FOUND/);
   });
@@ -83,7 +95,7 @@ describe("sandbox service — the built-in interface and its optional dimensions
     const dsh = fake("dsh");
     const svc = await service([["dsh-local", dsh.provider]]);
     svc.configure({ mode: "workspace-write" });
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual(["dsh", "--", ...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["dsh", "--", ...ARGV]);
     // workspaceRoot is the Workspace, never the per-command cwd.
     expect(dsh.calls[0]).toMatchObject({ mode: "workspace-write", workspaceRoot: "/work/project" });
     expect(svc.backends()).toEqual([{ name: "dsh-local", dimensions: ["fs-write"] }]);
@@ -115,7 +127,7 @@ describe("sandbox service — capability routing across backends", () => {
       ["penguin-bwrap", bwrap.provider],
     ]);
     svc.configure({ mode: "workspace-write" });
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual(["dsh", "--", ...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["dsh", "--", ...ARGV]);
     expect(bwrap.calls).toHaveLength(0);
   });
 
@@ -126,9 +138,55 @@ describe("sandbox service — capability routing across backends", () => {
       ["penguin-bwrap", bwrap.provider],
     ]);
     svc.configure({ mode: "workspace-write", network: "none", maskPaths: ["/home/u/.ssh"] });
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual(["bwrap", "--", ...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["bwrap", "--", ...ARGV]);
     expect(dsh.calls).toHaveLength(0);
     expect(bwrap.calls[0]).toMatchObject({ network: "none", maskPaths: ["/home/u/.ssh"] });
+  });
+
+  it("full access still routes to a backend when it cuts the network (never dropped)", async () => {
+    const { dsh, bwrap } = entries();
+    const svc = await service([
+      ["dsh-local", dsh.provider],
+      ["penguin-bwrap", bwrap.provider],
+    ]);
+    // Full access + no network is genuinely unconfined: it passes through.
+    svc.configure({ mode: "danger-full-access" });
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual([...ARGV]);
+    expect(bwrap.calls).toHaveLength(0);
+    // But full access that ALSO cuts the network must reach a backend that can cut it — the
+    // filesystem stays unrestricted, the network does not.
+    svc.configure({ mode: "danger-full-access", network: "none" });
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["bwrap", "--", ...ARGV]);
+    expect(bwrap.calls[0]).toMatchObject({ mode: "danger-full-access", network: "none" });
+  });
+
+  it("the local network level routes only to a backend declaring network-local", async () => {
+    const { dsh, bwrap } = entries();
+    const seatbelt = fake("seatbelt", ["fs-write", "network", "network-local", "mask-paths"]);
+    const svc = await service([
+      ["dsh-local", dsh.provider],
+      ["penguin-bwrap", bwrap.provider],
+      ["penguin-seatbelt", seatbelt.provider],
+    ]);
+    svc.configure({ mode: "workspace-write", network: "local" });
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["seatbelt", "--", ...ARGV]);
+    expect(bwrap.calls).toHaveLength(0);
+    expect(seatbelt.calls[0]).toMatchObject({ network: "local" });
+    // Full access with the local level still needs that backend: nothing is dropped.
+    svc.configure({ mode: "danger-full-access", network: "local" });
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["seatbelt", "--", ...ARGV]);
+  });
+
+  it("the local network level fails closed where no backend declares it", async () => {
+    const { dsh, bwrap } = entries();
+    const svc = await service([
+      ["dsh-local", dsh.provider],
+      ["penguin-bwrap", bwrap.provider],
+    ]);
+    svc.configure({ mode: "workspace-write", network: "local" });
+    expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(/requires fs-write \+ network-local/);
+    // Never read as "no network" or "open network" by a backend that cannot do it.
+    expect(bwrap.calls).toHaveLength(0);
   });
 
   it("an empty maskPaths list does not require the dimension", async () => {
@@ -138,7 +196,7 @@ describe("sandbox service — capability routing across backends", () => {
       ["penguin-bwrap", bwrap.provider],
     ]);
     svc.configure({ mode: "read-only", maskPaths: [] });
-    expect(svc.confiner()([...ARGV], OPTS)).toEqual(["dsh", "--", ...ARGV]);
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["dsh", "--", ...ARGV]);
   });
 
   it("a backend throw (unusable runner, etc.) propagates — fail-closed end to end", async () => {
