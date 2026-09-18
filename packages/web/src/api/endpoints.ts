@@ -2061,9 +2061,10 @@ export const putInstalledPlugins = (projectId: string, plugins: readonly string[
     body: { plugins },
   });
 /**
- * Admin only: asks this Project for a plugin the build ships — in the shared table, or with
- * `machineId` in that machine's own table — refused for one it does not, so the list never
- * names a package that is not on the machine; then re-assembles the App where it runs here.
+ * Admin only: lists the package in the shared table, or with `machineId` in that machine's
+ * own table. The machines that will run it install it — this server npm-installs it into its
+ * data root unless the build ships it, and only when it runs it itself — then the App is
+ * re-assembled. Slow for a cold registry fetch.
  */
 export const installPlugin = (
   projectId: string,
@@ -2076,7 +2077,7 @@ export const installPlugin = (
   });
 /**
  * Admin only: drops it from every table of this Project, or with `machineId` from that
- * machine's own table; nothing on disk changes.
+ * machine's own table; the package leaves this server's disk once nothing asks it to run here.
  */
 export const uninstallPlugin = (
   projectId: string,
