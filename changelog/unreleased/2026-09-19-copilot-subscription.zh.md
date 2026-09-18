@@ -1,6 +1,7 @@
 # 实验性 Copilot 订阅连接
 
 - **Date:** 2026-09-19
+- **PR:** [#2](https://github.com/nicolaepocroianu/penguin-harness/pull/2)
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `model-catalog`, `docs`
 
