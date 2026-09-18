@@ -9,8 +9,9 @@
  * Z.AI uses a simplified geometric approximation of its branded glyph (not an
  * exact reproduction of the trademark); vLLM uses its official mark from the
  * project's media kit, its two brand colours flattened to currentColor like
- * Qwen's gradient; custom models use a generic cube. All are pure paths, no
- * external image assets.
+ * Qwen's gradient; OpenCode Go uses the pixel "G" of its "go" wordmark, as OpenCode's
+ * own model registry (models.dev) publishes it for the group; custom models use a generic
+ * cube. All are pure paths, no external image assets.
  *
  * Vendor ids outside the preset table are user-defined groups: instead of all
  * sharing the cube (which made same-named models across groups
@@ -133,6 +134,14 @@ const GLYPHS: Record<string, Glyph> = {
         <path d="M393 824c1 1 2 1 3 2h4c6 1 7 3 11 6 3 1 7 2 10 3 1 1 2 1 4 2 3 1 3 1 8 2 6 1 7 2 10 7l-1 3h-2c-1 2-1 3-2 5-9 19-25 45-45 53-6 2-10 4-16 2-4-4-4-5-4-10 0-2 1-4 1-6-1 0-2 1-3 1-1 1-2 2-3 2-1 1-3 2-4 2-5 3-9 3-15 3-3-2-5-3-6-7 0-7 3-13 8-18-1 0-3-1-4-1-4-1-4-1-6-3-1-5 0-7 2-11 1-2 2-3 3-4s1-2 2-3l8-8c0-1 0-1 3-3 23-22 23-22 34-19" />
         <path d="M880 387c10 6 19 13 23 25 1 7 1 12-2 18-4 5-8 8-15 8-8 0-11-2-16-7-4-9-3-17 0-25 2-4 2-4 6-8h2c-4-6-10-8-17-10h-15c2-4 2-4 5-6 10-3 20 1 29 5m-3 16c-2 2-2 2-2 6s0 4 4 8c5-3 5-3 6-6 0-3 0-3-3-8Z" />
       </>
+    ),
+  },
+  "opencode-go": {
+    // The "G" of the pixel-style "go" wordmark on opencode.ai/go, as the 24x24 single-path
+    // provider logo OpenCode publishes for this group. The wordmark's grey inner fill is dropped,
+    // so the glyph is one currentColor shape like the rest of this set.
+    path: (
+      <path d="M19.4004 21H5V3H19.4004V6.59961H8.59961V17.4004H15.7998V13.7998H12.2002V10.2002H19.4004V21Z" />
     ),
   },
   "qwen-token-plan": QWEN_GLYPH,

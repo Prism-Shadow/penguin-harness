@@ -70,14 +70,14 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai、openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai、openrouter、fireworks、siliconflow、tokendance、opencode-go、qwen-pay-as-you-go、qwen-token-plan、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
+openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量。opencode-go 分组中走 Chat Completions 与 Responses 的模型同样如此，该分组走 Anthropic Messages 的模型则读取 `ANTHROPIC_*`。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 

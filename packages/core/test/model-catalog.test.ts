@@ -36,14 +36,15 @@ describe("model-catalog", () => {
     const ids = MODEL_CATALOG.map((m) => m.modelId);
     expect(MODEL_CATALOG[0]!.provider).toBe("deepseek");
     // Group order is hand-curated, interleaving gateways and first-party vendors: the
-    // recommended TokenDance first, the prebuilt Penguin Go group next, DeepSeek after it,
-    // and vLLM last
+    // recommended TokenDance first, the prebuilt Penguin Go group next, OpenCode Go third,
+    // DeepSeek after it, and vLLM last
     // among the vendors (self-hosted, so nothing in it runs until the user names a server)
     // and custom always last. This is the page's DEFAULT only — a Project that has reordered
     // its groups stores every key and keeps its own arrangement (web's model-group-order.ts).
     expect(MODEL_PROVIDERS.map((p) => p.id)).toEqual([
       "tokendance",
       "penguin-go",
+      "opencode-go",
       "deepseek",
       "openrouter",
       "fireworks",
@@ -180,6 +181,135 @@ describe("model-catalog", () => {
       },
       offPeakDiscount: DEEPSEEK_OFF_PEAK,
     });
+  });
+
+  it("OpenCode Go: each model pins the protocol its endpoint table names, at the Go page's per-token rates", () => {
+    const group = providerInfo("opencode-go")!;
+    expect(group.label).toBe("OpenCode Go");
+    expect(group.apiKeyUrl).toBe("https://opencode.ai/auth");
+    expect(group.modelsUrl).toBe("https://opencode.ai/docs/go/");
+    // A model added by hand gets the Chat Completions base and client, which is what most of
+    // the group speaks; the group pins no protocol, because its models sit on three.
+    expect(group.gatewayBaseUrl).toBe("https://opencode.ai/zen/go/v1");
+    expect(providerClientType("opencode-go")).toBeUndefined();
+    // No per-model pages: every model links to the Go docs page, which lists them all.
+    expect(modelHomepageUrl("opencode-go", "kimi-k3")).toBe("https://opencode.ai/docs/go/");
+
+    const go = MODEL_CATALOG.filter((m) => m.provider === "opencode-go");
+    const CHAT = ["openai-chat", "https://opencode.ai/zen/go/v1"];
+    const RESPONSES = ["openai-responses", "https://opencode.ai/zen/go/v1"];
+    // The Anthropic SDK appends /v1/messages itself, so the Messages base carries no /v1.
+    const MESSAGES = ["ant-messages", "https://opencode.ai/zen/go"];
+    // Dictionary order, newer versions of a series first. Protocols from the docs page's
+    // endpoint table; context windows and modalities from models.dev; vision checked live.
+    expect(
+      go.map((m) => [m.modelId, m.clientType, m.baseUrl, m.contextWindow, m.supportsVision]),
+    ).toEqual([
+      ["deepseek-v4.1-flash", ...CHAT, 1000000, true],
+      ["deepseek-v4-flash", ...CHAT, 1000000, false],
+      ["deepseek-v4-flash-vision-exp", ...CHAT, 1000000, true],
+      ["deepseek-v4-pro", ...CHAT, 1000000, false],
+      ["glm-5.3", ...CHAT, 1000000, false],
+      ["glm-5.3-flash", ...CHAT, 1000000, true],
+      ["glm-5.2", ...CHAT, 1000000, false],
+      ["glm-5.1", ...CHAT, 202752, false],
+      ["gpt-5.6-luna", ...RESPONSES, 1050000, true],
+      ["grok-4.6", ...RESPONSES, 500000, true],
+      ["hy4-preview", ...CHAT, 1024000, false],
+      ["hy3", ...CHAT, 192000, false],
+      ["kimi-k3", ...CHAT, 1048576, true],
+      ["kimi-k2.7-code", ...CHAT, 262144, true],
+      ["kimi-k2.6", ...CHAT, 262144, true],
+      ["longcat-2.0", ...CHAT, 1000000, false],
+      ["mimo-v2.5", ...CHAT, 1000000, true],
+      ["mimo-v2.5-pro", ...CHAT, 1048576, false],
+      ["minimax-m3", ...MESSAGES, 1000000, true],
+      ["minimax-m2.7", ...MESSAGES, 204800, false],
+      ["muse-spark-1.3-contributor", ...RESPONSES, 1048576, true],
+      ["muse-spark-1.2-contributor", ...RESPONSES, 1048576, true],
+      ["qwen3.8-flash", ...MESSAGES, 1000000, true],
+      ["qwen3.8-max", ...MESSAGES, 1000000, true],
+      ["qwen3.7-max", ...MESSAGES, 1000000, false],
+      ["qwen3.7-plus", ...MESSAGES, 1000000, true],
+      ["qwen3.6-plus", ...MESSAGES, 1000000, true],
+    ]);
+
+    // The Go page's rates in the catalog's (cache_read, cache_write, output) order. cache_write
+    // is the published cached-write rate where the page lists one and the input rate where it
+    // does not; tiered rows keep their base tier and the DeepSeek rows their peak rate.
+    expect(
+      Object.fromEntries(
+        go.map((m) => [
+          m.modelId,
+          [m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output],
+        ]),
+      ),
+    ).toEqual({
+      "deepseek-v4.1-flash": [0.006, 0.3, 1.2],
+      "deepseek-v4-flash": [0.006, 0.3, 1.2],
+      "deepseek-v4-flash-vision-exp": [0.006, 0.3, 1.2],
+      "deepseek-v4-pro": [0.044, 1.32, 3.96],
+      "glm-5.3": [0.26, 1.4, 4.4],
+      "glm-5.3-flash": [0.03, 0.15, 0.5],
+      "glm-5.2": [0.26, 1.4, 4.4],
+      "glm-5.1": [0.26, 1.4, 4.4],
+      "gpt-5.6-luna": [0.02, 0.25, 1.2],
+      "grok-4.6": [0.5, 2, 6],
+      "hy4-preview": [0.042, 0.834, 2.501],
+      hy3: [0.035, 0.14, 0.58],
+      "kimi-k3": [0.3, 3, 15],
+      "kimi-k2.7-code": [0.19, 0.95, 4],
+      "kimi-k2.6": [0.16, 0.95, 4],
+      "longcat-2.0": [0.006, 0.3, 1.2],
+      "mimo-v2.5": [0.0028, 0.14, 0.28],
+      "mimo-v2.5-pro": [0.003625, 0.435, 0.87],
+      "minimax-m3": [0.06, 0.3, 1.2],
+      "minimax-m2.7": [0.06, 0.375, 1.2],
+      "muse-spark-1.3-contributor": [0.002, 0.1, 0.2],
+      "muse-spark-1.2-contributor": [0.002, 0.1, 0.2],
+      "qwen3.8-flash": [0.016, 0.2, 0.47],
+      "qwen3.8-max": [0.25, 2.5, 6],
+      "qwen3.7-max": [0.5, 3.125, 7.5],
+      "qwen3.7-plus": [0.04, 0.5, 1.6],
+      "qwen3.6-plus": [0.05, 0.625, 3],
+    });
+
+    // The DeepSeek rows are the only ones on a schedule, DeepSeek's own, and off-peak they bill
+    // exactly the Go page's Off-Peak figures. 2026-09-19 is a Saturday: off-peak all day.
+    const scheduled = go.filter((m) => m.offPeakDiscount !== undefined);
+    expect(scheduled.map((m) => m.modelId)).toEqual([
+      "deepseek-v4.1-flash",
+      "deepseek-v4-flash",
+      "deepseek-v4-flash-vision-exp",
+      "deepseek-v4-pro",
+    ]);
+    const saturday = new Date("2026-09-19T10:00:00+08:00");
+    for (const m of scheduled) {
+      expect(m.offPeakDiscount, m.modelId).toBe(DEEPSEEK_OFF_PEAK);
+      const off = effectivePricing(m, saturday)!;
+      expect([off.cache_read, off.cache_write, off.output], m.modelId).toEqual(
+        m.modelId === "deepseek-v4-pro" ? [0.022, 0.66, 1.98] : [0.003, 0.15, 0.6],
+      );
+    }
+    // No promotion is on a rate: the running "4x" offer raises an allowance, not a price.
+    expect(go.filter((m) => m.discount !== undefined)).toEqual([]);
+
+    // A model the catalog already carries elsewhere keeps its display name here.
+    for (const [provider, modelId, goId] of [
+      ["zhipu", "glm-5.3-flash", "glm-5.3-flash"],
+      ["openai", "gpt-5.6-luna", "gpt-5.6-luna"],
+      ["openrouter", "x-ai/grok-4.6", "grok-4.6"],
+      ["moonshot", "kimi-k3", "kimi-k3"],
+      ["fireworks", "accounts/fireworks/models/kimi-k2p7-code", "kimi-k2.7-code"],
+      ["siliconflow", "meituan-longcat/LongCat-2.0", "longcat-2.0"],
+      ["minimax", "MiniMax-M3", "minimax-m3"],
+      ["tokendance", "hy4-preview", "hy4-preview"],
+      ["qwen-pay-as-you-go", "qwen3.8-max", "qwen3.8-max"],
+    ] as const) {
+      expect(catalogEntryFor("opencode-go", goId)!.displayName, goId).toBe(
+        catalogEntryFor(provider, modelId)!.displayName,
+      );
+    }
   });
 
   it("the app URL a minted key is stamped with is the same one attribution headers carry", () => {
@@ -735,6 +865,7 @@ describe("model-catalog", () => {
       "fireworks",
       "siliconflow",
       "tokendance",
+      "opencode-go",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
       "vllm",
@@ -759,6 +890,7 @@ describe("model-catalog", () => {
       "fireworks",
       "siliconflow",
       "tokendance",
+      "opencode-go",
       "qwen-token-plan",
       "qwen-pay-as-you-go",
     ];
@@ -814,6 +946,7 @@ describe("model-catalog", () => {
         ...pinnedDirect,
         ...customPresets,
         ...MODEL_CATALOG.filter((m) => m.provider === "penguin-go"),
+        ...MODEL_CATALOG.filter((m) => m.provider === "opencode-go"),
       ]
         // A retired gateway row keeps its pin in the catalog but is not a preset.
         .filter((m) => m.retired !== true)
@@ -1079,7 +1212,9 @@ describe("model-catalog", () => {
       (m) => m.provider === "moonshot" && m.modelId === "kimi-k3",
     )!.pricing!;
     expect([cnyOf(k3.cache_read), cnyOf(k3.cache_write), cnyOf(k3.output)]).toEqual([2, 20, 100]);
-    const k26 = MODEL_CATALOG.find((m) => m.modelId === "kimi-k2.6")!.pricing!;
+    const k26 = MODEL_CATALOG.find(
+      (m) => m.provider === "moonshot" && m.modelId === "kimi-k2.6",
+    )!.pricing!;
     expect([cnyOf(k26.cache_read), cnyOf(k26.cache_write), cnyOf(k26.output)]).toEqual([
       1.1, 6.5, 27,
     ]);
@@ -1323,6 +1458,13 @@ describe("resolveModelEnv (PRN-021: env fallback resolved by AgentHub routing ru
         expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
         continue;
       }
+      if (m.provider === "opencode-go" && m.clientType === "ant-messages") {
+        // OpenCode Go's group pair is the OPENAI_* one its Chat Completions and Responses rows
+        // read; its Messages rows read the Anthropic client's pair, the same split as custom.
+        expect(env!.envKey, m.modelId).toBe("ANTHROPIC_API_KEY");
+        expect(env!.envBaseUrlKey, m.modelId).toBe("ANTHROPIC_BASE_URL");
+        continue;
+      }
       expect(env!.envKey, m.modelId).toBe(provider.envKey);
       expect(env!.envBaseUrlKey, m.modelId).toBe(provider.envBaseUrlKey);
     }
@@ -1550,12 +1692,18 @@ describe("attributionHeaders (how the harness names itself to the gateways that 
   });
 
   it("catalog invariant: every gateway row whose host runs an attribution scheme carries it", () => {
+    const sessionId = "session-2026-09-17-10-30-00-a1b2c3d4";
     for (const m of MODEL_CATALOG) {
       const headers = attributionHeaders(m.baseUrl);
       if (m.provider === "openrouter") {
         expect(headers?.["HTTP-Referer"], m.modelId).toBe("https://penguin.ooo/");
       } else if (m.provider === "tokendance") {
         expect(headers?.["X-App-URL"], m.modelId).toBe("https://penguin.ooo/");
+      } else if (m.provider === "opencode-go") {
+        // Both OpenCode Go bases, Messages included, name the Session they are serving.
+        expect(attributionHeaders(m.baseUrl, sessionId), m.modelId).toEqual({
+          "x-opencode-session": sessionId,
+        });
       } else {
         expect(headers, `${m.provider}/${m.modelId}`).toBeUndefined();
       }
@@ -1570,9 +1718,9 @@ describe("off-peak schedules", () => {
 
   it("the DeepSeek rows store the peak price and declare the schedule", () => {
     // Every direct row, plus the resold rows whose sellers pass DeepSeek's own windows through:
-    // two on Penguin Go, two on TokenDance and one on OpenRouter. The retired rows keep the
-    // schedule too. A gateway row on the schedule carries no flat `discount` — the two are
-    // mutually exclusive, pinned by the last case here.
+    // two on Penguin Go, four on OpenCode Go, two on TokenDance and one on OpenRouter. The
+    // retired rows keep the schedule too. A gateway row on the schedule carries no flat
+    // `discount` — the two are mutually exclusive, pinned by the last case here.
     const rows = MODEL_CATALOG.filter((m) => m.offPeakDiscount === S);
     expect(rows.map((m) => `${m.provider}/${m.modelId}`)).toEqual([
       "deepseek/deepseek-flash",
@@ -1584,6 +1732,10 @@ describe("off-peak schedules", () => {
       "tokendance/deepseek-v4.1-flash",
       "penguin-go/deepseek-flash",
       "penguin-go/deepseek-v4-pro",
+      "opencode-go/deepseek-v4.1-flash",
+      "opencode-go/deepseek-v4-flash",
+      "opencode-go/deepseek-v4-flash-vision-exp",
+      "opencode-go/deepseek-v4-pro",
     ]);
     for (const m of rows) {
       // Peak is exactly double the off-peak tier DeepSeek publishes. Compared at 1e-5: both

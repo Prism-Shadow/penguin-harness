@@ -397,6 +397,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 | --- | --- | --- |
 | tokendance | `OPENAI_API_KEY` | 推荐分组。OpenAI 兼容网关，预置 base URL `https://tokendance.space/gateway/v1`；模型 id 为裸名称，不带供应商前缀（如 `glm-5.3`、`kimi-k3`）；价格采用网关自己的人民币费率，目前有几项在打折 |
 | penguin-go | `PENGUIN_GO_API_KEY` | 预置的中转分组，固定 base URL `https://token.penguin.ooo/api`；分组标题栏可以为你自动授权一把 key，也可以手动设置。见 [Penguin Go 分组](#penguin-go-分组) |
+| opencode-go | `OPENAI_API_KEY` | OpenCode Go 订阅网关。每个模型各自固定协议：Chat Completions 或 Responses 走 `https://opencode.ai/zen/go/v1`，Anthropic Messages 走 `https://opencode.ai/zen/go`（这些模型读取 `ANTHROPIC_API_KEY`）。见 [OpenCode Go 分组](#opencode-go-分组) |
 | deepseek | `DEEPSEEK_API_KEY` | 默认模型所在的分组 |
 | openrouter | `OPENAI_API_KEY` | OpenAI 兼容网关，预置 base URL `https://openrouter.ai/api/v1` |
 | fireworks | `OPENAI_API_KEY` | Fireworks AI（OpenAI 兼容），预置 base URL `https://api.fireworks.ai/inference/v1`；API 模型 id 形如 `accounts/fireworks/models/<slug>` |
@@ -417,6 +418,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
 - 两种客户端读取相同的 `OPENAI_*` 变量，所以无论哪种方式，凭据规则完全一致。
+- OpenCode Go 分组是例外：它的模型用到三种协议，因此每个模型各自固定协议，见 [OpenCode Go 分组](#opencode-go-分组)。
 
 直连 MiniMax M3 的客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型使用 `https://api.minimax.io/v1`。只有条目没有自己的 `base_url` 时，才会读取 `MINIMAX_BASE_URL`。
 
@@ -431,6 +433,15 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 - 平台的促销会替换这个分组已存的促销。和其他分组一样，`.project_config.toml` 里存的是牌价，促销存在服务端的数据库里；**同步预置**从不设置促销，每次授权或**同步**都会整体替换它们。这条记录丢失后，用量按牌价计价，直到下一次授权或同步把它写回来。
 
 平台报的是高峰档费率，单位是每百万 Token 多少美元。分组里的 DeepSeek 条目跟随 DeepSeek 当前的模型阵容，只有 `deepseek-flash` 和 `deepseek-v4-pro`，并声明与直连 DeepSeek 分组相同的空闲时段，因此在北京时间工作日 9:00–12:00、14:00–18:00 之外，卡片和成本记录都按半价计算。
+
+### OpenCode Go 分组
+
+`opencode-go` 收录 OpenCode 为 Go 订阅列出的 27 个模型。它们共用一把 key：在分组标题栏用**手动设置密钥**设置一次即可。
+
+- **协议。** OpenCode 把每个模型放在三个端点之一上，因此每个条目各自固定 `client_type` 与 base URL。Chat Completions（`openai-chat`）和 Responses（`openai-responses`）模型使用 `https://opencode.ai/zen/go/v1`，没有自己的 key 时读取 `OPENAI_API_KEY`。Anthropic Messages（`ant-messages`）模型使用 `https://opencode.ai/zen/go`，因为客户端会自行加上 `/v1/messages`，它们读取 `ANTHROPIC_API_KEY`。你自己添加到该分组的模型使用 `openai-chat` 和带 `/v1` 的 base URL。
+- **价格。** Go 按月订阅，用量上限是按模型计的美元额度：每月一份额度，每 5 小时最多用掉其中 20%，每周最多 50%。条目记录的是每次请求从额度中扣除的每 Token 价格，因此对这个分组而言，成本中心显示的是你用掉了多少额度，而不是一张账单。`gpt-5.6-luna`、`grok-4.6`、`qwen3.7-plus` 和 `qwen3.6-plus` 记录基础档，分别覆盖 272K、200K、256K 和 256K 输入 Token 以内。四个 DeepSeek 模型遵循 DeepSeek 的空闲时段，见[价格与促销](#价格与促销)。
+- **开通与地区。** 在 key 所属的 OpenCode 工作区开通之前，有五个模型会直接报错。`muse-spark-1.3-contributor` 和 `muse-spark-1.2-contributor` 需要同意 Meta 用提示词和回复训练模型。`deepseek-v4.1-flash`、`deepseek-v4-flash` 和 `deepseek-v4-pro` 需要同意由中国境内托管的服务提供。部分模型还会拒绝来自某些地区的请求：从中国大陆访问时，`gpt-5.6-luna` 和两个 Muse Spark 模型都会报错。
+- **会话请求头。** 发往该分组的请求会在 `x-opencode-session` 中标明所属对话，见[应用归因](#应用归因)。
 
 ### 预置模型
 
@@ -452,7 +463,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 - **DeepSeek 图像能力。** `deepseek-flash` 就是 V4.1 Flash，支持读图；`deepseek-v4-pro` 是 V4 Pro 0813 版本，仅支持文本。要发送图像，请使用 `deepseek-flash`。
 - **退役条目。** DeepSeek 仍然接受 `deepseek-v4-flash` 和 `deepseek-v4-flash-vision-exp`，并都由 V4.1 Flash 承接。它们不再是预置条目，但目录把它们连同 TokenDance 的 `deepseek-v4-flash-vision-exp` 作为退役条目保留：仍带着其中某条的 Project 照旧显示它的名称，**同步预置**也会继续更新它的价格。退役条目不会被补进没有它的 Project，新建的 Project 也不会拿到。
 - **OpenAI 出现两次。** OpenAI 全系模型出现了两遍：一次直连（用你自己的 OpenAI key，官方牌价），一次在 OpenRouter 上以 `openai/<id>` 形式（网关费率，随其当前促销活动浮动）。
-- **GLM-5.3 Flash 出现五次。** 分别是直连的 `glm-5.3-flash`、TokenDance 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：AgentHub 的 GLM 客户端只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
+- **GLM-5.3 Flash 出现六次。** 分别是直连的 `glm-5.3-flash`、TokenDance 与 OpenCode Go 上的同名条目，以及 OpenRouter 的 `z-ai/glm-5.3-flash`、Fireworks AI 的 `accounts/fireworks/models/glm-5p3-flash` 和 Qwen 按量付费的 `ZHIPU/GLM-5.3-Flash`。每一条都接受图像：AgentHub 的 GLM 客户端只对这一个 GLM id 转发图像内容，其他所有 GLM id 都拒收图像；各网关条目走通用的 OpenAI 兼容客户端，对任何 id 都会携带图像。各条不一致的是价格：每条记录的都是自己卖家收取的价格，所以促销期间彼此不同。
 - **OpenRouter 免费档。** 目录收录了 `:free` 变体 `nvidia/nemotron-3-ultra-550b-a55b:free`，以及 `openrouter/free` 这个统一的免费模型路由（Free Models Router）。它们不花钱，但 OpenRouter 免费档的限流和数据政策仍然适用。
 
 ### 价格与促销
@@ -460,7 +471,7 @@ PenguinHarness 升级可能改变内置的预置模型目录。一旦发生，Pr
 - **三类价格。** 每个模型都记录 `cache_read`、`cache_write` 和 `output` 三项价格，单位是每百万 Token 多少美元。成本中心按这些价格结算用量。
 - **仅记录基础档。** 供应商的价格随输入规模上调时，目录只记录基础档。MiniMax M3 记录的是 MiniMax 标准按量付费档在 512K 输入 Token 及以下的价格；超过后每项费率翻倍，priority 档为 1.5 倍，所以长上下文和 priority 用量的成本估算会偏低。OpenAI（272K 以上）和 Gemini 3.1 Pro（200K 以上）遵循同样的约定。
 - **DeepSeek 空闲时段。** 直连 DeepSeek 的条目记录官方高峰价格，并声明 DeepSeek 的空闲时段规则：工作日北京时间 9:00–12:00 和 14:00–18:00 以外的时段，三项价格全部减半。**模型库**页面在这些时段显示 `省 50%` 标签，成本中心也按这个费率计费。
-  - 四条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、OpenRouter 的 `deepseek/deepseek-v4.1-flash`，以及 Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`。
+  - 八条转售条目遵循同样的时段，因为各自的卖家沿用了 DeepSeek 的时间窗口：TokenDance 的 `deepseek-v4.1-flash`、OpenRouter 的 `deepseek/deepseek-v4.1-flash`、Penguin Go 的 `deepseek-flash` 和 `deepseek-v4-pro`，以及 OpenCode Go 的 `deepseek-v4.1-flash`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` 和 `deepseek-v4-pro`。
   - Qwen 转售的 DeepSeek 模型按它自己的时段计费：北京时间每天 22:00 至次日 8:00 半价。两个 Qwen 分组的 `deepseek-v4.1-flash` 和 Token Plan 的 `deepseek-v4-pro-0813` 声明的是这一套，折扣标签的悬停说明写的也是该条目所遵循时段的窗口。
   - 存储的价格始终是高峰价格，所以磁盘上的数值与 Project 创建或同步的时间无关。
 - **固定折扣。** 目前有九个 TokenDance 模型在打折：

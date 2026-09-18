@@ -6,6 +6,7 @@
  * /v1beta/models/<id>:…, and every OpenAI-compatible client posts /chat/completions.
  */
 import { describe, expect, it } from "vitest";
+import { MODEL_CATALOG } from "@prismshadow/penguin-core/model-catalog";
 import { protocolPathForModel } from "../src/features/models/protocol-path";
 
 describe("protocolPathForModel", () => {
@@ -46,6 +47,26 @@ describe("protocolPathForModel", () => {
     ]) {
       expect(protocolPathForModel(provider, "openai-chat")).toBe("/chat/completions");
     }
+  });
+
+  it("OpenCode Go rows: preset base URL plus the hinted path is the endpoint OpenCode documents", () => {
+    // The group mixes three protocols, and its Messages rows use a base without /v1 because the
+    // Anthropic SDK appends /v1/messages. Joined with the path the dialog shows, every row lands
+    // on one of the three endpoints in the Go docs page's endpoint table.
+    const endpoints = new Set([
+      "https://opencode.ai/zen/go/v1/chat/completions",
+      "https://opencode.ai/zen/go/v1/responses",
+      "https://opencode.ai/zen/go/v1/messages",
+    ]);
+    const rows = MODEL_CATALOG.filter((m) => m.provider === "opencode-go");
+    expect(rows).toHaveLength(27);
+    const hit = new Set<string>();
+    for (const m of rows) {
+      const url = `${m.baseUrl}${protocolPathForModel(m.provider, m.clientType ?? "")}`;
+      expect(endpoints.has(url), `${m.modelId} -> ${url}`).toBe(true);
+      hit.add(url);
+    }
+    expect(hit).toEqual(endpoints);
   });
 
   it("custom and user-defined groups get /chat/completions (with or without the explicit client type)", () => {
