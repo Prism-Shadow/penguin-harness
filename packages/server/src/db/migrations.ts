@@ -484,6 +484,28 @@ export const MIGRATIONS: readonly Migration[] = [
     // which surface every surface Session is — the one fact its row carries.
     down() {},
   },
+  {
+    version: 12,
+    name: "user-profile-adoption",
+    // The nickname and avatar columns again, for a data root this line's own earlier builds
+    // stamped past migration 5. Those builds numbered the machines columns 5 and the surface
+    // column 6, so a root they opened records a version at which user-profile — 5 on main —
+    // reads as already applied, and it is the one migration whose columns openDatabase does
+    // not also declare at process start: `users` would stay without them, and every account
+    // read would fail against a build that selects them.
+    //
+    // Additive and idempotent, like the migration it re-runs: a root that took user-profile
+    // in its proper place finds the columns in place and nothing happens. Remove this entry
+    // once no root can still be running one of those builds — the machines line's release is
+    // the moment.
+    swapSafe: true,
+    up(db) {
+      ensureColumn(db, "users", "display_name", "TEXT");
+      ensureColumn(db, "users", "avatar", "TEXT");
+    },
+    // Nothing to undo: what this adds, migration 5 owns and drops.
+    down() {},
+  },
 ];
 
 /** The highest version this build knows how to reach. */
