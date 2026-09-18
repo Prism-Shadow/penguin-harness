@@ -12,6 +12,31 @@ Each Project has its own model table: the models its conversations can use, grou
 - To tune requests, see [Thinking levels](#thinking-levels) and [Fast mode](#fast-mode).
 - For the full list of built-in providers and the file format, see [Built-in provider groups](#built-in-provider-groups) and [The per-Project model table](#the-per-project-model-table).
 
+## GitHub Copilot subscriptions (experimental)
+
+This development integration keeps Penguin's agent loop, tools, approvals, and history.
+It uses a Copilot transport in AgentHub. It is not a Copilot CLI or SDK runtime.
+The checked-in AgentHub patch is for development; npm distribution requires an AgentHub
+release containing the adapter. A custom OAuth App's inference access has not been verified.
+
+1. Register your own [GitHub OAuth App](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow) and enable device flow.
+2. Set `PENGUIN_COPILOT_CLIENT_ID` on the Penguin server to that app's client ID and restart it.
+3. Open **Models → Connect Copilot**, open GitHub, and enter the displayed code.
+4. After discovery succeeds, review the imported models' context limits and vision settings
+   and use the existing connection test before starting a session.
+
+All sessions in the project share the connected account. The credential stays on the server
+in the existing project model configuration and is masked in API responses. Reconnect from
+the Copilot group if access is revoked or to discover newly available models. To remove the
+saved credential, open the group's key dialog and select **Disconnect Copilot**.
+This does not clear `GITHUB_COPILOT_API_KEY` if it is set, or revoke the OAuth App on GitHub.
+
+Only non-expiring OAuth App tokens and models advertising Chat Completions plus tool calls
+are supported. Responses-only models and expiring GitHub App tokens are excluded.
+No dollar price or remaining subscription quota is inferred. Account and organization
+policies still govern access. GitHub documents custom-app subscription authentication for
+its SDK; that does not establish official support for this standalone transport.
+
 ## The Models page
 
 In the sidebar, select **Models**. Models are listed in groups, one per provider.

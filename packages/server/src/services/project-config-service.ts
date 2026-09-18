@@ -1456,6 +1456,54 @@ export class ProjectConfigService implements ProjectConfigStore {
     return applied;
   }
 
+  /** Discover through AgentHub before persisting a subscription credential. No inference
+   * probe is sent here: connecting an account must not spend a premium model request.
+   */
+  async connectCopilot(projectId: string, token: string, signal?: AbortSignal): Promise<number> {
+    const ids = [
+      ...new Set(
+        await coreListEndpointModels({
+          clientType: "github-copilot",
+          apiKey: token,
+        }),
+      ),
+    ].filter((id) => typeof id === "string" && id.length > 0 && id.length <= 256);
+    if (ids.length === 0) throw new Error("No supported Copilot models are available.");
+    const raw = await this.readRaw(projectId);
+    signal?.throwIfAborted();
+    const createdAt = new Date().toISOString();
+    const known = new Set<string>();
+    let applied = 0;
+    const models = asArray(raw.models).map((model) => {
+      if (model.provider !== "github-copilot") return model;
+      known.add(String(model.model_id));
+      applied++;
+      return {
+        ...model,
+        api_key: token,
+        created_at: createdAt,
+        client_type: "github-copilot",
+        base_url: "https://api.githubcopilot.com",
+      };
+    });
+    for (const id of ids) {
+      if (known.has(id)) continue;
+      applied++;
+      models.push({
+        provider: "github-copilot",
+        model_id: id,
+        display_name: id,
+        client_type: "github-copilot",
+        base_url: "https://api.githubcopilot.com",
+        api_key: token,
+        created_at: createdAt,
+        vision: false,
+      });
+    }
+    await this.writeRaw(projectId, { ...raw, models });
+    return applied;
+  }
+
   /** Returns one persisted group key without exposing it through an HTTP response. */
   async getGroupApiKey(projectId: string, provider: string): Promise<string | undefined> {
     const raw = await this.readRaw(projectId);

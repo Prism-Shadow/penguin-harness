@@ -817,6 +817,9 @@ export interface ModelOAuthStartRequest {
 export interface ModelOAuthStartResponse {
   flowId: string;
   authorizeUrl: string;
+  /** Device flow only: enter this public code at authorizeUrl. */
+  userCode?: string;
+  expiresAt?: number;
 }
 
 /** Why a flow failed, as a code the frontend phrases; never carries a code, a verifier or a key. */

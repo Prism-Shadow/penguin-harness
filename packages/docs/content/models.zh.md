@@ -14,6 +14,31 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 ## 模型库页面
 
+在侧边栏选择**模型库**，可管理项目中的模型。
+
+### GitHub Copilot 订阅（实验性）
+
+此开发集成保留了 Penguin 的代理循环、工具、审批及历史记录，通过 AgentHub 连接
+Copilot，不运行 Copilot CLI 或 SDK。仓库中的 AgentHub 补丁仅用于开发；npm 分发需要
+发布包含适配器的 AgentHub 版本。自定义 OAuth 应用的推理访问权限尚未验证。
+
+1. 注册自己的 [GitHub OAuth 应用](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow)，并启用设备流程。
+2. 在 Penguin 服务端将 `PENGUIN_COPILOT_CLIENT_ID` 设置为该应用的客户端 ID，然后重启。
+3. 打开**模型库 → 连接 Copilot**，前往 GitHub 输入显示的验证码。
+4. 模型发现成功后，检查上下文限制和视觉设置，并在开始会话前测试模型连接。
+
+项目中所有会话共用连接的账号。凭据通过现有项目模型配置保存在服务端，API 响应仅显示掩码。
+访问权限被撤销或需要发现新模型时，可从 Copilot 分组重新连接。要清除保存的凭据，
+打开分组密钥对话框，选择**断开 Copilot**。这不会清除已设置的 `GITHUB_COPILOT_API_KEY`
+环境变量，也不会撤销 GitHub 上的应用授权。
+
+仅支持不会过期的 OAuth 应用令牌，以及声明支持 Chat Completions 和工具调用的模型。
+不支持仅有 Responses 接口的模型和会过期的 GitHub App 令牌。不推算美元费用或剩余订阅额度。
+账号及组织策略仍然限制访问。GitHub 为其 SDK 提供了自定义应用订阅认证文档，
+这并不能证明此独立传输接口获得了官方支持。
+
+### 浏览模型
+
 在侧边栏选择**模型库**。模型按分组列出，每个供应商一个分组。
 
 - **分组**：内置分组按[内置供应商分组](#内置供应商分组)里的顺序排列；你创建的分组排在后面，按名称排序。没有模型的内置分组会隐藏；**Custom** 始终显示。**TokenDance** 分组带有**官方推荐**标签。

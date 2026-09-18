@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MODEL_CATALOG,
   PENGUIN_GO_BASE_URL,
@@ -60,7 +60,79 @@ describe("models preset & catalog enrichment", () => {
     projectId = created.project.projectId;
   });
   afterEach(async () => {
+    vi.unstubAllGlobals();
     await t.cleanup();
+  });
+
+  it("imports Copilot models through AgentHub, preserves the project and masks its credential", async () => {
+    const before = (await (await api.get(url())).json()) as ModelsResponse;
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        data: [
+          {
+            id: "copilot-test-model",
+            supported_endpoints: ["/chat/completions"],
+            capabilities: { supports: { tool_calls: true } },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    expect(
+      await t.deps.projectConfigService.connectCopilot(projectId, "gho_private-test-token"),
+    ).toBe(1);
+    const after = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(after.defaultModel).toEqual(before.defaultModel);
+    expect(after.models.filter((model) => model.provider !== "github-copilot")).toEqual(
+      before.models,
+    );
+    const imported = pick(after, "github-copilot", "copilot-test-model");
+    expect(imported.clientType).toBe("github-copilot");
+    expect(imported.pricing).toBeUndefined();
+    expect(JSON.stringify(after)).not.toContain("gho_private-test-token");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    // A reconnect updates existing credentials and does not duplicate the model.
+    expect(
+      await t.deps.projectConfigService.connectCopilot(projectId, "gho_reconnected-test-token"),
+    ).toBe(1);
+    const again = (await (await api.get(url())).json()) as ModelsResponse;
+    expect(again.models.filter((model) => model.provider === "github-copilot")).toHaveLength(1);
+  });
+
+  it("does not persist a Copilot credential when no compatible models are accessible", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => Response.json({ data: [] })),
+    );
+    const before = await (await api.get(url())).text();
+    await expect(
+      t.deps.projectConfigService.connectCopilot(projectId, "gho_unusable"),
+    ).rejects.toThrow("No supported");
+    expect(await (await api.get(url())).text()).toBe(before);
+  });
+
+  it("does not save a connection cancelled during model discovery", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () => {
+        controller.abort();
+        return Response.json({
+          data: [
+            {
+              id: "late-model",
+              supported_endpoints: ["/chat/completions"],
+              capabilities: { supports: { tool_calls: true } },
+            },
+          ],
+        });
+      }),
+    );
+    const before = await (await api.get(url())).text();
+    await expect(
+      t.deps.projectConfigService.connectCopilot(projectId, "gho_cancelled", controller.signal),
+    ).rejects.toThrow();
+    expect(await (await api.get(url())).text()).toBe(before);
   });
 
   it("credentials are inlined in one file: the apiKey from PUT lands in .project_config.toml (0600), GET returns only a mask", async () => {

@@ -113,6 +113,8 @@ export interface ModelProviderInfo {
    * every provider whose keys are only obtainable from its console.
    */
   oauth?: ModelProviderOAuth;
+  /** Server-side GitHub OAuth App device flow; subscription access is experimental. */
+  deviceOAuth?: true;
   /**
    * The AgentHub protocol EVERY entry in this group speaks, models the user adds included.
    *
@@ -374,6 +376,17 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     // Self-hosted: the user runs the server, so there is no console to mint a key at
     // (apiKeyUrl) and no endpoint to preset (gatewayBaseUrl). modelsUrl points at the recipe
     // index, which is where the served ids in this group are documented.
+    id: "github-copilot",
+    label: "GitHub Copilot (experimental)",
+    envKey: "GITHUB_COPILOT_API_KEY",
+    envBaseUrlKey: "",
+    gatewayBaseUrl: "https://api.githubcopilot.com",
+    clientType: "github-copilot",
+    deviceOAuth: true,
+    apiKeyUrl: "https://github.com/settings/applications",
+    modelsUrl: "https://docs.github.com/en/copilot/reference/ai-models/supported-models",
+  },
+  {
     id: "vllm",
     label: "vLLM",
     envKey: "OPENAI_API_KEY",
@@ -2436,6 +2449,7 @@ export interface ModelEnvInfo {
 export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvInfo | undefined {
   const explicitClientType = clientType?.toLowerCase();
   const t = explicitClientType || modelId.toLowerCase();
+  if (t === "github-copilot") return { envKey: "GITHUB_COPILOT_API_KEY", envBaseUrlKey: "" };
   const env = (prefix: string): ModelEnvInfo => ({
     envKey: `${prefix}_API_KEY`,
     envBaseUrlKey: `${prefix}_BASE_URL`,

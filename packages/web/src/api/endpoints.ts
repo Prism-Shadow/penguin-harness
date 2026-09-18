@@ -399,6 +399,12 @@ export const getModelOAuthStatus = (projectId: string, flowId: string) =>
     `/api/projects/${encodeURIComponent(projectId)}/model-oauth/${encodeURIComponent(flowId)}`,
   );
 
+export const cancelModelOAuth = (projectId: string, flowId: string) =>
+  apiFetch<{ ok: boolean }>(
+    `/api/projects/${encodeURIComponent(projectId)}/model-oauth/${encodeURIComponent(flowId)}`,
+    { method: "DELETE" },
+  );
+
 /** Redeems a code the user pasted, for when the provider's redirect cannot reach the harness. */
 export const submitModelOAuthCode = (projectId: string, flowId: string, code: string) =>
   apiFetch<ModelOAuthCodeResponse>(

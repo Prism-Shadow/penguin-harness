@@ -62,3 +62,6 @@ minimumReleaseAgeExclude:
   - "@deepseek-ai/dsh-typert-protocol@0.1.0-rc.7"
   - "@microsoft/mxc-sdk@0.7.0"
   - "@prismshadow/agenthub@0.4.15"
+patchedDependencies:
+  # Development integration only. Replace with a published AgentHub adapter before npm release.
+  "@prismshadow/agenthub@0.4.15": patches/@prismshadow__agenthub@0.4.15.patch

@@ -1134,6 +1134,17 @@ export function ModelsPage() {
               )}
             </div>
           </div>
+          {isOwner && rows !== null && !rows.some((row) => row.provider === "github-copilot") && (
+            <Button
+              size="sm"
+              className="mt-3"
+              disabled={busy}
+              onClick={() => setOauthFor("github-copilot")}
+            >
+              <GlyphIcon d={SIGN_IN_ICON} size={ICON_SIZE.inlineGlyph} />
+              {S.models.copilotConnect}
+            </Button>
+          )}
           {/* Last stop on the Models trail, in the one shape all four dismissible trails use:
               directly under the title, naming what is waiting, carrying the sync itself, and
               carrying the way down for someone who has looked and decided to stay off the
@@ -1292,7 +1303,9 @@ export function ModelsPage() {
                         </Button>
                       )}
                       {isOwner &&
-                        (group.provider.oauth || group.provider.id === PENGUIN_GO_PROVIDER_ID) && (
+                        (group.provider.oauth ||
+                          group.provider.deviceOAuth ||
+                          group.provider.id === PENGUIN_GO_PROVIDER_ID) && (
                           // Authorize-a-key action: rendered off the group's own catalog
                           // descriptor, so a provider gains this button by publishing a flow
                           // rather than by being named here. Same narrow-row rule as its
@@ -1303,12 +1316,20 @@ export function ModelsPage() {
                             variant="ghost"
                             className="shrink-0"
                             disabled={busy}
-                            aria-label={`${S.models.oauthKey} ${group.provider.label}`}
-                            title={S.models.oauthKey}
+                            aria-label={`${group.provider.deviceOAuth ? S.models.copilotConnect : S.models.oauthKey} ${group.provider.label}`}
+                            title={
+                              group.provider.deviceOAuth
+                                ? S.models.copilotConnect
+                                : S.models.oauthKey
+                            }
                             onClick={() => setOauthFor(group.provider.id)}
                           >
                             <GlyphIcon d={SIGN_IN_ICON} size={ICON_SIZE.groupHeaderAction} />
-                            <span className="hidden @3xl:inline">{S.models.oauthKey}</span>
+                            <span className="hidden @3xl:inline">
+                              {group.provider.deviceOAuth
+                                ? S.models.copilotConnect
+                                : S.models.oauthKey}
+                            </span>
                           </Button>
                         )}
                       {isOwner && group.provider.id !== "custom" && (
@@ -1466,7 +1487,7 @@ export function ModelsPage() {
             const affected = rows.filter((r) => r.provider === target);
             if (affected.length === 0) return;
             const nextRows = rows.map((r) =>
-              r.provider === target ? { ...r, apiKeyInput: key, clearApiKey: false } : r,
+              r.provider === target ? { ...r, apiKeyInput: key, clearApiKey: key === "" } : r,
             );
             // Success toast is shown inside persist (with "configured N" text); on failure
             // only an error toast is shown, no false success report (persist swallows the
@@ -1475,7 +1496,7 @@ export function ModelsPage() {
               nextRows,
               defaultModel,
               visionModel,
-              S.models.groupKeyApplied(affected.length),
+              key === "" ? S.models.copilotDisconnected : S.models.groupKeyApplied(affected.length),
             );
           }}
         />
@@ -3684,6 +3705,11 @@ function GroupKeyDialog({
       onClose={onClose}
       footer={
         <>
+          {provider.deviceOAuth && (
+            <Button size="sm" disabled={count === 0} onClick={() => onSubmit("")}>
+              {S.models.copilotDisconnect}
+            </Button>
+          )}
           <Button size="sm" onClick={onClose}>
             {S.common.cancel}
           </Button>
@@ -3766,7 +3792,7 @@ const OAUTH_POLL_MS = 2000;
  * routes back — the provider redirects to the server (polled here), or, when that redirect
  * cannot reach the harness, the user carries a one-time code across by hand.
  */
-function ModelOAuthDialog({
+export function ModelOAuthDialog({
   projectId,
   provider,
   count,
@@ -3782,7 +3808,12 @@ function ModelOAuthDialog({
 }) {
   const [manual, setManual] = useState(false);
   const [phase, setPhase] = useState<OAuthPhase>("starting");
-  const [flow, setFlow] = useState<{ flowId: string; authorizeUrl: string } | null>(null);
+  const [flow, setFlow] = useState<{
+    flowId: string;
+    authorizeUrl: string;
+    userCode?: string;
+    expiresAt?: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState("");
   /** How many models the key was written to — the sentence the `done` phase reports. */
@@ -3799,6 +3830,7 @@ function ModelOAuthDialog({
   // activation, which is what keeps a popup blocker out of the way.
   useEffect(() => {
     let cancelled = false;
+    let openedFlow: string | undefined;
     setPhase("starting");
     setFlow(null);
     setError(null);
@@ -3809,7 +3841,11 @@ function ModelOAuthDialog({
           provider: provider.id,
           mode: manual ? "manual" : "callback",
         });
-        if (cancelled) return;
+        openedFlow = res.flowId;
+        if (cancelled) {
+          void api.cancelModelOAuth(projectId, res.flowId).catch(() => {});
+          return;
+        }
         setFlow(res);
         setPhase("ready");
       } catch (e) {
@@ -3820,6 +3856,7 @@ function ModelOAuthDialog({
     })();
     return () => {
       cancelled = true;
+      if (openedFlow) void api.cancelModelOAuth(projectId, openedFlow).catch(() => {});
     };
   }, [projectId, provider.id, manual, attempt]);
 
@@ -3828,7 +3865,10 @@ function ModelOAuthDialog({
   useEffect(() => {
     if (phase !== "waiting" || manual || flow === null) return;
     let stopped = false;
+    let polling = false;
     const tick = async (): Promise<void> => {
+      if (polling) return;
+      polling = true;
       try {
         const res = await api.getModelOAuthStatus(projectId, flow.flowId);
         if (stopped) return;
@@ -3842,13 +3882,23 @@ function ModelOAuthDialog({
           return;
         }
         if (res.status === "error") {
-          setError(res.error ? S.models.oauthErrors[res.error] : S.models.oauthTimedOut);
+          setError(
+            provider.deviceOAuth && res.error === "apply_failed"
+              ? S.models.copilotApplyFailed
+              : res.error
+                ? S.models.oauthErrors[res.error]
+                : provider.deviceOAuth
+                  ? S.models.copilotTimedOut
+                  : S.models.oauthTimedOut,
+          );
           setPhase("failed");
         }
       } catch {
         if (stopped) return;
-        setError(S.models.oauthTimedOut);
+        setError(provider.deviceOAuth ? S.models.copilotTimedOut : S.models.oauthTimedOut);
         setPhase("failed");
+      } finally {
+        polling = false;
       }
     };
     const timer = window.setInterval(() => void tick(), OAUTH_POLL_MS);
@@ -3856,7 +3906,7 @@ function ModelOAuthDialog({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [phase, manual, flow, projectId, count]);
+  }, [phase, manual, flow, projectId, count, provider.deviceOAuth]);
 
   const openAuthorizePage = (): void => {
     if (flow === null) return;
@@ -3908,7 +3958,7 @@ function ModelOAuthDialog({
   return (
     <Modal
       open
-      title={S.models.oauthTitle(provider.label)}
+      title={provider.deviceOAuth ? S.models.copilotConnect : S.models.oauthTitle(provider.label)}
       onClose={onClose}
       footer={
         // Done is an outcome, not a choice: a "cancel" beside it would offer to undo a key that
@@ -3930,12 +3980,24 @@ function ModelOAuthDialog({
       <div className="space-y-3">
         {phase === "done" ? (
           <p className="text-sm text-gray-700 dark:text-gray-300">
-            {S.models.oauthAppliedBody(provider.label, applied)}
+            {provider.deviceOAuth
+              ? S.models.copilotApplied(applied)
+              : S.models.oauthAppliedBody(provider.label, applied)}
           </p>
         ) : (
           <p className="text-sm text-gray-700 dark:text-gray-300">
-            {S.models.oauthIntro(provider.label, count)}
+            {provider.deviceOAuth
+              ? S.models.copilotIntro
+              : S.models.oauthIntro(provider.label, count)}
           </p>
+        )}
+        {phase !== "done" && flow?.userCode && (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500">{S.models.copilotCode}</p>
+            <code className="block select-all font-mono text-xl tracking-widest">
+              {flow.userCode}
+            </code>
+          </div>
         )}
         {phase !== "done" && manual && (
           <>
@@ -3963,7 +4025,7 @@ function ModelOAuthDialog({
           </p>
         )}
         {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-        {phase !== "done" && (
+        {phase !== "done" && !provider.deviceOAuth && (
           <button
             type="button"
             onClick={() => setManual((v) => !v)}

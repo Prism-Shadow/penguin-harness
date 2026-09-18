@@ -208,6 +208,12 @@ export function modelOAuthCallbackRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv
 
 export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
+  app.delete("/:flowId", (c) => {
+    const projectId = requireValidId(c, "projectId");
+    deps.access.requireProjectOwner(c.var.user.userId, projectId);
+    deps.modelOAuth.cancel({ projectId, userId: c.var.user.userId, flowId: c.req.param("flowId") });
+    return c.json({ ok: true });
+  });
 
   // Opens a flow and returns the page to send the user to. The provider is looked up in the
   // built-in catalog inside the service, which is what rejects a group that publishes no
@@ -218,7 +224,7 @@ export function modelOAuthRoutes(deps: ModelOauthRouteDeps): Hono<AppEnv> {
     const body = await readJson(c);
     const provider = requireString(body, "provider", { minLen: 1, maxLen: 64 });
     const mode = parseMode(body.mode);
-    const started = deps.modelOAuth.start({
+    const started = await deps.modelOAuth.start({
       projectId,
       userId: c.var.user.userId,
       provider,

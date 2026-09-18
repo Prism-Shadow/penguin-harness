@@ -28,6 +28,7 @@ import { APP_URL, providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelProviderOAuth } from "@prismshadow/penguin-core/model-catalog";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
+import { CopilotDeviceFlow } from "./copilot-device-flow.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ModelOAuth, ProjectConfigStore } from "../mechanisms/projects.js";
 
@@ -96,6 +97,8 @@ export type ModelOAuthErrorCode =
 export interface ModelOAuthStartResult {
   flowId: string;
   authorizeUrl: string;
+  userCode?: string;
+  expiresAt?: number;
 }
 
 /**
@@ -212,6 +215,9 @@ export class ModelOAuthService implements ModelOAuth {
   /** Replaced in tests so they never reach the network. */
   private fetchImpl: typeof fetch = (...args) => fetch(...args);
   private now: () => number = () => Date.now();
+  private readonly device = new CopilotDeviceFlow((projectId, token, signal) =>
+    this.projectConfig.connectCopilot(projectId, token, signal),
+  );
 
   /**
    * Open a flow for one provider group and return the page to send the user to.
@@ -228,7 +234,8 @@ export class ModelOAuthService implements ModelOAuth {
     mode: ModelOAuthMode;
     /** Where the provider should send the browser back to; ignored in manual mode. */
     callbackOrigin: string;
-  }): ModelOAuthStartResult {
+  }): ModelOAuthStartResult | Promise<ModelOAuthStartResult> {
+    if (input.provider === "github-copilot") return this.device.start(input);
     const oauth = providerInfo(input.provider)?.oauth;
     if (oauth === undefined) {
       throw badRequest(`Provider ${input.provider} does not support authorizing a new API key.`);
@@ -322,6 +329,7 @@ export class ModelOAuthService implements ModelOAuth {
     error?: ModelOAuthErrorCode;
     applied?: number;
   }> {
+    if (this.device.has(input.flowId)) return this.device.poll(input);
     const flow = this.require(input);
     // Reading the code and claiming it inside `redeem` is one synchronous stretch, so two
     // overlapping polls cannot both reach the exchange: the second finds nothing deposited
@@ -347,6 +355,12 @@ export class ModelOAuthService implements ModelOAuth {
     code: string;
   }): Promise<{ ok: true; applied: number } | { ok: false; error: ModelOAuthErrorCode }> {
     return this.redeem(this.require(input), input.code);
+  }
+
+  cancel(input: { flowId: string; userId: string; projectId: string }): void {
+    if (this.device.has(input.flowId)) return this.device.cancel(input);
+    this.require(input);
+    this.flows.delete(input.flowId);
   }
 
   /**
