@@ -583,7 +583,10 @@ export class PluginConfigPage {
         // An option this machine cannot honour is refused like an invalid value, naming it.
         for (const u of status.get(name)?.unavailable?.() ?? []) {
           if (update[u.field] === u.value) {
-            throw new PluginConfigError(u.field, `"${u.value}" is not available here: ${u.reason}`);
+            throw new PluginConfigError(
+              u.field,
+              `"${u.field}" cannot be "${u.value}" here: ${u.reason}`,
+            );
           }
         }
         const saved = entries.set(name, update);
