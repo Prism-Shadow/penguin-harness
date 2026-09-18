@@ -105,7 +105,7 @@ describe("sandbox settings group", () => {
     expect(entries[0]).toBe(sandbox);
     expect(sandbox.values).toEqual({
       mode: "danger-full-access",
-      cutNetwork: false,
+      network: "open",
       writableTemp: true,
     });
     expect(sandbox.notices).toEqual([
@@ -119,13 +119,30 @@ describe("sandbox settings group", () => {
     expect(child.values).toEqual({ runner: "runner-a" });
   });
 
+  it("lists the local network level as unavailable where no backend supports it, and refuses saving it", async () => {
+    const { t, admin, list, sandbox } = await appWith([]);
+    apps.push(t);
+    const entry = (await list()).find((e) => e.name === "sandbox")!;
+    expect(entry.unavailable).toEqual([
+      expect.objectContaining({ field: "network", value: "local" }),
+    ]);
+    const refused = await admin.put("/api/admin/plugin-config", {
+      name: "sandbox",
+      values: { mode: "workspace-write", network: "local" },
+    });
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toContain("network");
+    // Nothing was stored: the service still runs the defaults.
+    expect(sandbox.currentSettings()).toEqual({ mode: "danger-full-access" });
+  });
+
   it("applies a saved policy to the next spawn; the backend reads its own saved group", async () => {
     const seen: Seen[] = [];
     const { t, admin, spawn, sandbox } = await appWith(seen);
     apps.push(t);
     const saved = await admin.put("/api/admin/plugin-config", {
       name: "sandbox",
-      values: { mode: "workspace-write", cutNetwork: true, maskPaths: [" /etc/x ", "/etc/x", ""] },
+      values: { mode: "workspace-write", network: "none", maskPaths: [" /etc/x ", "/etc/x", ""] },
     });
     expect(saved.status).toBe(200);
     expect(sandbox.currentSettings()).toEqual({
@@ -155,7 +172,7 @@ describe("sandbox settings group", () => {
 
     await admin.put("/api/admin/plugin-config", {
       name: "sandbox",
-      values: { mode: "read-only", cutNetwork: false, maskPaths: [], writableTemp: false },
+      values: { mode: "read-only", network: "open", maskPaths: [], writableTemp: false },
     });
     expect(sandbox.currentSettings()).toEqual({ mode: "read-only", writableTemp: false });
     spawn();

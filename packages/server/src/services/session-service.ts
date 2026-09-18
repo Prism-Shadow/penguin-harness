@@ -48,9 +48,23 @@ const SANDBOX_MODE_RANK: Record<SandboxSettings["mode"], number> = {
   "danger-full-access": 2,
 };
 
-/** A stored policy as the composer sees it. */
-export function sessionSandboxOf(policy: SandboxSettings): SessionSandbox {
-  return { mode: policy.mode, network: policy.network === "none" ? "none" : "open" };
+const SANDBOX_NETWORK_RANK: Record<SessionSandbox["network"], number> = {
+  none: 0,
+  local: 1,
+  open: 2,
+};
+
+/** A stored policy's network level as the composer names it. */
+function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
+  return policy.network ?? "open";
+}
+
+/** A stored policy as the composer sees it, with whether this server can enforce `local`. */
+export function sessionSandboxOf(
+  policy: SandboxSettings,
+  localNetworkSupported = false,
+): SessionSandbox {
+  return { mode: policy.mode, network: networkOf(policy), localNetworkSupported };
 }
 
 /**
@@ -63,9 +77,19 @@ export function applySandboxPick(
   pick: Partial<SessionSandbox>,
   defaults: SandboxSettings,
   isAdmin: boolean,
+  localNetworkSupported = false,
 ): SandboxSettings {
   const mode = pick.mode ?? base.mode;
-  const network = pick.network ?? (base.network === "none" ? "none" : "open");
+  const network = pick.network ?? networkOf(base);
+  // Picking a level no backend here can enforce would make every command fail closed; say so
+  // now instead. A policy that already holds it (a backend went away) fails at the command.
+  if (pick.network === "local" && !localNetworkSupported) {
+    throw new HttpError(
+      400,
+      "sandbox_unsupported",
+      "No sandbox backend on this server can limit the network to localhost.",
+    );
+  }
   if (!isAdmin) {
     if (SANDBOX_MODE_RANK[mode] > SANDBOX_MODE_RANK[defaults.mode]) {
       throw new HttpError(
@@ -74,16 +98,16 @@ export function applySandboxPick(
         `Only an administrator can give a Session more filesystem access than the server's sandbox settings (${defaults.mode}).`,
       );
     }
-    if (network === "open" && defaults.network === "none") {
+    if (SANDBOX_NETWORK_RANK[network] > SANDBOX_NETWORK_RANK[networkOf(defaults)]) {
       throw new HttpError(
         403,
         "sandbox_forbidden",
-        "Only an administrator can open the network for a Session while the server's sandbox settings cut it.",
+        `Only an administrator can give a Session more network access than the server's sandbox settings (${networkOf(defaults)}).`,
       );
     }
   }
   const { network: _dropped, ...rest } = base;
-  return { ...rest, mode, ...(network === "none" ? { network: "none" as const } : {}) };
+  return { ...rest, mode, ...(network === "open" ? {} : { network }) };
 }
 
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
@@ -153,6 +177,8 @@ export interface SessionServiceDeps {
   sandboxDefaults?: () => SandboxSettings;
   /** Host-owned model-request hooks, forwarded to core for every Session LLM. */
   assembly?: AgentAssembly;
+  /** Whether a mounted sandbox backend implements the `local` network level. */
+  sandboxLocalNetwork?: () => boolean;
 }
 
 export class SessionService {
@@ -163,6 +189,16 @@ export class SessionService {
     return this.deps.sandboxDefaults?.() ?? { mode: "danger-full-access" };
   }
 
+  /** Whether this server can enforce the `local` network level right now. */
+  localNetworkSupported(): boolean {
+    return this.deps.sandboxLocalNetwork?.() ?? false;
+  }
+
+  /** A policy as the composer sees it, with this server's support for `local`. */
+  sandboxView(policy: SandboxSettings): SessionSandbox {
+    return sessionSandboxOf(policy, this.localNetworkSupported());
+  }
+
   /** A Session's policy: its snapshot, or — for a row from before snapshots — the settings. */
   sandboxOf(row: SessionRow): SandboxSettings {
     return row.sandbox ?? this.defaultSandbox();
@@ -170,7 +206,13 @@ export class SessionService {
 
   /** Changes one Session's policy (its next command runs under it); returns the new policy. */
   updateSandbox(row: SessionRow, pick: Partial<SessionSandbox>, isAdmin: boolean): SandboxSettings {
-    const next = applySandboxPick(this.sandboxOf(row), pick, this.defaultSandbox(), isAdmin);
+    const next = applySandboxPick(
+      this.sandboxOf(row),
+      pick,
+      this.defaultSandbox(),
+      isAdmin,
+      this.localNetworkSupported(),
+    );
     this.deps.sessions.updateSandbox(row.sessionId, next);
     return next;
   }
@@ -201,7 +243,7 @@ export class SessionService {
       modelId: row.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
-      sandbox: sessionSandboxOf(this.sandboxOf(row)),
+      sandbox: this.sandboxView(this.sandboxOf(row)),
       ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
@@ -568,7 +610,13 @@ export class SessionService {
     const defaults = this.defaultSandbox();
     return args.sandbox === undefined
       ? defaults
-      : applySandboxPick(defaults, args.sandbox, defaults, args.isAdmin ?? false);
+      : applySandboxPick(
+          defaults,
+          args.sandbox,
+          defaults,
+          args.isAdmin ?? false,
+          this.localNetworkSupported(),
+        );
   }
 
   /**

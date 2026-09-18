@@ -136,7 +136,9 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
     ) {
       sandbox.mode = raw.mode;
     }
-    if (raw.network === "open" || raw.network === "none") sandbox.network = raw.network;
+    if (raw.network === "open" || raw.network === "local" || raw.network === "none") {
+      sandbox.network = raw.network;
+    }
     if (Object.keys(sandbox).length > 0) out.sandbox = sandbox;
   }
   return out;

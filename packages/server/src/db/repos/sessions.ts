@@ -73,7 +73,7 @@ function parseSandbox(raw: unknown): SandboxSettings | null {
     }
     return {
       mode: value.mode as SandboxSettings["mode"],
-      ...(value.network === "none" ? { network: "none" as const } : {}),
+      ...(value.network === "none" || value.network === "local" ? { network: value.network } : {}),
       ...(Array.isArray(value.maskPaths)
         ? { maskPaths: value.maskPaths.filter((p): p is string => typeof p === "string") }
         : {}),

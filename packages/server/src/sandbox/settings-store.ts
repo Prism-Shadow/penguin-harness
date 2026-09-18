@@ -37,7 +37,7 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
     : [];
   return {
     mode,
-    ...(doc.cutNetwork === true ? { network: "none" as const } : {}),
+    ...(doc.network === "none" || doc.network === "local" ? { network: doc.network } : {}),
     ...(maskPaths.length > 0 ? { maskPaths } : {}),
     ...(doc.writableTemp === false ? { writableTemp: false } : {}),
   };
@@ -71,11 +71,24 @@ export function sandboxPolicyOf(doc: Record<string, unknown>): Policy {
               { value: "read-only", title: "Read-only", titleZh: "只读" },
             ],
           },
-          cutNetwork: {
-            type: "boolean",
-            title: "Cut off the network",
-            titleZh: "断开网络",
-            default: false,
+          network: {
+            type: "enum",
+            title: "Network",
+            titleZh: "网络",
+            description:
+              "What a confined command may reach. Local network allows only this machine's localhost, and needs a backend that can enforce it.",
+            descriptionZh:
+              "被封禁的命令能访问的网络。本地网络只允许访问本机 localhost，需要能实施它的后端。",
+            default: "open",
+            options: [
+              { value: "open", title: "Full access", titleZh: "完全访问" },
+              {
+                value: "local",
+                title: "Local network (localhost only)",
+                titleZh: "本地网络（仅本机 localhost）",
+              },
+              { value: "none", title: "No network", titleZh: "无网络" },
+            ],
           },
           writableTemp: {
             type: "boolean",
@@ -139,6 +152,19 @@ export class SandboxSettingsStatus {
       // A backend reads its own group (drawn inside this card) at load: after a save of the
       // card, one that failed its check — a wrong program path — loads again, no restart.
       saved: () => sandbox.retryFailed(),
+      // The local level needs a backend that declares it; where none does, the option is
+      // shown greyed out and a save choosing it is refused.
+      unavailable: () =>
+        sandbox.backends().some((b) => b.dimensions.includes("network-local"))
+          ? []
+          : [
+              {
+                field: "network",
+                value: "local",
+                reason: "no sandbox backend on this host supports it",
+                reasonZh: "本机的沙盒后端不支持",
+              },
+            ],
       notices: (): PluginConfigNotice[] => {
         const notices: PluginConfigNotice[] = [];
         const backends = sandbox.backends();

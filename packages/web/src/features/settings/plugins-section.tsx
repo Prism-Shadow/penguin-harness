@@ -307,11 +307,23 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
             disabled={disabled}
             onChange={(e) => patch(entry.name, name, e.target.value)}
           >
-            {(field.options ?? []).map((option) => (
-              <option key={option.value} value={option.value}>
-                {localized(option.title, option.titleZh)}
-              </option>
-            ))}
+            {(field.options ?? []).map((option) => {
+              // An option this machine cannot honour stays listed, greyed out, with the reason.
+              const off = entry.unavailable?.find(
+                (u) => u.field === name && u.value === option.value,
+              );
+              const title = localized(option.title, option.titleZh);
+              return (
+                <option key={option.value} value={option.value} disabled={off !== undefined}>
+                  {off === undefined
+                    ? title
+                    : S.settings.pluginOptionUnavailable(
+                        title ?? option.value,
+                        localized(off.reason, off.reasonZh) ?? off.reason,
+                      )}
+                </option>
+              );
+            })}
           </Select>
         );
       case "list":

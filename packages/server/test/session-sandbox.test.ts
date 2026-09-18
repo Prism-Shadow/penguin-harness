@@ -40,7 +40,11 @@ describe("picking a Session's sandbox from the composer", () => {
   it("keeps the snapshot's mask paths and temp choice, and lays the picks over it", () => {
     const next = applySandboxPick(settings, { mode: "read-only" }, settings, false);
     expect(next).toEqual({ ...settings, mode: "read-only" });
-    expect(sessionSandboxOf(next)).toEqual({ mode: "read-only", network: "none" });
+    expect(sessionSandboxOf(next)).toEqual({
+      mode: "read-only",
+      network: "none",
+      localNetworkSupported: false,
+    });
   });
 
   it("a non-admin cannot loosen past the server's settings, in either dimension", () => {
@@ -48,6 +52,32 @@ describe("picking a Session's sandbox from the composer", () => {
       applySandboxPick(settings, { mode: "danger-full-access" }, settings, false),
     ).toThrow(/Only an administrator/);
     expect(() => applySandboxPick(settings, { network: "open" }, settings, false)).toThrow(
+      /Only an administrator/,
+    );
+  });
+
+  it("the local level is refused where no backend supports it, and ranks between none and open", () => {
+    expect(() => applySandboxPick(settings, { network: "local" }, settings, true)).toThrow(
+      /localhost/,
+    );
+    const open: SandboxSettings = { mode: "workspace-write" };
+    const local = applySandboxPick(open, { network: "local" }, open, false, true);
+    expect(local.network).toBe("local");
+    expect(sessionSandboxOf(local, true)).toEqual({
+      mode: "workspace-write",
+      network: "local",
+      localNetworkSupported: true,
+    });
+    // Under settings of "local", a non-admin may cut the network but not open it.
+    const localDefaults: SandboxSettings = { mode: "workspace-write", network: "local" };
+    expect(
+      applySandboxPick(localDefaults, { network: "none" }, localDefaults, false, true).network,
+    ).toBe("none");
+    expect(() =>
+      applySandboxPick(localDefaults, { network: "open" }, localDefaults, false, true),
+    ).toThrow(/Only an administrator/);
+    // Under settings of "none", "local" is already looser.
+    expect(() => applySandboxPick(settings, { network: "local" }, settings, false, true)).toThrow(
       /Only an administrator/,
     );
   });
@@ -152,18 +182,30 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
         owner.post(`/api/projects/${projectId}/agents/default_agent/sessions`, body);
       type Created = { session: { sessionId: string; sandbox: unknown } };
 
-      expect((await settings({ mode: "workspace-write", cutNetwork: true })).status).toBe(200);
+      expect((await settings({ mode: "workspace-write", network: "none" })).status).toBe(200);
       const first = (await (await create()).json()) as Created;
-      expect(first.session.sandbox).toEqual({ mode: "workspace-write", network: "none" });
+      expect(first.session.sandbox).toEqual({
+        mode: "workspace-write",
+        network: "none",
+        localNetworkSupported: false,
+      });
 
       // The settings change: a new Session starts from it, the existing one does not move.
-      expect((await settings({ mode: "read-only", cutNetwork: false })).status).toBe(200);
+      expect((await settings({ mode: "read-only", network: "open" })).status).toBe(200);
       const again = (await (
         await owner.get(`/api/sessions/${first.session.sessionId}`)
       ).json()) as Created;
-      expect(again.session.sandbox).toEqual({ mode: "workspace-write", network: "none" });
+      expect(again.session.sandbox).toEqual({
+        mode: "workspace-write",
+        network: "none",
+        localNetworkSupported: false,
+      });
       const second = (await (await create()).json()) as Created;
-      expect(second.session.sandbox).toEqual({ mode: "read-only", network: "open" });
+      expect(second.session.sandbox).toEqual({
+        mode: "read-only",
+        network: "open",
+        localNetworkSupported: false,
+      });
 
       // A non-admin tightens freely, and may not loosen past the settings.
       const tightened = await owner.patch(`/api/sessions/${first.session.sessionId}`, {
@@ -173,6 +215,7 @@ describe("the API: settings seed new Sessions, and never reach existing ones", (
       expect(((await tightened.json()) as Created).session.sandbox).toEqual({
         mode: "read-only",
         network: "none",
+        localNetworkSupported: false,
       });
       const loosened = await owner.patch(`/api/sessions/${second.session.sessionId}`, {
         sandbox: { mode: "danger-full-access" },

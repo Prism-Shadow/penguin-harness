@@ -27,7 +27,7 @@ import { SettingsDialog } from "../settings/settings-dialog";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 const FS_MODES: SessionSandbox["mode"][] = ["read-only", "workspace-write", "danger-full-access"];
-const NETWORK_MODES: SessionSandbox["network"][] = ["open", "none"];
+const NETWORK_MODES: SessionSandbox["network"][] = ["open", "local", "none"];
 
 /** A section's small heading inside the panel. */
 function Heading({ children }: { children: ReactNode }) {
@@ -38,29 +38,43 @@ function Heading({ children }: { children: ReactNode }) {
   );
 }
 
-/** One choice row: its text, and a check when it is the current value. */
+/**
+ * One choice row: its text, and a check when it is the current value. An unavailable choice
+ * stays listed, greyed out, with a short note saying why (`unavailable`).
+ */
 function Choice({
   label,
   selected,
   onPick,
+  unavailable,
 }: {
   label: string;
   selected: boolean;
   onPick: () => void;
+  unavailable?: string;
 }) {
+  const off = unavailable !== undefined;
   return (
     <button
       type="button"
       role="menuitemradio"
       aria-checked={selected}
+      aria-disabled={off || undefined}
+      disabled={off}
+      title={unavailable}
       onClick={onPick}
-      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-        selected
-          ? "font-medium text-gray-900 dark:text-gray-100"
-          : "text-gray-600 dark:text-gray-400"
+      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 ${
+        off
+          ? "cursor-not-allowed text-gray-400 dark:text-gray-600"
+          : `hover:bg-gray-100 dark:hover:bg-gray-800 ${
+              selected
+                ? "font-medium text-gray-900 dark:text-gray-100"
+                : "text-gray-600 dark:text-gray-400"
+            }`
       }`}
     >
       <span className="min-w-0 flex-1 truncate whitespace-nowrap">{label}</span>
+      {off && <span className="shrink-0 text-[10px]">{S.chat.permission.unsupported}</span>}
       <span className="w-3 shrink-0 text-center">{selected ? "✓" : ""}</span>
     </button>
   );
@@ -172,6 +186,10 @@ export function PermissionSelect({
               key={network}
               label={P.networkModes[network] ?? network}
               selected={sandbox.network === network}
+              // The local level needs a backend that can enforce it on this server.
+              {...(network === "local" && sandbox.localNetworkSupported !== true
+                ? { unavailable: P.localUnsupported }
+                : {})}
               onPick={() =>
                 network === sandbox.network
                   ? setOpen(false)

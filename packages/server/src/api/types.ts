@@ -1375,14 +1375,24 @@ export type SessionSandboxMode = "read-only" | "workspace-write" | "danger-full-
 
 /**
  * The part of a Session's sandbox policy a person picks from the composer: the filesystem
- * mode and whether the network is open. The Session keeps its own copy — taken from the
- * server's Sandbox settings when it was created — so editing those settings only changes
- * what NEW Sessions start with.
+ * mode and the network level. The Session keeps its own copy — taken from the server's
+ * Sandbox settings when it was created — so editing those settings only changes what NEW
+ * Sessions start with.
  */
 export interface SessionSandbox {
   mode: SessionSandboxMode;
-  network: "open" | "none";
+  /** `open` = unrestricted, `local` = only the host's localhost, `none` = no network. */
+  network: SessionSandboxNetwork;
+  /**
+   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
+   * the `local` level. When false the composer shows it greyed out, and picking it is refused
+   * (400 `sandbox_unsupported`).
+   */
+  localNetworkSupported?: boolean;
 }
+
+/** The network levels, widest first. */
+export type SessionSandboxNetwork = "open" | "local" | "none";
 
 export interface SessionInfo {
   sessionId: string;
@@ -4913,6 +4923,16 @@ export interface PluginConfigEntry {
   notices?: PluginConfigNotice[];
   /** What this group can DO once, on the machine, drawn as buttons beneath its notices. */
   actions?: PluginConfigActionDecl[];
+  /** Enum options this machine cannot honour now: drawn greyed out with the reason; a save choosing one is refused. */
+  unavailable?: PluginConfigUnavailableDecl[];
+}
+
+/** One enum option a settings group cannot honour on this machine, and why. */
+export interface PluginConfigUnavailableDecl {
+  field: string;
+  value: string;
+  reason: string;
+  reasonZh?: string;
 }
 
 /** One button under a settings group: what it is called, and what pressing it will do. */

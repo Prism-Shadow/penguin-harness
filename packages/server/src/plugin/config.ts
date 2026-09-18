@@ -365,8 +365,21 @@ export interface SettingsGroupStatus {
   saved?(): Promise<void>;
   /** What this group offers to do, drawn as buttons beneath its notices. */
   actions?(): PluginConfigAction[];
+  /**
+   * Enum options this machine cannot honour right now: drawn greyed out with the reason, and a
+   * save choosing one is refused. Asked per read, like the notices.
+   */
+  unavailable?(): PluginConfigUnavailable[];
   /** Runs one, by its id. Told what happened, in words the page shows as they are. */
   run?(action: string): Promise<PluginConfigActionResult>;
+}
+
+/** One enum option a settings group cannot honour on this machine, and why. */
+export interface PluginConfigUnavailable {
+  field: string;
+  value: string;
+  reason: string;
+  reasonZh?: string;
 }
 
 /** One thing a settings group can do, named for the button that runs it. */
@@ -556,15 +569,23 @@ export class PluginConfigPage {
       const group = status.get(entry.name);
       const notices = group?.notices() ?? [];
       const actions = group?.actions?.() ?? [];
+      const unavailable = group?.unavailable?.() ?? [];
       return {
         ...entry,
         ...(notices.length > 0 ? { notices } : {}),
         ...(actions.length > 0 ? { actions } : {}),
+        ...(unavailable.length > 0 ? { unavailable } : {}),
       };
     };
     this.pluginConfigAdmin = {
       describe: () => entries.describe().map(withStatus),
       set: async (name, update) => {
+        // An option this machine cannot honour is refused like an invalid value, naming it.
+        for (const u of status.get(name)?.unavailable?.() ?? []) {
+          if (update[u.field] === u.value) {
+            throw new PluginConfigError(u.field, `"${u.value}" is not available here: ${u.reason}`);
+          }
+        }
         const saved = entries.set(name, update);
         await status.get(saved.parent ?? name)?.saved?.();
         return withStatus(saved);

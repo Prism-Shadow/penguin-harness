@@ -26,7 +26,9 @@ import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
 /** What GET serves beside the block: the sandbox policy a new Session starts with (read-only). */
-const SERVED = { sandbox: { mode: "danger-full-access", network: "open" } };
+const SERVED = {
+  sandbox: { mode: "danger-full-access", network: "open", localNetworkSupported: false },
+};
 
 describe("project chat defaults", () => {
   let t: TestApp;

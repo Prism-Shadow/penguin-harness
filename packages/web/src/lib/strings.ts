@@ -206,6 +206,8 @@ export const zh = {
     },
     /** Admin-only sub-page (server-global): the options loaded plugins declare. */
     pluginsTitle: "插件",
+    /** An enum option this machine cannot honour, listed greyed out. */
+    pluginOptionUnavailable: (title: string, reason: string) => `${title}（不支持：${reason}）`,
     pluginsInfo:
       "各已装载插件在其包里声明的选项，表单按插件自己的 schema 生成。与插件本身一样是服务器全局的；保存后立即送达插件，无需重启。没有声明选项的插件不会出现在这里。",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
@@ -2184,7 +2186,13 @@ Benchmark：
         "danger-full-access": "完全访问",
       } as Record<string, string>,
       network: "网络",
-      networkModes: { open: "放行", none: "断开" } as Record<string, string>,
+      networkModes: {
+        open: "完全访问",
+        local: "本地网络（仅 localhost）",
+        none: "无网络",
+      } as Record<string, string>,
+      unsupported: "不支持",
+      localUnsupported: "本机的沙盒后端不支持只允许 localhost",
       more: "更多…",
       approval: "审批",
     },

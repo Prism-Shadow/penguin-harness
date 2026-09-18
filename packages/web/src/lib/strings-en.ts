@@ -188,6 +188,9 @@ export const en: Strings = {
     },
     /** Admin-only sub-page (server-global): the options loaded plugins declare. */
     pluginsTitle: "Plugins",
+    /** An enum option this machine cannot honour, listed greyed out. */
+    pluginOptionUnavailable: (title: string, reason: string) =>
+      `${title} (not supported: ${reason})`,
     pluginsInfo:
       "The options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here.",
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
@@ -2192,7 +2195,13 @@ Scenarios:
         "danger-full-access": "Full access",
       } as Record<string, string>,
       network: "Network",
-      networkModes: { open: "Allowed", none: "Cut off" } as Record<string, string>,
+      networkModes: {
+        open: "Full access",
+        local: "Local network (localhost only)",
+        none: "No network",
+      } as Record<string, string>,
+      unsupported: "Not supported",
+      localUnsupported: "No sandbox backend on this machine can limit the network to localhost",
       more: "More…",
       approval: "Approval",
     },
