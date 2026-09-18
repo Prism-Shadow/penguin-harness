@@ -8,12 +8,11 @@
 [中文版](2026-09-15-builtin-plugins-bundled.zh.md)
 
 The builtin plugin prefix a hot push carries was an npm install of every plugin's dependency
-tree, and every installed file is a separate blob on the push: about 1,700 files, most of them
-the whole Shiki grammar collection behind the languages plugin's five grammars and Hono's ESM,
-CommonJS and type copies behind the Discord bot's route. Enough small transfers to stall a push.
+tree, and every installed file is a separate blob on the push. Enough small transfers to stall
+a push.
 
-- The Discord bot compiles in Hono and the languages plugin its five grammars; those packages
-  move to `devDependencies`.
+- A builtin plugin compiles in what it runs, and the packages it compiles in are
+  `devDependencies`.
 - sandbox-dsh keeps the DSH chain as a dependency tree: it picks its per-platform rung by bare
   specifier at run time, and a bundle turns that into an unresolvable import — which is how the
   Windows rung (a restricted token and ACLs) came to fail there with "Cannot find package
