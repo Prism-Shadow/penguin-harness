@@ -10,28 +10,30 @@ import type {
 import type { WorkspaceFilesResponse, WorkspaceSearchResponse } from "../api/types.js";
 
 /** WorkspaceFiles: the mechanism WorkspaceFilesService implements. */
-export abstract class WorkspaceFiles extends Interface<{
-  statExisting(workspace: string, rels: string[]): Promise<string[]>;
-  statExistingWithMtime(workspace: string, rels: string[]): Promise<WorkspaceFileStat[]>;
-  list(workspace: string, rel: string): Promise<WorkspaceFilesResponse>;
-  read(
+@Interface()
+export abstract class WorkspaceFiles {
+  abstract statExisting(workspace: string, rels: string[]): Promise<string[]>;
+  abstract statExistingWithMtime(workspace: string, rels: string[]): Promise<WorkspaceFileStat[]>;
+  abstract list(workspace: string, rel: string): Promise<WorkspaceFilesResponse>;
+  abstract read(
     workspace: string,
     rel: string,
     options?: WorkspaceFileReadOptions,
   ): Promise<WorkspaceFileContent>;
-  write(
+  abstract write(
     workspace: string,
     rel: string,
     data: Buffer<ArrayBufferLike>,
     ifVersion?: string,
   ): Promise<void>;
-  move(workspace: string, from: string, to: string, ifVersion?: string): Promise<void>;
-  remove(workspace: string, rel: string, ifVersion?: string): Promise<void>;
-  search(workspace: string, q: string): Promise<WorkspaceSearchResponse>;
-  resolvePath(workspace: string, rel: string): Promise<string>;
-}>() {}
+  abstract move(workspace: string, from: string, to: string, ifVersion?: string): Promise<void>;
+  abstract remove(workspace: string, rel: string, ifVersion?: string): Promise<void>;
+  abstract search(workspace: string, q: string): Promise<WorkspaceSearchResponse>;
+  abstract resolvePath(workspace: string, rel: string): Promise<string>;
+}
 
 /** FileReveal: opening a path in the machine's file manager, as RevealService implements it. */
-export abstract class FileReveal extends Interface<{
-  reveal(filePath: string): Promise<void>;
-}>() {}
+@Interface()
+export abstract class FileReveal {
+  abstract reveal(filePath: string): Promise<void>;
+}
