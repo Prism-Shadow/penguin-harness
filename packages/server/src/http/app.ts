@@ -98,24 +98,21 @@ export class HttpModule {
         app: c.code as Hono<AppEnv>,
       }))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-    let gated = false;
+    // Protected routes: cookie -> auth_session -> user. Built once, mounted per group, and
+    // run once per request: prefixes nest (/api/projects, /api/projects/:projectId/members),
+    // so a request can pass several mounts, and the first is the one that authenticates.
+    const authenticate = authMiddleware(this.auth, this.config.trustProxy);
+    const gate: MiddlewareHandler<AppEnv> = (c, next) =>
+      (c.var.user as AppEnv["Variables"]["user"] | undefined) === undefined
+        ? authenticate(c, next)
+        : next();
     for (const r of routes) {
-      if (r.auth === "user") {
-        // Protected routes: cookie -> auth_session -> user. /api/* is gated once, ahead of
-        // the first protected group. A protected group under another prefix — the machine
-        // proxy at /server/ — is gated on its own prefix: the gate is what puts the user on
-        // the context, and a handler reading it behind an ungated prefix would throw.
-        if (!gated) {
-          app.use("/api/*", authMiddleware(this.auth, this.config.trustProxy));
-          gated = true;
-        }
-        if (!r.prefix.startsWith("/api")) {
-          app.use(
-            `${r.prefix.replace(/\/$/, "")}/*`,
-            authMiddleware(this.auth, this.config.trustProxy),
-          );
-        }
-      }
+      // The gate sits on each group that asked for it, not once on `/api/*` ahead of the
+      // first such group: a contributor picks its own prefix and order, and `auth` has to
+      // mean the same thing wherever the group lands — a public group ordered after a
+      // protected one stays public, and a protected group outside /api (the machine proxy
+      // at /server/) is still protected. The gate is also what puts the user on the context.
+      if (r.auth === "user") app.use(`${r.prefix.replace(/\/$/, "")}/*`, gate);
       app.route(r.prefix, r.app);
     }
     this.http = { fetch: (request: Request) => Promise.resolve(app.fetch(request)) };
