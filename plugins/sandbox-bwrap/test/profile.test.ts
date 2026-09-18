@@ -64,6 +64,12 @@ describe("penguin-bwrap profile", () => {
     expect(args.join(" ")).not.toContain(`--bind ${WS}`);
   });
 
+  it("refuses the local network level rather than reading it as an open network", () => {
+    expect(() =>
+      bwrapProfileArgs({ mode: "read-only", workspaceRoot: WS, network: "local" }),
+    ).toThrow(/local network/);
+  });
+
   it("full access binds the root read-WRITE, but still cuts the network when asked", () => {
     const args = bwrapProfileArgs({
       mode: "danger-full-access",

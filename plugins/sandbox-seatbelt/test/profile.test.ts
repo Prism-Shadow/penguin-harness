@@ -64,6 +64,24 @@ describe.skipIf(process.platform === "win32")("seatbelt profile", () => {
     expect(profile).toContain("(deny network*)");
   });
 
+  it("network: local denies every socket, then lets the host's localhost back in", () => {
+    const profile = seatbeltProfile({
+      mode: "workspace-write",
+      workspaceRoot: WS,
+      network: "local",
+    });
+    const deny = profile.indexOf("(deny network*)");
+    expect(deny).toBeGreaterThan(-1);
+    for (const form of [
+      '(allow network-outbound (remote ip "localhost:*"))',
+      '(allow network-bind (local ip "localhost:*"))',
+      '(allow network-inbound (local ip "localhost:*"))',
+    ]) {
+      // Later rules win in SBPL: each allowance comes after the blanket denial.
+      expect(profile.indexOf(form)).toBeGreaterThan(deny);
+    }
+  });
+
   it("network: none denies every socket", () => {
     expect(seatbeltProfile({ mode: "read-only", workspaceRoot: WS, network: "none" })).toContain(
       "(deny network*)",
@@ -120,6 +138,7 @@ describe("seatbelt provider", () => {
     expect(createSeatbeltProvider({ probe: () => true }).dimensions).toEqual([
       "fs-write",
       "network",
+      "network-local",
       "mask-paths",
     ]);
   });

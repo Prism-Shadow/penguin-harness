@@ -33,5 +33,6 @@ Windows 有了沙盒后端：命令在 WSL2 发行版里、在 bubblewrap 下执
 - **后端在加载时检查自己能否工作。** bwrap 与 Seatbelt 经 `loadPenguinBwrapProvider` / `loadSeatbeltProvider` 加载。不在自己的平台上时让出；在自己的平台上则以不阻塞的方式运行基础配置探测，运行器缺失或拒绝该配置时带着原因拒绝加载。此前 Windows 主机会把 bwrap 算作覆盖全部维度的已挂载后端，把每条封禁策略都派给它。命令执行时的探测保留。
 - **没有后端会悄无声息地缺席。** `SandboxService` 同时等待所有后端来源，按路由顺序记录：拒绝记为失败，null 记为让出。命令因此被拒绝时，消息把两者都点名：`backends not in use: <name> (<reason>); <name> (not for this host)`。
 - **两种封禁模式下临时目录都可写。** `SandboxPolicy` 新增 `writableTemp`，沙盒服务在每条封禁策略上都设置它：bwrap 挂载私有、可写的 `/tmp`（`$TMPDIR` 在别处时一并绑定），Seatbelt 放行临时目录。此前 `read-only` 模式下临时目录只读，Shell 在执行任何指令之前就会失败。
+- **网络多了本地一档。** 除无网络与完全访问外，`network: "local"` 只允许命令访问本机 localhost。它是单独的维度 `network-local`，沙盒服务只把它路由给声明了该维度的后端，其他情况 fail closed。Seatbelt 实现了它（先拒绝所有套接字，再放行 localhost）；bwrap 与 WSL 做不到——空的网络命名空间连主机的回环也一并失去——它们拒绝这一档，而不是当作开放网络处理。
 - **完全访问也能断网。** `danger-full-access` 过去在读取网络设置之前就短路为「不封禁」。完全访问、网络放行且无屏蔽路径时仍不封禁；完全访问且断网或屏蔽路径时，会走到一个后端去执行这一维度，同时不限制文件。bwrap（在 Linux 上与在 WSL 发行版里）把根目录以读写方式绑定并仍 `--unshare-net`；Seatbelt 不拒绝任何写入但仍 `(deny network*)`。
 - **移除了 MXC 后端。** `plugins/sandbox-mxc` 被删除，`@microsoft/mxc-sdk` 离开了工作区。内置插件注册表列出四个沙盒后端：bwrap、Seatbelt、WSL 与 DSH 适配器。

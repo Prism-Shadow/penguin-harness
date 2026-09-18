@@ -83,6 +83,12 @@ describe("bwrapArgs", () => {
     );
   });
 
+  it("refuses the local network level rather than reading it as an open network", () => {
+    expect(() =>
+      bwrapArgs({ mode: "read-only", workspaceRoot: WS, network: "local" }, HOST),
+    ).toThrow(/local network/);
+  });
+
   it("full access binds the distro writable and leaves /mnt alone, still cutting the network", () => {
     const args = bwrapArgs(
       { mode: "danger-full-access", workspaceRoot: WS, network: "none" },

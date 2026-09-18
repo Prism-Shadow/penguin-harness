@@ -160,6 +160,35 @@ describe("sandbox service — capability routing across backends", () => {
     expect(bwrap.calls[0]).toMatchObject({ mode: "danger-full-access", network: "none" });
   });
 
+  it("the local network level routes only to a backend declaring network-local", async () => {
+    const { dsh, bwrap } = entries();
+    const seatbelt = fake("seatbelt", ["fs-write", "network", "network-local", "mask-paths"]);
+    const svc = await service([
+      ["dsh-local", dsh.provider],
+      ["penguin-bwrap", bwrap.provider],
+      ["penguin-seatbelt", seatbelt.provider],
+    ]);
+    svc.configure({ mode: "workspace-write", network: "local" });
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["seatbelt", "--", ...ARGV]);
+    expect(bwrap.calls).toHaveLength(0);
+    expect(seatbelt.calls[0]).toMatchObject({ network: "local" });
+    // Full access with the local level still needs that backend: nothing is dropped.
+    svc.configure({ mode: "danger-full-access", network: "local" });
+    expect(svc.confiner()([...ARGV], OPTS).argv).toEqual(["seatbelt", "--", ...ARGV]);
+  });
+
+  it("the local network level fails closed where no backend declares it", async () => {
+    const { dsh, bwrap } = entries();
+    const svc = await service([
+      ["dsh-local", dsh.provider],
+      ["penguin-bwrap", bwrap.provider],
+    ]);
+    svc.configure({ mode: "workspace-write", network: "local" });
+    expect(() => svc.confiner()([...ARGV], OPTS)).toThrow(/requires fs-write \+ network-local/);
+    // Never read as "no network" or "open network" by a backend that cannot do it.
+    expect(bwrap.calls).toHaveLength(0);
+  });
+
   it("an empty maskPaths list does not require the dimension", async () => {
     const { dsh, bwrap } = entries();
     const svc = await service([

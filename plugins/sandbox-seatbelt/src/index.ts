@@ -15,6 +15,7 @@
  *   (allow file-write* (literal "/dev/null") …)     …beyond the required sinks
  *   [workspace-write] (allow file-write* (subpath <root>) …)
  *   [network: none]   (deny network*)
+ *   [network: local]  (deny network*) then allow localhost: outbound to, bind and inbound on it
  *   [mask-paths]      (deny file-read* file-write* (subpath <p>))
  *
  * Rule ORDER is the counterpart to bwrap's mount order: in SBPL the LAST matching rule
@@ -123,6 +124,16 @@ export function seatbeltProfile(policy: SandboxPolicy): string {
     // Seatbelt filters network natively: no sockets at all, outbound or inbound.
     forms.push("(deny network*)");
   }
+  if (policy.network === "local") {
+    // Everything is denied, then the host's loopback is let back in: connecting to a local
+    // server, and binding and accepting on localhost for one's own. Later rules win in SBPL.
+    forms.push(
+      "(deny network*)",
+      '(allow network-outbound (remote ip "localhost:*"))',
+      '(allow network-bind (local ip "localhost:*"))',
+      '(allow network-inbound (local ip "localhost:*"))',
+    );
+  }
   // LAST: a mask must outrank the write allowances above, including a masked path that
   // happens to sit inside the workspace.
   for (const target of policy.maskPaths ?? []) {
@@ -188,7 +199,7 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
   const probe = internals.probe ?? defaultProbe;
   let usable: boolean | undefined;
   return {
-    dimensions: ["fs-write", "network", "mask-paths"],
+    dimensions: ["fs-write", "network", "network-local", "mask-paths"],
     confine(argv, policy): ConfinedArgv {
       usable ??= probe(PROBE_TIMEOUT_MS, runner);
       if (!usable) {
@@ -221,7 +232,7 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
       {
         id: "sandbox-seatbelt.provider",
         name: "penguin-seatbelt",
-        dimensions: ["fs-write", "network", "mask-paths"],
+        dimensions: ["fs-write", "network", "network-local", "mask-paths"],
       },
     ],
   },

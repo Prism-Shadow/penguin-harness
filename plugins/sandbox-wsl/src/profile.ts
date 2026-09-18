@@ -101,6 +101,12 @@ export interface ProfileHost {
 /** The bubblewrap arguments for one policy: everything before `--` and the command. */
 export function bwrapArgs(policy: SandboxPolicy, host: ProfileHost): string[] {
   const full = policy.mode === "danger-full-access";
+  if (policy.network === "local") {
+    // bwrap's empty network namespace also loses the host's loopback, so "localhost only" has
+    // no spelling here. The service never routes it here (no network-local dimension); refuse
+    // rather than read it as an open network.
+    throw new Error("penguin-wsl cannot confine to the local network (localhost only)");
+  }
   const args = ["--die-with-parent", "--unshare-all"];
   if (policy.network !== "none") args.push("--share-net");
   args.push(full ? "--bind" : "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc");

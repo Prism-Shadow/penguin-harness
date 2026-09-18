@@ -32,6 +32,7 @@ profile is assembled in this sequence:
 | writable temp (either mode) | `--tmpfs /tmp`, `--bind <tmpdir> <same>` when `$TMPDIR` is elsewhere |
 | `workspace-write` | `--bind <workspaceRoot> <same>` |
 | `network: none` | `--unshare-net` |
+| `network: local` | not supported: an empty network namespace loses the host's loopback too |
 | `mask-paths` | `--tmpfs <dir>` or `--ro-bind /dev/null <file>` |
 
 Masking comes last on purpose: the entries have to shadow the read-only bind of `/` that

@@ -211,7 +211,7 @@ export interface SandboxSlots {
     schema: {
       "settings?": {
         mode: "'read-only'|'workspace-write'|'danger-full-access'",
-        "network?": "'none'",
+        "network?": "'none'|'local'",
         "maskPaths?": "string[]",
       },
     },

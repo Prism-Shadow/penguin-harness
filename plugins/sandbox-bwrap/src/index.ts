@@ -110,6 +110,12 @@ export function bwrapProfileArgs(policy: SandboxPolicy): string[] {
     if (root === "/tmp") continue; // already a writable tmpfs above
     args.push("--bind", root, root);
   }
+  if (policy.network === "local") {
+    // An empty network namespace also loses the host's loopback, so "localhost only" has no
+    // spelling here. The service never routes it here (no network-local dimension); refuse
+    // rather than read it as an open network.
+    throw new Error("penguin-bwrap cannot confine to the local network (localhost only)");
+  }
   if (policy.network === "none") args.push("--unshare-net");
   for (const target of policy.maskPaths ?? []) {
     const resolved = path.resolve(target);
