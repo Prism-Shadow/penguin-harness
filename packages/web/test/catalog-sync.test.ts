@@ -2,8 +2,9 @@
  * catalog-sync.ts unit tests: the "sync presets" merge — union of the local model table and
  * the built-in catalog, catalog winning on differing preset entries (their promotion included,
  * outside the Penguin Go group), local additions and credentials untouched, the display name
- * filled but never overwritten — plus `catalogDelta`, the same question asked of a saved table
- * so the Models nav badge can answer it before the page has loaded any rows.
+ * filled but never overwritten, a retired catalog row updated where the table carries it and
+ * never added — plus `catalogDelta`, the same question asked of a saved table so the Models nav
+ * badge can answer it before the page has loaded any rows.
  *
  * The last block is the one that matters most: the badge and the button must never disagree
  * about whether there is anything to do, so every case above is replayed through both.
@@ -12,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   PENGUIN_GO_PROVIDER_ID,
   catalogEntryFor,
+  catalogModelEntries,
   presetModelEntries,
 } from "@prismshadow/penguin-core/model-catalog";
 import type { ModelsResponse } from "@prismshadow/penguin-server/api";
@@ -89,7 +91,7 @@ const PRESET: PresetEntry[] = [
   },
   {
     provider: "qwen-token-plan",
-    model_id: "glm-5.2",
+    model_id: "glm-5.3",
     context_window: 1048576,
     client_type: "openai-chat",
     pricing: { unit: "usd_per_mtok", cache_read: 0.285714, cache_write: 1.142857, output: 4 },
@@ -123,12 +125,23 @@ const PENGUIN_GO: PresetEntry = presetModelEntries().find(
   (p) => p.provider === PENGUIN_GO_PROVIDER_ID,
 )!;
 
+/**
+ * A retired catalog row (see `ModelCatalogEntry.retired`), found rather than named: the catalog
+ * keeps one only for the Projects created while it was still a preset.
+ */
+const RETIRED: PresetEntry = catalogModelEntries().find(
+  (p) => catalogEntryFor(p.provider, p.model_id)?.retired === true,
+)!;
+
+/** A price no catalog row carries, standing in for one an older release stored. */
+const STALE_PRICING = { cacheRead: 1, cacheWrite: 2, output: 3 } as ModelDto["pricing"];
+
 describe("syncRowsWithCatalog", () => {
   it("adds catalog entries missing locally (gateway base URL preset, original null -> new on PUT)", () => {
     const { rows, added, updated } = syncRowsWithCatalog([], PRESET);
     expect(added).toBe(3);
     expect(updated).toBe(0);
-    const glm = rows.find((r) => r.provider === "qwen-token-plan" && r.modelId === "glm-5.2")!;
+    const glm = rows.find((r) => r.provider === "qwen-token-plan" && r.modelId === "glm-5.3")!;
     expect(glm.original).toBeNull();
     expect(glm.clientType).toBe("openai-chat");
     expect(glm.baseUrl).toBe("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1");
@@ -138,7 +151,7 @@ describe("syncRowsWithCatalog", () => {
     // The catalog's name travels with the new row: a preset entry carries none (the persisted
     // shape only stores a name that differs from the catalog), so a row built without it would
     // reach the PUT nameless and be saved as a model whose name the user cleared.
-    expect(glm.displayName).toBe(catalogName("qwen-token-plan", "glm-5.2"));
+    expect(glm.displayName).toBe(catalogName("qwen-token-plan", "glm-5.3"));
     // The lookup is against the shipped catalog, not against this list: `qwen3.8-max-preview`
     // left the Token Plan lineup, so the pair resolves to nothing and the row stays nameless
     // (falling back to its model id) rather than picking up an empty name.
@@ -216,7 +229,7 @@ describe("syncRowsWithCatalog", () => {
     expect(row.contextWindow).toBe("1000000"); // catalog-owned field reset
     expect(row.maxTokens).toBe("4096"); // user field survives the {...row, ...fields} merge
     // Fresh catalog rows default to inherit (no preset output cap exists).
-    expect(rows.find((r) => r.modelId === "glm-5.2")!.maxTokens).toBe("");
+    expect(rows.find((r) => r.modelId === "glm-5.3")!.maxTokens).toBe("");
   });
 
   it("keeps locally added models (including user-defined groups) verbatim and in place", () => {
@@ -395,7 +408,7 @@ describe("catalogDelta", () => {
       updated: 1,
       refs: [
         "deepseek/deepseek-v4-pro",
-        "qwen-token-plan/glm-5.2",
+        "qwen-token-plan/glm-5.3",
         "qwen-token-plan/qwen3.8-max-preview",
       ],
     });
@@ -411,7 +424,7 @@ describe("catalogDelta", () => {
       updated: 1,
       refs: [
         "deepseek/deepseek-v4-pro",
-        "qwen-token-plan/glm-5.2",
+        "qwen-token-plan/glm-5.3",
         "qwen-token-plan/qwen3.8-max-preview",
       ],
     });
@@ -439,7 +452,7 @@ describe("catalogDelta", () => {
    * read the same way, or a dot would lead to a button answering "already up to date".
    */
   it("agrees with the sync merge on every table shape, against the real catalog", () => {
-    const presets = [...PRESET, PROMOTED, PENGUIN_GO];
+    const presets = [...PRESET, PROMOTED, PENGUIN_GO, RETIRED];
     const tables: ModelDto[][] = [
       [],
       [makeDto({ provider: "deepseek", modelId: "deepseek-v4-pro" })],
@@ -447,7 +460,7 @@ describe("catalogDelta", () => {
       [
         makeDto({
           provider: "qwen-token-plan",
-          modelId: "glm-5.2",
+          modelId: "glm-5.3",
           clientType: "openai-chat",
           credential: { baseUrl: "http://my-proxy" } as ModelDto["credential"],
         }),
@@ -462,6 +475,9 @@ describe("catalogDelta", () => {
       [inSyncDto(PROMOTED, { discount: PROMOTED_DISCOUNT })],
       [inSyncDto(PRESET[0]!, { discount: 0.3 })],
       [inSyncDto(PENGUIN_GO, { discount: 0.5 })],
+      // A retired row, carried in sync and at a stale price (every other table lacks it).
+      [inSyncDto(RETIRED)],
+      [inSyncDto(RETIRED, { pricing: STALE_PRICING })],
     ];
     for (const table of tables) {
       const merged = syncRowsWithCatalog(table.map(toRow), presets);
@@ -496,5 +512,46 @@ describe("catalogDelta", () => {
     expect(noticeCounts(todo)).toEqual({ added: merged.added, updated: merged.updated });
     // And the dot the notice sits under is raised from the same total.
     expect((noticeCounts(todo).added ?? 0) + noticeCounts(todo).updated).toBe(todo.count);
+  });
+});
+
+/**
+ * A retired row stays in the catalog only for the Projects that already carry it. The sync keeps
+ * such a row on the catalog's price, the only price its off-peak tier applies to, and never adds
+ * it anywhere else. Both cases run against the shipped catalog, the list the page and the badge
+ * actually use.
+ */
+describe("retired catalog rows", () => {
+  const ref = (p: { provider: string; modelId: string }): string => `${p.provider}/${p.modelId}`;
+
+  it("a retired row the table carries at a stale price is updated, and the badge counts it", () => {
+    const stale = inSyncDto(RETIRED, { pricing: STALE_PRICING });
+    const merged = syncRowsWithCatalog([toRow(stale)]);
+    expect(merged.updated).toBe(1);
+    expect(merged.rows[0]).toMatchObject({
+      provider: RETIRED.provider,
+      modelId: RETIRED.model_id,
+      cacheRead: String(RETIRED.pricing!.cache_read),
+      cacheWrite: String(RETIRED.pricing!.cache_write),
+      output: String(RETIRED.pricing!.output),
+    });
+
+    // The badge raises the same update: the row is one of the entries its dot counts.
+    const todo = presetUpdateTodo(catalogDelta([stale]))!;
+    expect(todo.items).toContain(ref(stale));
+    expect(noticeCounts(todo).updated).toBe(1);
+    // Back on the catalog's price, the row leaves nothing to do.
+    expect(catalogDelta([inSyncDto(RETIRED)]).refs).not.toContain(ref(stale));
+  });
+
+  it("a table without the retired row never gets it, from the sync or the badge", () => {
+    const refOf = (p: PresetEntry): string => ref({ provider: p.provider, modelId: p.model_id });
+    const presets = presetModelEntries().map(refOf);
+    expect(presets).not.toContain(refOf(RETIRED));
+
+    const merged = syncRowsWithCatalog([]);
+    expect(merged.rows.map(ref)).toEqual(presets);
+    expect(merged.added).toBe(presets.length);
+    expect(catalogDelta([]).refs).toEqual(presets);
   });
 });

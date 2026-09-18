@@ -31,11 +31,12 @@ export interface SessionRow {
   /**
    * Creating client: "web" (created via the Web App), "cli" (created through the API by
    * the CLI, or adopted from a Trace a legacy CLI-direct run left behind), "org" (opened by
-   * the organization runtime — a desk or a ticket session); NULL = legacy row from before
-   * the column existed, treated as web. Free text in SQLite, so a new value needs no
-   * migration. Provenance that outlives its organization: development mode's list is the
-   * one reader that filters on it, and it hides "org" rows whether or not the organization
-   * still exists. The schedule/subagent SOURCE is deliberately NOT a row field — core
+   * the organization runtime — a desk or a ticket session — or spawned as a sub-session of
+   * one, which inherits the stamp at registration); NULL = legacy row from before the column
+   * existed, treated as web. Free text in SQLite, so a new value needs no migration.
+   * Provenance that outlives its organization: development mode's list is the one reader
+   * that filters on it (through the list's `excludeOrg`), and it hides "org" rows whether or
+   * not the organization still exists. The schedule/subagent SOURCE is deliberately NOT a row field — core
    * session_meta in the Trace stays the single source of truth for it
    * (runtime/session-sources.ts); `client` is a separate, DB-only axis that meta never
    * records.
@@ -152,7 +153,7 @@ export class SessionsRepo implements SessionIndex {
   /**
    * Stamp `client = "org"` on the rows an organization's files name, leaving the ones
    * already stamped alone. The reconcile pass calls it with every session the desk ledger
-   * and the tickets' `Sessions` headers claim, so a row opened before the marker existed
+   * and the tickets' `sessions` fields claim, so a row opened before the marker existed
    * carries the organization's provenance from the next pass on — and keeps it when the
    * organization is deleted or company mode is switched off, which is exactly when the
    * organization caches can no longer answer for it. Chunked because the id list is

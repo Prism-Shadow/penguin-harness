@@ -43,8 +43,9 @@ export const zh = {
 
   sections: {
     start: "开始",
-    design: "核心设计",
     guides: "使用指南",
+    advanced: "进阶功能",
+    design: "工作原理",
     reference: "参考",
   } as Record<string, string>,
 

@@ -5,9 +5,9 @@
  * see lib/omni/memory-changes.ts for what qualifies and what is filtered).
  *
  * Clicking a row opens the Memory side panel directly on that memory's content; the
- * header's brain button opens the panel on its list. A changed file that was deleted in a
- * later turn is filtered out (deletedKeys) — the row disappears here just as it does from
- * the panel's list; the whole card hides when nothing survives.
+ * header's "Open memory list" text action opens the panel on its list. A changed file that
+ * was deleted in a later turn is filtered out (deletedKeys) — the row disappears here just as
+ * it does from the panel's list; the whole card hides when nothing survives.
  */
 import { useState } from "react";
 import { S } from "../../lib/strings";
@@ -33,7 +33,7 @@ export function MemoryChangesCard({
   deletedKeys?: ReadonlySet<string>;
   /** Row click: open the Memory panel on this row's content; rows render as plain rows if this isn't wired up. */
   onLocateChange?: (row: MemoryChangeRow) => void;
-  /** Header button: open the Memory panel on its list; the button doesn't render if this isn't wired up. */
+  /** Header text action: open the Memory panel on its list; the action doesn't render if this isn't wired up. */
   onOpenPanel?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -69,7 +69,9 @@ export function MemoryChangesCard({
   return (
     <div className="anim-msg my-3 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
       {/* Header bar, mirroring the file-summary card: "icon + N memory updates", plus the one
-          card-level action (rows navigate to their own content, so this doesn't duplicate them). */}
+          card-level action (rows navigate to their own content, so this doesn't duplicate them).
+          The action is words, in the rows' own "View content" hint style: a brain glyph here
+          would only repeat the card's own mark beside it, and say nothing of where it leads. */}
       <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 dark:border-gray-800/60 dark:bg-gray-800/40">
         <GlyphIcon d={MEMORY_ICON} size={ICON_SIZE.rowLead} className="shrink-0 text-gray-400" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
@@ -78,12 +80,10 @@ export function MemoryChangesCard({
         {onOpenPanel && (
           <button
             type="button"
-            title={S.chat.memoryViewTitle}
             onClick={onOpenPanel}
-            className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:hover:text-gray-300"
+            className="shrink-0 cursor-pointer text-xs text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
           >
-            <GlyphIcon d={MEMORY_ICON} size={ICON_SIZE.inlineGlyph} />
-            <span className="sr-only">{S.chat.memoryViewTitle}</span>
+            {S.chat.memoryOpenList}
           </button>
         )}
       </div>

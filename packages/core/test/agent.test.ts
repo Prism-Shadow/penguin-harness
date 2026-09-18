@@ -241,10 +241,10 @@ describe("Agent.createSession model reference ((provider, model_id) pair)", () =
     const ws = path.join(tmpRoot, "ws-ref-half");
     await fs.mkdir(ws, { recursive: true });
     // A bare model_id is never resolved against the config, not even when exactly one entry
-    // carries it (deepseek-v4-flash is unique here): the group is the caller's to name.
-    await expect(
-      agent.createSession({ workspaceDir: ws, modelId: "deepseek-v4-flash" }),
-    ).rejects.toThrow(/must be given as a \(provider, model_id\) pair/);
+    // carries it (gpt-6-astra is unique here): the group is the caller's to name.
+    await expect(agent.createSession({ workspaceDir: ws, modelId: "gpt-6-astra" })).rejects.toThrow(
+      /must be given as a \(provider, model_id\) pair/,
+    );
     // The mirror case: provider alone is not a reference either.
     await expect(agent.createSession({ workspaceDir: ws, provider: "deepseek" })).rejects.toThrow(
       /must be given as a \(provider, model_id\) pair/,

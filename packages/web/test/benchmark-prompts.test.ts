@@ -24,7 +24,6 @@ import {
   evaluateTail,
   isValidRuns,
   optimizeTail,
-  slugFromTitle,
 } from "../src/features/benchmark/benchmark-prompts";
 
 describe("benchmarkCreateTail", () => {
@@ -268,12 +267,6 @@ describe("askCaseTail (the case dialog's Ask AI question)", () => {
 });
 
 describe("id helpers", () => {
-  it("slugFromTitle keeps ASCII words, folds separators, and yields nothing for a CJK title", () => {
-    expect(slugFromTitle("Report Writing (hard) v1")).toBe("report-writing-hard-v1");
-    expect(slugFromTitle("  报告写作  ")).toBe("");
-    expect(slugFromTitle("--a__b--")).toBe("a-b");
-  });
-
   it("caseId pads the position to three digits", () => {
     expect(caseId(1, "contradictions")).toBe("CASE-001-contradictions");
     expect(caseId(12, "x")).toBe("CASE-012-x");

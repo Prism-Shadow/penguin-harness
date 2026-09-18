@@ -209,6 +209,7 @@ export async function makeOrgHarness(opts: {
       }),
       dailyCostForSessions: async () => [],
     },
+    messagingChannel: () => null,
     errors: { record: (e) => void errors.push(e) },
     notifyProject: (_p, event) => void events.push(event),
     companyModeEnabled: () => flags.companyMode,

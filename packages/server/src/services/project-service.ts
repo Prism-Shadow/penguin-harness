@@ -175,6 +175,21 @@ export class ProjectService implements ProjectLifecycle {
   }
 
   /**
+   * Every id `createProject` refuses as taken, as names only: every row, and every name already
+   * under the data root, where the Project's directory would go — a directory with no row
+   * included, which no Project list shows.
+   */
+  async takenProjectIds(): Promise<string[]> {
+    let entries: string[] = [];
+    try {
+      entries = await fs.readdir(this.root);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    return [...new Set([...this.projects.listAll().map((p) => p.projectId), ...entries])];
+  }
+
+  /**
    * Initial Project provisioned at signup:
    * the built-in admin adopts `default_project` (if the directory already exists,
    * it's adopted directly without overwriting existing config — shared with the

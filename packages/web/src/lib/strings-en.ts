@@ -5,6 +5,7 @@
  * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
  * of a label/sentence or in a proper name (Agent State, AgentHub).
  */
+import type { PeakWindows } from "../features/models/model-grouping";
 import type { Strings } from "./strings";
 
 export const en: Strings = {
@@ -435,6 +436,39 @@ export const en: Strings = {
     time: "Time",
   },
 
+  /**
+   * The id field every create dialog with a semantic id wears (features/semantic-id): a Project's,
+   * an Agent's, a Benchmark's, an organization's and a channel's.
+   */
+  semanticId: {
+    /**
+     * The id field's generate button — its label says who proposes the id, its tooltip says
+     * what the proposal is derived from — and the clause the hint appends for it. The clause
+     * carries its own leading separator: what joins two clauses is punctuation, and
+     * punctuation belongs to the language.
+     */
+    generateIdLabel: "Generate with AI",
+    generateId: "Generate an id from the name",
+    idGenerateHint: "; you can also generate one from the display name",
+    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
+    idSuggest: {
+      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
+      fromName: "Transliterated from the name",
+      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
+      placeholder: (reason: string): string =>
+        `The model gave no usable id (${reason}); a placeholder was filled in — please change it to something meaningful`,
+      /** Why the proposal fell through, keyed by the server's reason code. */
+      reasons: {
+        no_default_model: "no default model configured",
+        model_failed: "the model request failed",
+        unusable_answer: "the model's answer was unusable",
+        no_ascii: "the name carries no ASCII to transliterate",
+      },
+      /** A reason a newer server named and this build does not know. */
+      reasonUnknown: "reason unknown",
+    },
+  },
+
   auth: {
     usernameHint:
       "2–32 chars: starts with a lowercase letter; lowercase letters, digits and underscores only",
@@ -528,9 +562,9 @@ export const en: Strings = {
     createTitle: "New Project",
     id: "Project id",
     idHint:
-      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
+      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only; cannot be changed later",
     idPrefixHint:
-      "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores. Cannot be changed later.",
+      "The id is prefixed with your username and a hyphen; append lowercase letters, digits or underscores; cannot be changed later",
     displayName: "Display name",
     /** Create dialog only: leaving the name empty falls back to the id. In Project settings the saved name cannot be blanked. */
     displayNameHint: "Leave empty to use the Project id as the name",
@@ -617,7 +651,9 @@ export const en: Strings = {
     createTitle: "Create agent",
     id: "Agent id",
     idHint:
-      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only. Cannot be changed later.",
+      "2–64 chars: starts with a lowercase letter; lowercase letters, digits and underscores only; cannot be changed later",
+    /** The id field's generation clause: the create dialog's name field is labelled Name, not display name. */
+    idGenerateHint: "; you can also generate one from the name",
     nameHint: "Leave empty to use the agent id as the name",
     description: "Description",
     createPlugins: "Plugins",
@@ -1092,8 +1128,19 @@ export const en: Strings = {
     recommendedGroup: "Recommended",
     discountBadge: (pct: number): string => `${pct}% off`,
     discountTitle: (pct: number): string => `Promotion: ${pct}% off the list price`,
-    offPeakTitle: (pct: number): string =>
-      `Off-peak rate: ${pct}% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday`,
+    offPeakTitle: (pct: number, peak: PeakWindows): string => {
+      const day = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+      const days = peak.everyDay
+        ? "every day"
+        : peak.days
+            .map(([from, to]) =>
+              from === to ? day[from - 1] : `${day[from - 1]} to ${day[to - 1]}`,
+            )
+            .join(", ");
+      const clock = (hour: number): string => `${String(hour).padStart(2, "0")}:00`;
+      const hours = peak.hours.map(([from, to]) => `${clock(from)}–${clock(to)}`).join(" and ");
+      return `Off-peak rate: ${pct}% off list. Peak hours bill at list price — ${hours} Beijing time, ${days}`;
+    },
     visionModelBadge: "Proxy vision",
     usedTokens: (v: string) => `${v} toks`,
     usedTokensTitle: "Tokens this model has used, all time",
@@ -2210,6 +2257,10 @@ Scenarios:
     processRemove: "Remove",
     /** Remove button tooltip: removal also drops the output captured from that process. */
     processRemoveHint: "Remove this entry — the output captured from it is discarded too",
+    /** The list heading's text action: removes every exited entry at once; its hint says the captured output goes too. */
+    processClearExited: "Clear exited",
+    processClearExitedHint:
+      "Clear every exited process — the output captured from them is discarded too",
     statTokens: "Total Tokens",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "Total Tokens",
@@ -2244,6 +2295,8 @@ Scenarios:
     memoryChangedMark: "Changed in this conversation",
     memoryContentUnavailable: "Content unavailable (the file may have been moved or deleted)",
     memoryRowOpen: "View content",
+    /** The memory-change card header's text action: opens the Memory panel on its list (a visible label rather than a second brain glyph beside the card's own). */
+    memoryOpenList: "Open memory list",
     memoryBack: "Back to the list",
     memoryEmptyAll: "No memory yet — say “remember …” in a chat to have the agent save one",
     /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
@@ -3257,6 +3310,8 @@ Scenarios:
     idField: "Benchmark id",
     idHint:
       "The directory name is the identifier: letters, digits, _ and - only, e.g. report-writing-v1",
+    /** The id field's generation clause: a Benchmark is named by its title, not a display name. */
+    idGenerateHint: "; you can also generate one from the title",
     idExists: "A Benchmark with this id already exists; pick another",
     titleField: "Title",
     descriptionField: "Description",
@@ -3403,32 +3458,6 @@ Scenarios:
     orgId: "Organization id",
     orgIdHint:
       "2–64 characters: a lowercase letter, then lowercase letters, digits or underscores; also the directory name, fixed once created",
-    /**
-     * The id field's generate button — its label says who proposes the id, its tooltip says
-     * what the proposal is derived from — and the clause the hint appends for it. The clause
-     * carries its own leading separator: what joins two clauses is punctuation, and
-     * punctuation belongs to the language.
-     */
-    generateIdLabel: "Generate with AI",
-    generateId: "Generate an id from the name",
-    idGenerateHint: "; you can also generate one from the display name",
-    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
-    idSuggest: {
-      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
-      fromName: "Transliterated from the name",
-      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
-      placeholder: (reason: string): string =>
-        `The model gave no usable id (${reason}); a placeholder was filled in — please change it to something meaningful`,
-      /** Why the proposal fell through, keyed by the server's reason code. */
-      reasons: {
-        no_default_model: "no default model configured",
-        model_failed: "the model request failed",
-        unusable_answer: "the model's answer was unusable",
-        no_ascii: "the name carries no ASCII to transliterate",
-      },
-      /** A reason a newer server named and this build does not know. */
-      reasonUnknown: "reason unknown",
-    },
     displayName: "Display name",
     displayNameHint: "Leave empty to use the organization id",
     mission: "Mission",
@@ -3442,7 +3471,7 @@ Scenarios:
       research: {
         name: "Research Paper Lab",
         mission:
-          "Set up a company that does research for me: keeps drafting and reviewing papers and produces work that can be submitted to top-tier conferences.",
+          "Set up a company that does research for me and produces papers fit for top-tier conferences. Experiments run autoresearch-style: fix the evaluation script and the metric first, edit one file only, give every experiment the same time budget, log each result as one line and keep only the changes that improve the metric. Before any experiment loop starts, the researcher asks me in the channel for resources — the machine and its GPU/CPU, concurrency, total hours, disk and data, paid APIs — then runs unattended inside what I approved and asks again before exceeding it. Papers go through adversarial review between two kinds of employee: reviewers reproduce the results, check baselines and ablations, hunt for test-set leakage and metric gaming, and return a score with required changes; authors revise or rebut point by point until the reviewer accepts.",
       },
       agentTuning: {
         name: "Agent Tuning Studio",

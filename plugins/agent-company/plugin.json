@@ -1,9 +1,9 @@
 {
-  "description": "Run a Project's agents as a company: create the organization with the user one question at a time, then the employee protocol every desk and ticket session follows (trigger blocks, the ticket board, channel etiquette, budgets), plus the CEO, HR and finance playbooks — mission to tickets, hiring and calendars, budgets and cost audits — and the mirror protocol for a company of digital twins that relays between real people.",
-  "description_zh": "把 Project 里的 Agent 组织成一家公司：先与用户一问一答地创建组织，再是每个工位会话与工单会话都遵循的员工协议（触发块、工单看板、频道礼仪、预算），以及 CEO、人事与财务的操作手册——使命拆解为工单、招募与日程、预算与成本巡检——还有让数字分身在真人之间传话的镜像协议。",
-  "short_description": "Company setup plus the employee, CEO, HR, finance and mirror playbooks.",
-  "short_description_zh": "创建组织，以及员工、CEO、人事、财务、镜像公司的操作手册。",
-  "version": "2026.09.14.3",
+  "description": "Run a Project's agents as a company: create the organization with the user one question at a time, then the employee protocol every desk and ticket session follows (trigger blocks, the ticket board, channel etiquette, budgets, asking the board before heavy or irreversible work), plus the CEO, HR and finance playbooks — mission to tickets, hiring and calendars, budgets and cost audits — the research protocol (an autoresearch-style experiment loop inside a resource envelope the board approved, and adversarial review between authors and reviewers), and the mirror protocol for a company of digital twins that relays between real people.",
+  "description_zh": "把 Project 里的 Agent 组织成一家公司：先与用户一问一答地创建组织，再是每个工位会话与工单会话都遵循的员工协议（触发块、工单看板、频道礼仪、预算、重负载或不可逆的事先向董事会请示），以及 CEO、人事与财务的操作手册——使命拆解为工单、招募与日程、预算与成本巡检——还有科研协议（在董事会批准的资源额度内跑 autoresearch 式实验循环、作者与审稿人对抗评审），以及让数字分身在真人之间传话的镜像协议。",
+  "short_description": "Company setup plus the employee, CEO, HR, finance, research and mirror playbooks.",
+  "short_description_zh": "创建组织，以及员工、CEO、人事、财务、科研、镜像公司的操作手册。",
+  "version": "2026.09.17.2",
   "category": "agent-company",
   "preinstall": false
 }

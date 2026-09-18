@@ -797,6 +797,70 @@ describe("session-index", () => {
     }
   });
 
+  it("excludeOrg=1 serves the user's own rows only: an organization's Sessions leave the page, the totals, the Workspace breakdown and its stamps together", async () => {
+    await configureModels();
+    const own = ((await (await api.post(base(), {})).json()) as SessionCreateResponse).session
+      .sessionId;
+    // A desk session, stamped at creation — and newer than every own row, so it would head
+    // the unfiltered stream. A ticket session the organization caches name but the reconcile
+    // pass has not stamped yet: the same predicate must catch it through `orgId`.
+    const desk = "session-2027-01-01-09-00-00-0abc0011";
+    const ticket = "session-2027-01-01-09-30-00-0abc0012";
+    for (const [sessionId, createdAt, client] of [
+      [desk, "2027-01-01T09:00:00.000Z", "org"],
+      [ticket, "2027-01-01T09:30:00.000Z", undefined],
+    ] as const) {
+      t.deps.sessionsRepo.insert({
+        sessionId,
+        projectId,
+        agentId: "default_agent",
+        provider: "custom",
+        modelId: "m-org",
+        workspace: "/tmp/w-org",
+        approvalMode: "allow-all",
+        title: null,
+        ...(client !== undefined ? { client } : {}),
+        createdAt,
+        lastActiveAt: createdAt,
+      });
+    }
+    t.deps.orgCacheRepo.addTicketSession(
+      projectId,
+      "acme",
+      "2026-09-02-site",
+      ticket,
+      "default_agent",
+    );
+    const list = async (qs: string) => {
+      const res = await api.get(`${base()}${qs}`);
+      expect(res.status, qs).toBe(200);
+      return (await res.json()) as SessionsResponse;
+    };
+    const ids = (body: SessionsResponse) => body.sessions.map((s) => s.sessionId);
+
+    // Without the flag the list keeps its whole-stream contract: every row, every total.
+    const full = await list("?counts=1");
+    expect(ids(full)).toEqual([ticket, desk, own]);
+    expect(full.counts!.active).toBe(3);
+    expect(full.workspaceCounts!["/tmp/w-org"]!.active).toBe(2);
+    expect(full.workspaceLatest!["/tmp/w-org"]).toBe("2027-01-01T09:30:00.000Z");
+
+    // With it, the organization's rows are gone from every part of the answer at once — a
+    // total or a stamp that still counted them would conjure their Workspace as a group.
+    const mine = await list("?counts=1&excludeOrg=1");
+    expect(ids(mine)).toEqual([own]);
+    expect(mine.counts!.active).toBe(1);
+    expect(mine.workspaceCounts!["/tmp/w-org"]).toBeUndefined();
+    expect(mine.workspaceLatest!["/tmp/w-org"]).toBeUndefined();
+    // Paging and the category filter walk the filtered stream: the first own row is the
+    // first row, not the third.
+    expect(ids(await list("?excludeOrg=1&limit=1&offset=0"))).toEqual([own]);
+    expect(ids(await list("?excludeOrg=1&category=active&limit=1&offset=0"))).toEqual([own]);
+    expect(ids(await list("?excludeOrg=1&limit=1&offset=1"))).toEqual([]);
+
+    expect((await api.get(`${base()}?excludeOrg=yes`)).status).toBe(400);
+  });
+
   it("PATCH approval mode persists and reads back", async () => {
     await configureModels();
     const { session } = (await (await api.post(base(), {})).json()) as SessionCreateResponse;

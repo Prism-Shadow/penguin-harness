@@ -88,6 +88,8 @@ export abstract class ProjectLifecycle extends Interface<{
   accessibleProjectIds(userId: string): string[];
   listProjects(userId: string): Promise<ProjectSummary[]>;
   createProject(owner: UserRow, projectId: string, name?: string): Promise<ProjectSummary>;
+  /** Every id `createProject` refuses as taken, as names only: the rows and the data root's entries. */
+  takenProjectIds(): Promise<string[]>;
   provisionInitialProject(user: UserRow, isAdmin: boolean): Promise<void>;
   renameProject(userId: string, projectId: string, name: string): Promise<ProjectSummary>;
   deleteProject(userId: string, projectId: string): Promise<void>;

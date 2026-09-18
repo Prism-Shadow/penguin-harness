@@ -1910,15 +1910,6 @@ describe("telegram binding routes and connector loop", () => {
     await settle(40);
     expect(runs).toHaveLength(1);
   });
-
-  it("the session list marks a telegram-ENABLED row with messagingChannel telegram", async () => {
-    await bindEnabled(SID);
-    const res = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
-    const body = (await res.json()) as {
-      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
-    };
-    expect(body.sessions.find((s) => s.sessionId === SID)?.messagingChannel).toBe("telegram");
-  });
 });
 
 // ---------------------------------------------------------------------------

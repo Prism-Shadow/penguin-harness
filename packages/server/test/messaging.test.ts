@@ -18,12 +18,13 @@
  * its own to the last known chat as soon as it completes (the run's first one threaded onto
  * the inbound message in groups), the files the reply MENTIONED follow it (existing ones
  * only, pictures as pictures, capped by count and by size, escapes refused by the Workspace
- * file service), an approval_request sends the one-line notice behind whatever is already
- * going out, a binding with `linePerMessage` set delivers a reply one message per
- * non-blank line — paced, and with a refused message costing only itself — while an unset
- * one is byte-for-byte the original single message, and a binding with `finalReplyOnly` set
- * relays a run's last completed message alone, at the run's end, files included. No test
- * opens real network.
+ * file service, and whatever does not go out filed as an error record under the Project
+ * rather than announced in the chat), an approval_request sends the one-line notice behind
+ * whatever is already going out, a binding with `linePerMessage` set delivers a reply one
+ * message per non-blank line — paced, and with a refused message costing only itself — while
+ * an unset one is byte-for-byte the original single message, and a binding with
+ * `finalReplyOnly` set relays a run's last completed message alone, at the run's end, files
+ * included. No test opens real network.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -43,9 +44,11 @@ import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../src/services/attachment-limits.js";
+import { MESSAGE_MAX } from "../src/runtime/error-recorder.js";
 import {
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_MAX_LINE_MESSAGES,
+  MESSAGING_OUTBOUND_FILE_MAX_BYTES,
   MESSAGING_OUTBOUND_FILE_MAX_COUNT,
   MESSAGING_OUTBOUND_IMAGE_MAX_BYTES,
   MESSAGING_TEST_MESSAGE,
@@ -53,11 +56,8 @@ import {
   MESSAGING_UNSUPPORTED_NOTICE,
   MessagingBridge,
   chunkMessagingText,
-  messagingFileFailedNotice,
-  messagingFilePermissionNotice,
-  messagingFileTooLargeNotice,
   messagingFilesMissingLog,
-  messagingFilesSkippedNotice,
+  messagingFilesNotSentRecords,
   messagingImageBudgetNotice,
   messagingImageFailedNotice,
   messagingImagePermissionNotice,
@@ -75,11 +75,13 @@ import type {
   MessagingInboundImage,
   MessagingInboundMessage,
 } from "../src/runtime/messaging/connector.js";
+import { messagingErrorKind } from "../src/runtime/messaging/error-kind.js";
 import { FeishuConnector } from "../src/runtime/messaging/feishu-connector.js";
 import type { FeishuCard } from "../src/runtime/messaging/feishu-card.js";
 import { FeishuApiError } from "../src/runtime/messaging/feishu-sdk.js";
 import {
   MessagingPermissionError,
+  MessagingUnsupportedError,
   collectUnderCap,
   imageMimeOfName,
   isImageFileName,
@@ -636,6 +638,204 @@ describe("messaging media helpers", () => {
       throw new Error("socket hang up");
     };
     await expect(collectUnderCap(dies(), 1024, "The image")).rejects.toThrow("socket hang up");
+  });
+});
+
+describe("messagingFilesNotSentRecords", () => {
+  /** The console link Feishu hands out for `scopes`, on an app id of real length. */
+  const grantUrl = (scopes: readonly string[]) =>
+    `https://open.feishu.cn/app/cli_a5f8b2c3d4e6f00b/auth?q=${scopes.join(",")}&op_from=openapi&token_type=tenant`;
+  /**
+   * Feishu's scope denial for an upload, as larkFailure builds it off the wire (see
+   * messaging-wire.test.ts): Feishu's own bilingual `msg`, verbatim, which already names the
+   * scopes and the console link, then the code and a log_id that is new on every request.
+   */
+  const uploadDenied = (logId: number, scopes = ["im:resource:upload", "im:resource"]) =>
+    new MessagingPermissionError(
+      scopes,
+      grantUrl(scopes),
+      `Access denied. One of the following scopes is required: [${scopes.join(", ")}]. ` +
+        `应用尚未开通所需的应用身份权限：[${scopes.join(", ")}]，点击链接申请并开通任一权限即可：` +
+        `${grantUrl(scopes)} (code 99991672, log_id 2026091710101${logId}ABCDEF0123456789ABCD)`,
+    );
+  const picture = (fileName: string) => ({
+    fileName,
+    maxBytes: MESSAGING_OUTBOUND_IMAGE_MAX_BYTES,
+    asImage: true,
+  });
+
+  it("files one record per cause, not per file, each under its own kind", () => {
+    const records = messagingFilesNotSentRecords(
+      "feishu",
+      [picture("huge.png")],
+      [
+        { fileName: "a.md", err: new MessagingUnsupportedError("This channel takes no files") },
+        { fileName: "b.md", err: new Error("socket hang up") },
+        { fileName: "c.png", err: uploadDenied(1) },
+        { fileName: "d.md", err: new MessagingUnsupportedError("This channel takes no files") },
+      ],
+    );
+    // The causes somebody has to act on come first: the three send failures share a code, and
+    // the recorder keeps only the first same-code record inside its window.
+    expect(
+      records.map((record) => [
+        record.code,
+        messagingErrorKind(record.err, record.code),
+        record.err.message,
+      ]),
+    ).toEqual([
+      [
+        "messaging_file_send_failed",
+        "unexpected",
+        '"c.png" was not sent to the feishu chat: this bot\'s app is missing a permission.\n' +
+          "im:resource:upload, im:resource\n" +
+          grantUrl(["im:resource:upload", "im:resource"]),
+      ],
+      [
+        "messaging_file_send_failed",
+        "unexpected",
+        '"b.md" was not sent to the feishu chat: socket hang up',
+      ],
+      [
+        "messaging_file_send_failed",
+        "expected",
+        '2 files were not sent to the feishu chat: "a.md", "d.md"\nThis channel takes no files',
+      ],
+      [
+        "messaging_file_too_large",
+        "expected",
+        '"huge.png" was not sent to the feishu chat: it is larger than the 10MB limit for a picture',
+      ],
+    ]);
+  });
+
+  it("names every file once, then the reason they share, or a line each where it differs", () => {
+    const messages = (
+      oversize: Parameters<typeof messagingFilesNotSentRecords>[1],
+      refused: Parameters<typeof messagingFilesNotSentRecords>[2],
+    ): string[] =>
+      messagingFilesNotSentRecords("telegram", oversize, refused).map(
+        (record) => record.err.message,
+      );
+    expect(
+      messages(
+        [],
+        ["a.md", "b.md", "c.md"].map((fileName) => ({
+          fileName,
+          err: new Error("upload rejected"),
+        })),
+      ),
+    ).toEqual([
+      '3 files were not sent to the telegram chat: "a.md", "b.md", "c.md"\nupload rejected',
+    ]);
+    expect(
+      messages(
+        [],
+        [
+          { fileName: "a.md", err: new Error("Request Entity Too Large") },
+          { fileName: "b.md", err: new Error("socket hang up") },
+        ],
+      ),
+    ).toEqual([
+      '2 files were not sent to the telegram chat: "a.md", "b.md"\n' +
+        '"a.md": Request Entity Too Large\n' +
+        '"b.md": socket hang up',
+    ]);
+    expect(messages([picture("a.png"), picture("b.png")], [])).toEqual([
+      '2 files were not sent to the telegram chat: "a.png", "b.png"\n' +
+        "each is larger than the 10MB limit for a picture",
+    ]);
+    // A picture and a document are held back by different ceilings, so each names its own.
+    expect(
+      messages(
+        [
+          picture("chart.png"),
+          { fileName: "dump.csv", maxBytes: MESSAGING_OUTBOUND_FILE_MAX_BYTES, asImage: false },
+        ],
+        [],
+      ),
+    ).toEqual([
+      '2 files were not sent to the telegram chat: "chart.png", "dump.csv"\n' +
+        '"chart.png": larger than the 10MB limit for a picture\n' +
+        '"dump.csv": larger than the 30MB limit for a file',
+    ]);
+  });
+
+  it("names every file a permission held back, then lists its scopes and console links once", () => {
+    const files = ["chart.png", "notes.md", "data.csv"];
+    const [record] = messagingFilesNotSentRecords(
+      "feishu",
+      [],
+      [
+        { fileName: "chart.png", err: uploadDenied(1) },
+        { fileName: "notes.md", err: uploadDenied(2) },
+        { fileName: "data.csv", err: uploadDenied(3, ["im:resource"]) },
+      ],
+    );
+    const text = record!.err.message;
+    // Nothing Feishu said is quoted: its sentence repeats the fix and its log_id differs on every
+    // request, so quoting it gave each file its own line and ran the record into the cap.
+    expect(text).toBe(
+      '3 files were not sent to the feishu chat: "chart.png", "notes.md", "data.csv"\n' +
+        "this bot's app is missing a permission.\n" +
+        "im:resource:upload, im:resource\n" +
+        `${grantUrl(["im:resource:upload", "im:resource"])}\n` +
+        grantUrl(["im:resource"]),
+    );
+    expect(text.length).toBeLessThanOrEqual(MESSAGE_MAX);
+    const occurrences = (part: string): number => text.split(part).length - 1;
+    expect(occurrences("im:resource:upload, im:resource")).toBe(1);
+    expect(occurrences(grantUrl(["im:resource:upload", "im:resource"]))).toBe(1);
+    expect(occurrences(grantUrl(["im:resource"]))).toBe(1);
+    for (const fileName of files) expect(occurrences(`"${fileName}"`)).toBe(1);
+  });
+
+  it("stays under the recorder's cap, giving up names before any reason", () => {
+    // The recorder cuts a long message from its end, which is where the reasons are.
+    const names = ["a", "b", "c", "d", "e"].map((letter) => `${letter.repeat(120)}.md`);
+    const [shared] = messagingFilesNotSentRecords(
+      "wechat",
+      [],
+      names.map((fileName) => ({ fileName, err: new Error("upload rejected") })),
+    );
+    const sharedText = shared!.err.message;
+    expect(sharedText.length).toBeLessThanOrEqual(MESSAGE_MAX);
+    // The reason whole; the list cut short, and marked as cut.
+    expect(sharedText.endsWith('", …\nupload rejected')).toBe(true);
+    expect(sharedText).toContain(`"${names[0]}", `);
+    expect(sharedText).not.toContain(names[4]);
+
+    // Reasons too long to fit even without the list are cut alike, so every file keeps its
+    // line, its name and the start of its reason.
+    const files = ["chart.png", "notes.md", "data.csv", "report.pdf", "summary.md"];
+    const [perFile] = messagingFilesNotSentRecords(
+      "feishu",
+      [],
+      files.map((fileName, i) => ({
+        fileName,
+        err: new Error(
+          `Upload failed (log_id ${i}): ${"The platform answered 502 Bad Gateway. ".repeat(6)}`,
+        ),
+      })),
+    );
+    const perFileText = perFile!.err.message;
+    expect(perFileText.length).toBeLessThanOrEqual(MESSAGE_MAX);
+    expect(perFileText.startsWith("5 files were not sent to the feishu chat: …\n")).toBe(true);
+    for (const fileName of files) {
+      expect(perFileText).toContain(`\n"${fileName}": Upload failed (log_id `);
+    }
+
+    // A lone file has no list to give up: its reason is cut, and marked as cut.
+    const [lone] = messagingFilesNotSentRecords(
+      "telegram",
+      [],
+      [{ fileName: "a.md", err: new Error("x".repeat(600)) }],
+    );
+    expect(lone!.err.message.length).toBeLessThanOrEqual(MESSAGE_MAX);
+    expect(lone!.err.message.startsWith('"a.md" was not sent to the telegram chat: xxx')).toBe(
+      true,
+    );
+    expect(lone!.err.message.endsWith("x…")).toBe(true);
   });
 });
 
@@ -2034,23 +2234,6 @@ describe("messaging binding routes and bridge", () => {
     expect(fake.connections[1]!.closed).toBe(true);
   });
 
-  it("the session list marks rows with the ENABLED channel only", async () => {
-    // Saved but disabled: no indicator — the row marks live connections, not stored configs.
-    await api.put(BASE(SID), PUT_BODY);
-    const saved = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
-    const savedBody = (await saved.json()) as {
-      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
-    };
-    expect("messagingChannel" in savedBody.sessions.find((s) => s.sessionId === SID)!).toBe(false);
-
-    await api.post(`${BASE(SID)}/state`, { enabled: true });
-    const res = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
-    const body = (await res.json()) as {
-      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
-    };
-    expect(body.sessions.find((s) => s.sessionId === SID)?.messagingChannel).toBe("feishu");
-  });
-
   it("start() connects only enabled bindings and reconciles away rows whose Session is gone", async () => {
     t.deps.messagingRepo.upsert({
       sessionId: SID,
@@ -2526,6 +2709,38 @@ describe("messaging binding routes and bridge", () => {
       .prepare("SELECT code, kind FROM error_records WHERE source = 'messaging' ORDER BY id")
       .all() as Array<{ code: string; kind: string }>;
 
+  /** One messaging error record in full, attribution included. */
+  type FiledError = {
+    code: string;
+    kind: string;
+    message: string;
+    projectId: string | null;
+    agentId: string | null;
+    sessionId: string | null;
+  };
+
+  /** Every messaging record filed so far, oldest first — the whole row a cost center reads. */
+  const messagingErrorRecords = (): FiledError[] =>
+    t.deps.db
+      .prepare(
+        `SELECT code, kind, message, project_id AS projectId, agent_id AS agentId,
+                session_id AS sessionId
+         FROM error_records WHERE source = 'messaging' ORDER BY id`,
+      )
+      .all() as FiledError[];
+
+  /**
+   * A record as the second Session files it: under that Session's Project and Agent, which is
+   * what lets the cost center serve it to an ordinary member — a record with no Project reaches
+   * admins only.
+   */
+  const filedBySid2 = (record: Pick<FiledError, "code" | "kind" | "message">): FiledError => ({
+    ...record,
+    projectId,
+    agentId: "default_agent",
+    sessionId: SID2,
+  });
+
   let asks = 0;
   /** Message the bound Session from the chat, and wait for the run to start AND finish. */
   const askAndSettle = async (): Promise<void> => {
@@ -2565,6 +2780,9 @@ describe("messaging binding routes and bridge", () => {
       { kind: "image", target: "oc_chat_files", fileName: "chart.png", bytes: IMAGE_BYTES.length },
       { kind: "file", target: "oc_chat_files", fileName: "notes.md", bytes: 5 },
     ]);
+    // A batch that went out whole files nothing.
+    await settle(80);
+    expect(messagingErrorRecords()).toEqual([]);
   });
 
   it("delivers a file the reply names in a plain sentence, with no inline code", async () => {
@@ -2706,52 +2924,98 @@ describe("messaging binding routes and bridge", () => {
     });
   });
 
-  it("names an upload the app has no permission for, with the scopes and the grant link", async () => {
+  it("files an upload the app has no permission for with the scopes and the grant link, and tells the chat nothing", async () => {
     const ws = await makeWorkspace();
     await fs.writeFile(path.join(ws, "notes.md"), "hi");
     await bindWithWorkspace(ws, "Written up in `notes.md`.", "cli_scope");
     // The live failure: an app that receives messages happily is refused the upload until
-    // a resource scope is granted. That reached `error_records` and nowhere the person in
-    // the chat could look, so the feature simply appeared not to work.
+    // a resource scope is granted.
     fake.failMediaSendWith = new MessagingPermissionError(
       ["im:resource:upload", "im:resource"],
       "https://open.feishu.cn/app/cli_scope/auth?q=im:resource:upload",
       "Access denied (code 99991672)",
     );
     await askAndSettle();
-    await waitFor(() => fake.allSends().length === 2);
-    const notice = fake.allTexts().at(-1)!.text;
-    expect(notice).toBe(
-      messagingFilePermissionNotice(
-        "notes.md",
-        ["im:resource:upload", "im:resource"],
-        "https://open.feishu.cn/app/cli_scope/auth?q=im:resource:upload",
-      ),
-    );
-    // Both halves are what the user acts on: what to grant, and where.
-    expect(notice).toContain("im:resource:upload");
-    expect(notice).toContain("https://open.feishu.cn/app/cli_scope/auth");
+    await waitFor(() => messagingErrorRecords().length === 1);
+    await settle(80);
+    // The reply and nothing after it: no line about the file reaches the chat.
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_chat_files", text: "Written up in `notes.md`." },
+    ]);
+    // One record that names the file and the channel, then what to grant and where, and none of
+    // the channel's own sentence, which says the same and adds a log_id nobody needs to grant a
+    // scope. UNEXPECTED, where the same denial on an inbound download is expected: nobody in the
+    // chat is handed the fix any more, so a human still has to grant the scope, and the cost
+    // center's highlight is how they find out.
+    expect(messagingErrorRecords()).toEqual([
+      filedBySid2({
+        code: "messaging_file_send_failed",
+        kind: "unexpected",
+        message:
+          '"notes.md" was not sent to the feishu chat: this bot\'s app is missing a permission.\n' +
+          "im:resource:upload, im:resource\n" +
+          "https://open.feishu.cn/app/cli_scope/auth?q=im:resource:upload",
+      }),
+    ]);
   });
 
-  it("caps the batch by count and names how many were left behind", async () => {
+  it("caps the batch by count and files ONE record naming how many were left behind", async () => {
     const names = ["a.md", "b.md", "c.md", "d.md", "e.md", "f.md", "g.md"];
     const ws = await makeWorkspace();
     for (const name of names) await fs.writeFile(path.join(ws, name), name);
-    await bindWithWorkspace(ws, `Wrote ${names.map((n) => `\`${n}\``).join(", ")}.`, "cli_many");
+    const reply = `Wrote ${names.map((n) => `\`${n}\``).join(", ")}.`;
+    await bindWithWorkspace(ws, reply, "cli_many");
     await askAndSettle();
-    await waitFor(() => fake.allSends().length === MESSAGING_OUTBOUND_FILE_MAX_COUNT + 2);
+    await waitFor(() => messagingErrorRecords().length === 1);
+    await settle(80);
     const sent = fake.allSends().filter((s): s is SentMedia => s.kind === "file");
-    expect(sent).toHaveLength(MESSAGING_OUTBOUND_FILE_MAX_COUNT);
     expect(sent.map((s) => s.fileName)).toEqual(names.slice(0, MESSAGING_OUTBOUND_FILE_MAX_COUNT));
-    // The remainder is counted in the chat — a cap that drops things quietly is a bug.
-    expect(fake.allSends().at(-1)).toEqual({
-      kind: "send",
-      target: "oc_chat_files",
-      text: messagingFilesSkippedNotice(names.length - MESSAGING_OUTBOUND_FILE_MAX_COUNT),
-    });
+    // The reply and the files that fit, and not a word about the rest in the chat.
+    expect(fake.allTexts().map((s) => s.text)).toEqual([reply]);
+    expect(fake.allSends()).toHaveLength(1 + MESSAGING_OUTBOUND_FILE_MAX_COUNT);
+    // The remainder is still counted — a cap that drops things quietly is a bug — in one
+    // record for the whole tail rather than one per file, naming how many, the cap and which.
+    // Expected: the cap is a judgement about the medium, nothing is broken, and the Web App
+    // still has both files.
+    expect(messagingErrorRecords()).toEqual([
+      filedBySid2({
+        code: "messaging_files_skipped",
+        kind: "expected",
+        message:
+          '2 more files the reply mentioned were not sent to the feishu chat: at most 5 ride along with one reply ("f.md", "g.md")',
+      }),
+    ]);
   });
 
-  it("names an oversize file instead of sending it, and keeps sending the rest", async () => {
+  it("fits a skipped tail of long names under the recorder's cap, the list cut and marked as cut", async () => {
+    const sent = ["a.md", "b.md", "c.md", "d.md", "e.md"];
+    // Five names of about a hundred characters: listed whole, the record runs past MESSAGE_MAX,
+    // and the recorder cuts it mid-name with no "…" and no closing bracket.
+    const skipped = [1, 2, 3, 4, 5].map(
+      (n) =>
+        `quarterly-revenue-breakdown-by-region-and-product-line-2026-q3-final-reviewed-by-finance-v${n}.xlsx`,
+    );
+    const ws = await makeWorkspace();
+    for (const name of [...sent, ...skipped]) await fs.writeFile(path.join(ws, name), name);
+    const reply = `Wrote ${[...sent, ...skipped].map((n) => `\`${n}\``).join(", ")}.`;
+    await bindWithWorkspace(ws, reply, "cli_many_long");
+    await askAndSettle();
+    await waitFor(() => messagingErrorRecords().length === 1);
+    await settle(80);
+    const [record] = messagingErrorRecords();
+    expect([record!.code, record!.kind]).toEqual(["messaging_files_skipped", "expected"]);
+    const { message } = record!;
+    expect(message.length).toBeLessThanOrEqual(MESSAGE_MAX);
+    expect(message).toMatch(
+      /^5 more files the reply mentioned were not sent to the feishu chat: at most 5 ride along with one reply \("/,
+    );
+    // Quoted like every other record's names, as many as fit, and the rest marked as cut.
+    expect(message).toContain(`("${skipped[0]}", "${skipped[1]}", `);
+    expect(message.endsWith(", …)")).toBe(true);
+    expect(message).not.toContain(skipped[4]);
+  });
+
+  it("files an oversize file instead of sending it, keeps sending the rest, and tells the chat nothing", async () => {
     const ws = await makeWorkspace();
     await fs.writeFile(
       path.join(ws, "huge.png"),
@@ -2760,22 +3024,25 @@ describe("messaging binding routes and bridge", () => {
     await fs.writeFile(path.join(ws, "small.md"), "ok");
     await bindWithWorkspace(ws, "Both `huge.png` and `small.md` are ready.", "cli_huge");
     await askAndSettle();
-    await waitFor(() => fake.allSends().length === 3);
-    expect(fake.allSends()[1]).toEqual({
-      kind: "send",
-      target: "oc_chat_files",
-      text: messagingFileTooLargeNotice("huge.png", MESSAGING_OUTBOUND_IMAGE_MAX_BYTES),
-    });
-    // One refusal does not cancel the batch behind it.
-    expect(fake.allSends()[2]).toEqual({
-      kind: "file",
-      target: "oc_chat_files",
-      fileName: "small.md",
-      bytes: 2,
-    });
+    await waitFor(() => fake.allSends().length === 2 && messagingErrorRecords().length === 1);
+    await settle(80);
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_chat_files", text: "Both `huge.png` and `small.md` are ready." },
+      // One refusal does not cancel the batch behind it.
+      { kind: "file", target: "oc_chat_files", fileName: "small.md", bytes: 2 },
+    ]);
+    // Named with the ceiling that held it back, and expected: a known limit, nothing broken.
+    expect(messagingErrorRecords()).toEqual([
+      filedBySid2({
+        code: "messaging_file_too_large",
+        kind: "expected",
+        message:
+          '"huge.png" was not sent to the feishu chat: it is larger than the 10MB limit for a picture',
+      }),
+    ]);
   });
 
-  it("a failing upload is recorded, not thrown, and the next file still goes", async () => {
+  it("a failing upload is recorded, not thrown or announced, and the next file still goes", async () => {
     const ws = await makeWorkspace();
     await fs.writeFile(path.join(ws, "one.md"), "1");
     await fs.writeFile(path.join(ws, "two.md"), "2");
@@ -2783,23 +3050,104 @@ describe("messaging binding routes and bridge", () => {
     // Only the first upload fails: the batch behind it must carry on rather than unwind.
     fake.failMediaSends = 1;
     await askAndSettle();
-    await waitFor(() => fake.allSends().length === 3);
+    await waitFor(() => fake.allSends().length === 2 && messagingErrorRecords().length === 1);
     await settle(80);
-    // The failure is named in the chat, with the channel's own reason: `error_records` is
-    // not somewhere the person in the chat can look, so an upload that failed was the one
-    // drop they could not see at all.
-    expect(fake.allSends()[1]).toEqual({
-      kind: "send",
-      target: "oc_chat_files",
-      text: messagingFileFailedNotice("one.md", "upload rejected"),
-    });
-    // And the batch behind it carries on rather than unwinding.
-    expect(fake.allSends()[2]).toEqual({
-      kind: "file",
-      target: "oc_chat_files",
-      fileName: "two.md",
-      bytes: 1,
-    });
+    // The reply, then the file behind the failed one — and no line about the failure between
+    // them.
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_chat_files", text: "`one.md` and `two.md`." },
+      { kind: "file", target: "oc_chat_files", fileName: "two.md", bytes: 1 },
+    ]);
+    // The record says which file, where it was going, and the channel's own reason. A failure
+    // this code does not understand stays unexpected: somebody has to look at it.
+    expect(messagingErrorRecords()).toEqual([
+      filedBySid2({
+        code: "messaging_file_send_failed",
+        kind: "unexpected",
+        message: '"one.md" was not sent to the feishu chat: upload rejected',
+      }),
+    ]);
+  });
+
+  it("a file the channel can never carry is filed as expected, and the chat hears only the reply", async () => {
+    const ws = await makeWorkspace();
+    await fs.writeFile(path.join(ws, "chart.png"), IMAGE_BYTES);
+    await bindWithWorkspace(ws, "The chart is `chart.png`.", "cli_unsupported");
+    // A structural refusal, typed as one (QQ's is the real case; see messaging-qq.test.ts for
+    // it end to end): the platform will refuse the next file identically.
+    fake.failMediaSendWith = new MessagingUnsupportedError(
+      'This channel cannot receive "chart.png": it takes no pictures',
+    );
+    await askAndSettle();
+    await waitFor(() => messagingErrorRecords().length === 1);
+    await settle(80);
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_chat_files", text: "The chart is `chart.png`." },
+    ]);
+    expect(messagingErrorRecords()).toEqual([
+      filedBySid2({
+        code: "messaging_file_send_failed",
+        kind: "expected",
+        message:
+          '"chart.png" was not sent to the feishu chat: This channel cannot receive "chart.png": it takes no pictures',
+      }),
+    ]);
+    // And it is where the Project's cost center reads its errors from, for an ordinary member.
+    const res = await api.get(`/api/projects/${projectId}/usage/errors`);
+    expect(res.status).toBe(200);
+    const page = (await res.json()) as { items: Array<{ code: string; kind: string }> };
+    expect(page.items.map((item) => [item.code, item.kind])).toEqual([
+      ["messaging_file_send_failed", "expected"],
+    ]);
+  });
+
+  it("three uploads refused in one reply file ONE record naming all three, and the chat hears only the reply", async () => {
+    const ws = await makeWorkspace();
+    for (const name of ["a.md", "b.md", "c.md"]) await fs.writeFile(path.join(ws, name), name);
+    await bindWithWorkspace(ws, "Wrote `a.md`, `b.md` and `c.md`.", "cli_upload_burst");
+    // Every upload refused within milliseconds of the last. Filed one per file, the recorder
+    // keeps the first record of a code inside its two-second window and drops the other two.
+    fake.failMediaSends = 3;
+    await askAndSettle();
+    await waitFor(() => messagingErrorRecords().length === 1);
+    await settle(80);
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_chat_files", text: "Wrote `a.md`, `b.md` and `c.md`." },
+    ]);
+    expect(messagingErrorRecords()).toEqual([
+      filedBySid2({
+        code: "messaging_file_send_failed",
+        kind: "unexpected",
+        message:
+          '3 files were not sent to the feishu chat: "a.md", "b.md", "c.md"\nupload rejected',
+      }),
+    ]);
+  });
+
+  it("two oversized files in one reply file ONE record naming both, and the rest still goes", async () => {
+    const ws = await makeWorkspace();
+    const oversize = Buffer.alloc(MESSAGING_OUTBOUND_IMAGE_MAX_BYTES + 1);
+    await fs.writeFile(path.join(ws, "huge.png"), oversize);
+    await fs.writeFile(path.join(ws, "vast.png"), oversize);
+    await fs.writeFile(path.join(ws, "small.md"), "ok");
+    const reply = "See `huge.png`, `vast.png` and `small.md`.";
+    await bindWithWorkspace(ws, reply, "cli_huge_pair");
+    await askAndSettle();
+    await waitFor(() => fake.allSends().length === 2 && messagingErrorRecords().length === 1);
+    await settle(80);
+    expect(fake.allSends()).toEqual([
+      { kind: "send", target: "oc_chat_files", text: reply },
+      { kind: "file", target: "oc_chat_files", fileName: "small.md", bytes: 2 },
+    ]);
+    expect(messagingErrorRecords()).toEqual([
+      filedBySid2({
+        code: "messaging_file_too_large",
+        kind: "expected",
+        message:
+          '2 files were not sent to the feishu chat: "huge.png", "vast.png"\n' +
+          "each is larger than the 10MB limit for a picture",
+      }),
+    ]);
   });
 
   it("under finalReplyOnly the files follow the ONE message that reached the chat", async () => {
@@ -3104,6 +3452,52 @@ describe("messaging binding routes and bridge", () => {
 });
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The session list's messaging mark, every channel in one table: a row carries the channel of
+ * its ENABLED binding, and a saved-but-disabled config marks nothing. The mark reads the stored
+ * binding alone (enabledMessagingChannel), so each case writes the binding straight into the
+ * repo and no connector ever connects.
+ */
+describe("the session list's messaging mark", () => {
+  let t: TestApp;
+  let api: ReturnType<typeof apiClient>;
+  const projectId = "birder-default_project";
+
+  beforeEach(async () => {
+    t = await createTestApp();
+    api = apiClient(t.app, (await provisionUser(t.app, "birder")).cookie);
+    t.deps.sessionsRepo.insert(sessionRowOf(SID, projectId));
+  });
+  afterEach(async () => {
+    await t.cleanup();
+  });
+
+  /** The Session's row as the development list serves it. */
+  const listedRow = async () => {
+    const res = await api.get(`/api/projects/${projectId}/agents/default_agent/sessions`);
+    const body = (await res.json()) as {
+      sessions: Array<{ sessionId: string; messagingChannel?: string }>;
+    };
+    return body.sessions.find((s) => s.sessionId === SID);
+  };
+
+  it.each(["feishu", "telegram", "qq", "wechat"] as const)(
+    "marks a %s row once its binding is enabled, and not while it is only saved",
+    async (channel) => {
+      t.deps.messagingRepo.upsert({
+        sessionId: SID,
+        channel,
+        accountId: `${channel}-bot`,
+        config: {},
+      });
+      expect(await listedRow()).not.toHaveProperty("messagingChannel");
+
+      t.deps.messagingRepo.setEnabled(SID, channel, true);
+      expect((await listedRow())?.messagingChannel).toBe(channel);
+    },
+  );
+});
 
 /**
  * The failure #484 named and left open: an inbound message arrives, `startTask` throws, the

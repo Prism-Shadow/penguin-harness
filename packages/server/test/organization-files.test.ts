@@ -29,11 +29,7 @@ import {
   ancestorsOf,
 } from "../src/organization/files.js";
 import type { ChannelConfig, OrgChart, OrgConfig, TicketDoc } from "../src/organization/files.js";
-import {
-  formatPrincipal,
-  parsePrincipal,
-  splitPrincipalList,
-} from "../src/organization/principal.js";
+import { formatPrincipal, parsePrincipal } from "../src/organization/principal.js";
 import {
   DEFAULT_CHANNEL_ID,
   channelConfigPath,
@@ -281,51 +277,23 @@ describe("tickets", () => {
     expect(parseTicket("status: done\n").ok).toBe(false);
   });
 
-  it("reads a ticket in the format that predates the frontmatter, and converts it on write", () => {
-    const legacy = [
-      "# Ticket: Launch the site",
-      "",
-      "Status: in_progress",
-      "Initiator: agent:acme_ceo",
-      "Owner:",
-      "X-Custom: kept",
-      "",
-      "## Goal",
-      "Ship it",
-      "",
-      "## Progress",
-      "- 2026-09-02T10:12:00+08:00 agent:acme_dev scaffolded the site session:session-x",
-      "- 2026-09-02T11:00:00+08:00 user:alice reviewed the copy",
-      "",
-    ].join("\n");
-    const parsed = parseTicket(legacy);
-    expect(parsed.ok).toBe(true);
-    if (!parsed.ok) return;
-    // No Owner header: the ticket belongs to whoever filed it, and Notify follows the owner.
-    expect(parsed.value.owner).toBe("agent:acme_ceo");
-    expect(parsed.value.notify).toEqual(["agent:acme_ceo"]);
-    // The operator and the time leave the prose for the history; the sentence stays.
-    expect(parsed.value.progress).toEqual(["scaffolded the site", "reviewed the copy"]);
-    expect(parsed.value.history).toEqual([
-      { at: "2026-09-02T10:12:00+08:00", by: "agent:acme_ceo", action: "created" },
-      {
-        at: "2026-09-02T10:12:00+08:00",
-        by: "agent:acme_dev",
-        action: "progress",
-        note: "scaffolded the site",
-      },
-      {
-        at: "2026-09-02T11:00:00+08:00",
-        by: "user:alice",
-        action: "progress",
-        note: "reviewed the copy",
-      },
-    ]);
-    expect(parsed.value.extra).toEqual({ "X-Custom": "kept" });
-    // Written back, it is a frontmatter file that parses to the same document.
-    const converted = serializeTicket(parsed.value);
-    expect(converted.startsWith("---\n")).toBe(true);
-    expect(parseTicket(converted)).toEqual(parsed);
+  it("rejects a file that does not open with the frontmatter, `# Ticket:` headers included", () => {
+    const headed = parseTicket(
+      [
+        "# Ticket: Launch the site",
+        "",
+        "Status: in_progress",
+        "Owner: agent:acme_ceo",
+        "",
+        "## Goal",
+        "Ship it",
+        "",
+      ].join("\n"),
+    );
+    expect(headed).toEqual({
+      ok: false,
+      error: "the file must start with `---` (YAML frontmatter)",
+    });
   });
 
   it("derives ids: letters-only slugs, letter suffixes, month and path", () => {
@@ -496,7 +464,6 @@ describe("principals", () => {
     expect(parsePrincipal("system")).toEqual({ kind: "system" });
     expect(parsePrincipal("acme_ceo")).toBeNull();
     expect(formatPrincipal({ kind: "user", id: "alice" })).toBe("user:alice");
-    expect(splitPrincipalList(" agent:a, user:b ,agent:a,")).toEqual(["agent:a", "user:b"]);
   });
 });
 

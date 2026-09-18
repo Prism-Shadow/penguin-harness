@@ -11,7 +11,6 @@ import type {
   OrgCalendarResponse,
   OrgCalendarUpsertRequest,
   OrgCalendarWriteResponse,
-  SemanticIdSuggestReason,
   SemanticIdSuggestRequest,
   SemanticIdSuggestResponse,
   OrgChannelCreateRequest,
@@ -64,6 +63,7 @@ import type {
   ProjectConfigStore,
   Projects,
 } from "../../mechanisms/projects.js";
+import type { MessagingBindings } from "../../mechanisms/messaging.js";
 import type { SessionIndex } from "../../mechanisms/sessions.js";
 import type { Settings } from "../../mechanisms/settings.js";
 import type { Errors, UsageQueries } from "../../mechanisms/observability.js";
@@ -105,12 +105,10 @@ import {
   userPrincipal,
 } from "../../organization/principal.js";
 import { isValidTimeZone, zonedDate, zonedDayRange } from "../../organization/zoned.js";
-import {
-  fallbackSemanticId,
-  placeholderSemanticId,
-  sanitizeSuggestedId,
-} from "../../organization/semantic-id.js";
+import { SEMANTIC_ID_RULES } from "../../services/semantic-id.js";
+import { suggestSemanticId } from "../../services/semantic-id-suggest.js";
 import { SEMANTIC_ID_PATTERN } from "../../services/ids.js";
+import { enabledMessagingChannel } from "../messaging/enabled-channel.js";
 import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
 import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget.js";
@@ -218,70 +216,31 @@ export class OrganizationService {
 
   /**
    * A semantic id for a display name (the organization and channel dialogs name the thing
-   * first and derive the id). The Project's default model translates the name into one
-   * snake_case English identifier — the common case is a Chinese name, which nothing
-   * mechanical can transliterate — and the ASCII slug of the name answers whenever the model
-   * is unavailable, refuses or answers with something no id can be built from. A name that
-   * neither path can name gets a dated placeholder and the reason it fell that far: the
-   * dialog fills the box and asks for a meaningful name in its place, which is a better
-   * answer than a refusal that leaves the box empty and the user with nothing to type.
+   * first and derive the id): the shared proposal (semantic-id-suggest.ts) with the kind's
+   * prefix, the ids the dialog passed in to avoid, and every model dead end recorded as the
+   * organization's.
    */
   async suggestId(
     projectId: string,
     req: SemanticIdSuggestRequest,
   ): Promise<SemanticIdSuggestResponse> {
-    const taken = req.taken ?? [];
-    // No model bound at all: nothing more specific can be said than what the name itself lacks.
-    let reason: SemanticIdSuggestReason = "no_ascii";
-    const complete = this.deps.completeOnce;
-    if (complete !== undefined) {
-      const proposed = await this.modelSemanticId(complete, projectId, req, taken);
-      if (proposed.id !== undefined) return { id: proposed.id, source: "model" };
-      reason = proposed.reason;
-    }
-    const id = fallbackSemanticId(req.name, req.kind, taken);
-    if (id !== null) return { id, source: "fallback" };
-    return { id: placeholderSemanticId(req.kind, taken), source: "placeholder", reason };
-  }
-
-  /**
-   * The model half of a proposal: the id it produced, or the reason there is none. An answer
-   * that does not sanitize to an id buys one retry with the format rule spelled out — a model
-   * that explained itself the first time usually complies when told to answer with the
-   * identifier alone — while a request that failed outright is not repeated, since nothing
-   * about the second ask would go differently. Every dead end is recorded, so the errors panel
-   * can say why the button produced a placeholder instead of a name.
-   */
-  private async modelSemanticId(
-    complete: NonNullable<OrgDeps["completeOnce"]>,
-    projectId: string,
-    req: SemanticIdSuggestRequest,
-    taken: readonly string[],
-  ): Promise<
-    { id: string; reason?: undefined } | { id?: undefined; reason: SemanticIdSuggestReason }
-  > {
-    const base = semanticIdPrompt(req);
-    let lastAnswer = "";
-    for (const prompt of [base, `${base} ${SEMANTIC_ID_RETRY_RULE}`]) {
-      const res = await complete(projectId, prompt);
-      if (!res.ok) {
-        this.recordIdSuggestFailure(projectId, `${req.kind} id for "${req.name}": ${res.error}`);
-        return { reason: res.cause === "no_model" ? "no_default_model" : "model_failed" };
-      }
-      const id = sanitizeSuggestedId(res.text, req.kind, taken);
-      if (id !== null) return { id };
-      lastAnswer = res.text;
-    }
-    this.recordIdSuggestFailure(
+    return suggestSemanticId(
+      {
+        completeOnce: this.deps.completeOnce,
+        recordFailure: (p, detail) => this.recordIdSuggestFailure(p, detail),
+      },
       projectId,
-      `${req.kind} id for "${req.name}": no id could be built from the model's answer: ${lastAnswer.trim()}`,
+      {
+        name: req.name,
+        kind: req.kind,
+        rule: SEMANTIC_ID_RULES[req.kind],
+        taken: req.taken ?? [],
+      },
     );
-    return { reason: "unusable_answer" };
   }
 
   /** One dead end of an id proposal, in the log and in the Project's errors panel. */
-  private recordIdSuggestFailure(projectId: string, detail: string): void {
-    const message = detail.slice(0, ID_SUGGEST_FAILURE_MAX);
+  private recordIdSuggestFailure(projectId: string, message: string): void {
     this.deps.log?.(`org: id suggestion fell back for ${projectId}: ${message}`);
     this.deps.errors.record({
       source: "organization",
@@ -485,7 +444,7 @@ export class OrganizationService {
    *
    * - `mentions`: the all-hands messages of the window `recentMessages` reads (the
    *   organization's current day) that name the caller or `all`, newest first.
-   * - `blockedTickets`: every ticket carrying a `Blocked` reason, whoever it waits on —
+   * - `blockedTickets`: every ticket carrying a `blocked` reason, whoever it waits on —
    *   uncapped, because a blocked ticket is work nobody is doing.
    * - `doneTickets`: tickets in `done` that closed in the current budget period, `closedAt`
    *   taken from the last `moved`-to-`done` history entry. A ticket whose file was moved by
@@ -1230,7 +1189,7 @@ export class OrganizationService {
   // Tickets
   // ---------------------------------------------------------------------------
 
-  /** `known` is every ticket id in the same listing: a `Parent` naming none is flagged invalid. */
+  /** `known` is every ticket id in the same listing: a `parent` naming none is flagged invalid. */
   private ticketItem(t: LoadedTicket, spend: OrgSpend, known: ReadonlySet<string>): OrgTicketItem {
     const d = t.doc;
     const running = d.sessions.some((s) => this.deps.runner.statusOf(s) !== "idle");
@@ -2458,6 +2417,7 @@ export class OrganizationService {
       const desk = org.desks[e.agentId];
       if (!desk) continue;
       const row = this.deps.sessions.findById(desk.sessionId);
+      const messagingChannel = this.deps.messagingChannel(desk.sessionId);
       desks.push({
         agentId: e.agentId,
         name: (await this.deps.agents.exists(projectId, e.agentId))
@@ -2468,6 +2428,7 @@ export class OrganizationService {
         status: this.deps.runner.statusOf(desk.sessionId),
         workspace: desk.workspace,
         ...(row?.lastActiveAt ? { lastActiveAt: row.lastActiveAt } : {}),
+        ...(messagingChannel !== null ? { messagingChannel } : {}),
       });
     }
     const ticketGroups: OrgSessionsResponse["tickets"] = [];
@@ -2525,17 +2486,6 @@ function lastClosedAt(doc: TicketDoc): string | null {
   return null;
 }
 
-/**
- * Appended to the prompt on the one retry an unusable answer buys. The first ask already
- * describes the format; a model that answered with prose anyway is told, in one sentence, that
- * the answer IS the identifier — which is the instruction such a model complies with.
- */
-const SEMANTIC_ID_RETRY_RULE =
-  "Answer with the identifier only — ASCII lowercase letters, digits and underscores, nothing else.";
-
-/** How much of a failed proposal's detail reaches the log and the errors panel. */
-const ID_SUGGEST_FAILURE_MAX = 300;
-
 /** The first non-empty line of a model's answer, stripped of the marks a model wraps one in. */
 function firstLine(answer: string): string {
   const line = answer
@@ -2565,27 +2515,6 @@ function ticketSlugPrompt(title: string): string {
   ].join(" ");
 }
 
-/**
- * The prompt behind a model-backed semantic id: the model translates a display name into
- * one snake_case English identifier — the semantic core only, since `sanitizeSuggestedId`
- * puts the kind's prefix (`co_` / `ch_`) in front of whatever comes back. Examples in both
- * scripts, the taken ids named so the answer does not collide, and no room for prose;
- * anything that does not survive the sanitizer falls back to the ASCII slug.
- */
-function semanticIdPrompt(req: SemanticIdSuggestRequest): string {
-  const taken = (req.taken ?? []).join(", ");
-  return [
-    "You produce identifiers. Given a display name, answer with ONE snake_case ASCII identifier:",
-    "lowercase letters, digits and underscores, starting with a letter, 2–40 characters, made of",
-    "English words that carry the name's meaning (translate a non-English name), no explanation,",
-    "nothing else. Examples: Plugin Marketplace → plugin_marketplace; 科研论文公司 →",
-    "research_paper_lab; 市场推广 → marketing; Site → site.",
-    "Do not add any prefix of your own; one is added to your answer.",
-    ...(taken !== "" ? [`Those answers are taken, prefix included: ${taken}.`] : []),
-    `Name: ${req.name}`,
-  ].join(" ");
-}
-
 /** The AGENTS.md written for an Agent created as an employee: who it is in this organization and where the handbook is. */
 export function employeeBrief(input: {
   orgId: string;
@@ -2606,7 +2535,7 @@ export function employeeBrief(input: {
 ${input.duties !== undefined ? `\n职责：${input.duties}\n` : ""}
 本组织的工作语言是中文：频道消息、工单、手册文档与汇报都用中文书写，命令、文件名、id 与字段名保持 ASCII。
 
-你的组织目录是 \`<app_data_dir>/organizations/${input.orgId}/\`。每轮工作开始时先读 \`handbook/README.md\`（组织手册的索引；这个目录是公司的知识库），然后按 \`company-employee\` Skill 行事；头衔属于哪个角色，就再用 \`company-ceo\`、\`company-hr\` 或 \`company-finance\`。在你的会话里，\`penguin org\` 命令已经从环境中知道你的组织、Project、Agent 与当前会话。
+你的组织目录是 \`<app_data_dir>/organizations/${input.orgId}/\`。每轮工作开始时先读 \`handbook/README.md\`（组织手册的索引；这个目录是公司的知识库），然后按 \`company-employee\` Skill 行事；头衔属于哪个角色，就再用 \`company-ceo\`、\`company-hr\` 或 \`company-finance\`，做实验或审稿则用 \`company-research\`。在你的会话里，\`penguin org\` 命令已经从环境中知道你的组织、Project、Agent 与当前会话。
 `;
   }
   return `# Employee brief
@@ -2617,7 +2546,7 @@ Mission: ${input.mission}
 ${input.duties !== undefined ? `\nDuties: ${input.duties}\n` : ""}
 This organization works in English: channel messages, tickets, handbook documents and reports are written in it; commands, file names, ids and field names stay ASCII.
 
-Your organization directory is \`<app_data_dir>/organizations/${input.orgId}/\`. At the start of every work run read \`handbook/README.md\` (the handbook index; the directory is the company's knowledge base), then follow the \`company-employee\` skill; use \`company-ceo\`, \`company-hr\` or \`company-finance\` when your title is that role. Inside your sessions the \`penguin org\` commands already know your organization, Project, Agent and session from the environment.
+Your organization directory is \`<app_data_dir>/organizations/${input.orgId}/\`. At the start of every work run read \`handbook/README.md\` (the handbook index; the directory is the company's knowledge base), then follow the \`company-employee\` skill; use \`company-ceo\`, \`company-hr\` or \`company-finance\` when your title is that role, and \`company-research\` when you run experiments or review them. Inside your sessions the \`penguin org\` commands already know your organization, Project, Agent and session from the environment.
 `;
 }
 
@@ -2629,10 +2558,10 @@ function initBody(org: LoadedOrg): string {
     return [
       `使命：${org.config.mission}`,
       "",
-      "如果上面的使命说的是「镜像一家现实公司」——为现实同事各建一个数字分身、公司只负责传话——就改按 `company-mirror` Skill 行事，跳过下面这份清单。",
+      "如果上面的使命说的是「镜像一家现实公司」——为现实同事各建一个数字分身、公司只负责传话——就改按 `company-mirror` Skill 行事，跳过下面这份清单。如果使命是做科研——跑实验、给出结论、写论文——下面的清单照常适用，另按 `company-research` Skill 补两件事：至少招一名不审自己稿的专职审稿人；任何实验循环开始前，负责人都要先在全员频道向董事会申请到资源额度。",
       "",
-      "你是一家全新组织的 CEO，这是它的初始化运行。重要的事由董事会拍板，你负责提案。按顺序完成下面几件事：",
-      `1. 读手册。然后在全员频道里给董事会（${board}）写一份提案——\`penguin org channel send -m "@${board} …"\`——写清你对使命的理解、打算开的工作线与首批工单、打算招募的角色（先人事与财务）及其预算与 Model，以及公共工作区怎么划分。以明确的问题结尾，然后结束本轮：董事会答复之前不招人、不排日程、不开工单。`,
+      "你是一家全新组织的 CEO，这是它的初始化运行。重要的事由董事会拍板，你负责提案。凡是动到这台机器、要花钱或触及组织之外的事——重负载计算、付费服务、公共工作区之外的写入、不可逆操作、缺少的凭据——每名员工（包括你）都先在全员频道请示董事会再动手（`company-employee` 的「What you may not decide alone」一节）。按顺序完成下面几件事：",
+      `1. 读手册。然后在全员频道里给董事会（${board}）写一份提案——\`penguin org channel send -m "@${board} …"\`——写清你对使命的理解、打算开的工作线与首批工单、打算招募的角色（先人事与财务）及其预算——所有人都用组织的 Model，组织未指定时用 Project 的默认 Model，除非使命为某个角色另行指定，提案里不要提 Model——以及公共工作区怎么划分。以明确的问题结尾，然后结束本轮：董事会答复之前不招人、不排日程、不开工单。`,
       `2. 答复会以提及或本会话消息的形式到来。董事会确认后，先招人事与财务——\`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceo} --duties "…"\`，\`${org.orgId}_finance\` 同理——再招确认过的其他角色。`,
       "3. 按确认的方案划分公共工作区。你自己在 `ceo/` 里工作，招募时不给 `--workspace` 的员工落在以其 Agent id 命名的子目录里，公共工作区的根目录只放大家共读的共享输入、不是任何人的工位。要换个分区名字再单独分配（`penguin org employee set <agent_id> --workspace <子目录>`）；相对子目录会在分配时自动建好。",
       "4. 把你自己、人事与财务排进日历（`penguin org calendar add …`），做成轮值表而不是广播：你每天 09:00，人事每三天 10:00，财务每周 16:00（组织时区，写成带偏移量的 ISO 时刻，绝不用 `--start-at now`），此后每招一人就给它一个各自不同的时点。",
@@ -2644,10 +2573,10 @@ function initBody(org: LoadedOrg): string {
   return [
     `Mission: ${org.config.mission}`,
     "",
-    "If the mission above says the organization MIRRORS a real company — one digital twin per real colleague, a company that only relays between people — follow the `company-mirror` skill instead and skip the checklist below.",
+    "If the mission above says the organization MIRRORS a real company — one digital twin per real colleague, a company that only relays between people — follow the `company-mirror` skill instead and skip the checklist below. If it is a research mission — experiments to run, results to claim, papers to write — the checklist applies and the `company-research` skill adds two things: at least one dedicated reviewer who authors nothing it reviews, and no experiment loop before its owner has an approved resource envelope from the board.",
     "",
-    "You are the CEO of a brand-new organization and this is its initialization run. The board decides the important things; you propose. Work through the following, in order:",
-    `1. Read the handbook. Then write ONE proposal to the board (${board}) in the all-hands channel — \`penguin org channel send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets and model, and how you will split the shared workspace. End with the explicit question and END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
+    'You are the CEO of a brand-new organization and this is its initialization run. The board decides the important things; you propose. Whatever touches this machine, spends money or reaches outside the organization — heavy compute, paid services, writing outside the shared workspace, anything irreversible, a missing credential — every employee, you included, asks the board in the all-hands channel before it starts (`company-employee`, "What you may not decide alone"). Work through the following, in order:',
+    `1. Read the handbook. Then write ONE proposal to the board (${board}) in the all-hands channel — \`penguin org channel send -m "@${board} …"\` — with your reading of the mission, the streams and first tickets you intend to file, the roles you intend to hire (HR and finance first) with budgets — every one on the organization's model, or the Project's default model when the organization names none, unless the mission asked for a particular one on a role, so propose no models — and how you will split the shared workspace. End with the explicit question and END THIS RUN: hire nothing, schedule nothing and file nothing before the board answers.`,
     `2. The answer arrives as a mention or in this conversation. Once the board confirms, hire HR and finance first — \`penguin org hire --new-agent ${org.orgId}_hr --title HR --reports-to ${ceo} --duties "…"\` and the same for \`${org.orgId}_finance\` — then the confirmed roles.`,
     "3. Partition the shared workspace as confirmed. You already work in `ceo/`, and a hire given no `--workspace` lands in a sub-directory named after its Agent id; the root of the shared workspace holds the shared inputs everyone reads and is nobody's desk. Assign a different sub-directory where a partition should be named for the stream rather than the employee (`penguin org employee set <agent_id> --workspace <sub-directory>`); a relative sub-directory is created when you assign it.",
     "4. Put yourself, HR and finance on the calendar (`penguin org calendar add …`) as a rota, not a broadcast: you daily at 09:00, HR every three days at 10:00, finance weekly at 16:00 (organization timezone, ISO instants with the offset — never `--start-at now`), and give every later hire its own distinct hour.",
@@ -2775,6 +2704,7 @@ export class OrganizationModule {
   @Use() private readonly usage!: UsageQueries;
   @Use() private readonly errors!: Errors;
   @Use() private readonly settings!: Settings;
+  @Use() private readonly messagingRepo!: MessagingBindings;
   @Provide() orgService!: OrgService;
   @Provide() orgScheduler!: OrgScheduler;
   setup({ effect }: ClassCtx) {
@@ -2816,6 +2746,7 @@ export class OrganizationModule {
       projectConfig,
       completeOnce: (projectId, prompt) => projectConfig.completeOnce(projectId, prompt),
       usage: this.usage,
+      messagingChannel: (sessionId) => enabledMessagingChannel(this.messagingRepo, sessionId),
       errors: this.errors,
       notifyProject: (projectId, event) => {
         const ownerUserId = this.projects.findById(projectId)?.ownerUserId;

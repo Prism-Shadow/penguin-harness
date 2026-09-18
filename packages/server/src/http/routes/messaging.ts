@@ -93,6 +93,7 @@ import {
 } from "./messaging-channels.js";
 import type { MessagingChannelSpec } from "./messaging-channels.js";
 import type { MessagingChannel } from "../../runtime/messaging/connector.js";
+import { isMessagingChannel } from "../../runtime/messaging/enabled-channel.js";
 import type { WeChatScanService } from "../../runtime/messaging/wechat-scan.js";
 import type { MessagingBridge } from "../../runtime/messaging/bridge.js";
 import type { QQScanService } from "../../runtime/messaging/qq-scan.js";
@@ -160,8 +161,8 @@ function wechatFieldsOf(row: MessagingBindingRow): { botId: string; botToken: st
  * message, the enable gate's credential check — is written once.
  *
  * A `Record` keyed by the discriminant rather than an array: every lookup here starts from a
- * channel already in hand, and a stored row's channel is untrusted text, so `?? null` on a
- * miss is the shape both callers want.
+ * channel already in hand, and a stored row's channel is untrusted text, so null for an id
+ * `isMessagingChannel` does not know (specOf) is the shape both callers want.
  */
 const CHANNEL_SPECS: Readonly<Record<MessagingChannel, MessagingChannelSpec>> = {
   feishu: {
@@ -230,7 +231,7 @@ const CHANNEL_SPECS: Readonly<Record<MessagingChannel, MessagingChannelSpec>> = 
 
 /** The spec for a stored row's channel, or null on an unknown discriminator (skipped defensively, like the bridge does). */
 function specOf(channel: string): MessagingChannelSpec | null {
-  return CHANNEL_SPECS[channel as MessagingChannel] ?? null;
+  return isMessagingChannel(channel) ? CHANNEL_SPECS[channel] : null;
 }
 
 /** Whatever channel the row is: its masked view, or null on an unknown discriminator. */

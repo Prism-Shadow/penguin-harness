@@ -1,101 +1,141 @@
 ---
 title: CLI 参考
-description: penguin 命令的子命令与选项完整参考。
+description: 所有 penguin 命令和子命令的选项、默认值、输出结构与示例。
 ---
 
-CLI 由 npm 包 `@prismshadow/penguin-cli` 提供，命令为 `penguin`。不带子命令执行 `penguin` 时打印帮助；`-v, --version` 打印当前构建的单行身份，`penguin version --json` 打印其完整信息。启动时自动加载工作目录下的 `.env`。
+本页收录所有 `penguin` 命令。开头先说明 CLI 如何连接服务器，以及所有命令共享的约定；随后逐条介绍每个命令，各配一段概述、用法、选项表和示例。
 
-CLI 是服务端的瘦客户端：所有会话相关命令（`run`、`chat`、`ls`、`input`、`logs`、`agent`、`project`、`cost`、`schedule`、`org`）都向 PenguinHarness 服务端发 HTTP 请求并渲染回复——Task 在服务端执行，Session 记录在服务端索引里，Web App 能看到 CLI 创建的一切（反之亦然）。只有 `config` 仍直接编辑 Project 配置文件，`server` / `web` 则负责启动服务本身。
+CLI 以 npm 包 `@prismshadow/penguin-cli` 发布，命令名为 `penguin`。直接运行 `penguin` 会打印帮助。`-v, --version` 打印当前构建的一行标识信息，`penguin version --json` 则打印完整信息。启动时，CLI 会从工作目录加载 `.env` 文件。
+
+CLI 是服务器的瘦客户端。所有面向会话的命令（`run`、`chat`、`ls`、`input`、`logs`、`agent`、`project`、`cost`、`schedule`、`org`）都向 PenguinHarness 服务器发送 HTTP 请求，并渲染返回结果。Task 在服务器上运行，Session 存放在服务器的索引里；CLI 创建的一切 Web App 都能看到，反过来也一样。只有 `config` 仍直接编辑 Project 的文件，`server` / `web` 则负责启动服务本身。
 
 ## 服务器连接
 
-连接本机服务器的 CLI 无需登录。连接按以下顺序解析，先命中先用：
+与本机服务器通信的 CLI 无需登录。CLI 按以下顺序确定要连接的服务器，命中第一项即停止：
 
-1. `--server <url>`——显式指定目标。
-2. `PENGUIN_API_URL`——同上，来自环境变量。服务端驱动的会话会把它（连同 `PENGUIN_API_TOKEN`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID`、`PENGUIN_SESSION_ID`）注入每个工具子进程，因此 Agent 自己执行的 `penguin` 命令天然连回运行它的那台服务器。
-3. 数据根目录（`PENGUIN_HOME`，否则 `~/.penguin/data`）下存活的 `server.lock`：附着到本机正在运行的服务器。
-4. 自动拉起：以随机端口分离启动一个本机服务器（输出写入 `<root>/logs/server-auto-<date>.log`），等待就绪后附着。两个 CLI 竞争拉起时，输家的子进程自行退出，双方都附着到赢家。
+1. `--server <url>`：显式指定的目标。
+2. `PENGUIN_API_URL`：同样指定目标，但取自环境变量。服务器驱动的会话会把它注入每个工具子进程，同时注入的还有 `PENGUIN_API_TOKEN`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`，这样 Agent 自己调用 `penguin` 时，请求就能到达运行它的那台服务器。
+3. 数据根目录下存在活跃的 `server.lock`（数据根目录取 `PENGUIN_HOME`，否则为 `~/.penguin/data`）：CLI 接入正在运行的本地服务器。
+4. 自动启动：CLI 在临时端口上拉起一个独立运行的本地服务器，等它就绪后接入。服务器输出写入 `<root>/logs/server-auto-<date>.log`。如果两个 CLI 同时抢着启动，落败一方的启动进程会退出，双方都接入先成功的那台。
 
-鉴权使用本机 API token：服务端每次启动都把新 token 写入 `<root>/api-token`（仅属主可读，逐次启动轮换），CLI 以 `Authorization: Bearer` 发送。`PENGUIN_API_TOKEN` 优先于文件；文件只在目标为回环地址时读取——连接远端 `--server` 必须显式设置 `PENGUIN_API_TOKEN`。持有该文件即等于管理员权限，这是有意设计：对数据根目录的本机文件系统访问本就等于管理员权限（与 `penguin server reset-admin-password` 同一条规则）。
+CLI 使用本地 API token 认证。服务器每次启动都会把一个新 token 写入 `<root>/api-token`（仅所有者可读），CLI 以 `Authorization: Bearer` 的形式发送它。`PENGUIN_API_TOKEN` 优先于这个文件。CLI 只对回环地址目标读取这个文件，因此远程 `--server` 需要显式设置 `PENGUIN_API_TOKEN`。按设计，持有这个文件就等于持有管理员权限——能直接访问数据根目录的本地文件系统，本来就拥有同样的权限。`penguin server reset-admin-password` 依据的也是同一条规则。
 
 ## 全局约定
 
-- 模型引用：模型身份始终是 `(provider, model_id)` 二元组。`--model-id` 填上游模型 id，`--provider` 填其所属分组；provider 绝不推断、绝不猜测、也没有缺省值。`run` / `chat` 上这对参数整体可选——两个都给即指定模型，两个都不给则使用 Project 默认模型——但只给其中一个是错误。
-- Project 与 Agent 缺省值：`--project-id` 依次回落到 `PENGUIN_PROJECT_ID`、`default_project`；`--agent-id` 依次回落到 `PENGUIN_AGENT_ID`、`default_agent`。在服务端驱动的会话内，这些环境变量即会话自身的坐标。
-- Session 引用：凡接受 session id 的地方（`input`、`logs`、`run --session`、`chat --resume`），完整 id 或任何唯一片段皆可——`penguin ls` 打印的末尾 8 位十六进制就是为此准备的简写。片段有歧义时报错并列出候选。
-- 最近会话缺省：凡 session id 可省的地方——`input [session_id]`、`logs [session_id]`、`chat --resume`——省略即指**当前 Agent 最近一次会话**（`--agent-id` 决定是哪个 Agent，回落规则同上）。`input` 与 `logs` 会在 stderr 打印一行暗色 `[latest]` 说明选中了哪个会话，目标因此从不含糊，stdout 上的 `--json` 也仍可解析。该 Agent 一个会话都没有时，打印一行指向 `penguin run` / `penguin chat` 的提示并以非零码退出。
-- `--json` 输出原始 JSON 而非渲染 / 表格形式；`--server <url>` 指定目标服务器（见上）。
-- 调用方上下文缺省值：在 harness Agent 内部（环境里存在 `PENGUIN_SESSION_ID`）时，`run` / `chat` 新建会话的每个**未指定**字段都缺省取调用方会话的实时值——Workspace、模型对、审批模式与思考等级——与 `run_subagent` 派生子会话的继承是同一条约定，两个入口因此读作一套规则。逐字段优先级为显式选项 > 调用方值 > 普通缺省；查询失败打印一行暗色警告并回落普通缺省；不在 Agent 内时一切不变。（`--project-id` / `--agent-id` 保持上文的环境变量缺省。）
-- `--timeout <duration>`（`run`、`input` 与 `logs -f` 上）以软让出语义限定等待——即 `exec_command` yield 窗口的模型应用在 CLI 的等待上：到时命令干净脱开并以 0 退出，任务继续在服务端运行，之后可用 `penguin input` / `penguin logs` 接续。接受形式：`30s`、`5m`、`2h`，或表示秒数的纯整数；其余形式一律拒绝。`--timeout 0` 是窗口的退化形式——送达后立即返回（`--json` 下为 `{sessionId, status: "running"}`）：一个旋钮同时覆盖「不等待」。不带该选项 = 无限等待。（`run --background` 仍是**新建任务**的惯用「发完即走」：它为脚本打印裸 session id，在创建时刻即脱开。）
-- 参数错误按界面语言呈现：缺少参数、缺少必填选项、未知选项或命令拼错时，打印一行本地化说明，附上该命令自身的用法与 `--help` 指引，并以非零码退出。
-- 数据根目录（仅 `config`）：`--root <dir>` 覆盖数据根目录，优先级为 `--root` > 环境变量 `PENGUIN_HOME` > `~/.penguin/data`。
+- 模型引用：模型的标识始终是 `(provider, model_id)` 这一对。`--model-id` 接收上游模型 id，`--provider` 接收模型所属的分组。CLI 从不推断、猜测或默认指定供应商。在 `run` 和 `chat` 上，这一对参数整体可选：两个都传即可选择模型，两个都不传则使用 Project 的默认模型；只传一个是错误。
+- Project 与 Agent 默认值：`--project-id` 依次回退到 `PENGUIN_PROJECT_ID`，再回退到 `default_project`；`--agent-id` 依次回退到 `PENGUIN_AGENT_ID`，再回退到 `default_agent`。在服务器驱动的会话里，这些环境变量指向会话所属的 Project 和 Agent。
+- Session 引用：凡是接受 session id 的命令（`input`、`logs`、`run --session`、`chat --resume`），完整 id 或任何唯一的片段都有效。`penguin ls` 打印的 8 位十六进制尾部就是为此准备的简写。片段有歧义时报错，并列出所有候选。
+- 默认使用最近的 Session：session id 可选的命令（`input [session_id]`、`logs [session_id]`、`chat --resume`）在省略 id 时，指向 Agent 最近的一个 Session，由 `--agent-id` 指定是哪个 Agent。`input` 和 `logs` 会在 stderr 上用一行暗色的 `[latest]` 标注选中的 Session，目标始终明确，stdout 上的 `--json` 输出也保持可解析。如果这个 Agent 一个 Session 都没有，命令会打印一行提示指向 `penguin run` / `penguin chat`，然后以非零码退出。
+- JSON 输出：`--json` 打印原始 JSON，取代渲染后的或表格形式的输出。
+- 目标服务器：`--server <url>` 指定要连接的服务器。参见[服务器连接](#服务器连接)。
+- 调用方上下文默认值：在 harness Agent 内部（`PENGUIN_SESSION_ID` 已设置）时，`run` 或 `chat` 创建的 Session 会从调用方 Session 的实时取值继承每一个未指定的字段：Workspace、模型对、审批模式和思考等级。`run_subagent` 对它派生的子 Agent 采用同样的继承，两个入口遵循同一条约定。对每个字段，显式传入的选项优先于调用方的值，调用方的值又优先于普通回退值。查找失败时打印一条暗色警告，并改用普通回退值。在 Agent 之外，行为不变：`--project-id` / `--agent-id` 仍按环境变量取默认值。
+- 超时：`run`、`input` 和 `logs -f` 上的 `--timeout <duration>` 限制等待时长，语义为软让出——相当于把 `exec_command` 的让出窗口模型搬到 CLI 上。到时后命令干净地脱离并退出，退出码为 0。Task 在服务器上继续运行，之后可以用 `penguin input` 或 `penguin logs` 接上。可接受的值有 `30s`、`5m`、`2h`，或一个表示秒数的纯整数；其他值一律拒绝。`--timeout 0` 在消息送达后立即返回（`--json` 下为 `{sessionId, status: "running"}`），所以这个选项也覆盖「不等」的场景。不带此选项时，命令无限等待。对新建 Task 而言，惯常做法仍是 `run --background`：提交后不再等待，打印裸 session id 供脚本使用，Task 一创建就脱离。
+- 参数错误：缺少参数、缺少必填选项、选项未知或命令拼错时，CLI 用界面语言打印一行错误、命令自身的用法，并提示查看 `--help`，然后以非零码退出。
+- 数据根目录：`--root <dir>` 为直接读取数据根目录的命令指定根目录，涉及 `config`、`auth`、`version`、`server status` 和 `server stop`。相对路径相对工作目录解析。优先级：`--root`，然后是 `PENGUIN_HOME` 环境变量，最后是 `~/.penguin/data`。
 
 ## penguin run
 
-在服务端创建（或复用）一个 Session，发送单条消息，流式渲染直至 Task 结束，打印统计行后退出。完成时退出码为 0；goal 模式仅目标 `complete` 时退出 0。
+在服务器上创建一个 Session（或复用已有的），发送一条消息，流式渲染 Task 直到结束，打印统计行后退出。Task 完成时退出码为 0，中途中止时为 1。目标模式运行只有在目标结果为 `complete` 时才以 0 退出。
 
 ```bash
-penguin run -m "总结当前目录的代码结构"
-penguin run -m "继续" --session 402a2e24        # 用片段复用既有会话
-penguin run -m "长任务" --background            # 立即返回 session id
+penguin run -m <message> [options]
 ```
 
-| 选项 | 说明 |
-| --- | --- |
-| `-m, --message <message>` | 必填，要发送的消息 |
-| `--project-id <id>` | 指定 Project（缺省依次取 `PENGUIN_PROJECT_ID`、`default_project`） |
-| `--agent-id <id>` | 指定 Agent（缺省依次取 `PENGUIN_AGENT_ID`、`default_agent`） |
-| `--workspace <path>` | Workspace 目录；相对路径按 CLI 的当前目录解析，缺省即当前目录。目录必须存在于服务器所在机器——本机默认流程里就是这台机器 |
-| `--model-id <id>` | 指定模型的上游 id，须与 `--provider` 同时给出；两者都不给时使用 Project 默认模型 |
-| `--provider <group>` | 模型所属 Provider 分组，给出 `--model-id` 时必填 |
-| `--approve <mode>` | 审批模式，见下文（缺省 `allow-all`）。与 `--session` 同用时 PATCH 该会话的粘性模式 |
-| `--thinking <level>` | 发起任务前把会话的思考等级钉为 `low` / `medium` / `high` / `xhigh` / `max`，自会话的下一次 LLM 请求起生效。省略时按会话钉定值（否则 Agent 配置）生效 |
-| `--session <sessionId>` | 复用既有 Session（完整 id 或唯一片段），不再新建；不能与 `--workspace` 及模型对同用 |
-| `--source <source>` | 把新建会话标记为 Benchmark 评估创建；唯一取值为 `benchmark`，Web App 会把这类会话归入会话列表的「评估任务」子夹。不能与 `--session` 同用 |
-| `--background` | 提交任务后立即退出并打印 session id（`--json` 下为 `{"sessionId"}`）；任务在服务端继续运行，可用 `penguin logs -f` 跟随 |
-| `--timeout <duration>` | 软让出等待预算（见「全局约定」）：到时打印已渲染内容与一行暗色「仍在运行」提示（含 session id；`--json` 下为 `{sessionId, status: "running", text}`）并以 0 退出——任务不被中止。`--timeout 0` 在 POST 后立即返回（`--json` 下为 `{sessionId, status: "running"}`，无 `text`）。不能与 `--background` 同用 |
-| `--goal [budget]` | 目标模式：消息即目标，服务端循环直至终态；可选值为 token 预算（如 `500k`） |
-| `--json` | 输出最终的 `{sessionId, status, text}` 对象而非渲染流（`text` 为主会话各条助手文本消息拼接） |
-| `--server <url>` | 目标服务器（见「服务器连接」） |
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `-m, --message <message>` | 要发送的消息。必填。 | — |
+| `--project-id <id>` | 要使用的 Project。 | `PENGUIN_PROJECT_ID`，否则 `default_project` |
+| `--agent-id <id>` | 要使用的 Agent。 | `PENGUIN_AGENT_ID`，否则 `default_agent` |
+| `--workspace <path>` | Workspace 目录。相对路径相对 CLI 的工作目录解析。目录必须存在于服务器所在的机器上；默认的本地部署中，服务器就在本机。 | 工作目录 |
+| `--model-id <id>` | 要使用的模型的上游 id。需要配合 `--provider`。 | Project 的默认模型 |
+| `--provider <group>` | 模型所属的供应商分组。与 `--model-id` 搭配时必填。 | — |
+| `--approve <mode>` | 审批模式；见[审批模式（--approve）](#审批模式--approve)。配合 `--session` 时，以 PATCH 请求更新 Session 固定的审批模式。 | `allow-all` |
+| `--thinking <level>` | 在 Task 开始前固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）。从 Session 的下一次 LLM 请求起生效。 | Session 已固定的等级，否则用 Agent 配置 |
+| `--session <sessionId>` | 复用已有的 Session（完整 id 或唯一片段），而不是新建。不能与 `--workspace` 或模型对同时使用。 | — |
+| `--source <source>` | 把新建的 Session 标记为由 Benchmark 评估创建。取值仅限 `benchmark`，Web App 会把这类 Session 归入会话列表的「评估任务」文件夹。不能与 `--session` 同时使用。 | — |
+| `--background` | 以 POST 提交 Task 后立即退出，打印 session id（`--json` 下为 `{"sessionId"}`）。Task 在服务器上继续运行；可用 `penguin logs -f` 跟踪。 | — |
+| `--timeout <duration>` | 软让出的等待预算；见[全局约定](#全局约定)。不能与 `--background` 同时使用。 | 无限等待 |
+| `--goal [budget]` | 目标模式：消息就是目标，服务器循环执行，直到目标达到终态。可选值是 Token 预算，例如 `500k`。 | — |
+| `--json` | 打印最终的 `{sessionId, status, text}` 对象，取代渲染后的流。`text` 拼接主 Session 的 助手文本消息。 | — |
+| `--server <url>` | 目标服务器；见[服务器连接](#服务器连接)。 | — |
+
+`--timeout` 到时后，`run` 打印目前已渲染的内容和一行暗色的仍在运行提示（附 session id），然后退出 0，不中止 Task。`--json` 下则打印 `{sessionId, status: "running", text}`。`--timeout 0` 在 POST 完成后立即返回，`--json` 下打印 `{sessionId, status: "running"}`，不含 `text`。对目标模式运行，最终 JSON 对象里的 `status` 就是目标结果。
+
+在审批提示处按 Ctrl-C 会拒绝这一次工具调用；其他任何时候按 Ctrl-C 都会在服务器上中止 Task。
+
+```bash
+penguin run -m "Summarize the code structure of this directory"
+penguin run -m "keep going" --session 402a2e24        # reuse a session by fragment
+penguin run -m "long job" --background                # returns the session id immediately
+```
 
 ## penguin chat
 
-交互式 REPL，每输入一行发起一个 Task。选项与 `run` 相同（除 `-m, --message` 外），另加：
+启动交互式 REPL，每行输入都会启动一个 Task。
 
-| 选项 | 说明 |
-| --- | --- |
-| `--resume [sessionId]` | 恢复指定 Session（完整 id 或唯一片段）；省略 id 时恢复该 Agent 最近的 Session |
-| `--verbose` | 显示完整工具输出；缺省折叠过长的工具输出（见下文） |
-| `--server <url>` | 目标服务器（见「服务器连接」） |
+```bash
+penguin chat [options]
+```
 
-使用 `--resume` 时，Workspace 与模型由原 Session 锁定，不可再用 `--workspace` / `--model-id` / `--provider` 覆盖。`--resume` 下仍接受 `--thinking`：它重新钉住该 Session，自下一次 LLM 请求起生效（中途更换会使提供商缓存失效，建议先压缩）。退出时会打印可直接复制的 `penguin chat --resume <sessionId>` 命令。
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--project-id <id>` / `--agent-id <id>` | 要使用的 Project 和 Agent，同 `run`。 | 见[全局约定](#全局约定) |
+| `--workspace <path>` | Workspace 目录，同 `run`。 | 工作目录 |
+| `--model-id <id>` / `--provider <group>` | 模型对，同 `run`。 | Project 的默认模型 |
+| `--approve <mode>` | 审批模式；见[审批模式（--approve）](#审批模式--approve)。 | `allow-all` |
+| `--thinking <level>` | 固定 Session 的思考等级，同 `run`。 | Session 已固定的等级，否则用 Agent 配置 |
+| `--resume [sessionId]` | 恢复一个 Session（完整 id 或唯一片段）。不带 id 时，恢复 Agent 最近的 Session。 | — |
+| `--verbose` | 显示完整工具输出，而不是折叠长输出；见[工具输出折叠](#工具输出折叠)。 | 长输出折叠 |
+| `--server <url>` | 目标服务器；见[服务器连接](#服务器连接)。 | — |
 
-REPL 内命令：
+使用 `--resume` 时，原 Session 已固定 Workspace 和模型，`--workspace`、`--model-id` 和 `--provider` 无法覆盖它们。`--thinking` 仍然有效：它重新固定现有 Session，从下一次 LLM 请求起生效。在上下文中途更改等级会使供应商的上下文缓存失效，所以请先压缩。退出时，如果 Session 已有历史，REPL 会打印一条可直接复制运行的 `penguin chat --resume <sessionId>` 命令。
+
+### REPL 内命令
 
 | 输入 | 行为 |
 | --- | --- |
-| 运行中输入任意文字 | 运行中插话：排队后以 `[user_steering]` 用户消息随下一轮送达模型（`»` 确认行会回显文字）；输入期间渲染暂挂，流式输出不会打断正在输入的行。若 Task 恰好已结束，该行作为下一条普通消息发送 |
-| `/compact` | 主动压缩当前上下文 |
-| `/clear` | 原地开启全新空白 Session；原会话保留在磁盘上，仍可用 `--resume` 恢复 |
-| `/thinking` | 显示本 Session 的思考等级：被 `--thinking` 或 `/thinking` 钉住的等级，否则为 Agent 配置的等级 |
-| `/thinking <level>` | 钉住本 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）；不会写回 Agent 配置。软限制：自下一次请求起生效、允许中途更换——回执会建议先 `/compact` 压缩，因为更换会使提供商的提示词缓存失效；此后派生的子会话继承钉住的等级 |
-| `/verbose` | 在折叠与完整工具输出之间切换 |
-| `/exit`、`/quit` | 退出 |
+| Task 运行期间输入的任意文本 | 运行中插话。这一行会排队，在两轮之间以 `[user_steering]` 用户消息的形式送达模型，同时一个 `»` 确认符会回显这段文本。你输入时渲染暂停，流式输出不会覆盖这一行。如果 Task 先结束，这一行会变成下一条普通 Prompt 发送出去。 |
+| `/goal[:<budget>] <objective>` | 对给出的目标运行目标模式。可选的预算是 Token 预算，例如 `/goal:500k`。Ctrl-C 会中止整个目标。见[目标模式](/goal-mode)。 |
+| `/compact` | 立即压缩当前上下文。 |
+| `/clear` | 原地开启一个全新的空白 Session，仍用同一个 Workspace 和模型。旧 Session 保留在服务器上，之后可用 `--resume` 恢复。 |
+| `/thinking` | 显示这个 Session 的思考等级：`--thinking` 或 `/thinking` 固定的等级，否则是 Agent 配置的等级。 |
+| `/thinking <level>` | 固定 Session 的思考等级（`low` / `medium` / `high` / `xhigh` / `max`）。等级不会写回 Agent 配置。 |
+| `/verbose` | 在折叠和完整工具输出之间切换。 |
+| `/exit`、`/quit` | 退出。 |
 
-过长的工具输出（`exec_command` 的结果、`read_file` 读回的整个文件）缺省折叠显示，避免刷屏：前 4 行照常流式打印，输出结束时打印省略标记（`……（另有 N 行，/verbose 显示完整输出）`）与最后 4 行；不超过 9 行的输出完整显示。这只是显示层截断——模型、Trace 与 Web App 收到的始终是完整输出。`/verbose`（或启动时加 `--verbose`）可关闭折叠、对后续输出生效；`--resume` 恢复的历史按同一规则折叠。`penguin run` 从不折叠：它的输出供管道与嵌套 CLI 消费。
+固定的思考等级属于软限制：从下一次请求起生效，即使处在上下文中途。回复会建议先运行 `/compact`，因为更改会使供应商的上下文缓存失效。更改之后派生的子 Agent Session 继承固定的等级。
 
-Ctrl-C 的行为依状态而定：
+### 工具输出折叠
+
+长工具输出——比如 `exec_command` 的结果或 `read_file` 读出的整个文件——默认折叠，以免刷满屏幕。前 4 行实时流式显示。输出结束后，REPL 打印一个省略标记（`… (+N lines, /verbose for full output)`）和最后 4 行。不超过 9 行的输出会完整显示。
+
+折叠只影响显示：模型、Trace 和 Web App 收到的始终是完整输出。输入 `/verbose` 或以 `--verbose` 启动，即可为后续输出关闭折叠。`--resume` 展示的历史同样按此折叠。`penguin run` 从不折叠输出，因为它的输出要供管道和嵌套 CLI 使用。
+
+### Ctrl-C
+
+Ctrl-C 的行为取决于 REPL 当时的状态：
 
 | 状态 | 行为 |
 | --- | --- |
-| 等待工具审批 | 拒绝该次工具调用 |
-| Task 运行中 | 中断当前 Task，返回输入 |
-| 输入缓冲非空 | 清空当前输入 |
-| 空闲且缓冲为空 | 显示退出确认（y/N） |
+| 等待工具审批 | 拒绝这一次工具调用。 |
+| Task 运行中 | 中止当前 Task，回到输入。 |
+| 输入缓冲区非空 | 清空当前输入。 |
+| 空闲且缓冲区为空 | 显示退出确认（y/N）。 |
 
 ## penguin ls
 
-列出 Project 的会话——覆盖全部 Agent，或用 `--agent-id` 限定一个。列依次为：短 id（其余命令可作片段使用的末尾 8 位十六进制）、Agent、标题、运行中 / 空闲、最近活动、Workspace 尾段。已归档会话仅在 `-a` 下出现。
+列出 Project 的 Session，默认覆盖所有 Agent，用 `--agent-id` 可只看一个。各列依次为：短 id（即 8 位十六进制尾部，其他命令可以把它当作片段使用）、Agent、标题、运行中/空闲、最近活跃时间和 Workspace 路径的末段。已归档的 Session 只有加 `-a` 才显示。
+
+```bash
+penguin ls [options]
+```
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--project-id <id>` / `--agent-id <id>` | 范围。不带 `--agent-id` 时列出 Project 的所有 Agent。 | 见[全局约定](#全局约定) |
+| `-a, --all` | 包含已归档的 Session。 | — |
+| `--days <n>` | 只列出最近 n 个自然日内有活动的 Session。今天算第 1 天，所以 `--days 2` 覆盖昨天和今天，与 `cost --days` 一致。可与 `-a` 和 `--json` 组合。 | — |
+| `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
 
 ```bash
 penguin ls
@@ -103,77 +143,110 @@ penguin ls --agent-id default_agent -a
 penguin ls --json
 ```
 
-| 选项 | 说明 |
-| --- | --- |
-| `--project-id <id>` / `--agent-id <id>` | 作用域（缺省值见「全局约定」；未给 `--agent-id` 时列出 Project 的全部 Agent） |
-| `-a, --all` | 包含已归档会话 |
-| `--days <n>` | 只列最近 n 个自然日内活跃过的会话——今天算第 1 天，`--days 2` 即昨天加今天（与 `cost --days` 同一自然日口径）。可与 `-a`、`--json` 组合 |
-| `--json` / `--server <url>` | 同各处约定 |
-
 ## penguin input
 
-向会话发送消息——或在不带 `-m` 时轮询其最近回复。session id 可以省略：省略即取当前 Agent 最近一次会话（见「全局约定」），于是裸 `penguin input` 正好回答「我的 Agent 最后说了什么」。带 `-m` 时：运行中的会话按插话（steering）送达（随下一轮交给模型），空闲会话则发起新 Task；缺省等待并渲染直至本轮结束，`--timeout` 限定等待（软让出，见「全局约定」；`--timeout 0` 在送达后立即返回）。
-
-不带 `-m` 时是**轮询**，与 `input_subagent` 的空 prompt 语义互为镜像：打印该会话最近一条完整助手文本（取自历史尾部的幂等「最新答案」快照；跳过思考与工具输出），不排队也不插话。运行中的会话先静默等待——给出 `--timeout` 时以其为上限，`--timeout 0` 立即取快照——到时仍在运行则打印当前最新文本并附「仍在运行」提示（退出码 0）。
+向一个 Session 发送消息；不带 `-m` 时，则轮询它最后一次的回答。session id 可省略：省略时命令使用 Agent 最近的 Session（见[全局约定](#全局约定)），所以直接运行 `penguin input` 就能回答「我的 Agent 最后说了什么」。
 
 ```bash
-penguin input 402a2e24 -m "顺便检查一下测试"
-penguin input 402a2e24 -m "排个队" --timeout 0    # 送达后立即返回
-penguin input 402a2e24                    # 轮询：打印最近一条助手回复
-penguin input                             # 轮询当前 Agent 最近一次会话
-penguin input 402a2e24 --timeout 5m       # 轮询，最多等运行中的一轮 5 分钟
+penguin input [session_id] [options]
 ```
 
-| 选项 | 说明 |
-| --- | --- |
-| `-m, --message <text>` | 消息文本；省略即改为轮询最近助手回复 |
-| `--timeout <duration>` | 软让出等待预算：带 `-m` 时到期脱开、行为同 `run`（`--json` 下为 `{sessionId, status: "running", text}`），`--timeout 0` 送达后立即返回（`{sessionId, status: "running"}`）；不带 `-m` 时到期取快照——`0` 即立即——并附仍在运行提示 |
-| `--project-id <id>` | 片段检索的作用域（完整 session id 不需要） |
-| `--agent-id <id>` | 省略 session id 时，取哪个 Agent 的最近一次会话 |
-| `--json` / `--server <url>` | 同各处约定；带 `-m` 的 `--json` 输出 `{sessionId, status, text}`（status 为 `completed` / `aborted` / `running`；`--timeout 0` 的形状不含 `text`），轮询形式输出 `{sessionId, status, text}`（status 为 `idle` / `running`，尚无回复时 text 为 `""`） |
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `-m, --message <text>` | 消息文本。省略它则改为轮询最后一次 助手回复。 | — |
+| `--timeout <duration>` | 软让出的等待预算。带 `-m` 时，到时后命令像 `run` 一样脱离，`--timeout 0` 在送达后立即返回。不带 `-m` 时，命令在到时点拍快照（`0` 表示立即拍），并注明 Session 仍在运行。 | 无限等待 |
+| `--project-id <id>` | 片段搜索的范围。完整 session id 无需此选项。 | `PENGUIN_PROJECT_ID`，否则 `default_project` |
+| `--agent-id <id>` | 省略 session id 时，取这个 Agent 最近的 Session。 | `PENGUIN_AGENT_ID`，否则 `default_agent` |
+| `--json` / `--server <url>` | 见[全局约定](#全局约定)和下文的 JSON 结构。 | — |
+
+带 `-m` 时，运行中的 Session 收到的文本会作为插话处理，在两轮之间送达；空闲的 Session 则启动一个新 Task。默认情况下，命令会等待并渲染，直到这一轮完成。
+
+不带 `-m` 时，命令是一次轮询，语义与 `input_subagent` 的空 Prompt 一致。它打印 Session 最近一次完整的 助手文本——从历史末尾取得的最后一次回答的幂等快照。思考与工具输出一概跳过，也不会排队或插话。如果 Session 正在运行，命令会先静默等待，给了 `--timeout` 就最多等这么久（`--timeout 0` 表示立即拍快照）。到时如果 Session 仍在运行，命令打印最新文本并注明仍在运行，退出 0。
+
+`--json` 下：
+
+- 带 `-m` 时，命令打印 `{sessionId, status, text}`，`status` 取 `completed`、`aborted` 或 `running`。`--timeout 0` 的结构没有 `text`。
+- 轮询形式打印 `{sessionId, status, text}`，`status` 取 `idle` 或 `running`，还没有回复时 `text` 为 `""`。
+
+```bash
+penguin input 402a2e24 -m "also check the tests"
+penguin input 402a2e24 -m "queue this" --timeout 0    # deliver and return immediately
+penguin input 402a2e24                    # poll: print the last assistant reply
+penguin input                             # poll the agent's most recent session
+penguin input 402a2e24 --timeout 5m       # poll, waiting out a running turn up to 5 minutes
+```
 
 ## penguin logs
 
-用与 REPL 相同的渲染器渲染会话历史。session id 可以省略：省略即取当前 Agent 最近一次会话（见「全局约定」），裸 `penguin logs` 因此就是「刚才发生了什么」。
+用与 REPL 相同的渲染器渲染一个 Session 的历史。session id 可省略：省略时命令使用 Agent 最近的 Session（见[全局约定](#全局约定)），所以直接运行 `penguin logs` 就能看到刚才发生的事。
 
 ```bash
-penguin logs                    # 当前 Agent 最近一次会话
+penguin logs [session_id] [options]
+```
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--tail <n>` | 只显示最后 n 条记录。 | 全部记录 |
+| `-f, --follow` | 历史播完后继续跟踪实时流。只读：Ctrl-C 脱离，不改动 Session。 | — |
+| `--timeout <duration>` | 跟踪这么长时间后停止（软让出，退出 0）。只在配合 `-f` 时有意义。 | — |
+| `--project-id <id>` | 片段搜索的范围。 | `PENGUIN_PROJECT_ID`，否则 `default_project` |
+| `--agent-id <id>` | 省略 session id 时，取这个 Agent 最近的 Session。 | `PENGUIN_AGENT_ID`，否则 `default_agent` |
+| `--json` / `--server <url>` | `--json` 打印原始消息数组；配合 `-f` 时，消息一到就以每行一条 JSON 打印。 | — |
+
+```bash
+penguin logs                    # the agent's most recent session
 penguin logs 402a2e24 --tail 20
 penguin logs 402a2e24 -f
 ```
 
-| 选项 | 说明 |
-| --- | --- |
-| `--tail <n>` | 只显示最后 n 条 |
-| `-f, --follow` | 渲染历史后继续跟随实时输出流（只读；Ctrl-C 仅断开，不影响会话） |
-| `--timeout <duration>` | 跟随该时长后停止（软让出，退出码 0）；仅与 `-f` 搭配有意义 |
-| `--project-id <id>` | 片段检索的作用域 |
-| `--agent-id <id>` | 省略 session id 时，取哪个 Agent 的最近一次会话 |
-| `--json` / `--server <url>` | 同各处约定；`--json` 输出原始消息数组（`-f` 下按行追加到达的 JSON 消息） |
-
 ## penguin agent
+
+`agent ls` 列出 Project 的 Agent，包括 id、名称、会话数和描述。`agent create` 创建 Agent。
+
+```bash
+penguin agent ls [--project-id <id>] [--json] [--server <url>]
+penguin agent create --agent-id <id> [options]
+```
+
+`agent create` 的选项：
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--agent-id <id>` | Agent id，同时也是它的目录名。必填。 | — |
+| `--name <name>` / `--description <text>` | 显示名称和描述。 | — |
+| `--plugins <names>` | 要预装的插件库插件名，逗号分隔，每个插件连同各自的 Skill 和钩子包一起安装。名称未知时直接拒绝，此时还没有创建任何东西。 | — |
+| `--project-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
 
 ```bash
 penguin agent ls
 penguin agent create --agent-id helper --name "Helper" --plugins software-development,goal
 ```
 
-`agent ls` 列出 Project 的 Agent（id、名称、会话数、描述）。`agent create` 创建一个：
-
-| 选项 | 说明 |
-| --- | --- |
-| `--agent-id <id>` | 必填，Agent id（即目录名） |
-| `--name <s>` / `--description <s>` | 显示名与描述 |
-| `--plugins <a,b>` | 逗号分隔的插件库插件名，预装进新 Agent（各自的 Skill 与钩子包）；未知名称在创建任何东西之前即被拒绝 |
-| `--project-id <id>` / `--json` / `--server <url>` | 同各处约定 |
-
 ## penguin project
 
-`penguin project ls` 列出当前账号可用的 Project（自有与被授权），含 id、显示名与角色。`--json` / `--server` 同各处约定。
+`penguin project ls` 列出这个账号能访问的 Project——自己的和共享的——包括 id、显示名称和角色。支持 `--json` 和 `--server`。
+
+```bash
+penguin project ls
+```
 
 ## penguin cost
 
-来自服务端用量聚合的 Token 用量与成本。缺省打印汇总卡片——今日 / 近 7 天 / 累计（与任何范围参数无关，恒计算）；`--by` 改为打印分组表格。
+展示来自服务器用量聚合的 Token 用量与成本。默认打印一张摘要卡片，包含今天、最近 7 天和总计，忽略任何范围选项。`--by` 则打印分组表格。
+
+```bash
+penguin cost [options]
+```
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--days <n>` | 设置起止日期，覆盖最近 n 天。 | — |
+| `--from <date>` / `--to <date>` | 显式范围，`yyyy-mm-dd` 格式，必须成对给出。 | — |
+| `--by <dimension>` | 按 `date`、`agent`、`model` 或 `session` 分组。 | 摘要卡片 |
+| `--project-id <id>` / `--agent-id <id>` | 范围。`--agent-id` 用于过滤，且没有默认 Agent：不主动缩小范围时，成本覆盖整个 Project。 | Project：见[全局约定](#全局约定) |
+| `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
+
+成本后面的 `+` 表示部分求和：这个分组里有模型没有配置价格。`-` 表示完全没有可计价的用量。
 
 ```bash
 penguin cost
@@ -181,77 +254,82 @@ penguin cost --days 7 --by model
 penguin cost --from 2026-08-01 --to 2026-08-25 --by agent
 ```
 
-| 选项 | 说明 |
-| --- | --- |
-| `--days <n>` | 最近 n 天（自动换算为 from/to） |
-| `--from <d>` / `--to <d>` | 显式范围（`yyyy-mm-dd`，恒成对） |
-| `--by <dim>` | 按 `date`、`agent`、`model` 或 `session` 分组 |
-| `--project-id <id>` / `--agent-id <id>` | 作用域；`--agent-id` 为过滤条件（此处没有缺省 Agent——成本是 Project 视图，除非显式收窄） |
-| `--json` / `--server <url>` | 同各处约定 |
-
-成本后缀 `+` 表示部分和（该桶里有模型未配置价格）；`-` 表示完全没有计价用量。
-
 ## penguin schedule
 
-`penguin schedule ls` 列出 Project 的定时任务——覆盖全部 Agent，或用 `--agent-id` 限定。列依次为：Agent、名称、启用与否、开始时刻、周期（一次性任务为「一次性」）、目标（绑定会话的短 id 或「新建会话」）、最近触发，以及非 active 状态的标记（`expired` / `done` / `missed` / `invalid`；无法解析的任务文件也会列出并标记 invalid）。`--json` / `--server` 同各处约定。
-
-`add` / `update` / `rm` 经 API 管理定时任务，由 API 写入任务的 TOML 文件——**文件仍是唯一真相源**，CLI 是带校验的写入器（与模型配置、vault 同一模式：一律经系统接口更新、校验收敛在接口层，手编依然可行）。API 错误原样透出，Agent 因此获得同步校验，而非手编 TOML 时要等对账周期的滞后。
+列出并管理 Project 的定时任务。
 
 ```bash
-penguin schedule add daily-report --prompt "总结今天的进展" --start-at 2026-09-01T09:00:00Z --period 1d
-penguin schedule add once-now --prompt "检查部署" --start-at now --session-id 402a2e24
+penguin schedule ls [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
+penguin schedule add <name> --prompt <text> --start-at <ISO|now> [options]
+penguin schedule update <name> [options]
+penguin schedule rm <name> [--project-id <id>] [--agent-id <id>] [--json] [--server <url>]
+```
+
+`penguin schedule ls` 列出所有 Agent 的定时任务，用 `--agent-id` 可只看一个。各列为：Agent、名称、是否启用、开始时间、周期（一次性任务显示 `once`）、目标（绑定的 Session 短 id，或 `new session`）、上次触发时间，以及每个非 active 状态的标记（`expired`、`done`、`missed` 或 `invalid`）。无法解析的定时任务文件也会列出，并标记 `invalid`。
+
+`add`、`update` 和 `rm` 走 API，由 API 写入定时任务的 TOML 文件。文件始终是唯一事实来源，CLI 是经过校验的写入方——模型配置和 vault 都遵循这一模式：更新经由系统接口，校验发生在接口层，手工编辑依然可行。API 错误原样打印，Agent 立即得到校验结果，不必像手工编辑那样等下一轮对账。
+
+`add` 和 `update` 的选项：
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--prompt <text>` | 每次触发发送的文本。`add` 必填。 | — |
+| `--start-at <ISO\|now>` | 首次触发时间，ISO 8601 格式，或用字面量 `now` 表示当前时刻。`add` 必填。 | — |
+| `--period <duration>` | 固定间隔，至少 `5m`（例如 `30m`、`12h`、`1d`、`7d`）。 | 一次性 |
+| `--end-at <ISO>` | 这个时刻之后不再触发。 | — |
+| `--session-id <id>` | 把每次触发绑定到一个 Session。只能在它和新建 Session 选项之间二选一。 | — |
+| `--workspace <path>` / `--model-id <id> --provider <group>` | 新建 Session 模式：每次触发都在这个 Workspace 和模型上创建一个 Session。模型对要么都给，要么都不给。 | 临时 Workspace；Project 的默认模型 |
+| `--disabled`（`add`） | 创建时即处于禁用状态。 | 启用 |
+| `--enable` / `--disable`（`update`） | 开启或关闭任务。 | — |
+| `--project-id <id>` / `--agent-id <id>` / `--json` / `--server <url>` | 见[全局约定](#全局约定)。 | — |
+
+- `add` 创建的任务默认启用，因为添加任务就是想让它跑起来；不想启用就用 `--disabled`。这是与原始文件的刻意差异：原始文件的 `enabled = false` 默认值保留不变，供手工编辑使用。
+- `update` 读取已存储的任务，修改后写回，未指定的字段保持原值。在绑定 Session 和新建 Session 两种目标之间切换时，会清空另一种目标的字段。
+- `rm` 不询问直接删除。服务器仍要求调用者是 Project 所有者。
+
+```bash
+penguin schedule add daily-report --prompt "summarize the day" --start-at 2026-09-01T09:00:00Z --period 1d
+penguin schedule add once-now --prompt "check the deploy" --start-at now --session-id 402a2e24
 penguin schedule update daily-report --period 12h --disable
 penguin schedule rm daily-report
 ```
 
-| 选项 | 说明 |
-| --- | --- |
-| `--prompt <s>` | 每次触发要发送的内容（`add` 必填） |
-| `--start-at <ISO\|now>` | 首次触发时刻，ISO 8601，或字面量 `now` 表示当前时刻（`add` 必填） |
-| `--period <dur>` | 固定间隔，下限 `5m`（如 `30m`、`12h`、`1d`、`7d`）；省略即一次性任务 |
-| `--end-at <ISO>` | 此时刻之后不再触发 |
-| `--session-id <id>` | 绑定到某个会话触发——与下面的新建会话形式互斥（XOR） |
-| `--workspace <path>` / `--model-id <id> --provider <p>` | 新建会话模式：每次触发在该 Workspace / 模型上开新会话（Workspace 省略即临时工作区；模型对「都给或都不给」，省略即 Project 默认） |
-| `--disabled`（`add`） | 与原始文件的一处有意分歧：`add` 缺省即**启用**——添加任务就是要它运行——原始文件的 `enabled = false` 缺省仍留给手编。`--disabled` 关闭 |
-| `--enable` / `--disable`（`update`） | 翻转启用位；`update` 对存储项读改写：未指定的字段保留原值，切换目标类型时清掉另一类字段 |
-| `--project-id` / `--agent-id` / `--json` / `--server` | 同各处约定；`rm` 直接删除、不做确认（服务端的 owner 授权照旧生效） |
-
 ## penguin org
 
-公司模式的命令族——组织 API 的瘦客户端。组织在 Project 目录下的文件（员工树、工位台账、日程、工单、频道）仍是唯一真相源；每个子命令要么读取它们的投影，要么经编辑它们的接口写入，契约与 `schedule` 的带校验写入器相同：API 错误原样透出，Agent 因此获得同步校验，而非手编文件时要等对账周期的滞后。自动生成的 id 按约定带前缀——组织 `co_`、频道 `ch_`——服务端只提议、不强制，因此这里传入的 id 一律按原样创建。
+公司模式的命令族，是组织 API 之上的瘦客户端。组织在 Project 目录下的文件（员工树、工位台账、日历、工单和频道）始终是唯一事实来源。每个子命令要么读取这些文件的投影，要么通过编辑这些文件的路由写入；契约与 `schedule` 一致——CLI 是经过校验的写入方，API 错误原样打印，Agent 立即得到校验结果，不必像手工编辑那样等下一轮对账。按约定，生成的 id 带前缀：组织用 `co_`，频道用 `ch_`。服务器建议这些前缀但从不强制，这里传入的 id 会严格按输入原样创建。
 
 ```bash
 penguin org ls [--project-id <id>] [--json]
-penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]   # 按约定取 `co_<slug>`
-penguin org show [--org-id <id>] [--json]                       # 概览：工作语言、员工与状态、看板计数、预算占用、待处理事项
-penguin org chart [--org-id <id>] [--json]                      # 员工树
+penguin org create --org-id <id> --mission <s> [--name <s>] [--language <zh|en>] [--workspace <path>] [--ceo-budget <usd>] [--model-id <id> --provider <p>] [--project-id <id>]   # by convention `co_<slug>`
+penguin org show [--org-id <id>] [--json]                       # overview: working language, employees and states, board counts, spend against budget, pending items
+penguin org chart [--org-id <id>] [--json]                      # the employee tree
 penguin org hire (--agent-id <id> | --new-agent <id> [--name <s>] [--description <s>] [--skills <a,b>]) --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
 penguin org employee set <agent_id> [--title <s>] [--reports-to <agent_id>] [--workspace <path>] [--budget <usd>] [--duties <s>] [--model-id <id> --provider <p>]
-penguin org leave <agent_id>                                    # 移出组织（CEO 不可），不删 Agent
-penguin org desk show [<agent_id>] [--json]                     # 工位会话 id 与 Workspace（尚无工位时开一个）
-penguin org desk renew [<agent_id>]                             # 换新的工位会话（重置上下文）
+penguin org leave <agent_id>                                    # out of the organization (not the CEO); the Agent itself stays
+penguin org desk show [<agent_id>] [--json]                     # the desk session id and Workspace (opens the desk if there is none)
+penguin org desk renew [<agent_id>]                             # a fresh desk session (resets the context)
 penguin org calendar ls [--agent-id <id>] [--json]
 penguin org calendar add <name> [--agent-id <id>] --prompt <s> --start-at <ISO|now> [--period <dur>] [--end-at <ISO>] [--title <s>] [--disabled]
-penguin org calendar update <name> [--agent-id <id>] [<同上字段>] [--enable|--disable]
+penguin org calendar update <name> [--agent-id <id>] [same fields] [--enable|--disable]
 penguin org calendar rm <name> [--agent-id <id>]
 penguin org ticket ls [--status <col>] [--owner <principal>] [--blocked] [--json]
 penguin org ticket show <ticket_id> [--json]
 penguin org ticket create --title <s> (--goal <s> [--criteria <s>] | --body-file <path>) [--owner <principal>] [--slug <words>] [--parent <ticket_id>] [--notify <p,p>] [--priority P0|P1|P2] [--due <date>]
-penguin org ticket move <ticket_id> --to <col> [--reason <s>]   # 移入 rejected 须给 reason
+penguin org ticket move <ticket_id> --to <col> [--reason <s>]   # moving into rejected needs a reason
 penguin org ticket assign <ticket_id> --owner <principal>
-penguin org ticket block <ticket_id> --reason <s> [--by <principal|ticket_id>]   # 工单留在所在列
+penguin org ticket block <ticket_id> --reason <s> [--by <principal|ticket_id>]   # the ticket stays in its column
 penguin org ticket unblock <ticket_id>
-penguin org ticket progress <ticket_id> -m <text>               # 追加一条进展，记为当前会话所写
-penguin org ticket start <ticket_id> [-m <附言>] [--workspace <path>] [--agent-id <id>] [--json]   # 新开一个后台处理该工单的工单会话，打印会话 id
-penguin org ticket attach <ticket_id> [--session <session_id>]   # 把既有会话挂为贡献会话（缺省当前会话）
-penguin org channel ls [--json]                                 # 人看到全部频道，员工只看到自己所在的
-penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # 新频道只有创建者一人；按约定取 `ch_<slug>`
-penguin org channel show <channel_id> [--json]                  # 用途、成员数与成员清单
-penguin org channel invite <channel_id> <principal>...          # 任一成员可邀请；每个 principal 一次 POST
-penguin org channel join <channel_id>                           # 仅限人；员工只能等成员邀请
-penguin org channel leave <channel_id>                          # 移出自己
-penguin org channel remove <channel_id> <principal>             # 仅限人
-penguin org channel archive <channel_id> | unarchive <channel_id>      # 仅限人；归档期间只读
+penguin org ticket progress <ticket_id> -m <text>               # a progress entry, attributed to the calling session
+penguin org ticket start <ticket_id> [-m <note>] [--workspace <path>] [--agent-id <id>] [--json]   # a ticket session working on the ticket in the background; prints its id
+penguin org ticket attach <ticket_id> [--session <session_id>]   # an existing session as a contributor (default: the calling session)
+penguin org channel ls [--json]                                 # every channel for a person, its own for an employee
+penguin org channel create <channel_id> [--name <s>] [--purpose <s>]   # a new channel holds only its creator; `ch_<slug>` by convention
+penguin org channel show <channel_id> [--json]                  # purpose, member count and the member list
+penguin org channel invite <channel_id> <principal>...          # any member invites; one POST per principal
+penguin org channel join <channel_id>                           # people only; an employee waits to be invited
+penguin org channel leave <channel_id>                          # self-removal
+penguin org channel remove <channel_id> <principal>             # people only
+penguin org channel archive <channel_id> | unarchive <channel_id>      # people only; read-only while archived
 penguin org channel tail [--channel <id>] [--date <d>] [-n <count>] [--json]
 penguin org channel send -m <text> [--channel <id>] [--ref-ticket <id>] [--ref-session <id>]
 penguin org handbook list [--json]
@@ -261,65 +339,135 @@ penguin org handbook rm <path>
 penguin org finance [--period <YYYY-MM>] [--json]
 ```
 
-每个子命令都接受 `--org-id <id>`、`--project-id`、`--json` 与 `--server`。**`--org-id` 缺省取 `PENGUIN_ORG_ID`**——公司模式在「服务器连接」一节所述控制环境之外多注入的一个变量：服务端把它注入工位会话与工单会话的每个工具子进程，员工自己的 `penguin org` 调用因此无需点名组织；人类在 shell 里则显式给出。没有缺省组织——两者都没有时，命令在联系任何服务器之前即失败。`create` 是例外：它的 `--org-id` 是要创建的 id，绝不取自环境。`--json` 把响应以单行 JSON 打印；写入类命令否则打印一行确认。
+### 通用选项
 
-同一套环境在会话内标识调用方：
+每个子命令都接受 `--org-id <id>`、`--project-id`、`--json` 和 `--server`。
 
-- `calendar` 各命令的 `--agent-id` 与 `desk` 的位置参数缺省取 `PENGUIN_AGENT_ID`——员工安排自己的日程、换自己的工位。`calendar ls` 不带该选项时列出全部员工的日程项。
-- `ticket start` 给了 `--agent-id` 就用它，否则用设置了的 `PENGUIN_AGENT_ID`，再否则由服务端取工单负责人。它同时携带 `PENGUIN_SESSION_ID`，服务端据此施加规则：**一张工单的会话只能由它的负责人或人发起**——员工对别人的工单（或没有员工负责人的工单）发起会得到 `403 not_ticket_owner`，原样打印，提示改用改派（`penguin org ticket assign <id> --owner agent:<员工>`），由那名员工的工位在下一次巡检时接手。`--agent-id` 则是负责人把同事拉进自己名下工单的方式。
-- 工单写入（`create`、`assign`、`move`、`block`、`unblock`、`progress`）与频道写入（`create`、`invite`、`join`、`archive`、`unarchive`、`send`）在请求体里携带 `PENGUIN_SESSION_ID`，文件因此记录该会话的员工而非 token 对应的用户；`ticket attach` 省略 `--session` 时挂接的就是它（完整 id 或唯一片段，同各处约定）。
-- 频道读取（`ls`、`show`、`tail`）以及 `leave` 与 `remove` 背后的成员 DELETE 没有请求体，同一个会话改由 `?sessionId=` 传入。不带它，服务端会把员工当作登录的那个人来应答，`channel ls` 便会列出全部频道而非该员工自己的。
+`--org-id` 默认取 `PENGUIN_ORG_ID`——公司模式加入[服务器连接](#服务器连接)所述环境的唯一一个变量。服务器把它注入工位会话和工单会话的每个工具子进程，员工自己调用 `penguin org` 时无需指名，请求就能到达自己所在的组织；人在 shell 里则显式传入这个选项。没有默认组织：选项和变量都不提供时，命令在联系任何服务器之前就会失败。`create` 是例外，因为它的 `--org-id` 就是要创建的 id，从不取自环境。
 
-`--channel` 缺省为 `default_channel`，即全体员工与全体 Project 成员都在其中的全员频道；`ls` 把它排在最前，并显示本地化名称而非其存储的 name。新频道只有创建者一人：员工要由成员邀请才能进入，人可以自行 `join` 任何频道，也能读到全部频道。`join` 与 `leave` 提交的都是调用方自己的 principal——在工位会话或工单会话内是该会话的员工，在会话外是登录的那个人——因此 `join` 绝不会把别人拉进频道。`join`、`remove`、`archive` 与 `unarchive` 是人的操作，因此在会话内执行时服务端返回 `403 not_a_member`——与其他 API 错误一样原样透出。
+`--json` 把响应打印为一行 JSON。不加时，写命令打印一行确认信息。
 
-分组说明：
+### 会话内的调用方身份
 
-- `ls` / `show` / `chart`：Project 的组织及其员工、工单与支出计数；单个组织的概览——名称、使命、状态与工作语言，按状态分的员工数，各列工单数，本期支出对照 CEO 预算，以及等你处理的事（@我、待审核工单、等我的阻塞）；以及按层级缩进的汇报树，逐员工列出头衔、实时状态、自身与累计支出和预算。校验失败的组织或员工以 `invalid: <原因>` 列出，不隐藏。
-- `create`：`--ceo-budget` 是 CEO 的月预算（美元），缺省 **100**。预算按累计线比较——该员工及其全部下属——所以 CEO 的预算就是整家公司的：新组织一开始就有上限而非无限，初始化会话的触发块里也会带上这个数字，CEO 据此裁剪自己的招募方案。`0` 是真的零预算；要重新变回无限，用 `PATCH .../employees/<org_id>_ceo` 传 `budget: null`（Web App 的员工编辑即发此请求）。`--language zh|en` 指定组织的工作语言；不给则由使命决定（正文里出现任一汉字即为 `zh`），组织写下的一切——组织手册、员工简介、CEO 的初始化会话、工位会话标题——都随之而定。
-- `hire`：`--agent-id`（既有 Agent）与 `--new-agent`（新建）二选一；`--name`、`--description`、`--skills`（额外的插件库插件，追加在每个员工都需要的 `agent-company,agent-development` 之上）描述新 Agent。`--workspace` 是组织公共工作区的子目录（`.` 即整个工作区）或绝对路径，不按 CLI 的 cwd 解析；不给则缺省为以该员工命名的子目录——公共工作区的根目录放共享输入，不是任何人的工位。相对子目录会先归一化——`./hr`、`hr/` 与 `hr` 是同一个分区——并在写下这次招募时由服务端建好，因此 `--workspace hr` 就够了，无需事先存在；绝对路径指向用户自己的目录，必须已经存在；用 `..` 爬出公共工作区的写法直接以 400 `invalid_workspace` 拒收。`employee set --workspace` 规则相同，但没有缺省值：只有给出时才改动分区。工位会话与工单会话打开时也会补建该目录。`--budget` 是该员工及其全部下属的月预算（美元）。`employee set` 只改给出的字段；模型对「都给或都不给」，同各处约定。
-- `calendar`：与 `penguin schedule` 同一套写入器——`add` 缺省启用、`--disabled` 关闭，`--start-at now` 即当前时刻，`update` 读改写，`rm` 不做确认。日程项一律发往员工的工位会话，且只在组织与该员工都处于运行状态时触发；否则状态列显示 `paused`。`add` 与 `update` 在返回事件之外附上本次写入引出的排班提醒——同一起始分钟上已有另一位员工的常设日程项、同一员工已有同周期的常设日程项、常设日程项以 `now` 起算——每条一行，以「排班提醒：」打印。它们只是建议：写入一律成功，提醒文本保持服务端的英文。
-- `ticket`：`ls` 取整个看板后在本地过滤（`--status` 为列名：`proposed`、`in_progress`、`review`、`done`、`rejected`）；`show` 先打印派生数据——所在列、运行状态、成本与含子工单成本、贡献会话数、子工单数——再打印工单自身的字段、正文各节，最后以 `History:` 打印操作历史。`create` 二选一：`--goal`（配合 `--criteria`）或以 `--body-file` 给出整个 Markdown 正文，frontmatter 都由服务端生成。`--json` 下 `ls` 以 `{ tickets, invalidFiles }` 打印过滤后的列表。`start` 像 `run --background` 一样打印裸 session id，供 `penguin logs` / `penguin input` 接续。`--owner <principal>` 指定这张工单**唯一**的责任人——组织的员工（Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`），缺省为调用方；没有 `--notify` 时它成为整个 `notify`，但仅限负责人是员工：人不会因为自己名下的工单收到通知，想收到就把自己写进 `--notify`。谁创建的不是一个选项——它记在工单 `history` 的 `created` 条目里，取自命令运行所在的环境。工单 id 形如 `<yyyy-mm-dd>-<slug>`，slug 是用连字符连接的小写英文单词；`--slug <words>` 直接指定它，标题里英文太少、服务端又无法让 Project 的模型代取时（400 `slug_required`）就必须用这个选项。声称做了活的写入——`progress`、正文编辑、`move --to review`——还会把调用方所在的会话记为该工单的贡献会话，其成本因此摊到工单上；移入其他列以及 `block`、`unblock` 都不记。`progress -m` 只写一句大白话——做了什么、东西在哪——谁写的、什么时候写的由服务端记录。`--goal`、`--criteria` 与 `progress -m` 要求把依赖的输入、预期交付物与涉及的文件一律写成完整路径。
-- `channel tail` 以 `time  sender  text` 打印当天最后 20 条消息（`-n` 改条数，`--date` 换一天），`--json` 下即当天的响应、只含这些消息；`channel send` 发一条——`@agent:<id>` 与 `@all` 会触发被提及员工的工位。`system` 消息在英文正文之外带一份结构化 `notice`，`tail` 因此按 CLI 自身的语言渲染；本版本不认识的种类保留英文原文。
-- `finance`：本期按员工（自身与沿汇报线累计，对照预算，附 `warned` / `paused` 标记）与按工单的支出，然后是合计；部分用量所用模型未配置价格时，stderr 上一行提示说明数字是下限。
+在会话内部，同一套环境变量标识调用方：
+
+- `calendar` 系列命令的 `--agent-id` 和 `desk` 的 `<agent_id>` 参数默认取 `PENGUIN_AGENT_ID`，员工借此安排自己的日程、换新自己的工位会话。不带选项的 `calendar ls` 列出所有员工的事件。
+- `ticket start` 启动工单会话：给了 `--agent-id` 就以它运行；否则在设置了 `PENGUIN_AGENT_ID` 时以它运行；再否则以工单负责人的身份运行，由服务器确定。命令还会发送 `PENGUIN_SESSION_ID`，服务器借此执行自己的规则：只有工单负责人或人才能启动工单会话。员工请求别人的工单，或请求没有员工负责人的工单时，会得到 `403 not_ticket_owner`，原样打印。错误信息会提示改为指派工单（`penguin org ticket assign <id> --owner agent:<employee>`），让那位员工的工位在下一轮巡检时接手。负责人也可以用 `--agent-id` 把同事拉到自己负责的工单上。
+- 工单写操作（`create`、`assign`、`move`、`block`、`unblock`、`progress`）和频道写操作（`create`、`invite`、`join`、`archive`、`unarchive`、`send`）在请求体里带上 `PENGUIN_SESSION_ID`，文件里记录的因此是会话对应的员工，而不是 token 的用户。`ticket attach` 在省略 `--session` 时挂接的就是这个会话；`--session` 与其他地方一样，接受完整 id 或唯一片段。
+- 频道读操作（`ls`、`show`、`tail`）以及 `leave` 和 `remove` 背后的成员 DELETE 没有请求体，改为通过 `?sessionId=` 发送同一个会话。不传的话，服务器会把员工当作登录的那个人来应答，`channel ls` 列出的会是所有频道而不是员工自己的频道。
+
+### ls、show 和 chart
+
+- `ls` 列出 Project 的组织，包括各自的员工数、工单数和支出。
+- `show` 打印一个组织的概览：名称、使命、状态和工作语言，员工按状态分布，看板各列的工单数，本期支出与 CEO 预算的对比。还会列出等你处理的事项：提及你的消息、待你审核的工单、因你而阻塞的工单。
+- `chart` 打印汇报树，按层级缩进，包含每个员工的职位、实时状态、自身支出、累计支出和预算。
+
+校验失败的组织或员工会带着 `invalid: <reason>` 出现在列表里，而不是直接略过。
+
+### create
+
+`--ceo-budget` 是 CEO 的月度预算，单位为美元，默认 100。预算沿累计线比较，即员工本人加上下面的所有人，所以 CEO 的预算覆盖整个公司。新组织因此有上限而非无限制，初始化运行的触发块会写明这个数字，CEO 据此规划招聘提案的规模。`0` 是真实的零预算。要再次解除上限，向 `PATCH .../employees/<org_id>_ceo` 发送 `budget: null`，Web App 的员工编辑器正是这么做的。
+
+`--language zh|en` 设置组织的工作语言。不给时由使命决定：使命文本里只要出现一个汉字，语言就是 `zh`。组织写出的一切都遵循这个语言：手册、员工简报、CEO 的初始化运行和工位会话标题。
+
+### hire
+
+`hire` 必须在 `--agent-id` 和 `--new-agent` 中恰好选一个：前者雇用已有的 Agent，后者新建一个。对新建的 Agent，用 `--name`、`--description` 和 `--skills` 描述它；`--skills` 列出额外的插件库插件，叠加在 `agent-company,agent-development` 之上，后者是每个员工都需要的。
+
+`--workspace` 是组织共享 Workspace 的子目录（`.` 表示整个共享 Workspace），或一个绝对路径。它从不相对 CLI 的工作目录解析。默认值是按员工命名的子目录，因为共享根目录存放共享的输入，不是任何人的工位。
+
+- 相对子目录会先做规范化，`./hr`、`hr/` 和 `hr` 是同一个分区。服务器在记录雇用信息时创建它，所以 `--workspace hr` 就够了，不需要事先存在任何东西。
+- 绝对路径指向用户自己的某个目录，且必须已经存在。
+- 用 `..` 跳出共享 Workspace 的路径一律拒绝，返回 400 `invalid_workspace`。
+
+工位会话或工单会话开启时同样会创建自己的目录。`--budget` 是月度预算，单位为美元，覆盖这名员工以及下面的所有人。
+
+### employee set
+
+`employee set` 只修改你给出的字段。`--workspace` 的用法与 `hire` 相同，但没有默认值：只有传了这个选项才改变分区。`--budget` 是月度预算，单位为美元，覆盖这名员工以及下面的所有人。模型对要么都给，要么都不给，与其他地方一致。
+
+### calendar
+
+`calendar` 使用与 `penguin schedule` 相同的写入方：`add` 创建启用的事件，除非传了 `--disabled`；`--start-at now` 表示当前时刻；`update` 读取已存储的事件，修改后写回；`rm` 不询问直接删除。事件触发到员工的工位会话里，且只在组织和员工都处于活跃状态时触发；否则状态列显示 `paused`。
+
+`add` 和 `update` 的响应包含事件本身，外加这次写入触发的排班提醒：另一位员工的周期性事件恰好定在同一个开始分钟；同一位员工有了第二个同周期的周期性事件；或周期性事件从 `now` 开始。CLI 把每条提醒单独打一行，形如 `Rota notice: …`。提醒从不阻塞写入，这些行保留服务器的英文原文。
+
+### ticket
+
+- `ls` 拉取整个看板后在本地过滤。`--status` 接受一列：`proposed`、`in_progress`、`review`、`done` 或 `rejected`。`--json` 下，`ls` 以 `{ tickets, invalidFiles }` 打印过滤后的列表。
+- `show` 先打印派生数据（所在列、运行状态、成本和汇总成本、贡献会话、子工单），然后是工单自身字段、正文各节，以及 `History:` 下的操作历史。
+- `create` 接受 `--goal`（配合 `--criteria`），或从 `--body-file` 读取完整的 Markdown 正文。两种方式都会生成 frontmatter。
+- `start` 打印裸 session id，与 `run --background` 一样，供 `penguin logs` 和 `penguin input` 接手。
+- `--owner <principal>` 指定唯一的负责主体：员工（Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`）。默认取调用方。未指定 `--notify` 时，负责人会成为完整的 `notify` 列表，但前提是负责人是员工：人不会就自己名下的工单收到通知，想收到通知需要用 `--notify` 把自己加进去。
+- 谁提交的工单不由选项指定：它就是工单历史里的 `created` 条目，取自命令运行时所处的环境。
+- 工单 id 的格式是 `<yyyy-mm-dd>-<slug>`，slug 是小写英文单词，用连字符连接。`--slug <words>` 用来设置它。标题里英文太少、服务器又无法用 Project 的模型为它起名时，就需要这个选项（400 `slug_required`）。
+- 表明已做了工作的写操作，还会把调用方所在的会话记为工单的贡献会话之一，它的成本因此计入工单。这类写操作包括 `progress`、编辑正文和 `move --to review`。移入其他任何列，以及 `block` 和 `unblock`，都不记录。
+- `progress -m` 接受一句平实的描述，说明做了什么、在哪里；服务器记录谁写的、什么时候写的。
+- `--goal`、`--criteria` 和 `progress -m` 要求所有输入、交付物和文件都用完整路径指名。
+
+### channel
+
+`--channel` 默认为 `default_channel`，即全员频道，每个员工和 Project 成员都在其中。`ls` 把它列在第一位，显示本地化标签而非存储的名称。
+
+新频道里只有创建者。成员邀请后员工才能进入；人则可以 `join` 任何频道，并能阅读所有频道。`join` 和 `leave` 始终作用于调用方自身的主体（在工位会话或工单会话里是会话对应的员工，会话之外是当前登录的人），所以 `join` 绝不可能添加别人。`join`、`remove`、`archive` 和 `unarchive` 是给人用的操作：在会话里调用时，服务器会以 `403 not_a_member` 应答，与其他 API 错误一样原样打印。
+
+`tail` 以 `time  sender  text` 的格式打印当天的最后 20 条消息；`-n` 改变条数，`--date` 选择别的日期。`--json` 下打印当天的响应，包含这些消息。`send` 发送一条消息，`@agent:<id>` 和 `@all` 提及会触发对应员工的工位。`system` 行在英文文本之外还携带结构化的 `notice`，`tail` 因此能用 CLI 自身的语言渲染它；当前构建不认识的通知类型则保留英文文本。
+
+### handbook
+
+- `list` 列出手册的文件，包括路径、大小和最近更新，索引排在最前。
+- `show` 打印一个文档；不给路径时打印索引（`README.md`）。
+- `write` 存储文档，`-m <text>` 与 `--file <file>` 必须恰好提供其中一个。
+- `rm` 删除文档。索引不能删。
+
+含 `..` 段的路径一律拒绝。
+
+### finance
+
+`finance` 打印本期支出：按员工（自身支出与沿汇报线的累计支出，与预算对比，带 `warned` 和 `paused` 标记）和按工单分别列出，最后是总额。如果有用量发生在未配置价格的模型上，stderr 会提示这些数字只是下限。
 
 ## 审批模式（--approve）
 
 | 模式 | 行为 |
 | --- | --- |
-| `allow-all` | 自动批准所有工具调用（默认） |
-| `deny-all` | 自动拒绝所有工具调用 |
-| `read-only` | 自动批准只读工具，其余逐个询问 |
-| `always-ask` | 每次工具调用都询问 |
+| `allow-all` | 自动批准每一次工具调用（默认） |
+| `deny-all` | 自动拒绝每一次工具调用 |
+| `read-only` | 自动批准只读工具，其余逐一询问 |
+| `always-ask` | 每一次工具调用都询问 |
 
-交互询问时输入 `y` / `yes` 批准、`n` / `no` 拒绝；直接回车默认为批准。
+在审批提示处，`n` 或 `no` 拒绝这次调用。`y`、`yes` 或任何其他回答，包括直接回车，都会批准。
 
 ## penguin config
 
-管理 Project 的模型配置、Agent 级 vault 环境变量与界面语言。除 `lang` 外，以下子命令均支持 `--project-id <id>`（缺省为默认 Project）与 `--root <dir>`。
+管理 Project 的模型配置、每个 Agent 的 vault 环境变量以及界面语言。除 `lang` 外，每个子命令都接受 `--project-id <id>`（默认值：默认 Project）和 `--root <dir>`。
 
 ### model add
 
-新增或更新模型条目：
+添加或更新一条模型条目。
 
 ```bash
 penguin config model add --provider deepseek --model-id deepseek-v4-pro --api-key sk-... --set-default
 ```
 
-| 选项 | 说明 |
-| --- | --- |
-| `--model-id <id>` | 必填，上游模型 id |
-| `--provider <group>` | 必填，条目所属的 Provider 分组。它绝不由模型 id 推导：网关会以上游 id 转售厂商模型，猜错分组会把凭据写到另一家厂商的接口上。内置分组之外的接口一律用 `custom`。 |
-| `--api-key <key>` | API Key，内联存入 Project 隐藏文件 `.project_config.toml` |
-| `--base-url <url>` | 自定义接口地址 |
-| `--context-window <n>` | 上下文窗口大小 |
-| `--max-tokens <n>` | 该模型的最大输出长度（正整数）。设置后覆盖 Agent 的 `model.max_tokens`，缺省沿用；小上下文模型建议调低 |
-| `--client-type <type>` | 客户端协议类型 |
-| `--vision` / `--no-vision` | 标记是否支持视觉输入 |
-| `--fast-mode` / `--no-fast-mode` | 开启 / 关闭快速模式（输出更快、按溢价计费；默认关闭）。在 AgentHub client 会拒绝该参数的模型上开启时，条目照常写入，但会在 stderr 给出警告。两者都不给则保留原值 |
-| `--price-cache-read <n>` | 缓存读价格 |
-| `--price-cache-write <n>` | 缓存写价格 |
-| `--price-output <n>` | 输出价格 |
-| `--set-default` | 同时设为默认模型 |
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--model-id <id>` | 上游模型 id。必填。 | — |
+| `--provider <group>` | 条目所属的供应商分组。必填。 | — |
+| `--api-key <key>` | API key，直接写在 Project 隐藏的 `.project_config.toml` 里。 | — |
+| `--base-url <url>` | 自定义端点的 base URL。 | 见下文 |
+| `--context-window <n>` | 上下文窗口大小，单位是 Token。 | — |
+| `--max-tokens <n>` | 这个模型的最大输出 Token 数，必须是正整数。设置后会覆盖 Agent 的 `model.max_tokens`；小上下文模型应调低此值。 | Agent 的 `model.max_tokens` |
+| `--client-type <type>` | AgentHub 客户端协议类型，例如 `openai-chat`。 | 见下文 |
+| `--vision` / `--no-vision` | 标记是否支持图片输入。 | 保持当前值 |
+| `--fast-mode` / `--no-fast-mode` | 开启或关闭快速模式（输出更快，价格更高）。 | 关闭；两个都不写则保持当前值 |
+| `--price-cache-read <n>` | 缓存读取价格，单位为美元每百万 Token。 | — |
+| `--price-cache-write <n>` | 缓存写入价格，单位为美元每百万 Token。 | — |
+| `--price-output <n>` | 输出价格，单位为美元每百万 Token。 | — |
+| `--set-default` | 同时把这条条目设为 Project 的默认模型。 | — |
+
+- CLI 绝不会从模型 id 推断 `--provider`。网关会按上游模型 id 转售厂商模型，靠猜测分组可能把凭证写到另一家厂商的端点上。内置分组之外的端点一律用 `custom`。
+- 新建条目时，`--client-type` 和 `--base-url` 默认取内置模型目录为对应 `(provider, model_id)` 组合设置的值。模型目录里没有这一条时由分组决定：指定了协议的分组就用它指定的协议；`custom`、用户自定义和网关分组用 `openai-chat`，网关分组的端点会自动填成 base URL；第一方厂商分组则两项都不设置。更新已有条目时，只有显式传入这两个选项才会改动。
+- 如果模型的 AgentHub 客户端不接受这个参数，开启 `--fast-mode` 仍会写入条目，但会在 stderr 上打印警告。
 
 ### model default / model vision / model list / model remove
 
@@ -330,13 +478,13 @@ penguin config model list
 penguin config model remove --model-id <id> --provider <group>
 ```
 
-- `model default` 设置 Project 默认模型；`model vision` 设置视觉代理模型。两者的 `--model-id` 与 `--provider` 均为必填，且引用必须已存在于模型列表。
-- `model list` 列出已配置模型，默认模型以 `*` 标记。
-- `model remove` 删除一个模型条目，连同内联在其上的凭据一并删除。`--model-id` 与 `--provider` 均为必填，按成对引用精确匹配——同名上游 id 在其他分组下的条目不受影响；引用不在配置中时以非零码退出。若被删条目正是默认模型或视觉模型，对应设置一并清空：留下一个指向已不存在模型的指针，只会让下一次会话直接失败。
+- `model default` 设置 Project 的默认模型，`model vision` 设置视觉代理模型。两者都要求 `--model-id` 和 `--provider`，而且这对组合必须已经在模型列表里。
+- `model list` 列出已配置的模型，并用 `*` 标记默认模型。
+- `model remove` 删除一条模型条目，连同直接写在条目上的凭证一起删除。命令要求 `--model-id` 和 `--provider`，并精确匹配这对组合，所以另一个分组下相同上游 id 的条目不受影响。这对组合不在配置里时，命令以非零退出码退出。如果删除的条目是默认模型或视觉模型，相应设置会一并清空：指向已不存在的模型，会让下一次会话直接失败。
 
 ### vault
 
-按 Agent 存储环境变量，写入 `agent_state/.vault.toml`；值只注入工具子进程的环境变量，绝不进入模型上下文。
+每个 Agent 独立的环境变量存储，写入 `agent_state/.vault.toml`。这些值只注入工具子进程的环境，从不进入模型上下文。
 
 ```bash
 penguin config vault set --key GITHUB_TOKEN --value ghp_xxx
@@ -350,92 +498,107 @@ penguin config vault remove --key GITHUB_TOKEN
 | `vault list` | `[--agent-id <id>]` |
 | `vault remove` | `--key <name>`（必填）、`[--agent-id <id>]` |
 
+`--agent-id` 默认为 `default_agent`。
+
 ### lang
 
 ```bash
-penguin config lang zh
+penguin config lang en
 ```
 
-设置 CLI 界面语言（`en` 或 `zh`），将 `PENGUIN_LANG` 写入 shell 启动文件。
+设置 CLI 的界面语言（`en` 或 `zh`），方式是把 `PENGUIN_LANG` 写入你的 shell 启动文件。在交互式终端里，命令随后会提议打开一个新 shell 让设置生效；否则会打印让设置生效的方法。Windows 上命令会拒绝执行，因为没有 POSIX shell 启动文件可写。
 
 ## penguin server / penguin web
 
-两者是同一服务进程的两个入口：`server` 为 headless 模式；`web` 额外等待服务就绪、打印 URL 并打开浏览器。
+同一个服务进程的两个入口。`server` 以无界面方式运行服务。`web` 还会等服务就绪，打印 URL 并打开浏览器。
+
+```bash
+penguin server [--port <port>] [--host <host>]
+penguin web [--port <port>] [--host <host>] [--no-open]
+```
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--port <port>` | 监听端口。 | `7364` |
+| `--host <host>` | 监听地址。 | `127.0.0.1` |
+| `--no-open` | 仅限 `web`：不打开浏览器。 | — |
+
+端口和主机按以下顺序确定：命令行选项，然后是 `PORT` / `HOST` 环境变量（包括来自 `.env` 的），最后是默认值。
+
+如果这个数据根目录上已经有服务在运行，`penguin server` 会说明情况并以退出码 1 退出；`penguin web` 则打印正在运行实例的 URL 并打开它（除非指定 `--no-open`），不会启动第二个实例。
+
+两个命令都把服务作为子进程运行，并以托管进程的身份守在它前面。终端里的 Ctrl+C 会传达给服务，命令以服务的退出码退出。当服务请求重启时——例如 `penguin update` 替换安装之后，Web App 的**重启并更新**就会发出这种请求——托管进程会在新版本上重新启动服务，并打印一行文字说明。通过 `tsx` 运行的开发版无法由普通 Node 重新拉起，因此服务改为在当前进程内运行，此时 Web App 会提示管理员手动重启。
 
 ```bash
 penguin web
 ```
 
-| 选项 | 说明 |
-| --- | --- |
-| `--port <port>` | 监听端口，默认 7364 |
-| `--host <host>` | 监听地址，默认 127.0.0.1 |
-| `--no-open` | 仅 `web`：不自动打开浏览器 |
-
-端口 / 地址优先级：命令行选项 > 环境变量 `PORT` / `HOST`（含 `.env`）> 默认值。
-
-两者都把服务作为子进程运行，自己留在后面做托管：终端的 Ctrl+C 会送达服务，命令以服务的退出码退出；当服务请求重启——`penguin update` 替换安装后，Web App 里的「重启并更新」——托管进程会在新版本上重新拉起它，并打印一行提示。经 `tsx` 的开发运行无法被普通 node 重新拉起，改为在本进程内运行服务；此时 Web App 会提示管理员手动重启。
-
 ### penguin server status
 
-以单行 JSON 打印本数据根目录的服务状态与本机 id。无论是否有服务在运行它都会作答——依据是数据根目录本身，而不是某个存活的进程：
+以一行 JSON 打印这个数据根目录的服务器状态和本机自身的 id。它能回答「服务器是否在运行」，因为它读取的是数据根目录本身，而不是去询问一个运行中的进程。
 
 ```bash
-penguin server status
+penguin server status [--root <dir>]
 # {"running":true,"port":7364,"pid":41233,"machineId":"LNrJdHAZJ91G58i0"}
 ```
 
-`running` 为真要求记录的 pid 存活**且**其端口可建立连接，因此被回收复用的 pid 不会被读成一个活着的服务。`machineId` 在本机从未启动过服务之前是 `null`——该 id 在首次启动时铸出，此后永不改变。数据根目录一如既往由 `PENGUIN_HOME` 选定。
+只有当记录的 pid 还活着、端口也能建立连接时，`running` 才是 true，所以复用的 pid 不会冒充存活的服务器。没有服务器在运行时，`port` 和 `pid` 为 `null`。`machineId` 在本机至少启动过一次服务器之前为 `null`：id 在首次启动时生成，此后永不改变。数据根目录照常取自 `--root` 或 `PENGUIN_HOME`。
 
-机器页正是通过 ssh 运行这条命令来询问一台机器的状态，这也是它输出 JSON 而非人类散文的原因。
+**机器**页面通过 ssh 运行这条命令，询问一台机器正在做什么，这也是输出采用 JSON 而不是文字说明的原因。
 
 ### penguin server reset-admin-password
 
-忘记 Web 管理员密码时的离线救援。须在服务停止后执行——数据根目录上有服务在运行时会拒绝：
+忘记 Web 管理员密码时的离线补救手段。必须在服务器停止的状态下运行；数据根目录上还有服务器在运行时，命令会拒绝执行。
 
 ```bash
 penguin server reset-admin-password
 ```
 
-内置 `admin` 会被恢复成未认领状态——密码随机生成且无人见过，admin 的全部会话一并吊销。重新启动服务，打开它打印的首次登录链接即可设置新密码；整个过程无需记下任何东西。其他账号由管理员在用户管理页重置，本命令只作用于 `admin`。数据根目录照常由 `PENGUIN_HOME` 决定。
+内置的 `admin` 账号回到未认领状态：密码换成一个没人见过的随机值，它的所有会话全部吊销。重新启动服务器，打开它打印的首次登录链接设置新密码即可，中间不需要记下任何东西。其他账号由管理员在**用户管理**页面重置，这条命令只处理 `admin`。数据根目录照常取自 `PENGUIN_HOME`。
 
 ### penguin server stop
 
-停止本数据根目录上的服务，并以单行 JSON 报告结果：
+停止这个数据根目录上的服务器，并以一行 JSON 报告结果。
 
 ```bash
-penguin server stop
+penguin server stop [--root <dir>]
 # {"ok":true,"pid":41233}
 ```
 
-只发 `SIGTERM` 并等待，绝不 `SIGKILL`：那个服务端持有数据库、也可能正在收尾一个任务，调用方因为超时就决定销毁它，这不是它该做的决定。根目录上本来就没有服务在跑时答 `{"ok":true}`——那正是调用方要的结果，不是失败。
+命令发送 `SIGTERM`，最多等待 15 秒，让服务器释放数据根目录。它绝不会发送 `SIGKILL`：服务器持有数据库，可能还有任务在收尾，超时就强杀不是调用方有权做的决定。数据根目录上本来就没有服务器在运行时，命令返回 `{"ok":true}`，因为「没有进程在服务这个目录」正是调用方想要的结果。
 
-Machines 页面重启一台机器时通过 ssh 执行它。之所以是命令而不是发给那个服务端的请求：需要被停止的机器，往往正是平台版本落后的那一台，而平台路由只有在机器已经跑上带它的构建之后才存在。
+服务器停不下来时，命令打印 `{"ok":false,"pid":…,"detail":"…"}` 并以退出码 1 退出。出现这种情况的情形有：信号无法送达；`SIGTERM` 发出 15 秒后服务器仍占用着数据根目录；以及在 Windows 上——那里无法通过信号实现优雅停止，只能从服务器自己的控制台停止。
+
+**机器**页面重启一台机器时，会通过 ssh 运行这条命令。之所以用命令而不是直接向服务器发请求，是因为需要停止的机器通常正是平台版本过期的那台，而平台路由要等机器跑上带这条路由的构建版本才会存在。
 
 ## penguin version
 
-报告当前运行的是哪个构建。仅凭版本号回答不了这个问题——两次发布之间由源码 checkout 构建出来的每一个版本也都自称 `0.2.3`——因此发布版与源码构建给出的身份并不相同。
+报告当前运行的是哪个构建。只看版本号回答不了这个问题：两次发布之间从源码检出构建出的每个版本也都自称 `0.2.3`，所以发布版和源码构建版要用不同的方式标识自己。
 
 ```bash
-penguin version          # v0.2.3                     （发布版）
-penguin version          # v0.2.3-14-g9e8f7d6-dirty   （源码构建）
-penguin version --json   # 完整构建信息
+penguin version          # v0.2.3            (a release)
+penguin version          # v0.2.3-14-g9e8f7d6-dirty   (built from a checkout)
+penguin version --json   # the full build info
 ```
 
-| 选项 | 说明 |
-| --- | --- |
-| `--json` | 输出完整版本报告而非单行：`{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}` |
-| `--root <dir>` | 以哪个数据根目录的 HMR store 作为 `harness` 上报。优先级：`--root` > `PENGUIN_HOME` > `~/.penguin/data` |
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--json` | 打印完整的版本报告，而不是一行：`{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}`。 | — |
+| `--root <dir>` | 指定把哪个数据根目录的 HMR 存储报告为 `harness`。仅在指定 `--json` 时使用。 | `PENGUIN_HOME`，否则 `~/.penguin/data` |
 
-不带选项时输出单行；源码构建下该行即 `git describe --tags --dirty` 的结果——`v0.2.3-14-g9e8f7d6-dirty` 表示位于 `v0.2.3` 之后 14 个提交、当前提交为 `9e8f7d6`、且工作区有未提交改动。`-v, --version` 输出的是同一行。
+不带选项时打印一行。对源码构建版来说，这一行就是 `git describe --tags --dirty` 的输出：`v0.2.3-14-g9e8f7d6-dirty` 表示在 `v0.2.3` 之后第十四个提交（`9e8f7d6`），且带有未提交的改动。`-v, --version` 打印同样的一行。
 
-`describe` 指向的是最近的可达 git tag，因此并不总是 `v` + `version`：发布准备会先用一个单独的提交抬升 `version`、之后才打 tag，所以这一窗口内的构建会报告 `v0.2.3-14-g9e8f7d6`，而 `version` 已经是 `0.2.4`。要版本号看 `version`，要在历史中的位置看 `describe`。
+`describe` 指向可达的最近的 git 标签，不一定等于 `version` 前面加个 `v`。准备发布时，`version` 先在自己的提交里升号，标签随后才创建，所以处于这个窗口期的构建会报告 `v0.2.3-14-g9e8f7d6`，而 `version` 已经是 `0.2.4`。要看发布号，读 `version`；要看在历史中的位置，读 `describe`。
 
-JSON 与 `GET /api/version` 返回的是同一份记录，因此在 HTTP 边界的任意一侧都能采集到同样的排障信息。其中 `channel` 取 `release` 或 `source`；`buildDate` 与 `commit` 由发布流程在构建时打入，源码构建为 null；`branch` 与 `dirty` 描述源码构建的 git 位置，发布版为 null——发布流程会先把常量写进工作区再构建，所以「是否干净」对发布产物本就不成立。
+这份 JSON 和 `GET /api/version` 返回的是同一条记录，所以 bug 报告可以从 HTTP 边界的任意一侧收集它。其中：
 
-### harness：这台机器上热更新推了什么
+- `channel` 取值为 `release` 或 `source`。
+- `buildDate` 和 `commit` 由发布流程写入构建，源码构建版为 null。
+- `branch` 和 `dirty` 描述源码构建版的 git 位置，发布版为 null——发布版用不上这两个字段，因为发布流程会在构建前把常量写入代码树。
 
-`harness` 描述的是该数据根目录的 HMR store——某次热更新提交进去、并会在重启后被恢复的 harness 代码。该根目录从未被推送过时为 null。
+### harness：这里热推送过什么
+
+`harness` 描述数据根目录的 HMR 存储：热更新提交进来的 harness 代码，重启后会恢复运行。这个数据根目录从未推送过任何内容时为 null。
 
 ```json
 "harness": {
@@ -445,73 +608,92 @@ JSON 与 `GET /api/version` 返回的是同一份记录，因此在 HTTP 边界�
 }
 ```
 
-这正是单行版本无法表达的部分：推送过去的 bundle 落在任何 checkout 之外，它只能以自己被编译时的版本号自称；`source.revision`（由推送方记录，拼写方式与 `describe` 一致）是唯一能指明其背后 revision 的信息。`bundles` 是已提交产物的内容寻址指针，无论推送方声称了什么，它标识的都是被推送代码本身。
+这是版本那一行唯一报告不了的信息。推送出去的 bundle 落在所有检出之外，只能用编译时依据的版本来标识自己。`source.revision` 由推送方记录，写法与 `describe` 相同，是唯一能指明背后修订版本的字段。`bundles` 保存已提交产物的内容寻址指针。无论推送方怎么声称，这些指针标识的都是实际推送的代码本身。
 
-它描述的是 store 而非当前进程：`penguin` 运行的是随包发布的 CLI，`penguin-hmr` 才运行 store 里的那份，因此 `harness` 非 null 并不意味着打印它的这条命令本身就是被推送的代码。若推送方未记录来源（包括在该机制存在之前推送的版本），`source` 为 null。
+`harness` 描述的是存储，不是正在运行的进程。`penguin` 运行打包好的 CLI，`penguin-hmr` 运行存储里的 CLI，所以 `harness` 非 null 并不意味着打印它的命令就是推送来的代码。推送方客户端没有记录来源信息时，`source` 为 null——在来源信息机制出现之前推送的内容也都如此。
 
-已安装的 penguin 从不调用 git，只读取构建时打入的常量：发布版由发布流程打入，其余构建则由打包器把 git 位置内联进产物，因此产物离开生成它的 checkout 之后依然能说明自己的身份——位于 `<root>/hmr/store/` 下被热推送的 bundle，在既无 checkout 也未安装 git 的机器上，仍会报告它被构建时的 revision。运行时询问 git 只是兜底，用于未经打包的 `tsx` 运行；即便如此它也只问自己所在的那个 checkout，所以在无关仓库里执行 `penguin version` 报告的仍是 harness 自身的版本，而非该仓库的。
+安装好的 `penguin` 从不运行 git：它读取构建时打入的常量。发布版的常量来自发布流程。其他构建的 git 位置由生成它的打包器内联进去，所以产物离开检出之后仍能标识自己：`<root>/hmr/store/` 下的热推送 bundle 能报告自己构建时所在的修订版本，即使机器上没有任何检出、也没安装 git。运行时询问 git 只是未打包的 `tsx` 运行方式的兜底做法，而且问的也是自己的检出，所以在无关的仓库里运行 `penguin version`，报告的是 harness 的修订版本，而不是那个仓库的。
+
 ## penguin auth
 
-在终端里登录正在运行的 PenguinHarness 服务。这是 CLI 里唯一以客户端身份与服务通信的部分——`config`、`run`、`chat` 都是直接操作数据根。
-
-有两种登录方式，取决于你站在哪里。
+从终端登录一台正在运行的 PenguinHarness 服务器。登录方式有两种，选哪种取决于你所处的位置。
 
 ```bash
-penguin auth login                      # 用密码登录该数据根上运行的服务
+penguin auth login                      # password, against the server on this data root
 penguin auth login --server https://penguin.example --user-id alice
 penguin auth status
 penguin auth logout
-penguin auth token                      # 不需要密码：直接从数据根签发
+penguin auth token                      # no password: minted from this data root
 ```
 
-`login` 需要密码，向正在运行的服务请求会话，和浏览器登录页做的事完全一样。目标默认是该数据根上正在运行的服务（从锁文件读端口），所以登录自己的服务不必写 URL。
+每个 `auth` 子命令都接受 `--root <dir>` 来选择数据根目录；参见[全局约定](#全局约定)。
 
-交互运行时会先问账号，再问密码，并且密码提示里写明是哪个账号的，避免把一个账号的密码输到另一个账号上。如果用非交互方式给了密码（`--password` 或 `PENGUIN_PASSWORD`），两个问题都不会问——那是脚本，脚本没法回答。
+### penguin auth login
 
-| 选项 | 说明 |
-| --- | --- |
-| `--server <url>` | 要登录的服务；默认是该数据根上运行的那个 |
-| `--user-id <id>` | 账号；不给时会询问，直接回车即用 `admin` |
-| `--password <pw>` | 密码；也可用 `PENGUIN_PASSWORD`，都没给时会无回显地提示输入 |
-| `--print` | 同时把会话令牌打印到 stdout，便于管道使用 |
+`login` 使用密码向正在运行的服务器请求会话，和浏览器的登录页完全一样。目标默认是这个数据根目录上运行的服务器，从它的锁文件读出，所以登录你自己的服务器不需要 URL。
 
-优先用 `PENGUIN_PASSWORD` 或交互输入，而不是 `--password`：命令行参数可以被 `ps` 看到。
+交互式运行时，`login` 先问账号、再问密码，密码提示中会显示账号名，因此不会把一个账号的密码误输入给另一个账号。如果以非交互方式提供密码（`--password` 或 `PENGUIN_PASSWORD`），这两个问题都不会出现，因为脚本无法回答。
 
-`token` 完全不需要密码。它把一行会话直接写进数据根的 `web.db`，其授权依据就是你能读写这个数据根——而它本来就装着这个令牌所能触及的全部凭据。因此它是**数据根属主**的工具：多用户部署时数据根属于运行服务的那个操作系统账号，其他人一律用 `auth login` 凭密码登录。适用于没有密码可给的场合：管理员密码被人改过的机器、不该持有密码的脚本，以及控制端通过 ssh 管理机器时。
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--server <url>` | 要登录的服务器。 | 这个数据根目录上运行的服务器 |
+| `--user-id <id>` | 账号。省略时会询问；直接回车表示 `admin`。 | `admin` |
+| `--password <pw>` | 密码。也可以从 `PENGUIN_PASSWORD` 读取；否则会提示输入且不回显。 | — |
+| `--print` | 同时把 session token 打印到 stdout，供管道使用。 | — |
 
-| 选项 | 说明 |
-| --- | --- |
-| `--user-id <id>` | 账号，默认 `admin` |
-| `--ttl-seconds <n>` | 有效期秒数，默认 3600 |
-| `--mark` | 在令牌前打印固定标记行——供需要从 shell 输出里解析它的调用方使用，因为登录 profile 可能打印横幅 |
+> [!WARNING]
+> 优先用 `PENGUIN_PASSWORD` 或交互提示，而不是 `--password`：机器上的任何人都能通过 `ps` 读到命令行。
 
-会话写入 `<root>/cli-session.json`，权限 0600；`status` 读它，`logout` 吊销并删除它。`logout` 会先告诉服务端，让会话真正失效，而不只是本地忘记；连不上服务时会明说，本地文件照样删除。
+### penguin auth token
+
+`token` 完全不需要密码。它直接往数据根目录的 `web.db` 里写一条会话记录，授权依据是：你能读写这个数据根目录，而它本来就保存着 token 能触达的全部凭证。因此 `token` 是**数据根目录所有者**的工具：多用户部署时，数据根目录属于运行服务器的操作系统账号，其他人一律用 `auth login` 登录。数据根目录上从未运行过服务器时命令会失败，因为还没有 `web.db` 可写。在拿不出密码的场合使用它：
+
+- 管理员密码由人手动设置过的机器。
+- 不能保存密码的脚本。
+- 通过 ssh 连接受管机器的控制器。
+
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--user-id <id>` | 账号。 | `admin` |
+| `--ttl-seconds <n>` | 会话有效期（秒）：正整数，上限 30 天。 | `3600` |
+| `--mark` | 在 token 之前打印一行固定标记，供从 shell 输出中解析 token 的调用方使用——这类 shell 的登录配置可能会打印横幅。 | — |
+
+### penguin auth status / penguin auth logout
+
+会话保存在 `<root>/cli-session.json`，文件权限为 0600。`login` 写入它；数据根目录上有服务器在运行时，`token` 也会写入。`status` 读取它。`logout` 吊销会话并删除文件：它会先通知服务器，因此会话在服务器端结束，而不只是本地把它忘掉。连不上服务器时，`logout` 会说明情况，然后照样删除本地文件。
 
 ## penguin update
 
-原地升级当前安装，并沿用它当初的安装方式。安装方式由运行中 CLI 的真实路径判定，不做猜测。
+使用当初安装时所用的机制，原地升级当前安装。命令根据正在运行的 CLI 的真实路径判断安装类型，绝不猜测。
 
 ```bash
-penguin update --check     # 只报告版本
-penguin update             # 确认后升级到最新版
+penguin update --check     # report versions only
+penguin update             # upgrade to the latest release, after confirming
 ```
 
-| 选项 | 说明 |
+| 选项 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--check` | 只报告已安装版本和最新版本，不做任何改动。无论哪种情况都以退出码 0 结束。 | — |
+| `--release <tag>` | 升级到指定发布版本而不是最新版（`v0.1.2` 或 `0.1.2`）。允许指定更旧的标签，并会按降级报告。 | 最新发布版 |
+| `-y, --yes` | 跳过确认提示。 | — |
+
+这个选项是 `--release` 而不是 `--version`，因为 `-v, --version` 是 CLI 自身的版本选项，会抢先生效。
+
+| 安装类型 | 升级方式 |
 | --- | --- |
-| `--check` | 只报告已安装版本与最新版本，不做任何修改；两种情况下退出码均为 0 |
-| `--release <tag>` | 指定目标版本而不是最新版（`v0.1.2` 或 `0.1.2`）；允许低于当前版本，会明确提示为降级 |
-| `-y, --yes` | 跳过确认提示 |
+| 压缩包（`install.sh`，默认 `~/.penguin`） | 重新运行官方安装器，保留原安装目录以及安装包是否自带 Node 运行时 |
+| npm、pnpm、yarn 或 bun 全局安装 | 用对应的包管理器全局安装 `@prismshadow/penguin-cli@<target>`。无法识别包管理器时，打印命令而不是猜测 |
+| 源码检出 | 拒绝：请用 `git pull` 加重新构建来更新 |
+| 桌面应用内置的 CLI | 拒绝：应用更新时会随之替换，请从应用菜单检查更新 |
+| 无法识别的布局 | 拒绝：请用官方安装器重新安装，或用当初的包管理器升级 |
 
-目标版本参数叫 `--release` 而不是 `--version`，因为 `-v, --version` 是 CLI 自身的版本参数，会优先生效。
+不带 `-y` 时，命令会打印它将要做的事（升级机制、目标版本和安装目录），并要求确认。stdin 不是终端时，命令要求提供 `--yes`，而不是等一个没人能回答的提示。**数据根目录完全不受影响**：升级只替换 `bin`、`lib`、`web` 和 `node`。Windows 上两种升级路径都无法原地执行。安装器是 POSIX shell 脚本；全局安装也无法从这里驱动，因为 Node 离开 shell 就无法执行 `npm` 或 `pnpm` 的 `.cmd` shim，所以命令会把完整命令打印出来，由你自己运行。
 
-版本发现和 tarball 下载遵循 `PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`，与稳定安装入口使用相同策略。默认的 `auto` 模式读取 OSS `latest.json`，优先选择该不可变版本，并按同一 tag 回退到 GitHub；安装包本身则由安装器测速选出的来源提供。强制 `oss` 或 `github` 时不会切换来源。`--release <tag>` 会跳过最新版查询，但仍遵循所选下载源策略。显式设置的 HTTPS `PENGUIN_DOWNLOAD_BASE_URL` 对安装脚本和发布包下载具有最高优先级，并可通过 `PENGUIN_DOWNLOAD_FALLBACK_BASE_URL` 为发布包配置后备地址。
+发布版本的发现和下载遵循 `PENGUIN_DOWNLOAD_SOURCE=auto|oss|github`，与稳定版安装入口使用相同的策略：
 
-| 安装方式 | 升级方式 |
-| --- | --- |
-| tarball（`install.sh`，默认 `~/.penguin`） | 重新执行官方安装脚本，并保持原安装目录以及是否内置 Node 运行时 |
-| npm/pnpm/yarn/bun 全局安装 | 用该包管理器全局安装 `@prismshadow/penguin-cli@<目标版本>`；无法确定包管理器时，只打印命令而不猜测 |
-| 源码检出 | 拒绝执行——请用 `git pull` 更新并重新构建 |
+- `auto` 是默认值：读取 OSS 的 `latest.json`，优先使用那个不可变的发布版本，失败时退回匹配的 GitHub 标签。安装包本身则来自安装器测速后选定的源。
+- `oss` 和 `github` 是严格模式：命令只使用指定的源。
+- `--release <tag>` 跳过最新版本探测，但仍遵循所选的源策略。
+- 显式设置的 HTTPS `PENGUIN_DOWNLOAD_BASE_URL` 拥有最高优先级，安装器和安装包下载都遵循它；`PENGUIN_DOWNLOAD_FALLBACK_BASE_URL` 可选，为安装包提供回退地址。
 
-不带 `-y` 时，命令会先打印它将要做什么——方式、目标版本与安装目录——再请求确认；当 stdin 不是终端时，它要求显式加 `--yes`，而不是卡在无人能回答的提示上。**数据目录不会被改动**：升级只替换 `bin`、`lib`、`web` 与 `node`。两条路径在 Windows 上都不做原地升级：安装脚本是 POSIX shell 脚本，而全局安装也无法由此驱动——Node 不会在没有 shell 的情况下执行 `npm`/`pnpm` 的 `.cmd` 包装脚本——因此命令会直接打印出应当由你自己执行的命令。
-
-相关文档：[配置参考](/configuration)、[模型与 Provider](/models)。
+另请参阅：[配置参考](/configuration)、[模型与供应商](/models)。

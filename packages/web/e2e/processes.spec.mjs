@@ -1,11 +1,13 @@
 /**
  * Session background-process list (details popover):
  * a task whose exec_command outlives its yield window becomes a background process —
- * the header's stats trigger gains a running-services count, the details card lists the
+ * the header's stats trigger gains a background-task count, the details card lists the
  * process (cmd + pid + start time) with a stop button, stopping it clears both, and the
  * card's other rows (model / workspace / created / per-line stats) render in their
  * new layout. The mock's "background server test" branch drives it
- * (`sleep 600` with a 300ms yield — see mock-llm.mjs).
+ * (`sleep 600` with a 300ms yield — see mock-llm.mjs). An exited row can be removed on its
+ * own, or together with every other exited row from the list heading, and a command too long
+ * for its row reads whole in the hover tooltip.
  */
 import { test, expect } from "@playwright/test";
 import { provisionAndLogin } from "./auth.mjs";
@@ -52,9 +54,9 @@ test("background process appears in the details card and can be stopped", async 
   await page.getByRole("button", { name: "发送" }).click();
 
   // The turn finishes with the command promoted to background: the stats trigger (far
-  // right; it doubles as the "Session 信息" details button) gains the services count.
+  // right; it doubles as the "Session 信息" details button) gains the background-task count.
   const detailsBtn = page.locator('button[title="Session 信息"]');
-  await expect(detailsBtn.locator('span[title="1 个运行中的服务"]')).toBeVisible({
+  await expect(detailsBtn.locator('span[title="1 个后台任务"]')).toBeVisible({
     timeout: 30_000,
   });
 
@@ -80,7 +82,7 @@ test("background process appears in the details card and can be stopped", async 
   // The kill drops the process from the registry: the row disappears on the follow-up
   // refresh and the header count goes with it.
   await expect(page.getByText("会话进程")).toHaveCount(0, { timeout: 10_000 });
-  await expect(detailsBtn.locator('span[title="1 个运行中的服务"]')).toHaveCount(0);
+  await expect(detailsBtn.locator('span[title="1 个后台任务"]')).toHaveCount(0);
 
   // The server-side list agrees (the registry entry is gone, not merely marked exited).
   const procs = await (
@@ -145,4 +147,79 @@ test("an exited process can be removed from the list", async ({ page }) => {
     await page.request.get(`${BASE}/api/sessions/${sessionId}/processes`)
   ).json();
   expect(procs.processes).toEqual([]);
+});
+
+test("clear exited removes every exited process and leaves the running one", async ({ page }) => {
+  await provisionAndLogin(page.request, U, P);
+
+  const projects = await (await page.request.get(`${BASE}/api/projects`)).json();
+  const projectId = projects.projects[0].projectId;
+  // Same idempotent model setup as the tests above, so this test can be rerun on its own.
+  const put = await page.request.put(`${BASE}/api/projects/${projectId}/models`, {
+    data: {
+      defaultModel: { provider: "custom", modelId: "claude-4-8" },
+      models: [
+        {
+          provider: "custom",
+          modelId: "claude-4-8",
+          apiKey: "sk-mock",
+          baseUrl: MOCK,
+          contextWindow: 200000,
+          pricing: { cacheRead: 1, cacheWrite: 5, output: 10 },
+        },
+      ],
+    },
+  });
+  expect(put.ok(), "put models").toBeTruthy();
+
+  const sess = await (
+    await page.request.post(`${BASE}/api/projects/${projectId}/agents/default_agent/sessions`, {
+      data: { provider: "custom", modelId: "claude-4-8", approvalMode: "allow-all" },
+    })
+  ).json();
+  const sessionId = sess.session.sessionId;
+
+  await page.goto(`${BASE}/chat/${sessionId}`);
+  const ta = page.getByPlaceholder(/输入消息/);
+  await ta.waitFor();
+  // The mock's pair branch: `sleep 600` stays up, and a `sleep 0.5 && echo …` with a long
+  // command line exits shortly after its yield window.
+  await ta.fill("background pair test");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText(/Command finished/).first()).toBeVisible({ timeout: 30_000 });
+
+  await page.locator('button[title="Session 信息"]').click();
+  await expect(page.getByText("会话进程")).toBeVisible();
+  const running = page.locator("li", { hasText: "sleep 600" }).first();
+  const exited = page.locator("li", { hasText: "sleep 0.5" }).first();
+  await expect(running.getByRole("button", { name: "停止" })).toBeVisible();
+  // Rides out one 15s poll interval in case the idle refresh still saw the process alive.
+  await expect(exited.getByText("已退出")).toBeVisible({ timeout: 30_000 });
+
+  // The exited command is too long for its row: hovering it shows the whole line in the
+  // styled tooltip (mock-llm.mjs PAIR_LONG_ECHO).
+  const longCommand =
+    "sleep 0.5 && echo the-exited-process-whose-command-line-runs-far-past-the-width-of-its-row-in-the-details-card";
+  await exited.getByText(longCommand).hover();
+  await expect(page.getByTestId("tooltip")).toHaveText(longCommand);
+
+  // One click on the list heading's text action removes the exited entry; the running row
+  // stays, and with nothing exited left the action itself goes away. Its hint names what
+  // leaves with the rows.
+  const clearExited = page.getByRole("button", { name: "清除已退出", exact: true });
+  await expect(clearExited).toHaveAttribute("title", /已捕获的输出也会一并丢弃/);
+  await clearExited.click();
+  await expect(page.locator("li", { hasText: "sleep 0.5" })).toHaveCount(0, { timeout: 10_000 });
+  await expect(running).toBeVisible();
+  await expect(clearExited).toHaveCount(0);
+
+  // The server-side list agrees: only the running process is left.
+  const procs = await (
+    await page.request.get(`${BASE}/api/sessions/${sessionId}/processes`)
+  ).json();
+  expect(procs.processes.map((p) => p.cmd)).toEqual(["sleep 600"]);
+
+  // Leave nothing running behind.
+  await running.getByRole("button", { name: "停止" }).click();
+  await expect(page.getByText("会话进程")).toHaveCount(0, { timeout: 10_000 });
 });

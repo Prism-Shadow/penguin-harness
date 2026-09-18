@@ -4,18 +4,25 @@
  * version bump each family causes, and what a local read mark clears), the open ticket every
  * company surface shares (the back stack a parent or a child pushes, and what closes it), what
  * it forgets when the organization list comes back without the organization it is aimed at,
- * and the
+ * a desk's messaging mark written into the loaded sessions route by a bind or an unbind, and the
  * user-channel forwarding in state/sessions.tsx's applyUserEvent — a company event reaches
- * every subscriber, and a work run refreshes the session list of the Project it belongs to.
+ * every subscriber, a work run refreshes the session list of the Project it belongs to, and a
+ * resync re-reads the company snapshots.
  */
 import { describe, expect, it, vi } from "vitest";
 import type {
   CompanyServerEvent,
   OrgChannelItem,
   OrgChannelMessage,
+  OrgSessionsResponse,
   OrganizationSummary,
 } from "@prismshadow/penguin-server/api";
-import { createCompanyStore, isCompanyEvent, subscribeCompanyEvents } from "../src/state/company";
+import {
+  createCompanyStore,
+  isCompanyEvent,
+  subscribeCompanyEvents,
+  subscribeCompanyResync,
+} from "../src/state/company";
 import { applyUserEvent, createSessionsStore } from "../src/state/sessions";
 
 const message = (over: Partial<OrgChannelMessage> = {}): OrgChannelMessage => ({
@@ -280,6 +287,43 @@ describe("forgetting an organization the list no longer holds", () => {
   });
 });
 
+describe("a desk's messaging binding changed here", () => {
+  const desks = (agentId: string, sessionId: string): OrgSessionsResponse => ({
+    desks: [{ agentId, name: agentId, sessionId, status: "idle", workspace: "/w" }],
+    tickets: [],
+  });
+
+  it("marks the desk in whichever organization holds it, and clears the mark on unbind", () => {
+    const store = createCompanyStore();
+    const other = desks("beta_ceo", "s-beta");
+    store.setState({
+      orgSessions: new Map([
+        ["p1/acme", desks("acme_ceo", "s-acme")],
+        ["p1/beta", other],
+      ]),
+    });
+    store.getState().setDeskMessagingChannel("s-acme", "telegram");
+    expect(store.getState().orgSessions.get("p1/acme")?.desks[0]?.messagingChannel).toBe(
+      "telegram",
+    );
+    // The organization that does not hold the desk keeps its very answer.
+    expect(store.getState().orgSessions.get("p1/beta")).toBe(other);
+
+    store.getState().setDeskMessagingChannel("s-acme", null);
+    expect(store.getState().orgSessions.get("p1/acme")?.desks[0]).not.toHaveProperty(
+      "messagingChannel",
+    );
+  });
+
+  it("sets nothing when no loaded desk is that Session", () => {
+    const store = createCompanyStore();
+    store.setState({ orgSessions: new Map([["p1/acme", desks("acme_ceo", "s-acme")]]) });
+    const before = store.getState().orgSessions;
+    store.getState().setDeskMessagingChannel("s-elsewhere", "qq");
+    expect(store.getState().orgSessions).toBe(before);
+  });
+});
+
 describe("the ticket dialog the whole shell shares", () => {
   const open = (store: ReturnType<typeof createCompanyStore>) => store.getState().ticketDialog;
 
@@ -371,6 +415,26 @@ describe("applyUserEvent forwarding", () => {
       expect(seen.map((e) => e.type)).toEqual(["org_run", "org_run", "org_channel"]);
       // Only the run of the current Project refreshes; a channel message changes no session row.
       expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+    }
+  });
+
+  it("a resync has the company store re-read the snapshots its surfaces now fall back to", () => {
+    const sessions = createSessionsStore();
+    sessions.setState({ projectId: "p1", reload: vi.fn(() => Promise.resolve()) });
+    const company = createCompanyStore();
+    const stop = subscribeCompanyResync(() => company.getState().resync());
+    try {
+      applyUserEvent(sessions, { type: "resync_required" }, () => undefined);
+      // `runs` re-reads the sessions route; `orgs` the organization list and the open chart.
+      expect(company.getState().versions).toEqual({
+        orgs: 1,
+        messages: 0,
+        tickets: 0,
+        runs: 1,
+        budget: 0,
+      });
     } finally {
       stop();
     }

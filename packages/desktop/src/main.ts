@@ -37,6 +37,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { app, BrowserWindow, dialog, shell } from "electron";
+import type { WindowOpenHandlerResponse } from "electron";
 import { resolveRoot } from "@prismshadow/penguin-core";
 import { liveServerLock } from "@prismshadow/penguin-server/lock";
 import { appIdentity, desktopDataRoot } from "./app-identity.js";
@@ -61,13 +62,16 @@ import {
 import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
 import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
 import {
+  classifyWindowOpen,
   desktopLoginUrl,
   hidesOnClose,
   isAppUrl,
   isAuthorizationBridgeUrl,
+  isExternalScheme,
   isLocalSurfaceUrl,
   MAX_SERVER_RESTARTS,
   restartDelayMs,
+  urlForLog,
 } from "./util.js";
 
 // Identity first: the name decides the userData directory, which also keys the
@@ -143,24 +147,51 @@ function createWindow(url: string): void {
   win.on("closed", () => {
     win = null;
   });
-  // "Open in a new tab" (Workspace HTML previews) is an app-origin link that mints a
-  // token and 302s to the preview origin — it needs the session cookie, so it must open
-  // in a window of this app; handing it to the system browser would land on a 401.
-  // Denying it outright (as this did at first) made the entry silently do nothing.
-  // Genuinely external links still go to the system browser.
+  // New windows, from this window and from every window it opens, go through one rule
+  // (classifyWindowOpen): only the Workspace preview hand-off, a preview page and a detached
+  // terminal get a window of this app; other sites go to the system browser; anything else
+  // on this instance is refused, since every other app path boots a second copy of the App.
   win.webContents.setWindowOpenHandler(({ url: target }) => {
+    // The one addition, and this window's alone: Penguin Go's authorization bridge. The Web
+    // App opens it from the Authorize click, then points it at the platform or closes it when
+    // `/start` fails. It is an implementation detail, not a second app window, so it stays
+    // hidden. It is decided here and not in openWindowFor, which every opened window shares, so
+    // HTML in a preview window cannot open hidden windows. An HTML preview in this window's own
+    // Files panel still can: its iframe allows popups, and this handler is not told which frame
+    // asked.
     if (isAuthorizationBridgeUrl(target)) {
       return {
         action: "allow",
-        // The bridge is an implementation detail, not a second app window. The Web App
-        // either navigates it to the platform URL or closes it when `/start` fails.
         overrideBrowserWindowOptions: {
           show: false,
           webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
         },
       };
     }
-    if (isLocalSurfaceUrl(target, appOrigin)) {
+    return openWindowFor(target, iconPath);
+  });
+  win.webContents.on("did-create-window", (child, details) =>
+    guardOpenedWindow(child, iconPath, isAuthorizationBridgeUrl(details.url)),
+  );
+  win.webContents.on("will-navigate", (event, target) => {
+    if (!isAppUrl(target, appOrigin)) {
+      event.preventDefault();
+      openInSystem(target);
+    }
+  });
+  win.webContents.on("render-process-gone", () => win?.webContents.reload());
+  armSmokeProbe(win);
+  void win.loadURL(url);
+}
+
+/**
+ * Answers a window-open request from any window of this app (see classifyWindowOpen in
+ * util.ts). A refusal is logged, by origin and path only: the user clicked something, and
+ * this line is the one trace of why nothing opened.
+ */
+function openWindowFor(target: string, iconPath: string | null): WindowOpenHandlerResponse {
+  switch (classifyWindowOpen(target, appOrigin)) {
+    case "window":
       return {
         action: "allow",
         overrideBrowserWindowOptions: {
@@ -168,44 +199,52 @@ function createWindow(url: string): void {
           height: 800,
           autoHideMenuBar: true,
           ...(iconPath !== null ? { icon: iconPath } : {}),
-          // Same hardening as the main window: the preview is Agent-written, untrusted
-          // HTML and must never get Node.
+          // Same hardening as the main window: a preview is Agent-written, untrusted HTML
+          // and must never get Node.
           webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
         },
       };
-    }
-    void shell.openExternal(target);
-    return { action: "deny" };
-  });
-  // The child lands on the preview origin after the redirect, so its policy is "stay
-  // within this instance's loopback surface, everything else to the system browser" —
-  // the main window's stricter app-origin-only rule would bounce the preview itself out.
-  win.webContents.on("did-create-window", (child, details) => {
-    const authorizationBridge = isAuthorizationBridgeUrl(details.url);
-    child.webContents.setWindowOpenHandler(({ url: target }) => {
-      if (isLocalSurfaceUrl(target, appOrigin)) return { action: "allow" };
+    case "external":
       void shell.openExternal(target);
       return { action: "deny" };
-    });
-    child.webContents.on("will-navigate", (event, target) => {
-      if (!isLocalSurfaceUrl(target, appOrigin)) {
-        event.preventDefault();
-        void shell.openExternal(target);
-        // A preview window stays open when one of its links opens externally. The hidden
-        // authorization bridge has completed its only job and must not linger.
-        if (authorizationBridge) child.close();
-      }
-    });
-  });
-  win.webContents.on("will-navigate", (event, target) => {
-    if (!isAppUrl(target, appOrigin)) {
+    case "deny":
+      process.stdout.write(`[shell] refused to open a window for ${urlForLog(target)}\n`);
+      return { action: "deny" };
+  }
+}
+
+/**
+ * The rules a window opened by this app lives under — and, in turn, every window that one
+ * opens: a window-open handler belongs to one window, so a window opened from a preview page
+ * would otherwise open anything at all. Its navigation policy is "stay within this instance's
+ * loopback surface": a child lands on the preview host after the redirect, and the main
+ * window's stricter app-origin-only rule would bounce the preview itself out.
+ *
+ * `authorizationBridge` marks the main window's hidden Penguin Go bridge. Only the main window
+ * opens one, so every window further down passes false.
+ */
+function guardOpenedWindow(
+  child: BrowserWindow,
+  iconPath: string | null,
+  authorizationBridge: boolean,
+): void {
+  child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
+  child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath, false));
+  child.webContents.on("will-navigate", (event, target) => {
+    if (!isLocalSurfaceUrl(target, appOrigin)) {
       event.preventDefault();
-      void shell.openExternal(target);
+      openInSystem(target);
+      // A preview window stays open when one of its links opens externally. The hidden
+      // authorization bridge has completed its only job and must not linger.
+      if (authorizationBridge) child.close();
     }
   });
-  win.webContents.on("render-process-gone", () => win?.webContents.reload());
-  armSmokeProbe(win);
-  void win.loadURL(url);
+}
+
+/** A navigation that leaves the app: a web or mail link goes to the system; any other scheme is refused. */
+function openInSystem(target: string): void {
+  if (isExternalScheme(target)) void shell.openExternal(target);
+  else process.stdout.write(`[shell] refused to hand ${urlForLog(target)} to the system\n`);
 }
 
 /**

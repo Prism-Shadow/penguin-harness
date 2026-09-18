@@ -11,6 +11,8 @@
  * 「智能体」 — the nav entry, the grouping option, the panel — and keeps "Agent" as-is
  * inside running prose, where it is the term of art rather than the thing being pointed at.
  */
+import type { PeakWindows } from "../features/models/model-grouping";
+
 export const zh = {
   appName: "PenguinHarness",
 
@@ -441,6 +443,39 @@ export const zh = {
     time: "时间",
   },
 
+  /**
+   * The id field every create dialog with a semantic id wears (features/semantic-id): a Project's,
+   * an Agent's, a Benchmark's, an organization's and a channel's.
+   */
+  semanticId: {
+    /**
+     * The id field's generate button — its label says who proposes the id, its tooltip says
+     * what the proposal is derived from — and the clause the hint appends for it. The clause
+     * carries its own leading separator: what joins two clauses is punctuation, and
+     * punctuation belongs to the language.
+     */
+    generateIdLabel: "用 AI 生成",
+    generateId: "从名称生成 ID",
+    idGenerateHint: "；也可以从显示名生成",
+    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
+    idSuggest: {
+      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
+      fromName: "按名称转写生成",
+      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
+      placeholder: (reason: string): string =>
+        `模型没有给出可用的 ID（${reason}），已填入占位 ID，请改成有含义的英文名`,
+      /** Why the proposal fell through, keyed by the server's reason code. */
+      reasons: {
+        no_default_model: "未配置默认模型",
+        model_failed: "模型调用失败",
+        unusable_answer: "模型回答不可用",
+        no_ascii: "名称里没有可转写的英文",
+      },
+      /** A reason a newer server named and this build does not know. */
+      reasonUnknown: "原因未知",
+    },
+  },
+
   auth: {
     usernameHint: "2~32 位：小写字母开头，仅小写字母、数字与下划线",
     password: "密码",
@@ -618,6 +653,8 @@ export const zh = {
     createTitle: "创建 Agent",
     id: "Agent id",
     idHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；创建后不可修改",
+    /** The id field's generation clause: the create dialog's name field is labelled Name, not display name. */
+    idGenerateHint: "；也可以从名称生成",
     nameHint: "留空则使用 Agent id 作为名称",
     description: "描述",
     /** Create dialog's skill picker: the library skills installed into the new Agent. */
@@ -1093,9 +1130,21 @@ export const zh = {
     /** Badge on a row the seller is currently discounting: the rate off its list price. */
     discountBadge: (pct: number): string => `省 ${pct}%`,
     discountTitle: (pct: number): string => `促销价：已在牌价基础上打 ${pct}% 折扣`,
-    /** Same badge as a flat promotion; only the explanation differs, because this rate comes and goes with the clock. */
-    offPeakTitle: (pct: number): string =>
-      `空闲时段价：比牌价低 ${pct}%。高峰时段按牌价计费——北京时间周一至周五 9:00–12:00、14:00–18:00`,
+    /**
+     * Same badge as a flat promotion; only the explanation differs, because this rate comes and
+     * goes with the clock. `peak` is the row's own schedule (see peakWindows), so each seller's
+     * peak hours are the ones named.
+     */
+    offPeakTitle: (pct: number, peak: PeakWindows): string => {
+      const day = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+      const days = peak.everyDay
+        ? "每天"
+        : peak.days
+            .map(([from, to]) => (from === to ? day[from - 1] : `${day[from - 1]}至${day[to - 1]}`))
+            .join("、");
+      const hours = peak.hours.map(([from, to]) => `${from}:00–${to}:00`).join("、");
+      return `空闲时段价：比牌价低 ${pct}%。高峰时段按牌价计费——北京时间${days} ${hours}`;
+    },
     visionModelBadge: "视觉代理",
     /** Card's right-edge figure: what this model has spent over its whole life. The unit stays English and is abbreviated the way the rest of the page abbreviates it — `tok/s`, `/M tok`. */
     usedTokens: (v: string) => `${v} toks`,
@@ -2199,6 +2248,9 @@ Benchmark：
     processRemove: "移除",
     /** Remove button tooltip: removal also drops the output captured from that process. */
     processRemoveHint: "移除该条目——该进程已捕获的输出也会一并丢弃",
+    /** The list heading's text action: removes every exited entry at once; its hint says the captured output goes too. */
+    processClearExited: "清除已退出",
+    processClearExitedHint: "清除所有已退出的进程——它们已捕获的输出也会一并丢弃",
     statTokens: "Token 累计",
     /** Info-dropdown stats list: the tokens bullet's label and its cache-hit-rate parenthetical (rate = cacheRead ÷ all input, e.g. "68%"). */
     statTotalTokens: "总 Token",
@@ -2239,6 +2291,8 @@ Benchmark：
     memoryChangedMark: "本次对话已更改",
     memoryContentUnavailable: "无法加载内容（文件可能已被移动或删除）",
     memoryRowOpen: "查看内容",
+    /** The memory-change card header's text action: opens the Memory panel on its list (a visible label rather than a second brain glyph beside the card's own). */
+    memoryOpenList: "打开记忆列表",
     memoryBack: "返回列表",
     memoryEmptyAll: "还没有任何记忆——在对话里说「记住……」即可让 agent 保存",
     /** Visible label on the Memory panel's header link (not a tooltip-only glyph): says what the click does and where it lands. */
@@ -3236,6 +3290,8 @@ Benchmark：
       "填好标题、题干与评分细则后，目录结构会按技能约定写入 Project 的 benchmarks/ 下；Benchmark 与 Agent 平级，之后可以用它评测任意智能体。",
     idField: "Benchmark id",
     idHint: "目录名即标识：仅字母、数字、_ 和 -，例如 report-writing-v1",
+    /** The id field's generation clause: a Benchmark is named by its title, not a display name. */
+    idGenerateHint: "；也可以从标题生成",
     idExists: "已有同名 Benchmark，请换一个 id",
     titleField: "标题",
     descriptionField: "描述",
@@ -3376,32 +3432,6 @@ Benchmark：
     createTitle: "新建组织",
     orgId: "组织 id",
     orgIdHint: "2~64 位：小写字母开头，仅小写字母、数字与下划线；也是目录名，创建后不可修改",
-    /**
-     * The id field's generate button — its label says who proposes the id, its tooltip says
-     * what the proposal is derived from — and the clause the hint appends for it. The clause
-     * carries its own leading separator: what joins two clauses is punctuation, and
-     * punctuation belongs to the language.
-     */
-    generateIdLabel: "用 AI 生成",
-    generateId: "从名称生成 ID",
-    idGenerateHint: "；也可以从显示名生成",
-    /** What the field says about the id a proposal just filled in (see id-suggest-notice.ts). */
-    idSuggest: {
-      /** Under an id transliterated from the name: quiet, because nothing went wrong. */
-      fromName: "按名称转写生成",
-      /** Under a placeholder id: it names nothing, so it says why and asks for a real name. */
-      placeholder: (reason: string): string =>
-        `模型没有给出可用的 ID（${reason}），已填入占位 ID，请改成有含义的英文名`,
-      /** Why the proposal fell through, keyed by the server's reason code. */
-      reasons: {
-        no_default_model: "未配置默认模型",
-        model_failed: "模型调用失败",
-        unusable_answer: "模型回答不可用",
-        no_ascii: "名称里没有可转写的英文",
-      },
-      /** A reason a newer server named and this build does not know. */
-      reasonUnknown: "原因未知",
-    },
     displayName: "显示名",
     displayNameHint: "留空则使用组织 id",
     mission: "使命",
@@ -3412,7 +3442,8 @@ Benchmark：
     missionExamples: {
       research: {
         name: "科研论文公司",
-        mission: "新建一个公司帮我做科研，不断写稿审稿，产出可以投稿顶级会议的学术论文",
+        mission:
+          "新建一个公司帮我做科研，产出可以投稿顶级会议的学术论文。实验按 autoresearch 的方式跑：先固定评测脚本与指标，只改一个文件，每次实验限定时长，结果逐行记入日志，只保留有提升的改动。开始任何实验循环之前，研究员先在群里向我申请资源——机器与 GPU/CPU、并发数、总时长、磁盘与数据、付费 API——批准后在额度内自主运行，要超出就再申请。论文由作者与审稿人两类员工对抗评审：审稿人复现结果、查基线与消融、找测试集泄漏与指标作弊，给出评分与必改项；作者逐条修改或反驳，直到审稿人接受。",
       },
       agentTuning: {
         name: "Agent 优化公司",

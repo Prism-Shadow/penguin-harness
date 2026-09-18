@@ -13,8 +13,10 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  DEEPSEEK_OFF_PEAK,
   MODEL_CATALOG,
   MODEL_PROVIDERS,
+  QWEN_OFF_PEAK,
   catalogEntryFor,
   effectivePricing,
 } from "@prismshadow/penguin-core/model-catalog";
@@ -25,10 +27,13 @@ import {
   isFreeModel,
   matchesQuery,
   orderModelsLikeLibrary,
+  peakWindows,
   promotedPricing,
   visibleChatModels,
 } from "../src/features/models/model-grouping";
 import type { ModelCredentialRowLike, ModelRowLike } from "../src/features/models/model-grouping";
+import { zh } from "../src/lib/strings";
+import { en } from "../src/lib/strings-en";
 
 const rows: ModelRowLike[] = [
   { provider: "anthropic", modelId: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6" },
@@ -375,7 +380,6 @@ describe("discountedPrice", () => {
     expect(discountedPrice(row)).toEqual({
       percent: 50,
       billed: { cacheRead: 0.05, cacheWrite: 0.25, output: 1 },
-      scheduled: false,
     });
     // No price check of its own: the server clears a promotion whose price a save changes.
     expect(discountedPrice({ ...row, output: "4" })?.billed.output).toBe(2);
@@ -409,16 +413,59 @@ describe("discountedPrice", () => {
   });
 
   it("a scheduled row is marked and halved off-peak, and left at list price at peak", () => {
-    const row = presetRow("deepseek", "deepseek-v4-flash");
-    const entry = catalogEntryFor("deepseek", "deepseek-v4-flash")!;
+    const row = presetRow("deepseek", "deepseek-flash");
+    const entry = catalogEntryFor("deepseek", "deepseek-flash")!;
 
     const off = discountedPrice(row, OFF_PEAK)!;
     expect(off.percent).toBe(50);
-    expect(off.scheduled).toBe(true);
+    expect(off.peak).toEqual(peakWindows(DEEPSEEK_OFF_PEAK));
     expect(off.billed.output).toBeCloseTo(entry.pricing!.output / 2, 6);
 
     // At peak the row carries no mark at all: the stored price is the price.
     expect(discountedPrice(row, PEAK)).toBeUndefined();
+  });
+
+  it("each scheduled row follows its own seller's windows, and the badge's title names them", () => {
+    // Qwen bills the DeepSeek models it sells at peak 08:00-22:00 Beijing on every day, while
+    // DeepSeek's own peak is weekday office hours: a Saturday morning parts the two.
+    const saturdayMorning = new Date("2026-09-05T02:00:00Z"); // 10:00 Beijing
+    const lateEvening = new Date("2026-08-31T15:00:00Z"); // Monday 23:00 Beijing
+    const qwen = presetRow("qwen-pay-as-you-go", "deepseek-v4.1-flash");
+    const deepseek = presetRow("deepseek", "deepseek-flash");
+    expect(discountedPrice(qwen, saturdayMorning)).toBeUndefined();
+    expect(discountedPrice(deepseek, saturdayMorning)?.peak).toEqual(
+      peakWindows(DEEPSEEK_OFF_PEAK),
+    );
+    const qwenOff = discountedPrice(qwen, lateEvening)!;
+    expect(qwenOff.percent).toBe(50);
+    expect(qwenOff.peak).toEqual({
+      days: [[1, 7]],
+      everyDay: true,
+      hours: [[8, 22]],
+    });
+
+    expect(peakWindows(DEEPSEEK_OFF_PEAK)).toEqual({
+      days: [[1, 5]],
+      everyDay: false,
+      hours: [
+        [9, 12],
+        [14, 18],
+      ],
+    });
+    // The hover text is spelled from the schedule in both dictionaries, so neither vendor's
+    // windows are described with the other's.
+    expect(zh.models.offPeakTitle(50, peakWindows(DEEPSEEK_OFF_PEAK))).toBe(
+      "空闲时段价：比牌价低 50%。高峰时段按牌价计费——北京时间周一至周五 9:00–12:00、14:00–18:00",
+    );
+    expect(en.models.offPeakTitle(50, peakWindows(DEEPSEEK_OFF_PEAK))).toBe(
+      "Off-peak rate: 50% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday",
+    );
+    expect(zh.models.offPeakTitle(50, peakWindows(QWEN_OFF_PEAK))).toBe(
+      "空闲时段价：比牌价低 50%。高峰时段按牌价计费——北京时间每天 8:00–22:00",
+    );
+    expect(en.models.offPeakTitle(50, peakWindows(QWEN_OFF_PEAK))).toBe(
+      "Off-peak rate: 50% off list. Peak hours bill at list price — 08:00–22:00 Beijing time, every day",
+    );
   });
 
   it("a promotion on a scheduled row multiplies with the live off-peak tier", () => {
@@ -428,7 +475,7 @@ describe("discountedPrice", () => {
     // 20% off, then half of the rest: 60% off, explained as the promotion.
     const off = discountedPrice(row, OFF_PEAK)!;
     expect(off.percent).toBe(60);
-    expect(off.scheduled).toBe(false);
+    expect(off.peak).toBeUndefined();
     expect(off.billed.output).toBeCloseTo(output * 0.8 * 0.5, 5);
 
     const peak = discountedPrice(row, PEAK)!;
@@ -443,7 +490,6 @@ describe("discountedPrice", () => {
     expect(discountedPrice({ ...row, discount: 0.2 }, OFF_PEAK)).toEqual({
       percent: 20,
       billed: expect.objectContaining({ output: 0.9872 }),
-      scheduled: false,
     });
   });
 
@@ -461,7 +507,7 @@ describe("discountedPrice", () => {
       // Only the tier is left to report.
       expect(discountedPrice({ ...scheduled, discount }, OFF_PEAK)).toMatchObject({
         percent: 50,
-        scheduled: true,
+        peak: peakWindows(DEEPSEEK_OFF_PEAK),
       });
     }
   });

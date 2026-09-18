@@ -1,507 +1,752 @@
 ---
 title: Server API
-description: HTTP API 参考：认证机制、路由列表、SSE 流式协议与 DTO 类型导入。
+description: PenguinHarness 服务器的 HTTP API 参考：认证、全部路由分组、SSE 流式协议和 DTO 类型导入。
 ---
 
-PenguinHarness Server 提供一套同源 HTTP API，自带的 Web App 与其他 HTTP 客户端都通过它访问。本文是接口参考：认证机制、路由列表与 SSE 流式协议。服务启动方式见[快速开始](/quickstart)。
+PenguinHarness 服务器提供一组同源 HTTP API，内置 Web App 和其他任何 HTTP 客户端用的都是它。本页先讲认证，再按功能分组介绍路由（每组先给路由表，再补充细节），最后讲 SSE 流式协议。启动服务器的方法见[快速开始](/quickstart)。
 
-## 总览
+## 概览
 
-- 技术栈：Hono + @hono/node-server，要求 Node >= 24；
-- 存储：SQLite（内置 `node:sqlite`，WAL 模式）仅存放索引与聚合数据——用户、登录会话、Project 授权、Agent / Session 索引、用量、UI 偏好、错误记录与 Schedule 状态；Agent、Trace 与 Workspace 数据全部以文件形式存放在 `~/.penguin/data` 下，与 CLI / SDK 共享，见[配置参考](/configuration)；
-- 监听：默认 `127.0.0.1:7364`，可用环境变量 `PORT` / `HOST` 调整；
-- 请求体：写请求仅接受 JSON（Content-Type 校验，CSRF 防线之一），其上限**由附件预算推导**而非固定值——附件以 base64 `data:` URL 随请求送达（膨胀 4/3），故上限为 `base64(attachmentTotalMb) + 一张内嵌图片与 JSON 外壳的余量`，在默认 120MB 合计下约 190MB，管理员调低附件上限时随之回落。按读取到的字节数统计，未声明长度（分块传输）的请求同样受限；
-- 错误响应统一为：
+- 技术栈：Hono 和 `@hono/node-server`，要求 Node >= 24。
+- 存储：SQLite（内置的 `node:sqlite`，WAL 模式）只保存索引和聚合数据：用户、认证会话、Project 授权、Agent 与 Session 索引、用量、UI 偏好、错误记录和定时任务状态。所有 Agent、Trace 和 Workspace 数据都以文件形式存放在 `~/.penguin/data` 下，与 CLI 和 SDK 共享；参见[配置参考](/configuration)。
+- 绑定地址：默认 `127.0.0.1:7364`，可通过 `PORT` / `HOST` 环境变量调整。
+- 请求体：写操作只接受 JSON，检查 Content-Type 是防 CSRF 的手段之一。请求体大小上限并非固定值，而是由附件额度推导出来的。附件以 base64 `data:` URL 的形式随请求传输，体积会膨胀 4/3，所以上限按 `base64(attachmentTotalMb)` 计算，再为一张内嵌图片和 JSON 封装留出余量。按默认 120MB 的总量计，约为 190MB；管理员调低总量，上限也会随之下降。服务器边读请求体边统计字节数，因此不声明长度（chunked）的请求同样受此限制。
+- 所有错误共用同一种结构：
 
 ```text
-{ "error": { "code": "<机器可读错误码>", "message": "<提示文案>" } }
+{ "error": { "code": "<machine-readable code>", "message": "<user-facing text>" } }
 ```
 
-## 目录结构
+## 源码结构
 
 ```text
 packages/server/src
-├── index.ts / config.ts / app.ts   # 启动入口 · 环境变量配置 · Hono 组装（运行时 app；业务路由由 src/modules 下的 http 模块装配，不绑端口,便于测试)
-├── api/types.ts                    # 对外 DTO 契约(经 "./api" 子路径供前端 type-only 引用)
-├── auth/                           # scrypt 密码、admin 种子、cookie 会话、认证中间件
-├── db/                             # node:sqlite 连接、建表 SQL、每表一个 repo
-├── http/                           # 错误体、请求校验、SSE 适配、routes/ 全部路由
-├── runtime/                        # session-manager(运行时驱动)· channel(SSE 环形缓冲)
-│                                   # approvals · usage-recorder · scheduler · title-generator
-└── services/                       # 授权规则、TOML/YAML 配置读写、Session/Trace/用量/快照服务
+├── index.ts / config.ts / app.ts   # startup entry · env config · the HMR layer's app (network guards, /api/hmr, the platform seam, static hosting; binds no port, testable)
+├── api/types.ts                    # the outward DTO contract (type-only import via the "./api" subpath)
+├── auth/                           # scrypt passwords, admin seeding, cookie sessions, auth middleware
+├── db/                             # node:sqlite connection, schema SQL, one repo per table
+├── hmr/                            # hot update: the platform seam and the /api/hmr routes
+├── http/                           # the business routes' assembly (app.ts), error bodies, request validation, SSE adapter, routes/
+├── machines/                       # remote machines: ssh config, install and connect jobs, the /server/<machineId> proxy
+├── organization/                   # company mode's files: chart, tickets, channels, handbook
+├── runtime/                        # session-manager (runtime driving) · channel (SSE ring buffer)
+│                                   # approvals · usage-recorder · scheduler · title-generator · messaging/ · organization/
+├── services/                       # authorization rules, TOML/YAML config IO, Session/Trace/usage/snapshot services
+└── terminal/                       # terminals: /api/terminals and the byte-stream WebSocket
 ```
 
 ## 认证
 
-- Cookie 会话：`penguin_session`（HttpOnly、SameSite=Lax），有效期 30 天，滑动续期；
-- 密码以 scrypt 哈希存储；会话是 `auth_sessions` 表中的一行，以随机 Cookie 令牌的 sha256 为键（原始令牌从不落库）；它跨重启存活、原地续期，logout 删除该行；
-- 不开放注册：启动时种子化内置管理员 `admin`，其初始密码随机生成、哈希后即丢弃，无人见过。在真正设置密码之前，每次启动都会打印一条首次登录链接用于认领账号（自动化场景可用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定一个已知密码）。其余账号由管理员创建；
-- 仅限同源访问，未启用 CORS 中间件。
+API 接受两种凭证：Cookie 会话和本地 API token。
+
+- Cookie 会话：`penguin_session`（HttpOnly，SameSite=Lax），有效期 30 天，滑动续期。
+- 密码以 scrypt 哈希存储。会话是 `auth_sessions` 表中的一行，以随机 Cookie token 的 sha256 为键；原始 token 从不存储。会话重启后依然有效，并在原地续期；登出则删除这一行。
+- 不开放注册。启动时，服务器会用一个随机密码初始化内置管理员 `admin`：密码哈希后保存，明文随即丢弃，没有任何人见过它。在设置密码之前，每次启动都会打印一条首次登录链接，用来认领账号。自动化场景可以改用 `PENGUIN_SEED_ADMIN_PASSWORD` 固定一个已知密码。其余所有账号都由管理员创建。
+- 仅限同源：未启用任何 CORS 中间件。
+- 标为「仅管理员」的路由，对其他用户一律返回 `403` `admin_required`。
 
 ```bash
-# 密码用认领账号（首次登录链接）时设置的那个。
+# Use the password you set when claiming the account from the first-login link.
 curl -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"userId":"admin","password":"<你的密码>"}' \
+  -d '{"userId":"admin","password":"<your password>"}' \
   http://localhost:7364/api/auth/login
 ```
 
-### 本机 API token（Bearer）
+### 本地 API token（Bearer）
 
-所有受保护路由同时接受携带**本机 API token** 的 `Authorization: Bearer <token>`——这是 CLI（以及经 CLI 驱动 harness 的 Agent）用来替代登录的本机凭据：
+所有受保护的路由也接受携带**本地 API token** 的 `Authorization: Bearer <token>`。CLI，以及通过 CLI 驱动 harness 的 Agent，都用这个本机凭证代替登录。
 
-- 服务端每次启动铸造新 token 并写入 `<root>/api-token`（仅属主可读，`0600`）；新 token 铸造的那一刻，上一次启动的 token 即失效。
-- 有效的 Bearer 即以内置 `admin` 身份通过认证。这个等价关系是授权模型本身，不是疏漏：对数据根目录的本机文件系统访问本就等于管理员权限——能读 `api-token` 的人也能读旁边的 `web.db`，与 `penguin server reset-admin-password` 是同一条规则。
-- 服务端驱动的会话把当前 token 以 `PENGUIN_API_TOKEN` 注入每个工具子进程（连同 `PENGUIN_API_URL`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID`、`PENGUIN_SESSION_ID`），Agent 自己的 `penguin` / API 调用由此获得连回运行它的服务器的授权。
-- SSE 端点与其它路由一样接受该请求头（用 `fetch` 消费，不要用 `EventSource`——后者无法携带请求头）。
-- 写请求的 JSON-only Content-Type 检查对 Bearer 请求同样生效。
+- 服务器每次启动都生成一个新 token，写入 `<root>/api-token`，文件权限仅限所有者（`0600`）。新 token 一经生成，上一次启动的 token 立即失效。
+- 有效的 Bearer token 以内置 `admin` 的身份通过认证。这是有意设计的授权模型：在本机文件系统上能访问数据根目录，本身就等于管理员权限，因为能读 `api-token` 的人也能读它旁边的 `web.db`。`penguin server reset-admin-password` 依赖的正是这条规则。
+- 服务器驱动的会话会把当前 token 注入每个工具子进程的环境变量 `PENGUIN_API_TOKEN`，同时注入 `PENGUIN_API_URL`、`PENGUIN_PROJECT_ID`、`PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID`。Agent 自己的 `penguin` 命令和 API 调用正是靠这些变量获得授权，才能连上运行自己的服务器。
+- SSE 端点和其他路由一样接受这个请求头。消费它们要用 `fetch`，不要用 `EventSource`——后者无法发送请求头。
+- 写请求只接受 JSON 的 Content-Type 检查，对 Bearer 请求同样生效。
 
 ```bash
 curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
   http://127.0.0.1:7364/api/me
 ```
 
-## 路由参考
+## 认证与账号
 
-### 认证与账户
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | /api/auth/login | 登录：`{userId, password}` → `{user}` |
-| POST | /api/auth/logout | 退出登录，返回 204 |
-| GET | /api/auth/claim?token=… | 兑换登录链接（首次登录链接，或桌面 shell 的一次性 token）：种下 Cookie 并跳转到 `/`；链接无效或已被使用时改为跳转 `/login?claimFailed=…`，由 Web App 说明如何获取新链接 |
-| GET | /api/install | 公开：`{installId}`——标识当前所服务数据根的不透明 id（`<root>/install-id`），在该根首次被使用时铸造。Web App 将其与自己存下的值比较，不一致时清除浏览器侧那些引用服务端实体的 UI 状态，因此更换数据根后不会再留下旧的 Workspace、草稿与置顶。`null` 表示服务端无法确定该 id，此时客户端不应改动任何内容。 |
-| GET | /api/me | 当前用户信息 |
-| PUT | /api/me/password | 修改密码：`{oldPassword, newPassword}`；桌面会话与首次登录会话可省略 `oldPassword`——其当前密码是随机生成且从未展示过的 |
-| PUT | /api/me/profile | 设置头像与昵称：`{displayName?, avatar?}` → `{user}`。为补丁语义——字段缺省表示保持原值，`null` 表示清除，两个字段都未出现则返回 `400`。`displayName` 去除首尾空白后须为 1–32 个字符（按字符计，因此中文昵称可以有 32 个）且不含控制字符；`avatar` 须是 `data:image/(png|jpeg|webp);base64,…` 形式的 data URL，长度不超过 131072 个字符且载荷可解码。任何已认证会话均可调用，含桌面 shell 的 token 会话——与上面的密码路由不同，个人资料没有需要校验的旧凭据 |
-| GET | /api/me/prefs | 读取 UI 偏好 |
-| PUT | /api/me/prefs | 写入 UI 偏好（浅合并） |
-
-### 用户管理（仅管理员）
+登录、登出、账号认领，以及当前用户的密码、资料和偏好设置。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/admin/users | 用户列表。每行在账号设置了昵称时带上昵称；头像刻意不下发——该列表不分页，每个账号一份 data URL 会让响应体积远超这张表实际用到的内容 |
-| POST | /api/admin/users | 创建用户：`{userId, password}` |
-| POST | /api/admin/users/:userId/password | 重置密码（该用户全部登录会话失效） |
-| DELETE | /api/admin/users/:userId | 删除用户 |
+| POST | `/api/auth/login` | 登录：`{userId, password}` → `{user}` |
+| POST | `/api/auth/logout` | 登出，返回 `204` |
+| GET | `/api/auth/claim?token=…` | 兑换登录链接：设置 Cookie 并重定向到 `/` |
+| GET | `/api/install` | 公开：返回 `{installId}`，即当前数据根目录的 id |
+| GET | `/api/me` | 当前用户的信息 |
+| PUT | `/api/me/password` | 修改密码：`{oldPassword, newPassword}` |
+| PUT | `/api/me/profile` | 设置头像和昵称：`{displayName?, avatar?}` → `{user}` |
+| GET | `/api/me/prefs` | 读取 UI 偏好 |
+| PUT | `/api/me/prefs` | 写入 UI 偏好（浅合并） |
 
-桌面模式下（server 由桌面应用拉起）整组路由返回 `403`、错误码 `desktop_single_user`：桌面应用是单用户形态，用户管理整体停用——数据根中已有的用户不受影响。
+- `GET /api/auth/claim` 用于兑换首次登录链接或桌面 shell 的一次性 token。链接无效或已被使用时，会改为重定向到 `/login?claimFailed=…`，Web App 会在那里说明如何获取一条有效链接。
+- `GET /api/install` 无需身份验证。`installId` 是一个不透明的 id，存储在 `<root>/install-id`，在数据根目录首次使用时生成。Web App 将它与本地保存的 id 比对，不一致时清空浏览器端引用服务器实体的 UI 状态，这样替换数据根目录后就不会残留旧的 Workspace、草稿和置顶项。返回 `null` 表示服务器无法确立 id，此时客户端不得改动任何状态。
+- `PUT /api/me/password`：桌面会话和首次登录会话可以省略 `oldPassword`，因为这类会话的当前密码是随机生成的，从未展示过。
+- `PUT /api/me/profile` 是补丁式更新：省略的字段保留原值，`null` 表示清除这个字段，请求体若两个字段都不含则返回 `400`。
+  - `displayName` 去除首尾空白后必须在 1–32 个字符之间，按字符计数（因此中文名可以满 32 个），且不能包含控制字符。
+  - `avatar` 必须是 `data:image/(png|jpeg|webp);base64,…` 形式的 URL，最长 131072 个字符，且其中的数据能够正常解码。
+  - 任何已认证的会话都可以调用，包括桌面 shell 的 token 会话。与修改密码的接口不同，修改资料没有旧凭证需要校验。
 
-### 服务端设置（仅管理员）
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | /api/admin/settings | 服务端全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb}}` |
-| PUT | /api/admin/settings | 更新设置（字段可省略，省略即保持现值），返回更新后的完整设置 |
-| GET | /api/admin/settings/proxy-probe | 连通性测速的目标列表：`{targets: [{provider, url}]}`（不发起任何请求） |
-| POST | /api/admin/settings/proxy-probe/:provider | 沿服务端出站链路探测其中一个目标，不携带任何凭据：`{probe: {provider, url, outcome, ms, status?}}`；`outcome` 在收到任意 HTTP 响应时为 `reachable`，否则为 `timeout` / `dns` / `refused` / `tls` / `network`；列表之外的 id 返回 404 `probe_target_not_found` |
-
-代理设置为两个独立开关共享一个可选的显式地址；修改即时生效（对新发起的连接与新派生的子进程），无需重启：
-
-- `proxyForApp`（「应用程序使用代理」，默认开）治理服务端自身出网（LLM 请求、更新检查、图片抓取）：开且填写了 `proxyUrl` → http 与 https 流量都走该地址，**优先于代理环境变量**——无需配置任何环境变量；开但未填地址 → 遵循 HTTP_PROXY / HTTPS_PROXY / NO_PROXY 环境变量（大小写并存）；关 → 一律直连。
-- `proxyForAgent`（「Agent 环境使用代理」，默认开）治理 Agent 命令子进程环境：开且填写了 `proxyUrl` → 注入 `HTTP_PROXY` / `HTTPS_PROXY`（含小写拼写）为该地址并附合并后的 NO_PROXY，覆盖继承值（`socks5://` 地址原样注入——各工具对这些变量中的 SOCKS URL 支持程度不一）；开但未填地址 → 宿主环境原样透传；关 → 剥除代理变量（NO_PROXY 保留）。
-- `proxyUrl`（默认 null = 跟随环境变量）即两者共享的显式地址。PUT 校验：先 trim；空串或 null 即清除地址；接受 undici dispatcher 认可的代理 URL——`http://`、`https://` 与（undici 实验性支持的）`socks5://`/`socks://` 地址，允许携带凭据——以及裸 `主机[:端口]`（规范化为 `http://主机[:端口]`）；只存储规范化后的值，响应回显存储形态。其余（无法解析，或 undici 拒绝的协议如 `socks4://`）一律 `400`，错误码 `invalid_proxy_url`，且被拒绝的 PUT 不写入任何字段。
-
-任一开启状态下生效的 NO_PROXY 恒包含 `localhost,127.0.0.1,::1`（回环不代理）。
-
-上传限制是两个整数 MB，约束输入框的文件附件；二者均在下一次请求即生效、无需重启（校验与请求体上限都按请求读取）：
-
-- `attachmentMaxMb`（默认 100）为单个附件上限，超出返回 `413` `file_too_large`。
-- `attachmentTotalMb`（默认 120）为单条消息解码后的合计上限，超出返回 `413` `payload_too_large`。
-- PUT 校验：两者都必须是 1 到 200 之间的整数，且**生效后**的合计值（本次 PUT 给出的值，或本次不修改时的存量值）不得低于生效后的单个上限。其余一律 `400`，错误码 `invalid_attachment_limit`，且被拒绝的 PUT 不写入任何字段。
-- 不可配置项：单条消息的附件数量（20）与内嵌图片上限（20MB，超出返回 `413` `image_too_large`）。内嵌图片会写入轨迹，并在每次翻阅历史与恢复会话时被重新读取，因此刻意不随附件上限放宽；`GET /api/me` 会在 `uploadLimits` 下报告以上全部数值，客户端据此按当前生效的上限预先校验。
-
-### 机器（仅管理员）
+## 用户管理（仅管理员）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/projects/:projectId/machines | 本机，加上**服务端自身** `~/.ssh/config` 中的主机别名，附带**本 Project** 在每台上安装了什么、每台最近一次探测到的状态、本服务端会安装的版本，以及正在运行或最近一次的任务：`{machines: [{id, alias, machineId, installed, elsewhere?, local, connection, api, status}], imageVersion, job}`。`elsewhere` 表示该主机由别的 Project 装过——可以纳入，不必重装 |
-| POST | /api/projects/:projectId/machines/probe | 询问本 Project 已安装的机器各自的状态（每台一次 ssh 往返，并发 5）并返回带有最新状态的列表 |
-| POST | /api/projects/:projectId/machines/:machineId/install | 在该主机上安装当前构建，并把它归入本 Project；返回 `202` 与同样的响应体，此时任务已在运行。请求体 `{replaceProgram: true}` 用于回答任务给出的那个提议：即便版本已一致也照装不误，并重启它 |
-| POST | /api/projects/:projectId/machines/:machineId/connect | 把该机器的服务端拉起来，并**持有**对它的那唯一一条连接——一个 `ssh -T -D` 会话，不会因空闲而关闭，断了会自行重建，服务端重启或热推之后也会恢复；返回 `202` 与同样的响应体，此时连接任务已在运行。Windows 机器返回 `409` `connect_unsupported`：那边没有可以持有会话的 shell |
-| POST | /api/projects/:projectId/machines/:machineId/disconnect | 断开连接。远端服务端**保持运行**——那是那台机器自己的服务端，别人可能正在上面 |
-| POST | /api/projects/:projectId/machines/:machineId/restart | 停止该机器的服务端并在同一端口重新启动；返回 `202`，若已有任务在跑则 `409`。它值得成为一个独立操作，是因为一台机器的**文件**可以在它运行时被更新，而只有重启才能让进程与之相符 |
-| GET | /api/projects/:projectId/machines/:machineId/dirs?path= | 该机器上 `path` 的子目录，经由持有的连接读取——工作区选择器浏览的就是它。与代理一样，按机器**自身的 id** 寻址。机器未连接时返回 `404`：读取从不自行打开 ssh |
-| POST | /api/projects/:projectId/machines/:machineId/release | 把该机器移出本 Project；机器上已安装的程序保持不动 |
+| GET | `/api/admin/users` | 列出用户 |
+| POST | `/api/admin/users` | 创建用户：`{userId, password}` |
+| POST | `/api/admin/users/:userId/password` | 重置密码，并使这个用户的所有登录会话失效 |
+| DELETE | `/api/admin/users/:userId` | 删除用户 |
 
-无论个人服务端还是多用户服务端都仅限管理员：安装会以**服务端账户**的密钥派生 ssh，并在另一台机器上写入程序目录——这是所有者的能力，而非访客的。ssh 配置只读不写，也从不解析：列表就是配置的文本（无论声明了几百台主机都只是一次文件读取），而别名原样交给 ssh——它的含义由 ssh 自己按自己的配置、每次都重新决定。
+用户列表的每一行都会带上账号昵称（如果设置过）。列表中刻意不放头像：列表不分页，每个账号再附一个 data URL 会让响应体膨胀到淹没其他内容。
 
-`imageVersion` 是将被推送的版本；为 `null` 表示本服务端根本没有安装镜像（只有从未被热推过的源码检出会是这种形态），此时任何安装都会以 `409` `no_install_image` 拒绝。该版本取自当前运行的安装自身：热推过的服务端推送它正在运行的 bundle（`0.0.0-hmr.<cli>.<web>`），tarball 或打包安装则推送自己的程序树，因此两端的一致是构造性的。
+桌面模式（由桌面应用拉起的服务器）下，这组路由一律返回 `403`，错误码为 `desktop_single_user`。桌面应用面向单用户，不提供用户管理；数据根目录中已有的用户不受影响。
 
-`installed` 是**本服务端**最近一次在该机器上完成的安装——`{version, at}`，从未安装过则为 `null`。它持久化在数据根目录下，因此能跨重启、跨热推、跨「在别的机器上安装」而保留；它记录的是本端做过什么，而非对远端的实地探查，所以被手工清空的远端仍显示为已安装，直到下一次安装将其修正。安装失败不写入任何记录。
+## 服务器设置（仅管理员）
 
-`machineId` 是该机器**自身**的 id——由运行在那里的服务端铸造的 16 位 base64url 字符（其 `machine` 表），跨改名、改别名与重装都保持不变，是所有存储引用应当指向的东西。该机器上的服务端尚未启动过时为 `null`，因为还没有任何东西铸造过它；它与 `status` 在同一次往返中获取，并记录在安装记录旁。同一主机的两个别名会报告相同的 `machineId`。
-
-`local` 标记服务端自身所在的机器。它始终出现在列表中、始终是已安装、始终在运行——它就是正在应答的那一个——并且永远不是安装目标：对它 `POST …/install` 返回 `409` `self_install`。
-
-`status` 为 `{state, checkedAt, port?, detail?}`，`state` 取 `running` / `stopped` / `unreachable` 之一；该机器尚未被探测时为 `null`。没有单独的 ssh 状态：ssh 是传输方式，因此连不上的机器就是 `unreachable`，并在 `detail` 中保留 OpenSSH 自己的原话。`GET` 从不发起探测——它只报告最近一次的答案——因为一次探测是每台机器一次 ssh 往返，而列表本身只是配置文件的文本。真正花费这些往返的是 `POST /api/machines/probe`，且只针对安装过的机器。
-
-已连接机器的 API 可通过本源上的 `/server/<machineId>/api/…` 访问，经由本服务端持有的那一条 ssh 会话拨达——是该会话内部的一个 channel（走它的 SOCKS 端口），从不是第二条连接。以机器自身的 id 而非它被访问时所用的 ssh 别名寻址：别名只存在于某一份配置文件中，若以它为键，一旦有人重命名主机，该机器的 URL 就会随之改变；而 id 是 base64url，放在路径中无需任何百分号编码。**仅限管理员**，且只有一个身份：请求在对端以那台机器的管理员身份发出，会话由本服务端通过自己的 ssh 权限铸造（在机器上执行 `penguin auth token`）——浏览器的 cookie 不会过去，机器的 cookie 也不会回来。只有 `/api` 会被转发——前端始终是本地的。
-
-安装是任务而非请求：它要探测对端，可能下载并校验一份 Node 运行时，再经 scp 复制镜像——最坏情况以分钟计。`POST` 启动后立即返回，客户端轮询 `GET` 读取 `job.log`，其中是对端自己的原话（ssh 的诊断、远端安装器的输出）。连接（`POST …/connect`）与重启（`POST …/restart`）是同一形状的任务，以 `job.kind`（`install` / `connect` / `restart`）区分。运行期间 `job.result` 为 `null`，结束后安装为 `{ok: true, installed: "installed" | "already-installed", version}`、连接与重启为 `{ok: true, connected: true}`，失败为 `{ok: false, step, message, canReplaceProgram?}`——`canReplaceProgram` 标记一种下一步是「无论如何都安装程序」的失败（`POST …/install` 带 `{replaceProgram: true}`），只提供选项而不自动执行，因为它会重启一个别人可能正在用的服务端。同一时刻只允许一个任务；任务存于内存，热推与重启都不保留，重跑即是恢复手段——每一步都是幂等的。
-
-在任何 ssh 运行之前就能判定的拒绝各有错误码：`409` `install_running`、`404` `unknown_machine`、`409` `no_install_image`，以及 `409` `self_install`——本服务端不会把这份构建盖到自己正在运行的程序目录上。除 `local` 那一行之外，指回本机的别名（`Host localhost`、本机的第二个名字）一旦被探测到报出本服务端自己的 id，同样会被拒绝。
-
-### 版本与在线更新
+服务器全局的代理、附件和公司模式设置。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /api/version | 当前运行构建的身份，外加该根目录被推送的 harness：`{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}`，与 `penguin version --json` 输出同一份记录。`harness` 描述该数据根目录的 HMR store（`{source, pushedAt, bundles}`，其中 `source` 为推送方 checkout 的 `{repo, revision}`），从未被推送过时为 null。`describe` 是单行身份（发布版为 `v0.2.3`，源码构建为 `v0.2.3-14-g9e8f7d6-dirty`）；`channel` 取 `release` 或 `source`；`buildDate`（UTC yyyy-mm-dd）与 `commit` 在构建时打入、无需联网，源码构建以及打入机制之前的发布版为 null；`branch` 与 `dirty` 记录源码构建的 git 位置，发布版为 null |
-| GET | /api/version/update-check | 对比 GitHub 最新 Release 与当前版本：`{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`；`?force=1`（手动「检查更新」）绕过 TTL 缓存，结果照常写入缓存 |
-| GET | /api/version/update | **仅管理员。**在线更新任务的状态：`{state: idle \| running \| done, targetVersion, phase?, percent?, output, result?, startedAt?, finishedAt?}`——运行中带 `phase`（`resolving` / `downloading` / `installing`）与 `percent`（从安装器的进度条读出）；结束后带 `result`（`{status, reason?, output, needsRestart}`）。更新弹窗在任务运行期间轮询它 |
-| POST | /api/version/update | **仅管理员。**启动在线更新任务——在服务器上后台运行 `penguin update --yes`——已有任务在跑则并入；应答与 GET 完全一致。已结束的任务可以再次启动（即重试） |
-| POST | /api/version/restart | **仅管理员。**请求进程在优雅关闭后以托管进程约定的重启退出码退出，由 `penguin server \| penguin web` 在已安装的版本上重新拉起：`{restarting: true}`；没有托管进程时为 `{restarting: false, reason: "no_supervisor"}` |
+| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode}}` |
+| PUT | `/api/admin/settings` | 更新设置；省略的字段保持当前值，任何字段非法都会拒绝整个 PUT。返回更新后的完整设置 |
+| GET | `/api/admin/settings/proxy-probe` | 可达性探测的目标：`{targets: [{provider, url}]}`。不发起任何请求 |
+| POST | `/api/admin/settings/proxy-probe/:provider` | 经服务器的出站链路探测其中一个目标，不发送任何凭证：`{probe: {provider, url, outcome, ms, status?}}` |
 
-`update-check` 是服务端唯一自动发起的对外网络请求，并且严格失败兜底：查询失败仍返回 200，只是设置 `error`（`network` / `rate_limited` / `bad_response`）且 `latestVersion` 为 null；结果在内存中缓存（成功 1 小时、失败 10 分钟）；设置 `PENGUIN_UPDATE_CHECK=off` 可完全关闭该查询（返回 `disabled: true`，不发起任何网络请求）。Owner 主动发起的供应商 Key 授权会另外产生对外请求。更新的 `status` 为 `updated`（需重启服务才能运行新版本）、`failed` 或 `unsupported` —— 后者包括服务不是通过 `penguin server|web` 启动（`reason: "not_launched_via_cli"`），以及 CLI 自身拒绝执行（源码运行、无法识别的安装方式、Windows）；`output` 携带 CLI 输出的末尾片段。
+只要有 HTTP 响应返回，探测的 `outcome` 就是 `reachable`，否则为 `timeout`、`dns`、`refused`、`tls` 或 `network`。`:provider` 不在目标列表里时返回 `404` `probe_target_not_found`。
 
-### Project 与成员
+### 代理设置
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | /api/projects | 当前用户可见的 Project 列表 |
-| POST | /api/projects | 创建 Project |
-| DELETE | /api/projects/:projectId | 删除 Project |
-| GET | /api/projects/:projectId/members | 成员列表 |
-| POST | /api/projects/:projectId/members | 添加成员：`{userId}` |
-| DELETE | /api/projects/:projectId/members/:userId | 移除成员 |
+代理设置是两个相互独立的开关，共用一个可选的显式地址。改动立即作用于新建连接和新启动的进程，无需重启。
 
-成员写操作仅限 Owner。成员路由在桌面模式下同样返回 `403 desktop_single_user`（见上文「用户管理」）。
+`proxyForApp`（即**应用程序使用代理**开关，默认开启）管理服务器自身的出站流量：LLM 请求、更新检查和图片拉取。
 
-### 模型
+- 开启且设置了 `proxyUrl`：http 和 https 都走这个地址，优先于代理环境变量，无需配置任何环境变量。
+- 开启但未设置地址：服务器遵循 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY` 环境变量，大小写两种拼写都认。
+- 关闭：始终直连。
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | /api/projects/:projectId/models | 模型列表（api_key 掩码显示）；有促销的行以 `discount` 携带其折扣 |
-| PUT | /api/projects/:projectId/models | 全表替换，条目以 `(provider, modelId)` 为键；条目的 `discount` 写入或清除其促销折扣（见下文） |
-| POST | /api/projects/:projectId/models/test | 连通性测试：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
-| POST | /api/projects/:projectId/models/detect | 自定义 base URL 的协议自动检测：按 `openai-responses` → `ant-messages` → `openai-chat` 顺序探测，先用整理后的 URL（整段端点路径会先被剥掉），再用它增删 `/v1` 后的形式，返回第一个被提供的协议与实际应答的 base URL：`{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}` |
-| POST | /api/projects/:projectId/models/list | 新增分组导入所用的端点模型列表：按检测出的协议列出端点服务的全部模型 id：`{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}` |
-| POST | /api/projects/:projectId/models/detect-vision | 视觉能力探测：用该模型的凭据发送一张 1x1 图片(一次真实计费的补全)：`{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported\|unsupported\|failed, message?}` |
+`proxyForAgent`（即 **Agent 环境使用代理**开关，默认开启）管理 Agent 命令子进程的环境。
 
-所有涉及模型的接口都要求完整的 `(provider, modelId)` 二元组，不做任何推断：只带一半的请求一律 400，绝不会退化为一次查找。模型引用本身可省略的场景（创建 Session、定时任务）省略的是整对，两半都不给即选用 Project 默认模型。
+- 开启且设置了 `proxyUrl`：注入 `HTTP_PROXY` 和 `HTTPS_PROXY`（含对应的小写变量），值为这个地址，同时注入合并后的 `NO_PROXY`，覆盖继承来的值。`socks5://` 地址原样注入；各工具能否在这些变量中接受 SOCKS URL 并不一致。
+- 开启但未设置地址：宿主环境原样透传。
+- 关闭：移除代理变量，保留 `NO_PROXY`。
 
-行上的 `pricing` 恒为牌价。促销折扣是从牌价中扣除的比例，取值在 0 与 1 之间（不含两端），不写入 `.project_config.toml`，而由服务端按行存于 `web.db`、在计算成本时扣除。`PUT /models` 时，条目带 `discount` 即按其写入：数字写入，`null` 清除，其他取值在写入任何内容之前即返回 400。省略 `discount` 的条目保留已存折扣，但若条目改名（`renamedFrom` 指向另一对引用）或 `pricing` 与已存价格不同，则一并清除；新表中不再出现的行，折扣随之删除。
+`proxyUrl` 是共用的显式地址，默认为 `null`，即跟随环境变量。PUT 按如下规则校验：
 
-`PUT /models` 同时会使该 Project 已缓存的 Session 运行时失效（与 vault 更新同一套生效语义）：进行中的运行不做热替换，但该 Project 下任何 Session 的下一个 Task 都会重新装载并读到新的 `api_key` / `base_url`。它还会向该 Project 已打开的 Session 通道发布 `credentials_updated` 事件（见下文「流式推送」），且模型响应携带 `updatedAt`（配置文件 mtime）——Web App 用它与最近一次鉴权失败的时间比较，决定鉴权失败的输入框是否继续禁用。
+- 先去除首尾空白，空值或 `null` 表示清除这个地址。
+- 可接受的值是 undici dispatcher 支持的代理 URL（`http://`、`https://`，以及实验性的 `socks5://` / `socks://`，允许带凭证），另外也接受裸的 `host[:port]`，并归一化为 `http://host[:port]`。只存储归一化后的值，响应返回的也是这个值。
+- 其他任何值——无论是无法解析，还是 undici 不接受的协议（如 `socks4://`）——都返回 `400`，错误码为 `invalid_proxy_url`，且这次 PUT 不会写入任何内容。
 
-#### Penguin Go Key 授权
+无论哪种开启状态，最终生效的 `NO_PROXY` 都包含 `localhost,127.0.0.1,::1`，所以回环流量永远不会走代理。
 
-以下路由全部仅限 Owner。浏览器只会得到本地 flow id 与授权 URL，不会得到设备密钥、中转站交付的 API Key 或其他平台响应字段。PenguinHarness 在服务端校验平台模型清单，把交付的 Key 写入 `penguin-go` 既有条目，并按平台元数据创建本地缺失模型；已有模型会刷新平台牌价和客户端协议，端点及其他由 Project 管理的配置不会被覆盖，模型也不会被删除。Project 模型表写入后，平台返回的折扣会整体替换该分组存于 `web.db` 的促销折扣，从不写入 `.project_config.toml`。
+### 附件上限
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | /api/projects/:projectId/platform-auth/start | 开启一次性授权流程；按平台截止时间过期，本地最长保留十分钟 |
-| POST | /api/projects/:projectId/platform-auth/sync | 使用已保存的 Key 获取平台模型清单，新增本地缺失模型并刷新已有模型的平台元数据；响应以 `added` / `updated` 返回数量，Key 无效时返回 `platform_reauthorization_required` |
-| GET | /api/projects/:projectId/platform-auth/:flowId/status | 由服务端轮询中转站，把已交付 Key 写入模型组并新增平台模型 |
-| POST | /api/projects/:projectId/platform-auth/:flowId/retry | 写入失败时仅重试本地原子写，不重复请求一次性交付 |
-| POST | /api/projects/:projectId/platform-auth/:flowId/cancel | 取消本地流程；中转站的 pending 记录按自身 TTL 过期 |
+输入框中的文件附件由两个以整数 MB 为单位的值控制。两者都从下一个请求起生效，无需重启，因为校验逻辑和请求体上限在每次请求时都会读取它们。
 
-成功写入后会使该 Project 的缓存运行时失效，并发布 `credentials_updated`。只要平台返回非空模型清单，分组不存在时也可以直接创建；`apply_failed` 表示通过校验的交付内容未能写入本地配置，重试接口只会再次执行这一步本地写入。
+- `attachmentMaxMb`（默认 100）是单个文件的大小上限，超过则返回 `413` `file_too_large`。
+- `attachmentTotalMb`（默认 120）是单条消息解码后字节总数的上限，超过则返回 `413` `payload_too_large`。
 
-#### 授权新建 API key
+PUT 按如下规则校验：
 
-仅限 Owner，但供应商跳回的 `GET /callback` 例外——它无需会话即可应答，且只能把跳回时带来的授权码存到流程上，详见下文。若某个供应商分组在内置目录中声明了授权流程，用户可以在浏览器里授权并**新建**一个 API key，不必再去控制台复制。
+- 两者都必须是 1–200 之间的整数。
+- 生效的总量（本次 PUT 传入的值；若本次未修改，则为已存储的值）不得低于生效的单文件上限。
+- 其余情况返回 `400`，错误码为 `invalid_attachment_limit`，且这次 PUT 不会写入任何内容。
+
+有两项限制不可更改：每条消息的文件数量上限（20）和内嵌图片上限（20MB，超限返回 `413` `image_too_large`）。内嵌图片会写入 Trace，之后每次分页加载历史、每次恢复会话都要重新读取，因此刻意不随附件上限一同调大。`GET /api/me` 会在 `uploadLimits` 中返回上述全部限制，客户端发送文件前可以先对照实际生效的限制检查文件。
+
+### 公司模式开关
+
+`companyMode` 是服务器的**启用公司模式**开关，默认关闭。修改无需重启即生效：开关关闭期间，所有组织路由都返回 `404` `company_mode_off`，组织的调度器也不会触发任何事件。
+
+## 机器（仅管理员）
+
+通过 ssh 在其他主机上安装本服务器的构建，并管理与这些主机的连接。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | /api/projects/:projectId/model-oauth/start | 开启一次流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl}` |
-| GET | /api/projects/:projectId/model-oauth/callback | 供应商跳回的地址（`?flow=&code=`）：把授权码存到流程上，并返回一个 HTML 页面；`HEAD` 返回 405 |
-| GET | /api/projects/:projectId/model-oauth/:flowId | 轮询流程状态，并顺带兑换已存下的授权码、写入 key：`{status: pending\|done\|error, provider, error?}` |
-| POST | /api/projects/:projectId/model-oauth/:flowId/code | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
+| GET | `/api/projects/:projectId/machines` | 本机以及服务器自身 `~/.ssh/config` 中的主机别名，连同本 Project 的安装记录、最近状态和当前任务：`{machines: [{id, alias, machineId, installed, elsewhere?, local, connection, api, status}], imageVersion, job}` |
+| POST | `/api/projects/:projectId/machines/probe` | 逐台询问本 Project 已安装机器正在做什么（每台一次 ssh 往返，最多 5 台并发），返回携带最新状态的列表 |
+| POST | `/api/projects/:projectId/machines/:machineId/install` | 开始在这台主机上安装当前构建，并将这台主机分配给本 Project；任务运行期间返回 `202`，响应体相同 |
+| POST | `/api/projects/:projectId/machines/:machineId/connect` | 启动那台机器的服务器，并维持那条唯一的连接；connect 任务运行期间返回 `202`，响应体相同 |
+| POST | `/api/projects/:projectId/machines/:machineId/disconnect` | 断开连接，远端服务器继续运行 |
+| POST | `/api/projects/:projectId/machines/:machineId/restart` | 停止那台机器的服务器，并在同一端口重新启动；返回 `202`，任务运行期间返回 `409` |
+| GET | `/api/projects/:projectId/machines/:machineId/dirs?path=` | 那台机器上 `path` 的子目录，经由保持中的连接读取；Workspace 选择器浏览的就是这些目录 |
+| POST | `/api/projects/:projectId/machines/:machineId/release` | 将那台机器移出本 Project；机器上的安装保持不变 |
 
-PKCE 的 verifier 在服务端生成、只在内存中保留十分钟，绝不下发到客户端；新建出的 key 直接写入该分组的模型，不回传、不记录日志、也不出现在 URL 中。一次流程只属于某个 Project 下的某个用户且只能用一次：第二次兑换会被拒绝，`/start`、`/:flowId`、`/:flowId/code` 也拒绝该 Owner 以外的任何人。
+无论个人服务器还是多用户服务器，这组路由都仅限管理员：安装会以服务器账号的密钥运行 ssh，并在另一台机器上写入程序目录——这是所有者才有的能力，不是访客该有的。服务器从不写入自己的 ssh 配置，也从不解析它。机器列表就是配置文件的原文，不管声明了多少台主机都只读取一次；每个别名都按原样传给 ssh，因此每次都由 ssh 套用自己的配置。
 
-`GET /callback` 是唯一的例外，且只能如此。环回地址上的 OAuth 跳转由供应商所跳转的那个浏览器送达，而它未必就是发起流程的那一个——桌面端 shell 会把授权页交给**系统**浏览器打开，系统浏览器并不持有该应用来源的 Cookie。因此这一条路径挂载在会话校验之外，改以 flow id 作为凭据：32 字节随机数，十分钟有效，只能存入一次，只对开启该流程的那个 Project 生效，且只服务于确实要了跳回地址的流程（`manual` 流程会被拒绝，它压根没拿到过跳回地址）。
+- `POST …/install` 可以携带请求体 `{replaceProgram: true}`，用来回应任务过程中提出的这个要求：即使版本已经一致，服务器也会重新安装程序并重启它。
+- `POST …/connect` 维持一条 `ssh -T -D` 会话：空闲时永不超时，断开后自动重连，服务器重启或热推送后也会自动恢复。Windows 机器返回 `409` `connect_unsupported`，因为没有 shell 可以维持会话。
+- `POST …/disconnect` 断开后远端服务器继续运行：它属于那台机器，其他人可能还在使用。
+- `POST …/restart` 之所以是独立操作，是因为机器上的文件可以在运行期间更新，只有重启才能让进程与文件保持一致。
+- `GET …/dirs` 与下文的 API 代理一样，用机器自身的 id 寻址。机器未连接时返回 `404`，因为读取操作绝不会自行建立 ssh 连接。
 
-这条路由能做的事还有第二重边界：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、以及写入该 Project 模型的动作，都发生在 `GET /:flowId`——Owner 自己的轮询，仍在会话校验之内。因此没有 Owner 主动查询流程状态，就不会有 key 落进任何 Project；兑换失败也在那里以 `{status: error, error}` 报出，而不是显示在跳回页面上。周边的一切同样不在豁免之内：更长的路径、其它任何请求方法（该字面路径上的 `HEAD` 返回 405），以及另外三条同级路由，仍然都需要会话。
+### 机器字段
 
-`mode: manual` 不传回调地址，授权页改为显示一次性授权码供用户手动带回，适用于跳转回不来的部署。无论由哪条路由完成兑换，流程完成后同样会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 一致。
-### 插件注册表
+- `elsewhere`：这台主机已由其他 Project 安装，可以直接接管，而不必重新安装。
+- `imageVersion`：将要推送的版本；本服务器完全没有安装镜像时为 `null`。只有从未接收过热推送的开发检出属于这种情况，此时每次安装都会失败，返回 `409` `no_install_image`。这个版本就是当前运行安装自身的版本：热推送的服务器发送它正在运行的 bundle（`0.0.0-hmr.<cli>.<web>`），tarball 或打包安装则发送自己的目录树，所以两端天然一致。
+- `installed`：本服务器最近一次在那台机器上执行的安装，格式为 `{version, at}`；从未安装过则为 `null`。它保存在数据根目录下，因此重启、热推送和其他机器上的安装都不会使它丢失。它记录的是实际执行过的操作，并不核对远端状态，所以手动清空过的机器仍会显示为已安装，直到下一次安装把它纠正过来。安装失败不会留下任何记录。
+- `machineId`：机器自身的 id，由运行在那台机器上的服务器生成（记录在它的 `machine` 表中），共 16 个 base64url 字符。重命名、修改别名和重新安装都不会改变它，持久化引用应指向它。在那台机器上启动过服务器之前，它为 `null`，因为还没有任何东西生成过它。本服务器在与 `status` 同一次往返中获知它，并把它与安装记录存放在一起。同一主机的两个别名报告相同的 `machineId`。
+- `local`：标记本服务器所在的机器。由于应答请求的正是它，这条记录始终在列表中，始终显示为已安装且正在运行；它也永远不会成为安装目标：对它调用 `POST …/install` 返回 `409` `self_install`。
+- `status`：`{state, checkedAt, port?, detail?}`，其中 `state` 为 `running`、`stopped` 或 `unreachable`；从未探测过的机器为 `null`。没有单独的 ssh 状态。ssh 就是传输通道，连不上的机器即为 `unreachable`，`detail` 携带 OpenSSH 自己的报错信息。`GET` 从不主动探测，只报告最近一次的结果，因为每探测一台机器都要花费一次 ssh 往返，而列表本身只是配置文本。只有 `POST …/machines/probe` 会付出这些往返开销，而且只针对已安装的机器。
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | /api/plugins/registry | 插件市场页的插件索引：`{plugins: PluginIndexEntry[]}`——所有已配置注册表（当前仅内置注册表）合并后的索引 |
-| GET | /api/plugins/registry/readme?name=… | 某个已列出条目的说明文档：`{name, readme}`（注册表没有时 `readme` 为 null）；索引未列出的名字返回 404 |
-| GET | /api/projects/:projectId/plugins/installed | 该 Project 要求的插件，并联上进程实际在跑的状态：`{plugins: [{specifier, active, builtin, modules, replaces, error?}], shipped, file, restartPending}`（成员即可） |
-| POST | /api/projects/:projectId/plugins/installed | `{specifier}`——为该 Project 要求一个随构建发布的插件（否则 400 `plugin_not_shipped`），无需重启即生效，App 自行重组——这会中止所有 Project 正在进行的 Agent 运行；启动失败的改动会被撤销（管理员） |
-| PUT | /api/projects/:projectId/plugins/installed | `{plugins}`——重写该 Project 的列表并应用；新增的名字须是随构建发布的包（管理员） |
-| DELETE | /api/projects/:projectId/plugins/installed?specifier=… | 从该 Project 的列表中去掉并应用；磁盘上什么都不变（管理员） |
+### 已连接机器的 API
 
-索引格式沿用 typst/packages 的 `index.json` 模式：扁平数组，每个元素是插件的一个版本条目（`name`、`version`、`description`、`authors`、`license`，可选 `repository` / `homepage` / `keywords` / `categories` / `updatedAt`）。注册表仅用于发现，不会导入任何插件代码；Project 通过上面的路由要求某个条目，其列表存在自己的 `.project_config.toml` 的 `[plugins]` 表里——包名 → 要求，形状同 Cargo 的 `[dependencies]`（`"@scope/name" = "*"`、版本字符串，或 `{ version = "…" }`）。进程运行的是所有 Project 表的并集。
+已连接机器的 API 可以通过本服务器 origin 上的 `/server/<machineId>/api/…` 访问。请求经由本服务器与那台机器之间唯一的那条 ssh 会话传输，走的是会话内部经由它的 SOCKS 端口的一条通道，绝不另开第二条连接。
 
-### Agent
+URL 使用机器自身的 id，而不是连接所用的 ssh 别名。别名只存在于某个配置文件里，若以别名为准，主机一改名，机器的 URL 就会跟着变。id 采用 base64url 编码，放进路径无需百分号转义。
 
-以下路径均省略前缀 `/api/projects/:projectId`。
+该代理仅限管理员，且只使用单一身份：请求在对端以那台机器的管理员身份执行，所用会话由本服务器凭借自身的 ssh 访问能力签发（在那台机器上执行 `penguin auth token`）。浏览器的 Cookie 不会传到对端，机器上的 Cookie 也不会带回本地。只有 `/api` 会转发，前端仍在本地运行。
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET / POST | /agents | Agent 列表 / 创建 |
-| DELETE | /agents/:agentId | 删除 Agent |
-| GET / PUT | /agents/:agentId/config | 读写配置（AGENTS.md + system_config.yaml，PUT 保留 YAML 注释） |
-| GET / PUT | /agents/:agentId/vault | Vault 环境变量（值掩码显示；PUT 全表替换） |
-| GET | /agents/:agentId/memory | 记忆总览：开关、模板是否含 `{{MEMORY}}`，以及各作用域条目——用户作用域（`user`，`kind: "user"`）在前，其后为各 Workspace |
-| POST | /agents/:agentId/memory/template-placeholder | 向提示词模板插入 `{{MEMORY}}` 占位符（幂等；创建于记忆功能之前的 Agent 的显式采用路径） |
-| GET | /agents/:agentId/memory/scopes/:key/files | 列出单个作用域的主题文件（frontmatter + 文件信息）；`:key` 为 workspace key 或 `user` |
-| GET / DELETE | /agents/:agentId/memory/scopes/:key/files/:name | 读取单个主题文件 / 删除它（并同步清理其 `MEMORY.md` 索引行） |
-| GET | /agents/:agentId/memory/scopes/:key/export | 把整个作用域导出为一份 JSON 文档：全部主题文件加它的 `MEMORY.md`，以附件形式下载 |
-| POST | /agents/:agentId/memory/scopes/:key/import | 把这样一份文档写回（仅 owner）：`{payload, mode?, confirm?}`。`mode` 为 `skip`（缺省，只添加作用域尚未有的名字）、`overwrite`（覆盖同名文件）或 `replace`（并删除文档中没有的文件）；任何会覆盖或删除的操作都需要 `confirm`，否则返回 409 `memory_import_confirm_required` |
-| GET | /agents/:agentId/export | 导出 Agent State 快照（tar.gz 下载） |
-| POST | /agents/:agentId/import | 导入快照：`{dataBase64, confirm?}`；版本冲突且未确认时返回 409 |
-| GET | /agents/:agentId/skills | 已安装 Skill 列表（从库安装走 `/plugins`） |
-| DELETE | /agents/:agentId/skills/:name | 卸载 Skill |
-| POST | /agents/:agentId/plugins | 按名称安装库内插件——各自的 Skill 与钩子包，重装即更新。`{ names }` → 201 `{ skills, hooks }`；404 `unknown_plugin` 时什么都不写 |
-| GET | /agents/:agentId/hooks | 已安装钩子包：名称、描述、版本、钩子点、所属插件的图标 |
-| POST | /agents/:agentId/hooks/archive | 从 zip 安装钩子包：`{dataBase64, overwrite?}`——hooks.json 与脚本在根目录或唯一顶层目录内，清单列出的每条命令都须指向包内文件；未带 overwrite 而同名已装时 409 `hook_exists` |
-| GET | /agents/:agentId/hooks/:name/archive | 把已安装的钩子包导出为 zip（可原样经 POST 导回） |
-| GET | `/api/plugins`（全局） | 按分类列出插件库——每个插件带其 Skill 元数据与钩子点（任意已登录用户） |
-| GET | `/api/plugins/:plugin/files`（全局） | 单个库内插件携带的全部文件，按路径键入的文本——各 Skill 的可安装 SKILL.md 与参考文件在 `skills/<name>/` 下，钩子脚本在 `hooks/` 下——供插件详情弹窗的文件浏览器使用（任意已登录用户） |
-| DELETE | /agents/:agentId/hooks/:name | 卸载钩子包 |
+### 任务
 
-### Schedule
+安装是一个任务，而不是单次请求。它要探测对端，可能还要下载并校验 Node 运行时，再通过 scp 复制镜像，整个过程可能耗时数分钟。`POST` 启动任务后立即返回。客户端轮询 `GET` 获取 `job.log`，其中是对端自己的输出（ssh 的诊断信息和远端安装器的输出）。
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | /schedules | 一次列出 Project 内所有 Agent 的定时任务，每条带所属 `agentId`（任意成员） |
-| GET / POST | /agents/:agentId/schedules | 定时任务列表 / 创建（重名返回 409） |
-| GET / PUT / DELETE | /agents/:agentId/schedules/:name | 读取 / 更新 / 删除单个任务 |
+连接（`POST …/connect`）和重启（`POST …/restart`）也是同样形式的任务，通过 `job.kind`（`install`、`connect` 或 `restart`）区分。任务运行期间 `job.result` 为 `null`，结束后为以下之一：
 
-Schedule 写操作仅限 Owner。新建 Session 模式的任务，`modelId` 与 `provider` 要么成对给出、要么都不给；该二元组会在任务保存时以及调度器对账时对照 Project 模型表校验。
+- 安装：`{ok: true, installed: "installed" | "already-installed", version}`
+- 连接或重启：`{ok: true, connected: true}`
+- 失败：`{ok: false, step, message, canReplaceProgram?}`
 
-### Benchmark
+`canReplaceProgram` 表示这次失败的后续步骤可以是强行安装程序：调用 `POST …/install` 并附带 `{replaceProgram: true}`。服务器只提供这一步而不擅自执行，因为它会重启一台可能还有其他人在使用的服务器。
 
-Benchmark 挂在 Project 上而非某个 Agent 上：一个 Benchmark 评测过哪些 Agent 由使用者决定，每条 evaluation 记录本轮被测的 Agent（`agentId`，记录中没有时为 `null`）。汇总项的 `agentIds` 按首次出现顺序列出这些 Agent。以下路径同样省略前缀 `/api/projects/:projectId`。
+同一时刻只运行一个任务。任务只存于内存，热推送或重启后就会丢失。要恢复就重新执行一遍：每一步都是幂等的。
+
+### 拒绝情形
+
+这些拒绝在运行任何 ssh 命令之前就已判定，每个都有专属错误码：
+
+- `409` `install_running`
+- `404` `unknown_machine`
+- `409` `no_install_image`
+- `409` `self_install`：本服务器不会把自己的构建推送覆盖到自身正在运行的程序目录上。除了 `local` 这一行，指回本主机的别名（例如 `Host localhost` 或本主机的另一个名字）同样会拒绝，前提是某次探测已从它那里读到本服务器自己的 id。
+
+## 版本与自更新
+
+查看当前运行的构建，检查 GitHub 上是否有更新的 release，并执行自更新。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /benchmarks | Benchmark 评分数据——只返回带 `benchmark_config.toml` 的目录；缺少该文件的目录（评测运行期间删除 Benchmark 所留下的残留）会被跳过；每条带 `status`（技能仍在构建时为 `draft`，校准未能完成时为 `failed`，否则 `published`） |
-| POST | /benchmarks | 手动新建 Benchmark（仅 owner）：`{ id, title, description?, runs?, cases: [{ id, title, statement, rubric }] }` → 201 `{ benchmark }`。服务端写入 `benchmark_config.toml`（其中 `status = "published"`）、内容为 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（标题为其一级标题）与 `rubric/README.md`；id 沿用 Agent id 的字符规则，题目 id 以 `CASE-` 开头；目录已存在时返回 409 `benchmark_exists` |
-| DELETE | /benchmarks/:benchmarkId | 整目录删除一个 Benchmark——题目、配置与记分板（仅 owner；204，不存在返回 404） |
-| GET | /benchmarks/:benchmarkId/cases | 单个 Benchmark 的题目列表：题目 id 与题干 README 的一级标题；评分细则永不返回 |
-| GET | /benchmarks/:benchmarkId/cases/:caseId/files | 浏览某道题的 `statement/`；在 `/files` 前加 `/rubric` 即评分细则一侧 |
-| GET | /benchmarks/:benchmarkId/cases/:caseId/files/content | 读取该材料下的单个文件（`?path=`、`?preview=1`、`?download=1`），内联渲染的加固规则与 Workspace 文件一致 |
+| GET | `/api/version` | 当前构建的标识，以及这个数据根目录收到的 harness 推送 |
+| GET | `/api/version/update-check` | 将 GitHub 上的最新 release 与当前运行版本对比 |
+| GET | `/api/version/update` | 仅管理员。自更新任务的状态 |
+| POST | `/api/version/update` | 仅管理员。启动自更新任务 |
+| POST | `/api/version/restart` | 仅管理员。通过托管进程重启该进程 |
 
-### 组织（公司模式）
+### GET /api/version
 
-以下路径都在 `/api/projects/:projectId/organizations` 之下。管理员的公司模式总开关关闭时所有路由回 404。Project 成员可读写。没有删除组织的路由：`status`（`active` / `paused`）就是它的开关，暂停的组织仍保留其对话、员工、工位与工单。写入体可带 `agentId` 与 `sessionId`——调用方所在的员工与会话，CLI 从 `PENGUIN_AGENT_ID` 与 `PENGUIN_SESSION_ID` 填入——文件里记录的就是该员工而不是 token 的用户；`agentId` 指向某名员工时以它为准，否则看会话。频道的读取与成员 DELETE 没有请求体，同样两项改由 `?agentId=` / `?sessionId=` 传入。两者都仅对携带本机 API token 的请求生效，员工因此被当作它自己而不是登录的那个人来应答。这些路由背后的文件见[公司模式](/company-mode)。
+返回当前构建的标识以及这个数据根目录收到的 harness 推送：`{version, describe, channel, buildDate, commit, branch, dirty, runtime, harness}`。与 `penguin version --json` 打印的记录完全一致。
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET / POST | / | 列出组织 / 新建：`{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?, language?}` → 201 并返回组织详情（创建即生成 CEO Agent 并以初始化会话打开其工位；id 或 CEO 的 Agent id 已被占用则 409）。CEO 的组织图条目写入 `workspace: ceo`，与其他员工一样是公共工作区下的一个分区。`ceoBudget` 是 CEO 的月预算（美元），写入其 `org_chart.yaml` 条目的 `budget`——非负，不给则为 100；按累计线比较，即整家公司的上限。`language` 取 `zh` 或 `en`，是组织书写一切内容所用的工作语言；不给则从使命判定 |
-| POST | /suggest-id | 为显示名提议一个语义 id：`{name, kind}`——`kind` 为 `org` 或 `channel`——外加 `taken?`（提议须避开的 id）→ `{id, source, reason?}`。Project 的缺省 Model 把名称译成一个 snake_case 英文词干（`source: model`）；首次回答拼不出 id 时，会带上「只回答标识符本身」的格式要求再问一次；未配置 Model 或两次回答都无法用时，以名称的 ASCII slug 兜底（`source: fallback`）；两条路都命名不了的名称回一个占位 id `co_org_<yyyymmdd>` / `ch_channel_<yyyymmdd>`（`source: placeholder`），并带上 `reason`：`no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`。该路由不会因为「名称译不出来」而失败——问了 id 的对话框一定拿得到一个；Model 一侧的每一次落空都记为 `organization` / `id_suggest_failed` 错误。随后服务端按 kind 给词干加前缀——`org` 加 `co_`、`channel` 加 `ch_`，词干本就带前缀时不会加第二遍——再截长度、再避开 `taken`，因此提议出来的 id 一定带前缀，而手工输入的 id 一律按原样接受。该次补全关闭思考、使用共享的元请求预算，不属于任何 Session，也不计量 |
-| GET / PATCH | /:orgId | 概览（设置、看板计数、今日日程、待处理、全员频道最近消息、`inbox`、告警；设置里的 `language` 一律是生效值，文件里没有该字段时从使命读出）/ 修改名称、使命、`status`（`active` / `paused`——暂停即停止一切自动触发）、`approvalMode`、`timezone`、`language` 与阈值 |
-| GET | /:orgId/chart | 员工树，含每位员工的实况状态、工位与本周期支出 |
-| POST | /:orgId/employees | 招募：任用已有 Agent 传 `{agentId}`，或新建 `{newAgent: {agentId, name?, description?, plugins?}}`，再加 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?`、`model?`。`workspace` 不给则缺省为以该员工 Agent id 命名的子目录——公共工作区的根目录放共享输入，不是任何人的工位。相对 `workspace` 会归一化（`./hr` → `hr`）并在公共工作区下创建，绝对路径必须已经存在，用 `..` 爬出公共工作区的写法回 400 `invalid_workspace` |
-| PATCH / DELETE | /:orgId/employees/:agentId | 改头衔、汇报对象、工作区（校验与创建同招募）、预算（`null` 清除）、职责、Model / 离任（下属上移到其上级；CEO 不可离任） |
-| GET / POST | /:orgId/employees/:agentId/desk | 工位会话（无则创建）/ 换新的工位会话 |
-| GET / PUT | /:orgId/handbook | 组织手册索引（`handbook/README.md`） |
-| GET | /:orgId/handbook/files | 知识库文件清单，索引在前 |
-| GET / PUT / DELETE | /:orgId/handbook/files/\<path\> | 按相对路径读写、删除一份文档；索引不可删 |
-| GET / POST | /:orgId/calendar | 全员日程项及运行状态 / 新建：`{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}` → 除写下的事件外还带一组建议性的 `warnings`（每条一行）：同一起始分钟上已有另一位员工的常设日程项、同一员工已有同周期的常设日程项、常设日程项以 `now` 起算。写入绝不因此被拒 |
-| GET / PUT / DELETE | /:orgId/calendar/:agentId/:name | 单个日程项；`PUT` 的响应与上面的新建相同，同样带 `warnings` |
-| GET / POST | /:orgId/tickets | 按列的看板（含无法解析的文件）/ 新建：`{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}`。`owner` 是这张工单**唯一**的责任人——本组织的员工（裸 Agent id 或 `agent:<id>`）或 Project 成员（`user:<id>`），缺省为调用方；没有 `notify` 时它成为整个 `notify`，但仅限它是员工时，人不会因为自己名下的工单被 @。谁创建的记在工单 `history` 的 `created` 条目里。id 的 slug 优先取 `slug`（小写英文单词以连字符连接，否则 400），否则由标题推导；标题推不出两个词时交给 Project 的模型来取，模型也取不出则回 400 `slug_required`，请调用方自己取 |
-| GET / PUT | /:orgId/tickets/:ticketId | 工单详情（frontmatter 字段、正文各节、`progress` 为纯句子、`history`、贡献会话、子工单、上卷成本）/ 更新 `{title?, owner?, parent?, notify?, priority?, due?, goal?, acceptanceCriteria?, result?}`。`owner` 不接受 `null`：工单永远有负责人，只能改派、不能清空；`parent` 与 `due` 仍可传 `null` 清除 |
-| POST | /:orgId/tickets/:ticketId/move | `{status, reason?}`——移入 `rejected` 须给理由 |
-| POST | /:orgId/tickets/:ticketId/block | `{reason, by?}`——`by` 为工单 id 或主体；工单留在所在列 |
-| POST | /:orgId/tickets/:ticketId/unblock | 解除阻塞 |
-| POST | /:orgId/tickets/:ticketId/progress | `{text}`——往 `## Progress` 追加一句大白话；谁写的、什么时候写的记为 `history` 里的一条 `progress` |
-| POST | /:orgId/tickets/:ticketId/start | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：该员工的一个工单会话，记入工单的 `sessions` 与 `history`。本路由是唯一一个 `agentId` 不表示调用方身份的路由——它指的是这个会话以谁的身份运行。谁能发起取决于调用方：人可以为任何工单发起（`agentId` 指定员工，缺省取负责人）；而以员工身份写入的调用方——工位会话或工单会话在请求体里带上自己的 `sessionId`——只能为**自己名下**的工单发起，对别人的工单或没有员工负责人的工单一律回 403 `not_ticket_owner`。负责人仍可用 `agentId` 把同事拉进自己名下的工单 |
-| POST | /:orgId/tickets/:ticketId/attach | `{sessionId}`——把既有会话记为贡献会话 |
-| GET / POST | /:orgId/channels | 调用方可见的全部频道（人：全部；员工：自己所在的），`default_channel` 在前 / 新建：`{channelId, name?, purpose?}` → 201，初始成员只有创建者（id 被占用则 409） |
-| GET / PATCH | /:orgId/channels/:channelId | 频道及其成员 / 改名称、改 `purpose`、设 `archived`（仅限人，且 `default_channel` 不可归档） |
-| POST | /:orgId/channels/:channelId/members | `{principal}`——任一成员可邀请 `agent:<id>` 员工或 `user:<id>` Project 成员；人可以自行加入，员工不可。重复添加已有成员为幂等的 201 |
-| DELETE | /:orgId/channels/:channelId/members/:principal | 移出成员：任何人都可移出自己，人可移出任何人，员工只能移出自己；移出非成员为幂等的 204 |
-| GET / POST | /:orgId/channels/:channelId/messages | 某一天的消息（`?date=yyyy-mm-dd`，缺省为组织时区的今天）及调用方的未读与 @ 计数 / 发送 `{text, refs?}`；@ 从正文解析，且必须都是频道成员。`system` 消息在英文 `text` 之外还带 `notice`——一个 `kind`（`employee_joined`、`employee_left`、`channel_created`、`channel_archived`、`channel_unarchived`、`channel_joined`、`channel_invited`、`channel_left`、`channel_removed`、`budget_warned`、`budget_paused`，以及遗留的 `ticket_blocked`、`ticket_done`、`ticket_rejected`——这三种已不再写入，保留只是为了让磁盘上已有的行仍能渲染）与一组字符串 `params`——客户端据此按读者的语言渲染该句；该字段出现之前写下的消息没有它 |
-| POST | /:orgId/channels/:channelId/read | `{upTo}`——调用方在该频道的已读游标 |
-| GET | /:orgId/finance | 按员工（本人与沿汇报线累计）、按工单（沿 `Parent` 上卷）的支出、逐日趋势与告警；`?period=yyyy-mm` |
-| GET | /:orgId/sessions | 组织的工位会话与按工单分组的工单会话 |
+- `describe` 是一行式的版本标识：release 构建形如 `v0.2.3`，源码检出的构建形如 `v0.2.3-14-g9e8f7d6-dirty`。
+- `channel` 为 `release` 或 `source`。
+- `buildDate`（UTC yyyy-mm-dd）和 `commit` 在构建时写入，读取时无需联网。源码构建，以及早于这一写入机制的 release，这两项为 null。
+- `branch` 和 `dirty` 记录源码构建的 git 位置，release 中为 null。
+- `harness` 以 `{source, pushedAt, bundles}` 描述数据根目录的 HMR 存储，其中 `source` 是执行推送的检出的 `{repo, revision}`。这个数据根目录从未接收过推送时为 null。
 
-频道相关错误：`channel_not_found`（404，频道 id 不合法时同样如此）、`channel_exists`（409）、`channel_archived`（409，归档频道在取消归档前不接受写入）、`not_a_member`（403，无成员身份的读取、发言与邀请，以及员工尝试仅限人的操作）、`all_hands_immutable`（400，归档 `default_channel` 或编辑其成员）、`mention_not_member`（400，消息提及了不在该频道的对象，整条不写入）、`invalid_principal`（400）。
+### GET /api/version/update-check
 
-`GET /api/events` 上的用户级事件：`org_run`（工作轮或工单会话开始）、`org_channel`（新消息，带 `channelId` 与 @ 名单）、`org_ticket`（工单的状态、负责人、阻塞或会话变化）、`org_budget`（告警 / 暂停 / 解除）。
+将 GitHub 上的最新 release 与当前运行版本对比：`{currentVersion, latestVersion, updateAvailable, releaseUrl, publishedAt, checkedAt, disabled?, error?}`。手动**检查更新**发送的 `?force=1` 可绕过 TTL 缓存，结果仍按常规缓存。
 
-驱动工位会话的只有三样：日程项、频道里的 @ 提及、直接同它说话的人（CEO 创建时的初始化运行是唯一例外）。**工单写入不会启动任何一轮运行。** `move`、`block`、`unblock` 以及经 `PUT /:orgId/tickets/:ticketId` 设定负责人，都只被记录——写进工单文件、该变化在全员频道有系统消息时写进全员频道、并发出 `org_ticket` 事件——同时排入相关员工的队列；每人的下一条日程项在正文的 `## Since your last sweep` 一节里带上它们，一条变化一行。组织或员工被暂停期间队列照常积累，由此后真正触发的那次巡检送达；员工离职时，尚未送达的行随之删除。
+这次查询失败时平稳降级：
 
-### Session 创建与目录浏览
+- 查询失败仍返回 200，只是 `error` 会带值（`network`、`rate_limited` 或 `bad_response`），且 `latestVersion` 为 null。
+- 结果缓存在内存中：成功后缓存 1 小时，失败后缓存 10 分钟。
+- `PENGUIN_UPDATE_CHECK=off` 可彻底关闭查询：响应带 `disabled: true`，且不发起任何网络请求。
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | /agents/:agentId/sessions | Session 列表（含运行状态）；无论由哪个客户端创建，所有行都会列出 |
-| POST | /agents/:agentId/sessions | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201。`client` 是存入索引行的创建客户端标记（CLI 传 `"cli"`，缺省 `"web"`）——仅作来源信息，绝不参与列表过滤；`source` 只接受 `"benchmark"`（Benchmark 评估或优化创建），`subagent` 与 `schedule` 由服务端自己写入 `org` 是服务端为组织的工位与工单会话（公司模式）自行写入的值，客户端不能传。 |
-| GET | /dirs?path= | 服务器端目录浏览（Workspace 选择器数据源） |
+这个开关只关掉这一项检查。无论它取什么值，模型请求、已启用的远程控制连接、由所有者发起的供应商 Key 授权和代理测试都照常出站。
 
-创建 Session 时，`modelId` 与 `provider` 要么成对给出、要么都不给：给出完整二元组即指定模型，两个都省略则取 Project 默认模型，只给一个返回 400。Workspace 默认自动创建临时工作区，审批模式默认 `allow-all`。
+### GET /api/version/update
 
-### 用量与 Trace（Agent 级）
+仅管理员。返回自更新任务的状态：`{state: idle | running | done, targetVersion, phase?, percent?, output, result?, startedAt?, finishedAt?}`。更新运行期间，更新对话框会轮询这个接口。
+
+- 任务运行期间，`phase` 为 `resolving`、`downloading` 或 `installing`，`percent` 取自安装器的进度条。
+- 任务完成后，`result` 为 `{status, reason?, output, needsRestart}`。
+
+`result` 中的 `status` 为以下之一：
+
+- `updated`：重启服务即可运行新版本。
+- `failed`。
+- `unsupported`：要么服务器不是通过 `penguin server` 或 `penguin web` 启动的（`reason: "not_launched_via_cli"`），要么 CLI 拒绝更新（源码检出、无法识别的安装布局，或 Windows）。
+
+`output` 保存 CLI 自身输出的最后一段。
+
+### POST /api/version/update
+
+仅管理员。启动自更新任务，任务会在服务器主机后台运行 `penguin update --yes`。如果已有任务在运行，这个请求会并入其中。响应即任务状态，与 `GET /api/version/update` 的返回完全一致。已完成的任务可以重新启动，作为重试。
+
+### POST /api/version/restart
+
+仅管理员。让进程在优雅关闭后以托管进程的重启码退出，`penguin server` 或 `penguin web` 随即会在已安装的 release 上重新拉起它。返回 `{restarting: true}`；如果没有托管进程在管理这个进程，则返回 `{restarting: false, reason: "no_supervisor"}`。
+
+## Project 与成员
+
+Project、Project 成员，以及保存在 `.project_config.toml` 中的 Project 级设置。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /usage | 用量统计，查询参数 `from`、`to`、`fromTs`/`toTs`（ISO 时间戳界定的滑动窗口，须成对给出；`minute` 精度必需）、`groupBy`、`granularity`（时间序列精度 `minute` / `hour` / `day` / `week` / `month`，默认 `day`；范围 × 精度过大的组合会被拒绝）、`agentId`、`provider`、`modelId` |
-| GET | /usage/errors | 异常明细表分页（按时间倒序）：`offset`、`limit`，以及与看板一致的 `from` / `to` / `fromTs` / `toTs` / `agentId` 过滤，另可选 `kind`（`unexpected` / `expected`）→ `{items, total}` |
-| DELETE | /usage/errors | 清空当前筛选下的异常明细：`from` / `to` / `fromTs` / `toTs` / `agentId`，与读取所用的同一组（不接受 `kind`，面板没有该控件）→ `{deleted}`。此处 `from` 与 `to` 必填（缺一即 400）——开区间等于整段历史而非一次筛选。仅 Project owner；删除的触及范围与调用者的读取范围相同，故管理员的清空同时带走其读取所含的无归属异常，成员的清空从不涉及 |
-| GET | /agents/:agentId/traces | Trace 文件的日期 → Session 下钻结构 |
-| GET | /agents/:agentId/traces/:sessionId/:index | 读取 Trace 事件（`offset` / `limit` 分页） |
-| GET | /agents/:agentId/traces/:sessionId/:index/analysis | Trace 性能分析结果 |
-| GET | /agents/:agentId/traces/:sessionId/:index/download | 下载 Trace 原始文件（JSONL 附件） |
-| POST | /agents/:agentId/traces/import | 导入 Trace 文件：`{dataBase64}` → `{sessionId, index, date}` |
+| GET | `/api/projects` | 当前用户可见的 Project |
+| POST | `/api/projects` | 创建 Project：`{projectId, name?}` → 201 `{project}` |
+| PATCH | `/api/projects/:projectId` | 重命名 Project：`{name}` → `{project}` |
+| DELETE | `/api/projects/:projectId` | 删除 Project |
+| GET | `/api/projects/:projectId/members` | 列出成员 |
+| POST | `/api/projects/:projectId/members` | 添加成员：`{userId}` |
+| DELETE | `/api/projects/:projectId/members/:userId` | 移除成员 |
+| GET / PUT | `/api/projects/:projectId/chat-defaults` | 读取 / 替换新建对话的默认值 |
+| GET / PUT | `/api/projects/:projectId/command-policy` | 读取 / 替换沙箱命令策略 |
+| POST | `/api/projects/:projectId/suggest-id` | 为正在创建的对象的显示名提议一个语义化 id |
 
-Trace 下载对任意成员开放；导入仅限 owner（同 Agent 快照导入，上限 14MB）。导入文件必须是合法的 Trace JSONL，且首条记录为携带文件名安全 `session_id` 的 `session_meta`；若该 Agent 已存在同名 Session，导入将被拒绝（409 `trace_session_exists`），因此导入文件总是成为一个新 Session 的 001 号文件，并按首条记录时间戳的本地日期落入对应日期目录。
+- `PATCH /api/projects/:projectId` 仅限所有者，且只能修改显示名称（1–100 个字符）。Project id 就是它的目录名，永不改变。
+- `DELETE /api/projects/:projectId` 仅限所有者。`default_project` 与 CLI 共享，无法删除：返回 `409` `cannot_delete_default_project`。
+- 成员的写操作仅限所有者。桌面模式下，成员相关路由同样返回 `403 desktop_single_user`；参见[用户管理（仅管理员）](#用户管理仅管理员)。
+- `chat-defaults` 对应 `[default_chat]` 配置块：`{agentId?, workspace?, approvalMode?, thinkingLevel?}`。任何成员都可以读取，只有所有者可以替换。PUT 会替换整个块：省略的键清除对应默认值，空请求体则移除整个块。`agentId` 必须指向 Project 中已存在的 Agent（否则返回 `400` `unknown_agent`）。`workspace` 只是预填值，创建 Session 时才会校验；留空表示临时 Workspace。`thinkingLevel` 用作未在自身配置里设置思考等级的 Agent 的兜底值，不接受 `none`。默认模型不属于这个块，由模型相关路由管理。
+- `command-policy` 对应 `[command_policy]` 配置块：`{enabled?, rules: [{name, pattern, description?, enabled?}]}`。任何成员都可以读取，只有所有者可以替换。PUT 必须携带完整的规则列表（空数组表示没有任何规则），规则最多 64 条。每条规则需要名称（最多 64 个字符）和 pattern（最多 512 个字符，且必须能编译为正则表达式），description 最多 300 个字符。pattern 编译失败返回 `400` `invalid_rule_pattern`，其他格式错误的规则返回 `400` `invalid_rules`，`enabled` 不是布尔值返回 `400` `invalid_enabled`。参见[命令策略](/configuration#命令策略)。
 
-### Session 级接口
+### 语义化 id 提议
 
-以下路径均省略前缀 `/api/sessions/:sessionId`。Trace 与 Session 的存储模型见 [Session 与 Trace](/sessions-and-traces)。
+`POST /api/projects/:projectId/suggest-id` 接收 `{name, kind, taken?}`，返回 `{id, source, reason?}`。`kind` 取 `project`、`agent`、`benchmark`、`org` 或 `channel`，`taken` 是提议必须避开的一批 id。id 输入框旁边的**用 AI 生成**按钮，背后都是这一条路由。
+
+- 路径里这个 Project 的默认模型把名称翻译成一个符合该 kind 拼写风格的英文 id（`source: model`）；**新建 Project** 对话框借用的是打开它时所在的那个 Project。回答没有得出 id 时，会带着明确的格式要求再问模型一次。
+- 没有配置模型，或两次回答都不可用时，改用名称生成的 ASCII slug（`source: fallback`）。
+- 两条路径都生成不出 id 时，给出一个带日期的占位 id（`source: placeholder`），`reason` 为 `no_default_model`、`model_failed`、`unusable_answer` 或 `no_ascii`：`project_<yyyymmdd>`、`agent_<yyyymmdd>`、`benchmark-<yyyymmdd>`、`co_org_<yyyymmdd>` 或 `ch_channel_<yyyymmdd>`；非管理员的 Project id 前面还带用户名。
+- 各个 kind 的差别只有三处：id 的形状、服务端自己要避开的 id，以及谁可以请求。`project` 对管理员是 snake_case，对其他人是 `<username>-<后缀>`，要避开服务器上的每一个 Project id；`agent` 是 snake_case，要避开这个 Project 的 Agent；`benchmark` 是 kebab-case，要避开这个 Project 的 Benchmark，且仅限所有者；`org` 和 `channel` 带 `co_`、`ch_` 前缀，回答里已有前缀时不会重复添加，公司模式关闭时返回 `404` `company_mode_off`。其余情况下调用者必须是这个 Project 的成员。
+- 服务端自己要避开的，是该 kind 的创建路由会以「已占用」拒绝的那些名称，包括任何列表都不显示的残留目录。它们不会进入提示词；发生冲突时只会加上 `_2` / `-2` 后缀。核心词因为以数字开头或只有一个字符而被该 kind 的规则拒绝时，会放到这个 kind 的名词后面再试一次（`3D Viewer` → `agent_3d_viewer`）。
+- 名称翻译不出来时路由也不会失败，因此请求 id 的对话框总能拿到结果。模型侧的每一次失败都会记录为 `id_suggest_failed` 错误，`org` 和 `channel` 记在 `organization` 来源下，其余记在 `id_suggest` 下。这次补全关闭思考运行，使用共享的元请求预算，不属于任何 Session，也不计量。
+
+## 模型
+
+管理 Project 的模型表，并探测模型端点。模型表对所有成员开放读取；本节其余路由仅限所有者。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | / | Session 信息（单会话 GET 额外携带 `tracePath`：最新 Trace 文件的绝对路径；列表行不含）。`orgId` 标出被公司模式缓存认领的会话——工位会话，或参与该组织某个工单的会话——普通会话没有这个字段；列表路由同样带上它 |
-| PATCH | / | 更新：`{approvalMode?, thinkingLevel?, archived?, title?}`。`thinkingLevel` 将思考等级钉在该 Session 上并持久化，自下一次 LLM 请求起生效——思考等级是软限制参数：允许中途更换，代价是提供商的缓存失效，因此选择器会建议先压缩；读取时由 `SessionInfo.thinkingLevel` 返回（缺省即从未钉住：按 Agent 配置生效） |
-| DELETE | / | 删除 Session（连同 Trace 与暂存文件） |
-| GET | /messages | 无参数时返回完整 OmniMessage 历史；`tailLimit=n` 或 `before=<游标>&limit=n` 改为读取一个按 Task 切分的窗口（自带 Web App 打开对话只读最近 50 轮，滚动到顶部再续载），此时响应携带 `page`（下一页游标 `before`、窗口前的轮数 `earlierTurns` 与累计统计 `prior`）。Task 运行期间响应额外携带 `live`（进行中的流式尾部，见下） |
-| POST | /fork | 从一条已完成的模型回复分叉空闲 Session：`{position:{fileIndex,ordinal}}` → `{session}` |
-| GET | /stream | SSE 事件流（见下节） |
-| POST | /tasks | 发起 Task：`{input: TaskInputPart[], queueIfBusy?}` → 202。带 `queueIfBusy` 时，运行中的 Session 会把输入暂存为跟进消息（`queued: true`），空闲后按序自动作为普通 Task 发出；`task_state` 事件携带排队数。`file` 类型的输入会写入 Session scratchpad，以 `[attached file: <路径>]` 行交给模型（见下方请求体）。带 `goal: {budget?}` 时该输入转为发起目标循环（Agent 未安装 `goal` 插件则 409 `goal_plugin_not_installed`）：必须含非空文字（一张图说明不了目标），随行的图片一律折叠成 scratchpad 路径行写入目标文本、与模型是否支持视觉无关，而 `file` 会被拒绝——没有东西能把它折进每轮重注入的目标里——见[目标模式](/goal-mode) |
-| POST | /steer | 运行中插话：`{text, images?}` 为运行中的 Task 排队一条消息（作为独立的 `[user_steering]` 用户消息随下一轮送达，图片紧随其后）→ 202；两个字段任一非空即可成消息，都为空则 400；无 Task 运行返回 409 `not_running` |
-| DELETE | /steer/:steerId | 撤回一条尚未送达的插话（id 随 `task_state` 的 `pendingSteering` 下发）：从队列中撤出 → 200，返回其原始内容 `{text, images, files}`（文件从 scratchpad 读回为 data URL，磁盘副本随之删除），供输入框恢复编辑；已送达模型则 409 `not_pending` |
-| DELETE | /follow-ups/:followUpId | 撤回一条排队中的跟进消息（id 随 `task_state` 的 `pendingFollowUps` 下发）：在自动发出前移除 → 200，返回其原始内容 `{text, images, files}`——排队中的跟进消息一律带有该内容，与其入队路径无关；已自动发出则 409 `follow_up_started` |
-| POST | /approvals/:toolCallId | 审批决定：`{decision}` 取 `allow` 或 `deny` → 204 |
-| POST | /tool-calls/:toolCallId/background | 把一个**正在执行**的工具调用交还为后台任务，使本轮可以结束、对话继续进行：204。调用带着 `process_id` / `subagent_id` 以 `completed` 结束，不杀任何进程，任务完成后仍以一贯的后台任务通知送回。该 id 没有正在执行的调用时（未知、已结束，或运行时已不存在）返回 404 `tool_call_not_found`；调用在运行但其工具没有后台形态时返回 409 `tool_not_detachable`（只有 `exec_command` 与 `run_subagent` 具备后台形态） |
-| POST | /abort | 中断当前 Task：已触发返回 202，无任务返回 204 |
-| POST | /retry-now | 重连倒计时上的「立即重试」：跳过进行中的退避等待、立刻发起下一次重试（重试计数不变）→ 200 `{skipped}`——`skipped:false` 表示当前没有等待可跳过（良性空操作，非错误） |
-| POST | /compact | 触发上下文压缩：202；无可压缩内容返回 409，具体原因由 code 承载——`compaction_not_configured`（该 Agent 没有配置压缩）、`nothing_to_compact`（当前上下文尚未完成一轮对话）、`already_compacted`（上次压缩后还没有新的对话）。服务重启后恢复的 Session 依据 Trace 判断可压缩性，因此已有对话无需先跑一次 Task 即可压缩 |
-| GET | /processes | 对话启动的后台进程（超过 yield 窗口转入后台的 `exec_command`）。仅来自活跃运行时——被回收或从未装载的会话如实返回空列表。检测到进程所服务地址时行内附 `serviceUrl`（取输出打印的最后一个本机 URL，否则按进程组做监听端口探测，每次拉取时刷新） |
-| POST | /processes/:processId/kill | 停止一个后台进程（对整个进程组先 SIGTERM、宽限期后 SIGKILL），条目随之从列表消失；已不存在时 404 `process_not_found` |
-| DELETE | /processes/:processId | 从列表移除一个**已退出**的进程条目：仍在运行时 409 `process_running`（应改用停止），已不存在时 404 `process_not_found`。条目连同该进程已捕获的输出一起离开运行时注册表，此后对该 `process_id` 调用 `input_command` 会失败 |
-| GET | /files?path= | 浏览 Workspace 目录 |
-| GET | /files/content?path=&download=&preview= | 读取 Workspace 文件（`download=1` 时作为附件下载，`preview=1` 以沙箱方式预览 —— 见下） |
-| GET | /files/preview-redirect?path= | html 的“新页面打开”：签发令牌并 302 跳转到独立预览源 |
-| POST | /files/stat | 批量存在性检查：`{paths}` |
-| PUT | /files/content?path= | 上传文件：`{dataBase64}`，上限 14MB |
-| POST | /files/move | 移动或重命名单个 Workspace 文件：`{from, to, ifVersion?}` → 204。**仅限文件**——目录没有单一的版本标记，无法为其表达保护该操作的前置条件，因此返回 400。`to` 的父目录缺失时自动创建。`from` 不存在时 404 `path_not_found`；`ifVersion` 与文件不再匹配时 409 `file_changed`（带标记时源文件消失同样算作已变化）；`to` 已被占用时 409 `target_exists`——目的地从未被读取过，因此只拒绝、不覆盖；移动到文件自身路径返回 400 |
-| DELETE | /files/content?path=&ifVersion= | 删除单个 Workspace 文件：204。仅限文件（目录返回 400）；文件不存在时 404 `path_not_found`，`ifVersion` 不再匹配时 409 `file_changed`。该标记在协议上可选——不带即为无条件删除——而 Files 面板总是回传其读取时拿到的那一枚 |
-| POST | /files/reveal?path= | 在本机的系统文件管理器里显示该文件（macOS 与 Windows 选中文件，Linux 桌面打开其所在目录）→ 204。仅桌面端自己的窗口可以请求：服务端非由 shell 启动时 404 `not_found`，桌面模式下的浏览器会话 403 `desktop_shell_only`——服务端分不清它与远程浏览器，而在服务端所在机器上弹出目录对那边的用户毫无用处。路径按读取的同一道规则限域（越界 400，不存在 404 `path_not_found`）；文件管理器起不来时 502 `reveal_failed` |
-| GET | /files/search?q= | 按条目**名称**搜索整个 Workspace（大小写不敏感的子串匹配，不匹配路径）→ `{hits: [{path, kind, sizeBytes, mtime}], truncated}`，每条命中携带的字段与目录列表中的条目一致。自根目录广度优先遍历，因此命中按层级由浅至深排列，被截断时留下的是最相关的命中，而不是最先遍历到的那个目录里的内容；`truncated` 表示遍历触及上限——200 条命中，或访问 20000 个目录条目。`q` 为空或超过 100 字符返回 400 |
-| GET | /traces | 本 Session 的 Trace 文件列表 |
-| GET | /traces/:index | 读取 Trace 事件（分页） |
-| GET | /traces/:index/analysis | Trace 性能分析结果 |
-| GET | /scratchpad/:fileName | 读取会话暂存文件（如输入图片、文件附件） |
+| GET | `/api/projects/:projectId/models` | 列出模型（`api_key` 做掩码处理）；正在促销的条目会带上促销折扣 `discount` |
+| PUT | `/api/projects/:projectId/models` | 整表替换，以 `(provider, modelId)` 为键；条目的 `discount` 用来保存或清除它的促销 |
+| PUT | `/api/projects/:projectId/models/default` | 设置默认模型：`{provider, modelId}` → `{defaultModel}` |
+| POST | `/api/projects/:projectId/models/test` | 测试连通性：`{provider, modelId, …}` → `{ok, latencyMs?, message?}` |
+| POST | `/api/projects/:projectId/models/detect` | 检测自定义 base URL 使用的协议 |
+| POST | `/api/projects/:projectId/models/list` | 列出端点提供的模型 id，供添加分组时导入 |
+| POST | `/api/projects/:projectId/models/detect-vision` | 探测模型是否接受图片 |
 
-通用约定：无权访问的 Session 一律返回 404，不泄露其存在性；每个 Session 同时只允许一个 Task 或压缩在运行，冲突时返回 409（`task_in_progress` / `compacting`）。
+凡是指定模型的路由都要求完整的 `(provider, modelId)` 组合，不做任何推断：只带一半的请求一律返回 400，绝不会退化为一次查找。在模型引用本身可选的场景（创建 Session、定时任务）里，两个都不填则使用 Project 的默认模型。
 
-#### GET /messages 的 `live` 字段
+条目的 `pricing` 记的始终是牌价。促销是一个大于 0、小于 1 的折扣率，从牌价中扣除，但从不写进 `.project_config.toml`：服务端按条目把它保存在 `web.db` 里，计算用量成本时再扣除。`PUT /models` 里，条目带的 `discount` 说了算——数字表示保存这个促销，`null` 表示清除，其他取值会在写入任何内容之前返回 `400`。条目不带 `discount` 时保留已存的促销，除非它改名（`renamedFrom` 指向另一对引用）或 `pricing` 与已存的不同，这两种情况下促销会被清除。新表里没有的条目，其促销随之删除。
 
-Trace 只存完整消息（流式 `partial_*` 永远不落盘），所以仅靠历史无法呈现一条正在流式输出的消息。因此当 Session 处于运行/压缩状态时，messages 响应额外携带进行中的流式尾部：
+- `PUT /models` 还会使 Project 缓存的 Session 运行时失效，生效值的语义与 vault 更新相同。已经开始的运行不会切换，但 Project 内任何 Session 的下一个 Task 都会重新加载运行时，读取新的 `api_key` / `base_url`。这条路由还会向 Project 已打开的 Session 通道发布 `credentials_updated` 事件（参见[流式传输（SSE）](#流式传输sse)）。模型响应带有 `updatedAt`，即配置文件的修改时间；Web App 拿它和最近一次认证失败的时间对比，决定那次失败导致禁用的输入框是否继续保持禁用。
+- `PUT /models/default` 只修改默认模型，无需重发模型表或凭证。这对组合必须指向一条已配置的条目，否则返回 400。已有的 Session 沿用创建时的模型，因此这条路由既不会使运行时失效，也不会发布 `credentials_updated`。
+- `POST /models/detect` 依次探测 `openai-responses`、`ant-messages`、`openai-chat`。先按输入原样尝试 URL（做归一化，去掉粘贴进来的端点路径），再尝试为同一 URL 加上或去掉 `/v1`，并报告第一个命中的协议及提供这个协议的 base URL：`{baseUrl, apiKey?, …}` → `{detected?, baseUrl?, probes}`。
+- `POST /models/list` 返回端点在检测到的协议下提供的模型 id：`{baseUrl, clientType, apiKey?}` → `{ok, models?, unsupported?, message?}`。
+- `POST /models/detect-vision` 用这个模型的凭证发送一张 1x1 图片，这是一次真实计费的补全请求：`{provider, modelId, apiKey?, baseUrl?, clientType?}` → `{outcome: supported|unsupported|failed, message?}`。
+
+### 签发供应商 API key
+
+内置模型目录中发布了授权流程的供应商分组，可以在浏览器里直接为用户签发新的 API key，用户不必再去控制台复制。这些路由仅限所有者使用，唯一的例外是重定向接收端 `GET /callback`：它无需会话即可响应，且只能把跳转带来的授权码交给对应流程（见下文）。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/projects/:projectId/model-oauth/start` | 发起流程：`{provider, mode?: callback\|manual}` → `{flowId, authorizeUrl}` |
+| GET | `/api/projects/:projectId/model-oauth/callback` | 供应商跳转回来的地址（`?flow=&code=`）：把授权码存到流程上，并返回一个 HTML 页面。`HEAD` 返回 405 |
+| GET | `/api/projects/:projectId/model-oauth/:flowId` | 轮询流程，兑换已存下的授权码并写入 key：`{status: pending\|done\|error, provider, error?}` |
+| POST | `/api/projects/:projectId/model-oauth/:flowId/code` | 兑换用户粘贴的授权码：`{code}` → `{ok, applied?, error?}` |
+
+PKCE verifier 由服务器生成，只在内存中保存 10 分钟，从不发送给客户端。签发出的 key 直接写入这个供应商分组的模型配置，从不返回、从不记录日志，也从不放进 URL。一个流程只属于一个 Project 中的一个用户，且只能使用一次：不接受第二次兑换，除这个用户外，任何人都无法调用 `/start`、`/:flowId` 和 `/:flowId/code`。
+
+`GET /callback` 必须是例外。回环地址上的 OAuth 跳转，由供应商跳转到的那个浏览器接收，而它未必是发起流程的浏览器。比如桌面 shell 会在*系统*浏览器中打开授权页，而系统浏览器没有这个应用的源的 Cookie。因此只有这一条路径挂在会话校验之外，改用 flow id 鉴权：32 个随机字节，10 分钟内有效，且只允许存入一次。授权码只能存入发起这个流程的 Project，而且只有要求过回调的流程才接受：`manual` 流程一律拒绝，因为它从未拿到过回调 URL。
+
+回调能做的事还有第二重限制：它只把授权码存到流程上，此外什么都不做。与供应商的兑换、写入 Project 模型，都发生在 `GET /:flowId`，也就是所有者自己的轮询里，仍在会话校验之后。除非所有者主动查询流程状态，否则任何 key 都进不了 Project；兑换失败也在那里以 `{status: error, error}` 报告，而不是显示在跳转页面上。回调周边的一切同样不在豁免之列：更长的路径、其他任何请求方法（这一路径本身的 `HEAD` 返回 405），以及另外三条同组路由，都仍然需要会话。
+
+`mode: manual` 不发送回调 URL，授权页会显示一个一次性授权码，由用户手动粘贴回来，适用于跳转回不来的部署。无论由哪条路由兑换授权码，流程完成后都会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
+
+### Penguin Go Key 授权
+
+Penguin Go 的 key 通过服务端轮询的设备授权交付，而不是浏览器跳转，因此它有自己的一组路由。这些路由都仅限所有者。浏览器只拿到本地的 flow id 和授权 URL，拿不到设备密钥、交付的 key，也拿不到平台返回的其他内容。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/projects/:projectId/platform-auth/start` | 开启一次性授权流程，平台给出的截止时间在本地最多按十分钟计：→ 201 `{flowId, authorizeUrl, expiresAt}` |
+| POST | `/api/projects/:projectId/platform-auth/sync` | 用已存的 key 拉取平台模型目录，补齐 Project 缺少的模型并刷新平台维护的字段：→ 模型表，外加 `added` 与 `updated` 计数 |
+| GET | `/api/projects/:projectId/platform-auth/:flowId/status` | 由服务端向 Penguin Go 轮询，随后把交付的 key 写入整个分组并补齐平台的模型：`{status: pending\|applying\|completed\|cancelled\|apply_failed\|error, error?, applied?}` |
+| POST | `/api/projects/:projectId/platform-auth/:flowId/retry` | 本地写入失败后重试写入；不会再次索取这次一次性交付，流程处于其他状态时返回 `409 platform_auth_not_retryable` |
+| POST | `/api/projects/:projectId/platform-auth/:flowId/cancel` | 取消本地流程；平台侧的待处理记录按自己的 TTL 过期 |
+
+服务端先校验交付的 key、端点和模型目录，然后才写入任何内容。校验通过后，它把 key 写入 `penguin-go` 分组下已有的每个条目，创建平台提供而 Project 没有的模型，刷新已有模型的牌价与客户端协议，并用平台的促销替换这个分组已存的促销。端点和其他由 Project 自己维护的字段保持不变，任何模型都不会被删除；目录非空时，分组不存在也会被建出来。写入完成后会使缓存的运行时失效并发布 `credentials_updated`，与 `PUT /models` 完全一致。
+
+flow id 指向的流程不存在时返回 `404 platform_auth_flow_not_found`。`sync` 在没有已存 key 或平台拒绝这把 key 时返回 `409 platform_reauthorization_required`，平台拒绝提供目录或返回的目录无法解析时返回 `502 platform_sync_failed`，平台不可达则是 `502 platform_unreachable`。交付的 key 未能写入本地时，流程停在 `apply_failed`，重试路由正是为此准备的。
+
+## Agent
+
+下面的路径省略了 `/api/projects/:projectId` 前缀，只有两个全局的 `/api/plugins` 路由是例外。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET / POST | `/agents` | 列出 Agent / 创建 Agent |
+| DELETE | `/agents/:agentId` | 删除一个 Agent（仅所有者） |
+| GET / PUT | `/agents/:agentId/config` | 读取 / 写入配置（`AGENTS.md` 和 `system_config.yaml`；PUT 保留 YAML 注释） |
+| POST | `/agents/:agentId/config/mcp-test` | 测试一条 MCP 服务器配置：`{name, config}` → `{ok, tools?, error?, latencyMs?}` |
+| POST | `/agents/:agentId/config/kernel-update` | 将配置合并升级到当前默认值：→ `{advanced, kept, kernelVersion}` |
+| POST | `/agents/:agentId/config/reset` | 用当前默认值覆盖 `system_config.yaml`，并返回新生成的配置 |
+| GET / PUT | `/agents/:agentId/vault` | Vault 环境变量（值做掩码处理；PUT 替换全部值，仅限所有者） |
+| POST | `/agents/:agentId/vault/template-placeholder` | 在 Prompt 模板中插入 `{{VAULT}}` 占位符（仅所有者） |
+| GET | `/agents/:agentId/memory` | 记忆概览 |
+| POST | `/agents/:agentId/memory/template-placeholder` | 在 Prompt 模板中插入 `{{MEMORY}}` 占位符 |
+| GET | `/agents/:agentId/memory/scopes/:key/files` | 列出一个作用域的主题文件 |
+| GET / DELETE | `/agents/:agentId/memory/scopes/:key/files/:name` | 读取 / 删除一个主题文件 |
+| GET | `/agents/:agentId/memory/scopes/:key/export` | 将一个作用域导出为单个 JSON 文档 |
+| POST | `/agents/:agentId/memory/scopes/:key/import` | 将导出的作用域写回（仅所有者） |
+| GET | `/agents/:agentId/export` | 导出 Agent State 快照（tar.gz 下载） |
+| POST | `/agents/:agentId/import` | 导入快照：`{dataBase64, confirm?}`；不带 `confirm` 且版本冲突时返回 409 |
+| GET | `/agents/:agentId/skills` | 已安装的 Skill（从插件库安装需通过 `/plugins`） |
+| POST | `/agents/:agentId/skills/template-placeholder` | 在 Prompt 模板中插入 `{{SKILLS}}` 占位符 |
+| POST | `/agents/:agentId/skills/archive` | 从 zip 安装 Skill：`{dataBase64, overwrite?}` → 返回 201 和 Skill 列表 |
+| GET | `/agents/:agentId/skills/:name/archive` | 将已安装的 Skill 导出为 zip |
+| DELETE | `/agents/:agentId/skills/:name` | 卸载一个 Skill |
+| POST | `/agents/:agentId/plugins` | 按名称从插件库安装插件：`{names}` → 201 `{skills, hooks}` |
+| GET | `/agents/:agentId/hooks` | 已安装的钩子包 |
+| POST | `/agents/:agentId/hooks/archive` | 从 zip 安装钩子包：`{dataBase64, overwrite?}` |
+| GET | `/agents/:agentId/hooks/:name/archive` | 将已安装的钩子包导出为 zip |
+| DELETE | `/agents/:agentId/hooks/:name` | 卸载一个钩子包 |
+| GET | `/api/plugins`（全局） | 按分类返回插件库（任何已登录用户） |
+| GET | `/api/plugins/:plugin/files`（全局） | 单个插件库插件自带的所有文件，以路径为键返回文本（任何已登录用户） |
+
+### Agent 路由
+
+- `POST /agents` 接受 `{agentId, name?, description?, plugins?, skillsDirectory?, directorySkills?, dataBase64?}`，返回 201 和 `{agent}`。`plugins` 指定要预装的插件库插件；遇到未知名称会拒绝请求，且不会创建 Agent 目录。`skillsDirectory` 和 `directorySkills` 从用户选择的目录导入 Skill（参见 [Session 创建与目录浏览](#session-创建与目录浏览)中的 `GET /dir-skills`），两者必须一起发送。`dataBase64` 让 Agent 从导出的快照启动，而不是使用默认模板。
+- `POST …/config/mcp-test` 从本机连接一条 MCP 服务器配置，列出它的工具后断开，不写入任何 Agent State。配置条目格式有误时返回 400。服务器连不上不算 HTTP 错误，照常返回 `{ok: false, error}`。
+- `POST …/config/kernel-update` 是 `reset` 的无损版本。它把缺失或仍保持旧默认值的设置标签页升级到当前默认值（记入 `advanced`），完整保留已自定义的标签页（记入 `kept`），并写入新的默认值版本（`kernelVersion`）。
+- `template-placeholder` 路由都是幂等的。Vault 和 Skills 两个路由会在 Prompt 模板中插入 `{{VAULT}}` 或 `{{SKILLS}}`；如果模板里是旧版硬编码的 `# Vault` 或 `# Skills` 小节，则替换成对应的占位符。记忆路由插入 `{{MEMORY}}`，在记忆功能推出之前创建的 Agent 就是通过它接入记忆的。
+- `POST …/skills/archive` 接受最大 14MB 的 zip。不带 `overwrite` 时，同名 Skill 已安装会返回 409 `skill_exists`。`GET …/skills/:name/archive` 导出的文件名为 `<name>.zip`；如果 Skill 的 `SKILL.md` 声明了版本，则为 `<name>-v<version>.zip`。Skill 未安装时，导出和卸载路由都返回 404 `not_found`。
+
+### 记忆
+
+- `GET …/memory` 返回记忆开关、Prompt 模板是否带有 `{{MEMORY}}`，以及每个作用域的条目：用户作用域（`user`，`kind: "user"`）排在最前，随后是各个 Workspace。
+- 在这些作用域路由中，`:key` 是某个 Workspace 的 key 或 `user`。
+- `GET …/scopes/:key/files` 列出一个作用域的主题文件，包括各自的 frontmatter 和文件统计信息。
+- `DELETE …/scopes/:key/files/:name` 删除一个主题文件，并从 `MEMORY.md` 索引中删掉对应的行。
+- `GET …/scopes/:key/export` 把作用域的全部主题文件连同 `MEMORY.md` 合成一个 JSON 文档返回，以附件形式下载。
+- `POST …/scopes/:key/import` 接受 `{payload, mode?, confirm?}`。`mode` 取 `skip`（默认值，只添加作用域缺少的文件）、`overwrite`（替换同名文件）或 `replace`（还会删除文档中没有包含的文件）。凡会覆盖或删除文件的模式都需要 `confirm`，否则路由返回 409 `memory_import_confirm_required`。
+
+### 插件与钩子
+
+- `POST …/plugins` 会安装每个指定插件的 Skill 和钩子包；再次安装即更新。名称不存在时返回 404 `unknown_plugin`，且不做任何写入。
+- `GET …/hooks` 返回每个已安装钩子包的名称、描述、版本、钩子点和插件图标。
+- `POST …/hooks/archive` 要求 `hooks.json` 及其脚本位于 zip 根目录或同一个顶层目录内，且列出的每条命令都必须指向包内的文件。不带 `overwrite` 时，同名钩子包已安装会返回 409 `hook_exists`。`GET …/hooks/:name/archive` 导出的 zip 可以再通过这个路由安装。
+- `GET /api/plugins` 按分类返回插件库的全部插件，包括每个插件的 Skill 元数据和钩子点。
+- `GET /api/plugins/:plugin/files` 返回单个插件库插件自带的全部文件，以路径为键返回文本：`skills/<name>/` 下是每个 Skill 可安装的 `SKILL.md` 和参考文件，`hooks/` 下是钩子脚本。插件详情页的文件浏览器用的就是这个路由。
+
+## 插件注册表与 Project 插件
+
+本节的插件是服务端的包：由服务器加载进自身模块树的模块，例如沙箱后端。它们不是安装在 Agent 上的插件库插件，后者见[插件与钩子](#插件与钩子)。注册表路由是全局的，任何已登录用户都可以访问；已安装插件路由属于单个 Project。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/plugins/registry` | 插件索引：`{plugins: PluginIndexEntry[]}` |
+| GET | `/api/plugins/registry/readme?name=…` | 索引中一个条目的说明文档：`{name, readme}` |
+| GET | `/api/projects/:projectId/plugins/installed` | 该 Project 要求的插件，连同进程的实际运行情况：`{plugins, shipped, file, restartPending}` |
+| POST | `/api/projects/:projectId/plugins/installed` | 仅管理员。添加一个随构建发布的插件：`{specifier}` |
+| PUT | `/api/projects/:projectId/plugins/installed` | 仅管理员。替换整个列表：`{plugins}` |
+| DELETE | `/api/projects/:projectId/plugins/installed?specifier=…` | 仅管理员。从列表中移除一个插件 |
+
+- 索引沿用 typst/packages 的 `index.json` 格式：扁平数组，每个元素是一个版本条目，包含 `name`、`version`、`description`、`authors` 和 `license`，可选 `repository`、`homepage`、`keywords`、`categories` 和 `updatedAt`。条目的 `name` 就是 Project 列表里使用的包名。目前索引只来自服务器内置的一个注册表，其中列出了四个沙箱后端。注册表只用于发现，从不导入插件代码。
+- `GET …/readme` 返回包自带的 `README.md`，从本机上的副本读取；没有时 `readme` 为 `null`。索引未列出的名称返回 `404` `not_found`，缺少 `name` 的请求返回 `400` `bad_request`。
+- `GET …/installed` 对该 Project 的任何成员开放。`plugins` 的每个元素是 `{specifier, active, builtin, modules, replaces, error?}`：`active` 表示进程已加载这个包，`builtin` 表示它随本次构建发布，`modules` 和 `replaces` 是其生成的 `ifaces.json` 声明的节点，`error` 说明它为什么没有运行，例如本机上没有这个包，或加载失败。`shipped` 列出构建发布的全部插件包，无论是否被要求。`file` 是保存列表的文件名。已列出的插件既没有运行、也没有加载失败时，`restartPending` 为 true，重启服务器即可解决。Project 的 `.project_config.toml` 无法读取时返回 `400` `invalid_plugins_file`。
+- 写操作返回与 GET 相同的响应体。specifier 必须是包名，不能是路径、URL 或版本范围（`400` `bad_request`）。加入列表的名称必须是构建发布的包，否则路由返回 `400` `plugin_not_shipped`：不会下载任何东西。`PUT` 只发送名称，留在列表中的名称保留文件为它记录的要求。`DELETE` 只修改列表，不删除磁盘上的任何东西。
+- 写操作无需重启即可生效：App 围绕新列表[自行重组](/server-boot#重组)，效果与热替换相同。所有 Project 中正在进行的 Agent 运行都会被中止，因为所有 Project 共用同一棵模块树。新 App 启动失败时，改动会被撤销，之前的 App 随之恢复。
+- 列表就是 Project 的 `.project_config.toml` 中的 `[plugins]` 表（见 [Project 配置](/configuration#project-配置)）。进程加载所有 Project 表的并集，因此任何一个 Project 要求的插件，都会为所有 Project 加载。
+
+## 定时任务
+
+下面的路径省略了 `/api/projects/:projectId` 前缀。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/schedules` | Project 内所有 Agent 的定时任务合并为一个列表，每条都标注所属的 `agentId`（任何成员） |
+| GET / POST | `/agents/:agentId/schedules` | 列出定时任务 / 创建定时任务（名称已存在时返回 409） |
+| POST | `/agents/:agentId/schedules/template-placeholder` | 在 Prompt 模板中插入 `{{SCHEDULES}}` 占位符（幂等） |
+| GET / PUT / DELETE | `/agents/:agentId/schedules/:name` | 读取 / 更新 / 删除单个任务 |
+
+定时任务的写操作仅限所有者。新建 Session 模式的任务，`modelId` 和 `provider` 要么同时携带，要么都不带。保存任务时会对照 Project 的模型表校验这对值；调度器核对任务时还会再校验一次。
+
+## Benchmark
+
+Benchmark 属于 Project，不属于某个 Agent：一个 Benchmark 可以评估任意多个 Agent，每次评估都会记录它测试的 Agent（`agentId`；没有对应 Agent 的记录为 `null`）。汇总中的 `agentIds` 按这些 Agent 首次出现的顺序排列。下面的路径同样省略了 `/api/projects/:projectId` 前缀。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/benchmarks` | Benchmark 的分数数据 |
+| POST | `/benchmarks` | 手动创建 Benchmark（仅所有者） |
+| DELETE | `/benchmarks/:benchmarkId` | 删除 Benchmark 目录，包括其中的题目、配置和计分板（仅所有者；返回 204，不存在时返回 404） |
+| GET | `/benchmarks/:benchmarkId/cases` | Benchmark 的题目：每道题的 id 和题干 README 的标题。评分标准永远不会返回 |
+| GET | `/benchmarks/:benchmarkId/cases/:caseId/files` | 浏览一道题的 `statement/` 目录 |
+| GET | `/benchmarks/:benchmarkId/cases/:caseId/files/content` | 读取题干中的一个文件（`?path=`、`?preview=1`、`?download=1`） |
+| GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files` | 浏览一道题的 `rubric/` 目录 |
+| GET | `/benchmarks/:benchmarkId/cases/:caseId/rubric/files/content` | 读取评分标准中的一个文件，参数与上一条相同 |
+
+- `GET /benchmarks` 只列出含有 `benchmark_config.toml` 的目录；评估过程中删除 Benchmark 留下的目录没有这个文件，因此不会出现在列表里。每个条目都带 `status`：Skill 还在构建 Benchmark 时为 `draft`，校准未能完成时为 `failed`，其余情况为 `published`。
+- `POST /benchmarks` 接受 `{id, title, description?, runs?, cases: [{id, title, statement, rubric}]}`，返回 201 和 `{benchmark}`。服务器会写入 `benchmark_config.toml`（其中 `status = "published"`）、一份 `evaluations: []` 的 `scoreboard.yaml`，以及每道题的 `statement/README.md`（以 title 为标题）和 `rubric/README.md`。id 的字符规则与 Agent id 相同，题目 id 以 `CASE-` 开头。如果目录已存在，路由返回 409 `benchmark_exists`。
+- 这些读取文件内容的路由采用与 Workspace 文件相同的内联加固；参见 [Workspace 文件响应](#workspace-文件响应)。
+
+## 组织（公司模式）
+
+以下所有路径都位于 `/api/projects/:projectId/organizations` 之下。服务器的公司模式开关关闭时，每条路由都返回 `404` `company_mode_off`（参见[公司模式开关](#公司模式开关)）。任何 Project 成员都可以读写。没有任何路由会删除组织：`status`（`active` / `paused`）就是关闭开关，暂停的组织会保留自己的对话、员工、工位和工单。这些路由背后的文件见[公司模式](/company-mode)。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET / POST | `/` | 列出组织 / 创建组织 |
+| GET / PATCH | `/:orgId` | 组织概览 / 修改组织设置 |
+| GET | `/:orgId/chart` | 员工树，含每名员工的实时状态、工位和本期花费 |
+| POST | `/:orgId/employees` | 招聘员工：已有 Agent 或新建 Agent |
+| PATCH / DELETE | `/:orgId/employees/:agentId` | 修改员工 / 将员工移出组织 |
+| GET / POST | `/:orgId/employees/:agentId/desk` | 工位会话（缺失时自动打开）/ 续期后的工位会话 |
+| GET / PUT | `/:orgId/handbook` | 手册索引（`handbook/README.md`） |
+| GET | `/:orgId/handbook/files` | 知识库文件，索引排在最前 |
+| GET / PUT / DELETE | `/:orgId/handbook/files/<path>` | 按相对路径访问单个文档；索引不可删除 |
+| GET / POST | `/:orgId/calendar` | 全体员工的事件和运行状态 / 创建事件 |
+| GET / PUT / DELETE | `/:orgId/calendar/:agentId/:name` | 单个事件 |
+| GET / POST | `/:orgId/tickets` | 按列组织的看板，附无法解析的文件 / 创建工单 |
+| GET / PUT | `/:orgId/tickets/:ticketId` | 工单详情 / 更新工单 |
+| POST | `/:orgId/tickets/:ticketId/move` | `{status, reason?}`；移动到 `rejected` 时必须给出原因 |
+| POST | `/:orgId/tickets/:ticketId/block` | `{reason, by?}`，`by` 是工单 id 或主体；工单仍留在原列 |
+| POST | `/:orgId/tickets/:ticketId/unblock` | 解除阻塞 |
+| POST | `/:orgId/tickets/:ticketId/progress` | `{text}`：向 `## Progress` 追加一句纯文本 |
+| POST | `/:orgId/tickets/:ticketId/start` | `{agentId?, message?, workspace?}` → 202 `{sessionId}`：启动工单会话 |
+| POST | `/:orgId/tickets/:ticketId/attach` | `{sessionId}`：把已有会话登记为贡献会话 |
+| GET / POST | `/:orgId/channels` | 调用者可见的频道，`default_channel` 在最前 / 打开一个频道 |
+| GET / PATCH | `/:orgId/channels/:channelId` | 频道和成员 / 重命名、修改 `purpose`、设置 `archived` |
+| POST | `/:orgId/channels/:channelId/members` | `{principal}`：添加成员 |
+| DELETE | `/:orgId/channels/:channelId/members/:principal` | 移除成员 |
+| GET / POST | `/:orgId/channels/:channelId/messages` | 一天的消息，附调用者的未读数和提及数 / 发送消息 |
+| POST | `/:orgId/channels/:channelId/read` | `{upTo}`：调用者在此频道的已读游标 |
+| GET | `/:orgId/finance` | 每名员工的花费（自身及沿汇报线累计）和每个工单的花费（沿 `Parent` 逐级汇总）、每日趋势和告警；`?period=yyyy-mm` |
+| GET | `/:orgId/sessions` | 组织的工位会话，以及按工单分组的工单会话。工位会话启用了消息绑定时，这一行也带上它的 `messagingChannel`，与会话自己的行一致 |
+
+### 调用者身份
+
+写操作的请求体可以携带 `agentId` 和 `sessionId`，分别对应发起调用的员工和会话；CLI 会从 `PENGUIN_AGENT_ID` 和 `PENGUIN_SESSION_ID` 自动填入这两个值。文件里因此记录的是员工，而不是 token 对应的用户：`agentId` 指向员工时以 `agentId` 为准，否则由会话决定。频道读取和成员 DELETE 没有请求体，所以改用查询参数 `?agentId=` / `?sessionId=` 传入同一对值。只有携带本地 API token 的请求，服务器才会认可这两个字段；员工就是这样以自己的身份、而不是以登录者的身份得到响应的。
+
+### 组织
+
+- `POST /` 接收 `{orgId, mission, name?, timezone?, workspace?, model?, ceoBudget?, language?}`，返回 201 和组织详情。创建组织的同时会创建 CEO Agent，并以一次初始化运行打开它的工位。id 或 CEO 的 Agent id 已被占用时，路由返回 409。CEO 的组织架构条目以 `workspace: ceo` 写入，也就是共享 Workspace 下的一个分区，其他员工也都是这样。
+- `ceoBudget` 是 CEO 的月度预算，单位为美元，写入 CEO 在 `org_chart.yaml` 中条目的 `budget`。不能为负数，默认 100。预算沿累计线比较，所以这个值是全公司的上限。
+- `language` 取 `zh` 或 `en`，是组织所有产出内容的工作语言。省略时根据使命判断。
+- `GET /:orgId` 返回概览：设置、看板计数、今日日程、待办事项、全员频道的最近消息、`inbox` 和告警。设置里始终带有生效的 `language`；文件里没有记录时，从使命推断得出。
+- `PATCH /:orgId` 修改名称、使命、`status`（`active` / `paused`；暂停会停止所有自动触发器）、`approvalMode`、`timezone`、`language` 和各项阈值。
+
+组织和频道的 id 提议由 Project 级路由给出，即带 `kind: org` 或 `kind: channel` 的 `POST /api/projects/:projectId/suggest-id`，见[语义化 id 提议](#语义化-id-提议)。
+
+### 员工
+
+- `POST /:orgId/employees` 招聘已有 Agent 时传 `{agentId}`，新建 Agent 时传 `{newAgent: {agentId, name?, description?, plugins?}}`；另外还可以带 `title`、`reportsTo`、`workspace?`、`budget?`、`duties?` 和 `model?`。
+- `workspace` 缺省为以员工 Agent id 命名的子目录，因为共享 Workspace 的根目录存放共享输入，不属于任何人的工位。相对路径 `workspace` 会先规范化（`./hr` → `hr`），再在共享 Workspace 下创建。绝对路径必须已经存在。包含 `..` 而逃出共享 Workspace 的路径返回 400 `invalid_workspace`。
+- `PATCH /:orgId/employees/:agentId` 修改职位、上级、Workspace（创建与校验规则和招聘时相同）、预算（传 `null` 即清除）、职责和模型。
+- `DELETE /:orgId/employees/:agentId` 将员工移出组织：下属上移，改归这名员工的上级管理。CEO 不能移出组织。
+
+### 日程
+
+`POST /:orgId/calendar` 接收 `{agentId, name, prompt, enabled, startAt, period?, endAt?, title?}`，返回保存后的事件，外加提示性的 `warnings`，每条警告一行：
+
+- 另一名员工有周期事件的开始时间落在同一分钟
+- 同一员工已有相同周期的第二个周期事件
+- 周期事件从 `now` 时刻开始
+
+警告不会阻止写入。`PUT /:orgId/calendar/:agentId/:name` 的响应与创建时一致，同样包含 `warnings`。
+
+### 工单
+
+- `POST /:orgId/tickets` 接收 `{title, goal?, acceptanceCriteria?, body?, owner?, parent?, notify?, priority?, due?, slug?}`。
+- `owner` 是唯一的责任主体：员工（直接写 Agent id，或 `agent:<id>`）或 Project 成员（`user:<id>`）。缺省为调用者。不传 `notify` 时，负责人一人就是整份 `notify` 列表，但前提是负责人为员工，这样人不会因为自己名下的工单被 @。谁提交了工单，记录在 `history` 的 `created` 条目里。
+- id 的 slug 优先取 `slug`，它必须是由连字符连接的小写英文单词（否则返回 400）。不传 `slug` 时从标题提取。标题凑不出两个单词时，交给 Project 的模型处理；模型也失败时，返回 400 `slug_required`，让调用者自己指定 slug。
+- `GET /:orgId/tickets/:ticketId` 返回 frontmatter 字段、正文各节、纯文本形式的 `progress`、`history`、贡献会话、子工单和逐级汇总的成本。
+- `PUT /:orgId/tickets/:ticketId` 接收 `{title?, owner?, parent?, notify?, priority?, due?, goal?, acceptanceCriteria?, result?}`。`owner` 不接受 `null`：工单始终有负责人，负责人可以更换，但不能取消。`parent` 和 `due` 接受 `null`，用于清空这两项。
+- `POST …/progress` 会记录这句话是谁写的、何时写的，并在 `history` 末尾追加一条 `progress` 条目。
+
+`POST /:orgId/tickets/:ticketId/start` 为一名员工启动工单会话，并记入工单的 `sessions` 和 `history`。这是唯一一条 `agentId` 不代表调用者身份的路由：它指定会话以哪名员工的身份运行。谁可以启动会话，取决于调用者：
+
+- 人可以在任何工单上启动会话。`agentId` 指定员工，缺省为负责人。
+- 以员工身份写入的调用者（用自己的 `sessionId` 发请求的工位会话或工单会话），只能为自己负责的工单启动会话。对别人的工单，或没有员工负责人的工单，会收到 403 `not_ticket_owner`。
+- 负责人也可以传 `agentId`，把一位同事拉进自己负责的工单。
+
+### 频道
+
+- `GET /:orgId/channels` 列出调用者能看到的所有频道：人可以看到全部，员工只看到自己加入的。
+- `POST /:orgId/channels` 接收 `{channelId, name?, purpose?}`，返回 201 和新建的频道，创建者是唯一成员；id 已被占用时返回 409。
+- `PATCH /:orgId/channels/:channelId` 只有人可以设置 `archived`，`default_channel` 则任何人都不能归档。
+- `POST …/members` 允许任何成员邀请 `agent:<id>` 员工或 `user:<id>` Project 成员。人可以添加自己，员工不行。添加的已是成员时不做任何改动，返回 201。
+- `DELETE …/members/:principal` 允许任何人移除自己，人还可以移除任何人；员工只能移除自己。移除非成员时不做任何改动，返回 204。
+- `GET …/messages` 接收 `?date=yyyy-mm-dd`，缺省为组织时区的今天。`POST …/messages` 发送 `{text, refs?}`；提及对象从文本中解析，且必须都是频道成员。
+
+`system` 消息在英文 `text` 之外还带一个 `notice`：包含 `kind` 和字符串 `params`，客户端据此用读者的语言渲染这句话。在这个字段出现之前写入的消息没有 `notice`。`kind` 取 `employee_joined`、`employee_left`、`channel_created`、`channel_archived`、`channel_unarchived`、`channel_joined`、`channel_invited`、`channel_left`、`channel_removed`、`budget_warned`、`budget_paused` 之一，或遗留的 `ticket_blocked`、`ticket_done`、`ticket_rejected` 之一。现在已经没有任何代码会写入遗留 kind，保留它们只是为了让磁盘上已有的消息仍能正常渲染。
+
+频道错误：
+
+| 代码 | 状态码 | 含义 |
+| --- | --- | --- |
+| `channel_not_found` | 404 | 频道不存在；不可能属于任何频道的 id 也返回这个错误 |
+| `channel_exists` | 409 | 频道 id 已被占用 |
+| `channel_archived` | 409 | 频道已归档，取消归档前不接受写入 |
+| `not_a_member` | 403 | 非成员却读取、发言或邀请，或员工尝试只有人才能执行的操作 |
+| `all_hands_immutable` | 400 | 归档 `default_channel` 或修改它的成员 |
+| `mention_not_member` | 400 | 消息提及的主体不是频道成员；不写入任何内容 |
+| `invalid_principal` | 400 | 主体格式不正确 |
+
+### 事件与触发
+
+公司模式会在用户事件流 `GET /api/events` 上发布 `org_run`、`org_channel`、`org_ticket` 和 `org_budget`；参见[流式传输（SSE）](#流式传输sse)。
+
+只有三件事会驱动工位会话：日程事件、频道里的 @ 提及，以及有人跟它说话。CEO 在创建时的初始化运行是唯一的例外。
+
+写工单不会触发运行。`move`、`block`、`unblock` 以及通过 `PUT /:orgId/tickets/:ticketId` 变更负责人，都会记入工单文件，并以 `org_ticket` 事件发布，同时排入相关员工的队列。员工的下一次日程事件触发时，会在正文的 `## Since your last sweep` 之下逐行列出这些变更，一条变更占一行。组织或员工暂停时，队列依然保留，由最终触发的那次巡检送达。员工离开组织时，它尚未投递的行也随之删除。
+
+## Session 创建与目录浏览
+
+以下路径省略了 `/api/projects/:projectId` 前缀。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/agents/:agentId/sessions` | 列出 Agent 的 Session 及运行状态，不论由哪个客户端创建；`excludeOrg=1` 则只要用户自己的那些 |
+| POST | `/agents/:agentId/sessions` | 创建 Session：`{modelId?, provider?, workspace?, approvalMode?, client?, source?}` → 201 `{session}` |
+| GET | `/dirs?path=` | Workspace 选择器背后的服务器端目录浏览器 |
+| GET | `/dir-skills?path=` | 目录所带的 Skill，用于导入到新 Agent |
+
+- Session 列表接受可选查询参数。`limit` 和 `offset` 用于分页（`offset` 必须搭配 `limit`）。`category`（`active`、`subagent`、`schedule`、`benchmark` 或 `archived`）先过滤再分页；`workspaceGroup` 只保留一个 Workspace 的会话。`counts=1` 会在响应里附加 `counts`（整个列表按类别的总数）、`workspaceCounts`（按 Workspace 路径统计的同类总数）和 `workspaceLatest`（每个 Workspace 最新的 Session）。不带分页参数时，返回完整列表。
+- `excludeOrg=1` 会把组织的工位会话、工单会话和子 Session 一并移出这一页以及 `counts=1` 的总数，这正是开发模式的列表所要的。取其他值返回 400。
+- 创建时 `modelId` 和 `provider` 必须成对出现：要指定模型就传完整一对，两个都省略则使用 Project 的默认模型。只传一个返回 400。
+- 显式传入的 `workspace` 必须是已存在的目录，永远不会自动创建。省略时自动创建一个临时 Workspace。审批模式默认 `allow-all`。
+- `client` 是记录在数据行上的来源提示：CLI 发起的请求为 `"cli"`，默认 `"web"`。组织的工位会话和工单会话由服务器自己写入 `"org"`，客户端不能发送这个值。只有 `excludeOrg` 会把它当作过滤条件，而且只用来剔除这些行。
+- `source` 只接受 `"benchmark"`，用于 Benchmark 评估或优化创建的 Session。`subagent` 和 `schedule` 由服务器自己设置。
+- `GET /dirs` 省略 `path` 时从主目录开始；显式传入的 `path` 必须是绝对路径。响应为 `{path, parent, entries}`，只包含子目录；读不了的目录按空列表返回，用户仍然可以向上返回。
+- `GET /dir-skills` 只读取绝对路径下的 `<path>/.agents/skills` 和 `<path>/.claude/skills`，响应为 `{path, skills}`。没有 Skill 的目录返回空列表。参见 [Agent](#agent) 一节中的 `POST /agents`。
+
+## 用量与 Trace（Agent 级别）
+
+以下路径省略了 `/api/projects/:projectId` 前缀。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/usage` | 用量统计 |
+| GET | `/usage/model-totals` | 每个模型的历史累计 Token 总量；不接受任何过滤参数 |
+| GET | `/usage/errors` | 错误详情表的一页，按时间倒序：→ `{items, total}` |
+| DELETE | `/usage/errors` | 按当前过滤条件清空错误表：→ `{deleted}`（仅限 Project 所有者） |
+| GET | `/agents/:agentId/traces` | Trace 文件，按日期 → Session 逐级下钻 |
+| GET | `/agents/:agentId/traces/:sessionId/:index` | 读取 Trace 事件（`offset` / `limit` 分页） |
+| GET | `/agents/:agentId/traces/:sessionId/:index/analysis` | Trace 性能分析 |
+| GET | `/agents/:agentId/traces/:sessionId/:index/download` | 下载原始 Trace 文件（JSONL 附件） |
+| POST | `/agents/:agentId/traces/import` | 导入 Trace 文件：`{dataBase64}` → `{sessionId, index, date}` |
+
+`GET /usage` 接受以下查询参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `from`、`to` | 日期范围，格式 `yyyy-mm-dd` |
+| `fromTs`、`toTs` | 限定滑动窗口起止的 ISO 时间戳。必须成对传入；`minute` 粒度时必填 |
+| `groupBy` | `date`、`agent`、`model` 或 `session`；默认 `date` |
+| `granularity` | 时间序列精度：`minute`、`hour`、`day`、`week` 或 `month`；默认 `day`。范围与精度的组合过大时会拒绝请求 |
+| `agentId`、`provider`、`modelId` | 过滤条件 |
+
+- `GET /usage/errors` 接受 `offset`、`limit`、同样的 `from` / `to` / `fromTs` / `toTs` / `agentId` 过滤条件，以及可选的 `kind`（`unexpected` 或 `expected`）。
+- `DELETE /usage/errors` 接受与读取相同的过滤条件（`from` / `to` / `fromTs` / `toTs` / `agentId`），但不接受 `kind`，因为面板上没有这个控件。这里 `from` 和 `to` 都必填（否则返回 400），因为少一个边界，清空的就是整段历史，而不是过滤后的一部分。清空的范围与调用者读取的范围完全一致：管理员清空时，也会删掉只有管理员读取才能看到的未归属行；成员清空时则永远不会。
+- `GET /agents/:agentId/traces` 还接受 `limit` 和 `offset` 分页，以及 `category`（必须搭配 `limit`），用于只列出某一类别的 Session。
+- 任何成员都可以下载 Trace。导入只有所有者能做，与 Agent State 快照导入一样，上限 14MB。导入的文件必须是有效的 Trace JSONL，首条记录必须是 `session_meta`，`session_id` 须可安全用作文件名。session id 与 Agent 已有的重复时拒绝导入（409 `trace_session_exists`），所以导入的文件总是成为新 Session 的 index 001，按首条记录的时间戳存入对应的本地日期目录。
+
+## Session 级端点
+
+下面这些路径省略了 `/api/sessions/:sessionId` 前缀。Session 和 Trace 背后的存储模型见 [Session 与 Trace](/sessions-and-traces)。
+
+这里的每条路由都遵循两条约定。调用方无权访问的 Session 一律返回 `404` `session_not_found`，因此不会暴露它是否存在。一个 Session 同一时间只能运行一个 Task 或一次压缩：冲突的请求返回 409（`task_in_progress` / `compacting`）。
+
+### Session 与历史
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/` | Session 信息 |
+| PATCH | `/` | 更新 Session：`{approvalMode?, thinkingLevel?, archived?, title?}` |
+| DELETE | `/` | 删除 Session，连同它的 Trace 和暂存文件 |
+| GET | `/messages` | OmniMessage 历史，全量或按 Task 窗口 |
+| POST | `/fork` | 在一条已完成的助手回复之后分叉空闲的 Session：`{position: {fileIndex, ordinal}}` → `{session}` |
+| GET | `/stream` | SSE 事件流；见[流式传输（SSE）](#流式传输sse) |
+| GET | `/context` | 当前模型上下文的组成，以及压缩将从哪里开始 |
+| GET | `/goal` | 当前 Session 最近一次目标运行 |
+
+- `GET /` 返回 Session 的信息。与列表行不同，单个 Session 的响应还带 `tracePath`，即最新 Trace 文件的绝对路径。`orgId` 标记公司模式缓存持有的会话（工位会话，或这个组织某个工单的贡献会话）；普通 Session 一律不带这个字段，列表路由同样会设置它。
+- `PATCH /` 带 `thinkingLevel` 会把这个思考等级持久地固定到这个 Session，从下一次 LLM 请求开始生效。思考等级是软性限制：可以在上下文中途更改，代价是损失供应商已缓存的上下文，因此等级选择器会建议先压缩。固定后的等级以 `SessionInfo.thinkingLevel` 返回；没有这个字段说明从未固定等级，此时采用 Agent 配置。
+- `GET /messages` 不带参数时返回完整的 OmniMessage 历史。`tailLimit=n` 改为读取最新的 n 个按 Task 对齐的单元，`before=<cursor>&limit=n` 读取某个游标之前的 n 个单元。两种形式互斥，`n` 在 1 到 1000 之间，`limit` 默认为 200。内置 Web App 打开一段对话时先显示最近 50 轮，滚动时再加载更早的内容。窗口式响应带 `page`，包含下一页的游标（`before`）、窗口之前的轮数（`earlierTurns`）和此前累计的统计（`prior`）。Task 运行期间，响应还会带 `live`；见 [GET /messages 上的 live 字段](#get-messages-上的-live-字段)。
+- `GET /context` 返回当前模型上下文的各个组成部分，外加 `compactionThreshold`：上下文达到多大（以 Token 计）时，Session 的下一个请求会开始压缩。这个阈值就是 Agent 的 `compaction.max_context_length`，上限不超过模型上下文窗口的剩余空间。压缩未启用、读不到 Agent 配置，或阈值不低于窗口时，这个值是 `null`。这条路由每次调用都读取最新的 Trace 文件，所以数值是快照，不是实时计数器。
+- `GET /goal` 返回 `{goal}`：Session 从未跑过目标时为 `null`，否则为 `{objective, status, budget, used, rounds}`。`status` 取值为 `active`、`complete`、`blocked`、`budget_limited` 或 `aborted`，`budget` 为 -1 表示不限制。目标只存活在它的运行期间，所以 Session 已停止运行、目标却仍是 active 时，会报告为 `aborted`。见[目标模式](/goal-mode)。
+
+### GET /messages 上的 `live` 字段
+
+Trace 只存储完整的消息，流式的 `partial_*` 消息从不落盘，所以光靠历史看不到一条仍在流式输出的消息。Session 运行或压缩期间，messages 响应会额外带上进行中的流尾部：
 
 ```ts
 interface MessagesResponse {
   messages: (OmniMessage & { tracePosition?: { fileIndex: number; ordinal: number } })[];
   live?: {
-    // Session 通道最近分配的 SSE 事件 id（`<epoch>-<seq>`）：
-    // 截至该 id（含）发布的所有事件都已累积进 `fragments`。
+    // The Session channel's most recently assigned SSE event id (`<epoch>-<seq>`):
+    // every event published up to and including this id is already reflected in `fragments`.
     cursor: string;
-    // 每个未闭合流式片段对应一条合成的 `partial_* start` OmniMessage，其 payload 携带
-    // 迄今累积的全部内容（文本/思考前缀、工具调用名 + 已累积参数、工具输出前缀 + 图片），
-    // 并保留原始 `origin` 链（子智能体片段同样覆盖）。
+    // One synthetic `partial_* start` OmniMessage per open streaming fragment, whose
+    // payload carries the full accumulated content so far (text/thinking prefix,
+    // tool-call name + accumulated arguments, tool-output prefix + images), with the
+    // original `origin` chain preserved (subagent fragments included).
     fragments: OmniMessage[];
   };
 }
 ```
 
-`cursor` 与 `fragments` 在 Trace 读取开始前原子采集。使用先连接模式（见下）的客户端在应用完历史后处理它们：当 cursor 的 epoch 与本连接已缓冲事件的 epoch 一致时，丢弃 seq ≤ cursor 的已缓冲 **partial** 事件（其内容已累积在 `fragments` 里），把 `fragments` 按正常归约路径喂入，再重放剩余缓冲。已缓冲的**完整**消息从不按 cursor 丢弃 —— 仍由常规重叠去重裁决。空闲时不携带 `live`。
+`cursor` 和 `fragments` 在 Trace 读取开始之前一并原子捕获。先连接事件流的客户端（见[推荐的客户端模式](#推荐的客户端模式)）在历史之后应用它们：游标的 epoch 与已缓冲 SSE 事件的 epoch 一致时，丢弃所有 seq 不高于游标的缓冲 partial 事件，因为 `fragments` 已经包含那些内容。接着客户端把 `fragments` 送入正常的 reducer，再重放缓冲中剩下的部分。游标从不丢弃缓冲中的完整消息；那些交给常规的重叠去重处理。Session 空闲时不返回 `live`。
 
-`tracePosition` 只是历史响应元数据，不进入持久化 OmniMessage。Web App 将一轮最后一条模型文本的不可变坐标提交给 `/fork`，服务端再校验它确实闭合了一个完整 Task。分叉会克隆保留范围内的 Trace 分片，并把源 Session 的 scratchpad 快照到新 Session id 下；系统生成的本地附件路径同步改写，因此以后删除任一 Session 都不会破坏另一方。同一源 Session 在任意回复位置产生的分支共用持久编号，标题使用不依赖界面语言的后缀，依次为 `原标题 (1)`、`原标题 (2)`；删除旧分支不会复用编号。源 Session 正在运行或压缩时返回 409。
+### 分叉
 
-Workspace 文件可能由 Agent 生成，`GET /files/content` 一律按不可信内容处理：所有响应都带 `X-Content-Type-Options: nosniff`，其余响应头取决于两个开关（`download=1` 优先于 `preview=1`）：
+`tracePosition` 是历史响应的元数据，不属于持久化的 OmniMessage 信封。Web App 把这条回复最后一条助手记录的不可变位置发给 `/fork`，服务器检查这条记录确实结束了一个已完成的 Task。
 
-| 查询参数 | Content-Type | Content-Disposition | Content-Security-Policy |
-| --- | --- | --- | --- |
-| 都不带 | `.html` / `.htm` / `.svg` 降级为 `text/plain; charset=utf-8`，其余为真实类型 | `inline` | 无 |
-| `preview=1` | 真实类型（`text/html`、`image/svg+xml` 等） | `inline` | `sandbox allow-scripts allow-popups allow-modals allow-forms`，仅对 `.html` / `.htm` / `.svg` 下发 |
-| `download=1` | 真实类型 | `attachment` | 无 |
+分叉会克隆保留的 Trace 文件，并把源暂存区按新 Session id 拍快照，同时改写系统生成的本地附件标记，因此以后无论删除哪个 Session，分叉都能继续工作。从同一个源 Session 的任意回复创建的分叉，共用一套与界面语言无关的持久标题序号（`Source title (1)`、`Source title (2)`）；删除较早的分叉也不会释放它的序号。源 Session 正在运行或压缩时返回 409。
 
-`GET /scratchpad/:fileName` 提供的同样是不可信字节（用户上传与 Agent 写下的临时文件），防护口径一致，只是没有那两个开关：始终带 `nosniff`；仅五种可安全内联的图片类型（`.png` / `.jpg` / `.jpeg` / `.gif` / `.webp`）按真实类型内联，供对话里的 `<img>` 使用；其余一律 `application/octet-stream` 并带 `Content-Disposition: attachment` —— 非图片内容无法在 App 所在源上作为文档渲染。
-
-文件名始终以 `filename*=UTF-8''` 形式携带（百分号编码）。`preview=1` 是预览跳转在没有独立预览源时的回退目标：文档保留真实类型，可以正常渲染并执行脚本，但沙箱刻意不含 `allow-same-origin`，因此它落在一个不透明源里，既拿不到本源的 Cookie，也调不动 API。这份隔离也正是那里 `localStorage`、`document.cookie` 与第三方 embed 全都不可用的原因。
-
-### 消息绑定（飞书、Telegram、QQ、微信）
-
-Session 可以接入消息软件机器人——目前的渠道是飞书、Telegram、QQ 与微信，各自挂在 `/messaging/<channel>` 之下。一个 Session **每个渠道至多保存一份配置**（多份可同时保存），其中**至多一个渠道处于启用状态**——启用的渠道持有在线连接。启用即把机器人账号绑定到该 Session，停用即解除绑定，因此同一个应用或机器人可以同时保存在任意多个 Session 上，只有启用是互斥的。发给机器人的消息以普通用户输入在该 Session 上发起 Task——与在网页输入框里输入完全一致（无标记块；忙碌时排入 follow-up 队列）——完成的回复再转发回对应会话，并按渠道文本上限分段（Telegram 硬上限 4096 字符）。飞书经 SDK 的 WebSocket 长连接接收事件，Telegram 用 `getUpdates` 长轮询，QQ 以 `GROUP_AND_C2C_EVENT` intent 保持平台的 WebSocket 网关连接，微信用 `ilink/bot/getupdates` 长轮询——四者都无需公网回调地址。保存与连接是两件事：PUT 只保存凭据，连接由独立的 state 接口开关。路径同上表，省略 `/api/sessions/:sessionId` 前缀。
+### Task 与插话
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | /messaging | 渠道无关读取：该 Session **每一份**已保存的渠道配置（`channel` 判别字段、密钥掩码、逐行 `enabled` 意图 + `linePerMessage` + `finalReplyOnly` + `renderMarkdown` + 连接运行状态 + `lastChatKnown`）。渠道感知的绑定编辑器只加载这一个 |
-| GET | /messaging/feishu | `{binding, status}` 形态下的飞书配置（未保存时为 null） |
-| PUT | /messaging/feishu | 保存凭据：`{appId, appSecret?, baseDomain?, clearAppSecret?, linePerMessage?, finalReplyOnly?, renderMarkdown?}`。`appSecret` 省略或留空则保持已存值；`clearAppSecret: true` 清除已存密钥（新输入的密钥优先于清除标记；启用中返回 409 `messaging_disable_before_clear`——清除后配置行与非密钥字段保留）；`baseDomain` 默认 `https://open.feishu.cn`。不带连接副作用——唯一例外：**已启用**绑定的连接器会用新凭据重启，保证存储配置与在线连接永不背离。保存不会与其他 Session 冲突，唯一例外正源于这次重启：把**已启用**的绑定改指到另一个 Session 已启用的账号上，返回 409 `account_enabled_elsewhere`，否则那次重启就会绕过启用闸门、把第二条在线连接接到同一账号上 |
-| POST | /messaging/feishu/state | 连接开关：`{enabled}`——启用即用**已存凭据**建立连接，停用即断开。该 Session 另一渠道已启用时返回 409 `another_channel_enabled`，同一账号已在**其他 Session** 上启用时返回 409 `account_enabled_elsewhere`（两者都是「先停用那一个」——后者不透露持有方的任何信息，它可能位于调用方看不到的 Project）；已存配置没有密钥时返回 400 `feishu_secret_required`。新配置默认停用；服务端启动只连接已启用的配置 |
-| DELETE | /messaging/feishu | 整体删除该渠道的配置（含 App Secret；另一渠道不受影响）。仅为 API 完整性保留——Web 界面的移除入口是清除标记 |
-| POST | /messaging/feishu/test | 用请求携带的草稿值做凭据探测，缺省字段回落到已存配置 → `{ok, latencyMs?, error?}`（凭据被拒是 `ok: false`，不是 HTTP 错误） |
-| POST | /messaging/feishu/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在飞书里给机器人发过消息之前返回 409 `feishu_no_chat` |
-| GET | /messaging/telegram | 同一形态下的 Telegram 配置（`botId`、`botTokenMasked`） |
-| PUT | /messaging/telegram | 保存凭据：`{botToken?, clearBotToken?, linePerMessage?, finalReplyOnly?, renderMarkdown?}`——整份凭据就是 @BotFather 签发的一条 `<机器人 id>:<密钥>` Token（省略或留空则保持已存值；读不出数字 id 时返回 400 `telegram_token_invalid`；清除标记与飞书同口径，清除后配置保留其机器人身份）。保存与启用的分离一致；把已启用绑定的 Token 换成另一个 Session 已启用的机器人时，同样返回 409 `account_enabled_elsewhere`，其余情况不存在跨 Session 的保存冲突 |
-| POST | /messaging/telegram/state | 与飞书开关同一契约（无已存 Token 时返回 400 `telegram_token_required`） |
-| DELETE | /messaging/telegram | 整体删除该渠道的配置（含 Bot Token）。仅为 API 完整性保留 |
-| POST | /messaging/telegram/test | 凭据探测（`getMe`），草稿 Token 缺省回落到已存值 → `{ok, latencyMs?, botUsername?, groupPrivacy?, error?}`——成功时报出 Token 登录到的机器人；当 @BotFather 的 Group Privacy 处于开启状态（默认如此，此时机器人在它不担任管理员的群里收不到任何普通消息）时报出 `groupPrivacy: true` |
-| POST | /messaging/telegram/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 Telegram 里给机器人发过消息之前返回 409 `telegram_no_chat` |
-| GET | /messaging/qq | 同一形态下的 QQ 配置（`appId`、`appSecretMasked`） |
-| PUT | /messaging/qq | 保存凭据对：`{appId, appSecret?, clearAppSecret?, linePerMessage?, finalReplyOnly?, renderMarkdown?}`——QQ 开放平台「开发设置」页的 App ID 与 App Secret。留空保持、清除标记、保存与启用分离都与飞书 PUT 同口径；把一条已启用绑定的 App ID 换成另一个 Session 已启用的账号时，同样返回 409 `account_enabled_elsewhere`，此外保存不会跨 Session 冲突；没有域名字段，因为 API v2 只有一个接口域名 |
-| POST | /messaging/qq/state | 与其他开关同一契约（无已存密钥时返回 400 `qq_secret_required`） |
-| DELETE | /messaging/qq | 整体删除该渠道的配置（含 App Secret）。仅为 API 完整性保留 |
-| POST | /messaging/qq/test | 凭据探测（换取 app access token）→ `{ok, latencyMs?, error?}`。不报出账号名：平台没有能识别机器人身份的接口 |
-| POST | /messaging/qq/scan | 发起扫码连接：服务端用新生成、且不外传的 AES 密钥注册一个绑定任务 → `{taskId, qrUrl, pollMs}`。把 `qrUrl` 渲染成二维码；它由 QQ 客户端打开，浏览器不会请求它。该 Session 的 QQ 连接处于启用状态时返回 409 `messaging_disable_before_scan`——扫码会在在线连接器底下换掉整对凭据；平台拒绝时返回 502 `qq_scan_failed` |
-| POST | /messaging/qq/scan/poll | `{taskId}` → `{status, appId?, binding?}`。`completed` 表示服务端已解密 App Secret 并**保存**了绑定（启用仍是独立动作）；`expired` 表示需重新建任务。未知、属于其他 Session 或已完成的任务返回 404 `qq_scan_task_unknown` |
-| POST | /messaging/qq/scan/cancel | `{taskId}`——用户中途离开时丢弃该任务，立即忘记其密钥，而不是等待过期清扫 |
-| POST | /messaging/qq/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在 QQ 里给机器人发过消息之前返回 409 `qq_no_chat`；没有可回复的近期消息时返回 502 `qq_send_failed`（见下） |
-| GET | /messaging/wechat | 同一形态下的微信配置（`botId`、`botTokenMasked`） |
-| PUT | /messaging/wechat | **只**保存投递偏好：`{clearBotToken?, linePerMessage?, finalReplyOnly?, renderMarkdown?}`。这是本组唯一不携带凭据的 PUT——微信机器人的 Bot Token 只能由扫码产生，没有可供复制的后台——因此它以已有绑定为前提，绑定不存在时返回 400 `wechat_token_required`。清除开关与其他渠道一致（启用中返回 409 `messaging_disable_before_clear`；被清除的配置保留行与机器人身份，只有重新扫码才能再次连接） |
-| POST | /messaging/wechat/state | 与其他开关同一契约（无已存 Token 时返回 400 `wechat_token_required`） |
-| DELETE | /messaging/wechat | 整体删除该渠道的配置（含 Bot Token）。仅为 API 完整性保留 |
-| POST | /messaging/wechat/test | 凭据探测（以扫码账号身份调用 `ilink/bot/getconfig`）→ `{ok, latencyMs?, error?}`。这是唯一**不接受请求体**的探测：本渠道没有可填写的字段，只能探测已存绑定（没有则返回 400 `wechat_token_required`）。不报出账号名——该探测既不识别机器人，也不识别人 |
-| POST | /messaging/wechat/scan | 发起扫码连接——在本渠道这是**唯一**的绑定方式 → `{taskId, qrUrl, pollMs}`。把 `qrUrl` 渲染成二维码；它由微信打开，服务端从不请求它。平台自身的轮询句柄——也就是能换取 Bot Token 的那个——留在服务端，`taskId` 是服务端另行签发的替代句柄。连接启用中返回 409 `messaging_disable_before_scan`；平台拒绝时返回 502 `wechat_scan_failed` |
-| POST | /messaging/wechat/scan/poll | `{taskId}` → `{status, botId?, binding?}`。`status` 取值为 `pending`、`scanned`、`need_verify_code`、`blocked`、`expired`、`already_bound`、`completed`。`completed` 表示服务端已**保存**绑定（启用仍是独立动作）；`already_bound` 不是失败——该机器人已被绑定，没有签发新凭据。它并不说明绑定在**哪里**：本流程不向平台提供任何已持有的 token 列表，因此无法区分「绑定在本服务」与「绑定在别处」。任务未知、属于其他 Session 或已结算时返回 404 `wechat_scan_task_unknown`。与 QQ 不同，**重叠的**轮询返回 `pending` 而非 404：上游是长轮询，一次调用会跨越客户端的多个轮询间隔 |
-| POST | /messaging/wechat/scan/verify | `{taskId, verifyCode}` → 204。微信在手机上显示的配对码。平台把它作为状态查询的参数，因此它随**下一次**轮询携带而不单独发起请求，本接口只做记录——配对码错误会表现为下一次轮询再次返回 `need_verify_code` |
-| POST | /messaging/wechat/scan/cancel | `{taskId}`——用户中途离开时丢弃该任务，立即忘记其句柄，而不是等待过期清扫 |
-| POST | /messaging/wechat/test-message | 向最近一次收到消息的会话发送一条固定测试文本；在微信里给机器人发过消息之前返回 409 `wechat_no_chat` |
+| POST | `/tasks` | 启动一个 Task：`{input: TaskInputPart[], queueIfBusy?, goal?}` → 202 |
+| POST | `/steer` | 为正在运行的 Task 排入一条插话消息：`{text, images?}` → 202 |
+| DELETE | `/steer/:steerId` | 撤回一条尚未投递的插话消息 |
+| DELETE | `/follow-ups/:followUpId` | 撤回一个排队的后续 Task |
+| POST | `/approvals/:toolCallId` | 审批决定：`{decision}`，`allow` 或 `deny` → 204 |
+| POST | `/tool-calls/:toolCallId/background` | 把一个执行中的工具调用移入后台 → 204 |
+| POST | `/subagents/:childSessionId/message` | 向一个子 Agent 会话发送消息：`{text}` → `{outcome}` |
+| POST | `/subagents/:childSessionId/abort` | 停止一个子 Agent 会话的当前运行 |
+| POST | `/abort` | 中断当前 Task：触发时返回 202，空闲时返回 204 |
+| POST | `/retry-now` | 跳过重连倒计时：→ 200 `{skipped}` |
+| POST | `/compact` | 开始上下文压缩：202 |
 
-没有已存密钥的配置（被清除过的）不返回掩码字段，也无法启用。`linePerMessage`、`finalReplyOnly` 与 `renderMarkdown` 是仅有的三个不属于凭据的已存字段。开启 `linePerMessage` 后，转发的助手回复中每个非空行各自作为一条消息发出（空行忽略，单行仍按长度上限分段，超出每条回复的消息条数上限的部分合并为最后一条）。开启 `finalReplyOnly` 后，一次运行只转发它**最后**完成的那条助手消息，并在运行结束时发送，而不是每完成一条就转发一条——运行过程中在工具调用之间写下的记录留在网页端；随回复发送的文件也只从这条最终消息中读取提及，因为聊天只收到了它。两者可叠加：同时开启时，被按行拆分的就是这条最终回复。两者默认均为 false，PUT 省略则保持已存值，且都不作用于通知与测试消息——审批提醒尤其不属于回复，无论 `finalReplyOnly` 如何都会立即到达。开启 `renderMarkdown` 后，转发回复中的 Markdown 按各渠道自身的标记语言渲染，而不是把字符原样发出；它**默认为 true**，PUT 省略同样保持已存值，同样不作用于通知与测试消息。各渠道各自渲染力所能及的部分，其余按既定方式降级而非泄漏源码：Telegram 使用 `parse_mode: "HTML"`，没有标题、列表和表格（标题渲染为一行粗体，列表符号作为文本保留，表格改用 `<pre>` 块）；飞书发送携带 JSON 2.0 富文本组件的交互卡片，全部构件均可渲染，超长表格改为代码块以免整行被静默丢弃；QQ 使用 `msg_type: 2` 自定义 markdown，没有代码格式也没有表格（代码块按转义后的普通文本行发出，表格按其行发出）；微信自己就读 Markdown，因此渲染是**做减法**而不是翻译——客户端不会呈现的部分保留文字、去掉标记（四级以上的标题、CJK 两侧的强调，以及内联图片，后者改为链接）。分段随该设置改变：在块边界切分，跨消息的代码块会重新加围栏，因此任何一条消息都不会打开一个它没有闭合的构件。**渠道拒绝的格式化发送会退回为同一条消息的纯文本发送**，因此该设置只可能损失排版，绝不会损失回复。唯一的跨 Session 规则按渠道内机器人账号计，且只作用于连接：一个账号只有一条事件流，因此至多一个 Session 能将其启用。飞书的账号身份是 `app_id`，Telegram 是 Token 冒号前的数字机器人 id（换发 Token 也不会改变），微信则是扫码返回的机器人 id。读取与两个测试接口对任意 Project 成员开放；PUT、state 开关与 DELETE 仅限所有者（与 Vault 同口径——绑定写操作携带或作用于密钥）。密钥永不回传。删除 Session 会连带删除其全部渠道配置。入站处理文本、图片与文件：图片按普通 `image_url` 输入部分送入，单张受服务端的内联图片上限约束，总量再受每个绑定一个滚动窗口的字节预算约束——内联图片会原样写入 Trace，而这条路径不像网页输入框，前面没有任何鉴权。文件按输入框的另一种附件形态送入——写进该 Session 的 Scratchpad，并以 `[attached file: <path>]` 行交给模型，其字节不进入对话——上限沿用管理员可设的单个文件与单条消息附件上限（与经过鉴权的上传同一组数值），并再取渠道自身更紧的那个上限（Telegram 不向机器人提供超过 20MB 的文件）。飞书取 `file` 消息类型，Telegram 取 `document` 字段：发送者主动**以文件形式**发出的那一个，也是 Telegram 各媒体字段中唯一携带发送者原始文件名的。在这两个渠道上，视频、音频与语音有意不予送达——下游没有任何环节能解码或转写它们，而发送者真正想交给智能体的东西，只要按文件发送就会到达。微信是例外，且仅仅因为解码由平台自己完成：语音消息随附它自己的转写文本，视频则作为普通文件到达。附件**确实会被送达**的消息（图片、文件），其说明文字即该消息的文本；其他媒体类型的说明文字则不是——其字节并不会送达，仅凭说明文字运行只会让模型对一个它从未收到的文件侃侃而谈。图片超过单张上限、超出窗口预算与渠道拒绝下载分别回复三种不同的双语提示；文件超过单个上限、一条消息的文件总量超限与渠道拒绝下载同样各有其提示。它们都不会把半条消息交给模型；因机器人自身权限被拒时，提示会点名所需权限并带上渠道给出的授权链接——飞书通常正是此种情况（接收消息与下载其中的附件是两项独立权限）。其余类型仍收到双语的“暂不支持”回复。出站方向，一次运行结束后会在回复文本之后发送该回复**提及且由本次运行产出**的文件——回复中形如路径、能解析到 Workspace 之内、确实存在、且修改时间不早于本次运行开始的片段，出现在回复的任何位置皆可（「提及」挑出这次真正要交付的那个产物；「修改时间」则确保一条可被会话中任何人引导的回复不会变成读取原语——拒绝粘贴某个文件的回复同样会点到它的名字）——图片按图片发送、其余按文件发送，且按**读取时实际拿到的文件名**分类，而非回复中写下的那个名字；每次运行最多 5 个，单个图片上限 10MB、单个文件上限 30MB（取两个渠道各自限制中更紧的一个）。被提及的文件凡是没送到，都会在会话中说明原因——超过上限、超出数量上限、Workspace 内没有该文件、渠道拒绝上传——唯独「本次运行没有写过」是静默跳过的，因为回复中提到自己读过的配置文件属于常态。Telegram 建立连接时先清空积压：无连接期间发来的消息会被跳过，与飞书“错过的事件即消失”同口径。绑定的运行时状态另外报出该连接**实际见到**的情况——`lastInboundAt`（最近一条消息到达的时间；自本次连接建立以来还没有收到过时该字段缺席）、`lastDeliveryError`（`{at, stage, detail}`，`stage` 为 `inbound` 表示消息已到达但其 Task 没能开始，为 `send` 表示回复没能送达聊天；后续的成功不会把它清掉），以及 `lastConnectionError`（`{at, detail}`，最近一次连接失败，并在连接恢复之后依然保留——不同于属于 `error` 状态、状态一离开就被抹掉的 `lastError`）。三者都只存在于进程内，且每次（重新）建立连接都会清空——重新启用连接或再保存一次凭证，都会开启一条新连接——所以 `lastInboundAt` 缺席只意味着「本次连接以来没有收到过」，而不是「从来没有收到过」。它们的存在是因为一个扣着消息不投递的渠道，表现出来正是 `connected` 且毫无报错。
-**QQ 是只能被动回复的渠道，这改变了「送达」的含义。** 平台不提供本产品可用的主动推送：每一条外发消息都是携带入站 `msg_id` 的*被动回复*，有效期只有几分钟，且单聊对同一条消息最多 4 条回复（群聊 5 条）。由此有三点在 API 上可见。一次运行完成的助手消息超过该额度时会被**合并**——前 `budget - 1` 条随完成即时发出，其余合并为最后一条送达，内容不丢。`linePerMessage` 的拆分上限**收敛到该额度**，而不是渠道无关的 20；被平台拒绝的 `renderMarkdown` 发送，其纯文本重试会再占用一次额度。`finalReplyOnly` 在这里有利有弊：它把一次运行的额度消耗压到最低——只发一条；但被动回复的有效期只有几分钟，把回复扣到运行结束才发，等于把这个窗口花在了运行本身上，运行时长超过窗口时将什么都送不出去，而逐条转发至少能把窗口之内完成的部分发出去。而没有可回复对象的发送——在网页端发起的对话，或窗口关闭之后的回复——会被**拒绝而非主动推送**：测试接口上表现为 502 `qq_send_failed`，转发回复则记为一条 `messaging_send_failed` 错误记录。QQ 的账号身份是 App ID。该渠道拒绝外发文件：平台的富媒体接口要求为文件提供公网可达地址。
-**微信只承载单聊，但媒体能力是四个渠道里最全的。** 该机器人渠道完全不接收群消息：在群里 @机器人的消息根本不会到达本 API，因此单聊正常、群聊沉默是渠道形态而非配置错误。作为交换，它是这里唯一能**双向**传输文字、图片与文件的渠道——回复中的图片与附件会上传到平台 CDN（每个文件一把 AES-128-ECB 密钥），以真正的图片和文件到达，而不是被拒绝。两类入站消息被折叠处理：语音消息按微信自带的语音转文字结果进入对话，视频按文件到达；微信没能转写的语音则以共用的「不支持」提示回到聊天。
+- `POST /tasks` 响应 `{sessionId, queued?}`。带 `queueIfBusy` 时，忙碌的 Session 会把输入存为后续 Task（`queued: true`），等 Session 空闲后作为普通的下一个 Task 启动；`task_state` 事件报告排队的数量。`file` 输入部分写入 Session 暂存区，并以 `[attached file: <path>]` 行的形式交给模型（见[请求体](#请求体)）。
+- `POST /tasks` 带 `goal: {budget?}` 时改为启动目标循环。Agent 没有安装 `goal` 插件时返回 409 `goal_plugin_not_installed`。目标就是输入里的文本（去掉开头的标记块），所以输入必须带非空文本（否则返回 400）：只有图片说明不了目标。图片作为普通输入随第 1 轮发送，之后各轮只重新注入目标文本。`file` 部分一律以 400 拒绝，因为没有办法把文件带进每一轮都重新注入的目标。见[目标模式](/goal-mode)。
+- `POST /steer` 在轮次之间把消息作为一条独立的 `[user_steering]` 用户消息投递，图片紧随其后。`text` 和 `images` 任一字段都能单独携带消息，但两者都缺时返回 400。没有 Task 在运行时返回 409 `not_running`。
+- `DELETE /steer/:steerId` 接收 `task_state` 里 `pendingSteering` 的 id，把那条消息从队列撤回。响应 200，带原始内容 `{text, images, files}`，便于输入框恢复消息供编辑：文件以 data URL 的形式从暂存区读回，磁盘上的副本随之删除。消息已经投递给模型时返回 409 `not_pending`。
+- `DELETE /follow-ups/:followUpId` 接收 `task_state` 里 `pendingFollowUps` 的 id，在后续 Task 启动前把它移除。响应 200，带原始内容 `{text, images, files}`；无论以哪种方式排队，每个排队的后续 Task 都带这些内容。后续 Task 已经启动、或 id 未知时返回 409 `follow_up_started`。
+- `POST /tool-calls/:toolCallId/background` 把一个执行中的工具调用转成后台任务交回，当前轮次得以收尾，对话得以继续。调用以 `completed` 结束并附带 `process_id` 或 `subagent_id`，进程一律不终止，结果稍后通过常规的后台任务通知送达。没有这个 id 的调用在执行时返回 404 `tool_call_not_found`（id 未知、调用已结束、或运行时已不存在）；调用还在运行、但它的工具没有后台形态时返回 409 `tool_not_detachable`。只有 `exec_command` 和 `run_subagent` 有后台形态。
+- `POST /subagents/:childSessionId/message` 无论子 Agent 处于什么状态，都把文本作为用户输入投递给它。子 Agent 正在运行、消息作为插话排队时，`outcome` 为 `steered`；空闲的子 Agent 启动一次后续运行时为 `started`；已释放的子 Agent 重新拉起并开始下一轮时为 `resumed`。子 Agent 以自己上下文的思考等级运行，可以用子 Session 上的 `PATCH` 固定它。空 `text` 返回 400；404 `subagent_gone` 表示子 Agent 的记录不存在或无法复活；409 `subagent_busy` 表示子 Agent 目前无法接收消息。
+- `POST /subagents/:childSessionId/abort` 只停止子 Agent 当前的运行；子 Session 仍可用于插话和后续 Task。成功停止一次运行时返回 202；子 Agent 已空闲或未知时返回 204。
+- `POST /retry-now` 对应重连倒计时上的**立即重试**按钮。它跳过当前的退避等待，立即发起下一次重试，不改动尝试计数。`skipped: false` 表示当时没有等待在进行，这不是错误。
+- `POST /compact` 在没有可压缩内容时返回 409，原因写在错误码里：`compaction_not_configured`（Agent 没有配置压缩）、`nothing_to_compact`（上下文还没有完整的对话轮次）或 `already_compacted`（上次压缩之后没有新内容）。服务器重启后恢复的 Session 会从自己的 Trace 推导出这些状态，所以已有对话无需先跑一个 Task 也能压缩。
 
-**扫码连接不会把机密交给浏览器。** 让这套流程安全的东西都留在服务端——解密 QQ App Secret 的 AES 密钥，以及换取微信 Bot Token 的轮询句柄——在服务端生成、持有、使用并丢弃；客户端只拿到任务句柄、待绘制的 URL 与状态。任务只存在于内存，归属发起它的 Session，按 Session 单独限量（一个调用方的扫码任务挤不掉另一个调用方的），并被「解决它的那一次轮询」认领掉，因此重放得到的是 404 而不是第二次绑定。对同一任务的并发轮询在 QQ 上同样是 404；在微信上返回 `pending`，因为上游是一次跨越客户端多个轮询间隔的长轮询。所有扫码路由都仅限 Project 所有者——无论调用方实际输入了多少内容，这个流程的终点都是一份存下来的凭据。
-
-### 独立源预览
-
-Files 面板内的 HTML 渲染视图（iframe）与“新页面打开”都走 `GET /files/preview-redirect?path=`：先鉴权，再签发一枚短时效 HMAC 令牌，然后 302 跳转到**另一个源**：
-
-```text
-GET  /api/sessions/:sessionId/files/preview-redirect?path=index.html
-302  Location: http://localhost:7364/preview/<token>/index.html
-GET  /preview/<token>/<相对路径>              （不鉴权，令牌即凭证）
-```
-
-- **为什么要独立源。** 页面需要一个真实的源，才能有可用的 storage、Cookie 与第三方 embed；但它不能是应用自己的源，否则 Agent 写出来的 HTML 就带着会话 Cookie 在跑。本地把 App 固定在规范主机 `localhost`，预览用 `127.0.0.1`——Cookie 按主机划分且不区分端口，所以这两者天然是两个 Cookie jar，而只换端口做不到。其余情况用 `PENGUIN_PREVIEW_ORIGIN`；两者都没有时（通配或非回环绑定，或变量未设）回退到上面的同源沙箱，并由 `GET /api/me` 的 `previewIsolated` 返回 `false`，界面据此提前说明。
-- **面板内渲染共用同一 URL。** Files 面板把该跳转 URL 嵌入 iframe，沙箱为 `allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads`——`allow-same-origin` 赋予的是预览源而非应用源的身份，因此仍严格紧于不带沙箱的新标签页。没有独立预览源时，面板回退为内联 `srcdoc` 渲染（仅 `allow-scripts`，附内存版 storage 垫片），相对子资源在那里无法加载。另注意部分浏览器会对跨站 iframe 内的 storage 做分区或屏蔽，页面在面板内的行为可能与顶层标签页略有差异。
-- **预览主机只服务 `/preview/*`。** 它与 App 是同一个进程，故其 `/api` 一律 401，其余路径一律 302 回规范 App 主机——会话 Cookie 因此永远不会落在预览主机上，也不被其接受，那里的 Agent HTML 无法同源调用 API。（部署 `PENGUIN_PREVIEW_ORIGIN` 时，反向代理须做等价保证：该源上只把 `/preview/*` 路由到 App。）
-- **路径式而非查询参数**，页面里的相对子资源（`app.js`、`style.css`、图片）才能相对文档解析，并在同一个令牌下加载。
-- **令牌绑定 Session、预览主机与过期时间。** 其中主机绑定是承重的：同一个进程也在应用源上应答，因此 `/preview/...` 在应用源上一律拒绝服务——否则那就是一个同源 XSS。权限只读、限定该 Session 的 Workspace，路径仍在服务端重新解析，`..` 与符号链接逃逸照旧拒绝。
-- **响应带 `Referrer-Policy: no-referrer`**，否则带令牌的 URL 会经 `Referer` 泄漏给页面内嵌的每一个第三方——而这个风险恰恰是因为 embed 现在能用了才出现的。
-- 令牌无效、过期、主机不符与路径越界一律返回裸 404：该端点不鉴权，不能确认任何东西是否存在。
-
-关键请求体（明确键名）：
+### 请求体
 
 ```ts
-// POST /api/sessions/:sessionId/tasks —— 发起一个 Task
+// POST /api/sessions/:sessionId/tasks — start a Task
 interface TaskCreateRequest {
   input: TaskInputPart[];
-  // 思考等级不是 Task 参数：它属于模型上下文——用 PATCH 钉在 Session 上，此后开启的每个上下文都以钉住的等级运行
+  // The thinking level is not a task parameter: it belongs to the model context — pin it on
+  // the Session with PATCH, and each context the Session opens runs at the pinned level
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string }    // 粘贴图片以 data URL 上送，≤20MB（超出返回 413 image_too_large）
-  // 文件附件：base64 data: URL，默认单个 ≤100MB（超出返回 413 file_too_large），单次请求最多 20 个、
-  // 解码后合计 ≤120MB（超出返回 413 too_many_files / payload_too_large；三项校验都在落盘前完成）。
-  // 两个尺寸均可由管理员调整（PUT /api/admin/settings），并由 GET /api/me 下发。
-  // 服务端将其写入该 Session 的 scratchpad，并在消息文本末尾追加一行
-  // `[attached file: <path>]`——模型按路径读取该文件。`fileName` 不得含路径分隔符；落盘时保留
-  // 原有词形（`报告 2026.pdf` → `报告-2026.pdf`：非 ASCII 字符原样保留，对 shell 不友好的
-  // ASCII 字符替换为 `-`），既便于在消息中辨认，也可安全地拼进命令。
+  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs, ≤20MB (413 image_too_large)
+  // File attachment: base64 data: URL, by default ≤100MB each (413 file_too_large beyond that),
+  // at most 20 per request and 120MB of decoded bytes in total (413 too_many_files /
+  // payload_too_large; all three are checked before anything is written). The two sizes are
+  // admin-settable (PUT /api/admin/settings) and reported by GET /api/me. The server writes it into the Session
+  // scratchpad and appends an `[attached file: <path>]` line to the message text — the model
+  // opens the file by path. `fileName` carries no path separators; on disk it keeps its own
+  // words (`报告 2026.pdf` → `报告-2026.pdf`: non-ASCII survives, shell-hostile ASCII becomes
+  // `-`), so a name is readable in the message and safe to paste into a command.
   | { type: "file"; fileName: string; dataUrl: string };
 
 // POST /api/sessions/:sessionId/approvals/:toolCallId
@@ -510,71 +755,378 @@ interface ApprovalDecisionRequest {
 }
 ```
 
-Web 的 `/model` 模型切换没有专用接口：它按 `/agent` 交接的方式复用上面的普通接口——先用会话创建接口在同一 Agent 下新建 Session（选定新模型并沿用源 Workspace），再 POST /tasks 发送以 `[model_switch_from]` 源块开头的首条消息（源会话 id、其 `tracePath`、Workspace 与原模型二元组），模型需要早前历史时自行读取该 Trace 文件。
+Web App 的 `/model` 切换没有专用端点。和 `/agent` 交接一样，它把几条普通路由组合起来：
 
-## 流式接口（SSE）
+1. 创建 Session：为同一个 Agent 打开新 Session，沿用所选模型和源 Workspace。
+2. `POST /tasks` 发送第一条消息，开头是 `[model_switch_from]` 来源块，写明源 session id、它的 `tracePath`、Workspace 以及之前的模型组合。
+3. 需要更早的历史时，模型自己去读那个 Trace 文件。
 
-实时通道采用 Server-Sent Events 而非 WebSocket，共两条(通道内承载的消息顺序语义见[消息流转与时序](/message-flow)):
+### 后台进程
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/processes` | 对话启动的后台进程 |
+| POST | `/processes/:processId/kill` | 停止一个后台进程 |
+| DELETE | `/processes/:processId` | 把一个已退出的进程从列表移除 |
+
+- `GET /processes` 列出超出让出窗口而转入后台的 `exec_command` 调用。列表只来自当前活跃的运行时，所以未加载、或从未正确加载的 Session 报告空列表。当服务器检测到进程对外服务的地址时，行会带 `serviceUrl`：它是输出打印的最后一个本地 URL；找不到时，是探测进程组发现的监听端口，每次请求都会刷新。
+- `POST /processes/:processId/kill` 先向整个进程组发送 SIGTERM，宽限期后发送 SIGKILL，条目随即移出列表。进程已不存在时返回 404 `process_not_found`。
+- `DELETE /processes/:processId` 在进程仍在运行时返回 409 `process_running`（应该改用停止接口），在条目已不存在时返回 404 `process_not_found`。条目连同已捕获的输出一起移出运行时注册表，之后再对那个 `process_id` 执行 `input_command` 会失败。
+
+### Workspace 文件
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/files?path=` | 浏览一个 Workspace 目录 |
+| GET | `/files/content?path=&download=&preview=` | 读取一个 Workspace 文件（见 [Workspace 文件响应](#workspace-文件响应)） |
+| GET | `/files/preview-redirect?path=` | 在独立的预览源上打开 HTML 文件：签发签名 token 并以 302 重定向 |
+| POST | `/files/stat` | 检查文件是否存在：`{paths}` |
+| PUT | `/files/content?path=` | 上传文件：`{dataBase64}`，最大 14MB |
+| POST | `/files/move` | 移动或重命名一个文件：`{from, to, ifVersion?}` → 204 |
+| DELETE | `/files/content?path=&ifVersion=` | 删除一个文件 → 204 |
+| POST | `/files/reveal?path=` | 在机器自带的文件管理器中显示文件 → 204 |
+| GET | `/files/search?q=` | 按条目名搜索整个 Workspace |
+| GET | `/scratchpad/:fileName` | 读取 Session 的一个暂存文件，例如输入图片或文件附件 |
+
+- `GET /files/preview-redirect` 支撑**新页面打开**和**文件浏览**面板里的 HTML 渲染视图；见[独立源上的预览](#独立源上的预览)。
+- `POST /files/move` 只对文件生效：目录没有单一的版本标记，保护移动的前置条件无法对目录表达，所以对目录返回 400。`to` 缺失的父目录会自动创建。`from` 不存在时返回 404 `path_not_found`；`ifVersion` 不再匹配时返回 409 `file_changed`（带着标记时源文件却已消失，也算作已变化）。`to` 位置已有内容时返回 409 `target_exists`——目标从未读取过，所以选择拒绝而不是覆盖；移动到文件自身路径返回 400。
+- `DELETE /files/content` 同样只对文件生效（对目录返回 400）。文件已不存在时返回 404 `path_not_found`；`ifVersion` 不再匹配时返回 409 `file_changed`。这个标记是可选的，不带标记时删除是无条件的，但**文件浏览**面板总是发送它读取时拿到的标记。
+- `POST /files/reveal` 在 macOS 和 Windows 上选中文件，在 Linux 桌面上打开文件所在目录。只有桌面 shell 自己的窗口可以调用它。服务器不是由桌面 shell 启动时返回 404 `not_found`；浏览器会话访问桌面模式服务器时返回 403 `desktop_shell_only`：这种会话无法与远程会话区分，而在服务器所在的机器上打开文件夹，对那头的用户毫无用处。路径的限制与读取相同（越界 400，不存在 404 `path_not_found`）；502 `reveal_failed` 表示文件管理器未能启动。
+- `GET /files/search` 只匹配条目名（不区分大小写的子串；不匹配路径），响应为 `{hits: [{path, kind, sizeBytes, mtime}], truncated}`，每条命中都带有目录列表条目的全部字段。搜索从根目录开始广度优先遍历，所以浅层结果先出现；结果达到上限时，保留的是最相关的命中，而不是最先遍历到的那个目录里的内容。`truncated` 表示遍历因达到上限而停止：命中 200 条，或访问了 20000 个目录条目。`q` 为空或超过 100 个字符时返回 400。
+
+### Workspace 文件响应
+
+Workspace 文件可能由 Agent 生成，所以 `GET /files/content` 把它们当作不可信内容。每个响应都带 `X-Content-Type-Options: nosniff`，其余响应头取决于两个标志，`download=1` 优先于 `preview=1`：
+
+| 查询参数 | Content-Type | Content-Disposition | Content-Security-Policy |
+| --- | --- | --- | --- |
+| 两者都不带 | `.html` / `.htm` / `.svg` 用 `text/plain; charset=utf-8`，其他用真实类型 | `inline` | — |
+| `preview=1` | 真实类型（`text/html`、`image/svg+xml` 等） | `inline` | `sandbox allow-scripts allow-popups allow-modals allow-forms`，仅对 `.html` / `.htm` / `.svg` 发送 |
+| `download=1` | 真实类型 | `attachment` | — |
+
+文件名一律以 `filename*=UTF-8''` 的形式加百分号编码发送。
+
+没有可用的独立预览源时，预览重定向就回退到 `preview=1`。文档保留真实类型，会正常渲染和执行，但沙盒有意省略 `allow-same-origin`。于是文档落在一个不透明源里，既拿不到本源的 cookie，也访问不到 API；`localStorage`、`document.cookie` 和第三方嵌入在那里都不起作用，原因也在于此。
+
+`GET /scratchpad/:fileName` 提供同类不可信内容（上传的文件以及 Agent 写入的临时文件），以同样的方式加固，但不接受那两个标志：
+
+- 始终发送 `X-Content-Type-Options: nosniff`。
+- 固定白名单中的五种惰性图片类型（`.png` / `.jpg` / `.jpeg` / `.gif` / `.webp`）以内联方式提供，供对话里的 `<img>` 标签使用。
+- 其余内容一律以 `application/octet-stream` 加 `Content-Disposition: attachment` 提供，因此除这些图片外，任何东西都无法在应用的源上渲染成文档。
+
+### 独立源上的预览
+
+**文件浏览**面板里的 HTML 渲染视图（一个 iframe）和**新页面打开**都经过 `GET /files/preview-redirect?path=`。这条路由先验证调用方，再签发一个短时效的 HMAC token，然后以 302 重定向到一个**不同的源**：
+
+```text
+GET  /api/sessions/:sessionId/files/preview-redirect?path=index.html
+302  Location: http://localhost:7364/preview/<token>/index.html
+GET  /preview/<token>/<relative path>          (unauthenticated; the token is the credential)
+```
+
+- 为什么需要独立的源：页面要有真实的源，存储、cookie 和第三方嵌入才能工作；但这个源不能是应用的源，否则 Agent 写的 HTML 会带着会话 cookie 运行。本地运行时，应用地址规范化为 `localhost`，预览由 `127.0.0.1` 提供。cookie 按主机名隔离、忽略端口，所以这两个主机拥有各自独立的 cookie jar；换成第二个端口就做不到这一点。其他情况则使用 `PENGUIN_PREVIEW_ORIGIN`。两者都没有时（通配或非回环绑定，或变量未设置），重定向回退到前文所述的同源沙盒，同时 `GET /api/me` 上的 `previewIsolated` 报告 `false`，UI 得以提前告知用户。
+- 应用内渲染用同一个 URL：**文件浏览**面板把重定向 URL 嵌入 iframe，沙盒标志为 `allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads`。这里的 `allow-same-origin` 授予的是预览源的身份，不是应用的，所以这套配置仍然严格比新标签页收紧——新标签页没有沙盒。没有独立预览源时，面板回退到内联 `srcdoc` 渲染（只给 `allow-scripts`，外加一个内存版 storage 垫片），相对子资源无法加载。部分浏览器会对跨站 iframe 内的存储做分区或阻止，所以同一个页面在面板里的行为可能与顶层标签页略有差异。
+- 预览主机只服务 `/preview/*`。它与应用是同一个进程，所以对 `/api` 返回 `401`，把其余所有路由以 `302` 重定向到规范的应用主机。因此，预览主机从不设置、也不接受会话 cookie，那里的 Agent HTML 无法从同一源访问 API。部署了 `PENGUIN_PREVIEW_ORIGIN` 时，反向代理必须执行同样的约束：只把 `/preview/*` 路由到这个源上的应用。
+- token 放在路径里，而不是查询参数里，这样页面的相对子资源（`app.js`、`style.css`、图片）相对文档解析，并在同一个 token 下加载。
+- token 绑定 Session、预览主机和过期时间。主机绑定很关键：同一个进程也在应用源上应答，所以 `/preview/...` 拒绝在那个源上服务，否则会构成同源 XSS。访问是只读的，限于这个 Session 的 Workspace；服务器会重新解析路径，对 `..` 和符号链接逃逸的拒绝方式与任何读取相同。
+- 响应带 `Referrer-Policy: no-referrer`。否则 URL 连同其中的 token 会通过 `Referer` 泄露给页面嵌入的每一个第三方——正因为嵌入如今可以工作，这个风险才随之而来。
+- 无效 token、过期 token、错误主机和越界路径一律返回裸 404：这个端点不经认证，绝不能确认任何路径是否存在。
+
+### Trace
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/traces` | 列出当前 Session 的 Trace 文件 |
+| GET | `/traces/:index` | 读取 Trace 事件（分页） |
+| GET | `/traces/:index/analysis` | Trace 性能分析 |
+
+## 消息渠道绑定（飞书、Telegram、QQ、微信）
+
+Session 可以连接消息机器人。目前支持的渠道是飞书、Telegram、QQ 和微信，路由都在 `/messaging/<channel>` 下。与 Session 级别的表格一样，下面的路径省略了 `/api/sessions/:sessionId` 前缀。
+
+- 每个 Session 对每个渠道最多保存一份配置，多个渠道的配置可以并存。同一时刻最多启用其中一个，启用的那个渠道持有活跃连接。
+- 启用会把机器人账号绑定到 Session，停用则解除绑定。因此，同一个应用或机器人可以保存到任意多个 Session 上；只有启用是独占的。
+- 保存和连接是两回事：PUT 只存储凭据，连接由 `state` 路由负责。新配置默认停用，服务器启动时只连接已启用的配置。
+- 发到机器人的消息会变成普通用户输入，在 Session 上启动 Task，和在 Web App 输入框里打字完全一样：不添加任何标记，Session 忙碌时排入后续消息队列。回复完成后会转发回聊天，按块发送，每块最多 4000 字符，低于 Telegram 4096 字符的硬性上限。
+- 飞书通过 SDK 的 WebSocket 长连接监听消息，Telegram 长轮询 `getUpdates`，QQ 以 `GROUP_AND_C2C_EVENT` intent 持有平台的 WebSocket 网关，微信长轮询 `ilink/bot/getupdates`。这些渠道都不需要公网回调 URL。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/messaging` | Session 已保存的全部渠道配置 |
+| GET | `/messaging/feishu` | 飞书配置，格式为 `{binding, status}`（未保存时为 `null`） |
+| PUT | `/messaging/feishu` | 保存飞书凭据：`{appId, appSecret?, baseDomain?, clearAppSecret?, linePerMessage?, finalReplyOnly?, renderMarkdown?}` |
+| POST | `/messaging/feishu/state` | 打开或关闭连接：`{enabled}` |
+| DELETE | `/messaging/feishu` | 完全删除飞书配置，包括 App Secret |
+| POST | `/messaging/feishu/test` | 测试凭据：→ `{ok, latencyMs?, error?}` |
+| POST | `/messaging/feishu/test-message` | 向最近已知的聊天发送一段简短的固定文本 |
+| GET | `/messaging/telegram` | Telegram 配置，格式同上（`botId`、`botTokenMasked`） |
+| PUT | `/messaging/telegram` | 保存 Telegram 凭据：`{botToken?, clearBotToken?, linePerMessage?, finalReplyOnly?, renderMarkdown?}` |
+| POST | `/messaging/telegram/state` | 打开或关闭连接：`{enabled}` |
+| DELETE | `/messaging/telegram` | 完全删除 Telegram 配置，包括 Bot Token |
+| POST | `/messaging/telegram/test` | 用 `getMe` 测试 Token：→ `{ok, latencyMs?, botUsername?, groupPrivacy?, error?}` |
+| POST | `/messaging/telegram/test-message` | 向最近已知的聊天发送一段简短的固定文本 |
+| GET | `/messaging/qq` | QQ 配置，格式同上（`appId`、`appSecretMasked`） |
+| PUT | `/messaging/qq` | 保存 QQ 凭据对：`{appId, appSecret?, clearAppSecret?, linePerMessage?, finalReplyOnly?, renderMarkdown?}` |
+| POST | `/messaging/qq/state` | 打开或关闭连接：`{enabled}` |
+| DELETE | `/messaging/qq` | 完全删除 QQ 配置，包括 App Secret |
+| POST | `/messaging/qq/test` | 通过换取 app-access-token 测试凭据：→ `{ok, latencyMs?, error?}` |
+| POST | `/messaging/qq/scan` | 发起扫码绑定：→ `{taskId, qrUrl, pollMs}` |
+| POST | `/messaging/qq/scan/poll` | 轮询扫码任务：`{taskId}` → `{status, appId?, binding?}` |
+| POST | `/messaging/qq/scan/cancel` | 丢弃扫码任务：`{taskId}` |
+| POST | `/messaging/qq/test-message` | 向最近已知的聊天发送一段简短的固定文本 |
+| GET | `/messaging/wechat` | 微信配置，格式同上（`botId`、`botTokenMasked`） |
+| PUT | `/messaging/wechat` | 只保存投递偏好：`{clearBotToken?, linePerMessage?, finalReplyOnly?, renderMarkdown?}` |
+| POST | `/messaging/wechat/state` | 打开或关闭连接：`{enabled}` |
+| DELETE | `/messaging/wechat` | 完全删除微信配置，包括 bot token |
+| POST | `/messaging/wechat/test` | 用 `ilink/bot/getconfig` 测试已存储的绑定：→ `{ok, latencyMs?, error?}` |
+| POST | `/messaging/wechat/scan` | 发起扫码绑定，这是绑定微信的唯一方式：→ `{taskId, qrUrl, pollMs}` |
+| POST | `/messaging/wechat/scan/poll` | 轮询扫码任务：`{taskId}` → `{status, botId?, binding?}` |
+| POST | `/messaging/wechat/scan/verify` | 记录手机上展示的配对码：`{taskId, verifyCode}` → 204 |
+| POST | `/messaging/wechat/scan/cancel` | 丢弃扫码任务：`{taskId}` |
+| POST | `/messaging/wechat/test-message` | 向最近已知的聊天发送一段简短的固定文本 |
+
+### 配置与权限
+
+- `GET /messaging` 是与渠道无关的读取接口，绑定编辑器加载的就是它。每行包含 `channel` 判别字段、掩码后的密钥、`enabled` 的期望值、`linePerMessage`、`finalReplyOnly`、`renderMarkdown`、运行时状态和 `lastChatKnown`。
+- 没有存储密钥时（即已清除的配置），响应里省略掩码密钥；没有密钥的配置无法启用。密钥永远不会回传给客户端。
+- 读取接口和两个测试路由对任何 Project 成员开放。PUT、`state` 开关和 DELETE 仅限所有者，语义与 vault 相同，因为这些写操作携带密钥或作用于密钥。所有扫码路由同样仅限所有者（见[扫码绑定](#扫码绑定)）。
+- DELETE 会完全删除一个渠道的配置，不影响其他渠道。这个路由只是为了 API 完整性而保留；Web App 实际用清除标志来移除密钥。删除 Session 会删除它的全部配置。
+- 跨 Session 只有唯一一条规则，按渠道内的机器人账号计算，而且只约束连接：一个账号只有一条事件流，因此最多只能有一个 Session 启用它。飞书按 `app_id` 识别账号，Telegram 按 Token 冒号前的数字 bot id（换发 Token 后依然不变），QQ 按 App ID，微信按扫码返回的 bot id。
+
+### 保存与连接
+
+- PUT 省略密钥或密钥为空白时，保留已存储的密钥。清除标志（`clearAppSecret` 或 `clearBotToken`）会删除已存储的密钥，但同一请求里输入的新密钥优先。渠道处于启用状态时执行清除，会返回 409 `messaging_disable_before_clear`。清除后的配置仍保留这条记录和非密钥字段，包括 Telegram 或微信机器人的身份标识。
+- PUT 不影响连接，只有一个例外：绑定为启用状态时，连接器会用新凭据重启，因此已存储的配置和活跃连接永远不会出现偏差。也正因为如此，保存操作不会在 Session 之间产生冲突，除非它把一个已启用的绑定指向了另一个 Session 已启用的账号。这种情况返回 409 `account_enabled_elsewhere`——否则重启会让这个账号出现第二条活跃连接，等于绕过了启用检查。
+- `POST …/state` 传入 `{enabled: true}` 时用已存储的凭据建立连接，传入 `{enabled: false}` 时断开。本 Session 的另一个渠道处于启用状态时，返回 409 `another_channel_enabled`；另一个 Session 已启用同一账号时，返回 409 `account_enabled_elsewhere`。两种情况的含义相同：先把那一个停用。第二种错误不会透露占用者是谁，对方可能位于调用者看不到的 Project 里。没有已存储的密钥时，开关操作返回 400 `feishu_secret_required`、`telegram_token_required`、`qq_secret_required` 或 `wechat_token_required`。
+- 飞书、Telegram 和 QQ 的 test 路由用请求中的草稿值探测，缺少的值回退到已存储的配置；微信的 test 不接受请求体（见下文）。凭据未通过验证时返回 `ok: false`，而不是 HTTP 错误。
+- test-message 路由在有人在对应应用里给机器人发过消息之前，返回 409 `feishu_no_chat`、`telegram_no_chat`、`qq_no_chat` 或 `wechat_no_chat`。
+
+### 各渠道细节
+
+- 飞书：`baseDomain` 默认为 `https://open.feishu.cn`。
+- Telegram：凭据就是 @BotFather 签发的那一个 `<bot id>:<secret>` 格式的 Token。解析不出数字 id 的 Token 返回 400 `telegram_token_invalid`。测试成功时会给出 Token 登录的机器人名（`botUsername`），并在 @BotFather 的 Group Privacy 开启时报告 `groupPrivacy: true`，这个选项默认开启。Group Privacy 开启时，机器人收不到自己不担任管理员的群里的普通消息。
+- QQ：凭据是 QQ 开放平台开发设置中的 App ID 和 App Secret。没有域名字段，因为 API v2 只有一个主机。测试不报告账号名，因为平台没有能识别机器人的调用。没有最近的 QQ 消息可回复时，test-message 还会返回 502 `qq_send_failed`；见 [QQ](#qq)。
+- 微信：微信的 PUT 是唯一不含凭据的。微信 bot token 只存在于扫码写入的地方，也没有控制台可供复制，因此 PUT 要求已存在绑定，绑定存在之前返回 400 `wechat_token_required`。清除后的微信配置只有重新扫码才能再次连接。test 路由是唯一不接受请求体的：这个渠道没有任何手动输入的内容，已存储的绑定就是全部可探测的对象（没有绑定时返回 400 `wechat_token_required`）。测试既不给出机器人名，也不给出扫码者信息。
+
+### QQ
+
+QQ 是只能回复的渠道，这一点改变了投递的含义。平台没有本产品可用的推送：每条出站消息都是被动回复，必须携带一条入站消息的 `msg_id`，有效期只有几分钟，而且每条消息在单聊中最多回复 4 条（群聊 5 条）。这个 API 上能看到三个后果：
+
+- 一次运行完成的助手消息超过回复额度时，消息会合并：前 `budget - 1` 条一完成就发出，其余的一起并入最后一条消息，不会丢掉任何一条。
+- `linePerMessage` 受这个额度而不是通常每条回复 20 条上限的约束；平台拒绝 `renderMarkdown` 发送时，纯文本重试会占用第二条回复。`finalReplyOnly` 在这里有利有弊。它让一次运行只消耗最少的额度——一条回复；但被动回复的窗口只有几分钟。把回复留到运行结束才发，窗口就消耗在运行上：运行时间一旦超过窗口，什么都发不出去，而逐条转发至少能把窗口内完成的消息发出去。
+- 没有可回复对象的发送不会推送出去，而是直接拒绝——比如在 Web App 里发起的一轮对话，或窗口关闭后的任何回复。这种情况在 test 端点上表现为 502 `qq_send_failed`，在转发的回复上表现为一条 `messaging_send_failed` 错误记录。
+
+在 QQ 上，出站文件一律拒收，因为平台的富媒体路径要求文件有一个公网可达的 URL。
+
+### 微信
+
+微信只承载单聊，但它是四个渠道中媒体支持最多的一种。这个 bot 渠道完全没有群聊入站：群里发给机器人的消息永远到不了这个 API，所以在单聊中正常的绑定在群里保持沉默，这是设计使然，不是配置错误。
+
+换来的是，它是这里唯一支持文本、图片、文件双向传输的渠道。回复中的图片和附件会上传到平台 CDN（AES-128-ECB 加密，每个文件一把密钥），以真正的图片和文件送达，而非遭到拒收。两类入站消息会经过转换：语音消息到达时是微信自己的转写文本，视频到达时是一个文件。平台无法转写的录音会在聊天中收到统一的「不支持」提示。
+
+### 扫码绑定
+
+扫码绑定从不把密钥暴露给浏览器。保证流程安全的一切都留在服务器上：解密 QQ App Secret 的 AES 密钥，以及收集微信 bot token 的平台轮询句柄。生成、保管、使用和销毁这些内容都是服务器的事，客户端只会拿到任务句柄、一个待渲染的 URL 和一个状态。
+
+- `POST …/scan` 返回 `{taskId, qrUrl, pollMs}`。把 `qrUrl` 渲染成二维码：由 QQ 或微信 App 打开它，任何一方都不需要去请求这个 URL。对微信来说，`taskId` 是本服务器自己生成的一个句柄，代替平台的轮询句柄。渠道的连接处于启用状态时，scan 返回 409 `messaging_disable_before_scan`，因为扫码会整体替换活跃连接器使用的全部凭据。平台拒绝时，scan 返回 502 `qq_scan_failed` 或 `wechat_scan_failed`。
+- QQ 的 `scan/poll` 状态为 `completed` 表示服务器已解密 App Secret 并保存了绑定；`expired` 表示重新发起一个任务。
+- 微信的 `scan/poll` 状态是 `pending`、`scanned`、`need_verify_code`、`blocked`、`expired`、`already_bound`、`completed` 之一。`completed` 表示服务器已保存绑定。`already_bound` 不算失败：机器人已经绑定过，没有签发任何新东西。它不会说明绑定在哪里——扫码不会给出 Token 列表，因此无法区分绑定是在本服务器上还是在别处。
+- 两个渠道都一样：保存绑定并不会启用它；启用仍是单独的一步。
+- `scan/verify` 记录微信在手机上展示的配对码。平台把配对码当作状态调用的参数，因此配对码随下一次轮询捎带发送，而不是单独发一次请求。配对码错误时，下一次轮询会再次报告 `need_verify_code`。
+- `scan/cancel` 丢弃用户中途放弃的扫码任务，对应的密钥或句柄立即从内存中丢弃，而不是等到下次清理。
+- 扫码任务保存在内存中，属于发起它们的 Session。每个 Session 有自己的数量上限，一个调用者的扫码任务不会把另一个调用者的挤出去。拿到最终结果的那个轮询会认领任务，因此重放这个轮询会返回 404（`qq_scan_task_unknown` 或 `wechat_scan_task_unknown`；未知任务或其他 Session 的任务也返回同样的错误），而不是重复绑定。同一任务的第二个并发轮询在 QQ 上同样返回 404，在微信上则返回 `pending`，因为微信一侧的上游调用是长轮询，会跨越多个客户端轮询间隔。
+
+所有扫码路由仅限所有者调用，因为无论调用者实际输入多少，整个流程最终都会落成一条存储的凭据。
+
+### 投递设置
+
+`linePerMessage`、`finalReplyOnly` 和 `renderMarkdown` 是三个与凭据无关的保存字段。PUT 时省略的字段保留已存储的值。这三个字段对通知和测试消息都不生效；特别是审批提醒，它不是回复，无论 `finalReplyOnly` 取什么值都会立即送达。
+
+- `linePerMessage`（默认 false）把转发的助手回复里每个非空行单独发成一条消息。空行直接丢弃，每行超出大小上限时仍会拆分，超过每条回复 20 条消息的上限后，剩余的行合并成最后一条消息。消息之间间隔 1 秒发出。
+- `finalReplyOnly`（默认 false）只在运行结束时转发这次运行最后一条完成的助手消息，而不是每完成一条就转发一条。运行在工具调用之间写下的工作笔记只保留在 Web App 中。此后跟随回复的文件也只从这条最终消息里读取，因为聊天收到的文本只有这一条。两个设置同时开启时，按行拆分的是最终回复。
+- `renderMarkdown`（默认 true）用渠道自己的标记格式渲染转发回复中的 Markdown，而不是原样发送字符。分块遵循这个设置：在块边界切分，跨消息的代码块会重新打开，因此任何一条消息都不会开启自己不闭合的结构。渠道拒绝带格式的发送时，同一条消息会以纯文本再次发送，所以这个设置最多损失格式，绝不会损失回复。
+
+每个渠道渲染自己支持的部分，其余刻意降级，而不是显示 Markdown 源码：
+
+| 渠道 | 回复的渲染方式 |
+| --- | --- |
+| Telegram | `parse_mode: "HTML"`。没有标题、列表和表格：标题变成一行加粗文本，列表符号保留为字面文本，表格变成 `<pre>` 块 |
+| 飞书 | 交互卡片，承载 JSON 2.0 富文本组件，能渲染全部内容。过长的表格转成代码块，不会悄悄丢掉任何一行 |
+| QQ | `msg_type: 2` markdown。没有代码格式，也没有表格：围栏代码块变成逐行转义的普通文本，表格变成逐行文本 |
+| 微信 | 微信自己解析 Markdown，所以渲染是做减法而不是转换：客户端不会显示的内容保留文字、去掉标记（层级深于四级的标题、CJK 文本两侧的强调标记，以及内联图片，后者变成链接） |
+
+### 入站消息
+
+入站消息可以携带文本、图片和文件。
+
+- 图片会变成普通的 `image_url` 输入部分。每张图片受服务器内联图片上限的约束，每个绑定还有一个滚动的图片字节预算：每 10 分钟 40MB，即内联图片上限的两倍。设这个预算是因为内联图片会原样写入 Trace，而这条路径与输入框不同，前面没有身份验证把关。
+- 文件采用输入框的另一种附件形态：先写入 Session scratchpad，再以 `[attached file: <path>]` 一行的形式交给模型，因此文件字节不会进入对话。它与经过身份验证的上传一样，受管理员可配置的单文件、单消息上限约束；渠道自身若有更严格的限制，则以更严者为准：Telegram 不向机器人提供超过 20MB 的文件。
+- 飞书投递以 `file` 消息类型发送的文件；Telegram 投递 `document` 字段里的文件，也就是发送者选择以文件形式发送的内容——这也是唯一携带发送者原始文件名的 Telegram 媒体字段。
+- 在飞书和 Telegram 上，视频、音频和语音刻意不投递：下游没有任何环节会解码或转写它们；发送者想让 Agent 拿到的内容，附成文件即可送达。微信是例外，只是因为平台自己做了这些处理（见[微信](#微信)）。
+- 附件会投递的消息（照片或文档），说明文字就是这条消息的文本。其他类型媒体上的说明文字则不然：媒体根本不会到达，只凭说明文字运行模型，会让它谈论一个从未收到过的文件。
+- 超过单图上限的图片、超出预算的图片和渠道拒收的图片，各有一条不同的双语提示；超过上限的文件、超过单消息总量的批次和渠道拒收的文件也是如此。任何一种情况都不会发出半条消息。如果拒绝是机器人自身权限导致的，提示会写明需要授予的权限范围，并附上渠道控制台的链接。在飞书上这是常见情况，因为接收消息和下载附件是两个不同的权限范围。
+- 其余所有消息类型都会收到双语「不支持」回复。
+
+### 出站文件
+
+运行结束后，回复后面会跟着回复提到、且由运行产出的文件：回复中任意位置出现、形如路径的片段，只要解析后落在 Workspace 内、文件确实存在、且写入时间不早于运行开始，就会随回复发出。「提及」挑出哪个产物才是重点。写入时间条件防止回复变成读取文件的手段——聊天里的任何人都能引导回复，而一条拒绝粘贴文件的回复照样会提到文件名。
+
+- 图片以图片形式发送，其余以附件形式发送；分类依据是实际读取的文件，而不是回复里写的名字。
+- 一次运行最多发送 5 个文件：每张图片最多 10MB，每个文件最多 30MB（取各渠道自身限制中更严的一个）。
+- 提及的文件未能送达时一律不在聊天中报告，而是作为异常记录挂在这个 Project 下，由成本中心的异常表展示：同一次回复里每个原因一条记录，写明它覆盖的每个文件、渠道和原因。
+  - `messaging_file_too_large` 覆盖超过大小上限的文件，`messaging_files_skipped` 覆盖超过数量上限的那些。两者都属于 `expected`。
+  - `messaging_file_send_failed` 覆盖渠道拒绝的上传，按原因分组：渠道根本承载不了的上传（QQ 上的任何文件）、缺少权限，以及其他任何拒绝。缺少权限的那条只列一次要授予的权限范围和控制台链接，取代每个文件各自的原因。渠道根本承载不了的上传属于 `expected`；缺少权限和其他任何拒绝属于 `unexpected`。
+  - Workspace 中对不上文件的名字，以及运行没有写过的文件，静默跳过、只写服务端日志，因为回复提到自己读过或只是描述过的文件是常态。
+
+### 连接状态
+
+Telegram 连接时会先清空积压，跳过无连接期间发送的消息。这一点与飞书一致：飞书错过的事件就彻底丢失了。
+
+除了状态本身，绑定的运行时状态还会报告活跃连接实际看到的情况：
+
+- `lastInboundAt`：最后一条消息到达的时间；本次连接建立后还没有消息到达时，这个字段不存在。
+- `lastDeliveryError`：`{at, stage, detail}`。`stage` 为 `inbound` 表示消息到达了但对应的 Task 从未启动，为 `send` 表示回复从未到达聊天。之后的成功不会清除这个字段。
+- `lastConnectionError`：`{at, detail}`，记录最近一次连接失败，连接恢复后仍保留。相比之下，`lastError` 属于 `error` 状态，状态一离开它就消失。
+
+这三个字段都保存在服务器进程中，每次连接或重连都会重置；重新启用渠道或保存凭据都会开启新连接。因此 `lastInboundAt` 缺失意味着「本次连接建立以来没有消息」，绝不是「从来没有过消息」。提供这些字段，是因为一个扣着消息不投递的渠道，照样显示 `connected`，而且没有任何报错。
+
+## 终端
+
+服务器主机上的交互式 shell。Web App 的终端使用这些路由，任何需要运行命令并读取屏幕的客户端也可以使用。每个终端属于打开它的用户，其余路由只能找到调用者自己的终端。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/terminals` | 列出调用者的终端：`{terminals}` |
+| POST | `/api/terminals` | 打开一个终端：`{cwd?, name?, shell?, cols?, rows?}` → 201，返回终端信息 |
+| GET | `/api/terminals/:id` | 单个终端的信息 |
+| DELETE | `/api/terminals/:id` | 终止终端；204 |
+| GET | `/api/terminals/:id/capture?start=&end=` | 以纯文本返回屏幕内容 |
+| POST | `/api/terminals/:id/keys` | 发送输入：`{keys, literal?}` → `{ok: true}` |
+
+- `cwd` 默认为用户主目录，`shell` 默认为用户的登录 shell。
+- `keys` 是字面文本或按键名：`Enter`、`Tab`、`Escape`、`Backspace`、`Space`、`Up`、`Down`、`Left`、`Right`、`Home`、`End`、`PageUp`、`PageDown`、`Delete`，或 `C-c` 这样的组合键。设置 `literal: true` 时，文本按原样发送。shell 已退出的终端返回 `409` `terminal_exited`。
+- 字节流不走这些路由：它是一个 WebSocket，地址为 `GET /api/terminals/:id/stream`（一个 Upgrade 请求）。
+- 缺少有效会话或 token 的请求返回 `401` `unauthorized`。
+
+## 桌面 shell、热更新与 Web 贡献
+
+这组路由服务于桌面 shell、热更新和 Web App 自己的模块系统，而不是一般客户端。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/desktop/shutdown` | 应桌面 shell 的请求优雅关闭服务器；202 |
+| GET | `/api/desktop/update` | 桌面应用更新器的状态：`{status}` |
+| POST | `/api/desktop/update/check`、`/api/desktop/update/download`、`/api/desktop/update/install` | 把命令转发给桌面 shell；202 |
+| GET / PUT | `/api/desktop/tray` | 读取系统托盘图标偏好：`{status}` / 转发更改：`{showTrayIcon?, locale?}` → 202 |
+| POST | `/api/hmr/assets/probe` | 热更新：报告存储缺少哪些 blob |
+| PUT | `/api/hmr/blobs/:sha` | 热更新：按 sha256 上传一个 blob |
+| POST | `/api/hmr/upgrade` | 热更新：把 platform、CLI 和 web bundle 一并升到新版本 |
+| GET | `/api/contributions` | 以数据形式返回服务器模块和插件贡献给 Web App 的页面和标签页 |
+
+- 非桌面模式下，桌面路由返回 `404` `not_found`。
+- `POST /api/desktop/shutdown` 不使用 cookie 会话。它用桌面 shell 专有的 Bearer token 认证（否则返回 `401` `unauthorized`），先应答，再立即开始优雅关闭。
+- update 和 tray 路由只响应桌面 shell 自己的窗口：其他任何会话都会得到 `403` `desktop_shell_only`。shell 未监听时，返回 `503` `shell_unreachable`。`showTrayIcon` 不是布尔值时，`PUT /api/desktop/tray` 返回 `400` `invalid_show_tray_icon`；`locale` 不是 `zh` 或 `en` 时返回 `400` `invalid_locale`；两个字段都未提供时返回 `400` `empty_tray_patch`。PUT 只确认收到更改；请用 GET 读回实际结果。
+- `/api/hmr` 路由仅限管理员（`403` `forbidden`）。绑定在非环回地址上时还要求 HTTPS，否则返回 `403` `hmr_disabled`。只有 `PENGUIN_TRUST_PROXY=1` 时 `X-Forwarded-Proto` 才生效。升级完成后，每个已连接的客户端都会收到 `web_updated` 并重新加载。
+
+## 流式传输（SSE）
+
+实时投递使用 Server-Sent Events 而不是 WebSocket，分为两类通道。通道所载内容的顺序语义见[消息流与顺序](/message-flow)。
 
 | 通道 | 路径 | 内容 |
 | --- | --- | --- |
-| Session 级 | GET /api/sessions/:sessionId/stream | 该 Session 的消息流与运行事件 |
-| 用户级 | GET /api/events | `hello` 握手与跨 Session 通知（session_state / session_background / schedule_fired / schedule_queued / session_created） |
+| 每个 Session | `GET /api/sessions/:sessionId/stream` | Session 的消息流和运行事件，包括子 Agent Session 的 `session_created` 以及目标模式事件 |
+| 每个用户 | `GET /api/events` | `hello` 握手和跨 Session 的通知：`session_state`、`session_background`、`session_title`、`schedule_fired`、`schedule_queued`、`web_updated` 以及公司模式的 `org_*` 事件 |
 
 ### 传输格式
 
-默认（未命名）SSE 事件承载原始 OmniMessage 信封（单行 JSON）——与 SDK 产出、Trace 落盘是同一套协议，见 [OmniMessage 协议](/omni-message)；命名为 `server_event` 的事件承载 ServerEvent 联合类型：
+默认（未命名）的 SSE 事件以单行 JSON 携带原始 OmniMessage 信封：SDK 产出、Trace 存储的就是这个协议（见 [OmniMessage 协议](/omni-message)）。名为 `server_event` 的事件携带 `ServerEvent` 联合类型：
 
 ```ts
 export type ServerEvent =
   | { type: "approval_request"; toolCall: OmniMessage<ToolCallPayload>; origin?: string[] }
-  | { type: "task_state"; state: "idle" | "running" | "compacting" }
+  | {
+      type: "task_state";
+      state: "idle" | "running" | "compacting";
+      queued?: number;
+      pendingSteering?: PendingSteeringInfo[];
+      returnedSteering?: PendingSteeringInfo[];
+      pendingFollowUps?: PendingFollowUpInfo[];
+      subagents?: SubagentRuntimeInfo[];
+    }
   | { type: "session_title"; sessionId: string; title: string }
   | { type: "session_state"; sessionId: string; state: "idle" | "running" | "compacting"; lastActiveAt: string; hasTrace: boolean }
   | { type: "session_background"; sessionId: string; processes: number; subagents: number }
   | { type: "resync_required" }
   | { type: "credentials_updated" }
   | { type: "hello" }
+  | { type: "web_updated"; rev: string }
   | { type: "session_created"; projectId: string; agentId: string; sessionId: string; source: SessionSource }
   | { type: "schedule_fired"; projectId: string; agentId: string; name: string; sessionId: string }
-  | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string };
+  | { type: "schedule_queued"; projectId: string; agentId: string; name: string; sessionId: string }
+  | { type: "goal_started"; sessionId: string; objective: string; budget: number }
+  | { type: "goal_round"; sessionId: string; round: number; used: number; budget: number }
+  | { type: "goal_finished"; sessionId: string; outcome: "complete" | "blocked" | "budget_limited" | "aborted"; rounds: number; used: number }
+  | { type: "org_run"; projectId: string; orgId: string; agentId: string; sessionId: string; kind: OrgTriggerKind }
+  | { type: "org_channel"; projectId: string; orgId: string; channelId: string; message: OrgChannelMessage }
+  | { type: "org_ticket"; projectId: string; orgId: string; ticketId: string; change: string }
+  | { type: "org_budget"; projectId: string; orgId: string; agentId: string; state: "warned" | "paused" | "resumed"; ratio: number };
 ```
 
 | 事件 | 触发时机 |
 | --- | --- |
-| approval_request | 工具调用升级为人工审批时发出：always-ask 下的所有调用，以及 read-only 下 rw / 未知权限的调用；重连时未决审批会重发 |
-| task_state | Session 运行状态翻转（idle / running / compacting） |
-| session_title | 首轮后模型生成的标题已持久化 |
-| session_state | `task_state` 在用户通道上的对应事件：同一次运行状态翻转，带上 `sessionId`，因此会话列表的每一行都能保持实时，而不只是客户端当前打开的那个会话。事件还携带重绘该行所需的行字段，无需重新拉取列表 —— 刚刚写入的 `lastActiveAt`，以及 `hasTrace`（状态为 running 或 compacting 时必为 true，因为正在运行的会话必然已经启动过 Task）。仅发往该 Project 拥有者与成员的用户通道 |
-| session_background | 某个 Session 的后台任务计数发生变化——命令超过 yield 窗口转入后台或以 `run_in_background` 启动、进程退出或被停止、后台子智能体开始一轮、结束一轮或被释放。携带此刻的 `SessionInfo.backgroundTasks`（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转后台、正在跑一轮的子会话数），归零时同样推送，列表据此即可撤下标记而无需重新拉取；列表行与单条查询在计数为零时省略该字段。受众与 `session_state` 相同 |
-| resync_required | Last-Event-ID 已被缓冲区淘汰，客户端须重新拉取历史 |
-| credentials_updated | Project 模型凭据已变更（`PUT /models`，或一次完成的授权新建 key 流程）：缓存运行时已失效，客户端应清除鉴权失败的输入框禁用态 |
-| hello | 用户通道连接握手 |
-| session_created | 新 Session 注册（如子 Agent 会话） |
-| schedule_fired | 定时任务已触发并发送 |
-| schedule_queued | 目标 Session 正在运行，本次触发已排队 |
+| `approval_request` | 工具调用需要人工审批 |
+| `task_state` | Session 的运行状态变化（`idle` / `running` / `compacting`） |
+| `session_title` | 第一轮对话后，模型生成的标题已保存 |
+| `session_state` | Session 的运行状态变化；`task_state` 在用户通道上的对应事件 |
+| `session_background` | Session 的后台任务计数变化 |
+| `resync_required` | `Last-Event-ID` 已被挤出缓冲区；客户端必须重新拉取历史 |
+| `credentials_updated` | Project 的模型凭据发生变化 |
+| `hello` | 用户通道上的握手 |
+| `web_updated` | 热更新替换了对外提供的 web 资源；客户端需重新加载 |
+| `session_created` | 注册了一个新 Session，例如子 Agent Session |
+| `schedule_fired` | 定时任务已触发，Prompt 已投递 |
+| `schedule_queued` | 目标 Session 正在运行，这次触发已排队 |
+| `goal_started` | 目标运行开始，在第一轮之前 |
+| `goal_round` | 一轮目标运行即将开始 |
+| `goal_finished` | 目标达到终止状态 |
+| `org_run` | 组织的工作运行（工位会话）或工单会话已启动 |
+| `org_channel` | 频道里有新消息 |
+| `org_ticket` | 工单的状态、负责人、阻塞状态或贡献会话发生变化 |
+| `org_budget` | 员工的预算进入警告、暂停或恢复状态 |
+
+- `approval_request` 覆盖 `always-ask` 模式下的每个调用，以及 `read-only` 模式下带 `rw` 或未知权限的调用。待处理的审批会在重连时重新发送。
+- `task_state` 还携带排队的后续消息数量（`queued`）、仍在等待投递的插话消息（`pendingSteering`）、运行结束时没能投递的插话消息（`returnedSteering`）、排队的后续消息本身（`pendingFollowUps`）以及活跃的子 Agent（`subagents`）。字段缺失表示没有。
+- `session_title` 发送到 Session 的通道，以及 Project 所有者和成员的用户通道。
+- `session_state` 用 `sessionId` 指明是哪个 Session，因此 Session 列表的每一行都能保持实时，而不只是客户端当前打开的那个会话。事件携带重绘这一行所需的字段，无需重新拉取：刚写入的 `lastActiveAt`，以及 `hasTrace`。状态为 `running` 或 `compacting` 时 `hasTrace` 必为 true，因为正在运行的 Session 必然已经启动过 Task。它发送到 Project 所有者和成员的用户通道。
+- 以下情况会触发 `session_background`：命令超过让出窗口转入后台，或以 `run_in_background` 启动；进程退出或停止；后台子 Agent 开始一轮、结束一轮或释放。事件携带 `SessionInfo.backgroundTasks` 的当前值（`processes` = 仍在运行的后台命令会话数，`subagents` = 已转入后台、正处于一轮中的子 Agent Session 数），归零时同样发送，列表无需重新拉取就能撤下标记。两个计数都为零时，列表行和单个 Session 的 GET 会省略这个字段。受众与 `session_state` 相同。
+- `credentials_updated` 在 `PUT /models` 或签发 API key 的流程完成之后发送。缓存的运行时已失效，客户端应清除因认证失败而禁用的输入框状态。
+- `web_updated` 以 `rev` 携带新的 web 修订号，发送到每个用户通道。
+- `session_created` 发送到父 Session 的通道。
+- `schedule_fired` 的 `sessionId` 是接收 Prompt 的 Session，在新建 Session 模式下是一个新 Session。排队的触发会在 Session 空闲后发送。
+- `goal_round` 携带 `used`，即目前累计的 Token 数。
+- `org_*` 事件发送到 Project 成员的用户通道。`org_channel` 包含消息里的提及信息，客户端可据此判断消息是否指向自己。这些事件是尽力而为的；持久状态以组织路由为准。
 
 ### 投递保证
 
-- 事件 id 按通道单调递增，形如 `<epoch>-<seq>`；
-- 每通道维护有界重放缓冲（最近 10,000 条事件或 8MB）；
-- 携带 `Last-Event-ID` 重连时，命中缓冲则补发缺口；未命中则先发 `resync_required`，客户端重新拉取 `/messages` 后继续消费；
-- 每 20 秒写一条心跳注释行；
-- 事件次序：带 `Last-Event-ID` 重连时，**补发的缺口(或 `resync_required`)最先送达**，随后才是初始事件——权威的 `task_state` 快照与未决的 approval_request，再进入实时流；全新连接(无 `Last-Event-ID`)不重放缓冲，首个事件即为 `task_state` 快照。
+- 事件 id 在每个通道内单调递增，格式为 `<epoch>-<seq>`。
+- 每个通道保留一个有界的重放缓冲区：最近 10,000 个事件或 8MB。
+- 携带 `Last-Event-ID` 重连时，如果 id 仍在缓冲区内，服务器会重放缺失的事件；否则先发送 `resync_required`，客户端重新拉取 `/messages` 后再继续。
+- 每 20 秒写入一行心跳注释。
+- 事件顺序：携带 `Last-Event-ID` 重连时，先到达重放的缺失部分（或 `resync_required`），然后是初始事件（权威的 `task_state` 快照和所有仍待处理的 `approval_request`），最后是实时流。不带 `Last-Event-ID` 的新连接跳过重放，第一个事件就是 `task_state` 快照。
 
-### 推荐客户端模式
+### 推荐的客户端模式
 
-自带 Web App 的接入顺序：
+内置的 Web App 按以下顺序连接：
 
-1. 先连接 `/stream` 并缓冲收到的事件；
-2. 再 GET `/messages` 拉取完整历史；
-3. 若响应携带 `live`（有 Task 在运行），丢弃 cursor 已覆盖的缓冲 partial 事件，并把 `live.fragments` 播种到历史之上 —— 进行中的消息连同已流式输出的前缀一起回到画面；
-4. 回放缓冲区并对重叠消息去重；
-5. 转入实时消费。
+1. 先连接 `/stream`，把收到的事件缓存起来。
+2. 用 GET 请求 `/messages` 获取历史。
+3. 如果响应带有 `live`（有 Task 正在运行），丢弃缓存中游标已覆盖的 partial 事件，把 `live.fragments` 应用在历史之上。进行中的消息会重新出现，已流式输出的前缀原样保留。
+4. 重放缓存的事件，去掉重叠部分。
+5. 之后继续处理实时流。
 
 ## 类型导入
 
-全部 DTO 类型可从服务端包的子路径 `@prismshadow/penguin-server/api` 以 type-only 方式导入：
+所有 DTO 类型都能以仅类型导入的方式，从服务器包的 `@prismshadow/penguin-server/api` 子路径引入：
 
 ```ts
 import type { ServerEvent, SessionInfo } from "@prismshadow/penguin-server/api";

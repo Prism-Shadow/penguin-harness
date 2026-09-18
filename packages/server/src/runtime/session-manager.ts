@@ -22,7 +22,9 @@
  *     event;
  *   - Approval registration and interrupt convergence: each approval decision re-reads
  *     approval_mode from the DB (takes effect immediately); an interrupt first
- *     converges pending approvals to deny, then aborts.
+ *     converges pending approvals to deny, then aborts. An organization's sessions have
+ *     nobody to ask, so a call their mode would hand to a person is denied at once
+ *     (see entryApprove).
  *
  * The underlying implementation of get-or-resume-or-heal is injected via
  * `SessionLoader`: production uses the core SDK (createCoreSessionLoader), tests inject
@@ -96,6 +98,7 @@ import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { Settings } from "../mechanisms/settings.js";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
+import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -862,6 +865,14 @@ export class SessionManager {
    * The entry-lifetime approval callback: the registry, the per-decision approval-mode
    * re-read, and the SSE escalation are all entry-scoped, so one instance serves every run
    * of the entry and the children's session-lifetime fallback sink alike.
+   *
+   * This is also where the one cross-cutting approval override lives — wrapping the callback
+   * handed to `Session.run` rather than teaching the engine anything: an organization's
+   * sessions run with nobody watching, so a call their approval mode would hand to a person
+   * is denied here instead of waiting for an answer that is never coming (see `unattended`
+   * in approvals.ts). The marker is the row's durable `client = "org"` stamp — desk, ticket
+   * and the sub-sessions that inherit it — read per decision, so a row the reconcile pass
+   * stamps later is covered from its next decision on.
    */
   private entryApprove(entry: RuntimeEntry): ApproveFn {
     return makeApprove({
@@ -869,6 +880,7 @@ export class SessionManager {
       getMode: () => this.deps.sessions.findById(entry.sessionId)?.approvalMode ?? "always-ask",
       toolPermission: (name) => entry.session.toolPermission(name),
       registry: entry.approvals,
+      unattended: () => this.deps.sessions.findById(entry.sessionId)?.client === "org",
       publishRequest: (pending) =>
         this.publishEvent(entry, {
           type: "approval_request",
@@ -2045,6 +2057,13 @@ export class SessionManager {
     const source = asSessionSource(p.source) ?? "subagent";
     this.deps.sources.set(childSid, source);
     const createdAt = this.now().toISOString();
+    // A sub-session of an organization's Session is company mode's own as much as the desk
+    // or ticket session that spawned it: it inherits the durable "org" stamp, which is the
+    // only mark it can carry — the organization caches name desks and ticket sessions, never
+    // what those spawn — and the one development mode's list leaves out. Every other parent
+    // leaves the marker blank (read as web): the child was spawned by this server's run, not
+    // opened through the CLI, whatever opened its parent.
+    const parentClient = this.deps.sessions.findById(entry.sessionId)?.client;
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
       projectId: entry.projectId,
@@ -2056,7 +2075,8 @@ export class SessionManager {
       // inserted with defaults (matches the convention for Sessions discovered by the CLI).
       approvalMode: "allow-all",
       title: null,
-      // Spawned by this server's run (client NULL = web); its Trace exists by construction.
+      ...(parentClient === "org" ? { client: "org" as const } : {}),
+      // Its Trace exists by construction.
       hasTrace: true,
       // A subagent's own runs are driven through the PARENT entry's drive, so nothing ever
       // stamps this row: it stays at its registration time (see SessionRow.lastActiveAt).
@@ -2397,19 +2417,7 @@ export class SessionsModule {
       traceStore: this.traceStore,
       proxyEnv: env.proxyEnv,
       controlEnv: env.controlEnv,
-      // List rows carry the ENABLED channel's indicator (saved-but-dark configs stay off
-      // the row); a point query per row keeps the repo out of the service. An unknown
-      // stored channel reads as none (same defensive skip as the bridge and the routes).
-      messagingChannel: (sessionId) => {
-        const enabled = this.messagingRepo.findEnabled(sessionId);
-        return enabled !== null &&
-          (enabled.channel === "feishu" ||
-            enabled.channel === "telegram" ||
-            enabled.channel === "qq" ||
-            enabled.channel === "wechat")
-          ? enabled.channel
-          : null;
-      },
+      messagingChannel: (sessionId) => enabledMessagingChannel(this.messagingRepo, sessionId),
       // Company mode: which organization owns a Session, so development mode's list can hide
       // organization sessions and the company sidebar can group its own. The caches are a
       // projection of the organization's files, rebuilt every reconcile pass, so a row that

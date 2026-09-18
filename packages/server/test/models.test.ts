@@ -34,8 +34,10 @@ import { apiClient, createTestApp, loginAdmin, provisionUser, waitFor } from "./
 import type { TestApp } from "./helpers.js";
 import { wire } from "@prismshadow/penguin-core/kernel";
 
-/** Catalog paired refs (config primary key = (provider, model_id)). */
-const catalogPairs = MODEL_CATALOG.map((m) => `${m.provider}\0${m.modelId}`);
+/** Preset paired refs (config primary key = (provider, model_id)): retired catalog rows are not presets. */
+const catalogPairs = MODEL_CATALOG.filter((m) => m.retired !== true).map(
+  (m) => `${m.provider}\0${m.modelId}`,
+);
 /** Response row → comparable paired key (test-only comparison, not the storage format). */
 const pairKey = (m: { provider: string; modelId: string }): string => `${m.provider}\0${m.modelId}`;
 /** Fetch a row by its paired ref. */
@@ -110,6 +112,11 @@ describe("models preset & catalog enrichment", () => {
       modelId: "deepseek-flash",
     });
     expect(body.models.map(pairKey)).toEqual(catalogPairs);
+    // A retired catalog row is kept only for the Projects that already carry it, so a new
+    // Project gets none of them.
+    const retired = MODEL_CATALOG.filter((m) => m.retired === true).map(pairKey);
+    expect(retired.length).toBeGreaterThan(0);
+    expect(body.models.map(pairKey).filter((key) => retired.includes(key))).toEqual([]);
 
     const sonnet = pick(body, "anthropic", "claude-sonnet-4-6");
     expect(sonnet.isDefault).toBe(false);
@@ -637,8 +644,8 @@ describe("model-reference rekeying and the connectivity test", () => {
     // that record's own timestamp when the usage is aggregated, so the price lookup's whole job
     // is to say what the two tiers are. The number on disk is the peak one either way.
     const svc = wire(ProjectConfigService, { paths: { root: t.root } });
-    const rates = await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash");
-    const catalogPeak = catalogEntryFor("deepseek", "deepseek-v4-flash")!.pricing!;
+    const rates = await svc.getPricing(projectId, "deepseek", "deepseek-flash");
+    const catalogPeak = catalogEntryFor("deepseek", "deepseek-flash")!.pricing!;
     expect(rates!.peak.output).toBe(catalogPeak.output);
     expect(rates!.offPeak.output).toBeCloseTo(catalogPeak.output / 2, 5);
     expect(rates!.peak.cacheRead).toBe(catalogPeak.cache_read);
@@ -653,7 +660,7 @@ describe("model-reference rekeying and the connectivity test", () => {
       ...(m.pricing
         ? {
             pricing:
-              m.provider === "deepseek" && m.modelId === "deepseek-v4-flash"
+              m.provider === "deepseek" && m.modelId === "deepseek-flash"
                 ? { cacheRead: 1, cacheWrite: 2, output: 3 }
                 : {
                     cacheRead: m.pricing.cacheRead,
@@ -668,7 +675,7 @@ describe("model-reference rekeying and the connectivity test", () => {
     // Nothing here knows whether 3 is a peak rate, so halving it would invent a discount: the
     // two tiers collapse to the typed number and the split costs a row and changes nothing.
     const typed = { cacheRead: 1, cacheWrite: 2, output: 3 };
-    expect(await svc.getPricing(projectId, "deepseek", "deepseek-v4-flash")).toEqual({
+    expect(await svc.getPricing(projectId, "deepseek", "deepseek-flash")).toEqual({
       peak: typed,
       offPeak: typed,
     });

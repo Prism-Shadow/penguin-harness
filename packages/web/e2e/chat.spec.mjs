@@ -130,8 +130,9 @@ test("chat + tool approval + stats/cost/copy + traces + files", async ({ page })
   await expect(page.locator('[aria-label="已批准 · 手动"]')).toBeVisible();
   await expect(page.getByText(/已批准/).filter({ visible: true })).toHaveCount(0);
 
-  // Chat links always open in a new tab and never navigate the SPA away — including bare URLs
-  // that remark-gfm autolinks (the mock reply carries one inside a CJK sentence).
+  // External chat links open in a new tab and never navigate the SPA away — including bare URLs
+  // that remark-gfm autolinks (the mock reply carries one inside a CJK sentence). A reply's link
+  // to a Workspace file opens the Files panel instead (md.test.ts, reply-link.test.ts).
   const replyLink = page.locator(".md-body a", { hasText: "example.com" }).first();
   await expect(replyLink).toBeVisible();
   await expect(replyLink).toHaveAttribute("href", /^https:\/\/example\.com\//);

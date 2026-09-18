@@ -15,7 +15,7 @@ If the message only names this skill without a concrete request, ask what financ
 
 - `budget` is a field of each employee's entry in `org_chart.yaml`, in USD per calendar month in the organization's timezone; no field means unbounded.
 - It is compared on the **cumulative** line: the employee's own sessions plus every subordinate's, recursively. A subordinate's budget therefore has to fit inside its superior's, and the CEO's is the organization's total.
-- Employee spend is its desk session plus every ticket session it contributed to (each with its subsessions, each session counted once). Ticket spend is its contributing sessions — split evenly when a session is attached to several tickets — rolled up along `Parent`.
+- Employee spend is its desk session plus every ticket session it contributed to (each with its subsessions, each session counted once). Ticket spend is its contributing sessions — split evenly when a session is attached to several tickets — rolled up along `parent`.
 - At `budget_warn_ratio` (default 0.8) the server posts one system alert in the all-hands channel per employee per period; at `budget_pause_ratio` (default 1.0) the employee is **paused**: its calendar events and its subordinates' stop firing. Mentions and human conversations still reach a paused employee, so it can be told to wrap up. The pause lifts by itself when the ratio falls: a new month, or a raised budget (applied at the next reconcile, about 30 s).
 - Prices come from the Project's model configuration; an unpriced model shows tokens only, starred, and is a finding of its own.
 
@@ -64,7 +64,7 @@ Take a detail that only one stream needs into that stream's channel instead — 
 
 Proposals, cheapest to enact first:
 
-1. **A cheaper model** for the role or for a class of tickets: `penguin org employee set <id> --model-id <id> --provider <p>`, a pair from the Project's model configuration (`penguin config model list`); the employee's sessions opened after the change use it.
+1. **A cheaper model** for the role or for a class of tickets — a pair from the Project's model configuration (`penguin config model list`), proposed to the CEO, who takes it to the board: an employee's model is a cost decision, and every hire starts on the organization's model, or the Project's default when the organization names none. Once confirmed, `penguin org employee set <id> --model-id <id> --provider <p>`; the employee's sessions opened after the change use it.
 2. **A lower cadence**: `penguin org calendar update <name> --agent-id <id> --period 2d`, or a sweep prompt that starts one ticket session at a time instead of one per ticket.
 3. **Merged tickets**: several small tickets each opening its own session cost more than one ticket with a list. Ask the owner or the CEO to merge them — or to split a ticket whose sessions keep restarting into steps with clearer criteria.
 4. **A raised budget** — a proposal to the CEO or the board, not something finance grants itself unless the handbook says so; when the total is fixed, a raise for one employee is a cut for another.

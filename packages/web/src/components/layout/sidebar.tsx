@@ -27,8 +27,9 @@
  * six pages in the nav group, and the channel list where the conversation list is, followed
  * by the organization's own 工位 group — one row per employee
  * (features/company/channel-sidebar.tsx, features/company/org-session-groups.tsx). The
- * development list is the user's OWN conversations only: an organization's desk and ticket
- * Sessions are filtered out of every group, bucket and folder here.
+ * development list is the user's OWN conversations only: an organization's desk, ticket and
+ * sub-sessions are left out of its fetches and totals by the server, and out of every group,
+ * bucket and folder here should one still arrive.
  * Desktop keeps it pinned as the left column; mobile puts the whole thing in a drawer.
  * New chats always enter draft state (/chat/new; a group header's "+" names its group's Agent or
  * Workspace in route state): Model / Workspace / approval mode are all chosen on the draft input
@@ -61,7 +62,6 @@ import {
   aggregateWorkspaceCounts,
   aggregateWorkspaceLatest,
   clampGroupPage,
-  countsWithoutOrgSessions,
   completeWorkspaceGroups,
   foldedShare,
   groupPageCount,
@@ -74,7 +74,6 @@ import {
   partitionSessions,
   revealPlan,
   sessionCategory,
-  splitDevelopmentList,
   totalCategoryCounts,
   withoutOrgSessions,
   workspaceGroupKey,
@@ -397,8 +396,8 @@ export function Sidebar({
   const {
     sessions: allSessions,
     byAgent: allByAgent,
-    countsByAgent: serverCountsByAgent,
-    workspaceCountsByAgent: serverWorkspaceCounts,
+    countsByAgent,
+    workspaceCountsByAgent,
     workspaceLatestByAgent,
     isLoadedFor,
     hasMoreFor,
@@ -425,27 +424,21 @@ export function Sidebar({
    * The rows this list renders: the user's OWN conversations. An organization's desk and
    * ticket Sessions (marked by `orgId`, or by the durable `client === "org"` stamp once the
    * organization is gone) are driven by its scheduler and are reached as themselves in company
-   * mode — a desk from the 工位 group, a ticket session from its ticket — so they are
-   * filtered out here — once, at the source, or a
-   * dropped row would still conjure the Workspace group, Agent group or time bucket it belongs
-   * to. They are filtered whatever the company-mode switches say (see withoutOrgSessions):
-   * this list is the user's conversations, and a switch about the shell does not turn a
-   * scheduler's Session into one.
+   * mode — a desk from the 工位 group, a ticket session from its ticket. The store's own
+   * fetches already leave them out, totals and Workspace stamps included (the server's
+   * `excludeOrg`), so the counts below are the list's exact share; this filter is for a row
+   * that entered by another door (the chat page's deep-link self-heal), applied once, at the
+   * source, or the dropped row would still conjure the Workspace group, Agent group or time
+   * bucket it belongs to. It applies whatever the company-mode switches say (see
+   * withoutOrgSessions): this list is the user's conversations, and a switch about the shell
+   * does not turn a scheduler's Session into one.
    */
-  const devList = useMemo(() => splitDevelopmentList(allSessions), [allSessions]);
-  const sessions = devList.own;
+  const sessions = useMemo(() => withoutOrgSessions(allSessions), [allSessions]);
   const byAgent = useMemo(() => {
     const map = new Map<string, SessionInfo[]>();
     for (const [agentId, rows] of allByAgent) map.set(agentId, withoutOrgSessions(rows));
     return map;
   }, [allByAgent]);
-  // …and the server totals those rows are counted in, corrected the same way, so a group
-  // header never promises rows this list will not draw.
-  const { byAgent: countsByAgent, byWorkspace: workspaceCountsByAgent } = useMemo(
-    () =>
-      countsWithoutOrgSessions(serverCountsByAgent, serverWorkspaceCounts, devList.organization),
-    [serverCountsByAgent, serverWorkspaceCounts, devList],
-  );
 
   const currentProjectId = currentProject?.projectId ?? null;
   /** This Project's read markers; re-renders the rows whenever one is stamped. */

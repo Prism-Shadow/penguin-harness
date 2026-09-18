@@ -19,7 +19,7 @@ export interface DocsPageDef {
 
 export interface DocsSectionDef {
   /** Section id — also the key into S.sections for the localized label. */
-  id: "start" | "design" | "guides" | "reference";
+  id: "start" | "guides" | "advanced" | "design" | "reference";
   /** Pages in display order. */
   pages: DocsPageDef[];
 }
@@ -38,9 +38,29 @@ export const DOCS_NAV: DocsSectionDef[] = [
         slug: "quickstart",
         children: ["quickstart-desktop", "quickstart-cli", "quickstart-docker", "quickstart-sdk"],
       },
+      { slug: "concepts" },
+      { slug: "updates" },
     ],
   },
-  { id: "guides", pages: pages("web-app", "goal-mode", "company-mode", "self-improvement") },
+  {
+    id: "guides",
+    pages: pages(
+      "web-app",
+      "chat",
+      "files",
+      "schedules",
+      "remote-control",
+      "agents",
+      "skills",
+      "models",
+      "usage",
+      "settings",
+    ),
+  },
+  {
+    id: "advanced",
+    pages: pages("evaluation-center", "self-improvement", "goal-mode", "company-mode"),
+  },
   {
     id: "design",
     pages: pages(
@@ -51,8 +71,6 @@ export const DOCS_NAV: DocsSectionDef[] = [
       "message-flow",
       "interfaces",
       "tools",
-      "skills",
-      "models",
       "sessions-and-traces",
     ),
   },
@@ -73,26 +91,12 @@ export function sectionOf(slug: string): DocsSectionDef | undefined {
   );
 }
 
-/**
- * Pages whose successor is not the slug that follows them in the sidebar.
- *
- * The SDK route is the last of Quickstart's three, so linear order hands its reader the
- * Web App guide — a tour of the browser UI, for someone who just embedded the engine in
- * their own program. It continues into the interface contracts instead, which is also
- * where the page's own "next steps" point. Note this redirects only the forward link:
- * Core Interfaces keeps the predecessor its own position gives it.
- */
-const NEXT_OVERRIDE: Record<string, string> = {
-  "quickstart-sdk": "interfaces",
-};
-
-/** Pager targets for a page: sidebar order, unless it overrides its successor. */
+/** Pager targets for a page: its neighbours in sidebar order. */
 export function pagerFor(slug: string): { prev: string | null; next: string | null } {
   const index = DOC_SLUGS.indexOf(slug);
   if (index === -1) return { prev: null, next: null };
-  const linearNext = index < DOC_SLUGS.length - 1 ? DOC_SLUGS[index + 1]! : null;
   return {
     prev: index > 0 ? DOC_SLUGS[index - 1]! : null,
-    next: NEXT_OVERRIDE[slug] ?? linearNext,
+    next: index < DOC_SLUGS.length - 1 ? DOC_SLUGS[index + 1]! : null,
   };
 }

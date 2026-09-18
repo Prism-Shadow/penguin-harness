@@ -258,6 +258,20 @@ export class BenchmarkService implements Benchmarks {
   }
 
   /**
+   * Every id `create` refuses as taken, as names only: each entry under `benchmarks/`. Unlike
+   * `list`, this includes a directory with no `benchmark_config.toml` (the debris of one deleted
+   * mid-evaluation), and it reads no config and no scoreboard.
+   */
+  async takenIds(projectId: string): Promise<string[]> {
+    try {
+      return await fs.readdir(benchmarksDir(this.root, projectId));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+  }
+
+  /**
    * Creates `benchmarks/<id>/` in the layout the evaluation Skills read: `benchmark_config.toml`
    * (title, description, runs, status), `scoreboard.yaml` with an empty evaluations list, and
    * per case `statement/README.md` (`# <title>`, then the statement) and `rubric/README.md` (the
