@@ -1194,7 +1194,7 @@ export const zh = {
     copilotDisconnect: "断开 Copilot",
     copilotDisconnected: "已清除保存的 Copilot 凭据。如果配置了环境变量凭据，它们仍然有效。",
     copilotIntro:
-      "为此项目连接 GitHub Copilot 订阅。项目中的所有会话共用该账号。实验性功能：配置的 GitHub OAuth 应用必须具有 Copilot 访问权限。仅导入支持 Chat Completions 和工具调用的模型；此处不按美元计算订阅用量。",
+      "为此项目连接 GitHub Copilot 订阅。项目中的所有会话共用该账号。实验性功能：配置的 GitHub OAuth 应用必须具有 Copilot 访问权限。支持工具调用的聊天模型将作为候选导入；请使用连接测试验证访问权限。此处不按美元计算订阅用量。",
     copilotCode: "在 GitHub 输入此验证码。验证码将在几分钟后过期。",
     copilotApplyFailed:
       "无法获取 Copilot 模型或保存凭据。请确认此 OAuth 应用及账号拥有 Copilot 访问权限，然后重新连接。",

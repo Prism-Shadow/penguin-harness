@@ -1188,7 +1188,7 @@ export const en: Strings = {
     copilotDisconnected:
       "Stored Copilot credentials cleared. Environment credentials, if configured, still apply.",
     copilotIntro:
-      "Connect a GitHub Copilot subscription for this project. All sessions in this project use the connected account. Experimental: your configured GitHub OAuth App must have Copilot access. Only models supporting Chat Completions and tools are imported; subscription usage is not priced in dollars here.",
+      "Connect a GitHub Copilot subscription for this project. All sessions in this project use the connected account. Experimental: your configured GitHub OAuth App must have Copilot access. Tool-capable chat models are imported as candidates; use the connection test to verify access. Subscription usage is not priced in dollars here.",
     copilotCode: "Enter this code on GitHub. It expires after a few minutes.",
     copilotApplyFailed:
       "Copilot models could not be discovered or the credential could not be saved. Check that this OAuth App and account have Copilot access, then reconnect.",

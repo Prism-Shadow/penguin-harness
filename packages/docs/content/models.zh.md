@@ -32,8 +32,9 @@ Copilot，不运行 Copilot CLI 或 SDK。仓库中的 AgentHub 补丁仅用于�
 打开分组密钥对话框，选择**断开 Copilot**。这不会清除已设置的 `GITHUB_COPILOT_API_KEY`
 环境变量，也不会撤销 GitHub 上的应用授权。
 
-仅支持不会过期的 OAuth 应用令牌，以及声明支持 Chat Completions 和工具调用的模型。
-不支持仅有 Responses 接口的模型和会过期的 GitHub App 令牌。不推算美元费用或剩余订阅额度。
+仅支持不会过期的 OAuth 应用令牌。模型发现会导入声明支持 Chat Completions 和工具调用的模型。
+缺少端点元数据时，会将明确标记为聊天类型且支持工具调用的模型导入为候选；请运行连接测试验证推理访问。
+不支持明确声明仅有 Responses 接口的模型和会过期的 GitHub App 令牌。不推算美元费用或剩余订阅额度。
 账号及组织策略仍然限制访问。GitHub 为其 SDK 提供了自定义应用订阅认证文档，
 这并不能证明此独立传输接口获得了官方支持。
 

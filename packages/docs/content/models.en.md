@@ -31,8 +31,10 @@ the Copilot group if access is revoked or to discover newly available models. To
 saved credential, open the group's key dialog and select **Disconnect Copilot**.
 This does not clear `GITHUB_COPILOT_API_KEY` if it is set, or revoke the OAuth App on GitHub.
 
-Only non-expiring OAuth App tokens and models advertising Chat Completions plus tool calls
-are supported. Responses-only models and expiring GitHub App tokens are excluded.
+Only non-expiring OAuth App tokens are supported. Discovery imports tool-capable models
+advertising Chat Completions. When endpoint metadata is absent, explicitly typed chat
+models with tool support are imported as candidates; run the connection test to verify
+inference access. Explicit Responses-only models and expiring GitHub App tokens are excluded.
 No dollar price or remaining subscription quota is inferred. Account and organization
 policies still govern access. GitHub documents custom-app subscription authentication for
 its SDK; that does not establish official support for this standalone transport.
