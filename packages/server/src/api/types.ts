@@ -4817,3 +4817,11 @@ export interface InstalledPluginsResponse {
   /** A listed plugin neither runs nor failed to load: the App could not be re-assembled around it (the previous one was restored), so a restart is what applies it. */
   restartPending: boolean;
 }
+export type {
+  ActivityRecord,
+  ActivityDraft,
+  ActivityDetail,
+  ActivityRun,
+  ActivityRunSummary,
+  ActivityRunStatus,
+} from "../activities/domain.js";

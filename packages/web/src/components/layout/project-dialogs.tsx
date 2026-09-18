@@ -233,6 +233,9 @@ export function ProjectSettingsDialog({ open, onClose }: { open: boolean; onClos
   useEffect(() => {
     if (open) setTab("general");
   }, [open]);
+  useEffect(() => {
+    if (open && !currentProject) onClose();
+  }, [open, currentProject, onClose]);
 
   const projectId = currentProject?.projectId;
   const isOwner = currentProject?.role === "owner";
@@ -317,7 +320,7 @@ function GeneralSection({
   isOwner: boolean;
   onClose: () => void;
 }) {
-  const { currentProject, setCurrentProjectId, projects, reloadProjects } = useProject();
+  const { currentProject, projects, reloadProjects, deleteProject } = useProject();
   /** The saved display name, with the same id fallback the switcher shows. */
   const savedName = currentProject ? projectDisplayName(currentProject) : "";
   /** Display-name edit buffer (owner only); saving is explicit, so it stays dirty until Save or remount. */
@@ -343,11 +346,8 @@ function GeneralSection({
 
   const doDelete = async () => {
     try {
-      await api.deleteProject(projectId);
-      onClose();
-      const next = projects.find((p) => p.projectId !== projectId);
-      await reloadProjects();
-      if (next) setCurrentProjectId(next.projectId);
+      if (await deleteProject(projectId)) onClose();
+      else setConfirmDelete(false);
     } catch (e) {
       toastError(apiErrorText(e));
     }

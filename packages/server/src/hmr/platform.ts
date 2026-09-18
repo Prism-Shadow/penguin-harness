@@ -23,6 +23,7 @@
  * adding or changing an endpoint or a service needs no runtime change.
  */
 import type { WebSocket } from "ws";
+import type { ActivityGeneration } from "../mechanisms/activities.js";
 import type {
   Impl,
   Json,
@@ -341,6 +342,8 @@ async function createInner(
   const auth = business?.api<Auth>("IdentityModule", "Auth") ?? null;
   const identity = identityFrom(auth);
   const manager = business?.api<SessionManager>("SessionRuntimeModule", "Sessions") ?? null;
+  const activityGeneration =
+    business?.api<ActivityGeneration>("ActivitiesModule", "ActivityGeneration") ?? null;
   // The runtime's one mid-request need of the CURRENT App is a hook installed over a
   // claimed capability — overwrite-only across swaps, so a dead generation's hook is
   // replaced and never removed: "is this session busy" for the channel sweep.
@@ -385,6 +388,7 @@ async function createInner(
     // processes that keep forwarding across the swap, and the successor adopts them by the
     // pid recorded in web.db (machines/service.ts).
     const drains: Promise<unknown>[] = [];
+    if (activityGeneration !== null) drains.push(activityGeneration.shutdown());
     if (manager !== null) drains.push(manager.shutdown(DRAIN_GRACE_MS));
     tree.dispose();
     if (business === null) terminals.quiesce();
@@ -440,7 +444,7 @@ async function createInner(
     // Process exit wants the manager's graceful ≤5s drain, which a synchronous dispose
     // effect cannot await — exposed for index.ts's shutdown to call before disposing.
     shutdown: async () => {
-      if (manager !== null) await manager.shutdown(DRAIN_GRACE_MS);
+      await Promise.all([activityGeneration?.shutdown(), manager?.shutdown(DRAIN_GRACE_MS)]);
     },
     drained: () => drained,
   };

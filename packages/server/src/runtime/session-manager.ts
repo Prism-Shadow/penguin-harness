@@ -805,6 +805,12 @@ export class SessionManager {
 
   /** Add a newly created Session to the active table (status idle), avoiding a redundant load on the next Task. */
   adopt(row: SessionRow, session: RuntimeSession): void {
+    // Creation can finish after shutdown has cleared the active table. Keep its
+    // durable Session record, but release the runtime instead of reviving this App.
+    if (this.closed) {
+      session.dispose?.();
+      return;
+    }
     this.entries.set(row.sessionId, {
       sessionId: row.sessionId,
       projectId: row.projectId,

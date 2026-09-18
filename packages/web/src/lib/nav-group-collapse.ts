@@ -24,7 +24,8 @@
  */
 import { NAV_PAGE_KEYS, PAGES } from "./pages";
 
-export type NavGroupKey = "agents" | "plugins" | "models" | "machines" | "usage" | "benchmark";
+export type NavGroupKey =
+  "agents" | "activities" | "plugins" | "models" | "machines" | "usage" | "benchmark";
 /**
  * The manifest, derived from the app's own module.json (lib/pages.ts): every page whose
  * `nav` is "main", in manifest order. The literal key type above is the set the strings

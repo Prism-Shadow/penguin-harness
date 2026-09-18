@@ -1198,6 +1198,20 @@ describe("session-manager", () => {
     expect((compactErr as { status: number }).status).toBe(503);
   });
 
+  it("disposes a runtime adopted after shutdown instead of retaining it", async () => {
+    const fake = approvalFakeSession("session-1");
+    let disposed = 0;
+    fake.dispose = () => {
+      disposed++;
+    };
+    const manager = makeManager(loaderOf(fake));
+    await manager.shutdown();
+    manager.adopt(ROW, fake);
+    expect(disposed).toBe(1);
+    await manager.shutdown();
+    expect(disposed).toBe(1);
+  });
+
   it("sweepIdle: entries idle past the timeout are evicted (reloaded via the loader on next access)", async () => {
     let loads = 0;
     const loader: SessionLoader = {

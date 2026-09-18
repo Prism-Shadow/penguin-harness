@@ -275,4 +275,48 @@ CREATE TABLE IF NOT EXISTS org_desk_notices (   -- DERIVED CACHE (company mode):
   at         TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_org_desk_notices_agent ON org_desk_notices(project_id, org_id, agent_id);
+CREATE TABLE IF NOT EXISTS activity_collections (
+project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+collection_id TEXT NOT NULL,
+path TEXT NOT NULL,
+created_at TEXT NOT NULL,
+updated_at TEXT NOT NULL,
+PRIMARY KEY (project_id, collection_id)
+);
+CREATE TABLE IF NOT EXISTS activities (
+id TEXT PRIMARY KEY,
+collection_id TEXT NOT NULL,
+product_code TEXT NOT NULL,
+ref_num INTEGER NOT NULL CHECK (ref_num >= 0),
+title TEXT NOT NULL,
+activity_type TEXT NOT NULL CHECK (activity_type IN ('standard', 'book')),
+created_at TEXT NOT NULL,
+updated_at TEXT NOT NULL,
+archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+UNIQUE (collection_id, product_code, ref_num)
+);
+CREATE INDEX IF NOT EXISTS idx_activities_collection ON activities(collection_id, archived, updated_at);
+CREATE TABLE IF NOT EXISTS activity_drafts (
+draft_id TEXT PRIMARY KEY,
+activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+base_version_id TEXT,
+content_revision TEXT NOT NULL,
+status TEXT NOT NULL CHECK (status IN ('draft', 'valid', 'invalid')),
+updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_activity_drafts_activity ON activity_drafts(activity_id, updated_at);
+CREATE TABLE IF NOT EXISTS activity_runs (
+run_id TEXT PRIMARY KEY,
+project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+activity_id TEXT NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+status TEXT NOT NULL,
+created_at TEXT NOT NULL,
+record_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_activity_runs_activity ON activity_runs(project_id, activity_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_runs_active ON activity_runs(activity_id) WHERE status = 'running';
+CREATE TABLE IF NOT EXISTS activity_run_candidates (
+run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE,
+candidate TEXT NOT NULL
+);
 `;

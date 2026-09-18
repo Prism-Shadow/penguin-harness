@@ -1,9 +1,28 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
-import type { ActivityDraft, ActivityRecord, CollectionManifest } from "../activities/domain.js";
+import type {
+  ActivityDraft,
+  ActivityRecord,
+  ActivityRun,
+  ActivityRunSummary,
+  CollectionManifest,
+} from "../activities/domain.js";
+
+export abstract class ActivityGeneration extends Interface<{
+  shutdown(): Promise<void>;
+  start(
+    projectId: string,
+    activityId: string,
+    agentId: string,
+    expectedRevision: string,
+  ): Promise<ActivityRun>;
+  list(projectId: string, activityId: string): Promise<ActivityRunSummary[]>;
+  candidate(projectId: string, activityId: string, runId: string): Promise<string | null>;
+  cancel(projectId: string, activityId: string, runId: string): Promise<ActivityRun>;
+}>() {}
 
 export abstract class ActivityAuthoring extends Interface<{
   ensureCollection(projectId: string, collectionId?: string): Promise<CollectionManifest>;
-  listActivities(projectId: string, collectionId: string): Promise<ActivityRecord[]>;
+  listActivities(projectId: string, collectionId?: string): Promise<ActivityRecord[]>;
   createActivity(
     projectId: string,
     input: {

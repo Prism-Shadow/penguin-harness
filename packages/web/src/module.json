@@ -28,6 +28,15 @@
         }
       },
       {
+        "id": "web.activities",
+        "key": "activities",
+        "path": "/activities/:activityId?",
+        "nav": "main",
+        "admin": false,
+        "released": true,
+        "renderer": { "builtin": "ActivitiesPage" }
+      },
+      {
         "id": "web.agent-settings",
         "key": "agent-settings",
         "path": "/agents/:agentId",

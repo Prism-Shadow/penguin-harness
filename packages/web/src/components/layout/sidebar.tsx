@@ -1785,7 +1785,7 @@ export function Sidebar({
                 className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-base font-semibold transition-colors duration-150 hover:bg-gray-200/70 dark:hover:bg-gray-800"
               >
                 <span className="min-w-0 flex-1 truncate text-left">
-                  {currentProject ? projectDisplayName(currentProject) : S.common.loading}
+                  {currentProject ? projectDisplayName(currentProject) : S.project.selectProject}
                 </span>
                 <span className="text-gray-400">
                   <ChevronDown />

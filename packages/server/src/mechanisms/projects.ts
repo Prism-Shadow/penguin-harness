@@ -53,6 +53,12 @@ export abstract class Projects extends Interface<{
   delete(projectId: string): void;
 }>() {}
 
+/** Activity work admitted before Project destruction must settle before its files are removed. */
+export abstract class ProjectActivityWork extends Interface<{
+  run<T>(projectId: string, operation: () => Promise<T>): Promise<T>;
+  destroy(projectId: string, operation: () => Promise<void>): Promise<void>;
+}>() {}
+
 /** Members: the mechanism MembersRepo implements. */
 export abstract class Members extends Interface<{
   insert(row: MemberRow): void;
