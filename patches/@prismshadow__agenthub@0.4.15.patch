@@ -1,0 +1,122 @@
+diff --git a/dist/autoClient.js b/dist/autoClient.js
+index 5750ce4098609a3dfb100be0e0a17671db9bdabe..d138e448ba4c32b19be4561221a3d9c8bc84b5a2 100644
+--- a/dist/autoClient.js
++++ b/dist/autoClient.js
+@@ -15,6 +15,7 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.AutoLLMClient = void 0;
+ const baseClient_1 = require("./baseClient");
++const { GitHubCopilotClient } = require("./github_copilot/client");
+ const gemini3_8_1 = require("./gemini3_8");
+ const claude5_1 = require("./claude5");
+ const gpt6_1 = require("./gpt6");
+@@ -29,6 +30,7 @@ const minimax_m3_1 = require("./minimax_m3");
+ const openai_chat_vllm_adapter_1 = require("./openai_chat_vllm_adapter");
+ // The generic protocol clients are named explicitly rather than deduced from a model id.
+ const PROTOCOL_CLIENT_TYPES = [
++    "github-copilot",
+     "openai-chat",
+     "openai-chat-vllm-adapter",
+     "openai-responses",
+@@ -65,6 +67,7 @@ class AutoLLMClient extends baseClient_1.LLMClient {
+      * @throws Error when the requested client is not yet implemented
+      */
+     _clientClassForModel(clientType) {
++        if (clientType === "github-copilot") return GitHubCopilotClient;
+         // every Gemini generation shares the unified client ("gemini-3" also matches the
+         // gemini-3.8/gemini-3.7/gemini-3.6/gemini-3.5-flash-lite client types)
+         if (clientType.includes("gemini-3") ||
+diff --git a/dist/github_copilot/client.d.ts b/dist/github_copilot/client.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2b31a90e3efa2c3c4fb00fec4c3c4a2fc5888335
+--- /dev/null
++++ b/dist/github_copilot/client.d.ts
+@@ -0,0 +1,9 @@
++import { OpenaiChatClient } from "../openai_chat";
++type Options = ConstructorParameters<typeof OpenaiChatClient>[0];
++/** Experimental transport; the caller owns authorization, tools and the agent loop. */
++export declare class GitHubCopilotClient extends OpenaiChatClient {
++    constructor(options: Options);
++    listModels(): Promise<string[]>;
++}
++export {};
++//# sourceMappingURL=client.d.ts.map
+\ No newline at end of file
+diff --git a/dist/github_copilot/client.d.ts.map b/dist/github_copilot/client.d.ts.map
+new file mode 100644
+index 0000000000000000000000000000000000000000..97286cb0d43a612591b3ae04da811a1e7d798b44
+--- /dev/null
++++ b/dist/github_copilot/client.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"client.d.ts","sourceRoot":"","sources":["../../src/github_copilot/client.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,gBAAgB,EAAE,MAAM,gBAAgB,CAAC;AAGlD,KAAK,OAAO,GAAG,qBAAqB,CAAC,OAAO,gBAAgB,CAAC,CAAC,CAAC,CAAC,CAAC;AAGjE,uFAAuF;AACvF,qBAAa,mBAAoB,SAAQ,gBAAgB;gBAC3C,OAAO,EAAE,OAAO;IAwCtB,UAAU,IAAI,OAAO,CAAC,MAAM,EAAE,CAAC;CAYtC"}
+\ No newline at end of file
+diff --git a/dist/github_copilot/client.js b/dist/github_copilot/client.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..c6990be0897ce7d14ce883262255d4e5c476466f
+--- /dev/null
++++ b/dist/github_copilot/client.js
+@@ -0,0 +1,64 @@
++"use strict";
++var __importDefault = (this && this.__importDefault) || function (mod) {
++    return (mod && mod.__esModule) ? mod : { "default": mod };
++};
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.GitHubCopilotClient = void 0;
++const openai_1 = __importDefault(require("openai"));
++const openai_chat_1 = require("../openai_chat");
++const BASE_URL = "https://api.githubcopilot.com";
++/** Experimental transport; the caller owns authorization, tools and the agent loop. */
++class GitHubCopilotClient extends openai_chat_1.OpenaiChatClient {
++    constructor(options) {
++        const apiKey = options.apiKey || process.env.GITHUB_COPILOT_API_KEY;
++        if (!apiKey)
++            throw new Error("Connect a GitHub Copilot account first.");
++        const baseUrl = options.baseUrl || BASE_URL;
++        if (baseUrl.replace(/\/$/, "") !== BASE_URL) {
++            throw new Error("GitHub Copilot requires https://api.githubcopilot.com.");
++        }
++        super({ ...options, apiKey, baseUrl });
++        this._client = new openai_1.default({
++            apiKey,
++            baseURL: BASE_URL,
++            maxRetries: 0,
++            defaultHeaders: {
++                ...options.defaultHeaders,
++                "User-Agent": "PenguinHarness",
++                "X-GitHub-Api-Version": "2026-06-01",
++                "Openai-Intent": "conversation-edits",
++            },
++            fetch: async (url, init) => {
++                if (new URL(String(url)).origin !== BASE_URL)
++                    throw new Error("Invalid Copilot endpoint.");
++                const headers = new Headers(init?.headers);
++                if (typeof init?.body === "string") {
++                    const body = JSON.parse(init.body);
++                    const messages = body.messages || [];
++                    const last = messages[messages.length - 1];
++                    // Image-only synthetic user messages can carry a preceding tool result.
++                    const toolImage = last?.role === "user" && Array.isArray(last.content) &&
++                        last.content.every((part) => part.type === "image_url") &&
++                        messages[messages.length - 2]?.role === "tool";
++                    headers.set("X-Initiator", last?.role === "user" && !toolImage ? "user" : "agent");
++                    if (messages.some((message) => Array.isArray(message.content) &&
++                        message.content.some((part) => part.type === "image_url"))) {
++                        headers.set("Copilot-Vision-Request", "true");
++                    }
++                }
++                return fetch(url, { ...init, headers, redirect: "error" });
++            },
++        });
++    }
++    async listModels() {
++        const ids = [];
++        for await (const entry of this._client.models.list({ timeout: 15000 })) {
++            const model = entry;
++            if (model.supported_endpoints?.includes("/chat/completions") &&
++                model.capabilities?.supports?.tool_calls === true)
++                ids.push(model.id);
++        }
++        return ids;
++    }
++}
++exports.GitHubCopilotClient = GitHubCopilotClient;

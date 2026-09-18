@@ -1190,6 +1190,17 @@ export const zh = {
     // 供应商授权取 key（模型分组头部动作）：整个 PKCE 流程都在服务端跑，前端只拿到一个
     // 不透明的 flow id 和状态。
     oauthKey: "自动获取密钥",
+    copilotConnect: "连接 Copilot",
+    copilotDisconnect: "断开 Copilot",
+    copilotDisconnected: "已清除保存的 Copilot 凭据。如果配置了环境变量凭据，它们仍然有效。",
+    copilotIntro:
+      "为此项目连接 GitHub Copilot 订阅。项目中的所有会话共用该账号。实验性功能：配置的 GitHub OAuth 应用必须具有 Copilot 访问权限。仅导入支持 Chat Completions 和工具调用的模型；此处不按美元计算订阅用量。",
+    copilotCode: "在 GitHub 输入此验证码。验证码将在几分钟后过期。",
+    copilotApplyFailed:
+      "无法获取 Copilot 模型或保存凭据。请确认此 OAuth 应用及账号拥有 Copilot 访问权限，然后重新连接。",
+    copilotTimedOut: "设备授权已过期或无法检查。请重新开始。",
+    copilotApplied: (count: number) =>
+      `已为 ${count} 个模型连接 Copilot。开始会话前请测试模型连接。若访问权限被撤销，请在此重新连接。清除模型组保存的密钥可在本地断开连接；在 GitHub 撤销应用授权可撤销其访问权限。`,
     oauthTitle: (label: string): string => `从「${label}」授权新建 API key`,
     oauthIntro: (label: string, n: number): string =>
       `将在你的 ${label} 账户下新建一个 API key，并写入该分组下全部 ${n} 个模型，覆盖它们当前的 key。`,

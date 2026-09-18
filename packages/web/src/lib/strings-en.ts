@@ -1183,6 +1183,18 @@ export const en: Strings = {
     getModelIds: "Get model IDs",
     groupKeyApplied: (n: number): string => `API key set for ${n} models`,
     oauthKey: "Authorize key",
+    copilotConnect: "Connect Copilot",
+    copilotDisconnect: "Disconnect Copilot",
+    copilotDisconnected:
+      "Stored Copilot credentials cleared. Environment credentials, if configured, still apply.",
+    copilotIntro:
+      "Connect a GitHub Copilot subscription for this project. All sessions in this project use the connected account. Experimental: your configured GitHub OAuth App must have Copilot access. Only models supporting Chat Completions and tools are imported; subscription usage is not priced in dollars here.",
+    copilotCode: "Enter this code on GitHub. It expires after a few minutes.",
+    copilotApplyFailed:
+      "Copilot models could not be discovered or the credential could not be saved. Check that this OAuth App and account have Copilot access, then reconnect.",
+    copilotTimedOut: "Device authorization expired or could not be checked. Start again.",
+    copilotApplied: (count: number) =>
+      `Copilot connected for ${count} models. Use the model's connection test before starting a session. Reconnect here if access is revoked. Clear the group's stored key to disconnect locally; revoke the app on GitHub to revoke its access.`,
     oauthTitle: (label: string): string => `Authorize a new ${label} API key`,
     oauthIntro: (label: string, n: number): string =>
       `A new API key will be created on your ${label} account and written to all ${n} models in this group, replacing the key they use now.`,

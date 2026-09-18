@@ -147,6 +147,7 @@ export abstract class ProjectConfigStore extends Interface<{
   getModels(projectId: string): Promise<ModelsResponse>;
   updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse>;
   setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number>;
+  connectCopilot(projectId: string, token: string, signal?: AbortSignal): Promise<number>;
   getGroupApiKey(projectId: string, provider: string): Promise<string | undefined>;
   mergePlatformModels(
     projectId: string,
@@ -182,7 +183,8 @@ export abstract class ModelOAuth extends Interface<{
     provider: string;
     mode: ModelOAuthMode;
     callbackOrigin: string;
-  }): ModelOAuthStartResult;
+  }): ModelOAuthStartResult | Promise<ModelOAuthStartResult>;
+  cancel(input: { flowId: string; userId: string; projectId: string }): void;
   deposit(input: { flowId: string; projectId: string; code: string }): void;
   poll(input: { flowId: string; userId: string; projectId: string }): Promise<{
     status: ModelOAuthStatus;

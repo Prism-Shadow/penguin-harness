@@ -56,6 +56,7 @@ describe("model-catalog", () => {
       "minimax",
       "qwen-pay-as-you-go",
       "qwen-token-plan",
+      "github-copilot",
       "vllm",
       "custom",
     ]);
@@ -109,7 +110,8 @@ describe("model-catalog", () => {
     expect(new Set([...providerIds]).size).toBe(MODEL_PROVIDERS.length);
     for (const p of MODEL_PROVIDERS) {
       expect(p.envKey).toMatch(/_API_KEY$/);
-      expect(p.envBaseUrlKey).toMatch(/_BASE_URL$/);
+      if (p.id === "github-copilot") expect(p.envBaseUrlKey).toBe("");
+      else expect(p.envBaseUrlKey).toMatch(/_BASE_URL$/);
     }
   });
 
@@ -296,6 +298,7 @@ describe("model-catalog", () => {
     // protocol to detection.
     expect(MODEL_PROVIDERS.filter((p) => p.clientType !== undefined).map((p) => p.id)).toEqual([
       "openrouter",
+      "github-copilot",
       "vllm",
     ]);
     expect(providerClientType("openrouter")).toBe("openai-responses");
@@ -755,6 +758,7 @@ describe("model-catalog", () => {
     expect(providerInfo("fireworks")!.gatewayBaseUrl).toBe("https://api.fireworks.ai/inference/v1");
     expect(providerInfo("tokendance")!.gatewayBaseUrl).toBe("https://tokendance.space/gateway/v1");
     const GATEWAYS = [
+      "github-copilot",
       "openrouter",
       "fireworks",
       "siliconflow",

@@ -107,6 +107,7 @@ describe("groupModelRows", () => {
       "minimax",
       "qwen-pay-as-you-go",
       "qwen-token-plan",
+      "github-copilot",
       "vllm",
       "custom",
     ]);

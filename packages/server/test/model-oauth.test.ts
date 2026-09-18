@@ -220,8 +220,8 @@ describe("flow store", () => {
     }
   });
 
-  it("the callback URL keeps its query, so the flow id rides back with the code", () => {
-    const { flowId, authorizeUrl } = start();
+  it("the callback URL keeps its query, so the flow id rides back with the code", async () => {
+    const { flowId, authorizeUrl } = await start();
     expect(new URL(authorizeUrl).searchParams.get("callback_url")).toBe(
       `http://127.0.0.1:8123/api/projects/p1/model-oauth/callback?flow=${encodeURIComponent(flowId)}`,
     );
@@ -230,7 +230,7 @@ describe("flow store", () => {
   });
 
   it("a flow belongs to one user in one Project; anyone else sees a 404", async () => {
-    const { flowId } = start();
+    const { flowId } = await start();
     expect((await service.poll({ flowId, userId: "u1", projectId: "p1" })).status).toBe("pending");
     await expect(service.poll({ flowId, userId: "u2", projectId: "p1" })).rejects.toThrow(
       HttpError,
@@ -244,7 +244,7 @@ describe("flow store", () => {
   });
 
   it("expires after ten minutes, and the expired flow is gone rather than failed", async () => {
-    const { flowId } = start();
+    const { flowId } = await start();
     clock += 10 * 60 * 1000 - 1;
     expect((await service.poll({ flowId, userId: "u1", projectId: "p1" })).status).toBe("pending");
     clock += 1;
@@ -257,7 +257,7 @@ describe("flow store", () => {
   });
 
   it("is single use: the second redemption is refused and the verifier is spent only once", async () => {
-    const { flowId } = start();
+    const { flowId } = await start();
     expect(await service.complete({ flowId, userId: "u1", projectId: "p1", code: "c" })).toEqual({
       ok: true,
       applied: 6,
@@ -276,7 +276,7 @@ describe("flow store", () => {
       fetchImpl: (async () => jsonResponse(403, {})) as unknown as typeof fetch,
       now: () => clock,
     });
-    const { flowId } = start();
+    const { flowId } = await start();
     expect(await service.complete({ flowId, userId: "u1", projectId: "p1", code: "c" })).toEqual({
       ok: false,
       error: "code_rejected",
@@ -293,7 +293,7 @@ describe("flow store", () => {
       fetchImpl: (async () => jsonResponse(200, { key: "sk-minted" })) as unknown as typeof fetch,
       now: () => clock,
     });
-    const { flowId } = start();
+    const { flowId } = await start();
     expect(await service.complete({ flowId, userId: "u1", projectId: "p1", code: "c" })).toEqual({
       ok: false,
       error: "apply_failed",
@@ -304,7 +304,7 @@ describe("flow store", () => {
   });
 
   it("a deposited code is redeemed by the owner's poll, not by the deposit itself", async () => {
-    const { flowId } = start();
+    const { flowId } = await start();
     service.deposit({ flowId, projectId: "p1", code: "redirected-code" });
     // The deposit alone reaches no provider and writes nothing.
     expect(applied).toEqual([]);
@@ -315,8 +315,8 @@ describe("flow store", () => {
     expect(applied).toHaveLength(1);
   });
 
-  it("a manual flow has no redirect to receive, so it cannot be deposited into", () => {
-    const { flowId } = service.start({
+  it("a manual flow has no redirect to receive, so it cannot be deposited into", async () => {
+    const { flowId } = await service.start({
       projectId: "p1",
       userId: "u1",
       provider: "tokendance",
@@ -327,7 +327,7 @@ describe("flow store", () => {
   });
 
   it("the deposit slot holds one code: a second redirect neither overwrites it nor re-arms it", async () => {
-    const { flowId } = start();
+    const { flowId } = await start();
     service.deposit({ flowId, projectId: "p1", code: "first" });
     expect(() => service.deposit({ flowId, projectId: "p1", code: "second" })).toThrow(HttpError);
     expect((await service.poll({ flowId, userId: "u1", projectId: "p1" })).status).toBe("done");
@@ -338,7 +338,7 @@ describe("flow store", () => {
   });
 
   it("a deposited code that nobody polls for expires with the flow", async () => {
-    const { flowId } = start();
+    const { flowId } = await start();
     service.deposit({ flowId, projectId: "p1", code: "never-polled" });
     clock += FLOW_TTL_MS;
     await expect(service.poll({ flowId, userId: "u1", projectId: "p1" })).rejects.toThrow(
