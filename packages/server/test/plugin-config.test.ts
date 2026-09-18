@@ -9,6 +9,7 @@ import { parseManifest } from "@prismshadow/penguin-core/kernel";
 import type { PluginConfigResponse } from "../src/api/types.js";
 import {
   PluginConfigError,
+  PluginConfigPage,
   PluginConfigStore,
   applyUpdate,
   parsePluginConfiguration,
@@ -283,5 +284,62 @@ describe("/api/admin/plugin-config", () => {
       values: [],
     });
     expect(shapeless.status).toBe(400);
+  });
+});
+
+describe("PluginConfigPage actions", () => {
+  /** A page node over one sandbox card and a backend card drawn inside it. */
+  function page(run: () => Promise<{ ok: boolean; message: string; settled?: Promise<void> }>) {
+    const saves: string[] = [];
+    const node = new PluginConfigPage() as unknown as {
+      entries: unknown;
+      pluginConfigAdmin: {
+        run(name: string, action: string): Promise<Record<string, unknown>>;
+      };
+      setup(ctx: unknown): void;
+    };
+    node.entries = {
+      describe: () => [
+        { name: "sandbox", configuration: { properties: {} }, values: {} },
+        { name: "backend", parent: "sandbox", configuration: { properties: {} }, values: {} },
+      ],
+      set: () => {
+        throw new Error("unused");
+      },
+    };
+    node.setup({
+      contributions: {
+        status: [
+          {
+            data: { group: "sandbox" },
+            code: { notices: () => [], saved: async () => void saves.push("sandbox") },
+          },
+          {
+            data: { group: "backend" },
+            code: { notices: () => [], actions: () => [{ id: "go", title: "Go" }], run },
+          },
+        ],
+      },
+    });
+    return { admin: node.pluginConfigAdmin, saves };
+  }
+
+  it("settles the card that draws the group once an action returns, as a save would", async () => {
+    const { admin, saves } = page(async () => ({ ok: true, message: "done" }));
+    expect(await admin.run("backend", "go")).toEqual({ ok: true, message: "done" });
+    expect(saves).toEqual(["sandbox"]);
+  });
+
+  it("settles only when started work ends, and never sends the promise to the page", async () => {
+    let finish!: () => void;
+    const settled = new Promise<void>((resolve) => (finish = resolve));
+    const { admin, saves } = page(async () => ({ ok: true, message: "started", settled }));
+    const result = await admin.run("backend", "go");
+    expect(result).toEqual({ ok: true, message: "started" });
+    expect(saves).toEqual([]);
+    finish();
+    await settled;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saves).toEqual(["sandbox"]);
   });
 });

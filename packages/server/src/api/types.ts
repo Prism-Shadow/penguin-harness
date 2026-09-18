@@ -4890,7 +4890,12 @@ export interface PluginConfiguration {
 
 /** A line of live status a contributed group reports beside its fields (e.g. that nothing can enforce it). */
 export interface PluginConfigNotice {
-  tone: "attention" | "muted";
+  /**
+   * `progress` = work the group started is still running (an install, a download): the page
+   * reads the groups again every few seconds while any notice says so, and the text is the
+   * step it is on.
+   */
+  tone: "attention" | "muted" | "progress";
   text: string;
   textZh?: string;
 }

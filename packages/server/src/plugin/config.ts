@@ -384,6 +384,12 @@ export interface PluginConfigActionResult {
   ok: boolean;
   message: string;
   messageZh?: string;
+  /**
+   * Work the action started and did not wait for, reported through `progress` notices; it
+   * resolves when that work ends. The page node then settles the card the way a save does (a
+   * sandbox backend the work made usable loads again). Never sent to the page.
+   */
+  settled?: Promise<void>;
 }
 
 /** What a module reads: the group it declared, and a watch on it. */
@@ -569,7 +575,16 @@ export class PluginConfigPage {
         if (group?.run === undefined || !offered.some((a) => a.id === action)) {
           throw new PluginConfigError(null, `"${name}" offers no action "${action}".`);
         }
-        return group.run(action);
+        const { settled, ...result } = await group.run(action);
+        // What the action changed on the machine is settled like a save of its card: the
+        // owner's status runs its follow-up (a backend that failed its check loads again).
+        const owner = entries.describe().find((e) => e.name === name)?.parent ?? name;
+        const settle = async () => {
+          await status.get(owner)?.saved?.();
+        };
+        if (settled === undefined) await settle();
+        else void settled.then(settle, settle).catch(() => {});
+        return result;
       },
     };
   }

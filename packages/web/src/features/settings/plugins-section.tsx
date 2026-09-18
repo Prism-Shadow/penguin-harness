@@ -28,7 +28,7 @@ import { PasswordInput } from "../../components/ui/password-input";
 import { Select } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
 import { toastError, toastInfo, toastSuccess } from "../../components/ui/toast";
-import { toneStrip } from "../../lib/tone";
+import { toneInk, toneStrip } from "../../lib/tone";
 import { SectionShell } from "./section-shell";
 
 /**
@@ -136,6 +136,47 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * While any group reports work in progress (an install it started), its notices and actions
+   * are read again every few seconds — only those: a draft being typed elsewhere on the page is
+   * not replaced, and a group that finished gets its new notices and buttons the same way.
+   */
+  const inProgress = (entries ?? []).some((e) =>
+    (e.notices ?? []).some((n) => n.tone === "progress"),
+  );
+  useEffect(() => {
+    if (!inProgress) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void api.adminGetPluginConfig().then(
+        (config) => {
+          if (cancelled) return;
+          setEntries((prev) =>
+            (prev ?? []).map((e) => {
+              const next = config.plugins.find((p) => p.name === e.name);
+              if (next === undefined) return e;
+              const { notices: _n, actions: _a, ...rest } = e;
+              return {
+                ...rest,
+                ...(next.notices !== undefined ? { notices: next.notices } : {}),
+                ...(next.actions !== undefined ? { actions: next.actions } : {}),
+              };
+            }),
+          );
+        },
+        () => {
+          // A failed read leaves the card as it was; the next change of `entries` does not
+          // come, so try again on the same schedule.
+          if (!cancelled) setEntries((prev) => (prev === null ? prev : [...prev]));
+        },
+      );
+    }, 2000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [entries, inProgress]);
 
   /**
    * The update one entry's draft makes, or `null` when it changes nothing; `false` when a
@@ -425,7 +466,15 @@ export function PluginsSection({ focus }: { focus?: string } = {}) {
           </div>
         )}
         {(entry.notices ?? []).map((notice, i) =>
-          notice.tone === "attention" ? (
+          notice.tone === "progress" ? (
+            <p key={i} className={`flex items-center gap-2 text-xs ${toneInk.busy}`}>
+              <span
+                aria-hidden
+                className="inline-block size-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent"
+              />
+              <span className="min-w-0 break-words">{localized(notice.text, notice.textZh)}</span>
+            </p>
+          ) : notice.tone === "attention" ? (
             <p key={i} className={`rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
               {localized(notice.text, notice.textZh)}
             </p>

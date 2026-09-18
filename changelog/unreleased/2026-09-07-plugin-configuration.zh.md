@@ -13,6 +13,7 @@
 
 - **设置分组是一条 contribution**，投给 `PluginConfigProvider.groups`。它是清单数据，因此插件的分组会写进生成的 `ifaces.json`，页面不运行包就能列出它。contribution 的 id 即分组名。数据包括标题、说明（带供中文界面使用的 `…Zh` 字段）以及 `properties`。每个字段是 `string`、`secret`、`boolean`、`number`、`enum`（带 `options`）或 `list`（按行，可选 `maxItems`）之一，各带标题、说明、缺省值、占位文字与 `required`。`number` 可声明 `minimum` 与 `maximum`，`string` 与 `list` 可声明 `pattern`（配 `patternErrorMessage`），每个值或每一行都须匹配。分组还可以设置 `parent`，画进另一个分组的卡片里，以及 `order`。
 - **实时提示行**来自投给 `PluginConfigPage.status` 的代码 contribution，用于运行时状态会变化的分组。可选的 `saved()` 在卡片保存后执行，PUT 的应答会等它引发的工作完成后才返回。声明写错时只丢弃那个分组并告警，页面其余部分照常加载。
+- **提示行可以提供操作，并报告进行中的工作。** 它可列出 `actions()`，画成分组提示行下方的按钮，`run(id)` 经 `POST /api/admin/plugin-config/action` 执行其中一个。提示行可带 `progress` 语气：页面以旋转图标显示它，并每两秒重新读取该卡片，直到它消失。操作启动的工作结束后，绘制它的卡片会像保存后一样完成收尾，于是此前无法加载的沙盒后端无需保存即可加载。WSL 后端的卡片（[WSL 沙盒](2026-09-17-wsl-sandbox.zh.md)）最先用上这两项。
 - **值在服务端全局存储**，每个分组一份文档，存在服务端设置的 `plugin-config:<分组名>` 下，因为插件按进程只加载一次。密钥在所有 API 返回中都以掩码显示。原样送回掩码即保留存储值，送空值即清除。
 - **由声明分组的模块自己读取。** 模块 `requires` 来自 `PluginConfigModule` 的 `PluginConfig`：`get(name)` 返回合并到声明缺省值上的存储值，`watch(name, cb)` 在每次保存后触发，`saved(name)` 区分已保存的选择与缺省值。
 - **纯数据的 contribution 不决定启动顺序。** 模块树只在槽接收代码时，才让槽的所有者晚于投稿者创建。因此同一个类可以既声明分组，又 requires `PluginConfig`。
