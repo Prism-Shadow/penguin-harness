@@ -107,12 +107,28 @@ describe("Copilot AgentHub boundary", () => {
             capabilities: { supports: { tool_calls: true } },
           },
           { id: "no-tools", supported_endpoints: ["/chat/completions"] },
+          { id: "legacy-chat", capabilities: { type: "chat", supports: { tool_calls: true } } },
+          {
+            id: "legacy-embedding",
+            capabilities: { type: "embeddings", supports: { tool_calls: true } },
+          },
+          { id: "legacy-unknown", capabilities: { supports: { tool_calls: true } } },
+          {
+            id: "explicitly-empty",
+            supported_endpoints: [],
+            capabilities: { type: "chat", supports: { tool_calls: true } },
+          },
+          {
+            id: "legacy-no-tools",
+            capabilities: { type: "chat", supports: { tool_calls: false } },
+          },
         ],
       }),
     );
     vi.stubGlobal("fetch", fetcher);
     expect(await listEndpointModels({ clientType: "github-copilot", apiKey: "gho_test" })).toEqual([
       "supported",
+      "legacy-chat",
     ]);
     const [url, init] = fetcher.mock.calls[0]!;
     expect(String(url)).toBe("https://api.githubcopilot.com/models");

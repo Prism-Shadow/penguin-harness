@@ -28,7 +28,6 @@ index 5750ce4098609a3dfb100be0e0a17671db9bdabe..d138e448ba4c32b19be4561221a3d9c8
          if (clientType.includes("gemini-3") ||
 diff --git a/dist/github_copilot/client.d.ts b/dist/github_copilot/client.d.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..2b31a90e3efa2c3c4fb00fec4c3c4a2fc5888335
 --- /dev/null
 +++ b/dist/github_copilot/client.d.ts
 @@ -0,0 +1,9 @@
@@ -44,18 +43,16 @@ index 0000000000000000000000000000000000000000..2b31a90e3efa2c3c4fb00fec4c3c4a2f
 \ No newline at end of file
 diff --git a/dist/github_copilot/client.d.ts.map b/dist/github_copilot/client.d.ts.map
 new file mode 100644
-index 0000000000000000000000000000000000000000..97286cb0d43a612591b3ae04da811a1e7d798b44
 --- /dev/null
 +++ b/dist/github_copilot/client.d.ts.map
-@@ -0,0 +1 @@
-+{"version":3,"file":"client.d.ts","sourceRoot":"","sources":["../../src/github_copilot/client.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,gBAAgB,EAAE,MAAM,gBAAgB,CAAC;AAGlD,KAAK,OAAO,GAAG,qBAAqB,CAAC,OAAO,gBAAgB,CAAC,CAAC,CAAC,CAAC,CAAC;AAGjE,uFAAuF;AACvF,qBAAa,mBAAoB,SAAQ,gBAAgB;gBAC3C,OAAO,EAAE,OAAO;IAwCtB,UAAU,IAAI,OAAO,CAAC,MAAM,EAAE,CAAC;CAYtC"}
+@@ -0,0 +1,1 @@
++{"version":3,"file":"client.d.ts","sourceRoot":"","sources":["../../src/github_copilot/client.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,gBAAgB,EAAE,MAAM,gBAAgB,CAAC;AAGlD,KAAK,OAAO,GAAG,qBAAqB,CAAC,OAAO,gBAAgB,CAAC,CAAC,CAAC,CAAC,CAAC;AAGjE,uFAAuF;AACvF,qBAAa,mBAAoB,SAAQ,gBAAgB;gBAC3C,OAAO,EAAE,OAAO;IAwCtB,UAAU,IAAI,OAAO,CAAC,MAAM,EAAE,CAAC;CAkBtC"}
 \ No newline at end of file
 diff --git a/dist/github_copilot/client.js b/dist/github_copilot/client.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..c6990be0897ce7d14ce883262255d4e5c476466f
 --- /dev/null
 +++ b/dist/github_copilot/client.js
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,70 @@
 +"use strict";
 +var __importDefault = (this && this.__importDefault) || function (mod) {
 +    return (mod && mod.__esModule) ? mod : { "default": mod };
@@ -112,7 +109,13 @@ index 0000000000000000000000000000000000000000..c6990be0897ce7d14ce883262255d4e5
 +        const ids = [];
 +        for await (const entry of this._client.models.list({ timeout: 15000 })) {
 +            const model = entry;
-+            if (model.supported_endpoints?.includes("/chat/completions") &&
++            // Older catalogs omit endpoint metadata. Treat explicitly chat-capable
++            // entries as candidates, while honoring any advertised endpoint restrictions.
++            const chat = model.supported_endpoints === undefined
++                ? model.capabilities?.type === "chat"
++                : Array.isArray(model.supported_endpoints) &&
++                    model.supported_endpoints.includes("/chat/completions");
++            if (chat &&
 +                model.capabilities?.supports?.tool_calls === true)
 +                ids.push(model.id);
 +        }
