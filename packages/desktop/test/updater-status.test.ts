@@ -17,6 +17,8 @@ import {
   nextUpdateStatus,
   parseUpdaterCommand,
   updaterStatusMessage,
+  hostCommandsMessage,
+  parseHostCommand,
 } from "../src/updater-status.js";
 import type { UpdaterEvent } from "../src/updater-status.js";
 
@@ -211,5 +213,21 @@ describe("port frames", () => {
     ]) {
       expect(parseUpdaterCommand(data)).toBeNull();
     }
+  });
+});
+
+describe("host commands on the port", () => {
+  it("frames what the host offers, and reads back only a well-formed ask", () => {
+    expect(hostCommandsMessage(["install-cli"])).toEqual({
+      type: "host-commands",
+      commands: ["install-cli"],
+    });
+    expect(parseHostCommand({ type: "host-command", command: "install-cli" })).toBe("install-cli");
+    expect(parseHostCommand({ type: "host-command", command: "check-updates" })).toBe(
+      "check-updates",
+    );
+    expect(parseHostCommand({ type: "host-command", command: "format-disk" })).toBeNull();
+    expect(parseHostCommand({ type: "desktop-updater-command", action: "check" })).toBeNull();
+    expect(parseHostCommand(null)).toBeNull();
   });
 });

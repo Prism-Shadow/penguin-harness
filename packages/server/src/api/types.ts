@@ -3900,6 +3900,31 @@ export interface DesktopTrayCommandMessage {
 }
 
 /**
+ * A native action the host process can run on the page's behalf — what the desktop shell's
+ * application menu used to offer, reached from the command palette instead (the menu bar
+ * stays hidden so a lone Alt no longer takes the keyboard). A plain server offers none.
+ */
+export const HOST_COMMANDS = ["install-cli", "check-updates"] as const;
+export type HostCommand = (typeof HOST_COMMANDS)[number];
+
+/** Shell → server push over the utilityProcess message channel, once per wiring: what this host offers. */
+export interface HostCommandsMessage {
+  type: "host-commands";
+  commands: HostCommand[];
+}
+
+/** `GET /api/command` (admin): the commands the host offers — empty under a plain server, or before the shell's push. */
+export interface HostCommandsResponse {
+  commands: HostCommand[];
+}
+
+/** Server → shell: run one. `POST /api/command/:command` sends it. */
+export interface HostCommandMessage {
+  type: "host-command";
+  command: HostCommand;
+}
+
+/**
  * The outcome of one self-update run (`penguin update --yes` on the server host), carried
  * by {@link UpdateJobStatus.result}. `unsupported` covers both a server not launched via
  * the CLI and the CLI's own refusals (source checkout, unrecognized install layout, Windows).
