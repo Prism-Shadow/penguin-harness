@@ -43,7 +43,7 @@ Laguna M.1 joined the catalog alongside Ling. This row is the free tier of Pools
 Two decisions in the catalog are worth knowing:
 
 - **Context window.** The routed model's real context window changes from request to request, so the row records a deliberately conservative 128,000 instead of any one model's real figure. Long Sessions compact early instead of growing toward a window the routed model may not have.
-- **Text only.** The router itself accepts images, but the model behind a given request may not. The row is marked text-only on purpose, so PenguinHarness does not send images on this route and uses its usual text-only fallback instead.
+- **Text only.** The router itself accepts images, but the model behind a given request may not. The row is marked text-only on purpose, so PenguinHarness does not send images on this route and falls back to its usual text-only hand-off (file path plus `describe_image`).
 
 ## Switch it on
 

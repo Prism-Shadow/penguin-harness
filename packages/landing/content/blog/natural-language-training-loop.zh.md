@@ -168,7 +168,7 @@ Skill 没有专用工具，也不会整篇塞进提示词。系统提示词模�
 
 - 部署的模型。Ollama 在 `http://localhost:11434/v1` 提供 OpenAI 兼容 API，vLLM 在 `http://localhost:8000/v1`。Agent 会话里发给它们的每条提示词、工具 Schema、工具结果和补全，都只经过本机回环接口。
 - 训练。LlamaFactory 跑在你的 GPU 上。数据集放在 `data/` 下，与 `data/dataset_info.json` 相邻；适配器和合并后的导出结果落在 `saves/` 下。`llamafactory-cli train` 的任何阶段都不会把你的样本发出去。
-- 评估。题目、题干和评分细则都是你 Project 里的文件，评估者从磁盘读取它们。一份评分细则的路径形如 `~/.penguin/data/default_project/agents/tool-router/benchmarks/tool-routing-v1/CASE-003-pick-the-cheaper-endpoint/rubric/README.md`，记分板是它们旁边的一个 YAML 文件。
+- 评估。题目、题干和评分细则都是你 Project 里的文件，评估者从磁盘读取它们。一份评分细则的路径形如 `~/.penguin/data/default_project/agents/tool_router/benchmarks/tool-routing-v1/CASE-003-pick-the-cheaper-endpoint/rubric/README.md`，记分板是它们旁边的一个 YAML 文件。
 - 配置。`penguin config model add` 写入一个隐藏的 Project 配置文件。它只由 CLI 管理，不应手工编辑，你指定放在哪里，它就留在哪里。
 
 如果驱动 Agent 的是本地模型，经过网络的就只有安装包和模型权重，而且都是下载进来。`ollama pull`、`pip install vllm`、克隆 LlamaFactory、解析 Hugging Face 基座模型 id，这些都是下载，没有一项会上传你的数据。如果驱动 Agent 的是托管模型，对话本身也会发到那家供应商，见第三步。

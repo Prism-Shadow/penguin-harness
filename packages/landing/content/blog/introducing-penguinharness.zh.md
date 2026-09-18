@@ -119,7 +119,7 @@ PenguinHarness 为以下模型提供了预置配置：
 
    ```bash
    curl -fsSL https://penguin.ooo/install.sh | sh
-   penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin，登录方式见终端输出）
+   penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin / penguin-2026，登录页上也有提示）
    ```
 
 2. 打开**模型仓库**页面，在 DeepSeek 或 OpenRouter 分组里填入 API key，把组里的一个模型设为默认。

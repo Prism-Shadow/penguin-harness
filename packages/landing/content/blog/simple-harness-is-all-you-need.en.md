@@ -9,7 +9,7 @@ excerpt: Databricks benchmarked coding agents on roughly a hundred real pull req
 
 An **agent harness** is the software around a language model that decides what goes into each request: the system prompt, the tool definitions, and the message history. The common intuition is that a bigger harness makes a better agent. More tools, more context, and more scaffolding should lead to better decisions, and the whole category was built on that belief.
 
-This essay argues the opposite. In a Databricks benchmark on real pull requests, the simplest harness produced the highest score at about half the cost, and Databricks attributes the result to sending less context per turn. We treat a harness as an **information budget** rather than a feature list, show where that budget goes, describe how PenguinHarness is built around that idea, and mark where minimalism has to stop.
+This essay argues the opposite. In a Databricks benchmark on real pull requests, the simplest harness produced the highest score at about half the cost, and Databricks attributes the result to sending less context per turn.
 
 ## The evidence: a benchmark on real pull requests
 

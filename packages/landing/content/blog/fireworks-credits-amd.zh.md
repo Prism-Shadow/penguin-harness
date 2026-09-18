@@ -65,7 +65,7 @@ AMD 会验证你的账号和申请资料，通常需要 2–3 个工作日。实
 
    ```bash
    curl -fsSL https://penguin.ooo/install.sh | sh
-   penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin，登录方式见终端输出）
+   penguin web        # 打开 http://127.0.0.1:7364（首次登录：admin / penguin-2026，登录页上也有提示）
    ```
 
 2. 打开**模型仓库**页面，找到 **Fireworks AI** 分组，点击**统一配置 API key**，粘贴刚创建的 API key。分组预置了五个模型：GLM 5.2、Kimi K2.7 Code、DeepSeek V4 Pro、MiniMax M3 和 DeepSeek V4 Flash，base URL 与价格都已填好，任选一个设为默认即可。想先比较各模型的实测 TTFT 与 TPS，可以点击分组上的**测速**。

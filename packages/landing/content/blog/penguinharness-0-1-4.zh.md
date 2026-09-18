@@ -46,7 +46,7 @@ irm https://penguin.ooo/install.ps1 | iex
 <img class="dark:hidden" src="/blog-assets/goal-mode-zh-light.webp" alt="目标模式进行中：检查套件目标的第 3 轮，输入框上方的目标横幅实时显示目标、轮次与 token 用量对预算" width="1920" height="1350" />
 <img class="hidden dark:block" src="/blog-assets/goal-mode-zh-dark.webp" alt="深色主题下的目标模式：检查套件目标的第 3 轮，输入框上方的目标横幅实时显示目标、轮次与 token 用量对预算" width="1920" height="1350" />
 
-CLI 提供同样的循环：聊天里用 `/goal[:<budget>] <objective>`，`penguin run` 则加上 `--goal`，此时只有目标真正完成，命令才以 0 退出，所以可以把目标直接写进脚本。SDK 仍然只有一个入口：`session.run(input, { goal: { budget } })`。
+CLI 提供同样的循环：聊天里用 `/goal[:<预算>] <目标>`，`penguin run` 则加上 `--goal`，此时只有目标真正完成，命令才以 0 退出，所以可以把目标直接写进脚本。SDK 仍然只有一个入口：`session.run(input, { goal: { budget } })`。
 
 ## 智能体面板
 

@@ -69,7 +69,7 @@ With the API key in hand, setup takes three steps:
 
    ```bash
    curl -fsSL https://penguin.ooo/install.sh | sh
-   penguin web        # opens http://127.0.0.1:7364 (first login: admin, sign-in details printed in the terminal)
+   penguin web        # opens http://127.0.0.1:7364 (first login: admin / penguin-2026, shown on the login page)
    ```
 
 2. Open the **Models** page and find the **Fireworks AI** group. Click **Set API key for group** and paste the API key you just created. The group has five preset models, with base URLs and pricing filled in: GLM 5.2, Kimi K2.7 Code, DeepSeek V4 Pro, MiniMax M3 and DeepSeek V4 Flash. Set any of them as the default. To compare real TTFT and TPS before you choose, click the group's **Speed test** button.

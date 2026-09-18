@@ -80,7 +80,7 @@ PenguinHarness 给出的答案不是一个更薄的框架。它先去掉组装�
 
 ```bash
 curl -fsSL https://penguin.ooo/install.sh | sh
-penguin web        # http://127.0.0.1:7364 — 首次登录：admin，初始密码见首次启动输出
+penguin web        # http://127.0.0.1:7364 — 首次登录：admin / penguin-2026，登录页上也有提示
 ```
 
 安装后就有多会话对话、Agent 与 Skill 管理、模型配置、用量与成本统计、Trace 可观测，以及**评估中心**，彼此已经打通。不用订阅什么，也不用另外自建什么。每个请求、每次工具调用、每个审批决策都已经记录下来，会话可以从 Trace 完整恢复。这里没有追踪 SDK 要接，因为产品之间根本不存在需要埋点的接缝。

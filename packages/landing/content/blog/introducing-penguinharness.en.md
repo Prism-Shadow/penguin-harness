@@ -119,7 +119,7 @@ A self-improving harness needs a community that improves with it. Come discuss, 
 
    ```bash
    curl -fsSL https://penguin.ooo/install.sh | sh
-   penguin web        # opens http://127.0.0.1:7364 (first login: admin, sign-in details printed in the terminal)
+   penguin web        # opens http://127.0.0.1:7364 (first login: admin / penguin-2026, shown on the login page)
    ```
 
 2. Open the **Models** page, add an API key to the DeepSeek or OpenRouter group, and set one of its models as the default.

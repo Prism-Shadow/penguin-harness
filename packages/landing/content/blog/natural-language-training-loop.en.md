@@ -168,7 +168,7 @@ In this setup, these stay local:
 
 - The served model. Ollama exposes its OpenAI-compatible API on `http://localhost:11434/v1`, and vLLM on `http://localhost:8000/v1`. Every prompt, tool schema, tool result and completion in an agent Session against them stays on the loopback interface.
 - The training. LlamaFactory runs on your GPU. Your dataset sits under `data/` next to `data/dataset_info.json`, and the adapter and the merged export land under `saves/`. No stage of `llamafactory-cli train` ships your examples anywhere.
-- The evaluation. Cases, statements and rubrics are files in your Project, and the evaluator reads them from disk. A rubric lives at a path like `~/.penguin/data/default_project/agents/tool-router/benchmarks/tool-routing-v1/CASE-003-pick-the-cheaper-endpoint/rubric/README.md`, and the scoreboard is a YAML file next to them.
+- The evaluation. Cases, statements and rubrics are files in your Project, and the evaluator reads them from disk. A rubric lives at a path like `~/.penguin/data/default_project/agents/tool_router/benchmarks/tool-routing-v1/CASE-003-pick-the-cheaper-endpoint/rubric/README.md`, and the scoreboard is a YAML file next to them.
 - The configuration. `penguin config model add` writes into a single hidden Project config file. The CLI manages it, it is never edited by hand, and it stays where you point it.
 
 If a local model drives the agent, only installs and weights cross the network, and they come in. `ollama pull`, `pip install vllm`, cloning LlamaFactory and resolving a Hugging Face base model id all download; none of them upload your data. If a hosted model drives the agent, the conversation also goes to that vendor, as Step 3 describes.

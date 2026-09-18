@@ -9,7 +9,7 @@ excerpt: Databricks 拿约一百个真实 Pull Request 评测编程 Agent，通�
 
 **Agent Harness** 是包在语言模型外面的那层软件，决定每次请求里放什么：系统提示词、工具定义和消息历史。按常见的直觉，Harness 越大，Agent 越强。工具更多、上下文更全、脚手架更厚，决策理应更好，整个品类就是建立在这个信念上的。
 
-本文的观点正好相反。Databricks 用真实 Pull Request 做了一次评测，最简单的 Harness 拿到最高分，成本还只有一半左右；Databricks 把原因归结为它每轮发送的上下文更少。我们把 Harness 看作一份**上下文预算**，而不是一张功能清单。下文会说明这份预算花在了哪里，介绍 PenguinHarness 怎样围绕这个思路构建，并指出精简必须在哪里止步。
+本文的观点正好相反。Databricks 用真实 Pull Request 做了一次评测，最简单的 Harness 拿到最高分，成本还只有一半左右；Databricks 把原因归结为它每轮发送的上下文更少。
 
 ## 证据：一次基于真实 Pull Request 的评测
 
