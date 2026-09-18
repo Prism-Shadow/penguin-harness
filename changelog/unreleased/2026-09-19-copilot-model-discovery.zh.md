@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** fix
 - **Scope:** `core`, `model-catalog`, `web`, `docs`
+- **PR:** [#5](https://github.com/nicolaepocroianu/penguin-harness/pull/5)
 
 [English](2026-09-19-copilot-model-discovery.md)
 
