@@ -5,14 +5,32 @@
  */
 import type { ComponentSection } from "../../ui/src/catalog";
 import type { Demo } from "../../ui/src/demo";
-import type { Module, ModuleVariant } from "../../ui/src/module";
+import type { Module, ModuleVariant, SceneFrame } from "../../ui/src/module";
+import { SceneContext } from "../../ui/src/scene";
+import type { SceneClock } from "../../ui/src/scene";
 import { allSelections, formatVariantKey } from "./lib/demos";
 import type { VariantPick } from "./lib/demos";
 import { useGallery } from "./state";
 
-export function ModuleView({ module, variant }: { module: Module; variant: ModuleVariant }) {
+/**
+ * A module's composition. A live variant's clock reaches the components it renders through
+ * `SceneContext`; a static variant gets none, so no clock from a surrounding card ever leaks in.
+ */
+export function ModuleView({
+  module,
+  variant,
+  clock = null,
+}: {
+  module: Module;
+  variant: ModuleVariant;
+  clock?: SceneClock | null;
+}) {
   const { state, mode } = useGallery();
-  return <>{module.render(variant.key, { lang: state.lang, mode })}</>;
+  return (
+    <SceneContext.Provider value={clock}>
+      {module.render(variant.key, { lang: state.lang, mode })}
+    </SceneContext.Provider>
+  );
 }
 
 function DemoCell({
@@ -49,6 +67,7 @@ export function DemoView({ demo, pick }: { demo: Demo; pick: VariantPick }) {
 export function useText(): {
   module: (module: Module) => { title: string; description: string };
   variant: (module: Module, variant: ModuleVariant) => string;
+  frame: (module: Module, variant: ModuleVariant, frame: SceneFrame) => string;
   part: (section: ComponentSection) => { title: string; description: string };
 } {
   const { S } = useGallery();
@@ -62,6 +81,8 @@ export function useText(): {
     },
     variant: (module, variant) =>
       S.catalog.modules[module.id]?.variants[variant.key] ?? variant.title,
+    frame: (module, variant, frame) =>
+      S.catalog.modules[module.id]?.frames?.[variant.key]?.[frame.key] ?? frame.title,
     part: (section) => {
       const zh = S.catalog.sections[section.id];
       return {

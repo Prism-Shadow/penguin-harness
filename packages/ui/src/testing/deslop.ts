@@ -81,6 +81,12 @@ export interface DeslopHit {
 export interface DeslopPolicy {
   /** Rule 1: files that may transition a transform — the chevron, the sheet, launcher and drawer motion. */
   readonly transformMotion: readonly string[];
+  /**
+   * Rule 1: files that may transition a size — the one `data-layout-motion` rule in the theme
+   * foundation, which moves a sidebar's width or a disclosure's grid rows on the theme's layout
+   * tokens. A component never transitions geometry itself; it sets the attribute.
+   */
+  readonly layoutMotion?: readonly string[];
   /** Rule 3: keyframe-driven entrances that may run 300 ms or longer. */
   readonly entranceMotion: readonly string[];
   /** Rule 6: files that may pulse without `.ui-live` — the dot, the skeleton, the streaming caret. */
@@ -579,6 +585,10 @@ const TRANSITION_PROPERTIES = new Set(
   ),
 );
 const TRANSFORM_PROPERTIES = new Set(["transform", "translate", "scale", "rotate"]);
+/** Rule 1: the sizes the layout-motion rule may transition, and nothing else may. */
+const LAYOUT_PROPERTIES = new Set(
+  "width height min-width max-width flex-basis grid-template-rows grid-template-columns".split(" "),
+);
 
 /** Rule 12: the steps a gap, a stack or an all-sides padding may take. */
 const RHYTHM_STEPS = new Set(["0", "px", "1", "1.5", "2", "3", "4", "6", "10"]);
@@ -628,9 +638,16 @@ function arbitraryValues(utility: string, name: string): string[] | null {
     .map((part) => part.trim().replace(/_/g, " "));
 }
 
-function refusedTransitionProperties(properties: readonly string[], transformOk: boolean) {
+function refusedTransitionProperties(
+  properties: readonly string[],
+  transformOk: boolean,
+  layoutOk = false,
+) {
   return properties.filter(
-    (p) => !TRANSITION_PROPERTIES.has(p) && !(transformOk && TRANSFORM_PROPERTIES.has(p)),
+    (p) =>
+      !TRANSITION_PROPERTIES.has(p) &&
+      !(transformOk && TRANSFORM_PROPERTIES.has(p)) &&
+      !(layoutOk && LAYOUT_PROPERTIES.has(p)),
   );
 }
 
@@ -642,7 +659,11 @@ const transitionToken: TokenPredicate = (token, file, policy) => {
   if (u === "transition-transform") return transformOk ? null : token.raw;
   const list = arbitraryValues(u, "transition");
   if (list === null || list.some((p) => p.startsWith("--") || p.startsWith("var("))) return null;
-  const refused = refusedTransitionProperties(list, transformOk);
+  const refused = refusedTransitionProperties(
+    list,
+    transformOk,
+    inPolicy(file, policy.layoutMotion ?? []),
+  );
   return refused.length > 0 ? token.raw : null;
 };
 
@@ -1063,6 +1084,7 @@ const cssTransitionCheck: Check = (analysis, policy) =>
     const refused = refusedTransitionProperties(
       properties,
       inPolicy(analysis.file, policy.transformMotion),
+      inPolicy(analysis.file, policy.layoutMotion ?? []),
     );
     return refused.length > 0
       ? [{ line: decl.line, found: `${decl.name}: ${refused.join(", ")}` }]
@@ -1129,13 +1151,17 @@ const cssHookMonoCheck: Check = (analysis) =>
 
 /**
  * Gradients painted by a hook recipe — the atmosphere tell — and backdrop filters off `.ui-glass`.
- * A gradient in app CSS that is not a hook (the context bar's hatch, which carries meaning) is
- * review.
+ * The one recipe that may paint a gradient is `.ui-shell`'s: the colour field behind the app
+ * window, which holds the floating sheet and the glass layers against it and so has a job
+ * (user decision, 2026-09-19); a wash on any other hook is still the tell. A gradient in app CSS
+ * that is not a hook (the context bar's hatch, which carries meaning) is review.
  */
 const cssDecorationCheck: Check = (analysis) =>
   declarations(analysis).flatMap(({ rule, decl }) => {
+    const selector = fullSelector(rule);
     if (
-      /\.ui-[a-z]/.test(fullSelector(rule)) &&
+      /\.ui-[a-z]/.test(selector) &&
+      !/\.ui-shell\b/.test(selector) &&
       /^background(?:-image)?$/.test(decl.name) &&
       /gradient\(/.test(decl.value)
     ) {

@@ -14,7 +14,7 @@ import type { FixtureLang, Fixtures } from "../fixtures";
 import { ChatTranscript } from "./chat";
 import { Glyph } from "./glyph";
 import type { GlyphName } from "./glyph";
-import { ChatHeader, NEUTRAL_FILL, Segmented, Sidebar } from "./parts";
+import { AppShell, ChatHeader, NEUTRAL_FILL, Segmented, Sidebar } from "./parts";
 import { Composer } from "./transcript";
 
 type PageKey = keyof Fixtures["copy"]["settings"]["pages"];
@@ -192,9 +192,9 @@ function PagedDialog({ f }: { f: Fixtures }) {
 export function SettingsScreen({ lang }: { lang: FixtureLang }) {
   const f = fixturesFor(lang);
   return (
-    <div className="relative flex h-screen w-full overflow-hidden bg-canvas text-fg">
+    <AppShell className="relative flex h-screen w-full overflow-hidden bg-canvas text-fg">
       <Sidebar f={f} activeSessionId={f.session.id} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
         <ChatHeader f={f} dock="none" />
         <main className="flex min-h-0 flex-1 flex-col">
           <ChatTranscript f={f} />
@@ -204,6 +204,6 @@ export function SettingsScreen({ lang }: { lang: FixtureLang }) {
       <div className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--ui-overlay-backdrop)] p-4">
         <PagedDialog f={f} />
       </div>
-    </div>
+    </AppShell>
   );
 }

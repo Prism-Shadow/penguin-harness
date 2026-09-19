@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { FixtureLang, Fixtures, ToolCallItem } from "../fixtures";
 import { Glyph } from "./glyph";
-import { AgentTile, ChatHeader, DockFrame, GroupHeader, Sidebar, Spinner } from "./parts";
+import { AgentTile, AppShell, ChatHeader, DockFrame, GroupHeader, Sidebar, Spinner } from "./parts";
 import { Composer, Turn } from "./transcript";
 
 /**
@@ -100,9 +100,9 @@ function SubagentsPanel({ f }: { f: Fixtures }) {
 export function ChatScreen({ lang }: { lang: FixtureLang }) {
   const f = fixturesFor(lang);
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-canvas text-fg">
+    <AppShell className="flex h-screen w-full overflow-hidden bg-canvas text-fg">
       <Sidebar f={f} activeSessionId={f.session.id} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
         <ChatHeader f={f} dock="right" />
         <div className="flex min-h-0 flex-1">
           <main className="flex min-w-0 flex-1 flex-col">
@@ -116,6 +116,6 @@ export function ChatScreen({ lang }: { lang: FixtureLang }) {
           </div>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }

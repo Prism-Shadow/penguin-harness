@@ -619,6 +619,15 @@ export interface FailedRunFixture {
   stats: TurnStats;
 }
 
+/**
+ * Turn 2 told short, as the conversation's live scene plays it: the read and the edit, then a
+ * reply that closes the turn on the fix, and the stats it settles on.
+ */
+export interface StreamedReplyFixture {
+  reply: AssistantTextItem;
+  stats: TurnStats;
+}
+
 /** A run of inline Markdown: plain text, inline code, or a link's text. */
 export type InlineFixture = string | { code: string } | { link: string };
 
@@ -694,6 +703,8 @@ export interface AppCopy {
     runStates: Record<RunState, string>;
     running: string;
     done: string;
+    /** A step that waits for its turn to run. */
+    queued: string;
     attach: string;
     steps: (n: number) => string;
     thinking: string;
@@ -725,6 +736,8 @@ export interface AppCopy {
     /** A command log's last line: its exit code and how long it ran. */
     exitStatus: (code: number, duration: string) => string;
     outputComplete: string;
+    /** A message's "Delete message": the confirmation it asks for, and the toast that follows. */
+    deleteMessage: { title: string; body: string; confirm: string; deleted: string };
   };
   dock: {
     subagents: (n: number) => string;
@@ -968,6 +981,7 @@ export interface Fixtures {
   usage: UsageFixture;
   plan: readonly PlanStepFixture[];
   failedRun: FailedRunFixture;
+  streamedReply: StreamedReplyFixture;
   docsAnswer: DocsAnswerFixture;
   specimens: TypeSpecimens;
 }

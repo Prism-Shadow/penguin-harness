@@ -6,11 +6,18 @@ fetched from a CDN, so the desktop build renders offline.
 
 ## Families
 
-| theme | sans | mono | display | CJK |
+| theme | sans (reading) | ui (chrome) | mono | CJK |
 | --- | --- | --- | --- | --- |
-| Primer `github` | Mona Sans Variable (from W1a; system stack until then) | JetBrains Mono Variable behind the system mono stack (W1a) | = sans | Noto Sans SC Variable (W1a) |
-| Frost `modern` | **MiSans** 400 / 500 | JetBrains Mono Variable | = sans | MiSans (the same family) |
-| Console `geek` | IBM Plex Sans Variable | Commit Mono 400 / 700 | IBM Plex Sans Condensed 600 (the h1 only) | Noto Sans SC Variable |
+| Primer `github` | Mona Sans Variable (from W1a; system stack until then) | = sans | JetBrains Mono Variable behind the system mono stack (W1a) | Noto Sans SC Variable (W1a) |
+| Frost `modern` | **MiSans** 400 / 500 | = sans | JetBrains Mono Variable | MiSans (the same family) |
+| Console `geek` | IBM Plex Sans Variable | Commit Mono 400 / 700 | Commit Mono 400 / 700 | Noto Sans SC Variable |
+
+Two faces per theme since the theme identities (2026-09-19): `--ui-font-ui` is the chrome's face
+(`body` sets it; navigation, controls, labels, headings, badges, tables) and `--ui-font-sans` the
+reading face (message text, prose, the composer's input opt in with `font-sans`). Primer and Frost
+point both at one family; Console sets its chrome in Commit Mono and reads in Plex Sans. The display
+face is the chrome face everywhere: Console's h1 is the mono bold, and IBM Plex Sans Condensed 600
+(the old uppercase h1) stays declared in `geek.css` but unnamed until its dependency is dropped.
 
 | family | files | source | licence |
 | --- | --- | --- | --- |
@@ -24,8 +31,9 @@ fetched from a CDN, so the desktop build renders offline.
 
 Why these faces: Mona Sans is GitHub's product face. MiSans gives Frost one family for Latin and
 Chinese, so a zh line sits in the same face as the English around it; no other face on the shortlist
-has Chinese. IBM Plex Sans with its Condensed cut gives Console an instrument-panel voice without
-setting chrome in mono, and Commit Mono is the face e2b.dev ships, used for data only.
+has Chinese. Commit Mono, the face opencode.ai and e2b.dev ship, is Console's chrome — navigation,
+controls, labels, headings — and its code face; IBM Plex Sans keeps Console's reading text
+proportional, which a monospaced paragraph is not.
 
 Frost ships two MiSans weights and no more, so `themes/modern.css` turns off weight synthesis: a 600
 or 700 request renders in Medium instead of a synthesized bold, which smears Han strokes. Frost's

@@ -15,12 +15,24 @@
  * Adding, renaming or removing a name is a contract change: every theme file changes in the
  * same commit, and so does the bridge in `theme.css` when the name has a utility alias.
  *
- * Heights are shared: the padding-block of controls, rows and menu rows carries the same values in
- * every theme, and so will the line-heights and the type scale once Primer adopts the shared scale
- * in W1a. Until then Primer keeps the app's rem line-heights (a small control is 29px at the 18px
- * root, 31.25px in Frost and Console); from W1a switching themes never reflows a layout
- * vertically. All type and density lengths are rem, so the 16 / 18 / 20 px root tiers keep
- * scaling them.
+ * Nothing about size is shared between themes any more. Each theme sets its own space unit
+ * (`--ui-space-unit`, which `theme.css` bridges to Tailwind's `--spacing`, so every `h-8`, `px-2`,
+ * `gap-3` and `w-64` scales with it), its own type rungs and line-heights, and its own control,
+ * row and menu-row padding; switching themes reflows a layout, by design (user decision,
+ * 2026-09-19). What every theme still shares is the NAMES, the markup they act on and the
+ * anatomy the style hooks rely on — a component never asks which theme is active. All type and
+ * density lengths are rem, so the 16 / 18 / 20 px root tiers keep scaling them within a theme.
+ *
+ * Two faces, not one: `--ui-font-ui` is the chrome's face (navigation, controls, labels, headings,
+ * badges, tables — `body` reads it), `--ui-font-sans` the reading face (message text, prose, the
+ * composer's input, which opt in with `font-sans`). Primer and Frost point both at one family;
+ * Console sets the chrome in a monospaced face and keeps reading text in a sans.
+ *
+ * Motion is three languages behind one set of names: the presence tokens (`--ui-dur-enter`,
+ * `--ui-enter-shift`, `--ui-enter-scale`, `--ui-enter-blur`, …) drive the theme-independent
+ * rules in `theme.css` for `data-presence`, `data-backdrop`, `data-reveal` and
+ * `data-layout-motion`; a theme picks a quick fade, a soft spring or a `steps()` jump by value
+ * alone. `--ui-dur-fast` / `base` / `slow` stay the state-change durations a component may name.
  */
 
 /** Stable, lowercase theme ids. Display names (Primer / Frost / Console) are UI copy, not ids. */
@@ -185,9 +197,33 @@ export const TOKEN_GROUPS = [
     ],
   },
   {
+    id: "shell",
+    title: "Shell",
+    // The app window's own frame (the `ui-shell` hook): the field behind it, the two washes a
+    // theme may paint over the field, the two columns' fills, the rule between them, and the main
+    // column's inset, corner and shadow when it floats. Primer's values are today's rendering.
+    names: [
+      "--ui-shell-field",
+      "--ui-shell-wash-1",
+      "--ui-shell-wash-2",
+      "--ui-shell-nav-bg",
+      "--ui-shell-main-bg",
+      "--ui-shell-line",
+      "--ui-shell-gap",
+      "--ui-shell-radius",
+      "--ui-shell-shadow",
+    ],
+  },
+  {
     id: "type-families",
     title: "Typography — families",
-    names: ["--ui-font-sans", "--ui-font-mono", "--ui-font-display", "--ui-font-cjk"],
+    names: [
+      "--ui-font-sans",
+      "--ui-font-ui",
+      "--ui-font-mono",
+      "--ui-font-display",
+      "--ui-font-cjk",
+    ],
   },
   {
     id: "type-scale",
@@ -254,6 +290,7 @@ export const TOKEN_GROUPS = [
     id: "density",
     title: "Density",
     names: [
+      "--ui-space-unit",
       "--ui-control-py-sm",
       "--ui-control-py-md",
       "--ui-control-py-lg",
@@ -288,6 +325,17 @@ export const TOKEN_GROUPS = [
       "--ui-ease-overlay-in",
       "--ui-ease-overlay-out",
       "--ui-live-timing",
+      "--ui-dur-enter",
+      "--ui-dur-exit",
+      "--ui-ease-enter",
+      "--ui-ease-exit",
+      "--ui-enter-shift",
+      "--ui-enter-scale",
+      "--ui-enter-blur",
+      "--ui-dur-reveal",
+      "--ui-reveal-blur",
+      "--ui-dur-layout",
+      "--ui-ease-layout",
     ],
   },
   {

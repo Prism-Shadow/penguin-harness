@@ -57,9 +57,11 @@ function parse(markdown: string): Block[] {
   return blocks;
 }
 
-const INLINE = /(\*\*[^*]+\*\*|`[^`]+`|https?:\/\/[^\s)）]+[^\s)）.,。，;；:：])/g;
+/** The inline runs the renderer styles — bold, code, a bare link — as one capture group. */
+export const INLINE = /(\*\*[^*]+\*\*|`[^`]+`|https?:\/\/[^\s)）]+[^\s)）.,。，;；:：])/g;
 
-function inline(text: string): ReactNode[] {
+/** A line of text with its inline runs styled; a streamed reply renders each chunk through it. */
+export function inline(text: string): ReactNode[] {
   return text.split(INLINE).map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
       return (
@@ -119,7 +121,8 @@ export function CodeBlock({ lang, text }: { lang: string; text: string }) {
 
 /**
  * `size`: `base` is the transcript's assistant prose; `sm` is a disclosure body (thinking) and
- * the dock's narrower panels.
+ * the dock's narrower panels. Prose is reading text, so it takes the reading face (`font-sans`)
+ * even where a theme sets its chrome in another.
  */
 export function Markdown({
   text,
@@ -133,7 +136,7 @@ export function Markdown({
   const blocks = parse(text);
   const body = size === "base" ? "text-base" : "text-sm";
   return (
-    <div className={`${body} leading-relaxed text-fg [overflow-wrap:break-word]`}>
+    <div className={`${body} font-sans leading-relaxed text-fg [overflow-wrap:break-word]`}>
       {blocks.map((b, i) => {
         const last = i === blocks.length - 1;
         const caret = streaming && last ? <StreamingCaret /> : null;

@@ -115,6 +115,8 @@ export interface FixtureProse {
       reviewReply: string;
       /** What the agent says when the citation test fails on a file renamed upstream. */
       failedReply: string;
+      /** The reply that closes the turn right after the edit, in the conversation's live scene. */
+      closingReply: string;
     };
     draft: string;
   };
@@ -392,7 +394,7 @@ export function buildFixtures(lang: FixtureLang, prose: FixtureProse): Fixtures 
 
   const sb = prose.sidebar;
 
-  const data: Omit<Fixtures, "plan" | "failedRun"> = {
+  const data: Omit<Fixtures, "plan" | "failedRun" | "streamedReply"> = {
     lang,
     copy,
     user: { id: USER_ID, name: prose.userName, isAdmin: true },
@@ -955,6 +957,7 @@ export function buildFixtures(lang: FixtureLang, prose: FixtureProse): Fixtures 
       [tk.pdf.title, tk.deploy.title],
     ),
     failedRun: failedRun(data.session.turns[1]!.items, t2.failedReply),
+    streamedReply: streamedReply(t2.closingReply),
   };
 }
 
@@ -1027,6 +1030,32 @@ function failedRun(turn2: readonly ChatItem[], reply: string): Fixtures["failedR
       costUsd: 0.011,
       elapsedMs: TURN2_SPAN_MS,
       outputTps: 64,
+    },
+  };
+}
+
+/**
+ * Turn 2 closed right after its edit: the reply that says what the filter does, and the turn's
+ * stats — the read and the edit as its two calls, the thinking, the arguments and the reply as
+ * its output. Input is the cache read plus the write, priced like the rest of the dataset.
+ */
+function streamedReply(reply: string): Fixtures["streamedReply"] {
+  return {
+    reply: {
+      kind: "text",
+      id: "tx-closing",
+      markdown: reply,
+      atIso: iso(TURN2_START_MS + 13_460),
+    },
+    stats: {
+      toolCalls: 2,
+      inputTokens: 19_870,
+      cacheReadTokens: 16_940,
+      cacheWriteTokens: 2_930,
+      outputTokens: 612,
+      costUsd: 0.0069,
+      elapsedMs: 13_460,
+      outputTps: 68,
     },
   };
 }

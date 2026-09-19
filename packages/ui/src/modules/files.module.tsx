@@ -5,7 +5,8 @@
  *   session changed (marked added or modified), the selected file — beside an empty preview;
  * - Preview: the same tree beside `src/rag.ts` previewed as source, under its breadcrumbs and
  *   actions;
- * - Drop: files dragged over the preview, the drop overlay naming the target folder.
+ * - Drop: files dragged over the preview, the drop overlay naming the target folder;
+ * - Expand a folder (live): the Workspace folder opening, then `src/` and the file in it selected.
  *
  * Static stand-ins for W7's `TreePane`, `FileTree`, `PreviewPane`, `Breadcrumbs`, `DropOverlay` and
  * `ResizeHandle`.
@@ -14,16 +15,39 @@ import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { FileNode, Fixtures } from "../fixtures";
 import { defineModule } from "../module";
+import type { SceneSpec } from "../module";
+import { reached, useScene } from "../scene";
 import { bytes } from "../screens/format";
+import { DisclosureBody } from "../screens/parts";
 import { Breadcrumbs, EmptyState, GlyphIcon, IconButton, SearchInput } from "./parts";
 
 /** Folders shown open: the ones leading to this session's changes. */
 const OPEN = new Set(["claude-code-expert", "claude-code-expert/src", "claude-code-expert/test"]);
 
-function TreeRow({ node, depth, f }: { node: FileNode; depth: number; f: Fixtures }) {
+/** What a live tree shows: the folders open, and the file selected, if any. */
+interface TreeState {
+  open: ReadonlySet<string>;
+  selected: string | null;
+}
+
+function TreeRow({
+  node,
+  depth,
+  f,
+  live,
+}: {
+  node: FileNode;
+  depth: number;
+  f: Fixtures;
+  /**
+   * A live scene's tree: every folder's children sit in a disclosure body that opens and folds by
+   * height, and the scene says which folders are open and which file is selected.
+   */
+  live?: TreeState;
+}) {
   const copy = f.copy.files;
-  const open = node.kind === "dir" && OPEN.has(node.path);
-  const selected = node.path === f.filePreview.path;
+  const open = node.kind === "dir" && (live ? live.open : OPEN).has(node.path);
+  const selected = node.path === (live ? live.selected : f.filePreview.path);
   return (
     <>
       <li
@@ -59,15 +83,23 @@ function TreeRow({ node, depth, f }: { node: FileNode; depth: number; f: Fixture
           </span>
         )}
       </li>
-      {open &&
+      {live && node.children ? (
+        <DisclosureBody open={open} list>
+          {node.children.map((child) => (
+            <TreeRow key={child.path} node={child} depth={depth + 1} f={f} live={live} />
+          ))}
+        </DisclosureBody>
+      ) : (
+        open &&
         node.children?.map((child) => (
           <TreeRow key={child.path} node={child} depth={depth + 1} f={f} />
-        ))}
+        ))
+      )}
     </>
   );
 }
 
-function TreePane({ f }: { f: Fixtures }) {
+function TreePane({ f, live }: { f: Fixtures; live?: TreeState }) {
   const copy = f.copy.files;
   return (
     <aside className="flex w-72 shrink-0 flex-col border-r border-line">
@@ -82,7 +114,7 @@ function TreePane({ f }: { f: Fixtures }) {
         <SearchInput placeholder={copy.search} />
       </div>
       <ul className="min-h-0 flex-1 overflow-hidden p-1">
-        <TreeRow node={f.fileTree} depth={0} f={f} />
+        <TreeRow node={f.fileTree} depth={0} f={f} live={live} />
       </ul>
     </aside>
   );
@@ -116,10 +148,10 @@ function PreviewPane({ f }: { f: Fixtures }) {
   );
 }
 
-function Panel({ f, children }: { f: Fixtures; children: ReactNode }) {
+function Panel({ f, live, children }: { f: Fixtures; live?: TreeState; children: ReactNode }) {
   return (
     <div className="flex h-[34rem] overflow-hidden rounded-lg border border-line bg-canvas">
-      <TreePane f={f} />
+      <TreePane f={f} live={live} />
       {children}
     </div>
   );
@@ -169,7 +201,48 @@ function Drop({ f }: { f: Fixtures }) {
   );
 }
 
-const VARIANTS = { tree: Tree, preview: Preview, drop: Drop } as const;
+const LIVE_EXPAND: SceneSpec = {
+  frames: [
+    { key: "closed", title: "Closed", hold: 1000 },
+    { key: "open", title: "Open", hold: 1600 },
+    { key: "selected", title: "Selected", hold: 1400 },
+  ],
+};
+
+/**
+ * Expand a folder: the Workspace folder, closed; opened, its folders and files arriving through
+ * its disclosure body; then the previewed file's folder opens and the file is selected, and its
+ * preview arrives beside the tree. The loop back to the first frame folds it all away again.
+ */
+function LiveExpand({ f }: { f: Fixtures }) {
+  const clock = useScene();
+  const copy = f.copy.files;
+  const file = f.filePreview.path;
+  const selected = reached(clock, "selected");
+  const open = new Set<string>();
+  if (reached(clock, "open")) open.add(f.fileTree.path);
+  if (selected) open.add(file.slice(0, file.lastIndexOf("/")));
+  return (
+    <Panel f={f} live={{ open, selected: selected ? file : null }}>
+      {selected ? (
+        <div data-reveal className="flex min-w-0 flex-1">
+          <PreviewPane f={f} />
+        </div>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center justify-center p-6">
+          <EmptyState variant="slot" title={copy.empty.title} description={copy.empty.body} />
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+const VARIANTS = {
+  tree: Tree,
+  preview: Preview,
+  drop: Drop,
+  "live-expand": LiveExpand,
+} as const;
 
 export const module = defineModule({
   id: "files",
@@ -181,6 +254,7 @@ export const module = defineModule({
     { key: "tree", title: "Tree" },
     { key: "preview", title: "Preview" },
     { key: "drop", title: "Drop" },
+    { key: "live-expand", title: "Expand a folder", scene: LIVE_EXPAND },
   ],
   parts: [
     "files-file-tree",

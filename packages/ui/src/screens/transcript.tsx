@@ -23,6 +23,7 @@ import { Glyph } from "./glyph";
 import { Markdown, StreamingCaret } from "./markdown";
 import {
   AgentTile,
+  DisclosureBody,
   Dot,
   IconButton,
   NEUTRAL_FILL,
@@ -42,11 +43,11 @@ export interface Expansion {
 // Bubbles and text
 // ---------------------------------------------------------------------------
 
-function UserBubble({
+export function UserBubble({
   item,
   dense,
 }: {
-  item: Extract<ChatItem, { kind: "user" }>;
+  item: Pick<Extract<ChatItem, { kind: "user" }>, "text" | "attachments">;
   dense: boolean;
 }) {
   return (
@@ -55,7 +56,7 @@ function UserBubble({
         className={`max-w-[85%] rounded-lg ${NEUTRAL_FILL} ${dense ? "px-3 py-2" : "px-4 py-2.5"}`}
       >
         <p
-          className={`whitespace-pre-wrap leading-relaxed text-fg [overflow-wrap:anywhere] ${
+          className={`whitespace-pre-wrap font-sans leading-relaxed text-fg [overflow-wrap:anywhere] ${
             dense ? "text-sm" : "text-base"
           }`}
         >
@@ -298,20 +299,32 @@ function ToolRow({ item, open, f }: { item: ToolCallItem; open: boolean; f: Fixt
   );
 }
 
-type WorkItem = ThinkingItem | ToolCallItem;
+export type WorkItem = ThinkingItem | ToolCallItem;
 
-function WorkGroup({
+export function WorkGroup({
   items,
   running,
   expansion,
   f,
+  live,
 }: {
   items: WorkItem[];
   running: boolean;
   expansion: Expansion;
   f: Fixtures;
+  /**
+   * A live scene's hold on the body: it opens and folds by height rather than mounting, and each
+   * row arrives with `data-reveal`. Absent, the group is open while it runs or when expanded.
+   */
+  live?: { open: boolean };
 }) {
-  const open = running || (expansion.groups?.has(items[0]!.id) ?? false);
+  const open = live ? live.open : running || (expansion.groups?.has(items[0]!.id) ?? false);
+  const row = (item: WorkItem) =>
+    item.kind === "thinking" ? (
+      <ThinkingRow key={item.id} item={item} open={expansion.rows?.has(item.id) ?? false} f={f} />
+    ) : (
+      <ToolRow key={item.id} item={item} open={expansion.rows?.has(item.id) ?? false} f={f} />
+    );
   const steps = items.filter((i) => i.kind === "tool_call").length;
   const settled = items.reduce((ms, i) => ms + (i.durationMs ?? i.elapsedMs ?? 0), 0);
   return (
@@ -340,25 +353,20 @@ function WorkGroup({
         </span>
         {CHEVRON(open)}
       </div>
-      {open && (
+      {live && (
+        <DisclosureBody open={live.open}>
+          <div data-slot="body" className="divide-y divide-line-muted border-t border-line">
+            {items.map((item) => (
+              <div key={item.id} data-reveal>
+                {row(item)}
+              </div>
+            ))}
+          </div>
+        </DisclosureBody>
+      )}
+      {!live && open && (
         <div data-slot="body" className="divide-y divide-line-muted border-t border-line">
-          {items.map((item) =>
-            item.kind === "thinking" ? (
-              <ThinkingRow
-                key={item.id}
-                item={item}
-                open={expansion.rows?.has(item.id) ?? false}
-                f={f}
-              />
-            ) : (
-              <ToolRow
-                key={item.id}
-                item={item}
-                open={expansion.rows?.has(item.id) ?? false}
-                f={f}
-              />
-            ),
-          )}
+          {items.map(row)}
         </div>
       )}
     </div>
@@ -512,7 +520,7 @@ export function Composer({ f, compact = false }: { f: Fixtures; compact?: boolea
             </div>
           )}
           <p
-            className={`px-1 py-0.5 text-base leading-6 ${
+            className={`px-1 py-0.5 font-sans text-base leading-6 ${
               s.composer.draft ? "text-fg" : "text-fg-subtle"
             } ${compact ? "min-h-6" : "min-h-[3.75rem]"}`}
           >

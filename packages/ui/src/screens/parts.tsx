@@ -1,7 +1,8 @@
 /**
- * Shell pieces shared by the screen mock-ups: marks, the sidebar, the chat header and the dock
- * frame. Static JSX on token utilities and the declared style hooks only — no palette class,
- * no `dark:` pair, no state — so the three themes differ purely through their tokens.
+ * Shell pieces shared by the screen mock-ups: the app shell, marks, the sidebar, the chat
+ * header, the dock frame and a disclosure body. Static JSX on token utilities and the declared
+ * style hooks only — no palette class, no `dark:` pair, no state — so the three themes differ
+ * purely through their tokens.
  *
  * Each piece names the web app component it imitates. When that component moves into this
  * package (the wave is noted), the screen swaps the piece for the real thing.
@@ -21,6 +22,47 @@ import type { GlyphName } from "./glyph";
  * (Console outlines its badges), and the contract has no opaque neutral-fill token.
  */
 export const NEUTRAL_FILL = "bg-[color-mix(in_oklab,var(--ui-fg)_7%,transparent)]";
+
+// ---------------------------------------------------------------------------
+// Shell (W7: AppShell; W4: DisclosureRow's body)
+// ---------------------------------------------------------------------------
+
+/**
+ * The product's own window: a navigation column and a main column, and at times a dock. `.ui-shell`
+ * lets a theme lay the three out as its own — Frost floats the main column as a sheet on a colour
+ * field, Console rules them apart edge to edge, Primer leaves the classes as they are — so the
+ * children say which is which, `data-slot="nav"`, `"main"` or `"dock"`, and the nav's selected
+ * row carries `aria-current="page"`.
+ */
+export function AppShell({ className, children }: { className: string; children: ReactNode }) {
+  return <div className={`ui-shell ${className}`}>{children}</div>;
+}
+
+/**
+ * A body that opens and folds by height: a one-row grid between `0fr` and `1fr`, which the theme
+ * animates through `data-layout-motion`, around a box that clips what the row has not opened yet.
+ * `list` makes it a list item holding a list, for a tree's children.
+ */
+export function DisclosureBody({
+  open,
+  list = false,
+  children,
+}: {
+  open: boolean;
+  list?: boolean;
+  children: ReactNode;
+}) {
+  const rows = open ? "grid-rows-[1fr]" : "grid-rows-[0fr]";
+  return list ? (
+    <li data-layout-motion aria-hidden={open ? undefined : true} className={`grid ${rows}`}>
+      <ul className="min-h-0 overflow-hidden">{children}</ul>
+    </li>
+  ) : (
+    <div data-layout-motion aria-hidden={open ? undefined : true} className={`grid ${rows}`}>
+      <div className="min-h-0 overflow-hidden">{children}</div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Marks (W1: Spinner, Dot, StatusIcon, AgentAvatar)
@@ -273,6 +315,7 @@ function SessionRow({ item, active, f }: { item: SessionListItem; active: boolea
   const agent = f.agents.find((a) => a.id === item.agentId);
   return (
     <li
+      aria-current={active ? "page" : undefined}
       className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 ${active ? "bg-accent-muted" : ""}`}
     >
       <AgentTile id={item.agentId} name={agent?.name ?? item.agentId} />
@@ -298,7 +341,10 @@ function SessionRow({ item, active, f }: { item: SessionListItem; active: boolea
 export function Sidebar({ f, activeSessionId }: { f: Fixtures; activeSessionId?: string }) {
   const c = f.copy.nav;
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-line bg-surface-muted">
+    <aside
+      data-slot="nav"
+      className="flex h-full w-72 shrink-0 flex-col border-r border-line bg-surface-muted"
+    >
       <div className="flex shrink-0 items-center gap-1 px-2 pt-2">
         <IconButton icon="sidebar" label={c.collapseSidebar} />
         <span className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1.5 text-base font-(--ui-weight-strong) text-fg">

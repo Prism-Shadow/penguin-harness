@@ -2,11 +2,13 @@
  * Foundations › Shape & depth: the things radius, border and shadow are for, in one stack — a page
  * card with its controls and a box nested at the inner radius, a menu dropped from the card's head
  * (glass in Frost), a dialog over the dimmed page and a toast above everything — each layer naming
- * the stacking tier it takes. Below it, the radius steps, the border widths and the five shadow
- * levels on plain boxes.
+ * the stacking tier it takes. Then the app window through `.ui-shell`, where a theme decides how
+ * its two columns relate (Frost's floating sheet on a field, Console's ruled columns, Primer's
+ * plain window). Below it, the radius steps, the border widths and the five shadow levels on
+ * plain boxes.
  */
 import { useGallery } from "../state";
-import { BoardGroup } from "./shared";
+import { BoardGroup, ShellSpecimen } from "./shared";
 
 const RADII = ["xs", "sm", "md", "lg", "xl", "pill", "control"] as const;
 const SHADOWS = ["flat", "raised", "overlay", "modal", "drawer"] as const;
@@ -85,6 +87,9 @@ export function ShapeBoard() {
   return (
     <div className="gf-board">
       <Scene />
+      <BoardGroup title={S.foundations.shell} aside={S.foundations.shellNote}>
+        <ShellSpecimen />
+      </BoardGroup>
       <div className="gf-pair">
         <BoardGroup title={S.foundations.radius}>
           <div className="gf-radii">

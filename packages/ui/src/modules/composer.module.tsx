@@ -1,15 +1,19 @@
 /**
  * Composer: the card the user types into, in the states it is seen in — empty, while a Task runs
  * (stop instead of send), carrying two attachment chips, with the slash-command menu open above
- * it, and with the model picker open over its model trigger. Static stand-ins for W6's
- * `ComposerCard`, `ChipRow`, `ToolbarTrigger`, `SendButton`, `SlashMenu` and `ModelSelect`.
+ * it, and with the model picker open over its model trigger; and live, a draft typed and sent.
+ * Static stand-ins for W6's `ComposerCard`, `ChipRow`, `ToolbarTrigger`, `SendButton`, `SlashMenu`
+ * and `ModelSelect`.
  */
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { Fixtures, ModelFixture } from "../fixtures";
 import { defineModule } from "../module";
+import type { SceneSpec } from "../module";
+import { reached, useScene } from "../scene";
 import { AgentTile } from "../screens/parts";
 import { tokens, usd } from "../screens/format";
+import { UserBubble } from "../screens/transcript";
 import {
   FloatingPanel,
   GlyphIcon,
@@ -18,11 +22,15 @@ import {
   MenuItem,
   MenuLabel,
   MenuSeparator,
+  RunSpinner,
   SearchInput,
+  TypingText,
 } from "./parts";
 import type { IconName } from "./parts";
 
-type ComposerState = "idle" | "running" | "chips" | "slash" | "picker";
+/** The static picks, then the live scene's own: typing a draft, ready to send, and sent. */
+type ComposerState =
+  "idle" | "running" | "chips" | "slash" | "picker" | "typing" | "ready" | "sent";
 
 /** The 14px context gauge: a ring filled to the share of the model's window in use. */
 function ContextRing({ used, window, label }: { used: number; window: number; label: string }) {
@@ -101,7 +109,9 @@ function ComposerCard({ f, state }: { f: Fixtures; state: ComposerState }) {
   const s = f.session;
   const c = f.copy.chat;
   const model = f.models.find((m) => m.modelId === s.model.modelId);
-  const draft = state === "idle" ? "" : state === "slash" ? "/" : s.composer.draft;
+  // Sent, the draft has left the input for the transcript while the Task runs.
+  const draft =
+    state === "idle" || state === "sent" ? "" : state === "slash" ? "/" : s.composer.draft;
   const chips = state === "chips" || state === "picker" ? s.composer.chips : [];
   return (
     <div className="ui-glass rounded-lg border border-line-emphasis bg-surface px-2.5 pb-2 pt-2">
@@ -125,9 +135,13 @@ function ComposerCard({ f, state }: { f: Fixtures; state: ComposerState }) {
         </div>
       )}
       <p
-        className={`min-h-14 px-1 py-0.5 text-base leading-6 ${draft ? "text-fg" : "text-fg-subtle"}`}
+        className={`min-h-14 px-1 py-0.5 font-sans text-base leading-6 ${draft ? "text-fg" : "text-fg-subtle"}`}
       >
-        {draft || c.inputPlaceholder}
+        {state === "typing" ? (
+          <TypingText text={draft} frame="typing" />
+        ) : (
+          draft || c.inputPlaceholder
+        )}
         {draft && <span aria-hidden className="ml-px inline-block h-5 w-px translate-y-1 bg-fg" />}
       </p>
       <div className="mt-1 flex items-center gap-2 text-xs">
@@ -146,8 +160,14 @@ function ComposerCard({ f, state }: { f: Fixtures; state: ComposerState }) {
           lead={<AgentTile id={s.model.provider} name={model?.providerLabel ?? "?"} size={16} />}
         />
         <SendButton
-          state={state === "running" ? "running" : draft && state !== "slash" ? "ready" : "idle"}
-          label={state === "running" ? c.stop : c.send}
+          state={
+            state === "running" || state === "sent"
+              ? "running"
+              : draft && state !== "slash" && state !== "typing"
+                ? "ready"
+                : "idle"
+          }
+          label={state === "running" || state === "sent" ? c.stop : c.send}
         />
       </div>
     </div>
@@ -258,6 +278,48 @@ function Composition({ f, state }: { f: Fixtures; state: ComposerState }) {
   );
 }
 
+const LIVE_SEND: SceneSpec = {
+  frames: [
+    { key: "empty", title: "Empty", hold: 900 },
+    { key: "typing", title: "Typing", hold: 1800 },
+    { key: "ready", title: "Ready", hold: 800 },
+    { key: "running", title: "Running", hold: 2000 },
+  ],
+};
+
+/** The card's state on each frame of the live scene. */
+const LIVE_STATES: Record<string, ComposerState> = {
+  empty: "idle",
+  typing: "typing",
+  ready: "ready",
+  running: "sent",
+};
+
+/**
+ * Type and send: the empty card; the draft typing in, send still off; send on once the draft is
+ * written; then sent — the draft lands in the transcript above with the run's live mark, the
+ * input clears and send turns to stop. The room above the card is held in every frame, so the
+ * card stays put when the message lands.
+ */
+function LiveSend({ f }: { f: Fixtures }) {
+  const clock = useScene();
+  const state = LIVE_STATES[clock?.frame ?? "running"] ?? "idle";
+  return (
+    <div className="mx-auto flex min-h-64 max-w-3xl flex-col justify-end gap-2">
+      {reached(clock, "running") && (
+        <div data-reveal>
+          <UserBubble item={{ text: f.session.composer.draft }} dense={false} />
+          <p className="flex items-center gap-1 px-1 text-xs text-tone-success-fg">
+            <RunSpinner />
+            {f.copy.chat.running}
+          </p>
+        </div>
+      )}
+      <ComposerCard f={f} state={state} />
+    </div>
+  );
+}
+
 const STATES: Record<string, ComposerState> = {
   idle: "idle",
   running: "running",
@@ -278,6 +340,7 @@ export const module = defineModule({
     { key: "chips", title: "Chips" },
     { key: "slash-menu", title: "Slash menu" },
     { key: "model-picker", title: "Model picker" },
+    { key: "live-send", title: "Type and send", scene: LIVE_SEND },
   ],
   parts: [
     "chat-composer",
@@ -290,7 +353,10 @@ export const module = defineModule({
     "overlays-menu",
     "actions-kbd",
   ],
-  render: (variant, { lang }) => (
-    <Composition f={fixturesFor(lang)} state={STATES[variant] ?? "idle"} />
-  ),
+  render: (variant, { lang }) =>
+    variant === "live-send" ? (
+      <LiveSend f={fixturesFor(lang)} />
+    ) : (
+      <Composition f={fixturesFor(lang)} state={STATES[variant] ?? "idle"} />
+    ),
 });

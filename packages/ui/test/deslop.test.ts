@@ -53,7 +53,12 @@ import { REPO_ROOT, SRC_DIR } from "./helpers/paths";
 const POLICY: DeslopPolicy = {
   // Rule 1: the chevron rotates; the sheet, the launcher fan and the drawer move.
   transformMotion: ["chevron.tsx", "sheet.tsx", "launcher.tsx", "drawer.tsx"],
-  // Rule 3: keyframe-driven entrances longer than 200 ms. None in the package yet.
+  // Rule 1: the `data-layout-motion` rule in the theme foundation transitions a width or a grid
+  // row on the theme's layout tokens; a component only sets the attribute.
+  layoutMotion: ["theme.css"],
+  // Rule 3: keyframe-driven entrances longer than 200 ms. None in the package yet: the presence,
+  // reveal and layout rules in theme.css read their own tokens (`--ui-dur-enter`, …), which the
+  // rule does not judge — it holds STATE transitions (hover, press, selection) to 120–200 ms.
   entranceMotion: [],
   // Rule 6: the dot's live pulse, the skeleton's arrival pulse and the streaming caret.
   pulseHomes: ["dot.tsx", "skeleton.tsx", "streaming-caret.tsx"],
@@ -138,9 +143,14 @@ describe("de-slop rules over packages/ui/src", () => {
 });
 
 describe("theme values the rules reach", () => {
-  // §2.4: Console keeps a condensed uppercase h1 (through .ui-display) and uppercases h6, the
-  // group-label rung (through .ui-eyebrow). Nothing between is uppercased, and no heading rung is
-  // set in the mono face — mono is for data.
+  // §2.4: a theme may uppercase its h1 (through .ui-display) and h6, the group-label rung
+  // (through .ui-eyebrow); nothing between is uppercased. Headings are set in the theme's chrome
+  // face (`--ui-font-ui`), its reading face or its display face — never in `--ui-font-mono`, the
+  // DATA face, and never in a literal monospace stack. Console's chrome face is itself
+  // monospaced (user decision, 2026-09-19), and that is the one door: a heading rung reaches a
+  // mono face only by reading `--ui-font-ui`, so a theme that wants mono titles says so once,
+  // in the face, and a component still never writes `font-mono` on a label (rule 16). The
+  // reading face stays proportional in every theme: prose is not set in mono.
   const themes = THEME_IDS.map((id) => {
     const rel = `themes/${id}.css`;
     const path = join(SRC_DIR, rel);
@@ -149,8 +159,9 @@ describe("theme values the rules reach", () => {
       : null;
     return { id, rel, analysis };
   });
+  const MONO = /--ui-font-mono|monospace/;
   for (const { id, rel, analysis } of themes) {
-    const title = `${rel}: headings h2–h5 are not uppercased and no heading is set in mono (rules 14, 16)`;
+    const title = `${rel}: h2–h5 not uppercased, no heading in the data face, prose not mono (rules 14, 16)`;
     if (analysis === null || analysis.isStub) {
       it.skip(`${title} — PENDING: the theme file is still a stub`, () => {});
       continue;
@@ -165,9 +176,13 @@ describe("theme values the rules reach", () => {
             problems.push(`${id} ${mode}: --ui-h${level}-transform is ${transform}`);
           }
           const font = values.get(`--ui-h${level}-font`) ?? "";
-          if (/--ui-font-mono|monospace/.test(font)) {
+          if (MONO.test(font)) {
             problems.push(`${id} ${mode}: --ui-h${level}-font is ${font}`);
           }
+        }
+        const reading = values.get("--ui-font-sans") ?? "";
+        if (MONO.test(reading) || /--ui-font-ui/.test(reading)) {
+          problems.push(`${id} ${mode}: --ui-font-sans (the reading face) is ${reading}`);
         }
       }
       expect(problems).toEqual([]);
@@ -243,6 +258,17 @@ describe("the rule checks, on known shapes", () => {
       ),
     ).toEqual(["1:transition: all", "1:transition: all"]);
     expect(found("x.css", ".a { transition-property: color, border-radius; }")).toEqual([
+      "1:transition-property: border-radius",
+    ]);
+    // A size transitions only in the layout-motion home, and only the sizes that rule names.
+    const layout =
+      ".a { transition-property: width, grid-template-rows; }\n.b { transition: height var(--ui-dur-layout); }";
+    expect(found("theme.css", layout, { ...POLICY, layoutMotion: [] })).toEqual([
+      "1:transition-property: width, grid-template-rows",
+      "1:transition: height",
+    ]);
+    expect(found("theme.css", layout)).toEqual([]);
+    expect(found("theme.css", ".a { transition-property: width, border-radius; }")).toEqual([
       "1:transition-property: border-radius",
     ]);
   });
@@ -481,6 +507,16 @@ describe("the rule checks, on known shapes", () => {
         ".ui-wash { background-image: radial-gradient(red, blue); }\n.hatch { background-image: repeating-linear-gradient(red, blue); }",
       ),
     ).toEqual(["18:.ui-wash { background-image: …gradient() }"]);
+    // The shell's colour field is the one gradient a recipe may paint; a blur on it is still off.
+    expect(
+      found(
+        "t.css",
+        ':root .ui-shell { background-image: radial-gradient(red, blue); }\n:root .ui-shell > [data-slot="nav"] { backdrop-filter: blur(4px); }\n:root .ui-frame { background: linear-gradient(red, blue); }',
+      ),
+    ).toEqual([
+      '18::root .ui-shell > [data-slot="nav"] { backdrop-filter: blur(4px) }',
+      "18::root .ui-frame { background: …gradient() }",
+    ]);
   });
 
   it("rule 19 — shadows", () => {

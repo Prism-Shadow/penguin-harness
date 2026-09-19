@@ -9,6 +9,10 @@
  *
  *   Console › Actions › Button › danger · sm · dark
  *
+ * A live variant that is paused names its frame, the variant joining the path:
+ *
+ *   Frost › Navigation › Collapse and expand › Rail · dark
+ *
  * The parts are English in both chrome languages: the breadcrumb names ids and code, and one quote
  * must mean one view.
  */
@@ -25,6 +29,8 @@ export interface BreadcrumbParts {
   part?: string;
   /** A module's variant title, or a part's axis values (`["all"]` for its matrix); empty for none. */
   variant?: readonly string[];
+  /** A paused live variant's frame title. */
+  frame?: string;
   mode: "light" | "dark";
   lang: Lang;
   tier: FontScale;
@@ -33,10 +39,13 @@ export interface BreadcrumbParts {
 export function formatBreadcrumb(parts: BreadcrumbParts): string {
   const names = [THEME_NAMES[parts.theme], parts.module];
   if (parts.part !== undefined) names.push(parts.part);
+  const variant = parts.variant ?? [];
+  const frame = variant.length > 0 ? parts.frame : undefined;
+  if (frame !== undefined) names.push(variant.join(" · "));
   const path = names.join(" › ");
-  const qualifiers = [...(parts.variant ?? []), parts.mode];
+  const qualifiers = [...(frame !== undefined ? [frame] : variant), parts.mode];
   if (parts.lang !== "en") qualifiers.push(parts.lang);
   if (parts.tier !== "md") qualifiers.push(`${TIER_PX[parts.tier]}px`);
   const tail = qualifiers.join(" · ");
-  return parts.variant && parts.variant.length > 0 ? `${path} › ${tail}` : `${path} · ${tail}`;
+  return variant.length > 0 ? `${path} › ${tail}` : `${path} · ${tail}`;
 }

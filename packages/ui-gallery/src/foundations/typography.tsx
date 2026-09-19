@@ -1,7 +1,8 @@
 /**
- * Foundations › Type: the role scale from h1 to caption, prose and code, each set in its own role
- * tokens, English and Chinese side by side — the step between rungs, the heading weights, Console's
- * condensed uppercase h1 and where a Latin face hands over to its CJK fallback, all at a glance.
+ * Foundations › Type: the role scale from h1 to caption, prose, the chrome line and code, each set
+ * in its own role tokens, English and Chinese side by side — the step between rungs, the heading
+ * weights, Console's mono chrome against its sans prose, and where a Latin face hands over to its
+ * CJK fallback, all at a glance. `prose` is the reading face; `ui` is the chrome face `body` sets.
  */
 import type { CSSProperties } from "react";
 import { useGallery } from "../state";
@@ -36,12 +37,27 @@ const ROLES: readonly Role[] = [
   heading(6, (s) => s.heading),
   {
     id: "prose",
-    style: { fontSize: "var(--ui-text-prose-size)", lineHeight: "var(--ui-text-prose-lh)" },
+    style: {
+      fontFamily: "var(--ui-font-sans)",
+      fontSize: "var(--ui-text-prose-size)",
+      lineHeight: "var(--ui-text-prose-lh)",
+    },
     text: (s) => s.paragraph,
   },
   {
     id: "body",
     style: {
+      fontFamily: "var(--ui-font-sans)",
+      fontSize: "var(--ui-text-body-size)",
+      lineHeight: "var(--ui-text-body-lh)",
+      letterSpacing: "var(--ui-tracking-body)",
+    },
+    text: (s) => s.ui,
+  },
+  {
+    id: "ui",
+    style: {
+      fontFamily: "var(--ui-font-ui)",
       fontSize: "var(--ui-text-body-size)",
       lineHeight: "var(--ui-text-body-lh)",
       letterSpacing: "var(--ui-tracking-body)",

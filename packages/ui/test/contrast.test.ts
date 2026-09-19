@@ -13,7 +13,11 @@
  *   `neutral`, the one tone allowed to recede where its meaning is already in text;
  * - a tone's ink on its own tint (`tone-*-bg`, a badge) and a solid badge's label on its fill — 4.5:1;
  * - the accent's label on the accent at rest and on hover (the primary button), for the theme's own
- *   accent and every user preset in theme.css — 4.5:1.
+ *   accent and every user preset in theme.css — 4.5:1;
+ * - text and muted text on the shell's two columns, composited onto the field behind the window
+ *   (Frost's navigation column is transparent on the field) — 4.5:1. The field's two washes are
+ *   gradients this suite cannot read; a theme keeps them faint enough that the muted ink still
+ *   clears 4.5:1 where they are strongest (Frost's values were measured by hand at 4.56:1).
  *
  * `fg-subtle` has no floor: it is placeholder and disabled ink, which WCAG exempts.
  *
@@ -95,13 +99,21 @@ const PAIRS: readonly Pair[] = [
   ]),
   { fg: "--ui-accent-fg", bg: "--ui-accent", min: 4.5 },
   { fg: "--ui-accent-fg", bg: "--ui-accent-hover", min: 4.5 },
+  ...(["--ui-shell-nav-bg", "--ui-shell-main-bg"] as const).flatMap((bg) => [
+    { fg: "--ui-fg" as const, bg, min: 4.5 as const },
+    { fg: "--ui-fg-muted" as const, bg, min: 4.5 as const },
+  ]),
 ];
 
-/** What a background token is painted over: the page over the UA canvas, surfaces over the page, fills over a surface. */
+/**
+ * What a background token is painted over: the page over the UA canvas, surfaces over the page,
+ * fills over a surface, the shell's field over the UA canvas and its columns over the field.
+ */
 function layerBelow(bg: TokenName): TokenName | "base" {
-  if (bg === "--ui-canvas") return "base";
+  if (bg === "--ui-canvas" || bg === "--ui-shell-field") return "base";
   if ((PAGE_SURFACES as readonly string[]).includes(bg) || bg === "--ui-overlay")
     return "--ui-canvas";
+  if (bg === "--ui-shell-nav-bg" || bg === "--ui-shell-main-bg") return "--ui-shell-field";
   return "--ui-surface";
 }
 

@@ -9,7 +9,7 @@ import type { FixtureLang, Fixtures, TraceSegmentKind, TraceTurn } from "../fixt
 import { ChatTranscript } from "./chat";
 import { bytes, duration, percent, tokens, usd } from "./format";
 import { Glyph } from "./glyph";
-import { Badge, ChatHeader, DockFrame, NEUTRAL_FILL, Sidebar, StatChip } from "./parts";
+import { AppShell, Badge, ChatHeader, DockFrame, NEUTRAL_FILL, Sidebar, StatChip } from "./parts";
 import { Composer } from "./transcript";
 
 /** Timeline phase inks: chart identity colours, one per kind; `other` recedes. */
@@ -267,9 +267,9 @@ function TracePanel({ f }: { f: Fixtures }) {
 export function TracesScreen({ lang }: { lang: FixtureLang }) {
   const f = fixturesFor(lang);
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-canvas text-fg">
+    <AppShell className="flex h-screen w-full overflow-hidden bg-canvas text-fg">
       <Sidebar f={f} activeSessionId={f.session.id} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
         <ChatHeader f={f} dock="bottom" />
         <main className="flex h-[34%] min-h-0 shrink-0 flex-col">
           <ChatTranscript f={f} />
@@ -281,6 +281,6 @@ export function TracesScreen({ lang }: { lang: FixtureLang }) {
           </DockFrame>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }

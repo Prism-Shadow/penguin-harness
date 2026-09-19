@@ -2,8 +2,10 @@
  * Foundations › Spacing: the five rhythm steps as a ruler over a real settings page — a glyph welded
  * to its label (stack-0), related rows (stack-1), a row group under its section title (stack-2), one
  * section after another (stack-3) and the page header above the content (stack-4) — so it shows that
- * siblings of different kinds never share a gap. Below it, the control rungs with their measured
- * heights, the number that must match across themes.
+ * siblings of different kinds never share a gap. Below it, the theme's space unit at one, two, four
+ * and eight (every `h-8` and `px-2` is a multiple of it, so this is where a theme's density starts)
+ * and the control rungs with their measured heights — each theme's own, since nothing about size
+ * is shared between themes.
  */
 import type { CSSProperties, ReactNode } from "react";
 import { useGallery } from "../state";
@@ -65,6 +67,8 @@ const RUNGS = [
   { rung: "lg", text: "body" },
 ] as const;
 
+const UNITS = [1, 2, 4, 8] as const;
+
 export function SpacingBoard() {
   const { S } = useGallery();
   const t = S.foundations.spacingPage;
@@ -94,6 +98,19 @@ export function SpacingBoard() {
         <Row glyph="bell" label={t.notifications} value={<span className="gf-switch" data-on />} />
         <p className="gf-caption gf-note gf-ruler-note">{S.foundations.stack0Note}</p>
       </div>
+      <BoardGroup title={S.foundations.spaceUnit} aside={S.foundations.spaceUnitNote}>
+        <div className="gf-units">
+          {UNITS.map((n) => (
+            <span key={n} className="gf-unit">
+              <span className="gf-caption gf-mono">× {n}</span>
+              <Measured
+                className="gf-unit-bar"
+                style={{ height: `calc(var(--ui-space-unit) * ${n})` }}
+              />
+            </span>
+          ))}
+        </div>
+      </BoardGroup>
       <BoardGroup title={S.foundations.controlHeights}>
         <div className="gf-rungs">
           {RUNGS.map(({ rung, text }) => (

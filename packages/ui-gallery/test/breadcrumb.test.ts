@@ -15,6 +15,20 @@ describe("formatBreadcrumb", () => {
     ).toBe("Frost › Conversation › Approval · dark · zh");
   });
 
+  it("names a paused live variant's frame, the variant joining the path", () => {
+    expect(
+      formatBreadcrumb({
+        theme: "modern",
+        module: "Navigation",
+        variant: ["Collapse and expand"],
+        frame: "Rail",
+        mode: "dark",
+        lang: "en",
+        tier: "md",
+      }),
+    ).toBe("Frost › Navigation › Collapse and expand › Rail · dark");
+  });
+
   it("keeps the part form feedback quoted before modules existed", () => {
     expect(
       formatBreadcrumb({

@@ -2,17 +2,21 @@
  * Static stand-ins the gallery modules compose, beside the screens' own (`screens/parts.tsx`). Each
  * is named after the component it imitates (A-architecture §3, K-redesign §5.1) and takes that
  * component's props, so a wave swaps it for the real thing by changing an import. Token utilities
- * and the declared style hooks only; no state.
+ * and the declared style hooks only; no state, except in the motion helpers at the end, which the
+ * live variants play their frames through.
  *
  * The names are load-bearing beyond readability: a style hook is allowed only inside the component
  * that hosts it (`FloatingPanel`, `Modal` and `Tooltip` wear `.ui-glass`, `GroupHeader`, `MenuLabel`
  * and `Text` the eyebrow, `Heading` the display face, `Dot` the live pulse, `Tabs` the underline),
  * and the package's de-slop guard reads the enclosing function's name to check it.
  */
-import type { AccentSwatchFixture } from "../fixtures";
-import type { ToneName } from "../tokens";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import type { AccentSwatchFixture } from "../fixtures";
+import { holdOf, reached, useFrameTime, useScene } from "../scene";
+import type { ToneName } from "../tokens";
 import { GLYPHS } from "../screens/glyph";
+import { INLINE, StreamingCaret, inline } from "../screens/markdown";
 import { Spinner } from "../components/icons/spinner/spinner";
 
 // ---------------------------------------------------------------------------------------------
@@ -650,6 +654,7 @@ export function NavRow({
 }) {
   return (
     <span
+      aria-current={active ? "page" : undefined}
       className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm ${
         active ? "bg-accent-muted font-(--ui-weight-medium) text-fg" : "text-fg-muted"
       }`}
@@ -1112,4 +1117,204 @@ export function PrefRow({
       <div className="shrink-0">{control}</div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Motion (the live variants): Presence, Backdrop, StreamText, TypingText
+//
+// A live variant draws the state its current frame names, and the theme animates the change
+// through attributes: `data-presence` / `data-backdrop` on a layer that comes and goes,
+// `data-reveal` on content that just arrived, `data-layout-motion` on a box whose size changes.
+// These helpers set the attributes and keep the timing; no duration or easing is written here, so
+// each theme moves the same frames its own way, and reduced motion not at all.
+// ---------------------------------------------------------------------------------------------
+
+/** The edge a transient layer comes from: a menu under its trigger comes from the top. */
+export type PresenceSide = "top" | "bottom" | "left" | "right" | "center";
+
+/**
+ * How far the current frame of a live variant has run, from 0 to 1. Without a clock (a static
+ * variant) and under reduced motion it reads 1, the frame's end; a still is cued at its end too.
+ */
+export function useFrameProgress(): number {
+  const clock = useScene();
+  const time = useFrameTime();
+  if (clock === null) return 1;
+  return Math.min(1, time / holdOf(clock.frames[clock.index]));
+}
+
+/** The longest time in a computed `animation-duration` or `animation-delay` list, in ms. */
+function longestMs(list: string): number {
+  return Math.max(
+    0,
+    ...list.split(",").map((value) => {
+      const n = Number.parseFloat(value);
+      if (!Number.isFinite(n)) return 0;
+      return value.trim().endsWith("ms") ? n : n * 1000;
+    }),
+  );
+}
+
+/**
+ * A layer that stays mounted while it leaves. When `show` turns false the layer reads `exit` and
+ * unmounts once the theme's exit animation ends, or at once when the theme gives it none (Console,
+ * reduced motion). A document that stops animating never sends `animationend`, so the computed
+ * duration is the backstop.
+ */
+function usePresence(show: boolean) {
+  const [present, setPresent] = useState(show);
+  if (show && !present) setPresent(true);
+  const node = useRef<HTMLElement | null>(null);
+  const attach = (element: HTMLElement | null) => {
+    node.current = element;
+  };
+  useLayoutEffect(() => {
+    const element = node.current;
+    if (show || !present) return;
+    if (element === null) {
+      setPresent(false);
+      return;
+    }
+    const style = getComputedStyle(element);
+    const pending = new Set(
+      style.animationName
+        .split(",")
+        .map((name) => name.trim())
+        .filter((name) => name !== "" && name !== "none"),
+    );
+    if (pending.size === 0) {
+      setPresent(false);
+      return;
+    }
+    const end = (event: AnimationEvent) => {
+      if (event.target !== element) return;
+      pending.delete(event.animationName);
+      if (pending.size === 0) setPresent(false);
+    };
+    const backstop = window.setTimeout(
+      () => setPresent(false),
+      longestMs(style.animationDuration) + longestMs(style.animationDelay) + 100,
+    );
+    element.addEventListener("animationend", end);
+    return () => {
+      element.removeEventListener("animationend", end);
+      window.clearTimeout(backstop);
+    };
+  }, [show, present]);
+  return { present, attach };
+}
+
+/**
+ * A transient layer — a menu, a popover, a tooltip, a dialog card, a toast, a dock panel — that
+ * enters and leaves: `data-presence="enter" | "exit"` and the edge it comes from in `data-side`.
+ * Position it from outside or through `className`, never with a transform: the theme's animation
+ * owns this box's transform while it moves.
+ */
+export function Presence({
+  show,
+  side,
+  as: Tag = "div",
+  className = "",
+  children,
+}: {
+  show: boolean;
+  side: PresenceSide;
+  /** A `span` inside phrasing content. */
+  as?: "div" | "span";
+  className?: string;
+  children: ReactNode;
+}) {
+  const { present, attach } = usePresence(show);
+  if (!present) return null;
+  return (
+    <Tag
+      ref={attach}
+      data-presence={show ? "enter" : "exit"}
+      data-side={side}
+      aria-hidden={show ? undefined : true}
+      className={className}
+    >
+      {children}
+    </Tag>
+  );
+}
+
+/** A dialog's scrim over the page it covers: it comes and goes with the dialog, and only fades. */
+export function Backdrop({ show }: { show: boolean }) {
+  const { present, attach } = usePresence(show);
+  if (!present) return null;
+  return (
+    <div
+      ref={attach}
+      aria-hidden
+      data-backdrop={show ? "enter" : "exit"}
+      className="absolute inset-0 bg-[var(--ui-overlay-backdrop)]"
+    />
+  );
+}
+
+/**
+ * Where a stream breaks: a Latin word, or one or two Han characters, each with the spaces and
+ * marks around it — the sizes a model's tokens arrive in.
+ */
+const STREAM_CHUNK = /\s*(?:\p{Script=Han}{1,2}|[^\s\p{Script=Han}]+)[^\s\p{L}\p{N}]*\s*/gu;
+
+/**
+ * A reply cut into the chunks it streams in; joined, they are the text. An inline run (code, bold,
+ * a link) is one chunk, so it never shows half its markup.
+ */
+export function streamChunks(text: string): string[] {
+  return text
+    .split(INLINE)
+    .flatMap((part, i) =>
+      i % 2 === 1 ? [part] : [...part.matchAll(STREAM_CHUNK)].map((match) => match[0]),
+    )
+    .filter((chunk) => chunk !== "");
+}
+
+/** The share of its frame a stream or a typed value takes, so the whole of it rests a beat. */
+const REVEAL_SPAN = 0.85;
+
+/** How many of `total` pieces show at `time` into a frame of `hold` ms. */
+const revealed = (total: number, time: number, hold: number) =>
+  Math.min(total, Math.floor((time * total) / (hold * REVEAL_SPAN)));
+
+/**
+ * A reply as it streams during `frame`: the chunks so far, each arriving as its own
+ * `<span data-reveal>`, then the caret. Before `frame` it is absent; after it, the whole text
+ * settles without a caret. The count comes from the frame's time, so the three frames of a
+ * comparison stream in step, and a still or reduced motion shows the whole text behind the caret.
+ */
+export function StreamText({ text, frame }: { text: string; frame: string }) {
+  const clock = useScene();
+  const time = useFrameTime();
+  const chunks = useMemo(() => streamChunks(text), [text]);
+  if (!reached(clock, frame)) return null;
+  if (clock === null || clock.frame !== frame) return <>{inline(text)}</>;
+  const shown = revealed(chunks.length, time, holdOf(clock.frames[clock.index]));
+  return (
+    <>
+      {chunks.slice(0, shown).map((chunk, i) => (
+        <span key={i} data-reveal>
+          {inline(chunk)}
+        </span>
+      ))}
+      <StreamingCaret />
+    </>
+  );
+}
+
+/**
+ * A field's value as it is typed during `frame`, a character at a time. Before `frame` it is
+ * empty; after it, and in a still, the whole value. Typed characters appear as keys land, with no
+ * reveal of their own.
+ */
+export function TypingText({ text, frame }: { text: string; frame: string }) {
+  const clock = useScene();
+  const time = useFrameTime();
+  if (!reached(clock, frame)) return null;
+  if (clock === null || clock.frame !== frame) return <>{text}</>;
+  const characters = Array.from(text);
+  const shown = revealed(characters.length, time, holdOf(clock.frames[clock.index]));
+  return <>{characters.slice(0, shown).join("")}</>;
 }

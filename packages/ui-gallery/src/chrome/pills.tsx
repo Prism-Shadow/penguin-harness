@@ -1,6 +1,7 @@
 /**
- * The quotable breadcrumb and the pill rows: a module's variants (one row, the active pick filled)
- * and a part demo's axes (one group per axis, plus `all` for a matrix demo).
+ * The quotable breadcrumb and the pill rows: a module's variants (one row, the active pick filled,
+ * a live variant marked with a play glyph) and a part demo's axes (one group per axis, plus `all`
+ * for a matrix demo).
  */
 import type { DemoAxes } from "../../../ui/src/demo";
 import type { Module, ModuleVariant } from "../../../ui/src/module";
@@ -46,9 +47,11 @@ export function VariantPills({
           type="button"
           className="g-pill"
           aria-pressed={variant.key === current.key}
-          title={variant.description}
+          data-scene={variant.scene ? true : undefined}
+          title={variant.description ?? (variant.scene ? S.transport.live : undefined)}
           onClick={() => onPick(variant.key)}
         >
+          {variant.scene && <ChromeIcon name="play" size={11} />}
           {text.variant(module, variant)}
         </button>
       ))}

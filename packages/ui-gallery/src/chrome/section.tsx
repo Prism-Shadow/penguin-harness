@@ -1,7 +1,8 @@
 /**
  * One module on the gallery page: the header (`Title — description` and its link / parts / tokens /
  * code buttons), the card (the composition on the theme's canvas, or three compare frames), the
- * card's foot (the quotable breadcrumb and the variant pills), and the drawers.
+ * card's foot (the variant pills, a live variant's transport, and the quotable breadcrumb), and the
+ * drawers. A live variant's clock belongs to the card, which plays it while it is on screen.
  */
 import type { ThemeId } from "@prismshadow/penguin-ui";
 import { memo, useRef, useState } from "react";
@@ -18,6 +19,7 @@ import { CodeDrawer, PartsDrawer, TokensDrawer } from "./drawers";
 import { ChromeIcon } from "./icons";
 import type { ChromeIconName } from "./icons";
 import { Breadcrumb, VariantPills } from "./pills";
+import { Transport, useScenePlayer } from "./player";
 
 type Drawer = "parts" | "tokens" | "code";
 
@@ -71,6 +73,11 @@ export const ModuleSection = memo(function ModuleSection({
   const variant = pickVariant(module, pickKey);
   const compare = comparesModule(state, module.id);
   const { title, description } = text.module(module);
+  const player = useScenePlayer(variant.scene, {
+    reduced: state.motion === "reduced",
+    autoplay: true,
+  });
+  const { clock } = player;
 
   const toggle = (drawer: Drawer) =>
     setOpen((current) => {
@@ -90,6 +97,7 @@ export const ModuleSection = memo(function ModuleSection({
     theme: state.theme,
     module: module.title,
     variant: [variant.title],
+    frame: clock && !clock.playing ? clock.frames[clock.index]?.title : undefined,
     mode,
     lang: state.lang,
     tier: state.tier,
@@ -132,17 +140,24 @@ export const ModuleSection = memo(function ModuleSection({
         </span>
       </header>
 
-      <div className="g-card">
+      <div ref={player.observe} className="g-card">
         {compare ? (
-          <CompareFrames module={module} variant={variant} frames={frames.current} />
+          <CompareFrames module={module} variant={variant} clock={clock} frames={frames.current} />
         ) : (
           <div ref={preview} className="g-preview" data-module={module.id}>
-            <ModuleView module={module} variant={variant} />
+            <ModuleView module={module} variant={variant} clock={clock} />
           </div>
         )}
-        <div className="g-card-foot g-chrome" data-compare={compare || undefined}>
+        <div
+          className="g-card-foot g-chrome"
+          data-compare={compare || undefined}
+          data-scene={clock ? true : undefined}
+        >
           {!compare && <Breadcrumb text={crumb} />}
           <VariantPills module={module} current={variant} onPick={onPick} />
+          {clock && (
+            <Transport module={module} variant={variant} clock={clock} control={player.control} />
+          )}
         </div>
       </div>
 

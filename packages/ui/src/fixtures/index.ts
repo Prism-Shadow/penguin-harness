@@ -3,8 +3,8 @@
  * tests: one coherent dataset — the "Build Claude Code docs expert" session, its tool calls, its
  * Trace, a model list, the Workspace tree, company tickets, calendar events and group chat, the
  * notices, form, menus, Vault rows, installed plugins, command palette, slash commands, week of
- * usage, to-do list, failed run and docs answer the modules compose, and the chrome copy they
- * print, plus the type specimens — in two locales of identical shape.
+ * usage, to-do list, failed run, streamed reply and docs answer the modules compose, and the
+ * chrome copy they print, plus the type specimens — in two locales of identical shape.
  */
 import { en } from "./en";
 import type { FixtureLang, Fixtures } from "./types";

@@ -1,22 +1,25 @@
 /**
- * Frost (`modern`) — pill controls, white cards on a warm off-white canvas, regular-weight display
- * type, and frosted glass on the layers that float over content. Reference: sierra.ai.
+ * Frost (`modern`) — soft, roomy, floating. A warm colour field behind the app window, the
+ * navigation column transparent on it, the main column a rounded sheet floating over it; pill
+ * controls, generous radii on boxes, regular-weight titles set large with negative tracking,
+ * frosted glass on the layers that float over content, and motion that springs and de-blurs.
+ * References: sierra.ai (the colour field, the type, the pills) and Figma's UI3 (the floating
+ * sheet, the roomy density).
  *
  * Status of each group:
- * - The light palette, radii, motion curve and the display treatment are measured on sierra.ai (its
- *   Tailwind theme and computed styles), then held to what an app needs: no ambient wash behind the
- *   content, boxes on a 4 / 6 / 10 / 14 / 20 px radius scale with the pill kept for the pressable
- *   control (`--ui-radius-control`), untinted tight shadows, and glass at a 16px blur on transient
- *   layers only. Sierra ships no dark mode: the whole dark section is a proposal on the same
- *   warm-neutral hue, never blue-grey.
+ * - The light palette is measured on sierra.ai (its Tailwind theme and computed styles). The
+ *   field behind the window is Sierra's colour field held to an app: one warm sand tone with two
+ *   soft radial washes (sage from the top-left, sand from the bottom-right) at an alpha that keeps
+ *   muted navigation text at 4.5:1 where the washes are strongest; never blue-grey, never loud.
+ *   Sierra ships no dark mode: the whole dark section is a proposal on the same warm-neutral hue.
  * - Semantic tones use Sierra's hues, tuned until every tone reads at 4.5:1 as text on its own
  *   tint and 3:1 as a mark on every surface (proposal). Chart and code colours are proposals.
  * - Fonts: MiSans (Xiaomi) in place of Sierra's commercial GT America, Latin and Chinese in one
- *   family at weights 400 and 500, with JetBrains Mono for code (`fonts/modern.css`).
- * - The type scale, line-heights (Primer adopts both in W1a) and the padding-block of controls,
- *   rows and menu rows are the shared values, so switching themes never reflows a layout
- *   vertically; this theme changes radius, colour, font, shadow, tracking, weight, padding-inline
- *   and the panel padding only.
+ *   family at weights 400 and 500, with JetBrains Mono for code (`fonts/modern.css`). Chrome and
+ *   reading text share the face.
+ * - Density and type are Frost's own: a 0.28rem space unit (12% above Tailwind's 0.25rem, so
+ *   every `h-8` and `px-2` grows with it), a 0.9375rem body rung, roomier control padding. The
+ *   size of nothing is shared with the other themes any more.
  *
  * Shape of the file (the same in every theme): one `@layer ui-theme` block holding the base rule,
  * which defines every name in tokens.ts in its group order with its light value, after the gray
@@ -30,39 +33,41 @@
     /* Tailwind bridge: the app's gray classes land on the warm ramp. white = the card surface. */
     --color-white: var(--ui-surface);
     --color-gray-50: #f6f5f3;
-    --color-gray-100: #eeeeee;
+    --color-gray-100: #efedea;
     --color-gray-200: #e4e0dc;
     --color-gray-300: #c1bcb7;
-    --color-gray-400: #898683;
-    --color-gray-500: #696764;
-    --color-gray-600: #625e5b;
-    --color-gray-700: #4a4745;
-    --color-gray-800: #3b3937;
+    --color-gray-400: #8a8783;
+    --color-gray-500: #5c5a57;
+    --color-gray-600: #514e4b;
+    --color-gray-700: #433f3d;
+    --color-gray-800: #363433;
     --color-gray-900: #302e2d;
     --color-gray-950: #222222;
 
-    /* Colour — surfaces */
+    /* Colour — surfaces. The canvas is the floating sheet's own colour: a warm off-white the
+       white cards still lift from. */
     --ui-canvas: #f6f5f3;
     --ui-surface: #ffffff;
-    --ui-surface-muted: #eeeeee;
+    --ui-surface-muted: #efedea;
     --ui-inset: #f6f5f3;
     --ui-overlay: #ffffff;
     --ui-overlay-backdrop: rgb(48 46 45 / 0.28);
 
-    /* Colour — text */
+    /* Colour — text. Muted ink is a step darker than Sierra's #696764 so navigation labels clear
+       4.5:1 on the field's washes, where they sit with no fill under them. */
     --ui-fg: #302e2d;
-    --ui-fg-muted: #696764;
-    --ui-fg-subtle: #898683;
+    --ui-fg-muted: #5c5a57;
+    --ui-fg-subtle: #8a8783;
     --ui-fg-link: #345eb2;
     --ui-fg-link-hover: #26468a;
 
     /* Colour — lines */
     --ui-line: #e4e0dc;
-    --ui-line-muted: #eeeeee;
+    --ui-line-muted: #eeebe7;
     --ui-line-emphasis: #c1bcb7;
     --ui-divider: #ebe8e4;
 
-    /* Colour — accent */
+    /* Colour — accent: Sierra's forest green */
     --ui-accent: #006838;
     --ui-accent-hover: #05351d;
     --ui-accent-active: #03281a;
@@ -92,7 +97,7 @@
     --ui-tone-done-emphasis: #7644a6;
     --ui-tone-done-emphasis-fg: #ffffff;
     --ui-tone-neutral-fg: #625e5b;
-    --ui-tone-neutral-bg: #eeeeee;
+    --ui-tone-neutral-bg: #efedea;
     --ui-tone-neutral-line: #e4e0dc;
     --ui-tone-neutral-emphasis: #716f6c;
     --ui-tone-neutral-emphasis-fg: #ffffff;
@@ -112,13 +117,13 @@
     --ui-chart-cache-read: #a8c5ec;
     --ui-chart-cache-write: #5d8ad3;
     --ui-chart-output: #243f7a;
-    --ui-chart-grid: #eeeeee;
-    --ui-chart-axis: #898683;
+    --ui-chart-grid: #efedea;
+    --ui-chart-axis: #8a8783;
 
     /* Colour — code */
     --ui-code-bg: #f6f5f3;
-    --ui-code-line: #eeeeee;
-    --ui-code-gutter: #898683;
+    --ui-code-line: #efedea;
+    --ui-code-gutter: #8a8783;
     --ui-code-selection: rgb(52 94 178 / 0.16);
     --ui-diff-add-bg: #e7f3ea;
     --ui-diff-add-word: #c2e5ca;
@@ -126,90 +131,110 @@
     --ui-diff-del-word: #f6c9bb;
     --ui-diff-hunk-bg: #ebf1fa;
 
-    /* Shape */
-    --ui-radius-xs: 0.25rem;
-    --ui-radius-sm: 0.375rem;
-    --ui-radius-md: 0.625rem;
-    --ui-radius-lg: 0.875rem;
-    --ui-radius-xl: 1.25rem;
+    /* Shape: generous on boxes — a 6 / 8 / 12 / 16 / 24 px scale at the 16px root — with the
+       pill kept for every pressable control. */
+    --ui-radius-xs: 0.375rem;
+    --ui-radius-sm: 0.5rem;
+    --ui-radius-md: 0.75rem;
+    --ui-radius-lg: 1rem;
+    --ui-radius-xl: 1.5rem;
     --ui-radius-pill: 9999px;
     --ui-radius-control: 9999px;
     --ui-border-w: 1px;
     --ui-border-w-thick: 2px;
 
-    /* Elevation: untinted and tight — a hairline ring and a short drop, never a long coloured
-       shadow; depth on cards comes from white on the warm canvas, not from a shadow. `flat` is a
-       zero shadow rather than `none`: Tailwind composes shadows into a comma list, where `none`
-       would invalidate the whole declaration. */
+    /* Elevation: untinted and soft — a hairline ring and a long, faint drop; depth on cards comes
+       from white on the warm canvas, not from a shadow. `flat` is a zero shadow rather than
+       `none`: Tailwind composes shadows into a comma list, where `none` would invalidate the
+       whole declaration. Glass is stronger here than a menu alone needs, because it also reads
+       against the colour field behind the window. */
     --ui-shadow-flat: 0 0 #0000;
-    --ui-shadow-raised: 0 1px 2px rgb(48 46 45 / 0.06);
-    --ui-shadow-overlay: 0 0 0 1px rgb(48 46 45 / 0.06), 0 4px 12px -4px rgb(0 0 0 / 0.12);
-    --ui-shadow-modal: 0 0 0 1px rgb(48 46 45 / 0.06), 0 16px 40px -16px rgb(0 0 0 / 0.2);
+    --ui-shadow-raised: 0 1px 2px rgb(48 46 45 / 0.05);
+    --ui-shadow-overlay: 0 0 0 1px rgb(48 46 45 / 0.05), 0 8px 24px -8px rgb(0 0 0 / 0.14);
+    --ui-shadow-modal: 0 0 0 1px rgb(48 46 45 / 0.05), 0 24px 56px -20px rgb(0 0 0 / 0.22);
     --ui-shadow-drawer: var(--ui-shadow-modal);
-    --ui-glass-bg: rgb(255 255 255 / 0.78);
-    --ui-glass-blur: 16px;
-    --ui-glass-saturate: 1.2;
-    --ui-glass-line: rgb(48 46 45 / 0.12);
+    --ui-glass-bg: rgb(255 255 255 / 0.72);
+    --ui-glass-blur: 20px;
+    --ui-glass-saturate: 1.3;
+    --ui-glass-line: rgb(48 46 45 / 0.1);
+
+    /* Shell: Sierra's colour field, held to an app. A warm sand field with a sage wash from the
+       top-left corner and a sand wash from the bottom-right; the navigation column has no fill of
+       its own, the main column is the canvas floating as a sheet with a 0.75rem inset, a 1.25rem
+       corner and a soft untinted shadow. No rule between the columns: the gap is the rule. */
+    --ui-shell-field: #ece9e3;
+    --ui-shell-wash-1: rgb(120 156 122 / 0.18);
+    --ui-shell-wash-2: rgb(212 166 118 / 0.16);
+    --ui-shell-nav-bg: transparent;
+    --ui-shell-main-bg: var(--ui-canvas);
+    --ui-shell-line: transparent;
+    --ui-shell-gap: 0.75rem;
+    --ui-shell-radius: 1.25rem;
+    --ui-shell-shadow: 0 1px 2px rgb(48 46 45 / 0.04), 0 16px 40px -16px rgb(48 46 45 / 0.18);
 
     /* Typography — families. MiSans sets Latin and Chinese alike; the system CJK faces stay ahead
-       of the generic fallbacks for the rare ideograph MiSans's slices do not carry. */
+       of the generic fallbacks for the rare ideograph MiSans's slices do not carry. Chrome and
+       reading text share the one face. */
     --ui-font-cjk: "MiSans", "PingFang SC", "Microsoft YaHei";
     --ui-font-sans: "MiSans", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
+    --ui-font-ui: var(--ui-font-sans);
     --ui-font-mono:
       "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
       var(--ui-font-cjk), monospace;
     --ui-font-display: var(--ui-font-sans);
 
-    /* Typography — scale (shared by every theme) and roles */
-    --ui-text-body-size: 0.875rem;
+    /* Typography — scale and roles: a 15px body at the 16px root, 13px small and caption, and
+       titles set large in the regular weight with tightening negative tracking up the scale, the
+       way Sierra sets its h1 and h2 (400, −1.3px at 65px). Frost's weights stop at 500. */
+    --ui-text-body-size: 0.9375rem;
     --ui-text-body-lh: 1.5;
-    --ui-text-small-size: 0.75rem;
+    --ui-text-small-size: 0.8125rem;
     --ui-text-small-lh: 1.5;
-    --ui-text-caption-size: 0.75rem;
-    --ui-text-caption-lh: 1.35;
+    --ui-text-caption-size: 0.8125rem;
+    --ui-text-caption-lh: 1.4;
     --ui-text-code-size: 0.8125rem;
     --ui-text-code-lh: 1.6;
     --ui-text-prose-size: 1rem;
-    --ui-text-prose-lh: 1.6;
-    --ui-h1-size: 1.953rem;
-    --ui-h1-lh: 1.15;
+    --ui-text-prose-lh: 1.65;
+    --ui-h1-size: 2.25rem;
+    --ui-h1-lh: 1.1;
     --ui-h1-weight: 400;
-    --ui-h1-tracking: -0.02em;
+    --ui-h1-tracking: -0.03em;
     --ui-h1-transform: none;
     --ui-h1-font: var(--ui-font-display);
-    --ui-h2-size: 1.5625rem;
-    --ui-h2-lh: 1.2;
+    --ui-h2-size: 1.75rem;
+    --ui-h2-lh: 1.15;
     --ui-h2-weight: 400;
-    --ui-h2-tracking: -0.015em;
+    --ui-h2-tracking: -0.025em;
     --ui-h2-transform: none;
     --ui-h2-font: var(--ui-font-display);
-    --ui-h3-size: 1.25rem;
-    --ui-h3-lh: 1.3;
-    --ui-h3-weight: 500;
-    --ui-h3-tracking: -0.01em;
+    --ui-h3-size: 1.375rem;
+    --ui-h3-lh: 1.25;
+    --ui-h3-weight: 400;
+    --ui-h3-tracking: -0.015em;
     --ui-h3-transform: none;
     --ui-h3-font: var(--ui-font-sans);
-    --ui-h4-size: 1rem;
-    --ui-h4-lh: 1.4;
+    --ui-h4-size: 1.125rem;
+    --ui-h4-lh: 1.35;
     --ui-h4-weight: 500;
-    --ui-h4-tracking: 0;
+    --ui-h4-tracking: -0.01em;
     --ui-h4-transform: none;
     --ui-h4-font: var(--ui-font-sans);
-    --ui-h5-size: 0.875rem;
+    --ui-h5-size: 0.9375rem;
     --ui-h5-lh: 1.5;
     --ui-h5-weight: 500;
     --ui-h5-tracking: 0;
     --ui-h5-transform: none;
     --ui-h5-font: var(--ui-font-sans);
-    --ui-h6-size: 0.75rem;
+    --ui-h6-size: 0.8125rem;
     --ui-h6-lh: 1.5;
     --ui-h6-weight: 500;
     --ui-h6-tracking: 0;
     --ui-h6-transform: none;
     --ui-h6-font: var(--ui-font-sans);
-    --ui-md-h1-size: 1.25rem;
-    --ui-md-h2-size: 1.125rem;
-    --ui-md-h3-size: 1rem;
+    --ui-md-h1-size: 1.5rem;
+    --ui-md-h2-size: 1.25rem;
+    --ui-md-h3-size: 1.0625rem;
     --ui-weight-body: 400;
     --ui-weight-medium: 500;
     --ui-weight-strong: 500;
@@ -217,31 +242,35 @@
     --ui-tracking-mono: 0;
     --ui-tracking-label: 0;
 
-    /* Density. The padding-block of controls, rows and menu rows is Primer's, so switching themes
-       never shifts their height; the card padding and stack gaps are shared too. Frost's pills
-       take wider padding-inline, its rows and menus their own, and its panels a roomier padding. */
-    --ui-control-py-sm: 0.25rem;
-    --ui-control-py-md: 0.375rem;
-    --ui-control-py-lg: 0.625rem;
-    --ui-control-px-sm: 0.75rem;
-    --ui-control-px-md: 0.875rem;
-    --ui-control-px-lg: 1.125rem;
+    /* Density: a 0.28rem space unit (every Tailwind spacing and size utility scales with it), and
+       control, row and menu-row padding a step roomier than the unit alone gives. Pills take wide
+       padding-inline. Stacks are the unit's multiples. */
+    --ui-space-unit: 0.28rem;
+    --ui-control-py-sm: 0.375rem;
+    --ui-control-py-md: 0.5rem;
+    --ui-control-py-lg: 0.75rem;
+    --ui-control-px-sm: 0.875rem;
+    --ui-control-px-md: 1.125rem;
+    --ui-control-px-lg: 1.375rem;
     --ui-control-gap-sm: 0.375rem;
-    --ui-control-gap-md: 0.5rem;
-    --ui-row-py: 0.375rem;
+    --ui-control-gap-md: 0.625rem;
+    --ui-row-py: 0.5rem;
     --ui-row-px: 1rem;
-    --ui-menu-row-py: 0.5rem;
-    --ui-menu-row-px: 0.625rem;
-    --ui-card-p: 1rem;
-    --ui-panel-p: 1.25rem;
-    --ui-stack-0: 0.25rem;
-    --ui-stack-1: 0.5rem;
-    --ui-stack-2: 1rem;
-    --ui-stack-3: 1.5rem;
-    --ui-stack-4: 2.5rem;
+    --ui-menu-row-py: 0.5625rem;
+    --ui-menu-row-px: 0.75rem;
+    --ui-card-p: 1.25rem;
+    --ui-panel-p: 1.5rem;
+    --ui-stack-0: 0.3125rem;
+    --ui-stack-1: 0.625rem;
+    --ui-stack-2: 1.25rem;
+    --ui-stack-3: 1.875rem;
+    --ui-stack-4: 3rem;
 
-    /* Motion: Sierra's cubic-bezier(.4,0,.2,1), with state changes held to 120–200ms (Sierra's .25s
-       base drops to .2s) and slower reveals at .32s. The spring is for sheet physics, never hover. */
+    /* Motion: Sierra's cubic-bezier(.4,0,.2,1) for state changes, held to 120–200ms. Layers enter
+       on a soft spring (a touch of overshoot, never a bounce) scaling up from 0.96 with a 6px
+       blur-in and an 8px slide from their edge, and leave quickly on the overlay-out curve;
+       streamed text de-blurs in word by word over 360ms; the sidebar's width settles on a long
+       ease-out. */
     --ui-dur-fast: 120ms;
     --ui-dur-base: 200ms;
     --ui-dur-slow: 320ms;
@@ -251,6 +280,17 @@
     --ui-ease-overlay-in: cubic-bezier(0.16, 1, 0.3, 1);
     --ui-ease-overlay-out: cubic-bezier(0.4, 0, 1, 1);
     --ui-live-timing: linear;
+    --ui-dur-enter: 280ms;
+    --ui-dur-exit: 160ms;
+    --ui-ease-enter: cubic-bezier(0.22, 1.15, 0.36, 1);
+    --ui-ease-exit: var(--ui-ease-overlay-out);
+    --ui-enter-shift: 8px;
+    --ui-enter-scale: 0.96;
+    --ui-enter-blur: 6px;
+    --ui-dur-reveal: 360ms;
+    --ui-reveal-blur: 4px;
+    --ui-dur-layout: 320ms;
+    --ui-ease-layout: cubic-bezier(0.22, 1, 0.36, 1);
 
     /* Icons */
     --ui-icon-stroke: 1.6;
@@ -371,8 +411,16 @@
     --ui-shadow-raised: inset 0 1px 0 rgb(255 255 255 / 0.04);
     --ui-shadow-overlay: 0 0 0 1px rgb(255 255 255 / 0.08), 0 8px 24px -8px rgb(0 0 0 / 0.6);
     --ui-shadow-modal: 0 0 0 1px rgb(255 255 255 / 0.08), 0 16px 48px -16px rgb(0 0 0 / 0.7);
-    --ui-glass-bg: rgb(30 29 27 / 0.72);
+    --ui-glass-bg: rgb(30 29 27 / 0.7);
     --ui-glass-line: rgb(255 255 255 / 0.1);
+
+    /* Shell: a deep warm field a step below the canvas, the same two washes turned down, and the
+       sheet held off the field by a darker shadow. Fills, rule, inset and corner keep their base
+       values. */
+    --ui-shell-field: #100f0e;
+    --ui-shell-wash-1: rgb(74 164 92 / 0.14);
+    --ui-shell-wash-2: rgb(212 120 74 / 0.1);
+    --ui-shell-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 16px 40px -16px rgb(0 0 0 / 0.6);
 
     /* Focus, selection and scrollbar */
     --ui-focus-ring: 3px solid color-mix(in srgb, var(--ui-accent) 40%, transparent);
@@ -386,15 +434,17 @@
    * Style hooks (hooks.ts). A component opts into a hook with its class; this theme decides what
    * the hook does. These rules sit in `ui-theme`, after Tailwind's `utilities`, so a hook wins over
    * the utilities its component also carries — that is what lets `.ui-live` re-time an
-   * `animate-spin` and `.ui-glass` replace a panel's opaque fill.
+   * `animate-spin`, `.ui-glass` replace a panel's opaque fill and `.ui-shell` re-paint the
+   * window's columns.
    *
-   * Frost gives all six a recipe: glass, eyebrow, display, live, frame, underline-nav.
+   * Frost gives all seven a recipe: glass, eyebrow, display, live, frame, underline-nav, shell.
    */
 
   /* Frosted transient layer: menus, popovers, tooltips, the modal card, the floating composer and
-     a sticky page header — the layers with content moving underneath, which is what glass shows.
-     Never on cards, the sidebar or the login card, where nothing scrolls behind. Elevation stays
-     the host's own shadow token. */
+     a sticky page header — the layers with content moving underneath, which is what glass shows;
+     over the shell's colour field the frost is what keeps them legible. Never on cards, the
+     sidebar or the login card, where nothing scrolls behind. Elevation stays the host's own
+     shadow token. */
   :root[data-theme="modern"] .ui-glass {
     background-color: var(--ui-glass-bg);
     -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
@@ -427,7 +477,7 @@
   /* Regular-weight display title with tight tracking. */
   :root[data-theme="modern"] .ui-display {
     font-weight: 400;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
   }
 
   :root[data-theme="modern"] .ui-live {
@@ -467,6 +517,37 @@
   }
   :root[data-theme="modern"] .ui-underline-nav [role="tab"][aria-selected="true"]::after {
     background-color: var(--ui-accent);
+  }
+
+  /* The app window: the colour field behind everything, painted with the two washes (the one
+     gradient a theme may paint — a field with a job, holding the sheet and the glass layers
+     against it); the navigation column sits on the field with no fill; the main column and the
+     dock float as sheets — inset from the field's edge by the shell gap (not from the column
+     beside them: the gap between two sheets is one gap, not two), rounded on the shell corner,
+     under the soft shell shadow, and clipped so their own rectangular children keep the corner.
+     A host's rule between the columns turns transparent: the gap is the rule. */
+  :root[data-theme="modern"] .ui-shell {
+    background-color: var(--ui-shell-field);
+    background-image:
+      radial-gradient(70% 60% at 0% 0%, var(--ui-shell-wash-1), transparent 70%),
+      radial-gradient(60% 55% at 100% 100%, var(--ui-shell-wash-2), transparent 70%);
+  }
+  :root[data-theme="modern"] .ui-shell > [data-slot="nav"] {
+    background-color: var(--ui-shell-nav-bg);
+    border-color: var(--ui-shell-line);
+  }
+  :root[data-theme="modern"] .ui-shell > [data-slot="main"],
+  :root[data-theme="modern"] .ui-shell > [data-slot="dock"] {
+    margin: var(--ui-shell-gap);
+    border-radius: var(--ui-shell-radius);
+    border-color: var(--ui-shell-line);
+    background-color: var(--ui-shell-main-bg);
+    box-shadow: var(--ui-shell-shadow);
+    overflow: clip;
+  }
+  :root[data-theme="modern"] .ui-shell > [data-slot="nav"] + [data-slot="main"],
+  :root[data-theme="modern"] .ui-shell > [data-slot="main"] + [data-slot="dock"] {
+    margin-inline-start: 0;
   }
 
   /* MiSans ships Regular (400) and Medium (500) only. A heavier request renders in Medium rather

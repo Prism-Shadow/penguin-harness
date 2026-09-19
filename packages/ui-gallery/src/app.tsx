@@ -3,7 +3,7 @@
  * there are no client-side transitions to manage):
  *
  *   /                 the gallery
- *   /embed            one module variant, or one part demo, alone
+ *   /embed            one module variant (a live one on its own clock), or one part demo, alone
  *   /screens/<name>   a full-viewport composite
  *   /fonts            font specimens, declared faces and licences
  */
@@ -14,7 +14,7 @@ import { ScreenPage } from "./pages/screen";
 import { routePath } from "./lib/location";
 import { GalleryProvider } from "./state";
 
-const EMBED_PARAMS = ["module", "demo", "variant", "frame"] as const;
+const EMBED_PARAMS = ["module", "demo", "variant", "frame", "play", "sync"] as const;
 
 export function App() {
   const path = routePath();

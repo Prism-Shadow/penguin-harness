@@ -6,13 +6,17 @@
  *   marks (running, pinned, unread, scheduled), one row showing its hover actions, the user row;
  * - Tabs & crumbs: a page header under its breadcrumbs, with underline tabs;
  * - Dock & rail: the chat with the right dock open — dock tabs, the panel actions and a panel;
- * - Collapsed: the sidebar folded to the icon rail, one icon showing its tooltip.
+ * - Collapsed: the sidebar folded to the icon rail, one icon showing its tooltip;
+ * - Collapse and expand (live): the sidebar folding to the rail, a rail icon's tooltip, and the
+ *   loop back out.
  */
 import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { Fixtures, SessionListItem } from "../fixtures";
 import { defineModule } from "../module";
-import { AgentTile, UserAvatar } from "../screens/parts";
+import type { SceneSpec } from "../module";
+import { reached, useScene } from "../scene";
+import { AgentTile, AppShell, UserAvatar } from "../screens/parts";
 import { duration, tokens, usd } from "../screens/format";
 import {
   Badge,
@@ -25,6 +29,7 @@ import {
   KeyValue,
   NavRow,
   PageHeader,
+  Presence,
   RunSpinner,
   Tabs,
   Tooltip,
@@ -42,7 +47,10 @@ const NAV: readonly {
   { key: "benchmark", icon: "benchmark" },
 ];
 
-/** A mock app window the compositions sit in: the product's own frame, at a fixed height. */
+/**
+ * A mock app window the compositions sit in: the product's own frame (the app shell), at a fixed
+ * height. Its children name their slots — the sidebar or rail `nav`, the chat column `main`.
+ */
 function Window({
   children,
   height = "h-[32rem]",
@@ -53,11 +61,11 @@ function Window({
   column?: boolean;
 }) {
   return (
-    <div
+    <AppShell
       className={`flex ${column ? "flex-col" : ""} ${height} overflow-hidden rounded-lg border border-line bg-canvas`}
     >
       {children}
-    </div>
+    </AppShell>
   );
 }
 
@@ -75,6 +83,7 @@ function SessionRow({
   const agent = f.agents.find((a) => a.id === item.agentId);
   return (
     <li
+      aria-current={active ? "page" : undefined}
       className={`flex h-8 items-center gap-2 rounded-md px-2 text-sm ${
         active ? "bg-accent-muted text-fg" : hovered ? "bg-surface-muted text-fg" : "text-fg-muted"
       }`}
@@ -107,10 +116,22 @@ function SessionRow({
 }
 
 function SidebarFrame({ f }: { f: Fixtures }) {
+  return (
+    <aside
+      data-slot="nav"
+      className="flex w-64 shrink-0 flex-col border-r border-line bg-surface-muted"
+    >
+      <SidebarBody f={f} />
+    </aside>
+  );
+}
+
+/** What the sidebar holds, apart from its frame, so the live scene can fade it inside its own. */
+function SidebarBody({ f }: { f: Fixtures }) {
   const c = f.copy.nav;
   const [workspace, earlier] = f.sessionGroups;
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-surface-muted">
+    <>
       <div className="flex items-center gap-1 px-2 pt-2">
         <span className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5">
           <UserAvatar name={f.user.name} size={22} />
@@ -179,7 +200,7 @@ function SidebarFrame({ f }: { f: Fixtures }) {
         <span className="min-w-0 flex-1 truncate text-sm text-fg">{f.user.name}</span>
         <IconButton label={f.copy.settings.title} icon="settings" size="sm" />
       </div>
-    </aside>
+    </>
   );
 }
 
@@ -218,12 +239,12 @@ function ChatBody({ f }: { f: Fixtures }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-6">
       {prompt?.kind === "user" && (
-        <p className="ml-auto max-w-[80%] rounded-lg bg-surface-muted px-4 py-2 text-sm text-fg">
+        <p className="ml-auto max-w-[80%] rounded-lg bg-surface-muted px-4 py-2 font-sans text-sm text-fg">
           {prompt.text}
         </p>
       )}
       {reply?.kind === "text" && (
-        <p className="text-sm leading-relaxed text-fg">{reply.markdown}</p>
+        <p className="font-sans text-sm leading-relaxed text-fg">{reply.markdown}</p>
       )}
     </div>
   );
@@ -233,7 +254,7 @@ function Sidebar({ f }: { f: Fixtures }) {
   return (
     <Window height="h-[39rem]">
       <SidebarFrame f={f} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
         <ChatHead f={f} />
         <ChatBody f={f} />
       </div>
@@ -350,7 +371,7 @@ function DockFrame({ f }: { f: Fixtures }) {
           )}
         </div>
         {reply?.kind === "text" && (
-          <p className="overflow-hidden p-3 text-sm leading-relaxed text-fg-muted">
+          <p className="overflow-hidden p-3 font-sans text-sm leading-relaxed text-fg-muted">
             {reply.markdown}
           </p>
         )}
@@ -363,7 +384,7 @@ function DockAndRail({ f }: { f: Fixtures }) {
   return (
     <Window height="h-[32rem]">
       <Rail f={f} />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
         <ChatHead f={f} dock="bottom" />
         <ChatBody f={f} />
         <DockFrame f={f} />
@@ -373,9 +394,32 @@ function DockAndRail({ f }: { f: Fixtures }) {
 }
 
 function Rail({ f, tooltip = false }: { f: Fixtures; tooltip?: boolean }) {
+  return (
+    <nav
+      data-slot="nav"
+      className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-surface-muted py-2"
+    >
+      <RailBody f={f} tooltip={tooltip} />
+    </nav>
+  );
+}
+
+/**
+ * What the rail holds, apart from its frame. `live` hangs the tooltip on a `Presence`, so the live
+ * scene's tooltip comes in from the icon's side and leaves again.
+ */
+function RailBody({
+  f,
+  tooltip = false,
+  live = false,
+}: {
+  f: Fixtures;
+  tooltip?: boolean;
+  live?: boolean;
+}) {
   const c = f.copy.nav;
   return (
-    <nav className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-surface-muted py-2">
+    <>
       <IconButton label={c.expandSidebar} icon="sidebar" />
       <IconButton label={c.newChat} icon="newChat" />
       <span className="my-1 h-px w-6 bg-line" />
@@ -387,16 +431,25 @@ function Rail({ f, tooltip = false }: { f: Fixtures; tooltip?: boolean }) {
             pressed={i === 2}
             hovered={tooltip && i === 1}
           />
-          {tooltip && i === 1 && (
+          {live && i === 1 ? (
             <span className="absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2">
-              <Tooltip label={c[row.key]} />
+              <Presence show={tooltip} side="left" as="span" className="block">
+                <Tooltip label={c[row.key]} />
+              </Presence>
             </span>
+          ) : (
+            tooltip &&
+            i === 1 && (
+              <span className="absolute left-full top-1/2 z-10 ml-2 -translate-y-1/2">
+                <Tooltip label={c[row.key]} />
+              </span>
+            )
           )}
         </span>
       ))}
       <span className="min-h-0 flex-1" />
       <UserAvatar name={f.user.name} size={24} />
-    </nav>
+    </>
   );
 }
 
@@ -404,7 +457,54 @@ function Collapsed({ f }: { f: Fixtures }) {
   return (
     <Window height="h-[28rem]">
       <Rail f={f} tooltip />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
+        <ChatHead f={f} />
+        <ChatBody f={f} />
+      </div>
+    </Window>
+  );
+}
+
+const LIVE_COLLAPSE: SceneSpec = {
+  frames: [
+    { key: "expanded", title: "Expanded", hold: 1600 },
+    { key: "rail", title: "Rail", hold: 1400 },
+    { key: "tooltip", title: "Tooltip", hold: 1400 },
+  ],
+};
+
+/**
+ * Collapse and expand: the sidebar folds to the icon rail — the nav column's width moves through
+ * `data-layout-motion` while the sidebar's contents leave and the rail's arrive, each laid out at
+ * its own width so neither reflows on the way — then one rail icon shows its tooltip. The loop
+ * back to the first frame plays the expand. The column clips while its width moves, and stops
+ * clipping once the rail has settled, so the tooltip can hang over the chat.
+ */
+function LiveCollapse({ f }: { f: Fixtures }) {
+  const clock = useScene();
+  const rail = reached(clock, "rail");
+  const tooltip = reached(clock, "tooltip");
+  return (
+    <Window height="h-[32rem]">
+      <aside
+        data-slot="nav"
+        data-layout-motion
+        className={`relative shrink-0 border-r border-line bg-surface-muted ${rail ? "w-12" : "w-64"} ${
+          tooltip ? "" : "overflow-hidden"
+        }`}
+      >
+        <Presence show={!rail} side="left" className="absolute inset-y-0 left-0 flex w-64 flex-col">
+          <SidebarBody f={f} />
+        </Presence>
+        <Presence
+          show={rail}
+          side="left"
+          className="absolute inset-y-0 left-0 flex w-12 flex-col items-center gap-1 py-2"
+        >
+          <RailBody f={f} tooltip={tooltip} live />
+        </Presence>
+      </aside>
+      <div data-slot="main" className="flex min-w-0 flex-1 flex-col">
         <ChatHead f={f} />
         <ChatBody f={f} />
       </div>
@@ -417,6 +517,7 @@ const VARIANTS = {
   "tabs-crumbs": TabsAndCrumbs,
   "dock-rail": DockAndRail,
   collapsed: Collapsed,
+  "live-collapse": LiveCollapse,
 } as const;
 
 export const module = defineModule({
@@ -430,6 +531,7 @@ export const module = defineModule({
     { key: "tabs-crumbs", title: "Tabs & crumbs" },
     { key: "dock-rail", title: "Dock & rail" },
     { key: "collapsed", title: "Collapsed" },
+    { key: "live-collapse", title: "Collapse and expand", scene: LIVE_COLLAPSE },
   ],
   parts: [
     "navigation-tabs",

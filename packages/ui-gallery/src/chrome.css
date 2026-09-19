@@ -437,7 +437,8 @@
   padding: 24px;
   background: var(--ui-canvas, var(--g-surface));
   color: var(--ui-fg, var(--g-ink));
-  font-family: var(--ui-font-sans, var(--g-font));
+  /* The chrome face, as the app's body sets it: a reading surface inside opts into font-sans. */
+  font-family: var(--ui-font-ui, var(--g-font));
   font-size: var(--ui-text-body-size, 1rem);
   line-height: var(--ui-text-body-lh, 1.5);
 }
@@ -458,6 +459,14 @@
 .g-card-foot[data-compare] {
   padding-top: 14px;
   border-top: 1px solid var(--g-line);
+}
+/* A live variant: pills, then its transport, then the breadcrumb. */
+.g-card-foot > .g-transport {
+  grid-row: 2;
+  justify-self: center;
+}
+.g-card-foot[data-scene] > .g-crumb {
+  grid-row: 3;
 }
 .g-pills {
   display: inline-flex;
@@ -500,6 +509,84 @@
 .g-pill[aria-pressed="true"] {
   background: var(--g-ink);
   color: var(--g-canvas);
+}
+.g-pill[data-scene] {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 10px;
+}
+
+/* A live variant's transport: play, restart, previous, the frames, next, speed. */
+.g-transport {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  max-width: 100%;
+}
+.g-transport > .g-seg {
+  margin-left: 6px;
+}
+.g-scene-frames {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1px;
+  margin: 0 4px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--g-inset);
+  border: 1px solid var(--g-line);
+}
+.g-scene-chip {
+  position: relative;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--g-ink-2);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  overflow: hidden;
+}
+.g-scene-chip:hover {
+  color: var(--g-ink);
+}
+.g-scene-chip[aria-pressed="true"] {
+  background: var(--g-surface);
+  color: var(--g-ink);
+  box-shadow: var(--g-raise);
+}
+/* How far the current frame has run: one linear animation per frame, paused with the clock. */
+.g-scene-progress {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--g-accent);
+  transform-origin: left center;
+  animation-name: g-scene-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes g-scene-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .g-scene-progress {
+    display: none;
+  }
 }
 .g-crumb {
   display: inline-flex;
@@ -899,6 +986,19 @@ body:has(.g-embed) {
   animation-play-state: paused !important;
   animation-delay: 0s !important;
   transition: none !important;
+}
+/*
+ * Except the motion hooks a live variant's frames carry: a paused entrance would hold its first,
+ * invisible keyframe, a paused exit would never end (leaving the layer mounted), and a paused resize
+ * would hold the old size. With no animation at all, each simply is in its new state.
+ */
+:root[data-motion="reduced"]
+  .g-preview
+  :is([data-presence], [data-backdrop], [data-reveal], [data-layout-motion]),
+:root[data-motion="reduced"]
+  .g-screen-root
+  :is([data-presence], [data-backdrop], [data-reveal], [data-layout-motion]) {
+  animation: none !important;
 }
 
 /* ---- Narrow screens: the rail stacks above the content ---------------------------------- */

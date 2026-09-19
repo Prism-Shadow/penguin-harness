@@ -3,23 +3,30 @@
  * render:
  *
  *   /embed?module=<module-id>&variant=<key>&theme=&mode=&tier=&lang=
+ *   /embed?module=<module-id>&variant=<live-key>&frame=<frame-key>&play=0|1&…
  *   /embed?demo=<part-id>&variant=<key>&theme=&mode=&tier=&lang=
+ *
+ * A live variant holds still on its last frame unless `frame` or `play` say otherwise (see
+ * lib/live.ts); in a compare frame (`sync=1`) it follows the clock of the card around it instead.
  *
  * It posts its height to a parent frame (`{ type: "gallery:height" }`) and marks
  * `<html data-gallery-ready>` once tokens are resolved and fonts have loaded, which is what the
  * screenshot script waits for. `#embed-root` carries what the script needs to walk the picks:
- * `data-kind`, `data-renderable`, `data-variants` (a module's keys) or `data-axes` and
- * `data-matrix` (a demo's).
+ * `data-kind`, `data-renderable`, `data-variants` (a module's keys), `data-frames` and
+ * `data-frame` (a live variant's frame keys and the one showing), or `data-axes` and `data-matrix`
+ * (a demo's).
  */
 import { useEffect, useRef } from "react";
+import { useFollowedClock, useScenePlayer } from "../chrome/player";
 import { parseVariantKey } from "../lib/demos";
+import { parseEmbedCue } from "../lib/live";
 import { pickVariant } from "../lib/modules";
 import { DemoView, ModuleView } from "../preview";
 import { DEMOS, MODULES } from "../registry";
 import { useGallery } from "../state";
 
 export function EmbedPage() {
-  const { tokens, S } = useGallery();
+  const { tokens, S, state } = useGallery();
   const params = new URLSearchParams(window.location.search);
   const moduleId = params.get("module");
   const demoId = params.get("demo");
@@ -27,6 +34,21 @@ export function EmbedPage() {
   const entry = moduleId !== null ? MODULES.byId.get(moduleId) : undefined;
   const demo = moduleId === null && demoId !== null ? DEMOS.byId.get(demoId)?.demo : undefined;
   const root = useRef<HTMLDivElement>(null);
+
+  const variant = entry ? pickVariant(entry.module, key) : undefined;
+  const reduced = state.motion === "reduced";
+  const sync = params.get("sync") === "1";
+  const own = useScenePlayer(sync ? undefined : variant?.scene, {
+    reduced,
+    start: (frames) => parseEmbedCue(frames, window.location.search),
+  });
+  const followed = useFollowedClock(
+    sync ? variant?.scene : undefined,
+    entry?.module.id ?? "",
+    variant?.key ?? "",
+    reduced,
+  );
+  const clock = sync ? followed : own.clock;
 
   useEffect(() => {
     const el = root.current;
@@ -55,8 +77,7 @@ export function EmbedPage() {
     };
   }, [tokens]);
 
-  if (entry) {
-    const variant = pickVariant(entry.module, key);
+  if (entry && variant) {
     return (
       <div
         ref={root}
@@ -68,8 +89,12 @@ export function EmbedPage() {
         data-width={entry.module.width}
         data-variant={variant.key}
         data-variants={JSON.stringify(entry.module.variants.map((v) => v.key))}
+        data-frames={
+          variant.scene ? JSON.stringify(variant.scene.frames.map((f) => f.key)) : undefined
+        }
+        data-frame={clock?.frame}
       >
-        <ModuleView module={entry.module} variant={variant} />
+        <ModuleView module={entry.module} variant={variant} clock={clock} />
       </div>
     );
   }

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
  * Screenshots of the gallery's modules through `/embed`: one PNG per module × variant × theme ×
- * mode × language, written to `<out>/<theme>/<mode>/<lang>/<module>--<variant>.png`. `--parts`
- * adds every part that has a demo, as `<part-id>--<pick>.png` beside them.
+ * mode × language, written to `<out>/<theme>/<mode>/<lang>/<module>--<variant>.png`. A live
+ * variant is shot paused on a frame, as `<module>--<variant>@<frame>.png`: every frame with
+ * `--variants all`, otherwise the last one, which is what the scene settles into. `--parts` adds
+ * every part that has a demo, as `<part-id>--<pick>.png` beside them.
  *
  * Needs the gallery running (`pnpm dev:gallery`, port 7372) and Playwright's Chromium. Shots are
  * never committed.
@@ -19,12 +21,14 @@
  *   --modes     light,dark                     (default: both)
  *   --langs     en,zh                          (default: both)
  *   --tier      sm | md | lg                   (default md)
- *   --variants  default | all                  (default: each module's first variant only)
+ *   --variants  default | all                  (default: each module's first variant only; `all`
+ *                                               also shoots every frame of a live variant)
  *   --parts     also shoot every part demo     (flag)
  *   --width     viewport width in px           (default 758: the main page's card, so a shot
  *                                               lays out exactly as the card does)
  *
- * Animations are frozen (`motion=reduced`) so two runs of the same tree compare pixel for pixel.
+ * Animations are frozen (`motion=reduced`) so two runs of the same tree compare pixel for pixel;
+ * under it a live variant's frame shows its end state (a stream's whole text), as a still should.
  *
  * Fonts must be the real ones. Before the first shot of each theme × language the script loads
  * every family that theme names for that language's specimen and fails the run when one has no
@@ -210,6 +214,8 @@ async function shoot() {
               renderable: el.dataset.renderable === "true",
               variant: el.dataset.variant ?? "",
               variants: JSON.parse(el.dataset.variants ?? "[]"),
+              frames: JSON.parse(el.dataset.frames ?? "[]"),
+              frame: el.dataset.frame ?? "",
               axes: JSON.parse(el.dataset.axes ?? "{}"),
               matrix: el.dataset.matrix === "true",
             }));
@@ -220,18 +226,23 @@ async function shoot() {
             console.log(file);
             return info;
           };
-          for (const module of modules) {
-            const first = await capture(
-              embed({ theme, mode, lang, module }),
-              (i) => `${module}--${i.variant}`,
-            );
+          // A live variant's embed opens paused on its last frame; the name says which frame it is.
+          const shotName = (module) => (i) =>
+            i.frames.length > 0 ? `${module}--${i.variant}@${i.frame}` : `${module}--${i.variant}`;
+          const shootVariant = async (module, variant) => {
+            const params = { theme, mode, lang, module, ...(variant ? { variant } : {}) };
+            const info = await capture(embed(params), shotName(module));
             if (allVariants) {
-              for (const key of first.variants.slice(1)) {
-                await capture(
-                  embed({ theme, mode, lang, module, variant: key }),
-                  () => `${module}--${key}`,
-                );
+              for (const frame of info.frames.filter((key) => key !== info.frame)) {
+                await capture(embed({ ...params, variant: info.variant, frame }), shotName(module));
               }
+            }
+            return info;
+          };
+          for (const module of modules) {
+            const first = await shootVariant(module, undefined);
+            if (allVariants) {
+              for (const key of first.variants.slice(1)) await shootVariant(module, key);
             }
           }
           if (args.parts) {

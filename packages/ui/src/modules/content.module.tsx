@@ -45,7 +45,7 @@ function Prose({ f }: { f: Fixtures }) {
   const d = f.docsAnswer;
   const h = "text-fg font-(--ui-weight-strong)";
   return (
-    <article className="mx-auto grid max-w-2xl gap-4 text-(length:--ui-text-prose-size) leading-(--ui-text-prose-lh) text-fg">
+    <article className="mx-auto grid max-w-2xl gap-4 font-sans text-(length:--ui-text-prose-size) leading-(--ui-text-prose-lh) text-fg">
       <h1 className={`text-(length:--ui-md-h1-size) leading-snug ${h}`}>{d.title}</h1>
       <p>
         <InlineText parts={d.intro} />

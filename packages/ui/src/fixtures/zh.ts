@@ -54,6 +54,7 @@ export const zh: Fixtures = buildFixtures("zh", {
       },
       running: "运行中",
       done: "运行完毕",
+      queued: "排队中",
       attach: "添加附件",
       steps: (n) => `${n} 步`,
       thinking: "思考",
@@ -93,6 +94,12 @@ export const zh: Fixtures = buildFixtures("zh", {
       contextOf: (used, window) => `上下文 ${used} / ${window}`,
       exitStatus: (code, duration) => `退出码 ${code} · ${duration}`,
       outputComplete: "输出完毕",
+      deleteMessage: {
+        title: "删除这条消息？",
+        body: "这条消息及其附件会从本对话中移除。",
+        confirm: "删除",
+        deleted: "消息已删除",
+      },
     },
     dock: {
       subagents: (n) => `子智能体（${n}）`,
@@ -374,6 +381,8 @@ export const zh: Fixtures = buildFixtures("zh", {
       reviewReadDescription: "阅读聊天页面",
       reviewReply:
         "`linkify()` 只在 `sources[n - 1]` 存在时才生成链接，超出来源数量的标记保持纯文本——这点没问题。有一处缺口：`sources` 在最后一段增量之后才到达，所以回答流式输出期间所有 `[n]` 都是纯文本，直到",
+      closingReply:
+        "改好了：`source` 文件已不存在的片段，现在会在编号之前从 `hits` 中剔除，所以答案里的每个 [n] 都能打开 `corpus/` 下真实存在的文件。旧条目会留在索引里，直到下次重建索引，但已不会再被引用。",
       failedReply:
         "测试抓到了一个真实的问题：上游把 `hooks.md` 改名为 `hooks-guide.md`，而索引里还留着旧文件，所以引用 [2] 指向了不存在的文件。先重建语料索引，再重新跑一遍测试。",
     },

@@ -12,7 +12,7 @@ import type { ComponentSection } from "../../../ui/src/catalog";
 import { MODULE_IDS } from "../../../ui/src/module";
 import type { Module, ModuleVariant } from "../../../ui/src/module";
 
-/** Variant keys double as URL and file-name segments. */
+/** Variant and frame keys double as URL and file-name segments. */
 export const VARIANT_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export interface CollectedModule {
@@ -30,6 +30,30 @@ export interface ModuleRegistry {
 }
 
 const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+/**
+ * What stops a live variant's scene from playing or being addressed: fewer than two frames (nothing
+ * to animate between), a frame key that cannot be a URL or file-name segment or repeats, or a hold
+ * that is not a positive number of ms.
+ */
+function sceneProblems(variant: ModuleVariant): string[] {
+  const frames = variant.scene?.frames;
+  if (frames === undefined) return [];
+  if (frames.length < 2) return [`live variant "${variant.key}" needs at least two frames`];
+  const keys = frames.map((frame) => frame.key);
+  const badKeys = keys.filter((key, i) => !VARIANT_KEY.test(key) || keys.indexOf(key) !== i);
+  const badHolds = frames.filter((frame) => !(Number.isFinite(frame.hold) && frame.hold > 0));
+  const found: string[] = [];
+  if (badKeys.length > 0)
+    found.push(
+      `frame keys of "${variant.key}" must be unique lowercase words joined by "-": ${badKeys.join(", ")}`,
+    );
+  if (badHolds.length > 0)
+    found.push(
+      `frame holds of "${variant.key}" must be positive ms: ${badHolds.map((f) => f.key).join(", ")}`,
+    );
+  return found;
+}
 
 export function collectModules(
   files: Readonly<Record<string, { module?: Module }>>,
@@ -69,6 +93,11 @@ export function collectModules(
           ? `${path}: module "${module.id}" has no variants`
           : `${path}: variant keys must be unique lowercase words joined by "-": ${badKeys.join(", ")}`,
       );
+      continue;
+    }
+    const badScenes = module.variants.flatMap((variant) => sceneProblems(variant));
+    if (badScenes.length > 0) {
+      for (const problem of badScenes) problems.push(`${path}: ${problem}`);
       continue;
     }
     const unknownParts = module.parts.filter((id) => !known.has(id));

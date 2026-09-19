@@ -6,16 +6,21 @@
  */
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { FIXTURES } from "../../../ui/src/fixtures";
 import { useGallery } from "../state";
+import { SPECIMENS } from "./specimens";
 
 /** A titled group on a board: a label rung and its content, ruled from the group above. */
 export function BoardGroup({
   title,
   aside,
+  action,
   children,
 }: {
   title: ReactNode;
   aside?: ReactNode;
+  /** A control at the end of the head row: the motion board's replay. */
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -23,6 +28,7 @@ export function BoardGroup({
       <div className="gf-group-head">
         <h3>{title}</h3>
         {aside !== undefined && <span className="gf-aside">{aside}</span>}
+        {action !== undefined && <span className="gf-group-action">{action}</span>}
       </div>
       {children}
     </section>
@@ -40,7 +46,7 @@ export function Measured({
   style,
   className,
 }: {
-  children: ReactNode;
+  children?: ReactNode;
   style: CSSProperties;
   className: string;
 }) {
@@ -85,5 +91,42 @@ export function Glyph({ d, size = 16 }: { d: string; size?: number }) {
     >
       <path d={d} />
     </svg>
+  );
+}
+
+/** A small themed control that replays a motion specimen. */
+export function ReplayButton({ onClick, label }: { onClick: () => void; label?: string }) {
+  const { S } = useGallery();
+  return (
+    <button type="button" className="gf-replay" onClick={onClick}>
+      {label ?? S.foundations.replay}
+    </button>
+  );
+}
+
+/**
+ * The app window through `.ui-shell`: a navigation column with three rows (the first selected) and
+ * a main column with a title and a line of text, in the anatomy the recipes select on. Frost lays
+ * its field behind it and floats the main column; Console rules the columns and marks the selected
+ * row; Primer leaves the specimen's own classes alone.
+ */
+export function ShellSpecimen() {
+  const { state } = useGallery();
+  const nav = FIXTURES[state.lang].copy.nav;
+  const specimen = SPECIMENS[state.lang];
+  return (
+    <div className="ui-shell gf-shell">
+      <div data-slot="nav" className="gf-shell-nav">
+        <span className="gf-shell-row" aria-current="page">
+          {nav.newChat}
+        </span>
+        <span className="gf-shell-row">{nav.agents}</span>
+        <span className="gf-shell-row">{nav.models}</span>
+      </div>
+      <div data-slot="main" className="gf-shell-main">
+        <strong className="gf-shell-title">{specimen.heading}</strong>
+        <p className="gf-shell-text">{specimen.ui}</p>
+      </div>
+    </div>
   );
 }

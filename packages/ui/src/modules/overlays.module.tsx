@@ -6,7 +6,8 @@
  * - Dialog: the paged settings dialog over the dimmed chat, a discard confirmation above it;
  * - Drawer: a Trace file's details in a side drawer;
  * - Toasts: the stack in the corner;
- * - Palette: the command palette as it opens — its commands and recent chats, and key hints.
+ * - Palette: the command palette as it opens — its commands and recent chats, and key hints;
+ * - Open and close (live): a reply's menu, the confirmation it leads to, and the toast after.
  *
  * Static stand-ins for W3's `Menu`, `FloatingPanel`, `InfoPopover`, `Tooltip`, `Modal`,
  * `PagedDialog`, `ConfirmModal`, `Drawer` and `Toaster`, and W8's `CommandPalette`.
@@ -15,10 +16,14 @@ import type { ReactNode } from "react";
 import { fixturesFor } from "../fixtures";
 import type { ChatTurn, Fixtures } from "../fixtures";
 import { defineModule } from "../module";
+import type { SceneSpec } from "../module";
+import { at, reached, useScene } from "../scene";
 import { bytes } from "../screens/format";
-import { AgentTile } from "../screens/parts";
-import { Turn } from "../screens/transcript";
+import { Markdown } from "../screens/markdown";
+import { AgentTile, DisclosureBody } from "../screens/parts";
+import { Turn, UserBubble } from "../screens/transcript";
 import {
+  Backdrop,
   Button,
   FloatingPanel,
   GlyphIcon,
@@ -31,6 +36,7 @@ import {
   MenuSeparator,
   Modal,
   PrefRow,
+  Presence,
   Segmented,
   Switch,
   Toast,
@@ -375,12 +381,110 @@ function Palette({ f }: { f: Fixtures }) {
   );
 }
 
+const LIVE_OPEN_CLOSE: SceneSpec = {
+  frames: [
+    { key: "idle", title: "Idle", hold: 900 },
+    { key: "menu", title: "Menu", hold: 1400 },
+    { key: "dialog", title: "Dialog", hold: 2000 },
+    { key: "toast", title: "Toast", hold: 1800 },
+  ],
+};
+
+/**
+ * Open and close: the reply's "…" opens its menu under it, the pointer on "Delete message"; the
+ * menu closes as the confirmation opens over its backdrop; the dialog leaves, the reply folds
+ * away and a toast says so from the corner. Each layer comes and goes through `Presence`, from
+ * the edge it opens from; the loop back to the first frame brings the reply back.
+ */
+function LiveOpenClose({ f }: { f: Fixtures }) {
+  const clock = useScene();
+  const turn = f.session.turns[1]!;
+  const prompt = turn.items.find((i) => i.id === "u2");
+  const reply = turn.items.find((i) => i.id === "tx4");
+  const menu = at(clock, "menu");
+  const dialog = at(clock, "dialog");
+  const deleted = reached(clock, "toast");
+  const d = f.copy.chat.deleteMessage;
+  return (
+    <div className="relative h-[32rem] overflow-hidden rounded-lg border border-line bg-canvas">
+      <div className="h-full overflow-hidden px-10 py-4">
+        <div className="mx-auto max-w-2xl">
+          {prompt?.kind === "user" && <UserBubble item={prompt} dense={false} />}
+          {reply?.kind === "text" && (
+            <DisclosureBody open={!deleted}>
+              <div className="my-3">
+                <Markdown text={reply.markdown} />
+              </div>
+            </DisclosureBody>
+          )}
+          {!deleted && (
+            <div className="flex items-center gap-1">
+              <IconButton label={f.copy.chat.copy} icon="copy" size="sm" />
+              <IconButton label={f.copy.chat.fork} icon="fork" size="sm" />
+              <span className="relative">
+                <IconButton label={f.copy.common.more} icon="more" size="sm" pressed={menu} />
+                <Presence
+                  show={menu}
+                  side="top"
+                  className="absolute left-0 top-full z-10 mt-1 w-60"
+                >
+                  <FloatingPanel>
+                    {f.menus.message.map((item, i) =>
+                      item === "separator" ? (
+                        <MenuSeparator key={i} />
+                      ) : (
+                        <MenuItem
+                          key={item.label}
+                          icon={item.icon}
+                          label={item.label}
+                          shortcut={item.shortcut}
+                          danger={item.danger}
+                          active={item.danger}
+                        />
+                      ),
+                    )}
+                  </FloatingPanel>
+                </Presence>
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+      <Backdrop show={dialog} />
+      <div className="absolute inset-0 flex items-center justify-center p-6">
+        <Presence show={dialog} side="center" className="w-full max-w-sm">
+          <Modal
+            title={d.title}
+            description={d.body}
+            footer={
+              <>
+                <Button variant="secondary" size="sm">
+                  {f.copy.common.cancel}
+                </Button>
+                <Button variant="danger" size="sm">
+                  {d.confirm}
+                </Button>
+              </>
+            }
+          />
+        </Presence>
+      </div>
+      <div className="absolute inset-x-0 bottom-0 flex justify-end p-6">
+        <Presence show={deleted} side="bottom" className="w-80 max-w-full">
+          <Toast tone="success" title={d.deleted} />
+        </Presence>
+      </div>
+    </div>
+  );
+}
+
 const VARIANTS = {
   menu: Menus,
   dialog: Dialogs,
   drawer: Drawer,
   toasts: Toasts,
   palette: Palette,
+  "live-open-close": LiveOpenClose,
 } as const;
 
 export const module = defineModule({
@@ -395,6 +499,7 @@ export const module = defineModule({
     { key: "drawer", title: "Drawer" },
     { key: "toasts", title: "Toasts" },
     { key: "palette", title: "Palette" },
+    { key: "live-open-close", title: "Open and close", scene: LIVE_OPEN_CLOSE },
   ],
   parts: [
     "overlays-modal",

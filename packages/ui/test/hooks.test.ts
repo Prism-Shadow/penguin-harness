@@ -5,16 +5,19 @@
  * closed so that no theme grows a costume one class at a time: the W0 drafts had eleven hooks, and
  * five of them (a gradient wash, a column grid, a dot matrix, corner ticks, radius that eases on
  * hover, mono button labels) were decoration with no job. `src/hooks.ts` exports the six that
- * remain, and this suite holds the source to it:
+ * remained plus the seventh added with the theme identities, `ui-shell` — the app window, the one
+ * place a theme may lay a colour field (user decision, 2026-09-19) — and this suite holds the
+ * source to it:
  *
  * - no `ui-*` class in markup, and no `.ui-*` selector in a stylesheet, outside the list — in the
  *   package, the web app and the gallery;
  * - each hook applied only inside the components Appendix B names as its hosts: glass only on
- *   transient layers, the eyebrow only as a group label, the display face only on a page title. A
- *   host is the nearest enclosing PascalCase function, so a stand-in in `screens/` or `modules/`
- *   carries the name of the component it imitates;
+ *   transient layers, the eyebrow only as a group label, the display face only on a page title,
+ *   the shell only on an app-window frame. A host is the nearest enclosing PascalCase function,
+ *   so a stand-in in `screens/` or `modules/` carries the name of the component it imitates;
  * - the markup the recipes select on: `.ui-live` names its signal in `data-live`, `.ui-display`
- *   sits on an h1, `.ui-frame`'s slots are `head`, `body`, `foot` or `pane`.
+ *   sits on an h1, `.ui-frame`'s slots are `head`, `body`, `foot` or `pane`, `.ui-shell`'s are
+ *   `nav`, `main` or `dock`.
  *
  */
 import { existsSync } from "node:fs";
@@ -33,11 +36,15 @@ const APPENDIX_A = [
   "ui-live",
   "ui-frame",
   "ui-underline-nav",
+  "ui-shell",
 ];
 
 /**
  * Appendix B: the components that may apply each hook. "Login brand" is the login screen's
- * composition; the page-level hero states are `PageFrame` and `EmptyState`.
+ * composition; the page-level hero states are `PageFrame` and `EmptyState`. The shell's one host
+ * in the package is `AppShell` (screens/parts.tsx), the app-window frame the modules' mock window
+ * and the chat, traces and settings screens all render through (the login screen has no
+ * navigation column); the web app's `AppLayout` takes it when the app adopts the shell.
  */
 const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-glass": ["FloatingPanel", "Modal", "ComposerCard", "PageHeader", "Tooltip"],
@@ -46,12 +53,14 @@ const HOSTS: Readonly<Record<string, readonly string[]>> = {
   "ui-live": ["Dot", "Spinner", "StreamingCaret", "ActivityIcon"],
   "ui-frame": ["ToolCallCard", "WorkGroup", "CodeBlock", "LogView", "DiffViewer", "DockFrame"],
   "ui-underline-nav": ["Tabs"],
+  "ui-shell": ["AppShell", "AppLayout"],
 };
 
 /** CSS keywords that start with `ui-` and are not classes. */
 const NOT_HOOKS = new Set(["ui-sans-serif", "ui-serif", "ui-monospace", "ui-rounded"]);
 
 const FRAME_SLOTS = new Set(["head", "body", "foot", "pane"]);
+const SHELL_SLOTS = new Set(["nav", "main", "dock"]);
 const LIVE_SIGNALS = new Set(["dot", "caret", "spinner"]);
 
 /** Not UI: the test machinery spells the patterns the checks look for, and hooks.ts is the list. */
@@ -93,7 +102,7 @@ function componentOf(analysis: FileAnalysis, token: ClassToken): string | null {
 describe("style hooks", () => {
   const hooks = new Set<string>(HOOKS);
 
-  it("are the six of Appendix A, each with its hosts", () => {
+  it("are the seven of Appendix A, each with its hosts", () => {
     expect([...HOOKS].sort()).toEqual([...APPENDIX_A].sort());
     expect(Object.keys(HOSTS).sort()).toEqual([...APPENDIX_A].sort());
   });
@@ -168,6 +177,15 @@ describe("style hooks", () => {
             const slot = child.element.attributes.get("data-slot");
             if (typeof slot === "string" && !FRAME_SLOTS.has(slot)) {
               problems.push(`${at} .ui-frame slot "${slot}" is not head, body, foot or pane`);
+            }
+          }
+        }
+        if (names.has("ui-shell")) {
+          for (const child of element.children) {
+            if (child.kind !== "element") continue;
+            const slot = child.element.attributes.get("data-slot");
+            if (typeof slot === "string" && !SHELL_SLOTS.has(slot)) {
+              problems.push(`${at} .ui-shell slot "${slot}" is not nav, main or dock`);
             }
           }
         }

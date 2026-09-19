@@ -4,4 +4,5 @@
  * so Vite, vitest and tsc read `src/` through the `exports` map in package.json, never a build.
  */
 export * from "./hooks";
+export * from "./scene";
 export * from "./tokens";

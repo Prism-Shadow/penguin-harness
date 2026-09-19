@@ -115,12 +115,12 @@ describe("theme files", () => {
 
 describe("the de-slop revision of the contract (K-redesign §2.5)", () => {
   it("adds the control radius and the outer rhythm steps, and drops the glass highlight", () => {
-    // 186 names in W0, less the inset glow line glass drew, plus three: 188.
+    // 186 names in W0, less the inset glow line glass drew, plus three: 188 (the count itself is
+    // held by the theme-identities revision below, which added to it).
     for (const name of ["--ui-radius-control", "--ui-stack-0", "--ui-stack-4"]) {
       expect(TOKEN_NAMES).toContain(name);
     }
     expect(TOKEN_NAMES.includes("--ui-glass-highlight" as never)).toBe(false);
-    expect(TOKEN_NAMES.length).toBe(188);
   });
 
   it("has no second name for the neutral fill's label", () => {
@@ -135,6 +135,105 @@ describe("the de-slop revision of the contract (K-redesign §2.5)", () => {
     // bridge line is matched in the comment-stripped sheet.
     const sheet = stripCssComments(readFileSync(join(SRC_DIR, "theme.css"), "utf8"));
     expect(sheet).toMatch(/@theme inline\s*\{[^}]*--radius-control:\s*var\(--ui-radius-control\);/);
+  });
+});
+
+describe("the theme-identities revision of the contract (2026-09-19)", () => {
+  // Nothing about size is shared between themes any more: each sets its own space unit, its own
+  // rungs and its own control padding, and the chrome and reading faces are two names. The
+  // presence / reveal / layout motion reads tokens of its own, and the app window has a hook with
+  // tokens behind it. 188 + 1 (the space unit) + 1 (the chrome face) + 9 (the shell) + 11 (motion)
+  // = 210.
+  it("adds the space unit, the chrome face, the shell group and the motion names", () => {
+    for (const name of [
+      "--ui-space-unit",
+      "--ui-font-ui",
+      "--ui-shell-field",
+      "--ui-shell-wash-1",
+      "--ui-shell-wash-2",
+      "--ui-shell-nav-bg",
+      "--ui-shell-main-bg",
+      "--ui-shell-line",
+      "--ui-shell-gap",
+      "--ui-shell-radius",
+      "--ui-shell-shadow",
+      "--ui-dur-enter",
+      "--ui-dur-exit",
+      "--ui-ease-enter",
+      "--ui-ease-exit",
+      "--ui-enter-shift",
+      "--ui-enter-scale",
+      "--ui-enter-blur",
+      "--ui-dur-reveal",
+      "--ui-reveal-blur",
+      "--ui-dur-layout",
+      "--ui-ease-layout",
+    ]) {
+      expect(TOKEN_NAMES).toContain(name);
+    }
+    expect(TOKEN_GROUPS.find((group) => group.id === "shell")?.names.length).toBe(9);
+    expect(TOKEN_NAMES.length).toBe(210);
+  });
+
+  it("bridges the space unit, the chrome face and the body rung to Tailwind and body", () => {
+    // With `--spacing` inlined, every `h-8` / `px-2` / `gap-3` / `size-4` / `w-64` a component
+    // spells computes from the theme's unit; with `--text-sm` inlined, its size and line-height are
+    // the theme's body rung. The chrome face reaches everything through `body`, and a reading
+    // surface opts into `font-sans`.
+    const sheet = stripCssComments(readFileSync(join(SRC_DIR, "theme.css"), "utf8"));
+    const bridge = /@theme inline\s*\{([^}]*)\}/.exec(sheet)?.[1] ?? "";
+    expect(bridge).toMatch(/--spacing:\s*var\(--ui-space-unit\);/);
+    expect(bridge).toMatch(/--font-ui:\s*var\(--ui-font-ui\);/);
+    expect(bridge).toMatch(/--font-sans:\s*var\(--ui-font-sans\);/);
+    expect(bridge).toMatch(/--text-sm:\s*var\(--ui-text-body-size\);/);
+    expect(bridge).toMatch(/--text-sm--line-height:\s*var\(--ui-text-body-lh\);/);
+    expect(bridge).toMatch(/--text-xs:\s*var\(--ui-text-small-size\);/);
+    expect(sheet).toMatch(/\bbody\s*\{[^}]*font-family:\s*var\(--ui-font-ui\);/);
+  });
+
+  it("keeps Primer at today's rendering: Tailwind's stock unit and rungs, one face, no field", () => {
+    const primer = THEMES.find((theme) => theme.id === DEFAULT_THEME_ID);
+    if (primer === undefined || primer.status !== "filled") throw new Error("Primer is filled");
+    const light = primer.analysis.modes.light;
+    expect(light.get("--ui-space-unit")).toBe("0.25rem");
+    expect(light.get("--ui-text-body-size")).toBe("0.875rem");
+    expect(light.get("--ui-text-body-lh")).toBe("calc(1.25 / 0.875)");
+    expect(light.get("--ui-text-small-size")).toBe("0.75rem");
+    expect(light.get("--ui-text-small-lh")).toBe("calc(1 / 0.75)");
+    expect(light.get("--ui-font-ui")).toBe("var(--ui-font-sans)");
+    expect(light.get("--ui-shell-field")).toBe("var(--ui-canvas)");
+    expect(light.get("--ui-shell-gap")).toBe("0px");
+    expect(light.get("--ui-shell-radius")).toBe("0px");
+    expect(light.get("--ui-enter-scale")).toBe("1");
+    expect(light.get("--ui-enter-blur")).toBe("0px");
+  });
+
+  it("gives the presence rules a token for every motion property they animate", () => {
+    // The rules in theme.css read only tokens for what moves: a theme that wants no motion sets
+    // zeros, one that wants steps sets a `steps()` easing. A rule that spelled a literal duration
+    // or shift would move the same way in every theme.
+    const sheet = stripCssComments(readFileSync(join(SRC_DIR, "theme.css"), "utf8"));
+    const presence = /\[data-presence="enter"\]\s*\{([^}]*)\}/.exec(sheet)?.[1] ?? "";
+    expect(presence).toMatch(/var\(--ui-dur-enter\)\s+var\(--ui-ease-enter\)/);
+    const layout = /\[data-layout-motion\]\s*\{([^}]*)\}/.exec(sheet)?.[1] ?? "";
+    expect(layout).toMatch(/transition-duration:\s*var\(--ui-dur-layout\)/);
+    expect(layout).toMatch(/transition-timing-function:\s*var\(--ui-ease-layout\)/);
+    const reveal = /\[data-reveal\]\s*\{([^}]*)\}/.exec(sheet)?.[1] ?? "";
+    expect(reveal).toMatch(/var\(--ui-dur-reveal\)/);
+    const animated = [
+      "--ui-enter-shift",
+      "--ui-enter-scale",
+      "--ui-enter-blur",
+      "--ui-reveal-blur",
+    ];
+    for (const name of animated) {
+      expect(sheet, `${name} is read by a keyframe`).toContain(`var(${name})`);
+    }
+    // Everything stops under the gallery's switch and the system preference.
+    expect(sheet).toMatch(
+      /:root\[data-motion="reduced"\]\s*:is\(\[data-presence\],\s*\[data-backdrop\],\s*\[data-reveal\],\s*\.ui-live\)\s*\{\s*animation:\s*none;/,
+    );
+    expect(sheet).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
   });
 });
 

@@ -23,6 +23,11 @@
  * Tokens here may read the gray bridge declared in the same block (`var(--color-gray-500)`); the
  * bridge itself is always literal, so no reference can cycle. Stock Tailwind colours are copied
  * as their exact `oklch()` values from tailwindcss/theme.css — a rounded hex would move pixels.
+ *
+ * The names added for the theme identities (the space unit, the chrome face, the shell, the
+ * presence / reveal / layout motion) carry the values that reproduce today's rendering: Tailwind's
+ * stock 0.25rem unit, one face for chrome and reading, no field behind the window, quick fades
+ * with a few px of slide. `.ui-shell` is a no-op here — the window's look is its own classes.
  */
 @layer ui-theme {
   :root,
@@ -151,21 +156,40 @@
     --ui-glass-saturate: 100%;
     --ui-glass-line: var(--ui-line);
 
-    /* ---- Typography — families: the system stacks the app ships today ---- */
+    /* ---- Shell: today's window — the sidebar's muted fill beside the canvas, one rule between
+       them, no field, no inset, no corner, no shadow. Every value is a reference, so dark needs
+       no second copy. ---- */
+    --ui-shell-field: var(--ui-canvas);
+    --ui-shell-wash-1: transparent;
+    --ui-shell-wash-2: transparent;
+    --ui-shell-nav-bg: var(--ui-surface-muted);
+    --ui-shell-main-bg: var(--ui-canvas);
+    --ui-shell-line: var(--ui-line);
+    --ui-shell-gap: 0px;
+    --ui-shell-radius: 0px;
+    --ui-shell-shadow: 0 0 #0000;
+
+    /* ---- Typography — families: the system stacks the app ships today; chrome and reading text
+       share the one face ---- */
     --ui-font-sans:
       ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei",
       sans-serif;
+    --ui-font-ui: var(--ui-font-sans);
     --ui-font-mono:
       ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
       monospace;
     --ui-font-display: var(--ui-font-sans);
     --ui-font-cjk: "PingFang SC", "Microsoft YaHei", sans-serif;
 
-    /* ---- Typography — scale and roles (shared by every theme: heights never move) ---- */
+    /* ---- Typography — scale and roles: Tailwind's stock text-sm / text-xs rungs, which is what
+       the app's classes render today (theme.css bridges `text-sm` and `text-xs` to these). The two
+       line-heights are Tailwind's own unitless ratios, not their rem equivalents: a child that sets
+       only its font size inherits a ratio but would inherit a rem as a fixed length, and every row
+       holding such a child would grow by a fraction of a pixel. ---- */
     --ui-text-body-size: 0.875rem;
-    --ui-text-body-lh: 1.25rem;
+    --ui-text-body-lh: calc(1.25 / 0.875);
     --ui-text-small-size: 0.75rem;
-    --ui-text-small-lh: 1rem;
+    --ui-text-small-lh: calc(1 / 0.75);
     --ui-text-caption-size: 0.75rem;
     --ui-text-caption-lh: 1rem;
     --ui-text-code-size: 0.8125rem;
@@ -218,10 +242,10 @@
     --ui-tracking-mono: normal;
     --ui-tracking-label: normal;
 
-    /* ---- Density (padding-block shared by every theme; a theme may change padding-inline, the
-       control gaps and the panel padding) ----
-       Control rungs, content height = 2 × padding-block + the rung's line-height (sm: small,
-       md and lg: body), plus a 1px border on each side:
+    /* ---- Density ----
+       The space unit is Tailwind's stock 0.25rem, so every `h-8` / `px-2` / `gap-3` the app spells
+       computes to what it computes today. Control rungs, content height = 2 × padding-block + the
+       rung's line-height (sm: small, md and lg: body), plus a 1px border on each side:
          sm 0.25rem × 2 + 1rem    = 1.5rem  (Button sm, Input sm)
          md 0.375rem × 2 + 1.25rem = 2rem   (Button md)
          lg 0.625rem × 2 + 1.25rem = 2.5rem (Input base; it reaches the height with py-2 + text-base)
@@ -229,6 +253,7 @@
        at 16px. They are the app's existing controls, which is why they are not Primer's
        28 / 32 / 40px at the 18px root: moving there changes every control's height, a visible
        change for a later wave. */
+    --ui-space-unit: 0.25rem;
     --ui-control-py-sm: 0.25rem;
     --ui-control-py-md: 0.375rem;
     --ui-control-py-lg: 0.625rem;
@@ -259,6 +284,19 @@
     --ui-ease-overlay-in: ease-out;
     --ui-ease-overlay-out: ease-in;
     --ui-live-timing: linear;
+    /* Presence, reveal and layout: the app's own feel — a layer fades in over 150ms with a 4px
+       slide from its edge and leaves faster, streamed text fades in, the sidebar's width eases. */
+    --ui-dur-enter: 150ms;
+    --ui-dur-exit: 100ms;
+    --ui-ease-enter: var(--ui-ease-overlay-in);
+    --ui-ease-exit: var(--ui-ease-overlay-out);
+    --ui-enter-shift: 4px;
+    --ui-enter-scale: 1;
+    --ui-enter-blur: 0px;
+    --ui-dur-reveal: 150ms;
+    --ui-reveal-blur: 0px;
+    --ui-dur-layout: 200ms;
+    --ui-ease-layout: var(--ui-ease-in-out);
 
     /* ---- Icons ---- */
     --ui-icon-stroke: 1.7;
@@ -368,4 +406,12 @@
     --ui-scrollbar-thumb: rgb(232 234 237 / 0.2);
     --ui-scrollbar-thumb-hover: rgb(232 234 237 / 0.35);
   }
+
+  /*
+   * Style hooks (hooks.ts): every one of the seven is a no-op in Primer. The app's look is what
+   * the components' own classes render — an opaque overlay, a sentence-case group label, a
+   * semibold h1, a linear pulse, a bordered card with a muted head, the accent bar under a tab,
+   * the sidebar's muted fill beside the canvas — so no recipe is written here, and none may be
+   * until a Primer polish wave changes that look on purpose.
+   */
 }

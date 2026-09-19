@@ -4,9 +4,10 @@
  * gallery's own and never reach the product. Theme names (Primer / Frost / Console), component
  * names, token names and breadcrumbs stay English in both.
  *
- * `catalog` translates the module files' titles, descriptions and variant titles, and catalog.ts's
- * section titles and descriptions. English reads those files directly, so only `zh` fills it; a test
- * checks it covers every module, variant and section.
+ * `catalog` translates the module files' titles, descriptions, variant titles and live variants'
+ * frame titles, and catalog.ts's section titles and descriptions. English reads those files
+ * directly, so only `zh` fills it; a test checks it covers every module, variant, frame and
+ * section.
  */
 import type { HookName, ToneName } from "@prismshadow/penguin-ui";
 import type { ModuleId } from "../../ui/src/module";
@@ -53,6 +54,17 @@ export const zh = {
     partsOf: (count: number) => `${count} 个组件`,
     noParts: "这个模块不列出组件。",
     replaces: (what: string) => `替代 ${what}`,
+  },
+  transport: {
+    label: "播放控制",
+    play: "播放",
+    pause: "暂停",
+    restart: "从头播放",
+    previous: "上一帧",
+    next: "下一帧",
+    frames: "帧",
+    rate: "播放速度",
+    live: "动态变体：按时钟逐帧播放",
   },
   embed: {
     unknownModule: (id: string) => `没有名为「${id}」的模块。`,
@@ -142,13 +154,32 @@ export const zh = {
     iconRegistry: (icons: number, files: number) => `${icons} 个图标，来自 ${files} 个文件`,
     duplicateNames: "同一路径的多个名字",
     durations: "时长 × 缓动",
-    reducedNote: "已减弱动效：动画停在首帧。",
+    reducedNote: "已减弱动效：每个变化直接呈现终态。",
     liveSignal: "实时信号",
     loading: "加载中",
     focusRing: "焦点环",
     inputFocus: "输入框焦点",
     selection: "选区",
     scrollbar: "滚动条",
+    spaceUnit: "间距单位",
+    spaceUnitNote: "所有间距与尺寸工具类都是它的倍数：h-8 即八个单位。",
+    shell: "外壳",
+    shellNote: "经 .ui-shell 的应用窗口：底场、导航列与主列，各主题自行决定它们的关系。",
+    presence: "进出",
+    presenceNote: "菜单自上方、对话框自中心、通知自下方进出，各按当前主题的进出令牌。",
+    reveal: "显现",
+    revealNote: "流式文本逐块显现，每一块只在出现时按显现令牌动一次。",
+    layout: "布局",
+    layoutNote: "侧栏在展开与图标栏之间的宽度变化，按布局令牌。",
+    replay: "重放",
+    replayAll: "全部重放",
+    motionSpecimens: {
+      menu: "菜单",
+      dialog: "对话框",
+      toast: "通知",
+      trigger: "更多",
+      sidebarRows: ["新建对话", "智能体", "模型库"] as readonly string[],
+    },
     hookJobs: {
       "ui-glass": "盖在内容之上的临时层",
       "ui-eyebrow": "为下方一组条目命名的分组标签",
@@ -156,6 +187,7 @@ export const zh = {
       "ui-live": "正在进行之物的动效",
       "ui-frame": "带头部、主体、底部与窗格的细线框",
       "ui-underline-nav": "标签栏中选中项的标记",
+      "ui-shell": "应用窗口：导航列与主列",
     } as Record<HookName, string>,
     hookSamples: {
       menu: ["置顶", "重命名", "删除"] as readonly string[],
@@ -203,7 +235,22 @@ export const zh = {
         title: "对话",
         description:
           "一个 Task 的对话记录：带附件的用户消息、含表格与代码的定稿正文、带思考与工具行的工作组、展开的差异、运行中的子 Agent、待审批的命令与统计行。",
-        variants: { streaming: "流式输出", settled: "已完成", approval: "待审批", failed: "失败" },
+        variants: {
+          streaming: "流式输出",
+          settled: "已完成",
+          approval: "待审批",
+          failed: "失败",
+          "live-stream": "流式回复",
+        },
+        frames: {
+          "live-stream": {
+            sent: "已发送",
+            thinking: "思考中",
+            tools: "工具调用",
+            streaming: "生成中",
+            settled: "已完成",
+          },
+        },
       },
       composer: {
         title: "输入框",
@@ -215,6 +262,10 @@ export const zh = {
           chips: "附件标签",
           "slash-menu": "斜杠菜单",
           "model-picker": "模型选择",
+          "live-send": "输入并发送",
+        },
+        frames: {
+          "live-send": { empty: "空白", typing: "输入中", ready: "就绪", running: "运行中" },
         },
       },
       navigation: {
@@ -226,6 +277,10 @@ export const zh = {
           "tabs-crumbs": "标签页与路径",
           "dock-rail": "停靠面板与图标栏",
           collapsed: "折叠",
+          "live-collapse": "收起与展开",
+        },
+        frames: {
+          "live-collapse": { expanded: "展开", rail: "图标栏", tooltip: "悬停提示" },
         },
       },
       actions: {
@@ -247,6 +302,10 @@ export const zh = {
           settled: "已结束",
           notices: "提示",
           "loading-empty": "加载与空状态",
+          "live-run": "运行到结束",
+        },
+        frames: {
+          "live-run": { queued: "排队中", running: "运行中", settled: "已结束" },
         },
       },
       forms: {
@@ -270,6 +329,10 @@ export const zh = {
           drawer: "抽屉",
           toasts: "通知",
           palette: "命令面板",
+          "live-open-close": "打开与关闭",
+        },
+        frames: {
+          "live-open-close": { idle: "静止", menu: "菜单", dialog: "对话框", toast: "通知" },
         },
       },
       tables: {
@@ -294,7 +357,10 @@ export const zh = {
         title: "文件与目录树",
         description:
           "Workspace 的文件面板：带搜索、刷新与上传的目录树；带路径的文件预览；拖放遮罩。",
-        variants: { tree: "目录树", preview: "预览", drop: "拖放" },
+        variants: { tree: "目录树", preview: "预览", drop: "拖放", "live-expand": "展开目录" },
+        frames: {
+          "live-expand": { closed: "收起", open: "展开", selected: "选中" },
+        },
       },
       pages: {
         title: "页面与分区",
@@ -313,7 +379,16 @@ export const zh = {
         variants: { chat: "对话", traces: "轨迹", settings: "设置", login: "登录" },
       },
     } as Partial<
-      Record<ModuleId, { title: string; description: string; variants: Record<string, string> }>
+      Record<
+        ModuleId,
+        {
+          title: string;
+          description: string;
+          variants: Record<string, string>;
+          /** A live variant's frame titles: variant key → frame key → title. */
+          frames?: Record<string, Record<string, string>>;
+        }
+      >
     >,
     sections: {
       "icons-glyph-icon": { description: "唯一的线形图标渲染器，描边读取 --ui-icon-stroke。" },

@@ -16,6 +16,11 @@ const PATHS = {
   back: "M15 18 9 12l6-6",
   type: "M4 7V4h16v3M9 20h6M12 4v16",
   parts: "m12 3 9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17.5l9 5 9-5",
+  play: "M7 4.5v15l12-7.5z",
+  pause: "M8 5v14M16 5v14",
+  restart: "M3 12a9 9 0 1 0 2.64-6.36L3 8M3 3v5h5",
+  previous: "M19 20 9 12l10-8zM5 19V5",
+  next: "m5 4 10 8-10 8zM19 5v14",
 } as const;
 
 export type ChromeIconName = keyof typeof PATHS;

@@ -1,9 +1,10 @@
 /**
- * Foundations › Hooks: the six style hooks (`packages/ui/src/hooks.ts`), each on the minimal markup
- * its recipes select on — `.ui-frame` children carry `data-slot`, `.ui-live` carries `data-live`,
- * `.ui-underline-nav` holds `[role=tab]` items, `.ui-display` sits on an `h1` — so a theme's hooks can
- * be reviewed before any component carries them. The specimens live here, in the gallery, rather
- * than in a package module: a package file applies a hook only inside the component that hosts it.
+ * Foundations › Hooks: the seven style hooks (`packages/ui/src/hooks.ts`), each on the minimal
+ * markup its recipes select on — `.ui-frame` children carry `data-slot`, `.ui-live` carries
+ * `data-live`, `.ui-underline-nav` holds `[role=tab]` items, `.ui-display` sits on an `h1`,
+ * `.ui-shell` holds a `nav` and a `main` slot — so a theme's hooks can be reviewed before any
+ * component carries them. The specimens live here, in the gallery, rather than in a package
+ * module: a package file applies a hook only inside the component that hosts it.
  *
  * The base look of each sample lives in `@layer components` (foundations.css): a hook's recipe sits
  * in `@layer ui-theme` and must win over it, exactly as it wins over a component's utilities.
@@ -11,6 +12,7 @@
 import { HOOKS } from "@prismshadow/penguin-ui";
 import type { ReactNode } from "react";
 import { useGallery } from "../state";
+import { ShellSpecimen } from "./shared";
 import { SPECIMENS } from "./specimens";
 
 function Hook({ name, children }: { name: (typeof HOOKS)[number]; children: ReactNode }) {
@@ -113,6 +115,10 @@ export function HooksBoard() {
             </span>
           ))}
         </div>
+      </Hook>
+
+      <Hook name="ui-shell">
+        <ShellSpecimen />
       </Hook>
     </div>
   );

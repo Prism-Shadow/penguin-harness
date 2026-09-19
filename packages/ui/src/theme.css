@@ -8,11 +8,14 @@
  *
  * What lives here is theme-independent: the `dark` variant, the cascade layer order, the bridge
  * from the `--ui-*` token contract (tokens.ts) to Tailwind utilities, the base rules that read
- * tokens, and the user's accent presets. Token VALUES live only in `themes/*.css`.
+ * tokens, the motion rules behind the `data-presence` / `data-backdrop` / `data-reveal` /
+ * `data-layout-motion` attributes, and the user's accent presets. Token VALUES live only in
+ * `themes/*.css`.
  *
  * Attributes on <html>: `class="dark"` (mode), `data-theme` (absent = github), `data-accent`
- * (absent = the theme's own accent). The pre-paint script in boot.ts sets all three before the
- * first frame; the app's theme provider keeps them in sync afterwards.
+ * (absent = the theme's own accent), `data-motion="reduced"` (the gallery's switch; the app
+ * answers the media query instead). The pre-paint script in boot.ts sets the first three before
+ * the first frame; the app's theme provider keeps them in sync afterwards.
  */
 
 /* Dark mode is the `dark` class on <html>, not the media query: the user can pin either mode. */
@@ -25,7 +28,7 @@
    after `utilities` never lets them override a utility's declaration. The one thing in ui-theme
    that does override utilities is a theme's style-hook recipes (hooks.ts), and they sit there for
    exactly that: `.ui-live` re-times its host's `animate-spin`, `.ui-glass` replaces its host's
-   opaque fill. */
+   opaque fill, `.ui-shell` re-paints its host's columns. */
 @layer ui-theme, ui-accent;
 
 /*
@@ -45,6 +48,14 @@
  *    no call site combines the two today.
  * 5. `--ui-inset` is aliased as `surface-inset`, not `inset`: a `--color-inset` would make
  *    Tailwind read the existing static `ring-inset` utility as a ring COLOUR as well, and emit both.
+ * 6. `--spacing` is Tailwind v4's one spacing multiplier: every spacing and size utility is
+ *    `calc(var(--spacing) * n)` (`h-8`, `px-2`, `gap-3`, `size-4`, `w-64`, `leading-5`, …), so
+ *    pointing it at `--ui-space-unit` scales all of them per theme. Primer's unit is Tailwind's
+ *    stock 0.25rem, so Primer moves no pixel; Frost's is larger and Console's smaller. Literal
+ *    lengths (`w-[24rem]`, `max-w-2xl`) do not follow it, by design.
+ * 7. `text-xs` and `text-sm` read the small and body rungs (size and line-height). Primer's rungs
+ *    equal Tailwind's stock values, so again nothing moves there; the other themes set their own.
+ *    `text-base` and up keep Tailwind's scale: no rung token names them.
  */
 @theme inline {
   /* Surfaces */
@@ -120,10 +131,22 @@
   --color-chart-grid: var(--ui-chart-grid);
   --color-chart-axis: var(--ui-chart-axis);
 
-  /* Tailwind's own namespaces follow the theme, so existing classes need no edits. */
+  /* Tailwind's own namespaces follow the theme, so existing classes need no edits. `font-sans` is
+     the reading face a bubble or a prose block opts into; `font-ui` the chrome's, which `body`
+     already sets and a component names only to opt back out of a reading surface. */
   --font-sans: var(--ui-font-sans);
+  --font-ui: var(--ui-font-ui);
   --font-mono: var(--ui-font-mono);
   --font-display: var(--ui-font-display);
+
+  /* Density: caveat 6. */
+  --spacing: var(--ui-space-unit);
+
+  /* Type rungs: caveat 7. */
+  --text-xs: var(--ui-text-small-size);
+  --text-xs--line-height: var(--ui-text-small-lh);
+  --text-sm: var(--ui-text-body-size);
+  --text-sm--line-height: var(--ui-text-body-lh);
 
   --radius-xs: var(--ui-radius-xs);
   --radius-sm: var(--ui-radius-sm);
@@ -162,7 +185,7 @@
   body {
     background-color: var(--ui-canvas);
     color: var(--ui-fg);
-    font-family: var(--ui-font-sans);
+    font-family: var(--ui-font-ui);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -192,6 +215,137 @@
   * {
     scrollbar-width: var(--ui-scrollbar-w);
     scrollbar-color: var(--ui-scrollbar-thumb) var(--ui-scrollbar-track);
+  }
+
+  /*
+   * Motion. A component never writes a duration, an easing, a keyframe or a transform for these:
+   * it sets one attribute and the active theme's motion tokens decide how the change looks —
+   * Primer a quick fade with a few px of slide, Frost a soft spring with a scale-up and a blur-in,
+   * Console a `steps()` jump. Every rule reads tokens only, and every one is switched off further
+   * down under `data-motion="reduced"` and the reduced-motion media query.
+   *
+   * - `data-presence="enter" | "exit"` on a transient layer (menu, popover, tooltip, dialog card,
+   *   toast, dock panel), with `data-side` naming the edge it comes from: `top` (a menu under its
+   *   trigger), `bottom` (a toast), `left` / `right` (a dock), `center` (a dialog). The `exit`
+   *   state stays mounted until `animationend`; with `animation-name: none` (reduced motion, or a
+   *   theme that jumps) the owner unmounts at once.
+   * - `data-backdrop="enter" | "exit"`: the dialog's scrim, opacity only.
+   * - `data-reveal`: content that just appeared inside a settled surface — a streamed chunk of
+   *   text, a new tool row — fades (and de-blurs) in once; put it on the appended element only.
+   * - `data-layout-motion`: an element whose size changes between states, the sidebar's width or a
+   *   disclosure's `grid-template-rows: 0fr ↔ 1fr`; the theme sets the duration and the curve.
+   *
+   * The presence keyframes move the element through the individual `translate` and `scale`
+   * properties, never `transform`, so a layer that positions itself with a `transform` keeps it
+   * while it animates; Tailwind v4's `translate-*` and `scale-*` utilities set the SAME individual
+   * properties and would be overridden for the animation's duration, so a presence box carries
+   * neither. Fill modes matter for the glass inside: an entrance fills `backwards` and a reveal
+   * too, so once they finish no animated `filter` (not even `blur(0)`) stays on the box — a held
+   * filter would make the box a backdrop root and the `.ui-glass` panel inside it would blur
+   * nothing; only the exit fills `forwards`, holding its end state until the owner unmounts it.
+   * `--_shift-x` / `--_shift-y` are private to these rules (not tokens).
+   */
+  [data-presence] {
+    --_shift-x: 0px;
+    --_shift-y: 0px;
+    transform-origin: center;
+  }
+  [data-presence][data-side="top"] {
+    --_shift-y: calc(-1 * var(--ui-enter-shift));
+    transform-origin: top center;
+  }
+  [data-presence][data-side="bottom"] {
+    --_shift-y: var(--ui-enter-shift);
+    transform-origin: bottom center;
+  }
+  [data-presence][data-side="left"] {
+    --_shift-x: calc(-1 * var(--ui-enter-shift));
+    transform-origin: left center;
+  }
+  [data-presence][data-side="right"] {
+    --_shift-x: var(--ui-enter-shift);
+    transform-origin: right center;
+  }
+  [data-presence="enter"] {
+    animation: ui-presence-enter var(--ui-dur-enter) var(--ui-ease-enter) backwards;
+  }
+  [data-presence="exit"] {
+    animation: ui-presence-exit var(--ui-dur-exit) var(--ui-ease-exit) forwards;
+    pointer-events: none;
+  }
+  @keyframes ui-presence-enter {
+    from {
+      opacity: 0;
+      translate: var(--_shift-x) var(--_shift-y);
+      scale: var(--ui-enter-scale);
+      filter: blur(var(--ui-enter-blur));
+    }
+  }
+  @keyframes ui-presence-exit {
+    to {
+      opacity: 0;
+      translate: var(--_shift-x) var(--_shift-y);
+      scale: var(--ui-enter-scale);
+      filter: blur(var(--ui-enter-blur));
+    }
+  }
+
+  [data-backdrop="enter"] {
+    animation: ui-backdrop-enter var(--ui-dur-enter) var(--ui-ease-overlay-in) backwards;
+  }
+  [data-backdrop="exit"] {
+    animation: ui-backdrop-exit var(--ui-dur-exit) var(--ui-ease-overlay-out) forwards;
+    pointer-events: none;
+  }
+  @keyframes ui-backdrop-enter {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes ui-backdrop-exit {
+    to {
+      opacity: 0;
+    }
+  }
+
+  [data-reveal] {
+    animation: ui-reveal var(--ui-dur-reveal) var(--ui-ease-out) backwards;
+  }
+  @keyframes ui-reveal {
+    from {
+      opacity: 0;
+      filter: blur(var(--ui-reveal-blur));
+    }
+  }
+
+  [data-layout-motion] {
+    transition-property:
+      width, height, min-width, max-width, flex-basis, grid-template-rows, grid-template-columns;
+    transition-duration: var(--ui-dur-layout);
+    transition-timing-function: var(--ui-ease-layout);
+  }
+}
+
+/* No motion: the gallery's switch on the root, then the user's system preference. Live signals
+   go still as well (a static caret block, an arc that does not turn), so a reduced page has no
+   movement at all. Nothing is left at a zero duration or paused on a first frame (an entrance
+   paused on its first frame would be invisible): each attribute computes to `animation-name:
+   none`, the element shows its end state at once, and that is what the presence owner checks
+   before unmounting an exit without waiting. These rules sit in no layer on purpose: an unlayered
+   declaration beats every layer, so they also silence a theme's own `.ui-live` recipes in
+   `ui-theme`, which would otherwise out-rank a rule in `base` whatever its specificity. */
+:root[data-motion="reduced"] :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
+  animation: none;
+}
+:root[data-motion="reduced"] [data-layout-motion] {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is([data-presence], [data-backdrop], [data-reveal], .ui-live) {
+    animation: none;
+  }
+  [data-layout-motion] {
+    transition: none;
   }
 }
 

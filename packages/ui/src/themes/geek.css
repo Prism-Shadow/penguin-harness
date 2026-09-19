@@ -1,28 +1,31 @@
 /**
- * Console (`geek`) — square corners, hairline rules, depth by layering rather than shadow, one
- * interface orange, a condensed uppercase page title, stepped live signals, and mono for data only.
- * Reference: e2b.dev (dark) and docs.e2b.dev (light).
+ * Console (`geek`) — mono chrome. Navigation, controls, labels, headings, badges and tables are
+ * set in Commit Mono; only reading text (message bubbles, assistant prose, the composer's input)
+ * stays in IBM Plex Sans. Paper-white light and warm near-black dark, one interface orange,
+ * square corners everywhere, hairlines, depth by surface steps rather than shadow, a ruled
+ * full-bleed window, frames whose head sits in the box's top rule like a TUI, a `>` before the
+ * selected navigation row, a block caret, and motion that jumps in steps.
+ * References: opencode.ai (the mono chrome, the paper and the warm black, the ruled column, the
+ * underline tabs) and e2b.dev (the orange, the square shapes, the stepped signals).
  *
  * Status of each group:
- * - Dark palette, lines, accent, radii, motion curves and the stepped live signal are measured on
- *   e2b.dev; the light palette is measured on docs.e2b.dev's light mode. What E2B's marketing page
- *   adds as ornament — bracketed mono eyebrows, the 12-column guide, dot fields, corner ticks, mono
- *   button labels — is left out: labels, buttons and headings are Plex Sans, and mono is for code,
- *   ids, paths and numbers.
+ * - Light is opencode's paper (`#fdfcfc` page, `rgb(29 29 31)` ink, `rgb(100 98 98)` muted),
+ *   stepped one shade so cards read as a lighter step on the page; dark is opencode's warm
+ *   near-black (`#131010`) with the same steps upward. The accent is E2B's orange, unchanged.
  * - Semantic tones are a hairline plus a 10–14% tint on E2B's code hues (proposal), tuned so every
- *   tone reads at 4.5:1 as text on its own tint and 3:1 as a mark on every surface. `fg-subtle`
- *   is lifted from E2B's #585858 / #a59f9e to clear 3:1. Chart colours are proposals.
- * - Fonts: IBM Plex Sans and IBM Plex Sans Condensed stand in for E2B's commercial Neue Haas
- *   Grotesk and PP Supply Sans; Commit Mono is the face e2b.dev ships (`fonts/geek.css`).
+ *   tone reads at 4.5:1 as text on its own tint and 3:1 as a mark on every surface; dark danger is
+ *   lifted to `#ff5252` so it clears its tint on the warm surface. Chart colours are proposals.
+ * - Fonts: Commit Mono (400 / 700, the face opencode and e2b.dev ship) for the chrome and for
+ *   code, IBM Plex Sans for reading, Noto Sans SC behind both for Han (`fonts/geek.css`). The
+ *   Plex Sans Condensed face the old uppercase h1 used is still declared and no longer named
+ *   here; drop its dependency with the next install.
  * - Radius is 0 everywhere, badges, counters, avatars and controls included (`--ui-radius-pill`
  *   and `--ui-radius-control` are 0). State dots and the switch knob stay round and the switch
  *   track stays a pill: those components use Tailwind's literal `rounded-full`, which no token
  *   re-points.
- * - The type scale, line-heights (Primer adopts both in W1a) and the padding-block of controls,
- *   rows and menu rows are the shared values, so switching themes never reflows a layout
- *   vertically; this theme changes radius, colour, font, shadow, tracking, weight, transform,
- *   padding-inline and the panel padding only. (Its condensed h1 and the frame head, recipes
- *   below, set their own line-height and height.)
+ * - Density and type are Console's own: a 0.225rem space unit (10% under Tailwind's 0.25rem, so
+ *   every `h-8` and `px-2` shrinks with it) and a 0.8125rem body rung. Medium weight is 400 —
+ *   Commit Mono has no 500 — so emphasis in the chrome is colour, and strong is the 700 cut.
  *
  * Shape of the file (the same in every theme): one `@layer ui-theme` block holding the base rule,
  * which defines every name in tokens.ts in its group order with its light value, after the gray
@@ -32,42 +35,42 @@
  * that file's dark rule); and then this theme's recipes for the style hooks (hooks.ts).
  */
 @layer ui-theme {
-  /* Light: docs.e2b.dev light. */
+  /* Light: paper. */
   :root[data-theme="geek"] {
     /* Tailwind bridge. white = the surface. */
     --color-white: var(--ui-surface);
-    --color-gray-50: #fafafa;
-    --color-gray-100: #f4f4f4;
-    --color-gray-200: #e5e5e5;
-    --color-gray-300: #d4d4d4;
-    --color-gray-400: #8a8483;
-    --color-gray-500: #6b6665;
-    --color-gray-600: #565150;
-    --color-gray-700: #3d3837;
-    --color-gray-800: #2c2625;
-    --color-gray-900: #110b0a;
-    --color-gray-950: #000000;
+    --color-gray-50: #fbfafa;
+    --color-gray-100: #f4f2f2;
+    --color-gray-200: #e6e3e3;
+    --color-gray-300: #d3cfcf;
+    --color-gray-400: #8f8b8b;
+    --color-gray-500: #5f5c5c;
+    --color-gray-600: #4d4a4a;
+    --color-gray-700: #383535;
+    --color-gray-800: #282525;
+    --color-gray-900: #1d1d1f;
+    --color-gray-950: #131010;
 
-    /* Colour — surfaces */
-    --ui-canvas: #ffffff;
+    /* Colour — surfaces: the page is paper, a card the white step above it */
+    --ui-canvas: #fbfafa;
     --ui-surface: #ffffff;
-    --ui-surface-muted: #fafafa;
-    --ui-inset: #f4f4f4;
+    --ui-surface-muted: #f4f2f2;
+    --ui-inset: #f0eeee;
     --ui-overlay: #ffffff;
-    --ui-overlay-backdrop: rgb(17 11 10 / 0.24);
+    --ui-overlay-backdrop: rgb(19 16 16 / 0.28);
 
     /* Colour — text */
-    --ui-fg: #110b0a;
-    --ui-fg-muted: #565150;
-    --ui-fg-subtle: #8a8483;
-    --ui-fg-link: #110b0a;
+    --ui-fg: #1d1d1f;
+    --ui-fg-muted: #5f5c5c;
+    --ui-fg-subtle: #8f8b8b;
+    --ui-fg-link: #1d1d1f;
     --ui-fg-link-hover: #e32a01;
 
     /* Colour — lines */
-    --ui-line: #e5e5e5;
-    --ui-line-muted: #ededed;
-    --ui-line-emphasis: #a59f9e;
-    --ui-divider: #ededed;
+    --ui-line: #e6e3e3;
+    --ui-line-muted: #efeded;
+    --ui-line-emphasis: #bdb8b8;
+    --ui-divider: #efeded;
 
     /* Colour — accent: interface orange. Hover darkens: the brighter fire orange drops white text
        under 4.5:1. */
@@ -99,10 +102,10 @@
     --ui-tone-done-line: #9a0fa4;
     --ui-tone-done-emphasis: #9a0fa4;
     --ui-tone-done-emphasis-fg: #ffffff;
-    --ui-tone-neutral-fg: #565150;
+    --ui-tone-neutral-fg: #5f5c5c;
     --ui-tone-neutral-bg: transparent;
-    --ui-tone-neutral-line: #e5e5e5;
-    --ui-tone-neutral-emphasis: #565150;
+    --ui-tone-neutral-line: #e6e3e3;
+    --ui-tone-neutral-emphasis: #5f5c5c;
     --ui-tone-neutral-emphasis-fg: #ffffff;
     --ui-tone-info-fg: #003ee9;
     --ui-tone-info-bg: rgb(0 62 233 / 0.08);
@@ -120,13 +123,13 @@
     --ui-chart-cache-read: #9ab8f6;
     --ui-chart-cache-write: #3d74ec;
     --ui-chart-output: #0030b5;
-    --ui-chart-grid: #ededed;
-    --ui-chart-axis: #8a8483;
+    --ui-chart-grid: #efeded;
+    --ui-chart-axis: #8f8b8b;
 
     /* Colour — code (E2B light code hues live in the Shiki theme, W5) */
-    --ui-code-bg: #f4f4f4;
-    --ui-code-line: #e5e5e5;
-    --ui-code-gutter: #8a8483;
+    --ui-code-bg: #f4f2f2;
+    --ui-code-line: #e6e3e3;
+    --ui-code-gutter: #8f8b8b;
     --ui-code-selection: rgb(227 42 1 / 0.14);
     --ui-diff-add-bg: rgb(77 96 0 / 0.08);
     --ui-diff-add-word: rgb(77 96 0 / 0.2);
@@ -150,114 +153,147 @@
        list. */
     --ui-shadow-flat: 0 0 #0000;
     --ui-shadow-raised: 0 0 #0000;
-    --ui-shadow-overlay: 0 1px 2px rgb(0 0 0 / 0.05), 0 0 0 1px rgb(0 0 0 / 0.1);
+    --ui-shadow-overlay: 0 0 0 1px rgb(29 29 31 / 0.12);
     --ui-shadow-modal: 0 0 #0000;
-    --ui-shadow-drawer: 0 0 0 1px rgb(0 0 0 / 0.1);
+    --ui-shadow-drawer: 0 0 0 1px rgb(29 29 31 / 0.12);
     --ui-glass-bg: var(--ui-overlay);
     --ui-glass-blur: 0px;
     --ui-glass-saturate: 1;
     --ui-glass-line: var(--ui-line);
 
-    /* Typography — families. Latin face first, so ASCII always renders in the theme's face. */
+    /* Shell: full bleed. Both columns are the page, one hairline between them, no inset, no
+       corner, no shadow. Every value is a reference or a zero, so dark needs no second copy. */
+    --ui-shell-field: var(--ui-canvas);
+    --ui-shell-wash-1: transparent;
+    --ui-shell-wash-2: transparent;
+    --ui-shell-nav-bg: var(--ui-canvas);
+    --ui-shell-main-bg: var(--ui-canvas);
+    --ui-shell-line: var(--ui-line);
+    --ui-shell-gap: 0px;
+    --ui-shell-radius: 0px;
+    --ui-shell-shadow: 0 0 #0000;
+
+    /* Typography — families. Latin face first, so ASCII always renders in the theme's face; the
+       chrome is the mono face with Noto behind it for Han, reading text is Plex Sans. */
     --ui-font-cjk: "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei";
     --ui-font-sans:
       "IBM Plex Sans Variable", var(--ui-font-cjk), ui-sans-serif, system-ui, sans-serif;
+    --ui-font-ui:
+      "Commit Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+      var(--ui-font-cjk), monospace;
     --ui-font-mono:
       "Commit Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
       var(--ui-font-cjk), monospace;
-    --ui-font-display:
-      "IBM Plex Sans Condensed", "IBM Plex Sans Variable", var(--ui-font-cjk), ui-sans-serif,
-      system-ui, sans-serif;
+    --ui-font-display: var(--ui-font-ui);
 
-    /* Typography — scale (shared by every theme) and roles */
-    --ui-text-body-size: 0.875rem;
+    /* Typography — scale and roles: a 13px body at the 16px root (Commit Mono is wide), 12px
+       small and caption, 16px reading text; headings in the chrome face at 700, sentence case,
+       no tracking — mono needs none — and the h6 group label uppercase with letter-spacing, the
+       one eyebrow rung. */
+    --ui-text-body-size: 0.8125rem;
     --ui-text-body-lh: 1.5;
     --ui-text-small-size: 0.75rem;
     --ui-text-small-lh: 1.5;
     --ui-text-caption-size: 0.75rem;
-    --ui-text-caption-lh: 1.35;
+    --ui-text-caption-lh: 1.4;
     --ui-text-code-size: 0.8125rem;
     --ui-text-code-lh: 1.6;
     --ui-text-prose-size: 1rem;
     --ui-text-prose-lh: 1.6;
-    --ui-h1-size: 1.953rem;
+    --ui-h1-size: 1.75rem;
     --ui-h1-lh: 1.15;
-    --ui-h1-weight: 600;
-    --ui-h1-tracking: -0.02em;
-    --ui-h1-transform: uppercase;
+    --ui-h1-weight: 700;
+    --ui-h1-tracking: 0;
+    --ui-h1-transform: none;
     --ui-h1-font: var(--ui-font-display);
-    --ui-h2-size: 1.5625rem;
+    --ui-h2-size: 1.375rem;
     --ui-h2-lh: 1.2;
-    --ui-h2-weight: 600;
-    --ui-h2-tracking: -0.015em;
+    --ui-h2-weight: 700;
+    --ui-h2-tracking: 0;
     --ui-h2-transform: none;
-    --ui-h2-font: var(--ui-font-sans);
-    --ui-h3-size: 1.25rem;
+    --ui-h2-font: var(--ui-font-ui);
+    --ui-h3-size: 1.125rem;
     --ui-h3-lh: 1.3;
-    --ui-h3-weight: 500;
-    --ui-h3-tracking: -0.01em;
+    --ui-h3-weight: 700;
+    --ui-h3-tracking: 0;
     --ui-h3-transform: none;
-    --ui-h3-font: var(--ui-font-sans);
+    --ui-h3-font: var(--ui-font-ui);
     --ui-h4-size: 1rem;
     --ui-h4-lh: 1.4;
-    --ui-h4-weight: 500;
+    --ui-h4-weight: 700;
     --ui-h4-tracking: 0;
     --ui-h4-transform: none;
-    --ui-h4-font: var(--ui-font-sans);
+    --ui-h4-font: var(--ui-font-ui);
     --ui-h5-size: 0.875rem;
     --ui-h5-lh: 1.5;
-    --ui-h5-weight: 500;
+    --ui-h5-weight: 700;
     --ui-h5-tracking: 0;
     --ui-h5-transform: none;
-    --ui-h5-font: var(--ui-font-sans);
+    --ui-h5-font: var(--ui-font-ui);
     --ui-h6-size: 0.75rem;
     --ui-h6-lh: 1.5;
     --ui-h6-weight: 500;
-    --ui-h6-tracking: 0.06em;
+    --ui-h6-tracking: 0.08em;
     --ui-h6-transform: uppercase;
-    --ui-h6-font: var(--ui-font-sans);
+    --ui-h6-font: var(--ui-font-ui);
     --ui-md-h1-size: 1.25rem;
     --ui-md-h2-size: 1.125rem;
     --ui-md-h3-size: 1rem;
     --ui-weight-body: 400;
-    --ui-weight-medium: 500;
-    --ui-weight-strong: 600;
-    --ui-tracking-body: -0.01em;
-    --ui-tracking-mono: 0.01em;
-    --ui-tracking-label: 0.06em;
+    --ui-weight-medium: 400;
+    --ui-weight-strong: 700;
+    --ui-tracking-body: 0;
+    --ui-tracking-mono: 0;
+    --ui-tracking-label: 0.08em;
 
-    /* Density */
-    --ui-control-py-sm: 0.25rem;
-    --ui-control-py-md: 0.375rem;
-    --ui-control-py-lg: 0.625rem;
-    --ui-control-px-sm: 0.625rem;
+    /* Density: a 0.225rem space unit (every Tailwind spacing and size utility shrinks with it),
+       tight control, row and menu-row padding, and short stacks. */
+    --ui-space-unit: 0.225rem;
+    --ui-control-py-sm: 0.1875rem;
+    --ui-control-py-md: 0.3125rem;
+    --ui-control-py-lg: 0.5rem;
+    --ui-control-px-sm: 0.5rem;
     --ui-control-px-md: 0.75rem;
-    --ui-control-px-lg: 1rem;
+    --ui-control-px-lg: 0.875rem;
     --ui-control-gap-sm: 0.375rem;
     --ui-control-gap-md: 0.5rem;
-    --ui-row-py: 0.375rem;
-    --ui-row-px: 0.75rem;
-    --ui-menu-row-py: 0.5rem;
+    --ui-row-py: 0.25rem;
+    --ui-row-px: 0.625rem;
+    --ui-menu-row-py: 0.375rem;
     --ui-menu-row-px: 0.5rem;
-    --ui-card-p: 1rem;
-    --ui-panel-p: 1.25rem;
+    --ui-card-p: 0.75rem;
+    --ui-panel-p: 1rem;
     --ui-stack-0: 0.25rem;
     --ui-stack-1: 0.5rem;
-    --ui-stack-2: 1rem;
-    --ui-stack-3: 1.5rem;
-    --ui-stack-4: 2.5rem;
+    --ui-stack-2: 0.875rem;
+    --ui-stack-3: 1.25rem;
+    --ui-stack-4: 2rem;
 
-    /* Motion: quick colour, no hover transforms, overlays on E2B's ui-out curve, stepped signals.
-       E2B's 100ms colour change is held to the 120ms floor every theme's state changes share. */
+    /* Motion: colour changes stay quick and smooth (E2B's 100ms held to the 120ms floor every
+       theme's state changes share); everything that appears, leaves or resizes jumps. A layer
+       enters in three frames over 120ms and leaves in two over 60ms, with no slide, no scale and
+       no blur; a streamed chunk is simply there (a zero reveal); the sidebar's width jumps
+       through four steps; the live signals tick. */
     --ui-dur-fast: 120ms;
     --ui-dur-base: 150ms;
     --ui-dur-slow: 260ms;
     --ui-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
     --ui-ease-in-out: cubic-bezier(0.215, 0.61, 0.355, 1);
     --ui-ease-spring: cubic-bezier(0.23, 1, 0.32, 1);
-    --ui-ease-overlay-in: cubic-bezier(0.23, 1, 0.32, 1);
-    --ui-ease-overlay-out: cubic-bezier(0.4, 0, 1, 1);
+    --ui-ease-overlay-in: steps(3, jump-none);
+    --ui-ease-overlay-out: steps(2, jump-none);
     --ui-live-timing: steps(2, end);
+    --ui-dur-enter: 120ms;
+    --ui-dur-exit: 60ms;
+    --ui-ease-enter: steps(3, jump-none);
+    --ui-ease-exit: steps(2, jump-none);
+    --ui-enter-shift: 0px;
+    --ui-enter-scale: 1;
+    --ui-enter-blur: 0px;
+    --ui-dur-reveal: 0ms;
+    --ui-reveal-blur: 0px;
+    --ui-dur-layout: 160ms;
+    --ui-ease-layout: steps(4, end);
 
     /* Icons */
     --ui-icon-stroke: 1.4;
@@ -271,48 +307,48 @@
     --ui-focus-ring-input: inset 0 0 0 1px var(--ui-accent);
     --ui-selection-bg: rgb(227 42 1 / 0.18);
     --ui-scrollbar-w: thin;
-    --ui-scrollbar-thumb: #d4d4d4;
-    --ui-scrollbar-thumb-hover: #a59f9e;
-    --ui-scrollbar-track: #fafafa;
+    --ui-scrollbar-thumb: #d3cfcf;
+    --ui-scrollbar-thumb-hover: #bdb8b8;
+    --ui-scrollbar-track: #f4f2f2;
     --ui-scrollbar-visibility: always;
   }
 
-  /* Dark: e2b.dev — the primary Console look. */
+  /* Dark: opencode's warm near-black. */
   :root[data-theme="geek"].dark {
     /* Tailwind bridge: 950 canvas, 900 raised, 800 hover / panel line, 700 control line, then the
-       ink ramp up to 50; 950, 300, 100 and 50 keep the light ramp's values. white stays literal:
+       ink ramp up to 200; 300, 100 and 50 keep the light ramp's values. white stays literal:
        `dark:*-white/N` hairlines read it as ink. */
     --color-white: #ffffff;
-    --color-gray-200: #e1e1e1;
-    --color-gray-400: #b8b8b8;
-    --color-gray-500: #8a8a8a;
-    --color-gray-600: #585858;
-    --color-gray-700: #2c2c2c;
-    --color-gray-800: #1f1f1f;
-    --color-gray-900: #0a0a0a;
+    --color-gray-200: #e4e1e1;
+    --color-gray-400: #a9a4a3;
+    --color-gray-500: #8a8483;
+    --color-gray-600: #5a5453;
+    --color-gray-700: #2f2b2b;
+    --color-gray-800: #242020;
+    --color-gray-900: #1a1717;
 
-    /* Colour — surfaces: cards are outlined, not filled */
-    --ui-canvas: #000000;
-    --ui-surface: #000000;
-    --ui-surface-muted: #121212;
-    --ui-inset: #0a0a0a;
-    --ui-overlay: #0a0a0a;
-    --ui-overlay-backdrop: rgb(0 0 0 / 0.5);
+    /* Colour — surfaces: warm steps up from the page */
+    --ui-canvas: #131010;
+    --ui-surface: #1a1717;
+    --ui-surface-muted: #221f1f;
+    --ui-inset: #0d0b0b;
+    --ui-overlay: #1d1a1a;
+    --ui-overlay-backdrop: rgb(0 0 0 / 0.6);
 
     /* Colour — text */
-    --ui-fg: #ffffff;
-    --ui-fg-muted: #b8b8b8;
-    --ui-fg-subtle: #6b6b6b;
-    --ui-fg-link: #ffffff;
+    --ui-fg: #f3f1f0;
+    --ui-fg-muted: #a9a4a3;
+    --ui-fg-subtle: #7a7473;
+    --ui-fg-link: #f3f1f0;
     --ui-fg-link-hover: #ff5029;
 
     /* Colour — lines */
-    --ui-line: #2c2c2c;
-    --ui-line-muted: #1f1f1f;
-    --ui-line-emphasis: #585858;
-    --ui-divider: #1f1f1f;
+    --ui-line: #2f2b2b;
+    --ui-line-muted: #242020;
+    --ui-line-emphasis: #5a5453;
+    --ui-divider: #242020;
 
-    /* Colour — accent: the same orange, its wash and line a step stronger on black */
+    /* Colour — accent: the same orange, its wash and line a step stronger on the dark page */
     --ui-accent-muted: rgb(227 42 1 / 0.16);
     --ui-accent-line: rgb(227 42 1 / 0.6);
 
@@ -327,19 +363,19 @@
     --ui-tone-attention-line: #f2c230;
     --ui-tone-attention-emphasis: #f2c230;
     --ui-tone-attention-emphasis-fg: #000000;
-    --ui-tone-danger-fg: #ff3b3b;
-    --ui-tone-danger-bg: rgb(255 59 59 / 0.14);
-    --ui-tone-danger-line: #ff3b3b;
-    --ui-tone-danger-emphasis: #ff3b3b;
+    --ui-tone-danger-fg: #ff5252;
+    --ui-tone-danger-bg: rgb(255 82 82 / 0.14);
+    --ui-tone-danger-line: #ff5252;
+    --ui-tone-danger-emphasis: #ff5252;
     --ui-tone-danger-emphasis-fg: #000000;
     --ui-tone-done-fg: #b57cff;
     --ui-tone-done-bg: rgb(181 124 255 / 0.14);
     --ui-tone-done-line: #b57cff;
     --ui-tone-done-emphasis: #b57cff;
     --ui-tone-done-emphasis-fg: #000000;
-    --ui-tone-neutral-fg: #b8b8b8;
-    --ui-tone-neutral-line: #2c2c2c;
-    --ui-tone-neutral-emphasis: #585858;
+    --ui-tone-neutral-fg: #a9a4a3;
+    --ui-tone-neutral-line: #2f2b2b;
+    --ui-tone-neutral-emphasis: #5a5453;
     --ui-tone-info-fg: #5696fd;
     --ui-tone-info-bg: rgb(86 150 253 / 0.14);
     --ui-tone-info-line: #5696fd;
@@ -356,18 +392,18 @@
     --ui-chart-cache-read: #a8c8fe;
     --ui-chart-cache-write: #5696fd;
     --ui-chart-output: #2059d1;
-    --ui-chart-grid: #1f1f1f;
-    --ui-chart-axis: #6b6b6b;
+    --ui-chart-grid: #242020;
+    --ui-chart-axis: #7a7473;
 
     /* Colour — code */
-    --ui-code-bg: #0a0a0a;
-    --ui-code-line: #2c2c2c;
-    --ui-code-gutter: #6b6b6b;
+    --ui-code-bg: #0d0b0b;
+    --ui-code-line: #2f2b2b;
+    --ui-code-gutter: #7a7473;
     --ui-code-selection: rgb(227 42 1 / 0.28);
     --ui-diff-add-bg: rgb(157 194 12 / 0.1);
     --ui-diff-add-word: rgb(157 194 12 / 0.28);
-    --ui-diff-del-bg: rgb(255 59 59 / 0.1);
-    --ui-diff-del-word: rgb(255 59 59 / 0.3);
+    --ui-diff-del-bg: rgb(255 82 82 / 0.1);
+    --ui-diff-del-word: rgb(255 82 82 / 0.3);
     --ui-diff-hunk-bg: rgb(86 150 253 / 0.1);
 
     /* Elevation: layering, not shadow; a black ring cuts an overlay out of what it covers. */
@@ -377,23 +413,24 @@
 
     /* Focus, selection and scrollbar */
     --ui-selection-bg: rgb(227 42 1 / 0.32);
-    --ui-scrollbar-thumb: #2c2c2c;
-    --ui-scrollbar-thumb-hover: #585858;
-    --ui-scrollbar-track: #0a0a0a;
+    --ui-scrollbar-thumb: #2f2b2b;
+    --ui-scrollbar-thumb-hover: #5a5453;
+    --ui-scrollbar-track: #0d0b0b;
   }
 
   /*
    * Style hooks (hooks.ts). A component opts into a hook with its class; this theme decides what
    * the hook does. These rules sit in `ui-theme`, after Tailwind's `utilities`, so a hook wins over
    * the utilities its component also carries — that is what lets `.ui-live` re-time an
-   * `animate-spin`.
+   * `animate-spin` and `.ui-frame` redraw a card's box.
    *
-   * Console gives a recipe to: eyebrow, display, live, frame, underline-nav. `.ui-glass` is a no-op
-   * here: the overlay is opaque through the glass tokens.
+   * Console gives a recipe to: eyebrow, display, live, frame, underline-nav, shell. `.ui-glass` is
+   * a no-op here: the overlay is opaque through the glass tokens.
    */
 
-  /* Group label on the h6 rung: Plex Sans uppercase with label tracking, muted. */
+  /* Group label on the h6 rung: the chrome face, uppercase with label tracking, muted. */
   :root[data-theme="geek"] .ui-eyebrow {
+    font-family: var(--ui-font-ui);
     font-size: var(--ui-h6-size);
     line-height: var(--ui-h6-lh);
     font-weight: var(--ui-h6-weight);
@@ -402,18 +439,16 @@
     color: var(--ui-fg-muted);
   }
 
-  /* Condensed uppercase display, on the one h1 of a page or hero only; h2 and below stay Plex Sans
-     in sentence case. Han text has no case, and its taller glyphs need more leading. */
-  :root[data-theme="geek"] :is(h1, [aria-level="1"]).ui-display {
-    font-family: var(--ui-font-display);
-    font-weight: 600;
-    text-transform: uppercase;
-    line-height: 1.05;
-    letter-spacing: -0.02em;
-  }
-  :root[data-theme="geek"] :is(h1, [aria-level="1"]).ui-display:lang(zh) {
-    line-height: 1.2;
+  /* The page's one display title: the chrome face at its bold cut, sentence case, no tracking —
+     opencode's h1. Han glyphs need a little more leading than the Latin bold. */
+  :root[data-theme="geek"] .ui-display {
+    font-family: var(--ui-font-ui);
+    font-weight: 700;
+    text-transform: none;
     letter-spacing: 0;
+  }
+  :root[data-theme="geek"] .ui-display:lang(zh) {
+    line-height: 1.25;
   }
 
   /* Stepped live signals: the busy dot blinks, the caret is a block, the spinner ticks. */
@@ -442,16 +477,54 @@
     }
   }
 
-  /* Ruled frame: a hairline box, a 2.25rem head ruled off the body, a ruled foot and ruled panes.
-     Head and foot keep their content's own font — a path is mono because it is a path. */
+  /* Ruled frame, drawn like a TUI box: the head's title sits IN the top rule. The box gives up
+     its own border; the head draws the top rule through its vertical middle and the two sides
+     below the rule, its first and last children (the title group, the meta or actions) patch the
+     rule behind themselves with the frame's own fill, and the body, foot and panes draw the sides
+     and the bottom. A frame with no head keeps a plain top rule. Head text is the chrome face at
+     its own size; a path inside stays mono because it is a path. */
   :root[data-theme="geek"] .ui-frame {
-    border: var(--ui-border-w) solid var(--ui-line);
+    border: 0;
     border-radius: 0;
+    background-color: var(--ui-surface);
   }
   :root[data-theme="geek"] .ui-frame > [data-slot="head"] {
-    min-height: 2.25rem;
+    position: relative;
+    min-height: calc(var(--ui-space-unit) * 9);
+    padding-inline: calc(var(--ui-space-unit) * 3);
+    border-bottom: 0;
+    background-color: inherit;
+    font-family: var(--ui-font-ui);
+  }
+  :root[data-theme="geek"] .ui-frame > [data-slot="head"]::before {
+    content: "";
+    position: absolute;
+    inset: 50% 0 auto;
+    height: var(--ui-border-w);
+    background-color: var(--ui-line);
+  }
+  :root[data-theme="geek"] .ui-frame > [data-slot="head"]::after {
+    content: "";
+    position: absolute;
+    inset: 50% 0 0;
+    border-inline: var(--ui-border-w) solid var(--ui-line);
+    pointer-events: none;
+  }
+  :root[data-theme="geek"] .ui-frame > [data-slot="head"] > :first-child,
+  :root[data-theme="geek"] .ui-frame > [data-slot="head"] > :last-child {
+    position: relative;
+    z-index: 1;
+    padding-inline: var(--ui-space-unit);
+    background-color: inherit;
+  }
+  :root[data-theme="geek"] .ui-frame > :not([data-slot="head"]) {
+    border-inline: var(--ui-border-w) solid var(--ui-line);
+  }
+  :root[data-theme="geek"] .ui-frame > :first-child:not([data-slot="head"]) {
+    border-top: var(--ui-border-w) solid var(--ui-line);
+  }
+  :root[data-theme="geek"] .ui-frame > :last-child:not([data-slot="head"]) {
     border-bottom: var(--ui-border-w) solid var(--ui-line);
-    background-color: transparent;
   }
   :root[data-theme="geek"] .ui-frame > [data-slot="foot"] {
     border-top: var(--ui-border-w) solid var(--ui-line);
@@ -460,7 +533,7 @@
     border-left: var(--ui-border-w) solid var(--ui-line);
   }
 
-  /* Tabs: a 1px ink rule under the selected tab; no hover bar. */
+  /* Tabs: a 2px ink rule under the selected tab, opencode's underline; no hover bar. */
   :root[data-theme="geek"] .ui-underline-nav [role="tab"] {
     position: relative;
   }
@@ -469,11 +542,49 @@
     position: absolute;
     inset-inline: 0;
     bottom: -1px;
-    height: 1px;
+    height: 2px;
     background-color: transparent;
     pointer-events: none;
   }
   :root[data-theme="geek"] .ui-underline-nav [role="tab"][aria-selected="true"]::after {
     background-color: var(--ui-fg);
+  }
+
+  /* The app window: full bleed on the page, the navigation column ruled off the main column by
+     one hairline (and a dock column, when there is one, ruled off on its other side), no corner
+     anywhere, and a `>` in the accent before the selected navigation row — a nav entry or the
+     open session — standing in the row's own inline padding (two space units, the narrowest
+     row's) at the small rung, so the row's content does not move. */
+  :root[data-theme="geek"] .ui-shell {
+    background-color: var(--ui-shell-field);
+    border-radius: 0;
+  }
+  :root[data-theme="geek"] .ui-shell > [data-slot="nav"] {
+    background-color: var(--ui-shell-nav-bg);
+    border-inline-end: var(--ui-border-w) solid var(--ui-shell-line);
+  }
+  :root[data-theme="geek"] .ui-shell > [data-slot="main"] {
+    background-color: var(--ui-shell-main-bg);
+  }
+  :root[data-theme="geek"] .ui-shell > [data-slot="dock"] {
+    border-inline-start: var(--ui-border-w) solid var(--ui-shell-line);
+  }
+  :root[data-theme="geek"] .ui-shell [data-slot="nav"] [aria-current="page"] {
+    position: relative;
+  }
+  :root[data-theme="geek"] .ui-shell [data-slot="nav"] [aria-current="page"]::before {
+    content: ">";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(var(--ui-space-unit) * 2);
+    font-family: var(--ui-font-ui);
+    font-size: var(--ui-text-small-size);
+    font-weight: 700;
+    color: var(--ui-accent);
+    pointer-events: none;
   }
 }

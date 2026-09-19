@@ -1,7 +1,8 @@
 /**
  * The gallery is fifteen modules (K-redesign §4.2): one file per `MODULE_IDS` entry, each listing
  * the catalog sections its Parts drawer shows, every section listed by its own module, every demo
- * reachable from some module, and a Chinese title for each module, variant and section.
+ * reachable from some module, live variants after the static ones with addressable frames, and a
+ * Chinese title for each module, variant, frame and section.
  */
 import { describe, expect, it } from "vitest";
 import { CATALOG, catalogSection } from "../../ui/src/catalog";
@@ -26,6 +27,21 @@ describe("the collected modules", () => {
       for (const variant of module.variants) {
         expect(variant.key, module.id).toMatch(VARIANT_KEY);
         expect(variant.title.trim(), `${module.id} ${variant.key}`).not.toBe("");
+      }
+    }
+  });
+
+  it("put live variants after the static ones, each with two or more addressable frames", () => {
+    for (const { module } of MODULES.list) {
+      const live = module.variants.map((variant) => variant.scene !== undefined);
+      const lastStatic = live.lastIndexOf(false);
+      expect(live.slice(0, lastStatic + 1), `${module.id}: live after static`).not.toContain(true);
+      for (const variant of module.variants) {
+        const keys = variant.scene?.frames.map((frame) => frame.key);
+        if (keys === undefined) continue;
+        expect(keys.length, `${module.id} ${variant.key}`).toBeGreaterThanOrEqual(2);
+        expect(new Set(keys).size, `${module.id} ${variant.key}`).toBe(keys.length);
+        for (const key of keys) expect(key, `${module.id} ${variant.key}`).toMatch(VARIANT_KEY);
       }
     }
   });
@@ -71,6 +87,20 @@ describe("the collected modules", () => {
     for (const section of CATALOG)
       expect(zh.catalog.sections[section.id], section.id).toBeDefined();
   });
+
+  it("have a Chinese title for every frame of every live variant, and for nothing else", () => {
+    for (const { module } of MODULES.list) {
+      const frames: Record<string, string[]> = {};
+      for (const variant of module.variants) {
+        if (variant.scene) frames[variant.key] = variant.scene.frames.map((f) => f.key).sort();
+      }
+      const translated: Record<string, string[]> = {};
+      for (const [key, titles] of Object.entries(zh.catalog.modules[module.id]?.frames ?? {})) {
+        translated[key] = Object.keys(titles).sort();
+      }
+      expect(translated, module.id).toEqual(frames);
+    }
+  });
 });
 
 describe("the catalog", () => {
@@ -105,6 +135,7 @@ describe("collectModules", () => {
     }) as Module;
 
   it("reports, and skips, what cannot be rendered as a module", () => {
+    const oneFrame = { key: "queued", title: "Queued", hold: 1000 };
     const registry = collectModules(
       {
         "m/a.module.tsx": {},
@@ -123,6 +154,31 @@ describe("collectModules", () => {
         "m/actions.module.tsx": {
           module: make("actions", { parts: ["actions-button", "nope-part"] }),
         },
+        "m/files.module.tsx": {
+          module: make("files", {
+            variants: [
+              { key: "tree", title: "Tree" },
+              {
+                key: "live-expand",
+                title: "Expand",
+                scene: {
+                  frames: [
+                    { key: "closed", title: "Closed", hold: 1000 },
+                    { key: "Open", title: "Open", hold: 0 },
+                  ],
+                },
+              },
+            ],
+          }),
+        },
+        "m/status.module.tsx": {
+          module: make("status", {
+            variants: [
+              { key: "live", title: "Live" },
+              { key: "live-run", title: "Run", scene: { frames: [oneFrame] } },
+            ],
+          }),
+        },
         "x/actions.module.tsx": { module: make("actions") },
       },
       catalog,
@@ -138,6 +194,9 @@ describe("collectModules", () => {
     expect(text).toMatch(/parts not in catalog\.ts: nope-part/);
     expect(text).toMatch(/module "actions" is already defined by m\/actions\.module\.tsx/);
     expect(text).toMatch(/module "conversation" has no conversation\.module\.tsx/);
+    expect(text).toMatch(/frame keys of "live-expand" must be unique lowercase words .*: Open/);
+    expect(text).toMatch(/frame holds of "live-expand" must be positive ms: Open/);
+    expect(text).toMatch(/live variant "live-run" needs at least two frames/);
     // A module with an unknown part still renders; its drawer lists what exists.
     expect(registry.list.map(({ module }) => module.id)).toEqual(["actions"]);
   });

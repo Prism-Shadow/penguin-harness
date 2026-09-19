@@ -1,11 +1,15 @@
 /**
  * Console (`geek`) Latin faces, all OFL-1.1:
- * - IBM Plex Sans (sans), variable `wght`, latin + latin-ext — @fontsource-variable/ibm-plex-sans
- * - IBM Plex Sans Condensed (display), static 600, latin + latin-ext —
- *   @fontsource/ibm-plex-sans-condensed. Only the h1 display title uses it, always at 600.
- * - Commit Mono (mono), static 400 and 700 — @fontsource/commit-mono. Fontsource builds it as a
- *   single `latin` file with no `unicode-range`, so none is declared here either: the browser
- *   loads the file for any mono text and falls back per missing glyph.
+ * - IBM Plex Sans (the reading face), variable `wght`, latin + latin-ext —
+ *   @fontsource-variable/ibm-plex-sans
+ * - Commit Mono (the chrome face and the code face), static 400 and 700 — @fontsource/commit-mono.
+ *   Fontsource builds it as a single `latin` file with no `unicode-range`, so none is declared here
+ *   either: the browser loads the file for any chrome or mono text and falls back per missing
+ *   glyph.
+ * - IBM Plex Sans Condensed, static 600, latin + latin-ext — @fontsource/ibm-plex-sans-condensed.
+ *   Declared but no longer named by the theme: the uppercase condensed h1 gave way to the mono
+ *   chrome's bold h1. A declared face nobody names is never downloaded; drop the dependency and
+ *   these two rules with the next install.
  *
  * Only `themes/geek.css` names these families, so no other theme ever downloads them. The
  * `url()`s are relative to this file on purpose — see `index.css`.

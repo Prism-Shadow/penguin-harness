@@ -57,6 +57,7 @@ export const en: Fixtures = buildFixtures("en", {
       },
       running: "Running",
       done: "Done",
+      queued: "Queued",
       attach: "Attach files",
       steps: (n) => `${n} ${n === 1 ? "step" : "steps"}`,
       thinking: "Thinking",
@@ -96,6 +97,12 @@ export const en: Fixtures = buildFixtures("en", {
       contextOf: (used, window) => `${used} of ${window} context`,
       exitStatus: (code, duration) => `exit ${code} · ${duration}`,
       outputComplete: "Output complete",
+      deleteMessage: {
+        title: "Delete this message?",
+        body: "The message and its attachments are removed from this chat.",
+        confirm: "Delete",
+        deleted: "Message deleted",
+      },
     },
     dock: {
       subagents: (n) => `Subagents (${n})`,
@@ -381,6 +388,8 @@ Run \`{run}\`, then open {url}.`,
       reviewReadDescription: "Read the chat page",
       reviewReply:
         "`linkify()` links a marker only when `sources[n - 1]` exists, so a marker past the last source stays plain text — good. One gap: `sources` arrives after the last delta, so while the answer streams every `[n]` is plain text, and the links appear only once the",
+      closingReply:
+        "Done: chunks whose `source` file is gone are now dropped from `hits` before the hits are numbered, so every [n] in an answer opens a real file under `corpus/`. Stale entries stay in the index until the next re-index, but they can no longer be cited.",
       failedReply:
         "The test caught a real gap: `hooks.md` was renamed upstream to `hooks-guide.md`, so citation [2] points at a file the index still lists. Re-indexing the corpus, then running the suite again.",
     },

@@ -36,6 +36,26 @@
   line-height: var(--ui-text-caption-lh);
   color: var(--ui-fg-subtle);
 }
+.gf-group-action {
+  margin-left: auto;
+}
+.gf-replay {
+  padding: var(--ui-control-py-sm) var(--ui-control-px-sm);
+  border: 1px solid var(--ui-line-emphasis);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-fg);
+  font: inherit;
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+  font-weight: var(--ui-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--ui-dur-fast) var(--ui-ease-out);
+}
+.gf-replay:hover {
+  background: var(--ui-surface-muted);
+}
 .gf-pair {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
@@ -623,6 +643,22 @@
 .gf-switch[data-on]::after {
   left: calc(100% - 1.125rem);
 }
+.gf-units {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem 2rem;
+}
+.gf-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.gf-unit-bar {
+  display: inline-block;
+  width: 4rem;
+  background: color-mix(in srgb, var(--ui-tone-info-emphasis) 32%, transparent);
+}
 .gf-rungs {
   display: flex;
   flex-wrap: wrap;
@@ -686,7 +722,216 @@
   color: var(--ui-tone-attention-fg);
 }
 
+/* ---- Shell (the ui-shell specimen; the theme's recipe re-paints it) ---- */
+
+.gf-shell {
+  display: flex;
+  height: 12rem;
+  overflow: hidden;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-canvas);
+}
+.gf-shell-nav {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  width: calc(var(--ui-space-unit) * 44);
+  flex-shrink: 0;
+  padding: calc(var(--ui-space-unit) * 2);
+  border-right: 1px solid var(--ui-line);
+  background: var(--ui-surface-muted);
+}
+.gf-shell-row {
+  padding: var(--ui-row-py) calc(var(--ui-space-unit) * 2.5);
+  border-radius: var(--ui-radius-md);
+  font-size: var(--ui-text-body-size);
+  line-height: var(--ui-text-body-lh);
+  color: var(--ui-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gf-shell-row[aria-current] {
+  background: var(--ui-accent-muted);
+  color: var(--ui-fg);
+  font-weight: var(--ui-weight-medium);
+}
+.gf-shell-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  padding: var(--ui-panel-p);
+}
+.gf-shell-title {
+  font-family: var(--ui-h4-font);
+  font-size: var(--ui-h4-size);
+  line-height: var(--ui-h4-lh);
+  font-weight: var(--ui-h4-weight);
+  letter-spacing: var(--ui-h4-tracking);
+}
+.gf-shell-text {
+  margin: 0;
+  font-family: var(--ui-font-sans);
+  font-size: var(--ui-text-body-size);
+  line-height: var(--ui-text-body-lh);
+  color: var(--ui-fg-muted);
+}
+
 /* ---- Motion ---- */
+
+/* The presence specimens: a stage with the layer that enters and leaves; the layer's box carries
+   the attribute and the panel inside it carries the look, the way the modules' Presence wraps a
+   glass panel. */
+.gf-presence {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+.gf-specimen {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.gf-specimen-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.gf-stage {
+  position: relative;
+  height: 12rem;
+  overflow: hidden;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-canvas);
+}
+.gf-stage-trigger {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: var(--ui-control-py-sm) var(--ui-control-px-sm);
+  border: 1px solid var(--ui-line-emphasis);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+}
+.gf-layer {
+  position: absolute;
+}
+.gf-layer[data-side="top"] {
+  top: 3.25rem;
+  left: 0.75rem;
+}
+.gf-layer[data-side="center"] {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+.gf-layer[data-side="bottom"] {
+  right: 0.75rem;
+  bottom: 0.75rem;
+}
+.gf-motion-menu {
+  display: grid;
+  gap: 0.125rem;
+  width: 10rem;
+  padding: 0.25rem;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-overlay);
+  box-shadow: var(--ui-shadow-overlay);
+}
+.gf-motion-dialog {
+  position: relative;
+  display: grid;
+  gap: 0.5rem;
+  width: min(100%, 17rem);
+  padding: 1rem;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-overlay);
+  box-shadow: var(--ui-shadow-modal);
+  font-size: var(--ui-text-body-size);
+}
+.gf-motion-dialog p {
+  margin: 0 0 0.25rem;
+  font-size: var(--ui-text-small-size);
+}
+.gf-motion-toast {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-overlay);
+  box-shadow: var(--ui-shadow-overlay);
+  font-size: var(--ui-text-small-size);
+  white-space: nowrap;
+}
+
+/* The reveal specimen reads as a reply: the reading face at the prose rung. */
+.gf-reveal {
+  min-height: 5rem;
+  margin: 0;
+  font-family: var(--ui-font-sans);
+  font-size: var(--ui-text-prose-size);
+  line-height: var(--ui-text-prose-lh);
+}
+
+/* The layout specimen: a sidebar beside a page, folding to a rail by width alone. */
+.gf-layout-stage {
+  display: flex;
+  height: 9rem;
+  overflow: hidden;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-canvas);
+}
+.gf-layout-nav {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  width: calc(var(--ui-space-unit) * 44);
+  flex-shrink: 0;
+  overflow: hidden;
+  padding: calc(var(--ui-space-unit) * 2);
+  border-right: 1px solid var(--ui-line);
+  background: var(--ui-surface-muted);
+}
+.gf-layout-nav[data-rail] {
+  width: calc(var(--ui-space-unit) * 13);
+}
+.gf-layout-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-stack-1);
+  padding: var(--ui-row-py) calc(var(--ui-space-unit) * 2.5);
+  border-radius: var(--ui-radius-md);
+  font-size: var(--ui-text-body-size);
+  line-height: var(--ui-text-body-lh);
+  color: var(--ui-fg-muted);
+  white-space: nowrap;
+}
+.gf-layout-row[aria-current] {
+  background: var(--ui-accent-muted);
+  color: var(--ui-fg);
+}
+.gf-layout-main {
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+.gf-layout-main > span {
+  height: 0.5rem;
+  border-radius: var(--ui-radius-xs);
+  background: var(--ui-line);
+}
 
 .gf-motion {
   display: grid;
