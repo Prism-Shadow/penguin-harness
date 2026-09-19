@@ -207,6 +207,74 @@ test("company mode: create the organization, meet the CEO, see the board and the
     )
     .toBe(true);
 
+  // A mention picked from the @ menu shows the CEO's name in the box, tinted by the layer
+  // behind it, and still goes out as the id. It is one block: the arrow keys step over it,
+  // Shift+arrow selects all of it, Backspace at its end takes all of it and Ctrl+Z brings it
+  // back tinted, and a cut pasted elsewhere in the box, or a drag to another spot, leaves it
+  // a mention.
+  const NAME = "@Plugin Marketplace CEO";
+  const LEAD = " 请看信息架构 ";
+  const tint = page.locator("[data-mention]");
+  const selection = () => input.evaluate((el) => [el.selectionStart, el.selectionEnd]);
+  await input.pressSequentially("@Plug");
+  await expect(page.getByRole("option", { name: /Plugin Marketplace CEO/ })).toBeVisible();
+  await input.press("Enter");
+  await expect(input).toHaveValue(`${NAME} `);
+  await expect(tint).toHaveText(NAME);
+  await input.press("Backspace"); // the pick's trailing space
+  await expect(input).toHaveValue(NAME);
+  await input.press("ArrowLeft");
+  await expect.poll(selection).toEqual([0, 0]);
+  await input.press("ArrowRight");
+  await expect.poll(selection).toEqual([NAME.length, NAME.length]);
+  await input.press("Shift+ArrowLeft");
+  await expect.poll(selection).toEqual([0, NAME.length]);
+  await input.press("ArrowRight");
+  await expect.poll(selection).toEqual([NAME.length, NAME.length]);
+  await input.press("Backspace");
+  await expect(input).toHaveValue("");
+  await expect(tint).toHaveCount(0);
+  await input.press("Control+z");
+  await expect(input).toHaveValue(NAME);
+  await expect(tint).toHaveText(NAME);
+
+  await input.press("End");
+  await input.pressSequentially(LEAD.trimEnd());
+  await input.press("Home");
+  await input.press("Shift+ArrowRight");
+  await expect.poll(selection).toEqual([0, NAME.length]);
+  await input.press("Control+x");
+  await expect(input).toHaveValue(LEAD.trimEnd());
+  await expect(tint).toHaveCount(0);
+  await input.press("End");
+  await input.pressSequentially(" ");
+  await input.press("Control+v");
+  await expect(input).toHaveValue(`${LEAD}${NAME}`);
+  await expect(tint).toHaveText(NAME);
+
+  // Dragged by its name back in front of the sentence: the box deletes it, then drops it.
+  await input.press("Shift+ArrowLeft");
+  await expect.poll(selection).toEqual([LEAD.length, LEAD.length + NAME.length]);
+  const grab = await tint.boundingBox();
+  const field = await input.boundingBox();
+  const line = grab.y + grab.height / 2;
+  await page.mouse.move(grab.x + grab.width / 2, line);
+  await page.mouse.down();
+  await page.mouse.move(field.x + 4, line, { steps: 8 });
+  await page.mouse.up();
+  await expect(input).toHaveValue(`${NAME}${LEAD}`);
+  await expect(tint).toHaveText(NAME);
+  await input.press("Enter");
+  await expect(input).toHaveValue("");
+  await expect
+    .poll(async () => {
+      const day = await (
+        await page.request.get(api(`/organizations/${ORG}/channels/default_channel/messages`))
+      ).json();
+      return day.messages.find((m) => m.text === `@${ORG}_ceo${LEAD.trimEnd()}`)?.mentions;
+    })
+    .toEqual([`agent:${ORG}_ceo`]);
+
   // A new channel: created from the channel list header's own "+", the dialog validates the
   // id here, the sidebar gains a row, and the view opens on it.
   await page.getByRole("button", { name: "新建频道", exact: true }).first().click();

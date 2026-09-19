@@ -1,7 +1,8 @@
 /**
  * The organization switcher that stands where the Project switcher stands in development
- * mode. The trigger names the open organization with its status dot and, beneath it, the
- * Project it belongs to; the menu lists every organization the user can reach, grouped by
+ * mode. The trigger names the open organization with its status as a text capsule to the right
+ * of the name (the name truncates, the capsule never does) and, beneath it, the Project it
+ * belongs to; the menu lists every organization the user can reach, grouped by
  * Project with a check mark on the open one (picking one opens its overview), then the two
  * entries that make and shape one — "New organization" (success makes the new organization
  * the shell's current one and lands in its CEO's desk session) and "Organization settings".
@@ -29,7 +30,7 @@ import {
   OrganizationSettingsDialog,
   useOrganizationCreated,
 } from "./org-dialogs";
-import { OrgStatusDot } from "./shared";
+import { OrgStatusDot, OrgStatusPill, orgStatusText } from "./shared";
 
 const menuItemClass = `flex w-full items-center ${ICON_GAP.menu} px-3.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800`;
 
@@ -61,7 +62,7 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
 
   const triggerTitle =
     current !== null
-      ? S.company.inProject(projectName(current.projectId), current.name)
+      ? `${S.company.inProject(projectName(current.projectId), current.name)} · ${orgStatusText(current)}`
       : S.company.switcher;
   /**
    * What is waiting in this organization's channels, summed over the ones the user belongs
@@ -98,7 +99,6 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           >
             <span className="min-w-0 flex-1">
               <span className={`flex items-center ${ICON_GAP.row}`}>
-                {current !== null && <OrgStatusDot org={current} />}
                 <span className="min-w-0 truncate text-base font-semibold leading-tight">
                   {current !== null
                     ? current.name
@@ -106,6 +106,13 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                       ? S.company.noOrganizations
                       : S.common.loading}
                 </span>
+                {/* Never shrinks and never wraps: a CJK label would otherwise break per
+                    character before the name gave up a single letter. */}
+                {current !== null && (
+                  <span className="shrink-0 whitespace-nowrap">
+                    <OrgStatusPill org={current} />
+                  </span>
+                )}
               </span>
               {/* The Project the organization belongs to: the second line, so the name stays the headline. */}
               {current !== null && (

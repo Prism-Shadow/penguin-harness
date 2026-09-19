@@ -1,9 +1,10 @@
 /**
  * A channel's @-mentions (pure, unit tested): the candidates the composer offers — the
  * channel's own members, plus `all` — and how they rank against what was typed, the token
- * being typed at the caret, what a pick types and how it is spliced into the draft, how a
- * stored message is split into plain runs and mention runs for highlighting, and what a
- * mention run displays and whether it addresses the reader. The token grammar mirrors the
+ * being typed at the caret, what a pick sends (the draft that shows it by name is
+ * mention-draft.ts), how a stored message is split into plain runs and mention runs for
+ * highlighting, and what a mention run displays and whether it addresses the reader. The token
+ * grammar mirrors the
  * server's extractMentionTokens — `@id`, `@agent:id`, `@user:id`, `@all` — and its
  * resolution order (an employee before a member of the same id), so what the composer
  * highlights is what the server delivers.
@@ -74,7 +75,7 @@ export function rankMentionCandidates(
 }
 
 /**
- * What a pick types after the `@`: an employee's bare id, a member's bare id — unless an
+ * What a pick sends after the `@`: an employee's bare id, a member's bare id — unless an
  * employee shares it, in which case `user:` disambiguates, since the server resolves a bare
  * id to the employee first — and `all`.
  */
@@ -113,8 +114,9 @@ export function mentionIsMe(
 
 /**
  * The `@token` the caret sits at the end of, if any: the `@` must start the text or follow a
- * character that cannot be part of an id, and the token runs unbroken to the caret. Null when
- * the caret is not inside such a token (the panel then stays closed).
+ * character that cannot be part of an id, and the token runs unbroken to the caret — letters
+ * of any script, digits and `_:.-`, so a name typed in CJK searches too. Null when the caret
+ * is not inside such a token (the panel then stays closed).
  */
 export function mentionQueryAt(
   text: string,
@@ -125,20 +127,8 @@ export function mentionQueryAt(
   if (at === -1) return null;
   if (at > 0 && /[A-Za-z0-9_@]/.test(before[at - 1]!)) return null;
   const query = before.slice(at + 1);
-  if (!/^[A-Za-z0-9_:.-]*$/.test(query)) return null;
+  if (!/^[\p{L}\p{N}_:.-]*$/u.test(query)) return null;
   return { start: at, query };
-}
-
-/** Replaces the token at `start`…`caret` with the principal and a trailing space; returns the new text and caret. */
-export function insertMention(
-  text: string,
-  start: number,
-  caret: number,
-  principal: string,
-): { text: string; caret: number } {
-  const inserted = `@${principal} `;
-  const next = text.slice(0, start) + inserted + text.slice(caret);
-  return { text: next, caret: start + inserted.length };
 }
 
 export interface TextRun {
