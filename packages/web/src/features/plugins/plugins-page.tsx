@@ -225,6 +225,12 @@ export function PluginsPage() {
   const [deployment, setDeployment] = useState<InstalledPluginsResponse | null>(null);
   /** The registry: every module plugin this deployment could ask for. */
   const [index, setIndex] = useState<PluginIndexEntry[] | null>(null);
+  /**
+   * Sources that answered with nothing. A published index that is down shortens the list
+   * instead of emptying it (the server merges tolerantly), so the page has to say so — a
+   * silently shorter list reads as "that plugin does not exist".
+   */
+  const [indexFailures, setIndexFailures] = useState<{ source: string; error: string }[]>([]);
   /** The specifier whose install or removal is running: the list is written one verb at a time. */
   const [pendingSpecifier, setPendingSpecifier] = useState<string | null>(null);
   const isAdmin = user?.isAdmin === true;
@@ -299,7 +305,9 @@ export function PluginsPage() {
     let cancelled = false;
     api.getPluginIndex().then(
       (res) => {
-        if (!cancelled) setIndex(res.plugins);
+        if (cancelled) return;
+        setIndex(res.plugins);
+        setIndexFailures(res.failures ?? []);
       },
       () => {
         if (!cancelled) setIndex([]);
@@ -654,6 +662,11 @@ export function PluginsPage() {
           />
         )}
 
+        {indexFailures.length > 0 && (
+          <div className={`mt-4 rounded-md px-3 py-2 text-sm ${toneSurface.attention}`}>
+            {S.pluginRegistry.sourceUnavailable(indexFailures.length)}
+          </div>
+        )}
         {remote !== null && "error" in remote && remote.machineId === viewMachine && (
           <div className={`mt-4 rounded-md px-3 py-2 text-xs ${toneStrip.attention}`}>
             {S.plugins.machineUnreadable(nameOf(remote.machineId), remote.error)}

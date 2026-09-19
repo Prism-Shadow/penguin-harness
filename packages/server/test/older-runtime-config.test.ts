@@ -17,8 +17,8 @@ describe("a platform on a runtime whose config predates newer settings", () => {
     t = null;
   });
 
-  it("boots and serves without cliEntry", async () => {
-    t = await createTestApp({ config: { cliEntry: undefined } });
+  it("boots and serves without cliEntry or pluginIndexUrl", async () => {
+    t = await createTestApp({ config: { cliEntry: undefined, pluginIndexUrl: undefined } });
     const admin = await loginAdmin(t.app);
     const res = await t.app.request("/api/projects/default_project/agents", {
       headers: { cookie: admin.cookie },
