@@ -3,7 +3,8 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import templates from "./waf-templates.json" with { type: "json" };
 import type { ActivityDetail } from "./domain.js";
-import { validateActivitySpec } from "./domain.js";
+import { contentRevision, validateActivitySpec } from "./domain.js";
+import { mediaConfiguration, validateManifest, validateMediaCoverage } from "./media.js";
 import { HttpError } from "../http/errors.js";
 
 /** Loom's WAF checkout convention; discovery only walks ancestors, never the disk. */
@@ -181,9 +182,20 @@ export function scaffoldModule(activity: ActivityDetail): Record<string, string>
     states,
   });
   json(`${refDir}/activity_spec.json`, spec);
-  json(`configurations/${activity.productCode}-${activity.refNum}.json`, {
-    [activity.productCode]: { telemetry: false },
-  });
+  const plan = activity.draft.mediaPlan;
+  if (plan && plan.specRevision !== contentRevision(spec))
+    throw new HttpError(
+      409,
+      "media_stale",
+      "Rebuild the media plan from the saved specification before assembly.",
+    );
+  const manifest = plan ? validateManifest(plan.manifest, activity) : null;
+  if (manifest) validateMediaCoverage(manifest, activity);
+  if (manifest) json(`${refDir}/asset_manifest.json`, manifest);
+  json(
+    `configurations/${activity.productCode}-${activity.refNum}.json`,
+    manifest ? mediaConfiguration(manifest) : { [activity.productCode]: { telemetry: false } },
+  );
   return files;
 }
 
@@ -193,6 +205,30 @@ export async function prepareModule(
   wafRoot: string,
 ): Promise<void> {
   const files = scaffoldModule(activity);
+  // Saved paths are references. Confirm checkout availability before creating a paid Session.
+  const references = new Set(
+    Object.values(activity.draft.mediaPlan?.manifest.assets ?? {}).flatMap((assets) =>
+      assets.flatMap((asset) => (asset.path ? [asset.path] : [])),
+    ),
+  );
+  for (const reference of references) {
+    let current = wafRoot;
+    const parts = reference.split("/");
+    for (let index = 0; index < parts.length; index++) {
+      current = path.join(current, parts[index]!);
+      const stat = await fs.lstat(current).catch(() => null);
+      if (
+        !stat ||
+        stat.isSymbolicLink() ||
+        (index === parts.length - 1 ? !stat.isFile() : !stat.isDirectory())
+      )
+        throw new HttpError(
+          400,
+          "media_missing",
+          `Referenced media is missing or linked: ${reference}`,
+        );
+    }
+  }
   for (const [name, source] of Object.entries(files)) {
     const file = path.join(workspace, "module", name);
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -219,6 +255,38 @@ export interface ModuleArtifact {
   sha256: string;
   bytes: number;
 }
+
+/** A completed model turn must not silently replace approved media bindings. */
+export async function verifyMediaArtifacts(
+  workspace: string,
+  activity: ActivityDetail,
+  read: (file: string) => Promise<string>,
+): Promise<void> {
+  if (!activity.draft.mediaPlan) return;
+  const prefix = `module/generated/${activity.productCode}/refs/${activity.productCode}-${activity.refNum}/spec`;
+  const manifest = validateManifest(
+    JSON.parse(await read(path.join(workspace, prefix, "asset_manifest.json"))),
+    activity,
+  );
+  if (contentRevision(manifest) !== contentRevision(activity.draft.mediaPlan.manifest))
+    throw new Error("Assembly changed the approved media manifest.");
+  const configuration = JSON.parse(
+    await read(
+      path.join(
+        workspace,
+        "module/configurations",
+        `${activity.productCode}-${activity.refNum}.json`,
+      ),
+    ),
+  );
+  const expected = mediaConfiguration(manifest)[activity.productCode] as Record<string, unknown>;
+  for (const [language, entries] of Object.entries(expected)) {
+    if (language === "telemetry") continue;
+    for (const [key, value] of Object.entries(entries as Record<string, string>))
+      if (configuration[activity.productCode]?.[language]?.[key] !== value)
+        throw new Error("Assembly changed an approved media configuration binding.");
+  }
+}
 export interface ModuleResult {
   modulePath: "module";
   previewPath: "preview/index.html";
@@ -229,6 +297,7 @@ export interface ModuleResult {
 export async function collectModule(
   workspace: string,
   read: (file: string, maxBytes?: number) => Promise<string>,
+  requiredFiles: string[] = [],
 ): Promise<ModuleResult> {
   const manifest = JSON.parse(await read(path.join(workspace, "module-result.json"))) as {
     files?: unknown;
@@ -237,6 +306,7 @@ export async function collectModule(
     throw new Error("module-result.json requires between 1 and 200 file paths.");
   const names = manifest.files;
   for (const required of [
+    ...requiredFiles,
     "module/package.json",
     "module/definition.json",
     "module/src/index.ts",
@@ -290,6 +360,7 @@ export async function collectModule(
 
 export const modulePrompt = `Implement the saved activity specification in input.json as a real WAF HTML module.
 The module/ directory contains the native WAF scaffold. Read waf-context.json for the local framework, navbar and media checkout. Read that framework's contracts before implementing.
+If input.json contains draft.mediaPlan, its manifest and language-specific configuration are approved inputs. Preserve their keys, scripts and paths; do not invent replacements. Paths are relative to wafRoot. Verify bound files exist within its media checkout, copy only required assets into preview using normal Harness tools and approvals, and resolve {{MEDIA}} to the preview's relative media base. Assets without paths remain unbound: report them explicitly and do not claim complete media. A binding is a reference, not proof of file availability.
 Work only in this Session workspace. Treat the shared WAF checkout as read-only. Do not modify shared modules or run Loom's pipeline/server. Do not delegate.
 Implement the actual learning interactions and feedback in module/src, preserving waf-state-machine, WAF lifecycle, Interactable input and cleanup. Complete the ref configuration, asset manifest and state machine for the input productCode/refNum. Use existing media when available; report missing media explicitly, never invent successful generation.
 Use normal Harness approvals for installing dependencies and running commands. Run module typecheck and buildDebug; record real command output in module/build.log. Do not publish or deploy packages.

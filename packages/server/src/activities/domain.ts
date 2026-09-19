@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { MediaPlan } from "./media.js";
 
 export const PRODUCT_CODE_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$/;
 
@@ -32,6 +33,7 @@ export interface ActivityDraft {
   status: "draft" | "valid" | "invalid";
   description: string;
   spec: Record<string, unknown> | null;
+  mediaPlan?: MediaPlan;
   updatedAt: string;
 }
 
@@ -79,6 +81,17 @@ function canonical(value: unknown): unknown {
 }
 
 export type ActivityDetail = ActivityRecord & { draft: ActivityDraft };
+
+/** Preserve pre-media draft hashes until a plan is explicitly saved. */
+export function draftRevision(
+  draft: Pick<ActivityDraft, "description" | "spec" | "mediaPlan">,
+): string {
+  return contentRevision({
+    description: draft.description,
+    spec: draft.spec,
+    ...(draft.mediaPlan ? { mediaPlan: draft.mediaPlan } : {}),
+  });
+}
 export type ActivityRunStatus =
   "running" | "succeeded" | "failed" | "conflict" | "cancelled" | "interrupted";
 export interface ActivityRun {

@@ -110,6 +110,27 @@ export class ActivityRoutes {
         202,
       );
     });
+    app.post("/:activityId/plan-media", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.activities.planMedia(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
+      );
+    });
+    app.put("/:activityId/media", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.activities.applyMedia(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          body.manifest,
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
+      );
+    });
     app.get("/:activityId/runs", async (c) =>
       c.json({
         runs: await this.generation.list(

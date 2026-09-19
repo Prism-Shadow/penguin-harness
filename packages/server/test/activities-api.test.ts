@@ -135,6 +135,103 @@ describe("native activity authoring API", () => {
         })
       ).status,
     ).toBe(403);
+    expect(
+      (
+        await reader.post(`${base}/${one.id}/plan-media`, {
+          expectedRevision: one.draft.contentRevision,
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await reader.put(`${base}/${one.id}/media`, {
+          expectedRevision: one.draft.contentRevision,
+          manifest: {},
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("persists media plans, rejects stale writes and requires replanning after spec changes", async () => {
+    const t = await createTestApp();
+    cleanups.push(t.cleanup);
+    const owner = await provisionUser(t.app, "media_owner");
+    const client = apiClient(t.app, owner.cookie);
+    expect(
+      (await client.post("/api/projects", { projectId: "media_owner-activities" })).status,
+    ).toBe(201);
+    const base = "/api/projects/media_owner-activities/activities";
+    const created = (await (
+      await client.post(base, { productCode: "P", refNum: 1, title: "One" })
+    ).json()) as ActivityDetail;
+    const endpoint = `${base}/${created.id}`;
+    expect(
+      (
+        await client.post(`${endpoint}/plan-media`, {
+          expectedRevision: created.draft.contentRevision,
+        })
+      ).status,
+    ).toBe(422);
+    let draft = (await (
+      await client.post(`${endpoint}/apply-generated-spec`, {
+        spec: {
+          ...activitySpec,
+          scenes: [
+            {
+              id: "intro",
+              description: "Look",
+              media: { images: [{ key: "cat", description: "A cat" }] },
+            },
+          ],
+        },
+        expectedRevision: created.draft.contentRevision,
+      })
+    ).json()) as ActivityDraft;
+    const before = draft.contentRevision;
+    draft = (await (
+      await client.post(`${endpoint}/plan-media`, { expectedRevision: before })
+    ).json()) as ActivityDraft;
+    expect(draft.mediaPlan!.manifest.assets["en-US"]).toHaveLength(1);
+    expect(draft.contentRevision).not.toBe(before);
+    const manifest = structuredClone(draft.mediaPlan!.manifest);
+    manifest.assets["en-US"]![0]!.path = "media/images/cat.png";
+    expect(
+      (await client.put(`${endpoint}/media`, { manifest, expectedRevision: before })).status,
+    ).toBe(409);
+    const saved = await client.put(`${endpoint}/media`, {
+      manifest,
+      expectedRevision: draft.contentRevision,
+    });
+    expect(saved.status).toBe(200);
+    draft = (await saved.json()) as ActivityDraft;
+    expect(
+      ((await (await client.get(endpoint)).json()) as ActivityDetail).draft.mediaPlan!.manifest,
+    ).toEqual(manifest);
+    const file = path.join(
+      projectDir(t.root, "media_owner-activities"),
+      "activities",
+      created.collectionId,
+      "activities",
+      created.id,
+      "drafts",
+      draft.draftId,
+      "asset-manifest.json",
+    );
+    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual(manifest);
+    draft = (await (
+      await client.post(`${endpoint}/apply-generated-spec`, {
+        spec: { ...draft.spec, title: "Changed" },
+        expectedRevision: draft.contentRevision,
+      })
+    ).json()) as ActivityDraft;
+    expect(
+      (await client.put(`${endpoint}/media`, { manifest, expectedRevision: draft.contentRevision }))
+        .status,
+    ).toBe(409);
+    draft = (await (
+      await client.post(`${endpoint}/plan-media`, { expectedRevision: draft.contentRevision })
+    ).json()) as ActivityDraft;
+    expect(draft.mediaPlan!.manifest.assets["en-US"]![0]!.path).toBe("media/images/cat.png");
   });
 
   it("serializes concurrent edits and reads nested file changes instead of stale DB revisions", async () => {

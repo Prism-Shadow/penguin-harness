@@ -11,6 +11,7 @@ import {
 import { readCandidate } from "../src/activities/generation.js";
 import type { ActivityDetail } from "../src/activities/domain.js";
 import { activitySpec } from "./activity-fixtures.js";
+import { planMedia } from "../src/activities/media.js";
 
 const activity: ActivityDetail = {
   id: "act_one",
@@ -44,6 +45,30 @@ async function directory() {
 }
 
 describe("native WAF module boundary", () => {
+  it("checks referenced media before writing assembly files, without changing the checkout", async () => {
+    const root = await directory();
+    const workspace = await directory();
+    const a = structuredClone(activity);
+    a.draft.mediaPlan = planMedia(a);
+    a.draft.mediaPlan.manifest.assets["en-US"]!.push({
+      key: "cat",
+      type: "image",
+      description: "A cat",
+      path: "media/cat.png",
+      usages: [],
+    });
+    await expect(prepareModule(workspace, a, root)).rejects.toThrow("Referenced media is missing");
+    expect(await fs.readdir(workspace)).toEqual([]);
+    await fs.mkdir(path.join(root, "media"));
+    await fs.writeFile(path.join(root, "media/cat.png"), "fixture bytes");
+    await prepareModule(workspace, a, root);
+    expect(await fs.readFile(path.join(root, "media/cat.png"), "utf8")).toBe("fixture bytes");
+    expect(
+      JSON.parse(
+        await fs.readFile(path.join(workspace, "module/configurations/P-12.json"), "utf8"),
+      ),
+    ).toMatchObject({ P: { "en-US": { cat: "{{MEDIA}}/cat.png" } } });
+  });
   it("discovers only a complete ancestor checkout and honors an explicit invalid root", async () => {
     const root = await directory();
     const child = path.join(root, "projects", "one");

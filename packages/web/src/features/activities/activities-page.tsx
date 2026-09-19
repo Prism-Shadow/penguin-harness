@@ -17,9 +17,10 @@ import { useProject } from "../../state/project";
 import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
+import { InfoPopover } from "../../components/ui/info-popover";
 
 const basePath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/activities`;
-const pretty = (spec: ActivityDraft["spec"]) => (spec ? JSON.stringify(spec, null, 2) : "");
+const pretty = (value: unknown) => (value ? JSON.stringify(value, null, 2) : "");
 const runTone: Record<ActivityRun["status"], Tone> = {
   running: "busy",
   succeeded: "success",
@@ -280,6 +281,7 @@ function ActivityEditor({
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
   const [description, setDescription] = useState("");
   const [spec, setSpec] = useState("");
+  const [media, setMedia] = useState("");
   const [runs, setRuns] = useState<ActivityRunSummary[]>([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [error, setError] = useState("");
@@ -308,7 +310,9 @@ function ActivityEditor({
   }, [projectId, available, editable]);
   const dirty =
     detail !== null &&
-    (description !== detail.draft.description || spec !== pretty(detail.draft.spec));
+    (description !== detail.draft.description ||
+      spec !== pretty(detail.draft.spec) ||
+      media !== pretty(detail.draft.mediaPlan?.manifest));
   state.current = { dirty, busy, revision: detail?.draft.contentRevision ?? "", available };
   useLayoutEffect(() => {
     onDirty(dirty);
@@ -324,6 +328,7 @@ function ActivityEditor({
     setDetail(value);
     setDescription(value.draft.description);
     setSpec(pretty(value.draft.spec));
+    setMedia(pretty(value.draft.mediaPlan?.manifest));
     setChanged(false);
   }
   useEffect(() => {
@@ -372,16 +377,20 @@ function ActivityEditor({
       if (alive.current) setBusy(false);
     }
   }
-  async function save(kind: "description" | "spec") {
+  async function save(kind: "description" | "spec" | "media") {
     if (!detail) return;
     await action(async () => {
       const draft = await apiFetch<ActivityDraft>(
-        `${endpoint}/${kind === "description" ? "description" : "apply-generated-spec"}`,
+        `${endpoint}/${kind === "description" ? "description" : kind === "media" ? "media" : "apply-generated-spec"}`,
         {
-          method: kind === "description" ? "PATCH" : "POST",
+          method: kind === "description" ? "PATCH" : kind === "media" ? "PUT" : "POST",
           body: {
             expectedRevision: detail.draft.contentRevision,
-            ...(kind === "description" ? { description } : { spec: JSON.parse(spec) }),
+            ...(kind === "description"
+              ? { description }
+              : kind === "media"
+                ? { manifest: JSON.parse(media) }
+                : { spec: JSON.parse(spec) }),
           },
         },
       );
@@ -392,6 +401,7 @@ function ActivityEditor({
         draft,
       });
       if (kind === "spec") setSpec(pretty(draft.spec));
+      if (kind === "media") setMedia(pretty(draft.mediaPlan?.manifest));
       setNotice(S.activities.saved);
       await onSaved();
     });
@@ -576,6 +586,72 @@ function ActivityEditor({
           </Button>
         )}
       </div>
+      <section className="space-y-3">
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          {S.activities.mediaTitle}
+          <InfoPopover label={S.activities.mediaTitle}>{S.activities.mediaHelp}</InfoPopover>
+        </h3>
+        {editable && (
+          <Button
+            size="sm"
+            disabled={
+              busy || running || dirty || detail.draft.status !== "valid" || !detail.draft.spec
+            }
+            onClick={() =>
+              void action(async () => {
+                const draft = await apiFetch<ActivityDraft>(`${endpoint}/plan-media`, {
+                  method: "POST",
+                  body: { expectedRevision: detail.draft.contentRevision },
+                });
+                if (alive.current) {
+                  accept({ ...detail, draft });
+                  setNotice(S.activities.saved);
+                }
+              })
+            }
+          >
+            {detail.draft.mediaPlan ? S.activities.rebuildMedia : S.activities.planMedia}
+          </Button>
+        )}
+        {detail.draft.mediaPlan && (
+          <>
+            <ul className="space-y-1 text-xs">
+              {Object.entries(detail.draft.mediaPlan.manifest.assets).map(([language, assets]) => (
+                <li key={language}>
+                  {language}:{" "}
+                  {S.activities.mediaCounts(
+                    assets.length,
+                    assets.filter((asset) => !!asset.path).length,
+                  )}
+                </li>
+              ))}
+            </ul>
+            <Textarea
+              size="sm"
+              label={S.activities.mediaManifest}
+              rows={12}
+              className="font-mono"
+              value={media}
+              onChange={(event) => setMedia(event.target.value)}
+              spellCheck={false}
+              disabled={available && (!editable || busy)}
+              readOnly={!available}
+              hint={S.activities.mediaPathHint}
+            />
+            {editable && (
+              <Button
+                size="sm"
+                disabled={
+                  busy || !media.trim() || media === pretty(detail.draft.mediaPlan.manifest)
+                }
+                onClick={() => void save("media")}
+              >
+                {S.activities.saveMedia}
+              </Button>
+            )}
+          </>
+        )}
+      </section>
       {available && (
         <section className="space-y-3">
           <h3 className="text-sm font-semibold">{S.activities.runs}</h3>

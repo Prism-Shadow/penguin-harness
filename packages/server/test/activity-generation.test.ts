@@ -62,6 +62,9 @@ describe("activity generation through Harness sessions", () => {
           return;
         }
         if (moduleOutput) {
+          const input = JSON.parse(
+            await fs.readFile(path.join(row.workspace!, "input.json"), "utf8"),
+          ) as ActivityDetail;
           const files: Record<string, string> = {
             "preview/index.html":
               "<!doctype html><title>WAF</title><script src='./runtime.js'></script>",
@@ -77,6 +80,12 @@ describe("activity generation through Harness sessions", () => {
             path.join(row.workspace!, "module-result.json"),
             JSON.stringify({
               files: [
+                ...(input.draft.mediaPlan
+                  ? [
+                      `module/generated/${input.productCode}/refs/${input.productCode}-${input.refNum}/spec/asset_manifest.json`,
+                      `module/configurations/${input.productCode}-${input.refNum}.json`,
+                    ]
+                  : []),
                 "module/package.json",
                 "module/definition.json",
                 "module/src/index.ts",
@@ -165,12 +174,23 @@ describe("activity generation through Harness sessions", () => {
       endpoint,
       service,
       start,
-      startModule: async () => {
+      startModule: async (withMedia = false) => {
         const current = (await (await client.get(endpoint)).json()) as ActivityDetail;
         expect(
           (
             await client.post(`${endpoint}/apply-generated-spec`, {
-              spec: activitySpec,
+              spec: withMedia
+                ? {
+                    ...activitySpec,
+                    scenes: [
+                      {
+                        id: "intro",
+                        description: "Look",
+                        media: { images: [{ key: "cat", description: "A cat" }] },
+                      },
+                    ],
+                  }
+                : activitySpec,
               expectedRevision: current.draft.contentRevision,
             })
           ).status,
@@ -179,6 +199,25 @@ describe("activity generation through Harness sessions", () => {
         for (const name of ["framework/src", "modules", "media"])
           await fs.mkdir(path.join(root, name), { recursive: true });
         await fs.writeFile(path.join(root, "framework/package.json"), "{}");
+        if (withMedia) {
+          const saved = (await (await client.get(endpoint)).json()) as ActivityDetail;
+          const planned = (await (
+            await client.post(`${endpoint}/plan-media`, {
+              expectedRevision: saved.draft.contentRevision,
+            })
+          ).json()) as ActivityDraft;
+          const manifest = planned.mediaPlan!.manifest;
+          manifest.assets["en-US"]![0]!.path = "media/cat.png";
+          expect(
+            (
+              await client.put(`${endpoint}/media`, {
+                expectedRevision: planned.contentRevision,
+                manifest,
+              })
+            ).status,
+          ).toBe(200);
+          await fs.writeFile(path.join(root, "media/cat.png"), "cat fixture");
+        }
         return start(root);
       },
       finish,
@@ -211,6 +250,58 @@ describe("activity generation through Harness sessions", () => {
     const detail = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
     expect(detail.draft.contentRevision).toBe(run.inputRevision);
     expect(detail.draft.spec).toEqual(activitySpec);
+  });
+  it("collects approved media artifacts and rejects a model that changes their bindings", async () => {
+    const f = await fixture(true);
+    const run = await f.startModule(true);
+    const result = await f.finish(run);
+    expect(result.status).toBe("succeeded");
+    expect(JSON.parse(result.candidate!).files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "module/generated/p/refs/p-1/spec/asset_manifest.json" }),
+      ]),
+    );
+    const next = await f.startModule(true);
+    const session = f.t.deps.sessionsRepo.findById(next.sessionId!)!;
+    await fs.writeFile(
+      path.join(session.workspace!, "module/configurations/p-1.json"),
+      JSON.stringify({ p: { "en-US": { cat: "{{MEDIA}}/wrong.png" } } }),
+    );
+    const rejected = await f.finish(next);
+    expect(rejected.status).toBe("failed");
+    expect(rejected.error).toContain("approved media configuration");
+  });
+  it("detects media edits made while assembly artifacts are being verified", async () => {
+    const f = await fixture(true);
+    const run = await f.startModule(true);
+    const open = fs.open.bind(fs);
+    let reads = 0;
+    const spy = vi.spyOn(fs, "open").mockImplementation(async (...args) => {
+      if (
+        String(args[0]).replaceAll("\\", "/").endsWith("module/configurations/p-1.json") &&
+        ++reads === 2
+      ) {
+        const current = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+        const manifest = current.draft.mediaPlan!.manifest;
+        manifest.assets["en-US"]![0]!.description = "Reviewed during collection";
+        expect(
+          (
+            await f.client.put(`${f.endpoint}/media`, {
+              manifest,
+              expectedRevision: current.draft.contentRevision,
+            })
+          ).status,
+        ).toBe(200);
+      }
+      return open(...args);
+    });
+    try {
+      const result = await f.finish(run);
+      expect(reads).toBe(2);
+      expect(result.status).toBe("conflict");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("keeps module output as a conflict when the input draft changes", async () => {
