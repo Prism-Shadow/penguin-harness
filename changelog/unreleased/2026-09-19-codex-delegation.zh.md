@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** feature
 - **Scope:** `skills`, `core`, `cli`, `desktop`
+- **PR:** [#8](https://github.com/nicolaepocroianu/penguin-harness/pull/8)
 
 [English](2026-09-19-codex-delegation.md)
 
