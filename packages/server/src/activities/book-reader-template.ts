@@ -138,7 +138,7 @@ export class BookReaderModel {
     }
     this.delayToken = null;
     this.state = 'ready';
-    if (firstVisit && this.cues(scene).length && (this.mode === 'readAlong' || !this.isStory(scene))) {
+    if (!this.activityComplete && firstVisit && this.cues(scene).length && (this.mode === 'readAlong' || !this.isStory(scene))) {
       return this.result('autoplay-requested');
     }
     if (this.isLastPageWithoutAudio(scene) && this.mode === 'readAlong') {
@@ -166,6 +166,7 @@ export class BookReaderModel {
     if (index < 0 || index >= this.scenes.length) return this.result('boundary');
     if (this.navigationLocked || this.state === 'readingDelay') return this.result('navigation-locked');
     const current = this.currentScene();
+    if (direction === 'next' && !this.activityComplete && current && this.cues(current).length > 0 && !this.completedNarration.has(current.id)) return this.result('narration-required');
     if (direction === 'next' && this.mode === 'decodable' && !this.activityComplete && current && this.isStory(current) && (!this.delayed.has(current.id) || (this.cues(current).length > 0 && !this.completedNarration.has(current.id)))) return this.result('decodable-reading-gate');
     return this.preparePage(index, false);
   }

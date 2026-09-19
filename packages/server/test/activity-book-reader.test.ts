@@ -194,7 +194,7 @@ describe("generated book reader template", () => {
     const reader = new Reader([cover(), story("page-1"), cover()], "readAlong");
     expect(reader.directStart(2).event).toBe("activity-completed");
     expect(reader.snapshot.activityComplete).toBe(true);
-    expect(reader.previous().event).toBe("autoplay-requested");
+    expect(reader.previous().event).toBe("page-ready");
     expect(reader.snapshot.currentPageId).toBe("page-1");
     expect(reader.next().event).toBe("page-ready");
     expect(reader.snapshot.activityComplete).toBe(true);
@@ -371,5 +371,34 @@ describe("generated book reader template", () => {
     const narration = reader.startNarration();
     reader.finishCue(narration.token!, true, 0);
     expect(reader.next().delayMs).toBe(10000);
+  });
+
+  it.each(["readAlong", "decodable"] as const)(
+    "requires narrated cover completion before Next in %s",
+    async (mode) => {
+      const Reader = await readerClass();
+      const narratedCover = { ...story("cover"), role: "cover" as const };
+      const reader = new Reader([narratedCover, story("story")], mode);
+      reader.initialize();
+      expect(reader.next().event).toBe("narration-required");
+      const narration = reader.startNarration();
+      reader.pauseNarration();
+      expect(reader.next().event).toBe("narration-required");
+      reader.resumeNarration();
+      reader.finishCue(narration.token!, true, 0);
+      expect(reader.next().snapshot.currentPageId).toBe("story");
+    },
+  );
+
+  it("keeps read-along Next gated after failed narration until a successful replay", async () => {
+    const Reader = await readerClass();
+    const reader = new Reader([story("one"), story("two")], "readAlong");
+    reader.initialize();
+    const failed = reader.startNarration();
+    reader.finishCue(failed.token!, false, 0);
+    expect(reader.next().event).toBe("narration-required");
+    const replay = reader.startNarration();
+    reader.finishCue(replay.token!, true, 0);
+    expect(reader.next().event).toBe("autoplay-requested");
   });
 });
