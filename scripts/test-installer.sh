@@ -297,6 +297,23 @@ HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$OFFLINE_INSTALL" PATH="$STUB_BIN:$PATH" 
 [ "$("$OFFLINE_INSTALL/bin/penguin" --version)" = "fixture-old" ] \
   || fail_test "offline install did not produce a working command"
 
+# A second installation beside the first leaves `penguin` with the first: with
+# PENGUIN_LINK_COMMAND=0 the ~/.local/bin symlink is not repointed.
+SECOND_INSTALL="$WORK_DIR/offline-second-install"
+HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$SECOND_INSTALL" PENGUIN_LINK_COMMAND=0 PATH="$STUB_BIN:$PATH" \
+  sh "$OFFLINE_DIR/install.sh" >/dev/null \
+  || fail_test "second install with PENGUIN_LINK_COMMAND=0 failed"
+[ "$("$SECOND_INSTALL/bin/penguin" --version)" = "fixture-old" ] \
+  || fail_test "second install did not produce a working command"
+[ "$(readlink "$TEST_HOME/.local/bin/penguin")" = "$OFFLINE_INSTALL/bin/penguin" ] \
+  || fail_test "PENGUIN_LINK_COMMAND=0 repointed the penguin symlink at the second installation"
+set +e
+HOME="$TEST_HOME" PENGUIN_INSTALL_DIR="$SECOND_INSTALL" PENGUIN_LINK_COMMAND=maybe PATH="$STUB_BIN:$PATH" \
+  sh "$OFFLINE_DIR/install.sh" >/dev/null 2>&1
+status=$?
+set -e
+[ "$status" -ne 0 ] || fail_test "an invalid PENGUIN_LINK_COMMAND was accepted"
+
 # The stamped installer inside a released bundle must still prefer its sibling payload and
 # never resolve metadata or download an online asset.
 STAMPED_OFFLINE_DIR="$WORK_DIR/offline-stamped"

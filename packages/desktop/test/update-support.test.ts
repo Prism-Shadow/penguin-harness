@@ -4,17 +4,23 @@ import { feedUrlOverride, updateSourceConfig, updateSupport } from "../src/updat
 describe("updateSupport", () => {
   it("supports packaged macOS and Windows builds", () => {
     for (const platform of ["darwin", "win32"] as const) {
-      expect(updateSupport({ isPackaged: true, platform, env: {} })).toEqual({ supported: true });
+      expect(updateSupport({ isPackaged: true, profile: "release", platform, env: {} })).toEqual({
+        supported: true,
+      });
     }
   });
 
   it("supports Linux only when running as an AppImage", () => {
     const env = { APPIMAGE: "/opt/PenguinHarness.AppImage" };
-    expect(updateSupport({ isPackaged: true, platform: "linux", env })).toEqual({
-      supported: true,
-    });
+    expect(updateSupport({ isPackaged: true, profile: "release", platform: "linux", env })).toEqual(
+      {
+        supported: true,
+      },
+    );
     // A deb install has no APPIMAGE: updating around dpkg would desync the two.
-    expect(updateSupport({ isPackaged: true, platform: "linux", env: {} })).toEqual({
+    expect(
+      updateSupport({ isPackaged: true, profile: "release", platform: "linux", env: {} }),
+    ).toEqual({
       supported: false,
       reason: "linux-not-appimage",
     });
@@ -22,8 +28,22 @@ describe("updateSupport", () => {
 
   it("never updates a dev run, whatever the platform", () => {
     expect(
-      updateSupport({ isPackaged: false, platform: "darwin", env: { APPIMAGE: "/x" } }),
+      updateSupport({
+        isPackaged: false,
+        profile: "dev",
+        platform: "darwin",
+        env: { APPIMAGE: "/x" },
+      }),
     ).toEqual({ supported: false, reason: "dev" });
+  });
+
+  it("never updates a packaged build on the dev profile: the installation is the release instance's", () => {
+    for (const platform of ["darwin", "win32"] as const) {
+      expect(updateSupport({ isPackaged: true, profile: "dev", platform, env: {} })).toEqual({
+        supported: false,
+        reason: "dev",
+      });
+    }
   });
 });
 
