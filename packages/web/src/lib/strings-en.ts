@@ -2036,7 +2036,7 @@ When done, open index.html in a browser and self-test once.`,
           "or the company is not listed, say so rather than inventing a quote.",
       },
       missionControl: {
-        label: "Mission control for your agents",
+        label: "Build a custom workflow UI: mission control",
         desc: "A workflow tab beside the chat: dispatch a task to several agents at once and watch every Session's live status",
         prompt:
           "Build yourself a workflow: a mission-control tab beside this chat. I type a task and pick " +
