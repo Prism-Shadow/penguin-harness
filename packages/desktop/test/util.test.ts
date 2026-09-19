@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  APP_WINDOW_OPTIONS,
   appOriginFor,
   classifyWindowOpen,
   desktopLoginUrl,
   hidesOnClose,
   isAppUrl,
-  isAuthorizationBridgeUrl,
   isExternalScheme,
   isLocalSurfaceUrl,
   parsePortFile,
@@ -145,20 +145,47 @@ describe("classifyWindowOpen", () => {
     expect(classifyWindowOpen("file:///etc/passwd", null)).toBe("deny");
   });
 
-  it("refuses the Penguin Go authorization bridge, which only the main window may open", () => {
-    // The main window's handler allows the bridge before it classifies anything. Every window
-    // shares this classification, so a preview page asking for about:blank gets no window.
-    expect(isAuthorizationBridgeUrl("about:blank")).toBe(true);
-    expect(classifyWindowOpen("about:blank", origin)).toBe("deny");
+  it("refuses a blank window from every window, the main window included", () => {
+    // `window.open()` with no URL, from HTML previewed in the main window's Files panel: its
+    // iframe allows popups, and the handler cannot tell that frame from the App. A blank window
+    // inherits the opener's origin, so an allowed one would be a hidden window the preview could
+    // script for as long as it liked. This classification is the whole rule for the main window
+    // too (main-window-open.test.ts pins that it has no exception of its own); the Penguin Go
+    // authorization URL comes here as a regular external request instead.
+    for (const url of ["about:blank", "about:blank#other", "about:srcdoc"]) {
+      expect(classifyWindowOpen(url, origin), url).toBe("deny");
+    }
+    expect(classifyWindowOpen("https://platform.example/authorize?flow=f-1", origin)).toBe(
+      "external",
+    );
   });
 });
 
-describe("isAuthorizationBridgeUrl", () => {
-  it("accepts only the inert blank window used while authorization starts", () => {
-    expect(isAuthorizationBridgeUrl("about:blank")).toBe(true);
-    expect(isAuthorizationBridgeUrl("about:blank#other")).toBe(false);
-    expect(isAuthorizationBridgeUrl("about:srcdoc")).toBe(false);
-    expect(isAuthorizationBridgeUrl("https://example.com")).toBe(false);
+describe("APP_WINDOW_OPTIONS", () => {
+  it("pins every feature a page could use to hide the window it is allowed to open", () => {
+    // Electron spreads the page's `window.open` feature string under the override, so a key
+    // absent here is one the page decides: `show=no,skipTaskbar=yes` on a /preview/ URL was a
+    // hidden, same-origin window — the blank-window gap by another route.
+    expect(APP_WINDOW_OPTIONS).toMatchObject({
+      show: true,
+      skipTaskbar: false,
+      opacity: 1,
+      transparent: false,
+      focusable: true,
+      hiddenInMissionControl: false,
+      enableLargerThanScreen: false,
+    });
+  });
+
+  it("restates the size limits, so a page cannot shrink the window to a point", () => {
+    // `maxWidth=1,maxHeight=1` would otherwise clamp the 1100×800 the override asks for.
+    expect(APP_WINDOW_OPTIONS.minWidth).toBeGreaterThan(0);
+    expect(APP_WINDOW_OPTIONS.minHeight).toBeGreaterThan(0);
+    expect(APP_WINDOW_OPTIONS.width).toBeGreaterThanOrEqual(APP_WINDOW_OPTIONS.minWidth);
+    expect(APP_WINDOW_OPTIONS.height).toBeGreaterThanOrEqual(APP_WINDOW_OPTIONS.minHeight);
+    // 0 is Electron's "no maximum" — the default a page's feature would have replaced.
+    expect(APP_WINDOW_OPTIONS.maxWidth).toBe(0);
+    expect(APP_WINDOW_OPTIONS.maxHeight).toBe(0);
   });
 });
 

@@ -9,6 +9,7 @@ import * as api from "../../api/endpoints";
 import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
 import { apiErrorText } from "../../lib/api-error";
+import { isElectronRenderer } from "../../lib/desktop-renderer";
 import { S } from "../../lib/strings";
 
 const POLL_MS = 3_000;
@@ -37,6 +38,12 @@ export function PlatformKeyAuthDialog({
   onClose: () => void;
   onApplied: (applied: number) => void;
 }) {
+  // A browser needs a tab opened inside the click, before the server has the URL, or its
+  // popup blocker eats the navigation. The desktop shell's window has no popup blocker and its
+  // shell refuses every blank window, so there the URL is opened once it is known and the
+  // shell hands it to the system browser. Decided by the renderer, not the session: in attach
+  // mode the shell's window holds an ordinary password session (see lib/desktop-renderer).
+  const bridge = !isElectronRenderer(navigator.userAgent);
   const [phase, setPhase] = useState<Phase>("ready");
   const [flow, setFlow] = useState<PlatformAuthStartResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -135,7 +142,7 @@ export function PlatformKeyAuthDialog({
 
     // Open synchronously from the click so browsers do not treat the eventual navigation as
     // an unsolicited popup while the server creates the one-time authorization request.
-    const authorizationTab = window.open("about:blank", "_blank");
+    const authorizationTab = bridge ? window.open("about:blank", "_blank") : null;
     if (authorizationTab !== null) authorizationTab.opener = null;
     try {
       const started = await api.startPlatformAuth(projectId);
@@ -145,6 +152,11 @@ export function PlatformKeyAuthDialog({
         return;
       }
       setFlow(started);
+      if (!bridge) {
+        window.open(started.authorizeUrl, "_blank", "noopener,noreferrer");
+        setPhase("waiting");
+        return;
+      }
       if (authorizationTab === null) {
         // Popup blockers can still intervene. Keep the created request and let the next
         // explicit click open its URL without consuming another platform start quota.

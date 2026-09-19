@@ -62,11 +62,11 @@ import {
 import { getUpdaterStatus, handleUpdaterCommand, initUpdater, onUpdaterStatus } from "./updater.js";
 import { parseUpdaterCommand, updaterStatusMessage } from "./updater-status.js";
 import {
+  APP_WINDOW_OPTIONS,
   classifyWindowOpen,
   desktopLoginUrl,
   hidesOnClose,
   isAppUrl,
-  isAuthorizationBridgeUrl,
   isExternalScheme,
   isLocalSurfaceUrl,
   MAX_SERVER_RESTARTS,
@@ -151,28 +151,11 @@ function createWindow(url: string): void {
   // (classifyWindowOpen): only the Workspace preview hand-off, a preview page and a detached
   // terminal get a window of this app; other sites go to the system browser; anything else
   // on this instance is refused, since every other app path boots a second copy of the App.
-  win.webContents.setWindowOpenHandler(({ url: target }) => {
-    // The one addition, and this window's alone: Penguin Go's authorization bridge. The Web
-    // App opens it from the Authorize click, then points it at the platform or closes it when
-    // `/start` fails. It is an implementation detail, not a second app window, so it stays
-    // hidden. It is decided here and not in openWindowFor, which every opened window shares, so
-    // HTML in a preview window cannot open hidden windows. An HTML preview in this window's own
-    // Files panel still can: its iframe allows popups, and this handler is not told which frame
-    // asked.
-    if (isAuthorizationBridgeUrl(target)) {
-      return {
-        action: "allow",
-        overrideBrowserWindowOptions: {
-          show: false,
-          webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-        },
-      };
-    }
-    return openWindowFor(target, iconPath);
-  });
-  win.webContents.on("did-create-window", (child, details) =>
-    guardOpenedWindow(child, iconPath, isAuthorizationBridgeUrl(details.url)),
-  );
+  // This window gets no exception of its own: the handler is not told which frame asked, and
+  // the Files panel previews Agent-written HTML in an iframe that allows popups, so any window
+  // allowed here is one that HTML can open too — a hidden one, it could own outright.
+  win.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
+  win.webContents.on("did-create-window", (child) => guardOpenedWindow(child, iconPath));
   win.webContents.on("will-navigate", (event, target) => {
     if (!isAppUrl(target, appOrigin)) {
       event.preventDefault();
@@ -194,14 +177,14 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
     case "window":
       return {
         action: "allow",
+        // Electron merges the page's `window.open` feature string under this override, so
+        // every key a page could use to hide the window is pinned here (APP_WINDOW_OPTIONS).
         overrideBrowserWindowOptions: {
-          width: 1100,
-          height: 800,
-          autoHideMenuBar: true,
           ...(iconPath !== null ? { icon: iconPath } : {}),
           // Same hardening as the main window: a preview is Agent-written, untrusted HTML
           // and must never get Node.
           webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+          ...APP_WINDOW_OPTIONS,
         },
       };
     case "external":
@@ -218,25 +201,23 @@ function openWindowFor(target: string, iconPath: string | null): WindowOpenHandl
  * opens: a window-open handler belongs to one window, so a window opened from a preview page
  * would otherwise open anything at all. Its navigation policy is "stay within this instance's
  * loopback surface": a child lands on the preview host after the redirect, and the main
- * window's stricter app-origin-only rule would bounce the preview itself out.
+ * window's stricter app-origin-only rule would bounce the preview itself out. A window stays
+ * open when one of its links opens externally.
  *
- * `authorizationBridge` marks the main window's hidden Penguin Go bridge. Only the main window
- * opens one, so every window further down passes false.
+ * The window is also kept where the user can see it. APP_WINDOW_OPTIONS pins what the page's
+ * feature string could hide, but a position is not an option to pin — `left`/`top` arrive as
+ * `x`/`y` — so the window is centered here instead, and the page's own `moveTo`/`resizeTo`,
+ * which Electron would otherwise apply, is refused: off-screen is hidden too.
  */
-function guardOpenedWindow(
-  child: BrowserWindow,
-  iconPath: string | null,
-  authorizationBridge: boolean,
-): void {
+function guardOpenedWindow(child: BrowserWindow, iconPath: string | null): void {
+  child.center();
+  child.webContents.on("content-bounds-updated", (event) => event.preventDefault());
   child.webContents.setWindowOpenHandler(({ url: target }) => openWindowFor(target, iconPath));
-  child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath, false));
+  child.webContents.on("did-create-window", (next) => guardOpenedWindow(next, iconPath));
   child.webContents.on("will-navigate", (event, target) => {
     if (!isLocalSurfaceUrl(target, appOrigin)) {
       event.preventDefault();
       openInSystem(target);
-      // A preview window stays open when one of its links opens externally. The hidden
-      // authorization bridge has completed its only job and must not linger.
-      if (authorizationBridge) child.close();
     }
   });
 }
