@@ -322,6 +322,9 @@ CREATE TABLE IF NOT EXISTS activity_module_runs (
 CREATE TABLE IF NOT EXISTS activity_audio_runs (
   run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS activity_image_runs (
+  run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS activity_run_candidates (
 run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE,
 candidate TEXT NOT NULL

@@ -26,11 +26,23 @@ export const en: Strings = {
     acceptSpeech: "Accept this audio",
     olderSpeech:
       "Generated from an older draft. Generate again to accept against the current draft.",
+    imageDescription: "Image description",
+    imageDescriptionHint: "1–5000 characters. Save the description before generating an image.",
+    acceptedImage: "Accepted image",
+    imageHelp:
+      "Images use Gemini through the selected Agent's normal Session and tool approvals. Add GEMINI_API_KEY to that Agent's Vault. Preview a candidate before accepting it; regeneration keeps your accepted image.",
+    generateImage: "Generate image",
+    regenerateImage: "Regenerate image",
+    imageCandidates: "Image candidates",
+    acceptImage: "Accept this image",
+    olderImage:
+      "Generated from an older draft. Generate again to accept against the current draft.",
     noScenes: "Save or generate a specification to review its scenes.",
     sceneReview: "Scenes",
     advancedSpec: "Advanced: specification JSON",
     advancedMedia: "Advanced: asset manifest JSON",
     audioRun: "Speech",
+    imageRun: "Image",
     speechReady: "Ready to review",
     speechHelp:
       "Speech uses Gemini TTS through the selected Agent’s normal Session and tool approvals. Add GEMINI_API_KEY to that Agent’s Vault. Listen to a candidate before accepting it; regeneration keeps your accepted audio.",

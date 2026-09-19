@@ -13,6 +13,7 @@ import {
 import { HttpError } from "../http/errors.js";
 import { readArtifactBytes } from "./artifact.js";
 import { AUDIO_MAX_BYTES, inspectWave } from "./audio.js";
+import { GENERATED_IMAGE_MAX_BYTES, inspectPng } from "./generated-image.js";
 
 /** Loom's WAF checkout convention; discovery only walks ancestors, never the disk. */
 export async function findWafRoot(
@@ -221,7 +222,7 @@ export async function prepareModule(
   for (const reference of references) {
     const generated = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
       .flat()
-      .some((asset) => asset.path === reference && asset.generatedAudio);
+      .some((asset) => asset.path === reference && (asset.generatedAudio || asset.generatedImage));
     let current = generated ? workspace : wafRoot;
     const parts = reference.split("/");
     for (let index = 0; index < parts.length; index++) {
@@ -298,15 +299,26 @@ export async function verifyMediaArtifacts(
         throw new Error("Assembly changed an approved media configuration binding.");
   }
   for (const asset of Object.values(activity.draft.mediaPlan.manifest.assets).flat()) {
-    if (!asset.generatedAudio) continue;
+    if (!asset.generatedAudio && !asset.generatedImage) continue;
     const file = path.join(workspace, "preview", asset.path!);
     for (const directory of ["preview", "preview/media", "preview/media/generated"]) {
       const stat = await fs.lstat(path.join(workspace, directory));
       if (!stat.isDirectory() || stat.isSymbolicLink())
         throw new Error("Linked preview media directories are not allowed.");
     }
-    const bytes = await readArtifactBytes(file, AUDIO_MAX_BYTES);
-    if (inspectWave(bytes, asset.generatedAudio.runId).sha256 !== asset.generatedAudio.sha256)
+    const bytes = await readArtifactBytes(
+      file,
+      asset.generatedImage ? GENERATED_IMAGE_MAX_BYTES : AUDIO_MAX_BYTES,
+    );
+    if (
+      asset.generatedImage &&
+      inspectPng(bytes, asset.generatedImage.runId).sha256 !== asset.generatedImage.sha256
+    )
+      throw new Error("Assembly changed the accepted image.");
+    if (
+      asset.generatedAudio &&
+      inspectWave(bytes, asset.generatedAudio.runId).sha256 !== asset.generatedAudio.sha256
+    )
       throw new Error("Assembly changed the accepted speech audio.");
   }
 }
@@ -383,9 +395,9 @@ export async function collectModule(
 
 export const modulePrompt = `Implement the saved activity specification in input.json as a real WAF HTML module.
 The module/ directory contains the native WAF scaffold. Read waf-context.json for the local framework, navbar and media checkout. Read that framework's contracts before implementing.
-If input.json contains draft.mediaPlan, its manifest and language-specific configuration are approved inputs. Preserve their keys, scripts and paths; do not invent replacements. Paths are relative to wafRoot except assets carrying generatedAudio: their approved bytes have already been copied into this Session's media/generated directory. Verify bound files, copy only required assets into preview using normal Harness tools and approvals, and resolve {{MEDIA}} to the preview's relative media base. Assets without paths remain unbound: report them explicitly and do not claim complete media. A binding is a reference, not proof of file availability.
+If input.json contains draft.mediaPlan, its manifest and language-specific configuration are approved inputs. Preserve their keys, scripts and paths; do not invent replacements. Paths are relative to wafRoot except assets carrying generatedAudio or generatedImage: their approved bytes have already been copied into this Session's media/generated directory. Verify bound files, copy only required assets into preview using normal Harness tools and approvals, and resolve {{MEDIA}} to the preview's relative media base. Assets without paths remain unbound: report them explicitly and do not claim complete media. A binding is a reference, not proof of file availability.
 Work only in this Session workspace. Treat the shared WAF checkout as read-only. Do not modify shared modules or run Loom's pipeline/server. Do not delegate.
-Copy each accepted generatedAudio file unchanged from media/generated to preview/media/generated, and resolve its configuration against that preview/media base. The collector verifies the accepted audio hashes. Do not include binary files in module-result.json's text file list.
+Copy each accepted generatedAudio or generatedImage file unchanged from media/generated to preview/media/generated, and resolve its configuration against that preview/media base. The collector verifies the accepted media hashes. Do not include binary files in module-result.json's text file list.
 Implement the actual learning interactions and feedback in module/src, preserving waf-state-machine, WAF lifecycle, Interactable input and cleanup. Complete the ref configuration, asset manifest and state machine for the input productCode/refNum. Use existing media when available; report missing media explicitly, never invent successful generation.
 Use normal Harness approvals for installing dependencies and running commands. Run module typecheck and buildDebug; record real command output in module/build.log. Do not publish or deploy packages.
 Produce preview/index.html and preview/runtime.js with bundled local subresources using the actual WAF framework. It must work as static files under an arbitrary URL prefix, with relative resource URLs. Bundle the framework runtime and navbar as needed. Do not replace WAF with a standalone imitation or rely on a separately running Loom server. Keep preview data local; do not contact production student/telemetry APIs.
