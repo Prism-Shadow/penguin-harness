@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** fix
 - **Scope:** `model-catalog`
+- **PR:** [#13](https://github.com/nicolaepocroianu/penguin-harness/pull/13)
 
 The Z.AI (GLM) group's **Manage keys** link now opens the global platform's key console,
 `https://z.ai/manage-apikey/apikey-list` — the platform the group's presets call: AgentHub's GLM
