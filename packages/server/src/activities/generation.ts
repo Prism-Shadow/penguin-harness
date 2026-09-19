@@ -10,6 +10,7 @@ import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 import { HttpError } from "../http/errors.js";
 import { ActivityLocks, atomicJson } from "./service.js";
+import { findWafRoot, prepareModule, collectModule, modulePrompt } from "./waf-module.js";
 import {
   newId,
   validateActivitySpec,
@@ -91,8 +92,13 @@ export class ActivityGenerationService implements ActivityGeneration {
   private workspace(run: ActivityRun): string {
     return path.join(this.config.root, "activity-runs", run.runId);
   }
+  private kind(runId: string): ActivityRun["kind"] {
+    return this.db.prepare("SELECT 1 FROM activity_module_runs WHERE run_id = ?").get(runId)
+      ? "module"
+      : "spec";
+  }
   private save(run: ActivityRun) {
-    const { candidate, ...metadata } = run;
+    const { candidate, kind: _kind, ...metadata } = run;
     this.db.exec("BEGIN");
     try {
       const hasCandidate =
@@ -118,7 +124,10 @@ export class ActivityGenerationService implements ActivityGeneration {
       this.db.prepare("SELECT record_json FROM activity_runs WHERE status = 'running'").all() as {
         record_json: string;
       }[]
-    ).map((row) => ({ ...JSON.parse(row.record_json), candidate: null }) as ActivityRun);
+    ).map((row) => {
+      const metadata = JSON.parse(row.record_json) as ActivityRunSummary;
+      return { ...metadata, kind: this.kind(metadata.runId), candidate: null };
+    });
   }
   private finish(run: ActivityRun, status: ActivityRun["status"], error: string | null = null) {
     run.status = status;
@@ -142,7 +151,10 @@ export class ActivityGenerationService implements ActivityGeneration {
           "SELECT record_json FROM activity_runs WHERE project_id = ? AND activity_id = ? ORDER BY created_at DESC, run_id DESC LIMIT 50",
         )
         .all(projectId, activityId) as { record_json: string }[]
-    ).map((row) => JSON.parse(row.record_json) as ActivityRunSummary);
+    ).map((row) => {
+      const metadata = JSON.parse(row.record_json) as ActivityRunSummary;
+      return { ...metadata, kind: this.kind(metadata.runId) };
+    });
   }
 
   private async getRun(projectId: string, activityId: string, runId: string): Promise<ActivityRun> {
@@ -157,7 +169,7 @@ export class ActivityGenerationService implements ActivityGeneration {
       .prepare("SELECT candidate FROM activity_run_candidates WHERE run_id = ?")
       .get(runId) as { candidate: string } | undefined;
     const { hasCandidate: _, ...metadata } = JSON.parse(row.record_json) as ActivityRunSummary;
-    return { ...metadata, candidate: payload?.candidate ?? null };
+    return { ...metadata, kind: this.kind(runId), candidate: payload?.candidate ?? null };
   }
 
   async candidate(projectId: string, activityId: string, runId: string): Promise<string | null> {
@@ -169,6 +181,7 @@ export class ActivityGenerationService implements ActivityGeneration {
     activityId: string,
     agentId: string,
     expectedRevision: string,
+    module?: { wafRoot?: string },
   ): Promise<ActivityRun> {
     return this.track(
       this.projectWork.run(projectId, () =>
@@ -187,6 +200,22 @@ export class ActivityGenerationService implements ActivityGeneration {
               "description_required",
               "Add a description before generating.",
             );
+          let wafRoot: string | null = null;
+          if (module) {
+            if (!activity.draft.spec || activity.draft.status !== "valid")
+              throw new HttpError(
+                400,
+                "module_spec_required",
+                "Save a valid specification before assembling a module.",
+              );
+            wafRoot = await findWafRoot(process.cwd(), module.wafRoot ?? process.env.WAF_ROOT_DIR);
+            if (!wafRoot)
+              throw new HttpError(
+                400,
+                "waf_checkout_missing",
+                "WAF checkout not found. Select a root containing framework, modules and media.",
+              );
+          }
           await this.agents.requireExists(projectId, agentId);
           if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
           if (this.running().some((run) => run.activityId === activityId))
@@ -196,6 +225,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               "This activity already has a running generation.",
             );
           const run: ActivityRun = {
+            kind: module ? "module" : "spec",
             runId: newId("run"),
             activityId,
             projectId,
@@ -209,19 +239,30 @@ export class ActivityGenerationService implements ActivityGeneration {
             error: null,
             candidate: null,
           };
-          const { candidate: _candidate, ...metadata } = run;
-          this.db
-            .prepare(
-              "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, record_json) VALUES (?, ?, ?, ?, ?, ?)",
-            )
-            .run(
-              run.runId,
-              projectId,
-              activityId,
-              run.status,
-              run.createdAt,
-              JSON.stringify({ ...metadata, hasCandidate: false }),
-            );
+          const { candidate: _candidate, kind: _kind, ...metadata } = run;
+          this.db.exec("BEGIN");
+          try {
+            this.db
+              .prepare(
+                "INSERT INTO activity_runs (run_id, project_id, activity_id, status, created_at, record_json) VALUES (?, ?, ?, ?, ?, ?)",
+              )
+              .run(
+                run.runId,
+                projectId,
+                activityId,
+                run.status,
+                run.createdAt,
+                JSON.stringify({ ...metadata, hasCandidate: false }),
+              );
+            if (module)
+              this.db
+                .prepare("INSERT INTO activity_module_runs (run_id) VALUES (?)")
+                .run(run.runId);
+            this.db.exec("COMMIT");
+          } catch (error) {
+            this.db.exec("ROLLBACK");
+            throw error;
+          }
           try {
             const workspace = this.workspace(run);
             await fs.mkdir(workspace, { recursive: true });
@@ -231,6 +272,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               activity.draft.description,
               "utf8",
             );
+            if (wafRoot) await prepareModule(workspace, activity, wafRoot);
             if (this.stopped) {
               this.finish(run, "interrupted", "Server stopped before generation started.");
               return run;
@@ -269,9 +311,13 @@ export class ActivityGenerationService implements ActivityGeneration {
               }
             });
             this.observers.set(run.runId, observer);
-            await this.sessions.startTask(session.sessionId, [userText(generationPrompt)], {
-              queueIfBusy: false,
-            });
+            await this.sessions.startTask(
+              session.sessionId,
+              [userText(module ? modulePrompt : generationPrompt)],
+              {
+                queueIfBusy: false,
+              },
+            );
           } catch (error) {
             this.finish(
               run,
@@ -331,7 +377,10 @@ export class ActivityGenerationService implements ActivityGeneration {
           return;
         try {
           await this.sessions.atIdleBoundary(run.sessionId, async () => {
-            const file = path.join(this.workspace(run), "activity-spec.json");
+            const file = path.join(
+              this.workspace(run),
+              run.kind === "module" ? "module-result.json" : "activity-spec.json",
+            );
             try {
               run.candidate = await readCandidate(file);
               this.save(run);
@@ -341,6 +390,23 @@ export class ActivityGenerationService implements ActivityGeneration {
                 throw new Error(
                   observer?.error ?? "The session ended without a confirmed completed request.",
                 );
+              if (run.kind === "module") {
+                const result = await collectModule(this.workspace(run), readCandidate);
+                run.candidate = JSON.stringify(result);
+                this.save(run);
+                if (this.stopped) return;
+                await this.projectWork.run(run.projectId, async () => {
+                  const current = await this.activities.getActivity(run.projectId, run.activityId);
+                  if (current.draft.contentRevision !== run.inputRevision)
+                    throw new HttpError(
+                      409,
+                      "draft_conflict",
+                      "The specification changed during assembly.",
+                    );
+                  this.finish(run, "succeeded");
+                });
+                return;
+              }
               const spec = validateActivitySpec(JSON.parse(run.candidate));
               // Cancellation and completion share the activity lock. The authoring
               // service separately serializes this comparison against draft edits.
@@ -357,7 +423,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               const conflict = error instanceof HttpError && error.code === "draft_conflict";
               const message =
                 (error as NodeJS.ErrnoException).code === "ENOENT"
-                  ? "The session ended without activity-spec.json."
+                  ? `The session ended without ${run.kind === "module" ? "module-result.json or a required artifact" : "activity-spec.json"}.`
                   : error instanceof Error
                     ? error.message
                     : "Could not collect generation output.";
@@ -374,12 +440,11 @@ export class ActivityGenerationService implements ActivityGeneration {
 }
 
 /** Validate and read the same opened file; never reopen a task-controlled path to read it. */
-export async function readCandidate(file: string): Promise<string> {
+export async function readCandidate(file: string, maxBytes = MAX_CANDIDATE_BYTES): Promise<string> {
   const before = await fs.lstat(file);
   const invalid = () =>
-    new Error("The output must be an unchanged regular JSON file no larger than 2 MiB.");
-  if (!before.isFile() || before.isSymbolicLink() || before.size > MAX_CANDIDATE_BYTES)
-    throw invalid();
+    new Error(`The output must be an unchanged regular file no larger than ${maxBytes} bytes.`);
+  if (!before.isFile() || before.isSymbolicLink() || before.size > maxBytes) throw invalid();
   const handle = await fs.open(
     file,
     constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
@@ -397,17 +462,17 @@ export async function readCandidate(file: string): Promise<string> {
       before.ino !== opened.ino ||
       current.dev !== opened.dev ||
       current.ino !== opened.ino ||
-      opened.size > MAX_CANDIDATE_BYTES
+      opened.size > maxBytes
     )
       throw invalid();
-    const buffer = Buffer.alloc(MAX_CANDIDATE_BYTES + 1);
+    const buffer = Buffer.alloc(maxBytes + 1);
     let length = 0;
     while (length < buffer.length) {
       const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
       if (!bytesRead) break;
       length += bytesRead;
     }
-    if (length > MAX_CANDIDATE_BYTES) throw invalid();
+    if (length > maxBytes) throw invalid();
     return buffer.subarray(0, length).toString("utf8");
   } finally {
     await handle.close();

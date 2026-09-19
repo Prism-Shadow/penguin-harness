@@ -82,6 +82,7 @@ export type ActivityDetail = ActivityRecord & { draft: ActivityDraft };
 export type ActivityRunStatus =
   "running" | "succeeded" | "failed" | "conflict" | "cancelled" | "interrupted";
 export interface ActivityRun {
+  kind: "spec" | "module";
   runId: string;
   activityId: string;
   projectId: string;

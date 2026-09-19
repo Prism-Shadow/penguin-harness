@@ -14,6 +14,7 @@ export abstract class ActivityGeneration extends Interface<{
     activityId: string,
     agentId: string,
     expectedRevision: string,
+    module?: { wafRoot?: string },
   ): Promise<ActivityRun>;
   list(projectId: string, activityId: string): Promise<ActivityRunSummary[]>;
   candidate(projectId: string, activityId: string, runId: string): Promise<string | null>;

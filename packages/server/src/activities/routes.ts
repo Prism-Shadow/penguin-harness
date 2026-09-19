@@ -4,6 +4,7 @@ import { Hono as HonoApp } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
+import { findWafRoot } from "./waf-module.js";
 import {
   badRequest,
   optionalString,
@@ -42,6 +43,23 @@ export class ActivityRoutes {
         c.req.query("collectionId"),
       );
       return c.json({ collectionId: activities[0]?.collectionId ?? null, activities });
+    });
+    app.get("/module-setup", async (c) => {
+      this.access.requireProjectOwner(c.var.user.userId, requireValidId(c, "projectId"));
+      return c.json({ wafRoot: await findWafRoot() });
+    });
+    app.post("/:activityId/assemble-module", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.generation.start(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          requireString(body, "agentId", { minLen: 1, maxLen: 128 }),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+          { wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) || undefined },
+        ),
+        202,
+      );
     });
     app.post("/", async (c) => {
       const body = await readJson(c);

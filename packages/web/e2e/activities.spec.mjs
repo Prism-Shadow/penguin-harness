@@ -119,6 +119,7 @@ async function fixture(page) {
       });
     if (p === base && request.method() === "GET")
       return json({ activities: activity ? [activity] : [] });
+    if (p === `${base}/module-setup`) return json({ wafRoot: "C:/WAF checkout" });
     if (p === base && request.method() === "POST") {
       const input = request.postDataJSON();
       activity = {
@@ -189,8 +190,10 @@ async function fixture(page) {
       };
       return json(activity.draft);
     }
-    if (p === `${base}/act_test/generate-spec`) {
+    if (p === `${base}/act_test/generate-spec` || p === `${base}/act_test/assemble-module`) {
       runs.unshift({
+        kind: p.endsWith("/assemble-module") ? "module" : "spec",
+        inputRevision: activity.draft.contentRevision,
         runId: "run_test",
         activityId: activity.id,
         projectId,
@@ -280,6 +283,14 @@ async function fixture(page) {
       failCandidate = true;
     },
     complete() {
+      if (runs[0].kind === "module") {
+        runs[0] = {
+          ...runs[0],
+          status: "succeeded",
+          candidate: JSON.stringify({ previewPath: "preview/index.html", files: [] }),
+        };
+        return;
+      }
       runs[0] = { ...runs[0], status: "succeeded", candidate: JSON.stringify(spec) };
       activity.draft = {
         ...activity.draft,
@@ -319,6 +330,40 @@ async function create(page) {
     page.getByRole("button", { name: "Generate specification", exact: true }),
   ).toBeEnabled();
 }
+
+test("assembles a saved spec and links to the Harness-isolated WAF preview", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  const assemble = page.getByRole("button", { name: "Assemble WAF module", exact: true });
+  await expect(assemble).toBeDisabled();
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await expect(assemble).toBeEnabled();
+  await expect(page.getByRole("textbox", { name: /^WAF checkout/ })).toHaveValue("C:/WAF checkout");
+  const sent = page.waitForRequest((request) => request.url().endsWith("/assemble-module"));
+  await assemble.click();
+  expect((await sent).postDataJSON()).toMatchObject({
+    wafRoot: "C:/WAF checkout",
+    agentId: "default_agent",
+  });
+  await expect(page.getByText("Module assembly", { exact: true })).toBeVisible();
+  f.complete();
+  await page.reload();
+  await expect(page.getByRole("link", { name: "Open WAF preview", exact: true })).toHaveAttribute(
+    "href",
+    "/api/sessions/session_test/files/preview-redirect?path=preview%2Findex.html",
+  );
+  await page.getByText("View candidate JSON", { exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Copy candidate into editor", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("textbox", { name: "Description", exact: true }).fill("A new revision");
+  await page.getByRole("button", { name: "Save description", exact: true }).click();
+  await expect(page.getByText("Built from an earlier draft", { exact: true })).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
 
 test("create, save, generate, leave and reopen a completed specification", async ({ page }) => {
   const f = await fixture(page);

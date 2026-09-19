@@ -288,9 +288,24 @@ function ActivityEditor({
   const [busy, setBusy] = useState(false);
   const [changed, setChanged] = useState(false);
   const [agentId, setAgentId] = useState("");
+  const [wafRoot, setWafRoot] = useState("");
   const state = useRef({ dirty: false, busy: false, revision: "", available });
   const alive = useRef(true);
   const endpoint = `${basePath(projectId)}/${encodeURIComponent(activityId)}`;
+  useEffect(() => {
+    if (!available || !editable) return;
+    let cancelled = false;
+    void apiFetch<{ wafRoot: string | null }>(`${basePath(projectId)}/module-setup`)
+      .then((value) => {
+        if (!cancelled) setWafRoot(value.wafRoot ?? "");
+      })
+      .catch(() => {
+        /* An explicit path can still be supplied when discovery fails. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, available, editable]);
   const dirty =
     detail !== null &&
     (description !== detail.draft.description || spec !== pretty(detail.draft.spec));
@@ -497,6 +512,46 @@ function ActivityEditor({
           >
             {S.activities.generate}
           </Button>
+          <Input
+            size="sm"
+            label={S.activities.wafRoot}
+            value={wafRoot}
+            onChange={(event) => setWafRoot(event.target.value)}
+            disabled={busy || running}
+            hint={S.activities.wafRootHint}
+          />
+          <Button
+            size="sm"
+            disabled={
+              busy ||
+              running ||
+              dirty ||
+              !selectedAgent ||
+              detail.draft.status !== "valid" ||
+              !detail.draft.spec
+            }
+            onClick={() =>
+              void action(async () => {
+                const run = await apiFetch<ActivityRun>(`${endpoint}/assemble-module`, {
+                  method: "POST",
+                  body: {
+                    agentId: selectedAgent,
+                    expectedRevision: detail.draft.contentRevision,
+                    wafRoot: wafRoot.trim() || undefined,
+                  },
+                });
+                if (alive.current) {
+                  setRuns((previous) => [
+                    summarize(run),
+                    ...previous.filter((item) => item.runId !== run.runId),
+                  ]);
+                  setRefreshVersion((value) => value + 1);
+                }
+              })
+            }
+          >
+            {S.activities.assemble}
+          </Button>
         </div>
       )}
       <div className="space-y-2">
@@ -531,8 +586,13 @@ function ActivityEditor({
               className="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-800"
             >
               <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs">
+                  {run.kind === "module" ? S.activities.moduleRun : S.activities.specRun}
+                </span>
                 <span className={`rounded px-2 py-0.5 text-xs ${toneSurface[runTone[run.status]]}`}>
-                  {S.activities.status[run.status]}
+                  {run.kind === "module" && run.status === "succeeded"
+                    ? S.activities.moduleReady
+                    : S.activities.status[run.status]}
                 </span>
                 <time className="text-xs text-gray-500" dateTime={run.createdAt}>
                   {new Date(run.createdAt).toLocaleString()}
@@ -543,6 +603,19 @@ function ActivityEditor({
                 <p className="text-xs text-gray-500">{S.activities.runningHelp}</p>
               )}
               <div className="flex flex-wrap items-center gap-3">
+                {run.kind === "module" && run.status === "succeeded" && run.sessionId && (
+                  <a
+                    className="text-xs underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    href={`/api/sessions/${encodeURIComponent(run.sessionId)}/files/preview-redirect?path=preview%2Findex.html`}
+                  >
+                    {S.activities.previewModule}
+                  </a>
+                )}
+                {run.kind === "module" && run.inputRevision !== detail.draft.contentRevision && (
+                  <span className={`text-xs ${toneInk.attention}`}>{S.activities.olderModule}</span>
+                )}
                 {run.sessionId && (
                   <Link
                     className="text-xs underline"
@@ -577,7 +650,7 @@ function ActivityEditor({
               {run.hasCandidate && (
                 <CandidateReview
                   endpoint={`${endpoint}/runs/${encodeURIComponent(run.runId)}/candidate`}
-                  editable={editable}
+                  editable={editable && run.kind !== "module"}
                   busy={busy}
                   onUse={(candidate) => {
                     if (!dirty || window.confirm(S.activities.discard)) setSpec(candidate);
