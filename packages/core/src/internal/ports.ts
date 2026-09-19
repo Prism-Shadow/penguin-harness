@@ -19,7 +19,7 @@
  * | 7367 | `pnpm dev:docs` (Vite)             | none (static)              | `packages/docs/vite.config.ts`       |
  * | 7368 | `pnpm dev:server` (dev backend)    | `~/.penguin/dev-data`      | `packages/server/package.json` `dev` |
  * | 7369 | `pnpm penguin web` (dev CLI)       | `~/.penguin/dev-data-cli`  | the root and cli `penguin` scripts   |
- * | 7370 | a machine's dev-profile server     | `~/.penguin-dev/data` there | `DEFAULT_DEV_SERVER_PORT` below      |
+ * | 7371 | a machine's dev-profile server     | `~/.penguin-dev/data` there | `DEFAULT_DEV_SERVER_PORT` below      |
  *
  * The desktop app binds no fixed port in either form (PORT=0 with a per-instance sticky
  * preference); its release profile shares `~/.penguin/data` with the CLI by design and its
@@ -56,6 +56,7 @@ export const DEFAULT_SERVER_PORT = 7364;
  * (`packages/server/src/machines/layout.ts`). Its own number because the release-profile
  * server on that machine holds 7364, and the forward's local port must equal the remote
  * one for Workspace previews to resolve — so the two profiles cannot share a number on
- * either end.
+ * either end. Not 7370: the design repository's reading site (`site/`) serves there, on the
+ * same developer box whose forward to a machine needs this number free locally.
  */
-export const DEFAULT_DEV_SERVER_PORT = 7370;
+export const DEFAULT_DEV_SERVER_PORT = 7371;

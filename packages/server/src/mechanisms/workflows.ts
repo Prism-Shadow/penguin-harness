@@ -1,12 +1,12 @@
 /**
  * Workflows: code an Agent keeps in its own directory and the server boots as a module
- * tree of its own — the same manifests, the same interface check and the same
- * `Plugin` shape (`package.json#penguin.modules` + a default export) the platform's plugins
- * use. Two interfaces cross the boundary:
+ * tree of its own — the same manifests and the same tree check the platform's plugins go
+ * through (`package.json#penguin.modules` + the default export of `index.ts`). Two
+ * interfaces cross the boundary:
  *
  * - `WorkflowHost` is what the server PUBLISHES into every workflow tree (the workflow's
- *   manifest requires it `from: "Host"`): a way to run its own Agent, a small state
- *   document, a log line.
+ *   manifest requires it `from: "Host"`): Sessions of the Project's Agents, opened and run
+ *   the way the SDK does it, a small state document, a log line.
  * - `WorkflowMain` is what a workflow PROVIDES: a JSON request handler the server mounts
  *   under `/api/projects/:p/agents/:a/workflows/:id/api/*`, which the workflow's own UI
  *   (served from its `ui/` folder) calls.
@@ -33,22 +33,66 @@ export interface WorkflowResponse {
   body?: unknown;
 }
 
+/**
+ * One item of what `WorkflowHost.run` sends: the SDK builds these with `userText("…")`, but a
+ * workflow has no package to import that from — its types come from the harness, and so does
+ * nothing at run time. An object, so an image or a file is a new optional member later.
+ */
+export interface WorkflowInput {
+  text: string;
+}
+
 /** What a workflow provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkflowMain" }`). */
-export abstract class WorkflowMain extends Interface<{
-  handle(request: WorkflowRequest): Promise<WorkflowResponse>;
-}>() {}
+@Interface()
+export abstract class WorkflowMain {
+  abstract handle(request: WorkflowRequest): Promise<WorkflowResponse>;
+}
 
 /** What the server publishes into a workflow tree as module `Host`. */
-export abstract class WorkflowHost extends Interface<{
-  /** Sends text to this Agent: into `sessionId` when given, else into a new Session. */
-  runAgent(input: { text: string; sessionId?: string }): Promise<{ sessionId: string }>;
-  /** `idle` / `running` / … of one of this Agent's Sessions. */
-  sessionStatus(sessionId: string): string;
+@Interface()
+export abstract class WorkflowHost {
+  /** The Agents of this Project — who `createSession` can be asked to open a Session of. */
+  abstract listAgents(): { agentId: string }[];
+  /**
+   * Opens a Session of an Agent of this Project — the workflow's own Agent when `agentId`
+   * is absent. The SDK's `agent.createSession`.
+   */
+  abstract createSession(opts?: { agentId?: string }): Promise<{ sessionId: string }>;
+  /**
+   * Runs one turn in a Session of this Project, new or existing — the SDK's `session.run`.
+   * `input` is a list of items like the SDK's, each one `{ text }` today; it reaches the
+   * Agent as a message from the server, not from a person. A Session that is busy takes it as a queued follow-up
+   * (`queued: true`) instead of refusing it. Resolves once the turn has started; watch it
+   * with `sessionStatus`.
+   */
+  abstract run(
+    sessionId: string,
+    input: WorkflowInput[],
+  ): Promise<{ sessionId: string; queued: boolean }>;
+  /** `idle` / `running` / … of a Session of this Project. */
+  abstract sessionStatus(sessionId: string): string;
   /** The workflow's own document (`state.json`, kept by the server across reloads and rollbacks). */
-  getState(): unknown;
-  setState(state: unknown): Promise<void>;
-  log(message: string): void;
-}>() {}
+  abstract getState(): unknown;
+  abstract setState(state: unknown): Promise<void>;
+  abstract log(message: string): void;
+}
+
+/** How the Web App draws a contributed tab: a page of the workflow, or a renderer it carries. */
+export type WorkflowTabRenderer = { iframe: { src: string } } | { builtin: string };
+
+/**
+ * One tab beside Chat, as the workflow contributed it (`WebModule.sessionTabs`). In a
+ * manifest `renderer.iframe.src` is a path inside the workflow folder, under `ui/`; in a
+ * `WorkflowInfo` it is the URL that file is served from.
+ */
+export interface WorkflowTab {
+  id: string;
+  /** Unique within the workflow; the tab's stable name (it appears in the full-page URL). */
+  key: string;
+  title: string;
+  titleZh?: string;
+  renderer: WorkflowTabRenderer;
+}
 
 export interface WorkflowInfo {
   id: string;
@@ -56,11 +100,18 @@ export interface WorkflowInfo {
   version: string | null;
   /** Content revision of the whole folder (what history records). */
   revision: string;
-  /** Content revision of `ui/`; null when the workflow has no UI. */
+  /** Content revision of `ui/`: the cache key of the workflow's pages. Null when it has no `ui/`. */
   uiRev: string | null;
+  /** The tabs of the instance that is SERVING — the previous one's while `error` is set. */
+  tabs: WorkflowTab[];
   loadedAt: string;
   /** The boot error when the current files do not load (the previous instance, if any, keeps serving). */
   error: string | null;
+  /**
+   * What loaded but is probably not what its author meant, each with the edit that settles it
+   * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
+   */
+  hints: string[];
 }
 
 export interface WorkflowVersion {
@@ -73,29 +124,34 @@ export interface WorkflowVersion {
   files: string[];
 }
 
-export abstract class Workflows extends Interface<{
-  list(projectId: string, agentId: string): Promise<WorkflowInfo[]>;
-  reload(projectId: string, agentId: string, workflowId: string): Promise<WorkflowInfo>;
-  dispatch(
+@Interface()
+export abstract class Workflows {
+  abstract list(projectId: string, agentId: string): Promise<WorkflowInfo[]>;
+  abstract reload(projectId: string, agentId: string, workflowId: string): Promise<WorkflowInfo>;
+  abstract dispatch(
     projectId: string,
     agentId: string,
     workflowId: string,
     request: WorkflowRequest,
   ): Promise<WorkflowResponse>;
   /** Absolute path of a file under the workflow's `ui/`, or null when absent/unsafe. */
-  uiFile(
+  abstract uiFile(
     projectId: string,
     agentId: string,
     workflowId: string,
     rel: string,
   ): Promise<string | null>;
-  history(projectId: string, agentId: string, workflowId: string): Promise<WorkflowVersion[]>;
-  rollback(
+  abstract history(
+    projectId: string,
+    agentId: string,
+    workflowId: string,
+  ): Promise<WorkflowVersion[]>;
+  abstract rollback(
     projectId: string,
     agentId: string,
     workflowId: string,
     revision: string,
   ): Promise<WorkflowInfo>;
   /** Deletes the folder and its recorded versions; the instance goes with them. */
-  remove(projectId: string, agentId: string, workflowId: string): Promise<void>;
-}>() {}
+  abstract remove(projectId: string, agentId: string, workflowId: string): Promise<void>;
+}

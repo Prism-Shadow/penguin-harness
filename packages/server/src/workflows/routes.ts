@@ -6,7 +6,7 @@
  *   GET    /:id/history            recorded versions, newest first
  *   POST   /:id/rollback {revision} restore that version's files and reload
  *   DELETE /:id                    remove the folder and its recorded versions
- *   GET    /:id/ui/*               the workflow's static UI (index.html when the path is empty)
+ *   GET    /:id/ui/*               a file of the workflow's `ui/` (the pages its tabs name)
  *   *      /:id/api/*              JSON, handed to the workflow's WorkflowMain.handle
  *
  * Every route requires access to the Project; the UI and api routes are what the
@@ -155,21 +155,3 @@ export class WorkflowRoutes {
     this.routes = workflowRoutes({ access: this.access, workflows: this.workflows });
   }
 }
-
-/**
- * Tells every Agent how to give itself a workflow. Its own component, with no
- * dependencies: HostAssembly collects prompt sections before the session runtime exists,
- * and the routes above need that runtime — on one class the two would be a cycle.
- */
-@Component({
-  contributes: {
-    "HostAssembly.promptSections": [
-      {
-        id: "WorkflowsModule.prompt",
-        title: "Workflows",
-        text: 'You can give yourself a page beside the chat and code that runs on the server: a *workflow*.\nA workflow is a folder `workflows/<id>/` inside your Agent directory (next to system_config.yaml), organised like a server plugin:\n- `package.json` with `"penguin": { "modules": [ { "name": "Workflow", "requires": { "host": { "iface": "@prismshadow/penguin-server#WorkflowHost", "from": "Host" } }, "provides": { "main": "@prismshadow/penguin-server#WorkflowMain" } } ] }`\n- `index.mjs` whose default export is `{ modules: { Workflow: { create({ use }) { return { api: { main: { async handle(req) { … return { status: 200, body: … }; } } } }; } } } }` — `req` is `{ method, path, query, body }`; `use.host` offers `runAgent({ text, sessionId? })`, `sessionStatus(id)`, `getState()`, `setState(doc)`, `log(text)`.\n- `ui/index.html` (plus any assets): served as your tab in the Web App; call your own handler with `fetch("../api/<path>")` (relative to the page, which is served under `ui/`; same-origin).\nYour page is themed by the app: the Web App stamps `light`/`dark` on its root and injects `/workflow-ui.css`, which styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wf-bg`, `--wf-fg`, `--wf-muted`, `--wf-border`, `--wf-surface`, `--wf-accent`, `--wf-accent-fg` (plus the classes `wf-primary` on a button, `wf-card`, `wf-rows`, `wf-row`, `wf-muted`). Write plain markup and take every colour and font from those variables — a hardcoded colour or font will clash with the user\'s theme, light or dark.\nThe page can ask to fill the whole app (no sidebar, no chat) with `parent.postMessage({ type: \"penguin:fill-app\" }, \"*\")`; the user gets back with the command palette (Ctrl+P or Ctrl+Shift+P), so never swallow both chords. `penguin web --app <project>/<agent>/<workflow>` opens the app straight onto that page.\nThe server checks the manifests against its interface table and reloads the folder whenever a file changes; every successful load is recorded as a version, and any version can be restored (`POST …/workflows/<id>/rollback`); `DELETE …/workflows/<id>` removes the workflow and its versions. Broken edits keep the previous version serving and report the error in the workflow list.\n',
-      },
-    ],
-  },
-})
-export class WorkflowPrompt {}

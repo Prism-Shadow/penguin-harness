@@ -1031,20 +1031,15 @@ export class MachinesService {
     } else {
       remotePort = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
       say(`Starting its server on port ${remotePort}…`);
-      let started = await this.#effects.startServer(target, remotePort);
-      if (!started.ok && remotePort !== this.#layout.defaultPort) {
-        // A remembered port is a hint, not a claim: something else can own it there by now
-        // — another profile's server, most often, since a row written before profiles
-        // reached machines remembers the release port. The profile's own default is the
-        // one number nothing else is meant to hold, so it gets one try before giving up.
-        say(`Port ${remotePort} did not take; trying ${this.#layout.defaultPort}…`);
-        remotePort = this.#layout.defaultPort;
-        started = await this.#effects.startServer(target, remotePort);
-      }
+      const started = await this.#effects.startServer(target, remotePort);
       if (!started.ok) return { ok: false, step: "start its server", message: started.detail };
       // A machine mints its id when its server starts, so one that was down had none — and
-      // its port and pid are now the freshest fact about it.
-      this.#recordProbe(address, await this.#probe(address, target));
+      // its port and pid are now the freshest fact about it. The port is taken from what the
+      // machine says, not from what was asked for: the two differ when an earlier, slower
+      // start is the server that answered.
+      const after = await this.#probe(address, target);
+      this.#recordProbe(address, after);
+      if (after.state.kind === "running") remotePort = after.state.port;
     }
 
     say("Opening the connection…", "connect");
