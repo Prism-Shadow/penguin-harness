@@ -578,6 +578,26 @@ export const MIGRATIONS: readonly Migration[] = [
       db.exec("DROP TABLE activity_module_runs");
     },
   },
+  {
+    version: 14,
+    name: "activity-audio-runs",
+    // Restart prevents old collectors interpreting speech output as specification output.
+    // Maintainers retain the migration until schema versions below 14 leave support.
+    swapSafe: false,
+    up(db) {
+      db.exec(
+        "CREATE TABLE IF NOT EXISTS activity_audio_runs (run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE)",
+      );
+    },
+    down(db) {
+      const row = db.prepare("SELECT COUNT(*) AS count FROM activity_audio_runs").get() as {
+        count: number;
+      };
+      if (row.count)
+        throw new Error("Cannot remove audio run storage while speech attempts exist.");
+      db.exec("DROP TABLE activity_audio_runs");
+    },
+  },
 ];
 
 /** The highest version this build knows how to reach. */

@@ -5,6 +5,51 @@ import type { Strings } from "./strings-types";
 export const en: Strings = {
   appName: "PenguinHarness",
   activities: {
+    mediaLanguage: "Language",
+    mediaType: "Media type",
+    noMediaAssets: "No assets match this filter.",
+    assetList: "Assets",
+    boundMedia: "Bound",
+    unboundMedia: "Needs media",
+    usedInScenes: "Used in scenes",
+    noSceneUsage: "No scene references",
+    assetPath: "Media path",
+    assetPathHint: "A relative path beneath the WAF checkout, for example media/audio/welcome.wav.",
+    speechScript: "Speech script",
+    speechScriptHint: "1–5000 characters.",
+    acceptedAudio: "Accepted audio",
+    speechVoice: "Voice",
+    regenerateSpeech: "Regenerate speech",
+    generateSpeech: "Generate speech",
+    speechCandidates: "Speech candidates",
+    speechCandidate: "Speech candidate",
+    acceptSpeech: "Accept this audio",
+    olderSpeech:
+      "Generated from an older draft. Generate again to accept against the current draft.",
+    noScenes: "Save or generate a specification to review its scenes.",
+    sceneReview: "Scenes",
+    advancedSpec: "Advanced: specification JSON",
+    advancedMedia: "Advanced: asset manifest JSON",
+    audioRun: "Speech",
+    speechReady: "Ready to review",
+    speechHelp:
+      "Speech uses Gemini TTS through the selected Agent’s normal Session and tool approvals. Add GEMINI_API_KEY to that Agent’s Vault. Listen to a candidate before accepting it; regeneration keeps your accepted audio.",
+    invalidMediaEditor: "Fix or reload the manifest JSON before using the asset editor.",
+    mediaTypes: {
+      all: "All media",
+      audio: "Audio",
+      image: "Images",
+      video: "Video",
+      animation: "Animation",
+    },
+    speechStatus: {
+      running: "Generating",
+      succeeded: "Ready to review",
+      failed: "Failed",
+      conflict: "Draft changed",
+      cancelled: "Cancelled",
+      interrupted: "Interrupted",
+    },
     mediaTitle: "Media plan",
     mediaHelp:
       "Build a plan from the saved specification, then assign existing media paths. Rebuild after changing the specification; unchanged requirements keep their bindings. Planning does not generate media files.",
@@ -4293,6 +4338,14 @@ Scenarios:
         "The media plan is invalid. Check its activity identity, unique keys, language groups, scene usages and relative media paths.",
       media_stale:
         "Rebuild the media plan from the saved specification before saving bindings or assembling a module.",
+      speech_credential_missing:
+        "Add GEMINI_API_KEY to the selected Agent’s Vault before generating speech.",
+      speech_helper_missing:
+        "The speech helper is missing. Rebuild the bundled plugins and restart the server.",
+      audio_invalid:
+        "Choose a supported voice and an audio asset with a saved script of 1–5000 characters.",
+      audio_changed:
+        "This audio candidate or its requirement changed. Generate a new candidate before accepting.",
       media_missing:
         "Referenced media is missing or linked in the selected WAF checkout. Check the saved paths before retrying assembly.",
       module_spec_invalid: "Module scenes need unique safe IDs other than activity.",

@@ -1,4 +1,5 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
+import type { AudioTarget, AudioResult } from "../activities/audio.js";
 import type {
   ActivityDraft,
   ActivityRecord,
@@ -14,14 +15,46 @@ export abstract class ActivityGeneration extends Interface<{
     activityId: string,
     agentId: string,
     expectedRevision: string,
-    module?: { wafRoot?: string },
+    module?: { wafRoot?: string; audio?: { language: string; assetKey: string; voice: string } },
   ): Promise<ActivityRun>;
   list(projectId: string, activityId: string): Promise<ActivityRunSummary[]>;
   candidate(projectId: string, activityId: string, runId: string): Promise<string | null>;
   cancel(projectId: string, activityId: string, runId: string): Promise<ActivityRun>;
+  acceptAudio(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
+  audioContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array>;
 }>() {}
 
 export abstract class ActivityAuthoring extends Interface<{
+  storeAudio(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    bytes: Uint8Array,
+  ): Promise<AudioResult>;
+  readAudio(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    sha256: string,
+  ): Promise<Uint8Array>;
+  applyAudio(
+    projectId: string,
+    activityId: string,
+    target: AudioTarget,
+    result: AudioResult,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
+  prepareAudioMedia(
+    projectId: string,
+    activityId: string,
+    workspace: string,
+    expectedRevision: string,
+  ): Promise<void>;
   planMedia(
     projectId: string,
     activityId: string,

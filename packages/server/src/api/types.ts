@@ -4825,3 +4825,5 @@ export type {
   ActivityRunSummary,
   ActivityRunStatus,
 } from "../activities/domain.js";
+export type { AudioTarget, AudioResult } from "../activities/audio.js";
+export type { MediaAsset, AssetManifest } from "../activities/media.js";

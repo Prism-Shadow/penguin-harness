@@ -120,6 +120,7 @@ async function fixture(page) {
     if (p === base && request.method() === "GET")
       return json({ activities: activity ? [activity] : [] });
     if (p === `${base}/module-setup`) return json({ wafRoot: "C:/WAF checkout" });
+    if (p === `${base}/speech-setup`) return json({ voices: ["Kore", "Puck"] });
     if (p === base && request.method() === "POST") {
       const input = request.postDataJSON();
       activity = {
@@ -205,6 +206,36 @@ async function fixture(page) {
       });
       return json(runs[0], 202);
     }
+    if (p === `${base}/act_test/generate-audio`) {
+      const body = request.postDataJSON();
+      runs.unshift({
+        kind: "audio",
+        audio: {
+          language: body.language,
+          assetKey: body.assetKey,
+          voice: body.voice,
+          script: "Hello",
+        },
+        runId: `run_audio_${runs.length}`,
+        inputRevision: activity.draft.contentRevision,
+        activityId: activity.id,
+        projectId,
+        sessionId: "session_test",
+        status: "running",
+        createdAt: "2026-09-19T10:00:00Z",
+        candidate: null,
+        error: null,
+      });
+      return json(runs[0], 202);
+    }
+    if (p.endsWith("/accept-audio")) {
+      const run = runs.find((run) => p.includes(`/${run.runId}/`));
+      const asset = activity.draft.mediaPlan.manifest.assets["en-US"][0];
+      asset.path = `media/generated/${run.runId}.wav`;
+      asset.generatedAudio = { runId: run.runId, sha256: "test" };
+      activity.draft.contentRevision = String(++revision);
+      return json(activity.draft);
+    }
     if (p === `${base}/act_test/apply-generated-spec`) {
       const body = request.postDataJSON();
       activity.draft = {
@@ -270,6 +301,10 @@ async function fixture(page) {
     return route.fulfill({ contentType, body: await fs.readFile(asset) });
   });
   return {
+    completeAudio() {
+      runs[0].status = "succeeded";
+      runs[0].candidate = "{}";
+    },
     errors,
     prefsWrites,
     removeProject() {
@@ -358,6 +393,7 @@ async function create(page) {
   await expect(
     page.getByRole("button", { name: "Generate specification", exact: true }),
   ).toBeEnabled();
+  await page.getByText("Advanced: specification JSON", { exact: true }).click();
 }
 
 test("plans media, preserves unsaved bindings on navigation, and saves paths for assembly", async ({
@@ -382,6 +418,7 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
     .fill(JSON.stringify(withMedia));
   await page.getByRole("button", { name: "Validate and save", exact: true }).click();
   await plan.click();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
   const editor = page.getByRole("textbox", { name: /^Asset manifest/ });
   await expect(editor).toBeVisible();
   await expect(page.getByText(/1 assets, 0 paths assigned, 1 unbound/)).toBeVisible();
@@ -403,6 +440,7 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
     page.getByRole("button", { name: "Assemble WAF module", exact: true }),
   ).toBeEnabled();
   await page.reload();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
   await expect(editor).toHaveValue(JSON.stringify(manifest, null, 2));
   await expect(page.getByText(/1 assets, 1 paths assigned, 0 unbound/)).toBeVisible();
   expect(f.errors).toEqual([]);
@@ -442,6 +480,58 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   expect(f.errors).toEqual([]);
 });
 
+test("edits scripts and explicitly accepts speech while regeneration keeps the accepted player", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
+  const manifest = {
+    productCode: "words",
+    refNum: 12,
+    assets: {
+      "en-US": [
+        {
+          key: "welcome",
+          type: "audio",
+          description: "Greeting",
+          script: "Hello",
+          usages: [{ sceneId: "intro" }],
+        },
+      ],
+    },
+  };
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(JSON.stringify(manifest));
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await page.getByRole("textbox", { name: /^Speech script/ }).fill("Hello there");
+  await expect(page.getByRole("button", { name: "Generate speech", exact: true })).toBeDisabled();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: /^Speech script/ })).toHaveValue("Hello there");
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await page.getByRole("button", { name: "Generate speech", exact: true }).click();
+  f.completeAudio();
+  await page.reload();
+  await expect(page.locator('audio[aria-label="Accepted audio"]')).toHaveCount(0);
+  await expect(page.locator('audio[aria-label="Speech candidate"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "Accept this audio", exact: true }).click();
+  const accepted = page.locator('audio[aria-label="Accepted audio"]');
+  const source = await accepted.getAttribute("src");
+  await page.getByRole("button", { name: "Regenerate speech", exact: true }).click();
+  await expect(accepted).toHaveAttribute("src", source);
+  f.completeAudio();
+  await page.reload();
+  await expect(accepted).toHaveAttribute("src", source);
+  await expect(page.locator('audio[aria-label="Speech candidate"]')).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Accept this audio", exact: true })).toBeEnabled();
+  expect(f.errors).toEqual([]);
+});
+
 test("create, save, generate, leave and reopen a completed specification", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
@@ -453,6 +543,7 @@ test("create, save, generate, leave and reopen a completed specification", async
   await page.reload();
   await expect(page.getByText("Running", { exact: true })).toBeVisible();
   f.complete();
+  await page.getByText("Advanced: specification JSON", { exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Specification JSON", exact: true })).toHaveValue(
     JSON.stringify(spec, null, 2),
   );
@@ -581,11 +672,12 @@ test("idle history polls slowly and candidate text is fetched only on expansion"
   await candidates.nth(0).click();
   await candidates.nth(1).click();
   await expect(page.getByRole("alert")).toContainText("Candidate temporarily unavailable.");
-  await page.locator("details").nth(1).getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(page.locator("details").nth(1).locator("pre")).toContainText(
-    '"title":"Second candidate"',
-  );
-  await expect(page.locator("details").nth(0).locator("pre")).toContainText("Loading");
+  const reviews = page
+    .locator("details")
+    .filter({ has: page.getByText("View candidate JSON", { exact: true }) });
+  await reviews.nth(1).getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(reviews.nth(1).locator("pre")).toContainText('"title":"Second candidate"');
+  await expect(reviews.nth(0).locator("pre")).toContainText("Loading");
   release();
   await expect(page.locator("details pre").nth(0)).toContainText('"title":"Sight words"');
   await expect(page.locator("details pre").nth(1)).toContainText('"title":"Second candidate"');

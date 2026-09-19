@@ -4,8 +4,15 @@ import { createHash } from "node:crypto";
 import templates from "./waf-templates.json" with { type: "json" };
 import type { ActivityDetail } from "./domain.js";
 import { contentRevision, validateActivitySpec } from "./domain.js";
-import { mediaConfiguration, validateManifest, validateMediaCoverage } from "./media.js";
+import {
+  mediaConfiguration,
+  validateManifest,
+  validateMediaCoverage,
+  wafManifest,
+} from "./media.js";
 import { HttpError } from "../http/errors.js";
+import { readArtifactBytes } from "./artifact.js";
+import { AUDIO_MAX_BYTES, inspectWave } from "./audio.js";
 
 /** Loom's WAF checkout convention; discovery only walks ancestors, never the disk. */
 export async function findWafRoot(
@@ -191,7 +198,7 @@ export function scaffoldModule(activity: ActivityDetail): Record<string, string>
     );
   const manifest = plan ? validateManifest(plan.manifest, activity) : null;
   if (manifest) validateMediaCoverage(manifest, activity);
-  if (manifest) json(`${refDir}/asset_manifest.json`, manifest);
+  if (manifest) json(`${refDir}/asset_manifest.json`, wafManifest(manifest));
   json(
     `configurations/${activity.productCode}-${activity.refNum}.json`,
     manifest ? mediaConfiguration(manifest) : { [activity.productCode]: { telemetry: false } },
@@ -212,7 +219,10 @@ export async function prepareModule(
     ),
   );
   for (const reference of references) {
-    let current = wafRoot;
+    const generated = Object.values(activity.draft.mediaPlan?.manifest.assets ?? {})
+      .flat()
+      .some((asset) => asset.path === reference && asset.generatedAudio);
+    let current = generated ? workspace : wafRoot;
     const parts = reference.split("/");
     for (let index = 0; index < parts.length; index++) {
       current = path.join(current, parts[index]!);
@@ -241,6 +251,7 @@ export async function prepareModule(
         wafRoot,
         framework: path.join(wafRoot, "framework"),
         media: path.join(wafRoot, "media"),
+        generatedMedia: path.join(workspace, "media"),
         navbar: path.join(wafRoot, "modules", "navbar"),
       },
       null,
@@ -268,7 +279,7 @@ export async function verifyMediaArtifacts(
     JSON.parse(await read(path.join(workspace, prefix, "asset_manifest.json"))),
     activity,
   );
-  if (contentRevision(manifest) !== contentRevision(activity.draft.mediaPlan.manifest))
+  if (contentRevision(manifest) !== contentRevision(wafManifest(activity.draft.mediaPlan.manifest)))
     throw new Error("Assembly changed the approved media manifest.");
   const configuration = JSON.parse(
     await read(
@@ -285,6 +296,18 @@ export async function verifyMediaArtifacts(
     for (const [key, value] of Object.entries(entries as Record<string, string>))
       if (configuration[activity.productCode]?.[language]?.[key] !== value)
         throw new Error("Assembly changed an approved media configuration binding.");
+  }
+  for (const asset of Object.values(activity.draft.mediaPlan.manifest.assets).flat()) {
+    if (!asset.generatedAudio) continue;
+    const file = path.join(workspace, "preview", asset.path!);
+    for (const directory of ["preview", "preview/media", "preview/media/generated"]) {
+      const stat = await fs.lstat(path.join(workspace, directory));
+      if (!stat.isDirectory() || stat.isSymbolicLink())
+        throw new Error("Linked preview media directories are not allowed.");
+    }
+    const bytes = await readArtifactBytes(file, AUDIO_MAX_BYTES);
+    if (inspectWave(bytes, asset.generatedAudio.runId).sha256 !== asset.generatedAudio.sha256)
+      throw new Error("Assembly changed the accepted speech audio.");
   }
 }
 export interface ModuleResult {
@@ -360,8 +383,9 @@ export async function collectModule(
 
 export const modulePrompt = `Implement the saved activity specification in input.json as a real WAF HTML module.
 The module/ directory contains the native WAF scaffold. Read waf-context.json for the local framework, navbar and media checkout. Read that framework's contracts before implementing.
-If input.json contains draft.mediaPlan, its manifest and language-specific configuration are approved inputs. Preserve their keys, scripts and paths; do not invent replacements. Paths are relative to wafRoot. Verify bound files exist within its media checkout, copy only required assets into preview using normal Harness tools and approvals, and resolve {{MEDIA}} to the preview's relative media base. Assets without paths remain unbound: report them explicitly and do not claim complete media. A binding is a reference, not proof of file availability.
+If input.json contains draft.mediaPlan, its manifest and language-specific configuration are approved inputs. Preserve their keys, scripts and paths; do not invent replacements. Paths are relative to wafRoot except assets carrying generatedAudio: their approved bytes have already been copied into this Session's media/generated directory. Verify bound files, copy only required assets into preview using normal Harness tools and approvals, and resolve {{MEDIA}} to the preview's relative media base. Assets without paths remain unbound: report them explicitly and do not claim complete media. A binding is a reference, not proof of file availability.
 Work only in this Session workspace. Treat the shared WAF checkout as read-only. Do not modify shared modules or run Loom's pipeline/server. Do not delegate.
+Copy each accepted generatedAudio file unchanged from media/generated to preview/media/generated, and resolve its configuration against that preview/media base. The collector verifies the accepted audio hashes. Do not include binary files in module-result.json's text file list.
 Implement the actual learning interactions and feedback in module/src, preserving waf-state-machine, WAF lifecycle, Interactable input and cleanup. Complete the ref configuration, asset manifest and state machine for the input productCode/refNum. Use existing media when available; report missing media explicitly, never invent successful generation.
 Use normal Harness approvals for installing dependencies and running commands. Run module typecheck and buildDebug; record real command output in module/build.log. Do not publish or deploy packages.
 Produce preview/index.html and preview/runtime.js with bundled local subresources using the actual WAF framework. It must work as static files under an arbitrary URL prefix, with relative resource URLs. Bundle the framework runtime and navbar as needed. Do not replace WAF with a standalone imitation or rely on a separately running Loom server. Keep preview data local; do not contact production student/telemetry APIs.
