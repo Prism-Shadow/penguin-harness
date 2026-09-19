@@ -1821,7 +1821,16 @@ export const zh = {
     detailHooks: "钩子",
     usedByAgents: (n: number): string => (n === 0 ? "未被使用" : `${n} 个 Agent 在用`),
     /** Title on a disabled quick-start button: it pre-selects one of the plugin's skills on the currently selected Agent, so the plugin has to be installed there first. */
-    quickInvokeNeedsInstall: "先在当前 Agent 安装该插件后才能快捷调用",
+    /** Quick start's tooltip: what pressing it does, and what it does not. */
+    quickStartHint: "快速开始：打开一份带该插件演示的草稿——点发送之前什么都不会运行",
+    quickStartInstallTitle: (plugin: string, agent: string) =>
+      `先把 ${plugin} 安装到 ${agent} 再快速开始？`,
+    quickStartAfterInstall: "随后打开一份带演示的草稿；点发送之前什么都不会运行。",
+    quickStartNotRunning: "插件运行后才能快速开始——它正在等待重启，或加载失败",
+    quickStartNeedsAdmin: "模块插件由管理员安装；运行后才能快速开始",
+    /** The demo of a module plugin that declares none. */
+    quickStartGenericText: (specifier: string) =>
+      `演示一下 ${specifier} 插件能做什么：在当前工作区里拿个小东西用一用，并告诉我它带来了什么变化。`,
     /** Top toast shown on successful install / uninstall. */
     installedToast: (plugin: string, agent: string): string => `已将 ${plugin} 安装到 ${agent}`,
     uninstalledToast: (plugin: string, agent: string): string => `已从 ${agent} 卸载 ${plugin}`,
@@ -1916,7 +1925,7 @@ export const zh = {
   },
 
   skills: {
-    quickInvoke: "快捷调用",
+    quickInvoke: "快速开始",
     /** Pre-filled body for quick invoke (per UI language; English is `use the <name> skill`). */
     quickInvokeText: (name: string): string => `使用 ${name} 技能`,
     /** Bulk controls of the multi-select skill panel; both act on the rows the search box currently leaves visible. */

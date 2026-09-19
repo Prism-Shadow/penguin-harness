@@ -24,6 +24,7 @@ plugins/<plugin>/
 | `version` | `YYYY.MM.DD.N`——日期加当日序号 |
 | `category` | `office-productivity`、`software-development`、`ai-app-development`、`agent-company` 之一；缺失或未知归入「其他」 |
 | `preinstall` | 可选；`false` 表示不进入 `default_agent` 的预装集合，仅可从插件库手动安装 |
+| `quick_start` | 插件页「快速开始」预填进新对话草稿的演示：`{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }`——发出后能看到插件起作用的提示词、要预选的本插件技能、以及草稿是否以目标模式打开。页面从不代为发送。未声明时预选第一个技能 |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | 钩子包在各[钩子点](/agent-loop#stop-hook)的命令：`[{ "command": "stop.mjs", "timeout": 60 }]`，路径相对 `hooks/`，超时以秒计 |
 
 插件名即目录名（`^[A-Za-z0-9_-]+$`）；围绕他人产品构建的插件带 `use-` 前缀（如 `use-firecrawl`），名字说明用途而不冒用产品名。版本先比日期、再比序号，因此 `2026.08.29.10` 排在 `2026.08.29.9` 之后；清单里的版本就是插件携带的一切内容的版本，与该包的 npm 版本（跟随发行版本）是两回事。没有别的版本方案。

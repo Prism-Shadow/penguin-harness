@@ -92,6 +92,19 @@ export interface LibraryHooks {
   files: Record<string, string>;
 }
 
+/**
+ * A plugin's quick start (plugin.json `quick_start`): the demo a person runs to see what the
+ * plugin does — a prompt the Plugins page pre-fills into a new-chat draft, never sends.
+ */
+export interface QuickStart {
+  prompt: string;
+  promptZh?: string;
+  /** Skills of this plugin to pre-select in the draft. */
+  skills?: string[];
+  /** Open the draft in goal mode (the prompt is the objective). */
+  goal?: boolean;
+}
+
 /** A plugin in the library: the manifest fields plus the content it ships. */
 export interface LibraryPlugin {
   /** Plugin name (its directory name). */
@@ -113,6 +126,8 @@ export interface LibraryPlugin {
   icon?: string;
   skills: LibrarySkill[];
   hooks?: LibraryHooks;
+  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`, optional). */
+  quickStart?: QuickStart;
 }
 
 /** Category manifest entry: id and titles (Chinese optional, displayed per UI language). */
@@ -436,6 +451,7 @@ interface PluginManifestFile {
   category?: string;
   /** Default true. */
   preinstall?: boolean;
+  quick_start?: { prompt?: unknown; prompt_zh?: unknown; skills?: unknown; goal?: unknown };
   /** One command list per hook point the plugin's hook package answers at. */
   hooks?: {
     stop?: HookCommand[];
@@ -509,6 +525,49 @@ function readPluginDir(name: string, dir: string): LibraryPlugin {
       }),
     ),
     ...(hooks !== undefined ? { hooks } : {}),
+    ...(manifest.quick_start !== undefined
+      ? { quickStart: parseQuickStart(manifest.quick_start, skills, manifestFile) }
+      : {}),
+  };
+}
+
+/**
+ * plugin.json `quick_start`, checked: a prompt is required, and the skills it pre-selects
+ * must be this plugin's own — a demo naming a skill the plugin does not ship would open a draft
+ * with nothing selected.
+ */
+function parseQuickStart(
+  raw: NonNullable<PluginManifestFile["quick_start"]>,
+  skills: readonly LibrarySkill[],
+  where: string,
+): QuickStart {
+  if (typeof raw.prompt !== "string" || raw.prompt.trim() === "") {
+    throw new Error(`${where}: quick_start.prompt must be a non-empty string`);
+  }
+  if (raw.prompt_zh !== undefined && typeof raw.prompt_zh !== "string") {
+    throw new Error(`${where}: quick_start.prompt_zh must be a string`);
+  }
+  let picked: string[] | undefined;
+  if (raw.skills !== undefined) {
+    if (!Array.isArray(raw.skills) || raw.skills.some((s) => typeof s !== "string")) {
+      throw new Error(`${where}: quick_start.skills must be a list of skill names`);
+    }
+    const unknown = (raw.skills as string[]).filter((n) => !skills.some((s) => s.name === n));
+    if (unknown.length > 0) {
+      throw new Error(
+        `${where}: quick_start.skills names skills the plugin does not ship: ${unknown.join(", ")}`,
+      );
+    }
+    picked = raw.skills as string[];
+  }
+  if (raw.goal !== undefined && typeof raw.goal !== "boolean") {
+    throw new Error(`${where}: quick_start.goal must be a boolean`);
+  }
+  return {
+    prompt: raw.prompt,
+    ...(typeof raw.prompt_zh === "string" ? { promptZh: raw.prompt_zh } : {}),
+    ...(picked !== undefined ? { skills: picked } : {}),
+    ...(raw.goal === true ? { goal: true } : {}),
   };
 }
 

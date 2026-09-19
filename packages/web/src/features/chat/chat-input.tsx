@@ -762,6 +762,7 @@ export function ChatInput({
   currentAgentId,
   skills,
   initialSkills,
+  initialGoal,
   onSkillsChange,
   onHandoff,
   initialText,
@@ -946,6 +947,8 @@ export function ChatInput({
    * in that list are pruned.
    */
   initialSkills?: string[];
+  /** Start in goal mode (a plugin's quick start whose demo is a goal): read once on mount. */
+  initialGoal?: boolean;
   /** Callback when selected skills change (check/prune; the clear after a successful send does not call back, same as onTextChange). */
   onSkillsChange?: (names: string[]) => void;
   /** Draft's initial text (restored on mount; paired with onTextChange for draft auto-caching). */
@@ -1064,7 +1067,7 @@ export function ChatInput({
   // exclusive with a staged /agent or /model switch (engaging either clears the other); attached
   // images ride along (core folds them into the objective as path lines) and selected skills ride
   // round-1 message as a [use_skills] block, exactly like a normal send.
-  const [goalOn, setGoalOn] = useState(false);
+  const [goalOn, setGoalOn] = useState(initialGoal === true);
   const [goalBudgetText, setGoalBudgetText] = useState("");
   const [goalBudgetOpen, setGoalBudgetOpen] = useState(false);
   const [goalBudgetDraft, setGoalBudgetDraft] = useState("");

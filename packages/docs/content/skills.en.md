@@ -24,6 +24,7 @@ plugins/<plugin>/
 | `version` | `YYYY.MM.DD.N` — the date plus a sequence number for that day |
 | `category` | One of `office-productivity`, `software-development`, `ai-app-development`, `agent-company`; missing or unknown lands in "Other" |
 | `preinstall` | Optional; `false` keeps the plugin out of `default_agent`'s preinstalled set — install it manually from the library |
+| `quick_start` | The demo the Plugins page's quick start pre-fills into a new-chat draft: `{ "prompt": "…", "prompt_zh": "…", "skills": ["…"], "goal": true }` — a prompt that shows the plugin working once sent, the plugin's own skills to pre-select, and whether the draft opens in goal mode. Never sent by the page. Without it, quick start pre-selects the first skill |
 | `hooks.stop` / `hooks.pre_tool_use` / `hooks.user_prompt` | The hook package's commands per [hook point](/agent-loop#stop-hooks): `[{ "command": "stop.mjs", "timeout": 60 }]`, paths relative to `hooks/`, timeout in seconds |
 
 The plugin name is its directory name (`^[A-Za-z0-9_-]+$`); a plugin built around someone else's product carries a `use-` prefix (`use-firecrawl`), so the name says what it is for rather than claiming the product. Versions are compared by date, then by sequence number, so `2026.08.29.10` follows `2026.08.29.9`; the manifest's version is the version of everything the plugin ships, and is distinct from the package's npm version (which follows the release). There is no other version scheme.

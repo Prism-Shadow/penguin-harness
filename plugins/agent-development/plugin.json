@@ -4,5 +4,10 @@
   "short_description": "SDK, unified LLM API, config and orchestration.",
   "short_description_zh": "SDK、统一 LLM API、配置与编排。",
   "version": "2026.09.14.1",
-  "category": "ai-app-development"
+  "category": "ai-app-development",
+  "quick_start": {
+    "prompt": "Use the penguin CLI to list the agents in this Project and the five most recent sessions, then tell me in one line each what every agent is for.",
+    "prompt_zh": "用 penguin CLI 列出当前 Project 里的 Agent 和最近五个会话，再用一句话说明每个 Agent 是做什么的。",
+    "skills": ["penguin-orchestration"]
+  }
 }

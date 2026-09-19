@@ -258,6 +258,15 @@ export function createSeatbeltProvider(internals: SeatbeltInternals = {}): Sandb
  */
 @Component({
   contributes: {
+    "WebModule.quickStarts": [
+      {
+        id: "sandbox-seatbelt.quick-start",
+        prompt:
+          "Test the sandbox your commands run under. Run three separate commands: write a file inside this Workspace, write a file in your home directory outside it, and fetch https://example.com. Report which succeeded and which were denied; if all three succeed, the sandbox is off (Settings → Plugins → Sandbox).",
+        promptZh:
+          "测试你执行命令时所处的沙盒。分三条命令执行：在当前工作区内写一个文件、在工作区外的家目录写一个文件、访问 https://example.com。报告哪些成功、哪些被拒；如果三条都成功，说明沙盒处于关闭状态（设置 → 插件 → 沙盒）。",
+      },
+    ],
     "SandboxModule.providers": [
       {
         id: "sandbox-seatbelt.provider",

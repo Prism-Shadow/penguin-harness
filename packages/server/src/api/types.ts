@@ -3674,6 +3674,20 @@ export interface PluginItem {
   hooks: string[];
   /** The plugin's raw icon.svg (beside plugin.json — every built-in plugin ships one), the icon of everything it ships; the frontend draws the puzzle-piece plugin glyph without it. */
   icon?: string;
+  /** The demo the Plugins page's quick start pre-fills (plugin.json `quick_start`); absent = pre-select its first skill. */
+  quickStart?: QuickStartItem;
+}
+
+/** A quick start: a prompt pre-filled into a new-chat draft — never sent by the page. */
+export interface QuickStartItem {
+  prompt: string;
+  promptZh?: string;
+  /** Skills to pre-select (a library plugin's own). */
+  skills?: string[];
+  /** Open the draft in goal mode. */
+  goal?: boolean;
+  /** Open a plugin's session surface instead of a conversation (a module plugin's `surface` kind). */
+  surface?: string;
 }
 
 export interface PluginGroupItem {
@@ -5117,6 +5131,8 @@ export interface ContributionsResponse {
   pages: WebContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+  /** Module plugins' quick starts, each named by the module that contributes it (`from`). */
+  quickStarts: Array<QuickStartItem & { id: string; from: string }>;
   /** The surfaces this process's plugins contribute; empty without any. */
   sessionSurfaces: SessionSurfaceSummary[];
 }
