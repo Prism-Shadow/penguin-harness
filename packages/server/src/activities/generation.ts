@@ -291,7 +291,18 @@ export class ActivityGenerationService implements ActivityGeneration {
           try {
             const workspace = this.workspace(run);
             await fs.mkdir(workspace, { recursive: true });
-            await atomicJson(path.join(workspace, "input.json"), activity);
+            // Requirement hashes track editorial changes, not media file bytes. They belong
+            // to draft reconciliation; exposing them to a generator invites false checksum claims.
+            const input = {
+              ...activity,
+              draft: {
+                ...activity.draft,
+                ...(activity.draft.mediaPlan
+                  ? { mediaPlan: { manifest: activity.draft.mediaPlan.manifest } }
+                  : {}),
+              },
+            };
+            await atomicJson(path.join(workspace, "input.json"), input);
             await fs.writeFile(
               path.join(workspace, "description.md"),
               activity.draft.description,
