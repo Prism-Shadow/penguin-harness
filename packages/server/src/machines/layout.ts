@@ -18,6 +18,10 @@
  * The port is fixed per profile for the reason the release one is (core's ports.ts): a
  * forward's local port equals its remote port, so the two profiles need distinct numbers.
  *
+ * One thing on a machine is NOT per profile: the `penguin` command a person types there
+ * (`~/.local/bin/penguin`, or the user Path on Windows). It belongs to the release
+ * installation, so only the release layout lets the installer register it.
+ *
  * Pure, and the only place either path is spelled: every command in this directory takes a
  * layout rather than naming `~/.penguin` itself.
  */
@@ -33,6 +37,8 @@ export interface RemoteLayout {
   dataRoot: { posix: string; win: string };
   /** The port the server is started on when this side has not remembered one. */
   defaultPort: number;
+  /** Whether an install from this profile registers the machine's `penguin` command. */
+  ownsCommand: boolean;
 }
 
 /** `PENGUIN_PROFILE=dev` selects the dev profile; anything else is release. */
@@ -47,7 +53,24 @@ export function remoteLayoutFor(profile: Profile): RemoteLayout {
     programDir: { posix: `$HOME/${dir}`, win: `%USERPROFILE%\\${dir}` },
     dataRoot: { posix: `$HOME/${dir}/data`, win: `%USERPROFILE%\\${dir}\\data` },
     defaultPort: profile === "dev" ? DEFAULT_DEV_SERVER_PORT : DEFAULT_SERVER_PORT,
+    ownsCommand: profile === "release",
   };
+}
+
+const PROFILES: readonly Profile[] = ["release", "dev"];
+
+/**
+ * The port to start a machine's server on: the remembered one, unless it is another
+ * profile's default. That number is reserved for the other profile's server on that
+ * machine — starting on it succeeds whenever that server happens to be down, and then
+ * holds the port it comes back to.
+ */
+export function portToStartOn(layout: RemoteLayout, remembered: number | null): number {
+  if (remembered === null) return layout.defaultPort;
+  const reserved = PROFILES.some(
+    (profile) => profile !== layout.profile && remoteLayoutFor(profile).defaultPort === remembered,
+  );
+  return reserved ? layout.defaultPort : remembered;
 }
 
 /** The layout this process reaches machines with. */

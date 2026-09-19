@@ -63,7 +63,7 @@ import { Hono } from "hono";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Db, Hmr, Paths } from "../hmr/capabilities.js";
-import { currentRemoteLayout } from "./layout.js";
+import { currentRemoteLayout, portToStartOn } from "./layout.js";
 import type { RemoteLayout } from "./layout.js";
 
 /** Why an install was refused before any ssh ran. */
@@ -769,22 +769,29 @@ export class MachinesService {
       remotePort = probed.state.port;
       say(`Its server is already up on port ${remotePort}.`);
     } else {
-      remotePort = this.repo.get(address)?.remotePort ?? this.#layout.defaultPort;
+      // A remembered port is a hint, not a claim. One that is another profile's default is
+      // not even a hint (portToStartOn): it would take whenever that profile's server is
+      // down, and hold the port that server comes back to.
+      remotePort = portToStartOn(this.#layout, this.repo.get(address)?.remotePort ?? null);
       say(`Starting its server on port ${remotePort}…`);
       let started = await this.#effects.startServer(target, remotePort);
-      if (!started.ok && remotePort !== this.#layout.defaultPort) {
-        // A remembered port is a hint, not a claim: something else can own it there by now
-        // — another profile's server, most often, since a row written before profiles
-        // reached machines remembers the release port. The profile's own default is the
-        // one number nothing else is meant to hold, so it gets one try before giving up.
+      if (!started.ok && started.exited !== false && remotePort !== this.#layout.defaultPort) {
+        // Something else can own the remembered port there by now. The profile's own
+        // default is the one number nothing else is meant to hold, so it gets one try
+        // before giving up — but only once the first process is gone: one still coming up
+        // holds the data root, and a second start would only die on its lock.
         say(`Port ${remotePort} did not take; trying ${this.#layout.defaultPort}…`);
         remotePort = this.#layout.defaultPort;
         started = await this.#effects.startServer(target, remotePort);
       }
       if (!started.ok) return { ok: false, step: "start its server", message: started.detail };
       // A machine mints its id when its server starts, so one that was down had none — and
-      // its port and pid are now the freshest fact about it.
-      this.#recordProbe(address, await this.#probe(address, target));
+      // its port and pid are now the freshest fact about it. The port is taken from what the
+      // machine says, not from what was asked for: the two differ when an earlier, slower
+      // start is the server that answered.
+      const after = await this.#probe(address, target);
+      this.#recordProbe(address, after);
+      if (after.state.kind === "running") remotePort = after.state.port;
     }
 
     say("Opening the connection…");

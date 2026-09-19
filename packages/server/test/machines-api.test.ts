@@ -19,6 +19,8 @@ import { openDatabase } from "../src/db/database.js";
 import { MachinesRepo } from "../src/db/repos/machines.js";
 import { MachinesService } from "../src/machines/service.js";
 import type { MachinesEffects } from "../src/machines/service.js";
+import { remoteLayoutFor } from "../src/machines/layout.js";
+import type { RemoteLayout } from "../src/machines/layout.js";
 import type { RemoteInstallOutcome } from "../src/machines/install-server.js";
 import type { RemoteIdentity } from "../src/machines/detect.js";
 import {
@@ -99,7 +101,7 @@ describe("machines API", () => {
   let machinesRepo: MachinesRepo;
   let store: DatabaseSync;
 
-  const boot = async (over: Partial<MachinesEffects> = {}) => {
+  const boot = async (over: Partial<MachinesEffects> = {}, layout?: RemoteLayout) => {
     connected.clear();
     machinesRoot = await makeTempRoot();
     // The store is the service's own here, not the App's, so it needs the Project row the
@@ -115,7 +117,14 @@ describe("machines API", () => {
       .run("default_project", "admin", "2026-08-24T00:00:00.000Z");
     machinesRepo = new MachinesRepo(store);
     t = await createTestApp({
-      machines: new MachinesService(machinesRoot, LOCAL_ID, machinesRepo, effects(over)),
+      machines: new MachinesService(
+        machinesRoot,
+        LOCAL_ID,
+        machinesRepo,
+        effects(over),
+        undefined,
+        layout,
+      ),
     });
     admin = apiClient(t.app, (await loginAdmin(t.app)).cookie);
   };
@@ -856,6 +865,77 @@ describe("machines API", () => {
       expect(starts).toEqual([7376, 7364]);
       expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(7364);
       expect(t.deps.machines.job()?.log.join(" ")).toContain("did not take; trying 7364");
+    });
+
+    it("a dev instance never starts on the release port, even when the row remembers it", async () => {
+      // A row written before profiles reached machines remembers 7364. With the release
+      // server there stopped, a start on 7364 would simply succeed — and the dev server
+      // would then hold the port the release one comes back to, on both ends of the forward.
+      const starts: number[] = [];
+      let up = false;
+      await boot(
+        {
+          probe: async () =>
+            up
+              ? { state: { kind: "running" as const, port: 7371, pid: 4242 }, machineId: null }
+              : { state: { kind: "stopped" as const }, machineId: null },
+          startServer: async (_t, port) => {
+            starts.push(port);
+            up = true;
+            return { ok: true };
+          },
+        },
+        remoteLayoutFor("dev"),
+      );
+      installed("9.9.9");
+      machinesRepo.patch("ssh:nas", { remotePort: 7364 });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(starts).toEqual([7371]);
+      expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(7371);
+    });
+
+    it("does not try a second port while the first start is still alive", async () => {
+      // A slow machine: the process is up and has the data root, it has just not answered
+      // yet. A second start would die on that lock, and the row would remember a port
+      // nothing listens on.
+      const starts: number[] = [];
+      await boot({
+        probe: async () => ({ state: { kind: "stopped" as const }, machineId: null }),
+        startServer: async (_t, port) => {
+          starts.push(port);
+          return { ok: false, detail: "it did not answer within 30s.", exited: false };
+        },
+      });
+      installed("9.9.9");
+      machinesRepo.patch("ssh:nas", { remotePort: 7376 });
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toMatchObject({ ok: false, step: "start its server" });
+      expect(starts).toEqual([7376]);
+      expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(7376);
+    });
+
+    it("remembers the port the machine says it serves on, not the one that was asked for", async () => {
+      // The data root admits one server, so the server that answers after a start can be an
+      // earlier one on another port. The connection has to go where it actually listens.
+      let up = false;
+      await boot({
+        probe: async () =>
+          up
+            ? { state: { kind: "running" as const, port: 7376, pid: 4242 }, machineId: null }
+            : { state: { kind: "stopped" as const }, machineId: null },
+        startServer: async () => {
+          up = true;
+          return { ok: true };
+        },
+      });
+      installed("9.9.9");
+      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
+      await waitFor(() => t.deps.machines.job()?.running === false);
+      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
+      expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(7376);
     });
 
     it("reconnecting over a live connection to an answering server starts nothing new", async () => {
