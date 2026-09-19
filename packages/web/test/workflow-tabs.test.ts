@@ -48,6 +48,19 @@ describe("workflow tabs", () => {
     expect(tabs[2]!.error).toBe("module tree rejected");
   });
 
+  it("serves the page of a machine's workflow through that machine, and says which", () => {
+    // A Session on a machine runs a copy of the Agent there, and the workflows it built live in
+    // that copy: the page is fetched through the machine's connection, and every later call
+    // about the tab (reload, history, remove) has to go the same way.
+    const [local] = workflowTabsOf([info({})]);
+    expect(local).toMatchObject({ machineId: null, src: `${UI}/index.html` });
+    const [remote] = workflowTabsOf([info({})], "m-1");
+    expect(remote).toMatchObject({ machineId: "m-1", src: `/server/m-1${UI}/index.html` });
+    expect(workflowAppPath("p", "a", "demo", "board", "m-1")).toBe(
+      "/app/p/a/demo/board?machine=m-1",
+    );
+  });
+
   it("falls back to Chat when the active tab is gone", () => {
     const tabs = workflowTabsOf([info({})]);
     expect(settleActiveTab("demo/board", tabs)).toBe("demo/board");

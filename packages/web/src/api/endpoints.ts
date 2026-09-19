@@ -2007,17 +2007,34 @@ export const setDesktopTray = (patch: DesktopTrayPatch) =>
 // ---- Workflows (an Agent's own extension packages, served as tabs beside the chat) ----
 const workflowsBase = (projectId: string, agentId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}/workflows`;
-export const getWorkflows = (projectId: string, agentId: string) =>
-  apiFetch<{ workflows: WorkflowInfo[] }>(workflowsBase(projectId, agentId));
+/**
+ * `machineId` on each of these: an Agent's workflows live where its state directory does, so
+ * the workflows of an Agent that only a machine has are asked of THAT machine's server.
+ */
+export const getWorkflows = (projectId: string, agentId: string, machineId: string | null = null) =>
+  apiFetch<{ workflows: WorkflowInfo[] }>(workflowsBase(projectId, agentId), {
+    server: machineId,
+  });
 /** Re-import the folder now (the server also does this whenever a file changes). */
-export const reloadWorkflow = (projectId: string, agentId: string, workflowId: string) =>
+export const reloadWorkflow = (
+  projectId: string,
+  agentId: string,
+  workflowId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<{ workflow: WorkflowInfo }>(
     `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/reload`,
-    { method: "POST", body: {} },
+    { method: "POST", body: {}, server: machineId },
   );
-export const getWorkflowHistory = (projectId: string, agentId: string, workflowId: string) =>
+export const getWorkflowHistory = (
+  projectId: string,
+  agentId: string,
+  workflowId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<{ versions: WorkflowVersion[] }>(
     `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/history`,
+    { server: machineId },
   );
 /** Restore a recorded version's files (state.json is kept) and reload. */
 export const rollbackWorkflow = (
@@ -2025,15 +2042,22 @@ export const rollbackWorkflow = (
   agentId: string,
   workflowId: string,
   revision: string,
+  machineId: string | null = null,
 ) =>
   apiFetch<{ workflow: WorkflowInfo }>(
     `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/rollback`,
-    { method: "POST", body: { revision } },
+    { method: "POST", body: { revision }, server: machineId },
   );
 /** Delete the folder and the versions recorded for it; nothing of the workflow is kept. */
-export const removeWorkflow = (projectId: string, agentId: string, workflowId: string) =>
+export const removeWorkflow = (
+  projectId: string,
+  agentId: string,
+  workflowId: string,
+  machineId: string | null = null,
+) =>
   apiFetch<void>(`${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}`, {
     method: "DELETE",
+    server: machineId,
   });
 
 // ---- The plugins a Project asks for, and the confinement agent commands run under ----

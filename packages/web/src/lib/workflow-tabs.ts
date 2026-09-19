@@ -13,6 +13,7 @@
  * the strip pointing at nothing.
  */
 import type { WorkflowInfo } from "@prismshadow/penguin-server/api";
+import { apiUrl } from "./server-context";
 
 export interface WorkflowTab {
   /** `<workflowId>/<key>`: what the strip selects by. */
@@ -22,8 +23,10 @@ export interface WorkflowTab {
   key: string;
   title: string;
   titleZh?: string;
-  /** Where the page is served from. */
+  /** Where the page is served from — through the machine's connection when the workflow lives on one. */
   src: string;
+  /** The machine whose server holds the workflow (the Agent's Session runs there); null = this server. */
+  machineId: string | null;
   /** The workflow's package name, for the frame's bar. */
   name: string;
   version: string | null;
@@ -76,7 +79,10 @@ export function workflowNoticesOf(workflows: readonly WorkflowInfo[]): WorkflowN
     .map((w) => ({ workflowId: w.id, error: w.error, hints: w.hints ?? [] }));
 }
 
-export function workflowTabsOf(workflows: readonly WorkflowInfo[]): WorkflowTab[] {
+export function workflowTabsOf(
+  workflows: readonly WorkflowInfo[],
+  machineId: string | null = null,
+): WorkflowTab[] {
   return workflows.flatMap((w) =>
     w.tabs.flatMap((tab) =>
       "iframe" in tab.renderer
@@ -87,7 +93,8 @@ export function workflowTabsOf(workflows: readonly WorkflowInfo[]): WorkflowTab[
               key: tab.key,
               title: tab.title,
               ...(tab.titleZh === undefined ? {} : { titleZh: tab.titleZh }),
-              src: tab.renderer.iframe.src,
+              src: apiUrl(tab.renderer.iframe.src, machineId),
+              machineId,
               name: w.name,
               version: w.version,
               revision: w.revision,
@@ -119,9 +126,12 @@ export function workflowAppPath(
   agentId: string,
   workflowId: string,
   tabKey?: string,
+  machineId: string | null = null,
 ): string {
   const segments = [projectId, agentId, workflowId, ...(tabKey === undefined ? [] : [tabKey])];
-  return `/app/${segments.map(encodeURIComponent).join("/")}`;
+  const path = `/app/${segments.map(encodeURIComponent).join("/")}`;
+  // The machine is not part of the workflow's name, only of where to ask for it.
+  return machineId === null ? path : `${path}?machine=${encodeURIComponent(machineId)}`;
 }
 
 /** The tab a full-page route names: that key, or the workflow's first tab when it names none. */
