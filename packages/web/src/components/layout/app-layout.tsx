@@ -38,6 +38,7 @@ import { prepareNewChatDraft } from "../../features/chat/new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
 import { setDockScope } from "../../features/dock/dock-state";
 import { toneStrip } from "../../lib/tone";
 
@@ -517,6 +518,8 @@ export function AppLayout() {
             views live in this pool and are adopted into dock tab bodies by DOM handoff,
             so navigating between pages never reconnects a terminal. */}
         <TerminalDockRuntime />
+        {/* Reconciles the shortcut mirror with the account's prefs and carries edits back. */}
+        <ShortcutRuntime />
       </div>
 
       {/* The software-update modal, opened from the sidebar's update row and the draft

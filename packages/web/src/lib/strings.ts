@@ -79,6 +79,42 @@ export const zh = {
     adminOnly: "只有管理员可以安装到机器上。",
   },
 
+  /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */
+  shortcuts: {
+    commands: {
+      "palette.toggle": "命令面板",
+      "terminal.toggle": "显示或隐藏终端",
+      "terminal.close": "关闭当前终端",
+      "editor.save": "保存",
+    },
+    groups: {
+      general: "通用",
+      panels: "面板",
+      terminal: "终端",
+      editor: "编辑器",
+    },
+    /** Where a focus-scoped command wins, for the shadowed-conflict hint. */
+    scopes: {
+      terminal: "终端",
+      editor: "编辑器",
+    },
+    unbound: "未设置",
+    /** The recorder button's tooltip. */
+    rebind: "更改快捷键",
+    record: "按下新的快捷键…",
+    recordHint: "Esc 取消 · Backspace 清除",
+    needsModifier: "需要配合 Ctrl 或 Alt（macOS 为 ⌘ 或 ⌃），Shift 只能与它们一起使用；或使用 F 键",
+    resetRow: "恢复默认",
+    resetAll: "全部恢复默认",
+    resetAllBody: (n: number): string => `将 ${n} 条快捷键恢复为默认值？`,
+    conflictSame: (other: string): string => `与「${other}」使用同一个快捷键，只有排在前面的生效`,
+    conflictShadowed: (other: string, surface: string): string =>
+      `在${surface}里会被「${other}」抢先`,
+    browserReserved: "浏览器保留了这个组合，只在桌面应用里生效",
+    desktopMenuReserved: "会覆盖桌面应用菜单里使用同一组合的快捷键",
+    saveFailed: "快捷键未能保存到账号",
+  },
+
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "终端",
@@ -161,6 +197,10 @@ export const zh = {
     profile: "个人资料",
     generalTitle: "通用",
     appearanceTitle: "外观",
+    shortcutsTitle: "快捷键",
+    /** The Shortcuts page's "?": what follows the platform, where bindings live, and the browser's own claims. */
+    shortcutsInfo:
+      "快捷键随平台：macOS 用 ⌘，其余平台用 Ctrl。改动即刻生效，本浏览器的其他标签页同步跟随；本账号的其他浏览器与桌面应用在下次加载时取得。按账号并按平台分别保存，Mac 与 Windows 各有一套。浏览器自身保留的组合（如 Ctrl+W / ⌘W）在浏览器标签页里收不到，只在桌面应用里生效，列表中已标出。",
     accountTitle: "账户",
     /** Trace import: the two pickers' accessible names, the pick-a-file action, and its outcomes. */
     importTrace: "导入 Trace",
@@ -2905,7 +2945,6 @@ Benchmark：
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "自动换行",
     unsaved: "有未保存的修改",
-    saveTitle: "保存（Ctrl+S / ⌘S）",
     saveConfirmTitle: "保存文件",
     saveConfirm: (name: string): string => `保存对 ${name} 的修改？Workspace 中的该文件将被覆盖。`,
     editTooLarge: (kb: number): string => `文件超过 ${kb}KB，无法在此编辑，请下载后编辑`,
@@ -4136,8 +4175,9 @@ Benchmark：
       documentLoadFailed: "文档加载失败",
       /** A row's tooltip: when the file was last written, and its size. */
       updatedAt: (time: string, size: string): string => `更新于 ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the shortcut. */
-      editorHint: "Markdown · Ctrl/⌘+S 保存",
+      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
+      editorHint: (shortcut: string | null): string =>
+        shortcut === null ? "Markdown" : `Markdown · ${shortcut} 保存`,
     },
   },
   errors: {

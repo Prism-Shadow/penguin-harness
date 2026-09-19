@@ -356,6 +356,20 @@ export interface DraftShortcut {
   prompt: string;
 }
 
+/**
+ * The account's keyboard shortcut overrides, one section per platform (the Web App's `Mod` token
+ * is ⌘ on macOS and Ctrl elsewhere, so a deliberate macOS-only binding must not leak to Windows).
+ * Each section maps a command id to a chord string ("Mod+Shift+KeyW") or null (explicitly
+ * unbound); only rows that differ from the Web App's default are present. Bounded on write by
+ * services/keybindings.ts.
+ */
+export interface StoredKeybindings {
+  v: 1;
+  mac?: Record<string, string | null>;
+  windows?: Record<string, string | null>;
+  linux?: Record<string, string | null>;
+}
+
 /** User UI preferences (SQLite ui_prefs, free-form JSON; known keys declared here). */
 export interface UiPrefs {
   theme?: "light" | "dark";
@@ -379,6 +393,8 @@ export interface UiPrefs {
    * known key holding user-authored text rather than a flag or an id.
    */
   draftShortcuts?: DraftShortcut[];
+  /** Keyboard shortcut overrides, replaced whole on every write and validated by services/keybindings.ts. */
+  keybindings?: StoredKeybindings;
   /** Personal company-mode switch (default on): off only hides this user's mode switch; organizations keep running. */
   companyMode?: boolean;
   /** The work mode the user last chose in the shell: development (default) or company. */

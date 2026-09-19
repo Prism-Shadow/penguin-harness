@@ -85,6 +85,7 @@ function populated(): ReturnType<typeof memStorage> {
     "penguin.files.treeWidth": "220",
     "penguin.files.editorWrap": "1",
     "penguin.notifications": "1",
+    "penguin.keybindings": '{"v":1,"linux":{"terminal.close":"Mod+Alt+KeyW"}}',
   });
 }
 
@@ -112,6 +113,7 @@ const PREFERENCE_KEYS = [
   "penguin.files.treeWidth",
   "penguin.files.editorWrap",
   "penguin.notifications",
+  "penguin.keybindings",
 ];
 
 const WEB_SRC = fileURLToPath(new URL("../src", import.meta.url));

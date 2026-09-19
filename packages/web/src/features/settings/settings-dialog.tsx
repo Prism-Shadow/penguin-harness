@@ -23,6 +23,7 @@ import { COMPANY_MODE_ICON, GEAR_ICON } from "../../components/ui/icons";
 import { ProfileSection } from "./profile-section";
 import { GeneralSection } from "./general-section";
 import { AppearanceSection } from "./appearance-section";
+import { ShortcutsSection } from "./shortcuts-section";
 import { AccountSection } from "./account-section";
 import { ProxySection } from "./proxy-section";
 import { UploadsSection } from "./uploads-section";
@@ -38,6 +39,9 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
   /** Sun: appearance. */
   appearance:
     "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4l1.4-1.4",
+  /** Keyboard: a rounded plate, two rows of keys and a space bar. */
+  shortcuts:
+    "M3 6h18a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM6 9.5h.01M9.5 9.5h.01M13 9.5h.01M16.5 9.5h.01M6 12.5h.01M9.5 12.5h.01M13 12.5h.01M16.5 12.5h.01M8.5 15.5h7",
   /** Single person: the signed-in account. */
   account: "M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10z",
   /** Globe: outbound traffic. */
@@ -77,6 +81,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     profile: S.settings.profile,
     general: S.settings.generalTitle,
     appearance: S.settings.appearanceTitle,
+    shortcuts: S.settings.shortcutsTitle,
     account: S.settings.accountTitle,
     proxy: S.settings.proxyTitle,
     uploads: S.settings.uploadLimitsTitle,
@@ -90,6 +95,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   // Page-level explanations, disclosed by the "?" the shell draws beside the pane heading.
   // Pages whose rows explain themselves one by one carry none.
   const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
+    shortcuts: S.settings.shortcutsInfo,
     proxy: S.settings.proxyInfo,
     uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
     company: S.settings.companyModeServerInfo,
@@ -122,6 +128,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
       {current === "profile" && <ProfileSection />}
       {current === "general" && <GeneralSection />}
       {current === "appearance" && <AppearanceSection />}
+      {current === "shortcuts" && <ShortcutsSection />}
       {current === "account" && <AccountSection />}
       {current === "proxy" && <ProxySection />}
       {current === "uploads" && <UploadsSection />}
