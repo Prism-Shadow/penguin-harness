@@ -32,7 +32,7 @@ export const EXAMPLE_FOLDERS = [
     id: "agents",
     tasks: [
       { id: "investmentCopilot", skills: ["penguin-sdk", "web-design"] },
-      { id: "rag", skills: ["penguin-sdk", "web-design"] },
+      { id: "missionControl", skills: ["penguin-sdk", "web-design"] },
       { id: "agentBenchmarkBuild", skills: [] },
       { id: "agentOptimization", skills: [] },
     ],

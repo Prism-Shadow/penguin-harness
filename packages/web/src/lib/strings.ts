@@ -283,8 +283,32 @@ export const zh = {
     title: "命令面板",
     placeholder: "输入以筛选命令…",
     noResults: "没有匹配的命令",
-    hint: "Ctrl+P / ⌘P 切换 · ↑↓ 选择 · Enter 执行",
+    hint: "Ctrl+P / Ctrl+Shift+P（⌘P）切换 · ↑↓ 选择 · Enter 执行",
     harnessHistory: "Harness 历史",
+  },
+  workflows: {
+    tabsLabel: "聊天与工作流",
+    chatTab: "聊天",
+    brokenMark: "当前文件加载失败",
+    reload: "重新加载",
+    reloading: "加载中…",
+    history: "历史",
+    loadError: "加载失败",
+    loadingHistory: "加载历史…",
+    noHistory: "还没有记录过版本。",
+    current: "当前",
+    restore: "恢复",
+    remove: "移除",
+    fillApp: "占满应用",
+    fillAppHint: "让这个页面占满整个应用；Ctrl+P / Ctrl+Shift+P 打开命令面板可退出",
+    exitFullPage: "退出全页模式（回到聊天）",
+    exitHint: "按 Ctrl+P 或 Ctrl+Shift+P 打开命令面板可回到聊天。",
+    noSuchPage: "这个 workflow 不存在或没有页面。",
+    removeConfirm: "删除这个工作流及其全部已记录版本？",
+    removeYes: "确认移除",
+    removing: "移除中…",
+    removeNo: "取消",
+    fileCount: (n: number) => `${n} 个文件`,
   },
   harnessHistory: {
     title: "Harness 历史",
@@ -2008,17 +2032,14 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "只做分析不是投资建议。它的查股工具要能答「帮我查一下智谱的股票」这类问题：" +
           "按公司名（中文也行）自己对应到股票代码，查不到或没上市就直说，不要编。",
       },
-      rag: {
-        label: "构建 Claude Code 文档 RAG 智能体",
-        desc: "收集 claude-code-docs 仓库，生成可对话、带来源引用的 RAG 知识应用",
+      missionControl: {
+        label: "搭建自定义工作流界面：Agent 指挥台",
+        desc: "聊天旁的 Workflow 标签页：把一个任务同时派给多个 Agent，实时看每个 Session 的状态",
         prompt:
-          "收集 https://github.com/ericbuess/claude-code-docs 的文档，构建一个 RAG 知识应用：" +
-          "克隆仓库并整理语料，建立检索索引；应用化身 Claude Code 配置专家，" +
-          "检索增强回答 Claude Code 相关问题并标注可点击的来源引用——" +
-          "引用要能展示命中的原文片段，并链接到真实文档；" +
-          "按 web-design 技能提供美观的 Web 聊天界面。" +
-          "完成后运行应用，用一个中文问题和一个英文问题各自测一次，" +
-          "确认两者都检索到了正确的英文文档、流式回答正常，并告诉我访问方式。",
+          "给你自己做一个 Workflow：聊天旁边的一张「指挥台」标签页。我输入一个任务、勾选本 Project 里的一个或多个 Agent，" +
+          "它就为每个 Agent 开一个 Session 并行跑起来。每次运行是一张卡片，带实时的动态状态（排队、运行中、完成）和耗时，" +
+          "刷新页面后看板仍在。再加第二张标签页放统计——各 Agent 的运行次数与平均耗时——以及一个占满整个应用的按钮，当作大屏来用。" +
+          "颜色一律取自主题变量，明暗两种主题下都要好看。",
       },
       agentBenchmarkBuild: {
         label: "构建通用决策智能体和评测基准",

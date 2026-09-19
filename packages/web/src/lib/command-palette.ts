@@ -10,13 +10,15 @@ export type ShortcutKeyEvent = Pick<
 >;
 
 /**
- * Ctrl+P on Windows/Linux, Cmd+P on macOS — the platform is a parameter (read once at
- * the call site) so the matcher stays a pure function. Shift and Alt must be up: Ctrl+Shift+P
- * belongs to the browser's own tooling, and a chord with Alt is never ours.
+ * Ctrl+P and Ctrl+Shift+P on Windows/Linux, Cmd+P and Cmd+Shift+P on macOS — the platform
+ * is a parameter (read once at the call site) so the matcher stays a pure function. Shift is
+ * accepted because a workflow page that fills the app may itself take Ctrl+P (print, its
+ * own shortcut); the palette is that page's only way out, so it has to answer both chords.
+ * A chord with Alt is never ours.
  */
 export function isCommandPaletteShortcut(e: ShortcutKeyEvent, isMac: boolean): boolean {
   if (e.key !== "p" && e.key !== "P") return false;
-  if (e.altKey || e.shiftKey) return false;
+  if (e.altKey) return false;
   return isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
 }
 

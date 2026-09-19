@@ -269,8 +269,33 @@ export const en: Strings = {
     title: "Command Palette",
     placeholder: "Type to filter commands…",
     noResults: "No matching commands",
-    hint: "Ctrl+P / ⌘P to toggle · ↑↓ to select · Enter to run",
+    hint: "Ctrl+P / Ctrl+Shift+P (⌘P) to toggle · ↑↓ to select · Enter to run",
     harnessHistory: "Harness history",
+  },
+  workflows: {
+    tabsLabel: "Chat and workflows",
+    chatTab: "Chat",
+    brokenMark: "The current files failed to load",
+    reload: "Reload",
+    reloading: "Reloading…",
+    history: "History",
+    loadError: "Load error",
+    loadingHistory: "Loading history…",
+    noHistory: "No versions recorded yet.",
+    current: "current",
+    restore: "Restore",
+    remove: "Remove",
+    fillApp: "Fill the app",
+    fillAppHint:
+      "Show this page as the whole app; Ctrl+P / Ctrl+Shift+P opens the command palette to leave",
+    exitFullPage: "Exit full page (back to chat)",
+    exitHint: "Press Ctrl+P or Ctrl+Shift+P for the command palette to get back to the chat.",
+    noSuchPage: "This workflow does not exist or has no page.",
+    removeConfirm: "Delete this workflow and all its recorded versions?",
+    removeYes: "Remove",
+    removing: "Removing…",
+    removeNo: "Keep",
+    fileCount: (n: number) => `${n} files`,
   },
   harnessHistory: {
     title: "Harness history",
@@ -2010,18 +2035,16 @@ When done, open index.html in a browser and self-test once.`,
           'stock for me": resolve a company name to its ticker itself, and when there is no match ' +
           "or the company is not listed, say so rather than inventing a quote.",
       },
-      rag: {
-        label: "Build a Claude Code docs RAG agent",
-        desc: "Collect the claude-code-docs repo into a conversational RAG knowledge app with source citations",
+      missionControl: {
+        label: "Build a custom workflow UI: mission control",
+        desc: "A workflow tab beside the chat: dispatch a task to several agents at once and watch every Session's live status",
         prompt:
-          "Collect the docs from https://github.com/ericbuess/claude-code-docs and build a RAG knowledge app: " +
-          "clone the repo and prepare the corpus, then build a retrieval index; " +
-          "the app acts as a Claude Code configuration expert, answering Claude Code questions " +
-          "with retrieval-augmented replies and clickable citations that reveal the matched " +
-          "original text chunk and link to the real documents; " +
-          "give it a beautiful web chat UI following the web-design skill. " +
-          "When done, run the app and self-test one Chinese question and one English question, confirming both retrieve " +
-          "the right English documents and stream their answers, then tell me how to access it.",
+          "Build yourself a workflow: a mission-control tab beside this chat. I type a task and pick " +
+          "one or more of this Project's Agents; it opens a Session for each and runs them in " +
+          "parallel. Every run is a card with a live, animated status (queued, running, done) and " +
+          "its elapsed time, and the board survives a reload. Add a second tab with the numbers — " +
+          "runs per Agent, average duration — and a button that fills the whole app, like a wall " +
+          "display. Take every colour from the theme variables so it looks right in light and dark.",
       },
       agentBenchmarkBuild: {
         label: "Build a general-purpose decision agent and its benchmark",
