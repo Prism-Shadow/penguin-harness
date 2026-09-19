@@ -143,6 +143,7 @@ export abstract class AgentLifecycle extends Interface<{
 }>() {}
 
 /** Assembly: the mechanism HostAssembly implements. */
-export abstract class Assembly extends Interface<{
-  promptSections(): PromptSection[];
-}>() {}
+@Interface()
+export abstract class Assembly {
+  abstract promptSections(): PromptSection[];
+}

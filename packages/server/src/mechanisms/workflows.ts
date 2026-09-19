@@ -34,21 +34,23 @@ export interface WorkflowResponse {
 }
 
 /** What a workflow provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkflowMain" }`). */
-export abstract class WorkflowMain extends Interface<{
-  handle(request: WorkflowRequest): Promise<WorkflowResponse>;
-}>() {}
+@Interface()
+export abstract class WorkflowMain {
+  abstract handle(request: WorkflowRequest): Promise<WorkflowResponse>;
+}
 
 /** What the server publishes into a workflow tree as module `Host`. */
-export abstract class WorkflowHost extends Interface<{
+@Interface()
+export abstract class WorkflowHost {
   /** Sends text to this Agent: into `sessionId` when given, else into a new Session. */
-  runAgent(input: { text: string; sessionId?: string }): Promise<{ sessionId: string }>;
+  abstract runAgent(input: { text: string; sessionId?: string }): Promise<{ sessionId: string }>;
   /** `idle` / `running` / … of one of this Agent's Sessions. */
-  sessionStatus(sessionId: string): string;
+  abstract sessionStatus(sessionId: string): string;
   /** The workflow's own document (`state.json`, kept by the server across reloads and rollbacks). */
-  getState(): unknown;
-  setState(state: unknown): Promise<void>;
-  log(message: string): void;
-}>() {}
+  abstract getState(): unknown;
+  abstract setState(state: unknown): Promise<void>;
+  abstract log(message: string): void;
+}
 
 export interface WorkflowInfo {
   id: string;
@@ -73,29 +75,34 @@ export interface WorkflowVersion {
   files: string[];
 }
 
-export abstract class Workflows extends Interface<{
-  list(projectId: string, agentId: string): Promise<WorkflowInfo[]>;
-  reload(projectId: string, agentId: string, workflowId: string): Promise<WorkflowInfo>;
-  dispatch(
+@Interface()
+export abstract class Workflows {
+  abstract list(projectId: string, agentId: string): Promise<WorkflowInfo[]>;
+  abstract reload(projectId: string, agentId: string, workflowId: string): Promise<WorkflowInfo>;
+  abstract dispatch(
     projectId: string,
     agentId: string,
     workflowId: string,
     request: WorkflowRequest,
   ): Promise<WorkflowResponse>;
   /** Absolute path of a file under the workflow's `ui/`, or null when absent/unsafe. */
-  uiFile(
+  abstract uiFile(
     projectId: string,
     agentId: string,
     workflowId: string,
     rel: string,
   ): Promise<string | null>;
-  history(projectId: string, agentId: string, workflowId: string): Promise<WorkflowVersion[]>;
-  rollback(
+  abstract history(
+    projectId: string,
+    agentId: string,
+    workflowId: string,
+  ): Promise<WorkflowVersion[]>;
+  abstract rollback(
     projectId: string,
     agentId: string,
     workflowId: string,
     revision: string,
   ): Promise<WorkflowInfo>;
   /** Deletes the folder and its recorded versions; the instance goes with them. */
-  remove(projectId: string, agentId: string, workflowId: string): Promise<void>;
-}>() {}
+  abstract remove(projectId: string, agentId: string, workflowId: string): Promise<void>;
+}
