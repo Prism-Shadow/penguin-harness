@@ -3,20 +3,20 @@
  *
  * A comparison needs two declarations. Looking both sides up in the platform's own table
  * compares a declaration with itself and can never fail, so here each side brings its own:
- * the CONSUMER's is the table the package carries — a plugin's generated `ifaces.json`,
- * which copies the host interfaces it compiled against; for a workflow, the table of the
- * package version installed in its `node_modules` — and the PLATFORM's is this
- * generation's. Nothing in this module judges
- * assignability itself: each table is rendered as a self-contained `.d.ts`, the questions
- * become assignments in a third file, and the TypeScript compiler answers them —
+ * the CONSUMER's is the table the package carries — a plugin's generated `ifaces.json`; for
+ * a workflow, the slice of the harness's table it was written against, kept in its folder
+ * (../workflows/harness-types.ts) — and the PLATFORM's is this generation's. Nothing in
+ * this module judges assignability itself: each table is rendered as a self-contained
+ * `.d.ts`, the questions become assignments in a third file, and the TypeScript compiler
+ * answers them —
  *
  *   requires  the platform's interface must be assignable to the consumer's view of it;
  *   provides  the consumer's view must be assignable to what the platform asks for.
  *
  * Two rules keep a pass meaningful. The consumer's table is never substituted: an
- * interface it does not carry is a problem, not a fall-back to the platform's entry. And rendering is lossless or it refuses: an
- * expression this module cannot write as TypeScript is reported by name, never widened to
- * `unknown`.
+ * interface it does not carry is reported as uncompared, never answered from the platform's
+ * entry. And rendering is lossless or it refuses: an expression this module cannot write as
+ * TypeScript is reported by name, never widened to `unknown`.
  */
 import os from "node:os";
 import path from "node:path";
