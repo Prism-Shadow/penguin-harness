@@ -70,7 +70,7 @@ describe("pluginHostFrom", () => {
     expect(pluginHostFrom(new HotResources()).modules()).toEqual([]);
   });
 
-  it("reads a host of an older shape as no extensions, and one without replacements as having none", () => {
+  it("reads a host of an older shape as no plugins, and one without replacements as having none", () => {
     // The activate-era runtime published a different object under the same id.
     const old = new HotResources();
     old.register(PLUGINS_RESOURCE_ID, { activated: [], iface: {} });

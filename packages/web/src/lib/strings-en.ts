@@ -303,6 +303,18 @@ export const en: Strings = {
     pluginConfigMachine: "Machine",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "Must be a number",
+    sharingTitle: "Sharing",
+    sharingInfo:
+      "Publish an Agent's definition (system config, prompt, skills, tools, workflows) as a GitHub gist, or install one from a gist. Publishing needs a GitHub token with the gist scope, kept by the server; installing a public gist needs none.",
+    sharingDesc:
+      "The server publishes as the `gh` CLI logged in on its machine when there is one; this token is the fallback. It is write-only: the page shows whether one is stored, never the value.",
+    githubToken: "GitHub token",
+    githubTokenHint:
+      "Needs the gist scope (fine-grained token: Gists → Read and write). Leaving it empty and saving changes nothing.",
+    githubTokenStored: "A token is stored.",
+    githubTokenMissing: "No token yet: Agents can be installed from a gist, but not published.",
+    githubTokenReplace: "Enter a new token to replace it",
+    githubTokenClear: "Clear token",
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
@@ -896,6 +908,47 @@ export const en: Strings = {
     ].join("\n"),
     firstAgentTitle: "No agent of your own yet",
     firstAgentDesc: "Describe the agent you want and let AI create it — or set one up manually.",
+    installFromGist: "Install an Agent",
+    installTitle: "Install an Agent",
+    installDesc:
+      "Paste a source; it is read and checked first, then choose the new Agent's id and install. What installs is the definition, with no state.",
+    installGist: "Source",
+    installSourceHint:
+      "Accepted: a gist link or id; npm:<name>[@version]; a GitHub repository link (default branch, or /tree/<branch>); a GitHub release link; a git URL (git+…, git@…, ending in .git); an http(s) link to a tar.gz. A repository that is an Agent directory (agent_state/, workflows/) needs no manifest.",
+    installKind: "Source kind",
+    installKindAuto: "Detect",
+    installKindGithub: "GitHub repository",
+    installKindRelease: "GitHub release",
+    installKindUrl: "tar.gz link",
+    installRead: "Read",
+    installReading: "Reading…",
+    installChangeGist: "Use another source",
+    install: "Install",
+    installing: "Installing…",
+    installed: (agentId: string) => `Installed Agent ${agentId}`,
+    packageSummary: (files: number, size: string) => `${files} files · ${size}`,
+    packagedBy: (version: string) => `packaged by PenguinHarness ${version}`,
+    packageExcludes:
+      "Not included: memory, workspaces, a workflow's state.json, version history, the vault.",
+    publishToGist: "Publish to gist",
+    publishTitle: "Publish to a GitHub gist",
+    publishDesc:
+      "Publishes this Agent's definition as a set of readable text files; anyone (or another machine) can install a clean copy of the same Agent from it.",
+    publishNoToken:
+      "The server has no GitHub identity yet: log in with `gh auth login` (scope `gist`) on the server, or have an admin store a token under Settings → Sharing.",
+    publishGistId: "Publish to a different gist",
+    publishGistIdPlaceholder: "Leave empty",
+    publishGistIdHint:
+      "Empty: updates this Agent's own gist when something changed, and spends no request when nothing did; an Agent that was never published gets a new gist. A link or id publishes to that gist instead, and always writes — use it when the gist was deleted or edited on GitHub.",
+    publishPublic: "Public gist",
+    publishViaGh: "Publishes as the `gh` CLI logged in on the server.",
+    publishViaToken: "Publishes with the GitHub token stored on the server.",
+    publishUpdates: "Updates:",
+    publishUnchanged: "The gist already held exactly this: nothing was written.",
+    publish: "Publish",
+    publishUpdate: "Update gist",
+    publishing: "Publishing…",
+    published: (files: number, size: string) => `Published ${files} files (${size}).`,
     sessionCount: (n: number): string => `${n} session${n === 1 ? "" : "s"}`,
     toolCount: (n: number): string => `${n} tool${n === 1 ? "" : "s"}`,
     vaultKeyCount: (n: number): string => `${n} vault key${n === 1 ? "" : "s"}`,
