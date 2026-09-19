@@ -1,8 +1,8 @@
 /**
  * Workflows: code an Agent keeps in its own directory and the server boots as a module
- * tree of its own — the same manifests, the same interface check and the same
- * `Plugin` shape (`package.json#penguin.modules` + a default export) the platform's plugins
- * use. Two interfaces cross the boundary:
+ * tree of its own — the same manifests and the same tree check the platform's plugins go
+ * through (`package.json#penguin.modules` + the default export of `index.ts`). Two
+ * interfaces cross the boundary:
  *
  * - `WorkflowHost` is what the server PUBLISHES into every workflow tree (the workflow's
  *   manifest requires it `from: "Host"`): a way to run its own Agent, a small state
@@ -52,14 +52,64 @@ export abstract class WorkflowHost {
   abstract log(message: string): void;
 }
 
+/**
+ * The default export of a workflow's `index.ts`: code for the modules its manifest names.
+ * The root module is `Workflow`; its manifest requires the host under the alias `host`
+ * and provides the handler under the alias `main`. Written as
+ * `export default { … } satisfies WorkflowPackage`, which is what gives `use.host` and
+ * `handle`'s parameter their types.
+ */
+export interface WorkflowPackage {
+  modules: {
+    Workflow: WorkflowRootModule;
+    [name: string]: WorkflowRootModule | WorkflowModule;
+  };
+}
+
+export interface WorkflowRootModule {
+  create(ctx: WorkflowModuleCtx<{ host: WorkflowHost }>): {
+    api: { main: WorkflowMain } & Record<string, unknown>;
+  };
+}
+
+/** Any other module of the package: what it uses is whatever its own manifest requires. */
+export interface WorkflowModule {
+  create(ctx: WorkflowModuleCtx<Record<string, unknown>>): { api?: Record<string, unknown> };
+}
+
+export interface WorkflowModuleCtx<Use> {
+  use: Use;
+  /** Runs when the tree is disposed (a reload, a removal, the platform going away). */
+  effect(dispose: () => void): void;
+}
+
+/** How the Web App draws a contributed tab: a page of the workflow, or a renderer it carries. */
+export type WorkflowTabRenderer = { iframe: { src: string } } | { builtin: string };
+
+/**
+ * One tab beside Chat, as the workflow contributed it (`WebModule.sessionTabs`). In a
+ * manifest `renderer.iframe.src` is a path inside the workflow folder, under `ui/`; in a
+ * `WorkflowInfo` it is the URL that file is served from.
+ */
+export interface WorkflowTab {
+  id: string;
+  /** Unique within the workflow; the tab's stable name (it appears in the full-page URL). */
+  key: string;
+  title: string;
+  titleZh?: string;
+  renderer: WorkflowTabRenderer;
+}
+
 export interface WorkflowInfo {
   id: string;
   name: string;
   version: string | null;
   /** Content revision of the whole folder (what history records). */
   revision: string;
-  /** Content revision of `ui/`; null when the workflow has no UI. */
+  /** Content revision of `ui/`: the cache key of the workflow's pages. Null when it has no `ui/`. */
   uiRev: string | null;
+  /** The tabs of the instance that is SERVING — the previous one's while `error` is set. */
+  tabs: WorkflowTab[];
   loadedAt: string;
   /** The boot error when the current files do not load (the previous instance, if any, keeps serving). */
   error: string | null;

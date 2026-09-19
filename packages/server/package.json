@@ -53,7 +53,8 @@
     "./plugin": {
       "types": "./dist/plugin/index.d.ts",
       "import": "./dist/plugin/index.js"
-    }
+    },
+    "./ifaces.json": "./ifaces.json"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -98,6 +99,7 @@
   },
   "files": [
     "dist",
+    "ifaces.json",
     "web-dist",
     "LICENSE"
   ],

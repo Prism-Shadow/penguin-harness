@@ -110,14 +110,20 @@ export function AppRouter() {
         />
         {/* One workflow's page as the whole app: outside the shell, like the terminal; the
             command palette it mounts is the way back. */}
-        <Route
-          path="/app/:projectId/:agentId/:workflowId"
-          element={
-            <RequireAuthBare>
-              <WorkflowAppPage />
-            </RequireAuthBare>
-          }
-        />
+        {[
+          "/app/:projectId/:agentId/:workflowId",
+          "/app/:projectId/:agentId/:workflowId/:tabKey",
+        ].map((appPath) => (
+          <Route
+            key={appPath}
+            path={appPath}
+            element={
+              <RequireAuthBare>
+                <WorkflowAppPage />
+              </RequireAuthBare>
+            }
+          />
+        ))}
         <Route element={<RequireAuth />}>
           <Route index element={<Navigate to="/chat" replace />} />
           {/* Every page is a module.json entry (lib/pages.ts). Admin-only ones are refused

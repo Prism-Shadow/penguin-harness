@@ -61,5 +61,9 @@ export default defineConfig({
     for (const { name, from } of FAR_SIDE_SCRIPTS) {
       fs.copyFileSync(path.join(repo, from), path.join(here, "dist", name));
     }
+    // The interface table, as a real file beside package.json (where a plugin package keeps
+    // its own): a workflow reads it out of the version IT installed, which is the second
+    // declaration an interface check needs. `pnpm gen:ifaces` has just written the source.
+    fs.copyFileSync(path.join(here, "src", "ifaces.json"), path.join(here, "ifaces.json"));
   },
 });
