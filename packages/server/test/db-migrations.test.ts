@@ -343,6 +343,45 @@ describe("the swap path refuses what a rollback could not survive", () => {
       db.close();
     }
   });
+
+  /**
+   * The session row's `surface` column reaches a LIVE deployment only this way. Its line in
+   * openDatabase's ensureColumn list runs when the process starts, and a push never restarts
+   * the runtime — so without the migration a pushed platform writes `surface` to a table
+   * that has no such column, and every session insert fails: creation, fork, subagent
+   * registration, and the Trace adoption the session list hydrates through.
+   */
+  it("grows the session surface column on the swap path, so a pushed platform can write sessions", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(SCHEMA_SQL);
+      // A database as a running runtime holds it: migrated up to the version before this
+      // column, and with the column itself absent — which is what a push finds.
+      db.exec("ALTER TABLE sessions DROP COLUMN surface");
+      db.exec("PRAGMA user_version = 10");
+      const insert = () =>
+        db
+          .prepare(
+            `INSERT INTO sessions (session_id, project_id, agent_id, provider, model_id,
+               workspace, approval_mode, title, client, has_trace, last_active_at, created_at, surface)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run("s1", "p", "a", "prov", "m", "/w", "allow-all", null, "web", 0, "t", "t", null);
+      expect(insert).toThrow(/no column named surface/);
+
+      migrate(db, { swapPath: true });
+      expect(insert).not.toThrow();
+      expect(
+        (
+          db.prepare("SELECT surface FROM sessions WHERE session_id = 's1'").get() as {
+            surface: string | null;
+          }
+        ).surface,
+      ).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
 });
 
 describe("0.2.9 → current: drop-goal-state", () => {

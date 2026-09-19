@@ -43,6 +43,30 @@ export interface CreateTerminalRequest {
   cols?: number;
   rows?: number;
   shell?: string;
+  /** Run this program (argv) instead of a shell — see CreateTerminalSessionOptions.command. */
+  command?: readonly string[];
+  /** Extra environment for the pty, over the server's own. */
+  env?: Record<string, string>;
+  /** Variables to remove from the inherited environment (see CreateTerminalSessionOptions). */
+  unsetEnv?: readonly string[];
+}
+
+/**
+ * Why a pty could not start, in the reader's terms.
+ *
+ * Names what was actually being started: a surface runs a PROGRAM, and "could not start a
+ * shell: File not found" sends the reader to look at their shell when the missing thing is
+ * the program a plugin asked for. A bare "posix_spawnp failed." says nothing either, so
+ * node-pty's non-executable spawn-helper gets its file and its fix named (see spawnHelperHint).
+ */
+export function spawnFailureMessage(
+  program: string | undefined,
+  err: unknown,
+  hint: string | null,
+): string {
+  const what = program ?? "a shell";
+  const because = err instanceof Error ? err.message : String(err);
+  return `Could not start ${what}: ${because}` + (hint === null ? "" : ` (${hint})`);
 }
 
 export class TerminalManager {
@@ -115,20 +139,19 @@ export class TerminalManager {
       ...(request.cols !== undefined ? { cols: request.cols } : {}),
       ...(request.rows !== undefined ? { rows: request.rows } : {}),
       ...(request.shell !== undefined ? { shell: request.shell } : {}),
+      ...(request.command !== undefined ? { command: request.command } : {}),
+      ...(request.env !== undefined ? { env: request.env } : {}),
+      ...(request.unsetEnv !== undefined ? { unsetEnv: request.unsetEnv } : {}),
     };
 
     let session: TerminalSession;
     try {
       session = new TerminalSession(options);
     } catch (err) {
-      // A bare "posix_spawnp failed." says nothing; when the cause is node-pty's
-      // non-executable spawn-helper, name the file and the fix.
-      const hint = spawnHelperHint();
       throw new HttpError(
         500,
         "terminal_spawn_failed",
-        `Could not start a shell: ${err instanceof Error ? err.message : String(err)}` +
-          (hint === null ? "" : ` (${hint})`),
+        spawnFailureMessage(request.command?.[0], err, spawnHelperHint()),
       );
     }
 

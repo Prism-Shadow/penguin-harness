@@ -143,15 +143,26 @@ for (const project of projects) {
    * on a class that declares its own abstract members, or `extends Interface<…>()` for
    * an interface that IS an existing type (see core kernel/markers.ts).
    */
+  /**
+   * The value `Interface<…>()` returns is an IfaceHandle: constructable AND callable (a base
+   * class that is also a decorator). A built package's .d.ts spells the heritage as
+   * `extends X_base` with `X_base` declared of that shape — the same interface class seen
+   * from outside, which a plugin's fields name.
+   */
+  const isIfaceHandleType = (expr) => {
+    const type = checker.getTypeAtLocation(expr);
+    return type.getCallSignatures().length > 0 && type.getConstructSignatures().length > 0;
+  };
   const isInterfaceClassDecl = (d) =>
     ts.isClassDeclaration(d) &&
     (hasInterfaceDecorator(d) ||
       (d.heritageClauses ?? []).some((h) =>
         h.types.some(
           (t) =>
-            ts.isCallExpression(t.expression) &&
-            ts.isIdentifier(t.expression.expression) &&
-            t.expression.expression.text === "Interface",
+            (ts.isCallExpression(t.expression) &&
+              ts.isIdentifier(t.expression.expression) &&
+              t.expression.expression.text === "Interface") ||
+            (ts.isIdentifier(t.expression) && isIfaceHandleType(t.expression)),
         ),
       ));
   /**
