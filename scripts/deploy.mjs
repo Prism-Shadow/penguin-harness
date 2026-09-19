@@ -257,10 +257,10 @@ async function readNativeAssets() {
   // small files is hundreds of blobs, probes and transfers, and stalls. The platform unpacks
   // `archives/*.tgz` before resolving anything from its assets (hmr/asset-archives.ts).
   files[`archives/${archiveName("", "node-pty")}`] = await packArchive(pty);
-  // The compiler a plugin's interfaces are checked with: the target's program may predate it
-  // being a dependency (or be a desktop bundle with no node_modules), and a platform that
-  // cannot find it makes no comparison. Content-addressed like everything here, so it
-  // crosses once.
+  // The compiler plugin interfaces and workflows are checked with: the target's program may
+  // predate it being a dependency (or be a desktop bundle with no node_modules), and a
+  // platform that cannot find it compares no plugin interface and loads no workflow.
+  // Content-addressed like everything here, so it crosses once.
   files[`archives/${archiveName("", "typescript")}`] = await packArchive(
     typescriptPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
       rel: `node_modules/typescript/${rel}`,

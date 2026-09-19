@@ -1,8 +1,8 @@
 /**
  * The TypeScript compiler as something a build carries.
  *
- * The server lets the compiler decide whether a package's interfaces still fit the platform
- * (packages/server/src/plugin/typescript.ts). It
+ * The server type-checks and transpiles workflows, and lets the compiler decide whether a
+ * package's interfaces still fit the platform (packages/server/src/plugin/typescript.ts). It
  * is a dependency of the server package, which covers an npm install and a checkout — but a
  * hot push lands on machines whose program was installed before that, and the desktop build
  * bundles the server into one file with no `node_modules` of its own. Both therefore carry

@@ -5,8 +5,8 @@
  * interfaces cross the boundary:
  *
  * - `WorkflowHost` is what the server PUBLISHES into every workflow tree (the workflow's
- *   manifest requires it `from: "Host"`): a way to run its own Agent, a small state
- *   document, a log line.
+ *   manifest requires it `from: "Host"`): Sessions of the Project's Agents, opened and run
+ *   the way the SDK does it, a small state document, a log line.
  * - `WorkflowMain` is what a workflow PROVIDES: a JSON request handler the server mounts
  *   under `/api/projects/:p/agents/:a/workflows/:id/api/*`, which the workflow's own UI
  *   (served from its `ui/` folder) calls.
@@ -15,6 +15,7 @@
  * serve a UI file, and the version history every successful load appends to — which is
  * what makes an Agent's own edits to its workflow reversible.
  */
+import type { OmniMessage, TextPayload } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
 /** A JSON request the workflow's handler receives (the HTTP shape, minus the transport). */
@@ -42,9 +43,23 @@ export abstract class WorkflowMain {
 /** What the server publishes into a workflow tree as module `Host`. */
 @Interface()
 export abstract class WorkflowHost {
-  /** Sends text to this Agent: into `sessionId` when given, else into a new Session. */
-  abstract runAgent(input: { text: string; sessionId?: string }): Promise<{ sessionId: string }>;
-  /** `idle` / `running` / … of one of this Agent's Sessions. */
+  /**
+   * Opens a Session of an Agent of this Project — the workflow's own Agent when `agentId`
+   * is absent. The SDK's `agent.createSession`.
+   */
+  abstract createSession(opts?: { agentId?: string }): Promise<{ sessionId: string }>;
+  /**
+   * Runs one turn in a Session of this Project, new or existing: `input` is what the SDK's
+   * `session.run` takes (`[userText("…")]`) and reaches the Agent as a message from the
+   * server, not from a person. A Session that is busy takes it as a queued follow-up
+   * (`queued: true`) instead of refusing it. Resolves once the turn has started; watch it
+   * with `sessionStatus`.
+   */
+  abstract run(
+    sessionId: string,
+    input: OmniMessage<TextPayload>[],
+  ): Promise<{ sessionId: string; queued: boolean }>;
+  /** `idle` / `running` / … of a Session of this Project. */
   abstract sessionStatus(sessionId: string): string;
   /** The workflow's own document (`state.json`, kept by the server across reloads and rollbacks). */
   abstract getState(): unknown;

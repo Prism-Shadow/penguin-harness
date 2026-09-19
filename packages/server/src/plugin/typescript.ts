@@ -2,7 +2,9 @@
  * The TypeScript compiler, loaded when something first needs it.
  *
  * The compiler decides whether the interfaces a package was written against still fit this
- * platform (./iface-check.ts). It is a dependency of this package, but the platform also runs as a single pushed bundle that sits outside any
+ * platform (./iface-check.ts) — for plugins and for workflows alike — and type-checks and
+ * transpiles a workflow's source (../workflows/compile.ts). It is a dependency of this
+ * package, but the platform also runs as a single pushed bundle that sits outside any
  * `node_modules`, on machines whose program may predate that dependency — so the specifier
  * is kept out of the bundler's sight and resolved at run time, in three places: beside this
  * module, beside the program that is running, and in the assets the push carried it in

@@ -113,7 +113,7 @@ if (hostBinding(ptyFiles) === undefined) {
   process.exit(1);
 }
 
-// The compiler a plugin's interfaces are checked with, beside the server bundle for the same reason
+// The compiler plugin interfaces and workflows are checked with, beside the server bundle for the same reason
 // node-pty is: the bundle has no node_modules of its own, and the server resolves
 // `typescript` from the program that is running.
 const { typescriptPayload } = await import(

@@ -385,6 +385,7 @@ The root manifest is named `Workflow`; it requires the host, provides the handle
 ```
 
 ```ts
+import { userText } from "@prismshadow/penguin-core";
 import type { WorkflowPackage } from "@prismshadow/penguin-server/plugin";
 
 export default {
@@ -399,7 +400,9 @@ export default {
                 // req = { method, path, query, body }; path is below the workflow's api/ mount
                 if (req.path === "/ask" && req.method === "POST") {
                   const { question } = req.body as { question: string };
-                  const { sessionId } = await host.runAgent({ text: question });
+                  // The same two verbs as above: open a Session, run a turn in it.
+                  const { sessionId } = await host.createSession();
+                  await host.run(sessionId, [userText(question)]);
                   return { body: { sessionId } };
                 }
                 return { status: 404, body: { error: "no such route" } };
@@ -419,7 +422,7 @@ export default {
 
 **Tabs are contributions.** Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (unique in the workflow, part of the full-page URL), `title` / `titleZh`, and a `renderer` whose `iframe.src` is a file under `ui/`. Several entries make several tabs; none makes a server-only workflow. It is the same slot, written the same way, a plugin contributes to — the host opens it to workflows and scopes the tab to this Agent. A slot the host has not opened (`WebModule.pages`, say) is refused by name.
 
-`WorkflowHost` (published as module `Host`): `runAgent({ text, sessionId? })` sends text to this Agent — into that Session, or a new one — and returns `{ sessionId }`; `sessionStatus(sessionId)`; `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workflow`, with their own `requires` between them — the tree is checked as a whole.
+`WorkflowHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workflow's Project: `createSession({ agentId? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`; `run(sessionId, [userText("…")])` runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workflow`, with their own `requires` between them — the tree is checked as a whole.
 
 HTTP, all under `/api/projects/:projectId/agents/:agentId/workflows` (Project members only): `GET /` lists the workflows with their `revision`, `uiRev`, `tabs` (each page's URL resolved) and current load `error`; `GET /:id/ui/*` serves a file of `ui/` (there is no default document — a tab names its page); any method on `/:id/api/*` reaches `handle` as JSON; `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. `DELETE /:id` removes the workflow together with its recorded versions. From a page directly under `ui/`, call your handler with a relative `fetch("../api/…")`; the Web App shows each page in its tab and reloads it when `uiRev` changes.
 

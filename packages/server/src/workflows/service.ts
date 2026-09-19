@@ -23,13 +23,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import {
-  bootModules,
-  Component,
-  ifaceKey,
-  parseManifest,
-  Use,
-} from "@prismshadow/penguin-core/kernel";
+import { bootModules, Component, parseManifest, Use } from "@prismshadow/penguin-core/kernel";
 import type {
   ClassCtx,
   IfaceDecl,
@@ -39,11 +33,13 @@ import type {
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
 import { userText } from "@prismshadow/penguin-core";
+import type { OmniMessage, TextPayload } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import type { ServerEvent } from "../api/types.js";
 import type { Channels, Clock, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
-import type { Members, Projects } from "../mechanisms/projects.js";
+import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
+import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
   WorkflowInfo,
   WorkflowRequest,
@@ -54,8 +50,13 @@ import type {
 } from "../mechanisms/workflows.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
 import { compileWorkflow, pruneBuilds } from "./compile.js";
-import { checkIfaces, packageOf, readInstalledTable, type IfaceQuestion } from "./iface-check.js";
-import { loadTypeScript } from "./typescript.js";
+import {
+  checkIfaces,
+  ifaceQuestions,
+  packageOf,
+  readInstalledTable,
+} from "../plugin/iface-check.js";
+import { loadTypeScript } from "../plugin/typescript.js";
 import {
   historyDir,
   isSafeRelPath,
@@ -124,26 +125,6 @@ async function readManifests(folder: WorkflowFolder): Promise<Manifest[]> {
       throw new Error(`package.json#penguin.modules[${i}]: ${messageOf(err)}`);
     }
   });
-}
-
-/**
- * The interfaces the manifests name with a package part, as questions for the compiler:
- * does the version installed in the workflow folder still fit this platform's?
- */
-function ifaceQuestions(manifests: readonly Manifest[]): IfaceQuestion[] {
-  const out: IfaceQuestion[] = [];
-  for (const m of manifests) {
-    for (const [alias, need] of Object.entries(m.requires)) {
-      const key = ifaceKey(m.name, need.iface);
-      if (packageOf(need.iface) !== null)
-        out.push({ module: m.name, alias, direction: "requires", key });
-    }
-    for (const [alias, ref] of Object.entries(m.provides)) {
-      const key = ifaceKey(m.name, ref);
-      if (packageOf(ref) !== null) out.push({ module: m.name, alias, direction: "provides", key });
-    }
-  }
-  return out;
 }
 
 /**
@@ -232,6 +213,8 @@ export class WorkflowService implements Workflows {
   @Use() private readonly channels!: Channels;
   @Use() private readonly members!: Members;
   @Use() private readonly projects!: Projects;
+  @Use() private readonly agents!: AgentIndex;
+  @Use() private readonly sessionIndex!: SessionIndex;
   @Use() private readonly runner!: ScheduleTaskRunner;
   @Use() private readonly sessions!: ScheduleSessionCreator;
 
@@ -423,12 +406,14 @@ export class WorkflowService implements Workflows {
       const ts = await loadTypeScript();
       const entry = compileWorkflow(ts, folder.dir, folder.revision);
       const questions = ifaceQuestions(manifests);
-      const installed = new Map(
-        [...new Set(questions.map((q) => packageOf(q.key)!))].map((pkg) => [
-          pkg,
-          readInstalledTable(folder.dir, pkg),
-        ]),
-      );
+      // The workflow's side of the comparison: the tables of the packages IT installed.
+      const installed: IfaceTable = { ifaces: {}, types: {} };
+      for (const pkg of new Set(questions.map((q) => packageOf(q.key)!))) {
+        const read = readInstalledTable(folder.dir, pkg);
+        if (typeof read === "string") throw new Error(read);
+        Object.assign(installed.ifaces, read.ifaces);
+        Object.assign(installed.types, read.types);
+      }
       const misfits = checkIfaces(ts, table as unknown as IfaceTable, installed, questions);
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       const root = await loadDefs(manifests, entry);
@@ -481,16 +466,30 @@ export class WorkflowService implements Workflows {
     const ensureState = () => (stateRead ??= readState(folder.dir).then((s) => void (state = s)));
     void ensureState();
     return {
-      async runAgent(input: { text: string; sessionId?: string }) {
-        if (typeof input?.text !== "string" || input.text === "")
-          throw new Error("runAgent: text is required");
-        const sessionId =
-          input.sessionId ??
-          (await service.sessions.createSession({ projectId, agentId })).sessionId;
-        await service.runner.startTask(sessionId, [userText(input.text, "server")]);
-        return { sessionId };
+      async createSession(opts?: { agentId?: string }) {
+        const target = opts?.agentId ?? agentId;
+        if (!service.agents.exists(projectId, target)) {
+          throw new Error(`createSession: this Project has no Agent '${target}'`);
+        }
+        return service.sessions.createSession({ projectId, agentId: target });
       },
-      sessionStatus: (sessionId: string) => service.runner.statusOf(sessionId),
+      async run(sessionId: string, input: OmniMessage<TextPayload>[]) {
+        service.ownSession(projectId, sessionId, "run");
+        const texts = (Array.isArray(input) ? input : []).map((m) => m?.payload?.text);
+        if (texts.length === 0 || texts.some((t) => typeof t !== "string" || t === "")) {
+          throw new Error('run: input is a non-empty list of userText("…") messages');
+        }
+        // Whatever the workflow stamped, the Agent hears the server, never a person.
+        return service.runner.startTask(
+          sessionId,
+          texts.map((text) => userText(text, "server")),
+          { queueIfBusy: true },
+        );
+      },
+      sessionStatus: (sessionId: string) => {
+        service.ownSession(projectId, sessionId, "sessionStatus");
+        return service.runner.statusOf(sessionId);
+      },
       getState: () => state,
       async setState(next: unknown) {
         await ensureState();
@@ -499,6 +498,13 @@ export class WorkflowService implements Workflows {
       },
       log: (message: string) => service.log.line(`[workflow ${folder.id}] ${message}`),
     };
+  }
+
+  /** A workflow reaches the Sessions of its own Project and no others. */
+  private ownSession(projectId: string, sessionId: string, call: string): void {
+    if (this.sessionIndex.findById(sessionId)?.projectId !== projectId) {
+      throw new Error(`${call}: this Project has no Session '${sessionId}'`);
+    }
   }
 
   /** Drops a workflow's instance and tells the Project's users it is gone. */
