@@ -27,7 +27,9 @@ import {
   type WorkflowTab,
   type WorkflowUpdatedDetail,
 } from "../../lib/workflow-tabs";
+import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
+import { localizedText } from "../chat/skill-use";
 
 /** The Agent's workflow tabs, kept fresh by the server's `workflow_updated` events. */
 export function useWorkflowTabs(projectId: string | null, agentId: string | null) {
@@ -62,9 +64,12 @@ export function useWorkflowTabs(projectId: string | null, agentId: string | null
   }, [projectId, agentId, refresh]);
 
   const settled = settleActiveTab(active, tabs);
-  const activeTab = settled === null ? null : (tabs.find((t) => t.workflowId === settled) ?? null);
+  const activeTab = settled === null ? null : (tabs.find((t) => t.tabId === settled) ?? null);
   return { tabs, active: settled, activeTab, setActive: setActiveRaw, refresh };
 }
+
+/** How long a page that never finishes loading stays hidden before it is shown as it is. */
+const FRAME_REVEAL_TIMEOUT_MS = 4000;
 
 const TAB_BASE =
   "relative h-9 shrink-0 border-b-2 px-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
@@ -79,8 +84,9 @@ export function WorkflowTabStrip({
 }: {
   tabs: readonly WorkflowTab[];
   active: string | null;
-  onSelect: (workflowId: string | null) => void;
+  onSelect: (tabId: string | null) => void;
 }) {
+  const { locale } = useLocale();
   if (tabs.length === 0) return null;
   return (
     <div
@@ -99,15 +105,15 @@ export function WorkflowTabStrip({
       </button>
       {tabs.map((t) => (
         <button
-          key={t.workflowId}
+          key={t.tabId}
           type="button"
           role="tab"
-          aria-selected={active === t.workflowId}
+          aria-selected={active === t.tabId}
           title={t.error ?? undefined}
-          className={`${TAB_BASE} ${active === t.workflowId ? TAB_ACTIVE : TAB_IDLE}`}
-          onClick={() => onSelect(t.workflowId)}
+          className={`${TAB_BASE} ${active === t.tabId ? TAB_ACTIVE : TAB_IDLE}`}
+          onClick={() => onSelect(t.tabId)}
         >
-          {t.name}
+          {localizedText(locale, t.title, t.titleZh)}
           {t.error !== null && (
             <span className={`ml-1.5 ${toneInk.danger}`} aria-label={S.workflows.brokenMark}>
               !
@@ -197,6 +203,22 @@ export function WorkflowFrame({
     return () => cancelAnimationFrame(id);
   }, [applyTheme, dark, accent, fontScale, tab.uiRev]);
 
+  // A page is its own document: until it has loaded and been themed it paints the browser's
+  // white canvas, and then its own unstyled markup — a white flash in a dark app, on every
+  // tab switch and every reload. So the frame stays invisible over the app's own background
+  // until the theme is on it, and fades in. The timer is for a page that never fires `load`
+  // (a hung subresource): it is shown anyway rather than hidden forever.
+  const frameKey = `${tab.tabId}@${tab.uiRev}`;
+  const [shownKey, setShownKey] = useState<string | null>(null);
+  const onFrameLoad = useCallback(() => {
+    applyTheme();
+    setShownKey(frameKey);
+  }, [applyTheme, frameKey]);
+  useEffect(() => {
+    const id = setTimeout(() => setShownKey(frameKey), FRAME_REVEAL_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [frameKey]);
+
   const remove = async () => {
     setBusy("remove");
     setFailure(null);
@@ -214,8 +236,8 @@ export function WorkflowFrame({
   // (`parent.postMessage({ type: "penguin:fill-app" }, "*")`) — only from our own frame.
   const navigate = useNavigate();
   const fillApp = useCallback(
-    () => void navigate(workflowAppPath(projectId, agentId, tab.workflowId)),
-    [navigate, projectId, agentId, tab.workflowId],
+    () => void navigate(workflowAppPath(projectId, agentId, tab.workflowId, tab.key)),
+    [navigate, projectId, agentId, tab.workflowId, tab.key],
   );
   useEffect(() => {
     if (bare) return;
@@ -336,12 +358,14 @@ export function WorkflowFrame({
         )}
       </div>
       <iframe
-        key={tab.uiRev}
+        key={frameKey}
         ref={frameRef}
-        onLoad={applyTheme}
-        title={tab.name}
-        src={workflowUiUrl(projectId, agentId, tab)}
-        className="min-h-0 flex-1 border-0 bg-white"
+        onLoad={onFrameLoad}
+        title={tab.title}
+        src={workflowUiUrl(tab)}
+        className={`min-h-0 flex-1 border-0 transition-opacity duration-150 motion-reduce:transition-none ${
+          shownKey === frameKey ? "opacity-100" : "opacity-0"
+        }`}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
       />
     </div>

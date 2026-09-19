@@ -1,5 +1,6 @@
 /**
- * One workflow's page as the whole app: /app/:projectId/:agentId/:workflowId.
+ * One workflow page as the whole app: /app/:projectId/:agentId/:workflowId[/:tabKey] — the
+ * tab that key names, or the workflow's first tab without one.
  *
  * No sidebar, no chat, no tab strip — the page fills the window, which is what
  * `penguin web --app …` opens and what a tab's "fill the app" action navigates to. There is
@@ -14,7 +15,12 @@ import { useNavigate, useParams } from "react-router";
 import * as api from "../../api/endpoints";
 import type { PaletteAction } from "../../lib/command-palette";
 import { S } from "../../lib/strings";
-import { WORKFLOW_UPDATED_EVENT, workflowTabsOf, type WorkflowTab } from "../../lib/workflow-tabs";
+import {
+  appPageTab,
+  WORKFLOW_UPDATED_EVENT,
+  workflowTabsOf,
+  type WorkflowTab,
+} from "../../lib/workflow-tabs";
 import { rememberSelection } from "../../state/project";
 import { AppPalette } from "../palette/app-palette";
 import { WorkflowFrame } from "./workflow-tabs";
@@ -24,6 +30,7 @@ export function WorkflowAppPage() {
   const projectId = params["projectId"] ?? "";
   const agentId = params["agentId"] ?? "";
   const workflowId = params["workflowId"] ?? "";
+  const tabKey = params["tabKey"];
   const navigate = useNavigate();
   const [tab, setTab] = useState<WorkflowTab | null | undefined>(undefined);
   const [failure, setFailure] = useState<string | null>(null);
@@ -34,7 +41,7 @@ export function WorkflowAppPage() {
       try {
         const res = await api.getWorkflows(projectId, agentId);
         if (!alive) return;
-        setTab(workflowTabsOf(res.workflows).find((t) => t.workflowId === workflowId) ?? null);
+        setTab(appPageTab(workflowTabsOf(res.workflows), workflowId, tabKey));
         setFailure(null);
       } catch (err) {
         if (alive) setFailure(err instanceof Error ? err.message : String(err));
@@ -50,7 +57,7 @@ export function WorkflowAppPage() {
       alive = false;
       window.removeEventListener(WORKFLOW_UPDATED_EVENT, onUpdated);
     };
-  }, [projectId, agentId, workflowId]);
+  }, [projectId, agentId, workflowId, tabKey]);
 
   const exit = useMemo<PaletteAction[]>(
     () => [
