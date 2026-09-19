@@ -10,7 +10,7 @@
  * channel pretending to be a resource. The registry carries resources and capabilities;
  * a function derivable from an already-claimed capability is neither.
  */
-import { SESSION_COOKIE } from "../auth/middleware.js";
+import { parseCookieHeader, sessionCookies } from "../auth/middleware.js";
 
 export interface IdentifiedUser {
   userId: string;
@@ -23,18 +23,6 @@ export interface AuthenticatesSessions {
   authenticateWithMeta(token: string): { user: { userId: string } } | null;
 }
 
-/** The session cookie out of a raw Cookie header (the seam hands over a plain Request). */
-export function readSessionCookie(header: string | null): string | null {
-  if (header === null) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() !== SESSION_COOKIE) continue;
-    return decodeURIComponent(part.slice(eq + 1).trim());
-  }
-  return null;
-}
-
 /**
  * Builds the resolver from the claimed auth capability. Null (a bare kernel, which has no
  * auth to claim) authenticates nobody: an unattributable request is not a request from
@@ -43,8 +31,11 @@ export function readSessionCookie(header: string | null): string | null {
 export function identityFrom(auth: AuthenticatesSessions | null): Identity {
   if (auth === null) return async () => null;
   return async (request) => {
-    const token = readSessionCookie(request.headers.get("cookie"));
-    const authed = token === null ? null : auth.authenticateWithMeta(token);
-    return authed === null ? null : { userId: authed.user.userId };
+    const cookies = parseCookieHeader(request.headers.get("cookie"));
+    for (const { token } of sessionCookies(cookies, request.headers.get("host") ?? undefined)) {
+      const authed = auth.authenticateWithMeta(token);
+      if (authed !== null) return { userId: authed.user.userId };
+    }
+    return null;
   };
 }

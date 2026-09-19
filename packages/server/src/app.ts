@@ -58,7 +58,7 @@ import { SessionsRepo } from "./db/repos/sessions.js";
 import { UiPrefsRepo } from "./db/repos/ui-prefs.js";
 import { UsersRepo } from "./db/repos/users.js";
 import type { UserRow } from "./db/repos/users.js";
-import { jsonOnlyWrites } from "./auth/middleware.js";
+import { jsonOnlyWrites, sameOriginWrites } from "./auth/middleware.js";
 import { mintApiToken, storeApiToken } from "./auth/api-token.js";
 import type { Identity } from "./terminal/identity.js";
 import { terminalRoutes } from "./terminal/routes.js";
@@ -460,6 +460,7 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     }
     return capped.mw(c, next);
   });
+  app.use("/api/*", sameOriginWrites);
   app.use("/api/*", jsonOnlyWrites);
 
   // THE seam: every route is one the platform may take over by push — the upgrade channel

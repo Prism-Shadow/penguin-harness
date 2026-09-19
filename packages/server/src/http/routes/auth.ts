@@ -9,7 +9,7 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AuthResponse } from "../../api/types.js";
-import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
+import { cookieOptions, sessionCookieName, sessionCookies } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { readJson, requireString } from "../validate.js";
 import { HttpError } from "../errors.js";
@@ -35,7 +35,7 @@ export function authRoutes(deps: AuthRouteDeps): Hono<AppEnv> {
     const { user, token } = await deps.authService.login(userId, password);
     setCookie(
       c,
-      SESSION_COOKIE,
+      sessionCookieName(c.req.header("host"), c.req.header("origin") !== undefined),
       token,
       cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
     );
@@ -43,9 +43,14 @@ export function authRoutes(deps: AuthRouteDeps): Hono<AppEnv> {
   });
 
   app.post("/logout", (c) => {
-    const token = getCookie(c, SESSION_COOKIE);
-    if (token) deps.authService.logout(token);
-    deleteCookie(c, SESSION_COOKIE, { path: "/" });
+    // Signs out every session of THIS server the request holds, under either name. The plain
+    // name may carry another instance's token (one that predates per-port names): that token
+    // is not ours, and its cookie is left alone.
+    for (const { name, token } of sessionCookies(getCookie(c), c.req.header("host"))) {
+      if (deps.authService.authenticateWithMeta(token) === null) continue;
+      deps.authService.logout(token);
+      deleteCookie(c, name, { path: "/" });
+    }
     return c.body(null, 204);
   });
 
@@ -76,7 +81,8 @@ export function authRoutes(deps: AuthRouteDeps): Hono<AppEnv> {
       return c.redirect(`/login?claimFailed=${deps.desktop !== null ? "desktop" : "server"}`, 302);
     setCookie(
       c,
-      SESSION_COOKIE,
+      // A link, so a browser followed it: a navigation carries no Origin to tell by.
+      sessionCookieName(c.req.header("host"), true),
       session,
       cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
     );

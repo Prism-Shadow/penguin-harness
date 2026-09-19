@@ -5,7 +5,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import { Config, Log } from "../hmr/capabilities.js";
 import type { MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { authMiddleware, jsonOnlyWrites } from "../auth/middleware.js";
+import { authMiddleware, jsonOnlyWrites, sameOriginWrites } from "../auth/middleware.js";
 import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
@@ -87,6 +87,7 @@ export class HttpModule {
       }
       return capped.mw(c, next);
     });
+    app.use("/api/*", sameOriginWrites);
     app.use("/api/*", jsonOnlyWrites);
 
     const routes = [...(contributions.routes ?? [])]

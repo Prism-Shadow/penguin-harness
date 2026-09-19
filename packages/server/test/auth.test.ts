@@ -122,6 +122,102 @@ describe("auth", () => {
     expect(after.status).toBe(401);
   });
 
+  it("two instances on one host stay signed in side by side: a browser's cookie carries the port", async () => {
+    // Cookies ignore the port, so a release and a development instance on one host — or two
+    // tunnels on a phone — shared `penguin_session`, and signing in to one signed the other out.
+    const other = await createTestApp();
+    try {
+      await provisionUser(t.app, "dana");
+      await provisionUser(other.app, "dana");
+      const signIn = async (app: TestApp["app"], port: number) => {
+        const res = await app.request("/api/auth/login", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            host: `phone.example:${port}`,
+            origin: `http://phone.example:${port}`,
+          },
+          body: JSON.stringify({ userId: "dana", password: "password-123" }),
+        });
+        expect(res.status).toBe(200);
+        return (res.headers.get("set-cookie") ?? "").split(";")[0]!;
+      };
+      const a = await signIn(t.app, 53531);
+      const b = await signIn(other.app, 53899);
+      expect(a.startsWith("penguin_session_53531=")).toBe(true);
+      expect(b.startsWith("penguin_session_53899=")).toBe(true);
+      // One jar, both cookies, sent to both — each server finds its own.
+      const jar = `${a}; ${b}`;
+      const me = (app: TestApp["app"], port: number) =>
+        app.request("/api/me", { headers: { cookie: jar, host: `phone.example:${port}` } });
+      expect((await me(t.app, 53531)).status).toBe(200);
+      expect((await me(other.app, 53899)).status).toBe(200);
+      // Signing out of one leaves the other's cookie alone.
+      const out = await t.app.request("/api/auth/logout", {
+        method: "POST",
+        headers: { cookie: jar, host: "phone.example:53531", origin: "http://phone.example:53531" },
+      });
+      expect(out.status).toBe(204);
+      expect(out.headers.get("set-cookie") ?? "").toContain("penguin_session_53531=;");
+      expect(out.headers.get("set-cookie") ?? "").not.toContain("penguin_session_53899");
+      expect((await me(t.app, 53531)).status).toBe(401);
+      expect((await me(other.app, 53899)).status).toBe(200);
+    } finally {
+      await other.cleanup();
+    }
+  });
+
+  it("a non-browser sign-in keeps the plain cookie name, and a plain cookie still signs in", async () => {
+    // The CLI reads `penguin_session` off the login's Set-Cookie (an older CLI must keep finding
+    // it), and sends it back under that name whatever port it talks to.
+    await provisionUser(t.app, "erin");
+    const res = await t.app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json", host: "localhost:7364" },
+      body: JSON.stringify({ userId: "erin", password: "password-123" }),
+    });
+    const cookie = (res.headers.get("set-cookie") ?? "").split(";")[0]!;
+    expect(cookie.startsWith("penguin_session=")).toBe(true);
+    const me = await t.app.request("/api/me", { headers: { cookie, host: "localhost:7364" } });
+    expect(me.status).toBe(200);
+  });
+
+  it("refuses a write a browser made from another origin — another port of this host included", async () => {
+    const { cookie } = await provisionUser(t.app, "fay");
+    const write = (
+      headers: Record<string, string>,
+      body: string | Uint8Array = JSON.stringify({ projectId: "fay-one", name: "x" }),
+    ) =>
+      t.app.request("/api/projects", {
+        method: "POST",
+        headers: { cookie, host: "localhost:7364", ...headers },
+        body,
+      });
+    const json = { "content-type": "application/json" };
+    // `SameSite` lets this one through: same site, different port.
+    const sibling = await write({ ...json, origin: "http://localhost:3000" });
+    expect(sibling.status).toBe(403);
+    expect(((await sibling.json()) as { error: { code: string } }).error.code).toBe(
+      "cross_origin_write",
+    );
+    expect((await write({ ...json, origin: "https://evil.example" })).status).toBe(403);
+    expect((await write({ ...json, origin: "null" })).status).toBe(403);
+    // This app's own page, and a client that is no browser at all.
+    expect((await write({ ...json, origin: "http://localhost:7364" })).status).toBe(201);
+    expect(
+      (await write({ ...json }, JSON.stringify({ projectId: "fay-two", name: "x" }))).status,
+    ).toBe(201);
+    // A body with no Content-Type is what `fetch(…, { mode: "no-cors", body: untypedBlob })`
+    // sends; the handlers would parse it as JSON without asking, so it is refused outright.
+    const bytes = new TextEncoder().encode(JSON.stringify({ projectId: "fay-three", name: "x" }));
+    const untyped = await write({ "content-length": String(bytes.byteLength) }, bytes);
+    expect(untyped.status).toBe(415);
+    // A write with neither a type nor a body is still fine (logout, say).
+    expect(
+      (await t.app.request("/api/auth/logout", { method: "POST", headers: { cookie } })).status,
+    ).toBe(204);
+  });
+
   it("self password change: old checked, new takes effect, initial flag cleared", async () => {
     const { cookie } = await provisionUser(t.app, "dave");
     const api = apiClient(t.app, cookie);
