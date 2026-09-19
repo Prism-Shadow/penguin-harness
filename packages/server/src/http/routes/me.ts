@@ -21,7 +21,7 @@ import type {
   UpdateProfileResponse,
 } from "../../api/types.js";
 import { toUserInfo } from "../../auth/service.js";
-import { SESSION_COOKIE, cookieOptions } from "../../auth/middleware.js";
+import { cookieOptions, sessionCookieName } from "../../auth/middleware.js";
 import type { AppEnv } from "../../auth/middleware.js";
 import { badRequest, readJson, requireString } from "../validate.js";
 import { HttpError } from "../errors.js";
@@ -167,7 +167,7 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
         const { token } = await deps.authService.login(c.var.user.userId, newPassword);
         setCookie(
           c,
-          SESSION_COOKIE,
+          sessionCookieName(c.req.header("host"), c.req.header("origin") !== undefined),
           token,
           cookieOptions(c, deps.authService.sessionTtlMs, deps.config.trustProxy),
         );
