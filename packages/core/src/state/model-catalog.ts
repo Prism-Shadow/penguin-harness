@@ -332,7 +332,11 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     label: "Z.AI (GLM)",
     envKey: "ZAI_API_KEY",
     envBaseUrlKey: "ZAI_BASE_URL",
-    apiKeyUrl: "https://open.bigmodel.cn/apikey/platform",
+    // The global platform's key console: the group's default endpoint is global api.z.ai
+    // (AgentHub's GLM client fallback), and the two platforms issue separate keys. A
+    // bigmodel.cn key is the mainland platform's and needs
+    // ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4/ to work.
+    apiKeyUrl: "https://z.ai/manage-apikey/apikey-list",
     modelsUrl: "https://docs.z.ai/guides/overview/pricing",
   },
   {
