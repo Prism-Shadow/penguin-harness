@@ -12,6 +12,13 @@
  * among those dependencies — a plugin compiles against `@prismshadow/penguin-core`'s types
  * (a devDependency) and shares the host's copy at run time.
  *
+ * A builtin plugin bundles what it runs. Every file in the prefix is a blob a push carries
+ * separately, so an npm dependency tree (a grammar collection, a web framework's CJS, ESM and
+ * type copies) turns one plugin into hundreds of small transfers. Its own build compiles its
+ * pure-JS dependencies into `dist/`; what remains a runtime dependency is a native module whose
+ * per-platform binaries cannot live inside a bundle, named in NATIVE_DEPENDENCIES — and a
+ * package declaring anything else fails this build before anything is packed.
+ *
  * Cached by content: the hash over every plugin's `src/`, `package.json`, `README.md` and
  * `tsup.config.ts` names a directory under `node_modules/.cache/penguin-plugins/`, and an
  * unchanged set is not built, packed or installed again — a push of an unrelated change costs
@@ -33,9 +40,69 @@ const PLUGINS_SRC = path.join(ROOT, "plugins");
 const CACHE = path.join(ROOT, "node_modules", ".cache", "penguin-plugins");
 const COMPLETE = ".complete";
 /** Folded into the cache key: bump when what this script WRITES changes, not only what it reads. */
-const PACK_FORMAT = 4;
+const PACK_FORMAT = 7;
 /** The prefix's own manifest: npm needs one above `node_modules`, and it is ours, never a package's. */
 const PREFIX_MANIFEST = { name: "penguin-builtin-plugins", private: true, version: "0.0.0" };
+/**
+ * The runtime dependencies a builtin plugin may declare: native modules only, each with a
+ * reason. Everything else is compiled into the plugin's `dist/` by its own build.
+ */
+const NATIVE_DEPENDENCIES = new Map([
+  ["koffi", "FFI with per-platform prebuilt binaries (sandbox-dsh's Windows ACL runner)"],
+  [
+    "@deepseek-ai/dsh-sandbox-local",
+    "picks its per-platform rung by bare specifier at run time — bundling it makes the Windows one unresolvable (sandbox-dsh)",
+  ],
+  ["@deepseek-ai/cordis", "the context the DSH chain is mounted on, shared with it (sandbox-dsh)"],
+  [
+    "@deepseek-ai/node-addon-landlock-run",
+    "resolves its per-platform launcher binary package at run time (sandbox-dsh)",
+  ],
+]);
+
+/**
+ * The hosts a pushed prefix may land on. npm installs a native module's binary for the machine
+ * doing the install, and this build runs wherever CI or a developer happens to be — so a prefix
+ * built on Linux carried no Windows binary, and sandbox-dsh's Windows runner failed there with
+ * "Cannot find the native Koffi module". The per-platform packages of every NATIVE_DEPENDENCIES
+ * entry are installed for each of these as well; they are small next to the plugins themselves,
+ * and one prefix then serves every target a push can reach.
+ */
+const TARGET_PLATFORMS = [
+  { os: "linux", cpu: "x64" },
+  { os: "linux", cpu: "arm64" },
+  { os: "win32", cpu: "x64" },
+  { os: "darwin", cpu: "arm64" },
+];
+
+/**
+ * The per-platform packages a native dependency declares as optional dependencies, as
+ * `name@version` specifiers, for the targets above. A native module publishes one package per
+ * `<os>-<cpu>` (koffi: `@koromix/koffi-win32-x64`) and depends on all of them optionally, so its
+ * own manifest — installed above — is the list, and this build never hardcodes a platform triple.
+ */
+async function platformPackagesOf(prefix) {
+  const wanted = TARGET_PLATFORMS.map(({ os: o, cpu }) => `${o}-${cpu}`);
+  const specs = [];
+  for (const dep of NATIVE_DEPENDENCIES.keys()) {
+    let manifest;
+    try {
+      manifest = JSON.parse(
+        await fsp.readFile(
+          path.join(prefix, "node_modules", ...dep.split("/"), "package.json"),
+          "utf8",
+        ),
+      );
+    } catch {
+      continue; // not installed: no plugin in this build declares it
+    }
+    for (const [name, version] of Object.entries(manifest.optionalDependencies ?? {})) {
+      if (wanted.some((triple) => name.endsWith(`-${triple}`))) specs.push(`${name}@${version}`);
+    }
+  }
+  return specs.sort();
+}
+
 /** What npm leaves in the prefix that is not a package: its hidden lockfile. Never shipped. */
 const NOT_SHIPPED = new Set(["node_modules/.package-lock.json"]);
 
@@ -107,6 +174,17 @@ async function pluginPackages() {
     const pkg = JSON.parse(await fsp.readFile(manifestFile, "utf8"));
     // A package with a code entry is built and packed; one without (skills, hooks) carries no code.
     if (pkg.main === undefined && pkg.exports === undefined) continue;
+    const unbundled = Object.keys(pkg.dependencies ?? {}).filter(
+      (d) => !NATIVE_DEPENDENCIES.has(d),
+    );
+    if (unbundled.length > 0) {
+      throw new Error(
+        `${pkg.name} declares runtime dependencies ${unbundled.join(", ")}: a builtin plugin bundles ` +
+          "what it runs (tsup noExternal, the package a devDependency) — every file it would " +
+          "install is a separate blob on every push. Only native modules stay dependencies " +
+          "(NATIVE_DEPENDENCIES in scripts/build-plugins.mjs).",
+      );
+    }
     out.push({ name: pkg.name, version: pkg.version, dir });
   }
   return out;
@@ -172,6 +250,31 @@ export async function buildBuiltinPlugins({ log = () => {} } = {}) {
           ],
           out,
         );
+        // One call for every target: npm reconciles the tree on each install, so a second
+        // install would prune the first target's package as extraneous. --force is what makes
+        // npm accept a package whose `os`/`cpu` is not this machine's — the point of the call.
+        const platformPackages = await platformPackagesOf(out);
+        if (platformPackages.length > 0) {
+          run(
+            "npm",
+            [
+              "install",
+              "--no-save",
+              "--no-package-lock",
+              "--omit=dev",
+              "--no-audit",
+              "--no-fund",
+              "--ignore-scripts",
+              "--force",
+              "--",
+              ...platformPackages,
+            ],
+            out,
+          );
+        }
+        if (platformPackages.length > 0) {
+          log(`${platformPackages.length} per-platform native binaries: installed`);
+        }
       }
       await fsp.writeFile(path.join(out, COMPLETE), hash);
       log(`${plugins.length} builtin plugins: installed (${hash})`);

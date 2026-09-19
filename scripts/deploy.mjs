@@ -30,7 +30,8 @@ import { unsafePlaintextTarget } from "./deploy-target-safety.mjs";
 import { buildGitDefine, checkoutFacts, originUrl } from "./build-git-stamp.mjs";
 import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
-import { buildBuiltinPlugins, prefixLayout } from "./build-plugins.mjs";
+import { buildBuiltinPlugins } from "./build-plugins.mjs";
+import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
 import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
@@ -240,19 +241,21 @@ async function readNativeAssets() {
       rel.startsWith("lib/") ||
       rel.startsWith("build/Release/") ||
       rel.startsWith("prebuilds/"));
+  const pty = [];
   for (const entry of await fsp.readdir(ptyDir, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const abs = path.join(entry.parentPath, entry.name);
     const rel = path.relative(ptyDir, abs).split(path.sep).join("/");
     if (!wanted(rel)) continue;
-    const target = `node_modules/node-pty/${rel}`;
-    files[target] = await fsp.readFile(abs);
-    // node-pty ships its prebuilt spawn-helper as 0644; the runtime restores the bit from
-    // this list, so push it regardless of how it looks on this machine.
-    if (rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0) {
-      exec.push(target);
-    }
+    // node-pty ships its prebuilt spawn-helper as 0644; the archive records it executable
+    // regardless of how it looks on this machine.
+    const executable = rel.endsWith("spawn-helper") || ((await fsp.stat(abs)).mode & 0o111) !== 0;
+    pty.push({ rel: `node_modules/node-pty/${rel}`, abs, exec: executable });
   }
+  // Every package travels as ONE archive (scripts/asset-archives.mjs): a push of hundreds of
+  // small files is hundreds of blobs, probes and transfers, and stalls. The platform unpacks
+  // `archives/*.tgz` before resolving anything from its assets (hmr/asset-archives.ts).
+  files[`archives/${archiveName("", "node-pty")}`] = await packArchive(pty);
   // The scripts that run on the FAR side — the release installers a remote install feeds
   // over, the one thing that has to arrive before the CLI does. A pushed bundle resolves them
   // from its own assets directory, so a push that omits one leaves a server that cannot
@@ -261,12 +264,13 @@ async function readNativeAssets() {
     files[name] = await fsp.readFile(path.join(ROOT, from));
   }
   // The builtin plugins, as the npm prefix the loader resolves from (`plugins/package.json`
-  // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs): the packages as npm
-  // publishes them, installed by npm, from cache when unchanged — so a push carries the
-  // plugins of the revision it was built from.
+  // + `plugins/node_modules/<name>/…`, see scripts/build-plugins.mjs), from cache when
+  // unchanged — one archive per package, so an unchanged plugin is an unchanged blob.
   const built = await buildBuiltinPlugins({ log });
-  for (const [rel, source] of prefixLayout(built)) {
-    files[`plugins/${rel}`] = await fsp.readFile(source.path);
+  const { byPackage, loose } = await prefixPackages(built.dir, built.files, "plugins");
+  files["archives/plugins.tgz"] = await packArchive(loose);
+  for (const [pkg, entries] of byPackage) {
+    files[`archives/${archiveName("plugins.", pkg)}`] = await packArchive(entries);
   }
   return { files, exec };
 }
