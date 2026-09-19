@@ -258,6 +258,16 @@ describe("workflows", () => {
       /index\.ts:\d+:\d+ TS2551 Property 'setStat' does not exist on type 'WorkflowHost'/,
     );
     expect(error).toContain("TS2322");
+    // Said once, by the author's own file; the server's copy of the same question is left out.
+    expect(error).not.toContain("default export");
+    expect(error.match(/TS2322/g)).toHaveLength(1);
+
+    // A JSON body may be null: an optional `unknown` member stays `unknown` in the table.
+    await fs.writeFile(
+      path.join(dir, "index.ts"),
+      indexSource("hello").replace("return { body: { count: n } };", "return { body: null };"),
+    );
+    expect((await reload()).error).toBeNull();
 
     // Untyped is refused too: `strict` leaves no implicit any to slip through.
     await fs.writeFile(
