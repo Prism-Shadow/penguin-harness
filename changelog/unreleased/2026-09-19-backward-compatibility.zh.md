@@ -3,7 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** refactor
 - **Scope:** `server`
-- **PR:** [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3)
+- **PR:** [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3), [#9](https://github.com/nicolaepocroianu/penguin-harness/pull/9)
 
 [English](2026-09-19-backward-compatibility.md)
 

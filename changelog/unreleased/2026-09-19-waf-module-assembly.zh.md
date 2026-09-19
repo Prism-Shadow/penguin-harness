@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#9](https://github.com/nicolaepocroianu/penguin-harness/pull/9)
 
 [English](2026-09-19-waf-module-assembly.md)
 
