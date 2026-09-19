@@ -2,8 +2,11 @@
  * Company mode, end to end through the browser with the mock LLM: switch modes, create the
  * marketplace organization from the switcher, land on the CEO's desk conversation (its
  * initialization run is answered by the mock), find the CEO on the org chart and a ticket on
- * the board, open a desk from the sidebar's 工位 group and another from the org chart, then
- * work in the channels — post in the all-hands channel and see the mention reach the CEO's
+ * the board, open a desk from the sidebar's 工位 group and another from the org chart, work the
+ * board — a click on a card opens its ticket, a mouse drag onto another column moves it, and a
+ * ticket session opened from the dialog stays on screen and joins the sidebar's 临时 group,
+ * which survives a reload and empties only through its ✕ and its 全部关闭 — then work in the
+ * channels — post in the all-hands channel and see the mention reach the CEO's
  * desk as an `[org_trigger]` work run, create a channel, invite the CEO into it, and post a
  * mention there — and finally check that development mode lists none of the organization's
  * own sessions. The desk row's run mark is checked on both sides of the initialization run:
@@ -45,7 +48,7 @@ async function enableCompanyMode() {
 test("company mode: create the organization, meet the CEO, see the board and the chat work", async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   await enableCompanyMode();
   await provisionAndLogin(page.request, U, P);
   const project = (await (await page.request.get(`${BASE}/api/projects`)).json()).projects[0];
@@ -178,6 +181,92 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await page.goto(`/org/${projectId}/${ORG}/tickets`);
   await expect(page.getByText("Build the marketplace site").first()).toBeVisible();
 
+  // A click anywhere on a card opens its ticket in place.
+  const board = `/org/${projectId}/${ORG}/tickets`;
+  const card = (title) => page.locator("[data-ticket-column] button", { hasText: title }).first();
+  await card("Build the marketplace site").click();
+  const siteDialog = page.getByRole("dialog", { name: "Build the marketplace site" });
+  await expect(siteDialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(siteDialog).toHaveCount(0);
+
+  // A mouse drag onto another column lifts the card as soon as it moves and asks to move the
+  // ticket there; confirming moves it.
+  const from = await card("Build the marketplace site").boundingBox();
+  const to = await page.locator('[data-ticket-column="in_progress"]').boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  // Near the column's top rather than its middle: a tall column can end below the viewport.
+  await page.mouse.move(to.x + to.width / 2, to.y + Math.min(60, to.height / 2), { steps: 12 });
+  await page.mouse.up();
+  const moveConfirm = page.getByRole("dialog", { name: "移动工单" });
+  await expect(
+    moveConfirm.getByText("将「Build the marketplace site」移到「进行中」？"),
+  ).toBeVisible();
+  await moveConfirm.getByRole("button", { name: "确认", exact: true }).click();
+  await expect(
+    page.locator('[data-ticket-column="in_progress"]').getByText("Build the marketplace site"),
+  ).toBeVisible();
+
+  // A ticket session opened from the dialog lands on its conversation and STAYS there: the
+  // board, still mounted while the router commits the new location, must not write its
+  // `?ticket=` query back over the conversation's history entry.
+  const startSession = async (ticketId) => {
+    const res = await page.request.post(api(`/organizations/${ORG}/tickets/${ticketId}/start`), {
+      data: { message: "Pick this up." },
+    });
+    expect(res.ok(), "start ticket session").toBeTruthy();
+    return (await res.json()).sessionId;
+  };
+  const openFromTicket = async (title, sessionId) => {
+    await page.goto(board);
+    await card(title).click();
+    const dialog = page.getByRole("dialog", { name: title });
+    await dialog.getByRole("button", { name: /^关联工单会话/ }).click();
+    await dialog.locator('button[title="打开会话"]').first().click();
+    await expect(page).toHaveURL(new RegExp(`/chat/${sessionId}$`));
+    await expect(page.getByPlaceholder(/输入消息/)).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe(`/chat/${sessionId}`);
+  };
+  const siteSession = await startSession(ticket.ticketId);
+  await openFromTicket("Build the marketplace site", siteSession);
+
+  // It joins the 临时 group below 工位, marked as the session on screen, and a reload keeps it.
+  const tempHeader = (n) => sidebar.getByRole("button", { name: `临时（${n}）` });
+  const anyTempHeader = sidebar.getByRole("button", { name: /^临时（/ });
+  const removeRow = sidebar.getByRole("button", { name: "从「临时」中移除" });
+  await expect(tempHeader(1)).toBeVisible();
+  const desksTop = (await sidebar.getByRole("button", { name: /^工位（/ }).boundingBox()).y;
+  expect((await tempHeader(1).boundingBox()).y).toBeGreaterThan(desksTop);
+  await expect(sidebar.locator('li button[aria-current="true"]')).toHaveCount(1);
+  await page.reload();
+  await expect(tempHeader(1)).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/chat/${siteSession}$`));
+
+  // A second one goes on top. Its ✕ removes only its row, even while it is on screen: the
+  // page stays on the conversation and the other entry stays listed.
+  const launch = await page.request.post(api(`/organizations/${ORG}/tickets`), {
+    data: { title: "Write the launch post", goal: "Announce the site.", owner: `agent:${ORG}_ceo` },
+  });
+  expect(launch.ok(), "create second ticket").toBeTruthy();
+  const launchSession = await startSession((await launch.json()).ticketId);
+  await openFromTicket("Write the launch post", launchSession);
+  await expect(tempHeader(2)).toBeVisible();
+  await removeRow.first().click();
+  await expect(tempHeader(1)).toBeVisible();
+  await expect(sidebar.locator('li button[aria-current="true"]')).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/chat/${launchSession}$`));
+
+  // 全部关闭 empties the group in one click, with no confirmation, and it stays empty.
+  await openFromTicket("Write the launch post", launchSession);
+  await expect(tempHeader(2)).toBeVisible();
+  await sidebar.getByRole("button", { name: "全部关闭", exact: true }).click();
+  await expect(anyTempHeader).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/chat/${launchSession}$`));
+  await page.reload();
+  await expect(sidebar.getByRole("button", { name: /^工位（/ })).toBeVisible();
+  await expect(anyTempHeader).toHaveCount(0);
+
   // An organization opens on its overview; its channels are the sidebar's own list, where
   // development mode lists conversations, with the all-hands channel pinned at its top.
   await page.goto(`/org/${projectId}/${ORG}`);
@@ -239,7 +328,7 @@ test("company mode: create the organization, meet the CEO, see the board and the
   expect(siteDay.messages.some((m) => m.text.includes("站点频道成立"))).toBe(true);
   expect(siteDay.messages.some((m) => m.mentions.includes(`agent:${ORG}_ceo`))).toBe(true);
 
-  // The overview reflects it all: one employee, one proposed ticket, the mission on screen.
+  // The overview shows the organization, its mission on screen.
   await page.goto(`/org/${projectId}/${ORG}/overview`);
   await expect(page.getByText("Plugin Marketplace").first()).toBeVisible();
 
@@ -259,5 +348,6 @@ test("company mode: create the organization, meet the CEO, see the board and the
   await expect(sidebar.getByRole("button", { name: /^组织（/ })).toHaveCount(0);
   const overview = await (await page.request.get(api(`/organizations/${ORG}`))).json();
   expect(overview.board.proposed).toBe(1);
-  expect(overview.openTickets).toBe(1);
+  expect(overview.board.in_progress).toBe(1);
+  expect(overview.openTickets).toBe(2);
 });

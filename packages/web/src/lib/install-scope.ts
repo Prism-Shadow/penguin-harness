@@ -303,6 +303,12 @@ export const KEY_RULES: readonly KeyRule[] = [
   },
   {
     kind: "family",
+    key: "penguin.orgTempSessions.",
+    scope: "install",
+    why: "The company sidebar's Temporary group of ticket sessions, keyed by user, Project and organization id and naming Sessions and Agents of this root.",
+  },
+  {
+    kind: "family",
     key: "penguin.lastAgentId.",
     scope: "install",
     why: "The Agent id last selected, per Project.",
