@@ -319,6 +319,14 @@ describe("activity generation through Harness sessions", () => {
     const saved = (await current()).draft;
     expect(saved.mediaPlan!.manifest.assets["en-US"]![0]!.generatedAudio?.runId).toBe(run.runId);
     const second = (await (await f.startAudio()).json()) as ActivityRun;
+    const secondSession = f.t.deps.sessionsRepo.findById(second.sessionId!)!;
+    const speechInput = JSON.parse(
+      await fs.readFile(path.join(secondSession.workspace!, "input.json"), "utf8"),
+    );
+    expect(speechInput.draft.mediaPlan).toEqual({ manifest: saved.mediaPlan!.manifest });
+    expect(speechInput.draft.mediaPlan.manifest.assets["en-US"][0].generatedAudio).toEqual(
+      saved.mediaPlan!.manifest.assets["en-US"]![0]!.generatedAudio,
+    );
     expect((await f.finish(second, "invalid")).status).toBe("failed");
     expect((await current()).draft).toEqual(saved);
     const third = (await (await f.startAudio()).json()) as ActivityRun;
@@ -414,6 +422,14 @@ describe("activity generation through Harness sessions", () => {
   it("collects approved media artifacts and rejects a model that changes their bindings", async () => {
     const f = await fixture(true);
     const run = await f.startModule(true);
+    const saved = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    expect(Object.keys(saved.draft.mediaPlan!.requirements)).not.toHaveLength(0);
+    const firstSession = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
+    const input = JSON.parse(
+      await fs.readFile(path.join(firstSession.workspace!, "input.json"), "utf8"),
+    );
+    expect(input.draft.mediaPlan).toEqual({ manifest: saved.draft.mediaPlan!.manifest });
+    expect((await (await f.client.get(f.endpoint)).json()) as ActivityDetail).toEqual(saved);
     const result = await f.finish(run);
     expect(result.status).toBe("succeeded");
     expect(JSON.parse(result.candidate!).files).toEqual(
