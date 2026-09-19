@@ -14,8 +14,16 @@ import { BACKGROUND_TASKS_ICON, SCHEDULE_ICON } from "../src/components/ui/icons
 import { ICON_SIZE } from "../src/lib/icon-scale";
 import { S } from "../src/lib/strings";
 import { toneInk } from "../src/lib/tone";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
+
+const SCAN = scanSources();
+
+describe("the activity marks' sources", () => {
+  it("scan every source root, and find the icon module in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, "packages/web/src/components/ui/session-activity-icon.tsx");
+  });
+});
 
 type Activity = Exclude<SessionActivity, null>;
 
@@ -216,10 +224,7 @@ describe("SessionActivityIcon", () => {
       expect(markup).toMatch(/(height="12"|height:12px)/);
     }
     // The empty state's placeholder, read from the sidebar itself so it cannot drift apart.
-    const sidebar = readFileSync(
-      fileURLToPath(new URL("../src/components/layout/sidebar.tsx", import.meta.url)),
-      "utf8",
-    );
+    const sidebar = sourceFile(SCAN, "packages/web/src/components/layout/sidebar.tsx").text;
     expect(sidebar).toMatch(/activity === null.*\n?.*className="block h-3 w-3 shrink-0"/);
   });
 });
@@ -231,7 +236,11 @@ describe("SessionActivityIcon", () => {
  * traces in the same stylesheet need an explicit override for exactly that reason).
  */
 describe("hourglass-turn reduced motion", () => {
-  const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
+  // Every stylesheet under the scanned roots, so the keyframes are found wherever they move.
+  const css = SCAN.files
+    .filter((file) => file.name.endsWith(".css"))
+    .map((file) => file.text)
+    .join("\n");
 
   it("is an animation, so the global reduced-motion rule disables it", () => {
     expect(css).toMatch(/\.hourglass-turn\s*\{[^}]*animation:\s*hourglass-turn/);

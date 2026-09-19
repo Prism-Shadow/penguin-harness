@@ -6,6 +6,15 @@
  */
 import { describe, expect, it } from "vitest";
 import { isTopEscLayer, popEscLayer, pushEscLayer } from "../src/components/ui/modal";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
+
+describe("esc layer sources", () => {
+  it("scan every source root, and find the stack in one place", () => {
+    const scan = scanSources();
+    expectEveryRootScanned(scan);
+    expectSingleHome(scan, "packages/web/src/components/ui/modal.tsx");
+  });
+});
 
 describe("esc layer stack", () => {
   it("only the topmost layer may act; popping restores the one below", () => {

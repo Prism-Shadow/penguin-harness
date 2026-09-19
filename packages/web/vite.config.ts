@@ -8,11 +8,15 @@
  * transparently, no special config needed.
  * The vitest config is kept separate in vitest.config.ts (its embedded vite 5 types conflict with this
  * package's vite 7 plugin types, hence the separate file to avoid the clash).
+ *
+ * `penguinUi()` emits the licence texts of the shared UI package's bundled fonts beside the build
+ * (`fonts-licenses/`). It is imported by relative path on purpose — see its module doc.
  */
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
+import { penguinUi } from "../ui/src/vite-plugin";
 
 /**
  * Resolves the `/api` proxy target: PENGUIN_API_PROXY replaces it outright, otherwise the
@@ -66,7 +70,13 @@ function katexWoff2Only(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), katexWoff2Only()],
+  plugins: [penguinUi(), react(), tailwindcss(), katexWoff2Only()],
+  build: {
+    // Never inline a font. Vite turns any asset under 4 KB into a data: URI, and a font slice the
+    // stylesheet references would then ride inside the one render-blocking CSS file for every
+    // session, whatever its theme. As its own file it is fetched only when some text needs it.
+    assetsInlineLimit: (file) => (file.endsWith(".woff2") ? false : undefined),
+  },
   // The highlighting worker loads its themes and each grammar with a dynamic import, so its
   // bundle has to be code-split — and Vite's default worker format, IIFE, cannot be. Without this
   // the build fails outright rather than shipping something subtly wrong, which is the good case.

@@ -20,9 +20,6 @@
  * contextmenu listener in the package, and that the one handler doing the suppressing
  * lives in the hook the row spreads onto itself (title-reveal.test.ts convention).
  */
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   IDLE_HOLD,
@@ -40,6 +37,7 @@ import {
   withinSettleWindow,
 } from "../src/lib/context-menu";
 import type { HoldEvent } from "../src/lib/context-menu";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
 const ROW = { top: 100, bottom: 132, left: 8, right: 260 };
 
@@ -287,45 +285,41 @@ describe("scrollMovesAnchor", () => {
   });
 });
 
+/** Every .ts/.tsx under web and the shared UI package (test/helpers/roots.ts). */
+const SCAN = scanSources([".ts", ".tsx"]);
+
 /**
- * Every .ts/.tsx under packages/web/src, as [relative path, source] pairs.
+ * Every scanned file as [repo-relative id, source] pairs.
  *
- * Paths are normalized to forward slashes here, once, rather than at each comparison:
- * `join` yields `\` on Windows, so every `path === "components/ui/…"` in this file would
- * silently match nothing there and collapse its assertions into "expected undefined to be
- * defined" — green on Linux, red on the Windows CI job. Callers can rely on POSIX
- * separators on every platform.
+ * Ids use forward slashes on every platform: `join` yields `\` on Windows, so a comparison
+ * against "packages/web/src/components/ui/…" would silently match nothing there and collapse
+ * its assertions into "expected undefined to be defined" — green on Linux, red on the Windows
+ * CI job. Callers can rely on POSIX separators on every platform.
  */
 function sourceFiles(): Array<[string, string]> {
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
-  const out: Array<[string, string]> = [];
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (/\.tsx?$/.test(entry.name))
-        out.push([
-          full
-            .slice(root.length + 1)
-            .split(sep)
-            .join("/"),
-          readFileSync(full, "utf8"),
-        ]);
-    }
-  };
-  walk(root);
-  return out;
+  return SCAN.files.map((file) => [file.id, file.text]);
 }
 
+const DROPDOWN = "packages/web/src/components/ui/dropdown.tsx";
+const CONTEXT_MENU = "packages/web/src/components/ui/context-menu.tsx";
+const SIDEBAR = "packages/web/src/components/layout/sidebar.tsx";
+
 describe("sourceFiles", () => {
+  it("scans every source root, and finds the menu modules in one place each", () => {
+    expectEveryRootScanned(SCAN);
+    for (const id of [DROPDOWN, CONTEXT_MENU, "packages/web/src/lib/context-menu.ts"]) {
+      expectSingleHome(SCAN, id);
+    }
+  });
+
   it("reports POSIX-separated paths whatever the platform's separator is", () => {
     // Pins the contract the assertions below depend on. A no-op assertion on Linux, and
     // the one that fails first on Windows if the normalization is ever dropped.
     const paths = sourceFiles().map(([path]) => path);
     expect(paths.length).toBeGreaterThan(0);
     expect(paths.filter((p) => p.includes("\\"))).toEqual([]);
-    expect(paths).toContain("components/ui/context-menu.tsx");
-    expect(paths).toContain("components/layout/sidebar.tsx");
+    expect(paths).toContain(CONTEXT_MENU);
+    expect(paths).toContain(SIDEBAR);
   });
 });
 
@@ -335,7 +329,7 @@ describe("anchored dismissal wiring", () => {
     // cannot reach is the component consulting it at all, and that is where this silently
     // breaks: drop the call and every assertion above still passes while the reported bug —
     // a streaming message list wiping a menu opened in the sidebar — comes straight back.
-    const dropdown = sourceFiles().find(([path]) => path === "components/ui/dropdown.tsx");
+    const dropdown = sourceFiles().find(([path]) => path === DROPDOWN);
     expect(dropdown).toBeDefined();
     const onScroll = /const onScroll = \(e: Event\) => \{([\s\S]*?)\n {4}\};/.exec(dropdown![1]);
     expect(onScroll, "onScroll should be declared in dropdown.tsx").not.toBeNull();
@@ -361,7 +355,7 @@ describe("native-menu suppression scope", () => {
   it("calls preventDefault inside the contextmenu handler itself, not somewhere adjacent", () => {
     // Tied to the handler rather than to the file: preventDefault also appears in
     // onKeyDown, so file-level presence would prove nothing about the native menu.
-    const hook = sourceFiles().find(([path]) => path === "components/ui/context-menu.tsx");
+    const hook = sourceFiles().find(([path]) => path === CONTEXT_MENU);
     expect(hook).toBeDefined();
     const handler = /onContextMenu:\s*\(e\)\s*=>\s*\{([\s\S]*?)\n {4}\},/.exec(hook![1]);
     expect(handler).not.toBeNull();
@@ -372,7 +366,7 @@ describe("native-menu suppression scope", () => {
     // React propagates through its own tree, so the Dropdown's body portal — a React child
     // of the row — would otherwise re-anchor the open menu when one of its items is
     // right-clicked. A DOM containment check separates the two trees.
-    const hook = sourceFiles().find(([path]) => path === "components/ui/context-menu.tsx");
+    const hook = sourceFiles().find(([path]) => path === CONTEXT_MENU);
     const src = hook![1];
     expect(src).toContain("host.contains(e.target as Node)");
     for (const handler of ["onContextMenu", "onKeyDown", "onPointerDown"]) {
@@ -385,7 +379,7 @@ describe("native-menu suppression scope", () => {
   });
 
   it("gives the sidebar row all three openers, so the menu is not mouse-only", () => {
-    const sidebar = sourceFiles().find(([path]) => path === "components/layout/sidebar.tsx");
+    const sidebar = sourceFiles().find(([path]) => path === SIDEBAR);
     expect(sidebar).toBeDefined();
     // The row spreads the hook's handlers (contextmenu + Shift+F10 + press-and-hold) and
     // guards its own click against the one a hold replays.
@@ -396,7 +390,7 @@ describe("native-menu suppression scope", () => {
   it("names the anchor's owner alongside the anchor, so the scroll rule has one to test", () => {
     // Without the wiring, scrollMovesAnchor is asked about a null owner on every scroll and
     // answers "dismiss" — the rule above would still pass while the bug was back.
-    const sidebar = sourceFiles().find(([path]) => path === "components/layout/sidebar.tsx");
+    const sidebar = sourceFiles().find(([path]) => path === SIDEBAR);
     expect(sidebar![1]).toContain("anchorOwner={ctx.anchorOwner}");
   });
 });

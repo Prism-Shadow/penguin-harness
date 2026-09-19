@@ -152,6 +152,8 @@ export const zh = {
     languageInfo: "界面语言，可跟随浏览器设置。",
     /** Sidebar user-menu row opening the System settings dialog. */
     systemSettings: "系统设置",
+    /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
+    fontCredit: "使用了小米 MiSans 字体",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "个人",
     groupServer: "服务器",
