@@ -10,7 +10,7 @@ Agent 现在可以在自己的目录里保存*工作流*：`workflows/<id>/` 是
 
 ## 契约
 
-根模块 `Workflow` 要求 `WorkflowHost`（服务器以 `Host` 模块发布：限定在本 Project 之内的 SDK 动词——`createSession({ agentId? })` 为本 Agent 或同一 Project 的另一个 Agent 开一个 Session，`run(sessionId, [userText("…")])` 在新的或已有的 Session 里跑一轮，Session 正忙时作为后续消息排队——以及 `sessionStatus`、基于工作流 `state.json` 的 `getState` / `setState`、`log`），并提供 `WorkflowMain`——一个 JSON 处理器 `handle({ method, path, query, body })`，服务器把它挂在 `/api/projects/:p/agents/:a/workflows/:id/api/*`。工作流的 `ui/` 从 `…/workflows/:id/ui/*` 提供。不向任何 Agent 的系统提示词添加内容：目录布局与契约由 `penguin-sdk` 技能承载，Agent 被要求做工作流时才加载。
+根模块 `Workflow` 要求 `WorkflowHost`（服务器以 `Host` 模块发布：限定在本 Project 之内的 SDK 动词——`listAgents()`、`createSession({ agentId? })` 为本 Agent 或同一 Project 的另一个 Agent 开一个 Session，`run(sessionId, [userText("…")])` 在新的或已有的 Session 里跑一轮，Session 正忙时作为后续消息排队——以及 `sessionStatus`、基于工作流 `state.json` 的 `getState` / `setState`、`log`），并提供 `WorkflowMain`——一个 JSON 处理器 `handle({ method, path, query, body })`，服务器把它挂在 `/api/projects/:p/agents/:a/workflows/:id/api/*`。工作流的 `ui/` 从 `…/workflows/:id/ui/*` 提供。不向任何 Agent 的系统提示词添加内容：目录布局与契约由 `penguin-sdk` 技能承载，Agent 被要求做工作流时才加载。
 
 ## TypeScript，由服务器检查
 
@@ -40,4 +40,4 @@ Agent 现在可以在自己的目录里保存*工作流*：`workflows/<id>/` 是
 
 工作流页面是独立文档，应用的样式表照不进去。现在框架会在页面根节点打上 `light` / `dark`，把应用*已解析*的令牌复制过去——灰阶、强调色对、字体栈、根字号——并把 `/workflow-ui.css` 注入到 head 最前面：这份基础样式表按应用的观感为纯 HTML（标题、列表、表单、表格、代码）定样，并暴露 `--wf-bg`、`--wf-fg`、`--wf-muted`、`--wf-border`、`--wf-surface`、`--wf-accent`、`--wf-accent-fg`，以及 `wf-primary`、`wf-card`、`wf-rows`、`wf-row`、`wf-muted` 等类。页面自己的规则依然优先；调色板只有一份定义——应用复制它已经解析出来的值，样式表不再重述一遍。切换主题或强调色会直接给已打开的页面换装，无需重新加载。技能要求用这些变量书写标记，因此 Agent 写出的工作流在明暗两种主题下都与用户的主题一致。
 
-`penguin-sdk` 技能记录了目录布局与契约。
+`penguin-sdk` 技能记录了目录布局与契约。新建对话页的「搭建和优化智能体」示例新增 **Agent 指挥台**——一个把同一任务并行派给本 Project 多个 Agent、实时显示每个 Session 状态的工作流，另有一张统计标签页与占满应用的大屏视图——取代了原来的 Claude Code 文档 RAG 示例。

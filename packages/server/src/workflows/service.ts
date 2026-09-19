@@ -472,6 +472,7 @@ export class WorkflowService implements Workflows {
     const ensureState = () => (stateRead ??= readState(folder.dir).then((s) => void (state = s)));
     void ensureState();
     return {
+      listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
       async createSession(opts?: { agentId?: string }) {
         const target = opts?.agentId ?? agentId;
         if (!service.agents.exists(projectId, target)) {

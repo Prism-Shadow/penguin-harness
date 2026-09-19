@@ -43,6 +43,8 @@ export abstract class WorkflowMain {
 /** What the server publishes into a workflow tree as module `Host`. */
 @Interface()
 export abstract class WorkflowHost {
+  /** The Agents of this Project — who `createSession` can be asked to open a Session of. */
+  abstract listAgents(): { agentId: string }[];
   /**
    * Opens a Session of an Agent of this Project — the workflow's own Agent when `agentId`
    * is absent. The SDK's `agent.createSession`.

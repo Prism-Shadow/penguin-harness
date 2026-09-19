@@ -62,7 +62,7 @@ export default {
                   // The SDK's verbs, scoped to this Project: another of its Agents, never a stranger's Session.
                   const opened = await host.createSession({ agentId: req.query["agent"] }).catch((e: Error) => e.message);
                   const ran = await host.run(req.query["session"] ?? "", [{ payload: { text: "hi" } }]).catch((e: Error) => e.message);
-                  return { body: { opened, ran } };
+                  return { body: { opened, ran, agents: host.listAgents().map((a) => a.agentId) } };
                 }
                 if (req.path === "/count" && req.method === "POST") {
                   const n = (((host.getState() ?? {}) as { count?: number }).count ?? 0) + 1;
@@ -86,6 +86,7 @@ const PLUGIN_DTS = `export interface WorkflowRequest { method: string; path: str
 export interface WorkflowResponse { status?: number; body?: unknown }
 export interface WorkflowMain { handle(request: WorkflowRequest): Promise<WorkflowResponse> }
 export interface WorkflowHost {
+  listAgents(): { agentId: string }[];
   createSession(opts?: { agentId?: string }): Promise<{ sessionId: string }>;
   run(sessionId: string, input: { payload: { text: string } }[]): Promise<{ sessionId: string; queued: boolean }>;
   sessionStatus(sessionId: string): string;
@@ -293,6 +294,7 @@ describe("workflows", () => {
     expect(await res.json()).toEqual({
       opened: "createSession: this Project has no Agent 'nobody'",
       ran: "run: this Project has no Session 'not-a-session'",
+      agents: [AGENT],
     });
     const own = await (await owner.get(`${BASE}/demo/api/open?agent=${AGENT}`)).json();
     // Its own Agent passes the Project check and reaches the session runtime, which in this
