@@ -18,7 +18,6 @@
  * expression this module cannot write as TypeScript is reported by name, never widened to
  * `unknown`.
  */
-import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {
@@ -30,34 +29,12 @@ import type {
 } from "@prismshadow/penguin-core/kernel";
 import type { TypeScript } from "./typescript.js";
 
-export const IFACES_FILE = "ifaces.json";
-
 export class IfaceRenderError extends Error {}
 
 /** `<package>#<Export>` → its package; null for a reference with no package part. */
 export function packageOf(key: string): string | null {
   const at = key.indexOf("#");
   return at <= 0 ? null : key.slice(0, at);
-}
-
-/** The table of the package version installed under `dir/node_modules`, or why there is none. */
-export function readInstalledTable(dir: string, pkg: string): IfaceTable | string {
-  const file = path.join(dir, "node_modules", ...pkg.split("/"), IFACES_FILE);
-  let text: string;
-  try {
-    text = fs.readFileSync(file, "utf8");
-  } catch {
-    return fs.existsSync(path.dirname(file))
-      ? `the installed '${pkg}' ships no ${IFACES_FILE} (a version from before workflows were checked against it)`
-      : `'${pkg}' is not installed in the workflow folder (run \`npm install\` there)`;
-  }
-  try {
-    const parsed = JSON.parse(text) as Partial<IfaceTable>;
-    if (typeof parsed.ifaces !== "object" || parsed.ifaces === null) throw new Error("no ifaces");
-    return { ifaces: parsed.ifaces, types: parsed.types ?? {} };
-  } catch (err) {
-    return `${file}: ${err instanceof Error ? err.message : String(err)}`;
-  }
 }
 
 // ---- table → .d.ts ------------------------------------------------------------------
@@ -84,6 +61,18 @@ function stringExpression(expr: string, where: string): string {
   return `(${expr})`;
 }
 
+/** Whether a parameter's type lets the argument be left out. */
+function admitsUndefined(e: TypeExpr): boolean {
+  if ("maybe" in e) return true;
+  if ("oneOf" in e) return e.oneOf.some(admitsUndefined);
+  if (!("data" in e)) return false;
+  const inData = (d: unknown): boolean =>
+    typeof d === "string"
+      ? d.split("|").some((part) => part.trim() === "undefined")
+      : Array.isArray(d) && d.length === 3 && d[1] === "|" && (inData(d[0]) || inData(d[2]));
+  return inData(e.data);
+}
+
 const property = (name: string) => (/^[A-Za-z_$][\w$]*$/.test(name) ? name : JSON.stringify(name));
 
 class Renderer {
@@ -94,13 +83,18 @@ class Renderer {
 
   constructor(private readonly table: IfaceTable) {}
 
-  /** A readable, collision-free identifier for a table key. */
+  /**
+   * The identifier a table key is declared under: its export name (`…#WorkflowHost` →
+   * `WorkflowHost`), numbered on a clash — so the text reads as a declaration file an author
+   * can write against, and a diagnostic names the type the way its source does.
+   */
   ident(key: string): string {
     let name = this.names.get(key);
     if (name !== undefined) return name;
     const base = key
-      .replace(/^@/, "")
+      .slice(key.indexOf("#") + 1)
       .replace(/[^A-Za-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
       .replace(/^(\d)/, "_$1");
     name = base;
     for (let n = 2; this.taken.has(name); n++) name = `${base}_${n}`;
@@ -109,12 +103,16 @@ class Renderer {
     return name;
   }
 
+  /** What was rendered, as a table of its own: the declared interfaces and all they reach. */
+  readonly slice: IfaceTable = { ifaces: {}, types: {} };
+
   iface(key: string): string {
     const name = this.ident(`iface ${key}`);
     if (this.done.has(name)) return name;
     this.done.add(name);
     const decl = this.table.ifaces[key];
     if (decl === undefined) throw new IfaceRenderError(`'${key}' is not in the table`);
+    this.slice.ifaces[key] = decl;
     this.out.push(this.interfaceText(name, key, decl));
     return name;
   }
@@ -134,6 +132,7 @@ class Renderer {
     const def = this.table.types[key];
     if (def === undefined)
       throw new IfaceRenderError(`type '${key}' is referenced but not in the table`);
+    this.slice.types[key] = def;
     // Reserve the slot first: a recursive type refers to itself by this name.
     const at = this.out.push("") - 1;
     this.out[at] = `export type ${name} = ${this.data(def, key)};`;
@@ -154,7 +153,13 @@ class Renderer {
   }
 
   private sig(sig: Sig, where: string): string {
-    const params = sig.params.map((p, i) => `a${i}: ${this.expr(p, where)}`);
+    // The table has no "optional parameter", only a type that admits undefined; trailing
+    // ones are written back as optional, or `f()` would not type-check against `f(a?: T)`.
+    let required = sig.params.length;
+    while (required > 0 && admitsUndefined(sig.params[required - 1]!)) required--;
+    const params = sig.params.map(
+      (p, i) => `a${i}${i >= required ? "?" : ""}: ${this.expr(p, where)}`,
+    );
     return `(${params.join(", ")}) => ${this.expr(sig.returns, where)}`;
   }
 
@@ -211,14 +216,17 @@ class Renderer {
   }
 }
 
-/** A self-contained `.d.ts` declaring `keys` (and everything they reach) out of `table`. */
+/**
+ * A self-contained `.d.ts` declaring `keys` (and everything they reach) out of `table`,
+ * with the part of the table it was made from.
+ */
 export function renderDts(
   table: IfaceTable,
   keys: readonly string[],
-): { text: string; names: Map<string, string> } {
+): { text: string; names: Map<string, string>; slice: IfaceTable } {
   const renderer = new Renderer(table);
   const names = new Map(keys.map((key) => [key, renderer.iface(key)]));
-  return { text: renderer.text(), names };
+  return { text: renderer.text(), names, slice: renderer.slice };
 }
 
 // ---- the questions --------------------------------------------------------------------

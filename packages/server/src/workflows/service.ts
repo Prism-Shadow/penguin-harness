@@ -10,9 +10,10 @@
  *
  * Three checks run before any create(), and a failure of any keeps the previous instance
  * serving with the problem named: the source is type-checked under `strict` against the
- * interface version the workflow installed (./compile.ts); that version is compared with
- * this platform's, both ways, by the compiler (./iface-check.ts); and the tree is checked
- * like any other — wiring, slots, contribution shapes.
+ * types the harness wrote into the folder when the workflow was new (./harness-types.ts,
+ * ./compile.ts); those are compared with this platform's, both ways, by the compiler
+ * (../plugin/iface-check.ts); and the tree is checked like any other — wiring, slots,
+ * contribution shapes.
  *
  * Loading is by content: the folder's revision (store.ts) names the directory the source
  * is emitted into, so an edited workflow is a new import URL rather than a hit in the ESM
@@ -33,7 +34,6 @@ import type {
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
 import { userText } from "@prismshadow/penguin-core";
-import type { OmniMessage, TextPayload } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import type { ServerEvent } from "../api/types.js";
 import type { Channels, Clock, Log, Paths } from "../hmr/capabilities.js";
@@ -42,6 +42,7 @@ import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
   WorkflowInfo,
+  WorkflowInput,
   WorkflowRequest,
   WorkflowResponse,
   WorkflowTab,
@@ -50,12 +51,8 @@ import type {
 } from "../mechanisms/workflows.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
 import { compileWorkflow, pruneBuilds } from "./compile.js";
-import {
-  checkIfaces,
-  ifaceQuestions,
-  packageOf,
-  readInstalledTable,
-} from "../plugin/iface-check.js";
+import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
+import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
 import { loadTypeScript } from "../plugin/typescript.js";
 import {
   historyDir,
@@ -404,21 +401,27 @@ export class WorkflowService implements Workflows {
       const manifests = await readManifests(folder);
       const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
       const ts = await loadTypeScript();
+      // A new workflow takes its types from THIS harness; one that has them keeps them, and
+      // they are its side of the comparison below.
+      installHarnessTypes(
+        folder.dir,
+        table as unknown as IfaceTable,
+        [HOST_IFACE, MAIN_IFACE],
+        this.clock.now(),
+      );
       const entry = compileWorkflow(ts, folder.dir, folder.revision);
-      const questions = ifaceQuestions(manifests);
-      // The workflow's side of the comparison: the tables of the packages IT installed.
-      const installed: IfaceTable = { ifaces: {}, types: {} };
-      for (const pkg of new Set(questions.map((q) => packageOf(q.key)!))) {
-        const read = readInstalledTable(folder.dir, pkg);
-        if (typeof read === "string") throw new Error(read);
-        Object.assign(installed.ifaces, read.ifaces);
-        Object.assign(installed.types, read.types);
-      }
-      const fit = checkIfaces(ts, table as unknown as IfaceTable, installed, questions);
-      // A workflow's side is the whole table of the version it installed, so an interface
-      // missing from it is one that version never had: a problem, not a pass.
+      const written = readHarnessTable(folder.dir);
+      if (typeof written === "string") throw new Error(written);
+      const fit = checkIfaces(
+        ts,
+        table as unknown as IfaceTable,
+        written,
+        ifaceQuestions(manifests),
+      );
+      // An interface the workflow names but holds no types for cannot be compared, and for a
+      // workflow that is a problem, not a pass.
       const misfits = [
-        ...fit.uncompared.map((q) => `${q}: the installed version does not declare it`),
+        ...fit.uncompared.map((q) => `${q}: not among the types this workflow was written against`),
         ...fit.problems,
       ];
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
@@ -480,11 +483,11 @@ export class WorkflowService implements Workflows {
         }
         return service.sessions.createSession({ projectId, agentId: target });
       },
-      async run(sessionId: string, input: OmniMessage<TextPayload>[]) {
+      async run(sessionId: string, input: WorkflowInput[]) {
         service.ownSession(projectId, sessionId, "run");
-        const texts = (Array.isArray(input) ? input : []).map((m) => m?.payload?.text);
+        const texts = (Array.isArray(input) ? input : []).map((item) => item?.text);
         if (texts.length === 0 || texts.some((t) => typeof t !== "string" || t === "")) {
-          throw new Error('run: input is a non-empty list of userText("…") messages');
+          throw new Error('run: input is a non-empty list of { text: "…" } items');
         }
         // Whatever the workflow stamped, the Agent hears the server, never a person.
         return service.runner.startTask(

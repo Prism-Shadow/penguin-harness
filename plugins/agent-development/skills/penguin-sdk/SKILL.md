@@ -351,11 +351,11 @@ Inside PenguinHarness an Agent can hold *workflows*: small plugin packages in it
 Layout, under `<root>/<project_id>/agents/<agent_id>/workflows/<workflow_id>/` (beside `agent_state/`):
 
 ```
-package.json    "type": "module", the dependency on @prismshadow/penguin-server, "penguin": { "modules": [ …manifests ] }
+package.json    "type": "module" and "penguin": { "modules": [ …manifests ] } — no dependency to install
 index.ts        default export { modules: { <Name>: { create(ctx) } } } satisfies WorkflowPackage — TypeScript only
 ui/             the workflow's pages and their assets; which of them are tabs is what the manifest contributes
 state.json      the workflow's own document, kept by the server across reloads and rollbacks
-node_modules/   from `npm install`: the interface types and the interface table the workflow is compared with
+.harness/       the server's: the types this workflow was written against (plugin.d.ts) and their interface table — read plugin.d.ts, never edit it
 .build/         the server's emitted JavaScript, per revision — never edit it
 ```
 
@@ -366,7 +366,6 @@ The root manifest is named `Workflow`; it requires the host, provides the handle
   "name": "demo",
   "version": "0.1.0",
   "type": "module",
-  "dependencies": { "@prismshadow/penguin-server": "<the version this server runs>" },
   "penguin": {
     "modules": [
       {
@@ -385,7 +384,6 @@ The root manifest is named `Workflow`; it requires the host, provides the handle
 ```
 
 ```ts
-import { userText } from "@prismshadow/penguin-core";
 import type { WorkflowPackage } from "@prismshadow/penguin-server/plugin";
 
 export default {
@@ -402,7 +400,7 @@ export default {
                   const { question } = req.body as { question: string };
                   // The same two verbs as above: open a Session, run a turn in it.
                   const { sessionId } = await host.createSession();
-                  await host.run(sessionId, [userText(question)]);
+                  await host.run(sessionId, [{ text: question }]);
                   return { body: { sessionId } };
                 }
                 return { status: 404, body: { error: "no such route" } };
@@ -416,13 +414,13 @@ export default {
 } satisfies WorkflowPackage;
 ```
 
-**TypeScript, checked by the server.** There is no build step to run and no `tsconfig.json` to write: the server builds one program from `index.ts` (and the `.ts` files it imports, with `.js` in the import specifier as NodeNext asks) under options it fixes itself — `strict` among them — refuses the load on any diagnostic, reporting file, line and reason, and otherwise emits into `.build/<revision>/` and imports that. `satisfies WorkflowPackage` is what types `use.host` and `req`; without it `strict` refuses the untyped parameters. A folder holding `index.js` or `index.mjs` instead is refused outright. Run `npm install` in the folder once: `@prismshadow/penguin-server/plugin` is resolved from the workflow's own `node_modules`.
+**TypeScript, checked by the server.** There is no build step to run, no `tsconfig.json` to write and nothing to `npm install`: the server builds one program from `index.ts` (and the `.ts` files it imports, with `.js` in the import specifier as NodeNext asks) under options it fixes itself — `strict` among them — refuses the load on any diagnostic, reporting file, line and reason, and otherwise emits into `.build/<revision>/` and imports that. `satisfies WorkflowPackage` is what types `use.host` and `req`; without it `strict` refuses the untyped parameters. A folder holding `index.js` or `index.mjs` instead is refused outright.
 
-**Interfaces, compared across versions.** Type-checking proves the workflow agrees with the version it installed; the server may be another. So the interface table that version shipped (`node_modules/@prismshadow/penguin-server/ifaces.json`) is compared with the running platform's, by the TypeScript compiler, in both directions: what the workflow requires must still be offered, and what it provides must still be what the platform asks for. A host method the workflow relies on that has since gone is a load error naming it — not a failure on the first call. A missing package or a version without a table is an error too, never a pass.
+**Types come from the harness that runs you.** One machine can run several harnesses — a release, a checkout, a platform someone pushed with interfaces of its own — and none of them is a version on npm, so `@prismshadow/penguin-server/plugin` is not a package here: the first time the server loads the folder it writes `.harness/plugin.d.ts`, rendered from ITS OWN interface table, and that is what the import resolves to. Create `package.json` and a minimal `index.ts`, let the server load it once, then read `.harness/plugin.d.ts` for the exact `WorkflowHost` this harness offers. The server then leaves `.harness/` alone: it is the record of what the workflow was written against, and a later generation of the platform is COMPARED with it, by the TypeScript compiler, both for what the workflow requires and what it provides — a host method you rely on that has since gone is a load error naming it, not a failure on the first call. To move a workflow onto the harness that runs it now, delete `.harness/` and fix what the compiler then reports.
 
 **Tabs are contributions.** Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (unique in the workflow, part of the full-page URL), `title` / `titleZh`, and a `renderer` whose `iframe.src` is a file under `ui/`. Several entries make several tabs; none makes a server-only workflow. It is the same slot, written the same way, a plugin contributes to — the host opens it to workflows and scopes the tab to this Agent. A slot the host has not opened (`WebModule.pages`, say) is refused by name.
 
-`WorkflowHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workflow's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`; `run(sessionId, [userText("…")])` runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workflow`, with their own `requires` between them — the tree is checked as a whole.
+`WorkflowHost` (published as module `Host`) speaks the SDK's verbs, scoped to the workflow's Project: `listAgents()` returns the Project's Agents as `{ agentId }[]`; `createSession({ agentId? })` opens a Session of this Agent — or of another Agent of the same Project — and returns `{ sessionId }`; `run(sessionId, [{ text: "…" }])` — the SDK's `session.run`, its input items spelled out because a workflow has no package to import `userText` from — runs one turn in a Session, new or existing, and returns `{ sessionId, queued }` once it has started (a busy Session queues it as a follow-up; the Agent hears it as a message from the server, not from a person); `sessionStatus(sessionId)` says `idle` / `running` / …; `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workflow`, with their own `requires` between them — the tree is checked as a whole.
 
 HTTP, all under `/api/projects/:projectId/agents/:agentId/workflows` (Project members only): `GET /` lists the workflows with their `revision`, `uiRev`, `tabs` (each page's URL resolved) and current load `error`; `GET /:id/ui/*` serves a file of `ui/` (there is no default document — a tab names its page); any method on `/:id/api/*` reaches `handle` as JSON; `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. `DELETE /:id` removes the workflow together with its recorded versions. From a page directly under `ui/`, call your handler with a relative `fetch("../api/…")`; the Web App shows each page in its tab and reloads it when `uiRev` changes.
 

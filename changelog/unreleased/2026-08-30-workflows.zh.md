@@ -10,15 +10,15 @@ Agent 现在可以在自己的目录里保存*工作流*：`workflows/<id>/` 是
 
 ## 契约
 
-根模块 `Workflow` 要求 `WorkflowHost`（服务器以 `Host` 模块发布：限定在本 Project 之内的 SDK 动词——`listAgents()`、`createSession({ agentId? })` 为本 Agent 或同一 Project 的另一个 Agent 开一个 Session，`run(sessionId, [userText("…")])` 在新的或已有的 Session 里跑一轮，Session 正忙时作为后续消息排队——以及 `sessionStatus`、基于工作流 `state.json` 的 `getState` / `setState`、`log`），并提供 `WorkflowMain`——一个 JSON 处理器 `handle({ method, path, query, body })`，服务器把它挂在 `/api/projects/:p/agents/:a/workflows/:id/api/*`。工作流的 `ui/` 从 `…/workflows/:id/ui/*` 提供。不向任何 Agent 的系统提示词添加内容：目录布局与契约由 `penguin-sdk` 技能承载，Agent 被要求做工作流时才加载。
+根模块 `Workflow` 要求 `WorkflowHost`（服务器以 `Host` 模块发布：限定在本 Project 之内的 SDK 动词——`listAgents()`、`createSession({ agentId? })` 为本 Agent 或同一 Project 的另一个 Agent 开一个 Session，`run(sessionId, [{ text: "…" }])` 在新的或已有的 Session 里跑一轮，Session 正忙时作为后续消息排队——以及 `sessionStatus`、基于工作流 `state.json` 的 `getState` / `setState`、`log`），并提供 `WorkflowMain`——一个 JSON 处理器 `handle({ method, path, query, body })`，服务器把它挂在 `/api/projects/:p/agents/:a/workflows/:id/api/*`。工作流的 `ui/` 从 `…/workflows/:id/ui/*` 提供。不向任何 Agent 的系统提示词添加内容：目录布局与契约由 `penguin-sdk` 技能承载，Agent 被要求做工作流时才加载。
 
 ## TypeScript，由服务器检查
 
-工作流以 TypeScript 编写——`index.ts`；只有 `index.js` 或 `index.mjs` 的目录会被拒绝。服务器以入口文件构建一个编译器程序，编译选项由服务器固定（`strict`；目录里的 `tsconfig.json` 不被采用），`@prismshadow/penguin-server/plugin` 从工作流自己的 `node_modules` 解析；同时把默认导出赋给 `WorkflowPackage`，因此无论作者是否写了 `satisfies WorkflowPackage`，形状都会被检查。任何诊断都使加载失败，并以文件、行、列与原因报出；通过的程序被输出到 `<workflow>/.build/<revision>/`——一个点目录，不计入修订、不进版本记录、也不触发监视器——被导入的正是它。编译器现在是服务器的运行时依赖，在第一个工作流需要时加载；没有它的安装不加载任何工作流，并说明原因。
+工作流以 TypeScript 编写——`index.ts`；只有 `index.js` 或 `index.mjs` 的目录会被拒绝。服务器以入口文件构建一个编译器程序，编译选项由服务器固定（`strict`；目录里的 `tsconfig.json` 不被采用）；同时把默认导出赋给 `WorkflowPackage`，因此无论作者是否写了 `satisfies WorkflowPackage`，形状都会被检查。任何诊断都使加载失败，并以文件、行、列与原因报出；通过的程序被输出到 `<workflow>/.build/<revision>/`——一个点目录，不计入修订、不进版本记录、也不触发监视器——被导入的正是它。编译器现在是服务器的运行时依赖，在第一个工作流需要时加载；没有它的安装不加载任何工作流，并说明原因。
 
-## 接口，跨版本比较
+## 类型来自 harness，跨代比较
 
-在平台自己的表里查一个被依赖的接口，是拿一条声明与它自己比较，永远不会失败。现在两侧各带自己的那一份：工作流的一份是其 `node_modules` 里所装版本的 `ifaces.json`——服务器包为此把接口表作为文件一并发布——平台的一份是它自己这一代的。两张表各渲染为一份自包含的 `.d.ts`，由 TypeScript 编译器在两个方向上判定：平台的接口须可赋值给工作流所依赖的那一版，工作流所提供的那一版须可赋值给平台所要求的。工作流写下时依据、此后已被删除的宿主方法，是一条点名它的加载错误；平台一侧的新增不影响任何工作流。包未安装、或所装版本不带接口表，是问题而绝不算通过；渲染器无法如实写成 TypeScript 的表达式按名拒绝，而不是放宽。插件在加载时接受同样的比较，以每个插件包本来就带着的那张表作为它的一侧；程序早于「编译器成为依赖」的安装上，插件照旧加载，日志写明未做比较。
+工作流不安装任何东西：一台机器上可以有多个 harness——发行版、某个检出、别人推送的带着自己接口的平台——它们都不是 npm 上的某个版本。第一次加载时服务器写下 `<workflow>/.harness/`，内容由**这个**平台自己的接口表渲染：`plugin.d.ts`（该工作流里 `@prismshadow/penguin-server/plugin` 解析到的就是它）与 `ifaces.json`（渲染它所用的那一部分表）。此后服务器不再动它——它是「这个工作流写下时依据什么」的记录——直到有人删除。接口比较靠的正是这份记录：在平台自己的表里查一个被依赖的接口，是拿一条声明与它自己比较，永远不会失败；现在两侧各带自己的那一份——工作流的 `.harness/ifaces.json` 与平台的表——各渲染为一份自包含的 `.d.ts`，由 TypeScript 编译器在两个方向上判定：平台的接口须可赋值给工作流所依赖的，工作流所提供的须可赋值给平台所要求的。工作流写下时依据、此后已被删除的宿主方法，是一条点名它的加载错误；平台一侧的新增不影响任何工作流。读不出来的表是问题而绝不算通过；渲染器无法如实写成 TypeScript 的表达式按名拒绝，而不是放宽。插件在加载时接受同样的比较，以每个插件包本来就带着的那张表作为它的一侧；表里没有副本的接口记为未比较并写入日志；程序早于「编译器成为依赖」的安装上，插件照旧加载，日志写明未做比较。
 
 ## 标签页是贡献
 

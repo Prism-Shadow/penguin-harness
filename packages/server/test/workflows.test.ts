@@ -10,7 +10,6 @@ import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
 import type { IfaceTable } from "@prismshadow/penguin-core/kernel";
 import type { WorkflowInfo, WorkflowVersion } from "../src/api/types.js";
-import platformTable from "../src/ifaces.json" with { type: "json" };
 import { apiClient, createTestApp, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -60,8 +59,10 @@ export default {
               async handle(req) {
                 if (req.path === "/open") {
                   // The SDK's verbs, scoped to this Project: another of its Agents, never a stranger's Session.
-                  const opened = await host.createSession({ agentId: req.query["agent"] }).catch((e: Error) => e.message);
-                  const ran = await host.run(req.query["session"] ?? "", [{ payload: { text: "hi" } }]).catch((e: Error) => e.message);
+                  const agent = req.query["agent"];
+                  // No argument at all is this Agent: the rendered types keep the parameter optional.
+                  const opened = await (agent ? host.createSession({ agentId: agent }) : host.createSession()).catch((e: Error) => e.message);
+                  const ran = await host.run(req.query["session"] ?? "", [{ text: "hi" }]).catch((e: Error) => e.message);
                   return { body: { opened, ran, agents: host.listAgents().map((a) => a.agentId) } };
                 }
                 if (req.path === "/count" && req.method === "POST") {
@@ -81,46 +82,12 @@ export default {
 `;
 }
 
-/** The types entry of the package a workflow installs, as its published \`.d.ts\` reads. */
-const PLUGIN_DTS = `export interface WorkflowRequest { method: string; path: string; query: Record<string, string>; body: unknown }
-export interface WorkflowResponse { status?: number; body?: unknown }
-export interface WorkflowMain { handle(request: WorkflowRequest): Promise<WorkflowResponse> }
-export interface WorkflowHost {
-  listAgents(): { agentId: string }[];
-  createSession(opts?: { agentId?: string }): Promise<{ sessionId: string }>;
-  run(sessionId: string, input: { payload: { text: string } }[]): Promise<{ sessionId: string; queued: boolean }>;
-  sessionStatus(sessionId: string): string;
-  getState(): unknown;
-  setState(state: unknown): Promise<void>;
-  log(message: string): void;
-}
-export interface WorkflowPackage {
-  modules: { Workflow: { create(ctx: { use: { host: WorkflowHost } }): { api: { main: WorkflowMain } } } };
-}
-`;
-
-/** What \`npm install\` leaves in the workflow folder: the types, and that version's interface table. */
-async function installTypes(dir: string, table: unknown = platformTable): Promise<void> {
-  const pkg = path.join(dir, "node_modules", "@prismshadow", "penguin-server");
-  await fs.mkdir(pkg, { recursive: true });
-  await fs.writeFile(
-    path.join(pkg, "package.json"),
-    JSON.stringify({
-      name: "@prismshadow/penguin-server",
-      version: "0.0.0-test",
-      type: "module",
-      exports: { "./plugin": { types: "./plugin.d.ts" } },
-    }),
-  );
-  await fs.writeFile(path.join(pkg, "plugin.d.ts"), PLUGIN_DTS);
-  await fs.writeFile(path.join(pkg, "ifaces.json"), JSON.stringify(table));
-}
-
-/** The platform's table as an OLDER package version would have shipped it. */
-function olderTable(edit: (table: IfaceTable) => void): IfaceTable {
-  const table = structuredClone(platformTable) as unknown as IfaceTable;
+/** Rewrites the table the harness wrote into the folder: the workflow was written against an OLDER one. */
+async function writtenAgainst(dir: string, edit: (table: IfaceTable) => void): Promise<void> {
+  const file = path.join(dir, ".harness", "ifaces.json");
+  const table = JSON.parse(await fs.readFile(file, "utf8")) as IfaceTable;
   edit(table);
-  return table;
+  await fs.writeFile(file, JSON.stringify(table));
 }
 
 describe("workflows", () => {
@@ -138,7 +105,6 @@ describe("workflows", () => {
     await fs.mkdir(path.join(dir, "ui"), { recursive: true });
     await fs.writeFile(path.join(dir, "package.json"), packageJson());
     await fs.writeFile(path.join(dir, "index.ts"), indexSource("hello"));
-    await installTypes(dir);
     await fs.writeFile(path.join(dir, "ui", "index.html"), "<h1>demo v1</h1>");
   });
 
@@ -162,6 +128,16 @@ describe("workflows", () => {
     ]);
     // The emitted code lives in a dot-directory: no part of the revision or the versions.
     expect(await fs.readdir(path.join(dir, ".build"))).toEqual([wf!.revision]);
+    // Its types came from this harness, not from a package: written once, then left alone.
+    expect((await fs.readdir(path.join(dir, ".harness"))).sort()).toEqual([
+      "harness.json",
+      "ifaces.json",
+      "plugin.d.ts",
+    ]);
+    const types = await fs.readFile(path.join(dir, ".harness", "plugin.d.ts"), "utf8");
+    expect(types).toContain("export interface WorkflowHost {");
+    expect(types).toContain("export interface WorkflowPackage {");
+    await expect(fs.stat(path.join(dir, "node_modules"))).rejects.toThrow();
 
     const ui = await owner.get(`${BASE}/demo/ui/index.html`);
     expect(ui.status).toBe(200);
@@ -241,7 +217,10 @@ describe("workflows", () => {
     );
     const res = await owner.post(`${BASE}/demo/reload`);
     const broken = ((await res.json()) as { workflow: WorkflowInfo }).workflow;
-    expect(broken.error).toContain("module tree rejected");
+    // Named before anything runs: the host gave this workflow no types for that interface.
+    expect(broken.error).toContain(
+      "requires.host '@prismshadow/penguin-server#Workflows': not among the types this workflow was written against",
+    );
     expect(await (await owner.get(`${BASE}/demo/api/`)).json()).toMatchObject({
       greeting: "hello",
     });
@@ -296,7 +275,7 @@ describe("workflows", () => {
       ran: "run: this Project has no Session 'not-a-session'",
       agents: [AGENT],
     });
-    const own = await (await owner.get(`${BASE}/demo/api/open?agent=${AGENT}`)).json();
+    const own = await (await owner.get(`${BASE}/demo/api/open`)).json();
     // Its own Agent passes the Project check and reaches the session runtime, which in this
     // fixture has no model key to open a Session with.
     expect(own).toMatchObject({ opened: expect.stringContaining("API key") });
@@ -310,42 +289,39 @@ describe("workflows", () => {
     );
   });
 
-  it("compares the interfaces the workflow installed with this platform's, both ways", async () => {
+  it("compares the types the workflow was written against with this platform's, both ways", async () => {
     await list();
-    // requires: the version it was written against had a host method this platform lacks.
-    await installTypes(
-      dir,
-      olderTable((t) => {
-        t.ifaces[HOST_KEY]!.methods["removedSince"] = { params: [], returns: { void: true } };
-      }),
-    );
+    // requires: it was written when the host had a method this platform lacks.
+    await writtenAgainst(dir, (t) => {
+      t.ifaces[HOST_KEY]!.methods["removedSince"] = { params: [], returns: { void: true } };
+    });
     let error = await reloadError();
     expect(error).toContain(`Workflow: requires.host '${HOST_KEY}'`);
     expect(error).toContain("removedSince");
 
     // provides: the handler it was written against answers with something else.
-    await installTypes(
-      dir,
-      olderTable((t) => {
-        t.ifaces[MAIN_KEY]!.methods["handle"]!.returns = { promise: { data: "string" } };
-      }),
-    );
+    await writtenAgainst(dir, (t) => {
+      delete t.ifaces[HOST_KEY]!.methods["removedSince"];
+      t.ifaces[MAIN_KEY]!.methods["handle"]!.returns = { promise: { data: "string" } };
+    });
     error = await reloadError();
     expect(error).toContain(`Workflow: provides.main '${MAIN_KEY}'`);
     expect(error).toContain("TS2322");
 
     // An addition on the platform's side breaks nothing.
-    await installTypes(
-      dir,
-      olderTable((t) => {
-        delete t.ifaces[HOST_KEY]!.methods["log"];
-      }),
-    );
+    await fs.rm(path.join(dir, ".harness"), { recursive: true });
+    expect((await reload()).error).toBeNull();
+    await writtenAgainst(dir, (t) => {
+      delete t.ifaces[HOST_KEY]!.methods["log"];
+    });
     expect((await reload()).error).toBeNull();
 
-    // No table to compare with is a problem, never a pass against the platform's own.
-    await fs.rm(path.join(dir, "node_modules", "@prismshadow", "penguin-server", "ifaces.json"));
-    expect(await reloadError()).toContain("ships no ifaces.json");
+    // A table that cannot be read is a problem, never a pass against the platform's own;
+    // deleting the directory is how a workflow takes this harness's types afresh.
+    await fs.writeFile(path.join(dir, ".harness", "ifaces.json"), "{");
+    expect(await reloadError()).toContain(".harness/ifaces.json cannot be read");
+    await fs.rm(path.join(dir, ".harness"), { recursive: true });
+    expect((await reload()).error).toBeNull();
   });
 
   it("takes tabs from contributions: several per workflow, pages under ui/, open slots only", async () => {

@@ -6,9 +6,9 @@
  * runs, not ones the first request answers. The server builds one program from the entry
  * (and whatever it imports), under options the HOST fixes — `strict`, NodeNext; a
  * `tsconfig.json` in the folder is not consulted, so a workflow cannot switch strictness
- * off for itself — with the interface types resolved from the workflow's OWN
- * `node_modules` (`@prismshadow/penguin-server/plugin`): the version it was written
- * against. Whether that version still fits this platform is ../plugin/iface-check.ts.
+ * off for itself. `@prismshadow/penguin-server/plugin` resolves to the types the harness
+ * wrote into the folder (./harness-types.ts), never to a package: what the workflow was
+ * written against. Whether that still fits this platform is ../plugin/iface-check.ts.
  *
  * A second, virtual root file assigns the default export to `WorkflowPackage`, so the
  * shape is checked even when the author left `satisfies WorkflowPackage` out (in which
@@ -22,6 +22,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { TypeScript } from "../plugin/typescript.js";
+import { harnessTypesFile } from "./harness-types.js";
 
 export const ENTRY = "index.ts";
 export const BUILD_DIR = ".build";
@@ -72,6 +73,25 @@ export function compileWorkflow(ts: TypeScript, dir: string, revision: string): 
     same(file)
       ? ts.createSourceFile(file, CHECK_SOURCE, languageVersion, true)
       : getSourceFile.call(host, file, languageVersion, ...rest);
+  const types = {
+    resolvedFileName: harnessTypesFile(dir),
+    extension: ts.Extension.Dts,
+    isExternalLibraryImport: false,
+  };
+  host.resolveModuleNameLiterals = (literals, containingFile, redirected, opts, source) =>
+    literals.map((literal) =>
+      literal.text === TYPES_MODULE
+        ? { resolvedModule: types }
+        : ts.resolveModuleName(
+            literal.text,
+            containingFile,
+            opts,
+            host,
+            undefined,
+            redirected,
+            ts.getModeForUsageLocation(source, literal, opts),
+          ),
+    );
 
   const program = ts.createProgram([entry, checkFile], options, host);
   const diagnostics = ts.getPreEmitDiagnostics(program);
@@ -120,17 +140,6 @@ function describe(
   });
   if (diagnostics.length > MAX_DIAGNOSTICS) {
     lines.push(`… and ${diagnostics.length - MAX_DIAGNOSTICS} more`);
-  }
-  if (
-    diagnostics.some(
-      (d) =>
-        d.code === 2307 &&
-        String(ts.flattenDiagnosticMessageText(d.messageText, " ")).includes(TYPES_MODULE),
-    )
-  ) {
-    lines.push(
-      `(run \`npm install\` in the workflow folder: ${TYPES_MODULE} is resolved from its own node_modules)`,
-    );
   }
   return lines.join("\n");
 }
