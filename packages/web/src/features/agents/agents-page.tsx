@@ -372,7 +372,11 @@ export function AgentsPage() {
     // Typed-but-unsent draft text becomes a parked draft conversation first, and every field
     // but the Agent starts on the Project's new-chat defaults (new-chat.ts).
     if (user && projectId) prepareNewChatDraft(user.userId, projectId);
-    setCurrentAgentId(agentId);
+    // The current Agent is one of THIS server's. An id that only a machine has matches none of
+    // them, and the chat page renders nothing — the draft included — until there is a current
+    // Agent, so naming one here left a placeholder that never resolved. The draft takes a
+    // machine's Agent from the route state below, and validates it against that machine's list.
+    if (machineId === null) setCurrentAgentId(agentId);
     navigate(`/chat/${DRAFT_SESSION_ID}`, {
       // An Agent that lives on a machine runs there: the draft is handed that machine with an
       // empty Workspace, which is the temporary workspace ON it. The draft applies a machine
