@@ -19,7 +19,7 @@ import {
   readServerStateCommand,
 } from "../src/machines/server-state.js";
 import { parseProbeOutput, posixProbe, windowsProbe } from "../src/machines/detect.js";
-import { portToStartOn, profileFromEnv, remoteLayoutFor } from "../src/machines/layout.js";
+import { profileFromEnv, remoteLayoutFor } from "../src/machines/layout.js";
 import { startRemoteServer } from "../src/machines/server-control.js";
 import {
   cmdQuote,
@@ -573,9 +573,9 @@ describe("startRemoteServer", () => {
   }
   afterEach(() => vi.useRealTimers());
 
-  it("stops waiting once the launched process is gone, and says it exited", async () => {
+  it("stops waiting once the launched process is gone, and hands back the log's words", async () => {
     // A port collision kills the server within a second. Waiting out the whole timeout
-    // would hold the caller's fallback back by half a minute for nothing.
+    // would keep the failure from a person for half a minute for nothing.
     vi.useFakeTimers();
     const asked: string[] = [];
     const result = await settled(
@@ -587,11 +587,7 @@ describe("startRemoteServer", () => {
         return said("Error: listen EADDRINUSE: address already in use 127.0.0.1:7376\n");
       }),
     );
-    expect(result).toEqual({
-      ok: false,
-      detail: expect.stringContaining("EADDRINUSE"),
-      exited: true,
-    });
+    expect(result).toEqual({ ok: false, detail: expect.stringContaining("EADDRINUSE") });
     expect(asked.filter((c) => c.includes("server status"))).toHaveLength(1);
   });
 
@@ -657,19 +653,6 @@ describe("remote layout", () => {
   it("only the release profile registers the machine's `penguin` command", () => {
     expect(RELEASE.ownsCommand).toBe(true);
     expect(DEV.ownsCommand).toBe(false);
-  });
-
-  it("never starts on a remembered port that is the other profile's default", () => {
-    // It would take whenever that profile's server is down, and then hold the port the
-    // server comes back to — on both ends, since a forward's local port equals the remote.
-    expect(portToStartOn(DEV, 7364)).toBe(7371);
-    expect(portToStartOn(RELEASE, 7371)).toBe(7364);
-    // Anything else remembered is a hint worth trying; nothing remembered is the default.
-    expect(portToStartOn(DEV, 7376)).toBe(7376);
-    expect(portToStartOn(DEV, 7371)).toBe(7371);
-    expect(portToStartOn(RELEASE, 7364)).toBe(7364);
-    expect(portToStartOn(RELEASE, null)).toBe(7364);
-    expect(portToStartOn(DEV, null)).toBe(7371);
   });
 });
 

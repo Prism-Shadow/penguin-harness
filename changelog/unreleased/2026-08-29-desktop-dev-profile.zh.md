@@ -4,6 +4,7 @@
 - **Type:** feature
 - **Scope:** `desktop`, `server`, `core`, `docs`
 - **PR:** [#544](https://github.com/Prism-Shadow/penguin-harness/pull/544)
+- **Breaking:** yes — dev profile 数据根里的机器记录描述的是那些机器上的 release 安装，不做转换
 
 [English](2026-08-29-desktop-dev-profile.md)
 
@@ -24,7 +25,19 @@ profile 在实例触及的每台机器上都成立。壳以 `PENGUIN_PROFILE` �
 
 - profile 以 `PENGUIN_PROFILE` 随每条远程命令一起传递,与 `PENGUIN_HOME` 并列,因此在某台机器上启动的 server 再去触及其他机器时,仍处于它被启动时的那个 profile。
 - 那台机器上用户键入的 `penguin` 命令始终归 release 安装所有。dev profile 的安装以 `PENGUIN_LINK_COMMAND=0` 运行安装脚本;这是 `install.sh` 与 `install.ps1` 新增的选项,不改动 `~/.local/bin/penguin`,也不改动 Windows 的用户 Path。
-- 记住的远程端口会被优先尝试,但若它是另一个 profile 的默认端口,则从不在其上启动。记住的端口启动不了时,回落一次到本 profile 的默认端口——仅在确认第一个进程已退出之后;进程一旦退出,对启动的等待随即结束。启动后记录的端口以那台机器自己报告的为准。
+- 对远程启动的等待在被启动的进程退出后随即结束,并以对端日志作为失败原因,不再等满 30 秒。启动后记录的端口以那台机器自己报告的为准。
 - 「Install 'penguin' Command…」菜单项只在 release profile 下提供,与每次启动时对该链接的修复一致。
 
-这对 profile 延伸到机器之前写下的机器记录意味着什么,见[向后兼容](2026-09-18-backward-compatibility-dev-profile.zh.md)。
+## 兼容性
+
+release profile 的数据根不受影响:其中的机器记录写下时的布局,就是现在读取它们的布局。
+
+**dev profile** 的数据根(`~/.penguin/dev-data`,由 `pnpm dev`、`pnpm desktop` 或更早的 `--dev` 构建使用)里的机器记录,写于所有实例都触及 `~/.penguin` 的时候。这些记录不做转换,也没有任何宽容读取:记录的版本是那台机器的 dev 安装并不具备的版本,记住的端口是 release server 的端口。从这样的记录发起连接,要么带着那台机器自己的报错失败,要么把 dev server 启动在那里的 release server 回来时要用的端口上。
+
+从 dev profile 的实例触及机器之前,先停掉该实例,清掉记录里记住的内容:
+
+```sh
+sqlite3 ~/.penguin/dev-data/web.db "UPDATE machines SET version = NULL, installed_at = NULL, remote_port = NULL;"
+```
+
+然后从 dev 实例安装一次。那台机器上无须删除任何东西,那里的 release 安装保持原样。

@@ -838,39 +838,31 @@ describe("machines API", () => {
       expect(t.deps.machines.job()?.log.join(" ")).toContain("Starting its server");
     });
 
-    it("falls back to the profile's default port when the remembered one does not take", async () => {
-      // A row written before profiles reached machines remembers the port the RELEASE
-      // server holds there; a dev instance starting on it collides. The default is the one
-      // number nothing else is meant to hold, so it gets one try — and is what the row
-      // remembers afterwards.
+    it("a remembered port that does not take is the failure, not a cue to try another", async () => {
+      // The row's port is the only one tried: this side does not guess at numbers on a
+      // machine other people use, and the far side's own words are what a person reads.
       const starts: number[] = [];
-      let up = false;
       await boot({
-        probe: async () =>
-          up
-            ? { state: { kind: "running" as const, port: 7364, pid: 4242 }, machineId: null }
-            : { state: { kind: "stopped" as const }, machineId: null },
+        probe: async () => ({ state: { kind: "stopped" as const }, machineId: null }),
         startServer: async (_t, port) => {
           starts.push(port);
-          if (port === 7376) return { ok: false, detail: "EADDRINUSE" };
-          up = true;
-          return { ok: true };
+          return { ok: false, detail: "EADDRINUSE" };
         },
       });
       installed("9.9.9");
       machinesRepo.patch("ssh:nas", { remotePort: 7376 });
       await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
       await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
-      expect(starts).toEqual([7376, 7364]);
-      expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(7364);
-      expect(t.deps.machines.job()?.log.join(" ")).toContain("did not take; trying 7364");
+      expect(t.deps.machines.job()?.result).toMatchObject({
+        ok: false,
+        step: "start its server",
+        message: "EADDRINUSE",
+      });
+      expect(starts).toEqual([7376]);
+      expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(7376);
     });
 
-    it("a dev instance never starts on the release port, even when the row remembers it", async () => {
-      // A row written before profiles reached machines remembers 7364. With the release
-      // server there stopped, a start on 7364 would simply succeed — and the dev server
-      // would then hold the port the release one comes back to, on both ends of the forward.
+    it("a machine never reached before starts on the profile's own default port", async () => {
       const starts: number[] = [];
       let up = false;
       await boot(
@@ -888,33 +880,11 @@ describe("machines API", () => {
         remoteLayoutFor("dev"),
       );
       installed("9.9.9");
-      machinesRepo.patch("ssh:nas", { remotePort: 7364 });
       await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
       await waitFor(() => t.deps.machines.job()?.running === false);
       expect(t.deps.machines.job()?.result).toEqual({ ok: true, connected: true });
       expect(starts).toEqual([7371]);
       expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(7371);
-    });
-
-    it("does not try a second port while the first start is still alive", async () => {
-      // A slow machine: the process is up and has the data root, it has just not answered
-      // yet. A second start would die on that lock, and the row would remember a port
-      // nothing listens on.
-      const starts: number[] = [];
-      await boot({
-        probe: async () => ({ state: { kind: "stopped" as const }, machineId: null }),
-        startServer: async (_t, port) => {
-          starts.push(port);
-          return { ok: false, detail: "it did not answer within 30s.", exited: false };
-        },
-      });
-      installed("9.9.9");
-      machinesRepo.patch("ssh:nas", { remotePort: 7376 });
-      await admin.post("/api/projects/default_project/machines/ssh:nas/connect");
-      await waitFor(() => t.deps.machines.job()?.running === false);
-      expect(t.deps.machines.job()?.result).toMatchObject({ ok: false, step: "start its server" });
-      expect(starts).toEqual([7376]);
-      expect(machinesRepo.get("ssh:nas")?.remotePort).toBe(7376);
     });
 
     it("remembers the port the machine says it serves on, not the one that was asked for", async () => {

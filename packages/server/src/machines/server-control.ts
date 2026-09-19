@@ -34,20 +34,16 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * "did not start".
  *
  * The wait ends as soon as the launched process is gone: a port collision kills it within a
- * second, and waiting out the full timeout would only delay the caller's next move. "A
+ * second, and waiting out the full timeout would only delay the failure reaching a person. "A
  * server answers" is not "on this port" — the data root admits one server, so a slower
  * start still holding it is what answers; the caller reads the port from its own probe.
- *
- * `exited` tells the two failures apart: true when the process was seen gone, false when it
- * was still alive at the timeout, absent when its pid could not be read. Only a process
- * that is gone has released the data root, so only then is another start worth trying.
  */
 export async function startRemoteServer(
   target: RemoteTarget,
   port: number,
   layout: RemoteLayout,
   exec: (target: RemoteTarget, command: string) => Promise<ExecResult>,
-): Promise<{ ok: true } | { ok: false; detail: string; exited?: boolean }> {
+): Promise<{ ok: true } | { ok: false; detail: string }> {
   const started = await exec(target, startServerCommand(port, layout));
   if (started.code !== 0) {
     return { ok: false, detail: started.stdout.trim() || "the machine could not start it." };
@@ -70,7 +66,7 @@ export async function startRemoteServer(
   }
   const tail = (await exec(target, serverLogTail(layout))).stdout.trim();
   const fallback = exited ? "it exited before answering." : "it did not answer within 30s.";
-  return { ok: false, detail: tail || fallback, ...(pid === null ? {} : { exited }) };
+  return { ok: false, detail: tail || fallback };
 }
 
 /**

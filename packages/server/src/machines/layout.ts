@@ -57,22 +57,6 @@ export function remoteLayoutFor(profile: Profile): RemoteLayout {
   };
 }
 
-const PROFILES: readonly Profile[] = ["release", "dev"];
-
-/**
- * The port to start a machine's server on: the remembered one, unless it is another
- * profile's default. That number is reserved for the other profile's server on that
- * machine — starting on it succeeds whenever that server happens to be down, and then
- * holds the port it comes back to.
- */
-export function portToStartOn(layout: RemoteLayout, remembered: number | null): number {
-  if (remembered === null) return layout.defaultPort;
-  const reserved = PROFILES.some(
-    (profile) => profile !== layout.profile && remoteLayoutFor(profile).defaultPort === remembered,
-  );
-  return reserved ? layout.defaultPort : remembered;
-}
-
 /** The layout this process reaches machines with. */
 export function currentRemoteLayout(env: NodeJS.ProcessEnv = process.env): RemoteLayout {
   return remoteLayoutFor(profileFromEnv(env));
