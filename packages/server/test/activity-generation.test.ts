@@ -109,7 +109,9 @@ describe("activity generation through Harness sessions", () => {
             path.join(row.workspace!, "module-result.json"),
             JSON.stringify({
               files: [
-                ...("bookMode" in input ? ["module/src/book-reader/model.ts"] : []),
+                ...("bookMode" in input
+                  ? ["module/src/book-reader/model.ts", "module/src/book-reader/controller.ts"]
+                  : []),
                 ...(input.draft.mediaPlan
                   ? [
                       `module/generated/${input.productCode}/refs/${input.productCode}-${input.refNum}/spec/asset_manifest.json`,
@@ -925,6 +927,12 @@ describe("activity generation through Harness sessions", () => {
     expect(
       await fs.readFile(path.join(session.workspace!, "module/src/book-reader/model.ts"), "utf8"),
     ).toContain("export class BookReaderModel");
+    expect(
+      await fs.readFile(
+        path.join(session.workspace!, "module/src/book-reader/controller.ts"),
+        "utf8",
+      ),
+    ).toContain("export class BookReaderController");
     const result = await f.finish(run);
     expect(result.status, result.error ?? "").toBe("succeeded");
     const configuration = JSON.parse(

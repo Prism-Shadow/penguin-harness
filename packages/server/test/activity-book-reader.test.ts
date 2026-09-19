@@ -363,7 +363,7 @@ describe("generated book reader template", () => {
       story("long", "word ".repeat(30)),
     ];
     const reader = new Reader(scenes, "decodable");
-    scenes[0].media!.narration!.script = "changed";
+    scenes[0]!.media!.narration!.script = "changed";
     const delay = reader.initialize();
     expect(delay.snapshot.readingDelaySeconds).toBe(4);
     expect(delay.delayMs).toBe(4000);
