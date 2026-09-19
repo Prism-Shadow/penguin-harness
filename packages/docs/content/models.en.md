@@ -12,6 +12,29 @@ Each Project has its own model table: the models its conversations can use, grou
 - To tune requests, see [Thinking levels](#thinking-levels) and [Fast mode](#fast-mode).
 - For the full list of built-in providers and the file format, see [Built-in provider groups](#built-in-provider-groups) and [The per-Project model table](#the-per-project-model-table).
 
+## ChatGPT / Codex subscriptions (experimental)
+
+Open **Models → Connect ChatGPT**, follow the OpenAI sign-in link, and enter the displayed
+code. After authorization, Penguin imports the subscription's visible models. Select one in
+the chat model picker. No API key, OAuth App registration, or Codex CLI installation is needed.
+The separate `use-codex` plugin delegates work to Codex; this connection runs Penguin's own
+agent loop, tools, approvals, and history through an AgentHub model transport.
+
+This is an experimental integration with an undocumented Codex backend, not the public OpenAI
+API. Available models and request behavior can change. The backend controls output limits:
+Penguin's configured output-token cap is not enforced on this transport. Temperature is not
+supported. Subscription usage is recorded without a dollar price.
+
+The project owner connects the account; all sessions in that project use it. Access and refresh
+tokens stay server-side in each model's `chatgpt_oauth` table inside `.project_config.toml`, with
+the same file permissions as other credentials. Penguin refreshes before expiry and saves the
+rotation before inference. Use one Penguin server process for the project; refresh serialization
+does not coordinate separate processes sharing the same credential file.
+
+Use **Connect ChatGPT** again to change accounts or discover additional models, or
+**Disconnect ChatGPT** to remove the saved credentials. Existing sessions reload credentials
+before their next request. Disconnecting here does not revoke the authorization at OpenAI.
+
 ## GitHub Copilot subscriptions (experimental)
 
 This development integration keeps Penguin's agent loop, tools, approvals, and history.

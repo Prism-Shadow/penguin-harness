@@ -121,6 +121,8 @@ export interface ModelEntry {
   pricing?: ModelPricing;
   /** API key (inlined credential); left empty falls back to the vendor's environment variable. */
   api_key?: string;
+  /** Project-scoped subscription secrets, never returned to model/HTTP clients. */
+  chatgpt_oauth?: import("@prismshadow/agenthub").ChatGPTCredentials;
   /** Custom base URL (inlined credential); preset for gateway models. */
   base_url?: string;
   /** api_key's write timestamp (ISO 8601; a display field maintained by the interface layer). */

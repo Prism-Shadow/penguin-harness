@@ -1242,6 +1242,17 @@ export const en: Strings = {
     groupKeyApplied: (n: number): string => `API key set for ${n} models`,
     oauthKey: "Authorize key",
     copilotConnect: "Connect Copilot",
+    chatgptConnect: "Connect ChatGPT",
+    chatgptDisconnect: "Disconnect ChatGPT",
+    chatgptDisconnected: "Saved ChatGPT subscription credentials cleared.",
+    chatgptDisconnectBody:
+      "Remove the saved subscription credentials for this project. Its ChatGPT models will need a new connection before making further requests.",
+    chatgptIntro:
+      "Connect your ChatGPT subscription for this project. All sessions in this project use the connected account. Experimental: this uses an undocumented Codex backend. Penguin runs the tools and approvals. The backend controls output limits; subscription usage is not priced in dollars here.",
+    chatgptCode: "Enter this code on OpenAI’s sign-in page. It expires after a few minutes.",
+    chatgptApplyFailed:
+      "ChatGPT models could not be discovered or the credentials could not be saved. Reconnect and try again.",
+    chatgptApplied: (count: number) => `Connected ChatGPT and imported ${count} models.`,
     copilotDisconnect: "Disconnect Copilot",
     copilotDisconnected:
       "Stored Copilot credentials cleared. Environment credentials, if configured, still apply.",

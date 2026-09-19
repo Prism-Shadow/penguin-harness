@@ -771,6 +771,14 @@ export type Strings = {
     groupKeyApplied: (n: number) => string;
     oauthKey: string;
     copilotConnect: string;
+    chatgptConnect: string;
+    chatgptDisconnect: string;
+    chatgptDisconnected: string;
+    chatgptDisconnectBody: string;
+    chatgptIntro: string;
+    chatgptCode: string;
+    chatgptApplyFailed: string;
+    chatgptApplied: (count: number) => string;
     copilotDisconnect: string;
     copilotDisconnected: string;
     copilotIntro: string;

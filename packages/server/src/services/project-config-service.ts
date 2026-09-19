@@ -28,6 +28,9 @@ import path from "node:path";
 import { parse as parseToml } from "smol-toml";
 import {
   CHAT_APPROVAL_MODES,
+  ChatGPTCodexClient,
+  projectChatGPTCredentials,
+  withProjectCredentialLock,
   atomicWriteFile,
   DEFAULT_CHAT_THINKING_LEVELS,
   DEFAULT_COMMAND_POLICY_RULES,
@@ -59,6 +62,7 @@ import type {
   ModelRef,
   OmniMessage,
   ProjectConfig,
+  ChatGPTCredentials,
 } from "@prismshadow/penguin-core";
 import type {
   ChatDefaultsDto,
@@ -542,19 +546,47 @@ export class ProjectConfigService implements ProjectConfigStore {
    * written with mode 0600, and replaced atomically so a crash mid-write cannot
    * truncate it — matching core's saveProjectConfig behavior.
    */
-  async writeRaw(projectId: string, data: RawTable): Promise<void> {
+  async writeRaw(
+    projectId: string,
+    data: RawTable,
+    credentialChanges?: ReadonlyMap<string, ChatGPTCredentials | null>,
+  ): Promise<void> {
     const file = this.filePath(projectId);
     await fs.mkdir(path.dirname(file), { recursive: true });
-    // Rendering goes through core's single writer: paired references become inline
-    // tables, models is placed last — matching the CLI's output format exactly
-    // (the same file should never have two formats).
-    await atomicWriteFile(file, renderProjectConfigToml(data), {
-      mode: 0o600,
-      followSymlinks: true,
+    await withProjectCredentialLock(this.root, projectId, async () => {
+      // Form saves can have read the table before a token rotation completed. Keep the
+      // latest secrets unless this operation explicitly connects or disconnects them.
+      let latest: RawTable = {};
+      try {
+        latest = parseToml(await fs.readFile(file, "utf8")) as RawTable;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      const models = asArray(data.models).map((model) => {
+        const next = { ...model };
+        delete next.chatgpt_oauth;
+        if (model.provider === "chatgpt-codex") {
+          const id = String(model.model_id);
+          const credentials = credentialChanges?.has(id)
+            ? credentialChanges.get(id)
+            : asArray(latest.models).find(
+                (m) => m.provider === "chatgpt-codex" && m.model_id === id,
+              )?.chatgpt_oauth;
+          if (credentials) next.chatgpt_oauth = credentials;
+        }
+        return next;
+      });
+      // Rendering goes through core's single writer: paired references become inline
+      // tables, models is placed last — matching the CLI's output format exactly
+      // (the same file should never have two formats).
+      await atomicWriteFile(file, renderProjectConfigToml({ ...data, models }), {
+        mode: 0o600,
+        followSymlinks: true,
+      });
+      // Every service write funnels through here: invalidate synchronously so the next
+      // read re-parses (external writers are caught by readTable's stat instead).
+      this.cache.delete(projectId);
     });
-    // Every service write funnels through here: invalidate synchronously so the next
-    // read re-parses (external writers are caught by readTable's stat instead).
-    this.cache.delete(projectId);
   }
 
   /**
@@ -848,6 +880,9 @@ export class ProjectConfigService implements ProjectConfigStore {
       // credential during construction, and that must read as "probe failed", not a 500.
       const llm = new GenerativeModel({
         modelId: req.modelId,
+        ...(req.provider === "chatgpt-codex" && clientType === "chatgpt-codex" && !req.clearApiKey
+          ? { chatgptCredentials: projectChatGPTCredentials(this.root, projectId, req.modelId) }
+          : {}),
         ...(apiKey ? { apiKey } : {}),
         ...(baseUrl ? { baseUrl } : {}),
         ...(clientType ? { clientType } : {}),
@@ -917,7 +952,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       // Inside the try for the same reason as the probes: the SDK throws during
       // construction when a credential is missing, and that must read as a failure with a
       // reason rather than an exception out of a dialog's helper.
-      const llm = new GenerativeModel(utilityCompletionConfig(ref.model_id, entry));
+      const llm = new GenerativeModel({
+        ...utilityCompletionConfig(ref.model_id, entry),
+        ...(ref.provider === "chatgpt-codex" && entry.client_type === "chatgpt-codex"
+          ? { chatgptCredentials: projectChatGPTCredentials(this.root, projectId, ref.model_id) }
+          : {}),
+      });
       return await collectUtilityCompletion(
         llm.streamGenerate({ newMessages: [userText(prompt)] }),
       );
@@ -969,6 +1009,9 @@ export class ProjectConfigService implements ProjectConfigStore {
         ...(baseUrl ? { baseUrl } : {}),
         ...(clientType ? { clientType } : {}),
         ...(fastMode ? { fastMode: true } : {}),
+        ...(req.provider === "chatgpt-codex" && clientType === "chatgpt-codex" && !req.clearApiKey
+          ? { chatgptCredentials: projectChatGPTCredentials(this.root, projectId, req.modelId) }
+          : {}),
         tools: [],
         // The lowest real level, not "none": several reasoning endpoints reject a request
         // that disables thinking outright, and a probe must not fail on the knob it sends.
@@ -1160,7 +1203,8 @@ export class ProjectConfigService implements ProjectConfigStore {
         const displayName =
           m.display_name === "" ? "" : (optStr(m.display_name) ?? cat?.displayName);
         // credential is inlined on the entry: a credential block is emitted if either api_key or base_url is present.
-        const apiKey = optStr(m.api_key);
+        const apiKey =
+          m.provider === "chatgpt-codex" && m.chatgpt_oauth ? "connected" : optStr(m.api_key);
         const credBaseUrl = optStr(m.base_url);
         const createdAt = optStr(m.created_at);
         // Masked env-fallback preview, first-party entries only (see envFallbackFirstParty):
@@ -1346,6 +1390,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       // credential is inlined on the entry; added/removed on top of the old value per the request (migrates automatically with the base entry when the key changes).
       if (entry.clearApiKey) {
         delete next.api_key;
+        delete next.chatgpt_oauth;
         delete next.created_at;
       }
       if (entry.apiKey !== undefined) {
@@ -1418,7 +1463,15 @@ export class ProjectConfigService implements ProjectConfigStore {
     else delete next.default_model;
     if (visionModel !== undefined) next.vision_model = toRaw(visionModel);
     else delete next.vision_model;
-    await this.writeRaw(projectId, next);
+    await this.writeRaw(
+      projectId,
+      next,
+      new Map(
+        req.models
+          .filter((m) => m.provider === "chatgpt-codex" && m.clearApiKey)
+          .map((m) => [m.modelId, null]),
+      ),
+    );
     if (this.promotions !== undefined) {
       const stored = new Map(
         this.promotions.list(projectId).map((p) => [refKey(p.provider, p.modelId), p.discount]),
@@ -1449,10 +1502,28 @@ export class ProjectConfigService implements ProjectConfigStore {
     const nextModels = asArray(raw.models).map((m) => {
       if (m.provider !== provider) return m;
       applied += 1;
+      if (provider === "chatgpt-codex") {
+        if (apiKey !== "") throw badRequest("Use Connect ChatGPT to authorize this subscription.");
+        const next = { ...m };
+        delete next.chatgpt_oauth;
+        delete next.api_key;
+        delete next.created_at;
+        return next;
+      }
       return { ...m, api_key: apiKey, created_at: createdAt };
     });
     if (applied === 0) return 0;
-    await this.writeRaw(projectId, { ...raw, models: nextModels });
+    await this.writeRaw(
+      projectId,
+      { ...raw, models: nextModels },
+      provider === "chatgpt-codex"
+        ? new Map(
+            nextModels
+              .filter((m) => m.provider === provider)
+              .map((m) => [String(m.model_id), null]),
+          )
+        : undefined,
+    );
     return applied;
   }
 
@@ -1502,6 +1573,53 @@ export class ProjectConfigService implements ProjectConfigStore {
     }
     await this.writeRaw(projectId, { ...raw, models });
     return applied;
+  }
+
+  async connectChatGPT(
+    projectId: string,
+    credentials: ChatGPTCredentials,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const client = new ChatGPTCodexClient({
+      model: "",
+      chatgptCredentials: async () => credentials,
+    });
+    const catalog = await client.listModelDetails(signal);
+    if (catalog.length === 0) throw new Error("No ChatGPT subscription models are available.");
+    const raw = await this.readRaw(projectId);
+    signal?.throwIfAborted();
+    const previous = asArray(raw.models);
+    const models = previous.filter((m) => m.provider !== "chatgpt-codex");
+    const advertised = new Set(catalog.map((m) => m.id));
+    for (const old of previous.filter(
+      (m) => m.provider === "chatgpt-codex" && !advertised.has(String(m.model_id)),
+    ))
+      models.push({ ...old, chatgpt_oauth: credentials });
+    for (const model of catalog) {
+      const old = previous.find((m) => m.provider === "chatgpt-codex" && m.model_id === model.id);
+      models.push({
+        ...old,
+        provider: "chatgpt-codex",
+        model_id: model.id,
+        display_name: old?.display_name ?? model.displayName,
+        client_type: "chatgpt-codex",
+        vision: model.vision,
+        base_url: "https://chatgpt.com/backend-api/codex",
+        ...(model.contextWindow ? { context_window: model.contextWindow } : {}),
+        chatgpt_oauth: credentials,
+        created_at: new Date().toISOString(),
+      });
+    }
+    await this.writeRaw(
+      projectId,
+      { ...raw, models },
+      new Map(
+        models
+          .filter((m) => m.provider === "chatgpt-codex")
+          .map((m) => [String(m.model_id), credentials]),
+      ),
+    );
+    return catalog.length;
   }
 
   /** Returns one persisted group key without exposing it through an HTTP response. */

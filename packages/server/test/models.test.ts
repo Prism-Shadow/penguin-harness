@@ -64,6 +64,55 @@ describe("models preset & catalog enrichment", () => {
     await t.cleanup();
   });
 
+  it("imports ChatGPT subscription models without exposing tokens and clears them on disconnect", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async () =>
+        Response.json({
+          models: [
+            {
+              slug: "chatgpt-test",
+              visibility: "list",
+              context_window: 200000,
+              input_modalities: ["text", "image"],
+            },
+            { slug: "internal", visibility: "hide" },
+          ],
+        }),
+      ),
+    );
+    const credentials = {
+      accessToken: "private-access",
+      refreshToken: "private-refresh",
+      accountId: "private-account",
+      expiresAt: Date.now() + 3600000,
+    };
+    expect(await t.deps.projectConfigService.connectChatGPT(projectId, credentials)).toBe(1);
+    const after = (await (await api.get(url())).json()) as ModelsResponse;
+    const model = pick(after, "chatgpt-codex", "chatgpt-test");
+    expect(model).toMatchObject({
+      clientType: "chatgpt-codex",
+      contextWindow: 200000,
+      vision: true,
+    });
+    expect(model.pricing).toBeUndefined();
+    expect(model.credential?.apiKeyMasked).toBeTruthy();
+    expect(JSON.stringify(after)).not.toContain("private-");
+    expect(after.models.some((m) => m.modelId === "internal")).toBe(false);
+    const stale = await t.deps.projectConfigService.readRaw(projectId);
+    await t.deps.projectConfigService.connectChatGPT(projectId, {
+      ...credentials,
+      refreshToken: "rotated-private",
+    });
+    await t.deps.projectConfigService.writeRaw(projectId, { ...stale, name: "An older form save" });
+    const refreshed = await t.deps.projectConfigService.readRaw(projectId);
+    expect(JSON.stringify(refreshed)).toContain("rotated-private");
+    expect(JSON.stringify(refreshed)).not.toContain("private-refresh");
+    await t.deps.projectConfigService.setGroupApiKey(projectId, "chatgpt-codex", "");
+    const config = await t.deps.projectConfigService.readRaw(projectId);
+    expect(JSON.stringify(config)).not.toContain("private-");
+  });
+
   it.each(["/chat/completions", "/responses"])(
     "imports Copilot %s models through AgentHub, preserves the project and masks its credential",
     async (endpoint) => {

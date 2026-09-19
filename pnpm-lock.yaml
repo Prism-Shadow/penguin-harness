@@ -12,7 +12,7 @@ overrides:
   nanoid: ^3.3.17
 
 patchedDependencies:
-  '@prismshadow/agenthub@0.4.15': 6eb49ee4410e6fbd52522038c122a645f4570623d384e3c3367b05bad55b2d8e
+  '@prismshadow/agenthub@0.4.15': 5f3671d47fbd9cb51f33bd050e62c4f84bae5e32848dcfffaba99ed3bf7fd315
 
 importers:
 
@@ -98,7 +98,7 @@ importers:
         version: link:../../plugins/use-firecrawl
       '@prismshadow/agenthub':
         specifier: ^0.4.15
-        version: 0.4.15(patch_hash=6eb49ee4410e6fbd52522038c122a645f4570623d384e3c3367b05bad55b2d8e)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: 0.4.15(patch_hash=5f3671d47fbd9cb51f33bd050e62c4f84bae5e32848dcfffaba99ed3bf7fd315)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@prismshadow/penguin-core':
         specifier: workspace:*
         version: link:../core
@@ -183,7 +183,7 @@ importers:
         version: link:../../plugins/use-firecrawl
       '@prismshadow/agenthub':
         specifier: 0.4.15
-        version: 0.4.15(patch_hash=6eb49ee4410e6fbd52522038c122a645f4570623d384e3c3367b05bad55b2d8e)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+        version: 0.4.15(patch_hash=5f3671d47fbd9cb51f33bd050e62c4f84bae5e32848dcfffaba99ed3bf7fd315)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -5633,7 +5633,7 @@ snapshots:
     dependencies:
       playwright: 1.61.1
 
-  '@prismshadow/agenthub@0.4.15(patch_hash=6eb49ee4410e6fbd52522038c122a645f4570623d384e3c3367b05bad55b2d8e)(supports-color@10.2.2)(ws@8.21.0)':
+  '@prismshadow/agenthub@0.4.15(patch_hash=5f3671d47fbd9cb51f33bd050e62c4f84bae5e32848dcfffaba99ed3bf7fd315)(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
@@ -5648,7 +5648,7 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/agenthub@0.4.15(patch_hash=6eb49ee4410e6fbd52522038c122a645f4570623d384e3c3367b05bad55b2d8e)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
+  '@prismshadow/agenthub@0.4.15(patch_hash=5f3671d47fbd9cb51f33bd050e62c4f84bae5e32848dcfffaba99ed3bf7fd315)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
       '@anthropic-ai/bedrock-sdk': 0.26.4(zod@4.4.3)
       '@anthropic-ai/sdk': 0.91.1(zod@4.4.3)
@@ -5680,7 +5680,7 @@ snapshots:
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-codex': file:plugins/use-codex
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/agenthub': 0.4.15(patch_hash=6eb49ee4410e6fbd52522038c122a645f4570623d384e3c3367b05bad55b2d8e)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/agenthub': 0.4.15(patch_hash=5f3671d47fbd9cb51f33bd050e62c4f84bae5e32848dcfffaba99ed3bf7fd315)(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@prismshadow/penguin-server': file:packages/server(supports-color@10.2.2)
       commander: 13.1.0
@@ -5713,7 +5713,7 @@ snapshots:
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-codex': file:plugins/use-codex
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/agenthub': 0.4.15(patch_hash=6eb49ee4410e6fbd52522038c122a645f4570623d384e3c3367b05bad55b2d8e)(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/agenthub': 0.4.15(patch_hash=5f3671d47fbd9cb51f33bd050e62c4f84bae5e32848dcfffaba99ed3bf7fd315)(supports-color@10.2.2)(ws@8.21.0)
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0
@@ -5742,7 +5742,7 @@ snapshots:
       '@penguinharness/use-claude-code': file:plugins/use-claude-code
       '@penguinharness/use-codex': file:plugins/use-codex
       '@penguinharness/use-firecrawl': file:plugins/use-firecrawl
-      '@prismshadow/agenthub': 0.4.15(patch_hash=6eb49ee4410e6fbd52522038c122a645f4570623d384e3c3367b05bad55b2d8e)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
+      '@prismshadow/agenthub': 0.4.15(patch_hash=5f3671d47fbd9cb51f33bd050e62c4f84bae5e32848dcfffaba99ed3bf7fd315)(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       arktype: 2.2.3
       smol-toml: 1.6.1
       yaml: 2.9.0

@@ -20,6 +20,8 @@ import type { ToolCallIdAllocator } from "../llm/tool-call-ids.js";
 export interface GenerativeModelConfig {
   modelId: string;
   apiKey?: string;
+  /** Server-side source; keeps expiring subscription secrets out of request/Trace data. */
+  chatgptCredentials?: import("@prismshadow/agenthub").ChatGPTCredentialProvider;
   baseUrl?: string;
   /**
    * AgentHub client protocol (`openai-chat` / `openai-responses` / `claude-4-8` /

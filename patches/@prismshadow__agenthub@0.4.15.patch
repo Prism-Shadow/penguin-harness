@@ -1,33 +1,383 @@
+diff --git a/dist/autoClient.d.ts b/dist/autoClient.d.ts
+index 386141744249389c16be7f9d0951db368566b8ba..1fefbce0d446d7679b08fa2929efdec3b3b7360b 100644
+--- a/dist/autoClient.d.ts
++++ b/dist/autoClient.d.ts
+@@ -1,4 +1,5 @@
+ import { LLMClient } from "./baseClient";
++import type { ChatGPTCredentialProvider } from "./chatgpt_codex/auth";
+ import { UniConfig, UniEvent, UniMessage } from "./types";
+ /**
+  * Auto-routing LLM client that dispatches to appropriate model-specific client.
+@@ -16,6 +17,7 @@ export declare class AutoLLMClient extends LLMClient {
+      */
+     constructor(options: {
+         model: string;
++        chatgptCredentials?: ChatGPTCredentialProvider;
+         apiKey?: string;
+         baseUrl?: string | null;
+         clientType?: string | null;
+diff --git a/dist/autoClient.d.ts.map b/dist/autoClient.d.ts.map
+index 02bd95f9c98f13d61ebe0be37f9682b2934bd2d9..250ae5f671e6b3bc31d397c7e193a8ab4ee2fa1d 100644
+--- a/dist/autoClient.d.ts.map
++++ b/dist/autoClient.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"autoClient.d.ts","sourceRoot":"","sources":["../src/autoClient.ts"],"names":[],"mappings":"AAcA,OAAO,EAAE,SAAS,EAAE,MAAM,cAAc,CAAC;AAazC,OAAO,EAAE,SAAS,EAAE,QAAQ,EAAE,UAAU,EAAE,MAAM,SAAS,CAAC;AAmB1D;;;;;GAKG;AACH,qBAAa,aAAc,SAAQ,SAAS;IAC1C,OAAO,CAAC,OAAO,CAAY;IAC3B,OAAO,CAAC,WAAW,CAAS;IAE5B;;;;OAIG;gBACS,OAAO,EAAE;QACnB,KAAK,EAAE,MAAM,CAAC;QACd,MAAM,CAAC,EAAE,MAAM,CAAC;QAChB,OAAO,CAAC,EAAE,MAAM,GAAG,IAAI,CAAC;QACxB,UAAU,CAAC,EAAE,MAAM,GAAG,IAAI,CAAC;QAC3B,cAAc,CAAC,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAC;KACzC;IAgBD;;;;;;;;;OASG;IACH,OAAO,CAAC,oBAAoB;IA8D5B,OAAO,CAAC,qBAAqB;IAqB7B;;OAEG;IAEH,+BAA+B,CAAC,MAAM,EAAE,SAAS,GAAG,GAAG;IAIvD;;OAEG;IAEH,+BAA+B,CAC7B,QAAQ,EAAE,UAAU,EAAE,EACtB,MAAM,CAAC,EAAE,WAAW,GACnB,GAAG;IAKN;;OAEG;IAEH,8BAA8B,CAAC,WAAW,EAAE,GAAG,GAAG,QAAQ;IAI1D;;OAEG;IAEI,0BAA0B,CAAC,QAAQ,EAAE,GAAG,GAAG,cAAc,CAAC,QAAQ,CAAC;IAW1E;;OAEG;IACI,iBAAiB,CAAC,OAAO,EAAE;QAChC,QAAQ,EAAE,UAAU,EAAE,CAAC;QACvB,MAAM,EAAE,SAAS,CAAC;QAClB,MAAM,CAAC,EAAE,WAAW,CAAC;KACtB,GAAG,cAAc,CAAC,QAAQ,CAAC;IAU5B;;OAEG;IACI,yBAAyB,CAAC,OAAO,EAAE;QACxC,OAAO,EAAE,UAAU,CAAC;QACpB,MAAM,EAAE,SAAS,CAAC;QAClB,MAAM,CAAC,EAAE,WAAW,CAAC;KACtB,GAAG,cAAc,CAAC,QAAQ,CAAC;IAU5B;;OAEG;IACH,YAAY,IAAI,IAAI;IAIpB;;OAEG;IACH,UAAU,IAAI,UAAU,EAAE;IAI1B;;OAEG;IACH,UAAU,CAAC,OAAO,EAAE,UAAU,EAAE,GAAG,IAAI;IAIvC;;;;;;;;;OASG;IACG,UAAU,IAAI,OAAO,CAAC,MAAM,EAAE,CAAC;CActC"}
+\ No newline at end of file
++{"version":3,"file":"autoClient.d.ts","sourceRoot":"","sources":["../src/autoClient.ts"],"names":[],"mappings":"AAcA,OAAO,EAAE,SAAS,EAAE,MAAM,cAAc,CAAC;AAEzC,OAAO,KAAK,EAAE,yBAAyB,EAAE,MAAM,sBAAsB,CAAC;AActE,OAAO,EAAE,SAAS,EAAE,QAAQ,EAAE,UAAU,EAAE,MAAM,SAAS,CAAC;AAqB1D;;;;;GAKG;AACH,qBAAa,aAAc,SAAQ,SAAS;IAC1C,OAAO,CAAC,OAAO,CAAY;IAC3B,OAAO,CAAC,WAAW,CAAS;IAE5B;;;;OAIG;gBACS,OAAO,EAAE;QACnB,KAAK,EAAE,MAAM,CAAC;QACd,kBAAkB,CAAC,EAAE,yBAAyB,CAAC;QAC/C,MAAM,CAAC,EAAE,MAAM,CAAC;QAChB,OAAO,CAAC,EAAE,MAAM,GAAG,IAAI,CAAC;QACxB,UAAU,CAAC,EAAE,MAAM,GAAG,IAAI,CAAC;QAC3B,cAAc,CAAC,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,CAAC,CAAC;KACzC;IAoBD;;;;;;;;;OASG;IACH,OAAO,CAAC,oBAAoB;IAkE5B,OAAO,CAAC,qBAAqB;IAuB7B;;OAEG;IAEH,+BAA+B,CAAC,MAAM,EAAE,SAAS,GAAG,GAAG;IAIvD;;OAEG;IAEH,+BAA+B,CAC7B,QAAQ,EAAE,UAAU,EAAE,EACtB,MAAM,CAAC,EAAE,WAAW,GACnB,GAAG;IAKN;;OAEG;IAEH,8BAA8B,CAAC,WAAW,EAAE,GAAG,GAAG,QAAQ;IAI1D;;OAEG;IAEI,0BAA0B,CAAC,QAAQ,EAAE,GAAG,GAAG,cAAc,CAAC,QAAQ,CAAC;IAW1E;;OAEG;IACI,iBAAiB,CAAC,OAAO,EAAE;QAChC,QAAQ,EAAE,UAAU,EAAE,CAAC;QACvB,MAAM,EAAE,SAAS,CAAC;QAClB,MAAM,CAAC,EAAE,WAAW,CAAC;KACtB,GAAG,cAAc,CAAC,QAAQ,CAAC;IAU5B;;OAEG;IACI,yBAAyB,CAAC,OAAO,EAAE;QACxC,OAAO,EAAE,UAAU,CAAC;QACpB,MAAM,EAAE,SAAS,CAAC;QAClB,MAAM,CAAC,EAAE,WAAW,CAAC;KACtB,GAAG,cAAc,CAAC,QAAQ,CAAC;IAU5B;;OAEG;IACH,YAAY,IAAI,IAAI;IAIpB;;OAEG;IACH,UAAU,IAAI,UAAU,EAAE;IAI1B;;OAEG;IACH,UAAU,CAAC,OAAO,EAAE,UAAU,EAAE,GAAG,IAAI;IAIvC;;;;;;;;;OASG;IACG,UAAU,IAAI,OAAO,CAAC,MAAM,EAAE,CAAC;CAetC"}
+\ No newline at end of file
 diff --git a/dist/autoClient.js b/dist/autoClient.js
-index 5750ce4098609a3dfb100be0e0a17671db9bdabe..d138e448ba4c32b19be4561221a3d9c8bc84b5a2 100644
+index 5750ce4098609a3dfb100be0e0a17671db9bdabe..86a669cd1b1af75ca7d18789ca45b4d356679380 100644
 --- a/dist/autoClient.js
 +++ b/dist/autoClient.js
-@@ -15,6 +15,7 @@
+@@ -15,6 +15,8 @@
  Object.defineProperty(exports, "__esModule", { value: true });
  exports.AutoLLMClient = void 0;
  const baseClient_1 = require("./baseClient");
-+const { GitHubCopilotClient } = require("./github_copilot/client");
++const client_1 = require("./chatgpt_codex/client");
++const client_2 = require("./github_copilot/client");
  const gemini3_8_1 = require("./gemini3_8");
  const claude5_1 = require("./claude5");
  const gpt6_1 = require("./gpt6");
-@@ -29,6 +30,7 @@ const minimax_m3_1 = require("./minimax_m3");
+@@ -29,6 +31,8 @@ const minimax_m3_1 = require("./minimax_m3");
  const openai_chat_vllm_adapter_1 = require("./openai_chat_vllm_adapter");
  // The generic protocol clients are named explicitly rather than deduced from a model id.
  const PROTOCOL_CLIENT_TYPES = [
++    "chatgpt-codex",
 +    "github-copilot",
      "openai-chat",
      "openai-chat-vllm-adapter",
      "openai-responses",
-@@ -65,6 +67,7 @@ class AutoLLMClient extends baseClient_1.LLMClient {
+@@ -52,6 +56,10 @@ class AutoLLMClient extends baseClient_1.LLMClient {
+         this._clientType = (options.clientType ||
+             process.env.CLIENT_TYPE ||
+             options.model).toLowerCase();
++        if (this._clientType === "chatgpt-codex") {
++            this._client = new client_1.ChatGPTCodexClient(options);
++            return;
++        }
+         this._client = this._createClientForModel(options.model, options.apiKey, options.baseUrl, this._clientType, options.defaultHeaders);
+     }
+     /**
+@@ -65,6 +73,10 @@ class AutoLLMClient extends baseClient_1.LLMClient {
       * @throws Error when the requested client is not yet implemented
       */
      _clientClassForModel(clientType) {
-+        if (clientType === "github-copilot") return GitHubCopilotClient;
++        if (clientType === "github-copilot")
++            return client_2.GitHubCopilotClient;
++        if (clientType === "chatgpt-codex")
++            return client_1.ChatGPTCodexClient;
          // every Gemini generation shares the unified client ("gemini-3" also matches the
          // gemini-3.8/gemini-3.7/gemini-3.6/gemini-3.5-flash-lite client types)
          if (clientType.includes("gemini-3") ||
+diff --git a/dist/chatgpt_codex/auth.d.ts b/dist/chatgpt_codex/auth.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..1eb6027c1a7ccad69a6b6ba7e87b9c97859eab1c
+--- /dev/null
++++ b/dist/chatgpt_codex/auth.d.ts
+@@ -0,0 +1,27 @@
++/** Experimental Codex device authorization. The caller owns secure storage. */
++export declare const CHATGPT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
++export declare class ChatGPTAuthorizationError extends Error {
++    readonly code = "authentication_error";
++    readonly status = 401;
++    constructor(message: string);
++}
++export interface ChatGPTCredentials {
++    accessToken: string;
++    refreshToken: string;
++    accountId: string;
++    expiresAt: number;
++}
++export type ChatGPTCredentialProvider = (signal?: AbortSignal) => Promise<ChatGPTCredentials>;
++export interface ChatGPTDeviceAuthorization {
++    deviceAuthId: string;
++    userCode: string;
++    intervalMs: number;
++    expiresAt: number;
++    authorizeUrl: string;
++}
++export declare function startChatGPTDeviceAuthorization(signal?: AbortSignal): Promise<ChatGPTDeviceAuthorization>;
++/** A null result means pending. Callers must respect intervalMs and expiresAt. */
++export declare function pollChatGPTDeviceAuthorization(flow: ChatGPTDeviceAuthorization, signal?: AbortSignal): Promise<ChatGPTCredentials | null>;
++/** Serialize refreshes and persist the returned rotation before issuing inference. */
++export declare function refreshChatGPTCredentials(previous: ChatGPTCredentials, signal?: AbortSignal): Promise<ChatGPTCredentials>;
++//# sourceMappingURL=auth.d.ts.map
+\ No newline at end of file
+diff --git a/dist/chatgpt_codex/auth.d.ts.map b/dist/chatgpt_codex/auth.d.ts.map
+new file mode 100644
+index 0000000000000000000000000000000000000000..fa8b7d039d6753c03bcdcadd0694ea2cfc946684
+--- /dev/null
++++ b/dist/chatgpt_codex/auth.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"auth.d.ts","sourceRoot":"","sources":["../../src/chatgpt_codex/auth.ts"],"names":[],"mappings":"AAAA,+EAA+E;AAC/E,eAAO,MAAM,sBAAsB,0CAA0C,CAAC;AAI9E,qBAAa,yBAA0B,SAAQ,KAAK;IAClD,QAAQ,CAAC,IAAI,0BAA0B;IACvC,QAAQ,CAAC,MAAM,OAAO;gBACV,OAAO,EAAE,MAAM;CAI5B;AAED,MAAM,WAAW,kBAAkB;IACjC,WAAW,EAAE,MAAM,CAAC;IACpB,YAAY,EAAE,MAAM,CAAC;IACrB,SAAS,EAAE,MAAM,CAAC;IAClB,SAAS,EAAE,MAAM,CAAC;CACnB;AACD,MAAM,MAAM,yBAAyB,GAAG,CACtC,MAAM,CAAC,EAAE,WAAW,KACjB,OAAO,CAAC,kBAAkB,CAAC,CAAC;AAEjC,MAAM,WAAW,0BAA0B;IACzC,YAAY,EAAE,MAAM,CAAC;IACrB,QAAQ,EAAE,MAAM,CAAC;IACjB,UAAU,EAAE,MAAM,CAAC;IACnB,SAAS,EAAE,MAAM,CAAC;IAClB,YAAY,EAAE,MAAM,CAAC;CACtB;AA0FD,wBAAsB,+BAA+B,CACnD,MAAM,CAAC,EAAE,WAAW,GACnB,OAAO,CAAC,0BAA0B,CAAC,CAyBrC;AAED,kFAAkF;AAClF,wBAAsB,8BAA8B,CAClD,IAAI,EAAE,0BAA0B,EAChC,MAAM,CAAC,EAAE,WAAW,GACnB,OAAO,CAAC,kBAAkB,GAAG,IAAI,CAAC,CA8BpC;AAED,sFAAsF;AACtF,wBAAsB,yBAAyB,CAC7C,QAAQ,EAAE,kBAAkB,EAC5B,MAAM,CAAC,EAAE,WAAW,GACnB,OAAO,CAAC,kBAAkB,CAAC,CAa7B"}
+\ No newline at end of file
+diff --git a/dist/chatgpt_codex/auth.js b/dist/chatgpt_codex/auth.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..d90922a33168164fd2232beba938558ced3b4bdb
+--- /dev/null
++++ b/dist/chatgpt_codex/auth.js
+@@ -0,0 +1,131 @@
++"use strict";
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.ChatGPTAuthorizationError = exports.CHATGPT_CODEX_BASE_URL = void 0;
++exports.startChatGPTDeviceAuthorization = startChatGPTDeviceAuthorization;
++exports.pollChatGPTDeviceAuthorization = pollChatGPTDeviceAuthorization;
++exports.refreshChatGPTCredentials = refreshChatGPTCredentials;
++/** Experimental Codex device authorization. The caller owns secure storage. */
++exports.CHATGPT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
++const ISSUER = "https://auth.openai.com";
++const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
++class ChatGPTAuthorizationError extends Error {
++    constructor(message) {
++        super(message);
++        this.code = "authentication_error";
++        this.status = 401;
++        this.name = "ChatGPTAuthorizationError";
++    }
++}
++exports.ChatGPTAuthorizationError = ChatGPTAuthorizationError;
++async function request(path, body, signal) {
++    try {
++        return await fetch(`${ISSUER}${path}`, {
++            method: "POST",
++            headers: {
++                "Content-Type": body instanceof URLSearchParams
++                    ? "application/x-www-form-urlencoded"
++                    : "application/json",
++            },
++            body: body instanceof URLSearchParams ? body : JSON.stringify(body),
++            signal: signal
++                ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
++                : AbortSignal.timeout(15000),
++            redirect: "error",
++        });
++    }
++    catch {
++        signal?.throwIfAborted();
++        throw new Error("ChatGPT authorization could not be reached. Try again.");
++    }
++}
++function nonempty(value) {
++    return typeof value === "string" && value.length > 0;
++}
++async function credentials(response, previous) {
++    if (!response.ok && ![400, 401, 403].includes(response.status))
++        throw Object.assign(new Error("ChatGPT authorization is temporarily unavailable. Try again."), { status: response.status });
++    if (!response.ok)
++        throw new ChatGPTAuthorizationError("ChatGPT authorization was rejected. Reconnect your subscription.");
++    try {
++        const body = (await response.json());
++        const accessToken = body.access_token;
++        const refreshToken = body.refresh_token ?? previous?.refreshToken;
++        let accountId = previous?.accountId;
++        if (nonempty(body.id_token)) {
++            // Metadata from the issuer's token exchange, never an authorization decision.
++            const claims = JSON.parse(Buffer.from(body.id_token.split(".")[1], "base64url").toString("utf8"));
++            accountId = claims["https://api.openai.com/auth"]?.chatgpt_account_id;
++        }
++        const lifetime = body.expires_in === undefined && nonempty(accessToken)
++            ? Number(JSON.parse(Buffer.from(accessToken.split(".")[1], "base64url").toString("utf8")).exp) -
++                Date.now() / 1000
++            : Number(body.expires_in);
++        if (!nonempty(accessToken) ||
++            !nonempty(refreshToken) ||
++            !nonempty(accountId) ||
++            !Number.isFinite(lifetime) ||
++            lifetime <= 0 ||
++            (previous && accountId !== previous.accountId))
++            throw new Error();
++        return {
++            accessToken,
++            refreshToken,
++            accountId,
++            expiresAt: Date.now() + lifetime * 1000,
++        };
++    }
++    catch {
++        throw new ChatGPTAuthorizationError("ChatGPT returned invalid credentials. Reconnect your subscription.");
++    }
++}
++async function startChatGPTDeviceAuthorization(signal) {
++    const response = await request("/api/accounts/deviceauth/usercode", { client_id: CLIENT_ID }, signal);
++    if (!response.ok)
++        throw new Error("ChatGPT device authorization is unavailable. Try again.");
++    const body = (await response.json());
++    const userCode = body.user_code ?? body.usercode;
++    const interval = Number(body.interval ?? 5);
++    if (!nonempty(body.device_auth_id) ||
++        !nonempty(userCode) ||
++        !Number.isFinite(interval) ||
++        interval < 0)
++        throw new Error("ChatGPT returned an invalid device authorization.");
++    return {
++        deviceAuthId: body.device_auth_id,
++        userCode,
++        intervalMs: Math.max(5, interval) * 1000,
++        expiresAt: Date.now() + 900000,
++        authorizeUrl: `${ISSUER}/codex/device`,
++    };
++}
++/** A null result means pending. Callers must respect intervalMs and expiresAt. */
++async function pollChatGPTDeviceAuthorization(flow, signal) {
++    if (Date.now() >= flow.expiresAt)
++        throw new Error("ChatGPT device authorization expired. Start again.");
++    const response = await request("/api/accounts/deviceauth/token", {
++        device_auth_id: flow.deviceAuthId,
++        user_code: flow.userCode,
++    }, signal);
++    if (response.status === 403 || response.status === 404)
++        return null;
++    if (!response.ok)
++        throw new Error("ChatGPT device authorization failed. Start again.");
++    const body = (await response.json());
++    if (!nonempty(body.authorization_code) || !nonempty(body.code_verifier))
++        throw new Error("ChatGPT returned an invalid authorization response.");
++    return credentials(await request("/oauth/token", new URLSearchParams({
++        grant_type: "authorization_code",
++        client_id: CLIENT_ID,
++        code: body.authorization_code,
++        code_verifier: body.code_verifier,
++        redirect_uri: `${ISSUER}/deviceauth/callback`,
++    }), signal));
++}
++/** Serialize refreshes and persist the returned rotation before issuing inference. */
++async function refreshChatGPTCredentials(previous, signal) {
++    return credentials(await request("/oauth/token", {
++        grant_type: "refresh_token",
++        client_id: CLIENT_ID,
++        refresh_token: previous.refreshToken,
++    }, signal), previous);
++}
+diff --git a/dist/chatgpt_codex/client.d.ts b/dist/chatgpt_codex/client.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..e498d32926ca4a154834a8dbff0e9303fb96b5e3
+--- /dev/null
++++ b/dist/chatgpt_codex/client.d.ts
+@@ -0,0 +1,19 @@
++import { OpenaiResponsesClient } from "../openai_responses";
++import { UniConfig } from "../types";
++import { ChatGPTCredentialProvider } from "./auth";
++export interface ChatGPTModel {
++    id: string;
++    displayName: string;
++    contextWindow?: number;
++    vision: boolean;
++}
++/** Undocumented subscription endpoint; Penguin/other callers keep their own agent loop. */
++export declare class ChatGPTCodexClient extends OpenaiResponsesClient {
++    constructor(options: ConstructorParameters<typeof OpenaiResponsesClient>[0] & {
++        chatgptCredentials?: ChatGPTCredentialProvider;
++    });
++    transformUniConfigToModelConfig(config: UniConfig): ReturnType<OpenaiResponsesClient["transformUniConfigToModelConfig"]>;
++    listModelDetails(signal?: AbortSignal): Promise<ChatGPTModel[]>;
++    listModels(signal?: AbortSignal): Promise<string[]>;
++}
++//# sourceMappingURL=client.d.ts.map
+\ No newline at end of file
+diff --git a/dist/chatgpt_codex/client.d.ts.map b/dist/chatgpt_codex/client.d.ts.map
+new file mode 100644
+index 0000000000000000000000000000000000000000..534844601d046fd05d4d9594d2c940e37708a4a5
+--- /dev/null
++++ b/dist/chatgpt_codex/client.d.ts.map
+@@ -0,0 +1 @@
++{"version":3,"file":"client.d.ts","sourceRoot":"","sources":["../../src/chatgpt_codex/client.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,qBAAqB,EAAE,MAAM,qBAAqB,CAAC;AAC5D,OAAO,EAAE,SAAS,EAAE,MAAM,UAAU,CAAC;AAErC,OAAO,EAA0B,yBAAyB,EAAE,MAAM,QAAQ,CAAC;AAE3E,MAAM,WAAW,YAAY;IAC3B,EAAE,EAAE,MAAM,CAAC;IACX,WAAW,EAAE,MAAM,CAAC;IACpB,aAAa,CAAC,EAAE,MAAM,CAAC;IACvB,MAAM,EAAE,OAAO,CAAC;CACjB;AAED,2FAA2F;AAC3F,qBAAa,kBAAmB,SAAQ,qBAAqB;gBAEzD,OAAO,EAAE,qBAAqB,CAAC,OAAO,qBAAqB,CAAC,CAAC,CAAC,CAAC,GAAG;QAChE,kBAAkB,CAAC,EAAE,yBAAyB,CAAC;KAChD;IA4CH,+BAA+B,CAC7B,MAAM,EAAE,SAAS,GAChB,UAAU,CAAC,qBAAqB,CAAC,iCAAiC,CAAC,CAAC;IAejE,gBAAgB,CAAC,MAAM,CAAC,EAAE,WAAW,GAAG,OAAO,CAAC,YAAY,EAAE,CAAC;IA4B/D,UAAU,CAAC,MAAM,CAAC,EAAE,WAAW,GAAG,OAAO,CAAC,MAAM,EAAE,CAAC;CAG1D"}
+\ No newline at end of file
+diff --git a/dist/chatgpt_codex/client.js b/dist/chatgpt_codex/client.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..2c8f2c186c04a7635a65564edb564902162ba2e6
+--- /dev/null
++++ b/dist/chatgpt_codex/client.js
+@@ -0,0 +1,87 @@
++"use strict";
++var __importDefault = (this && this.__importDefault) || function (mod) {
++    return (mod && mod.__esModule) ? mod : { "default": mod };
++};
++Object.defineProperty(exports, "__esModule", { value: true });
++exports.ChatGPTCodexClient = void 0;
++const openai_1 = __importDefault(require("openai"));
++const openai_responses_1 = require("../openai_responses");
++const errors_1 = require("../errors");
++const auth_1 = require("./auth");
++/** Undocumented subscription endpoint; Penguin/other callers keep their own agent loop. */
++class ChatGPTCodexClient extends openai_responses_1.OpenaiResponsesClient {
++    constructor(options) {
++        if (options.baseUrl &&
++            options.baseUrl.replace(/\/$/, "") !== auth_1.CHATGPT_CODEX_BASE_URL)
++            throw new Error("ChatGPT subscriptions require the Codex backend endpoint.");
++        if (!options.chatgptCredentials)
++            throw new Error("Connect a ChatGPT subscription first.");
++        super({
++            ...options,
++            apiKey: "subscription",
++            baseUrl: auth_1.CHATGPT_CODEX_BASE_URL,
++        });
++        const getCredentials = options.chatgptCredentials;
++        this._client = new openai_1.default({
++            apiKey: "subscription",
++            baseURL: auth_1.CHATGPT_CODEX_BASE_URL,
++            maxRetries: 0,
++            fetch: async (url, init) => {
++                const endpoint = new URL(String(url));
++                if (endpoint.origin !== "https://chatgpt.com" ||
++                    ![
++                        "/backend-api/codex/responses",
++                        "/backend-api/codex/models",
++                    ].includes(endpoint.pathname))
++                    throw new Error("Invalid ChatGPT subscription endpoint.");
++                const auth = await getCredentials(init?.signal ?? undefined);
++                const headers = new Headers(init?.headers);
++                headers.set("Authorization", `Bearer ${auth.accessToken}`);
++                headers.set("ChatGPT-Account-Id", auth.accountId);
++                headers.set("User-Agent", "PenguinHarness-Experimental-Transport/0.1");
++                headers.set("originator", "penguin_harness");
++                if (endpoint.pathname.endsWith("/models"))
++                    endpoint.searchParams.set("client_version", "0.154.0");
++                return fetch(endpoint, { ...init, headers, redirect: "error" });
++            },
++        });
++    }
++    transformUniConfigToModelConfig(config) {
++        if (config.temperature !== undefined)
++            throw new errors_1.UnsupportedParameterError({
++                client: "ChatGPTCodexClient",
++                parameter: "temperature",
++                message: "ChatGPT subscriptions do not support temperature.",
++            });
++        const result = super.transformUniConfigToModelConfig(config);
++        // The Codex backend chooses the output limit; the harness must not present its cap as enforced.
++        delete result.max_output_tokens;
++        result.instructions ?? (result.instructions = "");
++        result.include = ["reasoning.encrypted_content"];
++        return result;
++    }
++    async listModelDetails(signal) {
++        const response = await this._client.get("/models", { signal, timeout: 15000 });
++        if (!Array.isArray(response.models))
++            throw new Error("ChatGPT returned an invalid model catalog.");
++        return response.models
++            .filter((m) => m.visibility === "list" &&
++            typeof m.slug === "string" &&
++            m.slug.length > 0)
++            .map((m) => ({
++            id: m.slug,
++            displayName: typeof m.display_name === "string"
++                ? m.display_name
++                : m.slug,
++            ...(typeof m.context_window === "number" && m.context_window > 0
++                ? { contextWindow: m.context_window }
++                : {}),
++            vision: Array.isArray(m.input_modalities) &&
++                m.input_modalities.includes("image"),
++        }));
++    }
++    async listModels(signal) {
++        return (await this.listModelDetails(signal)).map((m) => m.id);
++    }
++}
++exports.ChatGPTCodexClient = ChatGPTCodexClient;
 diff --git a/dist/github_copilot/client.d.ts b/dist/github_copilot/client.d.ts
 new file mode 100644
+index 0000000000000000000000000000000000000000..6711b5de5bb6f3302fa25839aaf49772f2601ad2
 --- /dev/null
 +++ b/dist/github_copilot/client.d.ts
 @@ -0,0 +1,18 @@
@@ -52,13 +402,15 @@ new file mode 100644
 \ No newline at end of file
 diff --git a/dist/github_copilot/client.d.ts.map b/dist/github_copilot/client.d.ts.map
 new file mode 100644
+index 0000000000000000000000000000000000000000..61cc46bf947b79a88b553f6094794d810e0c4cbc
 --- /dev/null
 +++ b/dist/github_copilot/client.d.ts.map
-@@ -0,0 +1,1 @@
+@@ -0,0 +1 @@
 +{"version":3,"file":"client.d.ts","sourceRoot":"","sources":["../../src/github_copilot/client.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,gBAAgB,EAAE,MAAM,gBAAgB,CAAC;AAElD,OAAO,EAAE,SAAS,EAAE,UAAU,EAAE,QAAQ,EAAE,MAAM,UAAU,CAAC;AAG3D,KAAK,OAAO,GAAG,qBAAqB,CAAC,OAAO,gBAAgB,CAAC,CAAC,CAAC,CAAC,CAAC;AAWjE,uFAAuF;AACvF,qBAAa,mBAAoB,SAAQ,gBAAgB;IACvD,OAAO,CAAC,QAAQ,CAAC,SAAS,CAAyB;IACnD,OAAO,CAAC,QAAQ,CAAC,SAAS,CAA+B;IACzD,OAAO,CAAC,QAAQ,CAAC,CAAW;gBAChB,OAAO,EAAE,OAAO;IA2CtB,UAAU,CAAC,MAAM,CAAC,EAAE,WAAW,GAAG,OAAO,CAAC,MAAM,EAAE,CAAC;IA0BlD,0BAA0B,CAAC,OAAO,EAAE;QACzC,QAAQ,EAAE,UAAU,EAAE,CAAC;QACvB,MAAM,EAAE,SAAS,CAAC;QAClB,MAAM,CAAC,EAAE,WAAW,CAAC;KACtB,GAAG,cAAc,CAAC,QAAQ,CAAC;CAe7B"}
 \ No newline at end of file
 diff --git a/dist/github_copilot/client.js b/dist/github_copilot/client.js
 new file mode 100644
+index 0000000000000000000000000000000000000000..0f8cc82b51e5e721ea95dc9e7ad00f88144ac18a
 --- /dev/null
 +++ b/dist/github_copilot/client.js
 @@ -0,0 +1,104 @@
@@ -166,3 +518,42 @@ new file mode 100644
 +    }
 +}
 +exports.GitHubCopilotClient = GitHubCopilotClient;
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 16a26edf8ed256004605808fcc208f8213ff1ecc..aecfaec73711696779c6d945be10653831fc2cb5 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,4 +1,7 @@
+ export { AutoLLMClient } from "./autoClient";
++export * from "./chatgpt_codex/auth";
++export { ChatGPTCodexClient } from "./chatgpt_codex/client";
++export type { ChatGPTModel } from "./chatgpt_codex/client";
+ export { AgentHubError, EmptyResponseError, ToolCallArgumentParseError, UnsupportedOperationError, UnsupportedParameterError, } from "./errors";
+ export { listSupportedModels, Currency, Modality, ModelPricing, SupportedModel, } from "./registry";
+ export * from "./types";
+diff --git a/dist/index.d.ts.map b/dist/index.d.ts.map
+index 178be7ae97c5e615181c114b057dd6fd188819c6..f9d2ef7a2450cc886f1ad27656a7a337239b311d 100644
+--- a/dist/index.d.ts.map
++++ b/dist/index.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":"AAcA,OAAO,EAAE,aAAa,EAAE,MAAM,cAAc,CAAC;AAC7C,OAAO,EACL,aAAa,EACb,kBAAkB,EAClB,0BAA0B,EAC1B,yBAAyB,EACzB,yBAAyB,GAC1B,MAAM,UAAU,CAAC;AAClB,OAAO,EACL,mBAAmB,EACnB,QAAQ,EACR,QAAQ,EACR,YAAY,EACZ,cAAc,GACf,MAAM,YAAY,CAAC;AACpB,cAAc,SAAS,CAAC"}
+\ No newline at end of file
++{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":"AAcA,OAAO,EAAE,aAAa,EAAE,MAAM,cAAc,CAAC;AAC7C,cAAc,sBAAsB,CAAC;AACrC,OAAO,EAAE,kBAAkB,EAAE,MAAM,wBAAwB,CAAC;AAC5D,YAAY,EAAE,YAAY,EAAE,MAAM,wBAAwB,CAAC;AAC3D,OAAO,EACL,aAAa,EACb,kBAAkB,EAClB,0BAA0B,EAC1B,yBAAyB,EACzB,yBAAyB,GAC1B,MAAM,UAAU,CAAC;AAClB,OAAO,EACL,mBAAmB,EACnB,QAAQ,EACR,QAAQ,EACR,YAAY,EACZ,cAAc,GACf,MAAM,YAAY,CAAC;AACpB,cAAc,SAAS,CAAC"}
+\ No newline at end of file
+diff --git a/dist/index.js b/dist/index.js
+index 17c2010e03b56b3e0d4e2ea2e1623cf44d3ad4f3..edd8835eadb14ffebf856095858a936aa99ccc0f 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -27,9 +27,12 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
+     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+ };
+ Object.defineProperty(exports, "__esModule", { value: true });
+-exports.listSupportedModels = exports.UnsupportedParameterError = exports.UnsupportedOperationError = exports.ToolCallArgumentParseError = exports.EmptyResponseError = exports.AgentHubError = exports.AutoLLMClient = void 0;
++exports.listSupportedModels = exports.UnsupportedParameterError = exports.UnsupportedOperationError = exports.ToolCallArgumentParseError = exports.EmptyResponseError = exports.AgentHubError = exports.ChatGPTCodexClient = exports.AutoLLMClient = void 0;
+ var autoClient_1 = require("./autoClient");
+ Object.defineProperty(exports, "AutoLLMClient", { enumerable: true, get: function () { return autoClient_1.AutoLLMClient; } });
++__exportStar(require("./chatgpt_codex/auth"), exports);
++var client_1 = require("./chatgpt_codex/client");
++Object.defineProperty(exports, "ChatGPTCodexClient", { enumerable: true, get: function () { return client_1.ChatGPTCodexClient; } });
+ var errors_1 = require("./errors");
+ Object.defineProperty(exports, "AgentHubError", { enumerable: true, get: function () { return errors_1.AgentHubError; } });
+ Object.defineProperty(exports, "EmptyResponseError", { enumerable: true, get: function () { return errors_1.EmptyResponseError; } });

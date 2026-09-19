@@ -29,6 +29,7 @@ import type { ModelProviderOAuth } from "@prismshadow/penguin-core/model-catalog
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
 import { CopilotDeviceFlow } from "./copilot-device-flow.js";
+import { ChatGPTDeviceFlow } from "./chatgpt-device-flow.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ModelOAuth, ProjectConfigStore } from "../mechanisms/projects.js";
 
@@ -218,6 +219,9 @@ export class ModelOAuthService implements ModelOAuth {
   private readonly device = new CopilotDeviceFlow((projectId, token, signal) =>
     this.projectConfig.connectCopilot(projectId, token, signal),
   );
+  private readonly chatgpt = new ChatGPTDeviceFlow((projectId, credentials, signal) =>
+    this.projectConfig.connectChatGPT(projectId, credentials, signal),
+  );
 
   /**
    * Open a flow for one provider group and return the page to send the user to.
@@ -236,6 +240,7 @@ export class ModelOAuthService implements ModelOAuth {
     callbackOrigin: string;
   }): ModelOAuthStartResult | Promise<ModelOAuthStartResult> {
     if (input.provider === "github-copilot") return this.device.start(input);
+    if (input.provider === "chatgpt-codex") return this.chatgpt.start(input);
     const oauth = providerInfo(input.provider)?.oauth;
     if (oauth === undefined) {
       throw badRequest(`Provider ${input.provider} does not support authorizing a new API key.`);
@@ -330,6 +335,7 @@ export class ModelOAuthService implements ModelOAuth {
     applied?: number;
   }> {
     if (this.device.has(input.flowId)) return this.device.poll(input);
+    if (this.chatgpt.has(input.flowId)) return this.chatgpt.poll(input);
     const flow = this.require(input);
     // Reading the code and claiming it inside `redeem` is one synchronous stretch, so two
     // overlapping polls cannot both reach the exchange: the second finds nothing deposited
@@ -359,6 +365,7 @@ export class ModelOAuthService implements ModelOAuth {
 
   cancel(input: { flowId: string; userId: string; projectId: string }): void {
     if (this.device.has(input.flowId)) return this.device.cancel(input);
+    if (this.chatgpt.has(input.flowId)) return this.chatgpt.cancel(input);
     this.require(input);
     this.flows.delete(input.flowId);
   }

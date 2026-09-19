@@ -1118,6 +1118,16 @@ export class Agent {
           createLLM: () =>
             new GenerativeModel({
               modelId: visionEntry.model_id,
+              ...(visionEntry.provider === "chatgpt-codex" &&
+              visionEntry.client_type === "chatgpt-codex"
+                ? {
+                    chatgptCredentials: projectChatGPTCredentials(
+                      root,
+                      projectId,
+                      visionEntry.model_id,
+                    ),
+                  }
+                : {}),
               ...(visionEntry.api_key !== undefined ? { apiKey: visionEntry.api_key } : {}),
               ...(visionEntry.base_url !== undefined ? { baseUrl: visionEntry.base_url } : {}),
               ...(visionEntry.client_type !== undefined
@@ -1193,6 +1203,9 @@ export class Agent {
       new GenerativeModel({
         modelId: modelEntry.model_id,
         toolCallIds,
+        ...(modelEntry.provider === "chatgpt-codex" && modelEntry.client_type === "chatgpt-codex"
+          ? { chatgptCredentials: projectChatGPTCredentials(root, projectId, modelEntry.model_id) }
+          : {}),
         ...(apiKey !== undefined ? { apiKey } : {}),
         ...(baseUrl !== undefined ? { baseUrl } : {}),
         ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
@@ -1267,6 +1280,9 @@ export class Agent {
     const createBareLLM = (): GenerativeModel =>
       new GenerativeModel({
         modelId: modelEntry.model_id,
+        ...(modelEntry.provider === "chatgpt-codex" && modelEntry.client_type === "chatgpt-codex"
+          ? { chatgptCredentials: projectChatGPTCredentials(root, projectId, modelEntry.model_id) }
+          : {}),
         ...(apiKey !== undefined ? { apiKey } : {}),
         ...(baseUrl !== undefined ? { baseUrl } : {}),
         ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
@@ -1384,3 +1400,4 @@ function runDetached(handle: SubagentHandle, messages: OmniMessage[], approve?: 
     }
   })();
 }
+import { projectChatGPTCredentials } from "./state/chatgpt-credentials.js";
