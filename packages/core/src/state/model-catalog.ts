@@ -18,8 +18,9 @@
  * the 2026-09-16 refresh — the direct DeepSeek group down to the two names its pricing page
  * lists, TokenDance's deepseek-v4-flash-0731 / deepseek-v4-pro-0813 / kimi-k3 promotions, the
  * OpenRouter qwen/qwen3.8-27b row, the Fireworks AI and SiliconFlow additions, and both Qwen
- * groups' line-ups with their peak/off-peak DeepSeek rows: 2026-09-16 — per each provider's
- * docs).
+ * groups' line-ups with their peak/off-peak DeepSeek rows: 2026-09-16; the Z.AI Coding Plan
+ * group, its endpoint and all five presets verified live against the coding endpoint rather
+ * than docs: 2026-09-19 — per each provider's docs).
  * Docs: packages/docs/content/models.{zh,en}.md (site path /docs/models) documents the
  * provider groups and credential resolution described here.
  *
@@ -208,6 +209,10 @@ const VLLM_CLIENT_TYPE = "openai-chat-vllm-adapter";
 /** Preset provider endpoints; only OpenAI-compatible gateways expose theirs as gatewayBaseUrl. */
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1";
+// Z.AI's Coding Plan endpoint — the only path the subscription quota is mounted on. Used as
+// row-level baseUrl, not gatewayBaseUrl: this is not an OpenAI-gateway group (see the group's
+// own comment).
+const ZHIPU_CODING_PLAN_BASE_URL = "https://api.z.ai/api/coding/paas/v4/";
 const QWEN_TOKEN_PLAN_BASE_URL =
   "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
 const QWEN_PAYG_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
@@ -333,6 +338,19 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     envKey: "ZAI_API_KEY",
     envBaseUrlKey: "ZAI_BASE_URL",
     apiKeyUrl: "https://open.bigmodel.cn/apikey/platform",
+    modelsUrl: "https://docs.z.ai/guides/overview/pricing",
+  },
+  {
+    // Z.AI's subscription billing path for the same GLM ids the group above sells
+    // pay-as-you-go: a Coding Plan quota lives only on the coding endpoint, and each of this
+    // group's presets inlines it (see the rows' comment). Same credential and env pair as
+    // `zhipu` — the key is interchangeable; the endpoint, not the key, picks the billing path.
+    id: "zhipu-coding-plan",
+    label: "Z.AI Coding Plan",
+    envKey: "ZAI_API_KEY",
+    envBaseUrlKey: "ZAI_BASE_URL",
+    // The Coding Plan is sold on the international platform, whose console this links to.
+    apiKeyUrl: "https://z.ai/manage-apikey/apikey-list",
     modelsUrl: "https://docs.z.ai/guides/overview/pricing",
   },
   {
@@ -2253,6 +2271,62 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     pricing: usd(0.2, 1, 3.2),
     supportsVision: false,
   },
+  // -- Z.AI Coding Plan (subscription; endpoint pinned per row, every price bucket zero) --
+  {
+    // The GLM Coding Plan is a subscription whose quota is mounted only on the coding
+    // endpoint inlined below — the same key against the pay-as-you-go group's endpoint
+    // answers 1113 "Insufficient balance or no resource package" (verified 2026-09-19, when
+    // every preset here answered a minimal completion on that endpoint). The wire protocol
+    // is unchanged, so the rows keep the direct group's auto-routing onto AgentHub's unified
+    // GLM client and its vision rule; only the base URL differs. It is inlined per row
+    // instead of set as the group's gatewayBaseUrl, which is the OpenAI gateways' field and
+    // would steer models the user adds here onto the generic OpenAI client. Usage draws the
+    // plan's quota rather than a meter, so there is no per-token bill to record: every
+    // bucket is zero, which the cost center reads as a genuine $0 tier, not an unknown price.
+    modelId: "glm-5.3",
+    displayName: "GLM-5.3",
+    provider: "zhipu-coding-plan",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    baseUrl: ZHIPU_CODING_PLAN_BASE_URL,
+  },
+  {
+    modelId: "glm-5.3-flash",
+    displayName: "GLM-5.3 Flash",
+    provider: "zhipu-coding-plan",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: true,
+    baseUrl: ZHIPU_CODING_PLAN_BASE_URL,
+  },
+  {
+    modelId: "glm-5.2",
+    displayName: "GLM-5.2",
+    provider: "zhipu-coding-plan",
+    contextWindow: 1000000,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    baseUrl: ZHIPU_CODING_PLAN_BASE_URL,
+  },
+  {
+    modelId: "glm-5.1",
+    displayName: "GLM-5.1",
+    provider: "zhipu-coding-plan",
+    contextWindow: 200000,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    baseUrl: ZHIPU_CODING_PLAN_BASE_URL,
+  },
+  {
+    modelId: "glm-5",
+    displayName: "GLM-5",
+    provider: "zhipu-coding-plan",
+    contextWindow: 200000,
+    pricing: usd(0, 0, 0),
+    supportsVision: false,
+    baseUrl: ZHIPU_CODING_PLAN_BASE_URL,
+  },
   // -- Moonshot (Kimi) (official CNY pricing) --
   {
     modelId: "kimi-k3",
@@ -2699,8 +2773,9 @@ export function modelHomepageUrl(provider: string, modelId: string): string | un
   if (provider === "qwen-pay-as-you-go") {
     return `https://www.qianwenai.com/models/${encodeURIComponent(modelId)}`;
   }
-  if (provider === "zhipu") {
-    // Z.AI's per-model guide pages use the bare model id as the slug.
+  if (provider === "zhipu" || provider === "zhipu-coding-plan") {
+    // Z.AI's per-model guide pages use the bare model id as the slug; the coding endpoint
+    // serves the same models, so both groups link the same pages.
     return `https://docs.z.ai/guides/llm/${modelId}`;
   }
   if (provider === "moonshot") {
