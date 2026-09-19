@@ -174,6 +174,7 @@ export abstract class ModelOAuth extends Interface<{
  * publishes a Session's state flips and its generated title this way, and a route
  * publishes a change the list could not otherwise learn of (a rename, a new Session).
  */
-export abstract class ProjectEvents extends Interface<{
-  notifyProjectUsers(projectId: string, event: ServerEvent): void;
-}>() {}
+@Interface()
+export abstract class ProjectEvents {
+  abstract notifyProjectUsers(projectId: string, event: ServerEvent): void;
+}

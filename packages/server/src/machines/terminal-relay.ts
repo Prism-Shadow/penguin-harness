@@ -230,15 +230,16 @@ export async function relayTerminalStream(
  * RemoteTerminals: the mechanism TerminalRelay implements. The terminal manager asks it for
  * an id it does not hold, and the platform offers it every socket before serving a local pty.
  */
-export abstract class RemoteTerminals extends Interface<{
+@Interface()
+export abstract class RemoteTerminals {
   /** The reference a remote id names, in the shape the runtime's owner check reads; undefined for a local id. */
-  get(id: string): Terminal | undefined;
+  abstract get(id: string): Terminal | undefined;
   /**
    * Joins a viewer's socket to the machine's stream when `session` is a remote reference.
    * False for a local pty, which the caller then serves itself.
    */
-  attach(ws: WsSocket, session: Terminal, url: URL, log: (line: string) => void): boolean;
-}>() {}
+  abstract attach(ws: WsSocket, session: Terminal, url: URL, log: (line: string) => void): boolean;
+}
 
 @Component()
 export class TerminalRelay implements RemoteTerminals {
