@@ -23,6 +23,7 @@ import {
   sessionMeta,
   tokenUsage,
   toolCall,
+  toolListReady,
   userText,
 } from "../src/omnimessage/index.js";
 import type { OmniMessage, TokenCounts } from "../src/omnimessage/index.js";
@@ -533,6 +534,102 @@ describe("agent.resumeSession system prompt per context", () => {
     const session = await agent.resumeSession({ sessionId: SID });
     try {
       expect(promptOf(session)).toBe("ORIGINAL SYSTEM PROMPT");
+    } finally {
+      session.dispose();
+    }
+  });
+});
+
+describe("agent.resumeSession after an in-session model switch", () => {
+  const SID = "session-2026-07-06-11-00-00-abcdef02";
+  // The default Project config ships both: the Session starts on ORIGINAL and switches to MODEL.
+  const ORIGINAL = { provider: "deepseek", model_id: "deepseek-flash" };
+  const SUMMARY = "[context_summary]\nthe story so far\n[/context_summary]";
+  const engineStateOf = (session: unknown) =>
+    (
+      session as {
+        engineDeps: {
+          initialState?: {
+            pendingSummary?: OmniMessage;
+            carryOver?: OmniMessage[];
+            sessionTurns?: number;
+            pendingTraceRotation?: boolean;
+          };
+        };
+      }
+    ).engineDeps.initialState;
+  /** File 1: a context on `model` with one completed turn, closed by a completed summarize pair of `reason`. */
+  const closedFile = (
+    model: { provider: string; model_id: string },
+    reason: "manual" | "context",
+  ) => [
+    metaFor(SID, workspace, model),
+    userText("q1"),
+    requestBegin(),
+    assistantText("a1"),
+    requestEnd("completed"),
+    tokenUsage(usage(150), usage(150)),
+    compactionBegin({ reason, mode: "summarize", context: 150, turns: 1 }),
+    userText("COMPACT NOW"),
+    requestBegin(),
+    assistantText("[summary]the story so far[/summary]"),
+    requestEnd("completed"),
+    compactionEnd({ reason, mode: "summarize", status: "completed" }),
+  ];
+
+  it("resumes on the model of the eagerly opened file: history empty, the summary is the carry-over, on the switched-to model", async () => {
+    const agent = await createAgent({});
+    // The switch closed the original model's context with a plain manual pair, and opened the
+    // target's file at once: its session_meta, its toolset, the summary as its first input.
+    await writeTraceFile(tmpRoot, SID, closedFile(ORIGINAL, "manual"));
+    await writeTraceFile(
+      tmpRoot,
+      SID,
+      [metaFor(SID, workspace, MODEL), toolListReady([]), userText(SUMMARY)],
+      { index: "002" },
+    );
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(session.provider).toBe(MODEL.provider);
+      expect(session.modelId).toBe(MODEL.model_id);
+      expect((session.metaMessage.payload as { model_id: string }).model_id).toBe(MODEL.model_id);
+      const state = engineStateOf(session);
+      expect(state?.pendingSummary).toBeUndefined();
+      expect(state?.pendingTraceRotation).toBe(false);
+      expect(state?.sessionTurns).toBe(0);
+      expect((state?.carryOver ?? []).map((m) => (m.payload as { text: string }).text)).toEqual([
+        SUMMARY,
+      ]);
+      expect(session.compactability()).toBe("just_compacted");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a file a compaction opened, with no completed turn yet, answers just_compacted after a restart", async () => {
+    const agent = await createAgent({});
+    // An ordinary compaction, then the process died before the new context's first answer: the
+    // file past the first holds the summary and a prompt whose request never completed.
+    await writeTraceFile(tmpRoot, SID, closedFile(MODEL, "context"));
+    await writeTraceFile(
+      tmpRoot,
+      SID,
+      [
+        metaFor(SID, workspace),
+        toolListReady([]),
+        userText(SUMMARY),
+        userText("q2"),
+        requestBegin(),
+        abortEvent(),
+      ],
+      { index: "002" },
+    );
+
+    const session = await agent.resumeSession({ sessionId: SID });
+    try {
+      expect(engineStateOf(session)?.sessionTurns).toBe(0);
+      expect(session.compactability()).toBe("just_compacted");
     } finally {
       session.dispose();
     }

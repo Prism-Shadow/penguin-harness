@@ -105,6 +105,14 @@ import { buildInputHistory } from "./input-history";
 import { buildOutline } from "./outline-model";
 import { GoalStatusBanner } from "./goal-banner";
 import { handoffMessage, modelSwitchMessage } from "./agent-handoff";
+import { modelLabel } from "./model-select";
+import {
+  modelSwitchOutcome,
+  sessionModelPick,
+  sessionRowStale,
+  switchContextShape,
+} from "./model-switch";
+import type { SwitchContextShape } from "./model-switch";
 import { hasConfiguredKey, promotedPricing, sameModelRef } from "../models/model-grouping";
 import { providerInfo } from "@prismshadow/penguin-core/model-catalog";
 import { WorkspaceBrowser } from "./workspace-browser";
@@ -344,6 +352,17 @@ export function ChatPage() {
   // the pick is held until the compaction completes. Logic in thinking-level.ts
   // (needsThinkingSwitchConfirm / thinkingSwitchAfterCompaction).
   const [thinkingSwitch, setThinkingSwitch] = useState<StagedThinkingSwitch | null>(null);
+  // A pick in the session toolbar's model picker, waiting on its confirm dialog (null = no
+  // dialog). `shape` is what the switch will do to the context — compact it first, switch an
+  // empty conversation at once, or continue from a summary already held — so the dialog and
+  // the toast promise only that. See onPickSessionModel / confirmModelSwitch.
+  const [modelSwitchAsk, setModelSwitchAsk] = useState<{
+    to: ModelRefDto;
+    shape: SwitchContextShape;
+  } | null>(null);
+  // The dialog stays open (its buttons busy) until the switch request answers, so a double
+  // click cannot post the switch twice.
+  const [modelSwitchPosting, setModelSwitchPosting] = useState(false);
 
   const routeSessionId = params.sessionId ?? null;
   // The docks' arrangement lives in the dock store (features/dock) — tabs, active tab,
@@ -1318,6 +1337,19 @@ export function ChatPage() {
     composerRef.current?.addReference(reference);
   }, []);
 
+  // A fresh Session row from the server, applied wherever the page reads the row from: the
+  // paged list, and the direct lookup's copy for a row the list does not hold (see
+  // resolveRoutedSession).
+  const applySessionRow = useCallback(
+    (session: SessionInfo) => {
+      replace(session);
+      setFetchedSession((cur) =>
+        cur !== null && cur.sessionId === session.sessionId ? session : cur,
+      );
+    },
+    [replace],
+  );
+
   // Pins a picked level on the Session so it outlives this tab: PATCH, then swap the
   // returned row into the session store (the picker reads it back from there); it applies
   // from the next LLM request (the picker's menu advises compacting first). Modeled on
@@ -1520,6 +1552,125 @@ export function ChatPage() {
     // The items are read from the model per run; `version` is the change signal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.version, stream.model, thinkingSwitch, applyTurnThinkingLevel]);
+
+  /** A model's display label for the switch dialog and its toasts: the configured name, else the id. */
+  const modelDisplay = useCallback(
+    (ref: ModelRefDto): string => {
+      const m = models?.models.find((x) => sameModelRef(x, ref));
+      return m ? modelLabel(m) : ref.modelId;
+    },
+    [models],
+  );
+
+  // Session toolbar model picker: switches THIS conversation's model (the `/model` handoff opens
+  // a new conversation instead). Re-picking the current model does nothing; any other pick asks
+  // first, worded for what the switch will do: compact the context on the current model before
+  // moving on, or — right after a compaction, when there is nothing to compact — continue on
+  // the picked model from the summary already held.
+  const onPickSessionModel = useCallback(
+    (ref: ModelRefDto) => {
+      if (!selected) return;
+      const pick = sessionModelPick({
+        current: { provider: selected.provider, modelId: selected.modelId },
+        picked: ref,
+        status: stream.taskState,
+        // Read at pick time: the model's items mutate in place. The live tail decides, behind
+        // whatever window was backfilled above it.
+        shape: switchContextShape([...stream.prefixItems, ...stream.model.items]),
+      });
+      if (pick.act === "confirm") setModelSwitchAsk({ to: ref, shape: pick.shape });
+    },
+    [selected, stream.taskState, stream.prefixItems, stream.model],
+  );
+
+  // The dialog's confirm. 202 = the switch is streaming: the compaction row (or, right after a
+  // compaction, the model-change marker alone) carries it from here, and the effect below
+  // refetches the Session once the new context's session_meta names the new model. 200 = the
+  // Session never ran and switched inside the request: its row is applied at once. A refusal
+  // (409 busy / same model / not configured / unavailable / compaction not configured) is a
+  // toast.
+  const confirmModelSwitch = useCallback(async () => {
+    const ask = modelSwitchAsk;
+    if (!selected || ask === null || modelSwitchPosting) return;
+    setModelSwitchPosting(true);
+    const from = modelDisplay({ provider: selected.provider, modelId: selected.modelId });
+    const to = modelDisplay(ask.to);
+    try {
+      const res = await api.switchSessionModel(selected.sessionId, {
+        provider: ask.to.provider,
+        modelId: ask.to.modelId,
+      });
+      const outcome = modelSwitchOutcome(res);
+      if (outcome.kind === "applied") {
+        applySessionRow(outcome.session);
+        toastSuccess(S.chat.modelSwitchInSessionApplied(to));
+        return;
+      }
+      // Only a switch that compacts may say so; one that continues from a held summary runs
+      // no compaction and must not promise one.
+      toastInfo(
+        ask.shape === "compact"
+          ? S.chat.modelSwitchInSessionStarted(from, to)
+          : S.chat.modelSwitchInSessionSwitching(to),
+      );
+      // The switch shares get-or-resume-or-heal with /compact: follow a self-healed id.
+      await syncHealedSessionId(selected.sessionId, outcome.sessionId);
+    } catch (e) {
+      toastError(apiErrorText(e, { modelId: ask.to.modelId }));
+    } finally {
+      setModelSwitchPosting(false);
+      setModelSwitchAsk(null);
+    }
+  }, [
+    modelSwitchAsk,
+    modelSwitchPosting,
+    selected,
+    modelDisplay,
+    applySessionRow,
+    syncHealedSessionId,
+  ]);
+
+  // The Session DTO (model badge, context window, window notice, header price) is the authority
+  // for the current model, and nothing on the stream updates it. When the running context's
+  // session_meta names another model than the row on hand — a switch completed, on this tab or
+  // another one watching the Session, or the row was held from before a switch — the row is
+  // refetched once the Session is idle again. Once per Session and model pair — recorded only
+  // when the fetch succeeded, so a server row that still disagrees is not refetched in a loop,
+  // while a failed fetch (one transient error) is retried at the next change and surfaced,
+  // rather than leaving the badge, the context ring and the price on the old model until a
+  // reload. Runs per stream version because the model mutates in place; one fetch in flight
+  // per pair.
+  const staleRowFetchedRef = useRef<string | null>(null);
+  const staleRowFetchingRef = useRef<string | null>(null);
+  useEffect(() => {
+    const contextModel = stream.model.contextModel;
+    if (selectedSessionId === null || stream.loading || stream.taskState !== "idle") return;
+    if (contextModel === null || !sessionRowStale(contextModel, activeModelRef)) return;
+    const key = `${selectedSessionId}:${contextModel.provider}/${contextModel.modelId}`;
+    if (staleRowFetchedRef.current === key || staleRowFetchingRef.current === key) return;
+    staleRowFetchingRef.current = key;
+    void api
+      .getSession(selectedSessionId)
+      .then((res) => {
+        staleRowFetchedRef.current = key;
+        applySessionRow(res.session);
+      })
+      .catch((e: unknown) => toastError(apiErrorText(e)))
+      .finally(() => {
+        if (staleRowFetchingRef.current === key) staleRowFetchingRef.current = null;
+      });
+    // `version` is the model's change signal; the model ref is rebuilt per render from the row.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    stream.version,
+    stream.model,
+    stream.loading,
+    stream.taskState,
+    selectedSessionId,
+    selected?.provider,
+    selected?.modelId,
+    applySessionRow,
+  ]);
 
   // "New Chat" = enter draft state: no Session is created until the first message is sent.
   // Typed-but-unsent text in the ACTIVE new-chat draft first becomes a parked draft
@@ -1792,10 +1943,10 @@ export function ChatPage() {
   const emptyChat =
     selected !== null && !stream.loading && !stream.error && stream.model.items.length === 0;
 
-  // Input area in session state: Agent / Workspace / Model are already locked by the Session
-  // (the model selector isn't rendered; models feeds the locked model's read-only display and
-  // the /model switch picker) — approval mode and the per-turn thinking level stay editable;
-  // /model forks the conversation onto another model.
+  // Input area in session state: Agent and Workspace are fixed by the Session. The toolbar's
+  // model picker switches this conversation's model in place (confirmed, compacting first);
+  // approval mode and the thinking level stay editable; /model opens a NEW conversation on
+  // another model and leaves this one as it is.
   const input = selected && (
     <ChatInput
       controlRef={composerRef}
@@ -1818,6 +1969,7 @@ export function ChatPage() {
       {...(models !== null ? { models: models.models } : {})}
       {...(models?.defaultModel !== undefined ? { defaultModel: models.defaultModel } : {})}
       onSwitchModel={onSwitchModel}
+      onPickSessionModel={onPickSessionModel}
       // Display value: the level pinned on this Session, else the Agent config's level
       // (auto-follow while unpinned; the send path uses the raw pin — see onSend).
       turnThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
@@ -2365,6 +2517,49 @@ export function ChatPage() {
               thinkingSwitch?.level ??
               "",
           )}
+        </p>
+        {stream.taskState !== "idle" && (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            {S.chat.thinkingSwitchBusyHint}
+          </p>
+        )}
+      </ConfirmModal>
+
+      {/* In-conversation model switch confirmation (the session toolbar's model picker), two
+          choices only: compact and switch, or cancel. There is no "switch anyway" — a switch
+          always compacts on the current model first, and a failed compaction keeps it. The two
+          shapes with nothing to compact read "switch" instead: an empty transcript (the switch
+          is immediate) and a transcript ending in a completed compaction (no compaction runs;
+          the conversation continues from the summary already held). The session can start
+          running while the dialog is up (a queued follow-up, a schedule): the confirm is then
+          disabled and the body says why, exactly like the thinking dialog. */}
+      <ConfirmModal
+        open={modelSwitchAsk !== null}
+        title={S.chat.modelSwitchInSessionTitle}
+        tone="primary"
+        confirmLabel={
+          modelSwitchAsk?.shape === "compact"
+            ? S.chat.modelSwitchInSessionConfirm
+            : S.chat.modelSwitchInSessionDirectConfirm
+        }
+        confirmDisabled={stream.taskState !== "idle"}
+        busy={modelSwitchPosting}
+        onConfirm={() => void confirmModelSwitch()}
+        onClose={() => {
+          if (!modelSwitchPosting) setModelSwitchAsk(null);
+        }}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          {modelSwitchAsk === null || selected === null
+            ? null
+            : modelSwitchAsk.shape === "empty"
+              ? S.chat.modelSwitchInSessionDirectBody(modelDisplay(modelSwitchAsk.to))
+              : modelSwitchAsk.shape === "compacted"
+                ? S.chat.modelSwitchInSessionCompactedBody(modelDisplay(modelSwitchAsk.to))
+                : S.chat.modelSwitchInSessionBody(
+                    modelDisplay({ provider: selected.provider, modelId: selected.modelId }),
+                    modelDisplay(modelSwitchAsk.to),
+                  )}
         </p>
         {stream.taskState !== "idle" && (
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">

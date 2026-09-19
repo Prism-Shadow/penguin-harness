@@ -6,7 +6,7 @@
  * - PickerList: the generic candidate panel (search box, scroll cap, keyboard navigation,
  *   current-entry marker) shared with chat-input's `/agent` handoff picker;
  * - ModelMenuList: the model candidate panel (grouped, key-configured-first, "show all"
- *   expander) shared by the draft dropdown and the in-session `/model` switch picker;
+ *   expander) shared by the model dropdowns and the in-session `/model` handoff picker;
  * - ModelSelect: the dropdown trigger (provider logo + name + chevron), pill or form style.
  */
 import { useMemo, useState } from "react";
@@ -278,7 +278,8 @@ export function ModelMenuList({
 /**
  * Model selector (the chat composer's bottom-toolbar dropdown, also hosted by the Project
  * settings' new-chat-defaults section): the button shows the provider logo + name, and the
- * menu opens **downward** — the draft card is vertically centered with room below. The
+ * menu opens **downward** by default — the draft card is vertically centered with room below;
+ * the active conversation's composer is docked at the bottom and opens it upward. The
  * candidate list itself is the shared ModelMenuList panel (search, key-configured-first
  * grouping, Free badge, "show all" expander — documented there).
  *
@@ -298,6 +299,7 @@ export function ModelSelect({
   onChange,
   disabled,
   variant = "pill",
+  direction = "down",
   emptyLabel,
 }: {
   models: ModelInfo[];
@@ -308,6 +310,8 @@ export function ModelSelect({
   disabled: boolean;
   /** Trigger style: the composer's toolbar pill (default), or a dialog form control (see the header comment). */
   variant?: "pill" | "form";
+  /** Pill only: which way the menu opens — down for the draft card, up for the bottom-docked session composer. */
+  direction?: "down" | "up";
   /**
    * What the trigger reads while nothing is picked, for a host where "nothing" is itself a
    * choice rather than an unfinished one — the organization dialogs, where an empty model
@@ -365,8 +369,8 @@ export function ModelSelect({
     <Dropdown
       open={open}
       setOpen={setOpen}
-      menuClass="w-max min-w-56 origin-top-right"
-      portal={{ direction: "down", align: "right" }}
+      menuClass={`w-max min-w-56 ${direction === "up" ? "origin-bottom-right" : "origin-top-right"}`}
+      portal={{ direction, align: "right" }}
       button={
         <button
           type="button"

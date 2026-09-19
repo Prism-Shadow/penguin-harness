@@ -278,4 +278,50 @@ describe("prompt-cache invariants of request assembly", () => {
     expect(appended.content[1]!.text).toBe(COMPACTION_PROMPT);
     expect(configFingerprint(first.requests[1]!)).toBe(configFingerprint(first.requests[0]!));
   });
+
+  it("a model switch's compaction request extends the turn it follows on the old model; the new model's first request is a new line carrying its id", async () => {
+    const target = { provider: "anthropic", model_id: "claude-opus-4-7" };
+    const first = recordingModel(modelConfig(), [
+      { text: "First answer.", promptTokens: 20 },
+      { text: "[summary]the distilled summary[/summary]", promptTokens: 30 },
+    ]);
+    const second = recordingModel(modelConfig({ modelId: target.model_id }), [
+      { text: "Carried on from the summary." },
+    ]);
+    const engine = new ContextEngine({
+      llm: first.model,
+      environment: fakeEnvironment,
+      compaction: compactionSettings(),
+      openNextContext: ({ modelRef }) => {
+        expect(modelRef).toEqual(target);
+        return { llm: second.model };
+      },
+    });
+
+    await collect(engine.run([userText("task one")], { approve: allowAll }));
+    await collect(engine.switchModel({ ref: target }));
+    await collect(engine.run([userText("task two")], { approve: allowAll }));
+
+    // The switch's compaction request is an ordinary compaction request to the OLD model: same
+    // model id, tools, system prompt and parameters, one appended user turn (the prompt alone —
+    // a Task-boundary switch has nothing pending to fold in).
+    expect(first.requests).toHaveLength(2);
+    const reasons = diagnoseSeries(first.requests);
+    expect(reasons, formatDiagnostics(first.requests, reasons)).toEqual([{ type: "none" }]);
+    expect(configFingerprint(first.requests[1]!)).toBe(configFingerprint(first.requests[0]!));
+    expect(first.requests[1]!.wireConfig.model).toBe("claude-sonnet-4-6");
+    const appended = wireMessage(first.requests[1]!, -1);
+    expect(appended.role).toBe("user");
+    expect(blockTypes(appended)).toEqual(["text"]);
+    expect(appended.content[0]!.text).toBe(COMPACTION_PROMPT);
+    // The new model's first request is a new cache line by definition — a prompt cache is
+    // scoped to one model — and it opens with the summary the old model wrote.
+    expect(second.requests).toHaveLength(1);
+    expect(second.requests[0]!.wireConfig.model).toBe(target.model_id);
+    const opening = wireMessage(second.requests[0]!, 0);
+    expect(opening.role).toBe("user");
+    expect(blockTypes(opening)).toEqual(["text", "text"]);
+    expect(opening.content[0]!.text).toContain("[context_summary]");
+    expect(opening.content[1]!.text).toBe("task two");
+  });
 });

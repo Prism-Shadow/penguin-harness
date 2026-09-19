@@ -546,9 +546,9 @@ api_key = "sk-..."
 
 ### 模型与 Agent
 
-Agent 从不绑定模型。模型在创建 Session 时确定，之后在整个 Session 期间保持不变，所以同一个 Agent 可以用不同模型运行不同的 Session。
+Agent 从不绑定模型。模型在创建 Session 时确定，所以同一个 Agent 可以用不同模型运行不同的 Session；Session 之后还能换模型：对话工具栏的模型选择器先用当前模型压缩上下文，再在新模型上继续本对话（见 [Session 与 Trace](/sessions-and-traces#会话内切换模型)）。
 
-Session 内的 `/model` 命令通过交接来切换模型：
+`/model` 命令则是通过交接在另一个模型上开新会话：
 
 1. 为同一个 Agent 在新模型上新建一个 Session，仍在当前 Workspace 里。
 2. 新 Session 的第一条消息会带一个 `[model_switch_from]` 块，包含源 Session 的 id 和它的 Trace 文件路径。

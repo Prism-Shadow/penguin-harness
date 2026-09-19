@@ -208,6 +208,13 @@ describe("prefixCacheAtRisk (issue #310 — provider prefix cache over the exist
   it("new turns after a compaction re-arm the guard (only a TRAILING compaction is safe)", () => {
     expect(prefixCacheAtRisk([user, reply, compactionDone, user, reply])).toBe(true);
   });
+
+  it("a model switch's marker behind its successful compaction changes nothing — still safe", () => {
+    const modelChange: ThinkingSwitchItem = { kind: "model_change" };
+    expect(prefixCacheAtRisk([user, reply, stats, compactionDone, modelChange])).toBe(false);
+    // The marker is not a compaction of its own: it makes nothing safe by itself.
+    expect(prefixCacheAtRisk([user, reply, modelChange])).toBe(true);
+  });
 });
 
 describe("needsThinkingSwitchConfirm (mid-chat switch guard for the session picker)", () => {

@@ -698,13 +698,13 @@ export async function removeModel(
   ref: ModelRef,
 ): Promise<ProjectConfig> {
   const cfg = await loadProjectConfig(root, projectId);
-  const idx = cfg.models.findIndex((m) => sameRef(m, ref));
+  const idx = cfg.models.findIndex((m) => sameModelRef(m, ref));
   if (idx < 0) return cfg;
   cfg.models.splice(idx, 1);
-  if (cfg.default_model && sameRef(cfg.default_model, ref)) {
+  if (cfg.default_model && sameModelRef(cfg.default_model, ref)) {
     delete cfg.default_model;
   }
-  if (cfg.vision_model && sameRef(cfg.vision_model, ref)) {
+  if (cfg.vision_model && sameModelRef(cfg.vision_model, ref)) {
     delete cfg.vision_model;
   }
   await saveProjectConfig(root, projectId, cfg);
@@ -712,7 +712,7 @@ export async function removeModel(
 }
 
 /** Whether two paired references name the same entry. Both halves must match — the pair is the config's unique key. */
-function sameRef(a: ModelRef, b: ModelRef): boolean {
+export function sameModelRef(a: ModelRef, b: ModelRef): boolean {
   return a.provider === b.provider && a.model_id === b.model_id;
 }
 

@@ -1858,6 +1858,20 @@ export const en: Strings = {
       `Context compacted; thinking level switched to "${to}".`,
     thinkingSwitchCompactFailed:
       "The compaction did not finish; the thinking level was switched anyway.",
+    modelSwitchInSessionTitle: "Switch model",
+    modelSwitchInSessionConfirm: "Compact and switch",
+    /** Confirm label when the transcript is empty: nothing to compact, so it only switches. */
+    modelSwitchInSessionDirectConfirm: "Switch",
+    modelSwitchInSessionBody: (from: string, to: string): string =>
+      `The context is compacted on the current model "${from}" first, and this conversation then continues on "${to}". If the compaction fails, it stays on "${from}".`,
+    modelSwitchInSessionDirectBody: (to: string): string =>
+      `This conversation has no context yet, so it switches to "${to}" right away.`,
+    modelSwitchInSessionCompactedBody: (to: string): string =>
+      `The context was compacted a moment ago and nothing has been said since, so nothing is compacted again: this conversation continues on "${to}" from that summary.`,
+    modelSwitchInSessionStarted: (from: string, to: string): string =>
+      `Compacting the context on "${from}" — the conversation moves to "${to}" when it finishes.`,
+    modelSwitchInSessionSwitching: (to: string): string => `Switching to "${to}".`,
+    modelSwitchInSessionApplied: (to: string): string => `Switched to "${to}".`,
     workspaceUseThis: "Use this dir",
     workspaceUp: "Parent dir",
     workspaceNoSubdirs: "No subdirectories",
@@ -2367,19 +2381,21 @@ Scenarios:
     handoffFrom: (agent: string) => `Handed off from ${agent}'s conversation`,
     handoffBack: (title?: string) =>
       title ? `Back to the original conversation: ${title}` : "Back to the original conversation",
-    switchModel: "Switch model — on send, continues this conversation in a new session",
-    switchModelTitle: "Switch model",
-    modelSwitchTargetTitle: (model: string) => `Sending continues this conversation on ${model}`,
-    modelSwitchRemove: "Remove model switch",
+    switchModel:
+      "New conversation on another model — sending opens a new session that continues this one; this conversation stays as it is",
+    switchModelTitle: "New conversation on another model",
+    switchModelNote:
+      "To switch models inside this conversation, use the model picker in the toolbar (it compacts the context first)",
+    modelSwitchTargetTitle: (model: string) =>
+      `Sending opens a new conversation on ${model} that continues this one; this conversation stays as it is`,
+    modelSwitchRemove: "Remove the model for the new conversation",
     modelSwitchBusyHint:
-      "The model switch waits for this turn to finish: the new session continues from this session's record",
+      "The new conversation waits for this turn to finish: it continues from this session's record",
     modelSwitchFrom: (prevModel?: string) =>
       prevModel
-        ? `Switched model (was ${prevModel}) — continued from the earlier conversation`
-        : "Switched model — continued from the earlier conversation",
+        ? `New conversation on another model (was ${prevModel}) — continues the original`
+        : "New conversation on another model — continues the original",
     modelSwitchAutoMessage: "Continue this conversation on the new model",
-    /** Toast when the session-state (locked) model display is clicked: points at the `/model` command. */
-    modelLockedHint: "Type /model to switch models",
     scheduledFrom: (name: string) => `Triggered by scheduled task "${name}"`,
     /** `[org_trigger]` banner: what the organization scheduler sent this desk or ticket session, folded into one line. */
     orgTriggerFrom: (org: string): string => `Triggered by organization "${org}"`,
@@ -2418,6 +2434,7 @@ Scenarios:
     compactionRunning: (mode: string): string => (mode === "discard" ? "Clearing" : "Compacting"),
     compactionDone: (mode: string): string => (mode === "discard" ? "Cleared" : "Compacted"),
     compactionResult: "Result",
+    modelChanged: (from: string, to: string): string => `Model switched · ${from} → ${to}`,
     compactionFailed: (status: string, errorMessage?: string): string => {
       if (status === "aborted") return "aborted, keeping current context";
       const detail = errorMessage !== undefined ? ` (${errorMessage})` : "";
@@ -4247,6 +4264,12 @@ Scenarios:
       // own explanation here — collapsing them into one sentence would tell a user who just
       // compacted that they have never spoken.
       compaction_not_configured: "This agent does not have context compaction configured.",
+      same_model: "This conversation is already on that model.",
+      model_not_configured: "That model is not in this Project's model configuration.",
+      model_unavailable:
+        "That model cannot be used yet (it may have no API key) — configure it on the Models page first.",
+      summary_too_large:
+        "The context summary does not fit that model's context window, so the conversation stays on its current model — pick a model with a larger context window.",
       nothing_to_compact:
         "There is nothing to compact in the current context yet (no completed conversation turn).",
       already_compacted:

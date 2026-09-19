@@ -77,6 +77,7 @@ export abstract class TraceIndexStore extends Interface<{
   listFilesBySession(projectId: string, agentId: string, sessionId: string): TraceFileRow[];
   findAgentBySession(projectId: string, sessionId: string): string | null;
   upsertSession(row: TraceSessionRow): void;
+  updateSessionModel(sessionId: string, provider: string | null, modelId: string | null): void;
   getSession(sessionId: string): TraceSessionRow | null;
   listSessionsByAgent(projectId: string, agentId: string): TraceSessionRow[];
   deleteBySession(sessionId: string): void;

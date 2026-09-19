@@ -160,12 +160,13 @@ export interface ThinkingSwitchItem {
  *   "compact first, then switch" advice is not warned a second time. Failed or still
  *   running trailing compactions don't count (the old context is still in effect), but a
  *   successful one anywhere in the trailing compaction run does (a failed retry after a
- *   success changed nothing).
+ *   success changed nothing). A model-change marker in that run — a model switch's new context
+ *   opened behind its compaction — is housekeeping too, and changes nothing.
  */
 export function prefixCacheAtRisk(items: ReadonlyArray<ThinkingSwitchItem>): boolean {
   let last = items.length - 1;
   let compacted = false;
-  while (last >= 0 && items[last]!.kind === "compaction") {
+  while (last >= 0 && ["compaction", "model_change"].includes(items[last]!.kind)) {
     const c = items[last]!;
     if (!c.running && c.status === "completed") compacted = true;
     last--;

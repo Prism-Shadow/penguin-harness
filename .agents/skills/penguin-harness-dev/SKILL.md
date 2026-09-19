@@ -157,3 +157,11 @@ Whatever is decided, compatibility code is a standing cost: name **how long it s
 it, and what has to be true first**, at the code site and in a dedicated
 `changelog/unreleased/YYYY-MM-DD-backward-compatibility.md`. Other entries in that batch reference
 that file instead of re-telling it. A batch with no compatibility handling has no such file.
+
+## The message protocol is closed by default
+
+- **OmniMessage is closed by default.** No new field, type or enum value unless the fact is
+  unrepresentable by existing records and underivable by readers; prefer recording earlier or
+  streaming an existing record over a new field. Say so in the PR. The architecture spec's
+  message-format section states the rule, and `packages/core/src/omnimessage/types.ts` repeats it
+  at its head.

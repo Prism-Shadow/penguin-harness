@@ -129,7 +129,7 @@ Human ──run(newMessages)──► engine
 | 上下文压缩 | `compaction_begin` → 压缩请求在旧上下文中执行（压缩请求的原始消息只写 Trace，例外是每次尝试的 `token_usage`，以及正在生成的思考与摘要，它们以普通的 `partial_thinking`/`partial_text` 或 `thinking`/`text` 在区间内转发）→ `compaction_end(status)` |
 | 达到 max_turns | 长度提示（`[reached max turns (N); stopping]`）→ 运行结束；未提交的输入按补发保留 |
 | Prompt 本身 | 写入 Trace，但不回流（调用方已经有了） |
-| `session_meta` | 主 Session 的输出流不产出它（它在 Trace 与历史接口中）；子 Agent 子流的第一条消息是子 Session 的 `session_meta` |
+| `session_meta` | 主 Session 的输出流只在会话内切换模型时产出它，作为切换的最后一条：新上下文的 meta，记录 Session 此后所用的模型。其余时候它在 Trace 与历史接口中。子 Agent 子流的第一条消息是子 Session 的 `session_meta` |
 
 ## 跨 Session：origin 链
 

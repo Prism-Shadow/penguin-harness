@@ -8,9 +8,10 @@
  * In draft state (Session not yet created), when models/onChangeModel are supplied, the model
  * selector sits to the left of the send button (provider logo + name, popup opens **downward**,
  * with a top quick-search box, an internal scroll cap to avoid overflowing the screen, and a
- * configured-key-first list with a bottom "show all" row — see ModelSelect) — once
- * the Session is created the model is locked, and the same spot switches to a read-only
- * logo + name display;
+ * configured-key-first list with a bottom "show all" row — see ModelSelect). Once the
+ * Session exists the same selector opens upward and switches the conversation's model in
+ * place (the parent confirms and compacts on the current model first); the subagent composer
+ * shows a read-only logo + name there instead;
  * Draft state also renders a thinking-level picker left of the model selector (backed by the
  * Agent settings: picking a level writes through to the Agent config and applies to the session
  * created on first send); in session state the level is fixed (llmConfig is assembled once per
@@ -26,11 +27,12 @@
  * and opens a picker (agents / models), and the pick becomes a highlighted chip above the text
  * body instead of switching on the spot. The user
  * keeps typing; **Enter/Send** performs the switch — an agent chip hands the conversation off to
- * a new chat for that agent (the current Session is not sent to), a model chip forks this
- * conversation onto the picked model. A model fork additionally waits for this Session to be
- * idle (it branches off a Trace that a run or a compaction is still appending to) and says so
- * above the composer rather than just disabling Send. With an empty text body the default
- * auto-message is filled in. Only one chip at a time (picking either clears the other, picking
+ * a new chat for that agent (the current Session is not sent to), a model chip opens a new
+ * conversation on the picked model that continues this one, which itself stays as it is (the
+ * toolbar's model picker is the in-place switch). A model fork additionally waits for this
+ * Session to be idle (it branches off a Trace that a run or a compaction is still appending
+ * to) and says so above the composer rather than just disabling Send. With an empty text body
+ * the default auto-message is filled in. Only one chip at a time (picking either clears the other, picking
  * the model already in use clears the staging, and both are exclusive with goal mode); a chip is
  * removed via backspace at the start of the text or its x button, and both are cached with the
  * draft so they survive a session switch or reload along with the text they belong to;
@@ -108,6 +110,7 @@ import { ProviderLogo } from "../../components/ui/provider-logo";
 import { sameModelRef } from "../models/model-grouping";
 import { filterAgents, stagedSendRoute } from "./agent-handoff";
 import { ModelMenuList, ModelSelect, PickerList, modelLabel } from "./model-select";
+import { sessionModelPickerDisabled } from "./model-switch";
 import { matchSlash, removeSlashToken } from "./slash-token";
 import { SELECTABLE_THINKING_LEVELS, thinkingLevelLabel } from "./thinking-level";
 import { BOOK_ICON, buildSkillsMessage, localizedShortText, skillSlashItems } from "./skill-use";
@@ -298,11 +301,14 @@ function SwitchPickerPanel({
   panelRef,
   maxHeight,
   title,
+  note,
   children,
 }: {
   panelRef: RefObject<HTMLDivElement | null>;
   maxHeight: number | undefined;
   title: string;
+  /** Footnote pinned under the list (the thinking-level menu's footnote style). */
+  note?: string;
   children: ReactNode;
 }) {
   return (
@@ -315,6 +321,11 @@ function SwitchPickerPanel({
         {title}
       </div>
       {children}
+      {note && (
+        <div className="border-t border-gray-100 px-3 pb-1 pt-1.5 text-[11px] leading-snug text-gray-400 dark:border-gray-800 dark:text-gray-500">
+          {note}
+        </div>
+      )}
     </div>
   );
 }
@@ -813,6 +824,7 @@ export function ChatInput({
   models,
   onChangeModel,
   onSwitchModel,
+  onPickSessionModel,
   defaultModel,
   thinkingLevel,
   onChangeThinkingLevel,
@@ -924,20 +936,28 @@ export function ChatInput({
   modelRef: ModelRefDto | null;
   /**
    * Candidate model list: when supplied together with onChangeModel, renders the model selector
-   * to the left of the send button (draft state); when only models is supplied (session state),
-   * it's used to look up the locked model's display name (read-only display).
+   * to the left of the send button (draft state); with onPickSessionModel instead (session
+   * state), the same selector switches this conversation's model; with neither (the subagent
+   * composer), it only looks up the model's display name for the read-only badge.
    */
   models?: ModelInfo[];
-  /** Changes the selected model in draft state; no longer passed once the Session is created and the model is locked. */
+  /** Changes the selected model in draft state; not passed once the Session exists. */
   onChangeModel?: (ref: ModelRefDto) => void;
   /**
-   * Session state: model switch via the `/model` command — forks the session onto the picked
-   * model (a NEW session carrying this conversation) and navigates there; the draft written
-   * after the pick is posted as the new session's first task. Returns whether it succeeded
+   * Session state: the `/model` handoff — opens a NEW session on the picked model carrying this
+   * conversation and navigates there; the draft written after the pick is posted as the new
+   * session's first task, and this conversation stays as it is. Returns whether it succeeded
    * (draft kept on failure). Only passed for an active session (the command is additionally
    * gated on not running/compacting); picking the current model is a no-op.
    */
   onSwitchModel?: (ref: ModelRefDto, input: TaskInputPart[]) => Promise<boolean>;
+  /**
+   * Session state: a pick in the toolbar's model picker, which switches THIS conversation onto
+   * the picked model (compacting on the current one first). The parent owns the decision and
+   * the confirm dialog; the picker only reports the pick, and is disabled while a Task runs or
+   * a compaction is under way. Not passed to the subagent composer, whose badge stays display-only.
+   */
+  onPickSessionModel?: (ref: ModelRefDto) => void;
   /** Project default model (marked "default" on the selector's candidate item). */
   defaultModel?: ModelRefDto;
   /**
@@ -1051,7 +1071,7 @@ export function ChatInput({
    * — minus what a child has no semantics for (goal mode, image/file attachments and the "+"
    * menu carrying them, paste/drop file intake; /compact and the follow-up queue are already
    * gated by their absent callbacks). The model badge is inert here: a child cannot switch
-   * model or agent, so there is no locked-model hint to click for.
+   * model or agent.
    */
   variant?: "session" | "subagent";
   /**
@@ -1290,8 +1310,8 @@ export function ChatInput({
   const canMidRunSend = steerAction || queueAction;
   const midRunSendLabel = midRun === "queue" ? S.chat.followUpSend : S.chat.steerSend;
   const stopAction = isStopAction(status, midRun);
-  // Locked-model badge text (session and subagent variants): the catalog's display name when
-  // the model is known, the raw id otherwise.
+  // Display-only model badge text (see the badge below): the catalog's display name when the
+  // model is known, the raw id otherwise.
   const lockedModelLabel = (() => {
     const m = models?.find((x) => sameModelRef(x, modelRef));
     return m ? modelLabel(m) : (modelRef?.modelId ?? "…");
@@ -2181,16 +2201,18 @@ export function ChatInput({
         </div>
       )}
 
-      {/* /model switch picker (session state): reuses the draft model dropdown's list —
-          search + configured-key-first grouping + "show all"; the current model is marked and
-          picking it is a no-op. The /model token was already consumed when the command ran,
-          so cancelling (Escape / click outside) keeps the remaining draft and cannot re-open
-          the slash menu. A pick only stages the chip below — the switch happens on send. */}
+      {/* /model handoff picker (session state): reuses the model dropdown's list — search +
+          configured-key-first grouping + "show all"; the current model is marked and picking it
+          is a no-op. The /model token was already consumed when the command ran, so cancelling
+          (Escape / click outside) keeps the remaining draft and cannot re-open the slash menu.
+          A pick only stages the chip below — the new conversation opens on send. The footnote
+          points at the toolbar picker, which switches this conversation instead. */}
       {modelSwitchOpen && models && (
         <SwitchPickerPanel
           panelRef={modelSwitchRef}
           maxHeight={upwardMaxH}
           title={S.chat.switchModelTitle}
+          note={S.chat.switchModelNote}
         >
           <ModelMenuList
             models={models}
@@ -2773,7 +2795,10 @@ export function ChatInput({
                 note={S.chat.thinkingLevelChangeNote}
               />
             )}
-            {/* Left of the send button: model selector in draft state; once the Session is created the model is locked, shown read-only (still with the provider logo). */}
+            {/* Left of the send button: the model selector. In draft state it picks the model the
+                Session will be created on; in session state it switches this conversation's
+                model (the parent confirms, then compacts on the current model first), so it is
+                disabled whenever a compaction could not start. */}
             {models && onChangeModel ? (
               <ModelSelect
                 models={models}
@@ -2782,9 +2807,20 @@ export function ChatInput({
                 onChange={onChangeModel}
                 disabled={busy}
               />
-            ) : variant === "subagent" ? (
-              /* Subagent composer: the child runs whatever model it was spawned with, and no
-                 /model command exists here — so the badge is pure display, nothing to click. */
+            ) : models && onPickSessionModel && variant === "session" ? (
+              <ModelSelect
+                models={models}
+                value={modelRef}
+                {...(defaultModel !== undefined ? { defaultModel } : {})}
+                onChange={onPickSessionModel}
+                disabled={busy || sessionModelPickerDisabled(status)}
+                direction="up"
+              />
+            ) : (
+              /* Display-only badge: the subagent composer (a child runs whatever model it was
+                 spawned with and has no switch surface), and a session composer until its
+                 model list has loaded. Both the logo and the name come from the DTO's paired
+                 fields (no prefix parsing). */
               <span
                 title={modelRef?.modelId ?? ""}
                 className="flex h-8 min-w-0 max-w-44 shrink items-center gap-1.5 rounded-md px-1 text-gray-400 dark:text-gray-500"
@@ -2795,27 +2831,6 @@ export function ChatInput({
                 />
                 <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
               </span>
-            ) : (
-              /* Read-only display in session state: both the logo and the name come from the
-                 Session DTO's paired fields (no prefix parsing). A button rather than a plain
-                 span: the model is locked here, and clicking it explains the one way to switch
-                 (the /model command) instead of doing nothing. */
-              <button
-                type="button"
-                title={modelRef?.modelId ?? ""}
-                // Short accessible name (the toast carries the full hint): the long copy
-                // contains the literal "发送"/"Send", which would collide with the send
-                // button's accessible name for assistive tech and name-based test queries.
-                aria-label={`${S.chat.model} ${modelRef?.modelId ?? ""}`}
-                onClick={() => toastInfo(S.chat.modelLockedHint)}
-                className="flex h-8 min-w-0 max-w-44 shrink cursor-pointer items-center gap-1.5 rounded-md px-1 text-gray-400 transition-colors duration-150 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-              >
-                <ProviderLogo
-                  provider={modelRef?.provider ?? "custom"}
-                  className="h-4 w-4 shrink-0"
-                />
-                <span className="hidden min-w-0 truncate @md:block">{lockedModelLabel}</span>
-              </button>
             )}
             {/* One action button, never two: while running an empty composer means "Stop"
               (abort), and typing turns the very same button into "Send" — which, mid-run,

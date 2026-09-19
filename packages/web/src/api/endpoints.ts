@@ -162,6 +162,7 @@ import type {
   PluginIndexResponse,
   PluginReadmeResponse,
   SessionsResponse,
+  SessionSwitchModelRequest,
   SessionTracesResponse,
   SkillArchiveInstallRequest,
   SteerRequest,
@@ -928,6 +929,19 @@ export const postCompact = (sessionId: string) =>
     method: "POST",
     body: {},
   });
+
+/**
+ * Switch this Session to another model in place. Two success shapes: **202** with a
+ * {@link TaskCreateResponse} — the switch compacts on the current model first and streams like
+ * `/compact`; the new context's `session_meta` follows a completed compaction, and it is what
+ * says the Session switched — or **200** with a {@link SessionResponse} when the Session never
+ * ran and switched inside the request. `modelSwitchOutcome` tells the two apart by the body.
+ */
+export const switchSessionModel = (sessionId: string, body: SessionSwitchModelRequest) =>
+  apiFetch<TaskCreateResponse | SessionResponse>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/switch-model`,
+    { method: "POST", body },
+  );
 
 /**
  * Composition of the Session's current model context (the chat page's context-ring detail panel).

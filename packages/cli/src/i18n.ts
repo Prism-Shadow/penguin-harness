@@ -770,6 +770,24 @@ export interface Messages {
   thinkingSet(level: string): string;
   /** Invalid `--thinking` / `/thinking` value (lists the selectable levels). */
   thinkingInvalid(value: string): string;
+  /** Bare `/switch-model`: the Session's current model (a formatted label) plus the usage; a switch compacts first. */
+  switchModelCurrent(model: string): string;
+  /** `/switch-model` with anything but exactly `<provider> <model_id>`. */
+  switchModelUsage(): string;
+  /** After `/switch-model` completed: the model the Session was on and the one it is on now (formatted labels). */
+  switchModelDone(previous: string, next: string): string;
+  /** 409 `task_in_progress` / `compacting`: the Session is busy (possibly driven from another surface). */
+  switchModelBusy(): string;
+  /** 409 `same_model`: the Session already runs on the target. */
+  switchModelSame(model: string): string;
+  /** 409 `model_not_configured`: the target is not in the Project config; names the `penguin config model` commands to list and add models. */
+  switchModelNotConfigured(model: string, listCommand: string, addCommand: string): string;
+  /** 409 `model_unavailable`: the target is configured but cannot be constructed (e.g. no credential); `detail` is the server's message, verbatim (may be empty). */
+  switchModelUnavailable(model: string, detail: string): string;
+  /** 409 `summary_too_large`: the summary held from the last compaction does not fit the target's context window; `detail` is the server's message (names both sizes; may be empty), and the line says to pick a model with a larger window. */
+  switchModelSummaryTooLarge(model: string, detail: string): string;
+  /** 409 `compaction_not_configured`: a switch always compacts first, and this Session has no compaction. */
+  switchModelNoCompaction(): string;
   /** `/verbose` toggled on: tool output renders in full from here on. */
   verboseOn(): string;
   /** `/verbose` toggled off: long tool output is collapsed again from here on. */
@@ -782,7 +800,7 @@ export interface Messages {
   approvalDecision(decision: "allow" | "deny" | "forbidden"): string;
   /** run/chat given only one of --model-id / --provider: a model reference is always an explicit pair, never a lookup. */
   modelRefIncomplete(): string;
-  /** --resume is mutually exclusive with --workspace/--model-id (neither can change once the Session is created). */
+  /** --resume is mutually exclusive with --workspace/--model-id/--provider (the resumed Session keeps its own); points at `/switch-model` for changing the model inside the chat. */
   resumeNoOverride(): string;
   /** --resume given without a session id, and the current Agent has no Session at all. */
   resumeNoSession(): string;
@@ -937,7 +955,7 @@ const en: Messages = {
       "Mark the new session as created by a Benchmark evaluation (`benchmark`); the Web App files it under the Evaluations folder",
     background: "Post the task and exit immediately, printing the session id",
     sessionNoOverride: () =>
-      "--session reuses an existing Session: --workspace, --model-id, --provider and --source cannot be combined with it (none can change after creation).",
+      "--session reuses an existing Session: --workspace, --model-id, --provider and --source cannot be combined with it (the Session keeps its own; /switch-model inside penguin chat --resume changes its model, compacting first).",
     sourceInvalid: (value) =>
       `Invalid --source value "${value}". The only accepted value is benchmark.`,
     timeoutWithBackground: () =>
@@ -946,7 +964,7 @@ const en: Messages = {
   chat: {
     desc: "Open the interactive REPL",
     resume:
-      "Resume an existing Session (defaults to the agent's most recent one); workspace and model follow the original Session",
+      "Resume an existing Session (defaults to the agent's most recent one); workspace and model follow the original Session (/switch-model changes the model inside the chat, compacting first)",
     verbose:
       "Show full tool output (by default long tool outputs are collapsed to their first and last lines; /verbose toggles it mid-chat)",
   },
@@ -1488,7 +1506,7 @@ const en: Messages = {
 
   header: headerEn,
   chatHints: () =>
-    "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /goal runs a goal to completion; /compact to compact the context; /clear to start a fresh session; /thinking changes the thinking level; /verbose toggles full tool output; /exit to quit; and Ctrl-C interrupts the current conversation.",
+    "Type a message to start a conversation; end a line with \\; typing while a task runs steers the agent; /goal runs a goal to completion; /compact to compact the context; /clear to start a fresh session; /thinking changes the thinking level; /switch-model <provider> <model_id> switches the model (compacting the context first); /verbose toggles full tool output; /exit to quit; and Ctrl-C interrupts the current conversation.",
   confirmExit: () => "Exit penguin? [y/N] ",
   taskInterrupted: () => "[current conversation interrupted]",
   steerQueued: (text) => `» steering queued (delivered with the next turn): ${text}`,
@@ -1577,6 +1595,22 @@ const en: Messages = {
     `[thinking] level pinned to ${level} for this Session, effective from the next request — changing it invalidates the model's cached context, so /compact first is recommended (the Agent config is unchanged)`,
   thinkingInvalid: (value) =>
     `Invalid thinking level "${value}". Use low, medium, high, xhigh, or max.`,
+  switchModelCurrent: (model) =>
+    `[model switch] current model: ${model} — switch with /switch-model <provider> <model_id> (the context is compacted on the current model first)`,
+  switchModelUsage: () =>
+    "Usage: /switch-model <provider> <model_id>  (e.g. /switch-model deepseek deepseek-v4-pro; penguin config model list shows the configured models)",
+  switchModelDone: (previous, next) => `[model switch] model: ${previous} → ${next}`,
+  switchModelBusy: () =>
+    "[model switch] the Session is busy (a task or a compaction is running); switch once it finishes",
+  switchModelSame: (model) => `[model switch] already on ${model}; nothing to switch`,
+  switchModelNotConfigured: (model, listCommand, addCommand) =>
+    `[model switch] ${model} is not in the Project config: ${listCommand} lists the configured models, ${addCommand} adds it`,
+  switchModelUnavailable: (model, detail) =>
+    `[model switch] ${model} is configured but cannot be used${detail ? `: ${detail}` : ""}`,
+  switchModelSummaryTooLarge: (model, detail) =>
+    `[model switch] the context summary does not fit the context window of ${model}, so the Session stays on its current model — pick a model with a larger context window${detail ? ` (${detail})` : ""}`,
+  switchModelNoCompaction: () =>
+    "[model switch] context compaction is not configured for this Session, and a model switch always compacts first",
   verboseOn: () => "[verbose] on — tool output from here on shows in full",
   verboseOff: () =>
     "[verbose] off — long tool output from here on is collapsed (/verbose to toggle)",
@@ -1592,7 +1626,7 @@ const en: Messages = {
   modelRefIncomplete: () =>
     "--model-id and --provider must be given together: a model reference is always an explicit (provider, model_id) pair. Omit both to use the Project default model.",
   resumeNoOverride: () =>
-    "--resume does not accept --workspace, --model-id or --provider: they follow the original Session and cannot change.",
+    "--resume does not accept --workspace, --model-id or --provider: the resumed Session keeps its own. To change its model, run /switch-model <provider> <model_id> inside the chat (it compacts the context first).",
   resumeNoSession: () => "No session to resume: this agent has no recorded sessions yet.",
   resumedBanner: (sessionId, messageCount) =>
     `[resumed] ${sessionId} · ${messageCount} message${messageCount === 1 ? "" : "s"} in the current context`,
@@ -1719,14 +1753,14 @@ const zh: Messages = {
     source: "把新建会话标记为 Benchmark 评估创建（`benchmark`）；Web App 将其归入「评估任务」子夹",
     background: "提交任务后立即退出，打印 session id",
     sessionNoOverride: () =>
-      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider、--source 同时使用（Workspace、模型与来源创建后不可更换）。",
+      "--session 复用既有 Session：不能与 --workspace、--model-id、--provider、--source 同时使用（均沿用该 Session；如需换模型，在 penguin chat --resume 内用 /switch-model，会先压缩上下文）。",
     sourceInvalid: (value) => `无效的 --source 取值 "${value}"。唯一可用取值为 benchmark。`,
     timeoutWithBackground: () => "--timeout 限定等待，而 --background 不等待：二者去其一。",
   },
   chat: {
     desc: "打开交互式 REPL",
     resume:
-      "恢复既有 Session 继续对话（缺省恢复当前 Agent 最近一次）；Workspace 与模型沿用原 Session",
+      "恢复既有 Session 继续对话（缺省恢复当前 Agent 最近一次）；Workspace 与模型沿用原 Session（会话内可用 /switch-model 切换模型，会先压缩上下文）",
     verbose: "显示完整工具输出（缺省折叠过长的工具输出、只保留首尾数行；/verbose 可随时切换）",
   },
   ls: {
@@ -2229,7 +2263,7 @@ const zh: Messages = {
 
   header: headerZh,
   chatHints: () =>
-    "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/goal 以目标模式运行至完成；/compact 压缩上下文；/clear 开启全新会话；/thinking 调整思考等级；/verbose 切换完整工具输出；/exit 退出；Ctrl-C 中断对话。",
+    "输入消息发起对话；行尾 \\ 续行；运行中输入可插话引导；/goal 以目标模式运行至完成；/compact 压缩上下文；/clear 开启全新会话；/thinking 调整思考等级；/switch-model <provider> <model_id> 切换模型（先压缩上下文）；/verbose 切换完整工具输出；/exit 退出；Ctrl-C 中断对话。",
   confirmExit: () => "确认退出 penguin？[y/N] ",
   taskInterrupted: () => "[已中断当前对话]",
   steerQueued: (text) => `» 插话已排队（随下一轮送达）：${text}`,
@@ -2283,7 +2317,8 @@ const zh: Messages = {
       : status === "aborted"
         ? "[压缩] 已中断，保留当前上下文"
         : `[压缩] 失败${errorMessage !== undefined ? `（${errorMessage}）` : ""}，保留当前上下文${
-            // retryable = 本次放弃、下次触发自动重试；fatal = 需先修复模型配置或凭据。旧 Trace 两者都拼作 "failed"。
+            // retryable = abandoned this time, retried at the next trigger; fatal = a config
+            // or credential change has to come first. Legacy Traces spell both "failed".
             status === "retryable"
               ? "，下次触发时重试"
               : status === "fatal"
@@ -2313,6 +2348,21 @@ const zh: Messages = {
   thinkingSet: (level) =>
     `[思考] 本 Session 的等级已钉为 ${level}，下一轮请求起生效——更换思考等级会使模型缓存失效，建议先 /compact 压缩上下文（不改动 Agent 配置）`,
   thinkingInvalid: (value) => `无效的思考等级 "${value}"。请使用 low、medium、high、xhigh 或 max。`,
+  switchModelCurrent: (model) =>
+    `[切换模型] 当前模型：${model}——用 /switch-model <provider> <model_id> 切换（会先用当前模型压缩上下文）`,
+  switchModelUsage: () =>
+    "用法：/switch-model <provider> <model_id>（例如 /switch-model deepseek deepseek-v4-pro；penguin config model list 列出已配置的模型）",
+  switchModelDone: (previous, next) => `[切换模型] 模型：${previous} → ${next}`,
+  switchModelBusy: () => "[切换模型] 会话正忙（任务或压缩进行中），请待其结束后再切换",
+  switchModelSame: (model) => `[切换模型] 已在使用 ${model}，无需切换`,
+  switchModelNotConfigured: (model, listCommand, addCommand) =>
+    `[切换模型] Project 配置中没有 ${model}：${listCommand} 列出已配置的模型，${addCommand} 可添加它`,
+  switchModelUnavailable: (model, detail) =>
+    `[切换模型] ${model} 已配置但无法使用${detail ? `：${detail}` : ""}`,
+  switchModelSummaryTooLarge: (model, detail) =>
+    `[切换模型] 上下文摘要放不进 ${model} 的上下文窗口，Session 保持当前模型——请选一个上下文窗口更大的模型${detail ? `（${detail}）` : ""}`,
+  switchModelNoCompaction: () =>
+    "[切换模型] 本 Session 未配置上下文压缩，而切换模型必须先压缩，因此无法切换",
   verboseOn: () => "[详细输出] 已开启——后续工具输出完整显示（/verbose 切换）",
   verboseOff: () => "[详细输出] 已关闭——后续过长的工具输出将折叠（/verbose 切换）",
   toolOutputElided: (hidden) => `……（另有 ${hidden} 行，/verbose 显示完整输出）`,
@@ -2323,7 +2373,7 @@ const zh: Messages = {
   modelRefIncomplete: () =>
     "--model-id 与 --provider 必须成对给出：模型引用始终是显式的 (provider, model_id) 组合。两者都不给则使用 Project 默认模型。",
   resumeNoOverride: () =>
-    "--resume 不接受 --workspace、--model-id 与 --provider：均沿用原 Session，创建后不可更换。",
+    "--resume 不接受 --workspace、--model-id 与 --provider：均沿用原 Session。如需换模型，请在会话内使用 /switch-model <provider> <model_id>（会先压缩上下文）。",
   resumeNoSession: () => "没有可恢复的 Session：当前 Agent 还没有任何会话记录。",
   resumedBanner: (sessionId, messageCount) =>
     `[已恢复] ${sessionId} · 当前上下文共 ${messageCount} 条消息`,

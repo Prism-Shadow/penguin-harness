@@ -69,8 +69,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   session_id    TEXT PRIMARY KEY,
   project_id    TEXT NOT NULL,
   agent_id      TEXT NOT NULL,
-  provider      TEXT NOT NULL,                     -- provider group of the session model (paired with model_id as a model reference)
-  model_id      TEXT NOT NULL,                     -- upstream model id (sent to AgentHub as-is; never concatenate <provider>/<id>)
+  provider      TEXT NOT NULL,                     -- provider group of the session's CURRENT model (paired with model_id as a model reference; moves with each in-session switch)
+  model_id      TEXT NOT NULL,                     -- upstream model id of the current model (sent to AgentHub as-is; never concatenate <provider>/<id>)
   workspace     TEXT NOT NULL,
   approval_mode TEXT NOT NULL DEFAULT 'allow-all',   -- allow-all|deny-all|read-only|always-ask
   thinking_level TEXT,                               -- level pinned for THIS session (none|low|medium|high|xhigh|max); NULL=not pinned, runs follow the Agent config
@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS trace_sessions (    -- per-session facts read ONCE at
   source     TEXT,                           -- session_meta origin: 'subagent' | 'schedule' | 'benchmark' | NULL = user-created (or head not yet readable)
   workspace  TEXT NOT NULL DEFAULT '',
   title      TEXT,                           -- first-prompt fallback title (sessions.title always wins when present)
-  provider   TEXT,                           -- model reference from session_meta (CLI adoption reads it from here; NULL = meta unreadable / legacy without provider)
+  provider   TEXT,                           -- model reference from the LATEST shard's session_meta (a model switch opens a new shard on another model; CLI adoption reads it from here; NULL = meta unreadable / legacy without provider)
   model_id   TEXT,
   first_ts   TEXT,                           -- first record's timestamp (adoption's createdAt fallback when the id embeds no time)
   meta_read  INTEGER NOT NULL DEFAULT 0      -- 1 once the head parsed; 0 = facts unknown, retried by the next reconcile that touches the session

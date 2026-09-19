@@ -181,12 +181,17 @@ export async function resolveConnection(
   return conn;
 }
 
-/** Error the client raises for non-2xx responses; `code` is the server's error code when the body carried one. */
+/**
+ * Error the client raises for non-2xx responses; `code` is the server's error code when the
+ * body carried one, and `detail` the server's own message, unwrapped (empty when none) — for
+ * a caller that localizes the code and still needs the specifics.
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly detail = "",
   ) {
     super(message);
   }
@@ -273,7 +278,12 @@ export class ServerClient {
           : this.t.client.authFailed(this.conn.baseUrl),
       );
     }
-    return new ApiError(res.status, code, this.t.client.httpError(res.status, code, message));
+    return new ApiError(
+      res.status,
+      code,
+      this.t.client.httpError(res.status, code, message),
+      message,
+    );
   }
 
   /**

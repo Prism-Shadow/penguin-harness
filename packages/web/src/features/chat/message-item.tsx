@@ -409,6 +409,19 @@ export function MessageItem({ item, ctx }: { item: ChatItem; ctx: StreamRenderCo
       return <ReconnectLine item={item} ctx={ctx} />;
     case "compaction":
       return <CompactionBanner item={item} />;
+    case "model_change":
+      // A slim divider between two contexts on different models (an in-session model switch),
+      // named by model id: it renders from the Trace alone, so a model removed from the
+      // configuration since still reads.
+      return (
+        <div className="anim-msg my-3 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+          <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+          <span className="min-w-0 break-words text-center">
+            {S.chat.modelChanged(item.from.modelId, item.to.modelId)}
+          </span>
+          <span aria-hidden className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
+        </div>
+      );
     case "mcp_connect":
       return <McpConnectBanner item={item} />;
     case "task_stats":

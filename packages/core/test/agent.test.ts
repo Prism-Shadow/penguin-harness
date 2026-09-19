@@ -17,7 +17,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 import type { OpenContextOptions, OpenedContext, SystemConfig } from "../src/index.js";
-import { agentsMdPath, projectConfigPath, systemConfigPath } from "../src/state/paths.js";
+import {
+  agentsMdPath,
+  projectConfigPath,
+  systemConfigPath,
+  tracesDir,
+} from "../src/state/paths.js";
 import {
   addModel,
   createAgent,
@@ -25,11 +30,13 @@ import {
   DEFAULT_PROJECT_ID,
   installSkill,
   loadProjectConfig,
+  ModelSwitchRefusedError,
   saveProjectConfig,
   setVaultEntry,
   userText,
 } from "../src/index.js";
 import { metaMaxTokens } from "../src/agent.js";
+import { findLatestTraceFile, readTrace } from "../src/trace/index.js";
 import { mapThinkingLevel } from "../src/llm/index.js";
 import { stubProviderKeys } from "./provider-keys.js";
 import type {
@@ -590,6 +597,28 @@ describe("run_subagent spawning follows the PARENT session (never the Project de
       expect(child.model_id).toBe("claude-sonnet-4-6");
       expect(child.llm.thinkingLevel).toBe("xhigh");
       expect(child.workspace).toBe(ws);
+    } finally {
+      parent.dispose();
+    }
+  });
+
+  it("inherits the parent's CURRENT model: a child spawned after an in-session switch runs on the switched-to model", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-inherit-switched");
+    await fs.mkdir(ws, { recursive: true });
+    const parent = await agent.createSession({ workspaceDir: ws });
+    const runner = lastSpawnedRunner();
+    try {
+      expect(parent.provider).toBe("deepseek");
+      for await (const _ of parent.switchModel({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+      })) {
+        // a never-run Session switches silently
+      }
+      const child = await spawnedChildMeta(runner, {});
+      expect(child.provider).toBe("anthropic");
+      expect(child.model_id).toBe("claude-sonnet-4-6");
     } finally {
       parent.dispose();
     }
@@ -1160,6 +1189,183 @@ describe("Agent model contexts are assembled from the Agent State on disk, at ev
       await expect(openNext(session)).rejects.toThrow("Invalid Agent State config");
       // Nothing was adopted: the Session still describes the context that is running.
       expect(promptOf(session)).toBe(before);
+    } finally {
+      session.dispose();
+    }
+  });
+});
+
+describe("Session.switchModel on a real Agent (the composition layer's half)", () => {
+  const TARGET = { provider: "anthropic", modelId: "claude-sonnet-4-6" };
+  /** Runs a switch to its end, keeping what it streamed. */
+  async function drain(gen: AsyncGenerator<OmniMessage, unknown>): Promise<OmniMessage[]> {
+    const all: OmniMessage[] = [];
+    for (;;) {
+      const res = await gen.next();
+      if (res.done) return all;
+      all.push(res.value);
+    }
+  }
+  const lastBuilt = () =>
+    capturedLLMConfigs.list.at(-1) as
+      { modelId?: string; apiKey?: string; baseUrl?: string; systemPrompt?: string } | undefined;
+  const modelIdOf = (session: { metaMessage: OmniMessage }): string =>
+    (session.metaMessage.payload as { model_id: string }).model_id;
+
+  it("a Session that never ran is re-assembled on the target: nothing recorded, and its first run opens on it", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-fresh");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      expect(session.provider).toBe("deepseek");
+      expect(session.modelId).toBe("deepseek-flash");
+
+      const events = await drain(session.switchModel(TARGET));
+
+      expect(events).toEqual([]);
+      expect(session.provider).toBe("anthropic");
+      expect(session.modelId).toBe("claude-sonnet-4-6");
+      // The re-assembled first context's meta names the target, and its prompt was assembled
+      // for it (the Environment section names the model the context runs on).
+      expect(modelIdOf(session)).toBe("claude-sonnet-4-6");
+      expect((session.metaMessage.payload as { system_prompt: string }).system_prompt).toContain(
+        "claude-sonnet-4-6",
+      );
+      // Nothing was recorded: an untouched Session must not look resumable.
+      expect(await agent.latestSessionId()).toBeNull();
+
+      // The first run builds the target's LLM and opens the Trace with the target's meta.
+      await bootstrapped(session);
+      expect(lastBuilt()!.modelId).toBe("claude-sonnet-4-6");
+      const located = await findLatestTraceFile(
+        tracesDir(tmpRoot, DEFAULT_PROJECT_ID, DEFAULT_AGENT_ID),
+        session.sessionId,
+      );
+      const head = (await readTrace(located!.path))[0]!;
+      expect(head.type).toBe("session_meta");
+      expect((head.payload as { model_id: string }).model_id).toBe("claude-sonnet-4-6");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("refuses a target the Project config does not have, before anything happens", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-unknown");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      // A typed refusal, so a host maps it to its own code without reading the message.
+      const refusal = await drain(
+        session.switchModel({ provider: "custom", modelId: "nobody-configured-this" }),
+      ).catch((e: unknown) => e);
+      expect(refusal).toBeInstanceOf(ModelSwitchRefusedError);
+      expect(refusal).toMatchObject({
+        reason: "model_not_configured",
+        message: expect.stringMatching(/is not in the Project config/) as unknown,
+      });
+      expect(session.modelId).toBe("deepseek-flash");
+      expect(await agent.latestSessionId()).toBeNull();
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("resolves the target against the Project config on disk, not the Agent's load-time snapshot", async () => {
+    const agent = await createAgent();
+    // Configured after the Agent loaded: the snapshot does not know it, the disk does.
+    await addModel(tmpRoot, DEFAULT_PROJECT_ID, {
+      provider: "myproxy",
+      model_id: "claude-sonnet-4-6",
+      base_url: "https://proxy.invalid/v1",
+      api_key: "proxy-key",
+    });
+    expect(agent.projectConfig.models.some((m) => m.provider === "myproxy")).toBe(false);
+    const ws = path.join(tmpRoot, "ws-switch-disk");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      await drain(session.switchModel({ provider: "myproxy", modelId: "claude-sonnet-4-6" }));
+      expect(session.provider).toBe("myproxy");
+      // The validation constructed the target's bare LLM on the target entry's own credentials.
+      expect(lastBuilt()).toMatchObject({
+        modelId: "claude-sonnet-4-6",
+        apiKey: "proxy-key",
+        baseUrl: "https://proxy.invalid/v1",
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("explicit creation credentials stay with the creation model: a context on another model runs on that entry's own", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-creds");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({
+      workspaceDir: ws,
+      apiKey: "creation-key",
+      baseUrl: "https://creation.invalid/v1",
+    });
+    try {
+      // The creation model's bare LLM (the credential check) carries the override.
+      expect(lastBuilt()).toMatchObject({
+        modelId: "deepseek-flash",
+        apiKey: "creation-key",
+        baseUrl: "https://creation.invalid/v1",
+      });
+      await drain(session.switchModel(TARGET));
+      // The target's validation LLM, and the session LLM the first run builds, do not: the
+      // key was handed in for one vendor and must never be sent to another.
+      expect(lastBuilt()!.modelId).toBe("claude-sonnet-4-6");
+      expect(lastBuilt()!.apiKey).toBeUndefined();
+      expect(lastBuilt()!.baseUrl).toBeUndefined();
+      await bootstrapped(session);
+      expect(lastBuilt()!.modelId).toBe("claude-sonnet-4-6");
+      expect(lastBuilt()!.apiKey).toBeUndefined();
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("a rotation keeps the running model unless the opener is told the switch target", async () => {
+    const agent = await createAgent();
+    const ws = path.join(tmpRoot, "ws-switch-rotation");
+    await fs.mkdir(ws, { recursive: true });
+    const session = await agent.createSession({ workspaceDir: ws });
+    try {
+      await bootstrapped(session);
+      const opener = (
+        session as unknown as {
+          engine: {
+            deps: { openNextContext: (opts: OpenContextOptions) => Promise<OpenedContext> };
+          };
+        }
+      ).engine.deps.openNextContext;
+
+      // A plain rotation: the same model, re-assembled, with its own vision answer.
+      const kept = await opener({ emit: () => {} });
+      expect((kept.sessionMeta!.payload as { model_id: string }).model_id).toBe("deepseek-flash");
+      const deepseek = agent.projectConfig.models.find((m) => m.model_id === "deepseek-flash")!;
+      expect(kept.modelHasVision).toBe(deepseek.vision !== false);
+      expect(lastBuilt()!.modelId).toBe("deepseek-flash");
+      expect(session.modelId).toBe("deepseek-flash");
+
+      // A switch's rotation: the target, with its own vision answer and window-derived settings.
+      const switched = await opener({
+        emit: () => {},
+        modelRef: { provider: "anthropic", model_id: "claude-sonnet-4-6" },
+      });
+      expect((switched.sessionMeta!.payload as { model_id: string }).model_id).toBe(
+        "claude-sonnet-4-6",
+      );
+      expect(switched.modelHasVision).toBe(true);
+      expect(lastBuilt()!.modelId).toBe("claude-sonnet-4-6");
+      expect(lastBuilt()!.systemPrompt).toContain("claude-sonnet-4-6");
+      // The Session's own answer follows the opened context.
+      expect(session.provider).toBe("anthropic");
+      expect(session.modelId).toBe("claude-sonnet-4-6");
     } finally {
       session.dispose();
     }

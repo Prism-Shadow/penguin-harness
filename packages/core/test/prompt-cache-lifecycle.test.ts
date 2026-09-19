@@ -23,7 +23,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Environment } from "../src/environment/index.js";
 import { Session } from "../src/index.js";
-import { buildScheduledMessage, userText } from "../src/omnimessage/index.js";
+import { buildScheduledMessage, sessionMeta, userText } from "../src/omnimessage/index.js";
 import type { OmniMessage } from "../src/omnimessage/index.js";
 import { Writer, readTrace, resumeTrace } from "../src/trace/index.js";
 import type { CompactionSettings, TraceSink } from "../src/engine/context-engine.js";
@@ -77,6 +77,7 @@ interface SessionSpec {
   openNextContext?: ConstructorParameters<typeof Session>[0]["openNextContext"];
   initialEngineState?: ConstructorParameters<typeof Session>[0]["initialEngineState"];
   metaAlreadyWritten?: boolean;
+  modelSwitch?: ConstructorParameters<typeof Session>[0]["modelSwitch"];
 }
 
 function makeSession(spec: SessionSpec): Session {
@@ -91,6 +92,7 @@ function makeSession(spec: SessionSpec): Session {
     ...(spec.openNextContext ? { openNextContext: spec.openNextContext } : {}),
     ...(spec.initialEngineState ? { initialEngineState: spec.initialEngineState } : {}),
     ...(spec.metaAlreadyWritten ? { metaAlreadyWritten: true } : {}),
+    ...(spec.modelSwitch ? { modelSwitch: spec.modelSwitch } : {}),
   });
   cleanups.push(() => session.dispose());
   return session;
@@ -485,6 +487,33 @@ describe("the prompt cache across a Session's lifecycle", () => {
     // And the new context hits from its second request onwards.
     expect(usages[4]!.cache_read_input_tokens, report).toBe(prefixTokens(order[3]!));
   });
+
+  it("a model switch reads 0 on the new model — a new cache line — then hits from there", async () => {
+    const { order, onRequest } = ordering();
+    await driveModelSwitch(onRequest);
+
+    expect(order.map((request) => request.label)).toEqual([
+      "model A",
+      "model A",
+      "model A",
+      "model B",
+      "model B",
+    ]);
+    const usages = replay(order);
+    const reason =
+      "the context reopened on another model: a prompt cache is scoped to one model, so " +
+      "nothing the new model's first request sends is addressable";
+    expectHits(order, usages, new Map([[3, reason]]));
+    const report = formatCacheReport(order, usages);
+    // The switch's compaction request runs on the old model with the old config: it reads the
+    // turn it follows in full, exactly as a threshold compaction's does.
+    expect(usages[2]!.cache_read_input_tokens, report).toBe(prefixTokens(order[1]!));
+    // What the switch costs: the new model's first request, read in full and written anew.
+    expect(usages[3]!.cache_read_input_tokens, report).toBe(0);
+    expect(usages[3]!.cache_creation_input_tokens, report).toBe(prefixTokens(order[3]!));
+    // And the new model hits from its second request onwards.
+    expect(usages[4]!.cache_read_input_tokens, report).toBe(prefixTokens(order[3]!));
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -530,6 +559,47 @@ async function driveCompaction(onRequest: (request: RecordedRequest) => void): P
   });
   await collect(session.run([userText("task one")], { approve: allowAll }));
   await collect(session.run([userText("task two")], { approve: allowAll }));
+  await collect(session.run([userText("task three")], { approve: allowAll }));
+  await collect(session.run([userText("task four")], { approve: allowAll }));
+}
+
+/** The model the switch scenario moves to. */
+const SWITCH_TARGET = { provider: "anthropic", model_id: "claude-opus-4-7" };
+
+/** One Session, two tasks on one model, an in-session switch, two tasks on the other. */
+async function driveModelSwitch(onRequest: (request: RecordedRequest) => void): Promise<void> {
+  const first = recordingModel(
+    modelConfig(),
+    [
+      { text: "First answer." },
+      { text: "Second answer." },
+      { text: "[summary]the distilled summary[/summary]" },
+    ],
+    { label: "model A", onRequest },
+  );
+  const second = recordingModel(
+    modelConfig({ modelId: SWITCH_TARGET.model_id }),
+    [{ text: "Carried on from the summary." }, { text: "And on from there." }],
+    { label: "model B", onRequest },
+  );
+  const session = makeSession({
+    llm: first.model,
+    environment: fakeEnvironment,
+    compaction: compactionSettings(),
+    openNextContext: () => ({
+      llm: second.model,
+      sessionMeta: sessionMeta({ ...META, ...SWITCH_TARGET }),
+    }),
+    modelSwitch: {
+      validate: async () => ({ contextWindow: 200000 }),
+      reassembleInitialContext: async () => ({}),
+    },
+  });
+  await collect(session.run([userText("task one")], { approve: allowAll }));
+  await collect(session.run([userText("task two")], { approve: allowAll }));
+  await collect(
+    session.switchModel({ provider: SWITCH_TARGET.provider, modelId: SWITCH_TARGET.model_id }),
+  );
   await collect(session.run([userText("task three")], { approve: allowAll }));
   await collect(session.run([userText("task four")], { approve: allowAll }));
 }

@@ -14,12 +14,14 @@
  *     new api_key / base_url. Agent State changes (vault, AGENTS.md, tools, …) take no
  *     such shortcut: core assembles them into the next model context — at the Session's
  *     next compaction — exactly as the CLI does, so a running context never changes;
- *   - Per-Session mutual exclusion: only one Task/compaction may be in progress at a
- *     time;
- *   - run/compact drive: consumes the output stream in the background, publishing each
- *     message to the SSE channel and handing it to usage-recorder for persistence;
+ *   - Per-Session mutual exclusion: only one Task/compaction/model switch may be in
+ *     progress at a time;
+ *   - run/compact/switch drive: consumes the output stream in the background, publishing
+ *     each message to the SSE channel and handing it to usage-recorder for persistence;
  *     on completion (including errors) resets to idle and pushes a `task_state` server
- *     event;
+ *     event. A model switch (startSwitch) is a compaction whose next context opens on
+ *     another model: the entry's (provider, modelId) — the pair usage is attributed to —
+ *     and the index row follow it, moving as the new context's session_meta passes;
  *   - Approval registration and interrupt convergence: each approval decision re-reads
  *     approval_mode from the DB (takes effect immediately); an interrupt first
  *     converges pending approvals to deny, then aborts. An organization's sessions have
@@ -38,6 +40,7 @@ import {
   findLatestTraceFile,
   isHookInput,
   isSessionMeta,
+  ModelSwitchRefusedError,
   parseUserSteeringText,
   tracesDir,
   userText,
@@ -48,6 +51,7 @@ import type {
   BackgroundSubagentInfo,
   CompactAvailability,
   ControlEnvContext,
+  ModelSwitchResult,
   OmniMessage,
   ProxyEnvPolicy,
   SpawnConfiner,
@@ -60,6 +64,7 @@ import type {
   ToolDetachResult,
 } from "@prismshadow/penguin-core";
 import type {
+  ModelRefDto,
   PendingFollowUpInfo,
   PendingSteeringInfo,
   ServerEvent,
@@ -131,6 +136,48 @@ function compactUnavailable(why: Exclude<CompactAvailability, "ok">): HttpError 
   return new HttpError(409, code, message);
 }
 
+/**
+ * Core's refusal of a model switch, thrown before its first event as a typed
+ * `ModelSwitchRefusedError` (see `Session.switchModel`), under the code the HTTP contract names
+ * for its reason (see `SessionSwitchModelRequest`): the target is not in the Project config on
+ * disk (`model_not_configured` — a race with the manager's own check), the Session has a
+ * context to close but no compaction configured (`compaction_not_configured`), the target
+ * cannot be constructed (`model_unavailable` — a missing credential foremost, worded like the
+ * loader's own message for it), and a summary already held for the next context that the
+ * target's window cannot take (`summary_too_large`; core's message names both numbers, the
+ * remedy is a target with a larger window). Anything else core
+ * throws is not a refusal but a failure — an Agent State that no longer parses, a bootstrap
+ * that broke — and is rethrown so it reaches the 500 path and its logging rather than being
+ * dressed up as a target problem.
+ */
+function switchRefusal(err: unknown, ref: ModelRefDto): HttpError {
+  if (err instanceof HttpError) return err;
+  if (!(err instanceof ModelSwitchRefusedError)) throw err;
+  switch (err.reason) {
+    case "model_not_configured":
+      return new HttpError(409, "model_not_configured", err.message);
+    case "compaction_not_configured":
+      return new HttpError(409, "compaction_not_configured", err.message);
+    case "model_unavailable":
+      return new HttpError(
+        409,
+        "model_unavailable",
+        isMissingCredential(err)
+          ? `Model ${ref.modelId} has no API key yet. Configure it on the Models page first.`
+          : err.message,
+      );
+    case "summary_too_large":
+      return new HttpError(409, "summary_too_large", err.message);
+  }
+}
+
+/** The model a runtime Session reports itself on, or null for one that reports none (test fakes). */
+function runtimeModelOf(session: RuntimeSession): ModelRefDto | null {
+  const { provider, modelId } = session;
+  if (provider === undefined || modelId === undefined) return null;
+  return { provider, modelId };
+}
+
 /** Minimal interface for a runtime Session (satisfied by core Session; tests may inject a fake implementation). */
 export interface RuntimeSession {
   readonly sessionId: string;
@@ -142,6 +189,28 @@ export interface RuntimeSession {
     },
   ): AsyncGenerator<OmniMessage>;
   compact(opts: { signal: AbortSignal }): AsyncGenerator<OmniMessage>;
+  /**
+   * The running context's model (core `Session.provider` / `Session.modelId`, getters over
+   * the context's session_meta): the row's pair at creation, moved by each in-session switch
+   * — and, after a restart, whatever the Trace resumed on. Optional: test fakes may omit them,
+   * in which case the entry keeps the row's pair.
+   */
+  readonly provider?: string;
+  readonly modelId?: string;
+  /**
+   * Switches the Session's model in place (core `Session.switchModel`): compacts on the current
+   * model, then opens the next context on the target. The stream is an ordinary manual
+   * compaction pair (none when the context was just compacted), then the new context's opener
+   * records and its main-session `session_meta`, whose `provider` / `model_id` name the target
+   * — the getters above answer it by then; the return value says whether the Session is on the
+   * target now. Throws before its first event for a target that cannot be switched to.
+   * Optional: test fakes may omit it, reading as "switching is not available".
+   */
+  switchModel?(opts: {
+    provider: string;
+    modelId: string;
+    signal: AbortSignal;
+  }): AsyncGenerator<OmniMessage, ModelSwitchResult>;
   /**
    * The Session's thinking level (core `Session.thinkingLevel`, plain state): soft-limited —
    * an assignment applies from the Session's very next LLM request. Optional: test fakes may
@@ -352,6 +421,12 @@ export interface SessionManagerDeps {
   /** Error persistence (optional: without it, only logs — same as before this was wired up). */
   errors?: ErrorSink;
   log?: (line: string) => void;
+  /**
+   * The Project config, for `startSwitch` to refuse a target that is not configured with its
+   * own code before core is asked. Optional: without it (unit tests) the refusal is read off
+   * core's own validation instead.
+   */
+  projectConfig?: Pick<ProjectConfigStore, "loadConfig">;
   /** Goal run-state persistence (optional like `titles`: without it, goals run but leave no restorable record). */
   /**
    * Publishes a Session-scoped event on the user-level channel of everyone who can see the
@@ -429,7 +504,11 @@ interface RuntimeEntry {
   sessionId: string;
   projectId: string;
   agentId: string;
-  /** Vendor grouping for the Session's model (paired with modelId to form a model reference). */
+  /**
+   * The Session's current model (provider group paired with modelId): what the next drive
+   * attributes usage to. Loaded from the runtime's own answer (falling back to the row), moved
+   * by `startSwitch` as the new context's `session_meta` passes, and kept in step with the row.
+   */
   provider: string;
   modelId: string;
   session: RuntimeSession;
@@ -1284,6 +1363,166 @@ export class SessionManager {
     });
   }
 
+  /**
+   * Switches the Session's model in place (`POST /switch-model`): the runtime compacts on the
+   * model it is on, then opens its next context on `ref` — core `Session.switchModel`. Gated
+   * like a compaction (open, not deleting, idle) and refused before any event with a code per
+   * reason: `same_model`, `model_not_configured` (the target is not in the Project config),
+   * `model_unavailable` (its client cannot be constructed — no credential, or a runtime with
+   * no switch seam), `compaction_not_configured` and `summary_too_large` (a summary already
+   * held does not fit the target's window; see `switchRefusal` — any other error core throws
+   * before its first event is a failure and answers 500). Two ways out:
+   *
+   * - `switched: false` — a driven run like a compaction: status `compacting`, idle when it
+   *   ends. The stream is an ordinary manual compaction pair when the context had something to
+   *   close (none for a context a compaction had just closed), then the new context's opener
+   *   records and its `session_meta`. The row and the entry move to the target the moment that
+   *   meta passes through the drive — ahead of its publish, so a client that refetches the
+   *   Session on that record reads the new model — and take the runtime's own answer once the
+   *   run is over (see `switchStream`). A compaction that fails or is aborted yields no meta
+   *   and leaves both where they were;
+   * - `switched: true` — a Session that never ran has no context to compact: core re-assembled
+   *   its first context on the target inside this call, nothing was streamed, and the row
+   *   already carries the new pair (the route answers with the fresh DTO).
+   *
+   * Core decides between the two before its first event, so the head of its stream tells them
+   * apart: pulled here, under the lock, and handed back to the drive. The head comes promptly
+   * either way: a compaction's begin, or — for a context just compacted, which streams no pair
+   * — the opener's first record (`mcp_connect_begin` or `tool_list_ready`), published as soon
+   * as the toolset is being built. Usage: the drive's context is fixed at run start, so the
+   * switch's compaction request bills to the model that served it, and the next run's requests
+   * to the new one.
+   */
+  async startSwitch(
+    sessionId: string,
+    ref: ModelRefDto,
+  ): Promise<{ sessionId: string; switched: boolean }> {
+    return this.withLock(sessionId, async () => {
+      this.assertOpen();
+      this.assertAgentNotDeleting(sessionId);
+      this.assertSessionNotDeleting(sessionId);
+      const entry = await this.ensureEntry(sessionId);
+      this.assertIdle(entry);
+      if (entry.provider === ref.provider && entry.modelId === ref.modelId) {
+        throw new HttpError(
+          409,
+          "same_model",
+          `This Session already runs on ${ref.provider} / ${ref.modelId}.`,
+        );
+      }
+      await this.assertModelConfigured(entry.projectId, ref);
+      if (!entry.session.switchModel) {
+        // A runtime without the switch seam: the target exists, it cannot be switched to here.
+        throw new HttpError(
+          409,
+          "model_unavailable",
+          "Switching the model is not available for this Session.",
+        );
+      }
+      const ac = new AbortController();
+      const gen = entry.session.switchModel({
+        provider: ref.provider,
+        modelId: ref.modelId,
+        signal: ac.signal,
+      });
+      let head: IteratorResult<OmniMessage, ModelSwitchResult>;
+      try {
+        head = await gen.next();
+      } catch (err) {
+        throw switchRefusal(err, ref);
+      }
+      entry.lastActivityMs = Date.now();
+      if (head.done) {
+        // Never ran: switched inline, the runtime is already on the target.
+        this.syncEntryModel(entry);
+        return { sessionId: entry.sessionId, switched: true };
+      }
+      entry.status = "compacting";
+      entry.abort = ac;
+      this.publishState(entry, "compacting");
+      entry.running = this.drive(entry, this.switchStream(entry, head.value, gen));
+      return { sessionId: entry.sessionId, switched: false };
+    });
+  }
+
+  /** The switch target must be in the Project config → 409 `model_not_configured` (skipped without a config store: core validates the same fact on disk). */
+  private async assertModelConfigured(projectId: string, ref: ModelRefDto): Promise<void> {
+    if (!this.deps.projectConfig) return;
+    const config = await this.deps.projectConfig.loadConfig(projectId);
+    const configured = (config.models ?? []).some(
+      (m) => m.provider === ref.provider && m.model_id === ref.modelId,
+    );
+    if (!configured) {
+      throw new HttpError(
+        409,
+        "model_not_configured",
+        `Model ${ref.provider} / ${ref.modelId} is not in the Project config. Add it on the Models page first.`,
+      );
+    }
+  }
+
+  /**
+   * The drive stream of a model switch: the head `startSwitch` already pulled, then the rest of
+   * core's generator. A completed switch streams the new context's main-session `session_meta`
+   * last; core has adopted that context by the time it yields it, so as the meta passes — before
+   * it goes on to be published — the row and the entry take the runtime's model. The runtime's
+   * answer is adopted again once the generator is done — still inside the drive, ahead of the
+   * idle flip, so a client that refetches on idle reads what the next run will actually bill to
+   * (and a runtime that streams no meta, a test fake, is still followed). A switch that failed
+   * yields no meta and keeps the runtime, and so the row, on the model it was on.
+   */
+  private async *switchStream(
+    entry: RuntimeEntry,
+    head: OmniMessage,
+    rest: AsyncGenerator<OmniMessage, ModelSwitchResult>,
+  ): AsyncGenerator<OmniMessage> {
+    try {
+      let msg = head;
+      for (;;) {
+        if (isSessionMeta(msg) && (msg.origin === undefined || msg.origin.length === 0)) {
+          this.syncEntryModel(entry);
+        }
+        yield msg;
+        const next = await rest.next();
+        if (next.done) break;
+        msg = next.value;
+      }
+    } finally {
+      this.syncEntryModel(entry);
+    }
+  }
+
+  /** Adopts the runtime's current model as the entry's (see `adoptEntryModel`); a runtime that reports none (test fakes) leaves the entry alone. */
+  private syncEntryModel(entry: RuntimeEntry): void {
+    const model = runtimeModelOf(entry.session);
+    if (model) this.adoptEntryModel(entry, model);
+  }
+
+  /**
+   * Moves the entry — and the row it caches into — to `model` when it differs: the pair the
+   * next drive attributes usage to, and the one `GET /sessions/:id` describes. The row write is
+   * guarded like the other bookkeeping writes (see `touchRow`): a switch must not be stranded
+   * mid-drive by a closed DB handle, and the entry is right either way.
+   */
+  private adoptEntryModel(entry: RuntimeEntry, model: ModelRefDto): void {
+    if (entry.provider === model.provider && entry.modelId === model.modelId) return;
+    entry.provider = model.provider;
+    entry.modelId = model.modelId;
+    try {
+      this.deps.sessions.updateModel(entry.sessionId, model.provider, model.modelId);
+    } catch (err) {
+      this.log(
+        `[session] model bookkeeping failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this.deps.errors?.record({
+        source: "session",
+        err,
+        ctx: { projectId: entry.projectId, agentId: entry.agentId, sessionId: entry.sessionId },
+        code: "session_model_update_failed",
+      });
+    }
+  }
+
   /** Submit an approval decision; returns false if the pending approval doesn't exist (already decided/unknown). */
   decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny"): boolean {
     const entry = this.entries.get(sessionId);
@@ -1741,12 +1980,19 @@ export class SessionManager {
       this.deps.sessions.replaceId(row.sessionId, session.sessionId);
       currentId = session.sessionId;
     }
+    // The runtime's model is the truth the row caches: a Session that switched models and
+    // crashed between the Trace write and the row update resumes (from the Trace) on the new
+    // model, and the row is brought back in step here.
+    const model = runtimeModelOf(session) ?? { provider: row.provider, modelId: row.modelId };
+    if (model.provider !== row.provider || model.modelId !== row.modelId) {
+      this.deps.sessions.updateModel(currentId, model.provider, model.modelId);
+    }
     const entry: RuntimeEntry = {
       sessionId: currentId,
       projectId: row.projectId,
       agentId: row.agentId,
-      provider: row.provider,
-      modelId: row.modelId,
+      provider: model.provider,
+      modelId: model.modelId,
       session,
       status: "idle",
       approvals: new ApprovalRegistry(),
@@ -1897,7 +2143,7 @@ export class SessionManager {
             entry.pendingSteering.shift();
             this.publishState(entry, entry.status);
           }
-        } else if (isSessionMeta(msg)) {
+        } else if (isSessionMeta(msg) && msg.origin !== undefined && msg.origin.length > 0) {
           // Subagent registration is only a "side effect" — it must never interrupt the
           // main run flow on error: wrap the whole thing in a defensive try/catch.
           try {
@@ -2044,8 +2290,10 @@ export class SessionManager {
     msg: OmniMessage,
     children: Map<string, ChildSession>,
   ): ChildSession | null {
-    if (!isSessionMeta(msg)) return null;
-    const childSid = msg.origin![msg.origin!.length - 1]!;
+    // A child's meta only: the main session's own session_meta (no origin), which the stream
+    // carries when a model switch opens a new context, names no child to register.
+    if (!isSessionMeta(msg) || msg.origin === undefined || msg.origin.length === 0) return null;
+    const childSid = msg.origin[msg.origin.length - 1]!;
     if (children.has(childSid)) return null;
     const p = msg.payload as SessionMetaPayload;
     const agentId = path.basename(path.dirname(p.agent_state));
@@ -2248,6 +2496,7 @@ export abstract class Sessions extends Interface<
     | "startTask"
     | "startGoal"
     | "startCompact"
+    | "startSwitch"
     | "decideApproval"
     | "steer"
     | "recallSteering"
@@ -2399,6 +2648,7 @@ export class SessionsModule {
       errors,
       titles,
       log,
+      projectConfig,
       notifyProjectUsers,
       // A person talking to a desk (the chat page, a bound bot) starts a new @-chain: the
       // desk's next channel message is hop 1 again, whatever mention last woke it.

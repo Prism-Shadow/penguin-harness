@@ -443,6 +443,79 @@ describe("approvals and events", () => {
     expect(banner.errorMessage).toBe("the response contained no usable summary");
   });
 
+  it("a main-session session_meta on another model pushes a model_change item after the compaction row; the window's first meta, a same-pair rewrite and a nested child's meta push none", () => {
+    const onModel = (provider: string, modelId: string, sessionId = "s1") =>
+      sessionMeta({ ...meta(sessionId).payload, provider, model_id: modelId });
+    const markers = (model: StreamModel) => model.items.filter((i) => i.kind === "model_change");
+    const m = createStreamModel();
+    // The window's first meta only sets the context model.
+    pushMessage(m, onModel("anthropic", "a-1"));
+    expect(items(m)).toEqual([]);
+    expect(m.contextModel).toEqual({ provider: "anthropic", modelId: "a-1" });
+
+    // A switch streams an ordinary manual pair, then the new context's meta on another model.
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 1000, turns: 3 }),
+    );
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    pushMessage(m, at(onModel("openai", "b-2"), "2026-09-17T08:00:00.000Z"));
+    expect(items(m).map((i) => i.kind)).toEqual(["compaction", "model_change"]);
+    expect(items(m)[1]).toEqual({
+      kind: "model_change",
+      id: expect.any(Number),
+      from: { provider: "anthropic", modelId: "a-1" },
+      to: { provider: "openai", modelId: "b-2" },
+      tsMs: Date.parse("2026-09-17T08:00:00.000Z"),
+    });
+    expect(m.contextModel).toEqual({ provider: "openai", modelId: "b-2" });
+
+    // A same-pair rewrite — an ordinary rotation's meta, or the same record served twice by
+    // history and the live tail — pushes nothing.
+    pushMessage(m, onModel("openai", "b-2"));
+    expect(markers(m)).toHaveLength(1);
+
+    // A nested child's metas are that child's identity, never a switch of this Session, even
+    // when two of them name different models.
+    pushMessage(m, withOrigin(onModel("zhipu", "glm-5", "child1"), "child1"));
+    pushMessage(m, withOrigin(onModel("deepseek", "ds-1", "child1"), "child1"));
+    const child = items(m).find((i) => i.kind === "subagent") as SubagentItem;
+    expect(child.model.meta).toMatchObject({ provider: "deepseek", modelId: "ds-1" });
+    expect(markers(child.model)).toEqual([]);
+    expect(markers(m)).toHaveLength(1);
+    expect(m.contextModel).toEqual({ provider: "openai", modelId: "b-2" });
+  });
+
+  it("a round settled behind a switch's compaction row and marker places its stats row above both", () => {
+    const m = createStreamModel();
+    pushMessage(
+      m,
+      at(sessionMeta({ ...meta("s1").payload, model_id: "a-1" }), "2026-09-17T08:00:00.000Z"),
+    );
+    pushMessage(m, at(userText("task"), "2026-09-17T08:00:01.000Z"));
+    pushMessage(m, at(requestBegin(), "2026-09-17T08:00:02.000Z"));
+    pushMessage(m, at(assistantText("half a reply"), "2026-09-17T08:00:03.000Z"));
+    pushMessage(m, at(tokenUsage(counts(100), counts(100)), "2026-09-17T08:00:04.000Z"));
+    // Interrupted: the round's last item is the abort, so the compaction below does not settle
+    // it on arrival — the history rebuild settles it at its end.
+    pushMessage(m, at(abortEvent(), "2026-09-17T08:00:05.000Z"));
+    pushMessage(
+      m,
+      compactionBegin({ reason: "manual", mode: "summarize", context: 100, turns: 1 }),
+    );
+    pushMessage(m, compactionEnd({ reason: "manual", mode: "summarize", status: "completed" }));
+    pushMessage(m, sessionMeta({ ...meta("s1").payload, model_id: "b-2" }));
+    finalizeHistory(m);
+    expect(items(m).map((i) => i.kind)).toEqual([
+      "user_text",
+      "assistant_text",
+      "abort",
+      "task_stats",
+      "compaction",
+      "model_change",
+    ]);
+  });
+
   it("compaction wall time is derived from the begin/end message timestamps", () => {
     const m = createStreamModel();
     pushMessage(

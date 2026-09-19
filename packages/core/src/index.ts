@@ -37,19 +37,30 @@ export * from "./hooks/index.js";
 export * from "./plugins/index.js";
 
 // Runtime entry points
-export { ContextEngine, reconnectDelayMs } from "./engine/context-engine.js";
+export {
+  ContextEngine,
+  ModelSwitchRefusedError,
+  reconnectDelayMs,
+} from "./engine/context-engine.js";
 export type {
   CompactAvailability,
   CompactionSettings,
   ContextEngineDeps,
   EngineInitialState,
+  ModelSwitchRefusal,
+  ModelSwitchTarget,
   OpenContextOptions,
   OpenedContext,
   RunOptions,
   TraceSink,
 } from "./engine/context-engine.js";
 export { Session } from "./session.js";
-export type { SessionConfig } from "./session.js";
+export type {
+  ModelSwitchOptions,
+  ModelSwitchResult,
+  ModelSwitchSupport,
+  SessionConfig,
+} from "./session.js";
 export type { AgentAssembly, PromptSection } from "./agent.js";
 // Session-title generation lives in internal/ (an assembly detail of Session.generateTitle);
 // only its narrow public surface is re-exported: the result type (part of

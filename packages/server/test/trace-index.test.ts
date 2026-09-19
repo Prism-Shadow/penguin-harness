@@ -140,6 +140,59 @@ describe("trace-index", () => {
     expect(h.traceIndex.counters.gateStats).toBe(gate + 2); // root + newest only
   });
 
+  it("the model pair follows the LATEST shard's session_meta — a new shard re-reads that head alone, the other facts stay the earliest shard's", async () => {
+    await writeTraceFile(root, P, A, "2026-07-05", S1, 1, [
+      sessionMeta(meta(S1)),
+      userText("first prompt"),
+    ]);
+    // A Session first seen with two shards classifies from both heads: facts from the earliest,
+    // model from the latest.
+    await writeTraceFile(root, P, A, "2026-07-05", S2, 1, [
+      sessionMeta(meta(S2)),
+      userText("two-shard session"),
+    ]);
+    await writeTraceFile(root, P, A, "2026-07-05", S2, 2, [
+      sessionMeta(meta(S2, { provider: "other", model_id: "m-later" })),
+      userText("[context_summary]\nsummary\n[/context_summary]"),
+    ]);
+    await backdate(tracesRoot(root), path.join(tracesRoot(root), "2026-07-05"));
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.repo.getSession(S1)).toMatchObject({
+      provider: "custom",
+      modelId: "m1",
+      title: "first prompt",
+    });
+    expect(h.traceIndex.repo.getSession(S2)).toMatchObject({
+      provider: "other",
+      modelId: "m-later",
+      title: "two-shard session",
+    });
+    expect(h.traceIndex.counters.headReads).toBe(3); // S1 once, S2's two shards
+
+    // A model switch rotates S1 onto another model: one head-read of the new shard, the model
+    // pair moves, nothing else does.
+    await writeTraceFile(root, P, A, "2026-07-05", S1, 2, [
+      sessionMeta(meta(S1, { provider: "other", model_id: "m2" })),
+      userText("[context_summary]\nsummary\n[/context_summary]"),
+      userText("on the new model"),
+    ]);
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.repo.getSession(S1)).toMatchObject({
+      provider: "other",
+      modelId: "m2",
+      title: "first prompt",
+      workspace: "/ws/one",
+      metaRead: true,
+    });
+    expect(h.traceIndex.counters.headReads).toBe(4);
+
+    // Steady state afterwards: no re-read.
+    await backdate(tracesRoot(root), path.join(tracesRoot(root), "2026-07-05"));
+    await h.traceIndex.reconcileAgent(P, A);
+    await h.traceIndex.reconcileAgent(P, A);
+    expect(h.traceIndex.counters.headReads).toBe(4);
+  });
+
   it("a write into an OLD date dir with backdated mtime slips past the gate; the consumers' force-retry (locateAll) recovers it", async () => {
     // Two date dirs indexed; the gate now watches the root + ALL date dirs.
     // A normal write moves the old dir's mtime and is caught (covered by the test above).

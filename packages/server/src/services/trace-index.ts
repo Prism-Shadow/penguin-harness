@@ -18,7 +18,10 @@
  *     session's original date dir, not necessarily the newest). Only on a change
  *     does it readdir — and only the date dirs whose mtime moved — registering
  *     new shards and classifying each new Session ONCE (bounded head-read of the
- *     earliest shard for origin/workspace/title). Restart forgets the in-memory
+ *     earliest shard for origin/workspace/title). The model pair is the exception:
+ *     it is the LATEST shard's, since a model switch opens its next context in a new
+ *     shard on another model, so a new shard of a classified Session costs one more
+ *     head-read of that shard alone. Restart forgets the in-memory
  *     gate, so the first request per Agent after an upgrade or restart runs one
  *     full diff (this is also how the index first populates: no migration step
  *     needed).
@@ -106,6 +109,18 @@ function factsFromRecords(
     modelId: meta && typeof meta.payload.model_id === "string" ? meta.payload.model_id : null,
     firstTs: records[0]?.timestamp ?? null,
     metaRead: meta !== undefined,
+  };
+}
+
+/** The model pair a shard's head names (its session_meta), or null when the head has none. */
+function modelFromRecords(
+  records: OmniMessage[],
+): Pick<TraceSessionRow, "provider" | "modelId"> | null {
+  const meta = records.find(isSessionMeta);
+  if (!meta) return null;
+  return {
+    provider: typeof meta.payload.provider === "string" ? meta.payload.provider : null,
+    modelId: typeof meta.payload.model_id === "string" ? meta.payload.model_id : null,
   };
 }
 
@@ -215,6 +230,8 @@ export class TraceIndexService implements TraceIndex {
       knownByDate.set(row.date, list);
     }
     const newSessions = new Set<string>();
+    /** Classified Sessions that grew a shard in this pass: their model pair follows the latest shard. */
+    const rotated = new Set<string>();
     const dateDirs = await listDirs(dir);
     for (const date of dateDirs) {
       const m = await statMtime(path.join(dir, date));
@@ -238,9 +255,11 @@ export class TraceIndexService implements TraceIndex {
         } catch {
           continue; // Vanished between readdir and stat: skip; a later pass settles it.
         }
+        const fresh = !known.has(fileKey);
         this.repo.upsertFile({ projectId, agentId, sessionId, fileIndex, date, sizeBytes: size });
         known.delete(fileKey);
         if (this.repo.getSession(sessionId)?.metaRead !== true) newSessions.add(sessionId);
+        else if (fresh) rotated.add(sessionId);
       }
       // Rows whose files vanished from this dir (external delete / rename).
       for (const row of known.values()) {
@@ -254,14 +273,23 @@ export class TraceIndexService implements TraceIndex {
         this.repo.deleteFile(projectId, agentId, row.sessionId, row.fileIndex);
     }
     // Registration-time classification: ONCE per newly seen Session (bounded head-read
-    // of its earliest shard) — listings afterwards never touch file contents.
+    // of its earliest shard) — listings afterwards never touch file contents. A classified
+    // Session that grew a shard re-reads that shard's head alone, for its model pair.
     for (const sessionId of newSessions) {
       await this.classifySession(projectId, agentId, sessionId);
+    }
+    for (const sessionId of rotated) {
+      if (!newSessions.has(sessionId))
+        await this.refreshSessionModel(projectId, agentId, sessionId);
     }
     this.seen.set(key, next);
   }
 
-  /** Head-reads the Session's earliest indexed shard and stores its facts (origin/workspace/title/model ref). */
+  /**
+   * Head-reads the Session's earliest indexed shard and stores its facts (origin/workspace/
+   * title), plus its model pair from the LATEST shard when there is more than one: each shard
+   * is one model context, and a model switch opens its next context on another model.
+   */
   private async classifySession(
     projectId: string,
     agentId: string,
@@ -270,16 +298,37 @@ export class TraceIndexService implements TraceIndex {
     const files = this.repo.listFilesBySession(projectId, agentId, sessionId);
     const earliest = files[0];
     if (earliest === undefined) return;
-    this.counters.headReads += 1;
-    let records: OmniMessage[];
-    try {
-      records = await readTraceHead(traceFilePath(this.root, earliest));
-    } catch {
-      records = []; // Unreadable head: facts stay unknown (meta_read=0 → retried by a later reconcile pass).
+    const facts = factsFromRecords(projectId, agentId, sessionId, await this.readHead(earliest));
+    const latest = files[files.length - 1]!;
+    if (latest !== earliest && facts.metaRead) {
+      const model = modelFromRecords(await this.readHead(latest));
+      if (model) Object.assign(facts, model);
     }
-    const facts = factsFromRecords(projectId, agentId, sessionId, records);
     this.repo.upsertSession(facts);
     if (facts.metaRead) this.sources?.set(sessionId, facts.source);
+  }
+
+  /** A classified Session grew a shard: its model pair follows the latest shard's session_meta (no other fact moves). */
+  private async refreshSessionModel(
+    projectId: string,
+    agentId: string,
+    sessionId: string,
+  ): Promise<void> {
+    const files = this.repo.listFilesBySession(projectId, agentId, sessionId);
+    const latest = files[files.length - 1];
+    if (latest === undefined) return;
+    const model = modelFromRecords(await this.readHead(latest));
+    if (model) this.repo.updateSessionModel(sessionId, model.provider, model.modelId);
+  }
+
+  /** One bounded head-read (counted); an unreadable head reads as no records. */
+  private async readHead(file: TraceFileRow): Promise<OmniMessage[]> {
+    this.counters.headReads += 1;
+    try {
+      return await readTraceHead(traceFilePath(this.root, file));
+    } catch {
+      return []; // Unreadable head: facts stay unknown (meta_read=0 → retried by a later reconcile pass).
+    }
   }
 
   /**

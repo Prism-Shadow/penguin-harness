@@ -197,6 +197,13 @@ export class TraceIndexRepo implements TraceIndexStore {
       );
   }
 
+  /** The model pair alone (from the latest shard's head once a new shard appears); the other facts stay the earliest shard's. */
+  updateSessionModel(sessionId: string, provider: string | null, modelId: string | null): void {
+    this.db
+      .prepare("UPDATE trace_sessions SET provider = ?, model_id = ? WHERE session_id = ?")
+      .run(provider, modelId, sessionId);
+  }
+
   getSession(sessionId: string): TraceSessionRow | null {
     const r = this.db.prepare("SELECT * FROM trace_sessions WHERE session_id = ?").get(sessionId);
     return r ? mapSession(r) : null;

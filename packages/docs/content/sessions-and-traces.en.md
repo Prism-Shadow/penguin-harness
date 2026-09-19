@@ -14,7 +14,7 @@ The run model has six levels: Project → Agent → Workspace → Session → Ta
 | Project | Top-level unit that organizes agents; owns the model and credential configuration; in a multi-user Web deployment, users and Projects are many-to-many |
 | Agent | The executing subject; has exactly one Agent State (a persistent directory); one agent can serve many Workspaces |
 | Workspace | The working directory of one run — the only file scope the model sees; an explicit `workspaceDir` must already exist; when none is given, a temporary Workspace `workspaces/tmp-<8hex>` is created |
-| Session | A continuous conversation under one (Agent, Workspace); model and Workspace are locked at Session creation; ids look like `session-YYYY-MM-DD-HH-mm-ss-<8hex>` |
+| Session | A continuous conversation under one (Agent, Workspace); the Workspace is locked at Session creation, and the model chosen then can be switched inside the Session (see [In-session model switch](#in-session-model-switch)); ids look like `session-YYYY-MM-DD-HH-mm-ss-<8hex>` |
 | Task | One execution goal started by one Prompt; consists of one or more consecutive Requests |
 | Request | One LLM API call: context and tool definitions in, streamed output out |
 
@@ -96,7 +96,7 @@ The Trace is the single source of truth for recovery. There is no separate sessi
 
 1. Locate the highest-index Trace file of the Session.
 2. Read the runtime configuration from its `session_meta`:
-   - the model and the Workspace, which are immutable for the lifetime of the Session;
+   - the Workspace, which is immutable for the lifetime of the Session, and the model that context runs on (a model switch opens a new file, so the latest file always names the current model);
    - the system prompt that the context opened with.
 3. Replay the committed history into a fresh LLM context.
 4. Reconstruct the carry-over (undelivered tool outputs, interruption markers) and the turn and Token counters.
@@ -131,9 +131,24 @@ The empty context is opened like any context a compaction opens. It is assembled
 
 An open context behaves differently: it keeps the prompt its file recorded. Its tools, Environment and vault can only come from the current Agent State, because the Trace records no executable configuration.
 
-## Model switch (/model)
+## In-session model switch
 
-In the Web App, the `/model` command changes models the way the `/agent` handoff does:
+The model picker in an active conversation's toolbar switches the model inside the same Session. A switch is a context rotation:
+
+1. The context is compacted on the current model, always in summarize mode, even when the agent's `compaction.mode` is `discard`: the summary is what reaches the new model.
+2. The next context opens on the target model in a new Trace file, whose `session_meta` records that context's model. The file opens as soon as the switch completes, headed by the `session_meta` and then the summary, and that `session_meta` is also streamed.
+
+The compaction is an ordinary `manual` one: nothing on the `compaction_begin` / `compaction_end` pair names a model. A context that was just compacted records no second pair; its held summary heads the new file. A context with no completed turn (its first request failed or was stopped) is closed with a `discard` pair, and the summary it opened with, if any, is written again at the head of the new file; its other pending input rides in memory only, folded into path lines for a model without vision.
+
+The Session keeps its model when the compaction fails or is aborted, and when the summary does not fit the target model's context window: a summary the switch produced ends the compaction `fatal`, one already held refuses the switch before any event. The target must be in the Project configuration and constructible (credentials in place), or the switch is refused before any request. A Session that never ran has no context to compact: it switches directly and writes nothing.
+
+Resume reads the model from the latest file, so a Session restarted right after a switch runs on the new model with the summary pending. The one gap: a restart between two switches with no completed turn in between rebuilds the summary as ordinary pending input, so a second switch does not write it again; it stays in the closed file.
+
+For how to use the picker, see [Switch the model](/chat#switch-the-model).
+
+## New conversation on another model (/model)
+
+In the Web App, the `/model` command opens a new Session that continues the conversation on another model and leaves this one as it is. It works the way the `/agent` handoff does:
 
 1. Picking a model stages it in the composer.
 2. Sending creates a new Session under the same agent through the ordinary session-creation API. The new Session uses the chosen model and the source session's Workspace, so files stay reachable.

@@ -12,6 +12,13 @@
  * the Human interface communicates using: complete `model_msg`, streaming `partial_*`, and all
  * `event_msg`.
  *
+ * OmniMessage is a closed vocabulary. A new payload field or enum value is a protocol change
+ * every reader — Trace replay, the server, the Web App, the CLI, third-party consumers — has to
+ * learn, forever. Before adding one, show that no existing record carries the fact (the model
+ * lives in `session_meta`; a context's boundaries in the compaction pair and the file split)
+ * and that readers cannot derive it. The PR description says why the existing records could
+ * not carry it. The rule itself is stated in the architecture spec's message-format section.
+ *
  * Docs: packages/docs/content/omni-message.{zh,en}.md (site path /docs/omni-message) documents
  * this protocol payload-for-payload — keep the page in sync when changing types here.
  */
@@ -102,20 +109,23 @@ export interface ToolDefinition {
 /**
  * Session metadata: the runtime configuration of one **model context**. One `session_meta`
  * opens every Trace file — the Session's first, and each file a compaction's rotation starts.
- * The model reference, the paths and the origin are fixed for the Session's lifetime; the
- * assembled system prompt is fixed per context — a context is assembled from the Agent State
- * as it is when it opens (the template, `AGENTS.md` and the other placeholders re-read), so
- * each file's meta carries the prompt its context actually ran with; the context's toolset
- * follows as the `tool_list_ready` record. Everything that shapes the request prefix — model,
- * prompt, toolset — holds from a context's open to its close; the thinking level is not part
- * of it (a per-request parameter, deliberately not recorded — see the note in the body).
+ * The paths and the origin are fixed for the Session's lifetime; the model reference and the
+ * assembled system prompt are fixed per context — a context is assembled from the Agent State
+ * as it is when it opens (the template, `AGENTS.md` and the other placeholders re-read), on the
+ * model the Session is running at that point (an in-session model switch opens its new
+ * context on another one — see `Session.switchModel`), so each file's meta carries the prompt
+ * and the model its context actually ran with; the context's toolset follows as the
+ * `tool_list_ready` record. Everything that shapes the request prefix — model, prompt,
+ * toolset — holds from a context's open to its close; the thinking level is not part of it (a
+ * per-request parameter, deliberately not recorded — see the note in the body).
  */
 export interface SessionMetaPayload {
   session_id: string;
-  /** The session model's provider group (paired with `model_id` to form a model reference). */
+  /** This context's model: the provider group (paired with `model_id` to form a model reference). */
   provider: string;
-  /** The session model's upstream model_id (the request id sent to AgentHub; paired with `provider`). */
+  /** This context's model: the upstream model_id (the request id sent to AgentHub; paired with `provider`). */
   model_id: string;
+  /** The context window of this context's model, or `"unknown"` when its entry configures none. */
   model_context_window: number | string;
   /** The system prompt this context runs with (the assembled result, placeholders already substituted). */
   system_prompt: string;

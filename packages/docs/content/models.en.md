@@ -546,9 +546,9 @@ Where a model reference is optional (`penguin run` / `chat`, Session creation, s
 
 ### Models and agents
 
-An agent never binds a model. The model is chosen when a Session is created and stays fixed for that Session, so the same agent can run different Sessions on different models.
+An agent never binds a model. The model is chosen when a Session is created, so the same agent can run different Sessions on different models, and a Session can switch models later: the model picker in the conversation's toolbar compacts the context on the current model and continues the conversation on the new one (see [Sessions & Traces](/sessions-and-traces#in-session-model-switch)).
 
-The in-session `/model` command switches models by handoff:
+The `/model` command instead opens a new conversation on another model, by handoff:
 
 1. It opens a new Session for the same agent on the new model, in the current Workspace.
 2. The new Session's first message carries a `[model_switch_from]` block with the source Session's id and its Trace file path.

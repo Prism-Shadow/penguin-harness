@@ -10,12 +10,15 @@
  * Session's SSE stream (subscribe first, POST second) through the shared watcher.
  * `/goal[:<budget>] <objective>` runs goal mode; `/compact` POSTs a compaction and
  * renders its progress; `/clear` creates a fresh server Session in place; `/thinking`
- * shows or re-pins the Session's thinking level; `/verbose` toggles tool-output
+ * shows or re-pins the Session's thinking level; `/switch-model <provider> <model_id>`
+ * switches the Session's model in place (compacting on the current model first) and
+ * bare `/switch-model` shows the current one; `/verbose` toggles tool-output
  * collapsing (display only); `/exit` or `/quit` exits. Typing while a turn runs POSTs
  * a steering message (delivered between turns); Ctrl-C during a run POSTs /abort.
  *
  * `--resume` reuses an existing Session (full id or unique fragment; omitted = the
- * agent's most recent Session) and first renders its history from GET /messages.
+ * agent's most recent Session) and first renders its history from GET /messages; it
+ * takes no model flags — `/switch-model` changes the model inside the chat.
  * Ctrl-C behavior (state-dependent): buffer has content -> clear it; awaiting approval
  * -> deny; running -> abort the current turn; empty buffer -> y/N exit confirmation.
  * Docs: /docs/cli § "penguin chat".
@@ -28,6 +31,12 @@ import type { SessionInfo } from "@prismshadow/penguin-server/api";
 import { StreamRenderer, dim, renderHistory } from "../render.js";
 import { parseGoalCommand } from "../goal-command.js";
 import { parseThinkingCommand, resolveThinkingLevel } from "../thinking-command.js";
+import {
+  formatModelLabel,
+  parseSwitchModelCommand,
+  switchModelRefusal,
+  type ModelTarget,
+} from "../switch-model-command.js";
 import { parseApprovalAnswer, resolveApprovalMode } from "../approval.js";
 import { LineComposer, PasteFilter } from "../input.js";
 import {
@@ -93,8 +102,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
         process.exitCode = 1;
         return;
       }
-      // --resume excludes --workspace and the model pair (neither can change once the
-      // Session exists); checked before any connection is made.
+      // --resume excludes --workspace and the model pair (the resumed Session keeps its
+      // own; /switch-model changes the model inside the chat); checked before any
+      // connection is made.
       if (opts.resume !== undefined && (opts.workspace || opts.modelId || opts.provider)) {
         process.stdout.write(`${t.error(t.resumeNoOverride())}\n`);
         process.exitCode = 1;
@@ -111,9 +121,9 @@ export function registerChatCommand(program: Command, t: Messages): void {
       const projectId = resolveProjectId(opts.projectId);
       const agentId = resolveAgentId(opts.agentId);
 
-      // --resume reuses an existing Session (workspace/model fixed at creation); a new
-      // chat creates one on this cwd. `session` is reassigned by /clear after the
-      // closures below capture it, so it stays a let.
+      // --resume reuses an existing Session (its own workspace and model); a new chat
+      // creates one on this cwd. `session` is reassigned by /clear and /switch-model
+      // after the closures below capture it, so it stays a let.
       let session: SessionInfo;
       let resumedMessages: OmniMessage[] | null = null;
       if (opts.resume !== undefined) {
@@ -411,12 +421,14 @@ export function registerChatCommand(program: Command, t: Messages): void {
       /**
        * One server-driven turn: subscribe, POST via `post`, watch to idle. Returns once
        * the turn (or compaction/goal) has fully settled. Wires this turn's Ctrl-C to
-       * POST /abort exactly once.
+       * POST /abort exactly once. `inline` recognizes a response that already settled
+       * the request inside the POST (nothing streams for it, so there is nothing to watch);
+       * the result says whether the stream was watched.
        */
       const runTurn = async (
         post: () => Promise<unknown>,
-        watch: { goal?: boolean } = {},
-      ): Promise<void> => {
+        watch: { goal?: boolean; inline?: (response: unknown) => boolean } = {},
+      ): Promise<boolean> => {
         const stream = new SessionStream(client, session.sessionId, t);
         let aborted = false;
         abortTurn = () => {
@@ -428,7 +440,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
         };
         try {
           await stream.waitReady();
-          await post();
+          const response = await post();
+          if (watch.inline?.(response)) return false;
           await watchTask(stream, {
             client,
             sessionId: session.sessionId,
@@ -437,6 +450,7 @@ export function registerChatCommand(program: Command, t: Messages): void {
             approvalPrompt: interactivePrompt,
             ...(watch.goal ? { goal: { out } } : {}),
           });
+          return true;
         } finally {
           abortTurn = null;
           stream.close();
@@ -445,6 +459,51 @@ export function registerChatCommand(program: Command, t: Messages): void {
 
       // Whether this Session already has (or gained) history worth a resume hint.
       let resumable = opts.resume !== undefined;
+
+      /**
+       * `/switch-model <provider> <model_id>`: POST /switch-model through runTurn. A 202
+       * streams like /compact — an ordinary compaction, rendered as any compaction is (none
+       * for a context just compacted); a 200 carries the Session back — it never ran, so it
+       * switched inside the request. Either way the Session is re-read afterwards: the model
+       * line prints only when it actually changed, since a failed compaction already said why
+       * it did not. A 409 prints one localized line per refusal code.
+       */
+      const switchModel = async (target: ModelTarget): Promise<void> => {
+        const previous = session;
+        const startedAt = Date.now();
+        let streamed: boolean;
+        try {
+          streamed = await runTurn(
+            () => client.request("POST", `/api/sessions/${session.sessionId}/switch-model`, target),
+            // 200 SessionResponse vs 202 TaskCreateResponse: only the former has `session`.
+            {
+              inline: (response) =>
+                typeof response === "object" && response !== null && "session" in response,
+            },
+          );
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 409) {
+            const line = switchModelRefusal(err, target, session.projectId, t);
+            if (line !== null) {
+              out.write(`${line}\n`);
+              return;
+            }
+          }
+          throw err;
+        } finally {
+          renderer.endCompact(Date.now() - startedAt);
+        }
+        if (streamed) resumable = true;
+        session = await getSessionInfo(client, previous.sessionId);
+        if (session.provider !== previous.provider || session.modelId !== previous.modelId) {
+          out.write(
+            `${t.switchModelDone(
+              formatModelLabel(previous.provider, previous.modelId),
+              formatModelLabel(session.provider, session.modelId),
+            )}\n`,
+          );
+        }
+      };
 
       // The copy-pastable resume command for one Session: includes this run's Project /
       // Agent options so it works as-is.
@@ -480,6 +539,21 @@ export function registerChatCommand(program: Command, t: Messages): void {
             }
             continue;
           }
+          let switchTarget: ModelTarget | null = null;
+          if (text === "/switch-model" || text.startsWith("/switch-model ")) {
+            const parsed = parseSwitchModelCommand(text);
+            if (!parsed.ok) {
+              out.write(`${t.error(t.switchModelUsage())}\n`);
+              continue;
+            }
+            if (parsed.target === null) {
+              out.write(
+                `${t.switchModelCurrent(formatModelLabel(session.provider, session.modelId))}\n`,
+              );
+              continue;
+            }
+            switchTarget = parsed.target;
+          }
           if (text === "/verbose") {
             verbose = !verbose;
             renderer.setCollapseToolOutput(!verbose);
@@ -508,6 +582,8 @@ export function registerChatCommand(program: Command, t: Messages): void {
               } finally {
                 renderer.endCompact(Date.now() - startedAt);
               }
+            } else if (switchTarget !== null) {
+              await switchModel(switchTarget);
             } else if (text === "/clear") {
               // Start over with a brand-new blank Session on the same Workspace and model.
               // The old Session stays on the server (resumable), so its resume command is

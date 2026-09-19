@@ -1352,9 +1352,12 @@ export interface SessionInfo {
   sessionId: string;
   projectId: string;
   agentId: string;
-  /** Provider group of the session's model (paired with `modelId` to form a model reference). */
+  /**
+   * Provider group of the session's **current** model (paired with `modelId` to form a model
+   * reference). It moves with each in-session switch (`POST /api/sessions/:id/switch-model`).
+   */
   provider: string;
-  /** Upstream model_id of the session's model (the request id sent to AgentHub). */
+  /** Upstream model_id of the session's current model (the request id sent to AgentHub). */
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;
@@ -1740,6 +1743,35 @@ export interface GoalStateView {
 export interface GoalResponse {
   /** The Session's most recent goal run; null if it never ran one. */
   goal: GoalStateView | null;
+}
+
+/**
+ * `POST /api/sessions/:sessionId/switch-model`: switch this Session to another model in place.
+ * The switch compacts first on the current model (always summarize when there is a completed
+ * turn), then opens the next model context on the target. It answers 202 with a
+ * {@link TaskCreateResponse} and streams, the Session status `compacting`: an ordinary manual
+ * compaction pair (summarize, or discard for a context with no completed turn) when the context
+ * had something to close, then the new context's opener records and its `session_meta`, whose
+ * `provider` / `model_id` name the model the Session now runs on — the Session reads report the
+ * new pair from that record on, and `task_state` turns idle after it. A compaction that ends
+ * other than `completed` means no switch: no `session_meta` follows and the Session keeps its
+ * model. A Session just compacted and not written on since streams no pair — only the opener
+ * records and the `session_meta`. Refusals are 409 with a code per reason:
+ * `task_in_progress` / `compacting` (busy), `same_model`, `model_not_configured` (the target is
+ * not in the Project config), `model_unavailable` (the target cannot be constructed, e.g. no
+ * credential), `compaction_not_configured`, and `summary_too_large` (a Session just compacted
+ * holds a summary the target's context window cannot take; the message names both sizes, the
+ * remedy is a target with a larger window — a summary the switch's own compaction produces
+ * that does not fit is streamed as a `fatal` end instead). A Session that never ran has no
+ * context to compact:
+ * its switch completes inside the request, which then answers 200 with a
+ * {@link SessionResponse} carrying the updated model instead of 202 — nothing is streamed for it.
+ */
+export interface SessionSwitchModelRequest {
+  /** Provider group of the target model. */
+  provider: string;
+  /** Upstream model_id of the target model. */
+  modelId: string;
 }
 
 export interface TaskCreateResponse {

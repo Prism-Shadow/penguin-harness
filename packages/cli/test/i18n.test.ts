@@ -65,6 +65,37 @@ describe("getMessages", () => {
     expect(getMessages("zh").chatHints()).toContain("/verbose");
   });
 
+  it("the in-session model switch reads the same in both languages", () => {
+    const en = getMessages("en");
+    const zh = getMessages("zh");
+    for (const m of [en, zh]) {
+      // Every surface that teaches the command names it with its argument pair and says a
+      // switch compacts first.
+      for (const text of [m.chatHints(), m.switchModelCurrent("a (p)"), m.resumeNoOverride()]) {
+        expect(text).toContain("/switch-model <provider> <model_id>");
+      }
+      expect(m.chat.resume).toContain("/switch-model");
+      expect(m.switchModelUsage()).toContain("/switch-model <provider> <model_id>");
+      // Interpolations carry their arguments.
+      const done = m.switchModelDone("a (p)", "b (q)");
+      expect(done).toContain("a (p) → b (q)");
+      expect(m.switchModelSame("b (q)")).toContain("b (q)");
+      const notConfigured = m.switchModelNotConfigured("b (q)", "LIST-CMD", "ADD-CMD");
+      for (const part of ["b (q)", "LIST-CMD", "ADD-CMD"]) expect(notConfigured).toContain(part);
+      expect(m.switchModelUnavailable("b (q)", "no key")).toContain("no key");
+      expect(m.switchModelUnavailable("b (q)", "")).not.toMatch(/[:：]$/);
+      const tooLarge = m.switchModelSummaryTooLarge("b (q)", "15000 > 8000");
+      for (const part of ["b (q)", "15000 > 8000"]) expect(tooLarge).toContain(part);
+      expect(m.switchModelSummaryTooLarge("b (q)", "")).not.toMatch(/\(\)|（）/);
+      expect(m.switchModelBusy().length).toBeGreaterThan(0);
+      expect(m.switchModelNoCompaction().length).toBeGreaterThan(0);
+    }
+    // Two languages, not one copied twice.
+    expect(zh.switchModelDone("a", "b")).not.toBe(en.switchModelDone("a", "b"));
+    expect(zh.switchModelBusy()).not.toBe(en.switchModelBusy());
+    expect(zh.switchModelNoCompaction()).not.toBe(en.switchModelNoCompaction());
+  });
+
   it("server-backed command families exist in both languages (spot checks)", () => {
     for (const lang of ["en", "zh"] as const) {
       const m = getMessages(lang);

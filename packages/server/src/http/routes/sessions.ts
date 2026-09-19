@@ -707,8 +707,10 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       sessionId: fork.sessionId,
       projectId: row.projectId,
       agentId: row.agentId,
-      provider: row.provider,
-      modelId: row.modelId,
+      // The model of the shard the fork was cut in (its session_meta) — the source row's pair
+      // is only the model the source runs on NOW, which a switch may have moved since.
+      provider: fork.provider,
+      modelId: fork.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
       // insertFork replaces this with the source's current title plus its persistent number.
@@ -1295,6 +1297,38 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     const row = resolveSession(c);
     const { sessionId } = await deps.manager.startCompact(row.sessionId);
     return c.json({ sessionId } satisfies TaskCreateResponse, 202);
+  });
+
+  // In-session model switch (see SessionSwitchModelRequest): the complete (provider, modelId)
+  // pair, nothing inferred — one half alone is a 400 like everywhere else a model is named.
+  // 202 when the switch streams as a compaction; 200 with the fresh DTO when a Session that
+  // never ran switched inside the call (the manager tells the two apart).
+  app.post("/:sessionId/switch-model", async (c) => {
+    const row = resolveSession(c);
+    const body = await readJson(c);
+    const ref = {
+      provider: requireString(body, "provider", { minLen: 1 }),
+      modelId: requireString(body, "modelId", { minLen: 1 }),
+    };
+    const outcome = await deps.manager.startSwitch(row.sessionId, ref);
+    if (!outcome.switched) {
+      return c.json({ sessionId: outcome.sessionId } satisfies TaskCreateResponse, 202);
+    }
+    // Re-read after the switch: the manager moved the row to the new pair inside the call. A
+    // row gone meanwhile (deleted during the request) is a 404, not the pre-switch row — that
+    // one names a model the runtime no longer runs on.
+    const fresh = deps.sessionsRepo.findById(outcome.sessionId);
+    if (!fresh) {
+      throw new HttpError(
+        404,
+        "session_not_found",
+        "Session does not exist or you do not have access.",
+      );
+    }
+    const hasTrace = await deps.sessionService.hasTrace(fresh);
+    return c.json({
+      session: await deps.sessionService.toInfo(fresh, hasTrace),
+    } satisfies SessionResponse);
   });
 
   // —— Workspace file browsing (Files tab) ——

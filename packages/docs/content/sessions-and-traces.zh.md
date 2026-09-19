@@ -14,7 +14,7 @@ PenguinHarness 的全部运行时数据都存放在本地文件系统上。配�
 | Project | 组织 Agent 的顶层单位；持有模型和凭证配置；在多用户 Web 部署中，用户与 Project 多对多 |
 | Agent | 执行主体；有且仅有一个 Agent State（一个持久化目录）；一个 Agent 可以服务多个 Workspace |
 | Workspace | 一次运行的工作目录，也是模型唯一能看到的文件范围；显式指定的 `workspaceDir` 必须已经存在，未指定时会创建临时 Workspace `workspaces/tmp-<8hex>` |
-| Session | 同一（Agent、Workspace）下的一段连续对话；模型和 Workspace 在 Session 创建时锁定；id 形如 `session-YYYY-MM-DD-HH-mm-ss-<8hex>` |
+| Session | 同一（Agent、Workspace）下的一段连续对话；Workspace 在 Session 创建时锁定，模型在创建时选定、之后可在会话内切换（见[会话内切换模型](#会话内切换模型)）；id 形如 `session-YYYY-MM-DD-HH-mm-ss-<8hex>` |
 | Task | 由一个 Prompt 启动的一个执行目标；由一个或多个连续 Request 组成 |
 | Request | 一次 LLM API 调用：输入上下文和工具定义，输出流式结果 |
 
@@ -96,7 +96,7 @@ Trace 是恢复的唯一事实来源，不存在需要保持同步的独立 Sess
 
 1. 找到这个 Session 索引最大的 Trace 文件。
 2. 从文件里的 `session_meta` 读取运行时配置：
-   - 模型和 Workspace，二者在 Session 的整个生命周期内不可变；
+   - Workspace（在 Session 的整个生命周期内不可变），以及这个上下文所用的模型（切换模型会开新文件，所以最新文件总是记录当前模型）；
    - 该上下文开启时使用的系统提示词。
 3. 把已提交的历史重放进一个全新的 LLM 上下文。
 4. 重建补发内容（未送达的工具输出、中断标记），以及轮次和 Token 计数器。
@@ -131,9 +131,24 @@ summarize 模式下，恢复后会重建 `[context_summary]`，并把它加在�
 
 尚未关闭的上下文则不同：它沿用所在文件记录的提示词。工具、Environment 和 vault 只能来自当前 Agent State，因为 Trace 不记录任何可执行配置。
 
-## 模型切换（/model）
+## 会话内切换模型
 
-在 Web App 中，`/model` 命令用与 `/agent` 交接相同的方式切换模型：
+活跃对话工具栏里的模型选择器在同一个 Session 内切换模型。切换是一次上下文轮换：
+
+1. 先用当前模型压缩上下文，并且总是 summarize 模式，即使 Agent 的 `compaction.mode` 是 `discard`：摘要是带到新模型上的唯一记录。
+2. 下一个上下文在目标模型上开启，写进新的 Trace 文件，文件里的 `session_meta` 记录这个上下文的模型。文件在切换完成时立即开启，开头是 `session_meta`，然后是摘要；这条 `session_meta` 也会推入输出流。
+
+这次压缩是普通的 `manual` 压缩：`compaction_begin` / `compaction_end` 事件对上没有任何字段记录模型。刚压缩过的上下文不再记录第二对事件，手中的摘要直接写在新文件开头。没有完成任何一轮的上下文（首个请求失败或被停止）以一对 `discard` 事件收尾，它开启时所带的摘要（如有）会再写一次到新文件开头；其余待发的输入只在内存中带过去，目标模型没有视觉能力时先折叠成路径行。
+
+压缩失败或被中断时，以及摘要放不进目标模型的上下文窗口时，Session 保持原模型：切换自己压缩出的摘要以 `fatal` 结束压缩，已经在手中的摘要则在产生任何事件之前拒绝切换。目标必须在 Project 配置中且能构造出来（凭据齐全），否则切换在发出任何请求之前就被拒绝。从未运行过的 Session 没有上下文可压缩：直接切换，不写入任何内容。
+
+恢复从最新文件读取模型，所以切换后立刻重启的 Session 仍运行在新模型上，摘要待发。仅剩一处缺口：两次切换之间发生重启、其间没有完成任何一轮，重启会把摘要重建为普通的待发输入，之后再次切换时不会再写它一次；它仍留在被关闭的文件里。
+
+选择器的用法见[切换模型](/chat#切换模型)。
+
+## 换模型开新会话（/model）
+
+在 Web App 中，`/model` 命令新开一个 Session 在另一个模型上延续对话，本对话保持不变。它用与 `/agent` 交接相同的方式进行：
 
 1. 选择模型后，先暂存在输入框中。
 2. 发送时，通过普通的 Session 创建 API 在同一个 Agent 下创建新 Session。新 Session 使用所选模型和来源 Session 的 Workspace，因此文件仍然可以访问。

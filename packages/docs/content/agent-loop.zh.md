@@ -336,7 +336,7 @@ interface CompactionSettings {
 | --- | --- |
 | `context` | 上一轮的 `token_usage.request.total` ≥ 生效的上下文阈值 |
 | `turns` | Session 轮数 ≥ `maxSessionTurns`（默认 -1，即不限） |
-| `manual` | 用户运行 `/compact` 或调用 `session.compact()` |
+| `manual` | 用户运行 `/compact` 或调用 `session.compact()`，或在会话内切换模型（切换先用当前模型压缩） |
 
 `context` 触发的生效阈值取 `maxContextLength`（默认 256000）与模型 `context_window` − 2048 中的较小者：32k 的本地 vLLM 因此在约 30.7k 处压缩，而不是先撞上窗口上限；1M 窗口的模型则在配置的 256000 处触发。条目没有可用的 `context_window`（未配置或小于 4096）时，按 128000 的假定窗口推导，即约 126k。
 
@@ -396,7 +396,7 @@ interface CompactionSettings {
 
 轮转出的新 Trace 文件以记录本上下文所用提示词的 `session_meta` 开头，随后是连接事件对（如有）与工具集记录。
 
-整个 Session 生命周期内固定的只有 Session 自身：id、Workspace、模型条目（含凭据、窗口与逐模型标注）与来源。
+整个 Session 生命周期内固定的只有 Session 自身：id、Workspace 与来源。模型条目（含凭据、窗口与逐模型标注）按上下文固定：普通轮换沿用当前条目，会话内切换模型时按磁盘上的 Project 配置解析目标条目（见 [Session 与 Trace](/sessions-and-traces#会话内切换模型)）。
 
 Agent State 无法装配（例如配置文件已无法解析）时，本次运行以该错误结束，引擎保持旧上下文，与新建 Session 遇到的是同一个错误。恢复时发现上下文已被完成的压缩关闭，同样按此规则开启新上下文（见 [Session 与 Trace](/sessions-and-traces)）。
 

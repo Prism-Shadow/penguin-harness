@@ -336,7 +336,7 @@ Three triggers exist, recorded as `compaction_begin.reason`:
 | --- | --- |
 | `context` | the last turn's `token_usage.request.total` ≥ the effective context threshold |
 | `turns` | Session turn count ≥ `maxSessionTurns` (default -1 = unlimited) |
-| `manual` | the user runs `/compact` or calls `session.compact()` |
+| `manual` | the user runs `/compact` or calls `session.compact()`, or switches the model inside the Session (the switch compacts on the current model first) |
 
 The effective context threshold for the `context` trigger is the smaller of `maxContextLength` (default 256000) and the model's `context_window` − 2048. A 32k local vLLM therefore compacts at ~30.7k instead of overflowing the window first, while a 1M-window model fires at the configured 256000. An entry without a usable `context_window` — unset, or below 4096 — derives from an assumed 128000 window, i.e. ~126k.
 
@@ -396,7 +396,7 @@ The Environment is re-equipped at a rotation:
 
 The rotated Trace file opens with the `session_meta` recording the prompt this context runs with, then the connect pair (if any) and the toolset record.
 
-What stays fixed for the Session's lifetime is the Session itself: its id, Workspace, model entry (credentials, window and per-model annotations included) and origin.
+What stays fixed for the Session's lifetime is the Session itself: its id, Workspace and origin. The model entry (credentials, window and per-model annotations included) is per context: an ordinary rotation keeps the current entry, and an in-session model switch resolves the target entry from the Project config on disk (see [Sessions & Traces](/sessions-and-traces#in-session-model-switch)).
 
 An Agent State that cannot be assembled — a config that no longer parses — fails the run with that error, and the engine stays on the old context. This is the same error a new Session would hit. The same rule opens a context that resume finds closed by a completed compaction (see [Sessions & Traces](/sessions-and-traces)).
 

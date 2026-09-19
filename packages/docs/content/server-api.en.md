@@ -715,6 +715,7 @@ A fork clones the retained Trace files and snapshots the source scratchpad under
 | POST | `/abort` | Interrupts the current Task: 202 when triggered, 204 when idle |
 | POST | `/retry-now` | Skips the reconnect countdown: → 200 `{skipped}` |
 | POST | `/compact` | Starts context compaction: 202 |
+| POST | `/switch-model` | Switches this Session's model in place: 202, or 200 with the updated Session when the Session never ran |
 
 - `POST /tasks` answers `{sessionId, queued?}`. With `queueIfBusy`, a busy Session holds the input as a follow-up (`queued: true`) and starts it as an ordinary next Task once the Session is idle; `task_state` events report the number queued. `file` input parts are written to the Session scratchpad and handed to the model as `[attached file: <path>]` lines (see [Request bodies](#request-bodies)).
 - `POST /tasks` with `goal: {budget?}` starts a goal loop instead. It returns 409 `goal_plugin_not_installed` unless the `goal` plugin is installed on the agent. The objective is the input's text, with any leading marker blocks removed, so the input must carry non-empty text (400 otherwise): an image alone states no objective. Images are sent in round 1 as ordinary input, and later rounds re-inject only the objective text. `file` parts are refused with 400, because nothing carries them into the objective that every round re-injects. See [Goal mode](/goal-mode).
@@ -726,6 +727,7 @@ A fork clones the retained Trace files and snapshots the source scratchpad under
 - `POST /subagents/:childSessionId/abort` stops only the child's current run; the child Session stays available for steering and follow-ups. It returns 202 when a run was stopped, and 204 when the child is already idle or unknown.
 - `POST /retry-now` backs the **Retry now** button on the reconnect countdown. It skips the backoff wait in progress and fires the next retry immediately, without changing the attempt counter. `skipped: false` means no wait was in progress; it is not an error.
 - `POST /compact` returns 409 when there is nothing to compact, with the reason in the code: `compaction_not_configured` (the agent has no compaction configured), `nothing_to_compact` (the context has no completed conversation turn yet) or `already_compacted` (nothing new was said since the last compaction). A Session resumed after a server restart works this out from its Trace, so an existing conversation can be compacted without running a Task first.
+- `POST /switch-model` takes `{provider, modelId}`, the complete pair (one half alone is 400). It compacts the context on the current model, always in summarize mode, then opens the next context on the target. It answers 202 and streams like `/compact`, with the Session status `compacting`: an ordinary manual `compaction_begin` / `compaction_end` pair when the context had something to close (none when it was just compacted), then the new context's opener records and its `session_meta`, whose `provider` / `model_id` name the model the Session now runs on; `GET /` returns the new pair from that record on. A compaction that ends other than `completed` means no switch: no `session_meta` follows and the Session keeps its model. A Session that never ran has nothing to compact, so the switch completes inside the request, which answers 200 with the updated `{session}` and streams nothing. Refusals are 409 with a code per reason: `task_in_progress` / `compacting` (busy), `same_model`, `model_not_configured` (the target is not in the Project's model table), `model_unavailable` (the target cannot be constructed, e.g. no credential), `compaction_not_configured` and `summary_too_large` (the Session was just compacted and the summary it holds does not fit the target's context window; the message names both sizes, and the remedy is a model with a larger window — a summary the switch's own compaction produces that does not fit streams as a `fatal` end instead). The switch's compaction request is metered against the previous model, the Tasks after it against the new one.
 
 ### Request bodies
 
@@ -755,11 +757,11 @@ interface ApprovalDecisionRequest {
 }
 ```
 
-The Web App's `/model` switch has no dedicated endpoint. Like the `/agent` handoff, it combines ordinary routes:
+There are two ways to change model. The in-session switch is `POST /switch-model` above: the same Session compacts and continues on another model, keeping its id and its history. The Web App's `/model` handoff instead opens a new conversation on another model and has no dedicated endpoint. Like the `/agent` handoff, it combines ordinary routes:
 
 1. Session creation opens a new Session for the same agent, with the chosen model and the source Workspace carried over.
 2. `POST /tasks` sends a first message that opens with a `[model_switch_from]` source block, naming the source session id, its `tracePath`, the Workspace and the previous model pair.
-3. The model reads that Trace file itself when it needs the earlier history.
+3. The model reads that Trace file itself when it needs the earlier history. The source Session is left as it was.
 
 ### Background processes
 

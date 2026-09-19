@@ -1124,6 +1124,39 @@ describe("session-manager", () => {
     expect(recordedCtx[0]!.sessionId).toBe("session-2-healed");
   });
 
+  it("load reconciles the row's model with the runtime's: a Session that switched and crashed before the row update resumes on the new model, and the row follows", async () => {
+    // The Trace is the durable record of a switch (the file it opens is headed by the new
+    // context's session_meta); the row is a cache of it that a crash in between leaves stale.
+    // The loader resumes on the Trace's model, so what it reports wins — for the entry (usage
+    // attribution) and for the row (what GET /sessions/:id shows).
+    sessions.updateApprovalMode("session-1", "allow-all");
+    const resumed: RuntimeSession = {
+      ...approvalFakeSession("session-1"),
+      provider: "other",
+      modelId: "m-switched",
+    };
+    const manager = makeManager(loaderOf(resumed));
+    await manager.startTask("session-1", [userText("go")]);
+    await waitFor(() => manager.statusOf("session-1") === "idle" && recorded.length >= 3);
+    expect(sessions.findById("session-1")).toMatchObject({
+      provider: "other",
+      modelId: "m-switched",
+    });
+    expect(recordedCtx[0]).toMatchObject({ provider: "other", modelId: "m-switched" });
+
+    // A runtime that reports no model (test fakes) keeps the row's pair.
+    db.close();
+    db = openDatabase(":memory:");
+    sessions = wire(SessionsRepo, { db });
+    sessions.insert({ ...ROW, approvalMode: "allow-all" });
+    recordedCtx = [];
+    const plain = makeManager(loaderOf(approvalFakeSession("session-1")));
+    await plain.startTask("session-1", [userText("go")]);
+    await waitFor(() => plain.statusOf("session-1") === "idle" && recordedCtx.length >= 1);
+    expect(sessions.findById("session-1")).toMatchObject({ provider: "custom", modelId: "m1" });
+    expect(recordedCtx[0]).toMatchObject({ provider: "custom", modelId: "m1" });
+  });
+
   it("after the channel is swept and rebuilt, drive still sends to the current channel (re-get before every publish)", async () => {
     const manager = makeManager(loaderOf(approvalFakeSession("session-1")));
     await manager.startTask("session-1", [userText("go")]);

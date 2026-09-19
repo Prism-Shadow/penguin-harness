@@ -37,6 +37,24 @@ describe("apiErrorText", () => {
     }
   });
 
+  it("localizes each model-switch refusal separately in both locales", () => {
+    const codes = [
+      "same_model",
+      "model_not_configured",
+      "model_unavailable",
+      "compaction_not_configured",
+      "summary_too_large",
+      "task_in_progress",
+      "compacting",
+    ];
+    for (const dict of [ZH, EN]) {
+      setActiveStrings(dict);
+      const texts = codes.map((c) => apiErrorText(serverError(c)));
+      for (const t of texts) expect(t).not.toBe("RAW ENGLISH SERVER MESSAGE");
+      expect(new Set(texts).size).toBe(codes.length);
+    }
+  });
+
   it("gives the Chinese UI Chinese text for the errors it can surface", () => {
     setActiveStrings(ZH);
     // A representative slice of the codes an ordinary session can produce: compaction refusals,

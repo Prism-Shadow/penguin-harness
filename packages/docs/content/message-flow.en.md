@@ -129,7 +129,7 @@ The cases below change the observable order on the stream:
 | Compaction | `compaction_begin` → the compaction request runs against the old context (its raw messages are written to Trace only, except each attempt's `token_usage` and the thinking and summary being generated, which are forwarded as ordinary `partial_thinking`/`partial_text` or `thinking`/`text` inside the span) → `compaction_end(status)` |
 | max_turns reached | a length notice (`[reached max turns (N); stopping]`) → the run ends; unsubmitted input is kept as carry-over |
 | The Prompt itself | written to Trace, not echoed back onto the stream (the caller already has it) |
-| `session_meta` | never emitted on the main Session's stream (it lives in the Trace and the history API); a Subagent child stream's first message is the child's `session_meta` |
+| `session_meta` | emitted on the main Session's stream only by an in-session model switch, as its last message: the new context's meta, naming the model the Session now runs on. Otherwise it lives in the Trace and the history API. A Subagent child stream's first message is the child's `session_meta` |
 
 ## Across Sessions: the origin chain
 
