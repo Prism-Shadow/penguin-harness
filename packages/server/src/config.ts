@@ -68,6 +68,10 @@ export interface ServerConfig {
    * Whether `penguin server|web` supervises this process (PENGUIN_SUPERVISED=1) and relaunches
    * it when it exits with core's SERVER_RESTART_EXIT_CODE — what makes the web UI's "restart
    * to update" possible. False under a direct server start, a dev run, or the desktop shell.
+   *
+   * Required, unlike cliEntry below: the hot-update seam names it in the
+   * config interface it claims (hmr/capabilities.ts's HMR_INTERFACES), and a runtime that
+   * publishes a lifecycle capability publishes this field with it — the two arrived together.
    */
   supervised: boolean;
   /**
@@ -99,8 +103,11 @@ export interface ServerConfig {
    * (http/routes/version.ts), which accepts only an INSTALLED entry it can re-run as
    * `penguin update`: a checkout has no release to update to, but its CLI is exactly the
    * one an Agent working on that checkout should be running.
+   *
+   * OPTIONAL for the same reason: absent — a runtime older than this field — reads as null,
+   * no CLI to offer and no shim written.
    */
-  cliEntry: string | null;
+  cliEntry?: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

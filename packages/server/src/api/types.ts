@@ -24,7 +24,8 @@ import type {
   ToolDefinitionConfig,
 } from "@prismshadow/penguin-core/interfaces";
 // Build/harness identity is not an interface contract — it ships from the barrel (core's version-info.ts).
-import type { HarnessInfo, VersionReport } from "@prismshadow/penguin-core";
+import type { HarnessInfo, VersionReport, HarnessHistory } from "@prismshadow/penguin-core";
+import type { IfacesDiff } from "@prismshadow/penguin-hmr";
 
 // ---------------------------------------------------------------------------
 // General
@@ -3667,6 +3668,21 @@ export interface PluginReadmeResponse {
  * predating the stamping — v0.1.2 and earlier — where the UI shows the version alone).
  */
 export type VersionResponse = VersionReport;
+
+export type { HarnessHistoryEntry, IfacesSummary } from "@prismshadow/penguin-core";
+
+/** GET /api/version/history: the harness versions this data root has committed, newest first. */
+export type VersionHistoryResponse = HarnessHistory;
+
+/** POST /api/version/history/rollback `{ id }`: the push back has started; the swap follows. */
+export interface VersionRollbackResponse {
+  started: true;
+  id: string;
+}
+
+/** GET /api/version/history/diff?from=&to=: what changed between two stored interface tables. */
+export type VersionHistoryDiffResponse = IfacesDiff;
+export type { IfaceChange, IfacesDiff, MemberChange, ModuleChange } from "@prismshadow/penguin-hmr";
 
 /**
  * GET /api/version/update-check: newest published release vs the running version.

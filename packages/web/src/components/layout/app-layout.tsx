@@ -39,6 +39,7 @@ import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
 import { setDockScope } from "../../features/dock/dock-state";
+import { AppPalette } from "../../features/palette/app-palette";
 import { toneStrip } from "../../lib/tone";
 
 /**
@@ -517,6 +518,7 @@ export function AppLayout() {
             views live in this pool and are adopted into dock tab bodies by DOM handoff,
             so navigating between pages never reconnects a terminal. */}
         <TerminalDockRuntime />
+        <AppPalette />
       </div>
 
       {/* The software-update modal, opened from the sidebar's update row and the draft

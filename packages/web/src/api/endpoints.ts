@@ -194,6 +194,9 @@ import type {
   VaultResponse,
   VaultUpdateRequest,
   InstalledPluginsResponse,
+  VersionHistoryDiffResponse,
+  VersionHistoryResponse,
+  VersionRollbackResponse,
   VersionResponse,
   WeChatBindingPutRequest,
   WeChatBindingResponse,
@@ -1423,6 +1426,22 @@ export const installOnMachine = (projectId: string, machineId: string) =>
 // Version & self-update ----------------------------------------------------------------
 
 export const getVersion = () => apiFetch<VersionResponse>("/api/version");
+/** The harness versions this data root has committed, newest first, and the current one. */
+export const getVersionHistory = () => apiFetch<VersionHistoryResponse>("/api/version/history");
+/** Push a kept version back (admin); the swap follows the 202. */
+export const rollbackVersion = (id: string) =>
+  apiFetch<VersionRollbackResponse>("/api/version/history/rollback", {
+    method: "POST",
+    body: { id },
+  });
+/** A recorded interface table by hash — the module tree a version was built from. */
+export const getVersionIfacesTable = (hash: string) =>
+  apiFetch<unknown>(`/api/version/history/ifaces/${encodeURIComponent(hash)}`);
+/** What changed between two stored interface tables; either hash may be "none". */
+export const getVersionHistoryDiff = (from: string, to: string) =>
+  apiFetch<VersionHistoryDiffResponse>(
+    `/api/version/history/diff?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+  );
 
 /** `force` (the manual "check for updates" action) bypasses the server's TTL cache. */
 export const checkUpdate = (force = false) =>
