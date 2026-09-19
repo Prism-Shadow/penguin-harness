@@ -5,17 +5,33 @@
  * in one file and `amber-500` in the next for the same "waiting" state.
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { toneDot, toneInk, toneStrip, toneSurface } from "../src/lib/tone";
 import type { Tone } from "../src/lib/tone";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 const TONES: Tone[] = ["busy", "attention", "success", "danger", "muted"];
 
-const read = (rel: string) =>
-  readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), "utf8");
+const SCAN = scanSources();
+
+/** A source file's text by its repo-relative id; fails when no scanned root holds it. */
+const read = (id: string) => sourceFile(SCAN, id).text;
+
+/** The status files that take their colour from the tokens, wherever each one lives. */
+const STATUS_FILES = [
+  "packages/web/src/components/ui/status-icon.tsx",
+  "packages/web/src/components/ui/session-activity-icon.tsx",
+  "packages/web/src/components/ui/badge.tsx",
+  "packages/web/src/features/chat/step-banner.tsx",
+  "packages/web/src/features/chat/goal-banner.tsx",
+  "packages/web/src/features/chat/subagent-chip.tsx",
+];
 
 describe("tone tokens", () => {
+  it("scans every source root, and finds the tone module and each status file in one place", () => {
+    expectEveryRootScanned(SCAN);
+    for (const id of ["packages/web/src/lib/tone.ts", ...STATUS_FILES]) expectSingleHome(SCAN, id);
+  });
+
   it("covers every tone in every map", () => {
     for (const map of [toneInk, toneSurface, toneDot, toneStrip]) {
       for (const tone of TONES) expect(map[tone]).toBeTruthy();
@@ -51,22 +67,18 @@ describe("status marks take their colour from the tokens", () => {
   it("inks the two hourglass states with the same attention tone", () => {
     // The session list's running glyph and the stream's waiting-for-approval glyph are the same
     // state to a reader — unfinished, waiting — so they are the same colour.
-    expect(read("components/ui/status-icon.tsx")).toContain("waiting: toneInk.attention");
-    expect(read("components/ui/session-activity-icon.tsx")).toContain("toneInk.attention");
+    expect(read("packages/web/src/components/ui/status-icon.tsx")).toContain(
+      "waiting: toneInk.attention",
+    );
+    expect(read("packages/web/src/components/ui/session-activity-icon.tsx")).toContain(
+      "toneInk.attention",
+    );
   });
 
   it("leaves no status file spelling a palette class of its own", () => {
     // Categorical palettes (charts, per-skill tints, the terminal's own theme) are deliberately
     // out of scope and are not listed here.
-    const files = [
-      "components/ui/status-icon.tsx",
-      "components/ui/session-activity-icon.tsx",
-      "components/ui/badge.tsx",
-      "features/chat/step-banner.tsx",
-      "features/chat/goal-banner.tsx",
-      "features/chat/subagent-chip.tsx",
-    ];
-    for (const rel of files) {
+    for (const rel of STATUS_FILES) {
       const src = read(rel);
       // badge.tsx keeps one deliberate exception, a yellow informational tag that must not read
       // as a warning; it says so at the definition.

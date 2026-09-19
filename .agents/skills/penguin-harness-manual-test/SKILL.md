@@ -1,6 +1,6 @@
 ---
 name: penguin-harness-manual-test
-description: Use when standing PenguinHarness up to try a change by hand — launching the Web App, the desktop shell, the landing page or the docs site to click through it, screenshot it, or reproduce a report. Covers the four dev entry points and their ports, which data root each writes to, and the four ways a healthy setup looks broken.
+description: Use when standing PenguinHarness up to try a change by hand — launching the Web App, the desktop shell, the landing page, the docs site or the component gallery to click through it, screenshot it, or reproduce a report. Covers the dev entry points and their ports, which data root each writes to, and the four ways a healthy setup looks broken.
 ---
 
 # Standing PenguinHarness up to test by hand
@@ -16,11 +16,14 @@ workspace deps); `pnpm desktop` runs a full `pnpm -r build`, so it is slow to st
 | `pnpm desktop` | its own window | `~/.penguin/dev-data` |
 | `pnpm dev:landing` | http://localhost:7366 | none (static) |
 | `pnpm dev:docs` | http://localhost:7367 | none (static) |
+| `pnpm dev:gallery` | http://localhost:7372 | none (static) |
 
 Other fixed ports (`packages/core/src/internal/ports.ts`): 7364 installed server, 7368 dev backend,
 7369 `pnpm penguin web` (data root `~/.penguin/dev-data-cli` — its own, so it can serve while an
 Agent it hosts runs `pnpm dev`; the lock is per root). On a shared box, `ss -tln` before assuming
-one is free; `PORT=` inline moves it.
+one is free; `PORT=` inline moves it. The gallery's port is strict — a busy 7372 fails instead of
+drifting, because quoted gallery links and `pnpm --filter @prismshadow/penguin-ui-gallery shots`
+name it.
 
 The user's installed app, server and CLI all use `~/.penguin/data` — their real Agents, Sessions
 and keys. Never point a dev run there. Both surfaces print the root they took (`Data root: …`,

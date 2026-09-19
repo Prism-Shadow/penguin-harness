@@ -31,6 +31,8 @@ cache/
 
 # playwright e2e artifacts
 packages/web/test-results/
+# component gallery screenshots (scripts/shots.mjs); never committed
+packages/ui-gallery/shots/
 packages/web/playwright-report/
 
 # blog images staged locally by the landing capture/render scripts, then uploaded to

@@ -20,6 +20,7 @@ import {
 } from "../src/features/company/beta-badge";
 import { Segmented } from "../src/components/ui/segmented";
 import { zh } from "../src/lib/strings";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
 /** The in-memory stand-in for localStorage (this package's vitest runs in Node, which has none). */
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -42,6 +43,16 @@ const throwingStorage = {
     throw new Error("access denied");
   },
 };
+
+/** The modules rendered below, found by scanning web and the shared UI package (see roots.ts). */
+describe("the beta marks' sources", () => {
+  it("scan every source root, and find the badge and the switch in one place each", () => {
+    const scan = scanSources();
+    expectEveryRootScanned(scan);
+    expectSingleHome(scan, "packages/web/src/features/company/beta-badge.tsx");
+    expectSingleHome(scan, "packages/web/src/components/ui/segmented.tsx");
+  });
+});
 
 describe("shouldShowBetaNotice", () => {
   it("is owed on a browser that has never seen it, and not after it is marked", () => {

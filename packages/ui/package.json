@@ -20,15 +20,26 @@
     },
     "./boot": "./src/boot.ts",
     "./fixtures": "./src/fixtures/index.ts",
+    "./screens": "./src/screens/index.ts",
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run",
+    "sync:font-licenses": "node scripts/sync-font-licenses.mjs",
+    "fonts:misans": "uv run scripts/build-misans.py"
   },
   "peerDependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
+  },
+  "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/mona-sans": "^5.3.0",
+    "@fontsource-variable/noto-sans-sc": "^5.3.0",
+    "@fontsource/commit-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans-condensed": "^5.3.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -12,19 +12,23 @@
  * branch names only half the dialogs, and a restore target read one commit too late is a
  * dialog that hands focus back to itself.
  */
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { nextFocusIndex } from "../src/components/ui/modal";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
-const modal = readFileSync(
-  fileURLToPath(new URL("../src/components/ui/modal.tsx", import.meta.url)),
-  "utf8",
-);
-const dropdown = readFileSync(
-  fileURLToPath(new URL("../src/components/ui/dropdown.tsx", import.meta.url)),
-  "utf8",
-);
+const SCAN = scanSources();
+const MODAL = "packages/web/src/components/ui/modal.tsx";
+const DROPDOWN = "packages/web/src/components/ui/dropdown.tsx";
+const modal = sourceFile(SCAN, MODAL).text;
+const dropdown = sourceFile(SCAN, DROPDOWN).text;
+
+describe("the dialog primitives' sources", () => {
+  it("scan every source root, and find Modal and Dropdown in one place each", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, MODAL);
+    expectSingleHome(SCAN, DROPDOWN);
+  });
+});
 
 /** The panel div's opening tag — the element carrying the dialog's role and its focus wiring. */
 function panelTag(): string {

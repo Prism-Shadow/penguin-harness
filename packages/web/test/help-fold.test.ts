@@ -8,8 +8,18 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { HelpFold } from "../src/components/ui/help-fold";
 import { S } from "../src/lib/strings";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
 const DESC = "The vault stores values that commands can read at run time.";
+
+/** The module rendered below, found by scanning web and the shared UI package (see roots.ts). */
+describe("the fold's source", () => {
+  it("scans every source root, and finds the fold in one place", () => {
+    const scan = scanSources();
+    expectEveryRootScanned(scan);
+    expectSingleHome(scan, "packages/web/src/components/ui/help-fold.tsx");
+  });
+});
 
 describe("HelpFold", () => {
   const html = renderToStaticMarkup(createElement(HelpFold, { children: DESC }));
