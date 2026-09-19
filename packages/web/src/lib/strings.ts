@@ -2118,7 +2118,7 @@ Penguin 视觉风格（见 web-design 技能），默认深色。手机端侧边
           "按公司名（中文也行）自己对应到股票代码，查不到或没上市就直说，不要编。",
       },
       missionControl: {
-        label: "Agent 指挥台",
+        label: "搭建自定义工作流界面：Agent 指挥台",
         desc: "聊天旁的 Workflow 标签页：把一个任务同时派给多个 Agent，实时看每个 Session 的状态",
         prompt:
           "给你自己做一个 Workflow：聊天旁边的一张「指挥台」标签页。我输入一个任务、勾选本 Project 里的一个或多个 Agent，" +
