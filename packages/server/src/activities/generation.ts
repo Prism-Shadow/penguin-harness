@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { validateBookSpec } from "./book.js";
+import { compileBookConfiguration, type BookMode } from "./book-configuration.js";
 
 import { userText, libraryPlugin } from "@prismshadow/penguin-core";
 import { Component, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -29,6 +30,7 @@ import {
 import { mediaTextPrompt, mediaTextTarget, parseMediaTextCandidate } from "./media-text.js";
 import {
   newId,
+  contentRevision,
   validateActivitySpec,
   type ActivityRun,
   type ActivityRunSummary,
@@ -205,6 +207,7 @@ export class ActivityGenerationService implements ActivityGeneration {
     expectedRevision: string,
     module?: {
       wafRoot?: string;
+      bookMode?: string;
       audio?: { language: string; assetKey: string; voice: string };
       image?: { language: string; assetKey: string };
       mediaText?: { language: string; assetKey: string };
@@ -228,6 +231,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               "Add a description before generating.",
             );
           let wafRoot: string | null = null;
+          let bookMode: BookMode | undefined;
           if (module && [module.audio, module.image, module.mediaText].filter(Boolean).length > 1)
             throw new HttpError(400, "generation_invalid", "Choose one media generation type.");
           const audio = module?.audio ? audioTarget(activity, module.audio) : undefined;
@@ -245,10 +249,21 @@ export class ActivityGenerationService implements ActivityGeneration {
             if (activity.activityType === "book") {
               try {
                 validateBookSpec(validateActivitySpec(activity.draft.spec));
+                if (module.bookMode !== "readAlong" && module.bookMode !== "decodable")
+                  throw new Error("Choose Read-along or Decodable before assembling a book.");
+                bookMode = module.bookMode;
+                if (
+                  !activity.draft.mediaPlan ||
+                  activity.draft.mediaPlan.specRevision !== contentRevision(activity.draft.spec)
+                )
+                  throw new Error("Rebuild the media plan before assembling a book.");
+                compileBookConfiguration(activity, bookMode, activity.draft.mediaPlan.manifest);
               } catch (error) {
                 throw new HttpError(422, "spec_invalid", (error as Error).message);
               }
             }
+            if (activity.activityType !== "book" && module.bookMode !== undefined)
+              throw new HttpError(400, "book_mode_invalid", "Reading mode only applies to books.");
             wafRoot = await findWafRoot(process.cwd(), module.wafRoot ?? process.env.WAF_ROOT_DIR);
             if (!wafRoot)
               throw new HttpError(
@@ -289,6 +304,7 @@ export class ActivityGenerationService implements ActivityGeneration {
             ...(audio ? { audio } : {}),
             ...(image ? { image } : {}),
             ...(mediaText ? { mediaText } : {}),
+            ...(bookMode ? { bookMode } : {}),
             runId: newId("run"),
             activityId,
             projectId,
@@ -341,6 +357,7 @@ export class ActivityGenerationService implements ActivityGeneration {
             // to draft reconciliation; exposing them to a generator invites false checksum claims.
             const input = {
               ...activity,
+              ...(bookMode ? { bookMode } : {}),
               draft: {
                 ...activity.draft,
                 ...(activity.draft.mediaPlan
@@ -367,7 +384,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                 workspace,
                 expectedRevision,
               );
-              await prepareModule(workspace, activity, wafRoot);
+              await prepareModule(workspace, activity, wafRoot, bookMode);
             }
             if (audio || image) {
               const helperName = image ? "generate-image.mjs" : "generate-speech.mjs";
@@ -755,7 +772,12 @@ export class ActivityGenerationService implements ActivityGeneration {
                 if (this.stopped) return;
                 await this.projectWork.run(run.projectId, async () => {
                   if (input.draft.contentRevision === run.inputRevision)
-                    await verifyMediaArtifacts(this.workspace(run), input, readCandidate);
+                    await verifyMediaArtifacts(
+                      this.workspace(run),
+                      input,
+                      readCandidate,
+                      run.bookMode,
+                    );
                   const current = await this.activities.getActivity(run.projectId, run.activityId);
                   if (current.draft.contentRevision !== run.inputRevision)
                     throw new HttpError(

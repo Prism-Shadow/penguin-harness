@@ -79,6 +79,12 @@ export type Strings = {
     mediaCounts: (total: number, bound: number) => string;
     wafRoot: string;
     wafRootHint: string;
+    readingMode: string;
+    readingModeHint: string;
+    readingModeHelp: string;
+    chooseReadingMode: string;
+    readAlong: string;
+    decodable: string;
     assemble: string;
     moduleRun: string;
     moduleReady: string;
