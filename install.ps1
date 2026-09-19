@@ -6,6 +6,8 @@
 #   $env:PENGUIN_VERSION = "vX.Y.Z"     choose a version (same as -Version vX.Y.Z); a published Release
 #                                         installer defaults to its own version, an unstamped source copy to latest
 #   $env:PENGUIN_INSTALL_DIR = "<dir>"  install dir; default $env:USERPROFILE\.penguin
+#   $env:PENGUIN_LINK_COMMAND = "0"     leave the user Path alone; for a second installation beside
+#                                       the one the `penguin` command belongs to
 #   $env:PENGUIN_ARCHIVE = "<file>"     install a local Release zip without network access (same as -ArchivePath)
 #   $env:PENGUIN_DOWNLOAD_SOURCE = "auto|oss|github" choose the online source; default auto
 #                                         (speed-probed, with the same-version other source as fallback)
@@ -358,6 +360,8 @@ if (-not $InstallDir) {
 if (-not $ArchivePath) {
   $ArchivePath = if ($env:PENGUIN_ARCHIVE) { $env:PENGUIN_ARCHIVE } else { "" }
 }
+$LinkCommand = if ($env:PENGUIN_LINK_COMMAND) { $env:PENGUIN_LINK_COMMAND } else { "1" }
+if ($LinkCommand -ne "0" -and $LinkCommand -ne "1") { Fail "PENGUIN_LINK_COMMAND must be 0 or 1" }
 $DownloadBaseUrl = if ($env:PENGUIN_DOWNLOAD_BASE_URL) {
   $env:PENGUIN_DOWNLOAD_BASE_URL.TrimEnd('/')
 } else {
@@ -672,9 +676,11 @@ try {
 #     (unexpanded) value, append to it, and write it back with its original value kind.
 #     The registry only exists on Windows; skip the block elsewhere (functional test runs
 #     of this script on pwsh/Linux — where the old API was a silent no-op anyway). ---
+#     PENGUIN_LINK_COMMAND=0 skips it: `penguin` resolves to the first bin directory on the
+#     Path, and a second installation's entry there would answer whenever the first is absent.
 $BinDir = Join-Path $InstallDir "bin"
 $PathUpdateMessage = ""
-if ($env:OS -eq "Windows_NT") {
+if ($LinkCommand -eq "1" -and $env:OS -eq "Windows_NT") {
   $EnvKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey("Environment", $true)
   if ($null -eq $EnvKey) { $EnvKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Environment") }
   try {
@@ -714,7 +720,12 @@ public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint M
   }
 }
 # Make `penguin` work in this session too.
-if (($env:Path -split ";") -notcontains $BinDir) { $env:Path = "$env:Path;$BinDir" }
+$PenguinCommand = "penguin"
+if ($LinkCommand -eq "1") {
+  if (($env:Path -split ";") -notcontains $BinDir) { $env:Path = "$env:Path;$BinDir" }
+} else {
+  $PenguinCommand = "& `"$(Join-Path $BinDir "penguin.cmd")`""
+}
 
 Write-Host ""
 Write-Host "PenguinHarness $InstalledVersion installed to $InstallDir"
@@ -724,6 +735,6 @@ if ($PathUpdateMessage) {
 }
 Write-Host ""
 Write-Host "Get started:"
-Write-Host "  penguin --help    # all commands"
-Write-Host "  penguin web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
-Write-Host "  penguin server    # headless server (PORT / HOST to override)"
+Write-Host "  $PenguinCommand --help    # all commands"
+Write-Host "  $PenguinCommand web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
+Write-Host "  $PenguinCommand server    # headless server (PORT / HOST to override)"

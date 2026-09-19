@@ -2,14 +2,17 @@
  * Where an Agent's workflows live and how their versions are kept.
  *
  *   <agentDir>/workflows/<id>/package.json   `penguin.modules` manifests (a plugin package)
- *   <agentDir>/workflows/<id>/index.mjs      default export `{ modules: { <Name>: { create } } }`
- *   <agentDir>/workflows/<id>/ui/            optional static UI, served as the workflow's tab
+ *   <agentDir>/workflows/<id>/index.ts       default export `{ modules: { <Name>: { create } } }`
+ *   <agentDir>/workflows/<id>/ui/            the pages its contributed tabs name
  *   <agentDir>/workflows/<id>/state.json     the workflow's own document (WorkflowHost.getState)
+ *   <agentDir>/workflows/<id>/.harness/      the types it was written against (harness-types.ts)
+ *   <agentDir>/workflows/<id>/.build/        its emitted code, per revision (compile.ts)
  *   <agentDir>/workflows-history/<id>/<revision>/   a full copy of the folder at each successful load
  *   <agentDir>/workflows-history/<id>/versions.json  the list, newest first
  *
  * The revision is the content hash of every file except `state.json` (the state is the
- * workflow's data, not its code, and survives a rollback untouched). Reading is tolerant:
+ * workflow's data, not its code, and survives a rollback untouched), `node_modules` and the
+ * dot-directories, which are the server's. Reading is tolerant:
  * a folder without a package.json is not a workflow, a broken versions.json is an empty list.
  */
 import { createHash } from "node:crypto";

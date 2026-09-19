@@ -1,18 +1,24 @@
 /**
  * WorkflowService: boots every workflow folder of an Agent as a module tree of its own.
  *
- * A workflow is a plugin package (`package.json#penguin.modules` + a default export pairing
- * the manifests with code, exactly as ../plugin/loader.ts reads a platform plugin). Its root
- * module must be named `Workflow` and provide `WorkflowMain`; the
- * server publishes `WorkflowHost` to the tree as module `Host`. The tree is checked
- * against the platform's own interface table before any create() runs, so a workflow
- * that requires something the host does not publish, or provides a handler of the wrong
- * shape, fails to load with a named problem — and the previous instance keeps serving.
+ * A workflow is a plugin package: hand-written manifests in `package.json#penguin.modules`
+ * and an `index.ts` whose default export pairs them with code. Its root module must be
+ * named `Workflow` and provide `WorkflowMain`; the server publishes `WorkflowHost` to the
+ * tree as module `Host`, and the slots it opens to workflows under the platform's own
+ * module names (today `WebModule.sessionTabs`), so a workflow contributes a tab the way a
+ * plugin does and the host scopes it to the Agent.
  *
- * Loading is by content: the folder's revision (store.ts) is part of the import URL, so
- * an edited index.mjs is re-imported rather than served from the ESM cache, and every
- * successful load records the folder as a version the Agent (or the user) can roll back
- * to. A watcher on the `workflows/` folder reloads on change, debounced, and the users of
+ * Three checks run before any create(), and a failure of any keeps the previous instance
+ * serving with the problem named: the source is type-checked under `strict` against the
+ * types the harness wrote into the folder when the workflow was new (./harness-types.ts,
+ * ./compile.ts); those are compared with this platform's, both ways, by the compiler
+ * (../plugin/iface-check.ts); and the tree is checked like any other — wiring, slots,
+ * contribution shapes.
+ *
+ * Loading is by content: the folder's revision (store.ts) names the directory the source
+ * is emitted into, so an edited workflow is a new import URL rather than a hit in the ESM
+ * cache, and every successful load records the folder as a version the Agent (or the
+ * user) can roll back to. A watcher on the `workflows/` folder reloads on change, debounced, and the users of
  * the Project hear `workflow_updated` on their event stream.
  */
 import fs from "node:fs";
@@ -23,23 +29,31 @@ import type {
   ClassCtx,
   IfaceDecl,
   IfaceTable,
+  Manifest,
   ModuleDef,
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
 import { userText } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import type { ServerEvent } from "../api/types.js";
-import type { Channels, Clock, Log, Paths } from "../hmr/capabilities.js";
+import type { Channels, Clock, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
-import type { Members, Projects } from "../mechanisms/projects.js";
+import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
+import type { SessionIndex } from "../mechanisms/sessions.js";
 import type {
   WorkflowInfo,
+  WorkflowInput,
   WorkflowRequest,
   WorkflowResponse,
+  WorkflowTab,
   WorkflowVersion,
   Workflows,
 } from "../mechanisms/workflows.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
+import { compileWorkflow, pruneBuilds, writeLoadStatus } from "./compile.js";
+import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
+import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
+import { loadTypeScript } from "../plugin/typescript.js";
 import {
   historyDir,
   isSafeRelPath,
@@ -61,6 +75,11 @@ export const HOST_MODULE = "Host";
 export const ROOT_MODULE = "Workflow";
 export const HOST_IFACE = `${PKG}#WorkflowHost`;
 export const MAIN_IFACE = `${PKG}#WorkflowMain`;
+/** The platform module whose slots the host opens to workflows, and the slots it opens. */
+export const WEB_MODULE = "WebModule";
+export const WEB_IFACE = `${PKG}#WebShell`;
+export const TABS_SLOT = "sessionTabs";
+const OPEN_WEB_SLOTS = [TABS_SLOT] as const;
 /** A burst of file writes (an editor, a git checkout, a rollback) becomes one reload. */
 const WATCH_SETTLE_MS = 300;
 
@@ -68,6 +87,7 @@ interface Loaded {
   folder: WorkflowFolder;
   tree: ModuleTree | null;
   main: { handle(request: WorkflowRequest): Promise<WorkflowResponse> } | null;
+  tabs: WorkflowTab[];
   loadedAt: string;
   error: string | null;
 }
@@ -80,29 +100,96 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Reads `package.json#penguin.modules` and pairs it with the default export, by name. */
-async function loadDefs(folder: WorkflowFolder): Promise<ModuleDef> {
+/** Reads `package.json`: the manifests, and that the package is an ES module. */
+async function readManifests(folder: WorkflowFolder): Promise<Manifest[]> {
   const raw = JSON.parse(
     await fs.promises.readFile(path.join(folder.dir, "package.json"), "utf8"),
   ) as {
+    type?: unknown;
     penguin?: { modules?: unknown };
   };
+  if (raw.type !== "module") {
+    throw new Error('package.json must set "type": "module" (a workflow is an ES module)');
+  }
   const list = raw.penguin?.modules;
   if (!Array.isArray(list) || list.length === 0) {
     throw new Error("package.json#penguin.modules must list at least the `Workflow` module");
   }
-  const manifests = list.map((doc, i) => {
+  return list.map((doc, i) => {
     try {
       return parseManifest(doc);
     } catch (err) {
       throw new Error(`package.json#penguin.modules[${i}]: ${messageOf(err)}`);
     }
   });
-  const entry = ["index.mjs", "index.js"]
-    .map((f) => path.join(folder.dir, f))
-    .find((f) => fs.existsSync(f));
-  if (entry === undefined) throw new Error("no index.mjs (or index.js) next to package.json");
-  const mod = (await import(`${pathToFileURL(entry).href}?rev=${folder.revision}`)) as {
+}
+
+/**
+ * A workflow that loads and shows nothing is the quietest way to get this wrong: the pages are
+ * written, the load is green, and no tab appears, because a page is only a file until the
+ * manifest contributes a tab for it. The author is usually an Agent with nothing but these
+ * files and the load status, so the status says it, with the entry to add.
+ */
+export function loadHints(
+  uiRev: string | null,
+  tabs: readonly WorkflowTab[],
+  error: string | null,
+): string[] {
+  if (error !== null || uiRev === null || tabs.length > 0) return [];
+  const entry = {
+    key: "main",
+    title: "<tab title>",
+    renderer: { iframe: { src: `${UI_DIR}/index.html` } },
+  };
+  return [
+    `${UI_DIR}/ has pages but the manifest contributes no tab, so nothing shows beside the chat. ` +
+      `In package.json, under penguin.modules[0] (the module named Workflow), set ` +
+      `"contributes": ${JSON.stringify({ [`${WEB_MODULE}.${TABS_SLOT}`]: [entry] })} — ` +
+      `one entry per tab, src a file under ${UI_DIR}/.`,
+  ];
+}
+
+/**
+ * The tabs the manifests contribute to `WebModule.sessionTabs`, with each page's path (in
+ * the folder, under `ui/`) turned into the URL it is served from. The slot's shape was
+ * checked with the tree; where a page may live is this host's rule.
+ */
+function contributedTabs(manifests: readonly Manifest[], uiBase: string): WorkflowTab[] {
+  const tabs: WorkflowTab[] = [];
+  const keys = new Set<string>();
+  for (const m of manifests) {
+    for (const entry of m.contributes[`${WEB_MODULE}.${TABS_SLOT}`] ?? []) {
+      const tab = entry as unknown as WorkflowTab;
+      if (keys.has(tab.key)) {
+        throw new Error(
+          `contribution '${tab.id}': another tab of this workflow already has the key '${tab.key}'`,
+        );
+      }
+      keys.add(tab.key);
+      if (!("iframe" in tab.renderer)) {
+        tabs.push(tab);
+        continue;
+      }
+      const src = tab.renderer.iframe.src;
+      if (!isSafeRelPath(src) || !src.startsWith(`${UI_DIR}/`)) {
+        throw new Error(
+          `contribution '${tab.id}': renderer.iframe.src must be a file under ${UI_DIR}/ (got '${src}')`,
+        );
+      }
+      const rest = src
+        .slice(UI_DIR.length + 1)
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/");
+      tabs.push({ ...tab, renderer: { iframe: { src: `${uiBase}/${rest}` } } });
+    }
+  }
+  return tabs;
+}
+
+/** Pairs the manifests with the emitted default export, by name. */
+async function loadDefs(manifests: readonly Manifest[], entry: string): Promise<ModuleDef> {
+  const mod = (await import(pathToFileURL(entry).href)) as {
     default?: { modules?: Record<string, ModuleDef["create"] | { create: ModuleDef["create"] }> };
   };
   const code = mod.default?.modules;
@@ -148,12 +235,17 @@ export class WorkflowService implements Workflows {
   @Use() private readonly channels!: Channels;
   @Use() private readonly members!: Members;
   @Use() private readonly projects!: Projects;
+  @Use() private readonly hmr!: Hmr;
+  @Use() private readonly agents!: AgentIndex;
+  @Use() private readonly sessionIndex!: SessionIndex;
   @Use() private readonly runner!: ScheduleTaskRunner;
   @Use() private readonly sessions!: ScheduleSessionCreator;
 
   private readonly loaded = new Map<string, Loaded>();
   private readonly watchers = new Map<string, fs.FSWatcher>();
   private readonly pending = new Map<string, NodeJS.Timeout>();
+  /** The load in flight per workflow: a load takes a compiler run, so two can overlap. */
+  private readonly loading = new Map<string, Promise<Loaded>>();
   private resources: ClassCtx["resources"] | null = null;
   private disposed = false;
 
@@ -215,7 +307,8 @@ export class WorkflowService implements Workflows {
     rel: string,
   ): Promise<string | null> {
     if (!isWorkflowId(workflowId)) return null;
-    const file = rel === "" ? "index.html" : rel;
+    // No default document: which page a tab shows is what its contribution says.
+    const file = rel;
     if (!isSafeRelPath(file)) return null;
     const abs = path.join(
       workflowsDir(this.paths.root, projectId, agentId),
@@ -291,34 +384,91 @@ export class WorkflowService implements Workflows {
       version: l.folder.pkg.version,
       revision: l.folder.revision,
       uiRev: l.folder.uiRev,
+      tabs: l.tabs,
       loadedAt: l.loadedAt,
       error: l.error,
+      hints: loadHints(l.folder.uiRev, l.tabs, l.error),
     };
   }
 
+  /**
+   * One load at a time per workflow. The watcher and a request can both ask while the
+   * compiler is still running for the last edit; the later one waits and then loads what
+   * is on disk by then, so versions are recorded in order and never concurrently.
+   */
+  private load(projectId: string, agentId: string, folder: WorkflowFolder): Promise<Loaded> {
+    const k = key(projectId, agentId, folder.id);
+    const after = this.loading.get(k) ?? Promise.resolve();
+    const run = after
+      .catch(() => undefined)
+      .then(async () => {
+        const current = (await readFolder(folder.dir, folder.id)) ?? folder;
+        return this.loadNow(projectId, agentId, current);
+      });
+    this.loading.set(k, run);
+    void run
+      .finally(() => {
+        if (this.loading.get(k) === run) this.loading.delete(k);
+      })
+      .catch(() => undefined);
+    return run;
+  }
+
   /** Boots the folder; on failure keeps the previous instance and reports the error. */
-  private async load(projectId: string, agentId: string, folder: WorkflowFolder): Promise<Loaded> {
+  private async loadNow(
+    projectId: string,
+    agentId: string,
+    folder: WorkflowFolder,
+  ): Promise<Loaded> {
     const k = key(projectId, agentId, folder.id);
     const previous = this.loaded.get(k);
     const loadedAt = this.clock.now().toISOString();
     let next: Loaded;
     try {
-      const root = await loadDefs(folder);
+      const manifests = await readManifests(folder);
+      const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
+      const ts = await loadTypeScript(this.hmr.assetsDir());
+      // A new workflow takes its types from THIS harness; one that has them keeps them, and
+      // they are its side of the comparison below.
+      installHarnessTypes(
+        folder.dir,
+        table as unknown as IfaceTable,
+        [HOST_IFACE, MAIN_IFACE],
+        this.clock.now(),
+      );
+      const entry = compileWorkflow(ts, folder.dir, folder.revision);
+      const written = readHarnessTable(folder.dir);
+      if (typeof written === "string") throw new Error(written);
+      const fit = checkIfaces(
+        ts,
+        table as unknown as IfaceTable,
+        written,
+        ifaceQuestions(manifests),
+      );
+      // An interface the workflow names but holds no types for cannot be compared, and for a
+      // workflow that is a problem, not a pass.
+      const misfits = [
+        ...fit.uncompared.map((q) => `${q}: not among the types this workflow was written against`),
+        ...fit.problems,
+      ];
+      if (misfits.length > 0) throw new Error(misfits.join("\n"));
+      const root = await loadDefs(manifests, entry);
       const host = this.host(projectId, agentId, folder);
       const tree = await bootModules(root, {
         ifaces: table as unknown as IfaceTable,
         resources: this.resources!,
         published: {
-          ifaces: { [HOST_MODULE]: { host: hostDecl() } },
-          values: { [HOST_MODULE]: { host } },
+          ifaces: { [HOST_MODULE]: { host: hostDecl() }, [WEB_MODULE]: { web: webSlotsDecl() } },
+          values: { [HOST_MODULE]: { host }, [WEB_MODULE]: { web: {} } },
         },
       });
       const alias = Object.entries(root.manifest.provides).find(
         ([, ref]) => ref === MAIN_IFACE,
       )![0];
       const main = tree.api<Loaded["main"]>(ROOT_MODULE, alias);
-      next = { folder, tree, main, loadedAt, error: null };
+      next = { folder, tree, main, tabs, loadedAt, error: null };
       previous?.tree?.dispose();
+      pruneBuilds(folder.dir, folder.revision);
       await recordVersion(
         historyDir(this.paths.root, projectId, agentId),
         folder,
@@ -331,6 +481,7 @@ export class WorkflowService implements Workflows {
         folder,
         tree: previous?.tree ?? null,
         main: previous?.main ?? null,
+        tabs: previous?.tabs ?? [],
         loadedAt: previous?.loadedAt ?? loadedAt,
         error,
       };
@@ -339,6 +490,13 @@ export class WorkflowService implements Workflows {
       next.tree?.dispose();
       return next;
     }
+    writeLoadStatus(folder.dir, {
+      revision: folder.revision,
+      checkedAt: loadedAt,
+      error: next.error,
+      tabs: next.tabs.map((tab) => tab.key),
+      hints: loadHints(folder.uiRev, next.tabs, next.error),
+    });
     this.loaded.set(k, next);
     this.notify(projectId, agentId, this.info(folder.id, next));
     return next;
@@ -351,16 +509,31 @@ export class WorkflowService implements Workflows {
     const ensureState = () => (stateRead ??= readState(folder.dir).then((s) => void (state = s)));
     void ensureState();
     return {
-      async runAgent(input: { text: string; sessionId?: string }) {
-        if (typeof input?.text !== "string" || input.text === "")
-          throw new Error("runAgent: text is required");
-        const sessionId =
-          input.sessionId ??
-          (await service.sessions.createSession({ projectId, agentId })).sessionId;
-        await service.runner.startTask(sessionId, [userText(input.text, "server")]);
-        return { sessionId };
+      listAgents: () => service.agents.list(projectId).map((row) => ({ agentId: row.agentId })),
+      async createSession(opts?: { agentId?: string }) {
+        const target = opts?.agentId ?? agentId;
+        if (!service.agents.exists(projectId, target)) {
+          throw new Error(`createSession: this Project has no Agent '${target}'`);
+        }
+        return service.sessions.createSession({ projectId, agentId: target });
       },
-      sessionStatus: (sessionId: string) => service.runner.statusOf(sessionId),
+      async run(sessionId: string, input: WorkflowInput[]) {
+        service.ownSession(projectId, sessionId, "run");
+        const texts = (Array.isArray(input) ? input : []).map((item) => item?.text);
+        if (texts.length === 0 || texts.some((t) => typeof t !== "string" || t === "")) {
+          throw new Error('run: input is a non-empty list of { text: "…" } items');
+        }
+        // Whatever the workflow stamped, the Agent hears the server, never a person.
+        return service.runner.startTask(
+          sessionId,
+          texts.map((text) => userText(text, "server")),
+          { queueIfBusy: true },
+        );
+      },
+      sessionStatus: (sessionId: string) => {
+        service.ownSession(projectId, sessionId, "sessionStatus");
+        return service.runner.statusOf(sessionId);
+      },
       getState: () => state,
       async setState(next: unknown) {
         await ensureState();
@@ -369,6 +542,13 @@ export class WorkflowService implements Workflows {
       },
       log: (message: string) => service.log.line(`[workflow ${folder.id}] ${message}`),
     };
+  }
+
+  /** A workflow reaches the Sessions of its own Project and no others. */
+  private ownSession(projectId: string, sessionId: string, call: string): void {
+    if (this.sessionIndex.findById(sessionId)?.projectId !== projectId) {
+      throw new Error(`${call}: this Project has no Session '${sessionId}'`);
+    }
   }
 
   /** Drops a workflow's instance and tells the Project's users it is gone. */
@@ -400,7 +580,10 @@ export class WorkflowService implements Workflows {
     const k = `${projectId}/${agentId}`;
     if (this.watchers.has(k) || this.disposed) return;
     const declared = workflowsDir(this.paths.root, projectId, agentId);
-    if (!fs.existsSync(declared)) return;
+    if (!fs.existsSync(declared)) {
+      this.awaitFirstWorkflow(projectId, agentId, declared);
+      return;
+    }
     // Watch the REAL path: libuv compares each event's filename against the string it was
     // given, and a Windows short name (`RUNNER~1\…`, which is what os.tmpdir() hands back
     // on a CI runner) never matches the long name the events carry — the mismatch trips an
@@ -416,7 +599,39 @@ export class WorkflowService implements Workflows {
       watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
         const id = typeof filename === "string" ? filename.split(/[\\/]/)[0] : undefined;
         if (id === undefined || !isWorkflowId(id) || filename?.endsWith("state.json")) return;
+        // The server's own emit (`.build/`), and any other dot-directory, is not an edit.
+        if (filename?.split(/[\\/]/)[1]?.startsWith(".")) return;
         this.schedule(projectId, agentId, id);
+      });
+    } catch {
+      return;
+    }
+    watcher.on("error", () => {
+      watcher.close();
+      this.watchers.delete(k);
+    });
+    this.watchers.set(k, watcher);
+  }
+
+  /**
+   * An Agent with no `workflows/` folder yet: watch its own directory for that folder to
+   * appear. The Agent makes its first workflow with its file tools and nothing else — without
+   * this, nothing noticed until somebody listed the workflows again, and the Agent sat
+   * waiting for a load that was never going to happen.
+   */
+  private awaitFirstWorkflow(projectId: string, agentId: string, declared: string): void {
+    const k = `${projectId}/${agentId}`;
+    const parent = path.dirname(declared);
+    let watcher: fs.FSWatcher;
+    try {
+      watcher = fs.watch(fs.realpathSync.native(parent), (_event, filename) => {
+        if (filename !== path.basename(declared) || !fs.existsSync(declared)) return;
+        watcher.close();
+        this.watchers.delete(k);
+        // The folder exists now: watch it properly, and load whatever is already inside.
+        void this.list(projectId, agentId).catch((err) =>
+          this.log.line(`[workflows] ${k}: ${messageOf(err)}`),
+        );
       });
     } catch {
       return;
@@ -449,6 +664,30 @@ export class WorkflowService implements Workflows {
 }
 
 export class WorkflowNotFound extends Error {}
+
+/** Where a workflow's `ui/` is served from (./routes.ts). */
+function uiBase(projectId: string, agentId: string, workflowId: string): string {
+  const [p, a, w] = [projectId, agentId, workflowId].map(encodeURIComponent);
+  return `/api/projects/${p}/agents/${a}/workflows/${w}/${UI_DIR}`;
+}
+
+/**
+ * The slots the host opens to a workflow tree, published under the platform module's own
+ * name: the slot declarations come from the platform's table (so a workflow's contribution
+ * has the shape a plugin's has), and only the opened ones are there — contributing to any
+ * other is `no-such-slot`. No members: there is nothing to require from it.
+ */
+function webSlotsDecl(): IfaceDecl {
+  const decl = (table as unknown as { ifaces: Record<string, IfaceDecl> }).ifaces[WEB_IFACE];
+  if (!decl) throw new Error(`${WEB_IFACE} is not in ifaces.json (regenerate it)`);
+  const slots: IfaceDecl["slots"] = {};
+  for (const name of OPEN_WEB_SLOTS) {
+    const slot = decl.slots[name];
+    if (!slot) throw new Error(`${WEB_IFACE} declares no slot '${name}' (regenerate ifaces.json)`);
+    slots[name] = slot;
+  }
+  return { name: "WorkflowWebSlots", methods: {}, slots };
+}
 
 /** The published `WorkflowHost` declaration, straight from the platform's interface table. */
 function hostDecl(): IfaceDecl {

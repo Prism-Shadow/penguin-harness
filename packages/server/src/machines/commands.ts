@@ -68,6 +68,11 @@ function connectionOptions(target: RemoteTarget): string[] {
  * launcher exec'ing `node/bin/node lib/dist/…` (scripts/launchers/penguin). The data root
  * rides along as PENGUIN_HOME: the CLI's `server status`, `server stop` and `auth token`
  * all act on the root they are given, and the profile's root is not the default one.
+ * The profile rides along too, as PENGUIN_PROFILE: the server started by this command
+ * reaches machines of its own, and it reads its layout from that variable (layout.ts) —
+ * without it a dev-profile server would reach the NEXT machine's release installation.
+ * Named for the release profile as well, so an account that exports the variable cannot
+ * turn a release server into a dev one.
  *
  * `bin/penguin` is the released program, and a release only carries the subcommands this
  * side asks for (`server status`, `auth token`, `server --detach`) once a release has
@@ -93,13 +98,13 @@ function connectionOptions(target: RemoteTarget): string[] {
 export function remotePenguin(platform: RemotePlatform, layout: RemoteLayout): string {
   if (platform === "win32") {
     const dir = layout.programDir.win;
-    return `set "PENGUIN_HOME=${layout.dataRoot.win}" & "${dir}\\node\\node.exe" "${dir}\\lib\\dist\\penguin-hmr.js"`;
+    return `set "PENGUIN_HOME=${layout.dataRoot.win}" & set "PENGUIN_PROFILE=${layout.profile}" & "${dir}\\node\\node.exe" "${dir}\\lib\\dist\\penguin-hmr.js"`;
   }
   const dir = layout.programDir.posix;
   // `env`, not a bare `VAR=value` prefix: startServerCommand puts `nohup` in front of this,
   // and nohup takes the first word as the program — a bare assignment there is "no such
   // command", and the server never starts.
-  return `env PENGUIN_HOME="${layout.dataRoot.posix}" "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
+  return `env PENGUIN_HOME="${layout.dataRoot.posix}" PENGUIN_PROFILE=${layout.profile} "${dir}/node/bin/node" "${dir}/lib/dist/penguin-hmr.js"`;
 }
 
 /** `ssh <options> <alias> <remote command>`. */
@@ -141,18 +146,24 @@ export function runInstallScriptCommand(
   // installer's default happens to match that profile, but the far side's own override of
   // PENGUIN_INSTALL_DIR would not be visible here, and the rest of these commands assume
   // the layout they were given.
+  //
+  // PENGUIN_LINK_COMMAND=0 for a layout that does not own the machine's `penguin` command:
+  // the installer would otherwise repoint `~/.local/bin/penguin` (or extend the user Path)
+  // at this program directory, and a person typing `penguin` there would run the dev
+  // program against the release data root.
+  const link = layout.ownsCommand ? "1" : "0";
   if (where.platform === "win32") {
     const script = cmdQuote(where.scriptPath);
     return {
       command:
-        `set "PENGUIN_INSTALL_DIR=${layout.programDir.win}" & ` +
+        `set "PENGUIN_INSTALL_DIR=${layout.programDir.win}" & set "PENGUIN_LINK_COMMAND=${link}" & ` +
         `powershell -NoProfile -ExecutionPolicy Bypass -File ${script} -Version ${cmdQuote(versionTag)}` +
         ` & del /q ${script}`,
       scriptOnStdin: false,
     };
   }
   return {
-    command: `PENGUIN_INSTALL_DIR="${layout.programDir.posix}" PENGUIN_VERSION=${shQuote(versionTag)} sh -s`,
+    command: `PENGUIN_INSTALL_DIR="${layout.programDir.posix}" PENGUIN_LINK_COMMAND=${link} PENGUIN_VERSION=${shQuote(versionTag)} sh -s`,
     scriptOnStdin: true,
   };
 }
@@ -182,6 +193,9 @@ export function unpackStoreCommand(platform: RemotePlatform, layout: RemoteLayou
  * Starts the installed server in the background and returns at once; readiness is the
  * caller's probe. `nohup` and the redirections are what let it outlive the shell that ran it,
  * and the log is the far side's own words when it comes up and dies.
+ *
+ * Prints the launched process's pid (`$!`) as its only output, so the caller can tell a
+ * server that is still coming up from one that already died (launchedPid, isAliveCommand).
  */
 export function startServerCommand(port: number, layout: RemoteLayout): string {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`bad port ${port}`);
@@ -190,7 +204,20 @@ export function startServerCommand(port: number, layout: RemoteLayout): string {
   // it is omitted, so a login shell carrying HOST=0.0.0.0 would put that machine's server on
   // every interface. This side only ever reaches it as a channel inside the ssh session, at
   // loopback on the far end, so binding wider is exposure with nothing asking for it.
-  return `mkdir -p "${root}" && nohup ${remotePenguin("linux", layout)} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null &`;
+  return `mkdir -p "${root}" && nohup ${remotePenguin("linux", layout)} server --host 127.0.0.1 --port ${port} >> "${root}/server.log" 2>&1 < /dev/null & echo $!`;
+}
+
+/** The pid startServerCommand printed; null when the output holds none. */
+export function launchedPid(stdout: string): number | null {
+  const lines = stdout.trim().split(/\r?\n/);
+  const last = lines[lines.length - 1]?.trim() ?? "";
+  return /^[1-9]\d*$/.test(last) ? Number(last) : null;
+}
+
+/** Answers `alive` or `gone` for a pid on the far side. */
+export function isAliveCommand(pid: number): string {
+  if (!Number.isInteger(pid) || pid < 1) throw new Error(`bad pid ${pid}`);
+  return `kill -0 ${pid} 2>/dev/null && echo alive || echo gone`;
 }
 
 /** The last lines of that log, for a start that did not answer. */

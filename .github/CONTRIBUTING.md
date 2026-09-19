@@ -101,7 +101,7 @@ is a way to try the app against separate data, not a way to see uncommitted chan
 both belong to the one installation the two instances share, and the release instance
 does them. The profile also reaches other machines: the shell passes it to its server as
 `PENGUIN_PROFILE`, and the Machines page then works with the machine's installation for
-that profile — `~/.penguin-dev` on port 7370 for dev, beside the release one — so a dev
+that profile — `~/.penguin-dev` on port 7371 for dev, beside the release one — so a dev
 instance never touches the release server someone is using there
 (`packages/server/src/machines/layout.ts`).
 

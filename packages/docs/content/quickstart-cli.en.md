@@ -129,7 +129,7 @@ After the build, run `pnpm penguin <args>` inside the repo as the dev runner, or
 | Item | Details |
 | --- | --- |
 | Install dir | `~/.penguin` by default; override with the `PENGUIN_INSTALL_DIR` env var |
-| Command entry | A symlink `~/.local/bin/penguin` is created (the script warns if `~/.local/bin` is not on PATH) |
+| Command entry | A symlink `~/.local/bin/penguin` is created (the script warns if `~/.local/bin` is not on PATH); `PENGUIN_LINK_COMMAND=0` leaves it alone, for a second installation beside the one `penguin` belongs to |
 | Version selection | `PENGUIN_VERSION=vX.Y.Z` env var, or the `--version vX.Y.Z` script flag; the stable entry defaults to the latest Release, while a versioned Release installer defaults to its own tag |
 | Download source | `PENGUIN_DOWNLOAD_SOURCE=auto` (default), `oss`, or `github`; auto times a probe file and keeps the free GitHub download unless the OSS mirror is clearly faster, falling back to the same version on the other source (`PENGUIN_DOWNLOAD_SPEED_PROBE=0` skips the measurement) |
 | Local archive | `PENGUIN_ARCHIVE=<file>` or `--archive <file>`; accepts a Release bundle (self-verifying via its sealed payload checksum) or a payload/legacy program archive with an adjacent `<file>.sha256` (renamed legacy files may use the platform asset's canonical `.sha256`) |
@@ -143,7 +143,7 @@ Script flags go after `sh -s --`, e.g. `curl -fsSL https://penguin.ooo/install.s
 | Item | Details |
 | --- | --- |
 | Install dir | `%USERPROFILE%\.penguin` by default; override with the `PENGUIN_INSTALL_DIR` env var |
-| Command entry | the `bin\penguin.cmd` launcher (deliberately no `.ps1` launcher — batch files are exempt from the PowerShell execution policy, so `penguin` works even under the default Restricted policy); the installer adds `%USERPROFILE%\.penguin\bin` to your **user** Path and broadcasts the change — open a **new terminal window** once (a new tab of an already-running terminal keeps the old Path) |
+| Command entry | the `bin\penguin.cmd` launcher (deliberately no `.ps1` launcher — batch files are exempt from the PowerShell execution policy, so `penguin` works even under the default Restricted policy); the installer adds `%USERPROFILE%\.penguin\bin` to your **user** Path and broadcasts the change — open a **new terminal window** once (a new tab of an already-running terminal keeps the old Path); `$env:PENGUIN_LINK_COMMAND = "0"` leaves the Path alone, for a second installation beside the one `penguin` belongs to |
 | Version pin | `$env:PENGUIN_VERSION = "vX.Y.Z"` before running the installer |
 | Local archive | `$env:PENGUIN_ARCHIVE = "<file>"` or `-ArchivePath <file>`; accepts the Release bundle (self-verifying via its sealed payload checksum) or a payload/legacy zip with an adjacent `<file>.sha256` (renamed legacy files may use `penguin-win32-x64.zip.sha256`) |
 | Integrity check | Always on: online downloads are verified against the published `.sha256`, and bundle payloads against the checksum sealed inside the bundle |
