@@ -71,6 +71,8 @@ import type { Interfaces, MembersOf, ReassemblyChange } from "./capabilities.js"
 import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
 import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost } from "../plugin/loader.js";
+import { usePushedPluginLibrary } from "@prismshadow/penguin-core";
+import { pushedLibraryDir } from "./asset-archives.js";
 import { migrate } from "../db/migrations.js";
 import { MachinesRepo } from "../db/repos/machines.js";
 import type { Auth } from "../mechanisms/identity.js";
@@ -294,6 +296,11 @@ async function createInner(
     })
     .map(([group]) => group);
   const adoptable = (group: string) => !doomedGroups.includes(group);
+
+  // The skill/hook plugin LIBRARY is the one this build was made with, when the push carried
+  // it: a machine installed before a plugin existed otherwise never offers it, and a feature
+  // that seeds an Agent with it (company mode's CEO, `agent-company`) fails on every attempt.
+  if (caps !== null) usePushedPluginLibrary(pushedLibraryDir(caps.hmr.assetsDir()));
 
   // Plugins are modules (see ../plugin/), and WHICH ones this App runs is configuration it
   // reads for ITSELF: the closure over the root's Projects, loaded here rather than handed
