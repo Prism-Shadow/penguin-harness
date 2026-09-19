@@ -29,6 +29,22 @@ export const en: Strings = {
     imageDescription: "Image description",
     imageDescriptionHint: "1–5000 characters. Save the description before generating an image.",
     acceptedImage: "Accepted image",
+    textHelp:
+      "Improve an image prompt or narration script with the selected Agent. Review the original and suggested text before using it. Existing media stays available; generate a new image or speech separately when you want it to reflect the revised text.",
+    improveImagePrompt: "Improve image prompt",
+    improveNarration: "Improve narration script",
+    textCandidates: "Text suggestions",
+    reviewText: "Review text",
+    originalText: "Original text",
+    suggestedText: "Suggested text",
+    noOriginalText: "No script saved yet.",
+    acceptText: "Use this text",
+    olderText: "Suggested for an older draft. Generate a new suggestion before accepting it.",
+    matchingText: "This suggestion matches the current text.",
+    mediaTextChanged:
+      "The text has changed since this file was generated. Regenerate to update the media.",
+    invalidTextCandidate: "This text suggestion does not match the selected asset.",
+    textRun: "Media text",
     imageHelp:
       "Images use Gemini through the selected Agent's normal Session and tool approvals. Add GEMINI_API_KEY to that Agent's Vault. Preview a candidate before accepting it; regeneration keeps your accepted image.",
     generateImage: "Generate image",

@@ -7,6 +7,7 @@ import type { ActivityAuthoring } from "../mechanisms/activities.js";
 import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import { HttpError } from "../http/errors.js";
 import { planMedia, validateManifest, validateMediaCoverage } from "./media.js";
+import { mediaTextField, type MediaTextTarget } from "./media-text.js";
 import { AUDIO_MAX_BYTES, inspectWave, type AudioResult, type AudioTarget } from "./audio.js";
 import { readArtifactBytes } from "./artifact.js";
 import { readBoundImage, type ImageRequest } from "./image.js";
@@ -160,6 +161,38 @@ export class ActivityService implements ActivityAuthoring {
         );
       asset.path = `media/generated/${result.runId}.png`;
       asset.generatedImage = { runId: result.runId, sha256: result.sha256 };
+      return { ...draft, mediaPlan: { ...plan, manifest } };
+    });
+  }
+  async applyMediaText(
+    projectId: string,
+    activityId: string,
+    target: MediaTextTarget,
+    text: string,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    if (!text.trim() || text.length > 5000)
+      throw new HttpError(422, "media_text_invalid", "Media text must contain 1–5000 characters.");
+    return this.change(projectId, activityId, expectedRevision, (draft) => {
+      const plan = draft.mediaPlan;
+      if (!plan || plan.specRevision !== contentRevision(draft.spec) || draft.status !== "valid")
+        throw new HttpError(
+          409,
+          "media_stale",
+          "Rebuild the media plan before accepting improved media text.",
+        );
+      const manifest = structuredClone(plan.manifest);
+      const asset = manifest.assets[target.language]?.find(
+        (entry) => entry.key === target.assetKey,
+      );
+      if (!asset || asset.type !== target.type || mediaTextField(asset) !== target.text)
+        throw new HttpError(
+          409,
+          "media_text_changed",
+          "The selected media text changed. Generate a new candidate.",
+        );
+      if (target.type === "image") asset.description = text;
+      else asset.script = text;
       return { ...draft, mediaPlan: { ...plan, manifest } };
     });
   }

@@ -2,6 +2,7 @@ import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AudioTarget, AudioResult } from "../activities/audio.js";
 import type { ImageRequest } from "../activities/image.js";
 import type { ImageTarget, ImageResult } from "../activities/generated-image.js";
+import type { MediaTextTarget } from "../activities/media-text.js";
 import type {
   ActivityDraft,
   ActivityRecord,
@@ -21,6 +22,7 @@ export abstract class ActivityGeneration extends Interface<{
       wafRoot?: string;
       audio?: { language: string; assetKey: string; voice: string };
       image?: { language: string; assetKey: string };
+      mediaText?: { language: string; assetKey: string };
     },
   ): Promise<ActivityRun>;
   list(projectId: string, activityId: string): Promise<ActivityRunSummary[]>;
@@ -40,9 +42,22 @@ export abstract class ActivityGeneration extends Interface<{
     runId: string,
     expectedRevision: string,
   ): Promise<ActivityDraft>;
+  acceptMediaText(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
 }>() {}
 
 export abstract class ActivityAuthoring extends Interface<{
+  applyMediaText(
+    projectId: string,
+    activityId: string,
+    target: MediaTextTarget,
+    text: string,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
   storeImage(
     projectId: string,
     activityId: string,

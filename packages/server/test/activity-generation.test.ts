@@ -35,7 +35,7 @@ describe("activity generation through Harness sessions", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  async function fixture(moduleOutput: boolean | "audio" | "image" = false) {
+  async function fixture(moduleOutput: boolean | "audio" | "image" | "media-text" = false) {
     let complete: () => void = () => {};
     const waiting = new Set<string>();
     const disposed = new Set<string>();
@@ -73,6 +73,19 @@ describe("activity generation through Harness sessions", () => {
           await fs.writeFile(
             path.join(row.workspace!, "image.png"),
             output === "invalid" ? Buffer.from("invalid") : imagePng(),
+          );
+        } else if (moduleOutput === "media-text") {
+          const target = JSON.parse(
+            await fs.readFile(path.join(row.workspace!, "media-text-input.json"), "utf8"),
+          ) as { language: string; assetKey: string; type: "image" | "audio" };
+          await fs.writeFile(
+            path.join(row.workspace!, "media-text.json"),
+            output === "invalid"
+              ? "invalid"
+              : JSON.stringify({
+                  ...target,
+                  text: target.type === "audio" ? "Hello there." : "A brighter blue penguin",
+                }),
           );
         } else if (moduleOutput) {
           const input = JSON.parse(
@@ -284,6 +297,80 @@ describe("activity generation through Harness sessions", () => {
           expectedRevision: current.draft.contentRevision,
           language: "en-US",
           assetKey: "cover",
+        });
+        expect(response.status, await response.clone().text()).toBe(202);
+        const run = (await response.clone().json()) as ActivityRun;
+        expect(run.status, run.error ?? "").toBe("running");
+        await waitFor(() => waiting.has(run.sessionId!));
+        return response;
+      },
+      startMediaText: async (type: "image" | "audio" = "image") => {
+        let current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+        if (!current.draft.mediaPlan) {
+          const saved = await client.post(`${endpoint}/apply-generated-spec`, {
+            spec: {
+              ...activitySpec,
+              scenes: [
+                {
+                  id: "intro",
+                  description: "Look",
+                  ...(type === "image"
+                    ? { media: { images: [{ key: "cover", description: "A blue penguin" }] } }
+                    : {
+                        audio: {
+                          tracks: [{ key: "voice", description: "Say it", script: "Penguin" }],
+                        },
+                      }),
+                },
+              ],
+            },
+            expectedRevision: current.draft.contentRevision,
+          });
+          expect(saved.status).toBe(200);
+          const draft = (await saved.json()) as ActivityDraft;
+          const planned = await client.post(`${endpoint}/plan-media`, {
+            expectedRevision: draft.contentRevision,
+          });
+          expect(planned.status, await planned.clone().text()).toBe(200);
+          current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+        }
+        const manifest = structuredClone(current.draft.mediaPlan!.manifest);
+        manifest.assets["en-US"]![0]!.path =
+          type === "image" ? "media/existing-cover.png" : "media/existing-voice.wav";
+        if (type === "audio") {
+          const authoring = t.deps.tree.api<ActivityAuthoring>(
+            "ActivitiesModule",
+            "ActivityAuthoring",
+          );
+          const stored = await authoring.storeAudio(
+            "generator-activities",
+            activity.id,
+            `run_${"a".repeat(32)}`,
+            speechWave(),
+          );
+          manifest.assets["en-US"]![0]!.generatedAudio = {
+            runId: stored.runId,
+            sha256: stored.sha256,
+          };
+          manifest.assets["en-US"]![0]!.path = `media/generated/${stored.runId}.wav`;
+        }
+        manifest.assets["es-MX"] = [
+          {
+            ...manifest.assets["en-US"]![0]!,
+            ...(type === "image" ? { description: "Un pingüino azul" } : { script: "Di hola" }),
+          },
+        ];
+        const bound = await client.put(`${endpoint}/media`, {
+          expectedRevision: current.draft.contentRevision,
+          manifest,
+        });
+        expect(bound.status, await bound.clone().text()).toBe(200);
+        current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+        const response = await client.post(`${endpoint}/generate-media-text`, {
+          agentId: "default_agent",
+          expectedRevision: current.draft.contentRevision,
+          language: "en-US",
+          assetKey: type === "image" ? "cover" : "voice",
         });
         expect(response.status, await response.clone().text()).toBe(202);
         const run = (await response.clone().json()) as ActivityRun;
@@ -582,6 +669,122 @@ describe("activity generation through Harness sessions", () => {
         })
       ).status,
     ).toBe(409);
+  });
+
+  it("reviews media text as a candidate, accepts it explicitly, and preserves media bindings", async () => {
+    const f = await fixture("media-text");
+    const run = (await (await f.startMediaText()).json()) as ActivityRun;
+    expect(run.kind).toBe("media-text");
+    expect(run.mediaText).toEqual({
+      language: "en-US",
+      assetKey: "cover",
+      type: "image",
+      text: "A blue penguin",
+    });
+    const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
+    expect(session.approvalMode).toBe("always-ask");
+    const input = JSON.parse(
+      await fs.readFile(path.join(session.workspace!, "media-text-input.json"), "utf8"),
+    );
+    expect(input).toEqual(run.mediaText);
+    const result = await f.finish(run);
+    expect(result.status, result.error ?? "").toBe("succeeded");
+    const candidate = JSON.parse(result.candidate!) as Record<string, unknown>;
+    expect(candidate).toEqual({
+      language: "en-US",
+      assetKey: "cover",
+      type: "image",
+      text: "A brighter blue penguin",
+    });
+    const outsider = await provisionUser(f.t.app, "media_text_outsider");
+    expect(
+      (await apiClient(f.t.app, outsider.cookie).get(`${f.endpoint}/runs/${run.runId}/candidate`))
+        .status,
+    ).toBe(404);
+    const before = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    const beforeSpec = before.draft.spec;
+    const beforeSpanish = before.draft.mediaPlan!.manifest.assets["es-MX"]![0];
+    const beforeUsages = before.draft.mediaPlan!.manifest.assets["en-US"]![0]!.usages;
+    const accepted = await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-media-text`, {
+      expectedRevision: run.inputRevision,
+    });
+    expect(accepted.status, await accepted.clone().text()).toBe(200);
+    const after = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    const asset = after.draft.mediaPlan!.manifest.assets["en-US"]![0]!;
+    expect(asset.description).toBe("A brighter blue penguin");
+    expect(asset.path).toBe("media/existing-cover.png");
+    expect(asset.usages).toEqual(beforeUsages);
+    expect(after.draft.mediaPlan!.manifest.assets["es-MX"]![0]).toEqual(beforeSpanish);
+    expect(after.draft.spec).toEqual(beforeSpec);
+  });
+
+  it("keeps a media-text conflict previewable and refuses acceptance after a draft edit", async () => {
+    const f = await fixture("media-text");
+    const run = (await (await f.startMediaText()).json()) as ActivityRun;
+    await f.client.patch(`${f.endpoint}/description`, {
+      description: "Edited during media text generation",
+      expectedRevision: run.inputRevision,
+    });
+    const result = await f.finish(run);
+    expect(result.status).toBe("conflict");
+    expect(result.candidate).toContain("A brighter blue penguin");
+    expect(
+      (
+        await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-media-text`, {
+          expectedRevision: run.inputRevision,
+        })
+      ).status,
+    ).toBe(409);
+  });
+
+  it("updates only an accepted audio script while retaining its existing binding", async () => {
+    const f = await fixture("media-text");
+    const run = (await (await f.startMediaText("audio")).json()) as ActivityRun;
+    expect(run.mediaText).toEqual({
+      language: "en-US",
+      assetKey: "voice",
+      type: "audio",
+      text: "Penguin",
+    });
+    const before = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    const beforeAsset = before.draft.mediaPlan!.manifest.assets["en-US"]![0]!;
+    const beforeSpec = before.draft.spec;
+    const result = await f.finish(run);
+    expect(result.status).toBe("succeeded");
+    expect(JSON.parse(result.candidate!)).toMatchObject({
+      type: "audio",
+      text: "Hello there.",
+    });
+    const accepted = await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-media-text`, {
+      expectedRevision: run.inputRevision,
+    });
+    expect(accepted.status, await accepted.clone().text()).toBe(200);
+    const after = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    const afterAsset = after.draft.mediaPlan!.manifest.assets["en-US"]![0]!;
+    expect(afterAsset.script).toBe("Hello there.");
+    expect(afterAsset.description).toBe(beforeAsset.description);
+    expect(afterAsset.path).toBe(beforeAsset.path);
+    expect(beforeAsset.generatedAudio).toBeDefined();
+    expect(afterAsset.generatedAudio).toEqual(beforeAsset.generatedAudio);
+    const authoring = f.t.deps.tree.api<ActivityAuthoring>("ActivitiesModule", "ActivityAuthoring");
+    expect(
+      await authoring.readAudio(
+        "generator-activities",
+        f.activity.id,
+        afterAsset.generatedAudio!.runId,
+        afterAsset.generatedAudio!.sha256,
+      ),
+    ).toEqual(speechWave());
+    expect(afterAsset.usages).toEqual(beforeAsset.usages);
+    expect(after.draft.spec).toEqual(beforeSpec);
+  });
+
+  it("rejects malformed media-text output without changing the draft", async () => {
+    const f = await fixture("media-text");
+    const run = (await (await f.startMediaText()).json()) as ActivityRun;
+    const before = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    expect((await f.finish(run, "invalid")).status).toBe("failed");
+    await expect((await f.client.get(f.endpoint)).json()).resolves.toEqual(before);
   });
 
   it("assembles a WAF module through the same Session approvals and retains draft identity", async () => {

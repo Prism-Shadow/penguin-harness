@@ -616,6 +616,25 @@ export const MIGRATIONS: readonly Migration[] = [
       db.exec("DROP TABLE activity_image_runs");
     },
   },
+  {
+    version: 16,
+    name: "activity-media-text-runs",
+    // Restart-only: older collectors do not know how to classify media-text attempts.
+    swapSafe: false,
+    up(db) {
+      db.exec(
+        "CREATE TABLE IF NOT EXISTS activity_media_text_runs (run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE)",
+      );
+    },
+    down(db) {
+      const row = db.prepare("SELECT COUNT(*) AS count FROM activity_media_text_runs").get() as {
+        count: number;
+      };
+      if (row.count)
+        throw new Error("Cannot remove media text run storage while media text attempts exist.");
+      db.exec("DROP TABLE activity_media_text_runs");
+    },
+  },
 ];
 
 /** The highest version this build knows how to reach. */
