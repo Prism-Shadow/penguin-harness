@@ -307,7 +307,7 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
         )}
       </nav>
       {/* The account menu opens here, on the rail, instead of the avatar expanding the sidebar
-          first: appearance and System settings, the update row and signing out all stay one
+          first: appearance and Settings, the update row and signing out all stay one
           click away while collapsed. Same component as the pinned sidebar's (user-menu.tsx). */}
       <UserMenu
         className="mt-auto shrink-0"

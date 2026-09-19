@@ -131,7 +131,7 @@ export function AppRouter() {
             <Route path="channels/:channelId" element={<ChannelView />} />
             <Route path="*" element={<Navigate to="overview" replace />} />
           </Route>
-          {/* System settings and user management live in the settings dialog now (see
+          {/* Settings and user management live in the settings dialog now (see
               SettingsDialog); their old routes fall through to the catch-all. */}
           <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>

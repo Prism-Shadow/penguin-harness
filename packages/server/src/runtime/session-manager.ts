@@ -255,7 +255,7 @@ export function createCoreSessionLoader(
     proxyEnv?: () => ProxyEnvPolicy | null;
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
     pathPrepend?: () => string[];
-    confineSpawn?: () => SpawnConfiner | null;
+    confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
   } = {},
 ): SessionLoader {
   return {
@@ -629,6 +629,17 @@ function isPlainText(role: "user" | "assistant") {
 
 export class SessionManager {
   private readonly entries = new Map<string, RuntimeEntry>();
+  /**
+   * Each registered subagent Session's ROOT Session: a subagent runs under its root's
+   * sandbox policy, as it runs under its root's approval mode, so a change the person makes
+   * in the composer reaches the children already running.
+   */
+  private readonly childRoots = new Map<string, string>();
+
+  /** The Session whose policy governs `sessionId`: its root for a subagent, else itself. */
+  rootSessionOf(sessionId: string): string {
+    return this.childRoots.get(sessionId) ?? sessionId;
+  }
   /** Per-Session mutex (serializes get-or-load and status flips); auto-cleaned once the chain drains. */
   private readonly locks = new Map<string, Promise<unknown>>();
   private readonly log: (line: string) => void;
@@ -2044,6 +2055,8 @@ export class SessionManager {
     // row deliberately stores no source column.
     const source = asSessionSource(p.source) ?? "subagent";
     this.deps.sources.set(childSid, source);
+    const root = this.rootSessionOf(entry.sessionId);
+    this.childRoots.set(childSid, root);
     const createdAt = this.now().toISOString();
     this.deps.sessions.insertOrIgnore({
       sessionId: childSid,
@@ -2055,6 +2068,9 @@ export class SessionManager {
       // A subagent's approvals are inherited from the parent Session; the index row is
       // inserted with defaults (matches the convention for Sessions discovered by the CLI).
       approvalMode: "allow-all",
+      // The root's policy at registration, so the child row stands on its own if it is ever
+      // resumed directly; while registered it follows the root (see rootSessionOf).
+      sandbox: this.deps.sessions.findById(root)?.sandbox ?? null,
       title: null,
       // Spawned by this server's run (client NULL = web); its Trace exists by construction.
       hasTrace: true,
@@ -2257,6 +2273,8 @@ export abstract class SessionServiceIface extends Interface<
     | "listSessions"
     | "sessionStats"
     | "createSession"
+    | "defaultSandbox"
+    | "updateSandbox"
     | "latestTracePath"
     | "adoptUnmanagedTraceSessions"
   >
@@ -2268,7 +2286,7 @@ export abstract class SessionEnv extends Interface<{
   controlEnv(ctx: ControlEnvContext): Record<string, string>;
   /** The directories at the FRONT of every command's PATH: the harness's own CLI shim (see CreateAgentOptions.pathPrepend). */
   pathPrepend(): string[];
-  confineSpawn(): SpawnConfiner | null;
+  confineSpawn(ctx: ControlEnvContext): SpawnConfiner | null;
 }>() {}
 
 @Module()
@@ -2343,7 +2361,18 @@ export class SessionsModule {
       // this field publishes a config without it and wrote no shim either: no field, no
       // directory, feature off, rather than a push declined over a PATH entry.
       pathPrepend: (): string[] => (config.cliEntry ? [cliShimDir(config.root)] : []),
-      confineSpawn: () => sandbox.confiner(),
+      // Each Session confines under its OWN policy — the snapshot on its row, its root's for a
+      // subagent — so a settings change reaches only Sessions created after it. A row from
+      // before snapshots takes the settings at its first command and keeps them from then on.
+      confineSpawn: (ctx: ControlEnvContext) =>
+        sandbox.confinerFor(() => {
+          const root = manager.rootSessionOf(ctx.sessionId);
+          const row = sessionsRepo.findById(root);
+          if (row?.sandbox) return row.sandbox;
+          const snapshot = sandbox.currentSettings();
+          if (row !== null) sessionsRepo.updateSandbox(root, snapshot);
+          return snapshot;
+        }),
     };
 
     const notifyProjectUsers = (projectId: string, event: ServerEvent): void => {
@@ -2415,6 +2444,9 @@ export class SessionsModule {
       orgIdsOfProject: (projectId) => orgCache.orgIdsOfProject(projectId),
       pathPrepend: env.pathPrepend,
       confineSpawn: env.confineSpawn,
+      sandboxDefaults: () => sandbox.currentSettings(),
+      sandboxLocalNetwork: () =>
+        sandbox.backends().some((b) => b.dimensions.includes("network-local")),
     });
     this.manager = manager;
     this.sessionService = sessionService;

@@ -47,11 +47,13 @@ import type {
   ModelRefDto,
   ModelsResponse,
   SessionCreateRequest,
+  SessionSandbox,
   SkillMetadataItem,
   TaskInputPart,
 } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { UNCONFINED } from "../../lib/permission-level";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
 import { useAuth } from "../../state/auth";
@@ -198,6 +200,9 @@ export function DraftView({
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
+  // Only what the person picked: the rest follows the server's sandbox settings, which the
+  // chat-defaults response carries, so the button shows what the Session would start with.
+  const [sandboxPick, setSandboxPick] = useState<Partial<SessionSandbox>>(cached.sandbox ?? {});
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(cached.modelRef ?? null);
   const textRef = useRef(cached.text ?? "");
   /**
@@ -517,6 +522,7 @@ export function DraftView({
     cancelPendingSave();
     if (!userId) return;
     const data: DraftCache = { text: textRef.current, workspace, approvalMode };
+    if (Object.keys(sandboxPick).length > 0) data.sandbox = sandboxPick;
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
@@ -537,6 +543,7 @@ export function DraftView({
     agentId,
     workspace,
     approvalMode,
+    sandboxPick,
     modelRef,
     cached.source,
   ]);
@@ -663,6 +670,9 @@ export function DraftView({
     touchedRef.current.approval = true;
     setApprovalMode(mode);
   }, []);
+  const changeSandbox = useCallback((pick: Partial<SessionSandbox>) => {
+    setSandboxPick((prev) => ({ ...prev, ...pick }));
+  }, []);
 
   // Synchronous in-flight guard for the one send entry point (the composer): a second
   // submission while one is running would create a second Session with its own first task and
@@ -680,6 +690,7 @@ export function DraftView({
       let createdId: string | null = null;
       try {
         const body: SessionCreateRequest = { approvalMode };
+        if (Object.keys(sandboxPick).length > 0) body.sandbox = sandboxPick;
         // Model reference is submitted as a pair (provider + modelId; falls back to the Project default when not set).
         if (modelRef) {
           body.modelId = modelRef.modelId;
@@ -720,6 +731,7 @@ export function DraftView({
       projectId,
       agentId,
       approvalMode,
+      sandboxPick,
       modelRef,
       workspace,
       cached.source,
@@ -816,6 +828,8 @@ export function DraftView({
           vision={vision}
           approvalMode={approvalMode}
           onChangeApprovalMode={changeApprovalMode}
+          sandbox={{ ...(chatDefaults?.sandbox ?? UNCONFINED), ...sandboxPick }}
+          onChangeSandbox={changeSandbox}
           modeSaving={false}
           autoFocus
           agents={agents}

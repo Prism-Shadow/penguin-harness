@@ -33,7 +33,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: Output of `penguin version`, or the version the app shows in System settings.
+      description: Output of `penguin version`, or the version the app shows in Settings.
       placeholder: v0.2.7, or v0.2.7-14-g9e8f7d6-dirty for a source build
     validations:
       required: true

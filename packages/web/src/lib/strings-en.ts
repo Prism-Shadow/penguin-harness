@@ -130,8 +130,8 @@ export const en: Strings = {
   settings: {
     language: "Language",
     languageInfo: "Interface language; can follow the browser.",
-    /** Sidebar user-menu row opening the System settings dialog. */
-    systemSettings: "System settings",
+    /** Sidebar user-menu row opening the Settings dialog, and that dialog's title. */
+    title: "Settings",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",
@@ -185,6 +185,18 @@ export const en: Strings = {
       tls: "TLS handshake failed",
       network: "Unreachable",
     },
+    /** Admin-only sub-page (server-global): the options loaded plugins declare. */
+    pluginsTitle: "Plugins",
+    /** An enum option this machine cannot honour, listed greyed out. */
+    pluginOptionUnavailable: (title: string, reason: string) =>
+      `${title} (not supported: ${reason})`,
+    pluginsInfo:
+      "The options each loaded plugin declares in its package, drawn from the plugin's own schema. Server-global, like the plugins themselves; a save reaches the plugin at once, nothing to restart. A plugin that declares no options has no form here.",
+    /** A secret field with a stored value: submitting it empty keeps the stored one. */
+    pluginSecretKeepHint: "Leave empty to keep the saved value",
+    pluginSecretClear: "Clear stored value",
+    /** Under a number field whose box does not parse; the save is not sent. */
+    pluginFieldNotNumber: "Must be a number",
     uploadLimitsTitle: "Upload limits",
     /** Its two number fields, both in whole MB. */
     attachmentMaxMb: "Max attachment size (MB)",
@@ -518,7 +530,7 @@ export const en: Strings = {
   },
 
   /**
-   * The Profile page of System settings, and the avatar/nickname it writes. Visible in every
+   * The Profile page of Settings, and the avatar/nickname it writes. Visible in every
    * session, the desktop shell's own window included: a profile needs no password to change.
    */
   profile: {
@@ -1603,6 +1615,8 @@ export const en: Strings = {
     applyConfirmRemove: (name: string) => `Remove ${name}?`,
     applyConfirmBody: "Agent runs in progress in every Project will be stopped.",
     pageTitle: "Plugins",
+    /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
+    openSettings: "Plugin settings",
     pageDesc:
       "Every plugin in one list. The library's plugins ship with this build (skills and/or a hook package — quick-start a chat, or install to agents); the module plugins this Project asks for run in the server, and the rest of the registry can be installed for it.",
     /** The list's header: how many plugins are installed — the library's (shipped, every Agent may use them) plus the module plugins this Project lists. */
@@ -2079,6 +2093,32 @@ Scenarios:
     /** The same rule as `workspaceHint`, short enough to sit under a form field. */
     workspaceHintShort: "Leave empty for a temporary workspace",
     approvalMode: "Approval mode",
+    /** The composer's permission button: one colored shield for the level, a menu of Fs / Network / More. */
+    permission: {
+      label: "Permissions",
+      levels: {
+        all: "Full access",
+        partial: "Partial",
+        "read-only": "Read only",
+        off: "Off",
+      } as Record<string, string>,
+      fs: "Filesystem",
+      fsModes: {
+        "read-only": "Read only",
+        "workspace-write": "Workspace write",
+        "danger-full-access": "Full access",
+      } as Record<string, string>,
+      network: "Network",
+      networkModes: {
+        open: "Full access",
+        local: "Local network (localhost only)",
+        none: "No network",
+      } as Record<string, string>,
+      unsupported: "Not supported",
+      localUnsupported: "No sandbox backend on this machine can limit the network to localhost",
+      more: "More…",
+      approval: "Approval",
+    },
     approvalModeNames: {
       "allow-all": "Approve everything",
       "deny-all": "Deny everything",

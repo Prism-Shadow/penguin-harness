@@ -83,6 +83,7 @@ import type {
   PendingFollowUpInfo,
   PendingSteeringInfo,
   RecalledMessageResponse,
+  SessionSandbox,
   SessionStatus,
   SkillMetadataItem,
   TaskInputPart,
@@ -95,6 +96,7 @@ import { agentDisplayName } from "../../state/project";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { Button } from "../../components/ui/button";
 import { Dropdown } from "../../components/ui/dropdown";
+import { PermissionSelect } from "./permission-select";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { CheckIcon, ChevronDown, FILE_ICON, QUOTE_ICON } from "../../components/ui/icons";
 import { FOLDER_ICON } from "../../components/ui/group-list";
@@ -132,111 +134,6 @@ import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
 import { lineSuffix } from "../../lib/workspace-tree";
 import type { ComposerReference } from "../../lib/workspace-tree";
-
-const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
-
-/**
- * Illustrative icon for each approval mode (24x24 line art, grayscale via currentColor, no
- * color-coding): allow-all uses a warning triangle — it permits everything at the user's own
- * risk, the shape hints at it visually without rendering tension through color; deny-all is a
- * no-entry sign, read-only is an eye, always-ask is a question-mark circle.
- */
-const APPROVAL_MODE_ICONS: Record<ApprovalMode, string> = {
-  "allow-all":
-    "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4m0 4h.01",
-  "deny-all": "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.64 5.64l12.72 12.72",
-  "read-only":
-    "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
-  "always-ask":
-    "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.1 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3m.07 4h.01",
-};
-
-/**
- * Approval mode selector (custom-drawn dropdown, not the browser's native select): small,
- * grayscale.
- * Popup direction depends on context: for the draft card, vertically centered with room below
- * -> opens downward; for the chat input area docked at the bottom of the screen, where opening
- * downward would overflow the viewport with nowhere to scroll -> opens upward.
- */
-function ApprovalModeSelect({
-  value,
-  onChange,
-  disabled,
-  direction = "up",
-}: {
-  value: ApprovalMode;
-  onChange: (mode: ApprovalMode) => void;
-  disabled: boolean;
-  direction?: "up" | "down";
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Dropdown
-      open={open}
-      setOpen={setOpen}
-      // w-max: width exactly wraps the longest line (no wrapping within a line), avoiding an
-      // overly wide panel. Placement is portal-driven (the toolbar scrolls horizontally on
-      // phones, which would otherwise clip the panel); only size classes belong here.
-      menuClass="w-max"
-      portal={{ direction, align: "left" }}
-      button={
-        // Button styling matches the model selector (h-8 / rounded-md / solid hover background).
-        <button
-          type="button"
-          aria-label={S.chat.approvalMode}
-          title={`${S.chat.approvalMode}：${S.chat.approvalModeNames[value] ?? value}`}
-          disabled={disabled}
-          onClick={() => setOpen((v) => !v)}
-          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-        >
-          {/* Icon changes with the current mode (allow-all = warning triangle, grayscale, no color-coding) */}
-          <GlyphIcon d={APPROVAL_MODE_ICONS[value]} />
-          {/* Button shows only the description (the mode id is spelled out in the menu); when the card is narrower than @md, only the icon remains (title shows the full name). */}
-          <span className="hidden min-w-0 truncate @md:block">
-            {S.chat.approvalModeNames[value] ?? value}
-          </span>
-          <ChevronDown size={ICON_SIZE.caretDense} />
-        </button>
-      }
-    >
-      {APPROVAL_MODES.map((m) => (
-        <button
-          key={m}
-          type="button"
-          onClick={() => {
-            onChange(m);
-            setOpen(false);
-          }}
-          className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-            m === value
-              ? "font-medium text-gray-900 dark:text-gray-100"
-              : "text-gray-600 dark:text-gray-400"
-          }`}
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.7"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-            className="shrink-0 text-gray-400 dark:text-gray-500"
-          >
-            <path d={APPROVAL_MODE_ICONS[m]} />
-          </svg>
-          {/* Description first, mode id after (copy in strings); single line, no wrapping, selected checkmark at line end. */}
-          <span className="min-w-0 flex-1 truncate whitespace-nowrap">
-            {S.chat.approvalModes[m] ?? m}
-          </span>
-          <span className="w-3 shrink-0 text-center">{m === value ? "✓" : ""}</span>
-        </button>
-      ))}
-    </Dropdown>
-  );
-}
 
 /**
  * Agent candidate panel for the `/agent` switch picker — the agent-side counterpart of
@@ -523,18 +420,16 @@ function SkillSelect({
           disabled={disabled}
           // The panel is unmounted while closed, so its search box starts empty on every open.
           onClick={() => setOpen(!open)}
-          className="flex h-8 max-w-44 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+          // Icon only, the + button's square; the selected count rides the corner.
+          className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
         >
-          <GlyphIcon d={BOOK_ICON} className="shrink-0" />
-          {/* When the card is narrower than @md, only the icon + badge remain (title shows the full name). */}
-          <span className="hidden min-w-0 truncate @md:block">{S.chat.skillsSelect}</span>
+          <GlyphIcon d={BOOK_ICON} size={15} className="shrink-0" />
           {/* Selected-count badge (the chip row above the input mirrors the selection too). */}
           {selected.length > 0 && (
-            <span className="shrink-0 rounded-full bg-gray-200/80 px-1.5 py-px font-mono text-[10px] font-semibold text-gray-700 dark:bg-gray-700/60 dark:text-gray-200">
+            <span className="absolute -top-0.5 -right-0.5 min-w-3.5 rounded-full bg-gray-200 px-1 text-center font-mono text-[9px] leading-3.5 font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200">
               {selected.length}
             </span>
           )}
-          <ChevronDown size={ICON_SIZE.caretDense} />
         </button>
       }
     >
@@ -859,6 +754,8 @@ export function ChatInput({
   vision,
   approvalMode,
   onChangeApprovalMode,
+  sandbox,
+  onChangeSandbox,
   modeSaving,
   autoFocus,
   agents,
@@ -1023,7 +920,11 @@ export function ChatInput({
   /** Whether the current model supports image input (models config's vision; assumed supported by default). */
   vision: boolean;
   approvalMode: ApprovalMode;
-  onChangeApprovalMode: (mode: ApprovalMode) => void;
+  /** A returned promise keeps the permission button's pick on screen until the save settles. */
+  onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<unknown>;
+  /** The Session's own sandbox policy (the draft's pick before there is a Session). */
+  sandbox: SessionSandbox;
+  onChangeSandbox: (pick: Partial<SessionSandbox>) => void | Promise<unknown>;
   modeSaving: boolean;
   autoFocus?: boolean;
   /** Agent list of the current Project: the `/agent` command's candidates (without any, the command isn't offered). */
@@ -2713,69 +2614,75 @@ export function ChatInput({
               className="hidden"
               onChange={onPickAttachments}
             />
-            {/* "+" extension menu, leading the row: input add-ons (image upload, file
+            {/* The three icon buttons — +, permission, skills — sit as one tight cluster: the
+                row's wider gap would read them as unrelated controls. */}
+            <div className="flex shrink-0 items-center gap-0.5">
+              {/* "+" extension menu, leading the row: input add-ons (image upload, file
                 attachment, goal mode) plus the input settings footer (mid-run send mode —
                 usable while running, which is exactly when it matters, so the button itself
                 never disables). The uploads live in here rather than as their own toolbar
                 buttons: one 8x8 slot instead of three, which is the difference between the
                 phone row scrolling and not. */}
-            {variant === "session" && (
-              <PlusMenu
-                items={[
-                  {
-                    key: "image",
-                    icon: IMAGE_ICON,
-                    label: S.chat.uploadImage,
-                    // Without vision the images still send — as scratchpad file paths — so the
-                    // entry stays usable and the hint says what will happen instead. Goal mode
-                    // sends them that way on any model, since the objective is re-injected as
-                    // text every round.
-                    desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
-                    active: images.length > 0,
-                    onSelect: () => imageInputRef.current?.click(),
-                  },
-                  {
-                    key: "file",
-                    icon: PAPERCLIP_ICON,
-                    label: S.chat.uploadFile,
-                    // The description doubles as the explanation of where the file ends up:
-                    // it is filed into the session scratchpad and reached by path, never
-                    // inlined into the conversation.
-                    desc: S.chat.uploadFileDesc,
-                    active: attachments.length > 0,
-                    // Unlike images, a file cannot ride a goal: nothing folds it into the
-                    // objective that every round re-injects, so the server refuses it.
-                    disabled: goalOn,
-                    onSelect: () => attachmentInputRef.current?.click(),
-                  },
-                  {
-                    key: "goal",
-                    icon: GOAL_ICON,
-                    label: S.chat.goalMode,
-                    desc: S.chat.goalModeDesc,
-                    active: goalOn,
-                    disabled: running || compacting || busy,
-                    onSelect: () => toggleGoal(!goalOn),
-                  },
-                ]}
-                footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
+              {variant === "session" && (
+                <PlusMenu
+                  items={[
+                    {
+                      key: "image",
+                      icon: IMAGE_ICON,
+                      label: S.chat.uploadImage,
+                      // Without vision the images still send — as scratchpad file paths — so the
+                      // entry stays usable and the hint says what will happen instead. Goal mode
+                      // sends them that way on any model, since the objective is re-injected as
+                      // text every round.
+                      desc: vision && !goalOn ? S.chat.uploadImageDesc : S.chat.imagesAsPathHint,
+                      active: images.length > 0,
+                      onSelect: () => imageInputRef.current?.click(),
+                    },
+                    {
+                      key: "file",
+                      icon: PAPERCLIP_ICON,
+                      label: S.chat.uploadFile,
+                      // The description doubles as the explanation of where the file ends up:
+                      // it is filed into the session scratchpad and reached by path, never
+                      // inlined into the conversation.
+                      desc: S.chat.uploadFileDesc,
+                      active: attachments.length > 0,
+                      // Unlike images, a file cannot ride a goal: nothing folds it into the
+                      // objective that every round re-injects, so the server refuses it.
+                      disabled: goalOn,
+                      onSelect: () => attachmentInputRef.current?.click(),
+                    },
+                    {
+                      key: "goal",
+                      icon: GOAL_ICON,
+                      label: S.chat.goalMode,
+                      desc: S.chat.goalModeDesc,
+                      active: goalOn,
+                      disabled: running || compacting || busy,
+                      onSelect: () => toggleGoal(!goalOn),
+                    },
+                  ]}
+                  footer={<SteerModeRow steerMode={steerMode} onChangeSteerMode={setSteerMode} />}
+                  direction={models && onChangeModel ? "down" : "up"}
+                />
+              )}
+              <PermissionSelect
+                approvalMode={approvalMode}
+                sandbox={sandbox}
+                onChangeApprovalMode={onChangeApprovalMode}
+                onChangeSandbox={onChangeSandbox}
+                disabled={modeSaving}
                 direction={models && onChangeModel ? "down" : "up"}
               />
-            )}
-            <ApprovalModeSelect
-              value={approvalMode}
-              onChange={onChangeApprovalMode}
-              disabled={modeSaving}
-              direction={models && onChangeModel ? "down" : "up"}
-            />
-            {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
-            <SkillSelect
-              skills={skills}
-              selected={selectedSkills}
-              onToggle={toggleSkill}
-              disabled={running || compacting || busy}
-              direction={models && onChangeModel ? "down" : "up"}
-            />
+              {/* Multi-select skills dropdown (after approval mode): selected state is conveyed via the button badge. */}
+              <SkillSelect
+                skills={skills}
+                selected={selectedSkills}
+                onToggle={toggleSkill}
+                disabled={running || compacting || busy}
+                direction={models && onChangeModel ? "down" : "up"}
+              />
+            </div>
             {/* Help text: shown only when the card is wide enough (@lg); it never competes for
                 space on phones, where the group scrolls instead. */}
             <span

@@ -4,6 +4,7 @@
  */
 import type { ThinkingLevelName } from "@prismshadow/penguin-core/interfaces";
 import type { ApprovalMode } from "../../api/types.js";
+import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
 import type { SessionIndex } from "../../mechanisms/sessions.js";
@@ -53,6 +54,33 @@ export interface SessionRow {
    */
   lastActiveAt: string;
   createdAt: string;
+  /**
+   * The Session's own sandbox policy, snapshotted from the server's settings at creation.
+   * NULL = a row from before the column: it takes the settings at its next command.
+   */
+  sandbox?: SandboxSettings | null;
+}
+
+/** A stored policy, or null when the column is empty or holds something unreadable. */
+function parseSandbox(raw: unknown): SandboxSettings | null {
+  if (typeof raw !== "string" || raw === "") return null;
+  try {
+    const value = JSON.parse(raw) as Partial<SandboxSettings> | null;
+    const modes = ["read-only", "workspace-write", "danger-full-access"];
+    if (value === null || typeof value !== "object" || !modes.includes(value.mode as string)) {
+      return null;
+    }
+    return {
+      mode: value.mode as SandboxSettings["mode"],
+      ...(value.network === "none" || value.network === "local" ? { network: value.network } : {}),
+      ...(Array.isArray(value.maskPaths)
+        ? { maskPaths: value.maskPaths.filter((p): p is string => typeof p === "string") }
+        : {}),
+      ...(typeof value.writableTemp === "boolean" ? { writableTemp: value.writableTemp } : {}),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function mapRow(r: Record<string, unknown>): SessionRow {
@@ -73,6 +101,7 @@ function mapRow(r: Record<string, unknown>): SessionRow {
     // somehow inserted as NULL (degrades to createdAt instead of surfacing undefined).
     lastActiveAt: (r.last_active_at as string | null) ?? (r.created_at as string),
     createdAt: r.created_at as string,
+    sandbox: parseSandbox(r.sandbox),
   };
 }
 
@@ -129,8 +158,8 @@ export class SessionsRepo implements SessionIndex {
   private runInsert(verb: "INSERT" | "INSERT OR IGNORE", row: SessionRow): void {
     this.db
       .prepare(
-        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?)`,
+        `${verb} INTO sessions (session_id, project_id, agent_id, provider, model_id, workspace, approval_mode, title, client, has_trace, last_active_at, created_at, sandbox)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ?), ?, ?)`,
       )
       .run(
         row.sessionId,
@@ -146,6 +175,7 @@ export class SessionsRepo implements SessionIndex {
         row.lastActiveAt ?? null,
         row.createdAt,
         row.createdAt,
+        row.sandbox ? JSON.stringify(row.sandbox) : null,
       );
   }
 
@@ -226,6 +256,13 @@ export class SessionsRepo implements SessionIndex {
     this.db
       .prepare("UPDATE sessions SET approval_mode = ? WHERE session_id = ?")
       .run(mode, sessionId);
+  }
+
+  /** Replace the Session's sandbox policy snapshot (applies from its next command). */
+  updateSandbox(sessionId: string, sandbox: SandboxSettings): void {
+    this.db
+      .prepare("UPDATE sessions SET sandbox = ? WHERE session_id = ?")
+      .run(JSON.stringify(sandbox), sessionId);
   }
 
   /** Pin the session's thinking level (runs without one of their own then use it). */

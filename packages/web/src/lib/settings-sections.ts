@@ -1,5 +1,5 @@
 /**
- * The System settings dialog's pages, and who may see each one.
+ * The Settings dialog's pages, and who may see each one.
  *
  * Server-global pages write through /api/admin/settings (or the admin user routes) and
  * belong to admins alone; the personal pages are per-user preferences every signed-in user
@@ -23,9 +23,17 @@
 import { offersChangePassword } from "./account-menu";
 import type { AccountMenuSession } from "./account-menu";
 
-/** A page of the System settings dialog. */
+/** A page of the Settings dialog. */
 export type SettingsSectionKey =
-  "profile" | "general" | "appearance" | "account" | "proxy" | "uploads" | "company" | "users";
+  | "profile"
+  | "general"
+  | "appearance"
+  | "account"
+  | "proxy"
+  | "uploads"
+  | "company"
+  | "plugins"
+  | "users";
 
 /** Rail heading a page sits under: the viewer's own preferences vs. the whole server's. */
 export type SettingsGroupKey = "personal" | "server";
@@ -59,6 +67,8 @@ const SECTION_RULES: ReadonlyArray<SettingsSection & { visible(viewer: SettingsV
     { key: "uploads", group: "server", visible: (v) => v.isAdmin },
     // The company-mode master switch: server-global like the proxy and upload limits.
     { key: "company", group: "server", visible: (v) => v.isAdmin },
+    // The sandbox, and the options loaded plugins declare (server-global, like the plugins themselves).
+    { key: "plugins", group: "server", visible: (v) => v.isAdmin },
     // Single-user under the desktop shell: the server rejects the admin user routes there.
     { key: "users", group: "server", visible: (v) => v.isAdmin && !v.desktopMode },
   ];

@@ -22,6 +22,7 @@ import type {
   SessionCategory,
   SessionCategoryCounts,
   SessionInfo,
+  SessionSandbox,
   SessionSource,
 } from "../api/types.js";
 import { HttpError, isMissingCredential, modelCredentialMissing } from "../http/errors.js";
@@ -34,6 +35,75 @@ import { matchesWorkspaceGroup } from "./workspace-group.js";
 import type { TraceIndex, TraceIndexStore } from "../mechanisms/traces.js";
 import type { SessionIndex, SessionOrigins } from "../mechanisms/sessions.js";
 import type { ProjectConfigStore } from "../mechanisms/projects.js";
+import type { SandboxSettings } from "@prismshadow/penguin-core/plugin";
+
+const SANDBOX_MODE_RANK: Record<SandboxSettings["mode"], number> = {
+  "read-only": 0,
+  "workspace-write": 1,
+  "danger-full-access": 2,
+};
+
+const SANDBOX_NETWORK_RANK: Record<SessionSandbox["network"], number> = {
+  none: 0,
+  local: 1,
+  open: 2,
+};
+
+/** A stored policy's network level as the composer names it. */
+function networkOf(policy: SandboxSettings): SessionSandbox["network"] {
+  return policy.network ?? "open";
+}
+
+/** A stored policy as the composer sees it, with whether this server can enforce `local`. */
+export function sessionSandboxOf(
+  policy: SandboxSettings,
+  localNetworkSupported = false,
+): SessionSandbox {
+  return { mode: policy.mode, network: networkOf(policy), localNetworkSupported };
+}
+
+/**
+ * `base` with the composer's picks laid over it — the mask paths and the temp directory stay
+ * what the snapshot holds. A non-admin may tighten but never loosen past the server's settings
+ * (`defaults`): the admin's sandbox is the ceiling for everyone else, per Session or not.
+ */
+export function applySandboxPick(
+  base: SandboxSettings,
+  pick: Partial<SessionSandbox>,
+  defaults: SandboxSettings,
+  isAdmin: boolean,
+  localNetworkSupported = false,
+): SandboxSettings {
+  const mode = pick.mode ?? base.mode;
+  const network = pick.network ?? networkOf(base);
+  // Picking a level no backend here can enforce would make every command fail closed; say so
+  // now instead. A policy that already holds it (a backend went away) fails at the command.
+  if (pick.network === "local" && !localNetworkSupported) {
+    throw new HttpError(
+      400,
+      "sandbox_unsupported",
+      "No sandbox backend on this server can limit the network to localhost.",
+    );
+  }
+  if (!isAdmin) {
+    if (SANDBOX_MODE_RANK[mode] > SANDBOX_MODE_RANK[defaults.mode]) {
+      throw new HttpError(
+        403,
+        "sandbox_forbidden",
+        `Only an administrator can give a Session more filesystem access than the server's sandbox settings (${defaults.mode}).`,
+      );
+    }
+    if (SANDBOX_NETWORK_RANK[network] > SANDBOX_NETWORK_RANK[networkOf(defaults)]) {
+      throw new HttpError(
+        403,
+        "sandbox_forbidden",
+        `Only an administrator can give a Session more network access than the server's sandbox settings (${networkOf(defaults)}).`,
+      );
+    }
+  }
+  const { network: _dropped, ...rest } = base;
+  return { ...rest, mode, ...(network === "open" ? {} : { network }) };
+}
 
 const SESSION_ID_TS_RE = /^session-(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-[0-9a-f]{8}$/;
 
@@ -97,11 +167,48 @@ export interface SessionServiceDeps {
   orgIdOfSession?: (sessionId: string) => string | undefined;
   orgIdsOfProject?: (projectId: string) => ReadonlyMap<string, string>;
   /** Spawn-confinement getter (the sandbox module's), forwarded into core beside proxyEnv. */
-  confineSpawn?: () => SpawnConfiner | null;
+  confineSpawn?: (ctx: ControlEnvContext) => SpawnConfiner | null;
+  /** The server's Sandbox settings: what a new Session's policy is snapshotted from. */
+  sandboxDefaults?: () => SandboxSettings;
+  /** Whether a mounted sandbox backend implements the `local` network level. */
+  sandboxLocalNetwork?: () => boolean;
 }
 
 export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
+
+  /** The policy a new Session starts with: the server's Sandbox settings. */
+  defaultSandbox(): SandboxSettings {
+    return this.deps.sandboxDefaults?.() ?? { mode: "danger-full-access" };
+  }
+
+  /** Whether this server can enforce the `local` network level right now. */
+  localNetworkSupported(): boolean {
+    return this.deps.sandboxLocalNetwork?.() ?? false;
+  }
+
+  /** A policy as the composer sees it, with this server's support for `local`. */
+  sandboxView(policy: SandboxSettings): SessionSandbox {
+    return sessionSandboxOf(policy, this.localNetworkSupported());
+  }
+
+  /** A Session's policy: its snapshot, or — for a row from before snapshots — the settings. */
+  sandboxOf(row: SessionRow): SandboxSettings {
+    return row.sandbox ?? this.defaultSandbox();
+  }
+
+  /** Changes one Session's policy (its next command runs under it); returns the new policy. */
+  updateSandbox(row: SessionRow, pick: Partial<SessionSandbox>, isAdmin: boolean): SandboxSettings {
+    const next = applySandboxPick(
+      this.sandboxOf(row),
+      pick,
+      this.defaultSandbox(),
+      isAdmin,
+      this.localNetworkSupported(),
+    );
+    this.deps.sessions.updateSandbox(row.sessionId, next);
+    return next;
+  }
 
   /**
    * DB row -> SessionInfo (run status and pending approval count come from session-manager).
@@ -129,6 +236,7 @@ export class SessionService {
       modelId: row.modelId,
       workspace: row.workspace,
       approvalMode: row.approvalMode,
+      sandbox: this.sandboxView(this.sandboxOf(row)),
       ...(row.thinkingLevel ? { thinkingLevel: row.thinkingLevel } : {}),
       ...(row.title !== null ? { title: row.title } : {}),
       ...(source !== undefined ? { source } : {}),
@@ -366,6 +474,10 @@ export class SessionService {
     provider?: string;
     workspace?: string;
     approvalMode?: ApprovalMode;
+    /** The composer's sandbox picks; omitted halves take the server's settings. */
+    sandbox?: Partial<SessionSandbox>;
+    /** Whether the creator is an administrator (may loosen past the settings). Default false. */
+    isAdmin?: boolean;
     /**
      * Session source marker: `schedule` when triggered by a scheduled task, `benchmark` when
      * created by a Benchmark evaluation or optimization (the only value a client may send);
@@ -385,6 +497,8 @@ export class SessionService {
         "modelId and provider must be given together as a (provider, modelId) pair: specify both, or neither to use the Project's default model.",
       );
     }
+    // Checked before anything is created: a refused pick must not leave a Session behind.
+    const sandbox = this.snapshotSandbox(args);
     let modelId: string;
     let provider: string;
     if (args.modelId !== undefined && args.provider !== undefined) {
@@ -449,6 +563,7 @@ export class SessionService {
       modelId: session.modelId,
       workspace: session.workspaceDir,
       approvalMode: args.approvalMode ?? "allow-all",
+      sandbox,
       title: null,
       // The creator's hint: "cli" when the CLI created this Session through the API,
       // "org" when the organization runtime opened a desk or a ticket session, otherwise
@@ -460,7 +575,25 @@ export class SessionService {
     };
     this.deps.sessions.insert(row);
     this.deps.manager.adopt(row, session);
+
     return this.toInfo(row, false);
+  }
+
+  /** A new Session's snapshot: the settings, with the creator's picks (checked) on top. */
+  private snapshotSandbox(args: {
+    sandbox?: Partial<SessionSandbox>;
+    isAdmin?: boolean;
+  }): SandboxSettings {
+    const defaults = this.defaultSandbox();
+    return args.sandbox === undefined
+      ? defaults
+      : applySandboxPick(
+          defaults,
+          args.sandbox,
+          defaults,
+          args.isAdmin ?? false,
+          this.localNetworkSupported(),
+        );
   }
 
   /**

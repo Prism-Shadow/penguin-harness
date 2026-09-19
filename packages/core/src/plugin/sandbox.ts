@@ -134,7 +134,14 @@ export interface SandboxProvider {
 }
 
 /** A provider, or a promise of one: backends load asynchronously (dynamic imports, probes). */
-export type SandboxProviderSource = SandboxProvider | PromiseLike<SandboxProvider | null> | null;
+export type SandboxProviderLoad = SandboxProvider | PromiseLike<SandboxProvider | null> | null;
+
+/**
+ * What a backend binds: a load, or a loader that produces one. A loader is called at boot and
+ * again after its failure whenever the sandbox's settings are saved — so a backend whose check
+ * failed on a setting (a wrong program path) recovers once that setting is fixed, no restart.
+ */
+export type SandboxProviderSource = SandboxProviderLoad | (() => SandboxProviderLoad);
 
 /**
  * The active confinement settings, resolved per spawn. A type literal with plain
@@ -145,4 +152,6 @@ export type SandboxSettings = {
   mode: SandboxMode;
   network?: SandboxNetwork;
   maskPaths?: string[];
+  /** Grant the system temp directory writable (SandboxPolicy.writableTemp). Absent = granted. */
+  writableTemp?: boolean;
 };

@@ -1,5 +1,5 @@
 /**
- * Profile page of System settings: the avatar and nickname the account shows itself by.
+ * Profile page of Settings: the avatar and nickname the account shows itself by.
  *
  * Unlike the Account page beside it, this one exists in every session — the desktop shell's
  * own token window included, which for a desktop install is the only session there is. A

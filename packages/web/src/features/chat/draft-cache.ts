@@ -10,7 +10,7 @@
  * succession and the key only contains the Project/Session ID, the later user would recover the
  * previous user's text, Workspace, model selection, and handoff target — a cross-account information leak.
  */
-import type { ApprovalMode } from "@prismshadow/penguin-server/api";
+import type { ApprovalMode, SessionSandbox } from "@prismshadow/penguin-server/api";
 
 const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
 
@@ -19,6 +19,8 @@ export interface DraftCache {
   agentId?: string;
   workspace?: string;
   approvalMode?: ApprovalMode;
+  /** The draft's own permission picks; a half left out follows the server's sandbox settings. */
+  sandbox?: Partial<SessionSandbox>;
   /**
    * The model selected in the draft (a paired reference; (provider, modelId) is the unique key):
    * load validates the object shape; the old string-typed modelId field is simply dropped
@@ -123,6 +125,21 @@ export function draftFromUnknown(parsed: unknown): DraftCache {
     APPROVAL_MODES.includes(o.approvalMode as ApprovalMode)
   ) {
     out.approvalMode = o.approvalMode as ApprovalMode;
+  }
+  if (typeof o.sandbox === "object" && o.sandbox !== null) {
+    const raw = o.sandbox as Record<string, unknown>;
+    const sandbox: Partial<SessionSandbox> = {};
+    if (
+      raw.mode === "read-only" ||
+      raw.mode === "workspace-write" ||
+      raw.mode === "danger-full-access"
+    ) {
+      sandbox.mode = raw.mode;
+    }
+    if (raw.network === "open" || raw.network === "local" || raw.network === "none") {
+      sandbox.network = raw.network;
+    }
+    if (Object.keys(sandbox).length > 0) out.sandbox = sandbox;
   }
   return out;
 }

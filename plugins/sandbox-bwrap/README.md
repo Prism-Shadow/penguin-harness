@@ -19,7 +19,8 @@ skew between hosts, and no sandbox that is quietly off because a machine lacked 
 binary finds its library through an `$ORIGIN/../lib` rpath, which is what makes it usable from a
 backend that only rewrites an argv and never sets an environment.
 
-Precedence, when a command is confined: the one shipped here, else a `bwrap` on PATH.
+Precedence, when a command is confined: the program named in the settings, else the one shipped
+here, else a `bwrap` on PATH.
 
 ## How the profile is built
 
@@ -39,6 +40,10 @@ Masking comes last on purpose: the entries have to shadow the read-only bind of 
 would otherwise expose them. A path that does not exist is skipped — there is nothing to
 hide, and materializing an empty directory there would change the filesystem view rather
 than restrict it.
+
+## Settings
+
+On **Settings → Plugins**, inside the Sandbox card: the **bwrap program** (a path or a command on PATH; empty uses `bwrap`) and the **probe timeout** in seconds (1–30, default 5; the confine-time probe blocks the server while it runs). Both apply at the next command spawn; a changed program is probed afresh. If bwrap failed its check at boot (a wrong program, or bubblewrap installed later), saving the card loads it again, no restart.
 
 ## Install
 

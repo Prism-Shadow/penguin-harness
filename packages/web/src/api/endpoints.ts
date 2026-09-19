@@ -157,6 +157,9 @@ import type {
   SessionProcessesResponse,
   SessionResponse,
   PluginIndexResponse,
+  PluginConfigResponse,
+  PluginConfigActionResponse,
+  PluginConfigUpdateRequest,
   PluginReadmeResponse,
   SessionsResponse,
   SessionTracesResponse,
@@ -256,6 +259,21 @@ export const adminDeleteUser = (userId: string) =>
 
 /** Server-global settings (admin only): currently the "use system HTTP proxy" switch. */
 export const adminGetSettings = () => apiFetch<ServerSettingsResponse>("/api/admin/settings");
+
+/** Every loaded plugin that declares a configuration, with its schema and masked values (admin). */
+export const adminGetPluginConfig = () =>
+  apiFetch<PluginConfigResponse>("/api/admin/plugin-config");
+
+/** One package's update (admin): omitted fields keep their value, a masked secret sent back keeps the stored one. */
+export const adminPutPluginConfig = (body: PluginConfigUpdateRequest) =>
+  apiFetch<PluginConfigResponse>("/api/admin/plugin-config", { method: "PUT", body });
+
+/** Runs one settings group's action (admin): what a deployment must DO on the machine, once. */
+export const adminRunPluginConfigAction = (body: { name: string; action: string }) =>
+  apiFetch<PluginConfigActionResponse>("/api/admin/plugin-config/action", {
+    method: "POST",
+    body,
+  });
 
 /** Omitted fields keep their current value; applies immediately (no restart). */
 export const adminPutSettings = (body: ServerSettingsUpdateRequest) =>
@@ -1732,7 +1750,7 @@ export const getDesktopTray = () => apiFetch<DesktopTrayStatusResponse>("/api/de
 export const setDesktopTray = (patch: DesktopTrayPatch) =>
   apiFetch<void>("/api/desktop/tray", { method: "PUT", body: patch });
 
-// ---- The plugins a Project asks for ----
+// ---- The plugins a Project asks for, and the confinement agent commands run under ----
 /**
  * A Project's plugin list. Project-scoped because machines are lent to Projects, so this is
  * what says which machines a plugin has to reach; what the process RUNS is the union over

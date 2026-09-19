@@ -874,6 +874,11 @@ export interface ChatDefaultsDto {
    * "none" — only the selectable tiers.
    */
   thinkingLevel?: Exclude<ThinkingLevelName, "none">;
+  /**
+   * Read-only, GET only: the sandbox policy a new Session starts with — the server's Sandbox
+   * settings. Not part of the Project's block; PUT ignores it.
+   */
+  sandbox?: SessionSandbox;
 }
 
 // ---------------------------------------------------------------------------
@@ -1310,6 +1315,30 @@ export interface MemoryImportResponse {
 // Session
 // ---------------------------------------------------------------------------
 
+/** How far a Session's commands may reach the filesystem (the sandbox's confinement mode). */
+export type SessionSandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+
+/**
+ * The part of a Session's sandbox policy a person picks from the composer: the filesystem
+ * mode and the network level. The Session keeps its own copy — taken from the server's
+ * Sandbox settings when it was created — so editing those settings only changes what NEW
+ * Sessions start with.
+ */
+export interface SessionSandbox {
+  mode: SessionSandboxMode;
+  /** `open` = unrestricted, `local` = only the host's localhost, `none` = no network. */
+  network: SessionSandboxNetwork;
+  /**
+   * Response only, ignored in requests: whether a sandbox backend on this server can enforce
+   * the `local` level. When false the composer shows it greyed out, and picking it is refused
+   * (400 `sandbox_unsupported`).
+   */
+  localNetworkSupported?: boolean;
+}
+
+/** The network levels, widest first. */
+export type SessionSandboxNetwork = "open" | "local" | "none";
+
 export interface SessionInfo {
   sessionId: string;
   projectId: string;
@@ -1320,6 +1349,8 @@ export interface SessionInfo {
   modelId: string;
   workspace: string;
   approvalMode: ApprovalMode;
+  /** The Session's own sandbox policy (see {@link SessionSandbox}). */
+  sandbox: SessionSandbox;
   /**
    * Thinking level pinned for this Session (set via PATCH; the Web App's in-chat picker).
    * Unset = never pinned: each model context the Session opens reads the Agent config's
@@ -1481,6 +1512,11 @@ export interface SessionCreateRequest {
   /** Defaults to allow-all. */
   approvalMode?: ApprovalMode;
   /**
+   * The Session's sandbox policy; either half omitted takes the server's Sandbox settings.
+   * A non-admin may not pick anything looser than those settings (403 `sandbox_forbidden`).
+   */
+  sandbox?: Partial<SessionSandbox>;
+  /**
    * Creating-client hint stored on the Session row: "cli" when the CLI creates the
    * Session through the API, "org" when the organization runtime opened it (a desk or a
    * ticket session — company mode's own, kept out of development mode's lists whether or
@@ -1529,6 +1565,11 @@ export interface SessionResponse {
 
 export interface SessionPatchRequest {
   approvalMode?: ApprovalMode;
+  /**
+   * Change this Session's sandbox policy; applies from its next command. A non-admin may not
+   * pick anything looser than the server's Sandbox settings (403 `sandbox_forbidden`).
+   */
+  sandbox?: Partial<SessionSandbox>;
   /**
    * Pin this Session's thinking level (`none | low | medium | high | xhigh | max`, anything else
    * is a 400). It replaces the Agent-config fallback for this Session and applies from the
@@ -4724,6 +4765,123 @@ export interface ContributionsResponse {
   pages: WebContribution[];
   agentTabs: WebContribution[];
   sessionTabs: WebContribution[];
+}
+
+/**
+ * One field of a settings group a module declares (its `PluginConfigProvider.groups`
+ * contribution's `properties.<name>`): what the Settings dialog draws for it. `secret` is
+ * drawn as a password field and masked on the way out; `enum` is a choice among `options`;
+ * `list` is a list of strings, drawn one per line.
+ */
+export interface PluginConfigField {
+  type: "string" | "secret" | "boolean" | "number" | "enum" | "list";
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  placeholder?: string;
+  /** The value a package with nothing stored reads; also what an empty field falls back to. */
+  default?: string | number | boolean | string[];
+  /** A save that would leave this field empty is refused. */
+  required?: boolean;
+  /** `enum` only: the values it may take, in display order. */
+  options?: PluginConfigOption[];
+  /** `list` only: the most entries a save may leave (after trimming and de-duplicating). */
+  maxItems?: number;
+  /** `number` only: the smallest and largest value a save may store. */
+  minimum?: number;
+  maximum?: number;
+  /** `string` / `list` only: a regular expression every value (every line) must match. */
+  pattern?: string;
+  /** What a save refused by `pattern` says, after the field's name (e.g. "must be an absolute path"). */
+  patternErrorMessage?: string;
+}
+
+/** One choice of an `enum` field. */
+export interface PluginConfigOption {
+  value: string;
+  title: string;
+  titleZh?: string;
+}
+
+/** A declared configuration: a titled group of fields, in declaration order. */
+export interface PluginConfiguration {
+  title?: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+  properties: Record<string, PluginConfigField>;
+}
+
+/** A line of live status a contributed group reports beside its fields (e.g. that nothing can enforce it). */
+export interface PluginConfigNotice {
+  /**
+   * `progress` = work the group started is still running (an install, a download): the page
+   * reads the groups again every few seconds while any notice says so, and the text is the
+   * step it is on.
+   */
+  tone: "attention" | "muted" | "progress";
+  text: string;
+  textZh?: string;
+}
+
+/** One settings group (GET /api/admin/plugin-config): its schema and its values, secrets masked. */
+export interface PluginConfigEntry {
+  /** The group's name — the id of the contribution that declared it; also the store key. */
+  name: string;
+  configuration: PluginConfiguration;
+  /** Stored values merged onto the defaults; a secret arrives masked (`first4…last4` or `***`), never in the clear. */
+  values: Record<string, unknown>;
+  /** Drawn inside that entry's card and saved with it (a sandbox backend's options inside the sandbox's). */
+  parent?: string;
+  /** Live status beside the fields; absent when there is none. */
+  notices?: PluginConfigNotice[];
+  /** What this group can DO once, on the machine, drawn as buttons beneath its notices. */
+  actions?: PluginConfigActionDecl[];
+  /** Enum options this machine cannot honour now: drawn greyed out with the reason; a save choosing one is refused. */
+  unavailable?: PluginConfigUnavailableDecl[];
+}
+
+/** One enum option a settings group cannot honour on this machine, and why. */
+export interface PluginConfigUnavailableDecl {
+  field: string;
+  value: string;
+  reason: string;
+  reasonZh?: string;
+}
+
+/** One button under a settings group: what it is called, and what pressing it will do. */
+export interface PluginConfigActionDecl {
+  id: string;
+  title: string;
+  titleZh?: string;
+  description?: string;
+  descriptionZh?: string;
+}
+
+/** POST /api/admin/plugin-config/action — what running one reported. */
+export interface PluginConfigActionResponse {
+  ok: boolean;
+  message: string;
+  messageZh?: string;
+  /** The groups as they stand after it ran: a setup that worked changes what the page says. */
+  plugins: PluginConfigEntry[];
+}
+
+export interface PluginConfigResponse {
+  plugins: PluginConfigEntry[];
+}
+
+/**
+ * PUT /api/admin/plugin-config — one group's update. Every named field is validated
+ * against its type; an omitted field keeps its stored value; a secret sent as the masked
+ * value keeps the stored one, and `null` or `""` clears any field. 400 `plugin_config_invalid`
+ * (with `field`) on a value that does not fit or a required field left empty; 404
+ * `plugin_config_unknown` for a name no group answers to.
+ */
+export interface PluginConfigUpdateRequest {
+  name: string;
+  values: Record<string, unknown>;
 }
 
 /** One plugin a Project lists (GET /api/projects/:projectId/plugins/installed). */
