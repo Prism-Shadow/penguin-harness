@@ -69,6 +69,7 @@ import { versionBadgeFor } from "../../lib/update-flow";
 import { openUpdateModal, useUpdateFlow } from "../../lib/use-update-flow";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
+import { APPROVAL_MODES } from "./approval-mode";
 import { adoptDockScope } from "../dock/dock-state";
 import { setDockCwd } from "../dock/dock-terminal";
 import { EXAMPLE_FOLDERS } from "./example-tasks";
@@ -789,6 +790,8 @@ export function DraftView({
           contextNow={0}
           vision={vision}
           approvalMode={approvalMode}
+          // A draft becomes an ordinary conversation, never an organization's: every mode.
+          approvalModes={APPROVAL_MODES}
           onChangeApprovalMode={changeApprovalMode}
           modeSaving={false}
           autoFocus

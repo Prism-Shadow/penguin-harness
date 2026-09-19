@@ -78,6 +78,7 @@ export function SubagentsView({
   subagents,
   models,
   approvalMode,
+  approvalModes,
   onChangeApprovalMode,
   modeSaving,
   parentThinkingLevel,
@@ -98,6 +99,8 @@ export function SubagentsView({
   models: ModelInfo[];
   /** The PARENT session's approval mode — child approvals are judged by it (the same value the main composer edits). */
   approvalMode: ApprovalMode;
+  /** The modes the picker lists for the PARENT session (the main composer's list). */
+  approvalModes: readonly ApprovalMode[];
   onChangeApprovalMode: (mode: ApprovalMode) => void;
   modeSaving: boolean;
   /** The parent session's effective thinking level ("" = unknown): the child composer's display fallback — a child inherits it at spawn unless the spawning call pinned its own. */
@@ -296,6 +299,7 @@ export function SubagentsView({
             deliveredInputs={countDeliveredInputs(activeModel)}
             models={models}
             approvalMode={approvalMode}
+            approvalModes={approvalModes}
             onChangeApprovalMode={onChangeApprovalMode}
             modeSaving={modeSaving}
             fallbackThinkingLevel={activeNode?.spawnThinkingLevel ?? parentThinkingLevel}
@@ -338,6 +342,7 @@ function SubagentComposer({
   deliveredInputs,
   models,
   approvalMode,
+  approvalModes,
   onChangeApprovalMode,
   modeSaving,
   fallbackThinkingLevel,
@@ -352,6 +357,7 @@ function SubagentComposer({
   deliveredInputs: number;
   models: ModelInfo[];
   approvalMode: ApprovalMode;
+  approvalModes: readonly ApprovalMode[];
   onChangeApprovalMode: (mode: ApprovalMode) => void;
   modeSaving: boolean;
   /** Display fallback for the thinking picker while the user hasn't picked: the spawn call's explicit level, else the parent session's effective level (what the child inherited). */
@@ -453,6 +459,7 @@ function SubagentComposer({
         contextNow={contextNow}
         vision={false}
         approvalMode={approvalMode}
+        approvalModes={approvalModes}
         onChangeApprovalMode={onChangeApprovalMode}
         modeSaving={modeSaving}
         agents={[]}

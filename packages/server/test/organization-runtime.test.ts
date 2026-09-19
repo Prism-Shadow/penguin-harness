@@ -911,6 +911,43 @@ describe("organization runtime", () => {
       );
       expect(sessions.findById(work)?.approvalMode).toBe("read-only");
     });
+
+    it("carries a changed approval mode onto the sessions it already has, except archived ones", async () => {
+      await createOrg();
+      await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "HR", reportsTo: CEO });
+      // Everything here is opened under the default mode: the CEO's first desk, kept in the
+      // ledger as history once renewed, the current CEO and HR desks, and two sessions on one
+      // ticket, the second of which a person archives.
+      const firstDesk = (await service.desk(P, ORG, CEO, {})).sessionId;
+      const ceoDesk = (await service.desk(P, ORG, CEO, { renew: true })).sessionId;
+      const hrDesk = (await service.desk(P, ORG, HR, {})).sessionId;
+      const t = await service.createTicket(
+        P,
+        ORG,
+        { title: "Ship it", owner: `agent:${CEO}` },
+        { userId: "alice" },
+      );
+      const start = async (): Promise<string> =>
+        (await service.startTicket(P, ORG, t.ticketId, {}, { userId: "alice" })).sessionId;
+      const work = await start();
+      const archived = await start();
+      sessions.setArchived(archived, new Date(nowMs).toISOString());
+      const live = [firstDesk, ceoDesk, hrDesk, work];
+      const modeOf = (sessionId: string) => sessions.findById(sessionId)?.approvalMode;
+      expect([...live, archived].map(modeOf)).toEqual(Array(5).fill("allow-all"));
+
+      await service.patch(P, ORG, { approvalMode: "read-only" }, "alice");
+      expect(live.map(modeOf)).toEqual(Array(4).fill("read-only"));
+      expect(modeOf(archived)).toBe("allow-all");
+
+      // A write that leaves the mode where it is touches no session, so a desk whose mode was
+      // changed from its own composer keeps it until the organization's mode next changes.
+      sessions.updateApprovalMode(hrDesk, "deny-all");
+      await service.patch(P, ORG, { name: "Acme Inc", approvalMode: "read-only" }, "alice");
+      expect(modeOf(hrDesk)).toBe("deny-all");
+      await service.patch(P, ORG, { approvalMode: "allow-all" }, "alice");
+      expect(live.map(modeOf)).toEqual(Array(4).fill("allow-all"));
+    });
   });
 
   describe("who starts a ticket session", () => {

@@ -132,8 +132,6 @@ import { splitBySize } from "../../lib/upload-limits";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
 
-const APPROVAL_MODES: ApprovalMode[] = ["always-ask", "read-only", "allow-all", "deny-all"];
-
 /**
  * Illustrative icon for each approval mode (24x24 line art, grayscale via currentColor, no
  * color-coding): allow-all uses a warning triangle — it permits everything at the user's own
@@ -156,14 +154,17 @@ const APPROVAL_MODE_ICONS: Record<ApprovalMode, string> = {
  * Popup direction depends on context: for the draft card, vertically centered with room below
  * -> opens downward; for the chat input area docked at the bottom of the screen, where opening
  * downward would overflow the viewport with nowhere to scroll -> opens upward.
+ * The menu lists `modes` (see approval-mode.ts); the trigger always names `value`.
  */
 function ApprovalModeSelect({
   value,
+  modes,
   onChange,
   disabled,
   direction = "up",
 }: {
   value: ApprovalMode;
+  modes: readonly ApprovalMode[];
   onChange: (mode: ApprovalMode) => void;
   disabled: boolean;
   direction?: "up" | "down";
@@ -198,7 +199,7 @@ function ApprovalModeSelect({
         </button>
       }
     >
-      {APPROVAL_MODES.map((m) => (
+      {modes.map((m) => (
         <button
           key={m}
           type="button"
@@ -827,6 +828,7 @@ export function ChatInput({
   sessionId,
   vision,
   approvalMode,
+  approvalModes,
   onChangeApprovalMode,
   modeSaving,
   autoFocus,
@@ -992,6 +994,12 @@ export function ChatInput({
   /** Whether the current model supports image input (models config's vision; assumed supported by default). */
   vision: boolean;
   approvalMode: ApprovalMode;
+  /**
+   * The modes the approval picker lists, in order (`approvalModeChoices`): all four, except
+   * that an organization's Session leaves out `always-ask` unless it is the current value.
+   * The trigger shows `approvalMode` whatever the list holds.
+   */
+  approvalModes: readonly ApprovalMode[];
   onChangeApprovalMode: (mode: ApprovalMode) => void;
   modeSaving: boolean;
   autoFocus?: boolean;
@@ -2714,6 +2722,7 @@ export function ChatInput({
             )}
             <ApprovalModeSelect
               value={approvalMode}
+              modes={approvalModes}
               onChange={onChangeApprovalMode}
               disabled={modeSaving}
               direction={models && onChangeModel ? "down" : "up"}
