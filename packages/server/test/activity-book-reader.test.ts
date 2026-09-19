@@ -50,7 +50,13 @@ type Model = {
   dispose(): Result;
 };
 
-type Result = { event: string; token?: number; cueIndex?: number; snapshot: Model["snapshot"] };
+type Result = {
+  event: string;
+  token?: number;
+  cueIndex?: number;
+  delayMs?: number;
+  snapshot: Model["snapshot"];
+};
 
 let ReaderModel: Reader | undefined;
 
@@ -348,5 +354,22 @@ describe("generated book reader template", () => {
     expect(delay.event).toBe("page-reading-delay");
     expect(reader.finishReadingDelay(oldDelay.token!).event).toBe("stale-reading-delay");
     expect(reader.finishReadingDelay(delay.token!).event).toBe("reading-delay-finished");
+  });
+
+  it("counts Unicode words and emits bounded timer durations without retaining caller mutations", async () => {
+    const Reader = await readerClass();
+    const scenes = [
+      story("eight", "Éléphant déjà forêt garçon niño acción über schön"),
+      story("long", "word ".repeat(30)),
+    ];
+    const reader = new Reader(scenes, "decodable");
+    scenes[0].media!.narration!.script = "changed";
+    const delay = reader.initialize();
+    expect(delay.snapshot.readingDelaySeconds).toBe(4);
+    expect(delay.delayMs).toBe(4000);
+    reader.finishReadingDelay(delay.token!);
+    const narration = reader.startNarration();
+    reader.finishCue(narration.token!, true, 0);
+    expect(reader.next().delayMs).toBe(10000);
   });
 });
