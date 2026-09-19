@@ -18,7 +18,7 @@
  *   arc); round 3's slow verification run is the capture window, with the goal banner
  *   showing "round 3 · tokens used/budget" above the composer.
  *
- * Files: {agents-panel,goal-mode}-<lang>-<theme>.webp (8 of them, zh + en, light + dark,
+ * Files: {agents-panel,goal-mode}-<lang>-<theme>.webp (4 of them, English, light + dark,
  * 1280x900 @1.5x like the other blog shots).
  *
  * Output is a two-step flow, because blog images are not committed to this repo:
@@ -52,7 +52,7 @@ const BASE = `http://localhost:${SRV_PORT}`;
 const MOCK = `http://127.0.0.1:${MOCK_PORT}`;
 
 // ---------------------------------------------------------------------------
-// Scene scripts (zh + en). Commands are shared across languages (code is code)
+// Scene scripts (English). Commands are shared across languages (code is code)
 // and really execute in the staged Workspace.
 // ---------------------------------------------------------------------------
 
@@ -134,91 +134,10 @@ const SCENES = {
       ],
     },
   },
-  zh: {
-    agents: {
-      warmup: "这个工作区里有什么？一句话。",
-      warmupReply:
-        "reports/ 下是三次基准跑分（run-41 至 run-43）与七月基线，scripts/score-runs.mjs 用于对基线评分。",
-      prompt:
-        "把最近三次基准跑分与七月基线对比一下，并核对公开发布的数值——按需要派发给合适的智能体并行处理。",
-      parentThinking:
-        "两条互相独立的工作线：run-41 至 run-43 对比七月基线评分、公开数值核对。评分交给数据分析师，核对交给网页调研员，并行推进。",
-      analystPrompt:
-        "对 reports/runs/ 下的 run-41 至 run-43 三次跑分逐套件评分，与 reports/july-baseline.json 的七月基线对比，并生成趋势图。",
-      scoutPrompt: "核对七月基线的公开发布数值与本地口径是否一致，如有出入记录差异。",
-      analystThinking: "三份跑分文件加一份基线。先用评分脚本逐套件打分，再由各次总分画出趋势。",
-      analystText: "开始对三次跑分逐套件评分，与七月基线对比：",
-      scoutThinking:
-        "公开数值在发布说明里，本地口径在 reports/july-baseline.json。逐字段交叉核对准确率与题目数。",
-      scoutText:
-        "先核对总口径：公开发布的七月基线为 128 题、准确率 84.2%，与本地 reports/july-baseline.json 完全一致。分套件看，data-analysis 与 web-research 的通过数与发布说明逐位吻合；code-fix 套件公开口径四舍五入报 82%，本地为 82.1%，属展示精度差异而非数据出入。签发核对结论前还剩两项：report-writing 的题目数在附录表与正文各出现一次，需确认两处一致；趋势图引用的基线锚点也要与数据分析师从原始跑分推出的数值对齐。\n\n附录核对进行中：附录表中 report-writing 为 24 题，正文同为 24 题，此前的疑点排除。各套件题目数合计恰为公开口径的 128 题；按公开分套件数据重新加权计算的准确率同样落在 84.2%，说明总口径不是简单转抄而是内部自洽的。剩下基线锚点一项：发布说明以七月数字作为本期跑分的对比基准，核对结论里应明确写出两侧使用同一个 84.2% 锚点，公开与本地的唯一差异是 code-fix 的四舍五入展示。接下来起草核对纪要，每个已验证字段一行并附来源。",
-      title: "基准对比七月基线",
-      analystTitle: "跑分对比评分",
-      scoutTitle: "基线数值核对",
-    },
-    goal: {
-      warmup: "这个项目里有什么？",
-      warmupReply:
-        "一个小型文本表格模块（src/table.mjs）和它的检查套件（scripts/run-checks.mjs），共 12 项检查，覆盖列宽、对齐、日期与截断。",
-      objective: "让 scripts/run-checks.mjs 的 12 项检查全部通过：按报告修复、重跑，循环直到全绿。",
-      title: "修复表格检查套件",
-      rounds: [
-        [
-          {
-            thinking: "先完整跑一遍套件，确认真实的失败集合，再动手修改。",
-            text: "先跑一遍检查，确认目前的通过情况。",
-            exec: CHECKS_CMD,
-          },
-          {
-            text: "三项失败里有两项同因：单元格宽度按字符数计算，CJK 字宽被低估；另一项是缺失的非法日期兜底。先修宽度。",
-            exec: SED_WIDTH,
-          },
-          { text: "宽度修复已提交。下一轮先重跑验证，再处理日期兜底。" },
-        ],
-        [
-          { text: "第二轮——宽度修复后重跑检查。", exec: CHECKS_CMD },
-          { text: "11 项通过，只剩非法日期兜底一项。补上。", exec: SED_DATE_GUARD },
-          { text: "兜底已加，再做一轮最终验证。" },
-        ],
-        [
-          {
-            thinking: "宽度与日期两处都已修复，这一轮应当全绿。",
-            text: "最后一轮验证——宽度修复与日期兜底都已就位，预期 12 项全部通过。",
-            exec: CHECKS_CMD,
-          },
-          // Post-capture only: the slow verification run yields to the background at
-          // ~60s, so this step must not claim a result the run has not printed yet.
-          { text: "验证仍在后台运行——等汇总行出来后再确认目标状态。" },
-          { text: "等待最终汇总行后再把目标标记为完成。" },
-        ],
-      ],
-    },
-  },
 };
 
 /** Per-language demo users (same ids/agents as capture-shots.mjs, so sidebars stay monolingual). */
 const USERS = {
-  zh: {
-    userId: "demo",
-    agents: [
-      {
-        agentId: "data_analyst",
-        name: "数据分析师",
-        description: "面向 CSV / Excel 的数据分析、图表与报表生成",
-      },
-      { agentId: "web_scout", name: "网页调研员", description: "网页检索、信息核对与调研纪要整理" },
-      {
-        agentId: "agent_optimizer",
-        name: "Agent 优化师",
-        description: "评估其他 Agent 的表现并迭代其提示词与技能",
-      },
-    ],
-    analystNode: "数据分析师 · 运行中",
-    panelTitle: "智能体面板",
-    topologyLabel: "调用关系",
-    round3: "第 3 轮 · tokens",
-    round3Text: "最后一轮验证",
-  },
   en: {
     userId: "alex",
     agents: [
@@ -403,7 +322,6 @@ process.exit(failed ? 1 : 0);
 /** True when any of the scene's language variants contains `marker` in `flat`. */
 function langOf(flat, pick) {
   if (flat.includes(pick(SCENES.en))) return "en";
-  if (flat.includes(pick(SCENES.zh))) return "zh";
   return null;
 }
 
@@ -455,7 +373,7 @@ function decideTurn(messages, toolMarker) {
   }
 
   // Agents scene, child sessions first (their context lacks the parent's own prompt).
-  for (const lang of ["en", "zh"]) {
+  for (const lang of ["en"]) {
     const scene = SCENES[lang].agents;
     if (flat.includes(scene.prompt)) {
       // Parent conversation: one turn fans out BOTH children as parallel tool calls (both
@@ -474,10 +392,7 @@ function decideTurn(messages, toolMarker) {
       }
       return {
         kind: "turn",
-        text:
-          lang === "zh"
-            ? "两路结果已汇总：三次跑分相对七月基线稳步上升，公开数值与本地口径一致。"
-            : "Both tracks are in: the three runs climb steadily over the July baseline, and the published numbers match the local reports.",
+        text: "Both tracks are in: the three runs climb steadily over the July baseline, and the published numbers match the local reports.",
         usage: { input: 480, cachePerMsg: 2100, cacheWrite: 640, output: 320 },
       };
     }
@@ -495,10 +410,7 @@ function decideTurn(messages, toolMarker) {
       // the still-running script rather than claiming completion.
       return {
         kind: "turn",
-        text:
-          lang === "zh"
-            ? "评分脚本仍在后台运行，完成后我再汇总数字与趋势图。"
-            : "The scoring script is still running in the background; I'll summarize the numbers and the trend chart once it completes.",
+        text: "The scoring script is still running in the background; I'll summarize the numbers and the trend chart once it completes.",
         usage: { input: 410, cachePerMsg: 1400, cacheWrite: 520, output: 160 },
       };
     }
@@ -978,7 +890,7 @@ try {
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
       deviceScaleFactor: 1.5,
-      locale: lang === "zh" ? "zh-CN" : "en-US",
+      locale: "en-US",
     });
     await context.addInitScript(
       ([t, l]) => {
@@ -1040,7 +952,7 @@ try {
     }
   }
 
-  for (const lang of ["zh", "en"]) {
+  for (const lang of ["en"]) {
     const user = await provisionUser(adminCookie, lang);
     const scene = SCENES[lang];
     const ui = USERS[lang];

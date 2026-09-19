@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#392](https://github.com/Prism-Shadow/penguin-harness/pull/392)
 
-[中文版](2026-08-21-settings-disclosure.zh.md)
-
 The settings surfaces carried their explanations as gray paragraphs and sub-labels that
 every visit had to scroll past. They were moved onto the rule the rest of the Web App
 follows: what a page or a row *means* is disclosed by the circled "?" beside its title,

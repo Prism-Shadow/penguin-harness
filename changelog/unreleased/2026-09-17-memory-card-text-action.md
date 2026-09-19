@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#783](https://github.com/Prism-Shadow/penguin-harness/pull/783)
 
-[中文版](2026-09-17-memory-card-text-action.zh.md)
-
 After a Task updated memory, the card below the reply showed two brain icons: the card's own mark
 on the left, and an icon-only button on the right that opened the Memory panel on its list. The
 right-hand button is now the text **Open memory list**, styled like the rows' **View content**

@@ -1,7 +1,5 @@
 # Changelog
 
-[中文版](CHANGELOG.zh.md)
-
 One brief line per release. Per-release detail lives in [`changelog/<version>/`](changelog/).
 
 - **0.2.13** — 2026-09-15. Company mode turns a Project's Agents into an organization — a CEO, a reporting tree, a calendar, a five-column ticket board and channels, each a file on disk, off until an admin enables it. A Benchmark became a Project-level peer of an agent, the Workspace browser became a working file manager with a context menu and no size ceilings, the desktop app took a place in the system tray, shell commands can be confined through plugin backends, a running tool call can be sent to the background, and three AgentHub fixes end gateway 4xx that used to stop a Task mid-run. 0.2.12 was tagged for this same set and failed in the first job of its release run, before anything reached npm, Docker Hub or a Release page — so 0.2.12 exists only as a tag, and has no folder here. ([details](changelog/0.2.13/))

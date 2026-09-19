@@ -5,8 +5,6 @@
 - **Scope:** `model-catalog`, `core`, `docs`
 - **PR:** [#678](https://github.com/Prism-Shadow/penguin-harness/pull/678)
 
-[中文版](2026-09-11-deepseek-v4-flash-text-only.zh.md)
-
 The direct DeepSeek `deepseek-v4-flash` row was marked text-only (`supportsVision: false`).
 DeepSeek retired the id on 2026-09-10 and serves it from V4.1 Flash, but AgentHub 0.4.11's
 DeepSeek client matches the bare id against its text-only deny-list

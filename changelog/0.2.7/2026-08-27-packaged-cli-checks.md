@@ -5,8 +5,6 @@
 - **Scope:** `desktop`, `ci`
 - **PR:** [#480](https://github.com/Prism-Shadow/penguin-harness/pull/480)
 
-[中文版](2026-08-27-packaged-cli-checks.zh.md)
-
 The desktop app ships the CLI inside itself — `<app>/bin/penguin` and `<app>/bin/penguin.cmd`
 run `<app>/dist/penguin.js` on the app's own Electron runtime, and every route that puts
 `penguin` on PATH (the deb postinst, the macOS symlink, the Windows PATH entry, the AppImage

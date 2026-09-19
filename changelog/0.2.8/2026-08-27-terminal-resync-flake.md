@@ -5,8 +5,6 @@
 - **Scope:** `server`, `ci`
 - **PR:** [#516](https://github.com/Prism-Shadow/penguin-harness/pull/516)
 
-[中文版](2026-08-27-terminal-resync-flake.zh.md)
-
 `terminal stream backpressure > resyncs a lagging viewer with a fresh Restore instead of
 disconnecting it` failed five times in one day on macOS CI, on five pull requests that touched no
 terminal code, and passed on every rerun. Its resync assertion read a marker the flood prints once

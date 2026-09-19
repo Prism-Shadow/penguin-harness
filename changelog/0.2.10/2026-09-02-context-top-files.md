@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`, `core`
 - **PR:** [#584](https://github.com/Prism-Shadow/penguin-harness/pull/584)
 
-[中文版](2026-09-02-context-top-files.zh.md)
-
 The composer's context ring now fills against the point compaction fires rather than the model's
 context window, so a context half-way to being summarized reads as half full instead of nearly
 empty on a large-window model. The panel's bar keeps the window as its scale and marks that point

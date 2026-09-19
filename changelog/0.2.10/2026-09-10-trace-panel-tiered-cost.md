@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#659](https://github.com/Prism-Shadow/penguin-harness/pull/659)
 
-[中文版](2026-09-10-trace-panel-tiered-cost.zh.md)
-
 The Trace panel's per-turn and per-file costs are now priced by the server with the cost center's own rule, so a Session's Trace files add up to the cost the conversation toolbar and the cost center show for the same requests. Before this change the panel priced every request at the Project's stored rate, while the toolbar and the cost center billed each request at the tier its own timestamp fell in — for a model on a time-based schedule (DeepSeek's off-peak half price) the panel's files therefore added up to more than the toolbar showed, by half the cost of every request that ran off-peak.
 
 ## Details

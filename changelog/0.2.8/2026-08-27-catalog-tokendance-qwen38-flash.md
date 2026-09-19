@@ -5,8 +5,6 @@
 - **Scope:** `core`
 - **PR:** [#517](https://github.com/Prism-Shadow/penguin-harness/pull/517)
 
-[中文版](2026-08-27-catalog-tokendance-qwen38-flash.zh.md)
-
 The built-in catalog now carries `qwen3.8-flash` under TokenDance, at that gateway's own rates:
 CNY 0.8 input, 2.7 output, 0.1 cache hit per million tokens, over a 1M-token context window, with
 image input.

@@ -5,8 +5,6 @@
 - **Scope:** `model-catalog`, `server`, `web`, `docs`
 - **PR:** [#716](https://github.com/Prism-Shadow/penguin-harness/pull/716)
 
-[中文版](2026-09-16-model-promotions-in-database.zh.md)
-
 The `pricing` of every model in `.project_config.toml` now holds the list price, in every group. A flat promotion is a fraction the server keeps in a new `model_promotions` table in `web.db`, and cost is computed as list × (1 − discount). Presets and **Sync presets** used to write the discounted number into the file.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `landing`
 - **PR:** [#475](https://github.com/Prism-Shadow/penguin-harness/pull/475)
 
-[中文版](2026-08-27-landing-mobile-layout.zh.md)
-
 Refined the landing page for narrow phone viewports while preserving the desktop presentation and page narrative.
 
 ## Details

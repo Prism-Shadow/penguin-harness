@@ -21,7 +21,7 @@ import {
 } from "../src/lib/nav-group-collapse";
 import type { NavCollapseStorage } from "../src/lib/nav-group-collapse";
 import { NAV_ICONS } from "../src/components/ui/icons";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
 /** In-memory storage (vitest runs in a Node environment, no localStorage; draft-cache.test.ts convention). */
@@ -48,14 +48,14 @@ describe("NAV_GROUP_KEYS", () => {
       "benchmark",
     ]);
     // Pin the endpoints by label: a manifest edit that shifts the range shows up here.
-    expect(zh.nav[NAV_GROUP_KEYS[0]!]).toBe("智能体");
-    expect(zh.nav[NAV_GROUP_KEYS[NAV_GROUP_KEYS.length - 1]!]).toBe("评估中心");
+    expect(en.nav[NAV_GROUP_KEYS[0]!]).toBe("Agents");
+    expect(en.nav[NAV_GROUP_KEYS[NAV_GROUP_KEYS.length - 1]!]).toBe("Evaluation Center");
   });
 
   it("every entry has a zh label, an en label, and a nav icon (the sidebar renders straight off the manifest)", () => {
     for (const key of NAV_GROUP_KEYS) {
-      expect(zh.nav[key]).toBeTruthy();
       expect(en.nav[key]).toBeTruthy();
+
       expect(NAV_ICONS[key]).toBeTruthy();
     }
   });
@@ -65,7 +65,7 @@ describe("NAV_GROUP_KEYS", () => {
     // outside the group container — the manifest never governs it.
     expect(NAV_GROUP_KEYS as readonly string[]).not.toContain("newChat");
     expect(NAV_GROUP_KEYS as readonly string[]).not.toContain("chat");
-    expect(zh.chat.newSessionMenu).toBeTruthy();
+    expect(en.chat.newSessionMenu).toBeTruthy();
   });
 });
 
@@ -108,10 +108,7 @@ describe("visibleNavKeys", () => {
   });
 
   it("the chevron-button toggle's accessible names exist in both languages (icon-only button: aria + tooltip carry them)", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
+    for (const [locale, dict] of [["en", en]] as const) {
       expect(dict.nav.collapseGroup, locale).toBeTruthy();
       expect(dict.nav.expandGroup, locale).toBeTruthy();
       // One button, two states: the same name for both would leave the state unreadable.

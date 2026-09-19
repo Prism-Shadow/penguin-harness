@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#597](https://github.com/Prism-Shadow/penguin-harness/pull/597)
 
-[中文版](2026-09-01-machines-connection.zh.md)
-
 Behind the door the previous change put in front of `machines/` there is now **one connection per machine**, and everything this server says to a machine rides it.
 
 ## The connection

@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`, `plugins`, `docs`
 - **PR:** [#666](https://github.com/Prism-Shadow/penguin-harness/pull/666)
 
-[中文版](2026-09-10-plugin-version-format.zh.md)
-
 A plugin's dated version — the one `plugin.json` declares and the library card shows — is now
 written `YYYY.MM.DD.N`, dots throughout instead of dashes: `2026.09.10.1` where it read
 `2026-09-10.1`. The date and the sequence number are unchanged, and so is everything the version

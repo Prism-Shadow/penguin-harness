@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#528](https://github.com/Prism-Shadow/penguin-harness/pull/528)
 
-[中文版](2026-08-28-retry-line-collapse.zh.md)
-
 Every retryable request end added its own line, so a request that retried four times left four
 of them stacked in the conversation:
 

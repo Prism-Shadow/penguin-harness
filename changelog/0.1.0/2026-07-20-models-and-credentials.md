@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`, `cli`, `model-catalog`
 - **PR:** [#7](https://github.com/Prism-Shadow/penguin-harness/pull/7)
 
-[中文版](2026-07-20-models-and-credentials.zh.md)
-
 Preset provider groups, catalog entries and ordering, and the Models page features built around them.
 
 ## Add the Qwen Token Plan provider group to the model catalog

@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`
 - **PR:** [#340](https://github.com/Prism-Shadow/penguin-harness/pull/340)
 
-[中文版](2026-08-19-thinking-label-and-compaction-notice.zh.md)
-
 Two corrections to what the UI prints. The Chinese thinking-level label stopped carrying the wire value on every surface and now carries it only where a tier is picked, and the compaction step started naming what it actually did — a step that clears the context is no longer announced as compaction — which left neither mode with an outcome line to write. The Trace page's round badge follows the same naming, which took the mode through the analysis DTO.
 
 ## Thinking-level labels

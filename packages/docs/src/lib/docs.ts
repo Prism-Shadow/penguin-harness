@@ -1,8 +1,8 @@
 /**
  * Docs index: local Markdown pages imported at build time via import.meta.glob.
  * File naming: content/<slug>.<lang>.md — one file per page per language; a page
- * missing the active language falls back to the other one, so navigation is always
- * complete in both locales. Same architecture as the landing page blog.
+ * missing the active language falls back to English, so navigation is always
+ * complete for every locale. Same architecture as the landing page blog.
  */
 import { parseFrontmatter } from "./frontmatter";
 import type { Locale } from "../state/locale";
@@ -24,7 +24,7 @@ const files = import.meta.glob("../../content/*.md", {
 
 function toDoc(path: string, raw: string): DocPage | null {
   const file = path.split("/").pop() ?? "";
-  const match = /^(.+)\.(zh|en)\.md$/.exec(file);
+  const match = /^(.+)\.([a-z]{2}(?:-[A-Z]{2})?)\.md$/.exec(file);
   if (!match) return null;
   const { meta, body } = parseFrontmatter(raw);
   return {
@@ -40,7 +40,7 @@ const ALL: DocPage[] = Object.entries(files)
   .map(([path, raw]) => toDoc(path, raw))
   .filter((doc): doc is DocPage => doc !== null);
 
-/** The locale's version of a page (fallback to the other language). */
+/** The locale's version of a page (fallback to English). */
 export function getDoc(slug: string, locale: Locale): DocPage | undefined {
   const candidates = ALL.filter((doc) => doc.slug === slug);
   return candidates.find((doc) => doc.lang === locale) ?? candidates[0];

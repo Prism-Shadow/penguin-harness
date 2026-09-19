@@ -4,8 +4,6 @@
 - **Type:** process
 - **Scope:** `skills`
 
-[中文版](2026-08-19-dev-skill-blog-media.zh.md)
-
 `.agents/skills/penguin-harness-dev/SKILL.md` gained a "Blog posts, and where their images live" section covering the post pair under `packages/landing/content/blog/`, the community repo that hosts the images, the `/blog-assets/<name>` path posts write instead of the host URL, and how release screenshots are captured.
 
 ## Details

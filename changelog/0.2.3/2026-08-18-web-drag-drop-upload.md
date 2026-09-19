@@ -6,8 +6,6 @@
 - **PR:** [#319](https://github.com/Prism-Shadow/penguin-harness/pull/319)
 - **Issue:** [#311](https://github.com/Prism-Shadow/penguin-harness/issues/311)
 
-[中文版](2026-08-18-web-drag-drop-upload.zh.md)
-
 Dragging OS files onto the **chat area** — the conversation and the composer — became a third entry point into the composer's existing attachment intake, alongside the "+" menu's pickers and image paste. Until then a file dropped on the page got the browser's default: the tab navigated to the file, replacing the running app and any unsent draft.
 
 ## Dropping on the chat area

@@ -58,6 +58,6 @@ describe("buildImportPrompt", () => {
   });
 
   it("the command variant warns against blind execution", () => {
-    expect(buildImportPrompt("npx skills add pdf")).toContain("不要直接执行");
+    expect(buildImportPrompt("npx skills add pdf")).toContain("do not run it blindly");
   });
 });

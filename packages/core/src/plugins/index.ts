@@ -498,10 +498,10 @@ export function librarySkill(
  * Docs: /docs/skills § "Built-in library".
  */
 export const PLUGIN_CATEGORIES: PluginCategory[] = [
-  { id: "office-productivity", title: "Office Productivity", titleZh: "办公效率" },
-  { id: "software-development", title: "Software Development", titleZh: "软件开发" },
-  { id: "ai-app-development", title: "AI App Development", titleZh: "AI 应用开发" },
-  { id: "agent-company", title: "Agent Company", titleZh: "Agent 公司" },
+  { id: "office-productivity", title: "Office Productivity" },
+  { id: "software-development", title: "Software Development" },
+  { id: "ai-app-development", title: "AI App Development" },
+  { id: "agent-company", title: "Agent Company" },
 ];
 
 /**
@@ -522,7 +522,7 @@ export function groupPlugins(all: LibraryPlugin[]): ResolvedPluginGroup[] {
     .filter((p) => p.category === undefined || !known.has(p.category))
     .sort((a, b) => a.name.localeCompare(b.name));
   if (others.length > 0) {
-    groups.push({ id: "other", title: "Other", titleZh: "其他", plugins: others });
+    groups.push({ id: "other", title: "Other", plugins: others });
   }
   return groups;
 }

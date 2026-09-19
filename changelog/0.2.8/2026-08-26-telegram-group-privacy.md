@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`
 - **PR:** [#499](https://github.com/Prism-Shadow/penguin-harness/pull/499)
 
-[中文版](2026-08-26-telegram-group-privacy.zh.md)
-
 Messages sent to a bound Telegram bot in a group could go unanswered with nothing to show for it:
 no error, no status change, no record. The cause is Telegram's **Group Privacy**, on by default for
 every bot, under which the Bot API delivers to a bot that does not administer the group only

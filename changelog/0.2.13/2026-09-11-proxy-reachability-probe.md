@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#686](https://github.com/Prism-Shadow/penguin-harness/pull/686)
 
-[中文版](2026-09-11-proxy-reachability-probe.zh.md)
-
 The Proxy options settings page gained a reachability test, below the save row: it lists six
 provider targets — OpenAI, Anthropic, Gemini, DeepSeek, and GLM's two hosts, Z.AI and BigModel —
 with the exact URL each one probes, and one button measures them all, reporting a latency for every

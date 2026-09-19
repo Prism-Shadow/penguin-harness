@@ -5,8 +5,6 @@
 - **Scope:** `hmr`, `server`, `desktop`, `tooling`, `ci`
 - **PR:** [#656](https://github.com/Prism-Shadow/penguin-harness/pull/656)
 
-[中文版](2026-09-07-hmr-layer-and-package.zh.md)
-
 One purpose: make it hard to put product behaviour where only a reinstall can deliver it.
 
 **The layer is named after what it does.** "Runtime" also means "the program that is running", so anything the process did sounded like it belonged to the layer. It is the HMR layer now, in the documentation and in the identifiers. The tree's node names are not renamed.

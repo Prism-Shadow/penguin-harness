@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { EXAMPLE_FOLDERS, EXAMPLE_TASKS } from "../src/features/chat/example-tasks";
 import { buildSkillsMessage } from "../src/features/chat/skill-use";
 import { en } from "../src/lib/strings-en";
-import { zh } from "../src/lib/strings";
 
 describe("draft example tasks", () => {
   it.each(["agentBenchmarkBuild", "agentOptimization"] as const)(
@@ -11,33 +10,13 @@ describe("draft example tasks", () => {
       const task = EXAMPLE_TASKS.find((candidate) => candidate.id === id);
       expect(task).toBeDefined();
       expect(task?.skills).toEqual([]);
-      expect(buildSkillsMessage([...(task?.skills ?? [])], zh.chat.exampleTasks[id].prompt)).toBe(
-        zh.chat.exampleTasks[id].prompt,
+      expect(buildSkillsMessage([...(task?.skills ?? [])], en.chat.exampleTasks[id].prompt)).toBe(
+        en.chat.exampleTasks[id].prompt,
       );
     },
   );
 
   it.each([
-    {
-      locale: "zh",
-      buildPrompt: zh.chat.exampleTasks.agentBenchmarkBuild.prompt,
-      optimizationPrompt: zh.chat.exampleTasks.agentOptimization.prompt,
-      buildMarkers: [
-        "id：`finite_choice_agent`",
-        "installed_skills：`[]`",
-        "id：`contextual-choice-adaptation`",
-        "desired_baseline_score：`<75`",
-        "pilot_iteration_limit：`5`",
-      ],
-      buildForbiddenMarkers: ["thinking_level", "provider", "model_id", "runs："],
-      optimizationMarkers: [
-        "test_agent_id：`finite_choice_agent`",
-        "benchmark_id：`contextual-choice-adaptation`",
-        "runs：`3`",
-        "desired_score：`>=95`",
-        "candidate_round_limit：`5`",
-      ],
-    },
     {
       locale: "en",
       buildPrompt: en.chat.exampleTasks.agentBenchmarkBuild.prompt,
@@ -103,10 +82,10 @@ describe("draft example tasks", () => {
 });
 
 describe("draft example catalog", () => {
-  it("gives every folder and every example copy in both dictionaries", () => {
+  it("gives every folder and every example copy in the dictionary", () => {
     const ids = EXAMPLE_TASKS.map((task) => task.id);
     expect(new Set(ids).size).toBe(ids.length);
-    for (const dict of [zh, en]) {
+    for (const dict of [en]) {
       for (const folder of EXAMPLE_FOLDERS) {
         expect(dict.chat.exampleFolders[folder.id]).not.toBe("");
       }
@@ -146,32 +125,26 @@ describe("scheduled-task examples", () => {
   it.each([
     {
       id: "dailyPlan",
-      zhMarkers: ["每天", "9 点", "这个会话"],
       enMarkers: ["every day", "9am", "this same conversation"],
     },
-    { id: "githubDigest", zhMarkers: ["每天"], enMarkers: ["every morning"] },
+    { id: "githubDigest", enMarkers: ["every morning"] },
     {
       id: "memoryReview",
-      zhMarkers: ["每周五", "这个会话"],
       enMarkers: ["every Friday", "this same conversation"],
     },
-  ] as const)("$id says when it fires in both locales", ({ id, zhMarkers, enMarkers }) => {
-    const zhPrompt = zh.chat.exampleTasks[id].prompt;
+  ] as const)("$id says when it fires in English", ({ id, enMarkers }) => {
     const enPrompt = en.chat.exampleTasks[id].prompt;
-    for (const marker of zhMarkers) {
-      expect(zhPrompt).toContain(marker);
-    }
+
     for (const marker of enMarkers) {
       expect(enPrompt).toContain(marker);
     }
-    expect(zhPrompt).not.toContain("cron");
     expect(enPrompt).not.toContain("cron");
   });
 });
 
 /**
  * These five are written to be read by the user before they run, so each is a short paragraph —
- * around 100 Chinese characters — carrying what to build plus the constraints the result would be
+ * a few sentences — carrying what to build plus the constraints the result would be
  * wrong without, and none of the step-by-step detail the Agent works out or asks about. The caps
  * below are a ceiling against re-inflation, not a target. Only these five are covered: the older
  * briefs in the catalog are still far longer and are being shortened separately.
@@ -180,24 +153,10 @@ describe("short example prompts", () => {
   const shortExamples = [
     {
       id: "rhythmRunner",
-      zhMarkers: ["喵斯快跑", "企鹅", "音符图标", "节拍", "Perfect", "Great", "Miss"],
       enMarkers: ["Muse Dash", "penguin", "music-note icons", "beat", "Perfect", "Great", "Miss"],
     },
     {
       id: "investmentCopilot",
-      zhMarkers: [
-        "Penguin SDK",
-        "perplexity.ai/finance",
-        "对话式",
-        "启动后",
-        "实时抓取",
-        "首页",
-        "走势较好的股票",
-        "市场因素",
-        "查股工具",
-        "公司名",
-        "不要编",
-      ],
       enMarkers: [
         "Penguin SDK",
         "perplexity.ai/finance",
@@ -212,17 +171,14 @@ describe("short example prompts", () => {
         "not listed",
       ],
     },
-    { id: "dailyPlan", zhMarkers: ["计划"], enMarkers: ["plan"] },
-    { id: "githubDigest", zhMarkers: ["GitHub", "优先级"], enMarkers: ["GitHub", "priority"] },
-    { id: "memoryReview", zhMarkers: ["Memory"], enMarkers: ["Memory"] },
+    { id: "dailyPlan", enMarkers: ["plan"] },
+    { id: "githubDigest", enMarkers: ["GitHub", "priority"] },
+    { id: "memoryReview", enMarkers: ["Memory"] },
   ] as const;
 
   it.each(shortExamples)("$id stays within the length ceiling", ({ id }) => {
     // investmentCopilot sits highest by a wide margin: seven requirements plus a reference URL and
-    // a quoted sample question, both literals no rewording compresses. The English ceiling is the
-    // wider one because English runs about three times the character count of the same Chinese,
-    // not because the English is allowed to say more.
-    expect(zh.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(230);
+    // a quoted sample question, both literals no rewording compresses. The ceiling accommodates all requirements and the reference URL.
     expect(en.chat.exampleTasks[id].prompt.length).toBeLessThanOrEqual(700);
   });
 
@@ -230,10 +186,7 @@ describe("short example prompts", () => {
   // would be the wrong thing (a rhythm game is a game synced to music; the investment Copilot
   // is a Penguin SDK app that refreshes from startup, surfaces trending stocks on its home page,
   // and gives the assistant a name-resolving stock-lookup tool).
-  it.each(shortExamples)("$id keeps its core in both locales", ({ id, zhMarkers, enMarkers }) => {
-    for (const marker of zhMarkers) {
-      expect(zh.chat.exampleTasks[id].prompt).toContain(marker);
-    }
+  it.each(shortExamples)("$id keeps its core in English", ({ id, enMarkers }) => {
     for (const marker of enMarkers) {
       expect(en.chat.exampleTasks[id].prompt).toContain(marker);
     }
@@ -243,7 +196,6 @@ describe("short example prompts", () => {
 describe("investment copilot example", () => {
   // Short as it is, the brief stays analysis with stated evidence, never a call to act.
   it.each([
-    { locale: "zh", prompt: zh.chat.exampleTasks.investmentCopilot.prompt, marker: "不是投资建议" },
     {
       locale: "en",
       prompt: en.chat.exampleTasks.investmentCopilot.prompt,

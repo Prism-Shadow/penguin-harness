@@ -1,7 +1,5 @@
 # Security Policy
 
-[中文版](https://github.com/Prism-Shadow/penguin-harness/blob/main/.github/SECURITY.zh.md)
-
 ## Supported versions
 
 PenguinHarness is pre-1.0 and ships from `main`. There are no maintenance branches and

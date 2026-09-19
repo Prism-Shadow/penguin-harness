@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`
 - **PR:** [#442](https://github.com/Prism-Shadow/penguin-harness/pull/442)
 
-[中文版](2026-08-24-context-composition-panel.zh.md)
-
 The context ring in the chat composer became a button. Clicking it opens a panel that splits the
 current model context into six parts — system prompt, tool definitions, user messages, model
 messages, tool requests, tool results — as a bar running the full context window and a legend of

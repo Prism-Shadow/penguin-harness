@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`, `cli`, `model-catalog`
 - **PR:** [#326](https://github.com/Prism-Shadow/penguin-harness/pull/326)
 
-[中文版](2026-08-18-model-fast-mode.zh.md)
-
 Model entries gained an optional fast-mode setting that opts a model's session requests into the provider's faster serving tier at premium pricing, carried by AgentHub's UniConfig `fast_mode` (agenthub [#171](https://github.com/Prism-Shadow/agenthub/pull/171)): OpenAI-protocol clients send `service_tier: "priority"`, Anthropic-protocol clients send `speed: "fast"` with the fast-mode beta header. It defaults off and only `true` is ever persisted (`fast_mode = true` on the entry), so existing configs were left untouched. The toggle is offered only on models whose resolved AgentHub client can actually serve fast mode, turning it on asks for confirmation first because of the premium billing, and a model that rejects the parameter anyway fails the run immediately with an actionable message instead of retrying.
 
 ## Core

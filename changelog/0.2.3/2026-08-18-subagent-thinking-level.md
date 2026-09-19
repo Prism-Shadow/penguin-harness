@@ -6,8 +6,6 @@
 - **PR:** [#323](https://github.com/Prism-Shadow/penguin-harness/pull/323)
 - **Issue:** [#306](https://github.com/Prism-Shadow/penguin-harness/issues/306)
 
-[中文版](2026-08-18-subagent-thinking-level.zh.md)
-
 The `run_subagent` tool gained an optional `thinking_level` argument, so the model can pick the thinking level a subagent runs at — lower for cheap mechanical subtasks, higher for hard analysis — instead of every child Session always running at the parent Session's level. Changing the default tool entry advanced the config kernel to a new generation, so existing Agents take a kernel update.
 
 ## Details

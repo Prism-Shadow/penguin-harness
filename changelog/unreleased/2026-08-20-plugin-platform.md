@@ -6,8 +6,6 @@
 - **PR:** [#383](https://github.com/Prism-Shadow/penguin-harness/pull/383)
 - **Breaking:** yes — the data root's `plugins.json` is no longer read; each Project asks for its plugins again on the Plugins page
 
-[中文版](2026-08-20-plugin-platform.zh.md)
-
 The harness gains plugins end to end: a registry abstraction and a shared index format on the server, the plugins this repository builds shipped as part of every deployment, a Plugins page that lists what a Project has and what it could have, a plugin list that belongs to the Project and takes effect without a restart, and the same list kept on the machines the Project uses. Plugins are loaded by the platform, so all of it reaches a running deployment by a push.
 
 ## Registries and the index format

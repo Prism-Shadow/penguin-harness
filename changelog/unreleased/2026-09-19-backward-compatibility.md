@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3), [#9](https://github.com/nicolaepocroianu/penguin-harness/pull/9)
 
-[中文版](2026-09-19-backward-compatibility.zh.md)
-
 Migration 12 moved existing candidate text from activity run JSON into a separate payload table and retained compact history metadata, without resetting drafts or run history.
 
 ## Compatibility

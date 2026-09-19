@@ -6,8 +6,6 @@
 - **PR:** [#702](https://github.com/Prism-Shadow/penguin-harness/pull/702)
 - **Issue:** [#607](https://github.com/Prism-Shadow/penguin-harness/issues/607)
 
-[中文版](2026-09-12-notification-permission.zh.md)
-
 Nothing in the Web App ever called `Notification.requestPermission()`, and the completion
 notification was gated to the desktop shell, where Electron reports `Notification.permission`
 as `"granted"` without asking anyone. That is Electron's own check rather than the system's:

@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#556](https://github.com/Prism-Shadow/penguin-harness/pull/556)
 
-[中文版](2026-08-30-terminal-links.zh.md)
-
 Clicking a URL in a terminal opened `about:blank` instead of the address, and a hyperlink written by a program — the way `gh` and the agent CLIs print a pull request — first asked "Do you want to navigate to …? WARNING: This link could potentially be dangerous" and then did nothing either way.
 
 ## Details

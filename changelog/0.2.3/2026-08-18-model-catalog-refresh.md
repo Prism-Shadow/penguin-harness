@@ -6,8 +6,6 @@
 - **PR:** [#325](https://github.com/Prism-Shadow/penguin-harness/pull/325)
 - **Issue:** [#313](https://github.com/Prism-Shadow/penguin-harness/issues/313)
 
-[中文版](2026-08-18-model-catalog-refresh.zh.md)
-
 The built-in model catalog was refreshed against the AgentHub 0.4.2 line-up: Gemini 3.7, GLM-5.3 and the GPT-5.6 generation joined the direct provider groups along with their OpenRouter counterparts, a delisted free row was dropped, the DeepSeek rows were re-priced from the current official list, and the generic Chat Completions client type was renamed to `openai-chat`.
 
 ## New presets

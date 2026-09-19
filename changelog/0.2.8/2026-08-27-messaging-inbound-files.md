@@ -5,8 +5,6 @@
 - **Scope:** `server`, `docs`
 - **PR:** [#513](https://github.com/Prism-Shadow/penguin-harness/pull/513)
 
-[中文版](2026-08-27-messaging-inbound-files.zh.md)
-
 A document sent to the bot on Feishu or Telegram now reaches the Agent instead of the "not supported" notice. It arrives as the web composer's own file attachment — written into the Session scratchpad and handed to the model as an `[attached file: <path>]` line — over the same connector seam the inbound images landed on, so a third channel implements it the same way.
 
 ## Inbound files

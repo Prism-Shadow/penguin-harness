@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#710](https://github.com/Prism-Shadow/penguin-harness/pull/710)
 
-[中文版](2026-09-12-trace-view-all-events.zh.md)
-
 A long Trace file's later rounds — the compaction round among them, which sits at the end of the
 file — showed a timeline with zero messages: the analysis described the whole file and attributed
 messages to rounds by index range, while only the first 1000 events were ever fetched, so every

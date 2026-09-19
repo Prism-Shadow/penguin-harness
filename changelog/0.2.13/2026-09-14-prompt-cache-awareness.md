@@ -5,8 +5,6 @@
 - **Scope:** `core`
 - **PR:** [#722](https://github.com/Prism-Shadow/penguin-harness/pull/722)
 
-[中文版](2026-09-14-prompt-cache-awareness.zh.md)
-
 A provider serves a cached prefix only when the next request repeats the previous one byte for
 byte from the front — tools, then the system prompt, then the messages — so every turn the engine
 assembles has to leave the request an extension of the last one.

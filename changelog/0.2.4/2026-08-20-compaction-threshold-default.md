@@ -5,8 +5,6 @@
 - **Scope:** `core`, `docs`
 - **PR:** [#366](https://github.com/Prism-Shadow/penguin-harness/pull/366)
 
-[中文版](2026-08-20-compaction-threshold-default.zh.md)
-
 Newly created Agents are seeded with `compaction.max_context_length: 256000` instead of
 `128000`. The effective threshold is the smaller of that number and the model's
 `context_window − COMPACTION_HEADROOM` (2048), taken at every use, so a small-window model

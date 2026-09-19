@@ -5,8 +5,6 @@
 - **Scope:** `skills`, `docs`
 - **PR:** [#428](https://github.com/Prism-Shadow/penguin-harness/pull/428)
 
-[中文版](2026-08-23-manual-test-skill.zh.md)
-
 `.agents/skills/penguin-harness-manual-test/SKILL.md` is a new repo-development
 skill covering how to bring the app up on a developer machine so a change can be tried by hand: the four dev entry points (`pnpm dev`, `pnpm desktop`,
 `pnpm dev:landing`, `pnpm dev:docs`) with their fixed ports, and the environment traps that make a

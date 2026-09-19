@@ -7,8 +7,6 @@
 - **Issue:** [#229](https://github.com/Prism-Shadow/penguin-harness/issues/229), [#239](https://github.com/Prism-Shadow/penguin-harness/issues/239)
 - **Breaking:** yes — pre-split Traces' embedded tool record is no longer read or displayed.
 
-[中文版](2026-08-10-mcp-servers.zh.md)
-
 `tools.mcpServers` in `system_config.yaml` — until now a reserved, empty seam — is wired to a real MCP (Model Context Protocol) client, built on the official TypeScript SDK v2 (`@modelcontextprotocol/client` 2.0.0, spec revision 2026-07-28). Each entry keeps the spec's `{ name, config }` shape; `config` describes one of three transports ([#242](https://github.com/Prism-Shadow/penguin-harness/pull/242), closing [#239](https://github.com/Prism-Shadow/penguin-harness/issues/239) and [#229](https://github.com/Prism-Shadow/penguin-harness/issues/229)):
 
 - `stdio` — spawn a local server process (`command` / `args` / `env` / `cwd`);

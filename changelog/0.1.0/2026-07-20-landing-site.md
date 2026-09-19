@@ -5,8 +5,6 @@
 - **Scope:** `landing`, `docs`
 - **PR:** [#7](https://github.com/Prism-Shadow/penguin-harness/pull/7), [#6](https://github.com/Prism-Shadow/penguin-harness/pull/6)
 
-[中文版](2026-07-20-landing-site.zh.md)
-
 The penguin.ooo landing page: story, structure, animations, navigation, and the install domain.
 
 ## Landing, README, and blog retell one story, with penguin.ooo/install.sh

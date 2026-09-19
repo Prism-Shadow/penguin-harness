@@ -6,8 +6,6 @@
 - **PR:** [#227](https://github.com/Prism-Shadow/penguin-harness/pull/227), [#241](https://github.com/Prism-Shadow/penguin-harness/pull/241), [#246](https://github.com/Prism-Shadow/penguin-harness/pull/246)
 - **Issue:** [#89](https://github.com/Prism-Shadow/penguin-harness/issues/89)
 
-[中文版](2026-08-10-web-chat-ux.zh.md)
-
 ## Startup initial-password notice (server + CLI)
 
 The seeded admin password is persisted in `<root>/initial-admin-password` (0600) while it remains the initial one. Every server start re-prints it framed in ASCII with a change-it reminder, and `penguin web` attaching to an already-running instance prints the same notice (new side-effect-free subpath export `@prismshadow/penguin-server/initial-password`). Any admin password update — self change, desktop set, or an admin reset — deletes the file; legacy roots without the file stay silent. Docs (`quickstart` / `web-app` / `server-api`, READMEs) updated.

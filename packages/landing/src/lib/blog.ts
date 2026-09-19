@@ -1,8 +1,8 @@
 /**
  * Blog index: local Markdown posts imported at build time via import.meta.glob.
  * File naming: content/blog/<slug>.<lang>.md — one file per post per language;
- * a post missing the active language falls back to the other one, so the list
- * is always complete in both locales.
+ * a post missing the active language falls back to English, so the list
+ * is always complete for every locale.
  */
 import { parseFrontmatter } from "./frontmatter";
 import type { Locale } from "../state/locale";
@@ -38,7 +38,7 @@ export function parseAuthors(raw: string | undefined): string[] {
 
 /** Join authors for display: an ideographic comma in Chinese, an ASCII comma otherwise. */
 export function formatAuthors(authors: string[], locale: Locale): string {
-  return authors.join(locale === "zh" ? "、" : ", ");
+  return authors.join(", ");
 }
 
 const files = import.meta.glob("../../content/blog/*.md", {
@@ -49,7 +49,7 @@ const files = import.meta.glob("../../content/blog/*.md", {
 
 function toPost(path: string, raw: string): BlogPost | null {
   const file = path.split("/").pop() ?? "";
-  const match = /^(.+)\.(zh|en)\.md$/.exec(file);
+  const match = /^(.+)\.([a-z]{2}(?:-[A-Z]{2})?)\.md$/.exec(file);
   if (!match) return null;
   const { meta, body } = parseFrontmatter(raw);
   const category: BlogCategory =
@@ -97,7 +97,7 @@ export function formatPostDate(date: string, locale: Locale): string {
   if (utc.getUTCFullYear() !== y || utc.getUTCMonth() !== m - 1 || utc.getUTCDate() !== d) {
     return date;
   }
-  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
+  return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -109,7 +109,7 @@ const ALL: BlogPost[] = Object.entries(files)
   .map(([path, raw]) => toPost(path, raw))
   .filter((p): p is BlogPost => p !== null);
 
-/** Pick the locale's version of each slug (fallback to the other language), pinned/newest first. */
+/** Pick the locale's version of each slug (fallback to English), pinned/newest first. */
 export function postsFor(locale: Locale, category?: BlogCategory): BlogPost[] {
   const bySlug = new Map<string, BlogPost>();
   for (const post of ALL) {

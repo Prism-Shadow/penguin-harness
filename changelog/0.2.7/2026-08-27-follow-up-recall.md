@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#485](https://github.com/Prism-Shadow/penguin-harness/pull/485)
 
-[中文版](2026-08-27-follow-up-recall.zh.md)
-
 A message sent to a busy Session from a bound chat channel joined the follow-up queue without
 the content a recall hands back, so the Web App drew its queued line empty and its recall
 button answered "this message already went out" while the message was still waiting. The

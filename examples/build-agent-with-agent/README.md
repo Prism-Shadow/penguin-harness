@@ -1,4 +1,3 @@
-<!-- English | [简体中文](README.zh.md) -->
 
 # Example: an Agent that builds another Agent (local, on an AMD GPU via Ollama)
 

@@ -6,8 +6,6 @@
 - **PR:** [#480](https://github.com/Prism-Shadow/penguin-harness/pull/480)
 - **Breaking:** yes — a "Not Now" answered to the pre-0.2.7 one-time `penguin` offer is not carried forward; the command installs itself on the next launch
 
-[中文版](2026-08-27-backward-compatibility.zh.md)
-
 One piece of existing state is touched by this batch: the marker the desktop app wrote when
 it offered to install the `penguin` command, now that
 [the app installs it automatically](2026-08-27-desktop-installs-cli.md).

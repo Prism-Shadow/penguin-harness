@@ -5,8 +5,6 @@
 - **Scope:** `tooling`, `landing`, `docs`
 - **PR:** [#403](https://github.com/Prism-Shadow/penguin-harness/pull/403), [#406](https://github.com/Prism-Shadow/penguin-harness/pull/406), [#420](https://github.com/Prism-Shadow/penguin-harness/pull/420)
 
-[中文版](2026-08-23-download-source-rule.zh.md)
-
 `install.sh`, `install.ps1` and the desktop download page each chose between GitHub and the OSS
 mirror their own way. They now apply one rule, measured rather than assumed: time the release's
 large probe file on GitHub, keep GitHub whenever it reaches 256 KB/s, and only below that measure

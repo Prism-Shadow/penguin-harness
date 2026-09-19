@@ -65,11 +65,11 @@ CI job runs it on every pull request and warns. **Read that warning before taggi
 | --- | --- |
 | `changelog/unreleased/` | `git mv` to `changelog/<version>/`. Nothing else moves; released folders are frozen. |
 | `changelog/<version>/RELEASE.md` | New. The Release body, verbatim. Shape below. |
-| `CHANGELOG.md`, `CHANGELOG.zh.md` | One line at the top, linking `changelog/<version>/`. |
-| `README.md`, `README.zh.md` | The Docker example pins the exact version (`hiyouga/penguinharness:<version>`). |
+| `CHANGELOG.md` | One line at the top, linking `changelog/<version>/`. |
+| `README.md` | The Docker example pins the exact version (`hiyouga/penguinharness:<version>`). |
 | `package.json`, `packages/*/package.json`, `plugins/*/package.json` | Version, in lockstep. |
 | `packages/core/src/index.ts` | `export const VERSION`. |
-| `packages/landing/content/blog/penguinharness-<v-with-dashes>.{en,zh}.md` | The post pair. |
+| `packages/landing/content/blog/penguinharness-<v-with-dashes>.en.md` | The English post. |
 | `packages/landing/test/blog.test.ts` | The new slug joins the expected list. |
 
 **Anything whose version already differs is a decision, not a sweep.** Bump what sits on the
@@ -111,7 +111,7 @@ routes that moved. Say what breaks and what to do, one bullet each.
 
 Images are written `/blog-assets/<name>` and resolved by `blogAssetUrl`; never paste the raw
 host. Screenshots are named `penguinharness-<v-with-dashes>-<feature>-<lang>.png` and **shot once
-per UI language** — the post pair references `-en.png` and `-zh.png` separately.
+in English** — the post references `-en.png`.
 
 The assets live in the sibling `Prism-Shadow/penguin-harness-community` repo under
 `blog-assets/`, not here.

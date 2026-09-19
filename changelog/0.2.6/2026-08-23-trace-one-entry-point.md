@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#429](https://github.com/Prism-Shadow/penguin-harness/pull/429)
 
-[中文版](2026-08-23-trace-one-entry-point.zh.md)
-
 Alongside the dock's Trace panel, which shows the Trace of the conversation on screen, the
 `/traces` page was deep-linked from three places: a Trace file row in the conversation's
 details card, an eye button on every row of the Agent list, and the Session column of the

@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`, `docs`
 - **PR:** [#376](https://github.com/Prism-Shadow/penguin-harness/pull/376)
 
-[中文版](2026-08-20-background-execution.zh.md)
-
 Added a `run_in_background` argument to `exec_command` and `run_subagent`: the call returns its `process_id` / `subagent_id` immediately, and when the task settles its result comes back **as a user message injected by the harness** — the model no longer needs to poll. Added `kill_command` and `kill_subagent` to terminate background sessions, and raised `input_command`'s default empty-poll wait from 5000ms to 120000ms so one poll waits out most builds.
 
 ## Details

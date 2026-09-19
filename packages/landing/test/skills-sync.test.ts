@@ -12,7 +12,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { zh } from "../src/lib/strings";
 import type { Strings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
@@ -37,7 +36,6 @@ const listedSkills = (dict: Strings): string[] =>
   dict.skills.groups.flatMap((group) => group.skills);
 
 const DICTIONARIES: ReadonlyArray<{ file: string; dict: Strings }> = [
-  { file: "strings.ts", dict: zh },
   { file: "strings-en.ts", dict: en },
 ];
 
@@ -74,9 +72,4 @@ describe("landing ↔ skill library sync", () => {
    * flattened comparison cannot see. Membership inside a card only — the chips are free to be
    * reordered.
    */
-  it("both dictionaries put each Skill on the same card", () => {
-    const cards = (dict: Strings): string[][] =>
-      dict.skills.groups.map((group) => [...group.skills].sort());
-    expect(cards(en)).toEqual(cards(zh));
-  });
 });

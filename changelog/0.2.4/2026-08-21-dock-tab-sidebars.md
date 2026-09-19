@@ -6,8 +6,6 @@
 - **PR:** [#394](https://github.com/Prism-Shadow/penguin-harness/pull/394)
 - **Breaking:** yes — previously saved per-conversation terminal dock arrangements (browser localStorage) are not carried over; the docks start closed once, and running shells stay reachable from any dock's "+" menu.
 
-[中文版](2026-08-21-dock-tab-sidebars.zh.md)
-
 Replaced the chat page's drawer-style side panels and the old terminal pane system with
 two uniform dock surfaces, one on the right and one at the bottom of the chat page
 (Codex-style). Every side element — the subagents panel, the Workspace files panel, the

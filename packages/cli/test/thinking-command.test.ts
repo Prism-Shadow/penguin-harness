@@ -30,7 +30,7 @@ describe("the advertised tier set matches the accepted one", () => {
   it("every tier the messages name is actually accepted, in both locales", () => {
     // #322 spelled the ladder out in free text rather than deriving it, so widening the
     // ladder in core silently desynced the printed set from the accepted one. Pin it.
-    for (const messages of [getMessages("en"), getMessages("zh")]) {
+    for (const messages of [getMessages("en"), getMessages("en")]) {
       const printed = [
         messages.common.thinking,
         messages.thinkingCurrent("low"),

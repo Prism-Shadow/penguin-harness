@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#462](https://github.com/Prism-Shadow/penguin-harness/pull/462)
 
-[中文版](2026-08-25-remove-traces-page.zh.md)
-
 [Keeping one entry point for reading a Trace](2026-08-23-trace-one-entry-point.md) removed the three
 in-app links to `/traces` and left the page itself in place, reachable by URL. It is now removed
 outright: reading a Trace happens in a conversation's Trace panel, which is the only way in.

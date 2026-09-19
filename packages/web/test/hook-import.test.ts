@@ -2,7 +2,7 @@
  * hook-import unit tests (src/features/agents/hook-import.ts): the lead sentence wraps a
  * fetchable source (URL / repo / local path) in an import instruction and passes free text
  * through verbatim; the tail names the install target by Project and Agent id and states the
- * script contract the agent writes against, identically in both dictionaries, so a language
+ * script contract the agent writes against, identically in the English dictionary, so a language
  * switch never changes what the agent is told.
  */
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,7 +11,7 @@ import {
   hookImportLead,
   hookImportTail,
 } from "../src/features/agents/hook-import";
-import { setActiveStrings, zh } from "../src/lib/strings";
+import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 /** What the agent has to get right, whichever language the tail is in. */
@@ -42,8 +42,8 @@ describe("hookImportTail", () => {
     for (const token of CONTRACT) expect(tail, token).toContain(token);
   });
 
-  it("carries the same contract in both dictionaries", () => {
-    for (const dict of [zh, en]) {
+  it("carries the same contract in the English dictionary", () => {
+    for (const dict of [en]) {
       const tail = dict.hooks.importPromptTail("p", "a");
       for (const token of CONTRACT) expect(tail, token).toContain(token);
     }
@@ -51,10 +51,10 @@ describe("hookImportTail", () => {
 });
 
 describe("hookImportLead", () => {
-  afterEach(() => setActiveStrings(zh));
+  afterEach(() => setActiveStrings(en));
 
-  it("wraps a fetchable source in the import sentence, in either language", () => {
-    for (const dict of [zh, en]) {
+  it("wraps a fetchable source in the import sentence, in English", () => {
+    for (const dict of [en]) {
       setActiveStrings(dict);
       for (const source of [
         "https://example.com/hooks",

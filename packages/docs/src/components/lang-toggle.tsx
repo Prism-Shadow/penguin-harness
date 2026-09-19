@@ -1,5 +1,5 @@
 /**
- * Language menu: 中文 / English / follow system, persisted via the locale context.
+ * Language menu: English / follow system, persisted via the locale context.
  * A small dropdown (globe + current label); closes on outside click or selection.
  * Scroll position across the locale remount is preserved by LocaleScope.
  */
@@ -25,10 +25,9 @@ export function LangToggle() {
 
   const OPTIONS: Array<{ value: LangPref; label: string }> = [
     { value: "en", label: S.lang.en },
-    { value: "zh", label: S.lang.zh },
     { value: "system", label: S.lang.system },
   ];
-  const current = OPTIONS.find((o) => o.value === lang) ?? OPTIONS[2]!;
+  const current = OPTIONS.find((o) => o.value === lang) ?? OPTIONS[0]!;
 
   return (
     <div ref={ref} className="relative">

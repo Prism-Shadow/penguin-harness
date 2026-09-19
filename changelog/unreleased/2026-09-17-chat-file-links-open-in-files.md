@@ -5,8 +5,6 @@
 - **Scope:** `web`, `desktop`
 - **PR:** [#780](https://github.com/Prism-Shadow/penguin-harness/pull/780)
 
-[中文版](2026-09-17-chat-file-links-open-in-files.zh.md)
-
 Clicking a link in an assistant reply that named a file the Agent wrote —
 `[pelican-bike.html](pelican-bike.html)` — opened a new browser tab on a Web App route that does not
 exist, and in the desktop app opened one more full PenguinHarness window per click. Links in a

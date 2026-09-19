@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#683](https://github.com/Prism-Shadow/penguin-harness/pull/683)
 
-[中文版](2026-09-11-price-unit-overlap.zh.md)
-
 Five inputs in the model settings dialog draw a unit inside their own box and reserved room for
 it with a fixed padding. Each reserve is now derived from the width its unit actually renders at,
 measured live, so the value keeps the same gap from it whatever the resolved font, the interface

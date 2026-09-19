@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#494](https://github.com/Prism-Shadow/penguin-harness/pull/494)
 
-[中文版](2026-08-26-messaging-line-per-message.zh.md)
-
 A relayed assistant reply reached the chat as one message, however it was written. A per-binding
 option now delivers it as one message per non-blank line instead — the shape a role-play answer
 written as several spoken lines is meant to arrive in. Off by default, and off is byte-for-byte

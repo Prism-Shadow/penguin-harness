@@ -6,8 +6,6 @@
 - **PR:** [#754](https://github.com/Prism-Shadow/penguin-harness/pull/754)
 - **Breaking:** yes — a ticket file still in the `# Ticket:` header format is reported as invalid instead of being read
 
-[中文版](2026-09-16-tickets-frontmatter-only.zh.md)
-
 Company mode's tickets have one format on disk: YAML frontmatter followed by the prose
 sections. The reader for the format before it — a `# Ticket: <title>` line followed by
 `Key: value` headers — was removed on the schedule set in

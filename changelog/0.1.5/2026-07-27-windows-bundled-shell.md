@@ -5,8 +5,6 @@
 - **Scope:** `core`, `tooling`
 - **PR:** [#95](https://github.com/Prism-Shadow/penguin-harness/pull/95)
 
-[中文版](2026-07-27-windows-bundled-shell.zh.md)
-
 `penguin-win32-x64.zip` now ships **MinGit** under `git/`, and `exec_command` uses it when the machine has no Git for Windows of its own.
 
 ## The shell was whatever the machine had

@@ -5,8 +5,6 @@
 - **Scope:** `core`, `skills`
 - **PR:** [#498](https://github.com/Prism-Shadow/penguin-harness/pull/498)
 
-[中文版](2026-08-26-schedule-target-current-session.zh.md)
-
 The built-in Schedules Prompt now tells the Agent to aim a scheduled task at the Session it is already in — `session_id` written from the Environment section's Session ID line — so a task arranged in conversation reports back into that conversation instead of into a fresh Session nobody is watching. Opening a new Session per trigger became the deliberate alternative: when the user asks for a separate Session, when the task is better off starting clean, or when it has to outlive the conversation.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`
 - **PR:** [#663](https://github.com/Prism-Shadow/penguin-harness/pull/663)
 
-[中文版](2026-09-10-sidebar-workspace-groups-complete.zh.md)
-
 Grouped by Workspace, the sidebar formed a group only for Workspaces that one of its loaded rows belonged to, and the initial load is each Agent's ten newest conversations. With dozens of Workspaces holding hundreds of conversations each, a Workspace whose newest conversation was older than an Agent's ten newest never appeared at all. The group list is now built from the server's per-Workspace counts as well: every Workspace that holds Sessions is a group, and the groups are placed by their newest Session whether or not any of its rows are loaded.
 
 ## Details

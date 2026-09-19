@@ -5,8 +5,6 @@
 - **Scope:** `core`, `web`, `cli`, `docs`, `model-catalog`
 - **PR:** [#705](https://github.com/Prism-Shadow/penguin-harness/pull/705)
 
-[中文版](2026-09-12-catalog-openrouter-responses.zh.md)
-
 Every OpenRouter preset in the built-in catalog moved to AgentHub's generic Responses client
 (`client_type = "openai-responses"`), and the OpenRouter provider group pins the same protocol,
 so a model added to that group by hand speaks it too.

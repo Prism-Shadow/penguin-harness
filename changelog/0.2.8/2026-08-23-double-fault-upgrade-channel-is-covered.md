@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#425](https://github.com/Prism-Shadow/penguin-harness/pull/425)
 
-[中文版](2026-08-23-double-fault-upgrade-channel-is-covered.zh.md)
-
 Boot-failure recovery [answers a push that cannot boot](2026-08-20-hot-update-failure-modes.md)
 by re-booting the version that was running. What happens when that re-boot fails too was
 stated at the code — warn, keep `/api/hmr` reachable for a follow-up push, and let a restart

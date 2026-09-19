@@ -6,8 +6,6 @@
 - **PR:** [#588](https://github.com/Prism-Shadow/penguin-harness/pull/588)
 - **Breaking:** yes — the `read_image` and `describe_image` tool names are gone; an existing Agent's stored entries stop assembling, and a model calling either gets the unknown-tool reply until the Agent's kernel is updated
 
-[中文版](2026-09-02-backward-compatibility-read-file-images.zh.md)
-
 [Image reading folds into `read_file`](2026-09-02-read-file-images.md) removes two built-in tools that every existing Agent's `system_config.yaml` lists under `tools.builtin`, and changes the definition of a third. Nothing on disk is rewritten; this entry records what an existing install sees and what, if anything, to do.
 
 ## Stored tool entries: skipped, not migrated

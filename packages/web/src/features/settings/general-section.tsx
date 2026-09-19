@@ -46,7 +46,6 @@ export function GeneralSection() {
 
   const langOptions: ReadonlyArray<{ value: LangPref; label: string }> = [
     { value: "en", label: S.settings.langEn },
-    { value: "zh", label: S.settings.langZh },
     { value: "system", label: S.settings.followSystem },
   ];
   const currencyOptions: ReadonlyArray<{ value: Currency; label: string }> = [

@@ -19,16 +19,10 @@ import {
   SparklesIcon,
   UsersIcon,
 } from "../components/icons";
-import chatZhLight from "../assets/shots/chat-zh-light.webp";
-import chatZhDark from "../assets/shots/chat-zh-dark.webp";
 import chatEnLight from "../assets/shots/chat-en-light.webp";
 import chatEnDark from "../assets/shots/chat-en-dark.webp";
-import tracesZhLight from "../assets/shots/traces-zh-light.webp";
-import tracesZhDark from "../assets/shots/traces-zh-dark.webp";
 import tracesEnLight from "../assets/shots/traces-en-light.webp";
 import tracesEnDark from "../assets/shots/traces-en-dark.webp";
-import benchmarkZhLight from "../assets/shots/benchmark-zh-light.webp";
-import benchmarkZhDark from "../assets/shots/benchmark-zh-dark.webp";
 import benchmarkEnLight from "../assets/shots/benchmark-en-light.webp";
 import benchmarkEnDark from "../assets/shots/benchmark-en-dark.webp";
 
@@ -36,15 +30,12 @@ type ShotSet = Record<Locale, { light: string; dark: string }>;
 
 const SHOTS: Record<"chat" | "traces" | "benchmark", ShotSet> = {
   chat: {
-    zh: { light: chatZhLight, dark: chatZhDark },
     en: { light: chatEnLight, dark: chatEnDark },
   },
   traces: {
-    zh: { light: tracesZhLight, dark: tracesZhDark },
     en: { light: tracesEnLight, dark: tracesEnDark },
   },
   benchmark: {
-    zh: { light: benchmarkZhLight, dark: benchmarkZhDark },
     en: { light: benchmarkEnLight, dark: benchmarkEnDark },
   },
 };

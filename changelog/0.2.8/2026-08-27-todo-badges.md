@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`
 - **PR:** [#510](https://github.com/Prism-Shadow/penguin-harness/pull/510)
 
-[中文版](2026-08-27-todo-badges.zh.md)
-
 The phone-style red dot that marked a software or Agent-kernel update gained three more trails,
 for things the user is expected to act on but might reasonably choose not to: **Skill library**
 updates, **model library** preset updates, and **unexpected errors** in the cost center. Each dot

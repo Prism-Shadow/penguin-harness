@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#427](https://github.com/Prism-Shadow/penguin-harness/pull/427)
 
-[中文版](2026-08-23-hmr-comments-match-the-code.zh.md)
-
 Four passages in the hot-update runtime described something other than the code around them.
 A reader with no session transcript could not have resolved them, and two of them would have
 sent that reader the wrong way.

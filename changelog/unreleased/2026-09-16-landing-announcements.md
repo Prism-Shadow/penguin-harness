@@ -5,8 +5,6 @@
 - **Scope:** `landing`
 - **PR:** [#747](https://github.com/Prism-Shadow/penguin-harness/pull/747)
 
-[中文版](2026-09-16-landing-announcements.zh.md)
-
 The rotating announcement bar above the landing site's navigation dropped the announcement of GLM-5.3 Flash and Qwen 3.8 Flash and the one for the AMD Developer Program's Fireworks API credits. Two new announcements took their place, in both languages.
 
 ## Details

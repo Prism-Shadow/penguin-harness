@@ -5,8 +5,6 @@
 - **Scope:** `ci`, `desktop`
 - **PR:** [#670](https://github.com/Prism-Shadow/penguin-harness/pull/670)
 
-[中文版](2026-09-10-release-branch-signed-desktop-build.zh.md)
-
 `desktop-build.yml` now also runs on every push to a `release/**` branch, with macOS and Windows
 signing required, exactly as the release run will call it. Whether signing is required is decided
 once at the workflow level from the event and the inputs, and the steps read that instead of the

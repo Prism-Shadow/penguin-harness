@@ -39,8 +39,8 @@ function clockTime(d: Date): string {
 
 /** 周一 / Monday: the short form in Chinese already carries the "week" character the sentence needs. */
 function weekdayName(d: Date, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : "en-US", {
-    weekday: locale === "zh" ? "short" : "long",
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
   }).format(d);
 }
 

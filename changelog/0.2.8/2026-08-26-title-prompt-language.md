@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`
 - **PR:** [#489](https://github.com/Prism-Shadow/penguin-harness/pull/489)
 
-[中文版](2026-08-26-title-prompt-language.zh.md)
-
 The prompt behind an automatically generated Session title was rebuilt as an instruction about
 a piece of text rather than as a conversational turn. A conversation opening with `你好` was
 titled `你好！有什么可以帮你的吗？` — the model answered the material instead of naming it — and an

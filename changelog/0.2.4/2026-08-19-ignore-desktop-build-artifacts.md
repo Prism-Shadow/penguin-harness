@@ -5,8 +5,6 @@
 - **Scope:** `desktop`
 - **PR:** [#331](https://github.com/Prism-Shadow/penguin-harness/pull/331)
 
-[中文版](2026-08-19-ignore-desktop-build-artifacts.zh.md)
-
 `packages/desktop/.gitignore` now names every path a desktop packaging run writes — `bin/`, `out/`, `skills/` and `stage/` — so a run leaves nothing untracked behind on any branch.
 
 ## Details

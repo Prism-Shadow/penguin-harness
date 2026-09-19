@@ -6,8 +6,6 @@
 - **PR:** [#317](https://github.com/Prism-Shadow/penguin-harness/pull/317)
 - **Issue:** [#307](https://github.com/Prism-Shadow/penguin-harness/issues/307)
 
-[中文版](2026-08-18-remote-claude-code-driving.zh.md)
-
 The `remote-claude-code` library skill moved to v2, closing four gaps reported from real relayed sessions: the local agent answering in Claude Code's place, a "model + level" switch request read as one unknown model name, batched key sequences racing the TUI, and post-run suggestion text mistaken for the user's pending input. Troubleshooting rows, the verification checklist, the skill's frontmatter description and the bilingual `skills` docs tables were updated in sync, and a contract test was added over the new rules.
 
 ## Relay contract

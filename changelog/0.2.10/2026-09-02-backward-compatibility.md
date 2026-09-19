@@ -6,8 +6,6 @@
 - **PR:** [#542](https://github.com/Prism-Shadow/penguin-harness/pull/542)
 - **Breaking:** yes — the first restart-only schema migration: a hot push of this version onto a running runtime is refused until the runtime is restarted; goal mode on an Agent from before this release answers 409 until the `goal` plugin is installed on it
 
-[中文版](2026-09-02-backward-compatibility.zh.md)
-
 [Hooks in core, goal mode and continual learning as plugins, and the skill library becomes a
 plugin library](2026-08-29-stop-hook-goal-mode.md) touches six things that outlive a release:
 the `goal_state` table every `web.db` has carried since 0.1.3, the hook packages an existing

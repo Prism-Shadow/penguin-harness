@@ -185,20 +185,14 @@ a parser sees without types: a footer handed over as a component or built in a v
 dialog body outside those declared modules, follow the same rule but are on you. Adding a module to
 `DIALOG_BODY_MODULES` is how a new settings page joins the check.
 
-## Every user-facing string is bilingual
+## User-facing strings
 
-Two dictionaries: `src/lib/strings.ts` is zh (and defines the `Strings` type), `src/lib/strings-en.ts`
-is en and is typed `const en: Strings`. That type is the whole guard: a key added to one and not
-the other, or a signature that changed on one side, is a **type error** rather than a runtime
-surprise. What it cannot see is whether a function-valued string uses the parameter it is handed —
-`(n: number) => "items"` typechecks while the other side interpolates `n`. Add both, in the same
-shape, in the same PR.
+English copy lives in `src/lib/strings-en.ts`; `strings-types.ts` defines the shared
+`Strings` contract for future translations. `strings.ts` exports the active dictionary.
+Only English ships. Do not add Chinese dictionaries, translated documents, or metadata.
 
-`S` is a live binding swapped on locale change, so read it at render time; never hoist `S.x.y` into
-a module-level constant.
-
-Chinese belongs only in the zh dictionary, `titleZh` fields, `*.zh.md` documents, and fixtures that
-exercise CJK behaviour. Comments, test names and every other string are English.
+`S` is a live binding swapped on locale change, so read it at render time; never hoist
+`S.x.y` into a module-level constant. Keep Unicode and IME support intact.
 
 ## Popups: portal, do not absolutely position
 

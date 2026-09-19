@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#676](https://github.com/Prism-Shadow/penguin-harness/pull/676)
 
-[中文版](2026-09-10-trace-elapsed-total.zh.md)
-
 A Trace file's overall summary printed the elapsed total and its API / tool breakdown on the same
 line, so the row carried three durations at rest. Elapsed now shows the total on its own and keeps
 the breakdown in its hover text — the reading the per-round chip beside it already gave, so both

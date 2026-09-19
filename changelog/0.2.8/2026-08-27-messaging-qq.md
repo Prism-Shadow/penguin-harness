@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#501](https://github.com/Prism-Shadow/penguin-harness/pull/501)
 
-[中文版](2026-08-27-messaging-qq.zh.md)
-
 A Session gained a third channel to bind to: a QQ bot, behind the same connector seam Feishu
 and Telegram already sat behind. The credentials are the App ID and App Secret from the QQ
 open platform, and inbound messages ride the platform's WebSocket gateway, so binding one

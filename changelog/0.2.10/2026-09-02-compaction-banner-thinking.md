@@ -5,8 +5,6 @@
 - **Scope:** `core`, `web`, `cli`, `docs`
 - **PR:** [#582](https://github.com/Prism-Shadow/penguin-harness/pull/582)
 
-[中文版](2026-09-02-compaction-banner-thinking.zh.md)
-
 The Web App's compaction row took the shape of a running work group: the header's title doubles as its status (Compacting, then Compacted) and carries the wall time, and while the compaction runs the row is open and its sections arrive in the order the request produces them: the compaction request's thinking as soon as any lands, and the summary it produced only once that thinking has finished, with the first summary text — each closed by default, each with its own wall time, streaming while the request writes it
 
 ## Details

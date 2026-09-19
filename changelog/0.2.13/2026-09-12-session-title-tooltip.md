@@ -6,8 +6,6 @@
 - **PR:** [#706](https://github.com/Prism-Shadow/penguin-harness/pull/706)
 - **Issue:** [#570](https://github.com/Prism-Shadow/penguin-harness/issues/570)
 
-[中文版](2026-09-12-session-title-tooltip.zh.md)
-
 Hovering a sidebar session whose title was too long for the row disclosed that title twice at
 once: the text scrolled its clipped tail into view, and a native tooltip carrying the same text
 opened over it. The scroll is now the only disclosure on those rows.

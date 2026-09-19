@@ -5,8 +5,6 @@
 - **Scope:** `model-catalog`, `server`, `web`, `cli`, `docs`
 - **PR:** [#531](https://github.com/Prism-Shadow/penguin-harness/pull/531)
 
-[中文版](2026-08-28-catalog-tokendance-discounts.zh.md)
-
 Tencent's Hy4 preview joined the catalog through both of its sellers, six TokenDance rows
 gained a declared discount that the models page now shows and the cost center now bills at,
 TokenDance became the recommended provider group and leads the page by default, the model card

@@ -6,8 +6,6 @@
 - **PR:** [#540](https://github.com/Prism-Shadow/penguin-harness/pull/540)
 - **Breaking:** yes — `POST /api/version/update` answers with the job status instead of blocking until the run is over
 
-[中文版](2026-08-28-update-modal.zh.md)
-
 The two update entries — the "New version available" superscript on the new-chat page's
 version line, and the row under System settings in the sidebar user menu — now open the same
 update dialog, and the dialog walks the update the way an app updater does: a check, the

@@ -6,8 +6,6 @@
 - **PR:** [#443](https://github.com/Prism-Shadow/penguin-harness/pull/443)
 - **Breaking:** yes — the fixed seed password retires; claim the account through the printed first-login link
 
-[中文版](2026-08-24-penguin-auth.zh.md)
-
 Signing in to a server from a terminal is now possible, and the account bootstrap around it is
 rebuilt: a fresh server prints a first-login link instead of a fixed password, and a forgotten
 admin password is recovered offline.

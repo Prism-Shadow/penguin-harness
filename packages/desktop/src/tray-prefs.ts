@@ -74,7 +74,7 @@ export function readTrayPrefs(userDataDir: string): TrayPrefs {
     closeToTray: bool("closeToTray"),
     // Anything else, including the absence this file had before the field existed, means
     // nothing has been reported yet and the device language decides.
-    locale: locale === "zh" || locale === "en" ? locale : null,
+    locale: locale === "en" ? locale : null,
   };
 }
 
@@ -121,7 +121,7 @@ export function parseTrayCommand(data: unknown): TrayCommand | null {
   if (msg.type !== "desktop-tray-command") return null;
   const patch: TrayCommand = {};
   if (typeof msg.showTrayIcon === "boolean") patch.showTrayIcon = msg.showTrayIcon;
-  if (msg.locale === "zh" || msg.locale === "en") patch.locale = msg.locale;
+  if (msg.locale === "en") patch.locale = msg.locale;
   return patch;
 }
 

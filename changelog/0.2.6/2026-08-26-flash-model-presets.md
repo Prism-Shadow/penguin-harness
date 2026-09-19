@@ -5,8 +5,6 @@
 - **Scope:** `model-catalog`, `core`, `cli`, `docs`, `skills`
 - **PR:** [#469](https://github.com/Prism-Shadow/penguin-harness/pull/469)
 
-[中文版](2026-08-26-flash-model-presets.zh.md)
-
 The built-in model catalog gained three low-cost rows: `glm-5.3-flash` in the direct Z.AI (GLM) group, its gateway listing `z-ai/glm-5.3-flash` on OpenRouter, and `qwen3.8-flash` in the Qwen Pay-As-You-Go group. All three carry a million-token context window and prices roughly an order of magnitude below their non-Flash siblings.
 
 ## Details

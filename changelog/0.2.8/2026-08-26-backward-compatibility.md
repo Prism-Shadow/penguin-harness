@@ -6,8 +6,6 @@
 - **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490), [#493](https://github.com/Prism-Shadow/penguin-harness/pull/493), [#494](https://github.com/Prism-Shadow/penguin-harness/pull/494)
 - **Breaking:** yes — one-way for the database: after two Sessions have saved the same bot account, a build from before this change can no longer open that `web.db`
 
-[中文版](2026-08-26-backward-compatibility.zh.md)
-
 This batch touches three things on an existing `web.db`, all on `messaging_bindings` and all
 carried by every database that has opened a build with messaging bindings in it (0.2.5 and
 later): the `idx_messaging_account` unique index, and the absence of two added columns,

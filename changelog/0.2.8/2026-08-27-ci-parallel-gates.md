@@ -5,8 +5,6 @@
 - **Scope:** `ci`, `tooling`
 - **PR:** [#488](https://github.com/Prism-Shadow/penguin-harness/pull/488)
 
-[中文版](2026-08-27-ci-parallel-gates.zh.md)
-
 CI ran build, style, typecheck, test, installer and e2e as six serial steps inside one job per
 platform, so every platform paid for every gate in sequence and the slowest job set the run's
 length — 254s, of which the longest job spent 138s in vitest and 35s building all nine packages,

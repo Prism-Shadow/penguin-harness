@@ -10,7 +10,7 @@ import {
   toStoredUsd,
   unitLabel,
 } from "../src/features/company/budget-input";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
 describe("toStoredUsd", () => {
@@ -82,8 +82,6 @@ describe("isBudgetText", () => {
 
 describe("unitLabel", () => {
   it("names the reader's currency and the period the cap covers", () => {
-    expect(unitLabel("USD", zh)).toBe("$ / 月");
-    expect(unitLabel("CNY", zh)).toBe("¥ / 月");
     expect(unitLabel("USD", en)).toBe("$ / month");
     expect(unitLabel("CNY", en)).toBe("¥ / month");
   });

@@ -5,8 +5,6 @@
 - **Scope:** `core`
 - **PR:** [#700](https://github.com/Prism-Shadow/penguin-harness/pull/700)
 
-[中文版](2026-09-11-compaction-thinking-level.zh.md)
-
 ## Details
 
 - The thinking level is a per-request parameter, and every LLM request takes the level the

@@ -5,8 +5,6 @@
 - **Scope:** `server`, `cli`
 - **PR:** [#576](https://github.com/Prism-Shadow/penguin-harness/pull/576)
 
-[中文版](2026-09-01-machines-update.zh.md)
-
 A machine that already carries the right release but different pushed state is a **hot update, not an install**. It now goes over that machine's own update channel, which asks the machine and reports its answer — refusals included.
 
 ## Over the machine's own update channel

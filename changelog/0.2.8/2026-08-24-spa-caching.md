@@ -4,8 +4,6 @@
 - **Type:** fix
 - **Scope:** `server`
 
-[中文版](2026-08-24-spa-caching.zh.md)
-
 The built frontend was served with no caching headers at all, so what a browser did with it was
 the browser's own business. A hot update could land, the server could be running the new build,
 and a window could go on running the old one — with nothing on either side saying so.

@@ -5,8 +5,6 @@
 - **Scope:** `model-catalog`, `docs`
 - **PR:** [#590](https://github.com/Prism-Shadow/penguin-harness/pull/590)
 
-[中文版](2026-09-02-doubao-seed-models.zh.md)
-
 The built-in catalog's TokenDance group gained ByteDance's three Doubao Seed chat models: `seed-2.1-pro` (Doubao Seed 2.1 Pro), `seed-2.1-turbo` (Doubao Seed 2.1 Turbo) and `seed-evolving` (Doubao Seed Evolving, a rolling id that currently serves the same model as 2.1 Pro). All three are on the gateway's 50%-off promotion, recorded the way every promoted TokenDance row is — the list price in `pricing`, the rate in `discount` — so the models page shows the billed price with a discount badge, and a Project preset with them charges what the gateway charges.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `landing`, `docs`
 - **PR:** [#473](https://github.com/Prism-Shadow/penguin-harness/pull/473)
 
-[中文版](2026-08-27-landing-homepage-refinement.zh.md)
-
 Refined the landing page without removing its existing product sections, and made the desktop download choices easier to scan.
 
 ## Details

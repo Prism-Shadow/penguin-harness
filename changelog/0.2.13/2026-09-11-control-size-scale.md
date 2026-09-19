@@ -5,8 +5,6 @@
 - **Scope:** `web`, `skills`
 - **PR:** [#689](https://github.com/Prism-Shadow/penguin-harness/pull/689)
 
-[中文版](2026-09-11-control-size-scale.zh.md)
-
 The Web App's form controls spelled their font size in four places that had drifted apart, and four
 dialog fields sat a tier above their neighbours because no call site had said which tier it wanted.
 The rung now comes from a single record, `sizeTextClass` in `components/ui/input.tsx`, and every

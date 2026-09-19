@@ -5,8 +5,6 @@
 - **Scope:** `landing`, `docs`
 - **PR:** [#772](https://github.com/Prism-Shadow/penguin-harness/pull/772)
 
-[中文版](2026-09-17-blog-cjk-heading-anchors.zh.md)
-
 The landing site's router looked up the element for a URL hash without decoding the hash first. Browsers report the fragment percent-encoded, so a link to a Chinese heading such as `#升级须知` arrived as `#%E5%8D%87…` and matched no element, and the page scrolled to the top instead. The router now decodes the hash before the lookup. A shared deep link, an in-post `[…](#…)` link (which opens in a new tab) and a table-of-contents click all scroll to the Chinese heading, as links to English headings already did.
 
 ## Details

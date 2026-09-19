@@ -5,8 +5,6 @@
 - **Scope:** `tooling`, `ci`, `docs`
 - **PR:** [#166](https://github.com/Prism-Shadow/penguin-harness/pull/166)
 
-[中文版](2026-08-03-oss-distribution.zh.md)
-
 Release downloads no longer depend on GitHub's reachability alone ([#166](https://github.com/Prism-Shadow/penguin-harness/pull/166)).
 
 - A new `mirror-oss` release job downloads the exact assets attached to the GitHub Release, re-verifies their checksums, and mirrors the same bytes to an Alibaba Cloud OSS bucket; `latest.json` is uploaded last and only after every asset landed, so the mirror never advertises a partially mirrored version. The job reads its provider/role ARNs and bucket settings from the `oss-production` environment and fails fast with a named error when one is missing.

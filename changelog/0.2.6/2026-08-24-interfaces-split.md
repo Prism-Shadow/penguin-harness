@@ -6,8 +6,6 @@
 - **PR:** [#459](https://github.com/Prism-Shadow/penguin-harness/pull/459)
 - **Breaking:** yes — `SubagentHandle.run` and `sendToBackgroundSubagent` take an OmniMessage list instead of a string, and the build/version types left the `/interfaces` subpath
 
-[中文版](2026-08-24-interfaces-split.zh.md)
-
 `packages/core/src/interfaces.ts` held four unrelated groups in one 749-line file, with the
 build/version types physically splitting the Environment section in half. It is now a
 directory, divided by which side of `context_engine` needs each contract, and the

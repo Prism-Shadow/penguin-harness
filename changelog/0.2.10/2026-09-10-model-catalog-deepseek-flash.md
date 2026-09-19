@@ -5,8 +5,6 @@
 - **Scope:** `core`, `cli`, `docs`, `skills`
 - **PR:** [#662](https://github.com/Prism-Shadow/penguin-harness/pull/662)
 
-[中文版](2026-09-10-model-catalog-deepseek-flash.zh.md)
-
 DeepSeek released V4.1 Flash and names it `deepseek-flash`, without a version segment. The row
 pre-registered under the announced spelling `deepseek-v4.1-flash` is replaced by the released one,
 which now leads the `deepseek` group and is the model a new Project starts on. The same read

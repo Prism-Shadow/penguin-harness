@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#399](https://github.com/Prism-Shadow/penguin-harness/pull/399)
 
-[中文版](2026-08-21-draft-examples.zh.md)
-
 The home screen's example catalog grows by five cards and one folder. Build web apps gains a Muse Dash-style rhythm runner; Build and optimize agents gains a conversational investment analyst as its first entry; and a new Create scheduled tasks folder holds three examples that set up real schedules.
 
 Each of the five is a one- or two-sentence request rather than a full working brief — what to build and the constraints without which the result would be the wrong thing, with the file layouts, field lists and step-by-step headings left for the Agent to work out or ask about.

@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { ORG_EXAMPLES } from "../src/features/company/org-examples";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
 describe("organization mission examples", () => {
@@ -16,8 +16,8 @@ describe("organization mission examples", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("gives every example a name and a mission in both dictionaries", () => {
-    for (const dict of [zh, en]) {
+  it("gives every example a name and a mission in the English dictionary", () => {
+    for (const dict of [en]) {
       for (const { id } of ORG_EXAMPLES) {
         const copy = dict.company.missionExamples[id];
         expect(copy.name).not.toBe("");
@@ -29,7 +29,7 @@ describe("organization mission examples", () => {
   });
 
   it("keeps the names distinct, so four chips never read as one", () => {
-    for (const dict of [zh, en]) {
+    for (const dict of [en]) {
       const names = ORG_EXAMPLES.map(({ id }) => dict.company.missionExamples[id].name);
       expect(new Set(names).size).toBe(names.length);
     }

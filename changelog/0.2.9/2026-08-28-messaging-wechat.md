@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#533](https://github.com/Prism-Shadow/penguin-harness/pull/533)
 
-[中文版](2026-08-28-messaging-wechat.zh.md)
-
 A Session gained a fourth channel to bind to: WeChat's official claw bot, behind the same
 connector seam the other three already sat behind. Binding it is a QR code scanned in WeChat
 and nothing else — there is no console to copy a credential out of, so the scan is not the

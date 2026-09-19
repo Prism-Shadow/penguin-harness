@@ -5,8 +5,6 @@
 - **Scope:** `skills`
 - **PR:** [#536](https://github.com/Prism-Shadow/penguin-harness/pull/536)
 
-[中文版](2026-08-28-dev-skill-review-notes.zh.md)
-
 `.agents/skills/penguin-harness-dev/SKILL.md` gained four notes, each written from a defect that
 reached review in the batch that shipped
 [#528](https://github.com/Prism-Shadow/penguin-harness/pull/528)–[#534](https://github.com/Prism-Shadow/penguin-harness/pull/534).

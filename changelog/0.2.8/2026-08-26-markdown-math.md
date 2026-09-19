@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#503](https://github.com/Prism-Shadow/penguin-harness/pull/503)
 
-[中文版](2026-08-26-markdown-math.zh.md)
-
 Markdown bodies now render mathematical notation with KaTeX. The pipeline is shared, so chat
 messages, Trace events, benchmark cases and Workspace file previews all gained it at once.
 

@@ -6,8 +6,6 @@
 - **PR:** [#519](https://github.com/Prism-Shadow/penguin-harness/pull/519)
 - **Breaking:** yes — existing bindings start rendering Markdown after the upgrade, which changes how every relayed message looks; the new per-binding switch turns it off
 
-[中文版](2026-08-27-messaging-markdown.zh.md)
-
 The messaging bridge relayed the assistant's reply as plain text on every channel — Telegram
 `sendMessage` with no `parse_mode`, Feishu `msg_type: "text"`, QQ `msg_type: 0` — so the model's
 Markdown reached the chat as literal `**bold**`, `## heading` and raw code fences. A per-binding

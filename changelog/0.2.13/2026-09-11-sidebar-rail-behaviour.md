@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#684](https://github.com/Prism-Shadow/penguin-harness/pull/684)
 
-[中文版](2026-09-11-sidebar-rail-behaviour.zh.md)
-
 Four changes to the desktop sidebar and the narrow rail it collapses into.
 
 ## Details

@@ -209,7 +209,7 @@ const EN_MONTHS = [
  * render the previous day west of UTC. Unparsable or out-of-range input returns
  * unchanged (same convention as formatDateTime).
  */
-export function formatMonthDay(iso: string, locale: "zh" | "en"): string {
+export function formatMonthDay(iso: string, locale: string): string {
   const m = /^\d{4}-(\d{2})-(\d{2})(?:$|T)/.exec(iso);
   if (!m) return iso;
   const month = Number(m[1]);
@@ -217,7 +217,7 @@ export function formatMonthDay(iso: string, locale: "zh" | "en"): string {
   if (month < 1 || month > 12 || day < 1 || day > 31) return iso;
   // zh writes the date without spaces (8月30日), the way the message-time format does;
   // en keeps the abbreviated month (Aug 30).
-  return locale === "en" ? `${EN_MONTHS[month - 1]} ${day}` : `${month}月${day}日`;
+  return `${EN_MONTHS[month - 1]} ${day}`;
 }
 
 /**
@@ -229,10 +229,10 @@ export function formatMonthDay(iso: string, locale: "zh" | "en"): string {
  * Includes month and day (not just `HH:mm:ss`) — when scrolling back through
  * old messages, "what time" is less useful than "what day, what time".
  */
-export function formatMessageTime(ms: number, locale: "zh" | "en"): string {
+export function formatMessageTime(ms: number, locale: string): string {
   const d = new Date(ms);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(locale === "en" ? "en-US" : "zh-CN", {
+  return d.toLocaleString(locale, {
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -252,14 +252,14 @@ function startOfDayMs(d: Date): number {
  * skew) falls back to the absolute time, and parse failures return the
  * input unchanged.
  */
-export function formatRelativeDays(iso: string, locale: "zh" | "en"): string {
+export function formatRelativeDays(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const days = Math.round((startOfDayMs(new Date()) - startOfDayMs(d)) / 86_400_000);
   if (days < 0) return formatDateTime(iso);
-  if (days === 0) return locale === "en" ? "today" : "今天";
-  if (days === 1) return locale === "en" ? "yesterday" : "昨天";
-  return locale === "en" ? `${days} days ago` : `${days} 天前`;
+  if (days === 0) return "today";
+  if (days === 1) return "yesterday";
+  return `${days} days ago`;
 }
 
 /**
@@ -268,14 +268,14 @@ export function formatRelativeDays(iso: string, locale: "zh" | "en"): string {
  * time (clock skew) falls back to the date itself, and parse failures
  * return the input unchanged (without the "updated" wording).
  */
-export function formatRelativeDate(iso: string, locale: "zh" | "en"): string {
+export function formatRelativeDate(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const days = Math.round((startOfDayMs(new Date()) - startOfDayMs(d)) / 86_400_000);
   if (days < 0) return iso;
-  if (days === 0) return locale === "en" ? "updated today" : "今天更新";
-  if (days === 1) return locale === "en" ? "updated yesterday" : "昨天更新";
-  return locale === "en" ? `updated ${days} days ago` : `${days} 天前更新`;
+  if (days === 0) return "updated today";
+  if (days === 1) return "updated yesterday";
+  return `updated ${days} days ago`;
 }
 
 /**
@@ -289,18 +289,18 @@ export function formatRelativeDate(iso: string, locale: "zh" | "en"): string {
  * 07:00 on the 31st in UTC+8 would read as the 30th); an unparsable value yields "" so
  * callers hide the slot rather than show garbage.
  */
-export function formatRelativeShort(iso: string, locale: "zh" | "en"): string {
+export function formatRelativeShort(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const diffMs = Date.now() - d.getTime();
   if (diffMs < 0) return formatMonthDay(localYmd(d), locale);
   const min = Math.floor(diffMs / 60_000);
-  if (min < 1) return locale === "en" ? "now" : "刚刚";
-  if (min < 60) return locale === "en" ? `${min}m` : `${min} 分钟前`;
+  if (min < 1) return "now";
+  if (min < 60) return `${min}m`;
   const hours = Math.floor(min / 60);
-  if (hours < 24) return locale === "en" ? `${hours}h` : `${hours} 小时前`;
+  if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  if (days < 7) return locale === "en" ? `${days}d` : `${days} 天前`;
+  if (days < 7) return `${days}d`;
   return formatMonthDay(localYmd(d), locale);
 }
 

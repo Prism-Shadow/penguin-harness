@@ -5,8 +5,6 @@
 - **Scope:** `desktop`, `web`
 - **PR:** [#413](https://github.com/Prism-Shadow/penguin-harness/pull/413)
 
-[中文版](2026-08-23-update-unavailable-copy.zh.md)
-
 On Linux the shell can only replace an AppImage, so every other form — a `.deb` install,
 but also an unpacked tree — lands in the same unsupported state. Both places that report it
 said the copy came from a system package manager and to update it there, which is wrong

@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#699](https://github.com/Prism-Shadow/penguin-harness/pull/699)
 
-[中文版](2026-09-11-control-unification.zh.md)
-
 A second pass over the form controls, on the rule
 [#689](https://github.com/Prism-Shadow/penguin-harness/pull/689) set: a size comes from one record,
 and the rule is checked rather than remembered.

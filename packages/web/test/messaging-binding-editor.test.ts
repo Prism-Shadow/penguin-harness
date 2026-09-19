@@ -25,11 +25,11 @@ import {
   type MessagingChannelFacts,
 } from "../src/features/messaging/messaging-binding-editor";
 import { emptyMessagingForm } from "../src/features/messaging/messaging-binding-form";
-import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { S, setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { formatDateTime } from "../src/lib/format";
 
-afterEach(() => setActiveStrings(zh));
+afterEach(() => setActiveStrings(en));
 
 const DARK: MessagingChannelFacts = {
   secretConfigured: false,
@@ -88,10 +88,10 @@ const render = (state: MessagingBindingEditorState) =>
 describe("MessagingBindingBody", () => {
   it("opens on the fields: no explanatory prose above the first input", () => {
     const feishu = render(stateOf("feishu"));
-    expect(feishu).toContain(S.feishu.appId);
+    expect(feishu).toContain(S.feishu.appId.replaceAll("'", "&#x27;"));
     // The intro moved into the FAQ fold; leading the form with it is what this change undid.
-    expect(feishu).not.toContain(S.feishu.intro);
-    expect(render(stateOf("telegram"))).not.toContain(S.telegram.intro);
+    expect(feishu).not.toContain(S.feishu.intro.replaceAll("'", "&#x27;"));
+    expect(render(stateOf("telegram"))).not.toContain(S.telegram.intro.replaceAll("'", "&#x27;"));
   });
 
   it("hangs each channel's credential source on its credential field's corner", () => {
@@ -115,7 +115,7 @@ describe("MessagingBindingBody", () => {
     // manual. Both dictionaries, because the label is per-locale and `S` is zh until a test
     // says otherwise — an assertion against the active dictionary alone would leave English
     // free to carry the very wording this fixed.
-    for (const dict of [zh, en]) {
+    for (const dict of [en]) {
       setActiveStrings(dict);
       // Label and target in ONE assertion: pinned apart, they pass just as happily with the
       // right href on the wrong anchor.
@@ -139,9 +139,9 @@ describe("MessagingBindingBody", () => {
     };
     const dark = render(stateOf("feishu", { feishu: saved }));
     expect(dark).toContain("abcd…7890");
-    expect(dark).toContain(S.feishu.clearSecret);
+    expect(dark).toContain(S.feishu.clearSecret.replaceAll("'", "&#x27;"));
     expect(dark).toContain('type="checkbox"/>');
-    expect(dark).not.toContain(S.messaging.disableBeforeClearHint);
+    expect(dark).not.toContain(S.messaging.disableBeforeClearHint.replaceAll("'", "&#x27;"));
 
     // Enabled: clearing would leave a live connection running on a credential the store no
     // longer has, so the box is disabled — and says why, since a disabled control does not
@@ -150,7 +150,7 @@ describe("MessagingBindingBody", () => {
       stateOf("feishu", { feishu: { ...saved, enabled: true, status: { state: "connected" } } }),
     );
     expect(live).toContain('type="checkbox" disabled=""');
-    expect(live).toContain(S.messaging.disableBeforeClearHint);
+    expect(live).toContain(S.messaging.disableBeforeClearHint.replaceAll("'", "&#x27;"));
   });
 
   it("carries the bind/unbind sentence on the switch itself, as a tooltip rather than a line", () => {
@@ -193,13 +193,13 @@ describe("MessagingBindingBody", () => {
     for (const channel of ["feishu", "telegram", "qq", "wechat"] as MessagingChannel[]) {
       const html = render(stateOf(channel));
       // Every channel carries both: they are delivery preferences, not credentials.
-      expect(html).toContain(S.messaging.linePerMessage);
-      expect(html).toContain(S.messaging.finalReplyOnly);
+      expect(html).toContain(S.messaging.linePerMessage.replaceAll("'", "&#x27;"));
+      expect(html).toContain(S.messaging.finalReplyOnly.replaceAll("'", "&#x27;"));
       // Semantics disclose — each sentence is in a popover panel, which renders collapsed.
       expect(html).toContain(S.common.moreInfoAbout(S.messaging.linePerMessage));
       expect(html).toContain(S.common.moreInfoAbout(S.messaging.finalReplyOnly));
-      expect(html).not.toContain(S.messaging.linePerMessageHelp);
-      expect(html).not.toContain(S.messaging.finalReplyOnlyHelp);
+      expect(html).not.toContain(S.messaging.linePerMessageHelp.replaceAll("'", "&#x27;"));
+      expect(html).not.toContain(S.messaging.finalReplyOnlyHelp.replaceAll("'", "&#x27;"));
       // After the credential fields, not among them.
       const fieldAt = html.indexOf(credentialAnchor(channel));
       expect(fieldAt).toBeGreaterThanOrEqual(0);
@@ -241,7 +241,7 @@ describe("MessagingBindingBody", () => {
     } as const;
     for (const channel of ["feishu", "telegram", "qq", "wechat"] as MessagingChannel[]) {
       const html = render(stateOf(channel));
-      expect(html).toContain(S.messaging.renderMarkdown);
+      expect(html).toContain(S.messaging.renderMarkdown.replaceAll("'", "&#x27;"));
       // Semantics disclose — the sentence is in the popover panel, which renders collapsed.
       expect(html).toContain(S.common.moreInfoAbout(S.messaging.renderMarkdown));
       expect(html).not.toContain(help[channel]);
@@ -262,11 +262,11 @@ describe("MessagingBindingBody", () => {
     // sees nothing arrive and concludes the binding is broken. Every other channel's
     // explanation stays in the FAQ; this one is a line under the fields.
     const html = render(stateOf("qq"));
-    expect(html).toContain(S.qq.repliesOnly);
+    expect(html).toContain(S.qq.repliesOnly.replaceAll("'", "&#x27;"));
     // Under the credential fields, so the controls above hold one height across channels.
     expect(html.indexOf(S.qq.repliesOnly)).toBeGreaterThan(html.indexOf(S.qq.appSecret));
     // ...and it belongs to QQ alone.
-    expect(render(stateOf("feishu"))).not.toContain(S.qq.repliesOnly);
+    expect(render(stateOf("feishu"))).not.toContain(S.qq.repliesOnly.replaceAll("'", "&#x27;"));
   });
 
   it("offers all four channels in the selector", () => {
@@ -298,7 +298,7 @@ describe("MessagingBindingBody", () => {
         },
       }),
     );
-    expect(quiet).toContain(S.messaging.inboundNone);
+    expect(quiet).toContain(S.messaging.inboundNone.replaceAll("'", "&#x27;"));
 
     const seen = render(
       stateOf("telegram", {
@@ -311,7 +311,7 @@ describe("MessagingBindingBody", () => {
       }),
     );
     expect(seen).toContain(S.messaging.inboundLastAt(formatDateTime("2026-08-26T09:30:00.000Z")));
-    expect(seen).not.toContain(S.messaging.inboundNone);
+    expect(seen).not.toContain(S.messaging.inboundNone.replaceAll("'", "&#x27;"));
 
     // The two post-arrival failures are the same silence in the chat and different actions
     // for the reader, so the line names the stage rather than only the message.
@@ -377,7 +377,7 @@ describe("MessagingBindingBody", () => {
     const connecting = render(
       stateOf("telegram", { telegram: { ...live, status: { state: "connecting" } } }),
     );
-    expect(connecting).toContain(S.messaging.inboundNone);
+    expect(connecting).toContain(S.messaging.inboundNone.replaceAll("'", "&#x27;"));
 
     const erroring = render(
       stateOf("telegram", {
@@ -399,7 +399,7 @@ describe("MessagingBindingBody", () => {
 
     // A binding with no connection has no such record and must not claim one.
     const dark = render(stateOf("telegram", { telegram: { ...DARK, secretConfigured: true } }));
-    expect(dark).not.toContain(S.messaging.inboundNone);
+    expect(dark).not.toContain(S.messaging.inboundNone.replaceAll("'", "&#x27;"));
   });
 
   it("leaves the last connection failure on screen after the connection recovers", () => {
@@ -474,11 +474,11 @@ describe("MessagingBindingHelp", () => {
     expect(html.match(/<div id="[^"]+" hidden/g)).toHaveLength(3);
     // The panels stay in the DOM while folded (aria-controls has to resolve), so the text is
     // present — hidden, not absent.
-    expect(html).toContain(S.feishu.intro);
+    expect(html).toContain(S.feishu.intro.replaceAll("'", "&#x27;"));
     // The channel-neutral half of that fold: how one bot moves between conversations, which
     // is the question the enable-time 409 sends a reader here with.
-    expect(html).toContain(S.messaging.faqWhatBinding);
-    expect(html).toContain(S.messaging.troubleNoChat);
+    expect(html).toContain(S.messaging.faqWhatBinding.replaceAll("'", "&#x27;"));
+    expect(html).toContain(S.messaging.troubleNoChat.replaceAll("'", "&#x27;"));
     expect(html).toContain(S.feishu.setupSteps[0]);
   });
 
@@ -488,14 +488,14 @@ describe("MessagingBindingHelp", () => {
     );
     // Group Privacy is on by default and produces silence, not an error, so the fold is the
     // only place a user who has not run a credential test can find out about it.
-    expect(telegram).toContain(S.messaging.troubleGroupPrivacy);
-    expect(telegram).toContain(S.messaging.troubleOnePoller);
+    expect(telegram).toContain(S.messaging.troubleGroupPrivacy.replaceAll("'", "&#x27;"));
+    expect(telegram).toContain(S.messaging.troubleOnePoller.replaceAll("'", "&#x27;"));
 
     const feishu = renderToStaticMarkup(
       createElement(MessagingBindingHelp, { channel: "feishu" as MessagingChannel }),
     );
-    expect(feishu).not.toContain(S.messaging.troubleGroupPrivacy);
-    expect(feishu).not.toContain(S.messaging.troubleOnePoller);
+    expect(feishu).not.toContain(S.messaging.troubleGroupPrivacy.replaceAll("'", "&#x27;"));
+    expect(feishu).not.toContain(S.messaging.troubleOnePoller.replaceAll("'", "&#x27;"));
   });
 
   it("puts each channel's tutorial link in its setup fold", () => {
@@ -521,22 +521,19 @@ describe("MessagingBindingHelp", () => {
     expect(qq).toContain(S.qq.setupSteps[0]);
     // What the QR button spares the reader belongs beside those steps, not beside the
     // button: it is semantics, and a control is not a title for a standing sentence.
-    expect(qq).toContain(S.qq.scanHint);
+    expect(qq).toContain(S.qq.scanHint.replaceAll("'", "&#x27;"));
     // The reply budget is how this channel delivers a long answer, not a fault: it rides the
     // "what binding does" fold, while the passive-reply failure rides troubleshooting.
-    expect(qq).toContain(S.qq.replyBudget);
-    expect(qq).toContain(S.messaging.troubleQQPassive);
-    expect(telegram).not.toContain(S.messaging.troubleQQPassive);
+    expect(qq).toContain(S.qq.replyBudget.replaceAll("'", "&#x27;"));
+    expect(qq).toContain(S.messaging.troubleQQPassive.replaceAll("'", "&#x27;"));
+    expect(telegram).not.toContain(S.messaging.troubleQQPassive.replaceAll("'", "&#x27;"));
   });
 });
 
-describe("the Group Privacy copy, in both dictionaries", () => {
+describe("the Group Privacy copy, in the English dictionary", () => {
   // `S` is the zh dictionary at import time, so each rule is asserted per dictionary — the
   // two drifted apart once already (zh promised 三选一 and listed two options).
-  const entries = [
-    [en.messaging.troubleGroupPrivacy, "Making the bot an administrator"],
-    [zh.messaging.troubleGroupPrivacy, "把机器人设为该群的管理员"],
-  ] as const;
+  const entries = [[en.messaging.troubleGroupPrivacy, "Making the bot an administrator"]] as const;
 
   it("leads the fold entry with the admin route, then the @BotFather one", () => {
     // Making the bot an administrator is the only remedy that fixes the group without
@@ -553,7 +550,7 @@ describe("the Group Privacy copy, in both dictionaries", () => {
     // The notice rides an `info` toast: four seconds, no hover-pause. So the toast carries
     // the diagnosis and names the fold — by the fold's own title, which stays true if the
     // fold is renamed — and the steps stay where they can be read.
-    for (const dict of [en, zh]) {
+    for (const dict of [en]) {
       expect(dict.messaging.testPrivacyOn).toContain(dict.messaging.faqTroubleTitle);
       expect(dict.messaging.testPrivacyOn).not.toContain("/setprivacy");
     }

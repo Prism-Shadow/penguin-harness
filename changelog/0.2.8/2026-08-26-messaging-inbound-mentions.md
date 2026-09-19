@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#497](https://github.com/Prism-Shadow/penguin-harness/pull/497)
 
-[中文版](2026-08-26-messaging-inbound-mentions.zh.md)
-
 Addressing a bot in a group means mentioning it, so nearly every group message a binding
 receives carries an `@`. Neither channel handed that to the model in a usable form: Feishu writes
 a placeholder the model cannot resolve, and Telegram leaves the bot's own handle in front of the

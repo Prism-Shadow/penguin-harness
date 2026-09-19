@@ -5,8 +5,6 @@
 - **Scope:** `web`, `skills`
 - **PR:** [#129](https://github.com/Prism-Shadow/penguin-harness/pull/129)
 
-[中文版](2026-07-25-agent-tuning-pipeline.zh.md)
-
 The Web App now includes a runnable example that coordinates Agent creation, Benchmark construction, and score-driven Agent optimization without sharing private evaluation context between phases.
 
 ## Web App

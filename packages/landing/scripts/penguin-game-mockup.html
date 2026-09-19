@@ -2,7 +2,7 @@
 <!--
   Static, dependency-free mockup of the "penguin sled" example game's play screen —
   the FINISHED PRODUCT of the draft-screen game example, captured by
-  capture-game-mockup.mjs per language (?lang=zh|en) and theme (?theme=light|dark;
+  capture-game-mockup.mjs per language (?lang=en) and theme (?theme=light|dark;
   light = polar day, dark = polar night with an aurora). A cute cartoon scene:
   an Antarctic penguin on a wooden sled mid-jump over snow-capped rocks, with a
   score/distance/speed HUD and a "Space to jump" hint.
@@ -292,16 +292,9 @@
 
     <script>
       const params = new URLSearchParams(location.search);
-      const lang = params.get("lang") === "zh" ? "zh" : "en";
+      const lang = "en";
       if (params.get("theme") === "dark") document.body.classList.add("dark");
       const T = {
-        zh: {
-          title: "企 鹅 雪 橇 越 野",
-          score: "得分",
-          dist: "里程",
-          key: "空格",
-          hint: "起跳，跃过石头！",
-        },
         en: {
           title: "P E N G U I N · S L E D · R U N",
           score: "SCORE",
@@ -310,7 +303,7 @@
           hint: "jump the rocks!",
         },
       }[lang];
-      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      document.documentElement.lang = "en";
       document.getElementById("title").textContent = T.title;
       document.getElementById("score-label").textContent = T.score;
       document.getElementById("dist-label").textContent = T.dist;

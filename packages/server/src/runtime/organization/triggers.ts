@@ -11,15 +11,15 @@
 import { buildOrgTriggerMessage, userText } from "@prismshadow/penguin-core";
 import type { OrgTriggerOrigin } from "@prismshadow/penguin-core";
 import type { TicketDoc } from "../../organization/files.js";
-import { orgLanguage, serializeTicket } from "../../organization/files.js";
+import { serializeTicket } from "../../organization/files.js";
 import { agentPrincipal } from "../../organization/principal.js";
 import type { OrgDeps } from "./deps.js";
 import type { LoadedOrg } from "./model.js";
 import { employeeLine, sharedWorkspace } from "./model.js";
 
-/** The desk session's title, in the organization's working language. */
-function deskTitle(org: LoadedOrg, name: string): string {
-  return orgLanguage(org.config) === "zh" ? `${name} 的工位` : `${name}'s desk`;
+/** The desk session's title. */
+function deskTitle(_org: LoadedOrg, name: string): string {
+  return `${name}'s desk`;
 }
 
 export interface DeskHandle {

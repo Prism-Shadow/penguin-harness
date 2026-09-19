@@ -10,7 +10,7 @@
  *   penguin config vault set --key <name> --value <value> [--agent-id <id>] [--root <dir>]
  *   penguin config vault list [--agent-id <id>] [--root <dir>]
  *   penguin config vault remove --key <name> [--agent-id <id>] [--root <dir>]
- *   penguin config lang <en|zh>
+ *   penguin config lang <en>
  *
  * `--model-id` always takes the **upstream id** (the request id sent to AgentHub verbatim),
  * which together with `--provider` forms a `(provider, model_id)` paired reference —
@@ -385,7 +385,7 @@ export function registerConfigCommand(program: Command, t: Messages): void {
     .argument("<language>", t.config.langArg)
     .action(async (language: string) => {
       const lang = String(language).trim().toLowerCase();
-      if (lang !== "zh" && lang !== "en") {
+      if (lang !== "en") {
         process.stderr.write(`${t.langInvalid(String(language))}\n`);
         process.exitCode = 1;
         return;

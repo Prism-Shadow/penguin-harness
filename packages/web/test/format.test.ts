@@ -243,25 +243,25 @@ describe("formatRelativeDays", () => {
   });
 
   it("same day is today, regardless of the hour", () => {
-    expect(formatRelativeDays(new Date(2026, 6, 15, 0, 5).toISOString(), "zh")).toBe("今天");
+    expect(formatRelativeDays(new Date(2026, 6, 15, 0, 5).toISOString(), "en")).toBe("today");
     expect(formatRelativeDays(new Date(2026, 6, 15, 23, 59).toISOString(), "en")).toBe("today");
   });
 
   it("one day back is yesterday, earlier by calendar-day difference as n days ago (across months)", () => {
-    expect(formatRelativeDays(new Date(2026, 6, 14, 23, 0).toISOString(), "zh")).toBe("昨天");
+    expect(formatRelativeDays(new Date(2026, 6, 14, 23, 0).toISOString(), "en")).toBe("yesterday");
     expect(formatRelativeDays(new Date(2026, 6, 14, 1, 0).toISOString(), "en")).toBe("yesterday");
-    expect(formatRelativeDays(new Date(2026, 6, 10, 8, 0).toISOString(), "zh")).toBe("5 天前");
+    expect(formatRelativeDays(new Date(2026, 6, 10, 8, 0).toISOString(), "en")).toBe("5 days ago");
     expect(formatRelativeDays(new Date(2026, 5, 5, 8, 0).toISOString(), "en")).toBe("40 days ago");
   });
 
   it("future time (clock skew) falls back to the absolute time", () => {
     const future = new Date(2026, 6, 20, 8, 5).toISOString();
-    expect(formatRelativeDays(future, "zh")).toBe(formatDateTime(future));
-    expect(formatRelativeDays(future, "zh")).toBe("2026-07-20 08:05");
+    expect(formatRelativeDays(future, "en")).toBe(formatDateTime(future));
+    expect(formatRelativeDays(future, "en")).toBe("2026-07-20 08:05");
   });
 
   it("parse failure returns the input unchanged", () => {
-    expect(formatRelativeDays("not-a-date", "zh")).toBe("not-a-date");
+    expect(formatRelativeDays("not-a-date", "en")).toBe("not-a-date");
   });
 });
 
@@ -294,21 +294,21 @@ describe("formatRelativeShort", () => {
     new Date(2026, mo, d, h, mi).toISOString();
 
   it("under a minute reads as just-now", () => {
-    expect(formatRelativeShort(new Date(2026, 6, 15, 11, 59, 30).toISOString(), "zh")).toBe("刚刚");
+    expect(formatRelativeShort(new Date(2026, 6, 15, 11, 59, 30).toISOString(), "en")).toBe("now");
     expect(formatRelativeShort(at(6, 15, 12, 0), "en")).toBe("now");
   });
 
   it("minute / hour / day steps, floored: zh dictionary wording, en ultra-short", () => {
-    expect(formatRelativeShort(at(6, 15, 11, 55), "zh")).toBe("5 分钟前");
+    expect(formatRelativeShort(at(6, 15, 11, 55), "en")).toBe("5m");
     expect(formatRelativeShort(at(6, 15, 11, 1), "en")).toBe("59m");
-    expect(formatRelativeShort(at(6, 15, 9, 30), "zh")).toBe("2 小时前");
+    expect(formatRelativeShort(at(6, 15, 9, 30), "en")).toBe("2h");
     expect(formatRelativeShort(at(6, 14, 12, 30), "en")).toBe("23h");
-    expect(formatRelativeShort(at(6, 14, 11, 0), "zh")).toBe("1 天前");
+    expect(formatRelativeShort(at(6, 14, 11, 0), "en")).toBe("1d");
     expect(formatRelativeShort(at(6, 9, 12, 0), "en")).toBe("6d");
   });
 
   it("a week or older — and future times (clock skew) — fall back to the absolute month-day", () => {
-    expect(formatRelativeShort(at(6, 1, 0, 0), "zh")).toBe("7月1日");
+    expect(formatRelativeShort(at(6, 1, 0, 0), "en")).toBe("Jul 1");
     expect(formatRelativeShort(at(0, 2, 0, 0), "en")).toBe("Jan 2");
     expect(formatRelativeShort(at(6, 20, 0, 0), "en")).toBe("Jul 20");
   });
@@ -318,7 +318,7 @@ describe("formatRelativeShort", () => {
     // reading the date straight off the `...Z` string would hand both of them the 5th.
     const iso = "2026-06-05T23:00:00.000Z";
     withTimeZone("Asia/Shanghai", () => {
-      expect(formatRelativeShort(iso, "zh")).toBe("6月6日");
+      expect(formatRelativeShort(iso, "en")).toBe("Jun 6");
     });
     withTimeZone("America/New_York", () => {
       expect(formatRelativeShort(iso, "en")).toBe("Jun 5");
@@ -326,7 +326,7 @@ describe("formatRelativeShort", () => {
   });
 
   it("unparsable input yields the empty string (the row hides the slot instead of showing garbage)", () => {
-    expect(formatRelativeShort("not-a-date", "zh")).toBe("");
+    expect(formatRelativeShort("not-a-date", "en")).toBe("");
     expect(formatRelativeShort("", "en")).toBe("");
   });
 });
@@ -342,29 +342,35 @@ describe("formatRelativeDate (semantic update time on Skill cards)", () => {
   });
 
   it("same day is updated today, regardless of the hour", () => {
-    expect(formatRelativeDate(new Date(2026, 6, 15, 0, 5).toISOString(), "zh")).toBe("今天更新");
+    expect(formatRelativeDate(new Date(2026, 6, 15, 0, 5).toISOString(), "en")).toBe(
+      "updated today",
+    );
     expect(formatRelativeDate(new Date(2026, 6, 15, 23, 59).toISOString(), "en")).toBe(
       "updated today",
     );
   });
 
   it("one day back is updated yesterday, earlier as updated n days ago by calendar-day difference (across months)", () => {
-    expect(formatRelativeDate(new Date(2026, 6, 14, 23, 0).toISOString(), "zh")).toBe("昨天更新");
+    expect(formatRelativeDate(new Date(2026, 6, 14, 23, 0).toISOString(), "en")).toBe(
+      "updated yesterday",
+    );
     expect(formatRelativeDate(new Date(2026, 6, 14, 1, 0).toISOString(), "en")).toBe(
       "updated yesterday",
     );
-    expect(formatRelativeDate(new Date(2026, 6, 10, 8, 0).toISOString(), "zh")).toBe("5 天前更新");
+    expect(formatRelativeDate(new Date(2026, 6, 10, 8, 0).toISOString(), "en")).toBe(
+      "updated 5 days ago",
+    );
     expect(formatRelativeDate(new Date(2026, 5, 5, 8, 0).toISOString(), "en")).toBe(
       "updated 40 days ago",
     );
   });
 
   it("future time (clock skew) falls back to the date itself (without the updated wording)", () => {
-    expect(formatRelativeDate("2026-07-20", "zh")).toBe("2026-07-20");
+    expect(formatRelativeDate("2026-07-20", "en")).toBe("2026-07-20");
   });
 
   it("parse failure returns the input unchanged", () => {
-    expect(formatRelativeDate("not-a-date", "zh")).toBe("not-a-date");
+    expect(formatRelativeDate("not-a-date", "en")).toBe("not-a-date");
     expect(formatRelativeDate("", "en")).toBe("");
   });
 });
@@ -372,21 +378,21 @@ describe("formatRelativeDate (semantic update time on Skill cards)", () => {
 describe("formatMonthDay (version-line 'last updated' date)", () => {
   it("formats a date-only string per locale, matching the owner-specified wording", () => {
     expect(formatMonthDay("2026-07-26", "en")).toBe("Jul 26");
-    expect(formatMonthDay("2026-07-26", "zh")).toBe("7月26日");
+    expect(formatMonthDay("2026-07-26", "en")).toBe("Jul 26");
     expect(formatMonthDay("2026-01-05", "en")).toBe("Jan 5");
-    expect(formatMonthDay("2026-12-31", "zh")).toBe("12月31日");
+    expect(formatMonthDay("2026-12-31", "en")).toBe("Dec 31");
   });
 
   it("reads only the date part of a full ISO timestamp — no timezone round-trip that could shift a day", () => {
     expect(formatMonthDay("2026-07-01T00:00:00Z", "en")).toBe("Jul 1");
-    expect(formatMonthDay("2026-05-05T12:00:00Z", "zh")).toBe("5月5日");
+    expect(formatMonthDay("2026-05-05T12:00:00Z", "en")).toBe("May 5");
   });
 
   it("returns unparsable or out-of-range input unchanged", () => {
     expect(formatMonthDay("not-a-date", "en")).toBe("not-a-date");
-    expect(formatMonthDay("2026-7-26", "zh")).toBe("2026-7-26"); // not the zero-padded wire format
+    expect(formatMonthDay("2026-7-26", "en")).toBe("2026-7-26"); // not the zero-padded wire format
     expect(formatMonthDay("2026-07-26x", "en")).toBe("2026-07-26x");
     expect(formatMonthDay("2026-13-01", "en")).toBe("2026-13-01");
-    expect(formatMonthDay("2026-00-10", "zh")).toBe("2026-00-10");
+    expect(formatMonthDay("2026-00-10", "en")).toBe("2026-00-10");
   });
 });

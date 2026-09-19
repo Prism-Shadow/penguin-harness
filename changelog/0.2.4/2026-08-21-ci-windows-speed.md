@@ -5,8 +5,6 @@
 - **Scope:** `ci`
 - **PR:** [#385](https://github.com/Prism-Shadow/penguin-harness/pull/385)
 
-[中文版](2026-08-21-ci-windows-speed.zh.md)
-
 Split `ci-windows` into two parallel shards and dropped the steps that duplicated platform-independent gates, cutting the Windows wall clock roughly in half while every package's tests still run exactly once on Windows.
 
 ## Details

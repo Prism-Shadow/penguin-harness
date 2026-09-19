@@ -6,8 +6,6 @@
 - **PR:** [#374](https://github.com/Prism-Shadow/penguin-harness/pull/374)
 - **Breaking:** yes — every project starts denying the factory destructive commands (`rm -rf` and friends) under every approval mode; disable the offending rule (or the whole policy) in Project Settings to restore the old behavior
 
-[中文版](2026-08-20-sandbox-command-policy.zh.md)
-
 Added a Project-level sandbox command policy: a deny-rule list applied at the approval boundary to both tools that reach a shell — the command `exec_command` launches and what `input_command` types into an already-running one — so a hit is rejected under every approval mode, allow-all included, and the model sees `Tool call denied by policy.` instead of a person's cancellation. `Session.run` wraps the injected approval callback with the policy, so the refusal happens before any host is asked and `context_engine` keeps handling nothing but OmniMessage. The rules are stored as the `[command_policy]` block of `.project_config.toml` (Project-owned, so an Agent editing its own configuration cannot reach them) and snapshotted into the Session at creation. The Project settings dialog was rebuilt as a tabbed layout along the way.
 
 ## Details

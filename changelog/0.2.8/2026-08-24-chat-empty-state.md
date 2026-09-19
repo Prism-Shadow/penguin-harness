@@ -4,8 +4,6 @@
 - **Type:** fix
 - **Scope:** `web`
 
-[中文版](2026-08-24-chat-empty-state.zh.md)
-
 Two windows where the conversation area claimed there was nothing to show, in front of a list
 that was seconds from appearing. Both are gone.
 

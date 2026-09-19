@@ -3,7 +3,7 @@
  *
  * Same pattern as capture-readme-demo.mjs: penguin-game-mockup.html is a static,
  * dependency-free mockup of the example game's play screen, captured per language
- * (zh / en) and theme (light = polar day / dark = polar night) into
+ * (English) and theme (light = polar day / dark = polar night) into
  * packages/landing/src/assets as game-<lang>-<theme>.webp.
  *
  * Prereqs: Playwright's chromium only (no server, no build). Run:
@@ -41,12 +41,12 @@ async function saveWebp(pngBuffer, fileName) {
   console.log(`[game] ${fileName}`);
 }
 
-for (const lang of ["en", "zh"]) {
+for (const lang of ["en"]) {
   for (const theme of ["light", "dark"]) {
     const context = await browser.newContext({
       viewport: { width: 1280, height: 760 },
       deviceScaleFactor: 1.5,
-      locale: lang === "zh" ? "zh-CN" : "en-US",
+      locale: "en-US",
     });
     const page = await context.newPage();
     await page.goto(`${PAGE}?lang=${lang}&theme=${theme}`);

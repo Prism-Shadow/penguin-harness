@@ -5,8 +5,6 @@
 - **Scope:** `ci`, `docs`
 - **PR:** [#660](https://github.com/Prism-Shadow/penguin-harness/pull/660)
 
-[中文版](2026-09-10-docker-tags-latest-and-version.zh.md)
-
 The Docker workflow no longer publishes the `main-<sha7>` twin on a push to main, nor the `X.Y` line and `stable` on a release. A push to `main` moves `latest` and nothing else; a release publishes the exact version `X.Y.Z` and nothing else. The image is still stamped with `main-<sha7>` or the version as its reported version.
 
 ## Details

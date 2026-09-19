@@ -23,7 +23,7 @@ import type { WeChatBindingInfo, WeChatScanPollResponse } from "@prismshadow/pen
 import { ApiError } from "../src/api/client";
 import { WeChatScanConnect, wechatScanStep } from "../src/features/messaging/wechat-scan-connect";
 import type { WeChatScanTally } from "../src/features/messaging/wechat-scan-connect";
-import { S, zh } from "../src/lib/strings";
+import { S } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 describe("WeChatScanConnect", () => {
@@ -153,7 +153,7 @@ describe("wechatScanStep", () => {
   it("names no position for the code, which wraps above the text in a narrow panel", () => {
     // The waiting panel is `flex flex-wrap`: in the dock or on a phone the steps sit BELOW
     // the QR, so copy that says "the code on the left" is wrong exactly where it is read.
-    for (const dict of [zh, en]) {
+    for (const dict of [en]) {
       expect(dict.wechat.scanSteps).not.toMatch(/左侧|右侧|left|right/);
       expect(dict.wechat.verifyPrompt).not.toMatch(/左侧|右侧|left|right/);
     }

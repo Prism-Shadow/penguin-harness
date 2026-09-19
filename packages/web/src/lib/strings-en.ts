@@ -1,12 +1,6 @@
-/**
- * English dictionary (constrained by the `Strings` type to the same shape as zh):
- * locale switching goes through state/locale.tsx.
- * Keep domain terms capitalized — Workspace, Token, Task, Session, Project, Trace.
- * "agent" is a common noun: lowercase mid-sentence, capitalized only at the start
- * of a label/sentence or in a proper name (Agent State, AgentHub).
- */
+/** English dictionary. Other translations must implement the same Strings contract. */
 import type { PeakWindows } from "../features/models/model-grouping";
-import type { Strings } from "./strings";
+import type { Strings } from "./strings-types";
 
 export const en: Strings = {
   appName: "PenguinHarness",
@@ -272,7 +266,6 @@ export const en: Strings = {
     terminalTheme: "Terminal theme",
     terminalThemeInfo: "Colors of the terminal panel; follows the app theme by default.",
     followAppTheme: "App",
-    langZh: "中文",
     langEn: "English",
     fontSize: "Font size",
     fontSizeInfo: "Overall interface font size.",
@@ -3603,10 +3596,7 @@ Scenarios:
     language: "Working language",
     languageInfo:
       "The language the organization works in: its handbook, the employee briefs, the CEO's initialization session and every desk's output are written in it; it is detected from the mission when the organization is created.",
-    languages: {
-      zh: "中文",
-      en: "English",
-    },
+    languages: { zh: "Chinese", en: "English" },
     approvalMode: "Approval mode",
     approvalModeInfo:
       "How tool calls in desk and ticket sessions are approved. Unattended runs never stop to ask a person, so there is no always-ask here.",

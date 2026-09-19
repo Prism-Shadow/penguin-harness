@@ -6,8 +6,6 @@
 - **PR:** [#318](https://github.com/Prism-Shadow/penguin-harness/pull/318)
 - **Issue:** [#292](https://github.com/Prism-Shadow/penguin-harness/issues/292)
 
-[中文版](2026-08-18-desktop-dev-instance.zh.md)
-
 An unpackaged (source) desktop shell — `pnpm desktop`, or `pnpm --dir packages/desktop start` — took a dev-suffixed app identity and its own data root, so hacking on the desktop app stopped colliding with a running installed build.
 
 ## The dev instance

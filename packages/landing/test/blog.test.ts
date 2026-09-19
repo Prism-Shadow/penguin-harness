@@ -36,11 +36,6 @@ describe("formatPostDate", () => {
     expect(formatPostDate("2026-07-20", "en")).toBe("July 20, 2026");
   });
 
-  it("formats zh dates as year-month-day", () => {
-    expect(formatPostDate("2026-06-18", "zh")).toBe("2026年6月18日");
-    expect(formatPostDate("2026-07-20", "zh")).toBe("2026年7月20日");
-  });
-
   it("interprets the date in UTC so the calendar day never shifts", () => {
     // 2026-01-01 rendered in a western timezone would show Dec 31 without UTC pinning.
     expect(formatPostDate("2026-01-01", "en")).toBe("January 1, 2026");
@@ -48,13 +43,13 @@ describe("formatPostDate", () => {
 
   it("falls back to the raw string for unexpected input", () => {
     expect(formatPostDate("", "en")).toBe("");
-    expect(formatPostDate("not-a-date", "zh")).toBe("not-a-date");
+    expect(formatPostDate("not-a-date", "en")).toBe("not-a-date");
   });
 
   it("falls back to the raw string for impossible calendar dates", () => {
     expect(formatPostDate("2026-02-31", "en")).toBe("2026-02-31");
     expect(formatPostDate("2026-13-01", "en")).toBe("2026-13-01");
-    expect(formatPostDate("2026-04-00", "zh")).toBe("2026-04-00");
+    expect(formatPostDate("2026-04-00", "en")).toBe("2026-04-00");
   });
 });
 
@@ -68,9 +63,8 @@ describe("parseAuthors / formatAuthors", () => {
     expect(parseAuthors("  ")).toEqual([DEFAULT_AUTHOR]);
   });
 
-  it("joins with a comma in English and an ideographic comma in Chinese", () => {
+  it("joins authors with commas", () => {
     expect(formatAuthors(["A", "B"], "en")).toBe("A, B");
-    expect(formatAuthors(["A", "B"], "zh")).toBe("A、B");
     expect(formatAuthors(["A"], "en")).toBe("A");
   });
 });
@@ -94,7 +88,7 @@ describe("frontmatter mapping (author / pinned / category)", () => {
   });
 
   it("reads the pinned flag and sorts the pinned post first", () => {
-    for (const locale of ["en", "zh"] as const) {
+    for (const locale of ["en"] as const) {
       const posts = postsFor(locale);
       expect(posts.length).toBe(24);
       // The launch post stays the single pinned post; newer posts sort under it by date.

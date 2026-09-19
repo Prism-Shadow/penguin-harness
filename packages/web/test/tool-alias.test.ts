@@ -11,7 +11,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { BUILTIN_TOOL_FACTORIES } from "@prismshadow/penguin-core";
-import { setActiveStrings, zh } from "../src/lib/strings";
+import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import { toolDisplayName } from "../src/lib/tool-alias";
 
@@ -26,16 +26,6 @@ const EN_ALIASES: Record<string, string> = {
   input_subagent: "communicate",
 };
 
-const ZH_ALIASES: Record<string, string> = {
-  read_file: "读取",
-  write_file: "写入",
-  edit_file: "编辑",
-  exec_command: "执行命令",
-  input_command: "跟进命令",
-  run_subagent: "子智能体",
-  input_subagent: "交流",
-};
-
 /** Names that must pass through: an MCP tool, and tools no longer assembled but still in old Traces. */
 const PASSTHROUGH = [
   "mcp__playwright__browser_click",
@@ -46,16 +36,12 @@ const PASSTHROUGH = [
   "kill_subagent",
 ];
 
-afterEach(() => setActiveStrings(zh));
+afterEach(() => setActiveStrings(en));
 
 describe("toolDisplayName", () => {
-  it("names each built-in tool by its alias, in either language", () => {
+  it("names each built-in tool by its alias, in English", () => {
     setActiveStrings(en);
     for (const [name, alias] of Object.entries(EN_ALIASES)) {
-      expect(toolDisplayName(name, true)).toBe(alias);
-    }
-    setActiveStrings(zh);
-    for (const [name, alias] of Object.entries(ZH_ALIASES)) {
       expect(toolDisplayName(name, true)).toBe(alias);
     }
   });
@@ -71,15 +57,14 @@ describe("toolDisplayName", () => {
   });
 
   it("returns every name unchanged with the switch off", () => {
-    for (const name of [...Object.keys(ZH_ALIASES), ...PASSTHROUGH, ""]) {
+    for (const name of [...Object.keys(EN_ALIASES), ...PASSTHROUGH, ""]) {
       expect(toolDisplayName(name, false)).toBe(name);
     }
   });
 
-  it("aliases exactly core's built-in tools, in both dictionaries", () => {
+  it("aliases exactly core's built-in tools, in the English dictionary", () => {
     const builtins = Object.keys(BUILTIN_TOOL_FACTORIES).sort();
     expect(builtins).toEqual(Object.keys(EN_ALIASES).sort());
-    expect(Object.keys(zh.chat.toolAliases).sort()).toEqual(builtins);
     expect(Object.keys(en.chat.toolAliases).sort()).toEqual(builtins);
   });
 });

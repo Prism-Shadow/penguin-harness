@@ -15,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
 const SOURCE = readFileSync(
@@ -60,10 +60,10 @@ describe("the key-authorization dialog's outcome", () => {
     expect(dialogSource()).not.toContain("toastSuccess");
   });
 
-  it("names the provider and the count, in both dictionaries", () => {
+  it("names the provider and the count, in the English dictionary", () => {
     // The reader arrives from another tab and may not remember which authorization they just
     // finished, so the count alone is not enough.
-    for (const dict of [zh, en]) {
+    for (const dict of [en]) {
       const body = dict.models.oauthAppliedBody("TokenDance", 7);
       expect(body).toContain("TokenDance");
       expect(body).toContain("7");

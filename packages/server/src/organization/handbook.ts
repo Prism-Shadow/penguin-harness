@@ -2,9 +2,7 @@
  * The organization handbook index — `handbook/README.md`; the `handbook/` directory is the
  * company's knowledge base and this file is the one every work run reads first (progressive
  * loading: the trigger block points here, the index points at the files and documents).
- * Generated once at creation from the template of the organization's working language — the
- * two templates carry the same sections and tables, with paths, commands, ids and field
- * names ASCII in both; the CEO and HR own the file afterwards and may rewrite any of it.
+ * Generated once in English; the CEO and HR own the file afterwards.
  */
 import type { OrgLanguage } from "../api/types.js";
 
@@ -14,12 +12,12 @@ export interface HandbookInput {
   mission: string;
   ceoAgentId: string;
   createdBy: string;
-  /** The organization's working language: which of the two templates is rendered. */
+  /** The organization's working language: used for subsequent employee work. */
   language: OrgLanguage;
 }
 
 export function renderHandbook(input: HandbookInput): string {
-  return input.language === "zh" ? renderZh(input) : renderEn(input);
+  return renderEn(input);
 }
 
 function renderEn(input: HandbookInput): string {
@@ -34,7 +32,7 @@ ${input.mission}
 
 ## Working language
 
-This organization works in English: channel messages, tickets (title, goal, acceptance
+This organization works in ${input.language === "en" ? "English" : "the configured language (" + input.language + ")"}: channel messages, tickets (title, goal, acceptance
 criteria, progress, result), handbook documents, calendar prompts and employee briefs are
 written in it. Commands, file names, ids and field names stay ASCII.
 
@@ -202,113 +200,5 @@ _None yet._
 See the \`company-employee\` skill for the full \`penguin org\` command surface. Inside a desk or
 ticket session \`--org-id\`, \`--project-id\`, \`--agent-id\` and the current session are already
 known from the environment.
-`;
-}
-
-function renderZh(input: HandbookInput): string {
-  const dir = `<app_data_dir>/organizations/${input.orgId}`;
-  return `# ${input.name} — 组织手册
-
-组织 id：\`${input.orgId}\` · CEO：\`${input.ceoAgentId}\` · 董事会（创建者）：\`user:${input.createdBy}\`
-
-## 使命
-
-${input.mission}
-
-## 工作语言
-
-本组织的工作语言是中文：频道消息、工单（标题、目标、验收标准、进展、结果）、手册文档、日程提示词与员工简介都用中文书写。命令、文件名、id 与字段名一律保持 ASCII。
-
-## 这家组织如何运转
-
-- 每名员工都是一个 Agent。汇报树写在 \`org_chart.yaml\` 里，根是 CEO。
-- 每名员工有且只有一个常设的**工位会话**。日程项与频道里的提及以一条开头为 \`[org_trigger]\` 块的消息送到这里；工单的变化从不单独送来，而是列在下一次日历巡检的正文里。工位会话负责调度，不亲自做工单上的活。
-- 工作由看板上的**工单**承载。工单的负责人从自己的工位为它另开一个**工单会话**（\`penguin org ticket start <id>\`），跟踪它、检查结果、回写进展。只有负责人的工位或人可以为一张工单发起会话：要把活交给别的员工，就改派负责人（\`penguin org ticket assign <id> --owner agent:<员工>\`），那名员工的工位会在下一次巡检时接手。负责人可以加 \`--agent-id <同事>\` 把同事拉进自己名下的工单。一张工单可以由多个会话、多名员工共同贡献。
-- 交流发生在**频道**里，每个频道是 \`channels/\` 下的一个目录。\`default_channel\` 是全员频道，每名员工与每位董事会成员都在其中；任何人都可以为一条工作线或一张大工单另开频道，并邀请这项工作需要的主体。只有 \`@<员工>\` 与 \`@all\` 会把消息送到某人的工位，且只在该频道的成员范围内生效；其余内容只是记录在案。
-- **日历**是唯一的周期性驱动：一条日程项的提示词告诉员工该去看什么。HR 保证每名员工恰有一条各自时点的周期日程——这是轮值表，不是广播：节奏因角色而异（负责人每天、审核者两三天、财务每周），且没有两个工位共用同一个起始分钟。
-- **预算**是每名员工的月度上限（自身支出加上全部下属）。达到告警比例会在全员频道发一条系统消息；达到暂停比例则停掉该员工的日历，直到下个月或预算调高为止。人随时可以直接找工位说话。
-
-## 目录结构
-
-\`${dir}/\`
-
-| 路径 | 是什么 | 谁来写 |
-| --- | --- | --- |
-| \`org_config.toml\` | 名称、使命、状态、时区、工作语言、审批模式、@ 连锁上限与预算阈值 | 人、CEO |
-| \`org_chart.yaml\` | 员工树：头衔、reports_to、职责、workspace、预算、Model | CEO、HR（\`penguin org hire\` / \`employee set\`） |
-| \`handbook/\` | 知识库：这份索引（\`README.md\`）与它列出的文档 | CEO、HR、员工（\`penguin org handbook …\` 或文件工具） |
-| \`desks.toml\` | 员工 → 当前工位会话（事实文件） | 服务端 |
-| \`calendar/<agent_id>/<event>.toml\` | 日程项，一项一个文件（字段同定时任务，没有目标字段） | 员工（\`penguin org calendar …\`） |
-| \`tickets/<yyyy-mm>/<column>/<yyyy-mm-dd>-<slug>.md\` | 工单；所在列目录即状态 | 任何人（\`penguin org ticket …\`） |
-| \`channels/<channel_id>/channel.toml\` | 一个频道：名称、用途、成员（\`default_channel\` 是全员） | 成员（\`penguin org channel …\`） |
-| \`channels/<channel_id>/<yyyy-mm-dd>.jsonl\` | 频道消息，一行一条 | 服务端（\`penguin org channel send\`） |
-| \`workspace/\`（或 \`org_config.toml\` 里的 \`workspace\` 路径） | 公共工作区；根目录放共享输入，不是任何人的工位——CEO 在 \`ceo/\` 里工作，新员工不另行指定就落在以其 Agent id 命名的子目录里；相对子目录在分配时由服务端创建，绝对路径必须已存在 | 员工 |
-
-提示词里的路径一律用 \`<app_data_dir>\` 占位符，按系统提示词的 Environment 一节解析。绝不要把绝对路径写进别人会读的文件里。
-
-## 身份记号
-
-人和员工在所有结构化字段（工单字段、消息发送者与提及）里都记作 \`user:<user_id>\` 与 \`agent:<agent_id>\`。提及里的 \`all\` 指该频道的全体成员——在全员频道即全体员工；\`system\` 是调度器。消息正文里的 \`@<id>\` 是简写：先解析为员工，再解析为 Project 成员；两者都存在时写 \`@agent:<id>\` 或 \`@user:<id>\`。
-
-## 工单协议
-
-- 工单文件由 YAML frontmatter（\`title\`、\`status\`、\`owner\`、\`notify\`、\`priority\`、\`due\`、
-  \`blocked\`、\`sessions\`、\`history\`）加 \`## Goal\`、\`## Acceptance criteria\`、\`## Progress\`、
-  \`## Result\` 四节组成。id 形如 \`<yyyy-mm-dd>-<slug>\`，slug 是用连字符连接的小写英文单词。
-- 列：\`proposed\` → \`in_progress\` → \`review\`（可选）→ \`done\`，或 \`rejected\`（须给出理由）。
-- **负责人只有一个。** \`owner\` 是这张工单唯一的责任人——除非创建时指名他人，否则就是创建者本人；
-  谁创建的以及此后发生的一切都记在 \`history\` 里。
-- 任何人都可以提出。由 CEO、负责人的上级或某个人接受（→ in_progress）或拒绝。
-- 负责人把完成的工单移到 \`review\`；由 CEO 或某个人移到 \`done\`。验收标准明显已满足的 P2 工单可以直接进 \`done\`。
-- 工单会话结束前要写进展（\`penguin org ticket progress <id> -m …\`），工作完成则移列。\`## Progress\`
-  只写大白话句子：做了什么、东西在哪。不写 id、不写时间、不写人名——谁写的、什么时候写的由服务端记录。
-- 卡住了（等人拍板、等另一张工单、缺一把 key）：\`penguin org ticket block <id> --reason … --by …\`，然后停手。被阻塞的工单在解除之前会被巡检跳过。
-- \`## Goal\`、\`## Acceptance criteria\`、进展行与 \`## Result\` 里的每个参考物与交付物都写**完整路径**（绝对路径或 \`<app_data_dir>/…\`），同事不用问就能打开。
-- 关闭一张工单会通知它的 \`notify\` 名单，负责人是员工时也通知负责人；想收到通知的人把自己列进 \`notify\`。
-  工单的变化从不发到频道里：看板上的事，到看板上看。
-
-## 决策属于董事会
-
-CEO 提案，董事会（创建者 \`user:${input.createdBy}\`）拍板。招募之前（哪些角色、多少预算）、设定或调高预算或更换某名员工的 Model 之前、拒绝他人的工单或未经审核就关闭 P0 / P1 工单之前，以及修改本手册或组织结构之前，CEO 都要在全员频道发一份清楚的提案并 @ 董事会，然后停下来等答复。员工把这类事项上报给自己的上级，由 CEO 带到董事会。每名员工都用组织的 Model（\`org_config.toml\` 里的 \`model\`），组织未指定时用 Project 的默认 Model，除非董事会为该员工另行指定；没有人可以自行按角色分配 Model。已批准计划之内的日常工作不需要再确认。
-
-## 动到机器或组织之外的事，先问
-
-凡是动到这家组织所在的机器、要花钱或触及组织之外的事，都由需要它的那名员工先在全员频道里向董事会请示，得到明确的同意才能开始：
-
-- 重负载或长时间的计算：训练或评测、大型构建、大规模并行任务、持续几分钟以上占满 CPU 或 GPU 的任何事、超过 1 GB 的下载、会在本轮结束后继续运行的进程；
-- 花钱与对外：模型调用之外的付费 API 或服务、发布、推送到共享远端、给组织之外的人发邮件或消息、注册账号、开放端口；
-- 公共工作区之外的任何写入（用户的其他文件、系统设置、全局安装），以及任何不可逆的操作（删除不是自己创建的数据、改写共享历史、删库、覆盖共享输入）；
-- 自己需要却没有的凭据或密钥——向持有它的人索要，绝不在机器上搜寻，绝不写进工单、频道或本手册。
-
-请示是一条 @user:${input.createdBy} 的消息：要跑什么、预计时长与资源、怎么停、被拒后的替代方案。随后 \`penguin org ticket block <id> --reason … --by user:${input.createdBy}\` 并结束本轮；答复会以提及的形式到来。已批准计划之内、只是比较显眼的步骤——几分钟的构建、项目内的依赖安装、较小的下载——写一行进展再做；自己分区里的日常工作直接做。
-
-## 频道礼仪
-
-- 只在需要拍板、出现阻塞或汇报完成时提及别人。绝不为闲谈 \`@all\`。
-- 在触发块指明的频道里作答（它的 \`channel:\` 行）：\`penguin org channel send --channel <id> -m …\`。日历巡检时读一遍自己所在的频道：\`penguin org channel ls\`，再 \`penguin org channel tail --channel <id>\`。
-- 一条线索会淹没全员频道时就另开频道——一条工作线或一张大工单一个（\`penguin org channel create <id>\`），只邀请这项工作需要的主体（\`penguin org channel invite <id> <principal>\`），并在全员频道里说明一次。
-- 你只在自己是成员的频道里读和发；员工只有被成员邀请才会加入一个频道。需要董事会拍板的事情要发到全员频道——他们在那里读。
-- 提及了不在该频道的人，整条消息会被拒收：先邀请对方。
-- @ 连锁在若干跳之后会有意停止；由人或日历重新发起线索。
-
-## 角色
-
-- **CEO**（\`company-ceo\` Skill）：把使命拆成工单、招募、划分公共工作区、为每条工作线开一个频道并邀请其负责人、审核工单、在全员频道向董事会汇报。
-- **HR**（\`company-hr\` Skill）：保证每名员工都有日程、负责招募与离职、评估并改进员工、维护本手册。
-- **财务**（\`company-finance\` Skill）：设定预算、每天审计支出、解释告警并提出节流方案。
-- **作者与审稿人**（\`company-research\` Skill，科研组织专用）：先固定评测脚本与指标，在董事会批准的资源额度内跑实验循环，每个结论都交给不是作者的审稿人评审。
-- **所有人**（\`company-employee\` Skill）：先读本手册、巡检看板、发起并跟踪工单会话、回写结果、卡住就标阻塞而不是空转、重负载、花钱、不可逆或工作区之外的事先请示董事会、在自己的频道里汇报。
-
-## 知识库
-
-这个目录（\`handbook/\`）是公司的知识库，本文件是它的索引——每轮触发最先读的那一个文件。把可以长期沿用的知识放在这里，一个主题一个 Markdown 文件：董事会做出的决定（\`decisions/<yyyy-mm-dd>-<slug>.md\`）、约定、操作指南、产品与市场事实，以及任何不该让下一轮再重新摸索一遍的东西。每份文档都要在下面列出并用一行说明它何时相关，好让一轮运行只在那一行说了相关时才去读它。\`penguin org handbook list | show <path> | write <path>\` 用来读写文档；索引本身不可删除。
-
-## 文档
-
-_暂无。_
-
-## 命令参考
-
-完整的 \`penguin org\` 命令面见 \`company-employee\` Skill。在工位会话或工单会话内，\`--org-id\`、\`--project-id\`、\`--agent-id\` 与当前会话都已由环境给出。
 `;
 }

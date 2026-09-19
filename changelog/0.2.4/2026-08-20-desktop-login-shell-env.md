@@ -6,8 +6,6 @@
 - **PR:** [#370](https://github.com/Prism-Shadow/penguin-harness/pull/370)
 - **Issue:** [#351](https://github.com/Prism-Shadow/penguin-harness/issues/351)
 
-[中文版](2026-08-20-desktop-login-shell-env.zh.md)
-
 Made the desktop app read the user's login-shell environment on macOS and Linux GUI launches, so API keys exported in `.zshrc` / `.profile` reach core's model env fallback and the agent shell gets the user's real `PATH` — neither had been visible to an app started from the Dock or a desktop session, forcing keys to be re-entered and agent commands onto the bare system `PATH`.
 
 ## Details

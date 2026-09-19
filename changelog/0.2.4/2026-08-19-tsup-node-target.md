@@ -4,8 +4,6 @@
 - **Type:** process
 - **Scope:** `tooling`, `core`, `cli`, `server`, `skills`, `desktop`
 
-[中文版](2026-08-19-tsup-node-target.zh.md)
-
 Every package now compiles for the same Node version — `node24` — and the two published
 libraries that had never said which Node they need now declare it.
 

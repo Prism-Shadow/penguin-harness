@@ -6,8 +6,6 @@
 - **PR:** [#156](https://github.com/Prism-Shadow/penguin-harness/pull/156), [#157](https://github.com/Prism-Shadow/penguin-harness/pull/157), [#158](https://github.com/Prism-Shadow/penguin-harness/pull/158)
 - **Issue:** [#136](https://github.com/Prism-Shadow/penguin-harness/issues/136), [#137](https://github.com/Prism-Shadow/penguin-harness/issues/137), [#139](https://github.com/Prism-Shadow/penguin-harness/issues/139), [#140](https://github.com/Prism-Shadow/penguin-harness/issues/140)
 
-[中文版](2026-08-02-web-app-steering-and-session-list.zh.md)
-
 Steering messages no longer vanish on refresh or come back as duplicate-prone drafts, file attachments steer like images do, tool-card subtitles stop jittering while arguments stream, and the sidebar stays fast and scannable with many agents, workspaces, and CLI sessions.
 
 ## Steering across reloads, with visible content ([#136](https://github.com/Prism-Shadow/penguin-harness/issues/136), [#140](https://github.com/Prism-Shadow/penguin-harness/issues/140))

@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#525](https://github.com/Prism-Shadow/penguin-harness/pull/525)
 
-[中文版](2026-08-27-messaging-channel-spec.zh.md)
-
 `runtime/messaging/connector.ts` already gave the runtime a channel seam: a connector owns its
 wire protocol and hands the bridge a channel-neutral view. The HTTP layer had no such seam, so
 each of its six endpoints was written once per channel and each new saved field was written

@@ -1,24 +1,16 @@
 # The changelog contract
 
-Loaded on demand from `SKILL.md`, which states the rule: every change ships a bilingual entry in
+Loaded on demand from `SKILL.md`, which states the rule: every change ships an English entry in
 `changelog/unreleased/`, inside the PR that makes the change. This file is the shape of that
 entry and the traps around it. `changelog/README.md` is the full spec — read it rather than
 pattern-matching a neighbouring entry.
 
-## The pair
+## The entry
 
-- `YYYY-MM-DD-<slug>.md` and `YYYY-MM-DD-<slug>.zh.md`, mirroring section for section. One
-  without the other is unfinished.
-- H1, then the metadata block in fixed order — `Date` / `Type` / `Scope` / `PR` / `Issue` /
-  `Breaking` — then the counterpart link, then a lead paragraph and bespoke sections. Field names
-  and values stay English in both files so one `grep` covers the tree.
-- Omit an inapplicable field entirely. Placeholders are what stop `grep -rl 'Breaking:'
-  changelog/` from being an exact query.
-- `Breaking` present ⇒ a `## Compatibility` / `## 兼容性` section stating what breaks and the
-  migration step.
-- Section headings are translated, not carried across: `## Details` → `## 细节`, `## Compatibility`
-  → `## 兼容性`, bespoke ones naturally, in the same order and count. An English heading in the
-  `.zh.md` is the most common way the pair stops mirroring.
+- `YYYY-MM-DD-<slug>.md`, written in English.
+- H1, then metadata in order: `Date`, `Type`, `Scope`, `PR`, `Issue`, `Breaking`.
+- Omit inapplicable fields. Follow with a lead paragraph and relevant sections.
+- A breaking change needs a `## Compatibility` section with migration instructions.
 
 ## Rules that are easy to break
 

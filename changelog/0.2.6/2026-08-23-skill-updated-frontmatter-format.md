@@ -5,8 +5,6 @@
 - **Scope:** `docs`, `skills`, `server`
 - **PR:** [#418](https://github.com/Prism-Shadow/penguin-harness/pull/418)
 
-[中文版](2026-08-23-skill-updated-frontmatter-format.zh.md)
-
 The Skills doc pages described `updated` as a date and showed `updated: 2026-07-17`, while every
 Skill in the built-in library, the `skill-porting` and `agent-initialization` recipes for writing
 one, and the library test's assertion all use an ISO 8601 UTC timestamp. The documentation and the

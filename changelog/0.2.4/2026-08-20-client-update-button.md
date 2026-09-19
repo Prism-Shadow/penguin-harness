@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`, `desktop`, `docs`
 - **PR:** [#386](https://github.com/Prism-Shadow/penguin-harness/pull/386)
 
-[中文版](2026-08-20-client-update-button.zh.md)
-
 Added a client-update row to the sidebar user menu of the desktop shell's own window — the slot the server update reminder leaves empty in desktop mode, where System settings has no Updates page. The row drives the shell's electron-updater end to end: check, background download with progress, then a confirmed restart-to-install (the same interruption warning as the shell's native prompt), with the installed client version shown alongside.
 
 ## Details

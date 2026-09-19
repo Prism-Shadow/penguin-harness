@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#421](https://github.com/Prism-Shadow/penguin-harness/pull/421)
 
-[中文版](2026-08-23-hot-update-recovery-reboots-the-running-version.zh.md)
-
 When a pushed platform failed to boot, the host
 [re-booted the previous version](2026-08-20-hot-update-failure-modes.md) from the parked
 document — but chose *which* bundle to re-boot by comparing the running bundle's `id`
