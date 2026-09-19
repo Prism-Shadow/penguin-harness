@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** fix
 - **Scope:** `server`
+- **PR:** [#22](https://github.com/nicolaepocroianu/penguin-harness/pull/22)
 
 Book specification saves and new module requests gained page-order and media validation. Invalid candidates retained their reviewable output without replacing the saved specification. Book generation instructions added explicit page roles, one image per page, and ordered narration cues.
 
