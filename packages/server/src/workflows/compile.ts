@@ -113,6 +113,32 @@ export function compileWorkflow(ts: TypeScript, dir: string, revision: string): 
   return path.join(outDir, "index.js");
 }
 
+/** What the last load came to, beside the emitted code: see {@link writeLoadStatus}. */
+export const STATUS_FILE = "status.json";
+
+/**
+ * Writes `.build/status.json` after every load, good or bad. The Agent that wrote the
+ * workflow has its files and nothing else — no session with the HTTP API — so this is how
+ * it learns whether the edit it just made loaded, and what the compiler said if it did not:
+ * edit, wait a moment, read this file.
+ */
+export function writeLoadStatus(
+  dir: string,
+  status: { revision: string; checkedAt: string; error: string | null; tabs: string[] },
+): void {
+  try {
+    fs.mkdirSync(path.join(dir, BUILD_DIR), { recursive: true });
+    const file = path.join(dir, BUILD_DIR, STATUS_FILE);
+    fs.writeFileSync(
+      `${file}.tmp`,
+      `${JSON.stringify({ ok: status.error === null, ...status }, null, 1)}\n`,
+    );
+    fs.renameSync(`${file}.tmp`, file);
+  } catch {
+    // The folder may have just been removed; the status of a workflow that is gone is moot.
+  }
+}
+
 /** Drops the emitted code of every revision but `keep` (the one now serving). */
 export function pruneBuilds(dir: string, keep: string): void {
   const base = path.join(dir, BUILD_DIR);
@@ -123,7 +149,8 @@ export function pruneBuilds(dir: string, keep: string): void {
     return;
   }
   for (const name of entries) {
-    if (name !== keep) fs.rmSync(path.join(base, name), { recursive: true, force: true });
+    if (name === keep || name === STATUS_FILE) continue;
+    fs.rmSync(path.join(base, name), { recursive: true, force: true });
   }
 }
 

@@ -348,6 +348,15 @@ http.createServer(async (req, res) => {
 
 Inside PenguinHarness an Agent can hold *workflows*: small plugin packages in its own directory, written in TypeScript, that the server boots as module trees, shows as tabs beside the chat, reloads on every file change, and versions so any edit can be undone. This is the same module mechanism the server itself is built from — manifests as data, everything checked before any code runs — so a workflow that does not type-check, that was written against an interface version this server no longer fits, or whose manifests do not hold together fails to load with the problem named, while the previous version keeps serving.
 
+**Start here — the whole loop is files.** You need nothing but your file tools: no HTTP API, no port, no login, no server source. Do not go looking for the running server, its bundle or a checkout of the repository, and do not probe its API — everything you need to know is written into the workflow folder by the server itself.
+
+1. *Where:* your Agent directory is `<App Data Dir>/agents/<Agent ID>/` — both values are in the Environment section of your system prompt. Workflows live in its `workflows/` folder (create it if it is missing); `ls` it to see what already exists before you add or change anything.
+2. *Scaffold:* write the three files below — `package.json`, a minimal `index.ts`, one page under `ui/`. The server notices the folder within a second or two.
+3. *Read what the server wrote back:* `.build/status.json` is the result of the last load — `{ ok, revision, checkedAt, error, tabs }`. `ok: false` carries the compiler's or the checker's message with file, line and reason; fix that and look again. `.harness/plugin.d.ts` is the exact `WorkflowHost` and `WorkflowMain` THIS harness offers — read it once instead of guessing at an interface.
+4. *Iterate:* edit, wait a moment, read `.build/status.json` again. `checkedAt` changing tells you the server saw your edit. When it says `ok: true` the tabs are already in the user's chat page. If `status.json` never appears, ask the user to open this Agent's chat page once (that is what starts the server watching the folder) rather than hunting for another way in.
+
+What you do not need to find out by experiment: `host.run` resolves as soon as the turn has STARTED (not when it ends) with `{ sessionId, queued }`; `host.sessionStatus(id)` returns `"idle"`, `"running"` or `"compacting"`, so a run is finished when its Session is back to `"idle"`; `host.getState()` is synchronous and returns whatever was last passed to `setState` (`null` before the first one).
+
 Layout, under `<root>/<project_id>/agents/<agent_id>/workflows/<workflow_id>/` (beside `agent_state/`):
 
 ```
@@ -356,7 +365,7 @@ index.ts        default export { modules: { <Name>: { create(ctx) } } } satisfie
 ui/             the workflow's pages and their assets; which of them are tabs is what the manifest contributes
 state.json      the workflow's own document, kept by the server across reloads and rollbacks
 .harness/       the server's: the types this workflow was written against (plugin.d.ts) and their interface table — read plugin.d.ts, never edit it
-.build/         the server's emitted JavaScript, per revision — never edit it
+.build/         the server's: emitted JavaScript per revision, and status.json — the result of the last load; read it, never edit it
 ```
 
 The root manifest is named `Workflow`; it requires the host, provides the handler, and contributes its tabs:
