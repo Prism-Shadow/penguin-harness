@@ -6,8 +6,10 @@ import type { Config, Db } from "../hmr/capabilities.js";
 import type { ActivityAuthoring } from "../mechanisms/activities.js";
 import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import { HttpError } from "../http/errors.js";
+import { planMedia, validateManifest, validateMediaCoverage } from "./media.js";
 import {
   contentRevision,
+  draftRevision,
   newCollectionManifest,
   newId,
   normalizeProductCode,
@@ -257,8 +259,23 @@ export class ActivityService implements ActivityAuthoring {
       (file.spec !== null && (typeof file.spec !== "object" || Array.isArray(file.spec)))
     )
       throw new Error("Activity draft is corrupt.");
+    if (file.mediaPlan) {
+      if (!/^[a-f0-9]{64}$/.test(file.mediaPlan.specRevision))
+        throw new Error("Media plan is corrupt.");
+      const requirements = file.mediaPlan.requirements;
+      if (
+        !requirements ||
+        typeof requirements !== "object" ||
+        Array.isArray(requirements) ||
+        Object.values(requirements).some(
+          (value) => typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value),
+        )
+      )
+        throw new Error("Media requirements are corrupt.");
+      validateManifest(file.mediaPlan.manifest, activity);
+    }
     // The file is authoritative. Never substitute the index for missing/corrupt content.
-    const revision = contentRevision({ description: file.description, spec: file.spec });
+    const revision = draftRevision(file);
     return {
       ...activity,
       draft: {
@@ -299,11 +316,50 @@ export class ActivityService implements ActivityAuthoring {
       status: "valid",
     }));
   }
+  async planMedia(
+    projectId: string,
+    activityId: string,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
+      try {
+        return { ...draft, mediaPlan: planMedia({ ...activity, draft }) };
+      } catch (error) {
+        throw new HttpError(422, "media_invalid", (error as Error).message);
+      }
+    });
+  }
+  async applyMedia(
+    projectId: string,
+    activityId: string,
+    manifest: unknown,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
+      if (
+        !draft.mediaPlan ||
+        draft.mediaPlan.specRevision !== contentRevision(draft.spec) ||
+        draft.status !== "valid"
+      )
+        throw new HttpError(
+          409,
+          "media_stale",
+          "Rebuild the media plan from the saved specification before saving bindings.",
+        );
+      try {
+        const parsed = validateManifest(manifest, activity);
+        validateMediaCoverage(parsed, { ...activity, draft });
+        return { ...draft, mediaPlan: { ...draft.mediaPlan, manifest: parsed } };
+      } catch (error) {
+        throw new HttpError(422, "media_invalid", (error as Error).message);
+      }
+    });
+  }
   private async change(
     projectId: string,
     activityId: string,
     expectedRevision: string | undefined,
-    edit: (draft: ActivityDraft) => ActivityDraft,
+    edit: (draft: ActivityDraft, activity: ActivityRecord) => ActivityDraft,
   ): Promise<ActivityDraft> {
     return this.projectWork.run(projectId, () =>
       this.locks.run(activityId, async () => {
@@ -314,11 +370,8 @@ export class ActivityService implements ActivityAuthoring {
             "draft_conflict",
             "Draft changed. Reload it before applying your edit.",
           );
-        const draft = edit(current.draft);
-        draft.contentRevision = contentRevision({
-          description: draft.description,
-          spec: draft.spec,
-        });
+        const draft = edit(current.draft, current);
+        draft.contentRevision = draftRevision(draft);
         draft.updatedAt = new Date().toISOString();
         await this.writeDraft(projectId, draft, current.collectionId);
         this.db
@@ -346,6 +399,8 @@ export class ActivityService implements ActivityAuthoring {
     await fs.mkdir(dir, { recursive: true });
     // These two files are exports; only the atomically published draft is authoritative.
     if (draft.spec !== null) await atomicJson(path.join(dir, "activity-spec.json"), draft.spec);
+    if (draft.mediaPlan)
+      await atomicJson(path.join(dir, "asset-manifest.json"), draft.mediaPlan.manifest);
     await fs.writeFile(path.join(dir, "description.md"), draft.description, "utf8");
     await atomicJson(path.join(dir, "draft.json"), draft);
   }

@@ -22,6 +22,17 @@ export abstract class ActivityGeneration extends Interface<{
 }>() {}
 
 export abstract class ActivityAuthoring extends Interface<{
+  planMedia(
+    projectId: string,
+    activityId: string,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
+  applyMedia(
+    projectId: string,
+    activityId: string,
+    manifest: unknown,
+    expectedRevision: string,
+  ): Promise<ActivityDraft>;
   ensureCollection(projectId: string, collectionId?: string): Promise<CollectionManifest>;
   listActivities(projectId: string, collectionId?: string): Promise<ActivityRecord[]>;
   createActivity(

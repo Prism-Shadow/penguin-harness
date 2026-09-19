@@ -4,6 +4,14 @@ import type { PeakWindows } from "../features/models/model-grouping";
 export type Strings = {
   appName: string;
   activities: {
+    mediaTitle: string;
+    mediaHelp: string;
+    planMedia: string;
+    rebuildMedia: string;
+    mediaManifest: string;
+    mediaPathHint: string;
+    saveMedia: string;
+    mediaCounts: (total: number, bound: number) => string;
     wafRoot: string;
     wafRootHint: string;
     assemble: string;
@@ -2593,6 +2601,9 @@ export type Strings = {
       description_required: string;
       generation_running: string;
       module_spec_required: string;
+      media_invalid: string;
+      media_stale: string;
+      media_missing: string;
       module_spec_invalid: string;
       waf_checkout_missing: string;
       run_not_found: string;

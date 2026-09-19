@@ -10,7 +10,13 @@ import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 import { HttpError } from "../http/errors.js";
 import { ActivityLocks, atomicJson } from "./service.js";
-import { findWafRoot, prepareModule, collectModule, modulePrompt } from "./waf-module.js";
+import {
+  findWafRoot,
+  prepareModule,
+  collectModule,
+  modulePrompt,
+  verifyMediaArtifacts,
+} from "./waf-module.js";
 import {
   newId,
   validateActivitySpec,
@@ -391,11 +397,25 @@ export class ActivityGenerationService implements ActivityGeneration {
                   observer?.error ?? "The session ended without a confirmed completed request.",
                 );
               if (run.kind === "module") {
-                const result = await collectModule(this.workspace(run), readCandidate);
+                const input = await this.activities.getActivity(run.projectId, run.activityId);
+                const requiredMediaFiles =
+                  input.draft.mediaPlan && input.draft.contentRevision === run.inputRevision
+                    ? [
+                        `module/generated/${input.productCode}/refs/${input.productCode}-${input.refNum}/spec/asset_manifest.json`,
+                        `module/configurations/${input.productCode}-${input.refNum}.json`,
+                      ]
+                    : [];
+                const result = await collectModule(
+                  this.workspace(run),
+                  readCandidate,
+                  requiredMediaFiles,
+                );
                 run.candidate = JSON.stringify(result);
                 this.save(run);
                 if (this.stopped) return;
                 await this.projectWork.run(run.projectId, async () => {
+                  if (input.draft.contentRevision === run.inputRevision)
+                    await verifyMediaArtifacts(this.workspace(run), input, readCandidate);
                   const current = await this.activities.getActivity(run.projectId, run.activityId);
                   if (current.draft.contentRevision !== run.inputRevision)
                     throw new HttpError(

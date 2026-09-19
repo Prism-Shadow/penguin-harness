@@ -16,3 +16,9 @@ Repository maintainers retain the conversion and rollback as migration history u
 ## Module assembly storage
 
 Migration 13 added a separate module-run identity table without rewriting existing specification records. Restart the server before starting module assembly. Rollback refuses databases containing module attempts, because an older runtime would interpret those attempts as specification generation. Restore a pre-upgrade backup before downgrading such a database. Repository maintainers retain this migration until schema versions below 13 cease to be supported.
+
+## Media draft extension
+
+Media plans added an optional `mediaPlan` field to the authoritative draft file. Drafts without this field retained their existing content revisions and assembly behavior; no database migration or reset was required. Once a plan was saved, its contents participated in the draft revision and carried the source specification hash.
+
+Repository maintainers retain the optional-field format permanently as support for activities without media planning. It is not a temporary dual-format reader. Before downgrading to a runtime that does not include media in revision checks, restore a pre-media backup; older writers do not enforce media conflicts or stale-plan checks.

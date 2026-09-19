@@ -215,6 +215,35 @@ async function fixture(page) {
       };
       return json(activity.draft);
     }
+    if (p === `${base}/act_test/plan-media` || p === `${base}/act_test/media`) {
+      const body = request.postDataJSON();
+      if (body.expectedRevision !== activity.draft.contentRevision)
+        return json({ error: { code: "draft_conflict", message: "Draft changed." } }, 409);
+      activity.draft = {
+        ...activity.draft,
+        contentRevision: String(++revision),
+        mediaPlan: {
+          specRevision: "spec-revision",
+          manifest: body.manifest ?? {
+            productCode: "words",
+            refNum: 12,
+            assets: {
+              "en-US": [
+                {
+                  key: "cat",
+                  type: "image",
+                  description: "A cat",
+                  usages: [
+                    { sceneId: "intro", sourceKey: "cat", occurrence: 1, sceneOccurrenceCount: 1 },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      };
+      return json(activity.draft);
+    }
     if (p.startsWith("/api/")) {
       if (p.endsWith("/usage/errors")) return json({ items: [], total: 0 });
       if (p.endsWith("/sessions"))
@@ -330,6 +359,54 @@ async function create(page) {
     page.getByRole("button", { name: "Generate specification", exact: true }),
   ).toBeEnabled();
 }
+
+test("plans media, preserves unsaved bindings on navigation, and saves paths for assembly", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  const plan = page.getByRole("button", { name: "Plan media", exact: true });
+  await expect(plan).toBeDisabled();
+  const withMedia = {
+    ...spec,
+    scenes: [
+      {
+        id: "intro",
+        description: "Look",
+        media: { images: [{ key: "cat", description: "A cat" }] },
+      },
+    ],
+  };
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(withMedia));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await plan.click();
+  const editor = page.getByRole("textbox", { name: /^Asset manifest/ });
+  await expect(editor).toBeVisible();
+  await expect(page.getByText(/1 assets, 0 paths assigned, 1 unbound/)).toBeVisible();
+  const manifest = JSON.parse(await editor.inputValue());
+  manifest.assets["en-US"][0].path = "media/images/cat.png";
+  await editor.fill(JSON.stringify(manifest));
+  await expect(
+    page.getByRole("button", { name: "Assemble WAF module", exact: true }),
+  ).toBeDisabled();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await expect(editor).toHaveValue(JSON.stringify(manifest));
+  const request = page.waitForRequest(
+    (request) => request.url().endsWith("/media") && request.method() === "PUT",
+  );
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  expect((await request).postDataJSON().manifest).toEqual(manifest);
+  await expect(
+    page.getByRole("button", { name: "Assemble WAF module", exact: true }),
+  ).toBeEnabled();
+  await page.reload();
+  await expect(editor).toHaveValue(JSON.stringify(manifest, null, 2));
+  await expect(page.getByText(/1 assets, 1 paths assigned, 0 unbound/)).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
 
 test("assembles a saved spec and links to the Harness-isolated WAF preview", async ({ page }) => {
   const f = await fixture(page);

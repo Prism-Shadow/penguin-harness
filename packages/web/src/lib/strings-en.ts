@@ -5,6 +5,17 @@ import type { Strings } from "./strings-types";
 export const en: Strings = {
   appName: "PenguinHarness",
   activities: {
+    mediaTitle: "Media plan",
+    mediaHelp:
+      "Build a plan from the saved specification, then assign existing media paths. Rebuild after changing the specification; unchanged requirements keep their bindings. Planning does not generate media files.",
+    planMedia: "Plan media",
+    rebuildMedia: "Rebuild media plan",
+    mediaManifest: "Asset manifest",
+    mediaPathHint:
+      'Use language groups such as en-US. Add "path": "media/..." to reuse an asset; omit path for unbound assets. File availability is checked when assembly starts, not when saving this form.',
+    saveMedia: "Validate and save media",
+    mediaCounts: (total, bound) =>
+      `${total} assets, ${bound} paths assigned, ${total - bound} unbound (saved plan)`,
     wafRoot: "WAF checkout",
     wafRootHint:
       "Folder containing framework, modules and media. Leave empty for automatic discovery.",
@@ -4276,6 +4287,12 @@ Scenarios:
       description_required: "Add and save a description before generating a specification.",
       generation_running: "This activity already has a generation running.",
       module_spec_required: "Save a valid specification before assembling a module.",
+      media_invalid:
+        "The media plan is invalid. Check its activity identity, unique keys, language groups, scene usages and relative media paths.",
+      media_stale:
+        "Rebuild the media plan from the saved specification before saving bindings or assembling a module.",
+      media_missing:
+        "Referenced media is missing or linked in the selected WAF checkout. Check the saved paths before retrying assembly.",
       module_spec_invalid: "Module scenes need unique safe IDs other than activity.",
       waf_checkout_missing:
         "WAF checkout not found. Select a folder containing framework, modules and media.",
