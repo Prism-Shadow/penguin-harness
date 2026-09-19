@@ -961,7 +961,7 @@ export const zh = {
     groupModeImport: "导入模型",
     groupImportAll: "批量导入模型",
     groupImportNeedUrl: "请先填写有效的 base URL（http/https）",
-    groupImportKeyHint: "留空按协议读取 OPENAI_* / ANTHROPIC_* 环境变量",
+    groupImportKeyHint: "该端点的 API key（URL 不是厂商官方地址时必填）",
     groupImportListing: "正在获取模型列表…",
     groupImportSaving: (n: number): string => `正在导入 ${n} 个模型…`,
     groupImportUnsupported: "该协议不支持列出模型，请手动添加",

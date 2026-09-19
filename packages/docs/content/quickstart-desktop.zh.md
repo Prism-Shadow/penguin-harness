@@ -50,7 +50,7 @@ PenguinHarness 不内置任何模型凭据。为要使用的模型配置 API Key
 
 已经在 shell 配置文件里 export 的 API Key（`ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 等）不用再填一遍。在 macOS 和 Linux 上从 Dock 或桌面启动应用时，应用会导入登录 shell 的环境变量，只补上启动时没有设置的变量。Agent shell 的 `PATH` 也因此受益。设置 `PENGUIN_NO_LOGIN_SHELL_ENV` 可以关闭这项导入。
 
-官方供应商的模型没有保存 Key 时，**模型库**页面会以掩码显示检测到的环境变量值，和显示已保存的 Key 一样：模型卡片上显示，模型详情弹窗里也显示，并标注为**读取自环境变量**。网关分组和自定义分组不会匹配这些变量。
+官方供应商的模型没有保存 Key 时，**模型库**页面会以掩码显示检测到的环境变量值，和显示已保存的 Key 一样：模型卡片上显示，模型详情弹窗里也显示，并标注为**读取自环境变量**。网关分组，以及自带 base URL 的 custom / vLLM 条目，不会匹配这些变量——那里的模型需要自己的 key。
 
 ## 跑通第一个 Task
 

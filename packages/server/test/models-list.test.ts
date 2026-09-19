@@ -39,7 +39,7 @@ describe("ProjectConfigService.listEndpointModels", () => {
     ]);
   });
 
-  it("omits an absent key so the SDK's environment fallback applies", async () => {
+  it("omits an absent key; whether the environment may lend one is core's listing's decision (see its tests)", async () => {
     const calls: Record<string, unknown>[] = [];
     await service.listEndpointModels(
       { baseUrl: req.baseUrl, clientType: "ant-messages" },

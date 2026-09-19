@@ -46,12 +46,13 @@
  * Credential resolution is layered: the caller passes the key typed in the dialog or the
  * entry's stored one, and when there is neither, each probe falls back to the environment
  * variable for the protocol IT speaks (`ANTHROPIC_API_KEY` for `ant-messages`,
- * `OPENAI_API_KEY` for the two OpenAI protocols — see envApiKeyForProtocol). Detection
- * still works with no credential at all, but an authenticated probe is far more likely to
- * draw a protocol-shaped error than the generic 401 or gateway HTML an anonymous request
- * often gets, so the fallback materially improves accuracy.
+ * `OPENAI_API_KEY` for the two OpenAI protocols — see envApiKeyForProtocol) — but only when
+ * the probed base URL is that vendor's own endpoint. A gateway or a private server gets an
+ * anonymous probe: detection still
+ * works with no credential at all (a protocol-shaped 401 identifies the route), and sending
+ * the user's vendor key to a URL they typed is exactly what the rule forbids.
  */
-import { resolveModelEnv } from "@prismshadow/penguin-core";
+import { endpointEnvApiKey } from "@prismshadow/penguin-core";
 import type {
   ModelProtocolDetectResponse,
   ModelProtocolProbeDto,
@@ -102,25 +103,25 @@ export const PROTOCOL_PROBES: readonly ProbeSpec[] = [
 ];
 
 /**
- * Environment-variable fallback for a probe's credential, resolved PER PROTOCOL.
+ * Environment-variable fallback for a probe's credential, resolved PER PROTOCOL and PER URL.
  *
  * Which env var backs a request depends on the protocol being spoken, and detection is
  * precisely the case where the protocol is not yet known — so the resolution happens once
  * per probe rather than once per detection: `ant-messages` reads `ANTHROPIC_API_KEY`,
- * `openai-responses` / `openai-chat` read `OPENAI_API_KEY`. `resolveModelEnv` is the same
- * mapping the rest of the app uses (an explicit client type wins over the model id there),
- * so this cannot drift from what the saved model will actually read.
+ * `openai-responses` / `openai-chat` read `OPENAI_API_KEY`. Core's endpointEnvApiKey is the
+ * same rule the saved model is held to (see modelEnvFallback), so this cannot drift from
+ * what the entry will actually be allowed to read: the variable is lent only to the
+ * vendor's own endpoint.
  *
  * Server-side only: the value is placed in a request header and never returned to the
  * browser, echoed in a result, or logged.
  */
 export function envApiKeyForProtocol(
   clientType: ProtocolClientType,
+  baseUrl: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  const envKey = resolveModelEnv("", clientType)?.envKey;
-  if (!envKey) return undefined;
-  return env[envKey]?.trim() || undefined;
+  return endpointEnvApiKey(clientType, baseUrl, env);
 }
 
 /** Whether a string is an absolute http(s) URL (the only base URLs worth probing). */
@@ -341,10 +342,10 @@ export async function detectModelProtocol(options: {
   baseUrl: string;
   /**
    * Explicit credential (the key typed in the dialog, or the entry's stored key). When
-   * absent, each probe falls back to the environment variable for the protocol it speaks
-   * — see envApiKeyForProtocol. An authenticated probe is what makes the difference
-   * between a protocol-shaped error (which identifies the route) and the generic 401 or
-   * gateway HTML that an anonymous request often draws instead.
+   * absent, each probe falls back to the environment variable for the protocol it speaks,
+   * where the probed URL is allowed one — see envApiKeyForProtocol. An authenticated probe
+   * is what makes the difference between a protocol-shaped error (which identifies the
+   * route) and the generic 401 or gateway HTML that an anonymous request often draws.
    */
   apiKey?: string;
   /** Injection point for tests; defaults to global fetch (which routes through the admin proxy settings, see net/proxy.ts). */
@@ -358,7 +359,7 @@ export async function detectModelProtocol(options: {
   const probes: ModelProtocolProbeDto[] = [];
   for (const baseUrl of candidateBaseUrls(options.baseUrl)) {
     for (const spec of PROTOCOL_PROBES) {
-      const apiKey = options.apiKey ?? envApiKeyForProtocol(spec.clientType, options.env);
+      const apiKey = options.apiKey ?? envApiKeyForProtocol(spec.clientType, baseUrl, options.env);
       const probe = await runProbe(spec, baseUrl, apiKey, fetchImpl, timeoutMs);
       probes.push(probe);
       if (probe.outcome === "served") return { detected: spec.clientType, baseUrl, probes };

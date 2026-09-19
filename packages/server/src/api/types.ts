@@ -521,14 +521,21 @@ export interface ModelInfo {
   pricing?: ModelPricingDto;
   /** Running promotion for this row — a fraction in (0, 1) off `pricing`, which is the list price — read from web.db. Absent when the row has none. */
   discount?: number;
-  /** Environment variable name to fall back to when api_key is empty (e.g. ANTHROPIC_API_KEY); unset if no known fallback. */
+  /**
+   * Environment variable name the entry falls back to when api_key is empty (e.g.
+   * ANTHROPIC_API_KEY); unset when it gets no fallback — an id nothing routes, or an entry
+   * whose base URL is not the vendor's own official endpoint (a gateway preset, a custom /
+   * vLLM / user-created row with its own endpoint, a vendor row re-pointed at a proxy).
+   */
   envKey?: string;
   /**
    * Masked preview (same rule as `credential.apiKeyMasked`) of the value the server process
-   * currently holds for `envKey` — the plaintext is never serialized. Reported only for
-   * first-party official entries (vendor group, catalog shape unmodified); gateway, custom
-   * and user-defined groups never carry it. Absent = the variable is unset or empty, or the
-   * entry is not first-party.
+   * currently holds for `envKey` — the plaintext is never serialized. Reported only where the
+   * fallback may be presented as covering the entry (core's modelEnvPreviewKey): a row whose
+   * own base URL is a vendor endpoint, or a keyless row in a vendor group or Penguin Go. Gateway
+   * rows never carry it, and neither do custom / vLLM / user-defined rows with no base URL,
+   * although those do fall back. Absent = the variable is unset or empty, or the entry is not
+   * previewable.
    */
   envKeyMasked?: string;
   credential?: CredentialInfo;

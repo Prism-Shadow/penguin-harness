@@ -975,7 +975,7 @@ export const en: Strings = {
     groupModeImport: "Import models",
     groupImportAll: "Import all models",
     groupImportNeedUrl: "Fill in a valid base URL first (http/https)",
-    groupImportKeyHint: "Leave empty to read the protocol's OPENAI_* / ANTHROPIC_* env vars",
+    groupImportKeyHint: "The endpoint's API key (required unless the URL is the vendor's own)",
     groupImportListing: "Fetching model list…",
     groupImportSaving: (n: number): string => `Importing ${n} models…`,
     groupImportUnsupported: "This protocol cannot list models — add them manually",
