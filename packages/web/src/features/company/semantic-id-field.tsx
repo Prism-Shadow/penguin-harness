@@ -48,10 +48,13 @@ export function SemanticIdField({
   taken,
   error,
   disabled = false,
+  machineId = null,
   onChange,
   onEnter,
 }: {
   projectId: string;
+  /** The machine whose server proposes the id — the one the organization lives (or will live) on. Null = this server. */
+  machineId?: string | null;
   /** What the id is for; the server's proposal is shaped by it. */
   kind: SemanticIdSuggestRequest["kind"];
   label: string;
@@ -84,11 +87,15 @@ export function SemanticIdField({
     setBusy(true);
     setNotice(null);
     try {
-      const res = await api.suggestSemanticId(projectId, {
-        name: source.trim(),
-        kind,
-        ...(taken !== undefined && taken.length > 0 ? { taken: [...taken] } : {}),
-      });
+      const res = await api.suggestSemanticId(
+        projectId,
+        {
+          name: source.trim(),
+          kind,
+          ...(taken !== undefined && taken.length > 0 ? { taken: [...taken] } : {}),
+        },
+        machineId,
+      );
       onChange(res.id);
       setNotice(idSuggestNotice(res, S.company.idSuggest));
     } catch (e) {

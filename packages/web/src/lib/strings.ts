@@ -3823,6 +3823,14 @@ Benchmark：
     modelProjectDefault: "Project 默认",
     modelProjectDefaultNamed: (name: string): string => `Project 默认（${name}）`,
     modelsLoadFailed: "模型列表读取失败；仍可按 Project 默认模型创建",
+    machineField: "运行位置",
+    machineInfo:
+      "组织住在一台机器上：组织图、工单与频道写在那台机器上，员工是那台机器的 Agent，他们的会话也在那里运行。创建之后不能迁移。",
+    machineHere: "本机",
+    machineSsh: (alias: string) => `SSH: ${alias}`,
+    machineCompanyModeOff:
+      "那台机器没有开启公司模式。请先在那台机器的设置里开启，再在它上面创建组织。",
+    orgIdOnAnotherMachine: "这个 Project 在另一台机器上已有同名 id 的组织，请换一个 id。",
     workspaceField: "公司工作区",
     workspaceInfo:
       "员工共同工作的目录：每位员工的工作区是它的一个子目录（或整个目录），工位会话与工单会话都在其中运行。",

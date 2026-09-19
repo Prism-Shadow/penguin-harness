@@ -3831,6 +3831,15 @@ Scenarios:
     modelProjectDefaultNamed: (name: string): string => `Project default (${name})`,
     modelsLoadFailed:
       "The model list could not be read; you can still create with the Project default",
+    machineField: "Runs on",
+    machineInfo:
+      "An organization lives on one machine: its chart, tickets and channels are written there, its employees are that machine's Agents, and their Sessions run there. It cannot be moved afterwards.",
+    machineHere: "This server",
+    machineSsh: (alias: string) => `SSH: ${alias}`,
+    machineCompanyModeOff:
+      "Company mode is off on that machine. Turn it on in that machine's Settings first, then create the organization on it.",
+    orgIdOnAnotherMachine:
+      "This Project already has an organization with this id on another machine. Choose a different id.",
     workspaceField: "Company workspace",
     workspaceInfo:
       "The directory the employees work in together: each employee's workspace is one of its sub-directories (or all of it), and desk and ticket sessions run inside it.",

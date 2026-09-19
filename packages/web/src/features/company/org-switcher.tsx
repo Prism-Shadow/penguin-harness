@@ -15,7 +15,9 @@ import { useNavigate } from "react-router";
 import { S } from "../../lib/strings";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneSurface } from "../../lib/tone";
+import { nameOnMachine } from "../../lib/workspace-machines";
 import { useCompany } from "../../state/company";
+import { useSessions } from "../../state/sessions";
 import { projectDisplayName, useProject } from "../../state/project";
 import { Dropdown } from "../../components/ui/dropdown";
 import { Badge } from "../../components/ui/badge";
@@ -36,6 +38,11 @@ const menuItemClass = `flex w-full items-center ${ICON_GAP.menu} px-3.5 py-2 tex
 export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
   const company = useCompany();
+  // An organization on another machine reads `Name [SSH: alias]`, like a Workspace there; the
+  // alias falls back to the machine id when the machine list could not be read.
+  const { machineLabels } = useSessions();
+  const machineAlias = (machineId: string | null) =>
+    machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
   const onOrgCreated = useOrganizationCreated();
   const { projects } = useProject();
   const [open, setOpen] = useState(false);
@@ -155,7 +162,9 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
                   className={`${menuItemClass} ${active ? "font-semibold" : ""}`}
                 >
                   <OrgStatusDot org={o} />
-                  <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {nameOnMachine(o.name, machineAlias(o.machineId ?? null))}
+                  </span>
                   {o.invalid !== undefined ? (
                     <Badge tone="red">{S.company.orgInvalid}</Badge>
                   ) : o.status === "paused" ? (

@@ -4469,6 +4469,12 @@ export interface OrganizationSummary {
   blockedTickets: number;
   createdBy: string;
   spend: OrgSpendSummary;
+  /**
+   * The machine this organization lives on, as the machine id the listing was asked of. Never
+   * sent by a server — each one lists its own — but set by a client that merges the listings
+   * of several machines, so a row can say where it is. Absent or null: the server asked.
+   */
+  machineId?: string | null;
   /** Present when `org_config.toml` / `org_chart.yaml` fail validation: the organization is listed but every automatic trigger is held until it is fixed. */
   invalid?: string;
 }

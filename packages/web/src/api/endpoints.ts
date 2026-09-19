@@ -229,6 +229,7 @@ import type {
 } from "@prismshadow/penguin-server/api";
 import type { MCPServerConfig } from "@prismshadow/penguin-core/interfaces";
 import { apiFetch, apiFetchWithMeta } from "./client";
+import { rememberOrgMachine } from "../lib/org-machines";
 import { machineForSession, rememberSessionMachine } from "../lib/session-machines";
 import { apiUrl } from "../lib/server-context";
 
@@ -388,8 +389,11 @@ export const putCommandPolicy = (
 
 // Model configuration -------------------------------------------------------------------
 
-export const getModels = (projectId: string) =>
-  apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`);
+/** The Project's models on this server, or on the machine named: model config is per server. */
+export const getModels = (projectId: string, machineId: string | null = null) =>
+  apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`, {
+    server: machineId,
+  });
 
 export const putModels = (projectId: string, body: ModelsUpdateRequest) =>
   apiFetch<ModelsResponse>(`/api/projects/${encodeURIComponent(projectId)}/models`, {
@@ -1724,15 +1728,46 @@ const orgBase = (projectId: string, orgId?: string) =>
     orgId === undefined ? "" : `/${encodeURIComponent(orgId)}`
   }`;
 
-export const listOrganizations = (projectId: string) =>
-  apiFetch<OrganizationsResponse>(orgBase(projectId));
+/**
+ * The organizations ONE server has: this one, or the machine named. An organization lives on
+ * the machine its shared workspace is on, so the whole picture is the merge over this server
+ * and every machine held (state/company.tsx); each one's machine is then remembered
+ * (lib/org-machines.ts), which is what routes every organization-scoped call below without
+ * any of them naming a machine.
+ */
+export const listOrganizations = (projectId: string, machineId: string | null = null) =>
+  apiFetch<OrganizationsResponse>(orgBase(projectId), { server: machineId });
 
-export const createOrganization = (projectId: string, body: OrganizationCreateRequest) =>
-  apiFetch<OrganizationDetail>(orgBase(projectId), { method: "POST", body });
+/**
+ * Creates the organization on the machine its workspace is on (`machineId`; null = this
+ * server). Its machine — and its CEO desk Session's, which is what opens next — is
+ * remembered before the caller navigates.
+ */
+export const createOrganization = async (
+  projectId: string,
+  body: OrganizationCreateRequest,
+  machineId: string | null = null,
+) => {
+  const detail = await apiFetch<OrganizationDetail>(orgBase(projectId), {
+    method: "POST",
+    body,
+    server: machineId,
+  });
+  rememberOrgMachine(projectId, detail.orgId, machineId);
+  return detail;
+};
 
-/** A semantic id for a display name (organization or channel), from the Project's default model with an ASCII fallback. */
-export const suggestSemanticId = (projectId: string, body: SemanticIdSuggestRequest) =>
-  apiFetch<SemanticIdSuggestResponse>(`${orgBase(projectId)}/suggest-id`, { method: "POST", body });
+/** A semantic id for a display name (organization or channel), from the default model of the server asked, with an ASCII fallback. */
+export const suggestSemanticId = (
+  projectId: string,
+  body: SemanticIdSuggestRequest,
+  machineId: string | null = null,
+) =>
+  apiFetch<SemanticIdSuggestResponse>(`${orgBase(projectId)}/suggest-id`, {
+    method: "POST",
+    body,
+    server: machineId,
+  });
 
 export const getOrganization = (projectId: string, orgId: string) =>
   apiFetch<OrganizationDetail>(orgBase(projectId, orgId));

@@ -49,7 +49,10 @@ import type {
 import { useStore } from "zustand/react";
 import { createStore } from "zustand/vanilla";
 import * as api from "../api/endpoints";
+import { ApiError } from "../api/client";
 import { apiErrorText } from "../lib/api-error";
+import { forgetOrgMachines, rememberOrgMachine } from "../lib/org-machines";
+import { machineIdOf } from "../lib/workspace-machines";
 import { S } from "../lib/strings";
 import { toastAttention } from "../components/ui/toast";
 import { markBetaNoticeShown, shouldShowBetaNotice } from "../features/company/beta-badge";
@@ -198,6 +201,32 @@ function counters(channels: readonly OrgChannelItem[]): {
   return { channelUnread: unread, channelMentions: mentions };
 }
 
+/** A machine of a Project this server holds a connection to: its id and the ssh alias people read. */
+export interface HeldMachine {
+  machineId: string;
+  alias: string;
+}
+
+/**
+ * The machines of a Project this server holds a connection to — the ones whose API can be
+ * asked right now. The machine list is admin-only, and a reader who cannot see it has no
+ * machine to ask either: the listing is then this server's alone, as it was before
+ * organizations could live anywhere else.
+ */
+export async function heldMachines(projectId: string): Promise<HeldMachine[]> {
+  try {
+    const res = await api.getMachines(projectId);
+    return res.machines
+      .filter((m) => !m.local && m.installed !== null && m.connection !== null)
+      .flatMap((m) => {
+        const machineId = machineIdOf(m);
+        return machineId === null ? [] : [{ machineId, alias: m.alias }];
+      });
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Builds one Provider's store. Exported as a test seam: the package's vitest runs in Node
  * with no DOM, so the event routing below is exercised against the store directly.
@@ -320,21 +349,49 @@ export function createCompanyStore() {
     reloadOrganizations: async (projectIds) => {
       set({ orgsLoading: true });
       try {
+        // An organization lives on the machine its workspace is on, so a Project's
+        // organizations are this server's PLUS those of every machine held for it. `null` for
+        // a source that could not be asked — which is recorded, since a shortened list is not
+        // evidence that anything was deleted (forgetMissingOrganizations).
         const lists = await Promise.all(
-          projectIds.map((projectId) =>
-            api
-              .listOrganizations(projectId)
-              .then((res) => res.organizations)
-              // One Project's failure (lost access, a transient error) must not hide the
-              // rest — but it is recorded, since the shortened list is not evidence that
-              // anything was deleted (forgetMissingOrganizations).
-              .catch(() => null),
-          ),
+          projectIds.map(async (projectId) => {
+            const machineIds = (await heldMachines(projectId)).map((m) => m.machineId);
+            return Promise.all(
+              [null, ...machineIds].map((machineId) =>
+                api
+                  .listOrganizations(projectId, machineId)
+                  .then((res) => res.organizations.map((org) => ({ ...org, machineId })))
+                  // Company mode is a switch per SERVER: a machine with it off answers 404,
+                  // which is a complete answer ("none here"), not a failure to ask.
+                  .catch((err) =>
+                    machineId !== null && err instanceof ApiError && err.status === 404 ? [] : null,
+                  ),
+              ),
+            );
+          }),
         );
+        const sources = lists.flat();
+        // One id names one organization in the shell (its route, its remembered key): where
+        // two machines hold the same id, the first source wins — this server before any
+        // machine — and the create dialog refuses an id the merged list already holds.
+        const seen = new Set<string>();
+        const organizations = sources
+          .filter((list) => list !== null)
+          .flat()
+          .filter((org) => {
+            const key = orgKey(org.projectId, org.orgId);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        forgetOrgMachines();
+        for (const org of organizations) {
+          rememberOrgMachine(org.projectId, org.orgId, org.machineId ?? null);
+        }
         set({
-          organizations: lists.filter((list) => list !== null).flat(),
+          organizations,
           orgsLoaded: true,
-          orgsPartial: lists.some((list) => list === null),
+          orgsPartial: sources.some((list) => list === null),
         });
       } finally {
         set({ orgsLoading: false });

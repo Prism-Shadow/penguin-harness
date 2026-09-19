@@ -15,6 +15,7 @@
  */
 import { S } from "../lib/strings";
 import { apiUrl } from "../lib/server-context";
+import { machineForOrgPath, orgInPath, rememberSessionsIn } from "../lib/org-machines";
 import { machineForPath } from "../lib/session-machines";
 import { apiSocket } from "./socket";
 
@@ -98,9 +99,13 @@ export async function apiFetchWithMeta<T>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<{ data: T } & ApiFetchMeta> {
-  // Two routing rules, in order: an explicit `server` wins, otherwise a Session-scoped path
-  // goes to the machine that Session lives on. Everything else stays here.
-  const target = "server" in options ? (options.server ?? null) : machineForPath(path);
+  // Three routing rules, in order: an explicit `server` wins; otherwise a Session-scoped path
+  // goes to the machine that Session lives on, and an organization-scoped path to the machine
+  // that organization lives on. Everything else stays here.
+  const target =
+    "server" in options
+      ? (options.server ?? null)
+      : (machineForPath(path) ?? machineForOrgPath(path));
   let url = apiUrl(path, target);
   if (options.query) {
     const params = new URLSearchParams();
@@ -141,6 +146,11 @@ export async function apiFetchWithMeta<T>(
       onUnauthorized?.();
     }
     throw new ApiError(answer.status, code, message);
+  }
+
+  // An organization on another machine names Sessions that live there too.
+  if (target !== null && (orgInPath(path) !== null || path.endsWith("/organizations"))) {
+    rememberSessionsIn(answer.body, target);
   }
 
   // What passes through here tells the socket who the page is: a `/api/me` answer names the
