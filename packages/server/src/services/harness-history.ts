@@ -41,19 +41,20 @@ import type {
 /** How many versions the history remembers; the newest are kept. */
 export const HISTORY_KEEP = 100;
 
-export abstract class HarnessHistoryIface extends Interface<{
+@Interface()
+export abstract class HarnessHistoryIface {
   /** The recorded versions, newest first, with the runtime's current commit and the last rollback that failed. */
-  list(): Promise<HarnessHistory>;
+  abstract list(): Promise<HarnessHistory>;
   /** A recorded interface table by hash, or null. */
-  table(hash: string): Promise<unknown | null>;
+  abstract table(hash: string): Promise<unknown | null>;
   /**
    * Pushes a kept version back through the runtime's own upgrade channel. Resolves true
    * once the runtime has taken it (this platform is then being replaced); false when this
    * platform kept no artifacts for that id; throws when the runtime refused, after
    * recording the refusal for `list()`.
    */
-  rollback(id: string): Promise<boolean>;
-}>() {}
+  abstract rollback(id: string): Promise<boolean>;
+}
 
 /** How many versions' artifacts the platform keeps for rollback (the runtime's store keeps one). */
 export const KEEP_VERSIONS = 5;
