@@ -306,9 +306,10 @@ export class DiscordMessaging {
 }
 
 /** The REST + gateway transport as a node, so a test stands in a fake for the network. */
-export abstract class DiscordTransportHandle extends Interface<{
-  transport: Opaque<"DiscordTransport", DiscordTransport>;
-}>() {}
+@Interface()
+export abstract class DiscordTransportHandle {
+  abstract transport: Opaque<"DiscordTransport", DiscordTransport>;
+}
 @Module()
 export class DiscordTransportProvider {
   @Provide() discordTransport!: DiscordTransportHandle;

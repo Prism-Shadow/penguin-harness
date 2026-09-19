@@ -44,3 +44,8 @@ there, under the target Agent.
   state, kept under `discord-bot:chats:<projectId>` in the server settings.
 - The plugin ships with every build, listed in the builtin registry and not installed by
   default.
+- **The interface generator reads an interface a plugin names across the package boundary.**
+  This is the first plugin to `@Use` one of the server's own interfaces, and a built `.d.ts`
+  keeps the abstract class but not the `@Interface()` decorator that marks one — decorators are
+  erased. The generator now takes the marker from the table the declaring package generated for
+  itself, so a plugin outside that package can name its interfaces.
