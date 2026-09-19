@@ -155,21 +155,3 @@ export class WorkflowRoutes {
     this.routes = workflowRoutes({ access: this.access, workflows: this.workflows });
   }
 }
-
-/**
- * Tells every Agent how to give itself a workflow. Its own component, with no
- * dependencies: HostAssembly collects prompt sections before the session runtime exists,
- * and the routes above need that runtime — on one class the two would be a cycle.
- */
-@Component({
-  contributes: {
-    "HostAssembly.promptSections": [
-      {
-        id: "WorkflowsModule.prompt",
-        title: "Workflows",
-        text: 'You can give yourself pages beside the chat and code that runs on the server: a *workflow*.\nA workflow is a folder `workflows/<id>/` inside your Agent directory (beside `agent_state/`), organised like a server plugin and written in TypeScript:\n- `package.json` with `"type": "module"`, `"dependencies": { "@prismshadow/penguin-server": "<the version this server runs>" }` and `"penguin": { "modules": [ { "name": "Workflow", "requires": { "host": { "iface": "@prismshadow/penguin-server#WorkflowHost", "from": "Host" } }, "provides": { "main": "@prismshadow/penguin-server#WorkflowMain" }, "contributes": { "WebModule.sessionTabs": [ { "id": "<id>.main", "key": "main", "title": "\u2026", "titleZh": "\u2026", "renderer": { "iframe": { "src": "ui/index.html" } } } ] } } ] }`. Run `npm install` in the folder once: the interface types, and the interface table your workflow is compared with, come from its own `node_modules`.\n- `index.ts` (TypeScript only; JavaScript is refused): `import type { WorkflowPackage } from "@prismshadow/penguin-server/plugin"; export default { modules: { Workflow: { create({ use }) { return { api: { main: { async handle(req) { \u2026 return { status: 200, body: \u2026 }; } } } }; } } } } satisfies WorkflowPackage;` \u2014 `req` is `{ method, path, query, body }`; `use.host` offers `runAgent({ text, sessionId? })`, `sessionStatus(id)`, `getState()` (typed `unknown`: narrow it), `setState(doc)`, `log(text)`. The server type-checks it under `strict` and transpiles it; there is no build step for you to run and no `tsconfig.json` to write.\n- `ui/` holds your pages and their assets. Each entry under `WebModule.sessionTabs` is one tab beside the chat (several are fine; none makes a server-only workflow); `src` must be a file under `ui/`. A page directly under `ui/` calls your handler with `fetch("../api/<path>")` (same-origin).\nYour pages are themed by the app: the Web App stamps `light`/`dark` on the page root and injects `/workflow-ui.css`, which styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wf-bg`, `--wf-fg`, `--wf-muted`, `--wf-border`, `--wf-surface`, `--wf-accent`, `--wf-accent-fg` (plus the classes `wf-primary` on a button, `wf-card`, `wf-rows`, `wf-row`, `wf-muted`). Write plain markup and take every colour and font from those variables \u2014 a hardcoded colour or font will clash with the user\'s theme, light or dark.\nA page can ask to fill the whole app (no sidebar, no chat) with `parent.postMessage({ type: "penguin:fill-app" }, "*")`; the user gets back with the command palette (Ctrl+P or Ctrl+Shift+P), so never swallow both chords. `penguin web --app <project>/<agent>/<workflow>[/<tab key>]` opens the app straight onto that page.\nBefore any of your code runs the server checks three things and reports the first that fails, with the compiler\'s file, line and reason, in the workflow list: your source type-checks; the interface version you installed still fits this server, both what you require and what you provide; and your manifests (wiring, the slots you contribute to, the shape of each contribution). It reloads the folder whenever a file changes; every successful load is recorded as a version, and any version can be restored (`POST \u2026/workflows/<id>/rollback`); `DELETE \u2026/workflows/<id>` removes the workflow and its versions. A broken edit keeps the previous version serving.\n',
-      },
-    ],
-  },
-})
-export class WorkflowPrompt {}

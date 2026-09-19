@@ -58,6 +58,12 @@ export default {
           api: {
             main: {
               async handle(req) {
+                if (req.path === "/open") {
+                  // The SDK's verbs, scoped to this Project: another of its Agents, never a stranger's Session.
+                  const opened = await host.createSession({ agentId: req.query["agent"] }).catch((e: Error) => e.message);
+                  const ran = await host.run(req.query["session"] ?? "", [{ payload: { text: "hi" } }]).catch((e: Error) => e.message);
+                  return { body: { opened, ran } };
+                }
                 if (req.path === "/count" && req.method === "POST") {
                   const n = (((host.getState() ?? {}) as { count?: number }).count ?? 0) + 1;
                   await host.setState({ count: n });
@@ -80,7 +86,8 @@ const PLUGIN_DTS = `export interface WorkflowRequest { method: string; path: str
 export interface WorkflowResponse { status?: number; body?: unknown }
 export interface WorkflowMain { handle(request: WorkflowRequest): Promise<WorkflowResponse> }
 export interface WorkflowHost {
-  runAgent(input: { text: string; sessionId?: string }): Promise<{ sessionId: string }>;
+  createSession(opts?: { agentId?: string }): Promise<{ sessionId: string }>;
+  run(sessionId: string, input: { payload: { text: string } }[]): Promise<{ sessionId: string; queued: boolean }>;
   sessionStatus(sessionId: string): string;
   getState(): unknown;
   setState(state: unknown): Promise<void>;
@@ -278,6 +285,19 @@ describe("workflows", () => {
       indexSource("hello").replace(" satisfies WorkflowPackage", ""),
     );
     expect(await reloadError()).toContain("TS7031");
+  });
+
+  it("opens and runs Sessions the SDK's way, inside its own Project only", async () => {
+    await list();
+    const res = await owner.get(`${BASE}/demo/api/open?agent=nobody&session=not-a-session`);
+    expect(await res.json()).toEqual({
+      opened: "createSession: this Project has no Agent 'nobody'",
+      ran: "run: this Project has no Session 'not-a-session'",
+    });
+    const own = await (await owner.get(`${BASE}/demo/api/open?agent=${AGENT}`)).json();
+    // Its own Agent passes the Project check and reaches the session runtime, which in this
+    // fixture has no model key to open a Session with.
+    expect(own).toMatchObject({ opened: expect.stringContaining("API key") });
   });
 
   it("refuses JavaScript", async () => {

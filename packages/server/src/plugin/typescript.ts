@@ -1,15 +1,12 @@
 /**
- * The TypeScript compiler, loaded when the first workflow needs it.
+ * The TypeScript compiler, loaded when something first needs it.
  *
- * A workflow is TypeScript: the server type-checks it, transpiles it, and lets the same
- * compiler decide whether the interfaces it was written against still fit this platform
- * (./compile.ts, ./iface-check.ts). The compiler is a dependency of this package, but the
- * platform also runs as a single pushed bundle that sits outside any `node_modules` — so
- * the specifier is kept out of the bundler's sight and resolved at run time, from this
- * module first and then from the program that is running.
- *
- * There is no fallback to "unchecked": an installation without the compiler loads no
- * workflow, and says why.
+ * The compiler decides whether the interfaces a package was written against still fit this
+ * platform (./iface-check.ts) — for plugins and for workflows alike — and type-checks and
+ * transpiles a workflow's source (../workflows/compile.ts). It is a dependency of this
+ * package, but the platform also runs as a single pushed bundle that sits outside any
+ * `node_modules` — so the specifier is kept out of the bundler's sight and resolved at run
+ * time, from this module first and then from the program that is running.
  */
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
@@ -38,7 +35,7 @@ async function resolveAndImport(): Promise<TypeScript> {
     }
   }
   throw new TypeScriptUnavailable(
-    `the TypeScript compiler is not available in this installation, so workflows cannot be checked (${tried.join("; ")})`,
+    `the TypeScript compiler is not available in this installation (${tried.join("; ")})`,
   );
 }
 

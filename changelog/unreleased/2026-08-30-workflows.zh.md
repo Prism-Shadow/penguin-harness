@@ -10,7 +10,7 @@ Agent 现在可以在自己的目录里保存*工作流*：`workflows/<id>/` 是
 
 ## 契约
 
-根模块 `Workflow` 要求 `WorkflowHost`（服务器以 `Host` 模块发布：`runAgent({ text, sessionId? })`、`sessionStatus`、基于工作流 `state.json` 的 `getState` / `setState`、`log`），并提供 `WorkflowMain`——一个 JSON 处理器 `handle({ method, path, query, body })`，服务器把它挂在 `/api/projects/:p/agents/:a/workflows/:id/api/*`。工作流的 `ui/` 从 `…/workflows/:id/ui/*` 提供。每个 Agent 的系统提示词新增一节 *Workflows* 描述目录布局，Agent 因此能自己编写、修改和修复自己的工作流。
+根模块 `Workflow` 要求 `WorkflowHost`（服务器以 `Host` 模块发布：限定在本 Project 之内的 SDK 动词——`createSession({ agentId? })` 为本 Agent 或同一 Project 的另一个 Agent 开一个 Session，`run(sessionId, [userText("…")])` 在新的或已有的 Session 里跑一轮，Session 正忙时作为后续消息排队——以及 `sessionStatus`、基于工作流 `state.json` 的 `getState` / `setState`、`log`），并提供 `WorkflowMain`——一个 JSON 处理器 `handle({ method, path, query, body })`，服务器把它挂在 `/api/projects/:p/agents/:a/workflows/:id/api/*`。工作流的 `ui/` 从 `…/workflows/:id/ui/*` 提供。不向任何 Agent 的系统提示词添加内容：目录布局与契约由 `penguin-sdk` 技能承载，Agent 被要求做工作流时才加载。
 
 ## TypeScript，由服务器检查
 
@@ -18,7 +18,7 @@ Agent 现在可以在自己的目录里保存*工作流*：`workflows/<id>/` 是
 
 ## 接口，跨版本比较
 
-在平台自己的表里查一个被依赖的接口，是拿一条声明与它自己比较，永远不会失败。现在两侧各带自己的那一份：工作流的一份是其 `node_modules` 里所装版本的 `ifaces.json`——服务器包为此把接口表作为文件一并发布——平台的一份是它自己这一代的。两张表各渲染为一份自包含的 `.d.ts`，由 TypeScript 编译器在两个方向上判定：平台的接口须可赋值给工作流所依赖的那一版，工作流所提供的那一版须可赋值给平台所要求的。工作流写下时依据、此后已被删除的宿主方法，是一条点名它的加载错误；平台一侧的新增不影响任何工作流。包未安装、或所装版本不带接口表，是问题而绝不算通过；渲染器无法如实写成 TypeScript 的表达式按名拒绝，而不是放宽。
+在平台自己的表里查一个被依赖的接口，是拿一条声明与它自己比较，永远不会失败。现在两侧各带自己的那一份：工作流的一份是其 `node_modules` 里所装版本的 `ifaces.json`——服务器包为此把接口表作为文件一并发布——平台的一份是它自己这一代的。两张表各渲染为一份自包含的 `.d.ts`，由 TypeScript 编译器在两个方向上判定：平台的接口须可赋值给工作流所依赖的那一版，工作流所提供的那一版须可赋值给平台所要求的。工作流写下时依据、此后已被删除的宿主方法，是一条点名它的加载错误；平台一侧的新增不影响任何工作流。包未安装、或所装版本不带接口表，是问题而绝不算通过；渲染器无法如实写成 TypeScript 的表达式按名拒绝，而不是放宽。插件在加载时接受同样的比较，以每个插件包本来就带着的那张表作为它的一侧；程序早于「编译器成为依赖」的安装上，插件照旧加载，日志写明未做比较。
 
 ## 标签页是贡献
 
@@ -38,6 +38,6 @@ Agent 现在可以在自己的目录里保存*工作流*：`workflows/<id>/` 是
 
 ## 主题
 
-工作流页面是独立文档，应用的样式表照不进去。现在框架会在页面根节点打上 `light` / `dark`，把应用*已解析*的令牌复制过去——灰阶、强调色对、字体栈、根字号——并把 `/workflow-ui.css` 注入到 head 最前面：这份基础样式表按应用的观感为纯 HTML（标题、列表、表单、表格、代码）定样，并暴露 `--wf-bg`、`--wf-fg`、`--wf-muted`、`--wf-border`、`--wf-surface`、`--wf-accent`、`--wf-accent-fg`，以及 `wf-primary`、`wf-card`、`wf-rows`、`wf-row`、`wf-muted` 等类。页面自己的规则依然优先；调色板只有一份定义——应用复制它已经解析出来的值，样式表不再重述一遍。切换主题或强调色会直接给已打开的页面换装，无需重新加载。Agent 的提示词一节要求用这些变量书写标记，因此 Agent 写出的工作流在明暗两种主题下都与用户的主题一致。
+工作流页面是独立文档，应用的样式表照不进去。现在框架会在页面根节点打上 `light` / `dark`，把应用*已解析*的令牌复制过去——灰阶、强调色对、字体栈、根字号——并把 `/workflow-ui.css` 注入到 head 最前面：这份基础样式表按应用的观感为纯 HTML（标题、列表、表单、表格、代码）定样，并暴露 `--wf-bg`、`--wf-fg`、`--wf-muted`、`--wf-border`、`--wf-surface`、`--wf-accent`、`--wf-accent-fg`，以及 `wf-primary`、`wf-card`、`wf-rows`、`wf-row`、`wf-muted` 等类。页面自己的规则依然优先；调色板只有一份定义——应用复制它已经解析出来的值，样式表不再重述一遍。切换主题或强调色会直接给已打开的页面换装，无需重新加载。技能要求用这些变量书写标记，因此 Agent 写出的工作流在明暗两种主题下都与用户的主题一致。
 
 `penguin-sdk` 技能记录了目录布局与契约。

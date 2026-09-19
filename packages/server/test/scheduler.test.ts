@@ -95,7 +95,7 @@ describe("scheduler", () => {
         statusOf: (id: string) => (busy.has(id) ? "running" : "idle"),
         startTask: async (sessionId: string, input: OmniMessage[]) => {
           started.push({ sessionId, text: JSON.stringify(input[0]?.payload ?? "") });
-          return { sessionId };
+          return { sessionId, queued: false };
         },
       } satisfies ScheduleTaskRunner,
       sessionCreator: {

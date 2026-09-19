@@ -8,7 +8,7 @@
  * `tsconfig.json` in the folder is not consulted, so a workflow cannot switch strictness
  * off for itself — with the interface types resolved from the workflow's OWN
  * `node_modules` (`@prismshadow/penguin-server/plugin`): the version it was written
- * against. Whether that version still fits this platform is ./iface-check.ts.
+ * against. Whether that version still fits this platform is ../plugin/iface-check.ts.
  *
  * A second, virtual root file assigns the default export to `WorkflowPackage`, so the
  * shape is checked even when the author left `satisfies WorkflowPackage` out (in which
@@ -21,7 +21,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { TypeScript } from "./typescript.js";
+import type { TypeScript } from "../plugin/typescript.js";
 
 export const ENTRY = "index.ts";
 export const BUILD_DIR = ".build";

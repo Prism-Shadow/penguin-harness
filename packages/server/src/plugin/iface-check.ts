@@ -1,26 +1,33 @@
 /**
- * Does the version of an interface a workflow was written against still fit this platform?
+ * Do the interfaces a package was written against still fit this platform?
  *
  * A comparison needs two declarations. Looking both sides up in the platform's own table
  * compares a declaration with itself and can never fail, so here each side brings its own:
- * the CONSUMER's is the `ifaces.json` of the package version installed in the workflow's
- * `node_modules`, the PLATFORM's is this generation's table. Nothing in this module judges
+ * the CONSUMER's is the table the package carries — a plugin's generated `ifaces.json`,
+ * which copies the host interfaces it compiled against; for a workflow, the table of the
+ * package version installed in its `node_modules` — and the PLATFORM's is this
+ * generation's. Nothing in this module judges
  * assignability itself: each table is rendered as a self-contained `.d.ts`, the questions
  * become assignments in a third file, and the TypeScript compiler answers them —
  *
  *   requires  the platform's interface must be assignable to the consumer's view of it;
  *   provides  the consumer's view must be assignable to what the platform asks for.
  *
- * Two rules keep a pass meaningful. The consumer's table is never substituted: a package
- * that is not installed, or an interface its table does not carry, is a problem, not a
- * fall-back to the platform's entry. And rendering is lossless or it refuses: an
+ * Two rules keep a pass meaningful. The consumer's table is never substituted: an
+ * interface it does not carry is a problem, not a fall-back to the platform's entry. And rendering is lossless or it refuses: an
  * expression this module cannot write as TypeScript is reported by name, never widened to
  * `unknown`.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { IfaceDecl, IfaceTable, Sig, TypeExpr } from "@prismshadow/penguin-core/kernel";
+import type {
+  IfaceDecl,
+  IfaceTable,
+  Manifest,
+  Sig,
+  TypeExpr,
+} from "@prismshadow/penguin-core/kernel";
 import type { TypeScript } from "./typescript.js";
 
 export const IFACES_FILE = "ifaces.json";
@@ -225,69 +232,68 @@ export interface IfaceQuestion {
   key: string;
 }
 
+/** The interfaces manifests name with a package part, as questions for the compiler. */
+export function ifaceQuestions(manifests: readonly Manifest[]): IfaceQuestion[] {
+  const out: IfaceQuestion[] = [];
+  for (const m of manifests) {
+    for (const [alias, need] of Object.entries(m.requires)) {
+      if (packageOf(need.iface) === null) continue;
+      out.push({ module: m.name, alias, direction: "requires", key: need.iface });
+    }
+    for (const [alias, ref] of Object.entries(m.provides)) {
+      if (packageOf(ref) === null) continue;
+      out.push({ module: m.name, alias, direction: "provides", key: ref });
+    }
+  }
+  return out;
+}
+
 /**
- * Answers every question with the compiler. `consumerTables` holds one table per package,
- * or the reason it could not be read. Returns the problems, empty when all fit.
+ * Answers every question with the compiler: a question about an interface this platform
+ * does not declare is not one for here (the tree check names it), and one the consumer's
+ * table does not carry is a problem. Returns the problems, empty when all fit.
  */
 export function checkIfaces(
   ts: TypeScript,
   platform: IfaceTable,
-  consumerTables: ReadonlyMap<string, IfaceTable | string>,
+  consumer: IfaceTable,
   questions: readonly IfaceQuestion[],
 ): string[] {
   const problems: string[] = [];
   const label = (q: IfaceQuestion) => `${q.module}: ${q.direction}.${q.alias} '${q.key}'`;
   const base = path.join(os.tmpdir(), "penguin-iface-check");
   const files = new Map<string, string>();
-  const lines: string[] = [];
-  const asked: IfaceQuestion[] = [];
-
-  const platformKeys = questions.filter((q) => platform.ifaces[q.key] !== undefined);
-  let platformDts: ReturnType<typeof renderDts>;
-  try {
-    platformDts = renderDts(platform, [...new Set(platformKeys.map((q) => q.key))]);
-  } catch (err) {
-    return [`this platform's interface table: ${err instanceof Error ? err.message : String(err)}`];
-  }
-  files.set(path.join(base, "platform.d.ts"), platformDts.text);
-  lines.push(`import type * as P from "./platform.js";`);
-
-  const packages = [...new Set(platformKeys.map((q) => packageOf(q.key)!))];
-  packages.forEach((pkg, i) => {
-    const mine = platformKeys.filter((q) => packageOf(q.key) === pkg);
-    const table = consumerTables.get(pkg);
-    if (table === undefined || typeof table === "string") {
-      for (const q of mine) problems.push(`${label(q)}: ${table ?? `'${pkg}' was not read`}`);
-      return;
-    }
-    const present = mine.filter((q) => {
-      if (table.ifaces[q.key] !== undefined) return true;
-      problems.push(`${label(q)}: the installed '${pkg}' does not declare it`);
-      return false;
-    });
-    let dts: ReturnType<typeof renderDts>;
-    try {
-      dts = renderDts(table, [...new Set(present.map((q) => q.key))]);
-    } catch (err) {
-      for (const q of present)
-        problems.push(`${label(q)}: ${err instanceof Error ? err.message : String(err)}`);
-      return;
-    }
-    files.set(path.join(base, `consumer${i}.d.ts`), dts.text);
-    lines.push(`import type * as C${i} from "./consumer${i}.js";`);
-    for (const q of present) {
-      const n = asked.push(q) - 1;
-      const theirs = `C${i}.${dts.names.get(q.key)}`;
-      const ours = `P.${platformDts.names.get(q.key)}`;
-      // One question per line: the diagnostic's line number names the question.
-      lines.push(
-        q.direction === "requires"
-          ? `declare const q${n}: ${ours}; export const a${n}: ${theirs} = q${n};`
-          : `declare const q${n}: ${theirs}; export const a${n}: ${ours} = q${n};`,
-      );
-    }
+  const asked = questions.filter((q) => {
+    if (platform.ifaces[q.key] === undefined) return false;
+    if (consumer.ifaces[q.key] !== undefined) return true;
+    problems.push(`${label(q)}: the package's own interface table does not declare it`);
+    return false;
   });
   if (asked.length === 0) return problems;
+
+  const keys = [...new Set(asked.map((q) => q.key))];
+  let ours: ReturnType<typeof renderDts>;
+  let theirs: ReturnType<typeof renderDts>;
+  try {
+    ours = renderDts(platform, keys);
+    theirs = renderDts(consumer, keys);
+  } catch (err) {
+    return [...problems, `interface check: ${err instanceof Error ? err.message : String(err)}`];
+  }
+  files.set(path.join(base, "platform.d.ts"), ours.text);
+  files.set(path.join(base, "consumer.d.ts"), theirs.text);
+  const lines = [
+    `import type * as P from "./platform.js";`,
+    `import type * as C from "./consumer.js";`,
+    // One question per line: the diagnostic's line number names the question.
+    ...asked.map((q, n) => {
+      const [from, to] =
+        q.direction === "requires"
+          ? [`P.${ours.names.get(q.key)}`, `C.${theirs.names.get(q.key)}`]
+          : [`C.${theirs.names.get(q.key)}`, `P.${ours.names.get(q.key)}`];
+      return `declare const q${n}: ${from}; export const a${n}: ${to} = q${n};`;
+    }),
+  ];
 
   const checkFile = path.join(base, "check.ts");
   files.set(checkFile, lines.join("\n") + "\n");
