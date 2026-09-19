@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { MediaPlan } from "./media.js";
+import type { AudioTarget } from "./audio.js";
 
 export const PRODUCT_CODE_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$/;
 
@@ -95,7 +96,8 @@ export function draftRevision(
 export type ActivityRunStatus =
   "running" | "succeeded" | "failed" | "conflict" | "cancelled" | "interrupted";
 export interface ActivityRun {
-  kind: "spec" | "module";
+  kind: "spec" | "module" | "audio";
+  audio?: AudioTarget;
   runId: string;
   activityId: string;
   projectId: string;

@@ -4,6 +4,39 @@ import type { PeakWindows } from "../features/models/model-grouping";
 export type Strings = {
   appName: string;
   activities: {
+    mediaLanguage: string;
+    mediaType: string;
+    noMediaAssets: string;
+    assetList: string;
+    boundMedia: string;
+    unboundMedia: string;
+    usedInScenes: string;
+    noSceneUsage: string;
+    assetPath: string;
+    assetPathHint: string;
+    speechScript: string;
+    speechScriptHint: string;
+    acceptedAudio: string;
+    speechVoice: string;
+    regenerateSpeech: string;
+    generateSpeech: string;
+    speechCandidates: string;
+    speechCandidate: string;
+    acceptSpeech: string;
+    olderSpeech: string;
+    noScenes: string;
+    sceneReview: string;
+    advancedSpec: string;
+    advancedMedia: string;
+    audioRun: string;
+    speechReady: string;
+    speechHelp: string;
+    invalidMediaEditor: string;
+    mediaTypes: Record<"all" | "audio" | "image" | "video" | "animation", string>;
+    speechStatus: Record<
+      "running" | "succeeded" | "failed" | "conflict" | "cancelled" | "interrupted",
+      string
+    >;
     mediaTitle: string;
     mediaHelp: string;
     planMedia: string;
@@ -2603,6 +2636,10 @@ export type Strings = {
       module_spec_required: string;
       media_invalid: string;
       media_stale: string;
+      speech_credential_missing: string;
+      speech_helper_missing: string;
+      audio_invalid: string;
+      audio_changed: string;
       media_missing: string;
       module_spec_invalid: string;
       waf_checkout_missing: string;

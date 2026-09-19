@@ -17,6 +17,8 @@ import type { RuntimeSession } from "../src/runtime/session-manager.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { activitySpec } from "./activity-fixtures.js";
+import { speechWave } from "./audio-fixtures.js";
+import { prepareModule, verifyMediaArtifacts } from "../src/activities/waf-module.js";
 
 function deferred() {
   let resolve!: () => void;
@@ -32,7 +34,7 @@ describe("activity generation through Harness sessions", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  async function fixture(moduleOutput = false) {
+  async function fixture(moduleOutput: boolean | "audio" = false) {
     let complete: () => void = () => {};
     const waiting = new Set<string>();
     const disposed = new Set<string>();
@@ -61,7 +63,12 @@ describe("activity generation through Harness sessions", () => {
           yield abortEvent();
           return;
         }
-        if (moduleOutput) {
+        if (moduleOutput === "audio") {
+          await fs.writeFile(
+            path.join(row.workspace!, "speech.wav"),
+            output === "invalid" ? Buffer.from("invalid") : speechWave(),
+          );
+        } else if (moduleOutput) {
           const input = JSON.parse(
             await fs.readFile(path.join(row.workspace!, "input.json"), "utf8"),
           ) as ActivityDetail;
@@ -174,6 +181,57 @@ describe("activity generation through Harness sessions", () => {
       endpoint,
       service,
       start,
+      startAudio: async (configure = true) => {
+        let current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+        if (!current.draft.mediaPlan) {
+          const saved = await client.post(`${endpoint}/apply-generated-spec`, {
+            spec: {
+              ...activitySpec,
+              scenes: [
+                {
+                  id: "intro",
+                  description: "Listen",
+                  audio: {
+                    tracks: [{ key: "welcome", description: "Greeting", script: "Hello!" }],
+                  },
+                },
+              ],
+            },
+            expectedRevision: current.draft.contentRevision,
+          });
+          expect(saved.status).toBe(200);
+          const draft = (await saved.json()) as ActivityDraft;
+          expect(
+            (
+              await client.post(`${endpoint}/plan-media`, {
+                expectedRevision: draft.contentRevision,
+              })
+            ).status,
+          ).toBe(200);
+          current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+        }
+        if (configure)
+          expect(
+            (
+              await client.put("/api/projects/generator-activities/agents/default_agent/vault", {
+                entries: [{ key: "GEMINI_API_KEY", value: "fake-test-only" }],
+              })
+            ).status,
+          ).toBe(200);
+        const response = await client.post(`${endpoint}/generate-audio`, {
+          agentId: "default_agent",
+          expectedRevision: current.draft.contentRevision,
+          language: "en-US",
+          assetKey: "welcome",
+          voice: "Kore",
+        });
+        if (!configure) return response;
+        expect(response.status, await response.clone().text()).toBe(202);
+        const run = (await response.clone().json()) as ActivityRun;
+        expect(run.status, run.error ?? "").toBe("running");
+        await waitFor(() => waiting.has(run.sessionId!));
+        return response;
+      },
       startModule: async (withMedia = false) => {
         const current = (await (await client.get(endpoint)).json()) as ActivityDetail;
         expect(
@@ -228,6 +286,108 @@ describe("activity generation through Harness sessions", () => {
       },
     };
   }
+
+  it("keeps speech as a candidate until acceptance, preserves accepted audio on regeneration, and stages it for WAF", async () => {
+    const f = await fixture("audio");
+    expect((await f.startAudio(false)).status).toBe(400);
+    const run = (await (await f.startAudio()).json()) as ActivityRun;
+    expect(run.kind).toBe("audio");
+    const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
+    expect(session.approvalMode).toBe("always-ask");
+    expect(
+      await fs.readFile(path.join(session.workspace!, "generate-speech.mjs"), "utf8"),
+    ).toContain("AutoLLMClient");
+    expect(
+      await fs.readFile(path.join(session.workspace!, "speech-input.json"), "utf8"),
+    ).not.toContain("fake-test-only");
+    const result = await f.finish(run);
+    expect(result.status, result.error ?? "").toBe("succeeded");
+    const current = async () => (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    expect((await current()).draft.mediaPlan!.manifest.assets["en-US"]![0]!.path).toBeUndefined();
+    const playback = await f.client.get(`${f.endpoint}/runs/${run.runId}/audio`);
+    expect(playback.headers.get("content-type")).toBe("audio/wav");
+    expect(Buffer.from(await playback.arrayBuffer())).toEqual(speechWave());
+    const outsider = await provisionUser(f.t.app, "audio_outsider");
+    expect(
+      (await apiClient(f.t.app, outsider.cookie).get(`${f.endpoint}/runs/${run.runId}/audio`))
+        .status,
+    ).toBe(404);
+    const accepted = await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-audio`, {
+      expectedRevision: run.inputRevision,
+    });
+    expect(accepted.status, await accepted.clone().text()).toBe(200);
+    const saved = (await current()).draft;
+    expect(saved.mediaPlan!.manifest.assets["en-US"]![0]!.generatedAudio?.runId).toBe(run.runId);
+    const second = (await (await f.startAudio()).json()) as ActivityRun;
+    expect((await f.finish(second, "invalid")).status).toBe("failed");
+    expect((await current()).draft).toEqual(saved);
+    const third = (await (await f.startAudio()).json()) as ActivityRun;
+    expect((await f.finish(third)).status).toBe("succeeded");
+    expect((await current()).draft).toEqual(saved);
+    const authoring = f.t.deps.tree.api<ActivityAuthoring>("ActivitiesModule", "ActivityAuthoring");
+    const workspace = path.join(f.t.root, "audio-assembly");
+    await authoring.prepareAudioMedia(
+      "generator-activities",
+      f.activity.id,
+      workspace,
+      saved.contentRevision,
+    );
+    expect(await fs.readFile(path.join(workspace, `media/generated/${run.runId}.wav`))).toEqual(
+      speechWave(),
+    );
+    const waf = path.join(f.t.root, "audio-waf");
+    for (const name of ["framework/src", "modules", "media"])
+      await fs.mkdir(path.join(waf, name), { recursive: true });
+    await fs.writeFile(path.join(waf, "framework/package.json"), "{}");
+    await prepareModule(workspace, await current(), waf);
+    const exported = await fs.readFile(
+      path.join(workspace, "module/generated/p/refs/p-1/spec/asset_manifest.json"),
+      "utf8",
+    );
+    expect(exported).not.toContain("generatedAudio");
+    expect(exported).toContain(run.runId);
+    const previewAudio = path.join(workspace, "preview/media/generated", `${run.runId}.wav`);
+    await fs.mkdir(path.dirname(previewAudio), { recursive: true });
+    await fs.writeFile(previewAudio, speechWave());
+    const read = (file: string) => fs.readFile(file, "utf8");
+    await verifyMediaArtifacts(workspace, await current(), read);
+    await fs.writeFile(previewAudio, speechWave(96));
+    await expect(verifyMediaArtifacts(workspace, await current(), read)).rejects.toThrow(
+      "accepted speech audio",
+    );
+    const updated = await f.client.patch(`${f.endpoint}/description`, {
+      description: "Changed",
+      expectedRevision: saved.contentRevision,
+    });
+    const revision = ((await updated.json()) as ActivityDraft).contentRevision;
+    expect(
+      (
+        await f.client.post(`${f.endpoint}/runs/${third.runId}/accept-audio`, {
+          expectedRevision: revision,
+        })
+      ).status,
+    ).toBe(409);
+    expect((await current()).draft.mediaPlan).toEqual(saved.mediaPlan);
+  });
+
+  it("retains a playable conflict candidate without applying it when a draft changes during speech", async () => {
+    const f = await fixture("audio");
+    const run = (await (await f.startAudio()).json()) as ActivityRun;
+    await f.client.patch(`${f.endpoint}/description`, {
+      description: "Edited during generation",
+      expectedRevision: run.inputRevision,
+    });
+    const result = await f.finish(run);
+    expect(result.status).toBe("conflict");
+    expect((await f.client.get(`${f.endpoint}/runs/${run.runId}/audio`)).status).toBe(200);
+    expect(
+      (
+        await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-audio`, {
+          expectedRevision: run.inputRevision,
+        })
+      ).status,
+    ).toBe(409);
+  });
 
   it("assembles a WAF module through the same Session approvals and retains draft identity", async () => {
     const f = await fixture(true);

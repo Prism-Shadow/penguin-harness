@@ -173,6 +173,8 @@ Images arrive as `inline_data` content items (`data` is a Buffer, with `mime_typ
 
 ## Speech synthesis
 
+For an activity speech candidate, run `scripts/generate-speech.mjs` in the Session workspace with `speech-input.json` containing `model`, `voice`, `language`, and `script`. The helper uses AgentHub, requires `GEMINI_API_KEY` in the Agent Vault environment, and writes a new `speech.wav` without replacing an existing file. Run through normal tool approval; do not print credentials or retry a billable request automatically. Listen and explicitly accept through the Activities view.
+
 Use a Gemini TTS model (`gemini-3.1-flash-tts-preview`) and set `config.tts_config`:
 
 ```ts

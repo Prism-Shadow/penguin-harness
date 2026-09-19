@@ -22,3 +22,11 @@ Migration 13 added a separate module-run identity table without rewriting existi
 Media plans added an optional `mediaPlan` field to the authoritative draft file. Drafts without this field retained their existing content revisions and assembly behavior; no database migration or reset was required. Once a plan was saved, its contents participated in the draft revision and carried the source specification hash.
 
 Repository maintainers retain the optional-field format permanently as support for activities without media planning. It is not a temporary dual-format reader. Before downgrading to a runtime that does not include media in revision checks, restore a pre-media backup; older writers do not enforce media conflicts or stale-plan checks.
+
+## Speech candidate storage
+
+Migration 14 adds a speech-run identity table without rewriting existing specification or module attempts. Restart the server to apply it. Rollback refuses databases containing speech attempts because an older collector would treat them as specification attempts. Restore a pre-upgrade backup before downgrading a database with speech history.
+
+Accepted speech adds optional `generatedAudio` provenance to draft media assets; immutable candidate WAV files live with the activity draft. Existing media plans remain valid without this field. Native WAF exports omit Penguin's provenance. Restore a pre-speech backup before running an older writer against drafts with generated audio.
+
+Repository maintainers retain migration 14 until schema versions below 14 cease to be supported. The optional provenance field remains permanently for activities using generated audio.

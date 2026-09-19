@@ -5,6 +5,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import { findWafRoot } from "./waf-module.js";
+import { SPEECH_MODEL, SPEECH_VOICES } from "./audio.js";
 import {
   badRequest,
   optionalString,
@@ -59,6 +60,59 @@ export class ActivityRoutes {
           { wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) || undefined },
         ),
         202,
+      );
+    });
+    app.get("/speech-setup", (c) =>
+      c.json({
+        provider: "Gemini",
+        model: SPEECH_MODEL,
+        voices: SPEECH_VOICES,
+        vaultKey: "GEMINI_API_KEY",
+      }),
+    );
+    app.post("/:activityId/generate-audio", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.generation.start(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          requireString(body, "agentId", { minLen: 1, maxLen: 128 }),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+          {
+            audio: {
+              language: requireString(body, "language", { minLen: 5, maxLen: 5 }),
+              assetKey: requireString(body, "assetKey", { minLen: 1, maxLen: 128 }),
+              voice: requireString(body, "voice", { minLen: 1, maxLen: 128 }),
+            },
+          },
+        ),
+        202,
+      );
+    });
+    app.get("/:activityId/runs/:runId/audio", async (c) => {
+      const bytes = await this.generation.audioContent(
+        requireValidId(c, "projectId"),
+        pathParam(c, "activityId"),
+        pathParam(c, "runId"),
+      );
+      return new Response(new Uint8Array(bytes), {
+        headers: {
+          "Content-Type": "audio/wav",
+          "Content-Length": String(bytes.byteLength),
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    });
+    app.post("/:activityId/runs/:runId/accept-audio", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.generation.acceptAudio(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          pathParam(c, "runId"),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
       );
     });
     app.post("/", async (c) => {

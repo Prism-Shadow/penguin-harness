@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { constants } from "node:fs";
-import { userText } from "@prismshadow/penguin-core";
+
+import { userText, libraryPlugin } from "@prismshadow/penguin-core";
 import { Component, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
 import type { Config, Db, Channels, Log } from "../hmr/capabilities.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
@@ -10,6 +10,8 @@ import type { ProjectActivityWork } from "../mechanisms/projects.js";
 import type { Sessions, SessionServiceIface } from "../runtime/session-manager.js";
 import { HttpError } from "../http/errors.js";
 import { ActivityLocks, atomicJson } from "./service.js";
+import { AUDIO_MAX_BYTES, audioTarget, audioPrompt, type AudioResult } from "./audio.js";
+import { readArtifactBytes } from "./artifact.js";
 import {
   findWafRoot,
   prepareModule,
@@ -99,6 +101,8 @@ export class ActivityGenerationService implements ActivityGeneration {
     return path.join(this.config.root, "activity-runs", run.runId);
   }
   private kind(runId: string): ActivityRun["kind"] {
+    if (this.db.prepare("SELECT 1 FROM activity_audio_runs WHERE run_id = ?").get(runId))
+      return "audio";
     return this.db.prepare("SELECT 1 FROM activity_module_runs WHERE run_id = ?").get(runId)
       ? "module"
       : "spec";
@@ -187,7 +191,7 @@ export class ActivityGenerationService implements ActivityGeneration {
     activityId: string,
     agentId: string,
     expectedRevision: string,
-    module?: { wafRoot?: string },
+    module?: { wafRoot?: string; audio?: { language: string; assetKey: string; voice: string } },
   ): Promise<ActivityRun> {
     return this.track(
       this.projectWork.run(projectId, () =>
@@ -207,7 +211,8 @@ export class ActivityGenerationService implements ActivityGeneration {
               "Add a description before generating.",
             );
           let wafRoot: string | null = null;
-          if (module) {
+          const audio = module?.audio ? audioTarget(activity, module.audio) : undefined;
+          if (module && !audio) {
             if (!activity.draft.spec || activity.draft.status !== "valid")
               throw new HttpError(
                 400,
@@ -223,6 +228,17 @@ export class ActivityGenerationService implements ActivityGeneration {
               );
           }
           await this.agents.requireExists(projectId, agentId);
+          if (
+            audio &&
+            !(await this.agents.getVault(projectId, agentId)).entries.some(
+              (entry) => entry.key === "GEMINI_API_KEY",
+            )
+          )
+            throw new HttpError(
+              400,
+              "speech_credential_missing",
+              "Add GEMINI_API_KEY to the selected Agent's Vault before generating speech.",
+            );
           if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
           if (this.running().some((run) => run.activityId === activityId))
             throw new HttpError(
@@ -231,7 +247,8 @@ export class ActivityGenerationService implements ActivityGeneration {
               "This activity already has a running generation.",
             );
           const run: ActivityRun = {
-            kind: module ? "module" : "spec",
+            kind: audio ? "audio" : module ? "module" : "spec",
+            ...(audio ? { audio } : {}),
             runId: newId("run"),
             activityId,
             projectId,
@@ -260,7 +277,9 @@ export class ActivityGenerationService implements ActivityGeneration {
                 run.createdAt,
                 JSON.stringify({ ...metadata, hasCandidate: false }),
               );
-            if (module)
+            if (audio)
+              this.db.prepare("INSERT INTO activity_audio_runs (run_id) VALUES (?)").run(run.runId);
+            else if (module)
               this.db
                 .prepare("INSERT INTO activity_module_runs (run_id) VALUES (?)")
                 .run(run.runId);
@@ -278,7 +297,35 @@ export class ActivityGenerationService implements ActivityGeneration {
               activity.draft.description,
               "utf8",
             );
-            if (wafRoot) await prepareModule(workspace, activity, wafRoot);
+            if (wafRoot) {
+              await this.activities.prepareAudioMedia(
+                projectId,
+                activityId,
+                workspace,
+                expectedRevision,
+              );
+              await prepareModule(workspace, activity, wafRoot);
+            }
+            if (audio) {
+              const helper = libraryPlugin("agent-development")?.skills.find(
+                (skill) => skill.name === "unified-llm-api",
+              )?.files?.["scripts/generate-speech.mjs"];
+              if (!helper)
+                throw new HttpError(
+                  500,
+                  "speech_helper_missing",
+                  "The installed speech helper is missing. Rebuild the bundled plugins.",
+                );
+              await atomicJson(path.join(workspace, "speech-input.json"), audio);
+              await atomicJson(path.join(workspace, "package.json"), {
+                private: true,
+                type: "module",
+                dependencies: { "@prismshadow/agenthub": "0.4.15" },
+              });
+              await fs.writeFile(path.join(workspace, "generate-speech.mjs"), helper, {
+                flag: "wx",
+              });
+            }
             if (this.stopped) {
               this.finish(run, "interrupted", "Server stopped before generation started.");
               return run;
@@ -319,7 +366,7 @@ export class ActivityGenerationService implements ActivityGeneration {
             this.observers.set(run.runId, observer);
             await this.sessions.startTask(
               session.sessionId,
-              [userText(module ? modulePrompt : generationPrompt)],
+              [userText(audio ? audioPrompt : module ? modulePrompt : generationPrompt)],
               {
                 queueIfBusy: false,
               },
@@ -351,6 +398,43 @@ export class ActivityGenerationService implements ActivityGeneration {
         }
         return run;
       }),
+    );
+  }
+
+  async audioContent(projectId: string, activityId: string, runId: string): Promise<Uint8Array> {
+    const run = await this.getRun(projectId, activityId, runId);
+    if (run.kind !== "audio" || !run.candidate || !["succeeded", "conflict"].includes(run.status))
+      throw new HttpError(404, "run_not_found", "Speech candidate not available.");
+    const result = JSON.parse(run.candidate) as AudioResult;
+    return this.activities.readAudio(projectId, activityId, runId, result.sha256);
+  }
+  acceptAudio(projectId: string, activityId: string, runId: string, expectedRevision: string) {
+    return this.track(
+      this.projectWork.run(projectId, () =>
+        this.locks.run(activityId, async () => {
+          if (this.stopped) throw new HttpError(503, "activity_stopping", "Server is stopping.");
+          const run = await this.getRun(projectId, activityId, runId);
+          if (run.kind !== "audio" || run.status !== "succeeded" || !run.audio || !run.candidate)
+            throw new HttpError(
+              409,
+              "audio_changed",
+              "Only a successful speech candidate can be accepted.",
+            );
+          if (run.inputRevision !== expectedRevision)
+            throw new HttpError(
+              409,
+              "draft_conflict",
+              "The draft changed since speech generation. Generate a new candidate.",
+            );
+          return this.activities.applyAudio(
+            projectId,
+            activityId,
+            run.audio,
+            JSON.parse(run.candidate) as AudioResult,
+            expectedRevision,
+          );
+        }),
+      ),
     );
   }
 
@@ -388,6 +472,34 @@ export class ActivityGenerationService implements ActivityGeneration {
               run.kind === "module" ? "module-result.json" : "activity-spec.json",
             );
             try {
+              if (run.kind === "audio") {
+                const observer = this.observers.get(run.runId);
+                if (!observer?.completed)
+                  throw new Error(observer?.error ?? "Speech Session did not complete.");
+                const bytes = await readArtifactBytes(
+                  path.join(this.workspace(run), "speech.wav"),
+                  AUDIO_MAX_BYTES,
+                );
+                const result = await this.activities.storeAudio(
+                  run.projectId,
+                  run.activityId,
+                  run.runId,
+                  bytes,
+                );
+                run.candidate = JSON.stringify(result);
+                this.save(run);
+                await this.projectWork.run(run.projectId, async () => {
+                  const current = await this.activities.getActivity(run.projectId, run.activityId);
+                  if (current.draft.contentRevision !== run.inputRevision)
+                    throw new HttpError(
+                      409,
+                      "draft_conflict",
+                      "The draft changed during speech generation.",
+                    );
+                  this.finish(run, "succeeded");
+                });
+                return;
+              }
               run.candidate = await readCandidate(file);
               this.save(run);
               if (this.stopped) return;
@@ -443,7 +555,7 @@ export class ActivityGenerationService implements ActivityGeneration {
               const conflict = error instanceof HttpError && error.code === "draft_conflict";
               const message =
                 (error as NodeJS.ErrnoException).code === "ENOENT"
-                  ? `The session ended without ${run.kind === "module" ? "module-result.json or a required artifact" : "activity-spec.json"}.`
+                  ? `The session ended without ${run.kind === "audio" ? "speech.wav" : run.kind === "module" ? "module-result.json or a required artifact" : "activity-spec.json"}.`
                   : error instanceof Error
                     ? error.message
                     : "Could not collect generation output.";
@@ -461,42 +573,7 @@ export class ActivityGenerationService implements ActivityGeneration {
 
 /** Validate and read the same opened file; never reopen a task-controlled path to read it. */
 export async function readCandidate(file: string, maxBytes = MAX_CANDIDATE_BYTES): Promise<string> {
-  const before = await fs.lstat(file);
-  const invalid = () =>
-    new Error(`The output must be an unchanged regular file no larger than ${maxBytes} bytes.`);
-  if (!before.isFile() || before.isSymbolicLink() || before.size > maxBytes) throw invalid();
-  const handle = await fs.open(
-    file,
-    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
-  );
-  try {
-    const opened = await handle.stat();
-    const current = await fs.lstat(file);
-    // Windows lacks O_NOFOLLOW. Check handle identity against both path observations;
-    // a final-segment link swap cannot substitute a different file for the inspected one.
-    if (
-      !opened.isFile() ||
-      current.isSymbolicLink() ||
-      !current.isFile() ||
-      before.dev !== opened.dev ||
-      before.ino !== opened.ino ||
-      current.dev !== opened.dev ||
-      current.ino !== opened.ino ||
-      opened.size > maxBytes
-    )
-      throw invalid();
-    const buffer = Buffer.alloc(maxBytes + 1);
-    let length = 0;
-    while (length < buffer.length) {
-      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
-      if (!bytesRead) break;
-      length += bytesRead;
-    }
-    if (length > maxBytes) throw invalid();
-    return buffer.subarray(0, length).toString("utf8");
-  } finally {
-    await handle.close();
-  }
+  return (await readArtifactBytes(file, maxBytes)).toString("utf8");
 }
 
 const generationPrompt = `Generate a WAF HTML activity specification from description.md and input.json.
