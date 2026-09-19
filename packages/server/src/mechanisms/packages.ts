@@ -68,14 +68,15 @@ export interface PackagePreview {
   suggestedId: string;
 }
 
-export abstract class AgentPackages extends Interface<{
+@Interface()
+export abstract class AgentPackages {
   /** The Agent's definition as a package (never its state, never the vault). */
-  pack(projectId: string, agentId: string): Promise<AgentPackage>;
+  abstract pack(projectId: string, agentId: string): Promise<AgentPackage>;
   /**
    * Publishes the package as a gist; `gistId` updates that gist in place instead of
    * creating one (so an Agent keeps its URL across republishes).
    */
-  publish(
+  abstract publish(
     projectId: string,
     agentId: string,
     options: { gistId?: string; public: boolean },
@@ -93,9 +94,9 @@ export abstract class AgentPackages extends Interface<{
    * `github:o/r[#ref]` / `github-release:o/r[#tag]`), a git URL, or an http(s) URL of a
    * tarball; `kind` forces one reading when the shape is ambiguous.
    */
-  preview(source: string, kind?: string): Promise<PackagePreview>;
+  abstract preview(source: string, kind?: string): Promise<PackagePreview>;
   /** Installs a source's package as a new Agent in the Project. */
-  install(
+  abstract install(
     projectId: string,
     source: string,
     agentId: string,
@@ -105,7 +106,7 @@ export abstract class AgentPackages extends Interface<{
    * How publishing would authenticate: `gh` when the machine's CLI is logged in, `token`
    * when one is stored, null when neither — reading a public gist needs neither.
    */
-  publishMethod(): Promise<PublishMethod>;
+  abstract publishMethod(): Promise<PublishMethod>;
   /** The gist this Agent was published to before, so a republish updates it. */
-  publishedGist(projectId: string, agentId: string): Promise<PublishedGist | null>;
-}>() {}
+  abstract publishedGist(projectId: string, agentId: string): Promise<PublishedGist | null>;
+}

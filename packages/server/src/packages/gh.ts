@@ -72,7 +72,8 @@ export class GhCliRunner implements GhCli {
 }
 
 /** What the package service needs of the `gh` CLI. */
-export abstract class GhCli extends Interface<{
-  available(): Promise<boolean>;
-  api(path: string, method: string, body?: unknown): Promise<unknown>;
-}>() {}
+@Interface()
+export abstract class GhCli {
+  abstract available(): Promise<boolean>;
+  abstract api(path: string, method: string, body?: unknown): Promise<unknown>;
+}
