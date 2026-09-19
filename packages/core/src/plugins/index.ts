@@ -293,9 +293,10 @@ export function workspacePluginRoot(
 }
 
 /**
- * The host package: the package whose `dependencies` name the plugin packages. Two fixed
- * starting points, tried in this order, each walked upward to the first package.json that
- * names a plugin package:
+ * The host package: the package whose `dependencies` name the plugin packages. The library a
+ * hot push carried comes first when the platform named one (usePushedPluginLibrary); then two
+ * fixed starting points, tried in this order, each walked upward to the first package.json
+ * that names a plugin package:
  *
  * 1. the installation this module sits in — `packages/core` from source or dist, the
  *    bundling package's own root wherever core is inlined (the CLI bundle, the desktop
@@ -334,6 +335,29 @@ function programDir(): string | null {
   }
 }
 
+/**
+ * The library a hot push carried, when there is one (see {@link usePushedPluginLibrary}). It
+ * outranks the other two places: the plugins a pushed platform offers are the ones it was
+ * BUILT with, not the ones installed beside whatever program happened to boot it.
+ */
+let pushedLibrary: string | null = null;
+
+/**
+ * Points the library at the copy a hot push carried in its assets: a directory holding a
+ * `package.json` whose `dependencies` name the plugin packages, and their `node_modules`.
+ * `null` goes back to looking above this module and above the running program.
+ *
+ * Without it a pushed platform reads the library of the program that booted it — so a machine
+ * installed before a plugin existed never gets that plugin, however new its platform is, and
+ * a feature that seeds an Agent with it fails with "not in the plugin library". (Creating an
+ * organization installs `agent-company` on its CEO; on a program that predates company mode
+ * that was every attempt.) Called by the platform at boot, before anything reads the library.
+ */
+export function usePushedPluginLibrary(dir: string | null): void {
+  pushedLibrary = dir;
+  host = undefined;
+}
+
 /** From `start` upward, the first package.json whose `dependencies` name a plugin package. */
 function hostPackageAbove(start: string): HostPackage | null {
   for (let dir = start; ;) {
@@ -357,7 +381,10 @@ let host: HostPackage | null | undefined;
 function hostPackage(): HostPackage {
   const program = programDir();
   if (host === undefined)
-    host = hostPackageAbove(LOADER_DIR) ?? (program === null ? null : hostPackageAbove(program));
+    host =
+      (pushedLibrary === null ? null : hostPackageAbove(pushedLibrary)) ??
+      hostPackageAbove(LOADER_DIR) ??
+      (program === null ? null : hostPackageAbove(program));
   if (host === null) {
     throw new Error(
       `No package.json naming a ${PLUGIN_PKG_PREFIX} plugin package above the plugin loader at ${LOADER_DIR}` +
