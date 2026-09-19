@@ -68,6 +68,9 @@ export function useWorkflowTabs(projectId: string | null, agentId: string | null
   return { tabs, active: settled, activeTab, setActive: setActiveRaw, refresh };
 }
 
+/** How long a page that never finishes loading stays hidden before it is shown as it is. */
+const FRAME_REVEAL_TIMEOUT_MS = 4000;
+
 const TAB_BASE =
   "relative h-9 shrink-0 border-b-2 px-3 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400";
 const TAB_ACTIVE = "border-[var(--accent-bg)] font-medium text-gray-900 dark:text-gray-100";
@@ -199,6 +202,22 @@ export function WorkflowFrame({
     const id = requestAnimationFrame(applyTheme);
     return () => cancelAnimationFrame(id);
   }, [applyTheme, dark, accent, fontScale, tab.uiRev]);
+
+  // A page is its own document: until it has loaded and been themed it paints the browser's
+  // white canvas, and then its own unstyled markup — a white flash in a dark app, on every
+  // tab switch and every reload. So the frame stays invisible over the app's own background
+  // until the theme is on it, and fades in. The timer is for a page that never fires `load`
+  // (a hung subresource): it is shown anyway rather than hidden forever.
+  const frameKey = `${tab.tabId}@${tab.uiRev}`;
+  const [shownKey, setShownKey] = useState<string | null>(null);
+  const onFrameLoad = useCallback(() => {
+    applyTheme();
+    setShownKey(frameKey);
+  }, [applyTheme, frameKey]);
+  useEffect(() => {
+    const id = setTimeout(() => setShownKey(frameKey), FRAME_REVEAL_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [frameKey]);
 
   const remove = async () => {
     setBusy("remove");
@@ -339,12 +358,14 @@ export function WorkflowFrame({
         )}
       </div>
       <iframe
-        key={`${tab.tabId}@${tab.uiRev}`}
+        key={frameKey}
         ref={frameRef}
-        onLoad={applyTheme}
+        onLoad={onFrameLoad}
         title={tab.title}
         src={workflowUiUrl(tab)}
-        className="min-h-0 flex-1 border-0 bg-white"
+        className={`min-h-0 flex-1 border-0 transition-opacity duration-150 motion-reduce:transition-none ${
+          shownKey === frameKey ? "opacity-100" : "opacity-0"
+        }`}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
       />
     </div>
