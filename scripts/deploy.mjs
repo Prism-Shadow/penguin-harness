@@ -32,6 +32,7 @@ import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
 import { buildBuiltinPlugins } from "./build-plugins.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
+import { libraryPayload } from "./library-payload.mjs";
 import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
@@ -272,6 +273,16 @@ async function readNativeAssets() {
   for (const [pkg, entries] of byPackage) {
     files[`archives/${archiveName("plugins.", pkg)}`] = await packArchive(entries);
   }
+  // The skill/hook plugin LIBRARY this build was made with. Without it the target reads the
+  // library of whatever program booted the platform, so a plugin newer than that program is
+  // never offered there (see scripts/library-payload.mjs).
+  const library = await libraryPayload(ROOT);
+  try {
+    files["archives/library.tgz"] = await packArchive(library.entries);
+  } finally {
+    await library.cleanup();
+  }
+  log(`plugin library: ${library.names.length} plugins packed`);
   return { files, exec };
 }
 

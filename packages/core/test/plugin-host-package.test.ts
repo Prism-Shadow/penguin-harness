@@ -96,4 +96,43 @@ describe("the plugin library's host package", () => {
     fs.writeFileSync(program, script(bundle));
     expect(run(program)).toEqual({ loaded: true, names: ["goal"] });
   });
+
+  it("prefers the library a push carried over the one installed beside the program", () => {
+    // The same old installation as above — it only ever had `goal` — and a push whose assets
+    // carry a newer library laid out as a host package (scripts/library-payload.mjs).
+    const lib = path.join(scratch, "install", "lib");
+    const pushed = path.join(scratch, "root", "hmr", "assets", ".unpacked", "library");
+    const HUMANIZER = path.resolve(import.meta.dirname, "../../../plugins/humanizer");
+    fs.mkdirSync(pushed, { recursive: true });
+    fs.writeFileSync(
+      path.join(pushed, "package.json"),
+      JSON.stringify({
+        name: "penguin-plugin-library",
+        dependencies: { "@penguinharness/goal": "*", "@penguinharness/humanizer": "*" },
+      }),
+    );
+    for (const [name, from] of [
+      ["goal", GOAL_PLUGIN],
+      ["humanizer", HUMANIZER],
+    ] as const) {
+      fs.cpSync(from, path.join(pushed, "node_modules", "@penguinharness", name), {
+        recursive: true,
+      });
+    }
+    const program = path.join(lib, "dist", "serve-pushed.mjs");
+    fs.writeFileSync(
+      program,
+      `
+import { loadLibraryPlugins, usePushedPluginLibrary } from ${JSON.stringify(pathToFileURL(bundle).href)};
+const names = () => loadLibraryPlugins().map((p) => p.name).sort();
+const before = names();
+usePushedPluginLibrary(${JSON.stringify(pushed)});
+const carried = names();
+usePushedPluginLibrary(null);
+console.log(JSON.stringify({ loaded: true, names: [before.join(","), carried.join(","), names().join(",")] }));
+`,
+    );
+    // The program's own library, then the pushed one, then back again once it is unset.
+    expect(run(program)).toEqual({ loaded: true, names: ["goal", "goal,humanizer", "goal"] });
+  });
 });
