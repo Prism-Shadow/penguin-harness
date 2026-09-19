@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** feature
 - **Scope:** `server`, `web`, `agent-development`
+- **PR:** [#16](https://github.com/nicolaepocroianu/penguin-harness/pull/16)
 
 Activities now show scene summaries and a media editor with language and type filters, editable speech scripts, voice selection, audio playback, and explicit candidate acceptance. Specification and manifest JSON remain available in advanced disclosures.
 
