@@ -137,9 +137,11 @@ describe("workflows", () => {
       checkedAt: wf!.loadedAt,
       error: null,
       tabs: ["board"],
+      hints: [],
     });
     // Its types came from this harness, not from a package: written once, then left alone.
     expect((await fs.readdir(path.join(dir, ".harness"))).sort()).toEqual([
+      "README.md",
       "harness.json",
       "ifaces.json",
       "plugin.d.ts",
@@ -414,12 +416,24 @@ describe("workflows", () => {
     expect((await reload()).error).toContain("WebModule.pages");
     await write({ "WebModule.sessionTabs": [{ ...TAB, title: 7 }] });
     expect((await reload()).error).toContain("module tree rejected");
-    // A workflow with no contribution is server-side only.
+    // A workflow with no contribution is server-side only — and since this one has pages, the
+    // load says that nothing shows them, with the entry to add, in the API and in the status
+    // file alike (the Agent that wrote it may have only the file).
     await write({});
-    expect(await reload()).toMatchObject({
-      error: null,
-      tabs: [],
-    });
+    const bare = (await reload()) as { error: string | null; tabs: unknown[]; hints: string[] };
+    expect(bare).toMatchObject({ error: null, tabs: [] });
+    expect(bare.hints).toHaveLength(1);
+    expect(bare.hints[0]).toContain('"WebModule.sessionTabs"');
+    expect(bare.hints[0]).toContain("ui/index.html");
+    const status = JSON.parse(await fs.readFile(path.join(dir, ".build", "status.json"), "utf8"));
+    expect(status).toMatchObject({ ok: true, tabs: [], hints: bare.hints });
+    // The harness describes its own contract beside the types it wrote.
+    expect(await fs.readFile(path.join(dir, ".harness", "README.md"), "utf8")).toContain(
+      "A page shows only if a tab is contributed for it",
+    );
+    // With the tab back there is nothing to hint at.
+    await write({ "WebModule.sessionTabs": [TAB] });
+    expect(((await reload()) as { hints: string[] }).hints).toEqual([]);
   });
 
   it("removes the folder and its recorded versions on request", async () => {

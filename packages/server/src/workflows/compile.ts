@@ -124,7 +124,13 @@ export const STATUS_FILE = "status.json";
  */
 export function writeLoadStatus(
   dir: string,
-  status: { revision: string; checkedAt: string; error: string | null; tabs: string[] },
+  status: {
+    revision: string;
+    checkedAt: string;
+    error: string | null;
+    tabs: string[];
+    hints: string[];
+  },
 ): void {
   try {
     fs.mkdirSync(path.join(dir, BUILD_DIR), { recursive: true });

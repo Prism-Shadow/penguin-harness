@@ -107,6 +107,11 @@ export interface WorkflowInfo {
   loadedAt: string;
   /** The boot error when the current files do not load (the previous instance, if any, keeps serving). */
   error: string | null;
+  /**
+   * What loaded but is probably not what its author meant, each with the edit that settles it
+   * — pages under `ui/` that no tab shows, say. Never a failure: `error` is that.
+   */
+  hints: string[];
 }
 
 export interface WorkflowVersion {

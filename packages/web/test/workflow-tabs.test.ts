@@ -25,6 +25,7 @@ const info = (over: Partial<WorkflowInfo>): WorkflowInfo => ({
   tabs: [tab("board", "index.html")],
   loadedAt: "2026-08-30T00:00:00Z",
   error: null,
+  hints: [],
   ...over,
 });
 
