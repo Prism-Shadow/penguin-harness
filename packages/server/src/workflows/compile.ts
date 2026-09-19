@@ -94,7 +94,11 @@ export function compileWorkflow(ts: TypeScript, dir: string, revision: string): 
     );
 
   const program = ts.createProgram([entry, checkFile], options, host);
-  const diagnostics = ts.getPreEmitDiagnostics(program);
+  const all = ts.getPreEmitDiagnostics(program);
+  // The virtual root asks what `satisfies WorkflowPackage` already asks; when the author's
+  // own files have something to say, its copy of the same complaint is left out.
+  const authored = all.filter((d) => d.file === undefined || !same(d.file.fileName));
+  const diagnostics = authored.length > 0 ? authored : all;
   if (diagnostics.length > 0) throw new WorkflowCompileError(describe(ts, dir, diagnostics));
 
   fs.rmSync(outDir, { recursive: true, force: true });
@@ -123,13 +127,24 @@ export function pruneBuilds(dir: string, keep: string): void {
   }
 }
 
+/**
+ * An assignability failure arrives as a chain from the outermost type down to the member
+ * that does not fit, each level restating the whole shape. The first line says what was
+ * being assigned and the last two say what is wrong; the levels between are dropped.
+ */
+function briefly(chain: string): string {
+  const lines = chain.split("\n").map((line) => line.trim());
+  const kept = lines.length <= 4 ? lines : [lines[0]!, "…", ...lines.slice(-2)];
+  return kept.join("\n    ");
+}
+
 function describe(
   ts: TypeScript,
   dir: string,
   diagnostics: readonly import("typescript").Diagnostic[],
 ): string {
   const lines = diagnostics.slice(0, MAX_DIAGNOSTICS).map((d) => {
-    const text = ts.flattenDiagnosticMessageText(d.messageText, "\n  ");
+    const text = briefly(ts.flattenDiagnosticMessageText(d.messageText, "\n"));
     if (d.file === undefined || d.start === undefined) return `TS${d.code} ${text}`;
     const at = d.file.getLineAndCharacterOfPosition(d.start);
     const file = path.relative(dir, d.file.fileName).split(path.sep).join("/");
