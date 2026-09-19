@@ -12,14 +12,18 @@
  * size, line height, letter spacing, tab size, padding, wrap mode — and those are stated once,
  * for both layers, in `.code-surface`.
  *
- * No spell-check or autocorrect, and Ctrl+S / Cmd+S saves — the browser's own "save page"
- * default is suppressed while the focus is here. Long lines scroll sideways, as code should,
+ * No spell-check or autocorrect, and the `editor.save` shortcut (⌘S / Ctrl+S by default) saves —
+ * the browser's own "save page" default is suppressed while the focus is here. Long lines scroll
+ * sideways, as code should,
  * unless the Wrap toggle soft-wraps them; the toggle, Save and Cancel all live in the panel's
  * preview header, and this component owns only the text.
  */
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { S } from "../../lib/strings";
+import { isShortcut } from "../../lib/shortcuts/match";
+import { currentPlatform } from "../../lib/shortcuts/platform";
+import { keymap } from "../../lib/shortcuts/store";
 import { TEXT_PREVIEW_LIMIT, baseName, extOf } from "../../lib/workspace-tree";
 import { CodeSurface } from "./code-block";
 import { languageForExtension } from "./code-languages";
@@ -50,9 +54,10 @@ export function WorkspaceFileEditor({
   const [composing, setComposing] = useState(false);
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "s") {
+    if (isShortcut(e.nativeEvent, keymap(), "editor.save", currentPlatform())) {
+      // A held chord repeats: every repeat is kept from the browser (Save Page), one save runs.
       e.preventDefault();
-      onSave();
+      if (!e.repeat) onSave();
     }
   };
 

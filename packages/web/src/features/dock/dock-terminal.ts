@@ -1,9 +1,10 @@
 /**
  * The dock's terminal-side helpers: creating/adopting shells for terminal tabs, and the
- * global Ctrl+` hotkey. Split from dock-state.ts so the store stays pure (unit-testable
+ * global `terminal.toggle` command. Split from dock-state.ts so the store stays pure (unit-testable
  * without fetch); this module owns every server round-trip a terminal tab needs.
  */
 import { S } from "../../lib/strings";
+import { onCommand } from "../../lib/shortcuts/dispatcher";
 import { toastError } from "../../components/ui/toast";
 import {
   HttpStatusError,
@@ -30,8 +31,8 @@ const HOME_CWD = "~";
  * The Workspace a new shell should start in — the conversation's own directory, which is
  * where its files are and what the agent has been working in. Published by the surface
  * that knows it (the chat page for a Session, the draft page for the Workspace picked
- * there) rather than read from a store, because the Ctrl+` hotkey creates shells from a
- * module-scope listener with no React context to consult. Null = none known; the shell
+ * there) rather than read from a store, because the terminal toggle creates shells from a
+ * module-scope command handler with no React context to consult. Null = none known; the shell
  * falls back to home.
  */
 let workspaceCwd: string | null = null;
@@ -133,8 +134,8 @@ export function detachTerminal(id: string, position: DockPosition): void {
 }
 
 /**
- * Ctrl+`: hide the shown terminals, or bring them back — and with no terminal tab in
- * this conversation, adopt or create a shell (the async tail the store's synchronous
+ * The terminal toggle: hide the shown terminals, or bring them back — and with no terminal
+ * tab in this conversation, adopt or create a shell (the async tail the store's synchronous
  * toggle hands off).
  */
 export function toggleTerminal(): void {
@@ -144,15 +145,12 @@ export function toggleTerminal(): void {
 /** Re-exported for callers that already know which shell they want on screen. */
 export { showTerminal };
 
-// Ctrl+` (the Codex/VS Code binding), registered at module scope: a React-effect listener
-// leaves a window after first paint where the shortcut is silently dead — an effect runs
-// after paint, and a keypress can land in between. The store is page-global anyway; on
-// routes without the docks (login, /terminal) the toggle just flips hidden state.
-if (typeof window !== "undefined") {
-  window.addEventListener("keydown", (event) => {
-    if (!event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-    if (event.key !== "`" && event.code !== "Backquote") return;
-    event.preventDefault();
-    toggleTerminal();
-  });
-}
+// `terminal.toggle` (Ctrl+` on every platform by default — the Codex/VS Code binding),
+// registered at module scope: a React-effect registration leaves a window after first paint
+// where the shortcut is silently dead — an effect runs after paint, and a keypress can land
+// in between. The store is page-global anyway; on routes without the docks (login,
+// /terminal) the toggle just flips hidden state. The chord itself is the keymap's: the
+// window dispatcher matches it and calls this handler.
+onCommand("terminal.toggle", () => {
+  toggleTerminal();
+});

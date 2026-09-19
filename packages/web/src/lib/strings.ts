@@ -79,6 +79,22 @@ export const zh = {
     adminOnly: "只有管理员可以安装到机器上。",
   },
 
+  /** Keyboard shortcuts: the registry's command and group labels (lib/shortcuts/registry.ts). */
+  shortcuts: {
+    commands: {
+      "palette.toggle": "命令面板",
+      "terminal.toggle": "显示或隐藏终端",
+      "terminal.close": "关闭当前终端",
+      "editor.save": "保存",
+    },
+    groups: {
+      general: "通用",
+      panels: "面板",
+      terminal: "终端",
+      editor: "编辑器",
+    },
+  },
+
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "终端",
@@ -2905,7 +2921,6 @@ Benchmark：
     /** Soft-wrap toggle, shared by the source view and the editor: off means long lines scroll sideways. */
     wrapLines: "自动换行",
     unsaved: "有未保存的修改",
-    saveTitle: "保存（Ctrl+S / ⌘S）",
     saveConfirmTitle: "保存文件",
     saveConfirm: (name: string): string => `保存对 ${name} 的修改？Workspace 中的该文件将被覆盖。`,
     editTooLarge: (kb: number): string => `文件超过 ${kb}KB，无法在此编辑，请下载后编辑`,
@@ -4136,8 +4151,9 @@ Benchmark：
       documentLoadFailed: "文档加载失败",
       /** A row's tooltip: when the file was last written, and its size. */
       updatedAt: (time: string, size: string): string => `更新于 ${time} · ${size}`,
-      /** Beside the editor's buttons: what the text is, and the shortcut. */
-      editorHint: "Markdown · Ctrl/⌘+S 保存",
+      /** Beside the editor's buttons: what the text is, and the save shortcut (null while unbound). */
+      editorHint: (shortcut: string | null): string =>
+        shortcut === null ? "Markdown" : `Markdown · ${shortcut} 保存`,
     },
   },
   errors: {
