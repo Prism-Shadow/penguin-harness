@@ -134,6 +134,25 @@ importers:
         specifier: ^3.2.6
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
 
+  packages/coding-agents:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 1.4.0
+        version: 1.4.0(zod@4.4.3)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(supports-color@10.2.2)(tsx@4.22.4)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.6
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@10.2.2)(tsx@4.22.4)(yaml@2.9.0)
+
   packages/core:
     dependencies:
       '@modelcontextprotocol/client':
@@ -417,9 +436,12 @@ importers:
       '@larksuiteoapi/node-sdk':
         specifier: ^1.73.0
         version: 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@prismshadow/penguin-coding-agents':
+        specifier: workspace:*
+        version: link:../coding-agents
       '@prismshadow/penguin-core':
         specifier: workspace:*
-        version: file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+        version: link:../core
       '@xterm/headless':
         specifier: ^5.5.0
         version: 5.5.0
@@ -460,9 +482,12 @@ importers:
         specifier: ^2.5.0
         version: 2.9.0
     devDependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 1.4.0
+        version: 1.4.0(zod@4.4.3)
       '@prismshadow/penguin-hmr':
         specifier: workspace:*
-        version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)
+        version: file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
@@ -1624,6 +1649,10 @@ packages:
     resolution: {directory: packages/cli, type: directory}
     engines: {node: '>=24'}
     hasBin: true
+
+  '@prismshadow/penguin-coding-agents@file:packages/coding-agents':
+    resolution: {directory: packages/coding-agents, type: directory}
+    engines: {node: '>=24'}
 
   '@prismshadow/penguin-core@file:packages/core':
     resolution: {directory: packages/core, type: directory}
@@ -5696,6 +5725,12 @@ snapshots:
       - ws
       - zod
 
+  '@prismshadow/penguin-coding-agents@file:packages/coding-agents(zod@4.4.3)':
+    dependencies:
+      '@agentclientprotocol/sdk': 1.4.0(zod@4.4.3)
+    transitivePeerDependencies:
+      - zod
+
   '@prismshadow/penguin-core@file:packages/core(supports-color@10.2.2)(ws@8.21.0)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
@@ -5754,9 +5789,9 @@ snapshots:
       - ws
       - zod
 
-  '@prismshadow/penguin-hmr@file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)':
+  '@prismshadow/penguin-hmr@file:packages/hmr(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)':
     dependencies:
-      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
+      '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
       - bufferutil
@@ -5769,6 +5804,7 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@prismshadow/penguin-coding-agents': file:packages/coding-agents(zod@4.4.3)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2
@@ -5795,6 +5831,7 @@ snapshots:
     dependencies:
       '@hono/node-server': 2.0.12(hono@4.12.34)
       '@larksuiteoapi/node-sdk': 1.73.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
+      '@prismshadow/penguin-coding-agents': file:packages/coding-agents(zod@4.4.3)
       '@prismshadow/penguin-core': file:packages/core(supports-color@10.2.2)(ws@8.21.0)(zod@4.4.3)
       '@xterm/headless': 5.5.0
       dotenv: 17.4.2

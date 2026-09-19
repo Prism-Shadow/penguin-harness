@@ -1,0 +1,44 @@
+{
+  "name": "@prismshadow/penguin-coding-agents",
+  "version": "0.2.13",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "description": "PenguinHarness coding agents kernel: an Agent Client Protocol (ACP) client that drives external coding agents (Claude Code, Codex, Gemini CLI, or any ACP-speaking command) as subprocesses.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "packages/coding-agents"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.6"
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
