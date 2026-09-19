@@ -35,7 +35,10 @@ describe("activity generation through Harness sessions", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  async function fixture(moduleOutput: boolean | "audio" | "image" | "media-text" = false) {
+  async function fixture(
+    moduleOutput: boolean | "audio" | "image" | "media-text" = false,
+    activityType: "standard" | "book" = "standard",
+  ) {
     let complete: () => void = () => {};
     const waiting = new Set<string>();
     const disposed = new Set<string>();
@@ -149,7 +152,12 @@ describe("activity generation through Harness sessions", () => {
     });
     const base = "/api/projects/generator-activities/activities";
     const activity = (await (
-      await client.post(base, { productCode: "p", refNum: 1, title: "One" })
+      await client.post(base, {
+        productCode: "p",
+        refNum: 1,
+        title: "One",
+        activityType,
+      })
     ).json()) as ActivityDetail;
     const endpoint = `${base}/${activity.id}`;
     const draft = (await (
@@ -777,6 +785,95 @@ describe("activity generation through Harness sessions", () => {
     ).toEqual(speechWave());
     expect(afterAsset.usages).toEqual(beforeAsset.usages);
     expect(after.draft.spec).toEqual(beforeSpec);
+  });
+
+  it("retains an invalid book candidate as failed without changing the saved draft", async () => {
+    const f = await fixture(false, "book");
+    const before = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    const invalidBook = {
+      ...activitySpec,
+      scenes: [
+        {
+          id: "story-1",
+          description: "Story page 1",
+          role: "story",
+          media: { images: [], video: [], animations: [] },
+          audio: {
+            tracks: [{ key: "story-audio", description: "Narration", script: "Read the page." }],
+          },
+        },
+      ],
+    };
+    const result = await f.finish(await f.start(), JSON.stringify(invalidBook));
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("exactly one primary image");
+    expect(result.candidate).toBe(JSON.stringify(invalidBook));
+    expect((await (await f.client.get(f.endpoint)).json()) as ActivityDetail).toEqual(before);
+  });
+
+  it("applies a valid book candidate with ordered pages and required media", async () => {
+    const f = await fixture(false, "book");
+    const validBook = {
+      ...activitySpec,
+      id: "storybook",
+      moduleFolder: "waf-module-storybook",
+      title: "Storybook",
+      scenes: [
+        {
+          id: "cover",
+          description: "Cover page",
+          role: "cover",
+          media: { images: [{ key: "cover-image", description: "A clear cover." }] },
+          audio: { tracks: [] },
+        },
+        {
+          id: "title",
+          description: "Title page",
+          role: "title",
+          media: { images: [{ key: "title-image", description: "A clear title page." }] },
+          audio: { tracks: [] },
+        },
+        {
+          id: "story-1",
+          description: "Story page 1",
+          role: "story",
+          media: { images: [{ key: "story-1-image", description: "A clear story scene." }] },
+          audio: {
+            tracks: [{ key: "story-1-audio", description: "Narration", script: "Read the page." }],
+          },
+        },
+      ],
+    };
+    const result = await f.finish(await f.start(), JSON.stringify(validBook));
+    expect(result.status, result.error ?? "").toBe("succeeded");
+    expect(((await (await f.client.get(f.endpoint)).json()) as ActivityDetail).draft.spec).toEqual(
+      validBook,
+    );
+  });
+
+  it("reads legacy book drafts but rejects invalid assembly before allocating a run or Session", async () => {
+    const f = await fixture();
+    const saved = await f.client.post(`${f.endpoint}/apply-generated-spec`, {
+      spec: { ...activitySpec, scenes: [{ id: "story", description: "Read the story" }] },
+      expectedRevision: f.draft.contentRevision,
+    });
+    expect(saved.status).toBe(200);
+    // Represent a book saved before book-specific validation was introduced.
+    f.t.deps.db
+      .prepare("UPDATE activities SET activity_type = 'book' WHERE id = ?")
+      .run(f.activity.id);
+    const before = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    expect(before.draft.status).toBe("valid");
+    const sessionsBefore = f.t.deps.db.prepare("SELECT session_id FROM sessions").all();
+    const response = await f.client.post(`${f.endpoint}/assemble-module`, {
+      agentId: "default_agent",
+      expectedRevision: before.draft.contentRevision,
+    });
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("exactly one primary image");
+    expect(f.t.deps.db.prepare("SELECT * FROM activity_runs").all()).toEqual([]);
+    expect(f.t.deps.db.prepare("SELECT session_id FROM sessions").all()).toEqual(sessionsBefore);
+    expect((await (await f.client.get(f.endpoint)).json()) as ActivityDetail).toEqual(before);
   });
 
   it("rejects malformed media-text output without changing the draft", async () => {

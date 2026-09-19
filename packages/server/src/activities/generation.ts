@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { validateBookSpec } from "./book.js";
 
 import { userText, libraryPlugin } from "@prismshadow/penguin-core";
 import { Component, Use, type ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -241,6 +242,13 @@ export class ActivityGenerationService implements ActivityGeneration {
                 "module_spec_required",
                 "Save a valid specification before assembling a module.",
               );
+            if (activity.activityType === "book") {
+              try {
+                validateBookSpec(validateActivitySpec(activity.draft.spec));
+              } catch (error) {
+                throw new HttpError(422, "spec_invalid", (error as Error).message);
+              }
+            }
             wafRoot = await findWafRoot(process.cwd(), module.wafRoot ?? process.env.WAF_ROOT_DIR);
             if (!wafRoot)
               throw new HttpError(
@@ -818,5 +826,6 @@ The specification contract:
 - Optional scene media: images, video and animations arrays of { key, description, targetPath? } with string values.
 - Optional scene audio: tracks array of { key, description, script?, targetPath?, interruptible? }; interruptible is boolean.
 - Optional acceptance_criterias: string array; audience: null or { gradeBand: string or null }.
+If input.json declares activityType book, scene order is page order. Give every page an explicit role: cover, title, or story. Cover is optional and first; title is optional and follows cover or is first; all remaining pages are story pages. Use unique scene IDs, exactly one image per page with a meaningful description, and no scene videos or animations. Each audio track must have a globally unique non-empty key. The first audio cue on a story page is its visible narration text and must contain words; later cues are hidden follow-up prompts. Cover/title lettering is baked into the image; story images contain no story text. Preserve authored narration order and wording.
 Describe the actual learning flow, interactions, feedback and media needs. Preserve useful existing draft details in input.json.
 Use Harness's normal approval flow for tool actions. Finish only after writing valid JSON.`;
