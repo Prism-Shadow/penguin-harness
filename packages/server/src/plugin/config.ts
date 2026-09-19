@@ -406,14 +406,15 @@ export interface PluginConfigActionResult {
 }
 
 /** What a module reads: the group it declared, and a watch on it. */
-export abstract class PluginConfig extends Interface<{
+@Interface()
+export abstract class PluginConfig {
   /** The stored values merged onto the declared defaults; `{}` for a name no group answers to. */
-  get(name: string): Record<string, unknown>;
+  abstract get(name: string): Record<string, unknown>;
   /** Fires with the new document after every save of `name`; returns the unsubscribe. */
-  watch(name: string, cb: (values: Record<string, unknown>) => void): () => void;
+  abstract watch(name: string, cb: (values: Record<string, unknown>) => void): () => void;
   /** Whether anything was ever saved under `name` — what tells a default from a choice. */
-  saved(name: string): boolean;
-}>() {}
+  abstract saved(name: string): boolean;
+}
 
 export interface PluginConfigSlots {
   /** A settings group, as data: its id is its name, the data its configuration. */
@@ -421,20 +422,22 @@ export interface PluginConfigSlots {
 }
 
 /** The entries as stored, before any live notice: what the page node builds on. */
-export abstract class PluginConfigEntries extends Interface<{
-  describe(): PluginConfigEntry[];
-  set(name: string, update: Record<string, unknown>): PluginConfigEntry;
-}>() {}
+@Interface()
+export abstract class PluginConfigEntries {
+  abstract describe(): PluginConfigEntry[];
+  abstract set(name: string, update: Record<string, unknown>): PluginConfigEntry;
+}
 
 /** What the settings page reads and writes. */
-export abstract class PluginConfigAdmin extends Interface<{
+@Interface()
+export abstract class PluginConfigAdmin {
   /** Every declared group, in order, with its live notices; values masked. */
-  describe(): PluginConfigEntry[];
+  abstract describe(): PluginConfigEntry[];
   /** Validates and stores one update; answers that entry, masked, with its notices once its card's status has settled. */
-  set(name: string, update: Record<string, unknown>): Promise<PluginConfigEntry>;
+  abstract set(name: string, update: Record<string, unknown>): Promise<PluginConfigEntry>;
   /** Runs one group's action and says what happened; throws PluginConfigError for an unknown one. */
-  run(name: string, action: string): Promise<PluginConfigActionResult>;
-}>() {}
+  abstract run(name: string, action: string): Promise<PluginConfigActionResult>;
+}
 
 export interface PluginConfigAdminSlots {
   /** Live notices for a group that has any (`group` names it). */
