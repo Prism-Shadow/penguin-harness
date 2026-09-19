@@ -165,7 +165,6 @@ import {
 import { Workflows } from "./mechanisms/workflows.js";
 import { WorkflowService } from "./workflows/service.js";
 import { WorkflowRoutes } from "./workflows/routes.js";
-import { WorkflowPrompt, WorkflowRoutes } from "./workflows/routes.js";
 import { AgentPackages } from "./mechanisms/packages.js";
 import { AgentPackageService } from "./packages/service.js";
 import { PackageRoutes } from "./packages/routes.js";
