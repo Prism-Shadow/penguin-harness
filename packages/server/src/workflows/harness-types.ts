@@ -78,6 +78,13 @@ running harness's types afresh.
   (it resolves to \`.harness/plugin.d.ts\`; nothing to install).
 - \`ui/\` — pages and their assets. A page calls the workflow's handler at \`../api/<path>\`.
 
+The handler speaks JSON by default. A request body of another content type arrives as
+\`req.bytes\`; a response that names a \`content-type\` in \`headers\` is sent as written (\`body\` a
+string, or \`bytes\`). A page runs in the user's browser, which may be on another machine: to
+show a program running on THIS machine, fetch \`http://127.0.0.1:<port>\` from the handler and
+return the answer — never from the page. When branches of \`handle\` answer with different
+headers, declare its return type (\`Promise<WorkflowResponse>\`) so they are not inferred apart.
+
 ## A page shows only if a tab is contributed for it
 
 \`\`\`json
