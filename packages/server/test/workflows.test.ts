@@ -127,7 +127,17 @@ describe("workflows", () => {
       { ...TAB, renderer: { iframe: { src: `${BASE}/demo/ui/index.html` } } },
     ]);
     // The emitted code lives in a dot-directory: no part of the revision or the versions.
-    expect(await fs.readdir(path.join(dir, ".build"))).toEqual([wf!.revision]);
+    // Beside it, what the load came to — the Agent's only view of it is its own files.
+    expect((await fs.readdir(path.join(dir, ".build"))).sort()).toEqual(
+      [wf!.revision, "status.json"].sort(),
+    );
+    expect(JSON.parse(await fs.readFile(path.join(dir, ".build", "status.json"), "utf8"))).toEqual({
+      ok: true,
+      revision: wf!.revision,
+      checkedAt: wf!.loadedAt,
+      error: null,
+      tabs: ["board"],
+    });
     // Its types came from this harness, not from a package: written once, then left alone.
     expect((await fs.readdir(path.join(dir, ".harness"))).sort()).toEqual([
       "harness.json",
@@ -188,7 +198,9 @@ describe("workflows", () => {
     );
     expect(await (await owner.get(`${BASE}/demo/ui/index.html`)).text()).toBe("<h1>demo v1</h1>");
     // Only the serving revision keeps its emitted code.
-    expect(await fs.readdir(path.join(dir, ".build"))).toEqual([v1!.revision]);
+    expect((await fs.readdir(path.join(dir, ".build"))).sort()).toEqual(
+      [v1!.revision, "status.json"].sort(),
+    );
     expect(
       (await (await owner.get(`${BASE}/demo/api/`)).json()) as { greeting: string },
     ).toMatchObject({
@@ -258,6 +270,10 @@ describe("workflows", () => {
       /index\.ts:\d+:\d+ TS2551 Property 'setStat' does not exist on type 'WorkflowHost'/,
     );
     expect(error).toContain("TS2322");
+    // The same words reach the Agent through its files.
+    expect(
+      JSON.parse(await fs.readFile(path.join(dir, ".build", "status.json"), "utf8")),
+    ).toMatchObject({ ok: false, error });
     // Said once, by the author's own file; the server's copy of the same question is left out.
     expect(error).not.toContain("default export");
     expect(error.match(/TS2322/g)).toHaveLength(1);
@@ -289,6 +305,34 @@ describe("workflows", () => {
     // Its own Agent passes the Project check and reaches the session runtime, which in this
     // fixture has no model key to open a Session with.
     expect(own).toMatchObject({ opened: expect.stringContaining("API key") });
+  });
+
+  it("notices an Agent's FIRST workflow, made with nothing but its file tools", async () => {
+    // Another Agent of the Project, with no workflows/ folder when its list is first read.
+    const made = await owner.post(`/api/projects/${PROJECT}/agents`, { agentId: "builder" });
+    expect(made.status, await made.text()).toBe(201);
+    const base = `/api/projects/${PROJECT}/agents/builder/workflows`;
+    expect(((await (await owner.get(base)).json()) as { workflows: unknown[] }).workflows).toEqual(
+      [],
+    );
+
+    const first = path.join(agentDir(t.root, PROJECT, "builder"), "workflows", "first");
+    await fs.mkdir(path.join(first, "ui"), { recursive: true });
+    await fs.writeFile(path.join(first, "package.json"), packageJson());
+    await fs.writeFile(path.join(first, "index.ts"), indexSource("first"));
+    await fs.writeFile(path.join(first, "ui", "index.html"), "<h1>first</h1>");
+
+    // Nobody lists again: the server has to see the folder appear and load it on its own.
+    const statusFile = path.join(first, ".build", "status.json");
+    let status: { ok?: boolean } = {};
+    for (let i = 0; i < 100 && status.ok === undefined; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      status = await fs.readFile(statusFile, "utf8").then(
+        (text) => JSON.parse(text) as { ok: boolean },
+        () => ({}),
+      );
+    }
+    expect(status).toMatchObject({ ok: true, error: null, tabs: ["board"] });
   });
 
   it("refuses JavaScript", async () => {

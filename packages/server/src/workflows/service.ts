@@ -50,7 +50,7 @@ import type {
   Workflows,
 } from "../mechanisms/workflows.js";
 import { ScheduleSessionCreator, ScheduleTaskRunner } from "../runtime/scheduler.js";
-import { compileWorkflow, pruneBuilds } from "./compile.js";
+import { compileWorkflow, pruneBuilds, writeLoadStatus } from "./compile.js";
 import { installHarnessTypes, readHarnessTable } from "./harness-types.js";
 import { checkIfaces, ifaceQuestions } from "../plugin/iface-check.js";
 import { loadTypeScript } from "../plugin/typescript.js";
@@ -464,6 +464,12 @@ export class WorkflowService implements Workflows {
       next.tree?.dispose();
       return next;
     }
+    writeLoadStatus(folder.dir, {
+      revision: folder.revision,
+      checkedAt: loadedAt,
+      error: next.error,
+      tabs: next.tabs.map((tab) => tab.key),
+    });
     this.loaded.set(k, next);
     this.notify(projectId, agentId, this.info(folder.id, next));
     return next;
@@ -547,7 +553,10 @@ export class WorkflowService implements Workflows {
     const k = `${projectId}/${agentId}`;
     if (this.watchers.has(k) || this.disposed) return;
     const declared = workflowsDir(this.paths.root, projectId, agentId);
-    if (!fs.existsSync(declared)) return;
+    if (!fs.existsSync(declared)) {
+      this.awaitFirstWorkflow(projectId, agentId, declared);
+      return;
+    }
     // Watch the REAL path: libuv compares each event's filename against the string it was
     // given, and a Windows short name (`RUNNER~1\…`, which is what os.tmpdir() hands back
     // on a CI runner) never matches the long name the events carry — the mismatch trips an
@@ -566,6 +575,36 @@ export class WorkflowService implements Workflows {
         // The server's own emit (`.build/`), and any other dot-directory, is not an edit.
         if (filename?.split(/[\\/]/)[1]?.startsWith(".")) return;
         this.schedule(projectId, agentId, id);
+      });
+    } catch {
+      return;
+    }
+    watcher.on("error", () => {
+      watcher.close();
+      this.watchers.delete(k);
+    });
+    this.watchers.set(k, watcher);
+  }
+
+  /**
+   * An Agent with no `workflows/` folder yet: watch its own directory for that folder to
+   * appear. The Agent makes its first workflow with its file tools and nothing else — without
+   * this, nothing noticed until somebody listed the workflows again, and the Agent sat
+   * waiting for a load that was never going to happen.
+   */
+  private awaitFirstWorkflow(projectId: string, agentId: string, declared: string): void {
+    const k = `${projectId}/${agentId}`;
+    const parent = path.dirname(declared);
+    let watcher: fs.FSWatcher;
+    try {
+      watcher = fs.watch(fs.realpathSync.native(parent), (_event, filename) => {
+        if (filename !== path.basename(declared) || !fs.existsSync(declared)) return;
+        watcher.close();
+        this.watchers.delete(k);
+        // The folder exists now: watch it properly, and load whatever is already inside.
+        void this.list(projectId, agentId).catch((err) =>
+          this.log.line(`[workflows] ${k}: ${messageOf(err)}`),
+        );
       });
     } catch {
       return;
