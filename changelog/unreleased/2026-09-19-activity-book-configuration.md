@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#23](https://github.com/nicolaepocroianu/penguin-harness/pull/23)
 
 Book assembly gained an explicit Read-along or Decodable choice. Each new run recorded its selected mode and staged a native WAF book policy with ordered localized scenes, cover/title roles, story page numbers, image descriptions, primary narration, and follow-up audio cues. Incomplete localized narration fell back to the complete default-language configuration.
 
