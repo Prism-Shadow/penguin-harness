@@ -98,7 +98,14 @@ import { ChatDropRegion } from "./drop-zone";
 import { ConversationOutline, OutlineMenuButton, useOutlineRailFit } from "./conversation-outline";
 import { DraftView } from "./draft-view";
 import { parkActiveDraft } from "./draft-sessions";
-import { resolveRoutedSession, sessionForProject, sessionProbeKey } from "./session-project";
+import {
+  heldRouteSession,
+  resolveRoutedSession,
+  sessionForProject,
+  sessionProbeKey,
+} from "./session-project";
+import { machineForSession } from "../../lib/session-machines";
+import { nameOnMachine } from "../../lib/workspace-machines";
 import { CHAT_DEFAULTS_CHANGED_EVENT, chatDefaultsChangedDetail } from "./chat-defaults-event";
 import { advanceCostStat, applyUsageFetch, createCostStatHold } from "./header-stats";
 import type { CostStatDisplay } from "./header-stats";
@@ -301,10 +308,12 @@ export function ChatPage() {
   const { currentProject, currentAgent, setCurrentAgentId, reloadAgents, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const agentId = currentAgent?.agentId ?? null;
-  const workflowTabs = useWorkflowTabs(projectId, agentId);
   const {
     sessions,
     loading: sessionsLoading,
+    machineLabels,
+    machinesUnreachable,
+    offlineMachineIds,
     reload: reloadSessions,
     add: addSession,
     isDeleted: isSessionDeleted,
@@ -411,17 +420,55 @@ export function ChatPage() {
    * the open conversation. See resolveRoutedSession.
    */
   const [fetchedSession, setFetchedSession] = useState<SessionInfo | null>(null);
-  const selected = draft ? null : resolveRoutedSession(routeSessionId, sessions, fetchedSession);
+  const listed = draft ? null : resolveRoutedSession(routeSessionId, sessions, fetchedSession);
+  /**
+   * The routed Session, held across a refetch that momentarily does not list it.
+   *
+   * `listed` is derived from a list that reload() rebuilds WHOLESALE: for the tick between
+   * the fetches landing and the merged array being set, a source that answers slower, a
+   * machine that misses one round, or a Session whose category changed under a page that is
+   * not loaded, all read as "that row is not here". None of them mean the conversation on
+   * screen has gone anywhere, so the render must not take them for it — dropping `selected`
+   * for that tick paints the skeleton over a conversation the reader is in the middle of.
+   *
+   * Held only for the route it was seen on, and only until the direct lookup SAYS it is gone:
+   * `routeSessionPending` and the redirect below still read `listed`, so a Session actually
+   * deleted still probes, still fails, and still redirects — one tick later than before.
+   */
+  const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
+  const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
+  const heldSession = useRef<SessionInfo | null>(null);
+  heldSession.current = heldRouteSession(
+    heldSession.current,
+    listed,
+    routeSessionId ?? null,
+    probeKey !== null && probeFailedKey === probeKey,
+  );
+  const selected = draft ? null : heldSession.current;
+  // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
+  // workflows live on: a Session on a machine runs a copy of the Agent there, and the workflows
+  // it built are in that copy. The current Agent is always one of this server's, so going by
+  // it listed the wrong Agent's workflows (or none) for every Session on a machine.
+  const workflowTabs = useWorkflowTabs(
+    projectId,
+    selected?.agentId ?? agentId,
+    selected === null ? null : machineForSession(selected.sessionId),
+  );
   // New shells start in this conversation's Workspace — its files are what a terminal
   // opened here is for. While drafting, the Workspace is the one picked in the draft and
   // DraftView publishes it instead (a child effect runs before this one, so this must
   // yield rather than clobber it with null). Leaving the chat for another page keeps the
   // last conversation's Workspace: it is a better default than home for the hotkey,
-  // which stays live everywhere.
+  // which stays live everywhere. With the machine that Workspace is on: the path only means
+  // anything on its own filesystem, and a shell for this conversation belongs beside the
+  // agent running it.
   useEffect(() => {
     if (draft) return;
-    setDockCwd(selected?.workspace ?? null);
-  }, [draft, selected?.workspace]);
+    setDockCwd(
+      selected?.workspace ?? null,
+      selected === null ? null : machineForSession(selected.sessionId),
+    );
+  }, [draft, selected]);
 
   // Currently effective model (session state, the model reference comes from the Session DTO): model selection in draft state is handled internally by DraftView.
   const activeModelRef = selected
@@ -682,9 +729,9 @@ export function ChatPage() {
 
   // The Session list is paged: a deep-linked Session (old bookmark, cross-page jump) may sit
   // beyond the loaded pages. Look it up directly and insert it before the auto-select effect
-  // below concludes it doesn't exist; only a failed probe releases that redirect.
-  const probeKey = projectId && routeSessionId ? sessionProbeKey(projectId, routeSessionId) : null;
-  const [probeFailedKey, setProbeFailedKey] = useState<string | null>(null);
+  // below concludes it doesn't exist; only a failed probe releases that redirect. `probeKey`
+  // and `probeFailedKey` are declared up with `selected`, which needs them to know when to
+  // let the held Session go.
   /**
    * The route names a Session we cannot answer for YET: not in the loaded pages, and the
    * direct lookup that settles it has not failed. Ordinary with a paged list — a deep link,
@@ -693,7 +740,49 @@ export function ChatPage() {
    * means — their disagreeing is what once painted "no Sessions yet" over a conversation
    * that was about to appear.
    */
-  const routeSessionPending = !!routeSessionId && selected === null && probeFailedKey !== probeKey;
+  /**
+   * Nobody who could answer for this Session is answering, so a failed lookup settles nothing.
+   *
+   * Two shapes of that. Either no owner is recorded and some machine is out of reach — the
+   * probe then asks THIS server (lib/session-machines.ts: absence means here), which 404s
+   * about a Session that is alive THERE. Or the owner IS recorded and is itself one of the
+   * machines not answering, which is every row restored from the cache. Reading either as
+   * "gone" is what drops the reader into the draft page mid-conversation.
+   */
+  const routeSessionOwner = routeSessionId ? machineForSession(routeSessionId) : null;
+
+  /**
+   * The ssh alias of the machine a Session is on, or null for this server's own. Falls back
+   * to the machine id when the list could not be read (it is admin-only) — honest, where
+   * inventing a name is not.
+   */
+  const machineNameOf = (sessionId: string): string | null => {
+    const machineId = machineForSession(sessionId);
+    return machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
+  };
+  const routeSessionUnowned =
+    !!routeSessionId &&
+    // Except one we deleted ourselves. That is the one case where a failed lookup settles it
+    // whoever is out of reach — nobody is going to answer differently — and leaving it open
+    // held the page on a skeleton for as long as some machine stayed down, on the ordinary
+    // act of deleting the conversation you are looking at.
+    !isSessionDeleted(routeSessionId) &&
+    (routeSessionOwner === null
+      ? machinesUnreachable
+      : offlineMachineIds.includes(routeSessionOwner));
+  // Read from `listed`, never from `selected`: the held Session above keeps the conversation
+  // on screen through a refetch, but it must not tell the probe that the row is loaded — a
+  // Session that really is gone has to keep probing until the lookup fails and releases both.
+  const routeSessionPending =
+    !!routeSessionId && listed === null && (probeFailedKey !== probeKey || routeSessionUnowned);
+  /**
+   * The lookup has failed and the only servers that could still answer for this Session are
+   * out of reach. It is not gone — so the redirect must not fire and the row must not be
+   * dropped — but it is not loading either, and a skeleton that never resolves reads as a
+   * hung page. Say what is actually the matter instead, and let the recheck open it when the
+   * connection is back (state/sessions.tsx: OFFLINE_RECHECK_MS).
+   */
+  const routeSessionOffline = routeSessionPending && probeFailedKey === probeKey;
   useEffect(() => {
     if (draft || !projectId || !routeSessionId || !probeKey || sessionsLoading) return;
     // Settled (row loaded, or the lookup already failed): nothing to probe — and a failed
@@ -1149,13 +1238,22 @@ export function ChatPage() {
       };
       let createdId: string | null = null;
       try {
-        const created = await api.createSession(projectId, selected.agentId, {
-          provider: ref.provider,
-          modelId: ref.modelId,
-          workspace: selected.workspace,
-          approvalMode: selected.approvalMode,
-          sandbox: selected.sandbox,
-        });
+        const created = await api.createSession(
+          projectId,
+          selected.agentId,
+          {
+            provider: ref.provider,
+            modelId: ref.modelId,
+            workspace: selected.workspace,
+            approvalMode: selected.approvalMode,
+            sandbox: selected.sandbox,
+          },
+          // On the machine the source Session is on: the Workspace being carried over is a
+          // directory THERE, and this server would refuse a path it does not have
+          // ("Workspace does not exist or is inaccessible"). The machine travels with the
+          // path, here as everywhere.
+          machineForSession(selected.sessionId),
+        );
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input: [origin, ...input] });
         addSession(created.session);
@@ -1889,7 +1987,7 @@ export function ChatPage() {
         <div className="absolute inset-x-0 bottom-0 top-9 z-10">
           <WorkflowFrame
             projectId={projectId}
-            agentId={agentId}
+            agentId={selected?.agentId ?? agentId}
             tab={workflowTabs.activeTab}
             onChanged={() => void workflowTabs.refresh()}
             onRemoved={() => {
@@ -2046,7 +2144,11 @@ export function ChatPage() {
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {S.chat.workspace}
                 </p>
-                <p className="break-all font-mono text-xs leading-5">{selected.workspace}</p>
+                {/* The machine too: a path names a directory only together with the
+                    filesystem it is on, and the same path exists on more than one of them. */}
+                <p className="break-all font-mono text-xs leading-5">
+                  {nameOnMachine(selected.workspace, machineNameOf(selected.sessionId))}
+                </p>
               </div>
               <div>
                 <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -2278,6 +2380,17 @@ export function ChatPage() {
                     </div>
                   </>
                 )
+              ) : routeSessionOffline ? (
+                <EmptyState
+                  title={
+                    routeSessionOwner === null
+                      ? S.chat.sessionOnOfflineMachineUnknown
+                      : S.chat.sessionOnOfflineMachine(
+                          machineLabels.get(routeSessionOwner) ?? routeSessionOwner,
+                        )
+                  }
+                  description={S.chat.sessionOfflineHint}
+                />
               ) : sessionsLoading || routeSessionPending ? (
                 <div className="space-y-3 p-6">
                   <Skeleton className="h-5 w-1/2" />

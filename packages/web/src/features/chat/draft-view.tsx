@@ -56,6 +56,8 @@ import { S } from "../../lib/strings";
 import { UNCONFINED } from "../../lib/permission-level";
 import { formatMonthDay } from "../../lib/format";
 import { apiErrorText } from "../../lib/api-error";
+import { rememberSessionMachine } from "../../lib/session-machines";
+import { cachedMachineAgents, rememberMachineAgents } from "../../lib/machine-cache";
 import { useAuth } from "../../state/auth";
 import { useLocale } from "../../state/locale";
 import { agentDisplayName, useProject } from "../../state/project";
@@ -158,7 +160,16 @@ export function DraftView({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { agents, currentAgent, setCurrentAgentId } = useProject();
+  const { agents: localAgents, currentAgent, setCurrentAgentId } = useProject();
+  /**
+   * Agents on the machine the workspace is on. They are per-server: a Session created on
+   * another machine can only name an Agent that exists THERE, so offering this machine's
+   * list would offer choices that cannot be made. Empty while loading, which the validation
+   * below already treats as "not ready" rather than "none".
+   */
+  const [remoteAgents, setRemoteAgents] = useState<AgentSummary[]>([]);
+  /** Why the remote list may be empty, for the composer's empty row: still asking, or beyond reach. */
+  const [remoteAgentsState, setRemoteAgentsState] = useState<"loading" | "unreachable">("loading");
   const { add } = useSessions();
   // The draft key includes a user dimension (#68 cross-account leakage). RequireAuth
   // guarantees the user is logged in here; on the off chance there's no user (the
@@ -191,12 +202,20 @@ export function DraftView({
     cached.agentId ?? currentAgent?.agentId ?? null,
   );
   const [workspace, setWorkspace] = useState(cached.workspace ?? "");
+  /**
+   * The machine that workspace is on (null = this one). Carried beside the path because a
+   * path alone does not identify a directory: `/srv/app` exists on many machines and means
+   * a different one on each.
+   */
+  const [workspaceMachine, setWorkspaceMachine] = useState<string | null>(cached.machineId ?? null);
+  /** The Agents actually offerable for this draft: the target machine's, or this one's. */
+  const agents = workspaceMachine === null ? localAgents : remoteAgents;
   // A terminal opened while drafting starts in the Workspace chosen here; "" is the
   // temporary Workspace, whose directory the server only creates with the Session, so
   // that case falls back to home (setDockCwd's null).
   useEffect(() => {
-    setDockCwd(workspace || null);
-  }, [workspace]);
+    setDockCwd(workspace || null, workspaceMachine);
+  }, [workspace, workspaceMachine]);
   const [approvalMode, setApprovalMode] = useState<ApprovalMode>(
     cached.approvalMode ?? "allow-all",
   );
@@ -269,8 +288,14 @@ export function DraftView({
   const routeState = location.state as {
     agentId?: string;
     workspace?: string;
+    machineId?: string;
   } | null;
   const stateAgentId = routeState?.agentId;
+  // Read here rather than beside their own effect below: the Agent resolution waits on them
+  // (see `routeMachineSettled`), and a dependency array is evaluated during the render that
+  // declares it.
+  const stateWorkspace = routeState?.workspace;
+  const stateMachineId = routeState?.machineId;
   const appliedStateKey = useRef<string | null>(null);
   /** One-shot marker for the project-default Agent (seeding precedence, see below). */
   const appliedDefaultAgent = useRef(false);
@@ -278,11 +303,24 @@ export function DraftView({
     if (agents.length === 0) return; // list not ready yet, nothing to validate against — wait for the next pass
     const valid = (id: string | null | undefined): id is string =>
       !!id && agents.some((a) => a.agentId === id);
+    // The route may name an Agent that only exists on the machine it names alongside it (the
+    // Agents page offers a new chat on a machine's own Agent). That machine is applied by the
+    // Workspace effect below, one render later, and its Agents are fetched after that — so
+    // this pass would validate the id against THIS server's list, reject it, and spend the
+    // one-shot key on the fallback Agent, which is then what the Session is created with.
+    // Nothing is decided until the list being validated against is the one the route asked
+    // for. A machine named without a path is never applied at all (the machine travels with
+    // the path), so it cannot hold this up.
+    const routeMachineSettled =
+      stateMachineId === undefined ||
+      stateWorkspace === undefined ||
+      workspaceMachine === stateMachineId;
     if (
       stateAgentId &&
       appliedStateKey.current !== location.key &&
       loadAppliedRouteKey("agentId") !== location.key
     ) {
+      if (!routeMachineSettled) return;
       appliedStateKey.current = location.key;
       saveAppliedRouteKey("agentId", location.key);
       if (valid(stateAgentId)) {
@@ -309,13 +347,22 @@ export function DraftView({
     }
     if (valid(agentId)) return;
     setAgentId((agents.find((a) => a.agentId === "default_agent") ?? agents[0])?.agentId ?? null);
-  }, [agents, agentId, location.key, stateAgentId, chatDefaults, cached.agentId]);
+  }, [
+    agents,
+    agentId,
+    location.key,
+    stateAgentId,
+    stateMachineId,
+    stateWorkspace,
+    workspaceMachine,
+    chatDefaults,
+    cached.agentId,
+  ]);
 
   // Explicit Workspace from route state (the workspace-mode group header "+"): applied once per
   // location.key, same convention as the Agent above, overriding the cached selection ("" pre-fills
   // the temporary workspace). Unlike the Agent there's no list to validate against, so this is a
   // separate effect that never has to wait for a load.
-  const stateWorkspace = routeState?.workspace;
   const appliedWorkspaceKey = useRef<string | null>(null);
   useEffect(() => {
     if (
@@ -328,7 +375,10 @@ export function DraftView({
     appliedWorkspaceKey.current = location.key;
     saveAppliedRouteKey("workspace", location.key);
     setWorkspace(stateWorkspace);
-  }, [location.key, stateWorkspace]);
+    // Set together with the path, and to null when the route names none: a machine left over
+    // from a cached draft would send this Session to a machine the chosen path is not on.
+    setWorkspaceMachine(stateMachineId ?? null);
+  }, [location.key, stateWorkspace, stateMachineId]);
 
   // Project defaults for Workspace / approval mode: the same apply-once discipline as the
   // route-state effects above, deferred until the defaults resolve. A field is only seeded
@@ -523,6 +573,9 @@ export function DraftView({
     if (!userId) return;
     const data: DraftCache = { text: textRef.current, workspace, approvalMode };
     if (Object.keys(sandboxPick).length > 0) data.sandbox = sandboxPick;
+    // Saved with the path: a draft restored without its machine would create the Session
+    // here, against a path that only exists somewhere else.
+    if (workspaceMachine !== null) data.machineId = workspaceMachine;
     if (agentId) data.agentId = agentId;
     if (modelRef) data.modelRef = modelRef;
     if (skillsRef.current.length > 0) data.skills = skillsRef.current;
@@ -542,6 +595,7 @@ export function DraftView({
     draftId,
     agentId,
     workspace,
+    workspaceMachine,
     approvalMode,
     sandboxPick,
     modelRef,
@@ -661,10 +715,41 @@ export function DraftView({
     setCurrentAgentId(a.agentId);
   };
 
+  // The Agents of the machine the workspace is on. What that machine was last seen running
+  // is offered first, so the picker has something while the machine is asked — and stays on
+  // offer if it cannot be: it is the best account of that machine anyone has. The machine's
+  // own answer replaces it wholesale, including with nothing, so an Agent deleted over there
+  // stops being offered here. Nothing here connects: a machine with no held connection
+  // answers as unreachable, and the Machines page is where a person connects it.
+  useEffect(() => {
+    if (workspaceMachine === null) {
+      setRemoteAgents([]);
+      return;
+    }
+    let cancelled = false;
+    setRemoteAgents(cachedMachineAgents(projectId, workspaceMachine));
+    setRemoteAgentsState("loading");
+    void (async () => {
+      try {
+        const answered = (await api.listAgents(projectId, workspaceMachine)).agents;
+        rememberMachineAgents(projectId, workspaceMachine, answered);
+        if (!cancelled) setRemoteAgents(answered);
+      } catch {
+        if (!cancelled) setRemoteAgentsState("unreachable");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceMachine, projectId]);
+
   /** User edits routed through these two so a late-arriving project default cannot clobber them. */
-  const changeWorkspace = useCallback((path: string) => {
+  const changeWorkspace = useCallback((path: string, machineId?: string | null) => {
     touchedRef.current.workspace = true;
     setWorkspace(path);
+    // The machine travels with the path, always — including back to null when the pick moves
+    // home, or the next Session would be created on the machine the previous pick named.
+    setWorkspaceMachine(machineId ?? null);
   }, []);
   const changeApprovalMode = useCallback((mode: ApprovalMode) => {
     touchedRef.current.approval = true;
@@ -700,15 +785,26 @@ export function DraftView({
         // A draft the Evaluation Center's Use dialog composed creates its Session as an
         // evaluation run, which the sidebar files under the Evaluations folder.
         if (cached.source !== undefined) body.source = cached.source;
-        const created = await api.createSession(projectId, agentId, body);
+        // Created ON the machine that owns the workspace: that server runs the agent in it.
+        const created = await api.createSession(projectId, agentId, body, workspaceMachine);
         createdId = created.session.sessionId;
         const res = await api.postTask(createdId, { input, ...(goal ? { goal } : {}) });
+        // postTask answers with the CURRENT id: a Session with no Trace whose process
+        // restarted in between self-heals into a new one. Everything recorded a moment ago
+        // under the id we created is then about a Session that no longer answers to it, and
+        // the routing map is the half that fails silently — a remote Session left mapped
+        // under the old id would be asked of THIS server, which does not have it. Re-recorded
+        // BEFORE the lookup below, which is itself one of those calls.
+        if (res.sessionId !== createdId) rememberSessionMachine(res.sessionId, workspaceMachine);
         // Re-fetch the row before listing it: the server persisted the fallback title at
         // Task start (inside the postTask call), and its session_title push may have gone
         // out before this row existed in the list, where it patched nothing. The fresh row
         // also carries the post-self-heal id, matching where we navigate.
         const fresh = await api.getSession(res.sessionId).catch(() => null);
-        add(fresh?.session ?? created.session);
+        // Listed under the id we are about to navigate to. Falling back to the created row
+        // verbatim would list the OLD id — a stale row, and a route naming a Session the
+        // list does not contain.
+        add(fresh?.session ?? { ...created.session, sessionId: res.sessionId });
         discardDraft();
         // The draft now has an id of its own, so its docks move with it: anything left
         // behind under the draft's scope would surface in the NEXT new conversation
@@ -843,8 +939,23 @@ export function DraftView({
 
         {/* Ownership selection right below the card (small pill dropdowns, styled after ChatGPT's project picker button) */}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <AgentSelect agents={agents} selected={selectedAgent} onSelect={selectAgent} />
-          <WorkspaceSelect projectId={projectId} workspace={workspace} onChange={changeWorkspace} />
+          <AgentSelect
+            agents={agents}
+            selected={selectedAgent}
+            onSelect={selectAgent}
+            empty={
+              workspaceMachine !== null && remoteAgentsState === "unreachable"
+                ? S.machines.agentsUnreachable
+                : S.common.loading
+            }
+          />
+          <WorkspaceSelect
+            projectId={projectId}
+            workspace={workspace}
+            machineId={workspaceMachine}
+            onChange={changeWorkspace}
+            chooseMachine
+          />
         </div>
 
         {/* Example tasks: canned builds showing off the one-sentence → app flow; a click fills
@@ -993,10 +1104,13 @@ function AgentSelect({
   agents,
   selected,
   onSelect,
+  empty,
 }: {
   agents: AgentSummary[];
   selected: AgentSummary | null;
   onSelect: (agent: AgentSummary) => void;
+  /** The empty row's text — why there is nothing to pick yet. */
+  empty: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1028,9 +1142,7 @@ function AgentSelect({
       }
     >
       <div className="max-h-56 overflow-y-auto">
-        {agents.length === 0 && (
-          <p className="px-3 py-1.5 text-xs text-gray-400">{S.common.loading}</p>
-        )}
+        {agents.length === 0 && <p className="px-3 py-1.5 text-xs text-gray-400">{empty}</p>}
         {agents.map((a) => {
           const active = a.agentId === selected?.agentId;
           return (

@@ -77,6 +77,9 @@ import type { PickableItem } from "../skills/skill-pick-list";
 import { addSkillNames, removeSkillNames, toggleSkillName } from "../skills/skill-selection";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { AiCreateModal, CreateButtons } from "../ai-create";
+import { mergeAgents } from "../../lib/benchmark-merge";
+import type { AgentSource } from "../../lib/benchmark-merge";
+import { useSessions } from "../../state/sessions";
 
 /** Built-in Agent shipped with every Project (default_agent only; the server also rejects deletion, so no delete entry point is shown here). */
 const BUILTIN_AGENT_IDS = new Set(["default_agent"]);
@@ -126,17 +129,16 @@ export function AgentsPage() {
   const { locale } = useLocale();
   const { user } = useAuth();
   const { currentProject, agents, agentsLoading, reloadAgents, setCurrentAgentId } = useProject();
+  /**
+   * An Agent belongs to the Project, but its state directory is created on whichever machine it
+   * has run on — so one that has only ever run over there exists only over there, and a list
+   * built from this server alone does not have it at all.
+   */
+  const { machineIds, machineLabels } = useSessions();
+  const [machineAgents, setMachineAgents] = useState<AgentSource[]>([]);
+  const machinesKey = [...machineIds].join(",");
   /** Header search, the Models page's shape: name, id and description, case-insensitive. */
   const [query, setQuery] = useState("");
-  const shownAgents = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (needle === "") return agents;
-    return agents.filter((a) =>
-      [agentDisplayName(a), a.agentId, a.description ?? ""].some((field) =>
-        field.toLowerCase().includes(needle),
-      ),
-    );
-  }, [agents, query]);
   /** The kernel trail's raised badge, or undefined — the notice under the title acts on it or clears it. */
   const kernelTodo = useUpdateBadges().todos.agents;
   /** The bulk kernel update's confirmation is open. */
@@ -337,6 +339,27 @@ export function AgentsPage() {
     }
   };
 
+  useEffect(() => {
+    setMachineAgents([]);
+    if (!projectId || machinesKey === "") return;
+    let cancelled = false;
+    void Promise.allSettled(
+      machinesKey.split(",").map(async (machineId) => ({
+        machineId,
+        agents: (await api.listAgents(projectId, machineId)).agents,
+      })),
+    ).then((answers) => {
+      // A machine that cannot answer contributes no Agents, which is what not reading it
+      // means; this server's own list still stands on its own.
+      if (!cancelled) {
+        setMachineAgents(answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : [])));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, machinesKey]);
+
   /**
    * "New Chat": enters draft state (same as sidebar group header) — the Session is only
    * actually created when the first message is sent. agentId travels via route state: when the
@@ -344,12 +367,41 @@ export function AgentsPage() {
    * overrides it, ensuring that clicking "New Chat" on a given card always lands on that Agent
    * rather than the previous one from the cache.
    */
-  const newChat = (agentId: string) => {
+  const newChat = (agentId: string, machineId: string | null = null) => {
     // Typed-but-unsent draft text becomes a parked draft conversation first (draft-sessions.ts).
     if (user && projectId) parkActiveDraft(user.userId, projectId);
-    setCurrentAgentId(agentId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`, { state: { agentId } });
+    // The current Agent is one of THIS server's. An id that only a machine has matches none of
+    // them, and the chat page renders nothing — the draft included — until there is a current
+    // Agent, so naming one here left a placeholder that never resolved. The draft takes a
+    // machine's Agent from the route state below, and validates it against that machine's list.
+    if (machineId === null) setCurrentAgentId(agentId);
+    navigate(`/chat/${DRAFT_SESSION_ID}`, {
+      // An Agent that lives on a machine runs there: the draft is handed that machine with an
+      // empty Workspace, which is the temporary workspace ON it. The draft applies a machine
+      // only together with a path, since a machine without one would send the Session to a
+      // machine the chosen path is not on.
+      state: machineId === null ? { agentId } : { agentId, workspace: "", machineId },
+    });
   };
+
+  /** The ssh alias of a machine, or null for this server; an unlabelled machine falls back to its id. */
+  const machineNameOf = (machineId: string | null): string | null =>
+    machineId === null ? null : (machineLabels.get(machineId) ?? machineId);
+
+  /** Every Agent of the Project, wherever its state directory is, this server's described first. */
+  const mergedAgents = useMemo(
+    () => mergeAgents([{ machineId: null, agents }, ...machineAgents]),
+    [agents, machineAgents],
+  );
+  const shownAgents = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (needle === "") return mergedAgents;
+    return mergedAgents.filter(({ agent: a }) =>
+      [agentDisplayName(a), a.agentId, a.description ?? ""].some((field) =>
+        field.toLowerCase().includes(needle),
+      ),
+    );
+  }, [mergedAgents, query]);
 
   /**
    * Stat icon click: same navigation as the "Settings" button plus `?tab=` so the settings
@@ -492,8 +544,15 @@ export function AgentsPage() {
              compressed to two lines of text (name line + combined description/stats line) to
              minimize row height */
           <div className="space-y-3">
-            {shownAgents.map((a) => {
+            {shownAgents.map(({ agent: a, machineIds: on }) => {
               const builtin = BUILTIN_AGENT_IDS.has(a.agentId);
+              // An Agent this server does not have: everything below reads and writes its state
+              // directory, which is on the machine. Its name says where it is, its New chat opens
+              // there, and the rest is inert rather than answering 404 from here.
+              const machineName = on.includes(null) ? null : machineNameOf(on[0] ?? null);
+              const elsewhere = machineName !== null;
+              const elsewhereTitle =
+                machineName === null ? "" : S.agent.livesOnMachine(machineName);
               return (
                 <div
                   key={a.agentId}
@@ -516,6 +575,14 @@ export function AgentsPage() {
                       <span className="min-w-0 truncate text-base font-bold">
                         {agentDisplayName(a)}
                       </span>
+                      {machineName !== null && (
+                        <span
+                          className="shrink-0 font-mono text-[11px] normal-case text-gray-400 dark:text-gray-500"
+                          title={elsewhereTitle}
+                        >
+                          {S.chat.machineTag(machineName)}
+                        </span>
+                      )}
                       <span className="hidden shrink-0 font-mono text-xs text-gray-400 md:inline dark:text-gray-500">
                         {a.agentId}
                       </span>
@@ -558,6 +625,7 @@ export function AgentsPage() {
                       <button
                         type="button"
                         className={STAT_LINK_CLASS}
+                        disabled={elsewhere}
                         title={S.agent.toolCount(a.toolCount)}
                         aria-label={S.agent.toolCount(a.toolCount)}
                         onClick={() => openSettingsTab(a.agentId, "tools")}
@@ -568,6 +636,7 @@ export function AgentsPage() {
                       <button
                         type="button"
                         className={STAT_LINK_CLASS}
+                        disabled={elsewhere}
                         title={S.skills.skillCount(a.skillCount)}
                         aria-label={S.skills.skillCount(a.skillCount)}
                         onClick={() => openSettingsTab(a.agentId, "skills")}
@@ -578,6 +647,7 @@ export function AgentsPage() {
                       <button
                         type="button"
                         className={STAT_LINK_CLASS}
+                        disabled={elsewhere}
                         title={S.hooks.hookCount(a.hookCount)}
                         aria-label={S.hooks.hookCount(a.hookCount)}
                         onClick={() => openSettingsTab(a.agentId, "hooks")}
@@ -588,6 +658,7 @@ export function AgentsPage() {
                       <button
                         type="button"
                         className={STAT_LINK_CLASS}
+                        disabled={elsewhere}
                         title={S.agent.memoryCount(a.memoryCount)}
                         aria-label={S.agent.memoryCount(a.memoryCount)}
                         onClick={() => openSettingsTab(a.agentId, "memory")}
@@ -598,6 +669,7 @@ export function AgentsPage() {
                       <button
                         type="button"
                         className={STAT_LINK_CLASS}
+                        disabled={elsewhere}
                         title={S.agent.vaultKeyCount(a.vaultKeyCount)}
                         aria-label={S.agent.vaultKeyCount(a.vaultKeyCount)}
                         onClick={() => openSettingsTab(a.agentId, "vault")}
@@ -608,6 +680,7 @@ export function AgentsPage() {
                       <button
                         type="button"
                         className={STAT_LINK_CLASS}
+                        disabled={elsewhere}
                         title={S.agent.scheduleCount(a.scheduleCount)}
                         aria-label={S.agent.scheduleCount(a.scheduleCount)}
                         onClick={() => openSettingsTab(a.agentId, "schedules")}
@@ -634,12 +707,18 @@ export function AgentsPage() {
 
                   {/* Button group to the right of the sparkline: "New Chat" shows text, the rest are square icon buttons (tooltip shows the full name) */}
                   <div className="flex shrink-0 items-center gap-2">
-                    <Button size="sm" variant="primary" onClick={() => newChat(a.agentId)}>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => newChat(a.agentId, on.includes(null) ? null : (on[0] ?? null))}
+                    >
                       <GlyphIcon d={CARD_ICONS.newChat} />
                       {S.chat.newSessionMenu}
                     </Button>
                     <Button
                       size="sm"
+                      disabled={elsewhere}
+                      {...(elsewhere ? { title: elsewhereTitle } : {})}
                       onClick={() => {
                         setCurrentAgentId(a.agentId);
                         navigate(`/agents/${a.agentId}`);
@@ -650,8 +729,9 @@ export function AgentsPage() {
                     </Button>
                     <Button
                       size="icon"
-                      title={S.nav.usage}
+                      title={elsewhere ? elsewhereTitle : S.nav.usage}
                       aria-label={S.nav.usage}
+                      disabled={elsewhere}
                       onClick={() => navigate(`/usage?agentId=${encodeURIComponent(a.agentId)}`)}
                     >
                       <GlyphIcon
@@ -677,8 +757,9 @@ export function AgentsPage() {
                       <Button
                         size="icon"
                         variant="danger"
-                        title={S.agent.deleteAgent}
+                        title={elsewhere ? elsewhereTitle : S.agent.deleteAgent}
                         aria-label={S.agent.deleteAgent}
+                        disabled={elsewhere}
                         onClick={() =>
                           setDeleting({ agentId: a.agentId, name: agentDisplayName(a) })
                         }

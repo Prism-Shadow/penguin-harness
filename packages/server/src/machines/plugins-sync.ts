@@ -16,6 +16,12 @@
  * fleet-wide; a machine that cannot resolve it shows an inert error row rather than losing
  * the backend it can use.
  *
+ * WHAT A MACHINE IS HANDED is what the Project asks of THAT machine: the shared `[plugins]`
+ * table plus the machine's own `[plugins.<machineId>]` table, its entry winning. Over there
+ * it lands as the Project's shared table — the machine runs it, it does not re-share it. A
+ * plugin the machine is not asked for is never sent there; one it is asked for and does not
+ * list yet is added by that machine's own POST, which takes only what its build ships.
+ *
  * The list travels inside the tunnel to the machine's own `PUT /plugins/installed`, an
  * ordinary authenticated call rather than a far-side script: that endpoint validates, writes
  * the Project's config, and does its own hot apply. So a machine running a build new enough
@@ -48,10 +54,16 @@ export type PluginSyncOutcome =
     }
   | { kind: "failed"; detail: string };
 
+/** One plugin as a Project asks it of a machine: the package name and, when pinned, its version. */
+export interface WantedPlugin {
+  name: string;
+  version?: string;
+}
+
 export interface SyncPluginsOptions {
   api: MachineApi;
-  /** This side's half: what the Project asks for. */
-  loadLocal: (projectId: string) => Promise<string[]>;
+  /** This side's half: what the Project asks of this machine, shared and machine-own tables merged. */
+  loadLocal: (projectId: string) => Promise<WantedPlugin[]>;
   /** The Projects this machine is used by. */
   projects: readonly string[];
 }
@@ -102,13 +114,14 @@ export async function syncPluginsToMachine(opts: SyncPluginsOptions): Promise<Pl
   let restartPending = false;
 
   for (const projectId of opts.projects) {
-    let want: string[];
+    let wanted: WantedPlugin[];
     try {
-      want = await opts.loadLocal(projectId);
+      wanted = await opts.loadLocal(projectId);
     } catch (err) {
       refused.push({ projectId, detail: err instanceof Error ? err.message : String(err) });
       continue;
     }
+    const want = wanted.map((p) => p.name);
     // Read first: without knowing what is there, "added" and "removed" would be guesses, and
     // a machine already in parity would still be written to on every connect.
     const before = await opts.api.request("GET", pluginsPath(projectId));
@@ -121,8 +134,13 @@ export async function syncPluginsToMachine(opts: SyncPluginsOptions): Promise<Pl
       continue;
     }
     let had: string[];
+    let shipped: string[];
     try {
-      had = (JSON.parse(before.text) as InstalledPluginsResponse).plugins.map((p) => p.specifier);
+      const parsed = JSON.parse(before.text) as InstalledPluginsResponse;
+      // The machine's shared table is the list this sync owns; a row its own machine tables
+      // add is not (a build that predates them reports every row as shared).
+      had = parsed.plugins.filter((p) => p.everywhere !== false).map((p) => p.specifier);
+      shipped = parsed.shipped ?? [];
     } catch {
       refused.push({ projectId, detail: "that machine's plugin list could not be read" });
       continue;
@@ -130,14 +148,32 @@ export async function syncPluginsToMachine(opts: SyncPluginsOptions): Promise<Pl
     const same = had.length === want.length && had.every((s, i) => s === want[i]);
     if (same) continue;
 
-    const res = await opts.api.request("PUT", pluginsPath(projectId), { plugins: want });
+    // What the machine lacks and its build does not ship is installed there first: its PUT
+    // lists only what is already on its disk. A failed install is reported and left out of
+    // the list, so one unreachable package does not keep the rest from arriving.
+    const failedInstall = new Set<string>();
+    for (const plugin of wanted) {
+      if (had.includes(plugin.name) || shipped.includes(plugin.name)) continue;
+      const specifier =
+        plugin.version === undefined ? plugin.name : `${plugin.name}@${plugin.version}`;
+      const res = await opts.api.request("POST", pluginsPath(projectId), { specifier });
+      if (res.status !== 200) {
+        failedInstall.add(plugin.name);
+        refused.push({
+          projectId,
+          detail: `installing ${specifier} → ${res.status}: ${res.text.slice(0, 200)}`,
+        });
+      }
+    }
+    const listed = want.filter((s) => !failedInstall.has(s));
+    const res = await opts.api.request("PUT", pluginsPath(projectId), { plugins: listed });
     if (res.status !== 200) {
       refused.push({ projectId, detail: `PUT → ${res.status}: ${res.text.slice(0, 200)}` });
       continue;
     }
     written.push(projectId);
-    for (const s of want) if (!had.includes(s)) added.push(s);
-    for (const s of had) if (!want.includes(s)) removed.push(s);
+    for (const s of listed) if (!had.includes(s)) added.push(s);
+    for (const s of had) if (!listed.includes(s)) removed.push(s);
     try {
       const after = JSON.parse(res.text) as InstalledPluginsResponse;
       if (after.restartPending) restartPending = true;

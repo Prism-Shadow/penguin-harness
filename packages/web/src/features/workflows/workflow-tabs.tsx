@@ -32,7 +32,11 @@ import { useTheme } from "../../state/theme";
 import { localizedText } from "../chat/skill-use";
 
 /** The Agent's workflow tabs, kept fresh by the server's `workflow_updated` events. */
-export function useWorkflowTabs(projectId: string | null, agentId: string | null) {
+export function useWorkflowTabs(
+  projectId: string | null,
+  agentId: string | null,
+  machineId: string | null = null,
+) {
   const [tabs, setTabs] = useState<WorkflowTab[]>([]);
   const [active, setActiveRaw] = useState<string | null>(null);
 
@@ -42,12 +46,12 @@ export function useWorkflowTabs(projectId: string | null, agentId: string | null
       return;
     }
     try {
-      const res = await api.getWorkflows(projectId, agentId);
-      setTabs(workflowTabsOf(res.workflows));
+      const res = await api.getWorkflows(projectId, agentId, machineId);
+      setTabs(workflowTabsOf(res.workflows, machineId));
     } catch {
       // The strip is a convenience over the chat: a failed list leaves it as it was.
     }
-  }, [projectId, agentId]);
+  }, [projectId, agentId, machineId]);
 
   useEffect(() => {
     setActiveRaw(null);
@@ -155,7 +159,9 @@ export function WorkflowFrame({
 
   const loadHistory = useCallback(async () => {
     try {
-      setVersions((await api.getWorkflowHistory(projectId, agentId, tab.workflowId)).versions);
+      setVersions(
+        (await api.getWorkflowHistory(projectId, agentId, tab.workflowId, tab.machineId)).versions,
+      );
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
     }
@@ -169,7 +175,9 @@ export function WorkflowFrame({
     setBusy("reload");
     setFailure(null);
     try {
-      onChanged((await api.reloadWorkflow(projectId, agentId, tab.workflowId)).workflow);
+      onChanged(
+        (await api.reloadWorkflow(projectId, agentId, tab.workflowId, tab.machineId)).workflow,
+      );
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
     } finally {
@@ -182,7 +190,8 @@ export function WorkflowFrame({
     setFailure(null);
     try {
       onChanged(
-        (await api.rollbackWorkflow(projectId, agentId, tab.workflowId, revision)).workflow,
+        (await api.rollbackWorkflow(projectId, agentId, tab.workflowId, revision, tab.machineId))
+          .workflow,
       );
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
@@ -223,7 +232,7 @@ export function WorkflowFrame({
     setBusy("remove");
     setFailure(null);
     try {
-      await api.removeWorkflow(projectId, agentId, tab.workflowId);
+      await api.removeWorkflow(projectId, agentId, tab.workflowId, tab.machineId);
       onRemoved();
     } catch (err) {
       setFailure(err instanceof Error ? err.message : String(err));
@@ -236,7 +245,8 @@ export function WorkflowFrame({
   // (`parent.postMessage({ type: "penguin:fill-app" }, "*")`) — only from our own frame.
   const navigate = useNavigate();
   const fillApp = useCallback(
-    () => void navigate(workflowAppPath(projectId, agentId, tab.workflowId, tab.key)),
+    () =>
+      void navigate(workflowAppPath(projectId, agentId, tab.workflowId, tab.key, tab.machineId)),
     [navigate, projectId, agentId, tab.workflowId, tab.key],
   );
   useEffect(() => {

@@ -292,6 +292,8 @@ export const zh = {
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "留空保持已保存的值不变",
     pluginSecretClear: "清除已存值",
+    /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
+    pluginConfigMachine: "机器",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "必须是数字",
     uploadLimitsTitle: "上传限制",
@@ -1023,6 +1025,8 @@ export const zh = {
       `确认删除 MCP Server「${name}」？其工具自下次 Session 起不再可用。`,
     defaultValue: "（缺省）",
     /** Reset link next to the runtime dropdowns: rewinds the local pick back to "not overridden" (the menus offer no inherit row). */
+    /** An Agent whose state directory is on a machine: what this server cannot act on, and where it can be. */
+    livesOnMachine: (machine: string) => `该 Agent 在 ${machine} 上，请到那台机器上管理`,
     deleteAgent: "删除 Agent",
     builtinUndeletable: "内置 Agent 不可被删除",
     deleteConfirm: (name: string): string =>
@@ -1715,6 +1719,19 @@ export const zh = {
     applyConfirmRemove: (name: string) => `移除 ${name}？`,
     applyConfirmBody: "所有 Project 中正在进行的 Agent 运行都会被中止。",
     pageTitle: "插件",
+    /** The header's machine picker: which machine's plugins the page shows and edits. */
+    viewMachine: "机器",
+    allMachines: "所有机器",
+    thisServer: "本机",
+    /** A row listed for some machines only, by alias. */
+    onlyOn: (names: string) => `仅在 ${names}`,
+    /** An all-machines row listed only for other machines. */
+    notHere: "本机不运行",
+    /** A row the Project lists for a machine that has not reported it running yet. */
+    notSynced: "尚未同步到该机器",
+    /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
+    sharedCannotRemove: "已对所有机器启用：请在「所有机器」视图中移除。",
+    machineUnreadable: (name: string, reason: string) => `无法读取 ${name} 运行的插件：${reason}`,
     /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
     openSettings: "插件设置",
     pageDesc:
@@ -1997,6 +2014,10 @@ export const zh = {
     deleteWorkspaceConfirm: (name: string) =>
       `确定移除「${name}」？仅从侧边栏移除该工作区分组，不影响磁盘目录与已有会话，可随时重新添加。`,
     tempWorkspaces: "临时工作区",
+    /** A name that only means something on another machine, written with the ssh alias that reaches it. */
+    onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
+    /** The same mark on its own, for a row that is attributed to a machine rather than named after one. */
+    machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "在此工作区新建对话",
     draftSubtitle: "最擅长 AI 开发任务的自进化 Agent",
     /** Collapsed group names for the home-page examples (bookmark style; only one open at a time). */
@@ -2400,6 +2421,10 @@ Benchmark：
     statParenOpen: "（",
     statParenClose: "）",
     noSessions: "还没有 Session",
+    /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    sessionOnOfflineMachine: (machine: string) => `这个对话在 ${machine} 上，当前没有连接。`,
+    sessionOnOfflineMachineUnknown: "这个对话在某台机器上，当前没有连接。",
+    sessionOfflineHint: "连接恢复后会自动打开。",
     emptyStream: "发送一条消息开始对话",
     historyLoadFailed: "历史消息加载失败",
     statsLabel: "统计信息",

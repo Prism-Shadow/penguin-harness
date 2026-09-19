@@ -1,0 +1,269 @@
+/**
+ * A terminal on a machine, served through this server's own terminal stream.
+ *
+ * The runtime serves ONE kind of socket, `/api/terminals/<id>/stream`, and everything it
+ * does with it is ask the platform: `terminals().get(id)` for the session, then
+ * `attachStream(ws, session, url)` to drive the protocol. It never looks inside either. So a
+ * terminal that lives on a machine needs no runtime change at all — the terminal manager
+ * answers `get` with a reference to the remote pty (asked of this relay for an id it does
+ * not hold itself), and `attachStream` relays the socket to that machine's own stream
+ * through the connection this server holds to it (a channel dialled through the session's
+ * SOCKS port, like every other request to a machine's API). Platform code, pushed like any
+ * other; the runtime is exactly what it was.
+ *
+ * The reference is spelled in the id: `<terminalId>@<machineId>@<userId>`. The user id is
+ * there for the runtime's owner check, which compares the session's `ownerUserId` with the
+ * authenticated user — a client can only name itself, and an id naming anyone else is
+ * refused before this code runs. What that leaves to check here is that the user may reach
+ * machines at all, which is this server's admins (the session minted on the machine is an
+ * admin's).
+ *
+ * The relay carries messages verbatim. The protocol (frames, backpressure, restore) is the
+ * machine's; both ends speak it and this server does not need to.
+ */
+import type http from "node:http";
+import { WebSocket } from "ws";
+import type { RawData, WebSocket as WsSocket } from "ws";
+import { Component, Interface, Use } from "@prismshadow/penguin-core/kernel";
+import type { Terminal } from "../terminal/manager.js";
+import type { Auth } from "../mechanisms/identity.js";
+import type { Machines } from "./service.js";
+
+const SEP = "@";
+
+/** A remote pty, in the shape the runtime's owner check reads. */
+export interface RemoteTerminalRef {
+  id: string;
+  ownerUserId: string;
+  remote: { machineId: string; terminalId: string };
+}
+
+/** `<terminalId>@<machineId>@<userId>`, or null for an ordinary (local) id. */
+export function parseRemoteTerminalRef(id: string): RemoteTerminalRef | null {
+  let text = id;
+  try {
+    text = decodeURIComponent(id);
+  } catch {
+    // A malformed escape cannot name a terminal anywhere; fall through to "not remote".
+  }
+  const parts = text.split(SEP);
+  if (parts.length !== 3 || parts.some((p) => p === "")) return null;
+  const [terminalId, machineId, ownerUserId] = parts as [string, string, string];
+  return { id: text, ownerUserId, remote: { machineId, terminalId } };
+}
+
+export const isRemoteTerminalRef = (session: object): session is RemoteTerminalRef =>
+  "remote" in session;
+
+/**
+ * Viewer frames held while the machine's stream is still opening. Generous for what actually
+ * arrives in that window — an opening resize and a few keystrokes — and bounded because a
+ * viewer can paste into a handshake that never completes.
+ */
+const PENDING_INPUT_MAX_BYTES = 256 * 1024;
+
+/**
+ * Backpressure watermarks for the viewer's socket, the same pair the machine's own stream
+ * uses on its viewers (terminal/stream.ts).
+ */
+const BACKPRESSURE_HIGH_WATER = 1024 * 1024;
+const BACKPRESSURE_LOW_WATER = 64 * 1024;
+const BACKPRESSURE_POLL_MS = 250;
+
+const frameBytes = (data: RawData): number => {
+  if (Array.isArray(data)) return data.reduce((total, part) => total + part.length, 0);
+  return data instanceof ArrayBuffer ? data.byteLength : data.length;
+};
+
+export interface RelayDeps {
+  /**
+   * What the proxy needs to reach the machine's API by its own id — a dial through the held
+   * connection, the port over there, and a session there — or null when it is not connected.
+   */
+  proxyTarget(
+    machineId: string,
+  ): Promise<{ agent: http.Agent; port: number; cookie: string } | null>;
+  isAdmin(userId: string): boolean;
+}
+
+/**
+ * Joins the viewer's socket to the machine's stream for this pty. Closes the viewer with a
+ * WebSocket status (not a hang) for every way this can fail: the caller may not reach
+ * machines, the machine is not connected, or its stream refused.
+ */
+export async function relayTerminalStream(
+  ws: WsSocket,
+  ref: RemoteTerminalRef,
+  url: URL,
+  deps: RelayDeps,
+  log: (line: string) => void,
+): Promise<void> {
+  if (!deps.isAdmin(ref.ownerUserId)) return ws.close(1008, "forbidden");
+
+  // The remote socket, once there is one. Everything below is written to run before it
+  // exists, because the viewer can go away — and does, on a pane closed or reopened — while
+  // the dial and the handshake are still in flight.
+  let remote: WebSocket | null = null;
+  let closing = false;
+
+  // A close that arrived without a status (1005/1006) cannot be sent as one; ws throws.
+  const sendable = (code: number) =>
+    code === 1000 ||
+    code === 1001 ||
+    code === 1008 ||
+    code === 1011 ||
+    code === 1013 ||
+    (code >= 3000 && code <= 4999)
+      ? code
+      : 1000;
+  let drainTimer: ReturnType<typeof setInterval> | null = null;
+  const stopDrainPoll = () => {
+    if (drainTimer !== null) clearInterval(drainTimer);
+    drainTimer = null;
+  };
+  const closeBoth = (raw: number, reason: string) => {
+    closing = true;
+    stopDrainPoll();
+    const code = sendable(raw);
+    if (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING) ws.close(code, reason);
+    if (
+      remote !== null &&
+      (remote.readyState === remote.OPEN || remote.readyState === remote.CONNECTING)
+    ) {
+      remote.close(code, reason);
+    }
+  };
+
+  // Frames the viewer sends before the machine's stream is open are held, not dropped: the
+  // pane's opening geometry rides in one of them, and a shell started at the wrong size stays
+  // at it until something resizes the pane again.
+  const pending: { data: RawData; isBinary: boolean }[] = [];
+  let pendingBytes = 0;
+
+  // Listened to HERE, before the dial below — not after it. A viewer that closed during the
+  // handshake would otherwise never fire a close on a listener attached afterwards, and the
+  // socket opened below would stay attached to the pty on the machine with nobody reading it:
+  // one leaked pty stream per pane closed at the wrong moment.
+  ws.on("message", (data, isBinary) => {
+    if (remote !== null && remote.readyState === remote.OPEN) {
+      remote.send(data, { binary: isBinary });
+      return;
+    }
+    const size = frameBytes(data);
+    if (pendingBytes + size > PENDING_INPUT_MAX_BYTES) return;
+    pending.push({ data, isBinary });
+    pendingBytes += size;
+  });
+  ws.on("close", (code, reason) => closeBoth(code, reason.toString()));
+  ws.on("error", () => closeBoth(1011, "viewer failed"));
+
+  const target = await deps.proxyTarget(ref.remote.machineId).catch(() => null);
+  // The viewer left while this server was reaching the machine: there is nothing to relay to,
+  // and dialling anyway is exactly the leak above.
+  if (closing) return;
+  if (target === null) return ws.close(1013, "machine not connected");
+
+  const path = `/api/terminals/${encodeURIComponent(ref.remote.terminalId)}/stream${url.search}`;
+  // Through the connection, like every request to a machine's API: the agent's sockets are
+  // SOCKS dials inside the held ssh session (transport/connection.ts). Canonical host, as the
+  // request proxy sends it — the App answers on `localhost` and refuses `127.0.0.1`. No
+  // Origin: the machine's guard reads its absence as a non-browser client, which this is.
+  const socket = new WebSocket(`ws://127.0.0.1:${target.port}${path}`, {
+    agent: target.agent,
+    headers: { host: `localhost:${target.port}`, cookie: target.cookie },
+    perMessageDeflate: false,
+  });
+  remote = socket;
+
+  /**
+   * Backpressure on behalf of a viewer the machine cannot see.
+   *
+   * The machine's own stream watches its socket's buffer and stops sending to a viewer that
+   * falls behind, resyncing it with a fresh screen once it drains (terminal/stream.ts). But
+   * the socket it watches is this relay's, which is fast and local to it — so a slow browser
+   * link makes THIS server the buffer, and a `cat` of a large log grows it without bound.
+   * Reading the machine's socket is stopped instead: the bytes back up through the connection
+   * to where the lag detection can see them, and it does the dropping and resyncing it
+   * already knows how to do.
+   */
+  const applyBackpressure = () => {
+    if (drainTimer !== null || ws.bufferedAmount <= BACKPRESSURE_HIGH_WATER) return;
+    socket.pause();
+    drainTimer = setInterval(() => {
+      if (ws.readyState !== ws.OPEN || socket.readyState !== socket.OPEN) {
+        stopDrainPoll();
+        socket.resume();
+        return;
+      }
+      if (ws.bufferedAmount > BACKPRESSURE_LOW_WATER) return;
+      stopDrainPoll();
+      socket.resume();
+    }, BACKPRESSURE_POLL_MS);
+  };
+
+  socket.on("open", () => {
+    for (const frame of pending) socket.send(frame.data, { binary: frame.isBinary });
+    pending.length = 0;
+    pendingBytes = 0;
+    socket.on("message", (data, isBinary) => {
+      if (ws.readyState !== ws.OPEN) return;
+      ws.send(data, { binary: isBinary });
+      applyBackpressure();
+    });
+  });
+  // A handshake the machine refused: pass its status on as a close reason rather than
+  // inventing one — 404 for a pty that is gone reads differently from 401.
+  socket.on("unexpected-response", (_req, res) => {
+    res.resume();
+    closeBoth(1011, `machine answered ${res.statusCode ?? "?"}`);
+  });
+  socket.on("error", (err) => {
+    log(`[machines] terminal relay to ${ref.remote.machineId}: ${err.message}`);
+    closeBoth(1011, "relay failed");
+  });
+  // Either end closing takes the other with it: a half-open pipe to a shell is a pane that
+  // looks alive and answers nothing.
+  socket.on("close", (code, reason) => closeBoth(code, reason.toString()));
+}
+
+/**
+ * RemoteTerminals: the mechanism TerminalRelay implements. The terminal manager asks it for
+ * an id it does not hold, and the platform offers it every socket before serving a local pty.
+ */
+@Interface()
+export abstract class RemoteTerminals {
+  /** The reference a remote id names, in the shape the runtime's owner check reads; undefined for a local id. */
+  abstract get(id: string): Terminal | undefined;
+  /**
+   * Joins a viewer's socket to the machine's stream when `session` is a remote reference.
+   * False for a local pty, which the caller then serves itself.
+   */
+  abstract attach(ws: WsSocket, session: Terminal, url: URL, log: (line: string) => void): boolean;
+}
+
+@Component()
+export class TerminalRelay implements RemoteTerminals {
+  @Use() private readonly machines!: Machines;
+  @Use() private readonly auth!: Auth;
+
+  get(id: string): Terminal | undefined {
+    const ref = parseRemoteTerminalRef(id);
+    // The runtime only reads `ownerUserId` off this before handing it back to attach.
+    return ref === null ? undefined : (ref as unknown as Terminal);
+  }
+
+  attach(ws: WsSocket, session: Terminal, url: URL, log: (line: string) => void): boolean {
+    if (!isRemoteTerminalRef(session)) return false;
+    void relayTerminalStream(
+      ws,
+      session,
+      url,
+      {
+        proxyTarget: (machineId) => this.machines.proxyTarget(machineId),
+        isAdmin: (userId) => this.auth.isAdmin(userId),
+      },
+      log,
+    );
+    return true;
+  }
+}

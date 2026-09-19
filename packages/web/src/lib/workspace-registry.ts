@@ -1,29 +1,35 @@
 /**
  * Manually-added Workspaces of the sidebar (pure decisions, unit tested): the header's
- * 新建工作区 button lets the user browse to a directory, and the picked path must show
+ * new-workspace button lets the user browse to a directory, and the picked path must show
  * up as a workspace group IMMEDIATELY — even with zero Sessions. There is no Workspace
  * entity on the server (groups are otherwise derived purely from Session paths), so the
  * picked paths persist frontend-side per Project (`penguin.…` key naming, injectable
  * storage — the model-group-expansion.ts convention) and merge into the grouping as
  * empty groups.
  *
- * An entry is `{ path, alias? }`: the alias is a display name set via the group's
- * 重命名工作区 (it replaces the basename as the group label — for session-backed groups
- * too — while the full path stays in the tooltip; an empty alias reverts to the
- * basename). Loads stay tolerant of the branch's earlier string-only stored shape.
+ * An entry is `{ path, machineId?, alias? }`, and the first two together are its identity:
+ * one directory on one machine. The alias is a display name set via the group's rename
+ * action (it replaces the basename as the group label — for session-backed groups too —
+ * while the full path stays in the tooltip; an empty alias reverts to the basename). Loads
+ * stay tolerant of the branch's earlier string-only stored shape.
  *
- * Lifecycle: an entry stays until 删除工作区 unregisters it (sidebar-only — disk and
- * Sessions are never touched; with Sessions present the group simply persists as
+ * Lifecycle: an entry stays until the group's remove action unregisters it (sidebar-only —
+ * disk and Sessions are never touched; with Sessions present the group simply persists as
  * session-derived). Once Sessions exist the entry mostly dedups away at merge, but it
  * still carries the alias and keeps the group visible after those Sessions are gone.
  */
-import { isTempWorkspace, workspaceGroupKey, workspaceLabel } from "./session-grouping";
+import {
+  isTempWorkspace,
+  workspaceGroupKey,
+  workspaceGroupPath,
+  workspaceLabel,
+} from "./session-grouping";
 import type { WorkspaceGroup } from "./session-grouping";
 
 /** One registered Workspace: the normalized path, plus an optional display alias. */
 export interface WorkspaceEntry {
   path: string;
-  /** Display name overriding the path basename (set via 重命名工作区; absent = basename). */
+  /** Display name overriding the path basename (set via the group's rename action; absent = basename). */
   alias?: string;
   /**
    * The machine this directory is ON, by its own id. Absent means the local machine —
@@ -34,6 +40,18 @@ export interface WorkspaceEntry {
    * different directories, so the pair is the identity and `path` alone is not.
    */
   machineId?: string;
+}
+
+/**
+ * Whether two entries name the SAME directory: the path and the machine both, with absence
+ * and null both meaning this one. Every lookup in this module goes through it — a path-only
+ * match would rename, or delete, whichever machine's entry came first in the array.
+ */
+function sameWorkspace(
+  a: { path: string; machineId?: string | null },
+  b: { path: string; machineId?: string | null },
+): boolean {
+  return a.path === b.path && (a.machineId ?? null) === (b.machineId ?? null);
 }
 
 /** Minimal storage interface (the subset of localStorage used here); tests inject an in-memory implementation. */
@@ -103,7 +121,9 @@ export function loadWorkspaceRegistry(
     const out: WorkspaceEntry[] = [];
     for (const x of parsed) {
       const entry = parseEntry(x);
-      if (entry !== null && !out.some((e) => e.path === entry.path)) out.push(entry);
+      // Deduped on the PAIR, as registerWorkspace stores it: dropping the second machine's
+      // entry here would lose a Workspace on load, silently and for good.
+      if (entry !== null && !out.some((e) => sameWorkspace(e, entry))) out.push(entry);
     }
     return out;
   } catch {
@@ -144,36 +164,47 @@ export function registerWorkspace(
   if (p === "" || isTempWorkspace(p)) return entries;
   // Deduped on the PAIR: the same path on two machines is two different directories, and
   // collapsing them would hide one behind the other with no way to tell which.
-  if (entries.some((e) => e.path === p && (e.machineId ?? null) === (machineId ?? null))) {
-    return entries;
-  }
+  if (entries.some((e) => sameWorkspace(e, { path: p, machineId }))) return entries;
   return [{ path: p, ...(machineId === undefined ? {} : { machineId }) }, ...entries];
 }
 
 /**
  * Sets (or, with a blank alias, clears) a registered Workspace's display alias.
- * Returns the INPUT array unchanged (same reference) when the path isn't registered
- * or the alias doesn't actually change.
+ * Returns the INPUT array unchanged (same reference) when the pair isn't registered
+ * or the alias doesn't actually change. The machine is carried across the rewrite: an
+ * entry that lost it would name a directory here rather than the one that was renamed.
  */
 export function setWorkspaceAlias(
   entries: readonly WorkspaceEntry[],
   path: string,
+  machineId: string | null,
   alias: string,
 ): readonly WorkspaceEntry[] {
   const a = alias.trim();
-  const entry = entries.find((e) => e.path === path);
+  const target = { path, ...(machineId === null ? {} : { machineId }) };
+  const entry = entries.find((e) => sameWorkspace(e, target));
   if (!entry || (entry.alias ?? "") === a) return entries;
   return entries.map((e) =>
-    e.path === path ? (a === "" ? { path: e.path } : { path: e.path, alias: a }) : e,
+    sameWorkspace(e, target)
+      ? {
+          path: e.path,
+          ...(a === "" ? {} : { alias: a }),
+          ...(e.machineId === undefined ? {} : { machineId: e.machineId }),
+        }
+      : e,
   );
 }
 
-/** 删除工作区: drops the registry entry (sidebar-only — disk and Sessions are untouched). Same-reference fast exit when the path isn't registered. */
+/** Drops the registry entry (sidebar-only — disk and Sessions are untouched). Same-reference fast exit when the pair isn't registered. */
 export function unregisterWorkspace(
   entries: readonly WorkspaceEntry[],
   path: string,
+  machineId: string | null = null,
 ): readonly WorkspaceEntry[] {
-  return entries.some((e) => e.path === path) ? entries.filter((e) => e.path !== path) : entries;
+  const target = { path, ...(machineId === null ? {} : { machineId }) };
+  return entries.some((e) => sameWorkspace(e, target))
+    ? entries.filter((e) => !sameWorkspace(e, target))
+    : entries;
 }
 
 /**
@@ -195,18 +226,23 @@ export function mergeRegisteredWorkspaces<T>(
   registered: readonly WorkspaceEntry[],
 ): WorkspaceGroup<T>[] {
   const aliasByKey = new Map(
-    registered.filter((e) => e.alias !== undefined).map((e) => [e.path, e.alias as string]),
+    registered
+      .filter((e) => e.alias !== undefined)
+      .map((e) => [workspaceGroupKey(e.path, e.machineId ?? null), e.alias as string]),
   );
   const existing = new Set(groups.map((g) => g.key));
   const added: WorkspaceGroup<T>[] = [];
-  for (const { path, alias } of registered) {
-    const key = workspaceGroupKey(path);
-    if (existing.has(key) || key !== path) continue; // already grouped, or a temp-shaped path
+  for (const { path, alias, machineId } of registered) {
+    const machine = machineId ?? null;
+    const key = workspaceGroupKey(path, machine);
+    // Already grouped (by its own machine's Sessions), or a temp-shaped path.
+    if (existing.has(key) || workspaceGroupPath(key) !== path) continue;
     existing.add(key);
     added.push({
       key,
       label: alias ?? workspaceLabel(path),
       fullPath: path,
+      machineId: machine,
       temp: false,
       sessions: [],
     });

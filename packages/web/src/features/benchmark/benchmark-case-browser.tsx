@@ -134,9 +134,16 @@ interface Props {
   projectId: string;
   benchmarkId: string;
   caseSummary: BenchmarkCaseSummary;
+  /**
+   * The machine whose disk holds this Case's files; null for this server. A Benchmark's Cases
+   * can be read off any machine that has them, and the listing this browser was opened from
+   * recorded which one — asking a different server for the same path is asking about a
+   * directory it may not have.
+   */
+  machineId: string | null;
 }
 
-export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Props) {
+export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary, machineId }: Props) {
   /** Listings by tree path; a missing key means "not fetched yet". */
   const [listings, setListings] = useState<Listings>(() => new Map());
   /** Both materials start open, so the case's files are in view without a click. */
@@ -158,8 +165,11 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Pr
       filePath: string,
       options?: { download?: boolean; preview?: boolean },
     ) =>
-      api.benchmarkCaseFileUrl(projectId, benchmarkId, caseSummary.id, filePath, material, options),
-    [projectId, benchmarkId, caseSummary.id],
+      api.benchmarkCaseFileUrl(projectId, benchmarkId, caseSummary.id, filePath, material, {
+        ...options,
+        machineId,
+      }),
+    [projectId, benchmarkId, caseSummary.id, machineId],
   );
 
   /**
@@ -180,6 +190,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Pr
           caseSummary.id,
           path,
           material,
+          machineId,
         );
         if (!current()) return null;
         setListings((m) => new Map(m).set(treePath, res.entries));
@@ -199,7 +210,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Pr
         }
       }
     },
-    [projectId, benchmarkId, caseSummary.id],
+    [projectId, benchmarkId, caseSummary.id, machineId],
   );
 
   /** Opens a file in the preview pane: the text kinds are read, the rest are served by URL. */
@@ -252,7 +263,7 @@ export function BenchmarkCaseBrowser({ projectId, benchmarkId, caseSummary }: Pr
     // The request counters are deliberately not reset: a listing still in flight for the case
     // being left would otherwise match the new case's first request and land in its tree.
     readmeOpened.current = false;
-  }, [projectId, benchmarkId, caseSummary.id]);
+  }, [projectId, benchmarkId, caseSummary.id, machineId]);
 
   useEffect(() => {
     void loadDir("rubric");

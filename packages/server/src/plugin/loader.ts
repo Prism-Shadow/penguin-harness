@@ -23,7 +23,11 @@
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { parse as parseToml } from "smol-toml";
-import { parsePluginTable, projectConfigPath } from "@prismshadow/penguin-core";
+import {
+  effectivePluginTable,
+  parsePluginTables,
+  projectConfigPath,
+} from "@prismshadow/penguin-core";
 import { findPackageJSON } from "node:module";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -82,8 +86,16 @@ export async function listProjectIds(root: string): Promise<string[]> {
   return ids.sort();
 }
 
-/** One Project's list, in the order it wrote them; empty when it asks for none. */
-export async function readProjectPluginList(root: string, projectId: string): Promise<string[]> {
+/**
+ * What one Project asks `machineId` to run, in the order it wrote them; empty when it asks
+ * for none. `machineId` is the machine's own id — this server's, for what it loads itself —
+ * and null reads the shared table alone.
+ */
+export async function readProjectPluginList(
+  root: string,
+  projectId: string,
+  machineId: string | null = null,
+): Promise<string[]> {
   let text: string;
   try {
     text = await fs.readFile(projectConfigPath(root, projectId), "utf8");
@@ -108,17 +120,23 @@ export async function readProjectPluginList(root: string, projectId: string): Pr
     );
     return [];
   }
-  return Object.keys(parsePluginTable((parsed as { plugins?: unknown }).plugins) ?? {});
+  const tables = parsePluginTables((parsed as { plugins?: unknown }).plugins);
+  return tables === undefined ? [] : Object.keys(effectivePluginTable(tables, machineId));
 }
 
 /**
- * The closure this deployment runs: the union over its Projects, first-asked order. One
- * process, one module tree — so this is what `loadPlugins` loads, whoever asked for it.
+ * The closure a machine runs: the union over this root's Projects of what each asks THAT
+ * machine for, first-asked order. One process, one module tree — so with this server's own
+ * id it is what `loadPlugins` loads, whoever asked for it; a plugin every Project lists only
+ * for other machines is neither loaded nor installed here.
  */
-export async function readPluginClosure(root: string): Promise<string[]> {
+export async function readPluginClosure(
+  root: string,
+  machineId: string | null = null,
+): Promise<string[]> {
   const out: string[] = [];
   for (const projectId of await listProjectIds(root)) {
-    for (const specifier of await readProjectPluginList(root, projectId)) {
+    for (const specifier of await readProjectPluginList(root, projectId, machineId)) {
       if (!out.includes(specifier)) out.push(specifier);
     }
   }
@@ -544,6 +562,8 @@ export async function loadPlugins(
    * place (a package updated under `<root>/plugins`) means different code, and that is imported.
    */
   reuse: ReadonlyMap<string, LoadedPlugin> = new Map(),
+  /** This server's own machine id, which selects its `[plugins.<id>]` tables; null reads the shared tables alone. */
+  machineId: string | null = null,
 ): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
   const pushedAssets = assetsDir === undefined ? await committedAssetsDir(root) : assetsDir;
@@ -551,7 +571,7 @@ export async function loadPlugins(
   // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
   // available without a download — that is what `builtin` means — but availability is not
   // consent: it loads when a Project asks for it, like every other plugin.
-  const specifiers = await readPluginClosure(root);
+  const specifiers = await readPluginClosure(root, machineId);
   const loaded: LoadedPlugin[] = [];
   for (const specifier of specifiers) {
     // Reused only when the SAME FILE is behind the name. A push writes the builtin plugins to
@@ -642,13 +662,15 @@ export async function loadPluginHost(
   root: string,
   /** The booting version's assets (hmr.assetsDir()), not the committed ones — see loadPlugins. */
   assetsDir?: string | null,
+  /** This server's own machine id (see loadPlugins). */
+  machineId: string | null = null,
 ): Promise<PluginHost> {
   const inherited = pluginHostFrom(resources);
   // An older generation's host may predate `entries()`; then nothing is reused and every
   // specifier is imported again, which the ESM cache makes cheap.
   const reuse =
     typeof inherited.entries === "function" ? inherited.entries() : new Map<string, LoadedPlugin>();
-  const result = await loadPlugins(root, assetsDir, reuse);
+  const result = await loadPlugins(root, assetsDir, reuse, machineId);
   const host = new PluginHost();
   for (const entry of result.loaded) {
     // A module name clash is a LOAD failure, isolated per entry like an import failure.

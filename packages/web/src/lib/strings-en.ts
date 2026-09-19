@@ -259,6 +259,8 @@ export const en: Strings = {
     /** A secret field with a stored value: submitting it empty keeps the stored one. */
     pluginSecretKeepHint: "Leave empty to keep the saved value",
     pluginSecretClear: "Clear stored value",
+    /** The Plugins settings page's machine picker: each server keeps its own plugin settings. */
+    pluginConfigMachine: "Machine",
     /** Under a number field whose box does not parse; the save is not sent. */
     pluginFieldNotNumber: "Must be a number",
     uploadLimitsTitle: "Upload limits",
@@ -1026,6 +1028,7 @@ export const en: Strings = {
     mcpDeleteConfirm: (name: string): string =>
       `Delete MCP Server "${name}"? Its tools stop being available from the next Session on.`,
     defaultValue: "(default)",
+    livesOnMachine: (machine: string) => `This Agent lives on ${machine}; manage it there`,
     deleteAgent: "Delete agent",
     builtinUndeletable: "Built-in agents cannot be deleted",
     deleteConfirm: (name: string): string =>
@@ -1704,6 +1707,20 @@ export const en: Strings = {
     applyConfirmRemove: (name: string) => `Remove ${name}?`,
     applyConfirmBody: "Agent runs in progress in every Project will be stopped.",
     pageTitle: "Plugins",
+    /** The header's machine picker: which machine's plugins the page shows and edits. */
+    viewMachine: "Machine",
+    allMachines: "All machines",
+    thisServer: "This server",
+    /** A row listed for some machines only, by alias. */
+    onlyOn: (names: string) => `only on ${names}`,
+    /** An all-machines row listed only for other machines. */
+    notHere: "not on this server",
+    /** A row the Project lists for a machine that has not reported it running yet. */
+    notSynced: "not on that machine yet",
+    /** Remove is unavailable in a machine's view for a plugin the shared table lists. */
+    sharedCannotRemove: "Enabled on all machines: remove it in the All machines view.",
+    machineUnreadable: (name: string, reason: string) =>
+      `Could not read what ${name} runs: ${reason}`,
     /** Header icon button opening the Settings dialog on its Plugins page (admin only). */
     openSettings: "Plugin settings",
     pageDesc:
@@ -1990,6 +2007,8 @@ export const en: Strings = {
     deleteWorkspaceConfirm: (name: string) =>
       `Remove "${name}"? This only removes the workspace group from the sidebar — the directory on disk and existing chats are untouched, and it can be re-added anytime.`,
     tempWorkspaces: "Temporary workspaces",
+    onMachine: (name: string, machine: string) => `${name} [SSH: ${machine}]`,
+    machineTag: (machine: string) => `[SSH: ${machine}]`,
     newSessionInWorkspace: "New chat in this workspace",
     draftSubtitle: "The self-evolving agent that excels at AI development tasks",
     /** Folder names for the draft page's collapsible examples (bookmark-style: exactly one open at a time). */
@@ -2392,6 +2411,12 @@ Scenarios:
     statParenOpen: " (",
     statParenClose: ")",
     noSessions: "No Sessions yet",
+    /** The routed conversation is on a machine with no connection held: not gone, just out of reach from here. */
+    sessionOnOfflineMachine: (machine: string) =>
+      `This conversation is on ${machine}, which is not connected right now.`,
+    sessionOnOfflineMachineUnknown:
+      "This conversation is on a machine that is not connected right now.",
+    sessionOfflineHint: "It will open as soon as the connection is back.",
     emptyStream: "Send a message to start the conversation",
     historyLoadFailed: "Failed to load history",
     statsLabel: "Stats",
