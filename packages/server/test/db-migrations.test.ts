@@ -71,7 +71,7 @@ function open024(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   dropCompanyModeTables(db);
   db.exec("DROP TABLE messaging_bindings");
@@ -115,7 +115,7 @@ function open6(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   db.exec(PRE_CHANNEL_CHAT_DDL);
   // SCHEMA_SQL declares the CURRENT shape; migration 8's queue came after 6.
@@ -131,7 +131,7 @@ function open7(): DatabaseSync {
   db.exec("DROP TABLE IF EXISTS org_desk_notices");
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   db.exec("PRAGMA user_version = 7");
   return db;
@@ -143,7 +143,7 @@ function open8(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   db.exec("PRAGMA user_version = 8");
   return db;
@@ -155,7 +155,7 @@ function open029(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   dropCompanyModeTables(db);
   db.exec(GOAL_STATE_DDL);
@@ -178,7 +178,7 @@ function openPreProfile(): DatabaseSync {
   db.exec(SCHEMA_SQL);
   db.exec("DROP TABLE IF EXISTS model_promotions");
   db.exec(
-    "DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
+    "DROP TABLE IF EXISTS activity_module_runs; DROP TABLE IF EXISTS activity_run_candidates; DROP TABLE IF EXISTS activity_runs; DROP TABLE IF EXISTS activity_drafts; DROP TABLE IF EXISTS activities; DROP TABLE IF EXISTS activity_collections;",
   );
   dropProfileColumns(db);
   // Version 4 predates company mode as well: its three migrations (6–8) come after the
@@ -597,6 +597,32 @@ describe("migration 8 → current: model-promotions", () => {
 });
 
 describe("activity candidate storage", () => {
+  it("adds module run identity without rewriting spec history and refuses a lossy downgrade", () => {
+    const db = new sqlite.DatabaseSync(":memory:");
+    try {
+      db.exec(SCHEMA_SQL);
+      db.exec("DROP TABLE activity_module_runs; PRAGMA user_version = 12");
+      expect(() => migrate(db, { swapPath: true })).toThrow(RestartRequiredError);
+      expect(schemaVersion(db)).toBe(12);
+      migrate(db);
+      db.exec(
+        "INSERT INTO users (user_id, password_hash, is_admin, created_at) VALUES ('u', 'h', 0, 'now'); INSERT INTO projects VALUES ('p', 'u', 'now'); INSERT INTO activities VALUES ('a', 'c', 'p', 0, 'Title', 'standard', 'now', 'now', 0)",
+      );
+      db.exec(
+        "INSERT INTO activity_runs VALUES ('run', 'p', 'a', 'succeeded', 'now', '{}'); INSERT INTO activity_module_runs VALUES ('run')",
+      );
+      expect(() => rollbackTo(db, 12)).toThrow("assembly attempts exist");
+      expect(schemaVersion(db)).toBe(13);
+      expect(db.prepare("SELECT record_json FROM activity_runs").get()).toEqual({
+        record_json: "{}",
+      });
+      db.exec("DELETE FROM activity_module_runs; DELETE FROM activity_runs");
+      rollbackTo(db, 12);
+      expect(schemaVersion(db)).toBe(12);
+    } finally {
+      db.close();
+    }
+  });
   it("moves candidate bytes once, preserves invalid output, and restores it on rollback", () => {
     const db = new sqlite.DatabaseSync(":memory:");
     try {

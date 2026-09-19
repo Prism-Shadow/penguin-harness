@@ -21,7 +21,7 @@ describe("activity candidate handle reads", () => {
     const { file } = await fixture();
     expect(await readCandidate(file)).toBe('{"title":"safe"}');
     await fs.writeFile(file, "x".repeat(2 * 1024 * 1024 + 1));
-    await expect(readCandidate(file)).rejects.toThrow("regular JSON file");
+    await expect(readCandidate(file)).rejects.toThrow("regular file");
   });
   it("refuses a different file substituted at open, including on Windows without O_NOFOLLOW", async () => {
     const { dir, file } = await fixture();

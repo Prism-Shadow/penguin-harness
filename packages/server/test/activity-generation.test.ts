@@ -32,7 +32,7 @@ describe("activity generation through Harness sessions", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  async function fixture() {
+  async function fixture(moduleOutput = false) {
     let complete: () => void = () => {};
     const waiting = new Set<string>();
     const disposed = new Set<string>();
@@ -61,7 +61,31 @@ describe("activity generation through Harness sessions", () => {
           yield abortEvent();
           return;
         }
-        await fs.writeFile(path.join(row.workspace!, "activity-spec.json"), output);
+        if (moduleOutput) {
+          const files: Record<string, string> = {
+            "preview/index.html":
+              "<!doctype html><title>WAF</title><script src='./runtime.js'></script>",
+            "preview/runtime.js": "window.waf = true;",
+            "module/dist/entry.js": "window.moduleBuilt = true;",
+            "module/build.log": "typecheck and buildDebug completed",
+          };
+          for (const [name, content] of Object.entries(files)) {
+            await fs.mkdir(path.dirname(path.join(row.workspace!, name)), { recursive: true });
+            await fs.writeFile(path.join(row.workspace!, name), content);
+          }
+          await fs.writeFile(
+            path.join(row.workspace!, "module-result.json"),
+            JSON.stringify({
+              files: [
+                "module/package.json",
+                "module/definition.json",
+                "module/src/index.ts",
+                "module/res/layout.html",
+                ...Object.keys(files),
+              ],
+            }),
+          );
+        } else await fs.writeFile(path.join(row.workspace!, "activity-spec.json"), output);
         yield requestEnd(fatal ? "fatal" : "completed");
       },
     });
@@ -103,12 +127,16 @@ describe("activity generation through Harness sessions", () => {
       "ActivitiesModule",
       "ActivityGeneration",
     );
-    async function start() {
+    async function start(wafRoot?: string) {
       const current = (await (await client.get(endpoint)).json()) as ActivityDetail;
-      const response = await client.post(`${endpoint}/generate-spec`, {
-        agentId: "default_agent",
-        expectedRevision: current.draft.contentRevision,
-      });
+      const response = await client.post(
+        `${endpoint}/${wafRoot ? "assemble-module" : "generate-spec"}`,
+        {
+          agentId: "default_agent",
+          expectedRevision: current.draft.contentRevision,
+          ...(wafRoot ? { wafRoot } : {}),
+        },
+      );
       expect(response.status, await response.clone().text()).toBe(202);
       const run = (await response.json()) as ActivityRun;
       expect(run.status, run.error ?? "").toBe("running");
@@ -137,6 +165,22 @@ describe("activity generation through Harness sessions", () => {
       endpoint,
       service,
       start,
+      startModule: async () => {
+        const current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+        expect(
+          (
+            await client.post(`${endpoint}/apply-generated-spec`, {
+              spec: activitySpec,
+              expectedRevision: current.draft.contentRevision,
+            })
+          ).status,
+        ).toBe(200);
+        const root = path.join(t.root, "waf-checkout");
+        for (const name of ["framework/src", "modules", "media"])
+          await fs.mkdir(path.join(root, name), { recursive: true });
+        await fs.writeFile(path.join(root, "framework/package.json"), "{}");
+        return start(root);
+      },
       finish,
       disposed,
       endTask: async (run: ActivityRun) => {
@@ -145,6 +189,60 @@ describe("activity generation through Harness sessions", () => {
       },
     };
   }
+
+  it("assembles a WAF module through the same Session approvals and retains draft identity", async () => {
+    const f = await fixture(true);
+    const run = await f.startModule();
+    expect(run.kind).toBe("module");
+    const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
+    expect(session.approvalMode).toBe("always-ask");
+    expect(
+      JSON.parse(await fs.readFile(path.join(session.workspace!, "module/definition.json"), "utf8"))
+        .engine,
+    ).toBe("html");
+    const result = await f.finish(run);
+    expect(result.status).toBe("succeeded");
+    expect(result.kind).toBe("module");
+    expect(JSON.parse(result.candidate!).files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "preview/runtime.js", sha256: expect.any(String) }),
+      ]),
+    );
+    const detail = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    expect(detail.draft.contentRevision).toBe(run.inputRevision);
+    expect(detail.draft.spec).toEqual(activitySpec);
+  });
+
+  it("keeps module output as a conflict when the input draft changes", async () => {
+    const f = await fixture(true);
+    const run = await f.startModule();
+    await f.client.patch(`${f.endpoint}/description`, {
+      description: "Changed during assembly",
+      expectedRevision: run.inputRevision,
+    });
+    const result = await f.finish(run);
+    expect(result.status).toBe("conflict");
+    expect(JSON.parse(result.candidate!).previewPath).toBe("preview/index.html");
+  });
+
+  it("does not mark module files from a failed Session as a successful assembly", async () => {
+    const f = await fixture(true);
+    const run = await f.startModule();
+    expect((await f.finish(run, "", true)).status).toBe("failed");
+  });
+
+  it("requires a valid saved spec before admitting module work", async () => {
+    const f = await fixture(true);
+    const response = await f.client.post(`${f.endpoint}/assemble-module`, {
+      agentId: "default_agent",
+      expectedRevision: f.draft.contentRevision,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "module_spec_required" } });
+    expect(
+      f.t.deps.db.prepare("SELECT COUNT(*) AS count FROM activity_module_runs").get(),
+    ).toMatchObject({ count: 0 });
+  });
 
   it("captures inputs in a separate workspace, then validates, applies and reopens the saved result", async () => {
     const f = await fixture();

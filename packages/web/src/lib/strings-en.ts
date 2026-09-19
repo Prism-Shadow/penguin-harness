@@ -11,6 +11,15 @@ import type { Strings } from "./strings";
 export const en: Strings = {
   appName: "PenguinHarness",
   activities: {
+    wafRoot: "WAF checkout",
+    wafRootHint:
+      "Folder containing framework, modules and media. Leave empty for automatic discovery.",
+    assemble: "Assemble WAF module",
+    moduleRun: "Module assembly",
+    moduleReady: "Assembled",
+    specRun: "Specification",
+    previewModule: "Open WAF preview",
+    olderModule: "Built from an earlier draft",
     title: "Activities",
     create: "Create activity",
     productCode: "Product code",
@@ -4265,6 +4274,10 @@ Scenarios:
       spec_invalid: "The specification JSON is invalid. Check its required fields and value types.",
       description_required: "Add and save a description before generating a specification.",
       generation_running: "This activity already has a generation running.",
+      module_spec_required: "Save a valid specification before assembling a module.",
+      module_spec_invalid: "Module scenes need unique safe IDs other than activity.",
+      waf_checkout_missing:
+        "WAF checkout not found. Select a folder containing framework, modules and media.",
       run_not_found: "This generation attempt no longer exists, or you do not have access.",
       project_deleting:
         "This Project is being deleted. Activity changes and generation are unavailable.",
