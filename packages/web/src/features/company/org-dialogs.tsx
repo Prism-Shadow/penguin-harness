@@ -57,11 +57,13 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { useAuth } from "../../state/auth";
-import { useCompany } from "../../state/company";
+import { heldMachines, useCompany, type HeldMachine } from "../../state/company";
 import { projectDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { ModelCatalogSelect, modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
+import { MachinePicker } from "../machines/machine-picker";
+import { machineForOrg } from "../../lib/org-machines";
 import { sameModelRef } from "../models/model-grouping";
 import { ErrorLine, InfoFieldLabel, MoneyPerMonthInput, OrgStatusPill } from "./shared";
 import { orgCreatedTarget } from "./company-nav";
@@ -98,7 +100,7 @@ const DEFAULT_CEO_BUDGET_USD = 100;
 const ID_ERROR_CODES = new Set(["org_exists", "invalid_org_id"]);
 
 /** The Project's configured models, loaded once per open; null until they arrive, with the failure kept beside them. */
-function useProjectModels(projectId: string, open: boolean) {
+function useProjectModels(projectId: string, open: boolean, machineId: string | null = null) {
   const [models, setModels] = useState<ModelsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -107,7 +109,7 @@ function useProjectModels(projectId: string, open: boolean) {
     setModels(null);
     setError(null);
     api
-      .getModels(projectId)
+      .getModels(projectId, machineId)
       .then((res) => {
         if (!cancelled) setModels(res);
       })
@@ -117,7 +119,7 @@ function useProjectModels(projectId: string, open: boolean) {
     return () => {
       cancelled = true;
     };
-  }, [open, projectId]);
+  }, [open, projectId, machineId]);
   return { models, error };
 }
 
@@ -196,10 +198,13 @@ function ModelField({
 /** The company workspace: the chat draft's directory browser in its form shape; empty means the organization's own directory. */
 function WorkspaceField({
   projectId,
+  machineId,
   value,
   onChange,
 }: {
   projectId: string;
+  /** The machine the organization lives on: the only one whose directories are offered. Null = this server. */
+  machineId: string | null;
   value: string;
   onChange: (path: string) => void;
 }) {
@@ -207,13 +212,65 @@ function WorkspaceField({
     <div>
       <InfoFieldLabel label={S.company.workspaceField} info={S.company.workspaceInfo} />
       <WorkspaceSelect
+        // Keyed on the machine: the browser keeps the machine it is on as its own state, and
+        // an organization's workspace is never on another machine than the organization.
+        key={machineId ?? ""}
         projectId={projectId}
+        machineId={machineId}
         workspace={value}
-        onChange={onChange}
+        onChange={(path) => onChange(path)}
         variant="form"
         fieldLabel={S.company.workspaceField}
         emptyLabel={S.company.workspaceEmpty}
         clearLabel={S.company.workspaceClear}
+      />
+    </div>
+  );
+}
+
+/** The machines an organization of this Project can be created on, besides this server. */
+function useHeldMachines(projectId: string, open: boolean): HeldMachine[] {
+  const [machines, setMachines] = useState<HeldMachine[]>([]);
+  useEffect(() => {
+    if (!open || !projectId) return;
+    let cancelled = false;
+    setMachines([]);
+    void heldMachines(projectId).then((held) => {
+      if (!cancelled) setMachines(held);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectId]);
+  return machines;
+}
+
+/**
+ * Where the organization lives. An organization is files and desks, so it lives on ONE
+ * machine: its chart and tickets are written there, its employees are that machine's Agents,
+ * and their Sessions run there. The field is absent when the Project reaches no machine.
+ */
+function MachineField({
+  machines,
+  value,
+  onChange,
+}: {
+  machines: readonly HeldMachine[];
+  value: string | null;
+  onChange: (machineId: string | null) => void;
+}) {
+  if (machines.length === 0) return null;
+  return (
+    <div>
+      <InfoFieldLabel label={S.company.machineField} info={S.company.machineInfo} />
+      <MachinePicker
+        aria-label={S.company.machineField}
+        value={value ?? ""}
+        onChange={(next) => onChange(next === "" ? null : next)}
+        choices={[
+          { value: "", label: S.company.machineHere },
+          ...machines.map((m) => ({ value: m.machineId, label: S.company.machineSsh(m.alias) })),
+        ]}
       />
     </div>
   );
@@ -271,6 +328,8 @@ export function CreateOrganizationDialog({
   const [mission, setMission] = useState("");
   const [modelRef, setModelRef] = useState<ModelRefDto | null>(null);
   const [workspace, setWorkspace] = useState("");
+  /** The machine the organization is created on; null = this server. */
+  const [machineId, setMachineId] = useState<string | null>(null);
   const [ceoBudget, setCeoBudget] = useState(() => fromStoredUsd(DEFAULT_CEO_BUDGET_USD, currency));
   const [idError, setIdError] = useState<string | undefined>(undefined);
   const [missionError, setMissionError] = useState<string | undefined>(undefined);
@@ -281,7 +340,12 @@ export function CreateOrganizationDialog({
   const [busy, setBusy] = useState(false);
   /** "Clear draft" awaiting confirmation: it empties every field and the stored draft. */
   const [confirmClear, setConfirmClear] = useState(false);
-  const { models, error: modelsError } = useProjectModels(projectId, open);
+  const machines = useHeldMachines(projectId, open);
+  // A draft may name a machine that is not held any more; the form then falls back to here.
+  const onMachine =
+    machineId !== null && machines.some((m) => m.machineId === machineId) ? machineId : null;
+  const { models, error: modelsError } = useProjectModels(projectId, open, onMachine);
+  const { organizations } = useCompany();
 
   // The Project the organization is being created in: the current one on open, changeable
   // below when the user has several.
@@ -299,6 +363,7 @@ export function CreateOrganizationDialog({
     setMission(draft.mission);
     setModelRef(draft.model);
     setWorkspace(draft.workspace);
+    setMachineId(draft.machineId);
     setCeoBudget(
       draft.ceoBudget === "" ? fromStoredUsd(DEFAULT_CEO_BUDGET_USD, currency) : draft.ceoBudget,
     );
@@ -335,8 +400,16 @@ export function CreateOrganizationDialog({
   // Every edit is written straight through: the draft exists for the close nobody meant.
   useEffect(() => {
     if (!open || draftKey === null) return;
-    saveOrgDraft(draftKey, { orgId, name, mission, workspace, model: modelRef, ceoBudget });
-  }, [open, draftKey, orgId, name, mission, workspace, modelRef, ceoBudget]);
+    saveOrgDraft(draftKey, {
+      orgId,
+      name,
+      mission,
+      workspace,
+      machineId,
+      model: modelRef,
+      ceoBudget,
+    });
+  }, [open, draftKey, orgId, name, mission, workspace, machineId, modelRef, ceoBudget]);
 
   /** Whether there is anything in the form a "clear draft" would remove. */
   const draftContent = hasContent({
@@ -344,6 +417,7 @@ export function CreateOrganizationDialog({
     name,
     mission,
     workspace,
+    machineId,
     model: modelRef,
     ceoBudget,
   });
@@ -373,6 +447,13 @@ export function CreateOrganizationDialog({
       setBudgetError(S.company.ceoBudgetHint);
       bad = true;
     }
+    // One id names one organization in the shell, wherever it lives: an id another machine
+    // of this Project already holds is refused here, before that machine is asked.
+    const twin = organizations.find((o) => o.projectId === projectId && o.orgId === id);
+    if (!bad && twin !== undefined && (twin.machineId ?? null) !== onMachine) {
+      setIdError(S.company.orgIdOnAnotherMachine);
+      bad = true;
+    }
     if (bad || !projectId) return;
     setBusy(true);
     setFormError(null);
@@ -388,7 +469,7 @@ export function CreateOrganizationDialog({
         ...(modelRef !== null ? { model: modelRef } : {}),
         ...(ceoBudgetUsd !== null ? { ceoBudget: ceoBudgetUsd } : {}),
       };
-      const detail = await api.createOrganization(projectId, body);
+      const detail = await api.createOrganization(projectId, body, onMachine);
       // The draft did its job: what it held is now an organization.
       if (draftKey !== null) clearOrgDraft(draftKey);
       setRestored(false);
@@ -397,6 +478,9 @@ export function CreateOrganizationDialog({
     } catch (e) {
       const text = apiErrorText(e);
       if (e instanceof ApiError && ID_ERROR_CODES.has(e.code)) setIdError(text);
+      // Company mode is a switch per server: a machine with it off has no such route.
+      else if (e instanceof ApiError && e.status === 404 && onMachine !== null)
+        setFormError(S.company.machineCompanyModeOff);
       else setFormError(text);
     } finally {
       setBusy(false);
@@ -467,6 +551,7 @@ export function CreateOrganizationDialog({
         />
         <SemanticIdField
           projectId={projectId}
+          machineId={onMachine}
           kind="org"
           label={S.company.orgId}
           hint={S.company.orgIdHint}
@@ -502,7 +587,22 @@ export function CreateOrganizationDialog({
           onChange={setModelRef}
           disabled={busy}
         />
-        <WorkspaceField projectId={projectId} value={workspace} onChange={setWorkspace} />
+        <MachineField
+          machines={machines}
+          value={onMachine}
+          onChange={(next) => {
+            // The model and the workspace are that machine's: neither survives the move.
+            setMachineId(next);
+            setModelRef(null);
+            setWorkspace("");
+          }}
+        />
+        <WorkspaceField
+          projectId={projectId}
+          machineId={onMachine}
+          value={workspace}
+          onChange={setWorkspace}
+        />
         <MoneyPerMonthInput
           label={S.company.ceoBudget}
           currency={currency}
@@ -565,7 +665,8 @@ export function OrganizationSettingsDialog({
   /** The delete confirmation, and what has been typed into it (the id, to mean it). */
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [typedId, setTypedId] = useState("");
-  const { models, error: modelsError } = useProjectModels(projectId, open);
+  const orgMachine = machineForOrg(projectId, orgId);
+  const { models, error: modelsError } = useProjectModels(projectId, open, orgMachine);
 
   const doDelete = async () => {
     setBusy(true);
@@ -722,7 +823,12 @@ export function OrganizationSettingsDialog({
           onChange={setModelRef}
           disabled={!hydrated || busy}
         />
-        <WorkspaceField projectId={projectId} value={workspace} onChange={setWorkspace} />
+        <WorkspaceField
+          projectId={projectId}
+          machineId={orgMachine}
+          value={workspace}
+          onChange={setWorkspace}
+        />
         <Input
           label={S.company.timezone}
           size="sm"

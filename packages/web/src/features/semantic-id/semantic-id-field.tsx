@@ -59,6 +59,7 @@ export function SemanticIdField({
   generateHint,
   info,
   disabled = false,
+  machineId = null,
   onChange,
   onEnter,
 }: {
@@ -67,6 +68,8 @@ export function SemanticIdField({
    * opened from. Null while there is none, which leaves the button unavailable.
    */
   projectId: string | null;
+  /** The machine whose server proposes the id — the one the thing will live on. Null = this server. */
+  machineId?: string | null;
   /** What the id is for; the server's proposal is shaped by it. */
   kind: SemanticIdKind;
   label: string;
@@ -110,11 +113,15 @@ export function SemanticIdField({
     setBusy(true);
     setNotice(null);
     try {
-      const res = await api.suggestSemanticId(projectId, {
-        name: source.trim(),
-        kind,
-        ...(taken !== undefined && taken.length > 0 ? { taken: [...taken] } : {}),
-      });
+      const res = await api.suggestSemanticId(
+        projectId,
+        {
+          name: source.trim(),
+          kind,
+          ...(taken !== undefined && taken.length > 0 ? { taken: [...taken] } : {}),
+        },
+        machineId,
+      );
       onChange(proposalValue(res.id, lockedPrefix));
       setNotice(idSuggestNotice(res, S.semanticId.idSuggest));
     } catch (e) {
