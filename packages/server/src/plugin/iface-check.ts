@@ -248,28 +248,37 @@ export function ifaceQuestions(manifests: readonly Manifest[]): IfaceQuestion[] 
   return out;
 }
 
+export interface IfaceCheckResult {
+  /** Why the package does not fit; empty when every comparison passed. */
+  problems: string[];
+  /** Interfaces that could not be compared: the consumer's table carries no copy of them. */
+  uncompared: string[];
+}
+
 /**
- * Answers every question with the compiler: a question about an interface this platform
- * does not declare is not one for here (the tree check names it), and one the consumer's
- * table does not carry is a problem. Returns the problems, empty when all fit.
+ * Answers every question with the compiler. A question about an interface this platform
+ * does not declare is not one for here (the tree check names it). One the consumer's table
+ * does not carry cannot be compared, and is never answered from the platform's own entry:
+ * it is reported as `uncompared`, and whether that is a failure is the caller's rule.
  */
 export function checkIfaces(
   ts: TypeScript,
   platform: IfaceTable,
   consumer: IfaceTable,
   questions: readonly IfaceQuestion[],
-): string[] {
+): IfaceCheckResult {
   const problems: string[] = [];
+  const uncompared: string[] = [];
   const label = (q: IfaceQuestion) => `${q.module}: ${q.direction}.${q.alias} '${q.key}'`;
   const base = path.join(os.tmpdir(), "penguin-iface-check");
   const files = new Map<string, string>();
   const asked = questions.filter((q) => {
     if (platform.ifaces[q.key] === undefined) return false;
     if (consumer.ifaces[q.key] !== undefined) return true;
-    problems.push(`${label(q)}: the package's own interface table does not declare it`);
+    uncompared.push(label(q));
     return false;
   });
-  if (asked.length === 0) return problems;
+  if (asked.length === 0) return { problems, uncompared };
 
   const keys = [...new Set(asked.map((q) => q.key))];
   let ours: ReturnType<typeof renderDts>;
@@ -278,7 +287,8 @@ export function checkIfaces(
     ours = renderDts(platform, keys);
     theirs = renderDts(consumer, keys);
   } catch (err) {
-    return [...problems, `interface check: ${err instanceof Error ? err.message : String(err)}`];
+    problems.push(`interface check: ${err instanceof Error ? err.message : String(err)}`);
+    return { problems, uncompared };
   }
   files.set(path.join(base, "platform.d.ts"), ours.text);
   files.set(path.join(base, "consumer.d.ts"), theirs.text);
@@ -344,5 +354,5 @@ export function checkIfaces(
       }\n    TS${d.code} ${text}`,
     );
   }
-  return problems;
+  return { problems, uncompared };
 }

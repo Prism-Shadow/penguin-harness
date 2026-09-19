@@ -36,7 +36,10 @@ describe("interface check", () => {
   });
 
   it("passes a package compiled against this very platform", () => {
-    expect(checkIfaces(ts, platform, platform, ifaceQuestions([manifest]))).toEqual([]);
+    expect(checkIfaces(ts, platform, platform, ifaceQuestions([manifest]))).toEqual({
+      problems: [],
+      uncompared: [],
+    });
   });
 
   it("names a required interface that no longer fits, and a provided one", () => {
@@ -44,7 +47,7 @@ describe("interface check", () => {
       t.ifaces[LOG]!.methods["line"]!.params = [{ data: "number" }];
       t.ifaces[MAIN]!.methods["handle"]!.returns = { promise: { data: "string" } };
     });
-    const problems = checkIfaces(ts, platform, own, ifaceQuestions([manifest]));
+    const { problems } = checkIfaces(ts, platform, own, ifaceQuestions([manifest]));
     expect(problems).toHaveLength(2);
     expect(problems[0]).toContain(`Demo: requires.log '${LOG}'`);
     expect(problems[0]).toContain("TS2322");
@@ -55,16 +58,19 @@ describe("interface check", () => {
     const own = compiledAgainst((t) => {
       t.ifaces[LOG]!.methods = { line: t.ifaces[LOG]!.methods["line"]! };
     });
-    expect(checkIfaces(ts, platform, own, ifaceQuestions([manifest]))).toEqual([]);
+    expect(checkIfaces(ts, platform, own, ifaceQuestions([manifest])).problems).toEqual([]);
   });
 
-  it("never falls back to the platform's entry when the package's table lacks one", () => {
+  it("never answers from the platform's entry when the package's table lacks one", () => {
     const own = compiledAgainst((t) => {
       delete t.ifaces[LOG];
     });
-    expect(checkIfaces(ts, platform, own, ifaceQuestions([manifest]))).toEqual([
-      `Demo: requires.log '${LOG}': the package's own interface table does not declare it`,
-    ]);
+    // It is reported as uncompared; whether that fails the load is the caller's rule (a
+    // workflow's does, a plugin's — whose table the generator does not fill yet — does not).
+    expect(checkIfaces(ts, platform, own, ifaceQuestions([manifest]))).toEqual({
+      problems: [],
+      uncompared: [`Demo: requires.log '${LOG}'`],
+    });
   });
 
   it("renders every interface of the platform's table, refusing nothing it carries", () => {

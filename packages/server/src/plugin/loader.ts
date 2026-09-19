@@ -465,13 +465,19 @@ async function readPackageTable(file: string | null): Promise<{
  * The tree check cannot say: it looks a key up in one merged table, where the host's entry
  * stands, so it would compare the platform's declaration with itself.
  *
- * An installation whose program predates the compiler being a dependency cannot ask; there
- * the plugin loads as it did before this check existed, and the log says the check was
- * not made — a pushed platform must not take every plugin away from a machine that has
- * not been reinstalled.
+ * Two things can leave an interface uncompared, and neither fails the load — a pushed
+ * platform must not take plugins away from a machine for something the plugin did not do:
+ * a table that carries no copy of a host interface (the generator only writes the
+ * interfaces a package DECLARES, so today that is every host interface a plugin requires),
+ * and an installation whose program predates the compiler being a dependency. Both are
+ * logged; an interface the table does carry, and that no longer fits, fails the load.
  */
 let compilerMissingLogged = false;
-async function interfaceMisfits(own: IfaceTable, defs: readonly ModuleDef[]): Promise<string[]> {
+async function interfaceMisfits(
+  specifier: string,
+  own: IfaceTable,
+  defs: readonly ModuleDef[],
+): Promise<string[]> {
   const questions = ifaceQuestions(defs.map((d) => d.manifest));
   if (questions.length === 0) return [];
   let ts: TypeScript;
@@ -483,7 +489,13 @@ async function interfaceMisfits(own: IfaceTable, defs: readonly ModuleDef[]): Pr
     compilerMissingLogged = true;
     return [];
   }
-  return checkIfaces(ts, platformTable as unknown as IfaceTable, own, questions);
+  const fit = checkIfaces(ts, platformTable as unknown as IfaceTable, own, questions);
+  if (fit.uncompared.length > 0) {
+    console.warn(
+      `[plugins] ${specifier}: ${fit.uncompared.length} interface(s) not compared — its table carries no copy of them`,
+    );
+  }
+  return fit.problems;
 }
 
 /** The package's default export as a Plugin, or null when it is not one. */
@@ -598,7 +610,7 @@ export async function loadPlugins(
         });
       const modules = pair(plugin.modules);
       const replaces = pair(plugin.replaces);
-      const misfits = await interfaceMisfits(read.ifaces, [...modules, ...replaces]);
+      const misfits = await interfaceMisfits(specifier, read.ifaces, [...modules, ...replaces]);
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });
     } catch (err) {
