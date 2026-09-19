@@ -139,9 +139,10 @@ export function createWslProvider(
 }
 
 /** What this backend requires of plugin configuration: to read the group it declares. */
-export abstract class WslConfigReader extends Interface<{
-  get(name: string): Record<string, unknown>;
-}>() {}
+@Interface()
+export abstract class WslConfigReader {
+  abstract get(name: string): Record<string, unknown>;
+}
 
 /** The card's live half, in the consumer's own shape (see the settings page's contract). */
 export interface SettingsGroupStatus {

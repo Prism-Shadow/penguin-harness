@@ -115,9 +115,10 @@ export interface PenguinBwrapInternals {
  * What this backend requires of plugin configuration: to read the group it declares. The
  * interface is the consumer's own, so the package depends on no harness type.
  */
-export abstract class BwrapConfigReader extends Interface<{
-  get(name: string): Record<string, unknown>;
-}>() {}
+@Interface()
+export abstract class BwrapConfigReader {
+  abstract get(name: string): Record<string, unknown>;
+}
 
 /** The settings group this backend declares (its contribution id), drawn inside the Sandbox card. */
 export const BWRAP_GROUP = "sandbox-bwrap";
