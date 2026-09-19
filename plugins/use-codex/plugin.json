@@ -1,0 +1,9 @@
+{
+  "description": "Delegate coding tasks through Penguin's MCP tools and the Codex ACP adapter, with project-scoped ChatGPT sign-in, workspace write access, progress, cancellation, and human approval relay.",
+  "description_zh": "通过 Penguin 的 MCP 工具和 Codex ACP 适配器委托编程任务，支持项目级 ChatGPT 登录、工作区写入、进度、取消和人工审批转发。",
+  "short_description": "Delegate coding tasks using your ChatGPT subscription.",
+  "short_description_zh": "使用 ChatGPT 订阅委托编程任务。",
+  "version": "2026.09.19.1",
+  "category": "software-development",
+  "preinstall": false
+}
