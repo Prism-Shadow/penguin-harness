@@ -463,8 +463,11 @@ if (!app.requestSingleInstanceLock()) {
         log: (line) => process.stdout.write(`[shell] ${line}\n`),
       });
       // Standard menu plus native desktop-only actions; the window gets no IPC channel.
+      // The install item is the release profile's, like the per-launch repair below: the
+      // `penguin` command has one owner, and a `--dev` instance of the same install would
+      // rewrite it and record having done so in its own userData.
       installAppMenu({
-        includeCliInstall: currentCliInstallKind() !== null,
+        includeCliInstall: profile === "release" && currentCliInstallKind() !== null,
         onInstallCli: () => void installCliCommand(win),
       });
       // Before boot, and whatever the window is doing: the icon is there for as long as the
