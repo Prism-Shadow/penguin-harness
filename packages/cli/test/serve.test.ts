@@ -209,7 +209,7 @@ describe("readiness probe diagnostics", () => {
   it("includes actionable localized firewall guidance for connection timeouts", () => {
     const detail = "UND_ERR_CONNECT_TIMEOUT: Connect Timeout Error";
     const url = "http://127.0.0.1:7364/";
-    for (const lang of ["en", "zh"] as const) {
+    for (const lang of ["en"] as const) {
       const timeout = getMessages(lang).webProbeFailed(url, detail, "timeout", 7364);
       // Actionable means naming the port the user has to let through, not just reporting a
       // timeout; the probe error stays visible either way.

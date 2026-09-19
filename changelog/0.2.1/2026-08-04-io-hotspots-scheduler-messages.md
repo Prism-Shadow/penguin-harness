@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`
 - **PR:** [#200](https://github.com/Prism-Shadow/penguin-harness/pull/200), [#202](https://github.com/Prism-Shadow/penguin-harness/pull/202)
 
-[中文版](2026-08-04-io-hotspots-scheduler-messages.zh.md)
-
 The disk-IO audit that produced the trace index left two hotspots standing; both are closed.
 
 ## Scheduler ticks and project-config reads

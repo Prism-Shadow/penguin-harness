@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#437](https://github.com/Prism-Shadow/penguin-harness/pull/437)
 
-[中文版](2026-08-24-autolink-ends-at-ascii.zh.md)
-
 A URL typed into Chinese prose swallowed whatever followed it. `见 https://penguin.ooo，然后继续`
 linked the comma and the rest of the clause along with the address, so the link 404ed and the
 sentence lost its punctuation to link styling. Markdown surfaces in the Web App now end a bare URL

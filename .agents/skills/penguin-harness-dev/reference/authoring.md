@@ -5,9 +5,9 @@ changing behavior.
 
 ## Blog posts, and where their images live
 
-A post is a pair under `packages/landing/content/blog/`: `<slug>.en.md` and `<slug>.zh.md`, each
-with `title` / `date` / `category` / `excerpt` frontmatter. Same rule as changelog entries — one
-without the other is unfinished.
+Write a post under `packages/landing/content/blog/`: `<slug>.en.md`,
+with `title` / `date` / `category` / `excerpt` frontmatter. Write the post in English;
+translated counterparts are not required or shipped.
 
 **The images are not in this repo.** Screenshots and demo videos live in the sibling
 `Prism-Shadow/penguin-harness-community` repo, under `blog-assets/` and `videos/`. A published
@@ -50,7 +50,7 @@ If not, keep the surviving facts and delete the rest. What to hunt:
 - **Hedged planning residue** — "probably fine for now". Promote to a real `TODO` with a name, or
   replace with the actual bound.
 - **Authoring-language slips** — untranslated fragments. Non-i18n code and developer docs are
-  English-only; Chinese belongs in i18n catalogs, `*.zh.md` documents, and tests asserting CJK
+  English-only; non-ASCII fixtures belong in tests asserting CJK
   behavior.
 
 Keep, deliberately: issue and merged-PR links, suppression justifications, counterfactual-present
@@ -79,7 +79,7 @@ Seams that are intentional here — collapsing one is a product decision, not cl
 - `packages/core/src/internal/` versus what the package barrel exports — the public SDK surface is
   a contract;
 - the Trace on-disk format and its tolerant readers;
-- the bilingual documentation pairs and the i18n catalogs;
+- the English documentation and the i18n catalogs;
 - `desktop` running the *unchanged* server and Web App;
 - `message-window.ts` mirroring `stream-model.ts` — the file's own job is to reproduce that
   accumulation for the pre-window prefix, and its tests pin the shared cases on both sides.
@@ -101,5 +101,5 @@ Imported wholesale from a sibling repo's workflow, these are wrong here:
   configured here, so narrowing means choosing test files, not proving coverage over a source scope.
 - **Adding a skill to the repo root's `plugins/`** because it is "a skill". Those packages are the
   shipped, user-facing plugin library — a docs-sync test requires every plugin to appear in the
-  bilingual skills pages, the README tables are test-checked, and everything there installs into
+  English skills pages, the README tables are test-checked, and everything there installs into
   users' agents. Repo development skills live in `.agents/skills/`.

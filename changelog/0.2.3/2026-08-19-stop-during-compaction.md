@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#347](https://github.com/Prism-Shadow/penguin-harness/pull/347)
 
-[中文版](2026-08-19-stop-during-compaction.zh.md)
-
 The chat composer's single action button offers Stop while a compaction is running, so a compaction can be interrupted from the Web App again.
 
 ## Details

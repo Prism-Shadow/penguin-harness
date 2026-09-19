@@ -6,8 +6,6 @@
 - **PR:** [#466](https://github.com/Prism-Shadow/penguin-harness/pull/466), [#477](https://github.com/Prism-Shadow/penguin-harness/pull/477), [#479](https://github.com/Prism-Shadow/penguin-harness/pull/479)
 - **Breaking:** yes — old CLI binaries ran tasks core-direct and offline; the rebuilt commands require a server (auto-started locally), the per-user "show CLI sessions" preference is gone, and a Windows desktop client installed from 0.2.4 refuses this update after the signing identity change
 
-[中文版](2026-08-25-backward-compatibility.zh.md)
-
 This release touches four kinds of existing state — three from the CLI-on-server batch, one
 from the Windows signing change. What breaks without handling, and what was chosen:
 

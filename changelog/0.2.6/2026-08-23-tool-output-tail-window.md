@@ -5,8 +5,6 @@
 - **Scope:** `core`, `docs`
 - **PR:** [#432](https://github.com/Prism-Shadow/penguin-harness/pull/432)
 
-[中文版](2026-08-23-tool-output-tail-window.zh.md)
-
 Tool output that exceeds `maxOutputLength` used to keep the first `maxOutputLength`
 characters and drop everything after them. For command output — the common way to exceed
 the budget — the most informative part is usually the end: the test verdict, the error,

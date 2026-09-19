@@ -1,6 +1,6 @@
 /**
  * The prompt material of the three "Create with AI" surfaces — the Agents page's create dialog,
- * the Models page's add dialog and the Vault tab's add dialog: in both dictionaries each offers
+ * the Models page's add dialog and the Vault tab's add dialog: in the English dictionary each offers
  * examples that fill the draft and a fixed tail naming the skill the receiving agent must use;
  * the tail follows the draft when composed the way the dialogs compose it; and the parameterized
  * tails carry the ids they are fed, since the prompt goes to the Project's default agent rather
@@ -11,7 +11,7 @@
  * key-names-only ask leads and no card hands the user a secret-shaped placeholder to fill.
  */
 import { describe, expect, it } from "vitest";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 import { composeAiPrompt } from "../src/features/ai-create/ai-create-prompt";
 import type { AiExample } from "../src/features/ai-create/ai-create-panel";
@@ -30,20 +30,8 @@ function expectUsableExamples(examples: AiExample[]): void {
  * Per-dictionary assertions run twice over; this one compares the two, which the per-dictionary
  * block cannot see: a card added to one language only would pass every check above.
  */
-it("offers the same example cards in both dictionaries", () => {
-  expect(en.agent.aiExamples.map((e) => e.key)).toEqual(zh.agent.aiExamples.map((e) => e.key));
-  expect(en.models.aiAddExamples.map((e) => e.key)).toEqual(
-    zh.models.aiAddExamples.map((e) => e.key),
-  );
-  expect(en.vault.aiAddExamples.map((e) => e.key)).toEqual(
-    zh.vault.aiAddExamples.map((e) => e.key),
-  );
-});
 
-describe.each([
-  ["zh", zh],
-  ["en", en],
-] as const)("%s dictionary", (_locale, dict) => {
+describe.each([["en", en]] as const)("%s dictionary", (_locale, dict) => {
   it("offers examples on every surface", () => {
     expectUsableExamples(dict.agent.aiExamples);
     expectUsableExamples(dict.models.aiAddExamples);

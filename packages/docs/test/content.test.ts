@@ -1,6 +1,6 @@
 /**
  * Content integrity: the sidebar (DOCS_NAV) and the content/ directory must agree —
- * every navigated slug has both zh and en files with a frontmatter title, and every
+ * every navigated slug has English files with a frontmatter title, and every
  * content file belongs to the navigation (an orphan file would be unreachable).
  * Also guards the links pages navigate each other and themselves with. Heading ids come
  * from the heading text, so two identical headings collide into one id (the TOC then
@@ -22,7 +22,6 @@ import { DOCS_NAV, DOC_SLUGS, pagerFor } from "../src/lib/nav";
 import { parseFrontmatter } from "../src/lib/frontmatter";
 import { hashTargetId } from "../src/lib/hash";
 import { en } from "../src/lib/strings-en";
-import { zh } from "../src/lib/strings";
 import { extractToc } from "../src/lib/toc";
 
 const contentDir = join(__dirname, "..", "content");
@@ -72,16 +71,15 @@ describe("docs navigation / content integrity", () => {
     }
   });
 
-  it("labels every navigation section in both dictionaries", () => {
+  it("labels every navigation section", () => {
     for (const { id } of DOCS_NAV) {
-      expect(zh.sections[id], `missing zh label for the ${id} section`).toBeTruthy();
       expect(en.sections[id], `missing en label for the ${id} section`).toBeTruthy();
     }
   });
 
-  it("provides zh and en files with a title for every navigated slug", () => {
+  it("provides English files with a title for every navigated slug", () => {
     for (const slug of DOC_SLUGS) {
-      for (const lang of ["zh", "en"] as const) {
+      for (const lang of ["en"] as const) {
         const name = `${slug}.${lang}.md`;
         expect(files, `missing content file ${name}`).toContain(name);
         const { meta, body } = parseFrontmatter(readFileSync(join(contentDir, name), "utf8"));

@@ -3077,11 +3077,7 @@ function SessionRow({
             The swap stays a pure opacity handoff: the time hides on row hover
             (group-hover) and while a button holds focus (peer-focus-within; the group
             precedes the time span so the peer combinator can reach it). */}
-        <div
-          className={`relative flex h-6 shrink-0 items-center justify-end ${
-            locale === "zh" ? "w-[4.5rem]" : "w-14"
-          }`}
-        >
+        <div className={`relative flex h-6 shrink-0 items-center justify-end ${"w-14"}`}>
           {/* No hover pill on these (a fill as wide as the date read ugly); feedback is
               the glyph color deepening — red for delete. */}
           <div className="peer absolute right-0 top-1/2 flex -translate-y-1/2 items-center">

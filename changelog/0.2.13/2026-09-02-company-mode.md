@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `cli`, `core`, `skills`, `docs`
 - **PR:** [#587](https://github.com/Prism-Shadow/penguin-harness/pull/587)
 
-[中文版](2026-09-02-company-mode.zh.md)
-
 The Web App gained a second work mode. In company mode a Project's Agents form an
 **organization**: a CEO at the root of a reporting tree, one standing **desk session** per
 employee, a **calendar** that is the only periodic driver, a five-column **ticket board** that

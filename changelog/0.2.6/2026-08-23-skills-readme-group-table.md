@@ -5,8 +5,6 @@
 - **Scope:** `skills`
 - **PR:** [#416](https://github.com/Prism-Shadow/penguin-harness/pull/416)
 
-[中文版](2026-08-23-skills-readme-group-table.zh.md)
-
 The group table in `packages/skills/README.md` named 14 of the 18 shipped Skills: `bento-slides`,
 `humanizer`, `remote-claude-code` and `skill-porting` were added to `SKILL_GROUPS` and to the
 docs pages, but not to the README. The four were added, and a test now derives the check from

@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#694](https://github.com/Prism-Shadow/penguin-harness/pull/694)
 
-[中文版](2026-09-11-thinking-body-output-style.zh.md)
-
 An expanded thinking block, and both sections of a compaction banner, sat in an inset rounded box
 on a tinted ground — the shape the transcript uses for a quotation. Both now wear the block an
 expanded `exec_command` output wears.

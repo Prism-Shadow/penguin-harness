@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#575](https://github.com/Prism-Shadow/penguin-harness/pull/575)
 
-[中文版](2026-09-01-machines-models.zh.md)
-
 An Agent running on a machine calls the model endpoint **from over there**, against **that machine's** config. So a machine with no credentials is connected and unusable: picking a model here and starting the Session there failed with "Model is not in the Project config". Connecting a machine now hands it the Model config of the Projects that use it.
 
 ## Which Projects, and why the routes are under one

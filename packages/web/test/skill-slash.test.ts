@@ -20,12 +20,12 @@ import {
   localizedText,
   skillSlashItems,
 } from "../src/features/chat/skill-use";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
 describe("localizedText (copy selection by UI language)", () => {
   it("zh prefers the Chinese field", () => {
-    expect(localizedText("zh", "Create agents", "创建 Agent")).toBe("创建 Agent");
+    expect(localizedText("zh", "Create agents", "Create agent")).toBe("Create agent");
   });
 
   it("zh with the Chinese value missing (undefined / empty string) falls back to English", () => {
@@ -34,7 +34,7 @@ describe("localizedText (copy selection by UI language)", () => {
   });
 
   it("en always uses English (even with a Chinese field present)", () => {
-    expect(localizedText("en", "Create agents", "创建 Agent")).toBe("Create agents");
+    expect(localizedText("en", "Create agents", "Create agent")).toBe("Create agents");
   });
 });
 
@@ -42,11 +42,11 @@ describe("localizedShortText (short description first, falling back to the full 
   const full = {
     description: "Create agents from requirements",
     shortDescription: "Create agents",
-    shortDescriptionZh: "创建 Agent",
+    shortDescriptionZh: "Create agent",
   };
 
   it("both short descriptions present: picks the short description by UI language", () => {
-    expect(localizedShortText("zh", full)).toBe("创建 Agent");
+    expect(localizedShortText("zh", full)).toBe("Create agent");
     expect(localizedShortText("en", full)).toBe("Create agents");
   });
 
@@ -118,21 +118,18 @@ describe("skillSlashItems (slash skill command item assembly)", () => {
         name: "agent-initialization",
         description: "Create agents from requirements",
         shortDescription: "Create agents",
-        shortDescriptionZh: "创建 Agent",
+        shortDescriptionZh: "Create agent",
         version: "2026.07.01.1",
       },
     ];
-    expect(skillSlashItems(withShort, "zh")[0]!.desc).toBe("创建 Agent");
+    expect(skillSlashItems(withShort, "zh")[0]!.desc).toBe("Create agent");
     expect(skillSlashItems(withShort, "en")[0]!.desc).toBe("Create agents");
   });
 });
 
 describe("quickInvokeText (prefill text for skill-library quick invoke, zh/en dictionaries)", () => {
   it("reads exactly as the empty-body auto-invoke text for the same single skill", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
+    for (const [locale, dict] of [["en", en]] as const) {
       expect(dict.skills.quickInvokeText("agent-initialization"), locale).toBe(
         dict.chat.skillsAutoMessage(["agent-initialization"]),
       );
@@ -175,13 +172,6 @@ describe("filterSkills (search filter for the skill dropdown)", () => {
 });
 
 describe("skillsAutoMessage (auto-invoke text for empty-body sends, zh/en dictionaries)", () => {
-  it("zh: skill names joined with 、, same wording for singular and plural", () => {
-    expect(zh.chat.skillsAutoMessage(["agent-initialization"])).toBe(
-      "使用 agent-initialization 技能",
-    );
-    expect(zh.chat.skillsAutoMessage(["a", "b"])).toBe("使用 a、b 技能");
-  });
-
   it("en: singular use the <name> skill, plural comma-joined + skills", () => {
     expect(en.chat.skillsAutoMessage(["agent-initialization"])).toBe(
       "use the agent-initialization skill",

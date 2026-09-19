@@ -5,8 +5,6 @@
 - **Scope:** `server`, `docs`
 - **PR:** [#353](https://github.com/Prism-Shadow/penguin-harness/pull/353)
 
-[中文版](2026-08-22-extension-mechanism.zh.md)
-
 The harness gained an extension seam. An extension package exports one function — `activate(ctx)` — which the server runs once per process while reading `<root>/extensions.json`, before any App exists. Everything after that arrives as typed events: `"initialize"` hands over the definition view, where an extension registers workflow factories, and `"create"` hands over the assembled instance view. Both fire at every App creation, so a hot swap re-delivers them and an extension's registrations can never be seeded into an instance that has been replaced.
 
 ## Details

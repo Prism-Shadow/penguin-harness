@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#483](https://github.com/Prism-Shadow/penguin-harness/pull/483)
 
-[中文版](2026-08-27-web-db-upgrade-direction-tests.zh.md)
-
 `openDatabase` had coverage for one of the three shapes a released build meets on disk: a
 `sessions` table formed before a column existed. Two more were added, both derived from the real
 `SCHEMA_SQL` rather than a hand-copied DDL replica, in the style the file already used.

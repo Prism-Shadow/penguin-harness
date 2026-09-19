@@ -6,11 +6,7 @@
  * to it. The two navigation entries are ordinary in-window URL loads, so the window stays a
  * plain browser and the shell gains no channel into the Web App.
  *
- * The labels are written twice here rather than read from the Web App's catalogs: the shell
- * is a separate process that starts before any page is loaded and must draw a menu whether or
- * not one ever is, and it cannot import from `packages/web` — nothing in this package depends
- * on it. Six strings is the whole surface, and the type below makes a missing translation a
- * compile error rather than a menu that silently falls back to English.
+ * The shell keeps its own typed labels because it starts before the Web App.
  */
 
 /** What a menu entry does when it is clicked. */
@@ -37,8 +33,8 @@ export const TRAY_NAV_PATHS: Record<"new-session" | "models", string> = {
   models: "/models",
 };
 
-/** The two languages the Web App has, which the tray follows. */
-export type TrayLocale = "zh" | "en";
+/** The supported UI locales, which the tray follows. */
+export type TrayLocale = "en";
 
 /** One language's menu wording. `open` takes the app name, which carries a dev suffix unpackaged. */
 interface TrayLabels {
@@ -57,14 +53,6 @@ export const TRAY_LABELS: Record<TrayLocale, TrayLabels> = {
     closeToTray: "Keep running in the tray when the window closes",
     quit: "Quit",
   },
-  zh: {
-    // The app name is a proper noun and stays as it is, here as everywhere else.
-    open: (appName) => `打开 ${appName}`,
-    newSession: "新建会话",
-    models: "模型",
-    closeToTray: "关闭窗口后继续在托盘中运行",
-    quit: "退出",
-  },
 };
 
 /**
@@ -72,8 +60,8 @@ export const TRAY_LABELS: Record<TrayLocale, TrayLabels> = {
  * rule the Web App applies to `navigator.language` when its own preference is "follow the
  * system", so an untouched install agrees with itself across the window and the tray.
  */
-export function resolveTrayLocale(language: string | undefined): TrayLocale {
-  return language?.toLowerCase().startsWith("zh") ? "zh" : "en";
+export function resolveTrayLocale(_language: string | undefined): TrayLocale {
+  return "en";
 }
 
 /** The menu entries, in order, in the given language. */

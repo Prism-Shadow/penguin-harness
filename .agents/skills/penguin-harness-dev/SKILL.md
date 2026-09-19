@@ -131,9 +131,9 @@ numbers are edited. If you do not raise it, it ships.
 
 ## Record and ship
 
-Every change ships a changelog entry, in both languages, in `changelog/unreleased/`: a
-`YYYY-MM-DD-<slug>.md` and `YYYY-MM-DD-<slug>.zh.md` pair mirroring section for section, inside the
-PR that makes the change. One without the other is unfinished, **there is no index file**, and
+Every change ships an English changelog entry in `changelog/unreleased/`:
+a `YYYY-MM-DD-<slug>.md` file inside the PR that makes the change.
+**There is no index file**, and
 reasoning belongs in the PR description rather than on disk.
 
 **A conclusion is not a deliverable.** Do not package findings as a standalone page, artifact or

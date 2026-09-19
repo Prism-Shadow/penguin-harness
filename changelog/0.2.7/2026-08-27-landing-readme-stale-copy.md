@@ -5,8 +5,6 @@
 - **Scope:** `landing`, `docs`, `skills`
 - **PR:** [#481](https://github.com/Prism-Shadow/penguin-harness/pull/481)
 
-[中文版](2026-08-27-landing-readme-stale-copy.zh.md)
-
 Swept the landing site's two string dictionaries and both root READMEs for claims that no longer held, and corrected them in English and Chinese together.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`
 - **PR:** [#729](https://github.com/Prism-Shadow/penguin-harness/pull/729)
 
-[中文版](2026-09-15-url-tolerant-protocol-detection.zh.md)
-
 ## What changed
 
 - Custom-model protocol detection no longer takes the typed base URL literally. The URL is normalized first — trailing slashes, query and fragment dropped, a pasted endpoint path (`/chat/completions`, `/completions`, `/responses`, `/messages`, `/v1/messages`) stripped, a run of repeated `/v1` collapsed to one — and then probed, followed by the same URL with a trailing `/v1` removed or added. Each candidate runs the three protocols in the existing order (`openai-responses` → `ant-messages` → `openai-chat`) and the first one served wins, so an extra `/v1`, a missing `/v1`, or a whole endpoint URL copied out of a provider's documentation all detect the same protocol they would have with the URL typed exactly right. `POST /api/projects/:p/models/detect` reports the base URL that answered as `baseUrl` alongside `detected`.

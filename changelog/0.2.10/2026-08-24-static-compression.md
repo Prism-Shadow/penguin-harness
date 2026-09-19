@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#453](https://github.com/Prism-Shadow/penguin-harness/pull/453)
 
-[中文版](2026-08-24-static-compression.zh.md)
-
 The built app was served uncompressed — over a megabyte of JavaScript on a first load, which is
 the single largest thing that load waits on. It is now negotiated per request: brotli when the
 client offers it, gzip otherwise, and the original bytes for anything that offers neither.

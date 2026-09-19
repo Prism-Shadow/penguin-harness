@@ -5,8 +5,6 @@
 - **Scope:** `docs`
 - **PR:** [#455](https://github.com/Prism-Shadow/penguin-harness/pull/455)
 
-[中文版](2026-08-24-security-docs.zh.md)
-
 The reference section gains a Security Model page, organized as scenarios in the order a user
 meets them: a feature inventory first, then first login (web and desktop), changing a password
 by each of its four paths, automation on the local machine, remote machines — where ssh access

@@ -31,11 +31,11 @@ import {
 import type { SessionRowAction } from "../src/components/ui/session-row-menu";
 import { MESSAGING_RELAY_ICON } from "../src/components/ui/icons";
 import { STAT_ICONS } from "../src/lib/stat-icons";
-import { setActiveStrings, zh } from "../src/lib/strings";
+import { setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 /** Every test that switches locale puts the default (zh) back. */
-afterEach(() => setActiveStrings(zh));
+afterEach(() => setActiveStrings(en));
 
 const RESTING = { archived: false, pinned: false };
 
@@ -157,26 +157,26 @@ describe("sessionRowMenuItem", () => {
 
   it("flips archive's label and glyph on an archived row", () => {
     expect(sessionRowMenuItem("archive", { archived: false, pinned: false })).toMatchObject({
-      label: zh.chat.archiveSession,
+      label: en.chat.archiveSession,
       icon: ARCHIVE_ICON,
     });
     expect(sessionRowMenuItem("archive", { archived: true, pinned: false })).toMatchObject({
-      label: zh.chat.unarchiveSession,
+      label: en.chat.unarchiveSession,
       icon: UNARCHIVE_ICON,
     });
   });
 
   it("flips pin's label on a pinned row, keeping the one pin glyph", () => {
     expect(sessionRowMenuItem("pin", { archived: false, pinned: false }).label).toBe(
-      zh.chat.pinSession,
+      en.chat.pinSession,
     );
     expect(sessionRowMenuItem("pin", { archived: false, pinned: true }).label).toBe(
-      zh.chat.unpinSession,
+      en.chat.unpinSession,
     );
     expect(sessionRowMenuItem("pin", { archived: false, pinned: true }).icon).toBe(PIN_ICON);
   });
 
-  it("reads the active dictionary, so both locales name every action", () => {
+  it("reads the active dictionary, so English name every action", () => {
     setActiveStrings(en);
     expect(sessionRowMenuItem("archive", RESTING).label).toBe(en.chat.archiveSession);
     expect(sessionRowMenuItem("delete", RESTING).label).toBe(en.chat.deleteSession);
@@ -189,7 +189,6 @@ describe("sessionRowMenuItem", () => {
       const label = sessionRowMenuItem(action, RESTING).label;
       expect(label).toBeTruthy();
       expect(label).not.toBe(sessionRowMenuItem(action, RESTING).icon);
-      expect(Object.values(zh.chat)).not.toContain(label);
     }
   });
 });

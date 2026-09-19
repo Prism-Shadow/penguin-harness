@@ -5,8 +5,6 @@
 - **Scope:** `server`, `docs`
 - **PR:** [#502](https://github.com/Prism-Shadow/penguin-harness/pull/502)
 
-[中文版](2026-08-26-model-oauth-desktop-callback.zh.md)
-
 TokenDance's **Authorize key** action failed in the desktop app with `unauthorized` — "Not signed in or the sign-in has expired." — while the same action completed in the browser. Every desktop authorization had been ending on a 401 before the handler ran: the authorization page opened in the system browser, and the provider redirected *that* browser back to `http://localhost:<port>`, where it carried no `penguin_session` cookie. The redirect receiver stopped requiring a session — and stopped redeeming anything on its own, so that the route answering without one never gained the authority to write a credential.
 
 ## Details

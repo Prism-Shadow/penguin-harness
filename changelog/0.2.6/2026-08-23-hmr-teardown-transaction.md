@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`
 - **PR:** [#408](https://github.com/Prism-Shadow/penguin-harness/pull/408)
 
-[中文版](2026-08-23-hmr-teardown-transaction.zh.md)
-
 Three paths through a hot update could leave the process half-dead: serving HTTP out of closures while its session manager, scheduler and terminals were stopped, with nothing able to bring them back short of a restart. All three shared one shape — an irreversible step taken before the thing that justifies it had succeeded — and all three now treat a swap's teardown as a single transaction.
 
 ## Details

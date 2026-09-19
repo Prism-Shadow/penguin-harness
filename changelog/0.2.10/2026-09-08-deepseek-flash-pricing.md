@@ -5,8 +5,6 @@
 - **Scope:** `core`, `cli`, `docs`, `skills`
 - **PR:** [#649](https://github.com/Prism-Shadow/penguin-harness/pull/649)
 
-[中文版](2026-09-08-deepseek-flash-pricing.zh.md)
-
 DeepSeek adjusted the V4 Flash series price, effective 2026-09-10 12:00 Beijing. The catalog's two
 direct V4 Flash rows were re-read on 2026-09-08 and now record the peak tier CNY 0.04 / 2 / 8 per
 million tokens (cache hit / cache miss / output), whose off-peak half — 0.02 / 1 / 4 — is applied

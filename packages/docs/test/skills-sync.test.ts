@@ -23,7 +23,7 @@ describe("docs ↔ plugin library sync", () => {
     expect(libraryPlugins.length).toBeGreaterThan(0);
   });
 
-  for (const lang of ["zh", "en"] as const) {
+  for (const lang of ["en"] as const) {
     it(`skills.${lang}.md mentions every library plugin`, () => {
       const page = readFileSync(join(contentDir, `skills.${lang}.md`), "utf8");
       const missing = libraryPlugins.filter((name) => !page.includes(`\`${name}\``));

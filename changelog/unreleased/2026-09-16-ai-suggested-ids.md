@@ -6,8 +6,6 @@
 - **PR:** [#755](https://github.com/Prism-Shadow/penguin-harness/pull/755)
 - **Breaking:** yes — `POST /organizations/suggest-id` is removed; use `POST /api/projects/:p/suggest-id` with kind `"org"` (or `"channel"`)
 
-[中文版](2026-09-16-ai-suggested-ids.zh.md)
-
 The New Project, Create Agent and New Benchmark dialogs took the organization dialog's shape: the
 name comes first, and the id field beside it carries a **Generate with AI** button that asks the
 Project's default model for an English id in that kind's own shape. The id stays required,

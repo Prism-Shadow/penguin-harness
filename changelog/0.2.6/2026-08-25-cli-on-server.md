@@ -5,8 +5,6 @@
 - **Scope:** `cli`, `server`, `core`, `web`, `docs`
 - **PR:** [#466](https://github.com/Prism-Shadow/penguin-harness/pull/466)
 
-[中文版](2026-08-25-cli-on-server.zh.md)
-
 `penguin run` and `penguin chat` were rebuilt on the server API — the CLI now parses
 arguments, sends HTTP/SSE requests, and renders the streamed OmniMessages, while the task
 itself executes on the server. Everything the CLI creates shows up in the Web App and vice

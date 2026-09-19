@@ -4,8 +4,6 @@
 - **Type:** fix
 - **Scope:** `web`
 
-[中文版](2026-08-20-terminal-panel-swap.zh.md)
-
 Two ways the terminal stayed on screen after the user had, as far as they could tell,
 closed it.
 

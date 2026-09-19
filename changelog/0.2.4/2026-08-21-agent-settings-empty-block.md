@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#390](https://github.com/Prism-Shadow/penguin-harness/pull/390)
 
-[中文版](2026-08-21-agent-settings-empty-block.zh.md)
-
 Two layout changes on the Agent settings tabs. The "Import skill" button moved out of the
 Skills tab header down to the head of the installed list, right-aligned in its own row above
 it. And the four sections that can come up empty — Skills, Vault, Schedules and the Tools tab's

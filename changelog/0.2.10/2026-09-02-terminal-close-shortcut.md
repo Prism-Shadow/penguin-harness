@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#590](https://github.com/Prism-Shadow/penguin-harness/pull/590)
 
-[中文版](2026-09-02-terminal-close-shortcut.zh.md)
-
 Pressing Ctrl+W inside a terminal closes that terminal — the same thing its tab's × does: a confirmation first, then the shell is ended. It works in the dock's terminal tabs and on the standalone `/terminal` page, where the window then closes itself when the browser allows it (a window opened by the dock's detach); a window reached by address stays open showing the exited shell, with **New shell** one click away. The keystroke never reaches the shell, and only the terminal that has focus sees it — nothing is registered window-wide. The tab's × tooltip names the shortcut.
 
 ## Details

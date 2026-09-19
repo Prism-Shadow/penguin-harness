@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#367](https://github.com/Prism-Shadow/penguin-harness/pull/367)
 
-[中文版](2026-08-20-title-from-input.zh.md)
-
 Reworked automatic Session title generation so it never waits for model output. The moment a Task starts with user text, the first words of that text are persisted as a fallback title and pushed to the UI; the LLM title request fires at the same time, in the background, with the user input as its only material, and replaces the fallback when it lands. Previously the title appeared only after enough of the answer had streamed (or the Task finished), and the generation prompt could include assistant text.
 
 ## Details

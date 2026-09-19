@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`
 - **PR:** [#691](https://github.com/Prism-Shadow/penguin-harness/pull/691)
 
-[中文版](2026-09-11-send-tool-to-background.zh.md)
-
 While an `exec_command` or `run_subagent` call is executing, its row in the conversation now
 carries a "Send to background" action that hands the work back as a background task: the call
 closes with a `process_id` / `subagent_id`, nothing is killed, and the turn continues instead of

@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#441](https://github.com/Prism-Shadow/penguin-harness/pull/441)
 
-[中文版](2026-08-24-agent-snapshot-create.zh.md)
-
 Two changes to Agent State snapshot transfer. The create dialog can now initialize a new
 agent straight from an exported snapshot package, instead of the round-trip of creating an
 empty agent and then importing into it. And the import file picker no longer grays out the

@@ -5,8 +5,6 @@
 - **Scope:** `core`, `docs`
 - **PR:** [#709](https://github.com/Prism-Shadow/penguin-harness/pull/709)
 
-[中文版](2026-09-12-file-tool-lock.zh.md)
-
 `edit_file` and `write_file` hold a per-file mutex across their whole read-modify-write. Both tools
 read a file, compute the new content and replace it with an atomic temp-file + rename, and the
 engine runs a turn's approved tool calls concurrently — so two edits of one file, whether from one

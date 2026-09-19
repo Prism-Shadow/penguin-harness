@@ -6,8 +6,6 @@
 - **PR:** [#458](https://github.com/Prism-Shadow/penguin-harness/pull/458)
 - **Breaking:** yes — the engine no longer emits an abort event for LLM or compaction failures (their terminal record is the `request_end` / `compaction_end` already on the stream), and error information converges on one `error_code` + `error_message` pair across payloads
 
-[中文版](2026-08-25-abort-marks-user-interruptions-only.zh.md)
-
 The abort event now means exactly one thing: the user interrupted the run. An LLM fatal, an exhausted retry ladder, and a failed mid-task compaction no longer emit one — each failure's terminal record is the event already on the stream: a `request_end` carrying its status and the error pair (and no `retry_in_ms` — a non-completed end without a planned retry **is** the run ending), or the `compaction_end` with its status and detail.
 
 Error information itself converges on one shape, omnimessage's `ErrorInfo`: a machine-readable `error_code` render layers localize from, plus the verbatim `error_message`. It rides on the abort payload (`user_abort` / `backoff_interrupted` / `compaction_interrupted` — the three user-interruption causes), on `request_end` and `compaction_end` (the classified LLM failure: `timeout` / `network` / `malformed` / `auth` / `rejected` / `unsupported` / `invalid_input`, originating as `LLMOutcome.errorCode` — the status answers "retry?", the code says what kind of error), and on `mcp_connect_end` and its per-server results (`connect_failed`; the old `error` field becomes `error_message`). Nothing parses prose any more: `parseAbortReason` is deleted, and a legacy Trace's `reason` text (or `error` field) is simply shown as-is.

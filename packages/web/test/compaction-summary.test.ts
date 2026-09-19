@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { en } from "../src/lib/strings-en";
-import { zh } from "../src/lib/strings";
+
 import { compactionResultVisible, compactionSummaryText } from "../src/lib/omni/compaction-summary";
 
 describe("compactionSummaryText", () => {
@@ -63,10 +63,7 @@ describe("compactionResultVisible (the result section waits for the thinking to 
 
 describe("compactionTitle (the row is titled by its mode)", () => {
   it("never labels a discard as compaction — the whole point of titling by mode", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
+    for (const [locale, dict] of [["en", en]] as const) {
       expect(dict.chat.compactionTitle("summarize"), locale).toBeTruthy();
       expect(
         dict.chat.compactionTitle("discard"),
@@ -76,10 +73,7 @@ describe("compactionTitle (the row is titled by its mode)", () => {
   });
 
   it("falls back to the compaction title for any other mode (an unknown/legacy value)", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
+    for (const [locale, dict] of [["en", en]] as const) {
       for (const mode of ["", "future-mode"]) {
         expect(dict.chat.compactionTitle(mode), `${locale} ${mode}`).toBe(
           dict.chat.compactionTitle("summarize"),
@@ -90,16 +84,13 @@ describe("compactionTitle (the row is titled by its mode)", () => {
 });
 
 describe("compactionRunning / compactionDone (the title doubles as the status, as the work group's does)", () => {
-  it("reads 压缩中 while a compaction runs and 压缩完毕 once it settles", () => {
-    expect(zh.chat.compactionRunning("summarize")).toBe("压缩中");
-    expect(zh.chat.compactionDone("summarize")).toBe("压缩完毕");
+  it("names running and completed compaction states", () => {
+    expect(en.chat.compactionRunning("summarize")).toBe("Compacting");
+    expect(en.chat.compactionDone("summarize")).toBe("Compacted");
   });
 
-  it("keeps the two states and the two modes apart in both dictionaries", () => {
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
+  it("keeps the two states and the two modes apart in the English dictionary", () => {
+    for (const [locale, dict] of [["en", en]] as const) {
       for (const mode of ["summarize", "discard"]) {
         expect(dict.chat.compactionRunning(mode), `${locale} ${mode}`).toBeTruthy();
         expect(

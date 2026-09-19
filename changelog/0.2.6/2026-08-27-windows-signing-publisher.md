@@ -6,8 +6,6 @@
 - **PR:** [#477](https://github.com/Prism-Shadow/penguin-harness/pull/477), [#479](https://github.com/Prism-Shadow/penguin-harness/pull/479)
 - **Breaking:** yes — a Windows desktop client installed from 0.2.4 or earlier refuses this update and has to be reinstalled by hand
 
-[中文版](2026-08-27-windows-signing-publisher.zh.md)
-
 The certificate that Authenticode-signs the Windows desktop build changed subject: builds are
 signed by `CN="NaisNet Technology Co., Ltd."`, issued by `Certum Extended Validation Code Signing
 2021 CA`, where releases through v0.2.4 carried `RushRush Network Technology Ltd`. Both places that

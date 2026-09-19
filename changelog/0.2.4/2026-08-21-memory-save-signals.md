@@ -5,8 +5,6 @@
 - **Scope:** `core`, `docs`
 - **PR:** [#397](https://github.com/Prism-Shadow/penguin-harness/pull/397)
 
-[中文版](2026-08-21-memory-save-signals.zh.md)
-
 The built-in `memory.prompt` said what is worth saving but not when to notice it, leaving the
 judgement entirely to the model. It now names the moments that produce a durable fact:
 

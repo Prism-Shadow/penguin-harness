@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#550](https://github.com/Prism-Shadow/penguin-harness/pull/550)
 
-[中文版](2026-08-30-copy-session-id.zh.md)
-
 A Session's id was reachable only from the chat header's details card. It is now also an action on the Session row itself, in the same menu as pin, rename, archive and delete — reached by the row's ellipsis button or by right-clicking it.
 
 ## Details

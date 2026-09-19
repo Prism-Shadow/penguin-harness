@@ -964,8 +964,8 @@ Inbound messages can carry text, images and files.
 - Feishu delivers files sent as the `file` message type, and Telegram files in the `document` field: a file the sender chose to send as a file, which is also the only Telegram media field that carries the sender's own file name.
 - On Feishu and Telegram, video, audio and voice are deliberately not delivered: nothing downstream decodes or transcribes them, and anything a sender wants the agent to have arrives as soon as they attach it as a file. WeChat is the exception, only because the platform does the work itself (see [WeChat](#wechat)).
 - The caption of a message whose attachment is delivered (a photo or a document) is that message's text. A caption on any other kind of media is not, because the media never arrives, and running the model on the caption alone would make it answer about a file it never received.
-- An image over the per-image limit, an image past the budget, and an image the channel refuses each get a different bilingual notice, as do a file over a cap, a batch over the per-message total, and a file the channel refuses. None of them runs half a message. When the bot's own permissions caused the refusal, the notice names the permission scopes to grant and links to the channel's console. On Feishu this is the usual case, because receiving messages and downloading their attachments are separate scopes.
-- Every other message type gets the bilingual "not supported" reply.
+- An image over the per-image limit, an image past the budget, and an image the channel refuses each get a different notice, as do a file over a cap, a batch over the per-message total, and a file the channel refuses. None of them runs half a message. When the bot's own permissions caused the refusal, the notice names the permission scopes to grant and links to the channel's console. On Feishu this is the usual case, because receiving messages and downloading their attachments are separate scopes.
+- Every other message type gets the "not supported" reply.
 
 ### Outbound files
 

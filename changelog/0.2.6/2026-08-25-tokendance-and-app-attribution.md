@@ -5,8 +5,6 @@
 - **Scope:** `core`, `model-catalog`, `web`, `docs`
 - **PR:** [#465](https://github.com/Prism-Shadow/penguin-harness/pull/465)
 
-[中文版](2026-08-25-tokendance-and-app-attribution.zh.md)
-
 Model requests started naming PenguinHarness to the gateways that read an app-attribution header, and the built-in catalog gained a TokenDance provider group with seven presets. The model library's provider groups were resequenced at the same time.
 
 ## App attribution

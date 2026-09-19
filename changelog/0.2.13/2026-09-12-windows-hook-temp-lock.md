@@ -5,8 +5,6 @@
 - **Scope:** `core`, `ci`
 - **PR:** [#711](https://github.com/Prism-Shadow/penguin-harness/pull/711)
 
-[中文版](2026-09-12-windows-hook-temp-lock.zh.md)
-
 `test-windows (core)` failed intermittently in `hooks.test.ts` with `EBUSY: resource busy or
 locked, rmdir`, taking whole runs red on branches that had not touched hooks at all. The teardown
 was racing the operating system rather than the code under test, and the retry CI already performs

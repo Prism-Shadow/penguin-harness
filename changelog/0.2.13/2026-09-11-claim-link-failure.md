@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#690](https://github.com/Prism-Shadow/penguin-harness/pull/690)
 
-[中文版](2026-09-11-claim-link-failure.zh.md)
-
 Opening a one-time sign-in link that had already been used, or had expired, answered the
 browser with `{"error":{"code":"unauthorized",…}}` and left the visitor on a page of raw JSON
 with nothing to act on. `GET /api/auth/claim` now redirects such a claim to `/login`, where

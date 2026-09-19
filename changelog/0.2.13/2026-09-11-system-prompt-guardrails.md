@@ -5,8 +5,6 @@
 - **Scope:** `core`
 - **PR:** [#697](https://github.com/Prism-Shadow/penguin-harness/pull/697)
 
-[中文版](2026-09-11-system-prompt-guardrails.zh.md)
-
 The default system prompt told an agent to retry a failing tool call and to stop on an error it
 "cannot resolve", but never said what that looks like, so a stubborn error was met with an
 open-ended run of variants. It said nothing about batching tool calls, interactive commands,

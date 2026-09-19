@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`, `core`
 - **PR:** [#368](https://github.com/Prism-Shadow/penguin-harness/pull/368)
 
-[中文版](2026-08-20-model-list-import.zh.md)
-
 The models page's "add group" dialog gained two modes. **Create only** keeps the light path: a valid name hands off to that group's add-model dialog. **Import models** fills the brand-new group from its endpoint in the add-model dialog's field rhythm — API key first, then the base URL with the detect action at its top-right and the in-field protocol picker as manual override; once a protocol is determined, **Import all models** fetches every model id the endpoint serves and appends them all as entries of the new group in one save, each carrying the base URL, protocol, and typed key inline.
 
 ## Details

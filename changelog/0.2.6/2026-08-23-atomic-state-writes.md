@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `cli`, `desktop`
 - **PR:** [#423](https://github.com/Prism-Shadow/penguin-harness/pull/423)
 
-[中文版](2026-08-23-atomic-state-writes.zh.md)
-
 The files the Harness keeps on disk — `system_config.yaml`, `.project_config.toml`, `.vault.toml`,
 `AGENTS.md`, `MEMORY.md`, schedule files, `GOAL.yaml` — were each overwritten in place, so a crash
 or a full disk part-way through a write left the file truncated. A truncated `system_config.yaml`

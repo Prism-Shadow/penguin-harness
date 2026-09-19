@@ -5,8 +5,6 @@
 - **Scope:** `web`, `cli`
 - **PR:** [#773](https://github.com/Prism-Shadow/penguin-harness/pull/773)
 
-[中文版](2026-09-17-new-chat-defaults-and-copy.zh.md)
-
 The sidebar's "New chat" always opened its draft on `default_agent`, overriding the Agent chosen
 under **Project settings → New chat defaults**. A new chat now starts on the Project's new-chat
 defaults. Three pieces of copy that described behaviour the product no longer has were corrected

@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#252](https://github.com/Prism-Shadow/penguin-harness/pull/252), [#253](https://github.com/Prism-Shadow/penguin-harness/pull/253), [#254](https://github.com/Prism-Shadow/penguin-harness/pull/254), [#255](https://github.com/Prism-Shadow/penguin-harness/pull/255), [#259](https://github.com/Prism-Shadow/penguin-harness/pull/259)
 
-[中文版](2026-08-11-web-ui-polish.zh.md)
-
 Five UI fixes from one review pass ([#252](https://github.com/Prism-Shadow/penguin-harness/pull/252), [#253](https://github.com/Prism-Shadow/penguin-harness/pull/253), [#254](https://github.com/Prism-Shadow/penguin-harness/pull/254), [#255](https://github.com/Prism-Shadow/penguin-harness/pull/255), [#259](https://github.com/Prism-Shadow/penguin-harness/pull/259)):
 
 - **Dismissible initial-password banner ([#254](https://github.com/Prism-Shadow/penguin-harness/pull/254)).** The top banner urging a change away from the seeded password gains a close X at its right edge — a flat glyph with no background fill, hover darkening only, matching the "Change now" link's colors. Dismissal is permanent per user: it is stored server-side in `ui_prefs` (`initialPasswordBannerDismissed`), so it holds across devices and browsers. The banner renders only after the preference is hydrated — a dismissed banner never flashes — and fails open to visible when the preference request errors.

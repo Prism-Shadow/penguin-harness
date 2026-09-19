@@ -5,8 +5,6 @@
 - **Scope:** `server`, `cli`, `docs`
 - **PR:** [#568](https://github.com/Prism-Shadow/penguin-harness/pull/568)
 
-[中文版](2026-09-01-machines-identity.zh.md)
-
 A machine now says who it is and whether its server is up. The list opens with **this machine**, every installed one carries the last status probed for it, and `penguin server status` is the one command a controller runs over ssh to ask.
 
 ## Which machine is which

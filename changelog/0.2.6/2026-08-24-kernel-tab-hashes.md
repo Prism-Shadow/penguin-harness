@@ -6,8 +6,6 @@
 - **PR:** [#438](https://github.com/Prism-Shadow/penguin-harness/pull/438)
 - **Breaking:** yes — a kernel update now keeps or advances a whole settings tab, so editing one field of a tab freezes the rest of that tab until the default configuration is restored.
 
-[中文版](2026-08-24-kernel-tab-hashes.zh.md)
-
 Changed the unit of the kernel update from a config leaf to an Agent settings **tab**. `KERNEL_HASH_HISTORY` — six generations of built-in defaults, each a full snapshot of all 21–29 kernel-managed leaves, 158 stored entries — became two flat tables keyed by tab: `KERNEL_DEFAULT_TAB_HASHES` (7 hashes, one per tab) and `KERNEL_SUPERSEDED_TAB_HASHES` (6 hashes, the tab values earlier kernels shipped). Per tab a kernel update now asks one question: absent from the config, hash-equal to the current default, hash-equal to a superseded default, or none of those — and rewrites, skips, rewrites or keeps the tab whole.
 
 ## Details

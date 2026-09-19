@@ -110,7 +110,8 @@ describe("loadLibraryPlugins", () => {
       pre_tool_use: [],
       user_prompt: [{ command: "start.mjs", timeout: 60 }],
     });
-    expect(goal!.hooks!.manifest.description_zh).toBeDefined();
+    expect(goal!.hooks!.manifest.description).toBeTruthy();
+    expect(goal!.hooks!.manifest.description_zh).toBeUndefined();
     expect(Object.keys(goal!.hooks!.files).sort()).toEqual(["lib.mjs", "start.mjs", "stop.mjs"]);
     expect(goal!.skills).toEqual([]);
     const learning = libraryPlugin("continual-learning");
@@ -180,7 +181,7 @@ describe("groupPlugins / loadPluginGroups", () => {
       ["ai-app-development", ["a", "b"]],
       ["other", ["y", "z"]],
     ]);
-    expect(groups[2]).toMatchObject({ title: "Other", titleZh: "其他" });
+    expect(groups[2]).toMatchObject({ title: "Other" });
   });
 
   it("the library itself fills every category and leaves no Other group; hook packages sit with their audience", () => {
@@ -249,7 +250,7 @@ describe("parseSkillFrontmatter", () => {
 });
 
 /**
- * This package's README and the repository's two root READMEs each repeat the library as a
+ * This package's README and the repository's root README each repeat the library as a
  * table for human readers, and nothing else reads those tables. Derived from the library
  * rather than pinned, so adding a plugin — or filing it under the wrong heading — fails here
  * instead of leaving a table quietly wrong; the docs pages get the same guard from docs'
@@ -262,11 +263,6 @@ const README_TABLES = [
     heading: (c: PluginCategory) => c.title,
   },
   { label: "README.md", file: "../../../README.md", heading: (c: PluginCategory) => c.title },
-  {
-    label: "README.zh.md",
-    file: "../../../README.zh.md",
-    heading: (c: PluginCategory) => c.titleZh ?? c.title,
-  },
 ];
 
 /** Rows of a README's category table, located by its `Category` / `分类` header row. */

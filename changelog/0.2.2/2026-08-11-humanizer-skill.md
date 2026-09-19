@@ -5,8 +5,6 @@
 - **Scope:** `skills`
 - **PR:** [#256](https://github.com/Prism-Shadow/penguin-harness/pull/256)
 
-[中文版](2026-08-11-humanizer-skill.zh.md)
-
 `humanizer` joins the built-in library under the Office Productivity group as a manual-install skill — `preinstall: false`, so it stays out of default_agent's preinstalled set and installs from the Skill Library on demand ([#256](https://github.com/Prism-Shadow/penguin-harness/pull/256)).
 
 ## What it does

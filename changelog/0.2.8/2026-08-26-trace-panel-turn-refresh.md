@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#492](https://github.com/Prism-Shadow/penguin-harness/pull/492)
 
-[中文版](2026-08-26-trace-panel-turn-refresh.zh.md)
-
 The Trace dock panel used to fetch only when its tab became visible, so a Trace opened while the
 Session kept working stayed at the size and the contents it had been read at. It was hooked up to
 the settled-turn signal the Files panel already reads: a turn ending while the Trace tab is

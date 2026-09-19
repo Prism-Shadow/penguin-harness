@@ -5,8 +5,6 @@
 - **Scope:** `docs`, `landing`
 - **PR:** [#7](https://github.com/Prism-Shadow/penguin-harness/pull/7)
 
-[中文版](2026-07-20-readme-blog-and-docs.zh.md)
-
 ## READMEs
 
 The repository READMEs (en/zh).

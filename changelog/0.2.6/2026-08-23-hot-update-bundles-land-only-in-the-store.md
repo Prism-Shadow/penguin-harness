@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#422](https://github.com/Prism-Shadow/penguin-harness/pull/422)
 
-[中文版](2026-08-23-hot-update-bundles-land-only-in-the-store.zh.md)
-
 Every push wrote its platform bundle to disk twice: once into `<data root>/hmr/uploads/`, so
 the boot had a file to import, and once more into the content-addressed store when the
 version was committed. Only the store copy was ever read again, and only the store was swept

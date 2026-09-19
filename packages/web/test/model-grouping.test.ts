@@ -32,7 +32,7 @@ import {
   visibleChatModels,
 } from "../src/features/models/model-grouping";
 import type { ModelCredentialRowLike, ModelRowLike } from "../src/features/models/model-grouping";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
 const rows: ModelRowLike[] = [
@@ -454,17 +454,13 @@ describe("discountedPrice", () => {
         [14, 18],
       ],
     });
-    // The hover text is spelled from the schedule in both dictionaries, so neither vendor's
+    // The hover text is spelled from the schedule in the English dictionary, so neither vendor's
     // windows are described with the other's.
-    expect(zh.models.offPeakTitle(50, peakWindows(DEEPSEEK_OFF_PEAK))).toBe(
-      "空闲时段价：比牌价低 50%。高峰时段按牌价计费——北京时间周一至周五 9:00–12:00、14:00–18:00",
-    );
+
     expect(en.models.offPeakTitle(50, peakWindows(DEEPSEEK_OFF_PEAK))).toBe(
       "Off-peak rate: 50% off list. Peak hours bill at list price — 09:00–12:00 and 14:00–18:00 Beijing time, Monday to Friday",
     );
-    expect(zh.models.offPeakTitle(50, peakWindows(QWEN_OFF_PEAK))).toBe(
-      "空闲时段价：比牌价低 50%。高峰时段按牌价计费——北京时间每天 8:00–22:00",
-    );
+
     expect(en.models.offPeakTitle(50, peakWindows(QWEN_OFF_PEAK))).toBe(
       "Off-peak rate: 50% off list. Peak hours bill at list price — 08:00–22:00 Beijing time, every day",
     );

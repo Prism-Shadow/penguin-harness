@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`, `docs`
 - **PR:** [#592](https://github.com/Prism-Shadow/penguin-harness/pull/592)
 
-[中文版](2026-09-02-hooks-enable-import-export.zh.md)
-
 Hooks gained an on/off switch, the way Skills have one: a single Agent-level setting rather than a flag per installed package. The Agent settings Hooks tab also gained what the Skills tab already had — export as a zip, and the Skills tab's import dialog, a recommended chat import above a zip upload. The hook-point chips now read the bare point name and sit beside the package name.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`
 - **PR:** [#461](https://github.com/Prism-Shadow/penguin-harness/pull/461)
 
-[中文版](2026-08-25-sidebar-group-paging.zh.md)
-
 The chat sidebar's grouped list gains a reveal row that speaks for its own group, a way to fold a
 revealed group back, and real pagination over the groups themselves.
 

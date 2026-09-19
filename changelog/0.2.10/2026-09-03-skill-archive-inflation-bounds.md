@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#601](https://github.com/Prism-Shadow/penguin-harness/pull/601)
 
-[中文版](2026-09-03-skill-archive-inflation-bounds.zh.md)
-
 `POST /api/projects/:p/agents/:a/skills/archive` applied its 200-file, 5MB-per-file and 20MB-total caps to the entries `unzipSync` had already returned. `unzipSync` allocates a buffer of each entry's declared uncompressed size and inflates into it, so caps read off the result bound nothing: the 14MB the route accepts is enough compressed zeros to declare about 14GB, and an entry whose header overstates its size hands back a short view onto a buffer of the declared length — which passed every check and installed.
 
 ## Details

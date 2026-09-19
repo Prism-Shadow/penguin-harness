@@ -6,8 +6,6 @@
 - **PR:** [#529](https://github.com/Prism-Shadow/penguin-harness/pull/529)
 - **Issue:** [#527](https://github.com/Prism-Shadow/penguin-harness/issues/527)
 
-[中文版](2026-08-28-bulk-update-notice.zh.md)
-
 The page notice that says what a nav dot was pointing at is now one shared block on all four
 pages that carry one, and on Agents, Skills and Models it can act on everything it counts in a
 single press instead of leaving the user to update the objects one at a time.

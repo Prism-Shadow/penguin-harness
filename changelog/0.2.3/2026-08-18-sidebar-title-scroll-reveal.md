@@ -6,8 +6,6 @@
 - **PR:** [#328](https://github.com/Prism-Shadow/penguin-harness/pull/328)
 - **Issue:** [#309](https://github.com/Prism-Shadow/penguin-harness/issues/309)
 
-[中文版](2026-08-18-sidebar-title-scroll-reveal.zh.md)
-
 Conversation titles in the chat sidebar are clipped to one line, and the only way past the clipping was a native tooltip that is easy to miss — conversations sharing a long prefix were indistinguishable from one another. Hovering a row, or reaching it with keyboard focus, now scrolls the clipped title's hidden tail into view, on session rows and parked-draft rows alike.
 
 ## The reveal

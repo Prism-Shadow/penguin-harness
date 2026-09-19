@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `desktop`, `tooling`, `docs`
 - **PR:** [#658](https://github.com/Prism-Shadow/penguin-harness/pull/658)
 
-[中文版](2026-09-09-agent-cli-on-path.zh.md)
-
 Every command an Agent runs now finds this installation's own `penguin` first on its PATH. The server writes a launcher script into its data root at `<root>/bin/penguin` — it runs the CLI entry this installation was started from, on the server's own Node — and each Session puts that directory at the front of PATH for the commands it spawns. A command that asks the harness to do something reaches the harness it is running inside, rather than whatever version the machine happens to have installed globally.
 
 ## Details

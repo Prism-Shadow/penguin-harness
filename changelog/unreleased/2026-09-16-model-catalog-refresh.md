@@ -5,8 +5,6 @@
 - **Scope:** `model-catalog`, `web`, `docs`, `skills`
 - **PR:** [#749](https://github.com/Prism-Shadow/penguin-harness/pull/749)
 
-[中文版](2026-09-16-model-catalog-refresh.zh.md)
-
 The built-in model catalog was re-read against its providers on 2026-09-16. The direct DeepSeek group was cut down to the two models DeepSeek's pricing page lists, three TokenDance promotions were re-rated, OpenRouter, Fireworks AI, SiliconFlow and both Qwen groups gained rows, and the DeepSeek models Qwen sells were put on Qwen's own peak/off-peak schedule, the catalog's second one. Prices below are per million tokens, as cache hit / input / output.
 
 ## DeepSeek

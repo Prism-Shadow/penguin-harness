@@ -6,8 +6,6 @@
 - **PR:** [#434](https://github.com/Prism-Shadow/penguin-harness/pull/434)
 - **Breaking:** yes — no `PENGUIN_*` variable reaches commands an Agent runs; set the ones you want in the Agent's vault
 
-[中文版](2026-08-24-agent-commands-own-data-root.zh.md)
-
 Every `PENGUIN_*` variable is stripped from the environment of every command an Agent runs,
 alongside `PORT`, `HOST` and the rest of the harness's own plumbing. A harness an Agent starts now
 takes its own default data root instead of the one the running harness was serving from, and reads

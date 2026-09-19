@@ -5,8 +5,6 @@
 - **Scope:** `core`, `skills`
 - **PR:** [#604](https://github.com/Prism-Shadow/penguin-harness/pull/604)
 
-[中文版](2026-09-03-search-scope-and-dev-instance-rules.zh.md)
-
 Nothing in the default system prompt said where an agent should look for a file, so a path that did not resolve was answered by widening the search root — `find /`, a walk of the home directory, a scan of the whole disk. That is slow, and it reads files that have nothing to do with the task. The prompt now steers an agent to search from `CWD` down and to narrow rather than widen, and the two repo-development skills carry the matching guidance for agents working on PenguinHarness.
 
 ## Details

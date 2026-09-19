@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`
 - **PR:** [#505](https://github.com/Prism-Shadow/penguin-harness/pull/505)
 
-[中文版](2026-08-26-messaging-delivery-observability.zh.md)
-
 "I sent the bot a message and nothing happened" had three completely different causes and one
 appearance. The channel may never have delivered the message; it may have arrived and the Task
 failed to start, which the bridge swallowed into an error record; or the Task may have run and the

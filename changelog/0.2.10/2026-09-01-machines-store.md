@@ -6,8 +6,6 @@
 - **PR:** [#565](https://github.com/Prism-Shadow/penguin-harness/pull/565)
 - **Breaking:** yes — the machines routes moved under a Project, and `machines-installs.json` is read no longer
 
-[中文版](2026-09-01-machines-store.zh.md)
-
 What this server has installed on which machine moves out of `<data root>/machines-installs.json` and into `web.db`, and a machine now belongs to a Project. The install itself is unchanged — same ssh, same job, same progress lines.
 
 ## Details

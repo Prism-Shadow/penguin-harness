@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#491](https://github.com/Prism-Shadow/penguin-harness/pull/491)
 
-[中文版](2026-08-26-context-menu-scroll-dismiss.zh.md)
-
 Opening the context menu on a sidebar Session row while a conversation was streaming closed it again immediately, and kept closing it for as long as output kept arriving. A pointer-anchored panel now dismisses only for a scroll that moved the content it was anchored to.
 
 ## Details

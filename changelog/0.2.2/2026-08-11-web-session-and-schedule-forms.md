@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#245](https://github.com/Prism-Shadow/penguin-harness/pull/245)
 
-[中文版](2026-08-11-web-session-and-schedule-forms.zh.md)
-
 Four chat/settings tweaks ([#245](https://github.com/Prism-Shadow/penguin-harness/pull/245)):
 
 - **Copyable Session id.** The chat details card gains a Session id row under the model line; the id is a click-to-copy button (label flips to "Copied", optimistic so it works regardless of clipboard-permission context).

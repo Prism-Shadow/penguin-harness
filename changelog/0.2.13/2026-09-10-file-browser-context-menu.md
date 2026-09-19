@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#682](https://github.com/Prism-Shadow/penguin-harness/pull/682)
 
-[中文版](2026-09-10-file-browser-context-menu.zh.md)
-
 The dock panel that browsed the Workspace is now called 文件浏览 / Files, a secondary click on it
 carries the per-entry actions it had nowhere to put, and its source view and its in-place editor
 became the same presentation of the file: numbered lines, the same highlighting, the same

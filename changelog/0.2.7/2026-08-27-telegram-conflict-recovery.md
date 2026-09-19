@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`
 - **PR:** [#484](https://github.com/Prism-Shadow/penguin-harness/pull/484)
 
-[中文版](2026-08-27-telegram-conflict-recovery.zh.md)
-
 A Telegram binding that hit Telegram's one-poller-per-token rule parked at "connection error" and never delivered another message. The poll loop now treats a `getUpdates` failure as the outage it is, names a webhook that is blocking the poll, and the panel shows the whole failure message instead of its first few words.
 
 ## Details

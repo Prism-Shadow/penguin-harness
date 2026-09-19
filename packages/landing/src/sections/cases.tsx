@@ -12,12 +12,8 @@ import type { Locale } from "../state/locale";
 import { Section } from "../components/section";
 import { BrowserFrame } from "../components/browser-frame";
 import { demoVideoUrl } from "../lib/links";
-import chatZhLight from "../assets/shots/chat-zh-light.webp";
-import chatZhDark from "../assets/shots/chat-zh-dark.webp";
 import chatEnLight from "../assets/shots/chat-en-light.webp";
 import chatEnDark from "../assets/shots/chat-en-dark.webp";
-import gameZhLight from "../assets/game-zh-light.webp";
-import gameZhDark from "../assets/game-zh-dark.webp";
 import gameEnLight from "../assets/game-en-light.webp";
 import gameEnDark from "../assets/game-en-dark.webp";
 
@@ -29,19 +25,14 @@ type ShotSet = Record<Locale, { light: string; dark: string }>;
  * (preload="none"), and a matching PenguinHarness run doubles as the poster — so a video
  * tab costs a visitor exactly what an image tab already did until they press play.
  */
-const CASE_VIDEOS: Array<Record<Locale, string> | null> = [
-  { zh: demoVideoUrl("rag_zh"), en: demoVideoUrl("rag_en") },
-  null,
-];
+const CASE_VIDEOS: Array<Record<Locale, string> | null> = [{ en: demoVideoUrl("rag_en") }, null];
 
 /** Theme- and locale-matched posters or stills, index-aligned with S.cases.tabs. */
 const CASE_STILLS: ShotSet[] = [
   {
-    zh: { light: chatZhLight, dark: chatZhDark },
     en: { light: chatEnLight, dark: chatEnDark },
   },
   {
-    zh: { light: gameZhLight, dark: gameZhDark },
     en: { light: gameEnLight, dark: gameEnDark },
   },
 ];

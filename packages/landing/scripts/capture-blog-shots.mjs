@@ -10,7 +10,7 @@
  * dist -> provision one demo user per UI language (password rotated once so the
  * initial-password banner never shows) -> open /models, scroll the OpenRouter group
  * to the top of the viewport (Claude Opus 5 sits on its first card row, the free
- * rows a few rows below) -> screenshot, light theme, zh + en, as
+ * rows a few rows below) -> screenshot, light theme, English, as
  * free-models-page-<lang>-light.webp (re-encoded to WebP inside Chromium, same as
  * capture-shots.mjs).
  *
@@ -83,7 +83,7 @@ async function login(userId, password) {
  * about. The password is rotated once so the initial-password banner stays out of frame.
  */
 async function provisionUser(adminCookie, lang) {
-  const userId = lang === "zh" ? "demo" : "alex";
+  const userId = "alex";
   const initial = `${userId}12345`;
   await api(adminCookie, "POST", "/api/admin/users", { userId, password: initial }).catch((e) => {
     if (!String(e).includes("409")) throw e;
@@ -151,7 +151,7 @@ try {
     console.log(`[blog-shots] ${fileName}`);
   }
 
-  for (const lang of ["zh", "en"]) {
+  for (const lang of ["en"]) {
     const user = await provisionUser(adminCookie, lang);
 
     // 1280x900 @1.5x, light theme (the blog embeds a single light variant per language,
@@ -160,7 +160,7 @@ try {
     const context = await browser.newContext({
       viewport: { width: 1280, height: 900 },
       deviceScaleFactor: 1.5,
-      locale: lang === "zh" ? "zh-CN" : "en-US",
+      locale: "en-US",
     });
     await context.addInitScript(
       ([t, l]) => {

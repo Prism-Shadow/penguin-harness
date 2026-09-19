@@ -6,8 +6,6 @@
 - **PR:** [#542](https://github.com/Prism-Shadow/penguin-harness/pull/542)
 - **Breaking:** yes — the `goal_state` table is dropped by the first restart-only migration, and built-in goal mode is replaced by the `goal` plugin
 
-[中文版](2026-08-29-stop-hook-goal-mode.zh.md)
-
 The Session gained a generic hook mechanism: core codes the hook _points_ — **stop**, the moment a Task ends, **pre_tool_use** and **user_prompt** — and the hooks themselves come from plugins as **hook packages**, plain Node scripts installed into `agent_state/hooks/` beside `agent_state/skills/`. Goal mode moved out of core entirely and became the `goal` plugin's stop hook, ralph-loop style: a state file the hook reads and rewrites after every Task. A second hook package, `continual-learning`, hands a long task's findings to a background subagent. The skill library was reshaped into a plugin library — one npm package per plugin (`@penguinharness/<name>`), skills and hook packages inside, versions by date, loaded by `@prismshadow/penguin-core` — and `@prismshadow/penguin-skills` is deprecated.
 
 ## Stop hooks

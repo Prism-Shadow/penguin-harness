@@ -5,8 +5,6 @@
 - **Scope:** `core`, `web`, `docs`
 - **PR:** [#364](https://github.com/Prism-Shadow/penguin-harness/pull/364)
 
-[中文版](2026-08-20-mcp-server-permission.zh.md)
-
 An MCP Server entry gained an optional `permission` key with three states — `auto` (the
 default), `r` and `rw` — that fixes the approval level of every tool that server exposes.
 Under `auto` each tool keeps the level its own `readOnlyHint` annotation implies, which is

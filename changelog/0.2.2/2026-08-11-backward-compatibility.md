@@ -5,8 +5,6 @@
 - **Scope:** `core`, `web`
 - **PR:** [#257](https://github.com/Prism-Shadow/penguin-harness/pull/257), [#263](https://github.com/Prism-Shadow/penguin-harness/pull/263)
 
-[中文版](2026-08-11-backward-compatibility.zh.md)
-
 ## Prompt-injection section placeholders ([#257](https://github.com/Prism-Shadow/penguin-harness/pull/257)) `system_config.yaml` is baked at agent creation and never auto-upgraded, so every agent created before this change carries the old template text — hardcoded `# Vault` and `# Skills` sections with inline `{{VAULT_KEYS}}` / `{{SKILL_METADATA}}` placeholders, and no schedules section.
 
 **What old shape is tolerated.** Template-level substitution of the inline `{{VAULT_KEYS}}` and `{{SKILL_METADATA}}` placeholders continues to work, now honoring the new toggles: `vault.enabled: false` / `skills.enabled: false` blanks the inline list. On such templates the toggle cannot remove the baked section wording around the list — that text is literal template content; the tab explains this on legacy templates.

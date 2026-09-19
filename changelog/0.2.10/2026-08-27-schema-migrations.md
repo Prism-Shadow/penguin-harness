@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#383](https://github.com/Prism-Shadow/penguin-harness/pull/383)
 
-[中文版](2026-08-27-schema-migrations.zh.md)
-
 `schema.ts` declares the shape a fresh database is created with; it cannot express a change. Re-running `CREATE TABLE IF NOT EXISTS` converges a database toward the current declaration without knowing which state it came from, so no build could tell a 0.2.4 database from a 0.2.7 one and every change had to be additive to be safe at all. Schema changes are ordered migrations now, each stamped into `PRAGMA user_version`, and a pushed platform carries its own — which is how a table reaches a runtime older than the feature that needs it.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `docs`
 - **PR:** [#758](https://github.com/Prism-Shadow/penguin-harness/pull/758)
 
-[中文版](2026-09-16-docs-restructure.zh.md)
-
 The documentation site was reorganized in the spirit of a help center, and every page was
 rewritten in both languages: English first, then Chinese translated from it, with each draft
 checked against the code and the Web App's UI strings. Every existing page slug still works.

@@ -5,8 +5,6 @@
 - **Scope:** `desktop`
 - **PR:** [#411](https://github.com/Prism-Shadow/penguin-harness/pull/411)
 
-[中文版](2026-08-23-desktop-cli-install-quoting.zh.md)
-
 Installing the `penguin` command on macOS falls back to `osascript … with administrator
 privileges` when linking `/usr/local/bin/penguin` is refused — the ordinary path on a Mac
 without Homebrew, where that directory does not exist and creating it needs root. The

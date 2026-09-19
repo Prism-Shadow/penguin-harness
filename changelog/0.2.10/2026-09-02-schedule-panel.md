@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#593](https://github.com/Prism-Shadow/penguin-harness/pull/593)
 
-[中文版](2026-09-02-schedule-panel.zh.md)
-
 Scheduled tasks became reachable from the conversation itself. The chat page's dock gained a **Scheduled tasks** panel listing the tasks bound to the current Session and creating new ones, a Session with an enabled task bound to it wears an alarm clock on its sidebar row, and the Agent settings Schedule tab joined the "Create with AI" pattern — with one twist: from inside a conversation, the AI path prefills that conversation's own composer rather than a new one's.
 
 ## Details

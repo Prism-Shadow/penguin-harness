@@ -6,8 +6,6 @@
 - **PR:** [#539](https://github.com/Prism-Shadow/penguin-harness/pull/539)
 - **Breaking:** yes — SDK: `SessionConfig.createLLM` / `ContextEngineDeps.createLLM` became `openNextContext`, `RunOptions.thinkingLevel` and the per-round thinking level of the subagent seams are gone, `SessionConfig.commandPolicy` is a per-context source; HTTP API: `POST /tasks` and the subagent message no longer take `thinkingLevel`, and a follow-up recall no longer returns one
 
-[中文版](2026-08-28-context-assembled-per-rotation.zh.md)
-
 A compaction now opens its new model context exactly as a new Session opens its first: everything
 under the Agent State is read from disk at that moment — `system_config.yaml` in full (the prompt
 template with its section prompts and toggles, the builtin tool entries and MCP Servers, the

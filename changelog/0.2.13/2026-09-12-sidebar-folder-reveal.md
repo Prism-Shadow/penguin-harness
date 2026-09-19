@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#712](https://github.com/Prism-Shadow/penguin-harness/pull/712)
 
-[中文版](2026-09-12-sidebar-folder-reveal.zh.md)
-
 The conversation list's folders — Subagents, Scheduled, Archived — showed every row a fetch
 returned and had no way back: expanding Archived with 28 conversations left revealed 13 of them in
 one click, and once its share was loaded nothing folded it up again. A folder now follows the same

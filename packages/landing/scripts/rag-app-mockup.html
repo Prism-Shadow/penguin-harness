@@ -3,7 +3,7 @@
   <!--
     Finished-product mockup of the "one sentence → RAG app" example (a Claude Code docs
     expert), rendered by capture-readme-demo.mjs into assets/readme/rag-app-<lang>-<theme>.webp.
-    Pure static page — no build, no server; ?lang=zh|en&theme=light|dark picks the variant.
+    Pure static page — no build, no server; ?lang=en&theme=light|dark picks the variant.
     Styling follows the web-design skill's Penguin visual language: solid backgrounds,
     1px hairlines, system fonts, one brand-blue accent, pure-black dark mode.
   -->
@@ -405,30 +405,11 @@ claude mcp list</pre>
           placeholder: "Ask about Claude Code…",
           hint: "Answers cite the collected docs — click a source to open the original file.",
         },
-        zh: {
-          appName: "Claude Code 配置专家",
-          corpus: "674 个片段 · BM25",
-          question: "如何为 Claude Code 配置 MCP 服务器？",
-          a1: "用 CLI 添加服务器，然后在 Claude Code 里验证 ",
-          a1b: "：",
-          codeC1: "# 添加服务器（默认 local 作用域）",
-          codeC2: "# 验证",
-          a2: "项目级服务器保存在项目根目录的 .mcp.json，可随仓库共享给团队；user 作用域则让服务器在你的所有项目中可用 ",
-          a2b: "。会话内可用 /mcp 查看各服务器的连接状态。",
-          sources: "来源",
-          s1: "— 添加 MCP 服务器",
-          s2: "— 设置与作用域",
-          q1: "CLAUDE.md 是做什么的？",
-          q2: "怎么创建自定义斜杠命令？",
-          q3: "Hooks 配置放在哪里？",
-          placeholder: "向 Claude Code 专家提问…",
-          hint: "回答引用采集的文档——点击来源即可打开原文。",
-        },
       };
       const params = new URLSearchParams(location.search);
-      const lang = params.get("lang") === "zh" ? "zh" : "en";
+      const lang = "en";
       const theme = params.get("theme") === "dark" ? "dark" : "light";
-      document.documentElement.lang = lang === "zh" ? "zh" : "en";
+      document.documentElement.lang = "en";
       if (theme === "dark") document.documentElement.classList.add("dark");
       for (const el of document.querySelectorAll("[data-t]")) {
         el.textContent = T[lang][el.dataset.t];

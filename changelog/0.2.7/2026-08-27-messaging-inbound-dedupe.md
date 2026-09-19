@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#484](https://github.com/Prism-Shadow/penguin-harness/pull/484)
 
-[中文版](2026-08-27-messaging-inbound-dedupe.zh.md)
-
 A message a channel handed the bridge twice queued two Tasks and ran both, appearing twice in the chat and twice in the Web App. The bridge now drops a message its binding has already processed.
 
 ## Details

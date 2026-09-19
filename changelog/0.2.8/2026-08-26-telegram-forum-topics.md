@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507)
 
-[中文版](2026-08-26-telegram-forum-topics.zh.md)
-
 A forum supergroup splits one chat into topics, and every message carries the topic it was
 written in. Only the first reply of a run stayed there — Telegram infers a reply's topic from the
 message it quotes — while everything after it walked out of the conversation into **General**:

@@ -1,3 +1,4 @@
+import { en } from "../src/lib/strings-en";
 /**
  * Clicking a draft-screen example FILLS the composer and sends nothing.
  *
@@ -16,7 +17,6 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { buildExampleFill } from "../src/features/chat/example-fill";
 import { buildSkillsMessage } from "../src/features/chat/skill-use";
-import { zh } from "../src/lib/strings";
 
 const PROMPT = "Build a cute penguin sledding game.";
 
@@ -57,7 +57,7 @@ describe("buildExampleFill — what lands in the text body", () => {
   });
 
   it("carries the dictionary prompt through verbatim, newlines and all", () => {
-    const prompt = zh.chat.exampleTasks.gamecenter.prompt;
+    const prompt = en.chat.exampleTasks.gamecenter.prompt;
     expect(fill({ prompt }).text).toBe(prompt);
   });
 });

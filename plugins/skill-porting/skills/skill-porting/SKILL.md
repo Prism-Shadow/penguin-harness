@@ -40,7 +40,6 @@ Penguin frontmatter:
 name: <skill_name>                        # must equal the directory name
 description: <one line, English>          # injected into the prompt; keep it specific
 short_description: <shorter than description>  # optional UI blurb
-short_description_zh: <its Chinese variant>    # optional
 version: 1                                # natural number; bump on every content change
 updated: 2026-08-04T11:40:00Z             # ISO 8601 UTC; move it together with version
 ---
@@ -179,7 +178,7 @@ Shape each skill in `$WORK`, then copy the finished directory into `agent_state/
 
 1. **Directory name**: keep the upstream name when it already matches `[A-Za-z0-9_-]+` (lowercase-hyphen preferred); otherwise rename and note it. One directory per skill — a plugin with several skills becomes several installs (or one merged skill if the user prefers).
 2. **Keep** `name` (set it to the directory name) and `description` (flatten to one line; keep or make it English).
-3. **Add** `short_description` and `short_description_zh` (write them yourself, each shorter than the description), `version: 1` (bump on every later edit), and `updated:` from `date -u +%Y-%m-%dT%H:%M:%SZ`.
+3. **Add** `short_description` (write it yourself, shorter than the description), `version: 1` (bump on every later edit), and `updated:` from `date -u +%Y-%m-%dT%H:%M:%SZ`.
 4. **Drop foreign frontmatter fields** (`allowed-tools`, `disable-model-invocation`, `context`, `model`, `hooks`, `license`, `metadata`, `when_to_use`, …). Penguin ignores unknown single-line keys, but multi-line values corrupt the parse — flattening is mandatory, dropping keeps files honest. When a dropped field carries real information — required tools, trigger phrases — move it into the body text (`when_to_use` usually merges into `description`).
 5. **Components with no Penguin runtime**:
    - `commands/*.md` flat skills → each can become its own skill directory (file body → SKILL.md body), or a section of the main skill.

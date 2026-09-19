@@ -1,9 +1,5 @@
-/**
- * English dictionary (constrained by the `Strings` type to the same shape as zh):
- * locale switching goes through state/locale.tsx. Marketing copy uses lowercase `agent`;
- * preserve the established casing of Workspace, Token, Task, Skill, Trace, and other terms.
- */
-import type { Strings } from "./strings";
+/** English dictionary. Other translations must implement the same Strings contract. */
+import type { Strings } from "./strings-types";
 
 export const en: Strings = {
   siteName: "PenguinHarness",
@@ -42,7 +38,6 @@ export const en: Strings = {
 
   lang: {
     label: "Language",
-    zh: "中文",
     en: "English",
     system: "System",
   },

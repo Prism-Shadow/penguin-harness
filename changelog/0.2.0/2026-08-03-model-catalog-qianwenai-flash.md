@@ -5,8 +5,6 @@
 - **Scope:** `model-catalog`, `docs`, `skills`
 - **PR:** [#160](https://github.com/Prism-Shadow/penguin-harness/pull/160)
 
-[中文版](2026-08-03-model-catalog-qianwenai-flash.zh.md)
-
 Prices and specs read from each model's page or the gateway's models API on 2026-08-03.
 
 ## Qianwenai groups

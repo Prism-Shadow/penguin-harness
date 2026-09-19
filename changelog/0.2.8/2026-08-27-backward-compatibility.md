@@ -6,8 +6,6 @@
 - **PR:** [#507](https://github.com/Prism-Shadow/penguin-harness/pull/507), [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508), [#512](https://github.com/Prism-Shadow/penguin-harness/pull/512), [#519](https://github.com/Prism-Shadow/penguin-harness/pull/519)
 - **Breaking:** yes — on downgrade only: a Telegram binding whose last message was written in a forum topic sends nothing on a build from before this change until its next inbound message
 
-[中文版](2026-08-27-backward-compatibility.zh.md)
-
 This batch touched five things that outlive a release.
 [Scoping browser-persisted UI state to its data root](2026-08-26-install-scoped-local-state.md)
 added a file in the data root, `<root>/install-id`, and a `localStorage` entry,

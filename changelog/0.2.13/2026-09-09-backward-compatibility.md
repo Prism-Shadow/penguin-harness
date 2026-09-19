@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#587](https://github.com/Prism-Shadow/penguin-harness/pull/587)
 
-[中文版](2026-09-09-backward-compatibility.zh.md)
-
 [Company mode](2026-09-02-company-mode.md) reached its trial rounds with organizations already
 on disk, so five of its later changes had to meet data written before them. None needs a
 migration and none asks the user to do anything; this file says what each one tolerates and

@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#538](https://github.com/Prism-Shadow/penguin-harness/pull/538)
 
-[中文版](2026-08-28-sidebar-glyphs-and-copy.zh.md)
-
 Six small corrections in the sidebar, each one a mark or a label that named something other
 than what it does.
 

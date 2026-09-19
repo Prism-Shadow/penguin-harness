@@ -5,8 +5,6 @@
 - **Scope:** `ci`, `desktop`, `tooling`
 - **PR:** [#545](https://github.com/Prism-Shadow/penguin-harness/pull/545)
 
-[中文版](2026-08-30-ci-runtime-web-dist.zh.md)
-
 CI's `penguin-runtime-*` artifact — the unpacked desktop tree built for hot-update use — shipped without `web-dist` since the job was introduced: its build filter named the desktop package and its dependencies, the web package is not one of them (the app carries the web build by an electron-builder file mapping, not an import), and electron-builder skips an absent `from:` source in silence. A machine running that tree answered 404 on every page unless its data root held a hot-pushed web version to restore. GitHub Release installers build the whole workspace first and were never affected.
 
 ## Details

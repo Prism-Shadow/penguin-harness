@@ -1,9 +1,4 @@
-/**
- * Language context: zh / en / system (tracks navigator.language). On switch it first
- * synchronously calls setActiveStrings, then remounts the tree keyed on locale so every
- * `S.x` read reflects the new language; the preference persists to localStorage.
- * Same pattern as the landing page, under the docs site's own storage key.
- */
+/** Locale context with persisted preferences and a remount boundary. */
 import {
   createContext,
   useCallback,
@@ -15,13 +10,14 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { LANG_KEY, readPref, subscribePref, writePref } from "./site-prefs";
-import { setActiveStrings, zh } from "../lib/strings";
+import { setActiveStrings } from "../lib/strings";
 import { en } from "../lib/strings-en";
 
-export type LangPref = "zh" | "en" | "system";
-export type Locale = "zh" | "en";
+const DICTIONARIES = { en };
+export type Locale = keyof typeof DICTIONARIES;
+export type LangPref = Locale | "system";
 
-const LANG_PREFS = ["zh", "en", "system"] as const;
+const LANG_PREFS = ["en", "system"] as const;
 
 interface LocaleContextValue {
   lang: LangPref;
@@ -31,9 +27,10 @@ interface LocaleContextValue {
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
-/** Device language -> UI language: zh* -> zh, anything else -> en. */
+/** Unsupported device languages use the default English dictionary. */
 export function resolveSystemLocale(language: string | undefined): Locale {
-  return language?.toLowerCase().startsWith("zh") ? "zh" : "en";
+  const candidate = language?.toLowerCase().split("-")[0] ?? "en";
+  return Object.hasOwn(DICTIONARIES, candidate) ? (candidate as Locale) : "en";
 }
 
 function systemLocale(): Locale {
@@ -55,11 +52,11 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const locale = resolve(lang);
   // Switch the active dictionary during render (idempotent): children are keyed on
   // locale and render after this component, so they read the post-switch dictionary.
-  setActiveStrings(locale === "en" ? en : zh);
+  setActiveStrings(DICTIONARIES[locale]);
 
   // Keep the document language in sync (static index.html ships lang="en").
   useEffect(() => {
-    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+    document.documentElement.lang = locale;
   }, [locale]);
 
   useEffect(() => {

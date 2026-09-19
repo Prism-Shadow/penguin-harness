@@ -5,8 +5,6 @@
 - **Scope:** `core`
 - **PR:** [#487](https://github.com/Prism-Shadow/penguin-harness/pull/487)
 
-[中文版](2026-08-27-shell-line-fallback-follows-the-shell.zh.md)
-
 The `- Shell: <name>` line that render-time assembly injects into system prompts built from pre-`{{SHELL}}` templates was gated on the platform being Windows. That gate was replaced with one on the shell that actually resolved, so a pre-`{{SHELL}}` Agent on macOS or Linux is told about a `zsh`, `dash` or `sh` too.
 
 ## Details

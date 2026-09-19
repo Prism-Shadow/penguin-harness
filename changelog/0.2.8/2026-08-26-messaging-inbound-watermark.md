@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#493](https://github.com/Prism-Shadow/penguin-harness/pull/493)
 
-[中文版](2026-08-26-messaging-inbound-watermark.zh.md)
-
 The messaging bridge drops an inbound message its binding has already processed, so a channel
 replaying an event does not start the same Task again. That memory was in process only: a
 desktop-app relaunch or a runtime hot swap emptied it, and a channel replaying across the restart

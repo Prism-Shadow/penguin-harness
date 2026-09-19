@@ -6,8 +6,6 @@
 - **PR:** [#458](https://github.com/Prism-Shadow/penguin-harness/pull/458)
 - **Breaking:** yes — `StopReason` drops `failed` / `timeout` / `malformed` / `auth` in favor of `retryable` / `fatal` and becomes the only stop-reason vocabulary (`ToolStopReason` / `CompactionStatus` / `McpConnectStatus` are removed); `LLMOutcome.permanent` is removed; the Web composer's auth-dead gate is retired
 
-[中文版](2026-08-24-stop-reason-converges-to-four-values.zh.md)
-
 There is now exactly one stop-reason vocabulary: `completed` / `aborted` / `retryable` / `fatal`, used by every message and event that carries a stop reason — LLM fragments, tool outputs, compaction ends, MCP connect ends. A stop reason answers exactly one question — should this be retried — and the concrete failure rides on `error_message` (`LLMOutcome.errorMessage` → `request_end.error_message`) instead of on the reason value.
 
 **`retryable`** covers everything worth another attempt: transport drops, idle timeouts, 408/429/5xx, malformed or truncated responses, and every unclassifiable error — the fatal detector is a deterministic allowlist, so a gateway phrasing a transient fault its own way keeps its retries. The engine reconnects on the existing backoff ladder, unchanged.

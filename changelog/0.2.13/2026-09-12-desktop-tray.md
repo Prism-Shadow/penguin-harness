@@ -6,8 +6,6 @@
 - **PR:** [#707](https://github.com/Prism-Shadow/penguin-harness/pull/707)
 - **Issue:** [#569](https://github.com/Prism-Shadow/penguin-harness/issues/569)
 
-[中文版](2026-09-12-desktop-tray.zh.md)
-
 The desktop app took a place in the system tray — the Windows notification area, the macOS menu bar, the Linux tray — for as long as it runs, and closing the main window came to hide it there by default, leaving the embedded server and its background tasks running with a one-click way back.
 
 ## Details

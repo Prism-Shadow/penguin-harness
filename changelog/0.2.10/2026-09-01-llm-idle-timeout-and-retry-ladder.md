@@ -5,8 +5,6 @@
 - **Scope:** `core`, `web`, `docs`
 - **PR:** [#571](https://github.com/Prism-Shadow/penguin-harness/pull/571)
 
-[中文版](2026-09-01-llm-idle-timeout-and-retry-ladder.zh.md)
-
 `model.timeoutMs` has always measured the wait for the **next** upstream event: the timer runs only while awaiting the gateway, resets on every event, and never counts consumer-side time. It was documented as "per-Request timeout", which reads as a cap on how long a response may take. The two readings agree on a model that streams as it writes. They part company on a model that keeps its reasoning off the wire — GPT-5 and Gemini send nothing at all while they think, so the whole thinking phase lands in the single gap before the first event, and 120000 quietly meant "thinking may not exceed two minutes". A request cut off there produces no usage, and the retry goes silent in exactly the same place.
 
 ## Details

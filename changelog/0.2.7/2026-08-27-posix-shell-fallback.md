@@ -5,8 +5,6 @@
 - **Scope:** `core`
 - **PR:** [#484](https://github.com/Prism-Shadow/penguin-harness/pull/484)
 
-[中文版](2026-08-27-posix-shell-fallback.zh.md)
-
 The shell resolver gained on POSIX the fallback chain the Windows branch already had. Without it, a machine whose `PATH` has no `bash` failed every command before it ran.
 
 ## Details

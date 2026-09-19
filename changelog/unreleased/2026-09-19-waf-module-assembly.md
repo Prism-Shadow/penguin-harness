@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`
 - **PR:** [#9](https://github.com/nicolaepocroianu/penguin-harness/pull/9)
 
-[中文版](2026-09-19-waf-module-assembly.zh.md)
-
 Activities gained module assembly from a saved, valid specification. Each attempt received a separate Harness Session workspace with WAF TypeScript runtime templates, a module definition, build configuration, and product-code/reference-number configuration.
 
 ## Assembly and preview

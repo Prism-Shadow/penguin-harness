@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#504](https://github.com/Prism-Shadow/penguin-harness/pull/504)
 
-[中文版](2026-08-27-messaging-qq-scan.zh.md)
-
 Binding a QQ bot required copying an App ID and an App Secret out of the developer console
 by hand. The QQ binding editor gained a QR code above those fields: scan it in QQ, pick the
 bot, and the credentials arrive on the server. The typed fields were kept below it for the

@@ -5,8 +5,6 @@
 - **Scope:** `model-catalog`
 - **PR:** [#749](https://github.com/Prism-Shadow/penguin-harness/pull/749)
 
-[中文版](2026-09-16-backward-compatibility.zh.md)
-
 The [model catalog refresh](2026-09-16-model-catalog-refresh.md) stopped offering three rows that existing Projects still carry: `deepseek/deepseek-v4-flash`, the default model of new Projects from 0.2.0 to 0.2.8; `deepseek/deepseek-v4-flash-vision-exp`, the default in 0.2.9; and `tokendance/deepseek-v4-flash-vision-exp`. **Sync presets** never deletes a row, so those Projects keep them.
 
 ## What deleting them would have broken

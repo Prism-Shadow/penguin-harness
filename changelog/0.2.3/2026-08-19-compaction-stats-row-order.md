@@ -4,8 +4,6 @@
 - **Type:** fix
 - **Scope:** `web`
 
-[中文版](2026-08-19-compaction-stats-row-order.zh.md)
-
 A compaction that runs once a Task's conversation is over now settles that round's stats row as it begins, so its banner is created underneath the row instead of being moved below it afterwards.
 
 ## Details

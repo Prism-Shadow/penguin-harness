@@ -5,8 +5,6 @@
 - **Scope:** `server`, `docs`
 - **PR:** [#496](https://github.com/Prism-Shadow/penguin-harness/pull/496)
 
-[中文版](2026-08-26-messaging-media.zh.md)
-
 A picture pasted into Feishu or Telegram now reaches the Agent instead of the "text only" notice, and a run's reply is followed into the chat by the files it named. Both directions run over the existing connector seam, so a third channel implements them the same way.
 
 ## Inbound images

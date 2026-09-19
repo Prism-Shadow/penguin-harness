@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`
 - **PR:** [#598](https://github.com/Prism-Shadow/penguin-harness/pull/598)
 
-[中文版](2026-09-03-duration-breakdown.zh.md)
-
 The chat header's details card and the Trace view now print each duration with its two components
 in parentheses — `Elapsed 10.3s (API 5s, tools 5.3s)` — so a slow turn says whether it was slow
 waiting on the model or running tools.

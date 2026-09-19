@@ -5,8 +5,6 @@
 - **Scope:** `core`, `cli`, `tooling`, `ci`
 - **PR:** [#79](https://github.com/Prism-Shadow/penguin-harness/pull/79)
 
-[中文版](2026-07-26-windows-support.zh.md)
-
 The audit found the dependency graph already clean for Windows (`node:sqlite`, pure-JS `tar`, no native modules) and `npm install -g @prismshadow/penguin-cli` already yields a working `penguin` — but every `exec_command` died with `spawn bash ENOENT`, because the command session hardcoded `spawn("bash", ["-lc", cmd])`. That one line was the product-level blocker; the rest was packaging and honesty.
 
 ## The agent actually works: shell selection

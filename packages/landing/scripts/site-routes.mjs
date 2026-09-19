@@ -30,7 +30,7 @@ const DOCS_DIR = join(HERE, "..", "..", "docs", "content");
 function slugsIn(dir) {
   const slugs = new Set();
   for (const file of readdirSync(dir)) {
-    const slug = /^(.+)\.(zh|en)\.md$/.exec(file)?.[1];
+    const slug = /^(.+)\.([a-z]{2}(?:-[A-Z]{2})?)\.md$/.exec(file)?.[1];
     if (slug !== undefined) slugs.add(slug);
   }
   return [...slugs].sort();
@@ -39,7 +39,7 @@ function slugsIn(dir) {
 /** Newest `date:` in a post's frontmatter across its language variants, if any. */
 function newestDate(dir, slug) {
   let newest;
-  for (const lang of ["en", "zh"]) {
+  for (const lang of ["en"]) {
     let raw;
     try {
       raw = readFileSync(join(dir, `${slug}.${lang}.md`), "utf8");

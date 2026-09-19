@@ -5,8 +5,6 @@
 - **Scope:** `skills`, `docs`
 - **PR:** [#463](https://github.com/Prism-Shadow/penguin-harness/pull/463)
 
-[中文版](2026-08-25-penguin-orchestration-skill.zh.md)
-
 Added `penguin-orchestration` (v1) to the skill library's AI App Development group, right after `penguin-cli`. It teaches an agent running inside PenguinHarness to drive the harness itself over the `penguin` CLI against its own local server: list and create agents, start sessions and steer them mid-flight, read transcripts, and query costs and scheduled tasks. The skill documents the server-backed CLI surface [the CLI-on-server rework](2026-08-25-cli-on-server.md) introduced — the injected `PENGUIN_API_URL` / `PENGUIN_API_TOKEN` / project, agent and session id environment variables inside agent sessions, and the lock-file attach or auto-start path outside.
 
 ## Details

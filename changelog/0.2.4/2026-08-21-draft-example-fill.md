@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#398](https://github.com/Prism-Shadow/penguin-harness/pull/398)
 
-[中文版](2026-08-21-draft-example-fill.zh.md)
-
 Clicking an example on the new-chat screen used to create the Session and submit the canned prompt on the spot. It now fills the composer and stops: the prompt lands in the text body, the example's skills are preselected in the skills dropdown, and the user presses Send — which builds exactly the message the card used to submit by itself.
 
 ## Details

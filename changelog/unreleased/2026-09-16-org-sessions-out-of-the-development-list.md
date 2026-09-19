@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#751](https://github.com/Prism-Shadow/penguin-harness/pull/751)
 
-[中文版](2026-09-16-org-sessions-out-of-the-development-list.zh.md)
-
 While an organization was working, its Sessions could surface in development mode's Session
 list. Once an employee held more Sessions than the list loads per page, the server's totals
 still counted the desk and ticket sessions the list had not loaded, so the list drew their

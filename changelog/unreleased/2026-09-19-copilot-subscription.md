@@ -5,8 +5,6 @@
 - **Type:** feature
 - **Scope:** `core`, `server`, `web`, `model-catalog`, `docs`
 
-[中文版](2026-09-19-copilot-subscription.zh.md)
-
 Added a project-scoped GitHub Copilot device sign-in flow on the Models page. The connection imported accessible tool-capable Chat Completions models and stored the credential through the existing model configuration.
 
 ## Details

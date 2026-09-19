@@ -6,8 +6,6 @@
 - **PR:** [#321](https://github.com/Prism-Shadow/penguin-harness/pull/321)
 - **Issue:** [#287](https://github.com/Prism-Shadow/penguin-harness/issues/287)
 
-[中文版](2026-08-16-recall-queued-messages.zh.md)
-
 A mid-run message that is still waiting — an undelivered steering message, or a follow-up queued behind the current run — can now be recalled back into the input box, edited, and resent. The implementation grew out of the draft [#304](https://github.com/Prism-Shadow/penguin-harness/pull/304) opened by @Myriad-Dreamin.
 
 ## Web App

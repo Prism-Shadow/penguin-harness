@@ -6,7 +6,7 @@
  * server against a temp data root serving the built web dist -> drive a genuine
  * "build an Agent app" conversation (tools actually execute in the workspace) ->
  * screenshot the chat page, its Trace panel and the evaluation center, per UI language
- * (zh / en, each with its own user so sidebars stay monolingual) and per theme
+ * (English, each with its own user so sidebars stay monolingual) and per theme
  * (light / dark), into
  * src/assets/shots/ as <page>-<lang>-<theme>.webp (12 files, re-encoded to WebP
  * inside Chromium to keep the repo small).
@@ -146,36 +146,6 @@ claude-code-expert/
 
 /** Per-language script: user prompt marker -> turns + session title. */
 const SCRIPTS = {
-  zh: {
-    marker: "配置专家",
-    prompt:
-      "收集 https://github.com/ericbuess/claude-code-docs 的文档，做一个化身 Claude Code 配置专家、回答带来源引用的 RAG 问答应用。",
-    title: "构建 Claude Code 文档专家",
-    turns: [
-      {
-        thinking:
-          "一句话需求，penguin-sdk 技能给出了完整配方：先采集语料，再建 BM25 索引，回答经 Session 流式生成并带 [n] 引用直达原文。",
-        text: "先把文档采集进语料库：",
-        cmd: CMD_COLLECT,
-      },
-      {
-        thinking:
-          "语料就绪。写应用：本地 BM25 检索（零 embedding 依赖）+ 引用回答 + Penguin 风格聊天界面，引用链接到 /corpus 原文。",
-        text: "语料就绪，写检索与引用回答的应用入口：",
-        cmd: CMD_APP,
-      },
-      {
-        text: `Claude Code 文档专家已就绪：
-
-${TREE}
-
-- 检索：本地 BM25 索引全部文档片段，中文提问同样支持；
-- 回答：每次提问经 Session 流式生成，引用 [1][2] 可点击直达 \`corpus/\` 原文；
-- 界面：Penguin 风格聊天页，空态内置示例问题；
-- 运行：\`cd claude-code-expert && npm install && npm start\`，浏览器打开 http://localhost:4630。`,
-      },
-    ],
-  },
   en: {
     marker: "configuration expert",
     prompt:
@@ -211,7 +181,7 @@ ${TREE}
 };
 
 function scriptFor(flat) {
-  return flat.includes(SCRIPTS.en.marker) ? SCRIPTS.en : SCRIPTS.zh;
+  return SCRIPTS.en;
 }
 
 // ---------------------------------------------------------------------------
@@ -425,22 +395,6 @@ async function login(userId, password) {
 
 /** Per-language demo users so sidebars stay monolingual in the shots. */
 const USERS = {
-  zh: {
-    userId: "demo",
-    agents: [
-      {
-        agentId: "data_analyst",
-        name: "数据分析师",
-        description: "面向 CSV / Excel 的数据分析、图表与报表生成",
-      },
-      { agentId: "web_scout", name: "网页调研员", description: "网页检索、信息核对与调研纪要整理" },
-      {
-        agentId: "agent_optimizer",
-        name: "Agent 优化师",
-        description: "评估其他 Agent 的表现并迭代其提示词与技能",
-      },
-    ],
-  },
   en: {
     userId: "alex",
     agents: [
@@ -575,11 +529,11 @@ try {
   /** The final answer is the only turn mentioning the npm run command. */
   const DONE_MARKER = "npm install && npm start";
 
-  for (const lang of ["zh", "en"]) {
+  for (const lang of ["en"]) {
     const user = await provisionUser(admin.cookie, lang);
     const script = SCRIPTS[lang];
 
-    // Language-specific workspace subdir so zh/en runs don't collide on files.
+    // Language-specific workspace subdir so English runs don't collide on files.
     const ws = path.join(wsDir, lang);
     mkdirSync(ws, { recursive: true });
 
@@ -605,7 +559,7 @@ try {
       const context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
         deviceScaleFactor: 1.5,
-        locale: lang === "zh" ? "zh-CN" : "en-US",
+        locale: "en-US",
       });
       await context.addInitScript(
         ([t, l]) => {

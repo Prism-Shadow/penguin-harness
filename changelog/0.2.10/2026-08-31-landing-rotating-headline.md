@@ -5,8 +5,6 @@
 - **Scope:** `landing`
 - **PR:** [#560](https://github.com/Prism-Shadow/penguin-harness/pull/560)
 
-[中文版](2026-08-31-landing-rotating-headline.zh.md)
-
 Added an alternating phrase to the homepage headline: “auto-dev” / “auto-tuning” in English and “自动开发” / “自动调优” in Chinese.
 
 ## Headline animation

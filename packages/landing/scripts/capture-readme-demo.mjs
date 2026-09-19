@@ -4,8 +4,8 @@
  * The image shows the RESULT of the example — a Claude Code docs-expert RAG app —
  * rather than the build conversation: rag-app-mockup.html is a static, dependency-free
  * mockup of the generated app's UI (per the web-design skill's Penguin visual language),
- * captured per language (zh / en) and theme (light / dark) into assets/readme/ at the
- * repo root as rag-app-<lang>-<theme>.webp (README.md uses en, README.zh.md uses zh).
+ * captured per language (English) and theme (light / dark) into assets/readme/ at the
+ * repo root as rag-app-<lang>-<theme>.webp (README.md uses en).
  *
  * Prereqs: Playwright's chromium only (no server, no build). Run:
  * `node scripts/capture-readme-demo.mjs [--png-dir <dir>]` (--png-dir also saves
@@ -44,12 +44,12 @@ async function saveWebp(pngBuffer, fileName) {
   console.log(`[demo] ${fileName}`);
 }
 
-for (const lang of ["en", "zh"]) {
+for (const lang of ["en"]) {
   for (const theme of ["light", "dark"]) {
     const context = await browser.newContext({
       viewport: { width: 1280, height: 760 },
       deviceScaleFactor: 1.5,
-      locale: lang === "zh" ? "zh-CN" : "en-US",
+      locale: "en-US",
     });
     const page = await context.newPage();
     await page.goto(`${PAGE}?lang=${lang}&theme=${theme}`);

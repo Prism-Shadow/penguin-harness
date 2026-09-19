@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#242](https://github.com/Prism-Shadow/penguin-harness/pull/242)
 
-[中文版](2026-08-11-chat-phantom-idle-reload.zh.md)
-
 The chat page reloads the session and Agent lists when a Task finishes (a turn may have
 spawned a sub-session or auto-created an Agent). That trigger watched only the stream's
 task state — but the stream also resets to "idle" whenever it detaches, so **switching

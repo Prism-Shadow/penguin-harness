@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`, `docs`
 - **PR:** [#743](https://github.com/Prism-Shadow/penguin-harness/pull/743)
 
-[中文版](2026-09-16-schedule-mark-every-agent.zh.md)
-
 The alarm clock a session row wears for a bound task still to fire kept coming and going: the
 sidebar read only the current Agent's tasks while the list shows every Agent's Sessions, so
 opening a conversation of another Agent took the marks off the rest of the rows and returning put

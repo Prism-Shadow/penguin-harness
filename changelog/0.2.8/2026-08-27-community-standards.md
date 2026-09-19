@@ -5,8 +5,6 @@
 - **Scope:** `docs`, `tooling`
 - **PR:** [#514](https://github.com/Prism-Shadow/penguin-harness/pull/514)
 
-[中文版](2026-08-27-community-standards.zh.md)
-
 GitHub's Community Standards page listed five unchecked entries — code of conduct,
 contributing, security policy, issue templates, pull request template. All five were
 written, and every file GitHub recognizes from inside `.github/` was placed there, so no

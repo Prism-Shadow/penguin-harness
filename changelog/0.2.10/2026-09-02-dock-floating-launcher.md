@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#586](https://github.com/Prism-Shadow/penguin-harness/pull/586)
 
-[中文版](2026-09-02-dock-floating-launcher.zh.md)
-
 The chat page gained an AssistiveTouch-style floating launcher for the workbench: while no dock
 surface is up, a translucent round button floats just inside the right edge of the conversation
 body under a short "Shortcuts" caption, and a click fans its entries out on a tight

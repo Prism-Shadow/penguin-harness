@@ -5,8 +5,6 @@
 - **Scope:** `core`, `web`, `cli`, `docs`
 - **PR:** [#661](https://github.com/Prism-Shadow/penguin-harness/pull/661)
 
-[中文版](2026-09-10-tool-argument-guidance.zh.md)
-
 A model that named the shell text `command` instead of `cmd` — the parameter name of other harnesses' shell tools — had every `exec_command` call rejected with a one-line "missing argument", and typically re-issued the same call unchanged. `exec_command` now runs a call that carries the text as `command` (the schema still declares `cmd` alone, and `cmd` wins when both are present), and every built-in tool that rejects a call for its arguments now answers with a complete correction guide instead of one line.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#782](https://github.com/Prism-Shadow/penguin-harness/pull/782)
 
-[中文版](2026-09-17-process-list-clear-exited.zh.md)
-
 The **Processes** list in a conversation's details card gained a one-click action that removes
 every exited process, and a command too long for its row became readable by hovering it.
 

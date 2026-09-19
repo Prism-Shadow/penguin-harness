@@ -6,8 +6,6 @@
 - **PR:** [#322](https://github.com/Prism-Shadow/penguin-harness/pull/322)
 - **Issue:** [#305](https://github.com/Prism-Shadow/penguin-harness/issues/305)
 
-[中文版](2026-08-18-cli-thinking-and-output-collapse.zh.md)
-
 CLI mode gained two runtime controls that previously needed an Agent config edit or nothing at all: a thinking level settable per invocation and changeable mid-chat, and head/tail collapsing of long tool output in the chat REPL with a `/verbose` escape hatch. The CLI reference documents both.
 
 ## Thinking level

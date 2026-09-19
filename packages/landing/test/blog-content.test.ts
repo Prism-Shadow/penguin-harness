@@ -24,7 +24,7 @@ import { DOC_SLUGS } from "../../docs/src/lib/nav";
 import { parseFrontmatter } from "../src/lib/frontmatter";
 
 const contentDir = join(__dirname, "..", "content", "blog");
-const LANGS = ["en", "zh"] as const;
+const LANGS = ["en"] as const;
 
 /** The categories src/lib/blog.ts maps; anything else silently becomes "news". */
 const CATEGORIES = new Set(["news", "practice", "perspectives", "changelog"]);
@@ -64,7 +64,7 @@ describe("blog content integrity", () => {
     }
   });
 
-  it("provides zh and en files with a title, an excerpt and a body for every post", () => {
+  it("provides English files with a title, an excerpt and a body for every post", () => {
     expect(slugs.length).toBeGreaterThan(0);
     for (const slug of slugs) {
       for (const lang of LANGS) {
@@ -76,19 +76,6 @@ describe("blog content integrity", () => {
         expect(meta.excerpt, `missing excerpt in ${name}`).toBeTruthy();
         expect(body.length, `empty body in ${name}`).toBeGreaterThan(0);
       }
-    }
-  });
-
-  it("gives both languages of a post the same date, category and pinned flag", () => {
-    for (const slug of slugs) {
-      const en = read(slug, "en").meta;
-      const zh = read(slug, "zh").meta;
-      expect(zh.date, `${slug}: date differs between en and zh`).toBe(en.date);
-      expect(zh.category, `${slug}: category differs between en and zh`).toBe(en.category);
-      // `pinned` is absent on an unpinned post, so the flag is compared, not the raw text.
-      expect(zh.pinned === "true", `${slug}: pinned differs between en and zh`).toBe(
-        en.pinned === "true",
-      );
     }
   });
 

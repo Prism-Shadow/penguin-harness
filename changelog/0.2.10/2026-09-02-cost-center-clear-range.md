@@ -6,8 +6,6 @@
 - **PR:** [#590](https://github.com/Prism-Shadow/penguin-harness/pull/590)
 - **Breaking:** yes — `GET /usage` no longer returns `errors.clearable`, and a `DELETE /usage/errors` missing either date bound is refused with 400 instead of clearing the whole history
 
-[中文版](2026-09-02-cost-center-clear-range.zh.md)
-
 The cost center's **Clear** confirmation now names the range the way the picker does — "in the last 7 days", "in the last hour" — and spells out dates only for a custom range. Behind it, a clear now deletes exactly the rows the panel listed: the two trailing presets (last hour, last 24 hours) narrow the error table's reads and the clear alike to their instant window instead of to whole days, and an admin's clear takes the unattributed rows an admin's panel shows — login failures and process crashes with no Project — which a Project-scoped clear used to leave behind.
 
 ## Details

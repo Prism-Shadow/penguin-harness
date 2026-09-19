@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#410](https://github.com/Prism-Shadow/penguin-harness/pull/410)
 
-[中文版](2026-08-23-paging-params-reject-trailing-garbage.zh.md)
-
 `offset` and `limit` were parsed with `Number.parseInt` and then only range-checked, so a
 value that merely started with digits was accepted: `?limit=200abc` paged at 200 and
 `?limit=1e3` paged at 1. Both now go through the same digits-only parse

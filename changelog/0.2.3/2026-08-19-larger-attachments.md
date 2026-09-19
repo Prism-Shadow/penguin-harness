@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **Issue:** [#345](https://github.com/Prism-Shadow/penguin-harness/issues/345)
 
-[中文版](2026-08-19-larger-attachments.zh.md)
-
 The composer's file attachments were capped at 10MB per file and 12MB per message. The default is now **100MB per file and 120MB per message**, and an admin can change both from the user menu without touching a config file or restarting anything.
 
 ## The whole chain moves together, or not at all

@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`, `model-catalog`
 - **PR:** [#12](https://github.com/nicolaepocroianu/penguin-harness/pull/12), AgentHub [#4](https://github.com/nicolaepocroianu/agenthub/pull/4)
 
-[中文](./2026-09-19-chatgpt-subscription.zh.md)
-
 Added **Connect ChatGPT** to Models. Device authorization imported the account's visible
 subscription models for use with Penguin's agent loop, tools, approvals, and history.
 

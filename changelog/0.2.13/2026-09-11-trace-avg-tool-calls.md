@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#681](https://github.com/Prism-Shadow/penguin-harness/pull/681)
 
-[中文版](2026-09-11-trace-avg-tool-calls.zh.md)
-
 The Trace view's global summary swapped its compaction count for the average number of tool calls
 per round. The average divides the two figures printed directly above it, tool calls ÷ rounds, so
 it can be checked by eye and keeps the column's scope: rounds means every card below, compaction

@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`, `docs`
 - **PR:** [#401](https://github.com/Prism-Shadow/penguin-harness/pull/401)
 
-[中文版](2026-08-21-draft-custom-shortcuts.zh.md)
-
 Added a last folder to the draft screen's examples block, holding shortcuts the user saved themselves. **New shortcut** opens an editor already carrying whatever is in the composer, with its first line suggested as the name; saving files it under the folder, and clicking a row fills the composer with that prompt and sends nothing, exactly like a built-in example. Rows carry edit and delete, and the list is stored per user on the server (`ui_prefs.draftShortcuts`), so it follows the account to another browser or machine.
 
 ## Details

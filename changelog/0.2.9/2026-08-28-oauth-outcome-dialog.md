@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`
 - **PR:** [#532](https://github.com/Prism-Shadow/penguin-harness/pull/532)
 
-[中文版](2026-08-28-oauth-outcome-dialog.zh.md)
-
 Minting a provider key with **Authorize key** sends the user to the provider's own page in
 another tab. The key landing was announced with a toast fired the moment the poll saw it — in a
 window nobody was looking at, and faded by the time they switched back. The one step a user

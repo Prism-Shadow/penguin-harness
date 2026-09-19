@@ -6,8 +6,6 @@
 - **PR:** [#187](https://github.com/Prism-Shadow/penguin-harness/pull/187)
 - **Issue:** [#102](https://github.com/Prism-Shadow/penguin-harness/issues/102)
 
-[中文版](2026-08-04-ansi-tool-output.zh.md)
-
 A nested `penguin run` driven through `exec_command` and polled with `input_command` filled Web tool cards with `[36m`/`[0m` fragments spliced into words ([#102](https://github.com/Prism-Shadow/penguin-harness/issues/102)). Three layers each contributed, and each is fixed:
 
 - **CLI**: the renderer wrote escape codes unconditionally. Color is now decided once per output stream — TTY, `NO_COLOR` unset, `TERM` not `dumb`, with a non-empty `FORCE_COLOR` overriding in either direction, matching Node's own semantics — and every renderer escape routes through that palette, so piped output is plain text.

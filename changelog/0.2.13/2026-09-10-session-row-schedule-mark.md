@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#677](https://github.com/Prism-Shadow/penguin-harness/pull/677)
 
-[中文版](2026-09-10-session-row-schedule-mark.zh.md)
-
 The alarm clock a session row wears while a scheduled task is bound to it blinked in and out
 while switching between conversations, and it was drawn in the same amber as the running
 hourglass and the pending-approval badge. The schedules store now caches one list per Agent

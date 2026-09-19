@@ -5,8 +5,6 @@
 - **Scope:** `model-catalog`, `server`, `web`, `desktop`, `docs`
 - **PR:** [#716](https://github.com/Prism-Shadow/penguin-harness/pull/716)
 
-[中文版](2026-09-16-penguin-go.zh.md)
-
 The model catalog gained a **Penguin Go** group (`penguin-go`), the relay at `https://token.penguin.ooo/api`, placed after TokenDance. Its header offers the same "authorize a key" action as TokenDance, backed by the platform's own device flow, and a **Sync** action that refreshes the group from the platform's catalog with the key already stored.
 
 ## Details

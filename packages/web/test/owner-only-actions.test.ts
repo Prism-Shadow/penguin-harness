@@ -18,7 +18,7 @@ import type { BenchmarkSummary, ProjectSummary } from "@prismshadow/penguin-serv
 import { UnpublishedNotice } from "../src/features/benchmark/benchmark-detail-page";
 import { BenchmarkCard, BenchmarkCreateButtons } from "../src/features/benchmark/benchmark-page";
 import { traceImportTargets } from "../src/features/settings/trace-import-row";
-import { S, zh } from "../src/lib/strings";
+import { S } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 const noop = () => {};
@@ -31,15 +31,15 @@ describe("the Evaluation Center's create entry points", () => {
 
   it("offer the owner both ways to create a Benchmark", () => {
     const html = render(true);
-    expect(html).toContain(S.aiCreate.withAi);
-    expect(html).toContain(S.aiCreate.manual);
+    expect(html).toContain(S.aiCreate.withAi.replaceAll("'", "&#x27;"));
+    expect(html).toContain(S.aiCreate.manual.replaceAll("'", "&#x27;"));
     expect(html.match(/<button/g)).toHaveLength(2);
   });
 
   it("offer a member Create with AI alone: the conversation is theirs to start, the write is not", () => {
     const html = render(false);
-    expect(html).toContain(S.aiCreate.withAi);
-    expect(html).not.toContain(S.aiCreate.manual);
+    expect(html).toContain(S.aiCreate.withAi.replaceAll("'", "&#x27;"));
+    expect(html).not.toContain(S.aiCreate.manual.replaceAll("'", "&#x27;"));
     expect(html.match(/<button/g)).toHaveLength(1);
   });
 });
@@ -58,7 +58,7 @@ describe("a failed Benchmark's notices", () => {
     renderToStaticMarkup(
       createElement(BenchmarkCard, {
         benchmark: failed,
-        locale: "zh",
+        locale: "en",
         nameOf: (agentId: string) => agentId,
         canDelete,
         onOpen: noop,
@@ -72,25 +72,25 @@ describe("a failed Benchmark's notices", () => {
 
   it("tell the owner to delete it and create it again, beside the delete button", () => {
     const html = card(true);
-    expect(html).toContain(S.benchmark.creationFailedHint);
+    expect(html).toContain(S.benchmark.creationFailedHint.replaceAll("'", "&#x27;"));
     expect(html).toContain(`aria-label="${S.benchmark.deleteBenchmark}"`);
-    expect(page(true)).toContain(S.benchmark.creationFailedDetail);
+    expect(page(true)).toContain(S.benchmark.creationFailedDetail.replaceAll("'", "&#x27;"));
   });
 
   it("tell a member what happened without the delete step, since the member has no delete button", () => {
     const html = card(false);
-    expect(html).toContain(S.benchmark.creationFailedHintMember);
-    expect(html).not.toContain(S.benchmark.creationFailedHint);
-    expect(html).not.toContain(S.benchmark.deleteBenchmark);
+    expect(html).toContain(S.benchmark.creationFailedHintMember.replaceAll("'", "&#x27;"));
+    expect(html).not.toContain(S.benchmark.creationFailedHint.replaceAll("'", "&#x27;"));
+    expect(html).not.toContain(S.benchmark.deleteBenchmark.replaceAll("'", "&#x27;"));
     const detail = page(false);
-    expect(detail).toContain(S.benchmark.creationFailedDetailMember);
-    expect(detail).not.toContain(S.benchmark.creationFailedDetail);
+    expect(detail).toContain(S.benchmark.creationFailedDetailMember.replaceAll("'", "&#x27;"));
+    expect(detail).not.toContain(S.benchmark.creationFailedDetail.replaceAll("'", "&#x27;"));
     // Neither dictionary words a member's line with the step.
     for (const line of [
-      zh.benchmark.creationFailedHintMember,
-      zh.benchmark.creationFailedDetailMember,
+      en.benchmark.creationFailedHintMember,
+      en.benchmark.creationFailedDetailMember,
     ]) {
-      expect(line).not.toContain("删除");
+      expect(line).not.toContain("Remove");
     }
     for (const line of [
       en.benchmark.creationFailedHintMember,

@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#440](https://github.com/Prism-Shadow/penguin-harness/pull/440)
 
-[中文版](2026-08-24-sidebar-group-order.zh.md)
-
 The chat sidebar's groups — the Workspace folders and the Agents — can be dragged into a manual
 order, the way the conversation rows inside them already could. The order is kept per Project and
 per grouping mode, and it survives a reload.

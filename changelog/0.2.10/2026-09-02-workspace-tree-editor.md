@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`, `docs`
 - **PR:** [#589](https://github.com/Prism-Shadow/penguin-harness/pull/589)
 
-[中文版](2026-09-02-workspace-tree-editor.zh.md)
-
 The Workspace files panel became a two-pane browser — a directory tree on the left, the
 selected file's preview on the right — with plain-text editing of text files and
 drag-and-drop upload from the desktop.

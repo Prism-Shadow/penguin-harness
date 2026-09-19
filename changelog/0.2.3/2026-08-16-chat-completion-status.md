@@ -6,8 +6,6 @@
 - **PR:** [#302](https://github.com/Prism-Shadow/penguin-harness/pull/302)
 - **Issue:** [#291](https://github.com/Prism-Shadow/penguin-harness/issues/291)
 
-[中文版](2026-08-16-chat-completion-status.zh.md)
-
 A running conversation was marked by a small pulsing dot that simply vanished when the run ended, so "still working" and "finished" looked the same once the dot was gone — and a run that finished while the user was looking elsewhere left no trace at all. Sidebar rows now carry an hourglass that turns over while the Session is busy, and a green dot afterwards for as long as the last reply has not been read.
 
 ## The glyphs

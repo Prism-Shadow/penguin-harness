@@ -12,7 +12,6 @@ import { Section } from "../components/section";
 import { DemoVideo } from "../components/demo-video";
 import { demoVideoUrl } from "../lib/links";
 import { useLocale } from "../state/locale";
-import evoPosterZh from "../assets/evo-poster-zh.webp";
 import evoPosterEn from "../assets/evo-poster-en.webp";
 
 /** Rounded node with a centered label and an optional version pill. */
@@ -567,8 +566,8 @@ export function SelfImprove() {
       </div>
       <div className="mt-10">
         <DemoVideo
-          src={demoVideoUrl(locale === "zh" ? "evo_zh" : "evo_en")}
-          poster={locale === "zh" ? evoPosterZh : evoPosterEn}
+          src={demoVideoUrl("evo_en")}
+          poster={evoPosterEn}
           label={S.selfImprove.videoLabel}
           caption={S.selfImprove.videoCaption}
         />
