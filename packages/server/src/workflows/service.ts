@@ -414,7 +414,13 @@ export class WorkflowService implements Workflows {
         Object.assign(installed.ifaces, read.ifaces);
         Object.assign(installed.types, read.types);
       }
-      const misfits = checkIfaces(ts, table as unknown as IfaceTable, installed, questions);
+      const fit = checkIfaces(ts, table as unknown as IfaceTable, installed, questions);
+      // A workflow's side is the whole table of the version it installed, so an interface
+      // missing from it is one that version never had: a problem, not a pass.
+      const misfits = [
+        ...fit.uncompared.map((q) => `${q}: the installed version does not declare it`),
+        ...fit.problems,
+      ];
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       const root = await loadDefs(manifests, entry);
       const host = this.host(projectId, agentId, folder);
