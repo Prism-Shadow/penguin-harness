@@ -102,3 +102,14 @@ export function buildInfo(): BuildInfo {
 }
 // Version-string helpers (shared by the CLI's `penguin update` and the server's update check).
 export { compareVersions, normalizeVersion } from "./internal/version.js";
+export {
+  projectChatGPTCredentials,
+  withProjectCredentialLock,
+} from "./state/chatgpt-credentials.js";
+// Provider protocols stay in AgentHub; the server only orchestrates connection/storage.
+export {
+  startChatGPTDeviceAuthorization,
+  pollChatGPTDeviceAuthorization,
+  ChatGPTCodexClient,
+} from "@prismshadow/agenthub";
+export type { ChatGPTCredentials, ChatGPTDeviceAuthorization } from "@prismshadow/agenthub";

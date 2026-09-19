@@ -987,6 +987,7 @@ export class GenerativeModel implements LLMInterface {
     this.client = new AutoLLMClient({
       model: config.modelId,
       ...(config.apiKey !== undefined ? { apiKey: config.apiKey } : {}),
+      ...(config.chatgptCredentials ? { chatgptCredentials: config.chatgptCredentials } : {}),
       ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
       ...(config.clientType !== undefined ? { clientType: config.clientType } : {}),
       ...(headers ? { defaultHeaders: headers } : {}),

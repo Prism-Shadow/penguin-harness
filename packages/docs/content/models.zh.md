@@ -16,6 +16,25 @@ description: 为 Project 添加模型，设置 API key 和默认模型，选择�
 
 在侧边栏选择**模型库**，可管理项目中的模型。
 
+### ChatGPT / Codex 订阅（实验性）
+
+打开**模型库 → 连接 ChatGPT**，按 OpenAI 登录链接的提示输入显示的验证码。
+授权后，Penguin 导入订阅中可见的模型，可在聊天的模型选择器中使用。
+无需 API key、注册 OAuth 应用或安装 Codex CLI。独立的 `use-codex` 插件会把任务委派给
+Codex；此连接通过 AgentHub 模型传输保留 Penguin 自己的代理循环、工具、审批和历史。
+
+这是使用未公开 Codex 后端的实验集成，不是公开的 OpenAI API。可用模型和请求行为可能
+发生变化。输出限制由后端控制，此传输不执行 Penguin 配置的输出 token 上限，也不支持
+temperature。订阅用量会被记录，但不以美元计价。
+
+项目所有者连接账户，项目内所有会话共用。访问令牌和刷新令牌仅保存在服务器端
+`.project_config.toml` 中各模型的 `chatgpt_oauth` 表内，沿用其他凭据的文件权限。
+Penguin 在过期前刷新令牌，并在推理前保存新令牌。一个项目应只使用一个 Penguin 服务进程；
+刷新操作的串行化不协调共享同一凭据文件的其他进程。
+
+再次选择**连接 ChatGPT**可更换账户或发现新增模型，选择**断开 ChatGPT**可清除保存的
+凭据。现有会话在下一次请求前重新读取凭据。此操作不会撤销 OpenAI 端的授权。
+
 ### GitHub Copilot 订阅（实验性）
 
 此开发集成保留了 Penguin 的代理循环、工具、审批及历史记录，通过 AgentHub 连接

@@ -1253,6 +1253,15 @@ export const zh = {
     // 不透明的 flow id 和状态。
     oauthKey: "自动获取密钥",
     copilotConnect: "连接 Copilot",
+    chatgptConnect: "连接 ChatGPT",
+    chatgptDisconnect: "断开 ChatGPT",
+    chatgptDisconnected: "已清除保存的 ChatGPT 订阅凭据。",
+    chatgptDisconnectBody: "移除此项目保存的订阅凭据。再次发送请求前，需要重新连接 ChatGPT 模型。",
+    chatgptIntro:
+      "为此项目连接 ChatGPT 订阅。此项目的所有会话都使用所连接的账户。实验功能：使用未公开的 Codex 后端。工具和审批由 Penguin 执行。输出限制由后端控制；此处不以美元计算订阅用量。",
+    chatgptCode: "在 OpenAI 登录页面输入此验证码。验证码将在几分钟后过期。",
+    chatgptApplyFailed: "无法获取 ChatGPT 模型或保存凭据。请重新连接后重试。",
+    chatgptApplied: (count: number) => `已连接 ChatGPT 并导入 ${count} 个模型。`,
     copilotDisconnect: "断开 Copilot",
     copilotDisconnected: "已清除保存的 Copilot 凭据。如果配置了环境变量凭据，它们仍然有效。",
     copilotIntro:

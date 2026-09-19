@@ -154,6 +154,11 @@ export abstract class ProjectConfigStore extends Interface<{
   updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse>;
   setGroupApiKey(projectId: string, provider: string, apiKey: string): Promise<number>;
   connectCopilot(projectId: string, token: string, signal?: AbortSignal): Promise<number>;
+  connectChatGPT(
+    projectId: string,
+    credentials: import("@prismshadow/penguin-core").ChatGPTCredentials,
+    signal?: AbortSignal,
+  ): Promise<number>;
   getGroupApiKey(projectId: string, provider: string): Promise<string | undefined>;
   mergePlatformModels(
     projectId: string,

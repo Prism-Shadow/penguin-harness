@@ -387,6 +387,17 @@ export const MODEL_PROVIDERS: ModelProviderInfo[] = [
     modelsUrl: "https://docs.github.com/en/copilot/reference/ai-models/supported-models",
   },
   {
+    id: "chatgpt-codex",
+    label: "ChatGPT / Codex (experimental)",
+    envKey: "",
+    envBaseUrlKey: "",
+    gatewayBaseUrl: "https://chatgpt.com/backend-api/codex",
+    clientType: "chatgpt-codex",
+    deviceOAuth: true,
+    apiKeyUrl: "https://auth.openai.com/codex/device",
+    modelsUrl: "https://developers.openai.com/codex/models",
+  },
+  {
     id: "vllm",
     label: "vLLM",
     envKey: "OPENAI_API_KEY",
@@ -2450,6 +2461,7 @@ export function resolveModelEnv(modelId: string, clientType?: string): ModelEnvI
   const explicitClientType = clientType?.toLowerCase();
   const t = explicitClientType || modelId.toLowerCase();
   if (t === "github-copilot") return { envKey: "GITHUB_COPILOT_API_KEY", envBaseUrlKey: "" };
+  if (t === "chatgpt-codex") return { envKey: "", envBaseUrlKey: "" };
   const env = (prefix: string): ModelEnvInfo => ({
     envKey: `${prefix}_API_KEY`,
     envBaseUrlKey: `${prefix}_BASE_URL`,

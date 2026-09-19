@@ -57,6 +57,7 @@ describe("model-catalog", () => {
       "qwen-pay-as-you-go",
       "qwen-token-plan",
       "github-copilot",
+      "chatgpt-codex",
       "vllm",
       "custom",
     ]);
@@ -109,6 +110,11 @@ describe("model-catalog", () => {
     // Provider ids are also unique, and each provider has an API key / base URL env var name.
     expect(new Set([...providerIds]).size).toBe(MODEL_PROVIDERS.length);
     for (const p of MODEL_PROVIDERS) {
+      if (p.id === "chatgpt-codex") {
+        expect(p.envKey).toBe("");
+        expect(p.envBaseUrlKey).toBe("");
+        continue;
+      }
       expect(p.envKey).toMatch(/_API_KEY$/);
       if (p.id === "github-copilot") expect(p.envBaseUrlKey).toBe("");
       else expect(p.envBaseUrlKey).toMatch(/_BASE_URL$/);
@@ -299,6 +305,7 @@ describe("model-catalog", () => {
     expect(MODEL_PROVIDERS.filter((p) => p.clientType !== undefined).map((p) => p.id)).toEqual([
       "openrouter",
       "github-copilot",
+      "chatgpt-codex",
       "vllm",
     ]);
     expect(providerClientType("openrouter")).toBe("openai-responses");
@@ -759,6 +766,7 @@ describe("model-catalog", () => {
     expect(providerInfo("tokendance")!.gatewayBaseUrl).toBe("https://tokendance.space/gateway/v1");
     const GATEWAYS = [
       "github-copilot",
+      "chatgpt-codex",
       "openrouter",
       "fireworks",
       "siliconflow",

@@ -40,6 +40,7 @@
  */
 export function protocolPathForModel(provider: string, clientType: string): string {
   const t = clientType.trim().toLowerCase();
+  if (t === "chatgpt-codex" || (t === "" && provider === "chatgpt-codex")) return "/responses";
   // The generic protocol clients (agenthub 0.4.2): checked before the substring matches
   // below — "openai-responses" also contains "openai" but speaks the Responses API.
   // Order mirrors AutoLLMClient's routing.

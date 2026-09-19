@@ -1145,6 +1145,17 @@ export function ModelsPage() {
               {S.models.copilotConnect}
             </Button>
           )}
+          {isOwner && rows !== null && !rows.some((row) => row.provider === "chatgpt-codex") && (
+            <Button
+              size="sm"
+              className="mt-3"
+              disabled={busy}
+              onClick={() => setOauthFor("chatgpt-codex")}
+            >
+              <GlyphIcon d={SIGN_IN_ICON} size={ICON_SIZE.inlineGlyph} />
+              {S.models.chatgptConnect}
+            </Button>
+          )}
           {/* Last stop on the Models trail, in the one shape all four dismissible trails use:
               directly under the title, naming what is waiting, carrying the sync itself, and
               carrying the way down for someone who has looked and decided to stay off the
@@ -1316,10 +1327,12 @@ export function ModelsPage() {
                             variant="ghost"
                             className="shrink-0"
                             disabled={busy}
-                            aria-label={`${group.provider.deviceOAuth ? S.models.copilotConnect : S.models.oauthKey} ${group.provider.label}`}
+                            aria-label={`${group.provider.deviceOAuth ? (group.provider.id === "chatgpt-codex" ? S.models.chatgptConnect : S.models.copilotConnect) : S.models.oauthKey} ${group.provider.label}`}
                             title={
                               group.provider.deviceOAuth
-                                ? S.models.copilotConnect
+                                ? group.provider.id === "chatgpt-codex"
+                                  ? S.models.chatgptConnect
+                                  : S.models.copilotConnect
                                 : S.models.oauthKey
                             }
                             onClick={() => setOauthFor(group.provider.id)}
@@ -1327,7 +1340,9 @@ export function ModelsPage() {
                             <GlyphIcon d={SIGN_IN_ICON} size={ICON_SIZE.groupHeaderAction} />
                             <span className="hidden @3xl:inline">
                               {group.provider.deviceOAuth
-                                ? S.models.copilotConnect
+                                ? group.provider.id === "chatgpt-codex"
+                                  ? S.models.chatgptConnect
+                                  : S.models.copilotConnect
                                 : S.models.oauthKey}
                             </span>
                           </Button>
@@ -1341,12 +1356,20 @@ export function ModelsPage() {
                           variant="ghost"
                           className="shrink-0"
                           disabled={busy}
-                          aria-label={`${S.models.groupApiKey} ${group.provider.label}`}
-                          title={S.models.groupApiKey}
+                          aria-label={`${group.provider.id === "chatgpt-codex" ? S.models.chatgptDisconnect : S.models.groupApiKey} ${group.provider.label}`}
+                          title={
+                            group.provider.id === "chatgpt-codex"
+                              ? S.models.chatgptDisconnect
+                              : S.models.groupApiKey
+                          }
                           onClick={() => setGroupKeyFor(group.provider.id)}
                         >
                           <GlyphIcon d={KEY_ICON} size={ICON_SIZE.groupHeaderAction} />
-                          <span className="hidden @3xl:inline">{S.models.groupApiKey}</span>
+                          <span className="hidden @3xl:inline">
+                            {group.provider.id === "chatgpt-codex"
+                              ? S.models.chatgptDisconnect
+                              : S.models.groupApiKey}
+                          </span>
                         </Button>
                       )}
                       {isOwner && (
@@ -1496,7 +1519,11 @@ export function ModelsPage() {
               nextRows,
               defaultModel,
               visionModel,
-              key === "" ? S.models.copilotDisconnected : S.models.groupKeyApplied(affected.length),
+              key === ""
+                ? target === "chatgpt-codex"
+                  ? S.models.chatgptDisconnected
+                  : S.models.copilotDisconnected
+                : S.models.groupKeyApplied(affected.length),
             );
           }}
         />
@@ -3698,6 +3725,26 @@ function GroupKeyDialog({
   onSubmit: (apiKey: string) => void;
 }) {
   const [key, setKey] = useState("");
+  if (provider.id === "chatgpt-codex")
+    return (
+      <Modal
+        open
+        title={S.models.chatgptDisconnect}
+        onClose={onClose}
+        footer={
+          <>
+            <Button size="sm" onClick={onClose}>
+              {S.common.cancel}
+            </Button>
+            <Button size="sm" onClick={() => onSubmit("")}>
+              {S.models.chatgptDisconnect}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-400">{S.models.chatgptDisconnectBody}</p>
+      </Modal>
+    );
   return (
     <Modal
       open
@@ -3707,7 +3754,9 @@ function GroupKeyDialog({
         <>
           {provider.deviceOAuth && (
             <Button size="sm" disabled={count === 0} onClick={() => onSubmit("")}>
-              {S.models.copilotDisconnect}
+              {provider.id === "chatgpt-codex"
+                ? S.models.chatgptDisconnect
+                : S.models.copilotDisconnect}
             </Button>
           )}
           <Button size="sm" onClick={onClose}>
@@ -3806,6 +3855,22 @@ export function ModelOAuthDialog({
   onClose: () => void;
   onApplied: (applied: number) => void;
 }) {
+  const deviceStrings =
+    provider.id === "chatgpt-codex"
+      ? {
+          connect: S.models.chatgptConnect,
+          intro: S.models.chatgptIntro,
+          code: S.models.chatgptCode,
+          applyFailed: S.models.chatgptApplyFailed,
+          applied: S.models.chatgptApplied,
+        }
+      : {
+          connect: S.models.copilotConnect,
+          intro: S.models.copilotIntro,
+          code: S.models.copilotCode,
+          applyFailed: S.models.copilotApplyFailed,
+          applied: S.models.copilotApplied,
+        };
   const [manual, setManual] = useState(false);
   const [phase, setPhase] = useState<OAuthPhase>("starting");
   const [flow, setFlow] = useState<{
@@ -3884,7 +3949,7 @@ export function ModelOAuthDialog({
         if (res.status === "error") {
           setError(
             provider.deviceOAuth && res.error === "apply_failed"
-              ? S.models.copilotApplyFailed
+              ? deviceStrings.applyFailed
               : res.error
                 ? S.models.oauthErrors[res.error]
                 : provider.deviceOAuth
@@ -3958,7 +4023,7 @@ export function ModelOAuthDialog({
   return (
     <Modal
       open
-      title={provider.deviceOAuth ? S.models.copilotConnect : S.models.oauthTitle(provider.label)}
+      title={provider.deviceOAuth ? deviceStrings.connect : S.models.oauthTitle(provider.label)}
       onClose={onClose}
       footer={
         // Done is an outcome, not a choice: a "cancel" beside it would offer to undo a key that
@@ -3981,19 +4046,19 @@ export function ModelOAuthDialog({
         {phase === "done" ? (
           <p className="text-sm text-gray-700 dark:text-gray-300">
             {provider.deviceOAuth
-              ? S.models.copilotApplied(applied)
+              ? deviceStrings.applied(applied)
               : S.models.oauthAppliedBody(provider.label, applied)}
           </p>
         ) : (
           <p className="text-sm text-gray-700 dark:text-gray-300">
             {provider.deviceOAuth
-              ? S.models.copilotIntro
+              ? deviceStrings.intro
               : S.models.oauthIntro(provider.label, count)}
           </p>
         )}
         {phase !== "done" && flow?.userCode && (
           <div className="space-y-2">
-            <p className="text-xs text-gray-500">{S.models.copilotCode}</p>
+            <p className="text-xs text-gray-500">{deviceStrings.code}</p>
             <code className="block select-all font-mono text-xl tracking-widest">
               {flow.userCode}
             </code>

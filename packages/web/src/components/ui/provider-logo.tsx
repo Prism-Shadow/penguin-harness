@@ -183,7 +183,7 @@ const GLYPHS: Record<string, Glyph> = {
 };
 
 export function ProviderLogo({ provider, className }: { provider: string; className?: string }) {
-  const glyph = GLYPHS[provider];
+  const glyph = GLYPHS[provider === "chatgpt-codex" ? "openai" : provider];
   // User-defined group (only the preset `custom` id keeps the generic cube): letter tile.
   // SVG text scales with the viewBox, staying crisp at every call-site size; the ink is
   // theme-switched via --tile-fg / --tile-fg-dark (≥ 4.5:1 on the tile for every hue,
