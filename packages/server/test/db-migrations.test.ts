@@ -572,6 +572,45 @@ describe("0.2.4 → current", () => {
   });
 });
 
+describe("a machines table from before migration 4", () => {
+  /** The machines table as the machines line created it before release: forwards, no session, no platform. */
+  const ADOPTED_MACHINES_DDL = `
+    CREATE TABLE machines (
+      address      TEXT PRIMARY KEY,
+      machine_id   TEXT,
+      version      TEXT,
+      installed_at TEXT,
+      forward_port INTEGER,
+      forward_pid  INTEGER,
+      remote_port  INTEGER
+    );
+  `;
+
+  it("is adopted by migration 4 as it stands, and gains the columns the row writes at 10", () => {
+    // What a data root that ran the machines line before its migration holds: IF NOT EXISTS
+    // kept the table, and the first connect failed on the insert naming session_pid.
+    const db = open029();
+    try {
+      db.exec(ADOPTED_MACHINES_DDL);
+      db.exec("PRAGMA user_version = 3");
+      expect(migrate(db).applied).toEqual(
+        MIGRATIONS.filter((m) => m.version > 3).map((m) => m.name),
+      );
+      const columns = (db.prepare("PRAGMA table_info(machines)").all() as { name: string }[]).map(
+        (c) => c.name,
+      );
+      expect(columns).toEqual(expect.arrayContaining(["session_pid", "platform"]));
+      db.prepare(
+        "INSERT INTO machines (address, machine_id, version, installed_at, session_pid, remote_port, platform) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run("ssh:nas", null, "9.9.9", "2026-09-04T00:00:00.000Z", 42, 7364, "linux");
+      // Idempotent: a table that already has them is left as it is.
+      expect(migrate(db).applied).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
 describe("rollbackTo", () => {
   /** Every migration states an undo or states that it has none — never leaves it unsaid. */
   it("every migration declares its down, one way or the other", () => {

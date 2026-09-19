@@ -1,6 +1,7 @@
 /**
- * Turning `~/.ssh/config` into the list of aliases the menu can show. The parsing is in
- * ssh-config.ts; this file owns the I/O — reading files and expanding `Include` globs.
+ * Turning `~/.ssh/config` into the list of aliases the menu can show, and appending a host
+ * block to it. The parsing and the rendering are in ssh-config.ts; this file owns the I/O —
+ * reading files, expanding `Include` globs, and the one append.
  *
  * Nothing here resolves an alias: what it means is ssh's business, applied by ssh itself
  * every time it is handed one. An unreadable or missing config degrades to "no targets"
@@ -55,4 +56,38 @@ export function listHostAliases(): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Appends a rendered host block to `~/.ssh/config`, creating the directory and the file with
+ * the modes ssh insists on when they do not exist yet (0700 and 0600; ssh refuses a config
+ * others can write). A blank line separates the block from whatever came before, and a file
+ * that did not end in a newline gets one first, so the block never joins a foreign line.
+ */
+export function appendHostBlock(block: string): void {
+  const dir = SSH_DIR();
+  const file = path.join(dir, "config");
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  let existing = "";
+  try {
+    existing = fs.readFileSync(file, "utf8");
+  } catch {
+    fs.writeFileSync(file, "", { mode: 0o600 });
+  }
+  const lead = existing === "" ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
+  fs.appendFileSync(file, lead + block);
+}
+
+/** The config's text, or null when there is none to read. */
+export function readSshConfig(): string | null {
+  try {
+    return fs.readFileSync(path.join(SSH_DIR(), "config"), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** Writes the config back whole — after a block this app wrote was rewritten in place. */
+export function writeSshConfig(text: string): void {
+  fs.writeFileSync(path.join(SSH_DIR(), "config"), text, { mode: 0o600 });
 }
