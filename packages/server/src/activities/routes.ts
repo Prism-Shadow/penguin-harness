@@ -70,6 +70,28 @@ export class ActivityRoutes {
         vaultKey: "GEMINI_API_KEY",
       }),
     );
+    app.get("/:activityId/media-image", async (c) => {
+      const projectId = requireValidId(c, "projectId");
+      // Choosing a server-side checkout is an owner capability, like module assembly.
+      this.access.requireProjectOwner(c.var.user.userId, projectId);
+      const query = c.req.query();
+      const result = await this.activities.imageContent(projectId, pathParam(c, "activityId"), {
+        language: requireString(query, "language", { minLen: 5, maxLen: 5 }),
+        assetKey: requireString(query, "assetKey", { minLen: 1, maxLen: 128 }),
+        expectedRevision: requireString(query, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        wafRoot: optionalString(query, "wafRoot", { maxLen: 4096 }) || undefined,
+      });
+      return new Response(new Uint8Array(result.bytes), {
+        headers: {
+          "Content-Type": result.mimeType,
+          "Content-Length": String(result.bytes.byteLength),
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "default-src 'none'; sandbox",
+          "Cross-Origin-Resource-Policy": "same-origin",
+        },
+      });
+    });
     app.post("/:activityId/generate-audio", async (c) => {
       const body = await readJson(c);
       return c.json(

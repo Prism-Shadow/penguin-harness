@@ -37,6 +37,8 @@ async function fixture(page) {
   let activityRequests = 0;
   let deletedProjects = 0;
   const prefsWrites = [];
+  const imageRequests = [];
+  let imageFailure = false;
   const errors = [];
   page.on("pageerror", (error) => {
     errors.push(error.message);
@@ -121,6 +123,18 @@ async function fixture(page) {
       return json({ activities: activity ? [activity] : [] });
     if (p === `${base}/module-setup`) return json({ wafRoot: "C:/WAF checkout" });
     if (p === `${base}/speech-setup`) return json({ voices: ["Kore", "Puck"] });
+    if (p === `${base}/act_test/media-image`) {
+      imageRequests.push(Object.fromEntries(url.searchParams));
+      if (imageFailure)
+        return json({ error: { code: "image_unavailable", message: "Missing image" } }, 404);
+      return route.fulfill({
+        contentType: "image/png",
+        body: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      });
+    }
     if (p === base && request.method() === "POST") {
       const input = request.postDataJSON();
       activity = {
@@ -306,6 +320,10 @@ async function fixture(page) {
       runs[0].candidate = "{}";
     },
     errors,
+    imageRequests,
+    setImageFailure(value) {
+      imageFailure = value;
+    },
     prefsWrites,
     removeProject() {
       projectAvailable = false;
@@ -443,6 +461,60 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
   await expect(editor).toHaveValue(JSON.stringify(manifest, null, 2));
   await expect(page.getByText(/1 assets, 1 paths assigned, 0 unbound/)).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("previews only saved images and resets previews across edits, checkout changes and failures", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await expect(page.getByText("Assign and save a media path to preview this image.")).toBeVisible();
+  const binding = page.getByRole("textbox", { name: /^Media path/ });
+  await binding.fill("media/images/cat.png");
+  await expect(page.getByRole("button", { name: "Preview image", exact: true })).toHaveCount(0);
+  expect(f.imageRequests).toHaveLength(0);
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await page.getByRole("button", { name: "Preview image", exact: true }).click();
+  await expect(page.getByRole("img", { name: "A cat", exact: true })).toBeVisible();
+  await expect(page.getByText("1 × 1 pixels", { exact: true })).toBeVisible();
+  expect(f.imageRequests[0]).toMatchObject({
+    language: "en-US",
+    assetKey: "cat",
+    wafRoot: "C:/WAF checkout",
+  });
+  expect(f.imageRequests[0].expectedRevision).toBeTruthy();
+  await expect(page.getByRole("link", { name: "Open full-size image" })).toHaveAttribute(
+    "href",
+    /media-image\?/,
+  );
+  await binding.fill("media/images/different.png");
+  await expect(page.getByRole("img", { name: "A cat", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("Save or reload the draft before previewing its saved image."),
+  ).toBeVisible();
+  expect(f.imageRequests).toHaveLength(1);
+  await binding.fill("media/images/cat.png");
+  await page.getByRole("textbox", { name: /^WAF checkout/ }).fill("C:/Other WAF");
+  f.setImageFailure(true);
+  await page.getByRole("button", { name: "Preview image", exact: true }).click();
+  await expect(page.getByText(/^Image unavailable\./)).toBeVisible();
+  f.setImageFailure(false);
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.getByText("1 × 1 pixels", { exact: true })).toBeVisible();
+  expect(f.imageRequests.at(-1).wafRoot).toBe("C:/Other WAF");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  f.member();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Preview image", exact: true })).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
 

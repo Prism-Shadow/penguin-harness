@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { projectDir } from "@prismshadow/penguin-core";
@@ -299,5 +300,95 @@ describe("native activity authoring API", () => {
     await fs.writeFile(file, "{broken");
     expect((await client.get(endpoint)).status).toBe(500);
     expect(await fs.readFile(file, "utf8")).toBe("{broken");
+  });
+
+  it("serves bound image previews to the owner only and keeps them private", async () => {
+    const t = await createTestApp();
+    cleanups.push(t.cleanup);
+    const owner = await provisionUser(t.app, "image_owner");
+    const ownerClient = apiClient(t.app, owner.cookie);
+    const projectId = "image_owner-image_preview_project";
+    expect((await ownerClient.post("/api/projects", { projectId })).status).toBe(201);
+    const base = `/api/projects/${projectId}/activities`;
+    const created = (await (
+      await ownerClient.post(base, { productCode: "sight-words", refNum: 1, title: "Sight words" })
+    ).json()) as ActivityDetail;
+    const endpoint = `${base}/${created.id}`;
+    const spec = {
+      ...activitySpec,
+      scenes: [
+        {
+          id: "intro",
+          description: "Look",
+          media: { images: [{ key: "cat", description: "A cat" }] },
+        },
+      ],
+    };
+    let draft = (await (
+      await ownerClient.post(`${endpoint}/apply-generated-spec`, {
+        spec,
+        expectedRevision: created.draft.contentRevision,
+      })
+    ).json()) as ActivityDraft;
+    draft = (await (
+      await ownerClient.post(`${endpoint}/plan-media`, { expectedRevision: draft.contentRevision })
+    ).json()) as ActivityDraft;
+    const manifest = structuredClone(draft.mediaPlan!.manifest);
+    manifest.assets["en-US"]![0]!.path = "media/images/cat.png";
+    draft = (await (
+      await ownerClient.put(`${endpoint}/media`, {
+        manifest,
+        expectedRevision: draft.contentRevision,
+      })
+    ).json()) as ActivityDraft;
+
+    const wafRoot = await fs.mkdtemp(path.join(os.tmpdir(), "penguin-api-waf-"));
+    cleanups.push(() => fs.rm(wafRoot, { recursive: true, force: true }));
+    await fs.mkdir(path.join(wafRoot, "framework", "src"), { recursive: true });
+    await fs.writeFile(path.join(wafRoot, "framework", "package.json"), "{}");
+    await fs.mkdir(path.join(wafRoot, "modules"));
+    await fs.mkdir(path.join(wafRoot, "media", "images"), { recursive: true });
+    const png = Buffer.from([
+      137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1,
+    ]);
+    await fs.writeFile(path.join(wafRoot, "media/images/cat.png"), png);
+    const query = new URLSearchParams({
+      language: "en-US",
+      assetKey: "cat",
+      expectedRevision: draft.contentRevision,
+      wafRoot,
+    });
+    const response = await ownerClient.get(`${endpoint}/media-image?${query}`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("image/png");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(png);
+
+    const staleResponse = await ownerClient.get(
+      `${endpoint}/media-image?${new URLSearchParams({
+        language: "en-US",
+        assetKey: "cat",
+        expectedRevision: "stale-revision",
+        wafRoot,
+      })}`,
+    );
+    expect(staleResponse.status).toBe(409);
+
+    const member = await provisionUser(t.app, "image_member");
+    expect(
+      (await ownerClient.post(`/api/projects/${projectId}/members`, { userId: "image_member" }))
+        .status,
+    ).toBe(201);
+    const memberResponse = await apiClient(t.app, member.cookie).get(
+      `${endpoint}/media-image?${query}`,
+    );
+    expect(memberResponse.status).toBe(403);
+    const outsider = await provisionUser(t.app, "image_outsider");
+    const outsiderResponse = await apiClient(t.app, outsider.cookie).get(
+      `${endpoint}/media-image?${query}`,
+    );
+    expect(outsiderResponse.status).toBe(404);
   });
 });
