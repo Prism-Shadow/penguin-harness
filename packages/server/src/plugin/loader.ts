@@ -477,12 +477,13 @@ async function interfaceMisfits(
   specifier: string,
   own: IfaceTable,
   defs: readonly ModuleDef[],
+  assets: string | null,
 ): Promise<string[]> {
   const questions = ifaceQuestions(defs.map((d) => d.manifest));
   if (questions.length === 0) return [];
   let ts: TypeScript;
   try {
-    ts = await loadTypeScript();
+    ts = await loadTypeScript(assets);
   } catch (err) {
     if (!(err instanceof TypeScriptUnavailable)) throw err;
     if (!compilerMissingLogged) console.warn(`[plugins] interfaces not compared: ${err.message}`);
@@ -545,10 +546,8 @@ export async function loadPlugins(
   reuse: ReadonlyMap<string, LoadedPlugin> = new Map(),
 ): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
-  const bases = pluginBases(
-    root,
-    assetsDir === undefined ? await committedAssetsDir(root) : assetsDir,
-  );
+  const pushedAssets = assetsDir === undefined ? await committedAssetsDir(root) : assetsDir;
+  const bases = pluginBases(root, pushedAssets);
   // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
   // available without a download — that is what `builtin` means — but availability is not
   // consent: it loads when a Project asks for it, like every other plugin.
@@ -610,7 +609,12 @@ export async function loadPlugins(
         });
       const modules = pair(plugin.modules);
       const replaces = pair(plugin.replaces);
-      const misfits = await interfaceMisfits(specifier, read.ifaces, [...modules, ...replaces]);
+      const misfits = await interfaceMisfits(
+        specifier,
+        read.ifaces,
+        [...modules, ...replaces],
+        pushedAssets,
+      );
       if (misfits.length > 0) throw new Error(misfits.join("\n"));
       loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });
     } catch (err) {

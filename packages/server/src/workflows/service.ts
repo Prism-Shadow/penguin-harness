@@ -36,7 +36,7 @@ import type {
 import { userText } from "@prismshadow/penguin-core";
 import table from "../ifaces.json" with { type: "json" };
 import type { ServerEvent } from "../api/types.js";
-import type { Channels, Clock, Log, Paths } from "../hmr/capabilities.js";
+import type { Channels, Clock, Hmr, Log, Paths } from "../hmr/capabilities.js";
 import { userChannelKey } from "../http/routes/events.js";
 import type { AgentIndex, Members, Projects } from "../mechanisms/projects.js";
 import type { SessionIndex } from "../mechanisms/sessions.js";
@@ -210,6 +210,7 @@ export class WorkflowService implements Workflows {
   @Use() private readonly channels!: Channels;
   @Use() private readonly members!: Members;
   @Use() private readonly projects!: Projects;
+  @Use() private readonly hmr!: Hmr;
   @Use() private readonly agents!: AgentIndex;
   @Use() private readonly sessionIndex!: SessionIndex;
   @Use() private readonly runner!: ScheduleTaskRunner;
@@ -400,7 +401,7 @@ export class WorkflowService implements Workflows {
     try {
       const manifests = await readManifests(folder);
       const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
-      const ts = await loadTypeScript();
+      const ts = await loadTypeScript(this.hmr.assetsDir());
       // A new workflow takes its types from THIS harness; one that has them keeps them, and
       // they are its side of the comparison below.
       installHarnessTypes(
