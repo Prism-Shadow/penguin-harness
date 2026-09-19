@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** feature
 - **Scope:** `model-catalog`, `web`, `docs`
+- **PR:** [#14](https://github.com/nicolaepocroianu/penguin-harness/pull/14)
 
 The Models page gained a **Z.AI Coding Plan** group next to **Z.AI (GLM)**, so choosing a
 billing path for the GLM models is a choice of group, not a hand edit. The subscription's quota
