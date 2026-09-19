@@ -7,6 +7,8 @@
 #   PENGUIN_VERSION=vX.Y.Z    choose a version (same as --version vX.Y.Z); a published Release
 #                              installer defaults to its own version, an unstamped source copy to latest
 #   PENGUIN_INSTALL_DIR=<dir> install dir; default ~/.penguin
+#   PENGUIN_LINK_COMMAND=0    leave ~/.local/bin/penguin alone; for a second installation beside
+#                              the one the `penguin` command belongs to
 #   PENGUIN_ARCHIVE=<file>    install a local Release archive without network access (same as --archive <file>)
 #   PENGUIN_DOWNLOAD_SOURCE=auto|oss|github choose the online source; default auto (speed-probed,
 #                              with the same-version other source as fallback)
@@ -37,6 +39,7 @@ GITHUB_LATEST_BASE="$REPO/releases/latest/download"
 VERSION="${PENGUIN_VERSION:-}"
 INSTALL_DIR="${PENGUIN_INSTALL_DIR:-$HOME/.penguin}"
 BIN_DIR="$HOME/.local/bin"
+LINK_COMMAND="${PENGUIN_LINK_COMMAND:-1}"
 UNIVERSAL=0
 ARCHIVE="${PENGUIN_ARCHIVE:-}"
 SOURCE_MODE="${PENGUIN_DOWNLOAD_SOURCE:-auto}"
@@ -160,6 +163,10 @@ esac
 case "$DOWNLOAD_SPEED_PROBE" in
   0 | 1) ;;
   *) fail "PENGUIN_DOWNLOAD_SPEED_PROBE must be 0 or 1" ;;
+esac
+case "$LINK_COMMAND" in
+  0 | 1) ;;
+  *) fail "PENGUIN_LINK_COMMAND must be 0 or 1" ;;
 esac
 RESOLVED_RELEASE_VERSION="$VERSION"
 if [ -z "$RESOLVED_RELEASE_VERSION" ] && is_release_tag "$EMBEDDED_RELEASE_VERSION"; then
@@ -757,14 +764,21 @@ OLD_DIR=""
 rm -rf "$STAGING"
 STAGING=""
 
-# --- Symlink into ~/.local/bin and check PATH only after the install is known to work. ---
-mkdir -p "$BIN_DIR"
-ln -sf "$INSTALL_DIR/bin/penguin" "$BIN_DIR/penguin"
+# --- Symlink into ~/.local/bin and check PATH only after the install is known to work.
+#     PENGUIN_LINK_COMMAND=0 skips both: ~/.local/bin/penguin is one name, and a second
+#     installation that took it would hand its program to whoever types `penguin`. ---
 PATH_MISSING=0
-case ":$PATH:" in
-  *":$BIN_DIR:"*) ;;
-  *) PATH_MISSING=1 ;;
-esac
+PENGUIN_COMMAND="penguin"
+if [ "$LINK_COMMAND" -eq 1 ]; then
+  mkdir -p "$BIN_DIR"
+  ln -sf "$INSTALL_DIR/bin/penguin" "$BIN_DIR/penguin"
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) ;;
+    *) PATH_MISSING=1 ;;
+  esac
+else
+  PENGUIN_COMMAND="$INSTALL_DIR/bin/penguin"
+fi
 
 echo ""
 echo "PenguinHarness $installed_version installed to $INSTALL_DIR"
@@ -780,6 +794,6 @@ if [ "$PATH_MISSING" -eq 1 ]; then
 fi
 echo ""
 echo "Get started:"
-echo "  penguin --help    # all commands"
-echo "  penguin web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
-echo "  penguin server    # headless server (PORT / HOST to override)"
+echo "  $PENGUIN_COMMAND --help    # all commands"
+echo "  $PENGUIN_COMMAND web       # start the Web UI at http://127.0.0.1:7364 (a first-login link is printed on first start)"
+echo "  $PENGUIN_COMMAND server    # headless server (PORT / HOST to override)"
