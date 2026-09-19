@@ -1,11 +1,14 @@
 /**
- * Appearance context: light/dark theme (mode = light / dark / system) + font
- * size + theme color (accent).
- * - Theme: html.dark class + Tailwind dark: variant; system mode tracks prefers-color-scheme
- *   live. Dark mode defaults to pure black (styles.css overrides the neutral gray scale).
+ * Appearance context: light/dark mode (light / dark / system) + theme + font size + theme
+ * color (accent).
+ * - Mode: html.dark class + Tailwind dark: variant; system mode tracks prefers-color-scheme
+ *   live. Dark mode defaults to pure black (the default theme's gray bridge).
+ * - Theme: html[data-theme] selects one of the shared UI package's themes (absent = the
+ *   default). No UI offers it yet; it is stored and applied so a theme can be tried by setting
+ *   `penguin.themeId`.
  * - Font size: scales the root font-size (rem-based text-* utilities scale along with it).
- * - Theme color: html[data-accent] overrides --accent-bg/--accent-fg; defaults to neutral
- *   (gray/white, follows light/dark).
+ * - Theme color: html[data-accent] overrides the theme's accent tokens; defaults to neutral
+ *   (the theme's own accent, which follows light/dark).
  * - Tool short names: whether a tool-call card names the built-in tools by a short alias
  *   instead of the name the model calls them by. Display-only, default on.
  * - Terminal theme: its own light/dark/follow-the-app setting, following the app unless
@@ -13,13 +16,21 @@
  *   terminal reads `terminalDark` and paints itself, because Tailwind's dark: variant is
  *   anchored on html.dark and cannot express a light subtree inside a dark app.
  * All preferences persist to localStorage.
+ * The pre-paint script in index.html (the package's BOOT_SCRIPT) applies mode, theme, accent
+ * and font size before the first frame; the effects here keep them in sync afterwards, through
+ * the same applyThemeAttributes the package defines.
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { DEFAULT_THEME_ID, THEME_IDS } from "@prismshadow/penguin-ui";
+import type { ThemeId } from "@prismshadow/penguin-ui";
+import { applyThemeAttributes, THEME_STORAGE_KEYS } from "@prismshadow/penguin-ui/boot";
+import type { AccentChoice, FontScale as UiFontScale } from "@prismshadow/penguin-ui/boot";
 
+export type { ThemeId };
 export type ThemeMode = "light" | "dark" | "system";
-export type FontScale = "sm" | "md" | "lg";
-export type Accent = "neutral" | "blue" | "green" | "violet" | "rose" | "amber";
+export type FontScale = UiFontScale;
+export type Accent = AccentChoice;
 /**
  * The terminal's appearance. By default it follows the app ("app"): switching the app
  * between light and dark carries the terminal along. Pinning "light" or "dark" decouples
@@ -33,21 +44,22 @@ export type Currency = "USD" | "CNY";
 /** 1 USD ≈ 7 CNY (fixed conversion rate). */
 export const USD_TO_CNY = 7;
 
-const MODE_KEY = "penguin.theme";
-const FONT_KEY = "penguin.fontScale";
-const ACCENT_KEY = "penguin.accent";
+const MODE_KEY = THEME_STORAGE_KEYS.mode;
+const THEME_ID_KEY = THEME_STORAGE_KEYS.themeId;
+const FONT_KEY = THEME_STORAGE_KEYS.fontScale;
+const ACCENT_KEY = THEME_STORAGE_KEYS.accent;
 const CURRENCY_KEY = "penguin.currency";
 const TERMINAL_KEY = "penguin.terminal.theme";
 const TOOL_ALIASES_KEY = "penguin.toolAliases";
-
-/** Font size tier → root font-size (px): overall slightly larger than the system default for readability. */
-const FONT_PX: Record<FontScale, string> = { sm: "16px", md: "18px", lg: "20px" };
 
 interface ThemeContextValue {
   mode: ThemeMode;
   /** Resolved effective theme (system mode already resolved against the system preference). */
   dark: boolean;
   setMode: (mode: ThemeMode) => void;
+  /** Which theme renders the app. Stored and applied, not yet offered in Settings. */
+  themeId: ThemeId;
+  setThemeId: (themeId: ThemeId) => void;
   fontScale: FontScale;
   setFontScale: (scale: FontScale) => void;
   accent: Accent;
@@ -70,6 +82,11 @@ function initialMode(): ThemeMode {
   const stored = localStorage.getItem(MODE_KEY);
   if (stored === "light" || stored === "dark" || stored === "system") return stored;
   return "system";
+}
+
+function initialThemeId(): ThemeId {
+  const stored = localStorage.getItem(THEME_ID_KEY);
+  return THEME_IDS.find((id) => id === stored) ?? DEFAULT_THEME_ID;
 }
 
 function initialFontScale(): FontScale {
@@ -115,6 +132,7 @@ function systemDark(): boolean {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(initialMode);
   const [sysDark, setSysDark] = useState(systemDark);
+  const [themeId, setThemeIdState] = useState<ThemeId>(initialThemeId);
   const [fontScale, setFontScaleState] = useState<FontScale>(initialFontScale);
   const [accent, setAccentState] = useState<Accent>(initialAccent);
   const [currency, setCurrencyState] = useState<Currency>(initialCurrency);
@@ -125,17 +143,21 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const terminalDark = terminalMode === "app" ? dark : terminalMode === "dark";
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
+    applyThemeAttributes(document.documentElement, { dark });
   }, [dark]);
 
   useEffect(() => {
-    document.documentElement.style.fontSize = FONT_PX[fontScale];
+    // The default theme sets no data-theme: its selectors match a bare <html>.
+    applyThemeAttributes(document.documentElement, { themeId });
+  }, [themeId]);
+
+  useEffect(() => {
+    applyThemeAttributes(document.documentElement, { fontScale });
   }, [fontScale]);
 
   useEffect(() => {
-    // neutral relies on the CSS default (follows light/dark) and sets no data-accent.
-    if (accent === "neutral") delete document.documentElement.dataset.accent;
-    else document.documentElement.dataset.accent = accent;
+    // neutral leaves the theme's own accent (follows light/dark) and sets no data-accent.
+    applyThemeAttributes(document.documentElement, { accent });
   }, [accent]);
 
   // system mode: track system preference changes.
@@ -151,6 +173,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setMode = useCallback((next: ThemeMode) => {
     localStorage.setItem(MODE_KEY, next);
     setModeState(next);
+  }, []);
+
+  const setThemeId = useCallback((next: ThemeId) => {
+    localStorage.setItem(THEME_ID_KEY, next);
+    setThemeIdState(next);
   }, []);
 
   const setFontScale = useCallback((next: FontScale) => {
@@ -184,6 +211,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         mode,
         dark,
         setMode,
+        themeId,
+        setThemeId,
         fontScale,
         setFontScale,
         accent,

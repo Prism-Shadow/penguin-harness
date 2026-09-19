@@ -179,7 +179,7 @@ export function Modal({
   if (!open) return null;
   return createPortal(
     <div
-      className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+      className="anim-fade fixed inset-0 z-50 flex items-end justify-center bg-[var(--ui-overlay-backdrop)] p-0 sm:items-center sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

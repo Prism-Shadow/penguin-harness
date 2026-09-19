@@ -122,7 +122,7 @@ const PLUS_ICON = "M12 5v14M5 12h14";
  * hour row), and so is where the hint sits inside it.
  */
 const CREATE_SLOT_CLASS =
-  "group/slot absolute rounded-sm transition-colors duration-150 hover:bg-[var(--accent-bg)]/[0.07] hover:ring-1 hover:ring-inset hover:ring-[var(--accent-bg)]/25 focus-visible:bg-[var(--accent-bg)]/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--accent-bg)]/40 disabled:pointer-events-none";
+  "group/slot absolute rounded-sm transition-colors duration-150 hover:bg-accent/[0.07] hover:ring-1 hover:ring-inset hover:ring-accent/25 focus-visible:bg-accent/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 disabled:pointer-events-none";
 
 /**
  * What the slot under the pointer would do, spelled out inside it: a plus and 「新建日程」. It is
@@ -506,7 +506,7 @@ export function CalendarPage() {
             <span
               className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] tabular-nums ${
                 isToday
-                  ? "bg-[var(--accent-bg)] font-semibold text-[var(--accent-fg)]"
+                  ? "bg-accent font-semibold text-accent-fg"
                   : day.inMonth
                     ? "text-gray-600 dark:text-gray-300"
                     : "text-gray-400 dark:text-gray-600"
@@ -557,7 +557,7 @@ export function CalendarPage() {
       <div
         key={day.key}
         className={`relative border-l border-gray-100 dark:border-gray-800 ${
-          isToday ? "bg-[var(--accent-bg)]/[0.03]" : ""
+          isToday ? "bg-accent/[0.03]" : ""
         }`}
         style={{ height: HOUR_PX * 24 }}
       >
@@ -586,8 +586,8 @@ export function CalendarPage() {
             className="pointer-events-none absolute inset-x-0 z-10 flex items-center"
             style={{ top: dayFraction(now) * HOUR_PX * 24 - 1 }}
           >
-            <span className="-ml-1 h-2 w-2 rounded-full bg-[var(--accent-bg)]" />
-            <span className="h-0.5 flex-1 bg-[var(--accent-bg)]" />
+            <span className="-ml-1 h-2 w-2 rounded-full bg-accent" />
+            <span className="h-0.5 flex-1 bg-accent" />
           </div>
         )}
         {slots.map(({ item, lane, lanes }) => (
@@ -633,7 +633,7 @@ export function CalendarPage() {
                   {S.company.calendar.weekdays[(d.getDay() + 6) % 7]}
                   <span
                     className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums ${
-                      isToday ? "bg-[var(--accent-bg)] text-[var(--accent-fg)]" : ""
+                      isToday ? "bg-accent text-accent-fg" : ""
                     }`}
                   >
                     {d.getDate()}

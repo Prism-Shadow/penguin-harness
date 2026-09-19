@@ -1,0 +1,227 @@
+/**
+ * The theme foundation every consumer imports right after `@import "tailwindcss"`:
+ *
+ *   @import "tailwindcss";
+ *   @import "@prismshadow/penguin-ui/theme.css";
+ *   @import "@prismshadow/penguin-ui/themes/github.css";   (then modern.css, geek.css)
+ *   @import "@prismshadow/penguin-ui/fonts.css";
+ *
+ * What lives here is theme-independent: the `dark` variant, the cascade layer order, the bridge
+ * from the `--ui-*` token contract (tokens.ts) to Tailwind utilities, the base rules that read
+ * tokens, and the user's accent presets. Token VALUES live only in `themes/*.css`.
+ *
+ * Attributes on <html>: `class="dark"` (mode), `data-theme` (absent = github), `data-accent`
+ * (absent = the theme's own accent). The pre-paint script in boot.ts sets all three before the
+ * first frame; the app's theme provider keeps them in sync afterwards.
+ */
+
+/* Dark mode is the `dark` class on <html>, not the media query: the user can pin either mode. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Appended after Tailwind's own `theme, base, components, utilities`. A theme's blocks live in
+   ui-theme and the accent presets in ui-accent, so a preset beats a theme's `.dark` block by layer
+   order alone — `:root[data-theme="x"].dark` would otherwise out-rank `:root[data-accent="blue"]`
+   on specificity. Both layers only declare custom properties, so sitting after `utilities` never
+   lets them override a utility's declaration. */
+@layer ui-theme, ui-accent;
+
+/*
+ * The bridge. `inline` makes each utility reference `var(--ui-*)` directly instead of the
+ * Tailwind theme variable, so a `[data-theme]` or `.dark` set on a subtree resolves at the element
+ * rather than being frozen at :root.
+ *
+ * Caveats, written down where they bite:
+ * 1. Tailwind emits only the theme variables some utility uses, so bridging an unused scale step
+ *    costs nothing.
+ * 2. `rounded` (bare) and `rounded-full` are literals (`0.25rem`, `calc(infinity * 1px)`), not
+ *    theme variables, so neither follows the theme. Components use `rounded-sm` (same 0.25rem) and
+ *    `rounded-[var(--ui-radius-pill)]` for pills, and keep `rounded-full` for state dots and the
+ *    switch knob — which is how a square theme keeps round dots.
+ * 3. Bare `border` is a literal 1px; thinner-looking lines come from `--ui-line` alpha, not width.
+ * 4. Shadows bridged here lose Tailwind's `--tw-shadow-color` hook (`shadow-lg shadow-black/20`);
+ *    no call site combines the two today.
+ * 5. `--ui-inset` is aliased as `surface-inset`, not `inset`: a `--color-inset` would make
+ *    Tailwind read the existing static `ring-inset` utility as a ring COLOUR as well, and emit both.
+ */
+@theme inline {
+  /* Surfaces */
+  --color-canvas: var(--ui-canvas);
+  --color-surface: var(--ui-surface);
+  --color-surface-muted: var(--ui-surface-muted);
+  --color-surface-inset: var(--ui-inset);
+  --color-overlay: var(--ui-overlay);
+
+  /* Text */
+  --color-fg: var(--ui-fg);
+  --color-fg-muted: var(--ui-fg-muted);
+  --color-fg-subtle: var(--ui-fg-subtle);
+  --color-link: var(--ui-fg-link);
+  --color-link-hover: var(--ui-fg-link-hover);
+
+  /* Lines */
+  --color-line: var(--ui-line);
+  --color-line-muted: var(--ui-line-muted);
+  --color-line-emphasis: var(--ui-line-emphasis);
+  --color-divider: var(--ui-divider);
+
+  /* Accent */
+  --color-accent: var(--ui-accent);
+  --color-accent-hover: var(--ui-accent-hover);
+  --color-accent-active: var(--ui-accent-active);
+  --color-accent-fg: var(--ui-accent-fg);
+  --color-accent-muted: var(--ui-accent-muted);
+  --color-accent-line: var(--ui-accent-line);
+
+  /* Semantic tones: text-tone-danger-fg, bg-tone-success-bg, border-tone-attention-line, … */
+  --color-tone-success-fg: var(--ui-tone-success-fg);
+  --color-tone-success-bg: var(--ui-tone-success-bg);
+  --color-tone-success-line: var(--ui-tone-success-line);
+  --color-tone-success-emphasis: var(--ui-tone-success-emphasis);
+  --color-tone-success-emphasis-fg: var(--ui-tone-success-emphasis-fg);
+  --color-tone-attention-fg: var(--ui-tone-attention-fg);
+  --color-tone-attention-bg: var(--ui-tone-attention-bg);
+  --color-tone-attention-line: var(--ui-tone-attention-line);
+  --color-tone-attention-emphasis: var(--ui-tone-attention-emphasis);
+  --color-tone-attention-emphasis-fg: var(--ui-tone-attention-emphasis-fg);
+  --color-tone-danger-fg: var(--ui-tone-danger-fg);
+  --color-tone-danger-bg: var(--ui-tone-danger-bg);
+  --color-tone-danger-line: var(--ui-tone-danger-line);
+  --color-tone-danger-emphasis: var(--ui-tone-danger-emphasis);
+  --color-tone-danger-emphasis-fg: var(--ui-tone-danger-emphasis-fg);
+  --color-tone-done-fg: var(--ui-tone-done-fg);
+  --color-tone-done-bg: var(--ui-tone-done-bg);
+  --color-tone-done-line: var(--ui-tone-done-line);
+  --color-tone-done-emphasis: var(--ui-tone-done-emphasis);
+  --color-tone-done-emphasis-fg: var(--ui-tone-done-emphasis-fg);
+  --color-tone-neutral-fg: var(--ui-tone-neutral-fg);
+  --color-tone-neutral-bg: var(--ui-tone-neutral-bg);
+  --color-tone-neutral-line: var(--ui-tone-neutral-line);
+  --color-tone-neutral-emphasis: var(--ui-tone-neutral-emphasis);
+  --color-tone-neutral-emphasis-fg: var(--ui-tone-neutral-emphasis-fg);
+  --color-tone-info-fg: var(--ui-tone-info-fg);
+  --color-tone-info-bg: var(--ui-tone-info-bg);
+  --color-tone-info-line: var(--ui-tone-info-line);
+  --color-tone-info-emphasis: var(--ui-tone-info-emphasis);
+  --color-tone-info-emphasis-fg: var(--ui-tone-info-emphasis-fg);
+
+  /* Charts: identity colours, not judgement */
+  --color-chart-1: var(--ui-chart-1);
+  --color-chart-2: var(--ui-chart-2);
+  --color-chart-3: var(--ui-chart-3);
+  --color-chart-4: var(--ui-chart-4);
+  --color-chart-5: var(--ui-chart-5);
+  --color-chart-6: var(--ui-chart-6);
+  --color-chart-cache-read: var(--ui-chart-cache-read);
+  --color-chart-cache-write: var(--ui-chart-cache-write);
+  --color-chart-output: var(--ui-chart-output);
+  --color-chart-grid: var(--ui-chart-grid);
+  --color-chart-axis: var(--ui-chart-axis);
+
+  /* Tailwind's own namespaces follow the theme, so existing classes need no edits. */
+  --font-sans: var(--ui-font-sans);
+  --font-mono: var(--ui-font-mono);
+  --font-display: var(--ui-font-display);
+
+  --radius-xs: var(--ui-radius-xs);
+  --radius-sm: var(--ui-radius-sm);
+  --radius-md: var(--ui-radius-md);
+  --radius-lg: var(--ui-radius-lg);
+  --radius-xl: var(--ui-radius-xl);
+  /* The contract stops at xl; the two larger steps the app uses (the mobile sheet's 2xl, one 3xl)
+     keep Tailwind's stock ratios to xl — 1rem and 1.5rem against 0.75rem — so they follow a
+     theme's radius, including all the way down to 0. */
+  --radius-2xl: calc(var(--ui-radius-xl) * 4 / 3);
+  --radius-3xl: calc(var(--ui-radius-xl) * 2);
+
+  --shadow-sm: var(--ui-shadow-raised);
+  --shadow-lg: var(--ui-shadow-overlay);
+  --shadow-xl: var(--ui-shadow-modal);
+  --shadow-2xl: var(--ui-shadow-drawer);
+
+  --default-transition-duration: var(--ui-dur-fast);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+    /* Kept for one wave so branches still spelling `var(--accent-bg)` keep rendering; new code
+       writes `bg-accent` / `text-accent-fg`. Delete once no source reads them. */
+    --accent-bg: var(--ui-accent);
+    --accent-fg: var(--ui-accent-fg);
+  }
+  .dark {
+    color-scheme: dark;
+  }
+  body {
+    background-color: var(--ui-canvas);
+    color: var(--ui-fg);
+    font-family: var(--ui-font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  code,
+  pre,
+  kbd {
+    font-family: var(--ui-font-mono);
+  }
+  /* Keyboard focus for buttons and links; text controls draw their own ring and do not stack this one. */
+  button:focus-visible,
+  a:focus-visible,
+  [role="tab"]:focus-visible,
+  summary:focus-visible {
+    outline: var(--ui-focus-ring);
+    outline-offset: var(--ui-focus-ring-offset);
+  }
+  ::selection {
+    background: var(--ui-selection-bg);
+  }
+  * {
+    scrollbar-width: var(--ui-scrollbar-w);
+    scrollbar-color: var(--ui-scrollbar-thumb) var(--ui-scrollbar-track);
+  }
+}
+
+/* The user's accent presets: the same six accent tokens in both modes and in every theme. No
+   `data-accent` (the stored `neutral`) leaves the theme's own accent in place. */
+@layer ui-accent {
+  :root[data-accent="blue"] {
+    --ui-accent: #2563eb;
+    --ui-accent-hover: #1d4ed8;
+    --ui-accent-active: #1e40af;
+    --ui-accent-fg: #ffffff;
+    --ui-accent-muted: rgb(37 99 235 / 0.12);
+    --ui-accent-line: rgb(37 99 235 / 0.5);
+  }
+  :root[data-accent="green"] {
+    --ui-accent: #15803d; /* green-700: white text clears AA */
+    --ui-accent-hover: #166534;
+    --ui-accent-active: #14532d;
+    --ui-accent-fg: #ffffff;
+    --ui-accent-muted: rgb(21 128 61 / 0.12);
+    --ui-accent-line: rgb(21 128 61 / 0.5);
+  }
+  :root[data-accent="violet"] {
+    --ui-accent: #7c3aed;
+    --ui-accent-hover: #6d28d9;
+    --ui-accent-active: #5b21b6;
+    --ui-accent-fg: #ffffff;
+    --ui-accent-muted: rgb(124 58 237 / 0.12);
+    --ui-accent-line: rgb(124 58 237 / 0.5);
+  }
+  :root[data-accent="rose"] {
+    --ui-accent: #be123c; /* rose-700: white text clears AA */
+    --ui-accent-hover: #9f1239;
+    --ui-accent-active: #881337;
+    --ui-accent-fg: #ffffff;
+    --ui-accent-muted: rgb(190 18 60 / 0.12);
+    --ui-accent-line: rgb(190 18 60 / 0.5);
+  }
+  :root[data-accent="amber"] {
+    --ui-accent: #b45309; /* amber-700: white text clears AA */
+    --ui-accent-hover: #92400e;
+    --ui-accent-active: #78350f;
+    --ui-accent-fg: #ffffff;
+    --ui-accent-muted: rgb(180 83 9 / 0.12);
+    --ui-accent-line: rgb(180 83 9 / 0.5);
+  }
+}

@@ -41,9 +41,9 @@ export function Switch({ checked, onChange, disabled, className, ...rest }: Swit
         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full " +
         "inset-ring inset-ring-black/10 dark:inset-ring-white/10 " +
         "transition-colors duration-200 ease-out " +
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-bg)]/40 " +
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 " +
         "disabled:cursor-not-allowed disabled:opacity-60 " +
-        (checked ? "bg-[var(--accent-bg)]" : "bg-gray-200 dark:bg-gray-700") +
+        (checked ? "bg-accent" : "bg-gray-200 dark:bg-gray-700") +
         ` ${className ?? ""}`
       }
       {...rest}

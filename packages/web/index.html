@@ -4,9 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#030712" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/penguin-logo.svg" />
     <title>PenguinHarness</title>
+    <!-- Pre-paint theme: sets html.dark, data-theme, data-accent and the root font size from the
+         stored preferences before the first frame, so a dark or non-default page never flashes
+         the light default and the first frame never renders at 16px and reflows. Must equal
+         BOOT_SCRIPT in @prismshadow/penguin-ui/boot byte for byte (a test compares them). -->
+    <!-- prettier-ignore -->
+    <script>(function(){try{var d=document.documentElement,s=localStorage,m=s.getItem("penguin.theme");if(m==="dark"||(m!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches))d.classList.add("dark");var t=s.getItem("penguin.themeId");if(["modern","geek"].indexOf(t)>=0)d.dataset.theme=t;var a=s.getItem("penguin.accent");if(["blue","green","violet","rose","amber"].indexOf(a)>=0)d.dataset.accent=a;var f={"sm":"16px","md":"18px","lg":"20px"}[s.getItem("penguin.fontScale")];d.style.fontSize=typeof f==="string"?f:"18px"}catch(e){}})()</script>
   </head>
   <body>
     <div id="root"></div>

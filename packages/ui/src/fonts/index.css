@@ -1,0 +1,5 @@
+/**
+ * Font faces for every theme. Stub: W0b adds one file per theme (Latin + Latin-ext faces) and
+ * the shared CJK face, imported from here. Declaring a face downloads nothing until some text
+ * names its family, so every theme's faces are declared unconditionally.
+ */
