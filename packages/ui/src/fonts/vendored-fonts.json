@@ -1,0 +1,13 @@
+{
+  "misans": {
+    "family": "MiSans",
+    "themes": ["modern"],
+    "files": "src/fonts/misans/",
+    "builtBy": "scripts/build-misans.py",
+    "package": "https://hyperos.mi.com/font-download/MiSans.zip",
+    "license": "src/fonts/LICENSES/misans.txt",
+    "licenseTitle": "MiSans Font Intellectual Property License Agreement",
+    "licenseSource": "https://hyperos.mi.com/font-download/MiSans%E5%AD%97%E4%BD%93%E7%9F%A5%E8%AF%86%E4%BA%A7%E6%9D%83%E8%AE%B8%E5%8F%AF%E5%8D%8F%E8%AE%AE.pdf",
+    "licenseSourceSha256": "4a93a27cd2bd81b3b5ecfd0a853144a876fa26938a93a68443c67d74172fcb86"
+  }
+}

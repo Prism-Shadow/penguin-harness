@@ -132,6 +132,8 @@ export const en: Strings = {
     languageInfo: "Interface language; can follow the browser.",
     /** Sidebar user-menu row opening the System settings dialog. */
     systemSettings: "System settings",
+    /** The account menu's footer line: the credit MiSans's licence requires of software that ships the font. */
+    fontCredit: "Uses the MiSans font by Xiaomi",
     /** Rail headings: the viewer's own preferences vs. the whole server's. */
     groupPersonal: "Personal",
     groupServer: "Server",

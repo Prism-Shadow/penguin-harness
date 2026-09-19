@@ -15,9 +15,6 @@
  * (`environment: "node"`, no jsdom), so these assert against the source text
  * rather than a rendered DOM.
  */
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   OVERFLOW_TOLERANCE_PX,
@@ -28,6 +25,7 @@ import {
   revealDurationMs,
   titleDisclosure,
 } from "../src/lib/title-reveal";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
 describe("revealDistancePx", () => {
   it("reports 0 when the text fits", () => {
@@ -74,12 +72,19 @@ describe("revealDurationMs", () => {
   });
 });
 
-const src = resolve(dirname(fileURLToPath(import.meta.url)), "../src");
-const read = (rel: string) => readFileSync(resolve(src, rel), "utf8");
-const truncated = read("components/ui/truncated.tsx");
-const sidebar = read("components/layout/sidebar.tsx");
-/** styles.css with comments stripped and whitespace collapsed, so the assertions survive reformatting. */
-const css = read("styles.css")
+const SCAN = scanSources();
+const TRUNCATED = "packages/web/src/components/ui/truncated.tsx";
+const truncated = sourceFile(SCAN, TRUNCATED).text;
+const sidebar = sourceFile(SCAN, "packages/web/src/components/layout/sidebar.tsx").text;
+/**
+ * Every stylesheet under the scanned roots — styles.css, and the shared package's CSS once the
+ * reveal's rules move there — with comments stripped and whitespace collapsed, so the assertions
+ * survive reformatting.
+ */
+const css = SCAN.files
+  .filter((file) => file.name.endsWith(".css"))
+  .map((file) => file.text)
+  .join("\n")
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .replace(/\s+/g, " ");
 /** The keyframes that carry the whole reveal. */
@@ -88,6 +93,12 @@ const keyframes = css.match(/@keyframes title-scroll-reveal \{.*?\} \}/)?.[0] ??
 const trigger = css.match(/\[data-title-reveal\][^{]*\{[^}]*\}/)?.[0] ?? "";
 
 describe("the truncated-title reveal's CSS contract", () => {
+  it("is read from every source root, with the reveal component in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, TRUNCATED);
+    expectSingleHome(SCAN, "packages/web/src/lib/title-reveal.ts");
+  });
+
   it("triggers on the row attribute the sidebar rows actually render", () => {
     expect(sidebar).toContain("data-title-reveal");
     expect(trigger).toContain("[data-title-reveal]:is(:hover, :has(:focus-visible))");

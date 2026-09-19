@@ -1,5 +1,39 @@
 /**
- * Font faces for every theme. Stub: W0b adds one file per theme (Latin + Latin-ext faces) and
- * the shared CJK face, imported from here. Declaring a face downloads nothing until some text
- * names its family, so every theme's faces are declared unconditionally.
+ * Font faces for every theme, bundled with the app so the desktop build renders offline.
+ *
+ * A browser fetches a font FILE only when some element's `font-family` names its family and the
+ * text falls inside the face's `unicode-range`. Each theme file under `themes/` names only its own
+ * families, so a session downloads the active theme's faces and nothing else: Frost's MiSans
+ * slices and JetBrains Mono, or Console's Latin faces and the Noto Sans SC slices its CJK text
+ * touches; Primer names no bundled family in W0 and downloads none. The DECLARATIONS are another
+ * matter: every theme's faces are declared unconditionally here, so these rules sit in the app's
+ * main stylesheet and every session downloads them (about 94 KB gzipped, most of it MiSans's and
+ * Noto's `unicode-range` lists). That cost was accepted on 2026-09-18 over loading each theme's
+ * font sheet on demand. A consumer's build must not inline the font files (`assetsInlineLimit`),
+ * or small slices would ride in that stylesheet as data URIs.
+ *
+ * | theme           | sans                               | mono                          | display                       | CJK                          |
+ * | --------------- | ---------------------------------- | ----------------------------- | ----------------------------- | ---------------------------- |
+ * | Primer `github` | Mona Sans Variable (W1a)           | JetBrains Mono Variable (W1a) | —                             | Noto Sans SC Variable (W1a)  |
+ * | Frost `modern`  | MiSans 400 / 500                   | JetBrains Mono Variable       | —                             | MiSans (the same family)     |
+ * | Console `geek`  | IBM Plex Sans Variable             | Commit Mono 400 / 700         | IBM Plex Sans Condensed 600   | Noto Sans SC Variable        |
+ *
+ * Every face but MiSans is SIL Open Font License 1.1 and arrives through a fontsource package,
+ * whose licence text `scripts/sync-font-licenses.mjs` mirrors into `LICENSES/`. MiSans has no
+ * official package: `scripts/build-misans.py` cuts its slices from Xiaomi's download into
+ * `misans/`, and its licence is transcribed into `LICENSES/misans.txt` (`vendored-fonts.json`
+ * lists it). The `penguinUi()` Vite plugin emits every text in `LICENSES/` beside the build as
+ * `fonts-licenses/<name>.txt`. `README.md` has the families, licences, sources and bytes.
+ *
+ * The Latin faces are hand-declared (latin + latin-ext only, normal style, woff2) instead of
+ * importing fontsource's stylesheets, which would also bundle the cyrillic, greek and vietnamese
+ * slices and the woff fallbacks. Their `url()`s are paths relative to the file that holds them,
+ * into this package's own node_modules: a bare `@fontsource…` specifier would be resolved from the
+ * CONSUMER's stylesheet (Tailwind inlines every `@import` and leaves bare `url()`s untouched), and
+ * the consumer does not depend on fontsource. A relative path is rebased by Tailwind and resolves
+ * from here.
  */
+@import "./github.css";
+@import "./modern.css";
+@import "./geek.css";
+@import "./cjk.css";
