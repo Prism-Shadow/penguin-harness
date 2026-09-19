@@ -51,6 +51,15 @@ export const en: Strings = {
       interrupted: "Interrupted",
     },
     mediaTitle: "Media plan",
+    previewImage: "Preview image",
+    loadingImage: "Loading image…",
+    fullImage: "Open full-size image",
+    reloadImage: "Reload image",
+    imageDimensions: (dimensions: string) => `${dimensions} pixels`,
+    imageUnbound: "Assign and save a media path to preview this image.",
+    imageSaveFirst: "Save or reload the draft before previewing its saved image.",
+    imageUnavailable:
+      "Image unavailable. Check the saved path and WAF checkout, or reload the draft. Previews support PNG, JPEG, GIF and WebP files up to 8 MiB; linked files are not supported.",
     mediaHelp:
       "Build a plan from the saved specification, then assign existing media paths. Rebuild after changing the specification; unchanged requirements keep their bindings. Planning does not generate media files.",
     planMedia: "Plan media",

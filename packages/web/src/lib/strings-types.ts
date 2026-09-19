@@ -38,6 +38,14 @@ export type Strings = {
       string
     >;
     mediaTitle: string;
+    previewImage: string;
+    loadingImage: string;
+    fullImage: string;
+    reloadImage: string;
+    imageDimensions: (dimensions: string) => string;
+    imageUnbound: string;
+    imageSaveFirst: string;
+    imageUnavailable: string;
     mediaHelp: string;
     planMedia: string;
     rebuildMedia: string;

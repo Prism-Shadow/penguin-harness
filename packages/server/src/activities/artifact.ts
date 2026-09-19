@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import { constants } from "node:fs";
 
 /** Bound reads and inspect the same handle; no reopening a task-controlled file after validation. */
-export async function readArtifactBytes(file: string, maxBytes: number): Promise<Buffer> {
+export async function readArtifactBytes(
+  file: string,
+  maxBytes: number,
+  expected?: { dev: number; ino: number },
+): Promise<Buffer> {
   const before = await fs.lstat(file);
   const invalid = () =>
     new Error(`The output must be an unchanged regular file no larger than ${maxBytes} bytes.`);
@@ -20,6 +24,7 @@ export async function readArtifactBytes(file: string, maxBytes: number): Promise
       !current.isFile() ||
       before.dev !== opened.dev ||
       before.ino !== opened.ino ||
+      (expected !== undefined && (expected.dev !== opened.dev || expected.ino !== opened.ino)) ||
       current.dev !== opened.dev ||
       current.ino !== opened.ino ||
       opened.size > maxBytes

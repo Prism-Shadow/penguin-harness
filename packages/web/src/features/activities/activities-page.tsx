@@ -689,6 +689,8 @@ function ActivityEditor({
                 }
                 revision={detail.draft.contentRevision}
                 canAccept={editable && available && !busy && !running && !dirty}
+                canPreview={editable && available && !busy && !dirty}
+                wafRoot={wafRoot}
                 voices={voices}
                 onChange={(value) => setMedia(pretty(value))}
                 onGenerate={(language, assetKey, voice) =>

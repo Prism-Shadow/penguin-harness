@@ -5,6 +5,7 @@ import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { S } from "../../lib/strings";
 import { toneSurface } from "../../lib/tone";
+import { ImagePreview } from "./image-preview";
 
 export function MediaWorkbench({
   manifest,
@@ -14,6 +15,8 @@ export function MediaWorkbench({
   disabled,
   canGenerate,
   canAccept,
+  canPreview,
+  wafRoot,
   revision,
   voices,
   onChange,
@@ -27,6 +30,8 @@ export function MediaWorkbench({
   disabled: boolean;
   canGenerate: boolean;
   canAccept: boolean;
+  canPreview: boolean;
+  wafRoot: string;
   revision: string;
   voices: string[];
   onChange: (manifest: AssetManifest) => void;
@@ -45,6 +50,12 @@ export function MediaWorkbench({
   );
   const asset = entries.find((entry) => entry.key === selected) ?? entries[0];
   const voice = voices.includes(voiceChoice) ? voiceChoice : (voices[0] ?? "");
+  const imageUrl = `${endpoint}/media-image?${new URLSearchParams({
+    language,
+    assetKey: asset?.key ?? "",
+    expectedRevision: revision,
+    ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
+  })}`;
   const audioUrl = (runId: string) => `${endpoint}/runs/${encodeURIComponent(runId)}/audio`;
   function edit(change: (entry: NonNullable<typeof asset>) => void) {
     if (!asset || !editable || disabled) return;
@@ -120,6 +131,15 @@ export function MediaWorkbench({
               </span>
             </div>
             <p className="whitespace-pre-wrap break-words text-sm">{asset.description}</p>
+            {asset.type === "image" &&
+              editable &&
+              (!asset.path ? (
+                <p className="text-xs text-gray-500">{S.activities.imageUnbound}</p>
+              ) : !canPreview ? (
+                <p className="text-xs text-gray-500">{S.activities.imageSaveFirst}</p>
+              ) : (
+                <ImagePreview key={imageUrl} src={imageUrl} description={asset.description} />
+              ))}
             <p className="break-words text-xs text-gray-500">
               {S.activities.usedInScenes}:{" "}
               {[...new Set(asset.usages.map((usage) => usage.sceneId))].join(", ") ||

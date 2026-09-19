@@ -9,6 +9,7 @@ import { HttpError } from "../http/errors.js";
 import { planMedia, validateManifest, validateMediaCoverage } from "./media.js";
 import { AUDIO_MAX_BYTES, inspectWave, type AudioResult, type AudioTarget } from "./audio.js";
 import { readArtifactBytes } from "./artifact.js";
+import { readBoundImage, type ImageRequest } from "./image.js";
 import {
   contentRevision,
   draftRevision,
@@ -56,6 +57,10 @@ export class ActivityService implements ActivityAuthoring {
   @Use() private readonly config!: Config;
   @Use() private readonly db!: Db;
   private readonly locks = new ActivityLocks();
+
+  async imageContent(projectId: string, activityId: string, input: ImageRequest) {
+    return readBoundImage(await this.getActivity(projectId, activityId), input);
+  }
 
   private collectionDir(projectId: string, collectionId: string): string {
     return path.join(projectDir(this.config.root, projectId), "activities", collectionId);

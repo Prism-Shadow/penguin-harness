@@ -1,5 +1,6 @@
 import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AudioTarget, AudioResult } from "../activities/audio.js";
+import type { ImageRequest } from "../activities/image.js";
 import type {
   ActivityDraft,
   ActivityRecord,
@@ -30,6 +31,11 @@ export abstract class ActivityGeneration extends Interface<{
 }>() {}
 
 export abstract class ActivityAuthoring extends Interface<{
+  imageContent(
+    projectId: string,
+    activityId: string,
+    input: ImageRequest,
+  ): Promise<{ bytes: Uint8Array; mimeType: string }>;
   storeAudio(
     projectId: string,
     activityId: string,
