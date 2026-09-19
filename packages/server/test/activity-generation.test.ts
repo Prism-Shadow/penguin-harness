@@ -109,6 +109,7 @@ describe("activity generation through Harness sessions", () => {
             path.join(row.workspace!, "module-result.json"),
             JSON.stringify({
               files: [
+                ...("bookMode" in input ? ["module/src/book-reader/model.ts"] : []),
                 ...(input.draft.mediaPlan
                   ? [
                       `module/generated/${input.productCode}/refs/${input.productCode}-${input.refNum}/spec/asset_manifest.json`,
@@ -921,6 +922,9 @@ describe("activity generation through Harness sessions", () => {
       await fs.readFile(path.join(session.workspace!, "input.json"), "utf8"),
     );
     expect(input.bookMode).toBe("readAlong");
+    expect(
+      await fs.readFile(path.join(session.workspace!, "module/src/book-reader/model.ts"), "utf8"),
+    ).toContain("export class BookReaderModel");
     const result = await f.finish(run);
     expect(result.status, result.error ?? "").toBe("succeeded");
     const configuration = JSON.parse(
@@ -950,6 +954,13 @@ describe("activity generation through Harness sessions", () => {
     const rejected = await f.finish(tampered);
     expect(rejected.status).toBe("failed");
     expect(rejected.error).toContain("selected book reading policy");
+
+    const missingModel = await f.start(root, "readAlong");
+    const missingModelSession = f.t.deps.sessionsRepo.findById(missingModel.sessionId!)!;
+    await fs.unlink(path.join(missingModelSession.workspace!, "module/src/book-reader/model.ts"));
+    const missingModelResult = await f.finish(missingModel);
+    expect(missingModelResult.status).toBe("failed");
+    expect(missingModelResult.error).toContain("required artifact");
   });
 
   it("reads legacy book drafts but rejects invalid assembly before allocating a run or Session", async () => {

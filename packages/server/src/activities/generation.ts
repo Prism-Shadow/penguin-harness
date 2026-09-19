@@ -762,6 +762,7 @@ export class ActivityGenerationService implements ActivityGeneration {
                         `module/configurations/${input.productCode}-${input.refNum}.json`,
                       ]
                     : [];
+                if (run.bookMode) requiredMediaFiles.push("module/src/book-reader/model.ts");
                 const result = await collectModule(
                   this.workspace(run),
                   readCandidate,
