@@ -3,8 +3,9 @@
  *
  * A comparison needs two declarations. Looking both sides up in the platform's own table
  * compares a declaration with itself and can never fail, so here each side brings its own:
- * the CONSUMER's is the table the package carries — a plugin's generated `ifaces.json` —
- * and the PLATFORM's is this generation's. Nothing in
+ * the CONSUMER's is the table the package carries — a plugin's generated `ifaces.json`; for
+ * a workflow, the slice of the harness's table it was written against, kept in its folder
+ * (../workflows/harness-types.ts) — and the PLATFORM's is this generation's. Nothing in
  * this module judges assignability itself: each table is rendered as a self-contained
  * `.d.ts`, the questions become assignments in a third file, and the TypeScript compiler
  * answers them —
