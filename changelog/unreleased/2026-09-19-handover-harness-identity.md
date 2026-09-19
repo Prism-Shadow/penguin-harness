@@ -3,6 +3,7 @@
 Date: 2026-09-19
 Type: fix
 Scope: server
+PR: https://github.com/Prism-Shadow/penguin-harness/pull/799
 
 A server that was hot-pushed hands its build over to the machines it holds, and decides which of them are behind by comparing versions (`<release>+hmr.<sha>`). The sha was read off the platform bundle alone, so a push that changed only the web app or only the CLI left the version as it was: every machine counted as up to date, the Machines page agreed, and the push was never handed over.
 
