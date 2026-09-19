@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#372](https://github.com/Prism-Shadow/penguin-harness/pull/372)
 
-[中文版](2026-08-20-memory-scope-transfer.zh.md)
-
 Each scope group on the Memory tab — user memory, and one per Workspace — now moves in one
 piece. Export downloads the group as a single JSON document holding every memory and the
 group's `MEMORY.md`; import reads such a document back into any group of any agent, so a

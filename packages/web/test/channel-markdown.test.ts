@@ -1,3 +1,4 @@
+import { en } from "../src/lib/strings-en";
 /**
  * A channel message body, via react-dom/server static markup (node env, no DOM): Markdown
  * renders — headings, lists, tables, fenced code — while the `@mentions` around it stay chips
@@ -12,7 +13,6 @@ import {
   ChannelMessageBody,
   ChannelReaderProvider,
 } from "../src/features/company/channel-markdown";
-import { zh } from "../src/lib/strings";
 
 const reader = {
   names: new Map([["ceo", "Ada CEO"]]),
@@ -61,13 +61,13 @@ describe("mentions inside a message body", () => {
     const html = render("@ceo 先看一下");
     expect(html).toContain('title="@ceo"');
     expect(html).toContain("@Ada CEO");
-    expect(html).not.toContain(zh.company.channels.mentionsYou);
+    expect(html).not.toContain(en.company.channels.mentionsYou);
   });
 
   it("marks a mention that addresses the reader", () => {
     const html = render("@user:alice 这条是给你的");
     expect(html).toContain('title="@user:alice"');
-    expect(html).toContain(zh.company.channels.mentionsYou);
+    expect(html).toContain(en.company.channels.mentionsYou);
   });
 
   it("survives inside a list item and a heading", () => {

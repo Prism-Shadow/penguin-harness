@@ -29,7 +29,7 @@ import {
 } from "../src/components/ui/group-list";
 import type { GroupMode } from "../src/components/ui/group-list";
 import type { SessionSortMode } from "../src/lib/session-order";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
 describe("newEntityForGroupMode", () => {
@@ -78,8 +78,8 @@ describe("list-options glyphs", () => {
     expect(new Set(icons).size).toBe(icons.length);
   });
 
-  it("leaves every row a real label in both locales — the glyph never carries the name", () => {
-    for (const dict of [zh, en]) {
+  it("leaves every row a real label in English — the glyph never carries the name", () => {
+    for (const dict of [en]) {
       expect(dict.chat.groupByWorkspace).toBeTruthy();
       expect(dict.chat.groupByAgent).toBeTruthy();
       expect(dict.chat.groupByTime).toBeTruthy();

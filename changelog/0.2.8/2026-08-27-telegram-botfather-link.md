@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#506](https://github.com/Prism-Shadow/penguin-harness/pull/506)
 
-[中文版](2026-08-27-telegram-botfather-link.zh.md)
-
 The Bot Token field's corner link was labelled "open developer console" and pointed at
 `core.telegram.org/bots/api`, the Bot API reference. Telegram has no developer console, and
 that page does not issue tokens — so a user standing on the one field that needs a token,

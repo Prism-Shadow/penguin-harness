@@ -6,8 +6,6 @@
 - **PR:** [#232](https://github.com/Prism-Shadow/penguin-harness/pull/232), [#234](https://github.com/Prism-Shadow/penguin-harness/pull/234), [#235](https://github.com/Prism-Shadow/penguin-harness/pull/235), [#249](https://github.com/Prism-Shadow/penguin-harness/pull/249)
 - **Issue:** [#215](https://github.com/Prism-Shadow/penguin-harness/issues/215), [#218](https://github.com/Prism-Shadow/penguin-harness/issues/218)
 
-[中文版](2026-08-07-core-runtime.zh.md)
-
 ## Unlimited default turn cap
 
 A new agent's `system_config.yaml` now defaults to `max_turns: -1` (unlimited) instead of `100`, and the SDK's fallback for an omitted `maxTurns` agrees, so long agent runs are no longer cut off unexpectedly by the per-Task turn cap; a positive integer still caps the Task, and `-1` remains the only accepted non-positive value. Existing agents keep their stored `max_turns` verbatim and adopt the new default via the settings page's "Restore default configuration". Goal mode's 100-round runaway backstop is unchanged, but an explicit `maxRounds: -1` now disables it (internal knob, regression-tested).

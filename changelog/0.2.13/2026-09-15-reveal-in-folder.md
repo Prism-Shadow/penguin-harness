@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#733](https://github.com/Prism-Shadow/penguin-harness/pull/733)
 
-[中文版](2026-09-15-reveal-in-folder.zh.md)
-
 The Files panel's preview header gained a **Show in folder** button beside Download: it opens the
 previewed file's directory in the machine's own file manager, which is where a file goes on being
 worked on once the Agent has written it.

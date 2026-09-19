@@ -10,11 +10,11 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { en } from "../src/lib/strings-en";
-import { setActiveStrings, zh } from "../src/lib/strings";
+import { setActiveStrings } from "../src/lib/strings";
 import { compactionBadgeLabel } from "../src/features/traces/trace-file-view";
 
 // S is a live binding shared across the suite: always hand it back the default.
-afterEach(() => setActiveStrings(zh));
+afterEach(() => setActiveStrings(en));
 
 describe("compactionBadgeLabel", () => {
   it("shows nothing for a round that is not a compaction turn", () => {
@@ -28,10 +28,7 @@ describe("compactionBadgeLabel", () => {
     const summarize = { taskIndex: 1, compaction: true, compactionMode: "summarize" } as never;
     const discard = { taskIndex: 1, compaction: true, compactionMode: "discard" } as never;
 
-    for (const [locale, dict] of [
-      ["zh", zh],
-      ["en", en],
-    ] as const) {
+    for (const [locale, dict] of [["en", en]] as const) {
       setActiveStrings(dict);
       expect(compactionBadgeLabel(summarize), locale).toBe(dict.chat.compactionTitle("summarize"));
       expect(compactionBadgeLabel(discard), locale).toBe(dict.chat.compactionTitle("discard"));
@@ -43,7 +40,7 @@ describe("compactionBadgeLabel", () => {
 
   it("falls back to the compaction title when the mode is absent (a round analyzed by an older server)", () => {
     const legacy = { taskIndex: 1, compaction: true } as never;
-    for (const dict of [zh, en]) {
+    for (const dict of [en]) {
       setActiveStrings(dict);
       expect(compactionBadgeLabel(legacy)).toBe(dict.chat.compactionTitle("summarize"));
     }

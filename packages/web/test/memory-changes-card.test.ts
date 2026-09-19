@@ -12,7 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryChangesCard } from "../src/features/chat/memory-changes-card";
 import { MEMORY_ICON } from "../src/components/ui/icons";
 import type { MemoryChangeRow } from "../src/lib/omni/memory-changes";
-import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { S, setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 const ROWS: MemoryChangeRow[] = [
@@ -33,13 +33,13 @@ const render = (onOpenPanel?: () => void) =>
 const memoryMarks = (html: string) => html.split(`d="${MEMORY_ICON}"`).length - 1;
 
 afterEach(() => {
-  setActiveStrings(zh);
+  setActiveStrings(en);
 });
 
 describe("MemoryChangesCard header", () => {
   it("opens the list through a text action, leaving the card's own brain mark the only one", () => {
     const html = render(() => {});
-    expect(html).toMatch(/<button type="button"[^>]*>打开记忆列表<\/button>/);
+    expect(html).toMatch(/<button type="button"[^>]*>Open memory list<\/button>/);
     expect(memoryMarks(html)).toBe(1);
   });
 

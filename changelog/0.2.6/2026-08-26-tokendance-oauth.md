@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`, `docs`, `model-catalog`
 - **PR:** [#470](https://github.com/Prism-Shadow/penguin-harness/pull/470)
 
-[中文版](2026-08-26-tokendance-oauth.zh.md)
-
 The TokenDance group header gained an **Authorize key** action. It creates a new key on the user's TokenDance account through the provider's authorization page and writes it to every model in the group, so a first run no longer needs a trip to the console to copy a key out by hand.
 
 ## Details

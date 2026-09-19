@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`
 - **PR:** [#407](https://github.com/Prism-Shadow/penguin-harness/pull/407)
 
-[中文版](2026-08-23-steered-background-notices.zh.md)
-
 Normalized how `run_in_background` completion reports reach the conversation. When the agent loop is running, the report is injected at the next input-assembly boundary — the same mechanism as mid-run steering — and now records that fact on the wire: the `[background_task_done]` block carries a `delivery: steering` field line, stamped at delivery time. A report delivered while the session sat idle stays a task's own starting input and carries no stamp. The two deliveries are positionally identical in the Trace (both sit between a `request_end` and the next `request_begin`), so the recorded stamp is what lets every render and stats layer tell "inside the same turn" from "an independent turn".
 
 ## Details

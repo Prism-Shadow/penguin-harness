@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`, `skills`, `docs`
 - **PR:** [#596](https://github.com/Prism-Shadow/penguin-harness/pull/596)
 
-[中文版](2026-09-02-evaluation-center.zh.md)
-
 A Benchmark became a peer of an agent rather than something an agent owns: it moved to the Project level, one Benchmark can evaluate several agents, and the agent under test is recorded on each evaluation. The Evaluation Center was rebuilt around that and around the loop a first-timer needs — create a Benchmark, read its scores, hand it to an optimizer — each step one click away, with the prompts written for the person.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `server`, `docs`
 - **PR:** [#574](https://github.com/Prism-Shadow/penguin-harness/pull/574)
 
-[中文版](2026-09-01-machines-reach.zh.md)
-
 An installed machine can now be **connected**: this server brings its `penguin server` up over ssh and keeps the connection to it open, through which its API answers at `/server/<machineId>/api/…` on this origin. Nothing new listens anywhere, and nothing new is opened — the one connection a machine already has carries it.
 
 ## Connect, and what it costs

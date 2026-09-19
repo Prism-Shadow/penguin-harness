@@ -5,8 +5,6 @@
 - **Scope:** `server`, `docs`
 - **PR:** [#776](https://github.com/Prism-Shadow/penguin-harness/pull/776)
 
-[中文版](2026-09-17-messaging-outbound-file-errors.zh.md)
-
 A reply's file that did not reach a messaging chat — on Feishu, Telegram, QQ or WeChat — no longer
 brings a bilingual notice into the chat after the reply, such as the `"xx.md" could not be sent to
 the chat` QQ answered with for every file it cannot take. These failures are filed as error records

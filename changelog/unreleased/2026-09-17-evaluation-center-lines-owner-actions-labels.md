@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#775](https://github.com/Prism-Shadow/penguin-harness/pull/775)
 
-[中文版](2026-09-17-evaluation-center-lines-owner-actions-labels.zh.md)
-
 A series on a Benchmark's score chart was drawn only between neighbouring slots of the time axis,
 so another agent's evaluation between two of its points broke the line, and where two agents took
 turns no line was drawn at all. Each series became one line through its own points. Two owner-only

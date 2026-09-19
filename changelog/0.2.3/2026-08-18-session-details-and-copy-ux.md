@@ -6,8 +6,6 @@
 - **PR:** [#327](https://github.com/Prism-Shadow/penguin-harness/pull/327)
 - **Issue:** [#312](https://github.com/Prism-Shadow/penguin-harness/issues/312)
 
-[中文版](2026-08-18-session-details-and-copy-ux.zh.md)
-
 Three fixes to the chat session's details card and the copy affordances around it: exited background processes became removable from the process list, copy buttons confirm with their icon alone, and the Trace file row shows a single-line file name.
 
 ## Removable exited processes

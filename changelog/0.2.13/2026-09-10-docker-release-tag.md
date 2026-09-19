@@ -5,8 +5,6 @@
 - **Scope:** `ci`
 - **PR:** [#671](https://github.com/Prism-Shadow/penguin-harness/pull/671)
 
-[中文版](2026-09-10-docker-release-tag.zh.md)
-
 `docker.yml` tells a release build from a push to `main` by whether the `tag` input is set, not
 by the event name. A `workflow_call` from the release workflow runs under the caller's event,
 which for a tag push is `push` too, so the release builds of v0.2.10 and v0.2.11 moved `latest`

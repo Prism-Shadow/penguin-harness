@@ -3,14 +3,14 @@
  * default system prompt it mirrors — same tokens, same order (the dictionary carries that
  * invariant as a comment). This drift went unnoticed once ({{SHELL}} was added to the
  * prompt but not the list), so pin it: derive the tokens from core's real default prompt
- * and compare to both dictionaries.
+ * and compare to the English dictionary.
  */
 import { describe, expect, it } from "vitest";
 import { defaultSystemConfig } from "@prismshadow/penguin-core";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
-const dictionaries = { zh, en };
+const dictionaries = { en };
 
 /** Tokens `{{FOO}}` in first-appearance order, de-duplicated (a token may recur in the prompt body). */
 function promptTokensInOrder(prompt: string): string[] {

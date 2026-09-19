@@ -1,5 +1,5 @@
-/** English dictionary for the docs UI (same shape as `zh` in strings.ts). */
-import type { Strings } from "./strings";
+/** English dictionary. Other translations must implement the same Strings contract. */
+import type { Strings } from "./strings-types";
 
 export const en: Strings = {
   siteName: "PenguinHarness",
@@ -30,7 +30,6 @@ export const en: Strings = {
 
   lang: {
     label: "Language",
-    zh: "中文",
     en: "English",
     system: "System",
   },

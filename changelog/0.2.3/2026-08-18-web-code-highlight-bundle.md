@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#300](https://github.com/Prism-Shadow/penguin-harness/pull/300)
 
-[中文版](2026-08-18-web-code-highlight-bundle.zh.md)
-
 The first code block a conversation renders used to pull ~308 KB gzip of highlighter before coloring a single token; it now pulls ~69 KB.
 
 ## What changed

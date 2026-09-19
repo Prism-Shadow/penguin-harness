@@ -25,7 +25,7 @@ import type { QQBindingInfo, QQScanPollResponse } from "@prismshadow/penguin-ser
 import { ApiError } from "../src/api/client";
 import { QQScanConnect, QrCode, qqScanStep } from "../src/features/messaging/qq-scan-connect";
 import type { QQScanTally } from "../src/features/messaging/qq-scan-connect";
-import { S, zh } from "../src/lib/strings";
+import { S } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 const QR_URL = "https://q.qq.com/qqbot/openclaw/connect.html?task_id=t-1&source=&_wv=2";
@@ -146,7 +146,7 @@ describe("qqScanStep", () => {
   it("names no position for the code, which wraps above the text in a narrow panel", () => {
     // The waiting panel is `flex flex-wrap`: in the dock or on a phone the steps sit BELOW
     // the QR, so copy that says "the code on the left" is wrong exactly where it is read.
-    for (const dict of [zh, en]) {
+    for (const dict of [en]) {
       expect(dict.qq.scanSteps).not.toMatch(/左侧|右侧|left|right/);
     }
   });

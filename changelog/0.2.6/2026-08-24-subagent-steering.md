@@ -6,8 +6,6 @@
 - **PR:** [#433](https://github.com/Prism-Shadow/penguin-harness/pull/433)
 - **Issue:** [#272](https://github.com/Prism-Shadow/penguin-harness/issues/272), [#274](https://github.com/Prism-Shadow/penguin-harness/issues/274)
 
-[中文版](2026-08-24-subagent-steering.zh.md)
-
 A subagent used to be a fire-and-observe affair: `input_subagent` rejected a prompt while
 the child was still running, and the panel offered no way to correct or stop a child at
 all — stopping the main agent left its children running. Both gaps close with one

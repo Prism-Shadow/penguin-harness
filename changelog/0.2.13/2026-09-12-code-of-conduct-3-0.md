@@ -5,8 +5,6 @@
 - **Scope:** `docs`
 - **PR:** [#704](https://github.com/Prism-Shadow/penguin-harness/pull/704)
 
-[中文版](2026-09-12-code-of-conduct-3-0.zh.md)
-
 ## Details
 
 - `.github/CODE_OF_CONDUCT.md` and its Chinese counterpart carry Contributor Covenant 3.0 in

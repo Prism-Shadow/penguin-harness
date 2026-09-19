@@ -5,8 +5,6 @@
 - **Scope:** `desktop`, `ci`
 - **PR:** [#393](https://github.com/Prism-Shadow/penguin-harness/pull/393)
 
-[中文版](2026-08-21-desktop-terminal-node-pty.zh.md)
-
 Opening a terminal in the desktop app failed with `POST /api/terminals` → 500
 `terminal_spawn_failed`, reporting `Cannot find module 'node-pty'` from
 `packages/desktop/dist/server.js`. node-pty is a native module and the only dependency the

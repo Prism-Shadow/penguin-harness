@@ -5,8 +5,6 @@
 - **Scope:** `skills`, `docs`
 - **PR:** [#365](https://github.com/Prism-Shadow/penguin-harness/pull/365)
 
-[中文版](2026-08-20-penguin-sdk-skill-trigger.zh.md)
-
 Sharpened when the `penguin-sdk` skill fires and what it recommends for wiring in the
 user's own tools.
 

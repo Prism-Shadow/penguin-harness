@@ -5,8 +5,6 @@
 - **Scope:** `tooling`, `core`, `cli`
 - **PR:** [#471](https://github.com/Prism-Shadow/penguin-harness/pull/471)
 
-[中文版](2026-08-26-agent-env-hygiene.zh.md)
-
 `pnpm penguin` moved to its own default data root, `~/.penguin/dev-data-cli`, completing the
 isolation its port (7369) began. A data root admits one server at a time (`<root>/server.lock`), so
 on the shared `~/.penguin/dev-data` the dev CLI's `penguin web` and `pnpm dev:server` could only run

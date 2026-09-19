@@ -5,8 +5,6 @@
 - **Scope:** `server`, `core`, `web`, `skills`, `tooling`
 - **PR:** [#381](https://github.com/Prism-Shadow/penguin-harness/pull/381)
 
-[中文版](2026-08-20-faster-unit-tests.zh.md)
-
 `pnpm -r test` went from a 64.7s median to 38.7s, and the server package — which the
 workspace's dependency order puts on the critical path — from 51.5s to 13.4s, measured over
 five interleaved before/after runs on an 8-core Linux box. Two changes account for it: a

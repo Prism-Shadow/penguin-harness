@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#369](https://github.com/Prism-Shadow/penguin-harness/pull/369)
 
-[中文版](2026-08-20-system-settings-page.zh.md)
-
 Merged the settings that sat as separate rows and dialogs in the sidebar user menu into one **System settings dialog**, opened from the menu's single remaining System settings row: a left rail of pages — grouped Personal / Server — with each page a list of title-and-description rows. The rail, pages and row layout follow the Project-settings-style paged dialog; the shell is a reusable `PagedDialog` component. The old `/settings/:section` and `/admin/users` routes were removed along with the standalone settings page.
 
 ## Pages

@@ -5,8 +5,6 @@
 - **Scope:** `skills`
 - **PR:** [#417](https://github.com/Prism-Shadow/penguin-harness/pull/417)
 
-[中文版](2026-08-23-skills-teach-openai-chat-client-type.zh.md)
-
 The `ollama`, `vllm` and `penguin-sdk` skills registered OpenAI-compatible endpoints with
 `--client-type openai`, the pre-AgentHub-0.4.2 spelling that `agenthub-models` documents as a
 deprecated alias. All five occurrences now read `openai-chat` (`ollama` and `vllm` at `v2`,

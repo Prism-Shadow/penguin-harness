@@ -5,8 +5,6 @@
 - **Scope:** `landing`, `web`
 - **PR:** [#579](https://github.com/Prism-Shadow/penguin-harness/pull/579)
 
-[中文版](2026-09-01-landing-agent-glyph.zh.md)
-
 The landing page's `BotIcon` now carries the Web App's Agent glyph exactly — eyes and smile
 included. The two were the same lucide robot until the app's grew a face
 ([#538](https://github.com/Prism-Shadow/penguin-harness/pull/538)), and the page that sells

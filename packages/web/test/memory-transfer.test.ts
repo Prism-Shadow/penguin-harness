@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import type { MemoryScopeExport } from "@prismshadow/penguin-server/api";
-import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { S, setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import {
   MemoryDocumentError,
@@ -16,7 +16,7 @@ import {
   planMemoryImport,
 } from "../src/features/agents/memory-transfer";
 
-afterEach(() => setActiveStrings(zh));
+afterEach(() => setActiveStrings(en));
 
 const doc = (names: string[], index: string | null = "# Memories\n"): MemoryScopeExport => ({
   format: "penguin-memory-scope",
@@ -49,8 +49,7 @@ describe("parseMemoryScopeDocument", () => {
     }
     setActiveStrings(en);
     expect(() => parseMemoryScopeDocument("{}")).toThrow(S.memory.importInvalidFile);
-    setActiveStrings(zh);
-    expect(() => parseMemoryScopeDocument("{}")).toThrow(S.memory.importInvalidFile);
+    setActiveStrings(en);
   });
 
   it("calls a document with neither memories nor an index empty", () => {

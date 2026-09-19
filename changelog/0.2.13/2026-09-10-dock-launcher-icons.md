@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#680](https://github.com/Prism-Shadow/penguin-harness/pull/680)
 
-[中文版](2026-09-10-dock-launcher-icons.zh.md)
-
 The floating launcher's ball now answers what the pointer is on. Pointing at the ball itself turns
 its four workbench tiles into an expand mark and changes the caption under it to "Open"; pointing
 at one of the fanned-out entries puts that entry's own glyph in the ball, beside the name the

@@ -5,8 +5,6 @@
 - **Scope:** `core`, `web`, `docs`
 - **PR:** [#457](https://github.com/Prism-Shadow/penguin-harness/pull/457)
 
-[中文版](2026-08-24-background-stop-status.zh.md)
-
 A `run_in_background` command that ended on a SIGTERM reached the conversation as
 `Background command failed: … — terminated by signal SIGTERM`. A SIGTERM is almost always
 somebody stopping the process on purpose, and the model's reasonable response to a failed

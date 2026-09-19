@@ -1,16 +1,12 @@
-/**
- * Language context: zh / en / system (tracks navigator.language, listens for languagechange).
- * On switch, first synchronously calls setActiveStrings (assigned during render, idempotent),
- * then remounts the whole tree keyed on locale so every `S.x` read immediately reflects the
- * new language; the preference persists to localStorage.
- */
+/** Locale context with persisted preferences and a remount boundary. */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { setActiveStrings, zh } from "../lib/strings";
+import { setActiveStrings } from "../lib/strings";
 import { en } from "../lib/strings-en";
 
-export type LangPref = "zh" | "en" | "system";
-export type Locale = "zh" | "en";
+const DICTIONARIES = { en };
+export type Locale = keyof typeof DICTIONARIES;
+export type LangPref = Locale | "system";
 
 const STORAGE_KEY = "penguin.lang";
 
@@ -22,13 +18,10 @@ interface LocaleContextValue {
 
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
-/**
- * Device language → UI language (default when no stored preference exists; also applies on the
- * login page): a language tag starting with zh (zh-CN/zh-TW…) → zh; anything else or
- * unavailable → falls back to en. Exported as a pure function for unit tests (test/locale.test.ts).
- */
+/** Unsupported device languages use the default English dictionary. */
 export function resolveSystemLocale(language: string | undefined): Locale {
-  return language?.toLowerCase().startsWith("zh") ? "zh" : "en";
+  const candidate = language?.toLowerCase().split("-")[0] ?? "en";
+  return Object.hasOwn(DICTIONARIES, candidate) ? (candidate as Locale) : "en";
 }
 
 function systemLocale(): Locale {
@@ -41,7 +34,7 @@ function resolve(lang: LangPref): Locale {
 
 function initialLang(): LangPref {
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "zh" || stored === "en" || stored === "system") return stored;
+  if (stored === "en" || stored === "system") return stored;
   return "system";
 }
 
@@ -53,7 +46,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   const locale = resolve(lang);
   // Switch the active dictionary during render (idempotent assignment): children are keyed on
   // locale and render after this component, so they always read the post-switch dictionary.
-  setActiveStrings(locale === "en" ? en : zh);
+  setActiveStrings(DICTIONARIES[locale]);
 
   useEffect(() => {
     if (lang !== "system") return;

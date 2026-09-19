@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#464](https://github.com/Prism-Shadow/penguin-harness/pull/464)
 
-[中文版](2026-08-25-feishu-session-bridge.zh.md)
-
 Added messaging-channel bindings with Feishu (Lark) and Telegram as the first two
 channels: a Session can be connected to a self-built Feishu app or a Telegram bot, after
 which messages sent to the bot flow into that Session as ordinary user input and the AI's

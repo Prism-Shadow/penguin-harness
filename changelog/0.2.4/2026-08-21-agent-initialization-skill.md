@@ -6,8 +6,6 @@
 - **PR:** [#400](https://github.com/Prism-Shadow/penguin-harness/pull/400)
 - **Breaking:** yes — the library Skill `agent-creation` no longer exists under that name
 
-[中文版](2026-08-21-agent-initialization-skill.zh.md)
-
 The Agent Tuning group's `agent-creation` Skill is now **`agent-initialization`**. The name says what it
 does: it initializes an Agent's settings — AGENTS.md, identity metadata, and the Skills that Agent needs —
 rather than creating an Agent, which the product does elsewhere.

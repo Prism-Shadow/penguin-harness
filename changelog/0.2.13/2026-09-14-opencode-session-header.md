@@ -5,8 +5,6 @@
 - **Scope:** `core`
 - **PR:** [#612](https://github.com/Prism-Shadow/penguin-harness/pull/612)
 
-[中文版](2026-09-14-opencode-session-header.zh.md)
-
 A request sent to OpenCode's gateway now names the conversation it belongs to. The gateway keys its
 backend routing on an `x-opencode-session` header and wants one value that holds still across a
 conversation's requests; `attributionHeaders` supplies the Session's own id there, alongside the app

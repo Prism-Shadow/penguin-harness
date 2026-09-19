@@ -5,8 +5,6 @@
 - **Scope:** `core`, `web`, `cli`, `server`, `docs`
 - **PR:** [#588](https://github.com/Prism-Shadow/penguin-harness/pull/588)
 
-[中文版](2026-09-02-read-file-images.zh.md)
-
 Removed the `read_image` and `describe_image` tools and taught `read_file` to read images: a png/jpeg/gif/webp file (recognized by magic number, then extension) or an http(s) URL in `file_path` comes back as image content when the Session model accepts images, and as the Project's `vision_model` answering a new optional `prompt` argument when it does not — everything the two tools did, behind one name and one schema. `read_file`'s timeout rose to 60000 ms, and `input_command`'s timeout aligned with `exec_command` at 120000 ms.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#714](https://github.com/Prism-Shadow/penguin-harness/pull/714)
 
-[中文版](2026-09-12-user-profile.zh.md)
-
 An account was its user id everywhere it appeared: the sidebar's bottom user row, the collapsed
 rail's trigger, the admin user list. A new **Profile** page, heading the personal group of the
 System settings dialog, gives every account an avatar and a nickname, and the surfaces that used

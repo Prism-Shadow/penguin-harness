@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#774](https://github.com/Prism-Shadow/penguin-harness/pull/774)
 
-[中文版](2026-09-17-login-unknown-user-timing.zh.md)
-
 A sign-in with a username that has no account returned without running scrypt, while a wrong password on a real account paid for a full derivation. At production cost the first answered in well under a millisecond and the second took tens of milliseconds, so response time told which usernames exist. An unknown username is now checked against a dummy hash, and both failures return the same 401 `invalid_credentials` body after one derivation.
 
 ## Details

@@ -6,8 +6,6 @@
 - **PR:** [#349](https://github.com/Prism-Shadow/penguin-harness/pull/349)
 - **Issue:** [#346](https://github.com/Prism-Shadow/penguin-harness/issues/346)
 
-[中文版](2026-08-19-desktop-change-password.zh.md)
-
 The sidebar user menu offered **Change password** to every session, including the desktop app's own window — the one session that has never seen a password. The desktop shell signs in by redeeming a one-shot token instead of a login form, and the seed password of a desktop-created data root is fully random and deliberately never printed, so the entry asked its holder to replace a secret they could not name. It is now hidden there, joining the update row, the Users entry and sign-out, which desktop mode already dropped.
 
 ## What the entry is keyed on

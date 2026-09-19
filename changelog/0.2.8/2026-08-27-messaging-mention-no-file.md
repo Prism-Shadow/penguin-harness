@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#511](https://github.com/Prism-Shadow/penguin-harness/pull/511)
 
-[中文版](2026-08-27-messaging-mention-no-file.zh.md)
-
 The reply-file feature scans a reply's prose for path-like tokens and sends the ones that resolve
 inside the Workspace. Names that resolved to nothing were announced in the chat — *"Named in the
 reply but not sent — no such file inside this Session's Workspace: hello-world.md"* — on the

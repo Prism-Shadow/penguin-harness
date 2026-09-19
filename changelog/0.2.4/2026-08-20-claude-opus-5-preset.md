@@ -6,8 +6,6 @@
 - **PR:** [#363](https://github.com/Prism-Shadow/penguin-harness/pull/363)
 - **Issue:** [#352](https://github.com/Prism-Shadow/penguin-harness/issues/352)
 
-[中文版](2026-08-20-claude-opus-5-preset.zh.md)
-
 `claude-opus-5` was absent from the direct Anthropic group of the built-in model catalog, while its OpenRouter counterpart `anthropic/claude-opus-5` was already listed. The direct preset was added, and the rest of the Anthropic group was re-read against Anthropic's published pricing in the same pass.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `landing`
 - **PR:** [#757](https://github.com/Prism-Shadow/penguin-harness/pull/757)
 
-[中文版](2026-09-16-blog-rewrite.zh.md)
-
 All 21 blog posts were rewritten in both languages. The English version of each post was
 rewritten first and the Chinese version translated from it, and every draft was checked against
 the old post, the product's UI strings and the code before it replaced the old text.

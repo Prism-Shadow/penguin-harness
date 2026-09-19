@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#391](https://github.com/Prism-Shadow/penguin-harness/pull/391)
 
-[中文版](2026-08-21-update-check-out-of-settings.zh.md)
-
 Moved checking for updates out of the System settings dialog and into the sidebar user menu, on the row directly under the **System settings** entry. The dialog's **Updates** page ([System settings dialog](2026-08-20-system-settings-page.md)) was removed, and the web and desktop update rows now share one slot outside the dialog, so an update is one click from the menu instead of two clicks and a page.
 
 ## Details

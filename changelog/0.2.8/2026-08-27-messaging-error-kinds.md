@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#511](https://github.com/Prism-Shadow/penguin-harness/pull/511)
 
-[中文版](2026-08-27-messaging-error-kinds.zh.md)
-
 Every failure the messaging bridge caught was written to `error_records` without a `kind`, and the
 recorder's default for a non-HTTP source is `unexpected`. So two things that are neither surprising
 nor anyone's bug were filed as "shouldn't happen, needs a human":

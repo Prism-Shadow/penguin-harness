@@ -4,8 +4,6 @@
 - **Type:** fix
 - **Scope:** `tooling`, `cli`
 
-[中文版](2026-08-19-penguin-dev-script-entry.zh.md)
-
 The repo root's `pnpm penguin` script now runs `packages/cli/src/penguin.ts`, the source file the `penguin` bin is built from, instead of `packages/cli/src/index.ts`.
 
 Splitting the CLI entry in [#298](https://github.com/Prism-Shadow/penguin-harness/pull/298) left `index.ts` exporting `cli()` and moved the invocation into `penguin.ts`. That change updated `packages/cli`'s own `penguin` script and the bin, but not the root one, so from 2026-08-18 every `pnpm penguin <args>` at the repo root imported the module, ran nothing and exited 0 — no output, no error, and `dotenv/config` never loaded. `pnpm penguin chat` looked like a CLI that refused to start.

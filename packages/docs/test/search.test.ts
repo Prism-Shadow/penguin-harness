@@ -17,7 +17,7 @@ import { getSearchShortcutLabel } from "../src/lib/shortcut";
 const docs: DocPage[] = [
   {
     slug: "introduction",
-    lang: "zh",
+    lang: "en",
     title: "产品介绍",
     description: "",
     body: [
@@ -48,7 +48,7 @@ const docs: DocPage[] = [
   },
 ];
 const contentDir = join(__dirname, "..", "content");
-const contentFiles = ["zh", "en"].flatMap((lang) => DOC_SLUGS.map((slug) => `${slug}.${lang}.md`));
+const contentFiles = ["en"].flatMap((lang) => DOC_SLUGS.map((slug) => `${slug}.${lang}.md`));
 
 describe("docs search", () => {
   it("normalizes width, case, and whitespace", () => {
@@ -164,7 +164,7 @@ describe("docs search", () => {
   });
 
   it("finds identifier headings from the real OmniMessage documentation", () => {
-    for (const lang of ["en", "zh"] as const) {
+    for (const lang of ["en"] as const) {
       const { meta, body } = parseFrontmatter(
         readFileSync(join(contentDir, `omni-message.${lang}.md`), "utf8"),
       );

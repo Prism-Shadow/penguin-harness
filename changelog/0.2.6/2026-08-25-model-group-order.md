@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#467](https://github.com/Prism-Shadow/penguin-harness/pull/467)
 
-[中文版](2026-08-25-model-group-order.zh.md)
-
 The model library's provider groups can be dragged into a manual order, the way the chat
 sidebar's groups already could. The order is kept per Project, survives a reload, and the chat
 page's model picker follows it.

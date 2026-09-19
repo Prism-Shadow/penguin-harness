@@ -56,7 +56,7 @@ updated: <ISO 8601 timestamp — move it together with version>
 <skill_instructions>
 ```
 
-The frontmatter may also carry optional `short_description` and `short_description_zh` lines (a short UI blurb and its Chinese variant) — the UI prefers them for display, while prompt injection always uses the English `description`.
+The frontmatter may also carry an optional `short_description` line (a short UI blurb) — the UI prefers them for display, while prompt injection always uses the English `description`.
 
 Installing is all it takes: the frontmatter metadata of every `SKILL.md` under `skills/` is injected into the target agent's system prompt automatically — do not register skills in AGENTS.md.
 

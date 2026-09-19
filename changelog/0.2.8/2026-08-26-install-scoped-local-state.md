@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#508](https://github.com/Prism-Shadow/penguin-harness/pull/508)
 
-[中文版](2026-08-26-install-scoped-local-state.zh.md)
-
 Deleting the data files and restarting brought the app back with the old Workspace still
 selected. Part of that state was never in the data root at all: the Web App keeps the
 new-chat draft, the sidebar's registered Workspaces, pinned Sessions, read markers and the

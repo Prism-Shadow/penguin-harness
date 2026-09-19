@@ -10,7 +10,7 @@ import type {
   SemanticIdSuggestResponse,
 } from "@prismshadow/penguin-server/api";
 import { idSuggestNotice } from "../src/features/semantic-id/id-suggest-notice";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
 const REASONS = Object.keys({
@@ -21,7 +21,7 @@ const REASONS = Object.keys({
 } satisfies Record<SemanticIdSuggestReason, true>) as SemanticIdSuggestReason[];
 
 describe("the reason dictionaries", () => {
-  for (const [locale, dict] of Object.entries({ zh, en })) {
+  for (const [locale, dict] of Object.entries({ en })) {
     it(`${locale} carries a phrase for every reason the contract declares, and no other`, () => {
       expect(Object.keys(dict.semanticId.idSuggest.reasons).sort()).toEqual([...REASONS].sort());
     });
@@ -31,15 +31,14 @@ describe("the reason dictionaries", () => {
 describe("idSuggestNotice", () => {
   it("says nothing about an id the model produced", () => {
     const res: SemanticIdSuggestResponse = { id: "co_research_lab", source: "model" };
-    expect(idSuggestNotice(res, zh.semanticId.idSuggest)).toBeNull();
     expect(idSuggestNotice(res, en.semanticId.idSuggest)).toBeNull();
   });
 
   it("notes a transliteration quietly: nothing went wrong, it is just mechanical", () => {
     const res: SemanticIdSuggestResponse = { id: "co_plugin_marketplace", source: "fallback" };
-    expect(idSuggestNotice(res, zh.semanticId.idSuggest)).toEqual({
+    expect(idSuggestNotice(res, en.semanticId.idSuggest)).toEqual({
       tone: "muted",
-      text: "按名称转写生成",
+      text: "Transliterated from the name",
     });
     expect(idSuggestNotice(res, en.semanticId.idSuggest)?.tone).toBe("muted");
   });
@@ -51,9 +50,9 @@ describe("idSuggestNotice", () => {
         source: "placeholder",
         reason,
       };
-      const note = idSuggestNotice(res, zh.semanticId.idSuggest);
+      const note = idSuggestNotice(res, en.semanticId.idSuggest);
       expect(note?.tone, reason).toBe("attention");
-      expect(note?.text, reason).toContain(zh.semanticId.idSuggest.reasons[reason]);
+      expect(note?.text, reason).toContain(en.semanticId.idSuggest.reasons[reason]);
       expect(idSuggestNotice(res, en.semanticId.idSuggest)?.text, reason).toContain(
         en.semanticId.idSuggest.reasons[reason],
       );
@@ -66,7 +65,7 @@ describe("idSuggestNotice", () => {
       source: "placeholder",
       reason: "quota_exhausted",
     } as unknown as SemanticIdSuggestResponse;
-    for (const dict of [zh, en]) {
+    for (const dict of [en]) {
       const note = idSuggestNotice(newer, dict.semanticId.idSuggest);
       expect(note?.tone).toBe("attention");
       expect(note?.text).toContain(dict.semanticId.idSuggest.reasonUnknown);

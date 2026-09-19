@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#784](https://github.com/Prism-Shadow/penguin-harness/pull/784)
 
-[中文版](2026-09-17-chat-selection-menu.zh.md)
-
 Text selected in a conversation's message stream now answers a right-click with the app's own
 menu instead of the browser's. The desktop app, where Electron shows no context menu of its own,
 gained a way to copy conversation text through it.

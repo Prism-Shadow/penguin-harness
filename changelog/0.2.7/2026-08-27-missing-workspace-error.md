@@ -5,8 +5,6 @@
 - **Scope:** `core`
 - **PR:** [#484](https://github.com/Prism-Shadow/penguin-harness/pull/484)
 
-[中文版](2026-08-27-missing-workspace-error.zh.md)
-
 `exec_command` answered `[spawn error: spawn bash ENOENT]` when the Session's Workspace directory had disappeared. The working directory is now checked before the spawn, so the failure names the directory.
 
 ## Details

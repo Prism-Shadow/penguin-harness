@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#430](https://github.com/Prism-Shadow/penguin-harness/pull/430)
 
-[中文版](2026-08-23-phone-width-overflow.zh.md)
-
 Four surfaces in the Web App laid themselves out wider than the box they were given at phone width,
 and each one put something out of the reader's reach — off the screen, past a card's edge, or
 underneath the control next to it. All four now stay inside their box.

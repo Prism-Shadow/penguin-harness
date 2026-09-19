@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#687](https://github.com/Prism-Shadow/penguin-harness/pull/687)
 
-[中文版](2026-09-11-random-id-insecure-context.zh.md)
-
 Parked-draft and user-shortcut ids come from `crypto.getRandomValues` now, not
 `crypto.randomUUID`. The latter exists only in a secure context (HTTPS, or localhost), so a Web
 App opened over plain HTTP from any address but localhost threw

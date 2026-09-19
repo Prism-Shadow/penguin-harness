@@ -6,8 +6,6 @@
 - **PR:** [#342](https://github.com/Prism-Shadow/penguin-harness/pull/342)
 - **Breaking:** yes — two of the three `POST /compact` refusals moved off the shared `nothing_to_compact` error code onto `compaction_not_configured` and `already_compacted`.
 
-[中文版](2026-08-19-compact-after-restart.zh.md)
-
 Asking a Session to compact right after restarting the client was refused with "The current context has nothing to compact (no completed conversation turns yet)", however long the conversation actually was. `Session.compactability()` delegated to the `ContextEngine`, which the first run's bootstrap builds — so between a process restart and the next Task there was no engine to ask, and the delegation fell back to a literal "empty". Availability is now answered from the state the Trace replay recovered, and the three reasons a compaction can be refused reach the UI in the reader's language instead of as English prose.
 
 ## Details

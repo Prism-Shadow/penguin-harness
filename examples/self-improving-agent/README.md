@@ -1,4 +1,3 @@
-<!-- English | [简体中文](README.zh.md) -->
 
 # Example: an Agent that improves itself (local, on an AMD GPU via Ollama)
 

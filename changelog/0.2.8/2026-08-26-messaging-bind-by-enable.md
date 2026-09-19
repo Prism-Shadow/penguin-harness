@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#490](https://github.com/Prism-Shadow/penguin-harness/pull/490)
 
-[中文版](2026-08-26-messaging-bind-by-enable.zh.md)
-
 A Feishu app or a Telegram bot used to belong to one Session forever: whichever Session saved its
 credentials first owned it, a second Session's save was refused with 409 `feishu_app_in_use` /
 `telegram_bot_in_use`, and the Web App offered no unbind, so moving a bot to another conversation

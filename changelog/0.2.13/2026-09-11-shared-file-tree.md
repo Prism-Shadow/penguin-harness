@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#685](https://github.com/Prism-Shadow/penguin-harness/pull/685)
 
-[中文版](2026-09-11-shared-file-tree.zh.md)
-
 The Workspace panel's directory tree moved into `components/ui/file-tree.tsx`, and the plugin
 detail Modal's file browser was put on it. That browser's rows had been plain buttons — a text
 triangle per group, a middot per file, a border between every row, and a nested file carrying

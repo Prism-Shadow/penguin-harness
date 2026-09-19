@@ -5,8 +5,6 @@
 - **Scope:** `landing`
 - **PR:** [#766](https://github.com/Prism-Shadow/penguin-harness/pull/766)
 
-[中文版](2026-09-16-blog-new-posts.zh.md)
-
 Three posts were added to the blog in English and Chinese, with screenshots of the Web App in both
 languages and diagrams for the concepts.
 

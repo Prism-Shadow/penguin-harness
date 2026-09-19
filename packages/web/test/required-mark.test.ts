@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { Input } from "../src/components/ui/input";
 import { RequiredMark } from "../src/components/ui/field";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
 const SRC = fileURLToPath(new URL("../src", import.meta.url));
@@ -124,9 +124,8 @@ function optionalWording(dict: unknown, path = ""): string[] {
  * other's. A new entry needs a reason of the same kind: "this sentence describes something that
  * is itself optional", not "this label is optional".
  */
-const PROSE_EXCEPTIONS: Record<"zh" | "en", ReadonlySet<string>> = {
+const PROSE_EXCEPTIONS: Record<"en", ReadonlySet<string>> = {
   // Describes the tool schema's own `description` argument, which really is an optional argument.
-  zh: new Set(["agent.callDescriptionHint"]),
   en: new Set([
     "agent.callDescriptionHint",
     // States the accepted number format: the k/m suffix may be left off.
@@ -188,10 +187,7 @@ describe("required mark", () => {
     expect(marksIn(probe, '<span className="text-gray-500">*</span>')).toEqual([]);
   });
 
-  for (const [locale, dict] of [
-    ["zh", zh],
-    ["en", en],
-  ] as const) {
+  for (const [locale, dict] of [["en", en]] as const) {
     it(`never says "optional" in a ${locale} label`, () => {
       const said = optionalWording(dict).filter((p) => !PROSE_EXCEPTIONS[locale].has(p));
       expect(

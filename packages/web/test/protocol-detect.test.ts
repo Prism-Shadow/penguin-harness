@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { resolveModelEnv } from "@prismshadow/penguin-core/model-catalog";
-import { zh as ZH } from "../src/lib/strings";
+
 import { en as EN } from "../src/lib/strings-en";
 import { clientTypeAfterProviderChange, rowToEntry } from "../src/features/models/models-page";
 import type { RowState } from "../src/features/models/models-page";
@@ -254,10 +254,10 @@ describe("rowToEntry (the persistence funnel)", () => {
 });
 
 describe("detection copy", () => {
-  it("has exactly one user-facing failure message, in both locales", () => {
+  it("has exactly one user-facing failure message, in English", () => {
     // Every failure mode collapses to this: the maintainer's point is that a user cannot
     // act on "the endpoint responded but serves no protocol", only on the key and the URL.
-    for (const catalog of [EN.models, ZH.models] as const) {
+    for (const catalog of [EN.models] as const) {
       expect(catalog.detectFailedBody).toBeTruthy();
       // No protocol names to parse, and no "pick one manually" instruction.
       expect(catalog.detectFailedBody).not.toContain("OpenAI Responses");
@@ -266,12 +266,10 @@ describe("detection copy", () => {
     // The distinguishing strings are gone, not merely unused.
     expect("detectNone" in EN.models).toBe(false);
     expect("detectUnreachable" in EN.models).toBe(false);
-    expect("detectNone" in ZH.models).toBe(false);
-    expect("detectUnreachable" in ZH.models).toBe(false);
   });
 
   it("names the unset protocol as a placeholder rather than a protocol", () => {
-    for (const catalog of [EN.models, ZH.models] as const) {
+    for (const catalog of [EN.models] as const) {
       expect(catalog.protocolUnset).toBeTruthy();
       expect(Object.values(catalog.protocolNames)).not.toContain(catalog.protocolUnset);
     }
@@ -281,14 +279,14 @@ describe("detection copy", () => {
     // The verdict used to be a blocking AlertModal (which needed an accessible name) and,
     // before that, a line rendered under the base URL field. Both are gone: a detection
     // result is transient and must occupy no space in the form.
-    for (const catalog of [EN.models, ZH.models] as const) {
+    for (const catalog of [EN.models] as const) {
       expect("detectOkTitle" in catalog).toBe(false);
       expect("detectFailedTitle" in catalog).toBe(false);
     }
   });
 
   it("keeps both toast messages to a single short line", () => {
-    for (const catalog of [EN.models, ZH.models] as const) {
+    for (const catalog of [EN.models] as const) {
       const success = catalog.detectedProtocol("OpenAI Responses");
       for (const text of [success, catalog.detectFailedBody]) {
         expect(text.length).toBeLessThanOrEqual(80);

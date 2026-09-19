@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#583](https://github.com/Prism-Shadow/penguin-harness/pull/583)
 
-[中文版](2026-09-02-create-with-ai-kit.zh.md)
-
 Every object the Web App creates from a form is getting a second path: describe it to an agent. This change added the reusable kit behind that path — the pair of buttons that opens either path, the prompt panel with clickable examples and a folded full-prompt preview, and the dialog that hands the composed prompt to the Project's default agent as a prefilled draft in a new conversation. The creation surfaces wire it up in their own changes.
 
 ## Details

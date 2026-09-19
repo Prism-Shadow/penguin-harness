@@ -6,8 +6,6 @@
 - **PR:** [#320](https://github.com/Prism-Shadow/penguin-harness/pull/320)
 - **Issue:** [#310](https://github.com/Prism-Shadow/penguin-harness/issues/310)
 
-[中文版](2026-08-18-thinking-switch-guard.zh.md)
-
 The active-session composer's thinking-level picker applied a pick silently, even in the middle of a long conversation where switching lowers the provider's prompt-cache hit rate and raises the cost of the next request. A pick that would change the level now opens the standard confirmation card, which says exactly that in one sentence and offers three choices. The picked level is also stored on the Session, so it no longer evaporates on reload.
 
 ## The dialog's three choices

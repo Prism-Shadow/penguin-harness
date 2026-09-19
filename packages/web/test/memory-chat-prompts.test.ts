@@ -5,14 +5,14 @@
  * active.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { S, setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 import {
   buildMemoryAddPrompt,
   buildMemoryEditPrompt,
 } from "../src/features/agents/memory-chat-prompts";
 
-afterEach(() => setActiveStrings(zh));
+afterEach(() => setActiveStrings(en));
 
 describe("buildMemoryEditPrompt", () => {
   it("names the memory and leaves the requirement line trailing", () => {
@@ -33,7 +33,7 @@ describe("buildMemoryEditPrompt", () => {
   });
 
   it("follows the active dictionary", () => {
-    for (const dict of [en, zh]) {
+    for (const dict of [en]) {
       setActiveStrings(dict);
       expect(buildMemoryEditPrompt("t")).toBe(
         `${dict.memory.editPromptLead("t")}\n${dict.memory.editPromptTail}`,
@@ -53,7 +53,7 @@ describe("buildMemoryAddPrompt", () => {
   });
 
   it("follows the active dictionary", () => {
-    for (const dict of [en, zh]) {
+    for (const dict of [en]) {
       setActiveStrings(dict);
       for (const kind of ["user", "workspace"] as const) {
         expect(buildMemoryAddPrompt(kind, "c")).toBe(`${dict.memory.addPromptLead[kind]}\nc`);

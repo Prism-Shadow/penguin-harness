@@ -17,10 +17,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { UsageErrorItem, UsageErrors } from "@prismshadow/penguin-server/api";
 import { ErrorsPanel, errorsClearScopeText } from "../src/features/usage/errors-panel";
 import type { ErrorsFilters } from "../src/features/usage/errors-panel";
-import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { S, setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
-afterEach(() => setActiveStrings(zh));
+afterEach(() => setActiveStrings(en));
 
 const item = (code: string): UsageErrorItem => ({
   ts: "2026-08-27T10:00:00.000Z",
@@ -88,7 +88,7 @@ describe("ErrorsPanel clear action", () => {
 });
 
 describe("errorsClearScopeText", () => {
-  for (const [locale, dict] of Object.entries({ zh, en })) {
+  for (const [locale, dict] of Object.entries({ en })) {
     it(`${locale}: a custom range is named by its dates, and the Agent when one is selected`, () => {
       setActiveStrings(dict);
       const ranged = errorsClearScopeText(FILTERS, undefined, 12);

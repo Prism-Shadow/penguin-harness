@@ -1,7 +1,5 @@
 # Changelog Details
 
-[中文版](README.zh.md)
-
 Release history lives in two levels:
 
 1. [`../CHANGELOG.md`](../CHANGELOG.md) — one line per release, linking its folder.
@@ -28,8 +26,6 @@ Copy this template:
 - **PR:** [#N](https://github.com/Prism-Shadow/penguin-harness/pull/N)
 - **Issue:** [#N](https://github.com/Prism-Shadow/penguin-harness/issues/N)
 - **Breaking:** yes — <what breaks, in one line>
-
-[中文版](<name>.zh.md)
 
 <lead paragraph: what the change did>
 
@@ -61,25 +57,11 @@ An entry records **what was done**, in past tense. It opens with a lead paragrap
 
 **Do not describe the current state of the codebase.** "`X` is not exported from `Y`", "the client folder now holds `Z`" — these read as fact, drift silently as the code moves, and cost every later reader a verification they did not ask for. Write what the change did at the time, not what the repository is today.
 
-Cross-reference other entries with relative links, e.g. `[backward compatibility](2026-07-24-backward-compatibility.md)` — from a Chinese file, link the Chinese counterpart so a reader stays in one language. Relative links survive the folder rename at release time and can be checked mechanically.
+Cross-reference other entries with relative links, e.g. `[backward compatibility](2026-07-24-backward-compatibility.md)`. Relative links survive the folder rename at release time and can be checked mechanically.
 
-## Chinese counterpart
+## Language
 
-Every entry ships in both languages: `<name>.md` in English and `<name>.zh.md` in Chinese, mirroring it section for section. A change is not complete until both exist — write the English file first, then the counterpart, in the same PR.
-
-What stays in English, verbatim, so one `grep` works across both languages:
-
-- The metadata field names and their values — `- **Type:** feature`, the `Scope` identifiers, the `Date`, and the links. Only the `Breaking` reason is prose, so only it is translated.
-- Code identifiers, model ids, parameter names, error classes, and file paths.
-
-What gets translated: all prose, and the section headings. Use these renderings for the standard headings:
-
-| English | 中文 |
-| --- | --- |
-| `## Details` | `## 细节` |
-| `## Compatibility` | `## 兼容性` |
-
-Bespoke headings are translated naturally, keeping the same order and count as the English file. Each file links its counterpart on the line directly below the metadata block: `[中文版](<name>.zh.md)` in the English file, `[English](<name>.md)` in the Chinese one.
+Write entries in English. Translated counterparts are not required or shipped.
 
 ## Finding things
 
@@ -93,4 +75,4 @@ Bespoke headings are translated naturally, keeping the same order and count as t
 | Which entries a PR appears in | `grep -rl 'pull/263' changelog/` |
 | Entries answering a reported issue | `grep -rl 'Issue:' changelog/` |
 
-Written in English first, mirrored in Chinese. History starts after the v0.0.1 release (2026-07-19); earlier changes are not backfilled.
+Written in English. History starts after the v0.0.1 release (2026-07-19); earlier changes are not backfilled.

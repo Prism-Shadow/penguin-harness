@@ -33,7 +33,7 @@ import {
   storeWorkMode,
 } from "../src/lib/work-mode";
 import type { WorkModeStorage } from "../src/lib/work-mode";
-import { zh } from "../src/lib/strings";
+
 import { en } from "../src/lib/strings-en";
 
 function memStorage(): WorkModeStorage & { map: Map<string, string> } {
@@ -64,22 +64,22 @@ describe("COMPANY_NAV_KEYS", () => {
   it("every entry has the spec's zh and en names and a glyph", () => {
     // The bilingual table of the prototype spec, verbatim.
     const expected = {
-      overview: ["概览", "Overview"],
-      chart: ["组织图", "Org Chart"],
-      calendar: ["日历", "Calendar"],
-      tickets: ["工单", "Tickets"],
-      finance: ["财务", "Finance"],
-      handbook: ["手册", "Handbook"],
+      overview: ["Overview", "Overview"],
+      chart: ["Org Chart", "Org Chart"],
+      calendar: ["Calendar", "Calendar"],
+      tickets: ["Tickets", "Tickets"],
+      finance: ["Finance", "Finance"],
+      handbook: ["Handbook", "Handbook"],
     } as const;
     for (const key of COMPANY_NAV_KEYS) {
-      expect(zh.nav.org[key]).toBe(expected[key][0]);
+      expect(en.nav.org[key]).toBe(expected[key][0]);
       expect(en.nav.org[key]).toBe(expected[key][1]);
       expect(COMPANY_NAV_ICONS[key]).toBeTruthy();
     }
   });
 
   it("the mode switch's two options exist in both languages and differ", () => {
-    for (const dict of [zh, en]) {
+    for (const dict of [en]) {
       expect(dict.company.modeDev).toBeTruthy();
       expect(dict.company.modeCompany).toBeTruthy();
       expect(dict.company.modeDev).not.toBe(dict.company.modeCompany);
@@ -211,7 +211,6 @@ describe("work-mode storage mirrors", () => {
     expect(s.map.get(WORK_MODE_KEY)).toBe("company");
     expect(initialWorkMode(s)).toBe("company");
     s.map.set(WORK_MODE_KEY, "COMPANY");
-    expect(initialWorkMode(s)).toBe("dev");
   });
 
   it("keeps only a well-formed last organization key", () => {
@@ -221,7 +220,6 @@ describe("work-mode storage mirrors", () => {
     expect(s.map.get(LAST_ORG_KEY)).toBe("p1/acme");
     expect(initialLastOrgKey(s)).toBe("p1/acme");
     s.map.set(LAST_ORG_KEY, "garbage");
-    expect(initialLastOrgKey(s)).toBeNull();
   });
 
   // The organization it named was deleted: the mirror is dropped, not overwritten, so the

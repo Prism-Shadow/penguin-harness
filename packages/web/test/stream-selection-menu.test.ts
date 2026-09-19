@@ -20,7 +20,7 @@ import { ReferenceChip } from "../src/features/chat/reference-chip";
 import { QUOTE_ICON } from "../src/components/ui/icons";
 import { excerptLabel } from "../src/lib/selection-menu";
 import type { ComposerReference } from "../src/lib/workspace-tree";
-import { S, setActiveStrings, zh } from "../src/lib/strings";
+import { S, setActiveStrings } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
 
 /** Toasts raised during a test (the real store would leave its dismiss timers running). */
@@ -57,7 +57,7 @@ const label = (row: Row) =>
     .join("");
 
 afterEach(() => {
-  setActiveStrings(zh);
+  setActiveStrings(en);
   toasts.length = 0;
   vi.unstubAllGlobals();
 });

@@ -5,8 +5,6 @@
 - **Scope:** `web`, `tooling`
 - **PR:** [#378](https://github.com/Prism-Shadow/penguin-harness/pull/378)
 
-[中文版](2026-08-20-web-design-system.zh.md)
-
 Three conventions the Web App had been carrying implicitly are now written down and enforced: a
 status colour is picked by meaning from one module, an explanation is disclosed on demand unless a
 user needs it while typing, and a line icon comes from one renderer at one weight in a role-named

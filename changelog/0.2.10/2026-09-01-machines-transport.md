@@ -5,8 +5,6 @@
 - **Scope:** `server`
 - **PR:** [#567](https://github.com/Prism-Shadow/penguin-harness/pull/567)
 
-[中文版](2026-09-01-machines-transport.zh.md)
-
 Reaching another machine moves behind one directory. `machines/exec.ts` and `machines/targets.ts` become `machines/transport/exec.ts` and `machines/transport/targets.ts`, private behind `transport/index.ts`, and a test scans the source to keep them there. No behavior changes.
 
 ## Details

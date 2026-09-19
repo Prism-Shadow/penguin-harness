@@ -5,8 +5,6 @@
 - **Scope:** `core`, `docs`
 - **PR:** [#414](https://github.com/Prism-Shadow/penguin-harness/pull/414)
 
-[中文版](2026-08-23-file-tools-follow-symlinks.zh.md)
-
 Editing or writing a symlinked path replaced the link with a regular file and left the
 file it pointed at untouched — while reporting success, complete with a diff of a change
 that never reached the real file. `stat` and `readFile` dereference, so the tools read the

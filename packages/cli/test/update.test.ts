@@ -480,18 +480,6 @@ describe("buildInstallerInvocation (preserves the shape of the install being upg
     expect(getMessages("en").update.installerFetchFailed(["oss", "github"])).toBe(
       "Could not download the installer from the OSS mirror or GitHub. Check your network and retry.",
     );
-    expect(getMessages("zh").update.installerFetchFailed(["oss"])).toBe(
-      "无法从 OSS 镜像下载安装脚本。请检查网络后重试。",
-    );
-    expect(getMessages("zh").update.installerFetchFailed(["github"])).toBe(
-      "无法从 GitHub 下载安装脚本。请检查网络后重试。",
-    );
-    expect(getMessages("zh").update.installerFetchFailed(["oss", "github"])).toBe(
-      "无法从 OSS 镜像或 GitHub 下载安装脚本。请检查网络后重试。",
-    );
-    expect(getMessages("zh").update.installerFetchFailed(["configured"])).toBe(
-      "无法从配置的镜像下载安装脚本。请检查网络后重试。",
-    );
   });
 });
 
@@ -617,7 +605,7 @@ describe("planUpdate (what the command decides before it touches anything)", () 
       planUpdate({ ...base, platform: "win32", install: tarball }),
       planUpdate({ ...base, platform: "win32", install: npmGlobal }),
     ];
-    for (const lang of ["en", "zh"] as const) {
+    for (const lang of ["en"] as const) {
       const t = getMessages(lang);
       expect(plans.map((p) => p.action)).toEqual(Array(plans.length).fill("refuse"));
       expect(t.update.sourceCheckout()).toBeTruthy();
@@ -639,7 +627,6 @@ describe("confirmationMode (the gate in front of every upgrade)", () => {
     expect(confirmationMode(undefined, false)).toBe("needs-yes");
     expect(confirmationMode(false, false)).toBe("needs-yes");
     expect(getMessages("en").update.needsYes()).toContain("--yes");
-    expect(getMessages("zh").update.needsYes()).toContain("--yes");
   });
   it("a terminal without --yes gets the interactive prompt", () => {
     expect(confirmationMode(undefined, true)).toBe("prompt");
@@ -648,7 +635,7 @@ describe("confirmationMode (the gate in front of every upgrade)", () => {
 
 describe("command registration", () => {
   it("registers `update` with its three options in both languages", () => {
-    for (const lang of ["en", "zh"] as const) {
+    for (const lang of ["en"] as const) {
       const program = new Command();
       registerUpdateCommand(program, getMessages(lang));
       const cmd = program.commands.find((c) => c.name() === "update");

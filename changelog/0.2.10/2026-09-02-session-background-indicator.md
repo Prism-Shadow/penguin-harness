@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`, `docs`
 - **PR:** [#585](https://github.com/Prism-Shadow/penguin-harness/pull/585)
 
-[中文版](2026-09-02-session-background-indicator.zh.md)
-
 A conversation that has started a dev server or a background subagent now says so in the
 sidebar: its row carries a small activity trace beside the usual status glyph, the chat
 header counts the same tasks in a small pill, and both follow the server live — the mark

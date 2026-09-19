@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`
 - **PR:** [#530](https://github.com/Prism-Shadow/penguin-harness/pull/530)
 
-[中文版](2026-08-28-error-noise-and-clear.zh.md)
-
 Two changes to the cost center's error panel. A QQ gateway connection that the platform closed
 and the connector brought straight back no longer files as an error needing a human, and a
 Project owner can empty the table the panel is showing.

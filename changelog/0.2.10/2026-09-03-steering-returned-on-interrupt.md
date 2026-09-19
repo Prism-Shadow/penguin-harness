@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`
 - **PR:** [#605](https://github.com/Prism-Shadow/penguin-harness/pull/605)
 
-[中文版](2026-09-03-steering-returned-on-interrupt.zh.md)
-
 A message steered into a running Task and still waiting for its next tool round was thrown
 away when the run was interrupted, taking the text the user had already typed with it. The
 undelivered message is now handed back and returns to the composer, ready to send again.

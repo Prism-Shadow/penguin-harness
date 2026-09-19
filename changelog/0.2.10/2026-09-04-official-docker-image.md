@@ -5,8 +5,6 @@
 - **Scope:** `ci`, `tooling`, `docs`
 - **PR:** [#609](https://github.com/Prism-Shadow/penguin-harness/pull/609)
 
-[中文版](2026-09-04-official-docker-image.zh.md)
-
 PenguinHarness gained an official container image, Docker Hub `hiyouga/penguinharness`, built from this repository's source for `linux/amd64` and `linux/arm64`. Every push to `main` publishes that commit as `latest`, with `main-<sha7>` as an immutable twin; a release publishes `X.Y.Z`, `X.Y`, and `stable` while the tag is GitHub's current latest Release. It runs `penguin server` on `0.0.0.0:7364` with the data root on a `/data` volume, so a deployment is one container and one volume. The compose file and every documented `docker run` publish the port on the host's loopback (`127.0.0.1:7364:7364`), which leaves a fresh deployment reachable only from the machine running Docker; opening it to a network is an explicit choice, documented alongside the reverse-proxy notes.
 
 ## Details

@@ -14,7 +14,7 @@ const dist = join(pkg, "dist");
 
 const slugs = new Set(
   readdirSync(join(pkg, "content"))
-    .map((file) => /^(.+)\.(zh|en)\.md$/.exec(file)?.[1])
+    .map((file) => /^(.+)\.([a-z]{2}(?:-[A-Z]{2})?)\.md$/.exec(file)?.[1])
     .filter((slug) => slug !== undefined),
 );
 

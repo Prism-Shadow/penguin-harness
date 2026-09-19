@@ -5,8 +5,6 @@
 - **Scope:** `server`, `skills`
 - **PR:** [#785](https://github.com/Prism-Shadow/penguin-harness/pull/785)
 
-[中文版](2026-09-17-org-approval-deny.zh.md)
-
 In company mode, a tool call that the organization's approval mode hands to a person is now
 denied the moment it is made, instead of suspending the run until somebody answers. Desk,
 ticket and the sub-sessions they spawn have nobody watching them, so under `read-only` a

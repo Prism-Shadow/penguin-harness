@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#717](https://github.com/Prism-Shadow/penguin-harness/pull/717)
 
-[中文版](2026-09-14-session-row-time-alignment.zh.md)
-
 The marks right of a session title — the run glyph, the background-task and schedule marks, the approval count — drifted from row to row because the trailing time slot's width followed the time string. The slot now takes a fixed width per interface language, so the marks form one vertical column, and the Chinese month-day is written without spaces.
 
 ## Details

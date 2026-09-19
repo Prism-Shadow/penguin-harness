@@ -56,7 +56,7 @@ penguin config vault remove --key <NAME> [--project-id <id>] [--agent-id <id>] [
 ## Language
 
 ```bash
-penguin config lang <en|zh>   # persist the CLI language via PENGUIN_LANG in your shell rc
+penguin config lang <en>   # persist the CLI language via PENGUIN_LANG in your shell rc
 ```
 
 ## Running agents

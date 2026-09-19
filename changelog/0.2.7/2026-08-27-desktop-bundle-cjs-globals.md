@@ -5,8 +5,6 @@
 - **Scope:** `desktop`, `tooling`
 - **PR:** [#482](https://github.com/Prism-Shadow/penguin-harness/pull/482)
 
-[中文版](2026-08-27-desktop-bundle-cjs-globals.zh.md)
-
 Binding a Feishu app from the desktop app failed at the credential test and at connect with
 `__dirname is not defined`, so the messaging integration that shipped in 0.2.6
 ([#464](https://github.com/Prism-Shadow/penguin-harness/pull/464)) could not be used there at

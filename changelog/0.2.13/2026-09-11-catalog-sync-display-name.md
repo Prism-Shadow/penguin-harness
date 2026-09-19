@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`
 - **PR:** [#679](https://github.com/Prism-Shadow/penguin-harness/pull/679)
 
-[中文版](2026-09-11-catalog-sync-display-name.zh.md)
-
 A model added to a Project by the Models page's "sync presets" button was saved without a display
 name and listed under its raw model id, and syncing again never brought the name back. The rows a
 sync builds now carry the built-in catalog's name, and a sync fills in the name of any preset row

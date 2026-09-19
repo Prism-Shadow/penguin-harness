@@ -5,8 +5,6 @@
 - **Scope:** `plugins`
 - **PR:** [#698](https://github.com/Prism-Shadow/penguin-harness/pull/698)
 
-[中文版](2026-09-11-web-design-skill-tips.zh.md)
-
 The `web-design` skill in the `software-development` plugin gained the generic techniques from the
 published Z.ai Code prompt — everything in it that is not tied to that product's own SDK, stack or
 image tools. The plugin version moved to `2026.09.11.1`.

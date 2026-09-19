@@ -5,8 +5,6 @@
 - **Scope:** `desktop`, `docs`
 - **PR:** [#480](https://github.com/Prism-Shadow/penguin-harness/pull/480)
 
-[中文版](2026-08-27-desktop-installs-cli.zh.md)
-
 The desktop app now puts its bundled `penguin` command on PATH without being asked, and
 re-checks it at every launch. Only the deb package did this before; macOS, Windows and the
 AppImage offered it once, in a dialog on first launch, and never again. Because the app and

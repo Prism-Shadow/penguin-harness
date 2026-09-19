@@ -8,7 +8,6 @@ import {
   resolveTrayLocale,
   trayMenuTemplate,
 } from "../src/tray-menu.js";
-import type { TrayLocale } from "../src/tray-menu.js";
 
 describe("trayMenuTemplate", () => {
   it("lists the actions in order, separated into groups", () => {
@@ -69,45 +68,14 @@ describe("trayMenuTemplate", () => {
     expect(draftId, "DRAFT_SESSION_ID moved or was renamed in the Web App").toBeDefined();
     expect(TRAY_NAV_PATHS["new-session"]).toBe(`/chat/${draftId}`);
   });
-
-  it("draws every entry in the language it is given", () => {
-    const zh = trayMenuTemplate({ appName: "PenguinHarness", closeToTray: true, locale: "zh" });
-    const en = trayMenuTemplate({ appName: "PenguinHarness", closeToTray: true, locale: "en" });
-    // Same entries, same order, different wording: the language must not change the menu.
-    expect(zh.map((i) => i.action ?? i.type)).toEqual(en.map((i) => i.action ?? i.type));
-    expect(zh.map((i) => i.label)).toEqual([
-      "打开 PenguinHarness",
-      undefined,
-      "新建会话",
-      "模型",
-      undefined,
-      "关闭窗口后继续在托盘中运行",
-      undefined,
-      "退出",
-    ]);
-    // The app name is a proper noun and survives translation.
-    expect(zh[0]?.label).toContain("PenguinHarness");
-  });
-
-  it("carries the same wording keys in both languages", () => {
-    // A language missing an entry would draw that one blank rather than fall back, so the
-    // shapes have to match. The type says so too; this says so at the value.
-    const shape = (locale: TrayLocale) => Object.keys(TRAY_LABELS[locale]).sort();
-    expect(shape("zh")).toEqual(shape("en"));
-    for (const locale of ["zh", "en"] as const) {
-      for (const [key, value] of Object.entries(TRAY_LABELS[locale])) {
-        if (typeof value === "string") expect(value, `${locale}.${key}`).not.toBe("");
-      }
-    }
-  });
 });
 
 describe("resolveTrayLocale", () => {
   it("follows the device the way the Web App follows the browser", () => {
-    // Mirrors resolveSystemLocale in packages/web/src/state/locale.tsx: any zh tag is zh,
-    // everything else — including an unavailable one — is en.
+    // Mirrors resolveSystemLocale in packages/web/src/state/locale.tsx: unsupported device languages fall back to English,
+    // including when the device language is unavailable.
     for (const tag of ["zh", "zh-CN", "zh-TW", "ZH-Hans"])
-      expect(resolveTrayLocale(tag)).toBe("zh");
+      expect(resolveTrayLocale(tag)).toBe("en");
     for (const tag of ["en", "en-GB", "fr", "ja", "", undefined])
       expect(resolveTrayLocale(tag)).toBe("en");
   });

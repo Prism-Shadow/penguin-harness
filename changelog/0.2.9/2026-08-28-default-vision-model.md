@@ -5,8 +5,6 @@
 - **Scope:** `model-catalog`, `core`, `server`, `docs`, `skills`
 - **PR:** [#534](https://github.com/Prism-Shadow/penguin-harness/pull/534)
 
-[中文版](2026-08-28-default-vision-model.zh.md)
-
 A new Project defaulted to `deepseek/deepseek-v4-flash`, which is text-only, and a fresh install
 sets no `vision_model` either — so a pasted screenshot had no path to being read at all: it was
 saved to the scratchpad and handed over as a file path, and the tool that would have described it

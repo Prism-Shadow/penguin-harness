@@ -5,8 +5,6 @@
 - **Scope:** `web`, `server`
 - **PR:** [#460](https://github.com/Prism-Shadow/penguin-harness/pull/460)
 
-[中文版](2026-08-24-file-preview-svg-refresh.zh.md)
-
 Three things were wrong with the Web App's Files panel: it went stale the moment the Agent
 wrote anything, `.svg` was a broken image everywhere it appeared, and a Markdown file with an
 SVG in it could shake without settling.

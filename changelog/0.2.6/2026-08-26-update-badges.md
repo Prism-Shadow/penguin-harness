@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#472](https://github.com/Prism-Shadow/penguin-harness/pull/472)
 
-[中文版](2026-08-26-update-badges.zh.md)
-
 A phone-style red dot now marks the chrome whenever something is updatable, and every dot leads
 down an unbroken path to the control that performs the update. Two trails carry one: a
 **software** update — a newer release for a browser install, or a downloaded client build for

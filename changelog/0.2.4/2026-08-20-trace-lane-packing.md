@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#362](https://github.com/Prism-Shadow/penguin-harness/pull/362)
 
-[中文版](2026-08-20-trace-lane-packing.zh.md)
-
 Shortened the trace observation timeline: tool-call executions with the same tool name whose time ranges don't overlap now share one row instead of taking one row each, so a burst of serial calls to the same tool (a long `exec_command` or `read_file` sequence) collapses from N rows to one. Only a different tool name, or same-name calls that overlap in time (parallel execution), still open extra rows.
 
 ## Details

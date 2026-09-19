@@ -6,8 +6,6 @@
 - **PR:** [#329](https://github.com/Prism-Shadow/penguin-harness/pull/329)
 - **Issue:** [#288](https://github.com/Prism-Shadow/penguin-harness/issues/288), [#290](https://github.com/Prism-Shadow/penguin-harness/issues/290)
 
-[中文版](2026-08-18-compaction-continuity-and-streaming.zh.md)
-
 Two compaction defects were fixed and the compaction row gained a live, collapsed summary. A compaction triggered after a tool call now runs the tools to completion and compacts with their results, inventing nothing synthetic; a compaction the user quit out of is closed as failed when the session next loads, with its half-written draft discarded, so messages sent after a compaction survive a reload and stale `(unknown tool)` cards are gone; and the summary reaches the Web App as it is written, inside a block that is collapsed by default exactly like a thinking block.
 
 ## A compaction triggered after a tool call runs the tools first

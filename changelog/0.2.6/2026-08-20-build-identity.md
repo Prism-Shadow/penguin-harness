@@ -5,8 +5,6 @@
 - **Scope:** `cli`, `core`, `server`, `docs`, `ci`
 - **PR:** [#382](https://github.com/Prism-Shadow/penguin-harness/pull/382)
 
-[中文版](2026-08-20-build-identity.zh.md)
-
 Added `penguin version`, which prints the running build's identity as one line — `v0.2.3` for a release, and `git describe --tags --dirty` output such as `v0.2.3-14-g9e8f7d6-dirty` for a build made from a checkout. `-v, --version` prints that same line. `penguin version --json` prints the full record, and `GET /api/version` serves that same record, so the two cannot report different things about one install.
 
 The record's `harness` half names what a hot update pushed to the machine, read from that data root's HMR store. A pushed bundle lands outside any checkout, so its revision reaches the target twice over: inlined into the artifact at build time, and recorded beside it in `harness.json`.

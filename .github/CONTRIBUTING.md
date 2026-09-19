@@ -1,7 +1,5 @@
 # Contributing to PenguinHarness
 
-[中文版](CONTRIBUTING.zh.md)
-
 Thanks for helping build PenguinHarness! This guide covers the workspace setup, daily
 commands, quality gates, and the repo's working rules.
 
@@ -117,7 +115,7 @@ single data directory (`~/.penguin/data`) and a single message protocol (OmniMes
 | [`packages/web`](../packages/web)         | `@prismshadow/penguin-web`    | Web App: multi-session chat, Agent/skill/model management, Trace observability, evaluation center       |
 | [`plugins/*`](../plugins) | `@penguinharness/<name>` | The built-in plugins, one npm package each: skills (software development, model development, agent development/tuning, …) and session hooks (goal mode, skill summaries); the loader lives in `packages/core` |
 | [`packages/landing`](../packages/landing) | —                             | Product landing page (this repo's website)                                                              |
-| [`packages/docs`](../packages/docs)       | —                             | Documentation site (bilingual, deployed under `/docs/`)                                                 |
+| [`packages/docs`](../packages/docs)       | —                             | Documentation site (deployed under `/docs/`)                                                 |
 | [`plugins/*`](../plugins) | `@prismshadow/penguin-plugin-*` | Plugin packages a Project asks for on the Plugins page (its `[plugins]` table) — a directory of their own because nothing else in the harness depends on one                        |
 
 Responsibilities split by source of truth: the **SDK** owns protocol and execution
@@ -153,12 +151,9 @@ pnpm test:e2e                                        # core live-model e2e, need
 ## Working rules
 
 - **English is the repository's working language** — code, comments, error/log messages,
-  test names and fixtures, package metadata, and developer docs. Chinese appears only
-  where it is the content itself: zh i18n catalogs and fields (`strings.ts` dictionaries,
-  CLI `i18n.ts`, `titleZh`, `short_description_zh`), `*.zh.md` documents, and test
-  literals that assert zh i18n output or exercise CJK-specific behavior.
-- **Every change ships with a changelog entry, in both languages**: add
-  `changelog/unreleased/YYYY-MM-DD-<semantic-id>.md` plus its `.zh.md` counterpart
+  test names and fixtures, package metadata, and developer docs. Keep Unicode and IME test fixtures; ship app copy and documentation in English.
+- **Every change ships with a changelog entry, in English**: add
+  `changelog/unreleased/YYYY-MM-DD-<semantic-id>.md`
   (released versions' folders are frozen) — an H1 title, the `Date` / `Type` / `Scope` /
   `PR` / `Issue` / `Breaking` metadata block, the counterpart link, then a lead paragraph
   and bespoke sections. There is no index file to update. The format is documented in

@@ -5,8 +5,6 @@
 - **Scope:** `server`, `trace-index`
 - **PR:** [#271](https://github.com/Prism-Shadow/penguin-harness/pull/271)
 
-[中文版](2026-08-11-trace-index-compaction-rotate.zh.md)
-
 ## The bug
 
 Context compaction calls `TraceWriter.rotate()` to split the Trace into a new shard

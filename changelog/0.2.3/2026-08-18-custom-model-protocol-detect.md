@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`, `model-catalog`
 - **PR:** [#324](https://github.com/Prism-Shadow/penguin-harness/pull/324)
 
-[中文版](2026-08-18-custom-model-protocol-detect.zh.md)
-
 Custom and user-defined groups are no longer pinned to one protocol: a new custom model starts with no protocol selected, and a **Detect** action in the Web dialog probes which of AgentHub 0.4.2's generic protocol clients a custom base URL serves and stores it as the entry's `client_type`. The probe order is `openai-responses` (OpenAI Responses API) first, then `ant-messages` (Anthropic Messages API), then `openai-chat` (Chat Completions; bare `openai` stays its alias), and the first hit wins.
 
 ## Server

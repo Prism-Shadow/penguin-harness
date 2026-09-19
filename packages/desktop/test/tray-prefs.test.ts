@@ -50,13 +50,14 @@ describe("readTrayPrefs", () => {
   });
 
   it("keeps a reported language, and treats anything else as none reported", () => {
-    writeTrayPrefs(dir, { showTrayIcon: true, closeToTray: true, locale: "zh" });
-    expect(readTrayPrefs(dir).locale).toBe("zh");
+    writeTrayPrefs(dir, { showTrayIcon: true, closeToTray: true, locale: "en" });
+    expect(readTrayPrefs(dir).locale).toBe("en");
     // A file written before the field existed, and a file with a language this build does not
     // have, both mean the same thing: nothing has been reported, so the device decides.
     for (const stored of [
       '{"showTrayIcon":true,"closeToTray":true}',
       '{"locale":"fr"}',
+      '{"locale":"zh"}',
       '{"locale":7}',
     ]) {
       fs.writeFileSync(trayPrefsPath(dir), stored);
@@ -125,20 +126,20 @@ describe("updateTrayPrefs", () => {
     });
     expect(readTrayPrefs(dir)).toEqual({ showTrayIcon: false, closeToTray: true, locale: null });
     // The language is the third writer and goes through the same door.
-    expect(updateTrayPrefs(dir, { locale: "zh" })).toEqual({
+    expect(updateTrayPrefs(dir, { locale: "en" })).toEqual({
       showTrayIcon: false,
       closeToTray: true,
-      locale: "zh",
+      locale: "en",
     });
-    expect(updateTrayPrefs(dir, { showTrayIcon: true }).locale).toBe("zh");
+    expect(updateTrayPrefs(dir, { showTrayIcon: true }).locale).toBe("en");
   });
 });
 
 describe("the Appearance switch on the wire", () => {
   it("wraps the shown state for the push to the page", () => {
-    expect(trayStatusMessage(false, "zh")).toEqual({
+    expect(trayStatusMessage(false, "en")).toEqual({
       type: "desktop-tray-status",
-      status: { showTrayIcon: false, locale: "zh" },
+      status: { showTrayIcon: false, locale: "en" },
     });
   });
 
@@ -146,8 +147,8 @@ describe("the Appearance switch on the wire", () => {
     expect(parseTrayCommand({ type: "desktop-tray-command", showTrayIcon: false })).toEqual({
       showTrayIcon: false,
     });
-    expect(parseTrayCommand({ type: "desktop-tray-command", locale: "zh" })).toEqual({
-      locale: "zh",
+    expect(parseTrayCommand({ type: "desktop-tray-command", locale: "en" })).toEqual({
+      locale: "en",
     });
     // One frame can carry both: the page sends the switch and the language separately, but
     // nothing in the wire shape says it has to.

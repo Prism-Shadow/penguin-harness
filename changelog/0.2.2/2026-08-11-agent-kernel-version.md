@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `web`
 - **PR:** [#257](https://github.com/Prism-Shadow/penguin-harness/pull/257), [#261](https://github.com/Prism-Shadow/penguin-harness/pull/261), [#263](https://github.com/Prism-Shadow/penguin-harness/pull/263)
 
-[中文版](2026-08-11-agent-kernel-version.zh.md)
-
 `system_config.yaml` is baked at agent creation and never auto-upgraded, so until now the only way to newer built-in defaults was a full restore that discarded every customization. Agent configs now carry a **kernel version** ([#263](https://github.com/Prism-Shadow/penguin-harness/pull/263)): a date, `kernel_version: 2026-08-11`, recording which generation of built-in defaults the config was created from or last updated to. Creation and "restore defaults" both stamp it; ordinary config edits never touch it (it is unrelated to `version`, the optimization counter).
 
 ## Development-side bumps, mechanically enforced

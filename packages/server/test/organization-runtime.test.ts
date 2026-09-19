@@ -695,7 +695,7 @@ describe("organization runtime", () => {
   describe("the working language", () => {
     const ZH_MISSION = "做一个 DeepSeek Harness 插件市场，并靠首页置顶位盈利。";
 
-    it("follows the mission: a Chinese mission gives a Chinese handbook, brief and init run", async () => {
+    it("preserves the mission language while using shared English instruction templates", async () => {
       await service.create(P, { orgId: ORG, name: "插件市场", mission: ZH_MISSION }, "alice");
       const settings = (await service.detail(P, ORG, "alice")).settings;
       expect(settings.language).toBe("zh");
@@ -703,21 +703,22 @@ describe("organization runtime", () => {
         'language = "zh"',
       );
       const handbook = await service.handbook(P, ORG);
-      expect(handbook).toContain("## 工作语言");
-      expect(handbook).toContain("## 使命");
+      expect(handbook).toContain("## Working language");
+      expect(handbook).toContain("## Mission");
       expect(handbook).toContain(ZH_MISSION);
       // Paths, commands and field names stay ASCII whatever the language is.
       expect(handbook).toContain("`org_chart.yaml`");
       expect(handbook).toContain("penguin org ticket start <id>");
-      expect(briefs.get(CEO)).toContain("# 员工简介");
+      expect(briefs.get(CEO)).toContain("# Employee brief");
       expect(briefs.get(CEO)).toContain(`<app_data_dir>/organizations/${ORG}/`);
       const parsed = parseOrgTriggerMessage(started[0]!.text);
-      expect(parsed?.rest).toContain(`使命：${ZH_MISSION}`);
+      expect(parsed?.rest).toContain(`Mission: ${ZH_MISSION}`);
       expect(parsed?.rest).toContain("penguin org ticket start <id>");
-      expect(sessions.findById(started[0]!.sessionId)?.title).toBe(`Name of ${CEO} 的工位`);
-      // Hires inherit it: the brief is written in the organization's language, not the request's.
+      expect(sessions.findById(started[0]!.sessionId)?.title).toBe(`Name of ${CEO}'s desk`);
+      // Hires retain the working-language instruction in the shared English template.
       await service.hire(P, ORG, { newAgent: { agentId: HR }, title: "人事", reportsTo: CEO });
-      expect(briefs.get(HR)).toContain("# 员工简介");
+      expect(briefs.get(HR)).toContain("# Employee brief");
+      expect(briefs.get(HR)).toContain("the configured language (zh)");
     });
 
     it("takes the request's language over the mission's, and PATCH changes it", async () => {

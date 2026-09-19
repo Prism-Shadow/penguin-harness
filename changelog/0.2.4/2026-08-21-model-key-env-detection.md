@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#395](https://github.com/Prism-Shadow/penguin-harness/pull/395)
 
-[中文版](2026-08-21-model-key-env-detection.zh.md)
-
 The chat model picker judged "has an API key" by the stored masked key alone, while the model library already showed a model backed by an exported environment variable as configured. A model whose key came from `ANTHROPIC_API_KEY` was therefore pushed behind the picker's "show models without key" expander and marked with the struck-through key icon, on the same screen where the library card printed that variable's masked value. Both surfaces were put on one rule: a stored key **or** an env fallback the server proved is set.
 
 ## Details

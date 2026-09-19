@@ -1,16 +1,17 @@
+import { en } from "../src/lib/strings-en";
 /**
  * The web app's page manifest (src/module.json) and how server contributions fold in.
  */
 import { describe, expect, it } from "vitest";
 import { NAV_PAGE_KEYS, PAGES, mergePages, navPagesFor } from "../src/lib/pages";
 import { NAV_GROUP_KEYS } from "../src/lib/nav-group-collapse";
-import { zh } from "../src/lib/strings";
+
 import { NAV_ICONS } from "../src/components/ui/icons";
 
 describe("the page manifest", () => {
   it("names only keys the nav strings and icons are typed for", () => {
     for (const key of NAV_PAGE_KEYS) {
-      expect(zh.nav).toHaveProperty(key);
+      expect(en.nav).toHaveProperty(key);
       expect(NAV_ICONS).toHaveProperty(key);
     }
     expect(NAV_GROUP_KEYS).toEqual(NAV_PAGE_KEYS);

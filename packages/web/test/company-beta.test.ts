@@ -1,3 +1,4 @@
+import { en } from "../src/lib/strings-en";
 /**
  * Company mode's two beta marks (features/company/beta-badge.tsx).
  *
@@ -19,7 +20,6 @@ import {
   shouldShowBetaNotice,
 } from "../src/features/company/beta-badge";
 import { Segmented } from "../src/components/ui/segmented";
-import { zh } from "../src/lib/strings";
 
 /** The in-memory stand-in for localStorage (this package's vitest runs in Node, which has none). */
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -74,12 +74,12 @@ function workModeSwitch(withBadge: boolean): string {
   return renderToStaticMarkup(
     createElement(Segmented<"dev" | "company">, {
       options: [
-        { value: "dev", label: zh.company.modeDev },
+        { value: "dev", label: en.company.modeDev },
         {
           value: "company",
-          label: zh.company.modeCompany,
+          label: en.company.modeCompany,
           ...(withBadge
-            ? { badge: { node: createElement(BetaBadge), name: zh.company.beta } }
+            ? { badge: { node: createElement(BetaBadge), name: en.company.beta } }
             : {}),
         },
       ],
@@ -93,10 +93,10 @@ function workModeSwitch(withBadge: boolean): string {
 describe("the beta tag on the work-mode switch", () => {
   it("names itself in the option's accessible name, and only that option's", () => {
     const markup = workModeSwitch(true);
-    expect(markup).toContain(`aria-label="${zh.company.modeCompany} · ${zh.company.beta}"`);
+    expect(markup).toContain(`aria-label="${en.company.modeCompany} · ${en.company.beta}"`);
     // The other option keeps the label's own text as its name: an aria-label is only spent
     // where there is something the visible text does not already say.
-    expect(markup).not.toContain(`aria-label="${zh.company.modeDev}"`);
+    expect(markup).not.toContain(`aria-label="${en.company.modeDev}"`);
   });
 
   it("is a superscript, so the option's height and the control's size do not move", () => {
@@ -105,15 +105,15 @@ describe("the beta tag on the work-mode switch", () => {
     // Out of flow means out of the name too, so the tag's text is hidden rather than announced
     // twice beside the suffix above.
     expect(markup).toContain('aria-hidden="true"');
-    expect(markup).toContain(zh.company.beta);
+    expect(markup).toContain(en.company.beta);
     // The tooltip is the one thing the tag still says on its own.
-    expect(markup).toContain(`title="${zh.company.betaTitle}"`);
+    expect(markup).toContain(`title="${en.company.betaTitle}"`);
   });
 
   it("costs an option without one nothing", () => {
     const markup = workModeSwitch(false);
     expect(markup).not.toContain("aria-label");
     expect(markup).not.toContain("absolute");
-    expect(markup).not.toContain(zh.company.beta);
+    expect(markup).not.toContain(en.company.beta);
   });
 });

@@ -5,8 +5,6 @@
 - **Scope:** `core`, `server`, `docs`
 - **PR:** [#6](https://github.com/nicolaepocroianu/penguin-harness/pull/6)
 
-[中文版](2026-09-19-copilot-responses.zh.md)
-
 Updated the development AgentHub adapter patch to request Copilot's agentic-workflows catalog and support models advertising the Responses API.
 
 ## Details

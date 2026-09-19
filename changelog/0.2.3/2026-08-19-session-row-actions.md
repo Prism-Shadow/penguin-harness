@@ -5,8 +5,6 @@
 - **Scope:** `web`, `docs`
 - **PR:** [#341](https://github.com/Prism-Shadow/penguin-harness/pull/341)
 
-[中文版](2026-08-19-session-row-actions.zh.md)
-
 Hovering a conversation row in the chat sidebar had come to reveal a single ellipsis button, and every action on the row — including archive and delete — sat one click further in, inside its dropdown. The hover affordance went back to what shipped through v0.2.2: archive and delete as direct icon buttons in the row's trailing slot. The rest of the set did not go away; the whole menu, pin and rename included, now opens on right-click.
 
 ## The hover pair

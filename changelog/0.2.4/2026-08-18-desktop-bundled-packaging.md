@@ -4,8 +4,6 @@
 - **Type:** refactor
 - **Scope:** `desktop`, `cli`, `ci`
 
-[中文版](2026-08-18-desktop-bundled-packaging.zh.md)
-
 The desktop app stopped shipping a `node_modules` tree. `pnpm build` now emits the shell, the
 server and the CLI as three self-contained bundles in `packages/desktop/dist/`, and
 `electron-builder.yml` lists exactly what goes inside an installer — replacing

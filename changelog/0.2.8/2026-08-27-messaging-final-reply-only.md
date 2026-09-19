@@ -5,8 +5,6 @@
 - **Scope:** `server`, `web`, `docs`
 - **PR:** [#512](https://github.com/Prism-Shadow/penguin-harness/pull/512)
 
-[中文版](2026-08-27-messaging-final-reply-only.zh.md)
-
 Every completed assistant message of a run was mirrored to the chat the moment it completed, so
 a run that writes working notes between tool calls sent each note as its own message. A
 per-binding option now holds those back and delivers the run's LAST completed assistant text

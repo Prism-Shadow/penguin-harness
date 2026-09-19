@@ -5,8 +5,6 @@
 - **Scope:** `docs`
 - **PR:** [#303](https://github.com/Prism-Shadow/penguin-harness/pull/303)
 
-[中文版](2026-08-16-docs-quickstart-and-nav-order.zh.md)
-
 The Installation page was folded into Quickstart, which became an overview branching into one sub-page per installation route; the sidebar gained a level of nesting to show them, and the usage guides moved ahead of the core-design chapters.
 
 ## Details

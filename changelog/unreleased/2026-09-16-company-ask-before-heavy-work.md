@@ -5,8 +5,6 @@
 - **Scope:** `skills`, `server`, `web`, `landing`, `docs`
 - **PR:** [#750](https://github.com/Prism-Shadow/penguin-harness/pull/750)
 
-[中文版](2026-09-16-company-ask-before-heavy-work.zh.md)
-
 The `agent-company` plugin (now `2026.09.16.1`), the handbook template and the CEO's initialization run were changed so that a new organization's CEO proposes roles and budgets only — every hire runs on the organization's model, or the Project's default when the organization names none, unless the board asked for particular ones — and so that every employee asks the board in the all-hands channel, and waits, before anything that touches the user's machine, spends money or reaches outside the organization. A `company-research` skill was added for research organizations, and the research mission example was rewritten around it.
 
 ## Details

@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#688](https://github.com/Prism-Shadow/penguin-harness/pull/688)
 
-[中文版](2026-09-11-tool-name-aliases.zh.md)
-
 A tool-call card in a conversation now names each of the seven built-in tools by a short alias
 instead of the name the model calls it by: `read_file` reads as "read", `write_file` as "write",
 `edit_file` as "edit", `exec_command` as "exec", `input_command` as "follow", `run_subagent` as

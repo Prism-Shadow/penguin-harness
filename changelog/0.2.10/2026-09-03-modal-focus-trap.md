@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#602](https://github.com/Prism-Shadow/penguin-harness/pull/602)
 
-[中文版](2026-09-03-modal-focus-trap.zh.md)
-
 The Web App's `Modal` primitive, which every dialog in the app is built on, now contains
 keyboard focus for as long as it is open and returns it when it closes.
 

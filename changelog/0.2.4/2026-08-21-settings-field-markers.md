@@ -5,8 +5,6 @@
 - **Scope:** `web`
 - **PR:** [#396](https://github.com/Prism-Shadow/penguin-harness/pull/396)
 
-[中文版](2026-08-21-settings-field-markers.zh.md)
-
 Settings panels marked mandatory fields three different ways: a red `*`, the word "optional"
 appended to the neighbouring label, or nothing at all. They now follow one rule — **a required
 field carries the red `*`, an optional field carries no mark, and no label or placeholder says
