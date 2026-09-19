@@ -1,49 +1,53 @@
 ---
 name: codex
-description: Connect a ChatGPT subscription and delegate explicit coding tasks to Codex through Penguin's MCP tools. Use for Codex sign-in, model discovery, coding delegation, progress, approvals, cancellation, and follow-up tasks.
+description: Connect a ChatGPT subscription and delegate explicit coding tasks to Codex through Penguin's MCP tools and ACP. Use for Codex sign-in, model discovery, coding delegation, progress, approvals, cancellation, and follow-up tasks.
 ---
 
 # Codex delegation
 
-Penguin owns the parent task. Codex runs a separate delegated coding task through the official `codex app-server` stdio API. Use this skill only when the user asks to connect or delegate to Codex. This is subscription access through Codex, not an OpenAI API key or a model in Penguin's model selector.
+Penguin owns the parent task and final review. Codex runs its own delegated agent loop through the maintained Codex ACP adapter. Use only when the user asks to connect or delegate to Codex. This uses the ChatGPT subscription through Codex; it does not add an OpenAI provider or a model-picker entry.
 
 ## Before you start
 
-If the user only invokes this skill without a task, ask whether they want to connect their subscription or delegate a coding task, and which workspace to use. For an explicit task, proceed within its scope.
+If invoked without a task, ask whether the user wants to connect or delegate and which workspace to use. For an explicit task, proceed within its scope. **Codex has workspace write access and can edit files without a separate approval prompt.** Use Penguin's own tools for work requiring a read-only execution guarantee. The adapter's legacy `read-only` mode ID means workspace-write with on-request human approvals; never describe it to the user as read-only.
 
 ## Connect once per project
 
-The bridge was verified against Codex CLI 0.146.0 and its generated v2 schema. If a different release rejects a protocol field, report the mismatch; do not weaken its approval or sandbox settings to make it run.
+Requires Node 24+ on the Penguin server. The plugin includes pinned `@agentclientprotocol/codex-acp` 1.12.0 and its compatible Codex runtime; no globally installed Codex executable is needed.
 
-Requires Node 24+ and the official Codex CLI on the server machine. On Windows use an actual `codex.exe`, not a `.cmd` or `.ps1` shim. If necessary set `PENGUIN_CODEX_EXECUTABLE` in the MCP entry's `env` to the absolute executable path. Do not download or select a different executable without identifying it to the user.
+If `mcp__codex__codex_status` is available, call it. Otherwise add an MCP entry in the Agent's **Settings → Tools → MCP**. Resolve the packaged server from the Penguin installation directory (where its core or CLI package can resolve plugin dependencies):
 
-If `mcp__codex__codex_status` is already available, call it. Otherwise configure an MCP server in this Agent's **Settings → Tools → MCP** using the following fields. Resolve the paths from this installed skill's location and the **App Data Dir** line in Penguin's environment. `--project-dir` is the Penguin project data directory, NOT the workspace/repository, so all sessions in this project share one Codex sign-in. Do not use another project's directory.
+```sh
+node -p "require.resolve('@penguinharness/use-codex/server')"
+```
+
+For a source checkout the server is `<repository>/plugins/use-codex/src/server.mjs`. Runtime files stay in the plugin package so their dependencies resolve normally; they are not copied into the installed skill directory. Use the absolute resolved path:
 
 ```json
 {
   "name": "codex",
   "config": {
     "command": "node",
-    "args": ["<absolute path to this skill>/scripts/server.mjs", "--project-dir", "<App Data Dir>"],
+    "args": ["<absolute packaged server.mjs path>", "--project-dir", "<App Data Dir>"],
     "timeoutMs": 60000,
-    "maxOutputLength": 120000
+    "maxOutputLength": 180000
   }
 }
 ```
 
-Keep the MCP working directory unset: Penguin supplies the session workspace. Preserve other MCP entries. Do not set `permission: "r"`; task starts and approval answers must remain read-write tools. Start a new session after saving to load the tools. The bridge's scripts are copied with the skill when the plugin is installed.
+`<App Data Dir>` is the Penguin project data directory from Penguin's environment, not the repository. All sessions in that project share its subscription. Preserve other MCP entries. Leave the working directory unset so Penguin supplies the session workspace. Do not set `permission: "r"`; starting tasks and answering approvals are write operations. Start a new session after saving.
 
-Call `codex_connect`, show its verification URL and device code, then wait for the user to sign in. Call `codex_status` to confirm the connected account. Device login may need enabling in ChatGPT security settings. Never authorize on the user's behalf, read/copy `auth.json`, or ask for a token. Codex stores and refreshes credentials under `<App Data Dir>/coding-agents/codex`. All project members using this connection share the subscription. `codex_disconnect` cancels a pending login and signs out this project's account.
+Call `codex_connect`, then poll `codex_status` for the verification URL and message containing the device code. Show both to the user and wait for sign-in. Poll until connected or failed. Device login may need enabling in ChatGPT security settings. Never authorize on the user's behalf, read/copy `auth.json`, or ask for tokens. Codex stores and refreshes credentials under `<App Data Dir>/coding-agents/codex`; host API keys and desktop Codex credentials are not inherited. `codex_disconnect` cancels pending login and signs out; if login is still starting, poll and retry.
 
 ## Delegate and follow up
 
-1. Call `codex_models` when selecting a model; use returned IDs, never a static list.
-2. Call `codex_run` with a bounded prompt specifying scope, expected deliverable, and checks. Default `sandbox` is `read-only`; choose `workspace-write` only for a user-authorized editing task. Codex still asks for approvals according to its own policy. No unrestricted sandbox is exposed.
-3. Retain both `task_id` and `thread_id`. Poll `codex_poll` with the last returned `cursor` every few seconds, communicating meaningful progress. Output is bounded; `truncated: true` means some older events are no longer retained. Do not treat truncated output as a complete review.
-4. When `requests` is nonempty, relay the request and options to the user. Call `codex_respond` with their decision and the exact `request_id`; never invent an answer. Command/file approvals accept `accept`, `decline`, or `cancel` for one request. User-input requests take `answers: { "question-id": ["user answer"] }`. Requests expire after five minutes, interrupting the task. Unsupported request types fail closed.
-5. Poll until `completed`, `failed`, or `interrupted`. Task launch is not completion. `codex_cancel` requests interruption; poll until it takes effect. Tasks have a 30-minute limit and stop when the MCP connection closes. One task runs per connection; avoid simultaneous editing of the same files from different Penguin sessions.
-6. Review Codex's result and repository diff, run appropriate checks through Penguin, and report what was actually verified. For follow-ups, pass the saved `thread_id` to `codex_run`; task IDs belong to the current MCP connection, while Codex threads persist in its project home. After a reconnect, explicitly resume the saved thread, never silently start a fresh one.
+1. Call `codex_models` to discover model IDs. This opens and closes an unprompted ACP session; it does not run inference.
+2. Call `codex_run` with a bounded prompt specifying scope, deliverable and checks. Tasks use workspace-write, on-request approvals and a human reviewer. No automatic approval or unrestricted mode is exposed. There is no `sandbox` argument.
+3. Retain `task_id` and `thread_id`. Poll `codex_poll` with the last cursor, communicating meaningful progress. `truncated: true` means older output was dropped; do not treat it as a complete review.
+4. Relay pending requests to the human. For permissions, `codex_respond` takes `decision: "accept"`, `"decline"` or `"cancel"`; only one-time options are supported. For form questions, relay the message and schema, then send the user's `answers` object with `decision: "accept"`. Never infer consent or invent answers. Requests expire after five minutes and interrupt the task. Unsupported requests, including task-time URL elicitation, are cancelled.
+5. Poll until `completed`, `stopped`, `failed` or `interrupted`. `stopped` can mean a token limit or refusal; inspect the reported stop reason. `codex_cancel` requests interruption; wait for terminal status before editing the same files. Tasks have a thirty-minute limit with termination fallback. Closing MCP cancels work. One task runs per connection; avoid simultaneous edits from separate Penguin sessions.
+6. Review results and diffs, run appropriate checks through Penguin, and report actual verification. Resume with the saved `thread_id`; task IDs are local to the MCP connection, while Codex sessions persist in the project home.
 
-Keep subscription usage in its own units (`codex_status` reports limits). Do not invent dollar costs or claim unlimited usage. No ACP or provider emulation is involved.
+ACP subscription limits are unavailable (`limits: null`); do not invent limits or dollar costs. This plugin makes Penguin an ACP client for delegation. It does not implement an editor-facing `penguin acp` agent endpoint.
 
-Official references: [app-server](https://learn.chatgpt.com/docs/app-server), [authentication](https://learn.chatgpt.com/docs/auth).
+References: [Codex ACP adapter](https://github.com/agentclientprotocol/codex-acp), [ACP](https://agentclientprotocol.com/).

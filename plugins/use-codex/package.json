@@ -9,13 +9,28 @@
     "directory": "plugins/use-codex"
   },
   "type": "module",
+  "exports": {
+    "./server": "./src/server.mjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "penguin-codex-mcp": "./src/server.mjs"
+  },
+  "dependencies": {
+    "@agentclientprotocol/codex-acp": "1.12.0",
+    "@agentclientprotocol/sdk": "1.4.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "^4.2.0"
+  },
   "scripts": {
+    "build": "node --check src/server.mjs && node --check src/bridge.mjs && node --check src/acp-client.mjs && node --check src/codex-profile.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "files": [
     "plugin.json",
     "icon.svg",
     "skills",
+    "src",
     "README.md",
     "LICENSE"
   ],

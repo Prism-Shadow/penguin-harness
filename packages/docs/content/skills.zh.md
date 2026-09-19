@@ -199,7 +199,7 @@ Agent 可以在 Task 中重写自己的 `SKILL.md`。结合 Benchmark 评估和�
 | | `continual-learning` | Task 运行超过 30 轮才结束时，把 Task 的精简摘录交给后台子 Agent，由它把有长期价值的发现沉淀到 Agent 的 Skill 中（不预装） |
 | 软件开发 | `software-development` | 端到端的软件开发，包含两个 Skill：`software-engineering`（在最小范围内调查、实现和验证）和 `web-design`（生成 Web UI 用的 Penguin 视觉语言） |
 | | `use-claude-code` | 通过 SSH 在远程主机上运行 Claude Code：持久 expect 会话、带 stdin 修复的无头 `-p` 模式、tmux 驱动的交互式 TUI，以及多轮连续性（不预装：需要时从插件库安装） |
-| | `use-codex` | 使用 ChatGPT 订阅将编程任务委托给官方 Codex app-server：通过 MCP 提供项目级设备登录、模型发现、任务进度、取消和人工审批转发。安装插件后，按照 `codex` Skill 配置 Agent MCP 并连接账户。需要 Codex CLI；不预装，也不是模型选择器中的提供商。 |
+| | `use-codex` | 使用 ChatGPT 订阅通过 Codex ACP 适配器委托编程任务：通过 MCP 提供项目级设备登录、模型发现、进度、取消和人工答复。任务具有工作区写入权限。安装插件后，按照 `codex` Skill 配置 Agent MCP 并连接账户。包含 Codex 运行时，需要 Node 24+。不预装，也不是模型选择器中的提供商。 |
 | AI 应用开发 | `agent-development` | PenguinHarness 上的 Agent 开发，包含四个 Skill：`penguin-sdk`（基于 SDK 构建 Agent/AI/RAG 应用）、`unified-llm-api`（通过 `@prismshadow/agenthub` 调用模型 API）、`penguin-config`（管理模型密钥、默认值和 Vault 机密）和 `penguin-orchestration`（在 shell 里驱动 Agent、Session、成本和定时任务） |
 | | `model-development` | 在自己的硬件上做模型开发，包含三个 Skill：`llamafactory`（微调）、`ollama`（运行本地模型）和 `vllm`（在 OpenAI 兼容端点后面提供服务） |
 | | `skill-porting` | 把外部来源（插件市场、skills.sh 注册表、GitHub 仓库或本地文件夹）的 Skill 经审查和规范化后移植到 Agent |
