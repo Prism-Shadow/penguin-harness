@@ -52,6 +52,7 @@ describe("model-catalog", () => {
       "anthropic",
       "siliconflow",
       "zhipu",
+      "zhipu-coding-plan",
       "moonshot",
       "minimax",
       "qwen-pay-as-you-go",
@@ -201,17 +202,19 @@ describe("model-catalog", () => {
     for (const m of MODEL_CATALOG) {
       if (
         m.provider === "vllm" ||
+        m.provider === "zhipu-coding-plan" ||
         m.modelId.endsWith(":free") ||
         m.modelId === "openrouter/free" ||
         m.modelId === "Atria-Dawn-Preview" ||
         m.modelId === "dots-3-note-preview"
       ) {
-        // Self-hosted vLLM and the free-tier gateway rows share one treatment: a genuine $0
-        // price (not "unknown"), so costs compute to 0 and the free badge shows. Nobody bills
-        // per token for either — a vLLM deployment costs its operator hardware, which no
-        // catalog rate expresses. Atria Dawn Preview has no published price yet and is
-        // recorded at $0 until the vendor prices it; TokenDance's dots-3-note-preview is the
-        // one free row of its group.
+        // Self-hosted vLLM, the Coding Plan subscription and the free-tier gateway rows share
+        // one treatment: a genuine $0 price (not "unknown"), so costs compute to 0 and the
+        // free badge shows. Nobody bills per token for any of them — a vLLM deployment costs
+        // its operator hardware, the coding plan bills a subscription its quota is drawn on,
+        // and neither cost is a catalog rate. Atria Dawn Preview has no published price yet
+        // and is recorded at $0 until the vendor prices it; TokenDance's dots-3-note-preview
+        // is the one free row of its group.
         expect(m.pricing, m.modelId).toBeDefined();
         expect([m.pricing!.cache_read, m.pricing!.cache_write, m.pricing!.output]).toEqual([
           0, 0, 0,
@@ -812,12 +815,14 @@ describe("model-catalog", () => {
     expect(catalogEntryFor("openrouter", "google/gemini-3.5-flash")!.contextWindow).toBe(1048576);
     expect(catalogEntryFor("google", "gemini-3.5-flash")!.contextWindow).toBe(1048576);
 
-    // In preset entries, every gateway model inlines base_url, and so do the two direct rows
-    // whose own id does not route — MiniMax M3 and DeepSeek deepseek-flash (no credentials) —
-    // and the custom group's preset, whose group implies no endpoint at all.
+    // In preset entries, every gateway model inlines base_url, and so do the direct rows
+    // whose endpoint is not the routing default: MiniMax M3 and DeepSeek deepseek-flash (no
+    // credentials), the custom group's preset, whose group implies no endpoint at all, and
+    // every Z.AI Coding Plan row, whose subscription endpoint is the group's whole point.
     const pinnedDirect = MODEL_CATALOG.filter((m) => m.provider === "deepseek" && m.baseUrl);
     expect(pinnedDirect.map((m) => m.modelId)).toEqual(["deepseek-flash"]);
     const customPresets = MODEL_CATALOG.filter((m) => m.provider === "custom");
+    const codingPlanPresets = MODEL_CATALOG.filter((m) => m.provider === "zhipu-coding-plan");
     const withBaseUrl = presetModelEntries().filter((e) => e.base_url !== undefined);
     expect(withBaseUrl.map((e) => [e.provider, e.model_id]).sort()).toEqual(
       [
@@ -825,6 +830,7 @@ describe("model-catalog", () => {
         ...minimax,
         ...pinnedDirect,
         ...customPresets,
+        ...codingPlanPresets,
         ...MODEL_CATALOG.filter((m) => m.provider === "penguin-go"),
       ]
         // A retired gateway row keeps its pin in the catalog but is not a preset.
@@ -878,6 +884,41 @@ describe("model-catalog", () => {
       "glm-5.2",
       "glm-5.1",
       "glm-5",
+    ]);
+    const zcp = MODEL_CATALOG.filter((m) => m.provider === "zhipu-coding-plan");
+    // The Coding Plan group presets the same five ids as the direct group, in the same
+    // order — same credential, same auto-routing, the coding endpoint as the only
+    // difference — at zero list price everywhere: the subscription bills its quota, not a
+    // meter (verified live against that endpoint 2026-09-19).
+    expect(zcp.map((m) => m.modelId)).toEqual([
+      "glm-5.3",
+      "glm-5.3-flash",
+      "glm-5.2",
+      "glm-5.1",
+      "glm-5",
+    ]);
+    for (const m of zcp) {
+      expect(m.clientType, m.modelId).toBeUndefined();
+      expect(m.baseUrl, m.modelId).toBe("https://api.z.ai/api/coding/paas/v4/");
+      expect(m.pricing, m.modelId).toEqual({
+        unit: "usd_per_mtok",
+        cache_read: 0,
+        cache_write: 0,
+        output: 0,
+      });
+      // The ids reach the same unified GLM client as the direct group's, so the env pair is
+      // the same ZAI_* one and a credential set for either group serves both.
+      expect(resolveModelEnv(m.modelId, m.clientType)?.envKey, m.modelId).toBe("ZAI_API_KEY");
+      expect(resolveModelEnv(m.modelId, m.clientType)?.envBaseUrlKey, m.modelId).toBe(
+        "ZAI_BASE_URL",
+      );
+    }
+    expect(zcp.map((m) => [m.modelId, m.contextWindow, m.supportsVision])).toEqual([
+      ["glm-5.3", 1000000, false],
+      ["glm-5.3-flash", 1000000, true],
+      ["glm-5.2", 1000000, false],
+      ["glm-5.1", 200000, false],
+      ["glm-5", 200000, false],
     ]);
     // Gemini 3.6 / 3.7 / 3.8 Flash: Google halves all three of them through 2026-12-31, and
     // all six of their rows — direct and on OpenRouter — store Google's list price and
@@ -1470,7 +1511,9 @@ describe("fastModeProtocol (which models may be offered AgentHub's fast_mode, an
       if (m.clientType === "openai") {
         // Every gateway row pins the OpenAI protocol, which always carries service_tier.
         expect(verdict, `${m.provider}/${m.modelId}`).toBe("openai");
-      } else if (["google", "zhipu", "moonshot", "deepseek"].includes(m.provider)) {
+      } else if (
+        ["google", "zhipu", "zhipu-coding-plan", "moonshot", "deepseek"].includes(m.provider)
+      ) {
         // These groups' first-party clients have no fast tier at all: rows added to them
         // later (a new Gemini or GLM generation) stay excluded without touching this rule.
         expect(verdict, `${m.provider}/${m.modelId}`).toBeUndefined();

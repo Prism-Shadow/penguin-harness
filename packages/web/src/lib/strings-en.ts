@@ -1311,6 +1311,8 @@ export const en: Strings = {
     providerEnvNotes: {
       zhipu:
         "Defaults to the Z.AI global endpoint (api.z.ai); keys from bigmodel.cn need base URL https://open.bigmodel.cn/api/paas/v4",
+      "zhipu-coding-plan":
+        "Uses the Coding Plan endpoint (api.z.ai/api/coding/paas/v4): usage draws the plan's quota, not pay-as-you-go balance",
       moonshot:
         "Defaults to the China endpoint (api.moonshot.cn); keys from platform.kimi.com need base URL https://api.moonshot.ai/v1",
     },
