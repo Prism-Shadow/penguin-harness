@@ -1,8 +1,9 @@
 # 从模型库连接 ChatGPT 订阅
 
-Date: 2026-09-19
-Type: feature
-Scope: core, server, web
+- **Date:** 2026-09-19
+- **Type:** feature
+- **Scope:** `core`, `server`, `web`, `model-catalog`
+- **PR:** [#12](https://github.com/nicolaepocroianu/penguin-harness/pull/12), AgentHub [#4](https://github.com/nicolaepocroianu/agenthub/pull/4)
 
 [English](./2026-09-19-chatgpt-subscription.md)
 
