@@ -19,6 +19,7 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { setShortcutBlocker } from "../../lib/shortcuts/dispatcher";
 import { CloseButton } from "./icons";
 
 export interface ModalProps {
@@ -65,6 +66,13 @@ export function popEscLayer(id: symbol): void {
 export function isTopEscLayer(id: symbol): boolean {
   return escLayers[escLayers.length - 1] === id;
 }
+
+/** Whether any dialog or menu is open — the state in which a global shortcut must not run behind it. */
+export function hasEscLayers(): boolean {
+  return escLayers.length > 0;
+}
+
+setShortcutBlocker(hasEscLayers);
 
 /**
  * The elements an overlay hands focus to, in DOM order. Shared with Dropdown so a dialog and

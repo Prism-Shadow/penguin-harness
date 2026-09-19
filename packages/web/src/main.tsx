@@ -23,6 +23,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app";
 import { bootInstallScope, watchInstallScope } from "./lib/install-scope";
+// The global shortcut dispatcher installs itself at module evaluation (a React effect would
+// leave a post-paint window where a chord is dead); the import is what evaluates it.
+import "./lib/shortcuts/dispatcher";
 // KaTeX's stylesheet and its woff2 faces, resolved out of node_modules so Vite emits them as local
 // assets: the desktop app has to render math with no network, and a CDN <link> would leave every
 // formula as unstyled markup offline. Imported before styles.css so the app's own `.katex` rules

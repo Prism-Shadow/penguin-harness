@@ -40,6 +40,7 @@ export interface MeRouteDeps {
 }
 import { resolvePreviewTarget } from "../../services/preview-token.js";
 import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
+import { validateKeybindings } from "../../services/keybindings.js";
 import {
   INLINE_IMAGE_MAX_MB,
   MAX_ATTACHMENT_COUNT,
@@ -233,6 +234,9 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
     // on. Validated (and normalized) before the merge, so a rejected write stores nothing.
     if (body.draftShortcuts !== undefined) {
       body.draftShortcuts = validateDraftShortcuts(body.draftShortcuts);
+    }
+    if (body.keybindings !== undefined) {
+      body.keybindings = validateKeybindings(body.keybindings);
     }
     const raw = deps.prefsRepo.get(c.var.user.userId);
     let current: UiPrefs = {};

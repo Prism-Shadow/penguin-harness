@@ -322,6 +322,15 @@ export function currentDockScope(): string {
   return scope;
 }
 
+/**
+ * Whether a page with docks is on screen. Pages without them (organization pages, login, the
+ * standalone /terminal page) sit on the `~none` placeholder, where a dock command would act on
+ * nothing visible — or worse, spawn shells into an arrangement the next conversation inherits.
+ */
+export function docksOnScreen(): boolean {
+  return scope !== NO_SCOPE;
+}
+
 // ------------------------------------------------------------------------------- narrow
 
 /**

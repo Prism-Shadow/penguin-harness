@@ -8,6 +8,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useMatch, useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { S } from "../../lib/strings";
+import { onCommand } from "../../lib/shortcuts/dispatcher";
+import { useShortcutTitle } from "../../lib/shortcuts/use-keymap";
 import { latestConversation, withoutOrgSessions } from "../../lib/session-grouping";
 import { navNoteFor, useUpdateBadges } from "../../lib/use-update-badges";
 import { useAuth } from "../../state/auth";
@@ -34,10 +36,11 @@ import {
 import { NEW_CHAT_ICON, Sidebar } from "./sidebar";
 import { UserMenu } from "./user-menu";
 import { DRAFT_SESSION_ID } from "../../features/chat/chat-page";
-import { prepareNewChatDraft } from "../../features/chat/new-chat";
+import { useNewChat } from "../../features/chat/use-new-chat";
 import { ChangePasswordDialog } from "../account/change-password-dialog";
 import { UpdateModal } from "../account/update-modal";
 import { TerminalDockRuntime } from "../../features/terminal/terminal-view-pool";
+import { ShortcutRuntime } from "../../features/settings/shortcut-runtime";
 import { setDockScope } from "../../features/dock/dock-state";
 import { toneStrip } from "../../lib/tone";
 
@@ -48,6 +51,15 @@ import { toneStrip } from "../../lib/tone";
  * you were last in", and the returning arrow is what says so.
  */
 const HISTORY_ICON = "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5M12 7v5l4 2";
+
+/**
+ * Whether the pinned sidebar (or its rail) is on screen: the `<aside>` below is `hidden md:block`,
+ * and Tailwind's `md` is 768px at the browser's default font size — a media query ignores the
+ * app's 18px root. Below it the drawer's own sidebar answers the commands while it is open.
+ */
+function pinnedSidebarOnScreen(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
+}
 
 /** Shared look of rail entries (icon buttons and NavLinks alike): solid gray fill when active, gray hover otherwise. `relative` so an entry can anchor an update badge on its corner (no z-index, so it still creates no stacking context). */
 const railItemClass = (active: boolean) =>
@@ -108,11 +120,8 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     navigate(`/chat/${lastSession.sessionId}`);
   };
 
-  /** Mirrors the pinned sidebar's "New chat": parks any typed-but-unsent draft text first, then opens a draft that names nothing, so it starts on the Project's new-chat defaults (new-chat.ts). */
-  const newChat = () => {
-    if (user && currentProject) prepareNewChatDraft(user.userId, currentProject.projectId);
-    navigate(`/chat/${DRAFT_SESSION_ID}`);
-  };
+  /** Mirrors the pinned sidebar's "New chat" (use-new-chat.ts): parks any typed-but-unsent draft text first, then opens a draft that names nothing, so it starts on the Project's new-chat defaults. */
+  const newChat = useNewChat();
 
   /** Page entries (rail positions 3-8): same routes, same labels as the pinned nav.
       Traces is not among them: reading a Trace happens in the chat toolbar's panel
@@ -180,10 +189,11 @@ function CollapsedRail({ onExpand }: { onExpand: () => void }) {
     badges.softwareNote !== null
       ? `${S.nav.userSettings} · ${badges.softwareNote}`
       : S.nav.userSettings;
+  const expandTitle = useShortcutTitle(S.nav.expandSidebar, "sidebar.toggle");
 
   return (
     <div className="flex h-full flex-col items-center gap-1 py-2.5">
-      <Tooltip label={S.nav.expandSidebar} className="shrink-0">
+      <Tooltip label={expandTitle} className="shrink-0">
         <button
           type="button"
           aria-label={S.nav.expandSidebar}
@@ -416,6 +426,38 @@ export function AppLayout() {
       localStorage.setItem("penguin.sidebarCollapsed", next ? "1" : "0");
       return next;
     });
+  // The commands whose surface is this layout. Each declines (returns false, so the browser's
+  // own key runs) when its effect could not be seen: the pinned sidebar exists only from the
+  // `md` breakpoint up (below it the drawer's own sidebar answers while open), and company mode
+  // has neither a session search nor a development New chat. New chat runs from here rather
+  // than from the sidebar so it works with the sidebar collapsed to its rail. The search field
+  // only exists in the expanded sidebar: with the rail showing, the command expands the sidebar
+  // with the field already open (the pinned Sidebar mounts fresh on every expand and takes the
+  // flag as its initial state); otherwise it declines and the sidebar's own handler takes it.
+  const inCompany = company.workMode === "company";
+  const newChat = useNewChat();
+  const [openSearchOnExpand, setOpenSearchOnExpand] = useState(false);
+  useEffect(() => {
+    const offs = [
+      onCommand("sidebar.toggle", () => {
+        if (!pinnedSidebarOnScreen()) return false;
+        setOpenSearchOnExpand(false);
+        toggleCollapsed();
+      }),
+      onCommand("chat.new", () => {
+        if (inCompany) return false;
+        newChat();
+      }),
+      onCommand("sessions.search", () => {
+        if (inCompany || !pinnedSidebarOnScreen() || !collapsed) return false;
+        setOpenSearchOnExpand(true);
+        toggleCollapsed();
+      }),
+    ];
+    return () => {
+      for (const off of offs) off();
+    };
+  }, [collapsed, inCompany, newChat]);
 
   return (
     <div className="flex h-full">
@@ -438,9 +480,20 @@ export function AppLayout() {
       >
         <div className={`h-full ${collapsed ? "w-12" : "w-64 lg:w-72"}`}>
           {collapsed ? (
-            <CollapsedRail onExpand={toggleCollapsed} />
+            <CollapsedRail
+              onExpand={() => {
+                setOpenSearchOnExpand(false);
+                toggleCollapsed();
+              }}
+            />
           ) : (
-            <Sidebar onCollapse={toggleCollapsed} />
+            <Sidebar
+              onCollapse={() => {
+                setOpenSearchOnExpand(false);
+                toggleCollapsed();
+              }}
+              initialSearchOpen={openSearchOnExpand}
+            />
           )}
         </div>
       </aside>
@@ -517,6 +570,8 @@ export function AppLayout() {
             views live in this pool and are adopted into dock tab bodies by DOM handoff,
             so navigating between pages never reconnects a terminal. */}
         <TerminalDockRuntime />
+        {/* Reconciles the shortcut mirror with the account's prefs and carries edits back. */}
+        <ShortcutRuntime />
       </div>
 
       {/* The software-update modal, opened from the sidebar's update row and the draft
