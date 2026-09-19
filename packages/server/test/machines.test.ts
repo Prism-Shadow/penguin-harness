@@ -324,6 +324,49 @@ describe("resolvePushPlan", () => {
     }
   });
 
+  it("names the harness, not its platform bundle: a web-only or CLI-only push is a new version, an assets-only one is not", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
+    try {
+      const root = path.join(work, "penguin");
+      fs.mkdirSync(path.join(root, "lib", "dist"), { recursive: true });
+      fs.writeFileSync(path.join(root, "lib", "dist", "penguin.js"), "//\n");
+      fs.writeFileSync(
+        path.join(root, "lib", "package.json"),
+        JSON.stringify({ version: "0.2.4" }),
+      );
+      const hmrDir = path.join(work, "data", "hmr");
+      fs.mkdirSync(hmrDir, { recursive: true });
+      const versionOf = (over: Record<string, unknown>) => {
+        fs.writeFileSync(
+          path.join(hmrDir, "harness.json"),
+          JSON.stringify({
+            platform: { bundle: "store/platform/cafe0123456789ab.mjs" },
+            cli: { bundle: "store/cli/0123456789abcdef.mjs" },
+            web: { manifest: "store/web/89abcdef01234567.webz" },
+            assets: { dir: "store/assets/1111111111111111" },
+            ...over,
+          }),
+        );
+        return resolvePushPlan(
+          path.join(work, "data"),
+          path.join(root, "lib", "dist", "penguin.js"),
+        )!.version;
+      };
+      const base = versionOf({});
+      expect(base).toMatch(/^0\.2\.4\+hmr\.[0-9a-f]{12}$/);
+      // The machines sweep compares this string, so each part of the harness has to move it.
+      expect(versionOf({ web: { manifest: "store/web/ffffffffffffffff.webz" } })).not.toBe(base);
+      expect(versionOf({ cli: { bundle: "store/cli/ffffffffffffffff.mjs" } })).not.toBe(base);
+      expect(versionOf({ platform: { bundle: "store/platform/ffffffffffffffff.mjs" } })).not.toBe(
+        base,
+      );
+      // Assets are what a harness loads, not the harness.
+      expect(versionOf({ assets: { dir: "store/assets/2222222222222222" } })).toBe(base);
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  });
+
   it("packaged desktop app: its own manifest names the release it shipped under", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "penguin-plan-"));
     try {
