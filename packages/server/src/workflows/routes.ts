@@ -7,7 +7,8 @@
  *   POST   /:id/rollback {revision} restore that version's files and reload
  *   DELETE /:id                    remove the folder and its recorded versions
  *   GET    /:id/ui/*               a file of the workflow's `ui/` (the pages its tabs name)
- *   *      /:id/api/*              JSON, handed to the workflow's WorkflowMain.handle
+ *   *      /:id/api/*              handed to the workflow's WorkflowMain.handle: JSON by default, any
+ *                                  content type when the handler names one (see respond)
  *
  * Every route requires access to the Project; the UI and api routes are what the
  * workflow's own page (an iframe in the Web App, same-origin cookie auth) talks to.
@@ -20,7 +21,7 @@ import type { AppEnv } from "../auth/middleware.js";
 import { HttpError } from "../http/errors.js";
 import { requireValidId } from "../http/validate.js";
 import type { Access } from "../mechanisms/projects.js";
-import type { WorkflowRequest, Workflows } from "../mechanisms/workflows.js";
+import type { WorkflowRequest, WorkflowResponse, Workflows } from "../mechanisms/workflows.js";
 import { WorkflowNotFound } from "./service.js";
 
 const MIME: Record<string, string> = {
@@ -42,6 +43,71 @@ const MIME: Record<string, string> = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
 };
+
+/** The largest request body a workflow's handler is handed. */
+const MAX_BODY_BYTES = 50 * 1024 * 1024;
+/** Never shown to a workflow: they are the app's credentials, not the workflow's. */
+const WITHHELD_REQUEST_HEADERS = new Set(["cookie", "authorization", "proxy-authorization"]);
+/** Never taken from a workflow: the app's cookies, and what the transport decides for itself. */
+const DROPPED_RESPONSE_HEADERS = new Set([
+  "set-cookie",
+  "connection",
+  "keep-alive",
+  "transfer-encoding",
+  "content-length",
+]);
+
+const tooLarge = () =>
+  new HttpError(
+    413,
+    "payload_too_large",
+    `A workflow request body is at most ${MAX_BODY_BYTES} bytes`,
+  );
+
+const isJson = (contentType: string | undefined): boolean =>
+  contentType === undefined || /^application\/([\w.-]+\+)?json\b/i.test(contentType.trim());
+
+function parseJson(bytes: Uint8Array): unknown {
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function forwardedHeaders(headers: Headers): Record<string, string> {
+  const out: Record<string, string> = {};
+  headers.forEach((value, name) => {
+    if (!WITHHELD_REQUEST_HEADERS.has(name.toLowerCase())) out[name.toLowerCase()] = value;
+  });
+  return out;
+}
+
+/**
+ * JSON unless the handler says otherwise: a `content-type` header (or `bytes`) makes the
+ * response the handler's own — a page it proxies from a program it runs, an image, a
+ * download, a redirect. The same origin already serves the workflow's `ui/` files as
+ * written, so a handler that answers HTML is no wider than a file that is HTML.
+ */
+function respond(response: WorkflowResponse): Response {
+  const status = response.status ?? 200;
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(response.headers ?? {})) {
+    if (!DROPPED_RESPONSE_HEADERS.has(name.toLowerCase())) headers.set(name, value);
+  }
+  const bodiless = status === 204 || status === 304 || (status >= 300 && status < 400);
+  if (response.bytes !== undefined) {
+    if (!headers.has("content-type")) headers.set("content-type", "application/octet-stream");
+    return new Response(bodiless ? null : response.bytes, { status, headers });
+  }
+  if (headers.has("content-type")) {
+    const text = typeof response.body === "string" ? response.body : "";
+    return new Response(bodiless ? null : text, { status, headers });
+  }
+  if (bodiless) return new Response(null, { status, headers });
+  headers.set("content-type", "application/json; charset=utf-8");
+  return new Response(JSON.stringify(response.body ?? null), { status, headers });
+}
 
 export interface WorkflowRouteDeps {
   access: Access;
@@ -123,13 +189,21 @@ export function workflowRoutes(deps: WorkflowRouteDeps): Hono<AppEnv> {
       method: c.req.method,
       path: sub === "" ? "/" : sub,
       query: c.req.query(),
-      body:
-        c.req.method === "GET" || c.req.method === "HEAD"
-          ? null
-          : await c.req.json().catch(() => null),
+      headers: forwardedHeaders(c.req.raw.headers),
+      body: null,
     };
+    if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+      const declared = Number(c.req.header("content-length") ?? 0);
+      if (declared > MAX_BODY_BYTES) throw tooLarge();
+      const bytes = new Uint8Array(await c.req.arrayBuffer());
+      if (bytes.byteLength > MAX_BODY_BYTES) throw tooLarge();
+      // JSON stays what it always was — parsed, and `null` when it does not parse. Anything
+      // else reaches the handler as the bytes that were sent.
+      if (isJson(c.req.header("content-type"))) request.body = parseJson(bytes);
+      else if (bytes.byteLength > 0) request.bytes = bytes;
+    }
     const response = await deps.workflows.dispatch(projectId, agentId, id, request).catch(notFound);
-    return c.json(response.body ?? null, (response.status ?? 200) as 200);
+    return respond(response);
   });
 
   return app;

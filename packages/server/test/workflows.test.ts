@@ -65,6 +65,23 @@ export default {
                   const ran = await host.run(req.query["session"] ?? "", [{ text: "hi" }]).catch((e: Error) => e.message);
                   return { body: { opened, ran, agents: host.listAgents().map((a) => a.agentId) } };
                 }
+                if (req.path === "/page") {
+                  const headers: Record<string, string> = { "content-type": "text/html; charset=utf-8", "set-cookie": "x=1" };
+                  return { headers, body: "<h1>proxied</h1>" };
+                }
+                if (req.path === "/upload") {
+                  // Whatever was sent comes back as sent, with what the handler saw of the request.
+                  const headers: Record<string, string> = {
+                    "content-type": req.headers["content-type"] ?? "application/octet-stream",
+                    "x-saw-cookie": String("cookie" in req.headers),
+                    "x-json-body": JSON.stringify(req.body),
+                  };
+                  return { status: 201, headers, bytes: req.bytes ?? new Uint8Array() };
+                }
+                if (req.path === "/moved") {
+                  const headers: Record<string, string> = { location: "page" };
+                  return { status: 302, headers };
+                }
                 if (req.path === "/count" && req.method === "POST") {
                   const n = (((host.getState() ?? {}) as { count?: number }).count ?? 0) + 1;
                   await host.setState({ count: n });
@@ -93,12 +110,14 @@ async function writtenAgainst(dir: string, edit: (table: IfaceTable) => void): P
 describe("workflows", () => {
   let t: TestApp;
   let owner: ReturnType<typeof apiClient>;
+  let ownerCookie: string;
   let dir: string;
 
   beforeEach(async () => {
     t = await createTestApp();
     const a = await provisionUser(t.app, "owner");
     owner = apiClient(t.app, a.cookie);
+    ownerCookie = a.cookie;
     const created = await owner.post("/api/projects", { projectId: PROJECT, name: "wf" });
     expect(created.status, await created.text()).toBe(201);
     dir = path.join(agentDir(t.root, PROJECT, AGENT), "workflows", "demo");
@@ -434,6 +453,66 @@ describe("workflows", () => {
     // With the tab back there is nothing to hint at.
     await write({ "WebModule.sessionTabs": [TAB] });
     expect(((await reload()) as { hints: string[] }).hints).toEqual([]);
+  });
+
+  it("hands a handler any body and sends back any content type; JSON stays the default", async () => {
+    await list();
+    // An upload: not JSON, so the handler gets the bytes as sent — and never the app's cookie.
+    const sent = new Uint8Array([0, 1, 2, 250, 251, 255]);
+    const upload = await t.app.request(`${BASE}/demo/api/upload`, {
+      method: "POST",
+      headers: { cookie: ownerCookie, "content-type": "application/x-demo" },
+      body: sent,
+    });
+    expect(upload.status).toBe(201);
+    expect(upload.headers.get("content-type")).toBe("application/x-demo");
+    expect(upload.headers.get("x-saw-cookie")).toBe("false");
+    expect(upload.headers.get("x-json-body")).toBe("null");
+    expect(new Uint8Array(await upload.arrayBuffer())).toEqual(sent);
+    // A form is what another site can make a browser send with the cookie attached, so on this
+    // mount the browser's own account of the request's origin is the defense: a form from one
+    // of the app's pages passes, the same form from anywhere else does not.
+    const form = (site: string) =>
+      t.app.request(`${BASE}/demo/api/upload`, {
+        method: "POST",
+        headers: {
+          cookie: ownerCookie,
+          "content-type": "application/x-www-form-urlencoded",
+          "sec-fetch-site": site,
+        },
+        body: "a=1",
+      });
+    expect((await form("same-origin")).status).toBe(201);
+    const forged = await form("cross-site");
+    expect(forged.status).toBe(403);
+    expect(((await forged.json()) as { error: { code: string } }).error.code).toBe(
+      "cross_origin_write",
+    );
+    // Everywhere else a form is still refused outright.
+    const elsewhere = await t.app.request(`${BASE}/demo/reload`, {
+      method: "POST",
+      headers: {
+        cookie: ownerCookie,
+        "content-type": "text/plain",
+        "sec-fetch-site": "same-origin",
+      },
+      body: "x",
+    });
+    expect(elsewhere.status).toBe(415);
+    // A page: the handler names the content type, the string goes out as written, and a
+    // workflow does not get to set the app's cookies.
+    const page = await owner.get(`${BASE}/demo/api/page`);
+    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(page.headers.get("set-cookie")).toBeNull();
+    expect(await page.text()).toBe("<h1>proxied</h1>");
+    // A redirect, relative to the api mount.
+    const moved = await owner.get(`${BASE}/demo/api/moved`);
+    expect(moved.status).toBe(302);
+    expect(moved.headers.get("location")).toBe("page");
+    // And what every existing workflow does is unchanged: JSON in, JSON out.
+    const json = await owner.post(`${BASE}/demo/api/count`, {});
+    expect(json.headers.get("content-type")).toContain("application/json");
+    expect(await json.json()).toEqual({ count: 1 });
   });
 
   it("removes the folder and its recorded versions on request", async () => {

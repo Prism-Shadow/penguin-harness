@@ -45,6 +45,8 @@ const WORDS = new Set([
   ),
 ]);
 const INFIX = new Set(["|", "&"]);
+/** Opaque identities that name a type of TypeScript's own library (`lib#<Name>` in the table). */
+const LIB_TYPES = new Set(["lib#Uint8Array"]);
 const OPERATORS = new Set(["[]", "|", "&", "?", "=>", ":", "=", "@", "===", "keyof", "instanceof"]);
 
 /** An arktype string expression is written as TypeScript already, for the subset checked here. */
@@ -180,6 +182,9 @@ class Renderer {
     }
     if ("maybe" in e) return `(${this.expr(e.maybe, where)} | null | undefined)`;
     if ("oneOf" in e) return `(${e.oneOf.map((x) => this.expr(x, where)).join(" | ")})`;
+    // A type of the language's own library is the same type in every program: it is written
+    // as itself, where a host-declared opaque is a brand nobody else can construct.
+    if ("opaque" in e && LIB_TYPES.has(e.opaque)) return e.opaque.slice("lib#".length);
     if ("opaque" in e) return `Opaque<${JSON.stringify(e.opaque)}>`;
     throw new IfaceRenderError(
       `${where}: ${JSON.stringify(e).slice(0, 120)} has no TypeScript rendering`,

@@ -116,10 +116,43 @@ const ALLOWED_WRITE_CONTENT_TYPES = [
   "application/octet-stream",
 ];
 
+/**
+ * A workflow's own handler (`…/workflows/:id/api/*`) takes any body — an upload, a form of a
+ * program it relays — so there the content type cannot be the defense. What stands in for it
+ * is the browser's own account of where the request came from, which a page cannot forge:
+ * `Sec-Fetch-Site`, and `Origin` against `Host` for a browser that sends no fetch metadata.
+ * A request with neither is not a browser's, and carries no ambient cookie to ride on.
+ */
+const WORKFLOW_API = /^\/api\/projects\/[^/]+\/agents\/[^/]+\/workflows\/[^/]+\/api(\/|$)/;
+
+function fromThisOrigin(header: (name: string) => string | undefined): boolean {
+  const site = header("sec-fetch-site");
+  if (site !== undefined) return site === "same-origin";
+  const origin = header("origin");
+  if (origin === undefined) return true;
+  try {
+    return new URL(origin).host === header("host");
+  } catch {
+    return false;
+  }
+}
+
 export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
   if (WRITE_METHODS.has(c.req.method)) {
     const contentType = c.req.header("content-type")?.toLowerCase();
-    if (contentType && !ALLOWED_WRITE_CONTENT_TYPES.some((t) => contentType.startsWith(t))) {
+    const forgeable =
+      contentType !== undefined &&
+      contentType !== "" &&
+      !ALLOWED_WRITE_CONTENT_TYPES.some((t) => contentType.startsWith(t));
+    if (forgeable && WORKFLOW_API.test(c.req.path)) {
+      if (!fromThisOrigin((name) => c.req.header(name))) {
+        throw new HttpError(
+          403,
+          "cross_origin_write",
+          "A write to a workflow's handler must come from this app's own pages.",
+        );
+      }
+    } else if (forgeable) {
       throw new HttpError(
         415,
         "unsupported_media_type",

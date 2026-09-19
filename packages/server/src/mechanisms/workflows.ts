@@ -17,20 +17,33 @@
  */
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
-/** A JSON request the workflow's handler receives (the HTTP shape, minus the transport). */
+/** A request the workflow's handler receives (the HTTP shape, minus the transport). */
 export interface WorkflowRequest {
   method: string;
   /** Path below the workflow's `api/` mount, always starting with `/`. */
   path: string;
   query: Record<string, string>;
+  /** Request headers, names lower-cased. The app's own credentials (`cookie`, `authorization`) are withheld. */
+  headers: Record<string, string>;
+  /** The parsed body of a JSON request; `null` otherwise (GET/HEAD, no body, another content type). */
   body: unknown;
+  /** The body as sent, when there is one and it is not JSON: a form, an upload, plain text. */
+  bytes?: Uint8Array;
 }
 
 export interface WorkflowResponse {
   /** HTTP status; 200 when absent. */
   status?: number;
-  /** JSON body; `null` when absent. */
+  /**
+   * Response headers. Naming a `content-type` is what makes the response something other than
+   * JSON; `location` with a 3xx status redirects. `set-cookie` is dropped — a workflow does not
+   * write the app's cookies.
+   */
+  headers?: Record<string, string>;
+  /** JSON by default (`null` when absent); with a `content-type` header, a string sent as written. */
   body?: unknown;
+  /** A binary body (an image, a font, a download); wins over `body`. */
+  bytes?: Uint8Array;
 }
 
 /**
