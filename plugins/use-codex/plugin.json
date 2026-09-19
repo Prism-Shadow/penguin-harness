@@ -1,0 +1,9 @@
+{
+  "description": "Delegate explicit coding tasks to the official Codex app-server through Penguin's MCP tools, with project-scoped ChatGPT sign-in, progress, cancellation, and approval relay.",
+  "description_zh": "通过 Penguin 的 MCP 工具将明确的编程任务委托给官方 Codex app-server，支持项目级 ChatGPT 登录、进度、取消和审批转发。",
+  "short_description": "Delegate coding tasks using your ChatGPT subscription.",
+  "short_description_zh": "使用 ChatGPT 订阅委托编程任务。",
+  "version": "2026.09.19.1",
+  "category": "software-development",
+  "preinstall": false
+}

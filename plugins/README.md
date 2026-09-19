@@ -9,7 +9,7 @@ Included plugins, by category (`PLUGIN_CATEGORIES` in `packages/core/src/plugins
 | Category | Plugins |
 | --- | --- |
 | Office Productivity | `data-analysis`, `use-firecrawl`, `use-bento-slides`, `humanizer`, `goal`, `continual-learning` |
-| Software Development | `software-development`, `use-claude-code` |
+| Software Development | `software-development`, `use-claude-code`, `use-codex` |
 | AI App Development | `agent-development`, `model-development`, `skill-porting`, `agent-tuning` |
 | Agent Company | `agent-company` |
 

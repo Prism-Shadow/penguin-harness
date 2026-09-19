@@ -1,0 +1,25 @@
+{
+  "name": "@penguinharness/use-codex",
+  "version": "0.2.13",
+  "description": "Delegate coding tasks to Codex with project-scoped ChatGPT sign-in.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prism-Shadow/penguin-harness.git",
+    "directory": "plugins/use-codex"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "files": [
+    "plugin.json",
+    "icon.svg",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
