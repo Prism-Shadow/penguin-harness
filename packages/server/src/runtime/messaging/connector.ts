@@ -1,6 +1,6 @@
 /**
  * The messaging-channel connector seam: what the MessagingBridge needs from one chat
- * platform (Feishu, Telegram, QQ and WeChat today; further channels implement the same interface
+ * platform (Feishu, Telegram, QQ, WeChat and Discord today; further channels implement the same interface
  * and register in app assembly). A connector owns everything channel-specific — credential
  * shape, wire protocol, event normalization — and hands the bridge a channel-neutral
  * view: a client for outbound sends and credential checks, and a long-lived event
@@ -13,7 +13,7 @@
  */
 
 /** Known messaging channels (the DB stores the discriminator as text; unknown values are skipped defensively). */
-export type MessagingChannel = "feishu" | "telegram" | "qq" | "wechat";
+export type MessagingChannel = "feishu" | "telegram" | "qq" | "wechat" | "discord";
 
 /** One inbound image's bytes, once fetched, with the MIME type the bridge needs for its data URL. */
 export interface MessagingInboundImageData {
@@ -237,6 +237,14 @@ export interface MessagingChannelConnector {
    * would otherwise ask for more messages than the channel can ever deliver.
    */
   readonly replyBudget?: number;
+  /**
+   * This channel's per-message text cap, where it sits UNDER the shared chunk size
+   * (MESSAGING_TEXT_CHUNK_CHARS), or undefined where the shared one already fits. The bridge
+   * cuts a reply at the smaller of the two; the shared size was chosen under the tightest
+   * cap of the first channels, and a channel with a tighter one (Discord's is 2000) says so
+   * here rather than lowering the size for everyone.
+   */
+  readonly textChunkChars?: number;
   /** Builds the outbound client for one stored config (throws on a malformed document). */
   createClient(config: Record<string, unknown>): Promise<MessagingClient>;
   /**
