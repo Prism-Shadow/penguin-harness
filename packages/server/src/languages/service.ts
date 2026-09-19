@@ -63,10 +63,11 @@ export class LanguageService {
 }
 
 /** Languages: the mechanism LanguageService implements. */
-export abstract class Languages extends Interface<{
-  list(): LanguageSummary[];
-  grammar(id: string): unknown | null;
-}>() {}
+@Interface()
+export abstract class Languages {
+  abstract list(): LanguageSummary[];
+  abstract grammar(id: string): unknown | null;
+}
 
 @Module({})
 export class LanguagesModule {
