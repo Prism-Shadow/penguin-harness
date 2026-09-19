@@ -308,7 +308,6 @@ export function ChatPage() {
   const { currentProject, currentAgent, setCurrentAgentId, reloadAgents, agents } = useProject();
   const projectId = currentProject?.projectId ?? null;
   const agentId = currentAgent?.agentId ?? null;
-  const workflowTabs = useWorkflowTabs(projectId, agentId);
   const {
     sessions,
     loading: sessionsLoading,
@@ -446,6 +445,15 @@ export function ChatPage() {
     probeKey !== null && probeFailedKey === probeKey,
   );
   const selected = draft ? null : heldSession.current;
+  // The tabs beside a conversation are its OWN Agent's, asked of the server that Agent's
+  // workflows live on: a Session on a machine runs a copy of the Agent there, and the workflows
+  // it built are in that copy. The current Agent is always one of this server's, so going by
+  // it listed the wrong Agent's workflows (or none) for every Session on a machine.
+  const workflowTabs = useWorkflowTabs(
+    projectId,
+    selected?.agentId ?? agentId,
+    selected === null ? null : machineForSession(selected.sessionId),
+  );
   // New shells start in this conversation's Workspace — its files are what a terminal
   // opened here is for. While drafting, the Workspace is the one picked in the draft and
   // DraftView publishes it instead (a child effect runs before this one, so this must
@@ -1979,7 +1987,7 @@ export function ChatPage() {
         <div className="absolute inset-x-0 bottom-0 top-9 z-10">
           <WorkflowFrame
             projectId={projectId}
-            agentId={agentId}
+            agentId={selected?.agentId ?? agentId}
             tab={workflowTabs.activeTab}
             onChanged={() => void workflowTabs.refresh()}
             onRemoved={() => {

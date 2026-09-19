@@ -11,7 +11,7 @@
  * navigating.
  */
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import * as api from "../../api/endpoints";
 import type { PaletteAction } from "../../lib/command-palette";
 import { S } from "../../lib/strings";
@@ -31,6 +31,8 @@ export function WorkflowAppPage() {
   const agentId = params["agentId"] ?? "";
   const workflowId = params["workflowId"] ?? "";
   const tabKey = params["tabKey"];
+  // A workflow of an Agent that lives on a machine is asked of that machine (`?machine=<id>`).
+  const machineId = useSearchParams()[0].get("machine");
   const navigate = useNavigate();
   const [tab, setTab] = useState<WorkflowTab | null | undefined>(undefined);
   const [failure, setFailure] = useState<string | null>(null);
@@ -39,9 +41,9 @@ export function WorkflowAppPage() {
     let alive = true;
     const load = async () => {
       try {
-        const res = await api.getWorkflows(projectId, agentId);
+        const res = await api.getWorkflows(projectId, agentId, machineId);
         if (!alive) return;
-        setTab(appPageTab(workflowTabsOf(res.workflows), workflowId, tabKey));
+        setTab(appPageTab(workflowTabsOf(res.workflows, machineId), workflowId, tabKey));
         setFailure(null);
       } catch (err) {
         if (alive) setFailure(err instanceof Error ? err.message : String(err));
@@ -57,7 +59,7 @@ export function WorkflowAppPage() {
       alive = false;
       window.removeEventListener(WORKFLOW_UPDATED_EVENT, onUpdated);
     };
-  }, [projectId, agentId, workflowId, tabKey]);
+  }, [projectId, agentId, workflowId, tabKey, machineId]);
 
   const exit = useMemo<PaletteAction[]>(
     () => [
