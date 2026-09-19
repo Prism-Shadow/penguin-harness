@@ -13,7 +13,8 @@
  *                 workflow's side of the interface comparison (../plugin/iface-check.ts)
  *   harness.json  which table wrote them, and when
  *
- * and then leaves them alone. They are the record of what the workflow was written against:
+ * and then leaves them alone. (`README.md` beside them is not part of that record: it is this
+ * harness describing its own contract, rewritten whenever it differs — see {@link README}.) They are the record of what the workflow was written against:
  * a later generation of the platform, or another harness on the same machine, is compared
  * WITH them rather than overwriting them, which is what lets a removed host method be named
  * before the first call instead of failing at it. Deleting the directory is how a workflow
@@ -54,6 +55,64 @@ export interface WorkflowPackage {
 }
 `;
 
+/**
+ * The contract in the words of the harness that enforces it. The Agent writing a workflow may
+ * carry an old copy of the SDK skill, or none — installed skills are copies, and a platform
+ * can be pushed without them — but it always has this folder. What it most often gets wrong
+ * without being told is the last step: a page under `ui/` is only a file until the manifest
+ * contributes a tab for it, and a workflow with no tab loads clean and shows nothing.
+ */
+const README = `# This workflow, as the harness running it sees it
+
+Written by the harness; edits here are overwritten. \`plugin.d.ts\` and \`ifaces.json\` in this
+folder are the types this workflow was written against — delete \`.harness/\` to take the
+running harness's types afresh.
+
+## Files
+
+- \`package.json\` — \`"type": "module"\`, and the manifest under \`penguin.modules\`: a module named
+  \`Workflow\` that requires \`host\` (\`@prismshadow/penguin-server#WorkflowHost\`, from \`Host\`),
+  provides \`main\` (\`@prismshadow/penguin-server#WorkflowMain\`) and contributes its tabs.
+- \`index.ts\` — TypeScript, never JavaScript. \`export default { modules: { Workflow: { create(ctx) {
+  … } } } } satisfies WorkflowPackage\`, types imported from \`@prismshadow/penguin-server/plugin\`
+  (it resolves to \`.harness/plugin.d.ts\`; nothing to install).
+- \`ui/\` — pages and their assets. A page calls the workflow's handler at \`../api/<path>\`.
+
+## A page shows only if a tab is contributed for it
+
+\`\`\`json
+"contributes": {
+  "WebModule.sessionTabs": [
+    { "key": "main", "title": "Board", "titleZh": "看板",
+      "renderer": { "iframe": { "src": "ui/index.html" } } }
+  ]
+}
+\`\`\`
+
+One entry per tab, beside the chat of this Agent; \`key\` is unique in the workflow; \`src\` is a
+file under \`ui/\`. \`"contributes": {}\` is a server-only workflow with no UI — also how a UI is
+taken away again.
+
+## Did it load
+
+Every save reloads the workflow. \`.build/status.json\` says what came of it: \`ok\`, the compiler's
+\`error\` when it did not load (the previous version keeps serving), the \`tabs\` now showing, and
+\`hints\` — things that loaded but are probably not what you meant, each with the edit that
+settles it. Read it after every edit before telling anyone the work is done.
+`;
+
+/** Keeps `.harness/README.md` at this harness's text; best effort, it is documentation. */
+function writeReadme(target: string): void {
+  try {
+    const file = path.join(target, "README.md");
+    if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === README) return;
+    fs.writeFileSync(`${file}.tmp`, README);
+    fs.renameSync(`${file}.tmp`, file);
+  } catch {
+    // The folder may have just been removed.
+  }
+}
+
 export function harnessTypesFile(dir: string): string {
   return path.join(dir, HARNESS_DIR, TYPES_FILE);
 }
@@ -66,7 +125,10 @@ export function installHarnessTypes(
   now: Date,
 ): void {
   const target = path.join(dir, HARNESS_DIR);
-  if (fs.existsSync(target)) return;
+  if (fs.existsSync(target)) {
+    writeReadme(target);
+    return;
+  }
   const { text, slice } = renderDts(platform, keys);
   // Built aside and moved into place: a half-written directory must never read as installed.
   const staging = `${target}.${process.pid}.tmp`;
@@ -79,6 +141,7 @@ export function installHarnessTypes(
     `${JSON.stringify({ ifaces: platform.hash ?? null, installedAt: now.toISOString() }, null, 1)}\n`,
   );
   fs.renameSync(staging, target);
+  writeReadme(target);
 }
 
 /** The table the workflow was written against, or why it cannot be read. */

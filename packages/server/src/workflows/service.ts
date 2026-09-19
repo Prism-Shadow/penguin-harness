@@ -125,6 +125,31 @@ async function readManifests(folder: WorkflowFolder): Promise<Manifest[]> {
 }
 
 /**
+ * A workflow that loads and shows nothing is the quietest way to get this wrong: the pages are
+ * written, the load is green, and no tab appears, because a page is only a file until the
+ * manifest contributes a tab for it. The author is usually an Agent with nothing but these
+ * files and the load status, so the status says it, with the entry to add.
+ */
+export function loadHints(
+  uiRev: string | null,
+  tabs: readonly WorkflowTab[],
+  error: string | null,
+): string[] {
+  if (error !== null || uiRev === null || tabs.length > 0) return [];
+  const entry = {
+    key: "main",
+    title: "<tab title>",
+    renderer: { iframe: { src: `${UI_DIR}/index.html` } },
+  };
+  return [
+    `${UI_DIR}/ has pages but the manifest contributes no tab, so nothing shows beside the chat. ` +
+      `In package.json, under penguin.modules[0] (the module named Workflow), set ` +
+      `"contributes": ${JSON.stringify({ [`${WEB_MODULE}.${TABS_SLOT}`]: [entry] })} — ` +
+      `one entry per tab, src a file under ${UI_DIR}/.`,
+  ];
+}
+
+/**
  * The tabs the manifests contribute to `WebModule.sessionTabs`, with each page's path (in
  * the folder, under `ui/`) turned into the URL it is served from. The slot's shape was
  * checked with the tree; where a page may live is this host's rule.
@@ -362,6 +387,7 @@ export class WorkflowService implements Workflows {
       tabs: l.tabs,
       loadedAt: l.loadedAt,
       error: l.error,
+      hints: loadHints(l.folder.uiRev, l.tabs, l.error),
     };
   }
 
@@ -469,6 +495,7 @@ export class WorkflowService implements Workflows {
       checkedAt: loadedAt,
       error: next.error,
       tabs: next.tabs.map((tab) => tab.key),
+      hints: loadHints(folder.uiRev, next.tabs, next.error),
     });
     this.loaded.set(k, next);
     this.notify(projectId, agentId, this.info(folder.id, next));
