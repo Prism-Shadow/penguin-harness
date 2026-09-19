@@ -15,7 +15,6 @@
  * serve a UI file, and the version history every successful load appends to — which is
  * what makes an Agent's own edits to its workflow reversible.
  */
-import type { OmniMessage, TextPayload } from "@prismshadow/penguin-core";
 import { Interface } from "@prismshadow/penguin-core/kernel";
 
 /** A JSON request the workflow's handler receives (the HTTP shape, minus the transport). */
@@ -32,6 +31,15 @@ export interface WorkflowResponse {
   status?: number;
   /** JSON body; `null` when absent. */
   body?: unknown;
+}
+
+/**
+ * One item of what `WorkflowHost.run` sends: the SDK builds these with `userText("…")`, but a
+ * workflow has no package to import that from — its types come from the harness, and so does
+ * nothing at run time. An object, so an image or a file is a new optional member later.
+ */
+export interface WorkflowInput {
+  text: string;
 }
 
 /** What a workflow provides (its manifest: `provides: { main: "@prismshadow/penguin-server#WorkflowMain" }`). */
@@ -51,15 +59,15 @@ export abstract class WorkflowHost {
    */
   abstract createSession(opts?: { agentId?: string }): Promise<{ sessionId: string }>;
   /**
-   * Runs one turn in a Session of this Project, new or existing: `input` is what the SDK's
-   * `session.run` takes (`[userText("…")]`) and reaches the Agent as a message from the
-   * server, not from a person. A Session that is busy takes it as a queued follow-up
+   * Runs one turn in a Session of this Project, new or existing — the SDK's `session.run`.
+   * `input` is a list of items like the SDK's, each one `{ text }` today; it reaches the
+   * Agent as a message from the server, not from a person. A Session that is busy takes it as a queued follow-up
    * (`queued: true`) instead of refusing it. Resolves once the turn has started; watch it
    * with `sessionStatus`.
    */
   abstract run(
     sessionId: string,
-    input: OmniMessage<TextPayload>[],
+    input: WorkflowInput[],
   ): Promise<{ sessionId: string; queued: boolean }>;
   /** `idle` / `running` / … of a Session of this Project. */
   abstract sessionStatus(sessionId: string): string;
@@ -67,37 +75,6 @@ export abstract class WorkflowHost {
   abstract getState(): unknown;
   abstract setState(state: unknown): Promise<void>;
   abstract log(message: string): void;
-}
-
-/**
- * The default export of a workflow's `index.ts`: code for the modules its manifest names.
- * The root module is `Workflow`; its manifest requires the host under the alias `host`
- * and provides the handler under the alias `main`. Written as
- * `export default { … } satisfies WorkflowPackage`, which is what gives `use.host` and
- * `handle`'s parameter their types.
- */
-export interface WorkflowPackage {
-  modules: {
-    Workflow: WorkflowRootModule;
-    [name: string]: WorkflowRootModule | WorkflowModule;
-  };
-}
-
-export interface WorkflowRootModule {
-  create(ctx: WorkflowModuleCtx<{ host: WorkflowHost }>): {
-    api: { main: WorkflowMain } & Record<string, unknown>;
-  };
-}
-
-/** Any other module of the package: what it uses is whatever its own manifest requires. */
-export interface WorkflowModule {
-  create(ctx: WorkflowModuleCtx<Record<string, unknown>>): { api?: Record<string, unknown> };
-}
-
-export interface WorkflowModuleCtx<Use> {
-  use: Use;
-  /** Runs when the tree is disposed (a reload, a removal, the platform going away). */
-  effect(dispose: () => void): void;
 }
 
 /** How the Web App draws a contributed tab: a page of the workflow, or a renderer it carries. */

@@ -85,8 +85,8 @@ class Renderer {
   constructor(private readonly table: IfaceTable) {}
 
   /**
-   * The identifier a table key is declared under: its export name (`…#SessionIndex` →
-   * `SessionIndex`), numbered on a clash — so the text reads as a declaration file an author
+   * The identifier a table key is declared under: its export name (`…#WorkflowHost` →
+   * `WorkflowHost`), numbered on a clash — so the text reads as a declaration file an author
    * can write against, and a diagnostic names the type the way its source does.
    */
   ident(key: string): string {
