@@ -506,6 +506,34 @@ export const MIGRATIONS: readonly Migration[] = [
     // Nothing to undo: what this adds, migration 5 owns and drops.
     down() {},
   },
+  {
+    version: 13,
+    name: "company-mode-org-caches-adoption",
+    // The other half of what {@link MIGRATIONS}[12] is for. A data root opened by this line's
+    // earlier builds is stamped 6 under THEIR numbering (5 = machines columns, 6 = the
+    // surface column), so on main's numbering both user-profile (5) and
+    // company-mode-org-caches (6) read as already applied. Migration 12 re-ran the first;
+    // nothing re-ran the second, and migrations 7 and 8 then created only the tables that
+    // are theirs. Such a root reaches the latest version without `org_sessions`,
+    // `org_ticket_sessions`, `org_calendar_state`, `org_ticket_state` and `org_budget_state`
+    // — and creating a Session, which records into the first two, answers 500 with "no such
+    // table". Seen on every machine a server on the old line handed this build to.
+    //
+    // Re-runs migration 6's own `up` — the frozen DDL, all `IF NOT EXISTS`, so a root that
+    // took it in its proper place finds its work done — and then drops the two chat tables
+    // again, which migration 7 replaced and 6 would otherwise bring back. Remove with
+    // migration 12, once no root can still be running one of those builds.
+    swapSafe: true,
+    up(db) {
+      MIGRATIONS.find((m) => m.name === "company-mode-org-caches")!.up(db);
+      db.exec(`
+        DROP TABLE IF EXISTS org_chat_state;
+        DROP TABLE IF EXISTS org_chat_reads;
+      `);
+    },
+    // Nothing to undo: what this adds, migration 6 owns and drops.
+    down() {},
+  },
 ];
 
 /** The highest version this build knows how to reach. */

@@ -421,6 +421,42 @@ describe("0.2.9 → current: drop-goal-state", () => {
   });
 });
 
+describe("a root stamped by the machines line's old numbering → current", () => {
+  /**
+   * What such a root holds: that line numbered its machines columns 5 and its surface column
+   * 6, so it is stamped 6 with neither main's user-profile (5) nor its company-mode tables
+   * (6) — and the migrations from 7 up are all this build will run on it.
+   */
+  function openOldLineAt6(): DatabaseSync {
+    const db = new sqlite.DatabaseSync(":memory:");
+    db.exec(SCHEMA_SQL);
+    dropProfileColumns(db);
+    dropCompanyTables(db);
+    db.exec("PRAGMA user_version = 6");
+    return db;
+  }
+
+  it("ends with every table a fresh database has — a Session can be recorded for an organization", () => {
+    const db = openOldLineAt6();
+    const fresh = new sqlite.DatabaseSync(":memory:");
+    try {
+      fresh.exec(SCHEMA_SQL);
+      expect(migrate(db).applied).toEqual(
+        MIGRATIONS.filter((m) => m.version > 6).map((m) => m.name),
+      );
+      expect(shape(db)).toBe(shape(fresh));
+      // The two statements a new Session runs, which answered "no such table" on such a root.
+      expect(db.prepare("SELECT count(*) AS n FROM org_sessions").get()).toEqual({ n: 0 });
+      expect(db.prepare("SELECT count(*) AS n FROM org_ticket_sessions").get()).toEqual({ n: 0 });
+      // The chat tables migration 7 replaced do not come back with migration 6's DDL.
+      expect(shape(db)).not.toContain("org_chat_state");
+    } finally {
+      db.close();
+      fresh.close();
+    }
+  });
+});
+
 describe("pre-profile → current: user-profile", () => {
   it("adds both columns, and a database that already has them migrates the same", () => {
     const db = openPreProfile();
