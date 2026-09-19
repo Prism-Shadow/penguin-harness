@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#17](https://github.com/Prism-Shadow/penguin-harness/pull/17)
 
 The server can now run external coding agents — Claude Code, Codex, Gemini CLI, or any command
 that speaks the [Agent Client Protocol](https://agentclientprotocol.com) v1 over stdio — as
