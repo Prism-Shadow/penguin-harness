@@ -227,18 +227,19 @@ export class SessionSurfaceService {
 }
 
 /** SessionSurfaces: the mechanism SessionSurfaceService implements. */
-export abstract class SessionSurfaces extends Interface<{
-  list(): SessionSurfaceSummary[];
-  has(kind: string): boolean;
-  statusOf(sessionId: string): SessionStatus;
-  describe(row: SessionRow): SessionSurfaceResponse | null;
-  open(
+@Interface()
+export abstract class SessionSurfaces {
+  abstract list(): SessionSurfaceSummary[];
+  abstract has(kind: string): boolean;
+  abstract statusOf(sessionId: string): SessionStatus;
+  abstract describe(row: SessionRow): SessionSurfaceResponse | null;
+  abstract open(
     row: SessionRow,
     ownerUserId: string,
     options: SurfaceOpenOptions,
   ): Promise<SessionSurfaceResponse | null>;
-  close(sessionId: string): void;
-}>() {}
+  abstract close(sessionId: string): void;
+}
 
 export interface SessionSurfacesSlots {
   /** One surface: its static half here, the `SessionSurface` bound by the contributor. */
