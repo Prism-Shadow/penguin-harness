@@ -3,7 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** refactor
 - **Scope:** `server`
-- **PR:** [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3), [#9](https://github.com/nicolaepocroianu/penguin-harness/pull/9)
+- **PR:** [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3), [#9](https://github.com/nicolaepocroianu/penguin-harness/pull/9), [#15](https://github.com/nicolaepocroianu/penguin-harness/pull/15)
 
 Migration 12 moved existing candidate text from activity run JSON into a separate payload table and retained compact history metadata, without resetting drafts or run history.
 

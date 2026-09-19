@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#15](https://github.com/nicolaepocroianu/penguin-harness/pull/15)
 
 Activities gained a reviewable media plan derived from a saved specification. Owners could assign existing WAF media paths in a language-grouped asset manifest, with scene usages, audio scripts, and explicit unbound assets.
 
