@@ -16,6 +16,17 @@ export type { Sessions, SessionServiceIface } from "../runtime/session-manager.j
 export type { AgentService } from "../services/agent-service.js";
 export type { AgentConfigService } from "../services/agent-config-service.js";
 export type { HostAssembly, HostAssemblySlots } from "../services/host-assembly.js";
+// What a workflow (an Agent's own `workflows/<id>/index.ts`) compiles against.
+export type {
+  WorkflowHost,
+  WorkflowMain,
+  WorkflowModule,
+  WorkflowModuleCtx,
+  WorkflowPackage,
+  WorkflowRequest,
+  WorkflowResponse,
+  WorkflowRootModule,
+} from "../mechanisms/workflows.js";
 export type { Messaging, MessagingSlots } from "../runtime/messaging/bridge.js";
 export type {
   PluginConfig,

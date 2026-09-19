@@ -37,8 +37,16 @@ export interface WebShellSlots {
   pages: { key: string; path: string; nav: "main" | "none"; admin: boolean; renderer: RendererRef };
   /** A tab on the Agent settings page. */
   agentTabs: { key: string; order: number; renderer: RendererRef };
-  /** A tab beside a Session's chat (a workflow UI lives here). */
-  sessionTabs: { key: string; renderer: RendererRef };
+  /**
+   * A tab beside a Session's chat. A workflow contributes here too, from its own tree, where
+   * the host publishes this slot under this module's name and scopes the tab to its Agent.
+   */
+  sessionTabs: {
+    key: string;
+    title: string;
+    titleZh?: string;
+    renderer: { builtin: string } | { iframe: { src: string } };
+  };
 }
 
 @Module({

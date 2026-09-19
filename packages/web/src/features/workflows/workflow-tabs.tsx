@@ -27,7 +27,9 @@ import {
   type WorkflowTab,
   type WorkflowUpdatedDetail,
 } from "../../lib/workflow-tabs";
+import { useLocale } from "../../state/locale";
 import { useTheme } from "../../state/theme";
+import { localizedText } from "../chat/skill-use";
 
 /** The Agent's workflow tabs, kept fresh by the server's `workflow_updated` events. */
 export function useWorkflowTabs(projectId: string | null, agentId: string | null) {
@@ -62,7 +64,7 @@ export function useWorkflowTabs(projectId: string | null, agentId: string | null
   }, [projectId, agentId, refresh]);
 
   const settled = settleActiveTab(active, tabs);
-  const activeTab = settled === null ? null : (tabs.find((t) => t.workflowId === settled) ?? null);
+  const activeTab = settled === null ? null : (tabs.find((t) => t.tabId === settled) ?? null);
   return { tabs, active: settled, activeTab, setActive: setActiveRaw, refresh };
 }
 
@@ -79,8 +81,9 @@ export function WorkflowTabStrip({
 }: {
   tabs: readonly WorkflowTab[];
   active: string | null;
-  onSelect: (workflowId: string | null) => void;
+  onSelect: (tabId: string | null) => void;
 }) {
+  const { locale } = useLocale();
   if (tabs.length === 0) return null;
   return (
     <div
@@ -99,15 +102,15 @@ export function WorkflowTabStrip({
       </button>
       {tabs.map((t) => (
         <button
-          key={t.workflowId}
+          key={t.tabId}
           type="button"
           role="tab"
-          aria-selected={active === t.workflowId}
+          aria-selected={active === t.tabId}
           title={t.error ?? undefined}
-          className={`${TAB_BASE} ${active === t.workflowId ? TAB_ACTIVE : TAB_IDLE}`}
-          onClick={() => onSelect(t.workflowId)}
+          className={`${TAB_BASE} ${active === t.tabId ? TAB_ACTIVE : TAB_IDLE}`}
+          onClick={() => onSelect(t.tabId)}
         >
-          {t.name}
+          {localizedText(locale, t.title, t.titleZh)}
           {t.error !== null && (
             <span className={`ml-1.5 ${toneInk.danger}`} aria-label={S.workflows.brokenMark}>
               !
@@ -214,8 +217,8 @@ export function WorkflowFrame({
   // (`parent.postMessage({ type: "penguin:fill-app" }, "*")`) — only from our own frame.
   const navigate = useNavigate();
   const fillApp = useCallback(
-    () => void navigate(workflowAppPath(projectId, agentId, tab.workflowId)),
-    [navigate, projectId, agentId, tab.workflowId],
+    () => void navigate(workflowAppPath(projectId, agentId, tab.workflowId, tab.key)),
+    [navigate, projectId, agentId, tab.workflowId, tab.key],
   );
   useEffect(() => {
     if (bare) return;
@@ -336,11 +339,11 @@ export function WorkflowFrame({
         )}
       </div>
       <iframe
-        key={tab.uiRev}
+        key={`${tab.tabId}@${tab.uiRev}`}
         ref={frameRef}
         onLoad={applyTheme}
-        title={tab.name}
-        src={workflowUiUrl(projectId, agentId, tab)}
+        title={tab.title}
+        src={workflowUiUrl(tab)}
         className="min-h-0 flex-1 border-0 bg-white"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
       />

@@ -344,32 +344,49 @@ http.createServer(async (req, res) => {
 
 **Persona** (`persona.md`) — the embedded agent's role, written per the agent-initialization skill. Shape: one role sentence ("You are an expert on X; you answer strictly from the provided context blocks"), citation and refusal rules, plain-text output (no Markdown — the output contract above), answer language follows the question.
 
-## Workflows: a page and server code the Agent keeps for itself
+## Workflows: pages and server code the Agent keeps for itself
 
-Inside PenguinHarness an Agent can hold *workflows*: small plugin packages in its own directory that the server boots as module trees, serves as tabs beside the chat, reloads on every file change, and versions so any edit can be undone. This is the same module mechanism the server itself is built from — manifests as data, interfaces checked before any code runs — so a workflow that requires what the host does not publish, or provides a handler of the wrong shape, fails to load with a named problem while the previous version keeps serving.
+Inside PenguinHarness an Agent can hold *workflows*: small plugin packages in its own directory, written in TypeScript, that the server boots as module trees, shows as tabs beside the chat, reloads on every file change, and versions so any edit can be undone. This is the same module mechanism the server itself is built from — manifests as data, everything checked before any code runs — so a workflow that does not type-check, that was written against an interface version this server no longer fits, or whose manifests do not hold together fails to load with the problem named, while the previous version keeps serving.
 
-Layout, under `<root>/<project_id>/agents/<agent_id>/workflows/<workflow_id>/`:
+Layout, under `<root>/<project_id>/agents/<agent_id>/workflows/<workflow_id>/` (beside `agent_state/`):
 
 ```
-package.json    { "name": "…", "version": "…", "penguin": { "modules": [ …manifests ] } }
-index.mjs       default export { modules: { <Name>: { create(ctx) } } } — code for each manifest, by name
-ui/index.html   optional; served as the workflow's tab (any assets beside it)
+package.json    "type": "module", the dependency on @prismshadow/penguin-server, "penguin": { "modules": [ …manifests ] }
+index.ts        default export { modules: { <Name>: { create(ctx) } } } satisfies WorkflowPackage — TypeScript only
+ui/             the workflow's pages and their assets; which of them are tabs is what the manifest contributes
 state.json      the workflow's own document, kept by the server across reloads and rollbacks
+node_modules/   from `npm install`: the interface types and the interface table the workflow is compared with
+.build/         the server's emitted JavaScript, per revision — never edit it
 ```
 
-The root manifest is named `Workflow`; it requires the host and provides the handler:
+The root manifest is named `Workflow`; it requires the host, provides the handler, and contributes its tabs:
 
 ```json
 {
-  "name": "Workflow",
-  "requires": { "host": { "iface": "@prismshadow/penguin-server#WorkflowHost", "from": "Host" } },
-  "provides": { "main": "@prismshadow/penguin-server#WorkflowMain" },
-  "contributes": {},
-  "children": []
+  "name": "demo",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": { "@prismshadow/penguin-server": "<the version this server runs>" },
+  "penguin": {
+    "modules": [
+      {
+        "name": "Workflow",
+        "requires": { "host": { "iface": "@prismshadow/penguin-server#WorkflowHost", "from": "Host" } },
+        "provides": { "main": "@prismshadow/penguin-server#WorkflowMain" },
+        "contributes": {
+          "WebModule.sessionTabs": [
+            { "id": "demo.main", "key": "main", "title": "Demo", "titleZh": "演示", "renderer": { "iframe": { "src": "ui/index.html" } } }
+          ]
+        }
+      }
+    ]
+  }
 }
 ```
 
-```js
+```ts
+import type { WorkflowPackage } from "@prismshadow/penguin-server/plugin";
+
 export default {
   modules: {
     Workflow: {
@@ -381,7 +398,8 @@ export default {
               async handle(req) {
                 // req = { method, path, query, body }; path is below the workflow's api/ mount
                 if (req.path === "/ask" && req.method === "POST") {
-                  const { sessionId } = await host.runAgent({ text: req.body.question });
+                  const { question } = req.body as { question: string };
+                  const { sessionId } = await host.runAgent({ text: question });
                   return { body: { sessionId } };
                 }
                 return { status: 404, body: { error: "no such route" } };
@@ -392,16 +410,22 @@ export default {
       },
     },
   },
-};
+} satisfies WorkflowPackage;
 ```
 
-`WorkflowHost` (published as module `Host`): `runAgent({ text, sessionId? })` sends text to this Agent — into that Session, or a new one — and returns `{ sessionId }`; `sessionStatus(sessionId)`; `getState()` / `setState(doc)` over `state.json`; `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workflow`, with their own `requires` between them — the tree is checked as a whole.
+**TypeScript, checked by the server.** There is no build step to run and no `tsconfig.json` to write: the server builds one program from `index.ts` (and the `.ts` files it imports, with `.js` in the import specifier as NodeNext asks) under options it fixes itself — `strict` among them — refuses the load on any diagnostic, reporting file, line and reason, and otherwise emits into `.build/<revision>/` and imports that. `satisfies WorkflowPackage` is what types `use.host` and `req`; without it `strict` refuses the untyped parameters. A folder holding `index.js` or `index.mjs` instead is refused outright. Run `npm install` in the folder once: `@prismshadow/penguin-server/plugin` is resolved from the workflow's own `node_modules`.
 
-HTTP, all under `/api/projects/:projectId/agents/:agentId/workflows` (Project members only): `GET /` lists the workflows with their `revision`, `uiRev` and current load `error`; `GET /:id/ui/*` serves the page (`index.html` for the bare path); any method on `/:id/api/*` reaches `handle` as JSON; `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. `DELETE /:id` removes the workflow together with its recorded versions. From the page (served under `ui/`), call your handler with a relative `fetch("../api/…")`; the Web App shows the page in a tab and reloads it when `uiRev` changes.
+**Interfaces, compared across versions.** Type-checking proves the workflow agrees with the version it installed; the server may be another. So the interface table that version shipped (`node_modules/@prismshadow/penguin-server/ifaces.json`) is compared with the running platform's, by the TypeScript compiler, in both directions: what the workflow requires must still be offered, and what it provides must still be what the platform asks for. A host method the workflow relies on that has since gone is a load error naming it — not a failure on the first call. A missing package or a version without a table is an error too, never a pass.
+
+**Tabs are contributions.** Each entry under `WebModule.sessionTabs` is one tab beside the chat: `key` (unique in the workflow, part of the full-page URL), `title` / `titleZh`, and a `renderer` whose `iframe.src` is a file under `ui/`. Several entries make several tabs; none makes a server-only workflow. It is the same slot, written the same way, a plugin contributes to — the host opens it to workflows and scopes the tab to this Agent. A slot the host has not opened (`WebModule.pages`, say) is refused by name.
+
+`WorkflowHost` (published as module `Host`): `runAgent({ text, sessionId? })` sends text to this Agent — into that Session, or a new one — and returns `{ sessionId }`; `sessionStatus(sessionId)`; `getState()` / `setState(doc)` over `state.json` (`getState()` is `unknown`: narrow it); `log(text)`. More modules may be listed in `penguin.modules` and named as `children` of `Workflow`, with their own `requires` between them — the tree is checked as a whole.
+
+HTTP, all under `/api/projects/:projectId/agents/:agentId/workflows` (Project members only): `GET /` lists the workflows with their `revision`, `uiRev`, `tabs` (each page's URL resolved) and current load `error`; `GET /:id/ui/*` serves a file of `ui/` (there is no default document — a tab names its page); any method on `/:id/api/*` reaches `handle` as JSON; `POST /:id/reload`; `GET /:id/history` lists recorded versions; `POST /:id/rollback { revision }` restores one (code only — `state.json` stays) and reloads. `DELETE /:id` removes the workflow together with its recorded versions. From a page directly under `ui/`, call your handler with a relative `fetch("../api/…")`; the Web App shows each page in its tab and reloads it when `uiRev` changes.
 
 **Theme.** A workflow page is a separate document, so it inherits nothing from the app's stylesheet by itself. The Web App stamps `light`/`dark` on the page's root, copies its resolved palette (the gray scale, the accent pair, the font stack, the root font size) onto it, and injects `/workflow-ui.css` first in the head — a base stylesheet that styles plain HTML (headings, lists, forms, tables, code) to match the app and exposes `--wf-bg`, `--wf-fg`, `--wf-muted`, `--wf-border`, `--wf-surface`, `--wf-accent`, `--wf-accent-fg`, plus the classes `wf-primary` (a button), `wf-card`, `wf-rows`, `wf-row`, `wf-muted`. Write plain markup, take every colour and font from those variables, and the page follows the user through a theme or accent change; hardcode them and it clashes in one theme or the other. The page's own rules always win, and linking `/workflow-ui.css` yourself makes it look right when opened outside the app too.
 
-**Filling the app.** A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workflow>`: the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workflow>` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The way back is the command palette — Ctrl+P or Ctrl+Shift+P (⌘ on macOS), both, so a page may take one of them for itself but never both — whose *Exit full page* lands on that Agent's chat.
+**Filling the app.** A page can be shown as the whole app — no sidebar, no chat, no tab strip — at `/app/<project>/<agent>/<workflow>[/<tab key>]` (the workflow's first tab when no key is given): the tab's *Fill the app* button goes there, `penguin web --app <project>/<agent>/<workflow>[/<tab key>]` opens the browser straight onto it, and the page itself can ask with `parent.postMessage({ type: "penguin:fill-app" }, "*")`. The way back is the command palette — Ctrl+P or Ctrl+Shift+P (⌘ on macOS), both, so a page may take one of them for itself but never both — whose *Exit full page* lands on that Agent's chat.
 
 ## Verify before you hand over
 

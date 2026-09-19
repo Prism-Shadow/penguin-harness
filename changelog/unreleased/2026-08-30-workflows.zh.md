@@ -2,27 +2,39 @@
 
 - **Date:** 2026-08-30
 - **Type:** feature
-- **Scope:** `server`, `web`, `skills`
+- **Scope:** `server`, `web`, `cli`, `skills`
 
 [English](2026-08-30-workflows.md)
 
-Agent 现在可以在自己的目录里保存*工作流*：`workflows/<id>/` 是一个插件包——`package.json#penguin.modules` 里的清单、把清单与代码按名配对的 `index.mjs` 默认导出、可选的 `ui/`——服务器把它作为一棵独立的模块树启动，并在任何代码运行之前用服务器自己的接口表检查。这与服务器自身以及插件所用的是同一套机制：工作流要求了宿主没有发布的东西，或者提供的处理器形状不对，就会带着具名的问题加载失败，而上一个版本继续服务。
+Agent 现在可以在自己的目录里保存*工作流*：`workflows/<id>/` 是一个插件包——`package.json#penguin.modules` 里的清单、默认导出把清单与代码按名配对的 `index.ts`、放在 `ui/` 下的页面——服务器把它作为一棵独立的模块树启动。这与服务器自身以及插件所用的是同一套机制，并且一切检查都在工作流的任何代码运行之前完成：类型检查不过、它所依据的接口版本已与本服务器不合、或清单自身不成立的工作流，都会带着具名的问题加载失败，而上一个版本继续服务。
 
 ## 契约
 
 根模块 `Workflow` 要求 `WorkflowHost`（服务器以 `Host` 模块发布：`runAgent({ text, sessionId? })`、`sessionStatus`、基于工作流 `state.json` 的 `getState` / `setState`、`log`），并提供 `WorkflowMain`——一个 JSON 处理器 `handle({ method, path, query, body })`，服务器把它挂在 `/api/projects/:p/agents/:a/workflows/:id/api/*`。工作流的 `ui/` 从 `…/workflows/:id/ui/*` 提供。每个 Agent 的系统提示词新增一节 *Workflows* 描述目录布局，Agent 因此能自己编写、修改和修复自己的工作流。
 
+## TypeScript，由服务器检查
+
+工作流以 TypeScript 编写——`index.ts`；只有 `index.js` 或 `index.mjs` 的目录会被拒绝。服务器以入口文件构建一个编译器程序，编译选项由服务器固定（`strict`；目录里的 `tsconfig.json` 不被采用），`@prismshadow/penguin-server/plugin` 从工作流自己的 `node_modules` 解析；同时把默认导出赋给 `WorkflowPackage`，因此无论作者是否写了 `satisfies WorkflowPackage`，形状都会被检查。任何诊断都使加载失败，并以文件、行、列与原因报出；通过的程序被输出到 `<workflow>/.build/<revision>/`——一个点目录，不计入修订、不进版本记录、也不触发监视器——被导入的正是它。编译器现在是服务器的运行时依赖，在第一个工作流需要时加载；没有它的安装不加载任何工作流，并说明原因。
+
+## 接口，跨版本比较
+
+在平台自己的表里查一个被依赖的接口，是拿一条声明与它自己比较，永远不会失败。现在两侧各带自己的那一份：工作流的一份是其 `node_modules` 里所装版本的 `ifaces.json`——服务器包为此把接口表作为文件一并发布——平台的一份是它自己这一代的。两张表各渲染为一份自包含的 `.d.ts`，由 TypeScript 编译器在两个方向上判定：平台的接口须可赋值给工作流所依赖的那一版，工作流所提供的那一版须可赋值给平台所要求的。工作流写下时依据、此后已被删除的宿主方法，是一条点名它的加载错误；平台一侧的新增不影响任何工作流。包未安装、或所装版本不带接口表，是问题而绝不算通过；渲染器无法如实写成 TypeScript 的表达式按名拒绝，而不是放宽。
+
+## 标签页是贡献
+
+工作流在清单里向 `WebModule.sessionTabs` 投稿它的标签页——与插件投稿的是同一个槽、同一种写法，由宿主发布进工作流的树并限定于该 Agent：`key`、`title` / `titleZh`，以及 `iframe.src` 指向 `ui/` 下某个文件的 `renderer`。几条投稿即几张标签页；没有投稿即纯服务端的工作流；宿主未开放的槽按名拒绝。列表以 `tabs` 返回它们，各页面的 URL 已解析；报告一次失败的编辑时，保留的是服务着的那个实例的标签页。该槽的形状增加 `title` / `titleZh`，其 renderer 去掉了无人使用的 `namespace`。`ui/` 不再有缺省文档：标签页自己点名页面。
+
 ## 重载与回滚
 
-服务器监视 Agent 的 `workflows/` 目录，文件变化时重新导入对应工作流（也可 `POST …/:id/reload`）；导入以目录内容哈希为键，改过的模块不会从模块缓存里被拿出来。每次成功加载都记录在 `workflows-history/<id>/<revision>/`（保留二十个，`GET …/:id/history`），`POST …/:id/rollback { revision }` 恢复该版本的文件——`state.json` 不动——并重新加载。`DELETE …/:id` 连同版本一起删除工作流。Project 的用户会在事件流上收到 `workflow_updated` 与 `workflow_removed`，标签页因此无需刷新即可出现、更新或消失。
+服务器监视 Agent 的 `workflows/` 目录，文件变化时重新加载对应工作流（也可 `POST …/:id/reload`）；输出的代码放在以目录内容哈希命名的位置，改过的模块是一个新的导入 URL，不会从模块缓存里被拿出来。同一个工作流的加载逐次进行，因为每次加载现在都要跑一遍编译器。每次成功加载都记录在 `workflows-history/<id>/<revision>/`（保留二十个，`GET …/:id/history`），`POST …/:id/rollback { revision }` 恢复该版本的文件——`state.json` 不动——并重新加载。`DELETE …/:id` 连同版本一起删除工作流。Project 的用户会在事件流上收到 `workflow_updated` 与 `workflow_removed`，标签页因此无需刷新即可出现、更新或消失。
 
 ## Web App
 
-带 UI 的工作流在聊天页顶部成为 *聊天* 旁的一个标签页；标签页以 iframe 展示页面（UI 版本变化时重新加载，聊天在其下保持挂载），并显示工作流的版本与修订、当前文件启动失败时的加载错误、*重新加载* 按钮、每个已记录版本带 *恢复* 按钮的 *历史* 折叠面板，以及需点击两次的 *移除*。
+每一条投稿的标签页都在聊天页顶部、*聊天* 旁边，标题随用户的语言显示；标签页以 iframe 展示其页面（UI 版本变化时重新加载，聊天在其下保持挂载），并显示工作流的版本与修订、当前文件启动失败时的加载错误、*重新加载* 按钮、每个已记录版本带 *恢复* 按钮的 *历史* 折叠面板，以及需点击两次的 *移除*。
 
 ## 占满应用
 
-页面可以成为整个应用：`/app/:projectId/:agentId/:workflowId` 只显示某个 workflow 的页面，没有侧栏、聊天和标签条。标签页上的 *占满应用* 按钮会跳到这里，页面自己也可以用 `parent.postMessage({ type: "penguin:fill-app" }, "*")` 请求，`penguin web --app <project>/<agent>/<workflow>` 则让浏览器直接打开到这个页面（spec 不是三段时在启动任何东西之前就报 `Invalid --app`）。这个路由刻意没有任何可点的退出入口；出口是命令面板——它现在同时响应 **Ctrl+Shift+P 与 Ctrl+P**（macOS 为 ⌘），页面拿走其中一个也困不住用户——并在该路由上多出 *退出全页模式（回到聊天）*，会记住 Project 与 Agent 并落到它们的聊天页。
+页面可以成为整个应用：`/app/:projectId/:agentId/:workflowId[/:tabKey]` 只显示某个 workflow 的一张页面——该 key 所指的标签页，缺省为第一张——没有侧栏、聊天和标签条。标签页上的 *占满应用* 按钮会跳到这里，页面自己也可以用 `parent.postMessage({ type: "penguin:fill-app" }, "*")` 请求，`penguin web --app <project>/<agent>/<workflow>[/<tab>]` 则让浏览器直接打开到这个页面（spec 不是三段或四段时在启动任何东西之前就报 `Invalid --app`）。这个路由刻意没有任何可点的退出入口；出口是命令面板——它现在同时响应 **Ctrl+Shift+P 与 Ctrl+P**（macOS 为 ⌘），页面拿走其中一个也困不住用户——并在该路由上多出 *退出全页模式（回到聊天）*，会记住 Project 与 Agent 并落到它们的聊天页。
 
 ## 主题
 

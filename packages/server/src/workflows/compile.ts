@@ -1,0 +1,136 @@
+/**
+ * A workflow's source, checked and transpiled by the server.
+ *
+ * A workflow is TypeScript — `index.ts`, never JavaScript: what its handler returns and
+ * which host members it calls are then questions the compiler answers before any of it
+ * runs, not ones the first request answers. The server builds one program from the entry
+ * (and whatever it imports), under options the HOST fixes — `strict`, NodeNext; a
+ * `tsconfig.json` in the folder is not consulted, so a workflow cannot switch strictness
+ * off for itself — with the interface types resolved from the workflow's OWN
+ * `node_modules` (`@prismshadow/penguin-server/plugin`): the version it was written
+ * against. Whether that version still fits this platform is ./iface-check.ts.
+ *
+ * A second, virtual root file assigns the default export to `WorkflowPackage`, so the
+ * shape is checked even when the author left `satisfies WorkflowPackage` out (in which
+ * case `strict` has already refused the untyped parameters).
+ *
+ * Any diagnostic fails the load. A clean program is emitted into
+ * `<workflow>/.build/<revision>/` — inside the folder, so the emitted code resolves the
+ * workflow's own dependencies the way its source does; a dot-directory, so it is no part
+ * of the revision, the recorded versions or what the watcher reacts to.
+ */
+import fs from "node:fs";
+import path from "node:path";
+import type { TypeScript } from "./typescript.js";
+
+export const ENTRY = "index.ts";
+export const BUILD_DIR = ".build";
+/** The module a workflow imports its types from. */
+export const TYPES_MODULE = "@prismshadow/penguin-server/plugin";
+const CHECK_FILE = "__workflow_check__.ts";
+const CHECK_SOURCE = `import type { WorkflowPackage } from ${JSON.stringify(TYPES_MODULE)};
+import pkg from "./index.js";
+const check: WorkflowPackage = pkg;
+void check;
+`;
+/** Diagnostics reported per load; a broken import alone can produce hundreds. */
+const MAX_DIAGNOSTICS = 12;
+
+export class WorkflowCompileError extends Error {}
+
+/** Type-checks the workflow in `dir` and emits it; resolves to the emitted entry file. */
+export function compileWorkflow(ts: TypeScript, dir: string, revision: string): string {
+  const entry = path.join(dir, ENTRY);
+  if (!fs.existsSync(entry)) {
+    const js = ["index.mjs", "index.js"].find((f) => fs.existsSync(path.join(dir, f)));
+    throw new WorkflowCompileError(
+      js === undefined
+        ? `no ${ENTRY} next to package.json`
+        : `a workflow is written in TypeScript: rename ${js} to ${ENTRY} and type its default export (\`satisfies WorkflowPackage\`)`,
+    );
+  }
+  const outDir = path.join(dir, BUILD_DIR, revision);
+  const options: import("typescript").CompilerOptions = {
+    strict: true,
+    noEmitOnError: true,
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    esModuleInterop: true,
+    forceConsistentCasingInFileNames: true,
+    skipLibCheck: true,
+    rootDir: dir,
+    outDir,
+  };
+  const checkFile = path.join(dir, CHECK_FILE);
+  const same = (file: string) => path.resolve(file) === checkFile;
+  const host = ts.createCompilerHost(options);
+  const { fileExists, readFile, getSourceFile } = host;
+  host.fileExists = (file) => same(file) || fileExists.call(host, file);
+  host.readFile = (file) => (same(file) ? CHECK_SOURCE : readFile.call(host, file));
+  host.getSourceFile = (file, languageVersion, ...rest) =>
+    same(file)
+      ? ts.createSourceFile(file, CHECK_SOURCE, languageVersion, true)
+      : getSourceFile.call(host, file, languageVersion, ...rest);
+
+  const program = ts.createProgram([entry, checkFile], options, host);
+  const diagnostics = ts.getPreEmitDiagnostics(program);
+  if (diagnostics.length > 0) throw new WorkflowCompileError(describe(ts, dir, diagnostics));
+
+  fs.rmSync(outDir, { recursive: true, force: true });
+  for (const source of program.getSourceFiles()) {
+    if (source.isDeclarationFile || same(source.fileName)) continue;
+    if (program.isSourceFileFromExternalLibrary(source)) continue;
+    const result = program.emit(source);
+    if (result.emitSkipped) {
+      throw new WorkflowCompileError(describe(ts, dir, result.diagnostics));
+    }
+  }
+  return path.join(outDir, "index.js");
+}
+
+/** Drops the emitted code of every revision but `keep` (the one now serving). */
+export function pruneBuilds(dir: string, keep: string): void {
+  const base = path.join(dir, BUILD_DIR);
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(base);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    if (name !== keep) fs.rmSync(path.join(base, name), { recursive: true, force: true });
+  }
+}
+
+function describe(
+  ts: TypeScript,
+  dir: string,
+  diagnostics: readonly import("typescript").Diagnostic[],
+): string {
+  const lines = diagnostics.slice(0, MAX_DIAGNOSTICS).map((d) => {
+    const text = ts.flattenDiagnosticMessageText(d.messageText, "\n  ");
+    if (d.file === undefined || d.start === undefined) return `TS${d.code} ${text}`;
+    const at = d.file.getLineAndCharacterOfPosition(d.start);
+    const file = path.relative(dir, d.file.fileName).split(path.sep).join("/");
+    // The virtual root file is the server's question, not a file the author can open.
+    const where =
+      file === CHECK_FILE ? "default export" : `${file}:${at.line + 1}:${at.character + 1}`;
+    return `${where} TS${d.code} ${text}`;
+  });
+  if (diagnostics.length > MAX_DIAGNOSTICS) {
+    lines.push(`… and ${diagnostics.length - MAX_DIAGNOSTICS} more`);
+  }
+  if (
+    diagnostics.some(
+      (d) =>
+        d.code === 2307 &&
+        String(ts.flattenDiagnosticMessageText(d.messageText, " ")).includes(TYPES_MODULE),
+    )
+  ) {
+    lines.push(
+      `(run \`npm install\` in the workflow folder: ${TYPES_MODULE} is resolved from its own node_modules)`,
+    );
+  }
+  return lines.join("\n");
+}
