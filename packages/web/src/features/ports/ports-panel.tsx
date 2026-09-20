@@ -18,6 +18,7 @@ import { Button } from "../../components/ui/button";
 import { CopyButton } from "../../components/ui/copy-button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { CloseIcon, EXTERNAL_LINK_ICON } from "../../components/ui/icons";
 import { Input } from "../../components/ui/input";
 import { Skeleton } from "../../components/ui/skeleton";
 import { apiErrorText } from "../../lib/api-error";
@@ -30,9 +31,6 @@ import { dialLine, forwardTone, listenerLine, parsePort } from "./port-forward-f
 
 /** How often the facts are re-read while the tab is showing. */
 const POLL_MS = 3000;
-
-const OPEN_ICON = "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5";
-const REMOVE_ICON = "M6 6l12 12M18 6 6 18";
 
 const ROW_BUTTON =
   "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200";
@@ -162,7 +160,7 @@ function MachinePorts({
                     aria-label={S.ports.open}
                     className={ROW_BUTTON}
                   >
-                    <GlyphIcon d={OPEN_ICON} size={ICON_SIZE.inlineGlyph} />
+                    <GlyphIcon d={EXTERNAL_LINK_ICON} size={ICON_SIZE.inlineGlyph} />
                   </a>
                   <button
                     type="button"
@@ -171,7 +169,7 @@ function MachinePorts({
                     onClick={() => void remove(forward)}
                     className={ROW_BUTTON}
                   >
-                    <GlyphIcon d={REMOVE_ICON} size={ICON_SIZE.inlineGlyph} />
+                    <CloseIcon size={12} />
                   </button>
                 </li>
               );

@@ -11,11 +11,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 import type { MachineInfo, PortForwardInfo } from "@prismshadow/penguin-server/api";
 import { deletePortForward, getMachines, listPortForwards } from "../../api/endpoints";
-import { GlyphIcon } from "../../components/ui/glyph-icon";
+import { CloseIcon } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/skeleton";
 import { apiErrorText } from "../../lib/api-error";
 import { formatBytes } from "../../lib/format";
-import { ICON_SIZE } from "../../lib/icon-scale";
 import { S } from "../../lib/strings";
 import { toneDot } from "../../lib/tone";
 import { useDocumentTitle } from "../../lib/use-document-title";
@@ -25,7 +24,6 @@ import { dialLine, forwardTone, groupByWorkspace, listenerLine } from "./port-fo
 
 const POLL_MS = 3000;
 const MONO = "font-mono text-xs";
-const REMOVE_ICON = "M6 6l12 12M18 6 6 18";
 
 export function MachinePortsPage() {
   const { machineId = "" } = useParams();
@@ -131,7 +129,7 @@ export function MachinePortsPage() {
                         onClick={() => void remove(forward)}
                         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                       >
-                        <GlyphIcon d={REMOVE_ICON} size={ICON_SIZE.inlineGlyph} />
+                        <CloseIcon size={12} />
                       </button>
                     </div>
                     <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
