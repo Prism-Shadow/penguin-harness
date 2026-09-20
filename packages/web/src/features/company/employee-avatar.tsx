@@ -7,8 +7,25 @@
  * a channel message, a desk row and a ticket all name an employee by id only.
  */
 import * as api from "../../api/endpoints";
-import { AgentAvatar } from "@prismshadow/penguin-ui";
+import { AgentAvatar, CHANNEL_RUN_AVATAR_PX } from "@prismshadow/penguin-ui";
 import { useCompany } from "../../state/company";
+
+/**
+ * How large a face is drawn, by where it sits. These are a chat product's rungs rather than
+ * the icon scale's: a face is how a reader finds a PERSON in a list or a conversation, and at
+ * a line glyph's 14px a picture is a smudge. A list row carries one that still fits a one-line
+ * row; a message run is led by one large enough to recognise at a glance, as every messenger
+ * does it.
+ */
+export const FACE_PX = {
+  /** A row of a list: the sidebar's desks, a channel's members. */
+  row: 22,
+  /** The collapsed sidebar's rail, where the face is the whole row. */
+  rail: 24,
+  /** The avatar that leads somebody's run of messages: the UI package's run tile, which a
+   * person's initial is drawn at too. */
+  message: CHANNEL_RUN_AVATAR_PX,
+} as const;
 
 export function EmployeeAvatar({
   id,

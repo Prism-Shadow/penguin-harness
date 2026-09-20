@@ -44,7 +44,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { Truncated } from "../../components/ui/truncated";
-import { EmployeeAvatar } from "./employee-avatar";
+import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
 import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
@@ -77,7 +77,9 @@ function MemberAvatar({ member, size }: { member: OrgChannelMember; size: number
   if (item.kind === "user") {
     return <UserAvatar userId={item.id} displayName={item.name} size={size} />;
   }
-  return <EmployeeAvatar id={item.id} name={item.name} size={size} className="shrink-0 rounded" />;
+  return (
+    <EmployeeAvatar id={item.id} name={item.name} size={size} className="shrink-0 rounded-md" />
+  );
 }
 
 /** The member list: who is in the channel, with an employee's desk session one click away. */
@@ -145,7 +147,7 @@ function MemberPopover({
                   key={m.principal}
                   className={`flex items-center ${ICON_GAP.row} px-2.5 py-1.5 text-xs`}
                 >
-                  <MemberAvatar member={m} size={ICON_SIZE.rowLead} />
+                  <MemberAvatar member={m} size={FACE_PX.row} />
                   <Truncated text={m.name} className="min-w-0 flex-1" />
                   {m.kind === "agent" && (
                     <Button
@@ -230,7 +232,7 @@ function InvitePicker({
                 glyph={
                   <MemberAvatar
                     member={{ principal: c.principal, name: c.name, kind: c.kind }}
-                    size={ICON_SIZE.rowLead}
+                    size={FACE_PX.row}
                   />
                 }
                 label={c.name}
@@ -386,7 +388,7 @@ export function ChannelHeader({
             className={`flex min-w-0 items-center overflow-hidden whitespace-nowrap ${ICON_GAP.row}`}
           >
             <span className="shrink-0 text-gray-400 dark:text-gray-500">
-              <GlyphIcon d={channelGlyph(detail.channelId)} size={ICON_SIZE.rowLead} />
+              <GlyphIcon d={channelGlyph(detail.channelId)} size={FACE_PX.row} />
             </span>
             {label}
             {/* Two paragraphs, not one string per channel kind: what a hop is has to be
