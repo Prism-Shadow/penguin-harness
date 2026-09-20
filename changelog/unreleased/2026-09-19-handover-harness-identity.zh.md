@@ -1,9 +1,11 @@
 # 只改 Web 或只改 CLI 的推送也会到达机器
 
-Date: 2026-09-19
-Type: fix
-Scope: server
-PR: https://github.com/Prism-Shadow/penguin-harness/pull/799
+- **Date:** 2026-09-19
+- **Type:** fix
+- **Scope:** `server`
+- **PR:** [#799](https://github.com/Prism-Shadow/penguin-harness/pull/799)
+
+[English](2026-09-19-handover-harness-identity.md)
 
 被热推送过的服务端会把自己的构建交接给它持有的机器，并以版本号（`<release>+hmr.<sha>`）判断哪些机器落后。其中的 sha 原先只取自平台 bundle，于是只改了 Web 或只改了 CLI 的推送不会改变版本号：所有机器都被视为最新，Machines 页也如此显示，这次推送永远不会被交接。
 
