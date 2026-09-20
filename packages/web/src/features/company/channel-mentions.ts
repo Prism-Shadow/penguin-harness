@@ -104,6 +104,18 @@ export function mentionLabel(
   return names.get(token) ?? token;
 }
 
+/**
+ * What a mention chip adds after the name: the employee's title, so a reader sees what the
+ * person addressed does without opening the chart. Empty for a member, for `all`, and for an
+ * employee without a title — and when the title is all the name already says.
+ */
+export function mentionNote(token: string, titles: ReadonlyMap<string, string>): string {
+  if (token === "all") return "";
+  const m = /^(agent|user):(.+)$/.exec(token);
+  if (m?.[1] === "user") return "";
+  return titles.get(m?.[2] ?? token)?.trim() ?? "";
+}
+
 /** Whether a mention token addresses this user: their `user:` principal, `all`, or their bare id when no employee claims it. */
 export function mentionIsMe(
   token: string,

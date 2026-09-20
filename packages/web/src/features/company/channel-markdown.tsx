@@ -25,7 +25,13 @@ import type { Components, Options } from "react-markdown";
 import { S } from "../../lib/strings";
 import { toneSurface } from "../../lib/tone";
 import { Md } from "../chat/md";
-import { mentionIsMe, mentionLabel, mentionNameHandles, mentionRuns } from "./channel-mentions";
+import {
+  mentionIsMe,
+  mentionLabel,
+  mentionNameHandles,
+  mentionNote,
+  mentionRuns,
+} from "./channel-mentions";
 
 /** The mdast shapes this pass touches, declared structurally rather than taking `@types/mdast` on. */
 interface MdNode {
@@ -114,13 +120,20 @@ export const CHANNEL_REMARK_PLUGINS: NonNullable<Options["remarkPlugins"]> = [re
 export interface ChannelReader {
   /** Employee id to display name. */
   names: ReadonlyMap<string, string>;
+  /** Employee id to title, which a mention chip prints after the name. */
+  titles: ReadonlyMap<string, string>;
   /** The reading user's own id; "" while it is unknown. */
   me: string;
   /** Every employee id, so a bare `@id` an employee claims is not read as the user's. */
   employeeIds: ReadonlySet<string>;
 }
 
-const NOBODY: ChannelReader = { names: new Map(), me: "", employeeIds: new Set() };
+const NOBODY: ChannelReader = {
+  names: new Map(),
+  titles: new Map(),
+  me: "",
+  employeeIds: new Set(),
+};
 const ReaderContext = createContext<ChannelReader>(NOBODY);
 
 /** Names every mention chip rendered below against this reader. */
@@ -135,12 +148,24 @@ export function ChannelReaderProvider({
 }
 
 /**
- * A mention as a chip: the resolved name after the `@`, the raw token in the tooltip;
+ * A mention as a chip: the resolved name after the `@` — and the employee's title after it, a
+ * tone lighter, when there is one to say — with the raw token in the tooltip;
  * attention-toned when it addresses the reader. The ordinary chip sits one step deeper than
  * the app's usual grey fill, because the bubble it is printed on is that grey (channel-view's
  * BUBBLE_SURFACE) and a chip the colour of its background is not a chip.
  */
-export function MentionChip({ raw, label, me }: { raw: string; label: string; me: boolean }) {
+export function MentionChip({
+  raw,
+  label,
+  note = "",
+  me,
+}: {
+  raw: string;
+  label: string;
+  note?: string;
+  me: boolean;
+}) {
+  const noted = note !== "" && note !== label;
   return (
     <span
       title={raw}
@@ -151,6 +176,7 @@ export function MentionChip({ raw, label, me }: { raw: string; label: string; me
       }`}
     >
       @{label}
+      {noted && <span className="font-normal opacity-70"> ({note})</span>}
       {me && <span className="sr-only"> ({S.company.channels.mentionsYou})</span>}
     </span>
   );
@@ -164,6 +190,7 @@ function MentionNode({ value }: { value?: string | number | readonly string[] })
     <MentionChip
       raw={`@${token}`}
       label={mentionLabel(token, reader.names, S.company.principalAll)}
+      note={mentionNote(token, reader.titles)}
       me={mentionIsMe(token, reader.me, reader.employeeIds)}
     />
   );

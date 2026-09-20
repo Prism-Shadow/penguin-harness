@@ -12,6 +12,7 @@ import {
   mentionInsertId,
   mentionIsMe,
   mentionLabel,
+  mentionNote,
   mentionNameHandles,
   mentionQueryAt,
   mentionRuns,
@@ -239,5 +240,24 @@ describe("channelMentionCandidates", () => {
 
   it("is `all` alone in a channel whose only member is the reader's own employee-free self", () => {
     expect(channelMentionCandidates(list, new Set()).map((c) => c.principal)).toEqual(["all"]);
+  });
+});
+
+describe("mentionNote", () => {
+  const titles = new Map([
+    ["ceo", "CEO"],
+    ["dev", "  "],
+  ]);
+
+  it("is the employee's title, for a prefixed or a bare id", () => {
+    expect(mentionNote("agent:ceo", titles)).toBe("CEO");
+    expect(mentionNote("ceo", titles)).toBe("CEO");
+  });
+
+  it("is empty for a member, for all, for an employee without a title and for an unknown id", () => {
+    expect(mentionNote("user:ceo", titles)).toBe("");
+    expect(mentionNote("all", titles)).toBe("");
+    expect(mentionNote("agent:dev", titles)).toBe("");
+    expect(mentionNote("nobody", titles)).toBe("");
   });
 });
