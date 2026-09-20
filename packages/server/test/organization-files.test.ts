@@ -7,7 +7,6 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   detectLanguage,
-  extractMentionTokens,
   orgLanguage,
   parseCalendarEvent,
   parseChannelConfig,
@@ -448,11 +447,28 @@ describe("channel message lines", () => {
     expect(parseChannelMessageLine(JSON.stringify({ ...msg, hop: -1 })).ok).toBe(false);
     expect(parseChannelMessageLine(JSON.stringify({ ...msg, sender: "nobody" })).ok).toBe(false);
   });
+});
 
-  it("extracts mention tokens in short and prefixed forms", () => {
-    expect(
-      extractMentionTokens("@acme_ceo please review @user:alice and @all, not me@example.com"),
-    ).toEqual([{ id: "acme_ceo" }, { prefix: "user", id: "alice" }, { id: "all" }]);
+describe("an employee's name", () => {
+  const chart = (name: unknown) =>
+    `employees:\n  - agent_id: acme_ceo\n    name: ${JSON.stringify(name)}\n    title: CEO\n    reports_to: null\n    workspace: .\n`;
+
+  it("round-trips through the chart in any script, and is optional", () => {
+    const parsed = parseOrgChart(chart("王总 Ada"), "acme");
+    expect(parsed).toMatchObject({ ok: true, value: { employees: [{ name: "王总 Ada" }] } });
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parseOrgChart(serializeOrgChart(parsed.value), "acme")).toEqual(parsed);
+    const bare = parseOrgChart(
+      "employees:\n  - agent_id: acme_ceo\n    title: CEO\n    reports_to: null\n    workspace: .\n",
+      "acme",
+    );
+    expect(bare.ok && bare.value.employees[0]!.name).toBeUndefined();
+  });
+
+  it("refuses a name that would break a mention or a line", () => {
+    expect(parseOrgChart(chart("a@b"), "acme")).toMatchObject({ ok: false });
+    expect(parseOrgChart(chart(""), "acme")).toMatchObject({ ok: false });
+    expect(parseOrgChart(chart(7), "acme")).toMatchObject({ ok: false });
   });
 });
 

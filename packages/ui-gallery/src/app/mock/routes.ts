@@ -2158,6 +2158,8 @@ router
   .post("/api/projects/:projectId/organizations/:orgId/employees", companyOff)
   .patch("/api/projects/:projectId/organizations/:orgId/employees/:agentId", companyOff)
   .delete("/api/projects/:projectId/organizations/:orgId/employees/:agentId", companyOff)
+  .get("/api/projects/:projectId/organizations/:orgId/employees/:agentId/avatar", companyOff)
+  .put("/api/projects/:projectId/organizations/:orgId/employees/:agentId/avatar", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/employees/:agentId/desk", companyOff)
   .post("/api/projects/:projectId/organizations/:orgId/employees/:agentId/desk", companyOff)
   .get("/api/projects/:projectId/organizations/:orgId/handbook", companyOff)

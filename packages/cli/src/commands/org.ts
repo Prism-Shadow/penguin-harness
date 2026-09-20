@@ -11,7 +11,7 @@
  *   penguin org show | chart
  *   penguin org hire (--agent-id <id> | --new-agent <id> [--name] [--description] [--skills <a,b>])
  *                    --title <s> --reports-to <agent_id> [--workspace <path>] [--budget <usd>] [--duties <s>]
- *   penguin org employee set <agent_id> [--title] [--reports-to] [--workspace] [--budget] [--duties]
+ *   penguin org employee set <agent_id> [--name] [--title] [--reports-to] [--workspace] [--budget] [--duties]
  *                    [--model-id <id> --provider <p>]
  *   penguin org leave <agent_id>
  *   penguin org desk show|renew [<agent_id>]
@@ -714,6 +714,7 @@ export function registerOrgCommand(program: Command, t: Messages): void {
     employee
       .command("set <agent_id>")
       .description(t.org.employeeSetDesc)
+      .option("--name <name>", t.org.employeeName)
       .option("--title <title>", t.org.title)
       .option("--reports-to <agent_id>", t.org.reportsTo)
       .option("--workspace <path>", t.org.employeeWorkspace)
@@ -732,6 +733,8 @@ export function registerOrgCommand(program: Command, t: Messages): void {
       opts.budget !== undefined ? parseBudget("--budget", String(opts.budget), t) : undefined;
     if (budget === null) return;
     const body = {
+      // An empty name clears it: back to the Agent's own display name.
+      ...(opts.name !== undefined ? { name: String(opts.name) } : {}),
       ...(opts.title !== undefined ? { title: String(opts.title) } : {}),
       ...(opts.reportsTo !== undefined ? { reportsTo: String(opts.reportsTo) } : {}),
       ...(opts.workspace !== undefined ? { workspace: String(opts.workspace) } : {}),

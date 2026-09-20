@@ -488,10 +488,12 @@ describe("the message sent", () => {
     expect(tokens(draftWireText(d))).toEqual(["zhangsan", "lisi"]);
   });
 
-  it("a mention after a typed token whose full stop would swallow its @ is set apart", () => {
+  it("a mention after a typed token's full stop needs no space: the stop ends that token", () => {
+    // A handle stops at the end of its word (organization/names.ts findMentions), so the `.`
+    // after `@bob` is not part of it and the `@` that follows starts the next mention.
     const d = pick(typeAtEnd(EMPTY_DRAFT, "@bob."), "A", "Ada", "ceo");
     expect(d.text).toBe("@bob.@Ada ");
-    expect(draftWireText(d)).toBe("@bob. @ceo ");
+    expect(draftWireText(d)).toBe("@bob.@ceo ");
     expect(tokens(draftWireText(d))).toEqual(["bob", "ceo"]);
   });
 });
