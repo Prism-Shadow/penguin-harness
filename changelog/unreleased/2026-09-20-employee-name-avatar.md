@@ -3,6 +3,7 @@
 - **Date:** 2026-09-20
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `plugins`
+- **PR:** [#809](https://github.com/Prism-Shadow/penguin-harness/pull/809)
 
 [中文版](2026-09-20-employee-name-avatar.zh.md)
 
