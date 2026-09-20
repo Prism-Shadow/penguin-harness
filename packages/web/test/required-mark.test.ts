@@ -13,26 +13,17 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { Input } from "../src/components/ui/input";
 import { RequiredMark } from "../src/components/ui/field";
 import { zh } from "../src/lib/strings";
 import { en } from "../src/lib/strings-en";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
-const FIELD = join(SRC, "components", "ui", "field.tsx");
-
-function tsxFiles(dir = SRC, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) tsxFiles(path, out);
-    else if (name.endsWith(".tsx")) out.push(path);
-  }
-  return out;
-}
+/** Web and the shared UI package: a hand-rolled mark is a second spelling on either side. */
+const SCAN = scanSources();
+/** The one place the mark is allowed to be spelled. */
+const FIELD = "packages/web/src/components/ui/field.tsx";
 
 /**
  * Every string literal reachable from a node, joined. `className` is written four ways here —
@@ -73,17 +64,20 @@ function childText(node: ts.JsxElement): string {
     .trim();
 }
 
-/** Every element that paints a lone "*" in a red ink class — i.e. a hand-rolled required mark. */
-function marksIn(path: string, text: string): string[] {
+/**
+ * Every element that paints a lone "*" in a red ink class — i.e. a hand-rolled required mark — as
+ * "id:line".
+ */
+function marksIn(id: string, text: string): string[] {
   const found: string[] = [];
-  const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
+  const source = ts.createSourceFile(id, text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
   const visit = (node: ts.Node): void => {
     // The children test is cheap and rejects all but a handful of the tree's ~2200 elements,
     // so it runs before the attribute walk.
     if (ts.isJsxElement(node) && childText(node) === "*") {
       if (classNameOf(node.openingElement).includes("text-red-")) {
         const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
-        found.push(`${path.slice(SRC.length + 1).replaceAll(sep, "/")}:${line}`);
+        found.push(`${id}:${line}`);
       }
     }
     ts.forEachChild(node, visit);
@@ -94,9 +88,9 @@ function marksIn(path: string, text: string): string[] {
 
 function handRolledMarks(): string[] {
   const found: string[] = [];
-  for (const path of tsxFiles()) {
-    if (path === FIELD) continue; // the one place the mark is allowed to be spelled
-    found.push(...marksIn(path, readFileSync(path, "utf8")));
+  for (const file of SCAN.files) {
+    if (!file.name.endsWith(".tsx") || file.id === FIELD) continue;
+    found.push(...marksIn(file.id, file.text));
   }
   return found.sort();
 }
@@ -135,6 +129,11 @@ const PROSE_EXCEPTIONS: Record<"zh" | "en", ReadonlySet<string>> = {
 };
 
 describe("required mark", () => {
+  it("scans every source root, and finds the field module in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, FIELD);
+  });
+
   it("renders only when the field is required", () => {
     const required = renderToStaticMarkup(
       createElement(Input, { label: "Name", required: true, value: "", readOnly: true }),
@@ -177,7 +176,7 @@ describe("required mark", () => {
 
   it("finds a hand-rolled mark however its className is written", () => {
     // Without this the scan above could silently stop matching and still report a clean tree.
-    const probe = join(SRC, "probe.tsx");
+    const probe = "packages/web/src/probe.tsx";
     const shapes = [
       'const a = <span className="ml-0.5 text-red-500">*</span>;',
       "const b = <span className={`ml-0.5 text-red-500`}>*</span>;",
