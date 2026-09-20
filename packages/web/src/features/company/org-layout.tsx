@@ -264,6 +264,16 @@ export function OrgLayout() {
   const org =
     company.organizations.find((o) => o.projectId === projectId && o.orgId === orgId) ?? null;
   if (org === null && company.orgsLoaded) return <OrgGone />;
+  // No page before the list: it is what says which machine this organization runs on
+  // (lib/org-machines.ts), and a page that fetched any earlier would ask this server — whose
+  // copy of an organization that runs elsewhere is a mirror without its employees' Agents.
+  if (!company.orgsLoaded) {
+    return (
+      <OrgFrame>
+        <OrgPageSkeleton />
+      </OrgFrame>
+    );
+  }
   return (
     <OrgContext.Provider value={{ projectId, orgId, org }}>
       <Outlet />
