@@ -360,6 +360,13 @@ export const SCHEDULE_ICON =
 export const NAV_ICONS = {
   activities: "M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h6",
   agents: AGENT_GROUP_ICON,
+  /**
+   * Coding agents (a bot head: antenna, visor line, two eyes, chin feet). Distinct from
+   * `agents` (the group mark) and from `models` (the chip): the antenna is the one stroke
+   * nothing else in this table has.
+   */
+  "coding-agents":
+    "M12 2.6v2.9M6.5 21h11M6 10.5h12V19a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-8.5ZM9.2 14.6h.01M14.8 14.6h.01M6 10.5a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3",
   /** Plugin library (the puzzle piece). */
   plugins: PLUGIN_ICON,
   /**

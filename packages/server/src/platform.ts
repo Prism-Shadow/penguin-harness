@@ -146,6 +146,9 @@ import { TraceIndex, TraceIndexStore, Traces } from "./mechanisms/traces.js";
 import { AgentConfig, AgentLifecycle, Benchmarks, Memory, Snapshots } from "./mechanisms/agents.js";
 import { FileReveal, WorkspaceFiles } from "./mechanisms/workspace.js";
 import { Settings, UiPrefsStore } from "./mechanisms/settings.js";
+import { CodingAgents } from "./mechanisms/coding-agents.js";
+import { CodingAgentService } from "./coding-agents/service.js";
+import { CodingAgentsRoutes } from "./coding-agents/routes.js";
 import { MessagingBindings } from "./mechanisms/messaging.js";
 import { OrgCache } from "./mechanisms/organization.js";
 import { PreviewModule, PreviewTokens } from "./http/routes/preview.js";
@@ -349,6 +352,12 @@ export class TracesModule {}
 export class AgentsModule {}
 
 @Module({
+  children: [CodingAgentService, CodingAgentsRoutes],
+  exports: [CodingAgents],
+})
+export class CodingAgentsModule {}
+
+@Module({
   children: [ActivityService, ActivityGenerationService, ActivityRoutes],
   exports: [ActivityAuthoring, ActivityGeneration],
 })
@@ -420,6 +429,7 @@ export class ApiModule {}
     ObservabilityModule,
     TracesModule,
     AgentsModule,
+    CodingAgentsModule,
     ActivitiesModule,
     WorkspaceModule,
     MessagingHubModule,
