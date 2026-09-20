@@ -23,4 +23,5 @@ An employee was called by its Agent's display name — which, for an Agent creat
 ## Avatar
 
 - An image file of the organization: `avatars/<agent_id>.png|jpg|webp`, so it can be dropped in by hand and goes wherever the directory goes. `PUT …/employees/:agentId/avatar { avatar }` takes the same data URL a person's own avatar does (png, jpeg or webp, at most 131072 characters) and `null` removes it; `GET …/avatar` serves it, cached for good under the `?rev=` that `OrgEmployeeItem.avatarRev` supplies.
+- A picked image is cropped by hand before it is stored — drag to place it under the frame, scroll or slide to zoom (up to 4×), and what the frame shows is what is kept. The same crop step now sits in a person's own avatar picker (Settings › Profile), which used to take the centre square without asking.
 - Web: "Name and avatar" in an employee's chart menu opens one dialog for both, with the picker a person's own avatar uses. The chart, the desk list, channel messages and members, the finance table and principal chips show the picture; an employee without one keeps the letter tile. The hire dialog has the name as well.

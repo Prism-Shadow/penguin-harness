@@ -668,6 +668,10 @@ export const en: Strings = {
     /** Disclosed by the "?" beside that label: when a picked image takes effect. */
     avatarInfo:
       "A picture takes effect as soon as you choose it — there is no separate Save for it. The nickname beside it is typed text, so it keeps a Save of its own.",
+    cropAvatar: "Crop avatar",
+    cropAvatarHint: "Drag to position, scroll or use the slider to zoom",
+    cropZoom: "Zoom",
+    useAvatar: "Use this",
     changeAvatar: "Change avatar",
     /**
      * Shared label of the two buttons that put a field back to what an account with nothing set

@@ -16,13 +16,19 @@ import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
-import { avatarDataUrlFromFile } from "../../lib/avatar-image";
+import {
+  avatarDataUrlFromImage,
+  loadAvatarImage,
+  releaseAvatarImage,
+} from "../../lib/avatar-image";
+import type { AvatarCrop } from "../../lib/avatar-image";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
 import { Button, labelButtonClass } from "../../components/ui/button";
+import { AvatarCropDialog } from "../../components/ui/avatar-crop-dialog";
 import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
@@ -649,16 +655,29 @@ export function EmployeeProfileDialog({
     }
   };
 
+  /** The picked image, decoded and waiting for its crop to be chosen. */
+  const [cropping, setCropping] = useState<HTMLImageElement | null>(null);
+  const endCrop = () => {
+    if (cropping !== null) releaseAvatarImage(cropping);
+    setCropping(null);
+  };
+
   const onPickFile = (e: ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (file === undefined) return;
+    setError(undefined);
+    loadAvatarImage(file).then(setCropping, () => setError(S.profile.avatarUnreadable));
+  };
+
+  const onCropped = (crop: AvatarCrop) => {
+    const image = cropping;
+    if (image === null) return;
     void run(async () => {
-      const dataUrl = await avatarDataUrlFromFile(file).catch(() => undefined);
-      if (dataUrl === undefined) throw new Error(S.profile.avatarUnreadable);
+      const dataUrl = avatarDataUrlFromImage(image, crop);
       if (dataUrl === null) throw new Error(S.profile.avatarTooLarge);
       await api.putOrgEmployeeAvatar(projectId, orgId, employee.agentId, dataUrl);
-    });
+    }).finally(endCrop);
   };
 
   const save = () =>
@@ -724,6 +743,7 @@ export function EmployeeProfileDialog({
             {S.profile.restoreDefault}
           </Button>
         </div>
+        <AvatarCropDialog image={cropping} busy={busy} onCancel={endCrop} onConfirm={onCropped} />
         <Input
           label={S.company.chart.employeeName}
           size="sm"

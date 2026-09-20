@@ -688,6 +688,10 @@ export const zh = {
     /** Disclosed by the "?" beside that label: when a picked image takes effect. */
     avatarInfo:
       "选择图片后立即生效，无需另行保存；旁边的昵称是输入的文本，因此保留了自己的保存按钮。",
+    cropAvatar: "裁剪头像",
+    cropAvatarHint: "拖动调整位置，滚轮或滑块缩放",
+    cropZoom: "缩放",
+    useAvatar: "使用",
     changeAvatar: "更换头像",
     /**
      * Shared label of the two buttons that put a field back to what an account with nothing set
