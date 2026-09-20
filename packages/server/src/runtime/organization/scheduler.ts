@@ -6,8 +6,10 @@
  * now while hand edits wait for the next tick. The admin switch is read every tick: off
  * means the pass still refreshes caches but fires nothing.
  */
+import { runsOn } from "./deps.js";
 import type { OrgDeps } from "./deps.js";
 import { KeyedLocks, orgLockKey } from "./locks.js";
+import { pullMirror } from "./mirror.js";
 import { reconcileOrg } from "./reconcile.js";
 import type { ReconcileResult } from "./reconcile.js";
 
@@ -73,11 +75,26 @@ export class OrganizationScheduler {
     orgId: string,
     opts: { triggers?: boolean } = {},
   ): Promise<ReconcileResult | null> {
-    return this.locks.run(orgLockKey(projectId, orgId), () =>
-      reconcileOrg(this.deps, projectId, orgId, {
+    return this.locks.run(orgLockKey(projectId, orgId), async () => {
+      // An organization that runs on another machine is driven THERE. Reconciling its mirror
+      // here would find desks whose Sessions this server does not have and open new ones, and
+      // would fire its calendar a second time; the pass over it is the copy instead.
+      const elsewhere = await this.runsElsewhere(projectId, orgId);
+      if (elsewhere !== null) {
+        await pullMirror(this.deps, projectId, orgId, elsewhere);
+        return null;
+      }
+      return reconcileOrg(this.deps, projectId, orgId, {
         triggers: opts.triggers ?? this.deps.companyModeEnabled(),
-      }),
-    );
+      });
+    });
+  }
+
+  /** The machine the organization runs on when it is not this server; null when it runs here. */
+  private async runsElsewhere(projectId: string, orgId: string): Promise<string | null> {
+    const config = (await this.deps.store.readConfig(this.deps.store.dir(projectId, orgId)))
+      ?.parsed;
+    return config?.ok === true ? runsOn(this.deps, config.value) : null;
   }
 
   /** Runs a write under the organization's lock so it never interleaves with a pass. */
