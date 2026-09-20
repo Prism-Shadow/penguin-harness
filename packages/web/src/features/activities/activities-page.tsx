@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useBlocker, useNavigate, useParams } from "react-router";
 import type {
   ActivityDetail,
@@ -19,8 +19,11 @@ import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { InfoPopover } from "../../components/ui/info-popover";
+import { CreateActivityDialog } from "./create-activity-dialog";
 import { MediaWorkbench } from "./media-workbench";
+import { ModulePreview } from "./module-preview";
 import { SceneReview } from "./scene-review";
+import { activityInitials, filterActivities, latestModuleRun } from "./preview";
 
 const basePath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/activities`;
 const pretty = (value: unknown) => (value ? JSON.stringify(value, null, 2) : "");
@@ -68,11 +71,8 @@ function ActivityWorkspace({
   const [items, setItems] = useState<ActivityRecord[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [productCode, setProductCode] = useState("");
-  const [refNum, setRefNum] = useState("");
-  const [title, setTitle] = useState("");
-  const [activityType, setActivityType] = useState("standard");
+  const [search, setSearch] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
   const dirty = useRef(false);
   const mounted = useRef(true);
   const accessible = useRef(available);
@@ -119,37 +119,51 @@ function ActivityWorkspace({
     () => registerProjectChangeGuard(canLeave),
     [registerProjectChangeGuard, canLeave],
   );
-  async function create(event: React.FormEvent) {
-    event.preventDefault();
-    if (!canLeave()) return;
-    setCreating(true);
-    setError("");
-    try {
-      const result = await apiFetch<ActivityDetail>(basePath(projectId), {
-        method: "POST",
-        body: { productCode, refNum: Number(refNum), title, activityType },
-      });
-      if (!mounted.current) return;
-      setProductCode("");
-      setRefNum("");
-      setTitle("");
-      await reload();
-      dirty.current = false;
-      navigate(`/activities/${result.id}`);
-    } catch (e) {
-      if (mounted.current) setError(apiErrorText(e));
-    } finally {
-      if (mounted.current) setCreating(false);
-    }
+  const visible = useMemo(() => filterActivities(items, search), [items, search]);
+  if (activityId) {
+    return (
+      <div className="h-full overflow-auto">
+        <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
+          <nav className="text-xs">
+            <Link className="underline" to="/activities">
+              {S.activities.backToActivities}
+            </Link>
+          </nav>
+          <ActivityEditor
+            key={activityId}
+            projectId={projectId}
+            activityId={activityId}
+            editable={editable}
+            available={available}
+            onDirty={(value) => {
+              dirty.current = value;
+            }}
+            onSaved={reload}
+          />
+        </div>
+      </div>
+    );
   }
   return (
     <div className="h-full overflow-auto">
       <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
-        <header className="flex items-center justify-between gap-3">
+        <header className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-lg font-semibold">{S.activities.title}</h1>
-          <Button size="sm" disabled={!available} onClick={() => void reload()}>
-            {S.activities.refresh}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" disabled={!available} onClick={() => void reload()}>
+              {S.activities.refresh}
+            </Button>
+            {editable && (
+              <Button
+                size="sm"
+                variant="primary"
+                disabled={!available || !canLeave()}
+                onClick={() => setCreateOpen(true)}
+              >
+                {S.activities.newActivity}
+              </Button>
+            )}
+          </div>
         </header>
         {!available && (
           <p role="status" className={`rounded-md border p-3 text-xs ${toneStrip.attention}`}>
@@ -166,101 +180,68 @@ function ActivityWorkspace({
             {error}
           </p>
         )}
-        <div className="grid items-start gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
-          <aside className="space-y-5">
-            {editable && (
-              <form
-                onSubmit={(event) => void create(event)}
-                className="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-gray-800"
-              >
-                <h2 className="text-sm font-semibold">{S.activities.create}</h2>
-                <Input
-                  size="sm"
-                  label={S.activities.productCode}
-                  value={productCode}
-                  onChange={(e) => setProductCode(e.target.value)}
-                  required
-                  maxLength={100}
-                  disabled={creating}
-                />
-                <Input
-                  size="sm"
-                  label={S.activities.refNum}
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={refNum}
-                  onChange={(e) => setRefNum(e.target.value)}
-                  required
-                  disabled={creating}
-                />
-                <Input
-                  size="sm"
-                  label={S.activities.name}
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  required
-                  maxLength={200}
-                  disabled={creating}
-                />
-                <Select
-                  size="sm"
-                  label={S.activities.type}
-                  value={activityType}
-                  onChange={(e) => setActivityType(e.target.value)}
-                  disabled={creating}
+        {items.length > 0 && (
+          <Input
+            size="sm"
+            aria-label={S.activities.search}
+            placeholder={S.activities.search}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="max-w-sm"
+          />
+        )}
+        {loading ? (
+          <p role="status" className="text-xs text-gray-500">
+            {S.activities.loading}
+          </p>
+        ) : visible.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            {items.length === 0 ? S.activities.empty : S.activities.noMatches}
+          </p>
+        ) : (
+          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {visible.map((item) => (
+              <li key={item.id}>
+                <Link
+                  to={`/activities/${item.id}`}
+                  className="flex h-full flex-col gap-2 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-900"
                 >
-                  <option value="standard">{S.activities.standard}</option>
-                  <option value="book">{S.activities.book}</option>
-                </Select>
-                <Button type="submit" size="sm" variant="primary" disabled={creating}>
-                  {creating ? S.activities.busy : S.activities.create}
-                </Button>
-              </form>
-            )}
-            {available && (
-              <nav aria-label={S.activities.title} className="space-y-1">
-                {loading ? (
-                  <p role="status" className="text-xs text-gray-500">
-                    {S.activities.loading}
-                  </p>
-                ) : items.length === 0 ? (
-                  <p className="text-xs text-gray-500">{S.activities.empty}</p>
-                ) : (
-                  items.map((item) => (
-                    <Link
-                      key={item.id}
-                      to={`/activities/${item.id}`}
-                      aria-current={item.id === activityId ? "page" : undefined}
-                      className={`block rounded-md border p-3 text-sm ${item.id === activityId ? "border-gray-400 bg-gray-100 dark:border-gray-600 dark:bg-gray-800" : "border-transparent hover:bg-gray-50 dark:hover:bg-gray-900"}`}
+                  <span className="flex items-center gap-3">
+                    <span
+                      aria-hidden
+                      className="flex h-9 w-9 flex-none items-center justify-center rounded-md bg-gray-100 text-xs font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300"
                     >
-                      <span className="block break-words font-medium">
+                      {activityInitials(item.title, item.productCode)}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium">{item.title}</span>
+                      <span className="block truncate text-xs text-gray-500">
                         {item.productCode} / {item.refNum}
                       </span>
-                      <span className="block break-words text-xs text-gray-500">{item.title}</span>
-                    </Link>
-                  ))
-                )}
-              </nav>
-            )}
-          </aside>
-          {activityId ? (
-            <ActivityEditor
-              key={activityId}
-              projectId={projectId}
-              activityId={activityId}
-              editable={editable}
-              available={available}
-              onDirty={(value) => {
-                dirty.current = value;
-              }}
-              onSaved={reload}
-            />
-          ) : (
-            <p className="py-8 text-sm text-gray-500">{S.activities.select}</p>
-          )}
-        </div>
+                    </span>
+                  </span>
+                  <span className="mt-auto flex flex-wrap gap-1.5">
+                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800">
+                      {item.activityType === "book" ? S.activities.book : S.activities.standard}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
+      {createOpen && (
+        <CreateActivityDialog
+          projectId={projectId}
+          onClose={() => setCreateOpen(false)}
+          onCreated={(created) => {
+            setCreateOpen(false);
+            dirty.current = false;
+            navigate(`/activities/${created}`);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -882,6 +863,17 @@ function ActivityEditor({
           </>
         )}
       </section>
+      {available && (
+        <ModulePreview
+          runs={runs}
+          spec={detail.draft.spec}
+          languages={Object.keys(detail.draft.mediaPlan?.manifest.assets ?? {})}
+          stale={(() => {
+            const moduleRun = latestModuleRun(runs);
+            return Boolean(moduleRun && moduleRun.inputRevision !== detail.draft.contentRevision);
+          })()}
+        />
+      )}
       {available && (
         <section className="space-y-3">
           <h3 className="text-sm font-semibold">{S.activities.runs}</h3>

@@ -91,6 +91,17 @@ export type Strings = {
     specRun: string;
     previewModule: string;
     olderModule: string;
+    previewTitle: string;
+    previewHelp: string;
+    previewScene: string;
+    previewSceneDefault: string;
+    previewLanguageDefault: string;
+    previewReload: string;
+    previewResolution: (dimensions: string) => string;
+    newActivity: string;
+    search: string;
+    noMatches: string;
+    backToActivities: string;
     title: string;
     create: string;
     productCode: string;
@@ -100,7 +111,6 @@ export type Strings = {
     standard: string;
     book: string;
     empty: string;
-    select: string;
     noProject: string;
     unavailable: string;
     description: string;
