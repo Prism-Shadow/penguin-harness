@@ -3,6 +3,7 @@
 - **Date:** 2026-09-20
 - **Type:** feature
 - **Scope:** `server`, `desktop`, `scripts`
+- **PR:** [#808](https://github.com/Prism-Shadow/penguin-harness/pull/808)
 
 [中文版](2026-09-20-plugin-interface-check.zh.md)
 
