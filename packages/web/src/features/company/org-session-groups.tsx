@@ -32,8 +32,8 @@ import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import { useCompany } from "../../state/company";
 import { useProject } from "../../state/project";
-import { useLiveSessionStatuses } from "../../state/sessions";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { useLiveSessionStatuses, useSessions } from "../../state/sessions";
+import { EmployeeAvatar } from "./employee-avatar";
 import { Button } from "../../components/ui/button";
 import { useRowContextMenu } from "../../components/ui/context-menu";
 import { writeClipboard } from "../../components/ui/copy-button";
@@ -192,7 +192,7 @@ function DeskRow({
           }}
           className={rowButton(active)}
         >
-          <AgentAvatar
+          <EmployeeAvatar
             id={row.agentId}
             name={row.name}
             size={ICON_SIZE.rowLead}
@@ -358,7 +358,7 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
             onClick={() => void openDesk(d.agentId, d.sessionId)}
             className="relative flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 hover:bg-gray-200/70 disabled:opacity-60 dark:hover:bg-gray-800"
           >
-            <AgentAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
+            <EmployeeAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
             {running && (
               <span
                 aria-hidden

@@ -51,7 +51,7 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { EmployeeAvatar } from "./employee-avatar";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -73,6 +73,7 @@ import {
   mentionCandidates,
   mentionIsMe,
   mentionLabel,
+  mentionNameHandles,
   mentionRuns,
 } from "./channel-mentions";
 import {
@@ -411,6 +412,7 @@ export function ChannelView() {
   };
 
   const names = useMemo(() => new Map(employees.map((e) => [e.agentId, e.name])), [employees]);
+  const nameHandles = useMemo(() => mentionNameHandles(names), [names]);
   const employeeIds = useMemo(() => new Set(employees.map((e) => e.agentId)), [employees]);
   // Who the mention chips inside the rendered bodies are measured against. Memoized because it
   // is a context value: a fresh object per render would re-render every message body.
@@ -441,7 +443,7 @@ export function ChannelView() {
     document.getElementById(id)?.scrollIntoView({ block: "center" });
 
   const renderText = (m: OrgChannelMessage) =>
-    mentionRuns(m.text).map((run, i) =>
+    mentionRuns(m.text, nameHandles).map((run, i) =>
       run.mention === null ? (
         <span key={i}>{run.text}</span>
       ) : (
@@ -565,7 +567,7 @@ export function ChannelView() {
             to the run's last bubble instead puts a ten-line message between them. */}
         {!own &&
           (p.kind === "agent" ? (
-            <AgentAvatar
+            <EmployeeAvatar
               id={p.id}
               name={senderLabel}
               size={RUN_AVATAR_PX}

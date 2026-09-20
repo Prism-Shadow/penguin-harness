@@ -10,17 +10,20 @@
  * calls the API; the renewal is its own confirmation and needs no second one.
  */
 import { useEffect, useState } from "react";
+import type { ChangeEvent } from "react";
 import type { OrgEmployeeItem, OrgHireRequest } from "@prismshadow/penguin-server/api";
 import * as api from "../../api/endpoints";
 import { ApiError } from "../../api/client";
 import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
+import { avatarDataUrlFromFile } from "../../lib/avatar-image";
 import { SEMANTIC_ID_PATTERN } from "../../lib/semantic-id";
 import { formatMoney } from "../../lib/format";
 import { useCompany } from "../../state/company";
 import { agentDisplayName, useProject } from "../../state/project";
 import { useTheme } from "../../state/theme";
-import { Button } from "../../components/ui/button";
+import { Button, labelButtonClass } from "../../components/ui/button";
+import { HiddenFileInput } from "../../components/ui/hidden-file-input";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { Segmented } from "../../components/ui/segmented";
@@ -37,6 +40,7 @@ import { OrgSection } from "./org-layout";
 import { MoneyPerMonthInput } from "./shared";
 import { fromStoredUsd, isBudgetText, toStoredUsd } from "./budget-input";
 import { deskRenewPlan } from "./desk-renew";
+import { EmployeeAvatar } from "./employee-avatar";
 import { managerCandidates } from "./org-chart-tree";
 
 /** The plugins a new employee starts with: the organization procedures and the development skills. */
@@ -76,6 +80,8 @@ export function HireDialog({
   const [agentId, setAgentId] = useState("");
   const [newId, setNewId] = useState("");
   const [newName, setNewName] = useState("");
+  /** What the organization calls the employee; for a new Agent its name stands in when empty. */
+  const [employeeName, setEmployeeName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [plugins, setPlugins] = useState<string[]>(DEFAULT_EMPLOYEE_PLUGINS);
   const [pluginsOpen, setPluginsOpen] = useState(false);
@@ -98,6 +104,7 @@ export function HireDialog({
     setAgentId(candidates[0]?.agentId ?? "");
     setNewId("");
     setNewName("");
+    setEmployeeName("");
     setNewDescription("");
     setPlugins(DEFAULT_EMPLOYEE_PLUGINS);
     setTitle("");
@@ -160,6 +167,7 @@ export function HireDialog({
       // The box speaks the reader's currency; the chart file holds USD.
       const budgetUsd = toStoredUsd(budget, currency);
       const body: OrgHireRequest = {
+        ...(employeeName.trim() ? { name: employeeName.trim() } : {}),
         title: title.trim(),
         reportsTo: manager.agentId,
         ...(source === "existing"
@@ -322,6 +330,14 @@ export function HireDialog({
           </OrgSection>
           <OrgSection title={S.company.chart.hirePositionSection}>
             <div className="space-y-3">
+              <Input
+                label={S.company.chart.employeeName}
+                size="sm"
+                value={employeeName}
+                maxLength={64}
+                hint={S.company.chart.employeeNameHireHint}
+                onChange={(e) => setEmployeeName(e.target.value)}
+              />
               <Input
                 label={S.company.chart.employeeTitle}
                 required
@@ -587,6 +603,146 @@ export function EmployeeEditDialog({
  * that fails after the chart was already rewritten keeps the dialog open and asks the page to
  * reload, so what is on screen never disagrees with the file.
  */
+/**
+ * What the organization calls an employee, and what it looks like: the chart entry's `name`
+ * and the picture in the organization's `avatars/`. Both are the organization's, not the
+ * Agent's — the same Agent may be someone else elsewhere. The picture is written as it is
+ * picked (the picker re-encodes it to fit, like a person's own); the name on Save.
+ */
+export function EmployeeProfileDialog({
+  open,
+  projectId,
+  orgId,
+  employee,
+  onClose,
+  onChanged,
+}: {
+  open: boolean;
+  projectId: string;
+  orgId: string;
+  employee: OrgEmployeeItem;
+  onClose: () => void;
+  /** The name or the picture was written: the caller re-reads the chart. */
+  onChanged: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(employee.givenName ?? "");
+    setError(undefined);
+  }, [open, employee]);
+
+  const run = async (work: () => Promise<unknown>, done?: () => void) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await work();
+      onChanged();
+      done?.();
+    } catch (e) {
+      setError(apiErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onPickFile = (e: ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file === undefined) return;
+    void run(async () => {
+      const dataUrl = await avatarDataUrlFromFile(file).catch(() => undefined);
+      if (dataUrl === undefined) throw new Error(S.profile.avatarUnreadable);
+      if (dataUrl === null) throw new Error(S.profile.avatarTooLarge);
+      await api.putOrgEmployeeAvatar(projectId, orgId, employee.agentId, dataUrl);
+    });
+  };
+
+  const save = () =>
+    run(
+      () =>
+        api.patchOrgEmployee(projectId, orgId, employee.agentId, {
+          name: name.trim() === "" ? null : name.trim(),
+        }),
+      () => {
+        toastSuccess(S.company.chart.saved);
+        onClose();
+      },
+    );
+
+  return (
+    <Modal
+      open={open}
+      title={S.company.chart.profileTitle(employee.name)}
+      onClose={() => (busy ? undefined : onClose())}
+      footer={
+        <>
+          <Button size="sm" onClick={onClose} disabled={busy}>
+            {S.common.cancel}
+          </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy || name.trim() === (employee.givenName ?? "")}
+            onClick={() => void save()}
+          >
+            {S.common.save}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <EmployeeAvatar
+            id={employee.agentId}
+            name={employee.name}
+            size={48}
+            className="rounded-lg"
+          />
+          <label
+            className={`shrink-0 ${labelButtonClass("secondary", "sm")} ${busy ? "pointer-events-none opacity-60" : ""}`}
+          >
+            <HiddenFileInput
+              accept="image/png,image/jpeg,image/webp"
+              disabled={busy}
+              onChange={onPickFile}
+            />
+            {S.profile.changeAvatar}
+          </label>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="shrink-0"
+            disabled={busy || employee.avatarRev === undefined}
+            onClick={() =>
+              void run(() => api.putOrgEmployeeAvatar(projectId, orgId, employee.agentId, null))
+            }
+          >
+            {S.profile.restoreDefault}
+          </Button>
+        </div>
+        <Input
+          label={S.company.chart.employeeName}
+          size="sm"
+          value={name}
+          maxLength={64}
+          disabled={busy}
+          placeholder={employee.agentId}
+          hint={S.company.chart.employeeNameHint(employee.agentId)}
+          {...(error !== undefined ? { error } : {})}
+          onChange={(e) => {
+            setName(e.target.value);
+            setError(undefined);
+          }}
+        />
+      </div>
+    </Modal>
+  );
+}
+
 export function DeskRenewDialog({
   open,
   projectId,

@@ -42,7 +42,8 @@ import { formatMoney, formatPercent } from "../../lib/format";
 import { ICON_SIZE } from "../../lib/icon-scale";
 import { toneDot, toneInk } from "../../lib/tone";
 import type { Currency } from "../../state/theme";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { Badge } from "../../components/ui/badge";
+import { EmployeeAvatar } from "./employee-avatar";
 import { Dropdown } from "../../components/ui/dropdown";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
 import { ELLIPSIS_ICON } from "../../components/ui/session-row-menu";
@@ -161,7 +162,7 @@ export function ChartCard({
         }`}
       >
         <span className="flex items-center gap-2.5 pr-6">
-          <AgentAvatar
+          <EmployeeAvatar
             id={employee.agentId}
             name={employee.name}
             size={28}

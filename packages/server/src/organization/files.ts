@@ -32,6 +32,7 @@ import type {
 import { parseScheduleFile } from "../runtime/schedule-file.js";
 import type { ScheduleDefinition } from "../runtime/schedule-file.js";
 import { SEMANTIC_ID_PATTERN } from "../services/ids.js";
+import { employeeNameProblem } from "./names.js";
 import { DEFAULT_CHANNEL_ID, ceoAgentId, isTicketColumn } from "./paths.js";
 import { parsePrincipal } from "./principal.js";
 import { isValidTimeZone } from "./zoned.js";
@@ -235,6 +236,12 @@ export function serializeOrgConfig(cfg: OrgConfig): string {
 
 export interface OrgEmployee {
   agentId: string;
+  /**
+   * What the organization calls this employee: for people, in any script (./names.ts). Absent,
+   * the Agent's display name stands in, then the id. It need not be unique as written — two of
+   * a name are shown, and addressed, with their ids noted.
+   */
+  name?: string;
   title: string;
   /** null for the CEO, the root. */
   reportsTo: string | null;
@@ -260,6 +267,11 @@ function employeeFrom(item: unknown, index: number): ParseResult<OrgEmployee> {
   const title = e["title"];
   if (typeof title !== "string" || title.trim() === "") {
     return fail(`${agentId}: title must be a non-empty string`);
+  }
+  const name = e["name"];
+  if (name !== undefined) {
+    const problem = typeof name === "string" ? employeeNameProblem(name) : "name must be a string";
+    if (problem !== null) return fail(`${agentId}: ${problem}`);
   }
   const reportsTo = e["reports_to"] ?? null;
   if (reportsTo !== null && (typeof reportsTo !== "string" || reportsTo === "")) {
@@ -296,6 +308,7 @@ function employeeFrom(item: unknown, index: number): ParseResult<OrgEmployee> {
     ok: true,
     value: {
       agentId,
+      ...(typeof name === "string" ? { name: name.trim() } : {}),
       title: title.trim(),
       reportsTo: reportsTo as string | null,
       ...(typeof duties === "string" && duties.trim() !== "" ? { duties: duties.trim() } : {}),
@@ -356,6 +369,7 @@ export function serializeOrgChart(chart: OrgChart): string {
   const doc = {
     employees: chart.employees.map((e) => ({
       agent_id: e.agentId,
+      ...(e.name !== undefined ? { name: e.name } : {}),
       title: e.title,
       reports_to: e.reportsTo,
       ...(e.duties !== undefined ? { duties: e.duties } : {}),
@@ -368,6 +382,8 @@ export function serializeOrgChart(chart: OrgChart): string {
   };
   return [
     "# org_chart.yaml — the employee tree: one employee is one Agent (no Agent, no position),",
+    "# name is what people call it (any script; optional — the Agent's display name, then the id,",
+    "# stands in); it and the agent_id both work after @ in a channel.",
     "# joined by reports_to into a tree rooted at the CEO. Budgets are monthly USD caps for an",
     "# employee plus every subordinate; workspace is a sub-directory of the shared workspace",
     "# (. = all of it) or an absolute path that already exists.",
@@ -1107,24 +1123,4 @@ export function serializeChannelMessageLine(msg: OrgChannelMessage): string {
     ...(refs !== undefined && Object.keys(refs).length > 0 ? { refs } : {}),
     ...(msg.notice !== undefined ? { notice: msg.notice } : {}),
   });
-}
-
-export interface MentionToken {
-  /** `agent` / `user` when the writer disambiguated, absent for the short form. */
-  prefix?: "agent" | "user";
-  /** The bare id, or `all`. */
-  id: string;
-}
-
-/** The `@` tokens in a message: `@id`, `@agent:id`, `@user:id`, `@all`; who they resolve to is the service's call. */
-export function extractMentionTokens(text: string): MentionToken[] {
-  const out: MentionToken[] = [];
-  const re = /(^|[^A-Za-z0-9_@])@(?:(agent|user):)?([A-Za-z0-9][A-Za-z0-9_.-]*)/g;
-  for (const m of text.matchAll(re)) {
-    const prefix = m[2] as "agent" | "user" | undefined;
-    const id = m[3]!.replace(/[.-]+$/, "");
-    if (id === "") continue;
-    out.push({ ...(prefix !== undefined ? { prefix } : {}), id });
-  }
-  return out;
 }

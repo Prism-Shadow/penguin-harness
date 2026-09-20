@@ -4,6 +4,7 @@
  * set and every automatic trigger is held until the file is fixed (the same rule as an
  * invalid schedule file: report, skip, recover on edit).
  */
+import { employeeNames } from "../../organization/names.js";
 import type { Desks, OrgChart, OrgConfig, OrgEmployee } from "../../organization/files.js";
 import { ORG_CONFIG_DEFAULTS, ancestorsOf } from "../../organization/files.js";
 import { ceoAgentId, workspaceDir } from "../../organization/paths.js";
@@ -75,13 +76,17 @@ export async function loadOrg(
   };
 }
 
-/** The `employee:` line of a trigger block: id, title and reporting line for orientation. */
+/**
+ * The `employee:` line of a trigger block: id, title and reporting line for orientation — and
+ * the name the organization calls it by, when it has one, since that is what people will use.
+ */
 export function employeeLine(org: LoadedOrg, agentId: string): string {
   const e = org.byId.get(agentId);
   if (!e) return agentId;
+  const called = e.name !== undefined ? `"${e.name}", ` : "";
   return e.reportsTo === null
-    ? `${agentId} (${e.title})`
-    : `${agentId} (${e.title}, reports to ${e.reportsTo})`;
+    ? `${agentId} (${called}${e.title})`
+    : `${agentId} (${called}${e.title}, reports to ${e.reportsTo})`;
 }
 
 /** The employee and everyone above it, for "any ancestor paused" checks. */
@@ -96,4 +101,47 @@ export function isCeo(org: LoadedOrg, agentId: string): boolean {
 /** The shared workspace root: the directory named in the config, else the organization's own `workspace/`. */
 export function sharedWorkspace(org: LoadedOrg): string {
   return org.config.workspace ?? workspaceDir(org.dir);
+}
+
+/** The user ids of a Project: its owner, then its members. */
+export function projectUserIds(
+  deps: Pick<OrgDeps, "projects" | "members">,
+  projectId: string,
+): string[] {
+  const project = deps.projects.findById(projectId);
+  const out: string[] = [];
+  for (const id of [
+    ...(project ? [project.ownerUserId] : []),
+    ...deps.members.list(projectId).map((m) => m.userId),
+  ]) {
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * What every employee of the organization goes by, unique across it (organization/names.ts):
+ * the chart's `name`, else the Agent's display name, else the id — with the id noted on any
+ * name that is not one employee's alone. Every surface that names an employee reads this, so
+ * the name people see is the name they can type after `@`.
+ */
+export async function orgEmployeeNames(
+  deps: Pick<OrgDeps, "agents" | "projects" | "members">,
+  org: LoadedOrg,
+): Promise<Map<string, string>> {
+  const fallback = new Map<string, string>();
+  for (const e of org.chart.employees) {
+    if (e.name !== undefined) continue;
+    fallback.set(
+      e.agentId,
+      (await deps.agents.exists(org.projectId, e.agentId))
+        ? await deps.agents.displayName(org.projectId, e.agentId)
+        : e.agentId,
+    );
+  }
+  return employeeNames(
+    org.chart.employees,
+    (agentId) => fallback.get(agentId) ?? agentId,
+    new Set(projectUserIds(deps, org.projectId)),
+  );
 }

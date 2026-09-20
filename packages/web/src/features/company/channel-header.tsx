@@ -22,7 +22,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { ICON_GAP, ICON_SIZE } from "../../lib/icon-scale";
 import { useProject } from "../../state/project";
-import { AgentAvatar } from "../../components/ui/agent-avatar";
+import { EmployeeAvatar } from "./employee-avatar";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { Dropdown } from "../../components/ui/dropdown";
@@ -69,7 +69,7 @@ function MemberAvatar({ member, size }: { member: OrgChannelMember; size: number
   const parsed = parsePrincipal(member.principal);
   if (parsed.kind === "agent") {
     return (
-      <AgentAvatar id={parsed.id} name={member.name} size={size} className="shrink-0 rounded" />
+      <EmployeeAvatar id={parsed.id} name={member.name} size={size} className="shrink-0 rounded" />
     );
   }
   return (

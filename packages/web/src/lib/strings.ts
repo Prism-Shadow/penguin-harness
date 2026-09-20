@@ -3882,6 +3882,13 @@ Benchmark：
       hire: "招募下属",
       setBudget: "设预算",
       changeReportsTo: "调整汇报线",
+      nameAndAvatar: "名字与头像",
+      profileTitle: (name: string) => `名字与头像——${name}`,
+      employeeName: "名字",
+      employeeNameHint: (agentId: string) =>
+        `大家在这个组织里怎么称呼这位员工，可以是中文；和 id（${agentId}）一样可以用在 @ 后面。两位员工同名时，会各自带上 id 作备注。留空则用 Agent 自己的名字。`,
+      employeeNameHireHint:
+        "大家在这个组织里怎么称呼这位员工，可以是中文；和 id 一样可以用在 @ 后面。留空则用 Agent 自己的名字。",
       renewDesk: "换工位",
       leave: "离任",
       ceoCannotLeave: "CEO 不能离任",

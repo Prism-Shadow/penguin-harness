@@ -6,6 +6,7 @@
  *   GET           …/:orgId/chart
  *   POST          …/:orgId/employees                        # hire
  *   PATCH|DELETE  …/:orgId/employees/:agentId
+ *   GET|PUT       …/:orgId/employees/:agentId/avatar         # the employee's picture (PUT { avatar: dataUrl | null })
  *   GET|POST      …/:orgId/employees/:agentId/desk           # the desk session (GET opens it if needed; POST renews)
  *   GET|PUT       …/:orgId/handbook                 (the index, handbook/README.md)
  *   GET           …/:orgId/handbook/files
@@ -320,6 +321,7 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
         ...(plugins !== undefined ? { plugins } : {}),
       };
     }
+    const name = optionalString(body, "name", { minLen: 1, maxLen: 64 });
     const title = requireString(body, "title", { minLen: 1, maxLen: 100 });
     const reportsTo = requireString(body, "reportsTo", { minLen: 2, maxLen: 64 });
     const workspace = optionalString(body, "workspace", { minLen: 1, maxLen: 4096 });
@@ -329,6 +331,7 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const item = await deps.orgService.hire(projectId, orgId, {
       ...(agentId !== undefined ? { agentId } : {}),
       ...(newAgent !== undefined ? { newAgent } : {}),
+      ...(name !== undefined ? { name } : {}),
       title,
       reportsTo,
       ...(workspace !== undefined ? { workspace } : {}),
@@ -345,6 +348,8 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const agentId = requireValidId(c, "agentId");
     member(c, projectId);
     const body = await readJson(c);
+    // null clears the name; so does an empty string, which is what an emptied box sends.
+    const name = body.name === null ? null : optionalString(body, "name", { maxLen: 64 });
     const title = optionalString(body, "title", { minLen: 1, maxLen: 100 });
     const reportsTo = optionalString(body, "reportsTo", { minLen: 2, maxLen: 64 });
     const workspace = optionalString(body, "workspace", { minLen: 1, maxLen: 4096 });
@@ -353,6 +358,7 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
     const duties = optionalString(body, "duties", { maxLen: 2000 });
     const model = parseModel(body);
     const item = await deps.orgService.patchEmployee(projectId, orgId, agentId, {
+      ...(name !== undefined ? { name } : {}),
       ...(title !== undefined ? { title } : {}),
       ...(reportsTo !== undefined ? { reportsTo } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
@@ -361,6 +367,40 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
       ...(model !== undefined ? { model } : {}),
     });
     return c.json(item);
+  });
+
+  // The employee's avatar: an image of the organization's (avatars/<agent_id>.<ext>). The GET
+  // is cached for good because its URL carries the content revision (`avatarRev`).
+  app.get("/:orgId/employees/:agentId/avatar", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const agentId = requireValidId(c, "agentId");
+    member(c, projectId);
+    const avatar = await deps.orgService.employeeAvatar(projectId, orgId, agentId);
+    return c.body(new Uint8Array(avatar.bytes), 200, {
+      "content-type": avatar.mime,
+      "cache-control": "private, max-age=31536000, immutable",
+      "x-content-type-options": "nosniff",
+    });
+  });
+
+  app.put("/:orgId/employees/:agentId/avatar", async (c) => {
+    const projectId = requireValidId(c, "projectId");
+    const orgId = requireValidId(c, "orgId");
+    const agentId = requireValidId(c, "agentId");
+    member(c, projectId);
+    const body = await readJson(c);
+    if (body.avatar !== null && typeof body.avatar !== "string") {
+      throw badRequest("avatar must be a data URL, or null to remove it.");
+    }
+    return c.json(
+      await deps.orgService.setEmployeeAvatar(
+        projectId,
+        orgId,
+        agentId,
+        body.avatar as string | null,
+      ),
+    );
   });
 
   app.delete("/:orgId/employees/:agentId", async (c) => {

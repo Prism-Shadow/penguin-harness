@@ -316,6 +316,7 @@ export interface Messages {
     title: string;
     reportsTo: string;
     /** Employee workspace: a sub-directory of the shared workspace (`.` = all of it) or an absolute path, written as given. */
+    employeeName: string;
     employeeWorkspace: string;
     /** hire's --workspace: the same spec, with the default the employee's own sub-directory. */
     hireWorkspace: string;
@@ -1130,6 +1131,8 @@ const en: Messages = {
       "Extra library plugins for the new Agent, comma-separated (added to agent-company,agent-development)",
     title: "Job title",
     reportsTo: "Agent id of the manager",
+    employeeName:
+      "What the organization calls the employee — any language, works after @ like the id; an empty value clears it",
     employeeWorkspace:
       "Workspace: a sub-directory of the shared workspace (. = all of it) or an absolute path, written as given",
     hireWorkspace:
@@ -1892,6 +1895,7 @@ const zh: Messages = {
     skills: "新 Agent 额外的插件库插件，逗号分隔（在 agent-company,agent-development 之上追加）",
     title: "头衔",
     reportsTo: "上级的 Agent id",
+    employeeName: "组织里对这位员工的称呼——可以是中文，和 id 一样可用在 @ 后面；传空值即清除",
     employeeWorkspace: "Workspace：公共工作区的子目录（. 即整个工作区）或绝对路径，原样写入",
     hireWorkspace:
       "Workspace：公共工作区的子目录或绝对路径，原样写入（缺省为以该员工命名的子目录）",
