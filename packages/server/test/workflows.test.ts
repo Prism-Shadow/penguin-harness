@@ -78,6 +78,15 @@ export default {
                   };
                   return { status: 201, headers, bytes: req.bytes ?? new Uint8Array() };
                 }
+                if (req.path === "/events") {
+                  const headers: Record<string, string> = { "content-type": "text/event-stream" };
+                  async function* events() {
+                    yield "data: one\\n\\n";
+                    await new Promise((r) => setTimeout(r, 400));
+                    yield new TextEncoder().encode("data: two\\n\\n");
+                  }
+                  return { headers, stream: events() };
+                }
                 if (req.path === "/moved") {
                   const headers: Record<string, string> = { location: "page" };
                   return { status: 302, headers };
@@ -505,6 +514,18 @@ describe("workflows", () => {
     expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(page.headers.get("set-cookie")).toBeNull();
     expect(await page.text()).toBe("<h1>proxied</h1>");
+    // A stream: the first chunk is in the client's hands while the handler is still producing
+    // the second — nothing is held back until the end.
+    const events = await owner.get(`${BASE}/demo/api/events`);
+    expect(events.headers.get("content-type")).toBe("text/event-stream");
+    const reader = events.body!.getReader();
+    const startedAt = Date.now();
+    const first = await reader.read();
+    expect(new TextDecoder().decode(first.value)).toBe("data: one\n\n");
+    expect(Date.now() - startedAt).toBeLessThan(300);
+    const second = await reader.read();
+    expect(new TextDecoder().decode(second.value)).toBe("data: two\n\n");
+    expect((await reader.read()).done).toBe(true);
     // A redirect, relative to the api mount.
     const moved = await owner.get(`${BASE}/demo/api/moved`);
     expect(moved.status).toBe(302);

@@ -86,7 +86,7 @@ function forwardedHeaders(headers: Headers): Record<string, string> {
 /**
  * JSON unless the handler says otherwise: a `content-type` header (or `bytes`) makes the
  * response the handler's own — a page it proxies from a program it runs, an image, a
- * download, a redirect. The same origin already serves the workflow's `ui/` files as
+ * download, a redirect — and `stream` sends it as it is produced. The same origin already serves the workflow's `ui/` files as
  * written, so a handler that answers HTML is no wider than a file that is HTML.
  */
 function respond(response: WorkflowResponse): Response {
@@ -96,6 +96,10 @@ function respond(response: WorkflowResponse): Response {
     if (!DROPPED_RESPONSE_HEADERS.has(name.toLowerCase())) headers.set(name, value);
   }
   const bodiless = status === 204 || status === 304 || (status >= 300 && status < 400);
+  if (response.stream !== undefined && !bodiless) {
+    if (!headers.has("content-type")) headers.set("content-type", "application/octet-stream");
+    return new Response(streamOf(response.stream), { status, headers });
+  }
   if (response.bytes !== undefined) {
     if (!headers.has("content-type")) headers.set("content-type", "application/octet-stream");
     return new Response(bodiless ? null : response.bytes, { status, headers });
@@ -107,6 +111,34 @@ function respond(response: WorkflowResponse): Response {
   if (bodiless) return new Response(null, { status, headers });
   headers.set("content-type", "application/json; charset=utf-8");
   return new Response(JSON.stringify(response.body ?? null), { status, headers });
+}
+
+/**
+ * The handler's iterator as a response body: one chunk out per chunk yielded, pulled only as
+ * fast as the client reads. A client that disconnects cancels the stream, which ends the
+ * iteration — the generator's `finally` runs, and whatever it was relaying is let go.
+ */
+function streamOf(chunks: AsyncIterable<Uint8Array | string>): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let iterator: AsyncIterator<Uint8Array | string> | null = null;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      iterator ??= chunks[Symbol.asyncIterator]();
+      try {
+        const next = await iterator.next();
+        if (next.done) controller.close();
+        else
+          controller.enqueue(
+            typeof next.value === "string" ? encoder.encode(next.value) : next.value,
+          );
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    async cancel() {
+      await iterator?.return?.();
+    },
+  });
 }
 
 export interface WorkflowRouteDeps {
