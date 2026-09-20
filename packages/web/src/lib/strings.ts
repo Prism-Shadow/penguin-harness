@@ -3898,18 +3898,13 @@ Benchmark：
     modelProjectDefault: "Project 默认",
     modelProjectDefaultNamed: (name: string): string => `Project 默认（${name}）`,
     modelsLoadFailed: "模型列表读取失败；仍可按 Project 默认模型创建",
-    machineField: "运行位置",
-    machineInfo:
-      "组织住在一台机器上：组织图、工单与频道写在那台机器上，员工是那台机器的 Agent，他们的会话也在那里运行。创建之后不能迁移。",
-    machineHere: "本机",
-    machineSsh: (alias: string) => `SSH: ${alias}`,
     machineCompanyModeOff:
       "那台机器没有开启公司模式。请先在那台机器的设置里开启，再在它上面创建组织。",
-    orgIdOnAnotherMachine: "这个 Project 在另一台机器上已有同名 id 的组织，请换一个 id。",
     workspaceField: "公司工作区",
     workspaceInfo:
-      "员工共同工作的目录：每位员工的工作区是它的一个子目录（或整个目录），工位会话与工单会话都在其中运行。",
-    workspaceHint: "留空则使用组织自己的 workspace/ 目录；指定时必须是服务器上已存在的目录",
+      "员工共同工作的目录：每位员工的工作区是它的一个子目录（或整个目录），工位会话与工单会话都在其中运行。它可以在 Project 已连接的某台机器上：组织随之在那台机器上运行——Agent 与会话都在那里——但仍属于当前 Project，这里保留它的文件副本。创建之后不能迁移。",
+    workspaceHint:
+      "留空则使用组织自己的 workspace/ 目录；指定时必须是已存在的目录，可在本机或已连接的机器上",
     workspaceEmpty: "组织自己的 workspace/ 目录",
     workspaceMenuHint: "选一个已存在的目录作为公司工作区",
     workspaceClear: "改回组织自己的目录",

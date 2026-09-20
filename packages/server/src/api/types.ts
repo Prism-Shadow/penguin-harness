@@ -4534,9 +4534,9 @@ export interface OrganizationSummary {
   createdBy: string;
   spend: OrgSpendSummary;
   /**
-   * The machine this organization lives on, as the machine id the listing was asked of. Never
-   * sent by a server — each one lists its own — but set by a client that merges the listings
-   * of several machines, so a row can say where it is. Absent or null: the server asked.
+   * The machine this organization RUNS on, when that is not the server answering: the one its
+   * shared workspace is on. The organization's own requests (`…/organizations/:orgId/…`) are
+   * answered there; this server holds a mirror. Absent or null: it runs here.
    */
   machineId?: string | null;
   /** Present when `org_config.toml` / `org_chart.yaml` fail validation: the organization is listed but every automatic trigger is held until it is fixed. */
@@ -4943,6 +4943,12 @@ export interface OrganizationCreateRequest {
   timezone?: string;
   /** An existing absolute directory to use as the shared workspace; default = the organization's own `workspace/`. */
   workspace?: string;
+  /**
+   * The machine `workspace` is on, by its own id (one of the Project's connected machines);
+   * absent = this server. The organization RUNS there — that server opens its desks and drives
+   * its calendar — and belongs to the Project here, which keeps a mirror of its files.
+   */
+  workspaceMachine?: string;
   /** The model for desks and ticket sessions (a configured pair); default = the Project default. */
   model?: { provider: string; modelId: string };
   /**

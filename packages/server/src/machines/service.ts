@@ -422,6 +422,11 @@ export class MachinesService {
     return this.#job;
   }
 
+  /** This server's own machine id: what another server of the Project knows it by. */
+  ownId(): string {
+    return this.#machineId;
+  }
+
   /**
    * Stamps what a forwarded request just learned (proxy.ts's ProxyReport): the machine's
    * API answered, or the connection had nowhere to deliver. Passive on purpose — the proxy
@@ -1487,6 +1492,7 @@ export abstract class Machines extends Interface<
     | "start"
     | "syncModelsEverywhere"
     | "proxyTarget"
+    | "ownId"
     | "jobs"
     | "startUse"
     | "stopUsing"

@@ -1,19 +1,31 @@
-# Company mode: an organization can live on another machine
+# Company mode: an organization's shared workspace can be on a machine
 
 - **Date:** 2026-09-19
 - **Type:** feature
-- **Scope:** `web`
+- **Scope:** `server`, `web`
+- **PR:** [#796](https://github.com/Prism-Shadow/penguin-harness/pull/796)
 
 [中文版](2026-09-19-company-mode-remote-machines.zh.md)
 
-An organization is files and desks — its chart, handbook, tickets and channels are written by the server whose filesystem holds its shared workspace, and its employees' Sessions run there. Until now every company-mode call went to the server the window is on, so an organization could only ever be created and worked with locally: the create dialog did not offer a machine, and a workspace on one could not be chosen. An organization can now be created on any machine the Project holds a connection to, and is then used from the same window like a local one.
+An organization belongs to the Project. Its shared workspace can now be a directory on one of the Project's connected machines, and the organization then RUNS on that machine — its employees' Agents, their desks and ticket Sessions are there, and that machine's server drives its calendar — while this server keeps a mirror of its files, lists it with the Project's other organizations and keeps a copy that outlives the machine.
 
 ## Creating
 
-The create dialog gains **Runs on** — *This server*, or one of the Project's held machines, shown as `SSH: <alias>` — and is absent for a Project that reaches no machine. The rest of the form follows it: the workspace browser lists that machine's directories, the model picker that machine's models (model config is per server), and the generated id is proposed by that machine's server. Changing the machine clears the model and the workspace, which were the other machine's. The draft kept across an accidental close remembers the machine with the path. A machine whose company mode is switched off says so; an id another machine of the Project already uses is refused before that machine is asked.
+- The create dialog's shared-workspace picker offers the Project's connected machines, as the new-chat picker does. A directory on a machine is what makes the organization run there; there is no separate "runs on" field. The Model list follows the machine chosen, since desks run on its Model config.
+- `POST /api/projects/:projectId/organizations` takes `workspaceMachine` (a connected machine's own id) beside `workspace`. The request is passed to that machine's own server, which does the creating — the CEO's Agent, its desk and the first work round are its Sessions and state — so whatever it refuses (a taken id, a directory that does not exist, a Model it does not have, company mode switched off there) comes back in its own words. `409 machine_not_connected` when the machine is not connected.
+- `org_config.toml` gains `workspace_machine`, the id of the machine the organization runs on; absent means the server holding the file. An existing organization has none and is unaffected.
 
-## Using
+## Running and mirroring
 
-The organization list is the merge of this server's organizations and those of every held machine; a machine with company mode off counts as "none there", one that cannot be reached marks the list partial rather than its organizations deleted. The switcher names a remote organization `Name [SSH: alias]`, the way a Workspace on a machine is named. Where two machines hold the same id, this server's is the one listed.
+- A server drives an organization only when it runs there. The scheduler's pass over an organization that runs elsewhere copies it instead of reconciling it: reconciling a mirror would find desks whose Sessions this server does not have and open new ones, and fire the calendar a second time.
+- The mirror is one-directional, whole files by content hash: `GET …/organizations/:orgId/mirror` lists the organization's files (`workspace/` and dot-named entries excluded, 8 MB a file at most), `GET …/mirror/file?path=` returns one. Files the machine no longer has are removed from the mirror. A machine that cannot be reached leaves the mirror as it is.
+- A write to a mirrored organization on this server is refused with `409 org_runs_elsewhere`: it would be undone by the next copy.
 
-Every organization-scoped call — the forty under `/api/projects/<p>/organizations/<orgId>/…` — goes to the machine that organization was last listed on, by the same path rule Sessions already use, so none of the pages names a machine. Sessions an organization's answers name (a desk, a ticket's work Session, the CEO desk a new organization opens onto) are recorded against the same machine, which is what makes opening one reach the right server. Hiring offers the Agents of the organization's machine, since an Agent is per server, and the settings dialog browses and lists models on it. Company events already arrived over each held machine's event stream.
+## In the Web App
+
+- One organization list, from this server. An organization that runs on a machine carries `machineId`; its own requests (`…/organizations/:orgId/…`) and the Sessions its answers name are sent to that machine through the existing `/server/<machineId>` route, and it reads as `Name [SSH: alias]`. The list row's live facts (who is running, what was spent) are the machine's own; the mirror answers alone when it cannot be asked.
+
+## Not yet
+
+- One organization still runs on ONE machine: employees are not yet spread over several machines, which needs two-way synchronization of the organization's files.
+- Notifications about a remote organization are raised on the machine that runs it, to that machine's users; they reach this window through the machine's event stream when the same user id exists on both.

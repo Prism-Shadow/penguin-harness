@@ -17,7 +17,7 @@ import { UsersRepo } from "../src/db/repos/users.js";
 import { OrgStore } from "../src/organization/store.js";
 import type { ErrorRecordArgs } from "../src/runtime/error-recorder.js";
 import { DEFAULT_EMPLOYEE_PLUGINS } from "../src/runtime/organization/deps.js";
-import type { OrgDeps } from "../src/runtime/organization/deps.js";
+import type { OrgDeps, OrgMachines } from "../src/runtime/organization/deps.js";
 import { OrganizationScheduler } from "../src/runtime/organization/scheduler.js";
 import { OrganizationService } from "../src/runtime/organization/service.js";
 import { ProjectConfigService } from "../src/services/project-config-service.js";
@@ -87,6 +87,8 @@ export async function makeOrgHarness(opts: {
   projectId?: string;
   ownerUserId?: string;
   nowMs: number;
+  /** Which server this is and how it reaches another; none = a server with no machines. */
+  machines?: OrgMachines;
 }): Promise<OrgHarness> {
   const projectId = opts.projectId ?? "p1";
   const owner = opts.ownerUserId ?? "alice";
@@ -213,6 +215,7 @@ export async function makeOrgHarness(opts: {
     errors: { record: (e) => void errors.push(e) },
     notifyProject: (_p, event) => void events.push(event),
     companyModeEnabled: () => flags.companyMode,
+    ...(opts.machines !== undefined ? { machines: opts.machines } : {}),
     now: () => clock.nowMs,
     log: () => {},
   };

@@ -385,41 +385,21 @@ export function createCompanyStore() {
     reloadOrganizations: async (projectIds) => {
       set({ orgsLoading: true });
       try {
-        // An organization lives on the machine its workspace is on, so a Project's
-        // organizations are this server's PLUS those of every machine held for it. `null` for
-        // a source that could not be asked — which is recorded, since a shortened list is not
-        // evidence that anything was deleted (forgetMissingOrganizations).
+        // One list, from this server: an organization belongs to the Project. One whose shared
+        // workspace is on a machine RUNS there, and says so (`machineId`) — that is where its
+        // own requests are sent (lib/org-machines.ts); this server holds its mirror. `null`
+        // for a Project that could not be asked, which is recorded, since a shortened list is
+        // not evidence that anything was deleted (forgetMissingOrganizations).
         const lists = await Promise.all(
-          projectIds.map(async (projectId) => {
-            const machineIds = (await heldMachines(projectId)).map((m) => m.machineId);
-            return Promise.all(
-              [null, ...machineIds].map((machineId) =>
-                api
-                  .listOrganizations(projectId, machineId)
-                  .then((res) => res.organizations.map((org) => ({ ...org, machineId })))
-                  // Company mode is a switch per SERVER: a machine with it off answers 404,
-                  // which is a complete answer ("none here"), not a failure to ask.
-                  .catch((err) =>
-                    machineId !== null && err instanceof ApiError && err.status === 404 ? [] : null,
-                  ),
-              ),
-            );
-          }),
+          projectIds.map((projectId) =>
+            api
+              .listOrganizations(projectId)
+              .then((res) => res.organizations)
+              .catch(() => null),
+          ),
         );
-        const sources = lists.flat();
-        // One id names one organization in the shell (its route, its remembered key): where
-        // two machines hold the same id, the first source wins — this server before any
-        // machine — and the create dialog refuses an id the merged list already holds.
-        const seen = new Set<string>();
-        const organizations = sources
-          .filter((list) => list !== null)
-          .flat()
-          .filter((org) => {
-            const key = orgKey(org.projectId, org.orgId);
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
+        const sources = lists;
+        const organizations = sources.filter((list) => list !== null).flat();
         forgetOrgMachines();
         for (const org of organizations) {
           rememberOrgMachine(org.projectId, org.orgId, org.machineId ?? null);

@@ -112,8 +112,12 @@ import { latestSlotAt, nextSlotAfter, slotInWindow } from "../schedule-file.js";
 import type { ScheduleDefinition } from "../schedule-file.js";
 import { budgetLine, budgetRatio, computeSpend, pausedEmployees } from "./budget.js";
 import type { OrgSpend } from "./budget.js";
-import { DEFAULT_EMPLOYEE_PLUGINS, OrgRuns, OrgSessions, employeePlugins } from "./deps.js";
+import { machineApi } from "../../machines/machine-api.js";
+import { Machines } from "../../machines/service.js";
+import { DEFAULT_EMPLOYEE_PLUGINS, OrgRuns, OrgSessions, employeePlugins, runsOn } from "./deps.js";
 import type { OrgDeps } from "./deps.js";
+import { isMirrorPath, mirrorManifest, pullMirror, readMirrorFile } from "./mirror.js";
+import type { OrgMirrorEntry } from "./mirror.js";
 import { loadOrg, orgEmployeeNames, projectUserIds, sharedWorkspace } from "./model.js";
 import type { LoadedOrg } from "./model.js";
 import { parseAvatarDataUrl, readAvatar, writeAvatar } from "../../organization/avatars.js";
@@ -305,14 +309,47 @@ export class OrganizationService {
 
   async list(projectId: string): Promise<OrganizationSummary[]> {
     const out: OrganizationSummary[] = [];
+    /** What each machine says of the organizations it runs, asked once per machine. */
+    const told = new Map<string, Promise<Map<string, OrganizationSummary>>>();
     for (const orgId of await this.deps.store.listOrgIds(projectId)) {
       const org = await loadOrg(this.deps, projectId, orgId);
       if (org === null) continue;
       const { tickets } = await listTickets(this.deps, org);
       const spend = await computeSpend(this.deps, org, tickets);
-      out.push(this.summary(org, tickets, spend));
+      const mirrored = this.summary(org, tickets, spend);
+      const machineId = runsOn(this.deps, org.config);
+      if (machineId === null) {
+        out.push(mirrored);
+        continue;
+      }
+      // Who is running and what was spent are facts of the server the Sessions are on; the
+      // mirror has the files only, and answers alone when that machine cannot be asked.
+      if (!told.has(machineId)) told.set(machineId, this.summariesOn(projectId, machineId));
+      const live = (await told.get(machineId)!).get(orgId);
+      out.push({ ...(live ?? mirrored), machineId });
     }
     return out;
+  }
+
+  private async summariesOn(
+    projectId: string,
+    machineId: string,
+  ): Promise<Map<string, OrganizationSummary>> {
+    const found = new Map<string, OrganizationSummary>();
+    try {
+      const api = await this.deps.machines?.api(machineId);
+      if (!api) return found;
+      const res = await api.request(
+        "GET",
+        `/api/projects/${encodeURIComponent(projectId)}/organizations`,
+      );
+      if (res.status !== 200) return found;
+      const body = JSON.parse(res.text) as { organizations: OrganizationSummary[] };
+      for (const item of body.organizations) found.set(item.orgId, item);
+    } catch {
+      // The mirror answers.
+    }
+    return found;
   }
 
   private summary(
@@ -549,6 +586,8 @@ export class OrganizationService {
     if (await this.deps.agents.exists(projectId, ceo)) {
       throw new HttpError(409, "agent_exists", `The CEO's Agent id is already taken: ${ceo}`);
     }
+    const elsewhere = runsOn(this.deps, { workspaceMachine: req.workspaceMachine });
+    if (elsewhere !== null) return this.createOn(elsewhere, projectId, req, userId);
     const name = req.name?.trim() || orgId;
     if (req.model !== undefined) await this.validateModel(projectId, req.model);
     const workspace =
@@ -568,6 +607,9 @@ export class OrganizationService {
       budgetPauseRatio: ORG_CONFIG_DEFAULTS.budgetPauseRatio,
       createdBy: userId,
       ...(workspace !== undefined ? { workspace } : {}),
+      // Recorded when the request names this server explicitly: that is what a server holding
+      // this organization's mirror reads to know where it runs.
+      ...(req.workspaceMachine !== undefined ? { workspaceMachine: req.workspaceMachine } : {}),
       ...(req.model !== undefined ? { model: req.model } : {}),
     };
     const dir = this.deps.store.dir(projectId, orgId);
@@ -628,6 +670,104 @@ export class OrganizationService {
     });
     await this.scheduler.reconcile(projectId, orgId);
     return this.detail(projectId, orgId, userId);
+  }
+
+  /** The files a server holding this organization's mirror copies (runtime/organization/mirror.ts). */
+  async mirrorFiles(projectId: string, orgId: string): Promise<OrgMirrorEntry[]> {
+    const org = await this.requireOrg(projectId, orgId);
+    return mirrorManifest(org.dir);
+  }
+
+  async mirrorFile(projectId: string, orgId: string, rel: string): Promise<Buffer> {
+    const org = await this.requireOrg(projectId, orgId);
+    const bytes = isMirrorPath(rel) ? await readMirrorFile(org.dir, rel) : null;
+    if (bytes === null) throw new HttpError(404, "not_found", `No such file: ${rel}`);
+    return bytes;
+  }
+
+  /**
+   * The machine an organization runs on when that is not this server. Its requests belong
+   * there: a write made to the mirror would be undone by the next copy, and a read of it
+   * knows nothing of the Sessions.
+   */
+  async runsOn(projectId: string, orgId: string): Promise<string | null> {
+    const config = (await this.deps.store.readConfig(this.deps.store.dir(projectId, orgId)))
+      ?.parsed;
+    return config?.ok === true ? runsOn(this.deps, config.value) : null;
+  }
+
+  /**
+   * Creates the organization on the machine its shared workspace is on, and takes it into
+   * this Project as a mirror. The machine's own server does the creating — the CEO's Agent,
+   * its desk and the first work round are all Sessions and state over THERE — with the
+   * request as it came, so whatever it refuses (a taken id, a directory that does not exist,
+   * a Model it does not have, company mode switched off) is refused in its own words.
+   */
+  private async createOn(
+    machineId: string,
+    projectId: string,
+    req: OrganizationCreateRequest,
+    userId: string,
+  ): Promise<OrganizationDetail> {
+    if (req.workspace === undefined) {
+      throw badRequest("An organization on a machine needs its shared workspace named.");
+    }
+    const api = await this.deps.machines?.api(machineId);
+    if (!api) {
+      throw new HttpError(
+        409,
+        "machine_not_connected",
+        "That machine is not connected; connect it on the Machines page first.",
+      );
+    }
+    const answer = await api.request(
+      "POST",
+      `/api/projects/${encodeURIComponent(projectId)}/organizations`,
+      req,
+    );
+    if (answer.status !== 201) {
+      let error: { code?: string; message?: string } = {};
+      try {
+        error = (JSON.parse(answer.text) as { error?: typeof error }).error ?? {};
+      } catch {
+        // Not the API's envelope.
+      }
+      throw new HttpError(
+        answer.status >= 400 && answer.status < 500 ? (answer.status as 400) : 502,
+        error.code ?? "machine_refused",
+        error.message ?? `The machine answered ${answer.status}.`,
+      );
+    }
+    const pulled = await this.scheduler.withLock(projectId, req.orgId, () =>
+      pullMirror(this.deps, projectId, req.orgId, machineId, api),
+    );
+    const created = JSON.parse(answer.text) as OrganizationDetail;
+    if (pulled.kind !== "mirrored") {
+      // The organization exists over there; what this Project needs is a place to copy it
+      // into, or no pass would ever look for it. Its settings are enough to say where it runs.
+      const dir = this.deps.store.dir(projectId, req.orgId);
+      await this.deps.store.createLayout(dir, new Date(this.now()).toISOString());
+      await this.deps.store.writeConfig(dir, {
+        name: created.settings.name,
+        mission: created.settings.mission,
+        status: created.settings.status,
+        timezone: created.settings.timezone,
+        language: created.settings.language,
+        approvalMode: created.settings.approvalMode,
+        mentionChainLimit: created.settings.mentionChainLimit,
+        budgetWarnRatio: created.settings.budgetWarnRatio,
+        budgetPauseRatio: created.settings.budgetPauseRatio,
+        createdBy: created.settings.createdBy,
+        workspace: req.workspace,
+        workspaceMachine: machineId,
+        ...(created.settings.model !== undefined ? { model: created.settings.model } : {}),
+      });
+      this.deps.log?.(
+        `[organization] ${req.orgId} was created on ${machineId}; its first copy did not arrive (${pulled.kind}) and the next pass retries`,
+      );
+    }
+    void userId;
+    return { ...created, machineId };
   }
 
   /**
@@ -2709,6 +2849,9 @@ export abstract class OrgService extends Interface<
     OrganizationService,
     | "list"
     | "create"
+    | "mirrorFiles"
+    | "mirrorFile"
+    | "runsOn"
     | "detail"
     | "delete"
     | "patch"
@@ -2784,6 +2927,7 @@ export class OrganizationModule {
   @Use() private readonly usage!: UsageQueries;
   @Use() private readonly errors!: Errors;
   @Use() private readonly settings!: Settings;
+  @Use() private readonly machines!: Machines;
   @Use() private readonly messagingRepo!: MessagingBindings;
   @Provide() orgService!: OrgService;
   @Provide() orgScheduler!: OrgScheduler;
@@ -2840,6 +2984,13 @@ export class OrganizationModule {
         }
       },
       companyModeEnabled: () => this.settings.getCompanyMode(),
+      machines: {
+        ownId: () => this.machines.ownId(),
+        api: async (machineId) => {
+          const target = await this.machines.proxyTarget(machineId);
+          return target === null ? null : machineApi(target.agent, target.port, target.cookie);
+        },
+      },
       now: () => this.clock.now().getTime(),
       log: (line: string) => this.log.line(line),
     };

@@ -58,7 +58,6 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { ICON_GAP } from "../../lib/icon-scale";
 import { ModelSelect, modelLabel } from "../chat/model-select";
 import { WorkspaceSelect } from "../chat/workspace-select";
-import { MachinePicker } from "../machines/machine-picker";
 import { machineForOrg } from "../../lib/org-machines";
 import { sameModelRef } from "../models/model-grouping";
 import { ErrorLine, MoneyPerMonthInput, OrgStatusPill } from "./shared";
@@ -204,12 +203,19 @@ function WorkspaceField({
   machineId,
   value,
   onChange,
+  chooseMachine = false,
 }: {
   projectId: string;
-  /** The machine the organization lives on: the only one whose directories are offered. Null = this server. */
+  /** The machine the directory is on; null = this server. */
   machineId: string | null;
   value: string;
-  onChange: (path: string) => void;
+  onChange: (path: string, machineId: string | null) => void;
+  /**
+   * Offer the Project's machines in the picker. On for a NEW organization: the machine follows
+   * the workspace, so choosing a directory on a machine is what makes the organization run
+   * there. Off once it exists — it does not move.
+   */
+  chooseMachine?: boolean;
 }) {
   return (
     <div>
@@ -218,13 +224,14 @@ function WorkspaceField({
         <InfoPopover label={S.company.workspaceField}>{S.company.workspaceInfo}</InfoPopover>
       </span>
       <WorkspaceSelect
-        // Keyed on the machine: the browser keeps the machine it is on as its own state, and
-        // an organization's workspace is never on another machine than the organization.
-        key={machineId ?? ""}
+        // Keyed on the machine when it is fixed: the browser keeps the machine it is on as its
+        // own state, and an existing organization's workspace never leaves its machine.
+        key={chooseMachine ? "choose" : (machineId ?? "")}
         projectId={projectId}
         machineId={machineId}
         workspace={value}
-        onChange={(path) => onChange(path)}
+        onChange={(path, machine) => onChange(path, machine === undefined ? machineId : machine)}
+        chooseMachine={chooseMachine}
         variant="form"
         fieldLabel={S.company.workspaceField}
         emptyLabel={S.company.workspaceEmpty}
@@ -251,40 +258,6 @@ function useHeldMachines(projectId: string, open: boolean): HeldMachine[] {
     };
   }, [open, projectId]);
   return machines;
-}
-
-/**
- * Where the organization lives. An organization is files and desks, so it lives on ONE
- * machine: its chart and tickets are written there, its employees are that machine's Agents,
- * and their Sessions run there. The field is absent when the Project reaches no machine.
- */
-function MachineField({
-  machines,
-  value,
-  onChange,
-}: {
-  machines: readonly HeldMachine[];
-  value: string | null;
-  onChange: (machineId: string | null) => void;
-}) {
-  if (machines.length === 0) return null;
-  return (
-    <div>
-      <span className="mb-1 flex items-center gap-1">
-        <FieldLabel block={false}>{S.company.machineField}</FieldLabel>
-        <InfoPopover label={S.company.machineField}>{S.company.machineInfo}</InfoPopover>
-      </span>
-      <MachinePicker
-        aria-label={S.company.machineField}
-        value={value ?? ""}
-        onChange={(next) => onChange(next === "" ? null : next)}
-        choices={[
-          { value: "", label: S.company.machineHere },
-          ...machines.map((m) => ({ value: m.machineId, label: S.company.machineSsh(m.alias) })),
-        ]}
-      />
-    </div>
-  );
 }
 
 /**
@@ -394,7 +367,6 @@ export function CreateOrganizationDialog({
   const onMachine =
     machineId !== null && machines.some((m) => m.machineId === machineId) ? machineId : null;
   const { models, error: modelsError } = useProjectModels(projectId, open, onMachine);
-  const { organizations } = useCompany();
 
   // The Project the organization is being created in: the current one on open, changeable
   // below when the user has several.
@@ -496,13 +468,6 @@ export function CreateOrganizationDialog({
       setBudgetError(S.company.ceoBudgetHint);
       bad = true;
     }
-    // One id names one organization in the shell, wherever it lives: an id another machine
-    // of this Project already holds is refused here, before that machine is asked.
-    const twin = organizations.find((o) => o.projectId === projectId && o.orgId === id);
-    if (!bad && twin !== undefined && (twin.machineId ?? null) !== onMachine) {
-      setIdError(S.company.orgIdOnAnotherMachine);
-      bad = true;
-    }
     if (bad || !projectId) return;
     setBusy(true);
     setFormError(null);
@@ -515,10 +480,13 @@ export function CreateOrganizationDialog({
         mission: mission.trim(),
         ...(name.trim() ? { name: name.trim() } : {}),
         ...(workspace.trim() ? { workspace: workspace.trim() } : {}),
+        // The machine follows the workspace: a directory on a machine makes the organization
+        // run there. It still belongs to this Project, which keeps a mirror of its files.
+        ...(workspace.trim() && onMachine !== null ? { workspaceMachine: onMachine } : {}),
         ...(modelRef !== null ? { model: modelRef } : {}),
         ...(ceoBudgetUsd !== null ? { ceoBudget: ceoBudgetUsd } : {}),
       };
-      const detail = await api.createOrganization(projectId, body, onMachine);
+      const detail = await api.createOrganization(projectId, body);
       // The draft did its job: what it held is now an organization.
       if (draftKey !== null) clearOrgDraft(draftKey);
       setRestored(false);
@@ -639,21 +607,18 @@ export function CreateOrganizationDialog({
           onChange={setModelRef}
           disabled={busy}
         />
-        <MachineField
-          machines={machines}
-          value={onMachine}
-          onChange={(next) => {
-            // The model and the workspace are that machine's: neither survives the move.
-            setMachineId(next);
-            setModelRef(null);
-            setWorkspace("");
-          }}
-        />
         <WorkspaceField
           projectId={projectId}
           machineId={onMachine}
           value={workspace}
-          onChange={setWorkspace}
+          chooseMachine
+          onChange={(path, machine) => {
+            // The Model list is the machine's own: it does not survive a move to another one.
+            if (machine !== onMachine) setModelRef(null);
+            // A machine is only ever chosen together with a directory on it.
+            setMachineId(path.trim() === "" ? null : machine);
+            setWorkspace(path);
+          }}
         />
         <MoneyPerMonthInput
           label={S.company.ceoBudget}
@@ -866,7 +831,7 @@ export function OrganizationSettingsDialog({
           projectId={projectId}
           machineId={orgMachine}
           value={workspace}
-          onChange={setWorkspace}
+          onChange={(path) => setWorkspace(path)}
         />
         <Input
           label={S.company.timezone}

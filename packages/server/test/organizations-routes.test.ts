@@ -31,6 +31,9 @@ function fakeService(calls: Call[]): OrganizationService {
   const handler: ProxyHandler<Record<string, unknown>> = {
     get: (_target, method) => {
       if (typeof method !== "string") return undefined;
+      // Every write first asks where the organization runs (a mirror refuses writes); these
+      // all run here, and the question is not one of the calls a route test is about.
+      if (method === "runsOn") return async () => null;
       return async (...args: unknown[]) => {
         calls.push({ method, args });
         switch (method) {
