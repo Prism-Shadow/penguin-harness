@@ -3,6 +3,7 @@
 - **Date:** 2026-08-30
 - **Type:** feature
 - **Scope:** `server`, `web`, `cli`, `skills`
+- **PR:** [#718](https://github.com/Prism-Shadow/penguin-harness/pull/718)
 
 [中文版](2026-08-30-workflows.zh.md)
 
