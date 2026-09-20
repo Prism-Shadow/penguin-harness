@@ -1735,6 +1735,13 @@ export const patchOrganization = (
   body: OrganizationPatchRequest,
 ) => apiFetch<OrganizationSettings>(orgBase(projectId, orgId), { method: "PATCH", body });
 
+/**
+ * Owner only. The organization itself goes — to the Project's trash, restorable by hand; its
+ * employees' Agents and its desk and ticket Sessions are left as they are.
+ */
+export const deleteOrganization = (projectId: string, orgId: string) =>
+  apiFetch<void>(orgBase(projectId, orgId), { method: "DELETE" });
+
 export const getOrgChart = (projectId: string, orgId: string) =>
   apiFetch<OrgChartResponse>(`${orgBase(projectId, orgId)}/chart`);
 

@@ -628,6 +628,30 @@ export class OrganizationService {
     return this.detail(projectId, orgId, userId);
   }
 
+  /**
+   * Deletes the organization — and ONLY the organization: its directory goes to the Project's
+   * trash (store.trash), whole and restorable, and the rows this server derived from it go
+   * with it, since a new organization under the same id must not inherit
+   * another's read cursors, calendar state or pending notices.
+   *
+   * What it had is left exactly as it is. Its employees stay Agents of the Project, with
+   * everything they learned. Its desk and ticket Sessions stay too, still marked as an
+   * organization's (`client = org`), so they do not spill into development mode's list;
+   * with the organization gone no page lists them either, which is the price of not
+   * deleting conversations along with a company.
+   *
+   * Under the organization's lock, so a pass in flight finishes first and the next one finds
+   * no directory — the same state a hand-removed directory always was.
+   */
+  async delete(projectId: string, orgId: string): Promise<void> {
+    await this.requireOrg(projectId, orgId);
+    await this.scheduler.withLock(projectId, orgId, async () => {
+      await this.deps.store.trash(projectId, orgId, new Date(this.now()).toISOString());
+      this.deps.cache.deleteOrg(projectId, orgId);
+    });
+    this.deps.log?.(`[organization] ${projectId}/${orgId} deleted (moved to the trash)`);
+  }
+
   async patch(
     projectId: string,
     orgId: string,
@@ -2633,6 +2657,7 @@ export abstract class OrgService extends Interface<
     | "list"
     | "create"
     | "detail"
+    | "delete"
     | "patch"
     | "leave"
     | "suggestId"

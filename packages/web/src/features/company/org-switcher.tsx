@@ -226,6 +226,9 @@ export function OrgSwitcher({ onNavigate }: { onNavigate?: () => void }) {
           orgId={settingsTarget.orgId}
           onClose={() => setSettingsOpen(false)}
           onChanged={() => void company.reloadOrganizations()}
+          // The list drops it, and the shell then moves off its pages by itself (the settled
+          // listing no longer holds the current organization).
+          onDeleted={() => void company.reloadOrganizations()}
         />
       )}
     </>
