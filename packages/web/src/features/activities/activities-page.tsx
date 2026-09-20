@@ -448,7 +448,11 @@ function ActivityEditor({
               (item.script === undefined || typeof item.script === "string") &&
               (item.path === undefined || typeof item.path === "string") &&
               (item.generatedAudio === undefined ||
-                (item.generatedAudio && typeof item.generatedAudio.runId === "string")),
+                (item.generatedAudio && typeof item.generatedAudio.runId === "string")) &&
+              (item.generatedImage === undefined ||
+                (item.generatedImage &&
+                  typeof item.generatedImage.runId === "string" &&
+                  typeof item.generatedImage.sha256 === "string")),
           ),
       )
     )
@@ -651,6 +655,7 @@ function ActivityEditor({
           <InfoPopover label={S.activities.mediaTitle}>
             <p>{S.activities.mediaHelp}</p>
             <p>{S.activities.speechHelp}</p>
+            <p>{S.activities.imageHelp}</p>
           </InfoPopover>
         </h3>
         {editable && (
@@ -693,7 +698,7 @@ function ActivityEditor({
                 wafRoot={wafRoot}
                 voices={voices}
                 onChange={(value) => setMedia(pretty(value))}
-                onGenerate={(language, assetKey, voice) =>
+                onGenerateAudio={(language, assetKey, voice) =>
                   void action(async () => {
                     const run = await apiFetch<ActivityRun>(`${endpoint}/generate-audio`, {
                       method: "POST",
@@ -714,10 +719,45 @@ function ActivityEditor({
                     }
                   })
                 }
-                onAccept={(runId) =>
+                onGenerateImage={(language, assetKey) =>
+                  void action(async () => {
+                    const run = await apiFetch<ActivityRun>(`${endpoint}/generate-image`, {
+                      method: "POST",
+                      body: {
+                        agentId: selectedAgent,
+                        expectedRevision: detail.draft.contentRevision,
+                        language,
+                        assetKey,
+                      },
+                    });
+                    if (alive.current) {
+                      setRuns((previous) => [
+                        summarize(run),
+                        ...previous.filter((item) => item.runId !== run.runId),
+                      ]);
+                      setRefreshVersion((value) => value + 1);
+                    }
+                  })
+                }
+                onAcceptAudio={(runId) =>
                   void action(async () => {
                     const draft = await apiFetch<ActivityDraft>(
                       `${endpoint}/runs/${encodeURIComponent(runId)}/accept-audio`,
+                      {
+                        method: "POST",
+                        body: { expectedRevision: detail.draft.contentRevision },
+                      },
+                    );
+                    if (alive.current) {
+                      accept({ ...detail, draft });
+                      setNotice(S.activities.saved);
+                    }
+                  })
+                }
+                onAcceptImage={(runId) =>
+                  void action(async () => {
+                    const draft = await apiFetch<ActivityDraft>(
+                      `${endpoint}/runs/${encodeURIComponent(runId)}/accept-image`,
                       {
                         method: "POST",
                         body: { expectedRevision: detail.draft.contentRevision },
@@ -790,12 +830,14 @@ function ActivityEditor({
                     ? S.activities.moduleRun
                     : run.kind === "audio"
                       ? S.activities.audioRun
-                      : S.activities.specRun}
+                      : run.kind === "image"
+                        ? S.activities.imageRun
+                        : S.activities.specRun}
                 </span>
                 <span className={`rounded px-2 py-0.5 text-xs ${toneSurface[runTone[run.status]]}`}>
                   {run.kind === "module" && run.status === "succeeded"
                     ? S.activities.moduleReady
-                    : run.kind === "audio"
+                    : run.kind === "audio" || run.kind === "image"
                       ? S.activities.speechStatus[run.status]
                       : S.activities.status[run.status]}
                 </span>

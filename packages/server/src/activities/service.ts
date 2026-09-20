@@ -11,6 +11,12 @@ import { AUDIO_MAX_BYTES, inspectWave, type AudioResult, type AudioTarget } from
 import { readArtifactBytes } from "./artifact.js";
 import { readBoundImage, type ImageRequest } from "./image.js";
 import {
+  GENERATED_IMAGE_MAX_BYTES,
+  inspectPng,
+  type ImageResult,
+  type ImageTarget,
+} from "./generated-image.js";
+import {
   contentRevision,
   draftRevision,
   newCollectionManifest,
@@ -59,7 +65,127 @@ export class ActivityService implements ActivityAuthoring {
   private readonly locks = new ActivityLocks();
 
   async imageContent(projectId: string, activityId: string, input: ImageRequest) {
-    return readBoundImage(await this.getActivity(projectId, activityId), input);
+    const activity = await this.getActivity(projectId, activityId);
+    const generated = activity.draft.mediaPlan?.manifest.assets[input.language]?.find(
+      (asset) => asset.key === input.assetKey,
+    )?.generatedImage;
+    if (generated) {
+      if (activity.draft.contentRevision !== input.expectedRevision)
+        throw new HttpError(
+          409,
+          "draft_conflict",
+          "The draft changed. Reload it before previewing media.",
+        );
+      if (
+        activity.draft.status !== "valid" ||
+        activity.draft.mediaPlan!.specRevision !== contentRevision(activity.draft.spec)
+      )
+        throw new HttpError(409, "media_stale", "Rebuild the media plan before previewing images.");
+      return {
+        bytes: await this.readImage(projectId, activityId, generated.runId, generated.sha256),
+        mimeType: "image/png",
+      };
+    }
+    return readBoundImage(activity, input);
+  }
+
+  private imagePath(
+    projectId: string,
+    activity: ActivityRecord & { draft: ActivityDraft },
+    runId: string,
+  ) {
+    if (!/^run_[a-f0-9]{32}$/.test(runId))
+      throw new HttpError(404, "run_not_found", "Image candidate not found.");
+    return path.join(
+      this.draftWorkspace(projectId, activity.collectionId, activity.id, activity.draft.draftId),
+      "images",
+      `${runId}.png`,
+    );
+  }
+  async storeImage(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    bytes: Uint8Array,
+  ): Promise<ImageResult> {
+    return this.projectWork.run(projectId, async () => {
+      const activity = await this.getActivity(projectId, activityId);
+      const result = inspectPng(bytes, runId);
+      const file = this.imagePath(projectId, activity, runId);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, bytes, { flag: "wx" });
+      return result;
+    });
+  }
+  async readImage(
+    projectId: string,
+    activityId: string,
+    runId: string,
+    sha256: string,
+  ): Promise<Uint8Array> {
+    const activity = await this.getActivity(projectId, activityId);
+    const bytes = await readArtifactBytes(
+      this.imagePath(projectId, activity, runId),
+      GENERATED_IMAGE_MAX_BYTES,
+    );
+    if (inspectPng(bytes, runId).sha256 !== sha256)
+      throw new HttpError(409, "image_changed", "Stored image changed. Generate a new candidate.");
+    return bytes;
+  }
+  async applyImage(
+    projectId: string,
+    activityId: string,
+    target: ImageTarget,
+    result: ImageResult,
+    expectedRevision: string,
+  ): Promise<ActivityDraft> {
+    await this.readImage(projectId, activityId, result.runId, result.sha256);
+    return this.change(projectId, activityId, expectedRevision, (draft) => {
+      const plan = draft.mediaPlan;
+      if (!plan || plan.specRevision !== contentRevision(draft.spec) || draft.status !== "valid")
+        throw new HttpError(
+          409,
+          "media_stale",
+          "Rebuild the media plan before accepting an image.",
+        );
+      const manifest = structuredClone(plan.manifest);
+      const asset = manifest.assets[target.language]?.find(
+        (entry) => entry.key === target.assetKey,
+      );
+      if (!asset || asset.type !== "image" || asset.description !== target.prompt)
+        throw new HttpError(
+          409,
+          "image_changed",
+          "The image description changed. Generate a new candidate.",
+        );
+      asset.path = `media/generated/${result.runId}.png`;
+      asset.generatedImage = { runId: result.runId, sha256: result.sha256 };
+      return { ...draft, mediaPlan: { ...plan, manifest } };
+    });
+  }
+  async prepareImageMedia(
+    projectId: string,
+    activityId: string,
+    workspace: string,
+    expectedRevision: string,
+  ): Promise<void> {
+    const activity = await this.getActivity(projectId, activityId);
+    if (activity.draft.contentRevision !== expectedRevision)
+      throw new HttpError(409, "draft_conflict", "Media changed before assembly.");
+    const copied = new Set<string>();
+    for (const asset of Object.values(activity.draft.mediaPlan?.manifest.assets ?? {}).flat()) {
+      if (!asset.generatedImage || copied.has(asset.path!)) continue;
+      const bytes = await this.readImage(
+        projectId,
+        activityId,
+        asset.generatedImage.runId,
+        asset.generatedImage.sha256,
+      );
+      const file = path.join(workspace, asset.path!);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, bytes, { flag: "wx" });
+      copied.add(asset.path!);
+    }
   }
 
   private collectionDir(projectId: string, collectionId: string): string {
@@ -356,6 +482,20 @@ export class ActivityService implements ActivityAuthoring {
       try {
         const parsed = validateManifest(manifest, activity);
         validateMediaCoverage(parsed, { ...activity, draft });
+        for (const [language, assets] of Object.entries(parsed.assets)) {
+          for (const asset of assets) {
+            if (!asset.generatedImage) continue;
+            const accepted = draft.mediaPlan.manifest.assets[language]?.find(
+              (previous) => previous.key === asset.key,
+            )?.generatedImage;
+            if (
+              !accepted ||
+              accepted.runId !== asset.generatedImage.runId ||
+              accepted.sha256 !== asset.generatedImage.sha256
+            )
+              throw new Error("Use Accept this image to bind a generated candidate.");
+          }
+        }
         return { ...draft, mediaPlan: { ...draft.mediaPlan, manifest: parsed } };
       } catch (error) {
         throw new HttpError(422, "media_invalid", (error as Error).message);

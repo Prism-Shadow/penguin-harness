@@ -3,7 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** refactor
 - **Scope:** `server`
-- **PR:** [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3), [#9](https://github.com/nicolaepocroianu/penguin-harness/pull/9), [#15](https://github.com/nicolaepocroianu/penguin-harness/pull/15), [#16](https://github.com/nicolaepocroianu/penguin-harness/pull/16)
+- **PR:** [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3), [#9](https://github.com/nicolaepocroianu/penguin-harness/pull/9), [#15](https://github.com/nicolaepocroianu/penguin-harness/pull/15), [#16](https://github.com/nicolaepocroianu/penguin-harness/pull/16), [#20](https://github.com/nicolaepocroianu/penguin-harness/pull/20)
 
 Migration 12 moved existing candidate text from activity run JSON into a separate payload table and retained compact history metadata, without resetting drafts or run history.
 
@@ -30,3 +30,11 @@ Migration 14 adds a speech-run identity table without rewriting existing specifi
 Accepted speech adds optional `generatedAudio` provenance to draft media assets; immutable candidate WAV files live with the activity draft. Existing media plans remain valid without this field. Native WAF exports omit Penguin's provenance. Restore a pre-speech backup before running an older writer against drafts with generated audio.
 
 Repository maintainers retain migration 14 until schema versions below 14 cease to be supported. The optional provenance field remains permanently for activities using generated audio.
+
+## Image candidate storage
+
+Migration 15 adds an image-run identity table without rewriting existing attempts. Restart the server to apply it. Rollback refuses databases containing image attempts because older collectors would interpret them as specification attempts. Restore a pre-upgrade backup before downgrading a database with image history.
+
+Accepted images add optional `generatedImage` provenance to draft media assets; immutable PNG candidates live with the activity draft. Existing plans remain valid without this field. Native WAF exports omit Penguin's provenance and preserve the accepted PNG bytes. Restore a pre-image-generation backup before running an older writer against drafts containing generated images.
+
+Repository maintainers retain migration 15 until schema versions below 15 cease to be supported. The optional provenance field remains permanently for activities using generated images.

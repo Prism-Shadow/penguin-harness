@@ -18,6 +18,7 @@ import type { SessionRow } from "../src/db/repos/sessions.js";
 import { apiClient, createTestApp, provisionUser, waitFor } from "./helpers.js";
 import { activitySpec } from "./activity-fixtures.js";
 import { speechWave } from "./audio-fixtures.js";
+import { imagePng } from "./image-fixtures.js";
 import { prepareModule, verifyMediaArtifacts } from "../src/activities/waf-module.js";
 
 function deferred() {
@@ -34,7 +35,7 @@ describe("activity generation through Harness sessions", () => {
     for (const cleanup of cleanups.splice(0)) await cleanup();
   });
 
-  async function fixture(moduleOutput: boolean | "audio" = false) {
+  async function fixture(moduleOutput: boolean | "audio" | "image" = false) {
     let complete: () => void = () => {};
     const waiting = new Set<string>();
     const disposed = new Set<string>();
@@ -67,6 +68,11 @@ describe("activity generation through Harness sessions", () => {
           await fs.writeFile(
             path.join(row.workspace!, "speech.wav"),
             output === "invalid" ? Buffer.from("invalid") : speechWave(),
+          );
+        } else if (moduleOutput === "image") {
+          await fs.writeFile(
+            path.join(row.workspace!, "image.png"),
+            output === "invalid" ? Buffer.from("invalid") : imagePng(),
           );
         } else if (moduleOutput) {
           const input = JSON.parse(
@@ -232,6 +238,59 @@ describe("activity generation through Harness sessions", () => {
         await waitFor(() => waiting.has(run.sessionId!));
         return response;
       },
+      startImage: async (configure = true) => {
+        let current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+        if (!current.draft.mediaPlan) {
+          const saved = await client.post(`${endpoint}/apply-generated-spec`, {
+            spec: {
+              ...activitySpec,
+              scenes: [
+                {
+                  id: "intro",
+                  description: "Look",
+                  media: { images: [{ key: "cover", description: "A blue penguin" }] },
+                },
+              ],
+            },
+            expectedRevision: current.draft.contentRevision,
+          });
+          expect(saved.status).toBe(200);
+          const draft = (await saved.json()) as ActivityDraft;
+          expect(
+            (
+              await client.post(`${endpoint}/plan-media`, {
+                expectedRevision: draft.contentRevision,
+              })
+            ).status,
+          ).toBe(200);
+          current = (await (await client.get(endpoint)).json()) as ActivityDetail;
+        }
+        if (!configure)
+          return client.post(`${endpoint}/generate-image`, {
+            agentId: "default_agent",
+            expectedRevision: current.draft.contentRevision,
+            language: "en-US",
+            assetKey: "cover",
+          });
+        expect(
+          (
+            await client.put("/api/projects/generator-activities/agents/default_agent/vault", {
+              entries: [{ key: "GEMINI_API_KEY", value: "fake-test-only" }],
+            })
+          ).status,
+        ).toBe(200);
+        const response = await client.post(`${endpoint}/generate-image`, {
+          agentId: "default_agent",
+          expectedRevision: current.draft.contentRevision,
+          language: "en-US",
+          assetKey: "cover",
+        });
+        expect(response.status, await response.clone().text()).toBe(202);
+        const run = (await response.clone().json()) as ActivityRun;
+        expect(run.status, run.error ?? "").toBe("running");
+        await waitFor(() => waiting.has(run.sessionId!));
+        return response;
+      },
       startModule: async (withMedia = false) => {
         const current = (await (await client.get(endpoint)).json()) as ActivityDetail;
         expect(
@@ -391,6 +450,134 @@ describe("activity generation through Harness sessions", () => {
     expect(
       (
         await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-audio`, {
+          expectedRevision: run.inputRevision,
+        })
+      ).status,
+    ).toBe(409);
+  });
+
+  it("keeps image candidates immutable, accepts explicitly, preserves them on failure, and verifies WAF bytes", async () => {
+    const f = await fixture("image");
+    const missingCredential = await f.startImage(false);
+    expect(missingCredential.status).toBe(400);
+    expect(((await missingCredential.json()) as { error: { code: string } }).error.code).toBe(
+      "image_credential_missing",
+    );
+    const run = (await (await f.startImage()).json()) as ActivityRun;
+    expect(run.kind).toBe("image");
+    expect(run.image).toEqual({
+      language: "en-US",
+      assetKey: "cover",
+      prompt: "A blue penguin",
+      model: "gemini-3.1-flash-image",
+    });
+    const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
+    expect(session.approvalMode).toBe("always-ask");
+    expect(
+      await fs.readFile(path.join(session.workspace!, "image-input.json"), "utf8"),
+    ).not.toContain("fake-test-only");
+    const result = await f.finish(run);
+    expect(result.status, result.error ?? "").toBe("succeeded");
+    const current = async () => (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    const beforeAccept = await current();
+    const candidateResult = JSON.parse(result.candidate!) as { runId: string; sha256: string };
+    const forgedManifest = structuredClone(beforeAccept.draft.mediaPlan!.manifest);
+    const forgedAsset = forgedManifest.assets["en-US"]![0]!;
+    forgedAsset.path = `media/generated/${run.runId}.png`;
+    forgedAsset.generatedImage = candidateResult;
+    const forged = await f.client.put(`${f.endpoint}/media`, {
+      expectedRevision: beforeAccept.draft.contentRevision,
+      manifest: forgedManifest,
+    });
+    expect(forged.status).toBe(422);
+    expect((await current()).draft.mediaPlan).toEqual(beforeAccept.draft.mediaPlan);
+    const preview = await f.client.get(`${f.endpoint}/runs/${run.runId}/image`);
+    expect(preview.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await preview.arrayBuffer())).toEqual(imagePng());
+    const outsider = await provisionUser(f.t.app, "image_outsider");
+    expect(
+      (await apiClient(f.t.app, outsider.cookie).get(`${f.endpoint}/runs/${run.runId}/image`))
+        .status,
+    ).toBe(404);
+    const accepted = await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-image`, {
+      expectedRevision: run.inputRevision,
+    });
+    expect(accepted.status, await accepted.clone().text()).toBe(200);
+    const saved = (await current()).draft;
+    const savedAsset = saved.mediaPlan!.manifest.assets["en-US"]![0]!;
+    expect(savedAsset.path).toBe(`media/generated/${run.runId}.png`);
+    expect(savedAsset.generatedImage).toEqual({
+      runId: run.runId,
+      sha256: expect.any(String),
+    });
+    const retainedManifest = structuredClone(saved.mediaPlan!.manifest);
+    retainedManifest.assets["en-US"]![0]!.description = "A blue penguin, editorial update";
+    const retainedResponse = await f.client.put(`${f.endpoint}/media`, {
+      expectedRevision: saved.contentRevision,
+      manifest: retainedManifest,
+    });
+    expect(retainedResponse.status, await retainedResponse.clone().text()).toBe(200);
+    const retained = (await retainedResponse.json()) as ActivityDraft;
+    expect(retained.mediaPlan!.manifest.assets["en-US"]![0]!.generatedImage).toEqual(
+      savedAsset.generatedImage,
+    );
+
+    const second = (await (await f.startImage()).json()) as ActivityRun;
+    expect(second.runId).not.toBe(run.runId);
+    const secondSession = f.t.deps.sessionsRepo.findById(second.sessionId!)!;
+    const imageInput = JSON.parse(
+      await fs.readFile(path.join(secondSession.workspace!, "input.json"), "utf8"),
+    );
+    expect(imageInput.draft.mediaPlan.manifest.assets["en-US"][0].generatedImage).toEqual(
+      savedAsset.generatedImage,
+    );
+    expect((await f.finish(second, "invalid")).status).toBe("failed");
+    expect((await current()).draft).toEqual(retained);
+    expect(await f.client.get(`${f.endpoint}/runs/${run.runId}/image`)).toHaveProperty(
+      "status",
+      200,
+    );
+
+    const authoring = f.t.deps.tree.api<ActivityAuthoring>("ActivitiesModule", "ActivityAuthoring");
+    const workspace = path.join(f.t.root, "image-assembly");
+    await authoring.prepareImageMedia(
+      "generator-activities",
+      f.activity.id,
+      workspace,
+      retained.contentRevision,
+    );
+    expect(await fs.readFile(path.join(workspace, `media/generated/${run.runId}.png`))).toEqual(
+      imagePng(),
+    );
+    const waf = path.join(f.t.root, "image-waf");
+    for (const name of ["framework/src", "modules", "media"])
+      await fs.mkdir(path.join(waf, name), { recursive: true });
+    await fs.writeFile(path.join(waf, "framework/package.json"), "{}");
+    await prepareModule(workspace, await current(), waf);
+    const previewImage = path.join(workspace, "preview/media/generated", `${run.runId}.png`);
+    await fs.mkdir(path.dirname(previewImage), { recursive: true });
+    await fs.writeFile(previewImage, imagePng());
+    const read = (file: string) => fs.readFile(file, "utf8");
+    await verifyMediaArtifacts(workspace, await current(), read);
+    await fs.writeFile(previewImage, Buffer.from("tampered"));
+    await expect(verifyMediaArtifacts(workspace, await current(), read)).rejects.toThrow(
+      "Image output must be a complete PNG",
+    );
+  });
+
+  it("retains a previewable image conflict without applying it when the draft changes", async () => {
+    const f = await fixture("image");
+    const run = (await (await f.startImage()).json()) as ActivityRun;
+    await f.client.patch(`${f.endpoint}/description`, {
+      description: "Edited during generation",
+      expectedRevision: run.inputRevision,
+    });
+    const result = await f.finish(run);
+    expect(result.status).toBe("conflict");
+    expect((await f.client.get(`${f.endpoint}/runs/${run.runId}/image`)).status).toBe(200);
+    expect(
+      (
+        await f.client.post(`${f.endpoint}/runs/${run.runId}/accept-image`, {
           expectedRevision: run.inputRevision,
         })
       ).status,

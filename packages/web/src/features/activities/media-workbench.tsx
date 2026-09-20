@@ -20,8 +20,10 @@ export function MediaWorkbench({
   revision,
   voices,
   onChange,
-  onGenerate,
-  onAccept,
+  onGenerateAudio,
+  onGenerateImage,
+  onAcceptAudio,
+  onAcceptImage,
 }: {
   manifest: AssetManifest;
   runs: ActivityRunSummary[];
@@ -35,8 +37,10 @@ export function MediaWorkbench({
   revision: string;
   voices: string[];
   onChange: (manifest: AssetManifest) => void;
-  onGenerate: (language: string, assetKey: string, voice: string) => void;
-  onAccept: (runId: string) => void;
+  onGenerateAudio: (language: string, assetKey: string, voice: string) => void;
+  onGenerateImage: (language: string, assetKey: string) => void;
+  onAcceptAudio: (runId: string) => void;
+  onAcceptImage: (runId: string) => void;
 }) {
   const [languageChoice, setLanguage] = useState("");
   const [kind, setKind] = useState("all");
@@ -57,17 +61,25 @@ export function MediaWorkbench({
     ...(wafRoot.trim() ? { wafRoot: wafRoot.trim() } : {}),
   })}`;
   const audioUrl = (runId: string) => `${endpoint}/runs/${encodeURIComponent(runId)}/audio`;
+  const generatedImageUrl = (runId: string) =>
+    `${endpoint}/runs/${encodeURIComponent(runId)}/image`;
   function edit(change: (entry: NonNullable<typeof asset>) => void) {
     if (!asset || !editable || disabled) return;
     const updated = structuredClone(manifest);
     change(updated.assets[language]!.find((entry) => entry.key === asset.key)!);
     onChange(updated);
   }
-  const candidates = runs.filter(
+  const audioCandidates = runs.filter(
     (run) =>
       run.kind === "audio" &&
       run.audio?.language === language &&
       run.audio?.assetKey === asset?.key,
+  );
+  const imageCandidates = runs.filter(
+    (run) =>
+      run.kind === "image" &&
+      run.image?.language === language &&
+      run.image?.assetKey === asset?.key,
   );
   return (
     <div className="space-y-3">
@@ -130,9 +142,27 @@ export function MediaWorkbench({
                 {asset.path ? S.activities.boundMedia : S.activities.unboundMedia}
               </span>
             </div>
-            <p className="whitespace-pre-wrap break-words text-sm">{asset.description}</p>
+            {asset.type === "image" ? (
+              <Textarea
+                size="sm"
+                label={S.activities.imageDescription}
+                hint={S.activities.imageDescriptionHint}
+                rows={4}
+                maxLength={5000}
+                value={asset.description}
+                disabled={!editable || disabled}
+                onChange={(event) =>
+                  edit((entry) => {
+                    entry.description = event.target.value;
+                  })
+                }
+              />
+            ) : (
+              <p className="whitespace-pre-wrap break-words text-sm">{asset.description}</p>
+            )}
             {asset.type === "image" &&
               editable &&
+              !asset.generatedImage &&
               (!asset.path ? (
                 <p className="text-xs text-gray-500">{S.activities.imageUnbound}</p>
               ) : !canPreview ? (
@@ -140,6 +170,16 @@ export function MediaWorkbench({
               ) : (
                 <ImagePreview key={imageUrl} src={imageUrl} description={asset.description} />
               ))}
+            {asset.type === "image" && asset.generatedImage && (
+              <section className="space-y-1" aria-label={S.activities.acceptedImage}>
+                <p className="text-xs font-medium">{S.activities.acceptedImage}</p>
+                <ImagePreview
+                  key={`${endpoint}/${asset.generatedImage.runId}`}
+                  src={generatedImageUrl(asset.generatedImage.runId)}
+                  description={asset.description}
+                />
+              </section>
+            )}
             <p className="break-words text-xs text-gray-500">
               {S.activities.usedInScenes}:{" "}
               {[...new Set(asset.usages.map((usage) => usage.sceneId))].join(", ") ||
@@ -148,9 +188,13 @@ export function MediaWorkbench({
             <Input
               size="sm"
               label={S.activities.assetPath}
-              hint={asset.generatedAudio ? undefined : S.activities.assetPathHint}
+              hint={
+                asset.generatedAudio || asset.generatedImage
+                  ? undefined
+                  : S.activities.assetPathHint
+              }
               value={asset.path ?? ""}
-              disabled={!editable || disabled || !!asset.generatedAudio}
+              disabled={!editable || disabled || !!asset.generatedAudio || !!asset.generatedImage}
               onChange={(event) =>
                 edit((entry) => {
                   if (event.target.value) entry.path = event.target.value;
@@ -210,16 +254,16 @@ export function MediaWorkbench({
                         !asset.script?.trim() ||
                         asset.script.length > 5000
                       }
-                      onClick={() => onGenerate(language, asset.key, voice)}
+                      onClick={() => onGenerateAudio(language, asset.key, voice)}
                     >
                       {asset.path ? S.activities.regenerateSpeech : S.activities.generateSpeech}
                     </Button>
                   </>
                 )}
-                {candidates.length > 0 && (
+                {audioCandidates.length > 0 && (
                   <section className="space-y-3" aria-label={S.activities.speechCandidates}>
                     <h5 className="text-xs font-semibold">{S.activities.speechCandidates}</h5>
-                    {candidates.map((run) => (
+                    {audioCandidates.map((run) => (
                       <div
                         key={run.runId}
                         className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800"
@@ -245,7 +289,7 @@ export function MediaWorkbench({
                             <Button
                               size="sm"
                               disabled={!canAccept || run.inputRevision !== revision}
-                              onClick={() => onAccept(run.runId)}
+                              onClick={() => onAcceptAudio(run.runId)}
                             >
                               {S.activities.acceptSpeech}
                             </Button>
@@ -253,6 +297,63 @@ export function MediaWorkbench({
                         {run.inputRevision !== revision &&
                           run.runId !== asset.generatedAudio?.runId && (
                             <p className="text-xs text-gray-500">{S.activities.olderSpeech}</p>
+                          )}
+                      </div>
+                    ))}
+                  </section>
+                )}
+              </>
+            )}
+            {asset.type === "image" && (
+              <>
+                {editable && (
+                  <Button
+                    size="sm"
+                    disabled={
+                      !canGenerate || !asset.description.trim() || asset.description.length > 5000
+                    }
+                    onClick={() => onGenerateImage(language, asset.key)}
+                  >
+                    {asset.generatedImage
+                      ? S.activities.regenerateImage
+                      : S.activities.generateImage}
+                  </Button>
+                )}
+                {imageCandidates.length > 0 && (
+                  <section className="space-y-3" aria-label={S.activities.imageCandidates}>
+                    <h5 className="text-xs font-semibold">{S.activities.imageCandidates}</h5>
+                    {imageCandidates.map((run) => (
+                      <div
+                        key={run.runId}
+                        className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800"
+                      >
+                        <p className="text-xs">
+                          {new Date(run.createdAt).toLocaleString()} Â·{" "}
+                          {S.activities.speechStatus[run.status]}
+                        </p>
+                        {run.error && <p className="break-words text-xs">{run.error}</p>}
+                        {run.hasCandidate &&
+                          (run.status === "succeeded" || run.status === "conflict") && (
+                            <ImagePreview
+                              key={`${endpoint}/${run.runId}`}
+                              src={generatedImageUrl(run.runId)}
+                              description={run.image?.prompt ?? asset.description}
+                            />
+                          )}
+                        {editable &&
+                          run.status === "succeeded" &&
+                          run.runId !== asset.generatedImage?.runId && (
+                            <Button
+                              size="sm"
+                              disabled={!canAccept || run.inputRevision !== revision}
+                              onClick={() => onAcceptImage(run.runId)}
+                            >
+                              {S.activities.acceptImage}
+                            </Button>
+                          )}
+                        {run.inputRevision !== revision &&
+                          run.runId !== asset.generatedImage?.runId && (
+                            <p className="text-xs text-gray-500">{S.activities.olderImage}</p>
                           )}
                       </div>
                     ))}

@@ -153,6 +153,8 @@ Leave a parameter unset and the protocol default applies, which is the portable 
 
 ## Image generation
 
+For an activity image candidate, run `scripts/generate-image.mjs` in the Session workspace with `image-input.json` containing `model`, `prompt`, `language`, and `assetKey`. The helper makes one AgentHub request using `gemini-3.1-flash-image`, square 1K output, and the Agent Vault's `GEMINI_API_KEY`. It validates a single completed PNG and writes a new `image.png` without replacing an existing file. Use normal tool approval; do not print credentials or retry a billable request automatically. Inspect and explicitly accept the candidate through Activities; generation alone never replaces accepted media.
+
 Use a Gemini image model (see Model IDs) and set `config.image_config` (optional `aspect_ratio`, and `image_size` of `"1K"` | `"2K"`):
 
 ```ts

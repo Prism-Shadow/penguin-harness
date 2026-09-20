@@ -6,6 +6,7 @@ import type { Access } from "../mechanisms/projects.js";
 import type { ActivityAuthoring, ActivityGeneration } from "../mechanisms/activities.js";
 import { findWafRoot } from "./waf-module.js";
 import { SPEECH_MODEL, SPEECH_VOICES } from "./audio.js";
+import { IMAGE_MODEL } from "./generated-image.js";
 import {
   badRequest,
   optionalString,
@@ -70,6 +71,55 @@ export class ActivityRoutes {
         vaultKey: "GEMINI_API_KEY",
       }),
     );
+    app.get("/image-setup", (c) =>
+      c.json({ provider: "Gemini", model: IMAGE_MODEL, vaultKey: "GEMINI_API_KEY" }),
+    );
+    app.post("/:activityId/generate-image", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.generation.start(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          requireString(body, "agentId", { minLen: 1, maxLen: 128 }),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+          {
+            image: {
+              language: requireString(body, "language", { minLen: 5, maxLen: 5 }),
+              assetKey: requireString(body, "assetKey", { minLen: 1, maxLen: 128 }),
+            },
+          },
+        ),
+        202,
+      );
+    });
+    app.get("/:activityId/runs/:runId/image", async (c) => {
+      const bytes = await this.generation.imageCandidateContent(
+        requireValidId(c, "projectId"),
+        pathParam(c, "activityId"),
+        pathParam(c, "runId"),
+      );
+      return new Response(new Uint8Array(bytes), {
+        headers: {
+          "Content-Type": "image/png",
+          "Content-Length": String(bytes.byteLength),
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "default-src 'none'; sandbox",
+          "Cross-Origin-Resource-Policy": "same-origin",
+        },
+      });
+    });
+    app.post("/:activityId/runs/:runId/accept-image", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.generation.acceptImage(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          pathParam(c, "runId"),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
+      );
+    });
     app.get("/:activityId/media-image", async (c) => {
       const projectId = requireValidId(c, "projectId");
       // Choosing a server-side checkout is an owner capability, like module assembly.

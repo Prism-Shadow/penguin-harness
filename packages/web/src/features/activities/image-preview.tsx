@@ -8,7 +8,7 @@ export function ImagePreview({ src, description }: { src: string; description: s
   const [attempt, setAttempt] = useState(0);
   const [failed, setFailed] = useState(false);
   const [dimensions, setDimensions] = useState("");
-  const url = `${src}&attempt=${attempt}`;
+  const url = `${src}${src.includes("?") ? "&" : "?"}attempt=${attempt}`;
   function load() {
     setFailed(false);
     setDimensions("");

@@ -1,6 +1,6 @@
 {
   "description": "Agent development on PenguinHarness: build on the SDK, call any model through one unified LLM API, manage models and secrets, and orchestrate agents, sessions, costs and schedules.",
   "short_description": "SDK, unified LLM API, config and orchestration.",
-  "version": "2026.09.19.1",
+  "version": "2026.09.19.2",
   "category": "ai-app-development"
 }
