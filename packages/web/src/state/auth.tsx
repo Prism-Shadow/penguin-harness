@@ -6,7 +6,12 @@
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { MeResponse, UploadLimits, UserInfo } from "@prismshadow/penguin-server/api";
+import type {
+  MeResponse,
+  UploadLimits,
+  UploadPolicy,
+  UserInfo,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
 
@@ -23,6 +28,18 @@ const DEFAULT_UPLOAD_LIMITS: UploadLimits = {
   imageMaxMb: 20,
   attachmentLimitMinMb: 1,
   attachmentLimitMaxMb: 200,
+};
+
+/**
+ * The same stand-in for the policy. A stale value here costs at most one image that was
+ * re-encoded, or not, against the previous setting — the policy shapes what a tab uploads, it
+ * does not decide what the server accepts.
+ */
+const DEFAULT_UPLOAD_POLICY: UploadPolicy = {
+  imageCompression: true,
+  imageCompressionOverMb: 4,
+  imageCompressionMinMb: 1,
+  imageCompressionMaxMb: 64,
 };
 
 interface AuthContextValue {
@@ -56,6 +73,11 @@ interface AuthContextValue {
    */
   uploadLimits: UploadLimits;
   /**
+   * How this server wants uploads handled (admin-settable). The composer reads it to decide
+   * whether a large image is re-encoded before it is uploaded.
+   */
+  uploadPolicy: UploadPolicy;
+  /**
    * Whether company mode is enabled server-wide (the admin master switch in server settings,
    * default on). Off hides the work-mode switch for everyone and 404s every organization
    * route; the user's own preference (`UiPrefs.companyMode`) only hides the switch for them.
@@ -84,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [desktopMode, setDesktopMode] = useState(false);
   const [sessionVia, setSessionVia] = useState<MeResponse["sessionVia"]>("password");
   const [uploadLimits, setUploadLimits] = useState<UploadLimits>(DEFAULT_UPLOAD_LIMITS);
+  const [uploadPolicy, setUploadPolicy] = useState<UploadPolicy>(DEFAULT_UPLOAD_POLICY);
   // Off until /api/me says otherwise: the mode switch must not flash for a server that has
   // turned company mode off, and the default on the server side is on anyway.
   const [companyMode, setCompanyMode] = useState(false);
@@ -108,6 +131,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setDesktopMode(res.desktopMode);
         setSessionVia(res.sessionVia);
         setUploadLimits(res.uploadLimits);
+        setUploadPolicy(res.uploadPolicy);
+        setUploadPolicy(res.uploadPolicy);
         setCompanyMode(res.companyMode);
       })
       .catch((err: unknown) => {
@@ -137,6 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setDesktopMode(me.desktopMode);
       setSessionVia(me.sessionVia);
       setUploadLimits(me.uploadLimits);
+      setUploadPolicy(me.uploadPolicy);
       setCompanyMode(me.companyMode);
     } catch {
       // Login itself succeeded; keep the optimistic default.
@@ -171,6 +197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         desktopMode,
         sessionVia,
         uploadLimits,
+        uploadPolicy,
         companyMode,
         login,
         logout,
