@@ -3,6 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** feat
 - **Scope:** `server`, `web`, `docs`
+- **PR:** [#806](https://github.com/Prism-Shadow/penguin-harness/pull/806)
 
 [中文版](2026-09-19-dock-browser.zh.md)
 
