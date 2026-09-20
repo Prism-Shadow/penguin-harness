@@ -101,10 +101,12 @@ import {
 } from "../../services/task-attachments.js";
 import type { TaskAttachment } from "../../services/task-attachments.js";
 import {
+  bodyLimitBytes,
   INLINE_IMAGE_MAX_BYTES,
   INLINE_IMAGE_MAX_MB,
   toAttachmentLimits,
 } from "../../services/attachment-limits.js";
+import { readJsonRequest } from "../request-gzip.js";
 import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { Bind, Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { ClassCtx } from "@prismshadow/penguin-core/kernel";
@@ -949,11 +951,14 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
 
   app.post("/:sessionId/tasks", async (c) => {
     const row = resolveSession(c);
-    const body = await readJson(c);
-    const goal = parseGoalField(body);
     // Resolved per request from the admin settings, so a limit change applies to the very next
-    // upload rather than at the next restart.
-    const limits = toAttachmentLimits(deps.serverSettingsRepo.getAttachmentLimitsMb());
+    // upload rather than at the next restart. The same budget bounds the inflated size of a
+    // gzipped request body (#521): bodyLimitBytes is the largest body an equivalent plain
+    // request could carry.
+    const limitsMb = deps.serverSettingsRepo.getAttachmentLimitsMb();
+    const limits = toAttachmentLimits(limitsMb);
+    const body = await readJsonRequest(c, { maxInflatedBytes: bodyLimitBytes(limitsMb) });
+    const goal = parseGoalField(body);
     if (goal) {
       // Goal mode: the input needs non-empty text, since its marker-stripped text becomes the
       // objective that every round re-injects and an image on its own doesn't say what the
@@ -1029,13 +1034,13 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   // task POST.
   app.post("/:sessionId/steer", async (c) => {
     const row = resolveSession(c);
-    const body = await readJson(c);
+    // Same per-request budget as the task route: it bounds both the attachment validation
+    // below and the inflated size of a gzipped request body (#521).
+    const limitsMb = deps.serverSettingsRepo.getAttachmentLimitsMb();
+    const body = await readJsonRequest(c, { maxInflatedBytes: bodyLimitBytes(limitsMb) });
     const text = typeof body.text === "string" ? body.text.trim() : "";
     const images = parseSteerImages(body);
-    const files = parseSteerFiles(
-      body,
-      toAttachmentLimits(deps.serverSettingsRepo.getAttachmentLimitsMb()),
-    );
+    const files = parseSteerFiles(body, toAttachmentLimits(limitsMb));
     // Any part can carry the message on its own: an image or a file with no caption is a
     // complete steering message, and so is plain text.
     if (!text && images.length === 0 && files.length === 0) {
