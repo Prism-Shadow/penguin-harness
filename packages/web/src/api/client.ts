@@ -11,6 +11,7 @@ import type { ErrorDetails } from "@prismshadow/penguin-server/api";
 import { S } from "../lib/strings";
 import { apiUrl } from "../lib/server-context";
 import { machineForPath } from "../lib/session-machines";
+import { gzipIfBeneficial } from "./gzip";
 
 /**
  * Unified API error: carries the HTTP status code and server error code (server error body
@@ -74,6 +75,13 @@ export interface ApiFetchOptions {
    * a machine for ITS Agents, are the calls that need it.
    */
   server?: string | null;
+  /**
+   * Send the JSON body gzipped when compression strictly pays (#521). The API shape is
+   * unchanged (`Content-Type: application/json` plus `Content-Encoding: gzip`); anything
+   * else (small bodies, incompressible payloads, missing CompressionStream) falls back
+   * to the plain body silently.
+   */
+  gzip?: boolean;
 }
 
 /** Response metadata a caller may need alongside the parsed body. */
@@ -95,20 +103,30 @@ export interface ApiFetchMeta {
 }
 
 /** The request half every call shares: the method, the session cookie, a JSON body when there is one. */
-function requestInit(options: {
+async function requestInit(options: {
   method?: string;
   body?: unknown;
   signal?: AbortSignal;
-}): RequestInit {
+  gzip?: boolean;
+}): Promise<RequestInit> {
+  let headers: Record<string, string> | undefined;
+  let fetchBody: BodyInit | undefined;
+  if (options.body !== undefined) {
+    const json = JSON.stringify(options.body);
+    headers = { "Content-Type": "application/json" };
+    fetchBody = json;
+    if (options.gzip === true) {
+      const gzipped = await gzipIfBeneficial(json);
+      if (gzipped !== null) {
+        headers = { ...headers, "Content-Encoding": "gzip" };
+        fetchBody = new Blob([gzipped]);
+      }
+    }
+  }
   return {
     method: options.method ?? "GET",
     credentials: "same-origin",
-    ...(options.body !== undefined
-      ? {
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(options.body),
-        }
-      : {}),
+    ...(fetchBody !== undefined ? { headers, body: fetchBody } : {}),
     ...(options.signal !== undefined ? { signal: options.signal } : {}),
   };
 }
@@ -173,7 +191,7 @@ export async function apiFetchWithMeta<T>(
 
   let response: Response;
   try {
-    response = await fetch(url, requestInit(options));
+    response = await fetch(url, await requestInit(options));
   } catch {
     throw new ApiError(0, "network_error", S.errors.networkError);
   }
@@ -212,7 +230,7 @@ export async function apiFetchStream(
   const target = machineForPath(path);
   let response: Response;
   try {
-    response = await fetch(apiUrl(path, target), requestInit(options));
+    response = await fetch(apiUrl(path, target), await requestInit(options));
   } catch (err) {
     if (options.signal?.aborted) throw err;
     throw new ApiError(0, "network_error", S.errors.networkError);
