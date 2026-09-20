@@ -3,6 +3,7 @@
 - **Date:** 2026-09-20
 - **Type:** fix
 - **Scope:** web
+- **PR:** [#810](https://github.com/Prism-Shadow/penguin-harness/pull/810)
 
 [中文版](2026-09-20-channel-draft.zh.md)
 
