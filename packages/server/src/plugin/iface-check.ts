@@ -120,8 +120,11 @@ class Renderer {
 
   text(): string {
     return [
-      "declare const opaque: unique symbol;",
-      "type Opaque<Name extends string> = { readonly [opaque]: Name };",
+      // Branded by a plain, string-keyed property — never `unique symbol`. Each side is its
+      // own file, and a `unique symbol` declared in each is two different symbols, so the
+      // same opaque rendered on both sides would not be assignable to itself. The name is
+      // the identity (core/src/kernel/markers.ts), which is what the table records.
+      "type Opaque<Name extends string> = { readonly __opaque: Name };",
       ...this.out,
     ].join("\n");
   }
@@ -169,7 +172,10 @@ class Renderer {
     if ("iface" in e) return this.iface(e.iface);
     if ("fn" in e) return `(${this.sig(e.fn, where)})`;
     if ("promise" in e) return `Promise<${this.expr(e.promise, where)}>`;
-    if ("stream" in e) return `AsyncIterable<${this.expr(e.stream, where)}>`;
+    if ("stream" in e)
+      return e.returns === undefined
+        ? `AsyncIterable<${this.expr(e.stream, where)}>`
+        : `AsyncGenerator<${this.expr(e.stream, where)}, ${this.expr(e.returns, where)}>`;
     if ("void" in e) return "void";
     if ("array" in e) return `Array<${this.expr(e.array, where)}>`;
     if ("object" in e) {
@@ -285,10 +291,14 @@ export function checkIfaces(
   const base = path.join(os.tmpdir(), "penguin-iface-check");
   const files = new Map<string, string>();
   const asked = questions.filter((q) => {
-    if (platform.ifaces[q.key] === undefined) return false;
-    if (consumer.ifaces[q.key] !== undefined) return true;
-    uncompared.push(label(q));
-    return false;
+    // Either side missing its copy means there is nothing to compare — and it is recorded,
+    // never answered from the other side's entry. Both are counted, so the log's tally is
+    // the number of questions that went unanswered rather than half of it.
+    if (platform.ifaces[q.key] === undefined || consumer.ifaces[q.key] === undefined) {
+      uncompared.push(label(q));
+      return false;
+    }
+    return true;
   });
   if (asked.length === 0) return { problems, uncompared };
 
@@ -297,9 +307,19 @@ export function checkIfaces(
   let theirs: ReturnType<typeof renderDts>;
   try {
     ours = renderDts(platform, keys);
+  } catch (err) {
+    // The platform's own table: a rendering fault here is ours, and the caller hears it.
+    problems.push(`interface check: ${err instanceof Error ? err.message : String(err)}`);
+    return { problems, uncompared };
+  }
+  try {
     theirs = renderDts(consumer, keys);
   } catch (err) {
-    problems.push(`interface check: ${err instanceof Error ? err.message : String(err)}`);
+    // The package's table. A platform must not take a package away from a machine for
+    // something the package did not do (plugin/loader.ts), and an expression this renderer
+    // cannot write is exactly that: not compared, said out loud, never a refusal.
+    const why = err instanceof Error ? err.message : String(err);
+    for (const q of asked) uncompared.push(`${label(q)} (${why})`);
     return { problems, uncompared };
   }
   files.set(path.join(base, "platform.d.ts"), ours.text);
@@ -325,6 +345,10 @@ export function checkIfaces(
     noEmit: true,
     types: [],
     target: ts.ScriptTarget.ES2022,
+    // The language's own library without the DOM: the rendered tables use Promise, Array,
+    // AsyncIterable and the typed arrays, and parsing lib.dom.d.ts on every check is the
+    // largest single cost of one.
+    lib: ["lib.es2022.d.ts"],
     module: ts.ModuleKind.NodeNext,
     moduleResolution: ts.ModuleResolutionKind.NodeNext,
   };
