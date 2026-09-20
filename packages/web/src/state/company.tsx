@@ -71,6 +71,20 @@ import {
 import { useAuth } from "./auth";
 import { useProject } from "./project";
 
+/**
+ * The machine the open organization runs on, or null for this server (and while the list has
+ * not named the organization yet). The reads of the open organization re-run when it changes:
+ * the same organization key then means another server.
+ */
+export function machineOfOpenOrg(
+  organizations: readonly OrganizationSummary[],
+  currentOrgKey: string | null,
+): string | null {
+  if (currentOrgKey === null) return null;
+  const open = organizations.find((o) => orgKey(o.projectId, o.orgId) === currentOrgKey);
+  return open?.machineId ?? null;
+}
+
 /** The event families the organization scheduler publishes on the user channel. */
 export function isCompanyEvent(ev: ServerEvent): ev is CompanyServerEvent {
   return (
@@ -729,22 +743,29 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   // The open organization's channels: the sidebar's list and every badge on it. Re-read when
   // the organization changes and whenever a message event says one of its counters moved —
   // the listing carries the server's read cursors, which no client-side bump can know.
+  //
+  // Both this read and the roster below wait for the organization list: it is what says which
+  // machine an organization runs on, and the open organization is known before it (the shell
+  // adopts the last one from storage). Asked any earlier, the request goes to this server,
+  // whose copy of an organization that runs elsewhere is a mirror — its employees' Agents are
+  // not here, so every one of them would come back named by its id.
   const { currentOrgKey, versions } = state;
   const messageVersion = versions.messages;
+  const openMachine = machineOfOpenOrg(state.organizations, currentOrgKey);
   useEffect(() => {
     const open = parseOrgKey(currentOrgKey);
-    if (!serverEnabled || open === null) return;
+    if (!serverEnabled || open === null || !orgsLoaded) return;
     void store.getState().reloadChannels(open.projectId, open.orgId);
-  }, [store, serverEnabled, currentOrgKey, messageVersion]);
+  }, [store, serverEnabled, currentOrgKey, orgsLoaded, openMachine, messageVersion]);
 
   // The open organization's roster: the sidebar's 工位 group has a row per employee, desk or
   // no desk. Re-read when the organization changes and when a run or a personnel change
   // (both bump `orgs`) says the chart moved.
   useEffect(() => {
     const open = parseOrgKey(currentOrgKey);
-    if (!serverEnabled || open === null) return;
+    if (!serverEnabled || open === null || !orgsLoaded) return;
     void store.getState().reloadOrgChart(open.projectId, open.orgId);
-  }, [store, serverEnabled, currentOrgKey, orgsVersion]);
+  }, [store, serverEnabled, currentOrgKey, orgsLoaded, openMachine, orgsVersion]);
 
   // In company mode the shell always has a current organization: the one its sidebar names.
   // The organization routes announce it, but a desk or ticket conversation lives at
