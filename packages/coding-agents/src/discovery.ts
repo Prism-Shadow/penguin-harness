@@ -40,8 +40,10 @@ export interface AgentDiscoveryCandidate {
   /** The agent's own CLI was found on the server machine. */
   detected: boolean;
   /**
-   * A runnable ACP entrypoint, resolved to an absolute command. Null means the agent is
-   * known but not usable yet; `setupHint` says what is missing.
+   * A runnable ACP entrypoint, resolved to an absolute command. Independent of
+   * `detected`: an npx-run adapter resolves even when the agent's own CLI is absent,
+   * so consumers gate "usable" on `detected`, not on this. Null means nothing runnable
+   * was found; `setupHint` says what is missing.
    */
   launch: AgentLaunch | null;
   authHint: string;

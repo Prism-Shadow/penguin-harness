@@ -680,7 +680,9 @@ function DiscoveryList({
                 {candidate.authHint}
               </div>
             </div>
-            {candidate.launch !== null ? (
+            {/* Use follows `detected`, not `launch`: an npx runner resolves even when
+                the agent itself is absent, and that row belongs to the install link. */}
+            {candidate.detected && candidate.launch !== null ? (
               candidate.alreadyAdded ? (
                 <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
                   {S.codingAgents.discoveredAdded}

@@ -79,6 +79,16 @@ describe("agent discovery", () => {
     expect(codex?.setupHint).toBe("Not found on the server machine.");
   });
 
+  // The two flags are independent by design: an npx runner resolves without the agent.
+  // Consumers (the Add-agent dialog) must gate "usable" on `detected`, not `launch`.
+  it("still resolves an npx-run adapter when the agent itself is absent", async () => {
+    await install(bin, "npx");
+    const candidates = await discoverAgents({ env: env(), home });
+    const claude = candidates.find((c) => c.recipeId === "claude");
+    expect(claude?.detected).toBe(false);
+    expect(claude?.launch?.args).toEqual(["-y", "claude-agent-acp"]);
+  });
+
   it("finds CLIs in version-manager install dirs the PATH misses", async () => {
     await install(path.join(home, ".volta", "bin"), "gemini");
     await install(path.join(home, ".bun", "bin"), "npx");

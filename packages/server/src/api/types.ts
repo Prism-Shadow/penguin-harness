@@ -4850,8 +4850,9 @@ export interface CodingAgentsResponse {
 /**
  * GET /coding-agents/discover: one known agent recipe probed against the server machine.
  * `launch` carries the suggested ACP entrypoint resolved to an absolute command, or null
- * when the agent is installed but its adapter (or the agent itself) is missing —
- * `setupHint` says which.
+ * when nothing runnable was found — `setupHint` says what is missing. Note the two flags
+ * are independent: launch can be non-null via an npx-run adapter while `detected` is
+ * false (the agent's own CLI is absent), so consumers must gate "usable" on `detected`.
  */
 export interface CodingAgentDiscoveryCandidate {
   recipeId: string;
