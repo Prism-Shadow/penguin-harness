@@ -32,6 +32,16 @@ import type {
   BenchmarksResponse,
   CaseMaterial,
   ChatDefaultsDto,
+  CodingAgentCreateRequest,
+  CodingAgentModeRequest,
+  CodingAgentPermissionRequest,
+  CodingAgentPromptRequest,
+  CodingAgentSaveRequest,
+  CodingAgentSessionDetailResponse,
+  CodingAgentSessionInfo,
+  CodingAgentSessionsResponse,
+  CodingAgentServerInfo,
+  CodingAgentsResponse,
   CommandPolicyDto,
   CommandPolicyRuleDto,
   DefaultModelResponse,
@@ -1794,3 +1804,64 @@ export const uninstallPlugin = (projectId: string, specifier: string) =>
     `${pluginsPath(projectId)}?specifier=${encodeURIComponent(specifier)}`,
     { method: "DELETE" },
   );
+
+// --- Coding agents (Agent Client Protocol) ---------------------------------------------
+
+export const listCodingAgents = () => apiFetch<CodingAgentsResponse>("/api/coding-agents/agents");
+
+export const saveCodingAgent = (body: CodingAgentSaveRequest) =>
+  apiFetch<{ agent: CodingAgentServerInfo }>("/api/coding-agents/agents", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const removeCodingAgent = (agentId: string) =>
+  apiFetch<void>(`/api/coding-agents/agents/${encodeURIComponent(agentId)}`, { method: "DELETE" });
+
+export const listCodingAgentSessions = () =>
+  apiFetch<CodingAgentSessionsResponse>("/api/coding-agents/sessions");
+
+export const createCodingAgentSession = (body: CodingAgentCreateRequest) =>
+  apiFetch<{ session: CodingAgentSessionInfo }>("/api/coding-agents/sessions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getCodingAgentSession = (sessionId: string) =>
+  apiFetch<CodingAgentSessionDetailResponse>(
+    `/api/coding-agents/sessions/${encodeURIComponent(sessionId)}`,
+  );
+
+/** 202: the turn streams over the session's SSE channel, not this response. */
+export const promptCodingAgentSession = (sessionId: string, body: CodingAgentPromptRequest) =>
+  apiFetch<void>(`/api/coding-agents/sessions/${encodeURIComponent(sessionId)}/prompt`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const answerCodingAgentPermission = (
+  sessionId: string,
+  requestId: string,
+  body: CodingAgentPermissionRequest,
+) =>
+  apiFetch<void>(
+    `/api/coding-agents/sessions/${encodeURIComponent(sessionId)}` +
+      `/permissions/${encodeURIComponent(requestId)}`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+
+export const cancelCodingAgentSession = (sessionId: string) =>
+  apiFetch<void>(`/api/coding-agents/sessions/${encodeURIComponent(sessionId)}/cancel`, {
+    method: "POST",
+  });
+
+export const setCodingAgentMode = (sessionId: string, body: CodingAgentModeRequest) =>
+  apiFetch<void>(`/api/coding-agents/sessions/${encodeURIComponent(sessionId)}/mode`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const endCodingAgentSession = (sessionId: string) =>
+  apiFetch<void>(`/api/coding-agents/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+  });

@@ -12,7 +12,7 @@
  * Docs: /docs/server-api § "Streaming (SSE)".
  */
 import type { OmniMessage } from "@prismshadow/penguin-core/omnimessage";
-import type { ServerEvent } from "@prismshadow/penguin-server/api";
+import type { CodingAgentEvent, ServerEvent } from "@prismshadow/penguin-server/api";
 
 export interface StreamHandlers {
   /**
@@ -69,4 +69,41 @@ export function openSessionStream(sessionId: string, handlers: StreamHandlers): 
 /** Subscribes to the user-level server event stream (GET /api/events; reserved for scheduled-task notifications). */
 export function openUserEvents(handlers: StreamHandlers): StreamConnection {
   return subscribe("/api/events", handlers);
+}
+
+export interface CodingAgentStreamHandlers {
+  /** A live coding-agent event (the `coding_agent` SSE event name). */
+  onEvent: (event: CodingAgentEvent, eventId: string | null) => void;
+  /** Server events (the transcript snapshot on subscribe, resync_required on a buffer miss). */
+  onServerEvent: (event: ServerEvent, eventId: string | null) => void;
+  onOpen?: () => void;
+  onError?: (closed: boolean) => void;
+}
+
+/** Subscribes to a coding-agent session's stream (GET /api/coding-agents/sessions/:id/stream). */
+export function openCodingAgentStream(
+  sessionId: string,
+  handlers: CodingAgentStreamHandlers,
+): StreamConnection {
+  const source = new EventSource(
+    `/api/coding-agents/sessions/${encodeURIComponent(sessionId)}/stream`,
+  );
+  source.addEventListener("coding_agent", (e: MessageEvent<string>) => {
+    try {
+      handlers.onEvent(JSON.parse(e.data) as CodingAgentEvent, e.lastEventId || null);
+    } catch {
+      // Ignore lines that fail to parse (the protocol guarantees single-line JSON data).
+    }
+  });
+  source.addEventListener("server_event", (e: MessageEvent<string>) => {
+    try {
+      handlers.onServerEvent(JSON.parse(e.data) as ServerEvent, e.lastEventId || null);
+    } catch {
+      // Same as above.
+    }
+  });
+  if (handlers.onOpen) source.onopen = handlers.onOpen;
+  const { onError } = handlers;
+  if (onError) source.onerror = () => onError(source.readyState === EventSource.CLOSED);
+  return { close: () => source.close() };
 }

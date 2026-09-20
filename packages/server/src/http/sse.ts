@@ -16,7 +16,8 @@
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { ServerEvent } from "../api/types.js";
-import type { Channel, ChannelEvent, ChannelListener } from "../runtime/channel.js";
+import type { ChannelEvent, ChannelListener } from "../runtime/channel.js";
+import type { ChannelApi } from "../hmr/capabilities.js";
 
 const HEARTBEAT_MS = 20_000;
 
@@ -25,8 +26,12 @@ export interface SseEndpointOptions {
   initialEvents?: ServerEvent[];
 }
 
-/** Stream out a Channel as an SSE response. */
-export function sseEndpoint(c: Context, channel: Channel, opts: SseEndpointOptions = {}): Response {
+/** Stream out a Channel as an SSE response. Takes the capability shape, so module code holding a `ChannelApi` can serve it directly. */
+export function sseEndpoint(
+  c: Context,
+  channel: ChannelApi,
+  opts: SseEndpointOptions = {},
+): Response {
   const lastEventIdHeader = c.req.header("Last-Event-ID");
   c.header("X-Accel-Buffering", "no");
   c.header("Cache-Control", "no-cache");

@@ -18,6 +18,7 @@ import { AppLayout } from "./components/layout/app-layout";
 import { LoginPage } from "./pages/login";
 import { ChatPage } from "./features/chat/chat-page";
 import { AgentsPage } from "./features/agents/agents-page";
+import { CodingAgentsPage } from "./features/coding-agents/coding-agents-page";
 import { ActivitiesPage } from "./features/activities/activities-page";
 import { AgentSettingsPage } from "./features/agents/agent-settings-page";
 import { PluginsPage } from "./features/plugins/plugins-page";
@@ -46,6 +47,7 @@ import type { PageEntry } from "./lib/pages";
 const BUILTIN_PAGES: Record<string, React.ComponentType> = {
   ChatPage,
   AgentsPage,
+  CodingAgentsPage,
   ActivitiesPage,
   AgentSettingsPage,
   PluginsPage,

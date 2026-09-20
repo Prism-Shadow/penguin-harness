@@ -2505,6 +2505,11 @@ export type ServerEvent =
   /** Last-Event-ID has been evicted from the buffer: the frontend should re-fetch the history endpoint before continuing to consume this connection. */
   | { type: "resync_required" }
   /**
+   * The transcript snapshot of a coding-agent session, sent as the private initial event of
+   * its stream (the live events that follow ride the `coding_agent` SSE event name).
+   */
+  | { type: "coding_agent_snapshot"; sessionId: string; events: CodingAgentEvent[] }
+  /**
    * The Project's model credentials changed (PUT /models): cached runtimes have been
    * invalidated server-side, so an auth-dead Session can continue — the frontend clears
    * its auth-dead composer state immediately. Published to every existing Session channel
@@ -4825,5 +4830,66 @@ export type {
   ActivityRunSummary,
   ActivityRunStatus,
 } from "../activities/domain.js";
+
+// ---------------------------------------------------------------------------
+// Coding agents (Agent Client Protocol)
+// ---------------------------------------------------------------------------
+
+/** One configured external coding agent (an ACP-speaking command), as the Web App sees it. */
+export interface CodingAgentServerInfo {
+  id: string;
+  title?: string;
+  command: string;
+  args: string[];
+}
+
+export interface CodingAgentsResponse {
+  agents: CodingAgentServerInfo[];
+}
+
+/** POST /coding-agents/agents body: a full definition; `env` is write-only (never listed back). */
+export interface CodingAgentSaveRequest {
+  id: string;
+  title?: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+export interface CodingAgentSessionInfo {
+  sessionId: string;
+  agentId: string;
+  workspaceDir: string;
+  busy: boolean;
+  createdAt: number;
+}
+
+export interface CodingAgentSessionsResponse {
+  sessions: CodingAgentSessionInfo[];
+}
+
+export interface CodingAgentSessionDetailResponse extends CodingAgentSessionInfo {
+  events: CodingAgentEvent[];
+}
+
+export interface CodingAgentCreateRequest {
+  agentId: string;
+  workspaceDir: string;
+}
+
+export interface CodingAgentPromptRequest {
+  text: string;
+}
+
+export interface CodingAgentPermissionRequest {
+  outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
+}
+
+export interface CodingAgentModeRequest {
+  modeId: string;
+}
+
+/** The kernel's protocol-neutral event vocabulary, re-exported for API consumers. */
+export type CodingAgentEvent = import("@prismshadow/penguin-coding-agents").AgentSessionEvent;
 export type { AudioTarget, AudioResult } from "../activities/audio.js";
 export type { MediaAsset, AssetManifest } from "../activities/media.js";
