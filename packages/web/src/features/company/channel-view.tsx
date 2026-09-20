@@ -39,6 +39,7 @@ import { useNavigate, useParams } from "react-router";
 import type { OrgChannelDetail, OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import {
   Button,
+  CHANNEL_RUN_AVATAR_PX,
   ChannelBubble,
   ChannelRun,
   EmptyState,
@@ -62,6 +63,7 @@ import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
+import { EmployeeAvatar } from "./employee-avatar";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
 import { orgKey } from "./company-nav";
@@ -76,6 +78,7 @@ import {
   mentionCandidates,
   mentionIsMe,
   mentionLabel,
+  mentionNameHandles,
   mentionRuns,
 } from "./channel-mentions";
 import {
@@ -382,6 +385,7 @@ export function ChannelView() {
   };
 
   const names = useMemo(() => new Map(employees.map((e) => [e.agentId, e.name])), [employees]);
+  const nameHandles = useMemo(() => mentionNameHandles(names), [names]);
   const employeeIds = useMemo(() => new Set(employees.map((e) => e.agentId)), [employees]);
   // Who the mention chips inside the rendered bodies are measured against. Memoized because it
   // is a context value: a fresh object per render would re-render every message body.
@@ -412,7 +416,7 @@ export function ChannelView() {
     document.getElementById(id)?.scrollIntoView({ block: "center" });
 
   const renderText = (m: OrgChannelMessage) =>
-    mentionRuns(m.text).map((run, i) =>
+    mentionRuns(m.text, nameHandles).map((run, i) =>
       run.mention === null ? (
         <span key={i}>{run.text}</span>
       ) : (
@@ -546,6 +550,16 @@ export function ChannelView() {
             <span data-tooltip={S.company.channels.hopInfo} className="text-fg-muted">
               {S.company.channels.hop(item.hop)}
             </span>
+          ) : undefined
+        }
+        avatar={
+          p.kind === "agent" ? (
+            <EmployeeAvatar
+              id={p.id}
+              name={sender.name}
+              size={CHANNEL_RUN_AVATAR_PX}
+              className="shrink-0 rounded-md"
+            />
           ) : undefined
         }
       >

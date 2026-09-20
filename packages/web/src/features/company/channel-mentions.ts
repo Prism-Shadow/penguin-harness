@@ -3,11 +3,12 @@
  * channel's own members, plus `all` — and how they rank against what was typed, the token
  * being typed at the caret, what a pick sends (the draft that shows it by name is
  * mention-draft.ts), how a stored message is split into plain runs and mention runs for
- * highlighting, and what a mention run displays and whether it addresses the reader. The token
- * grammar mirrors the
- * server's extractMentionTokens — `@id`, `@agent:id`, `@user:id`, `@all` — and its
- * resolution order (an employee before a member of the same id), so what the composer
- * highlights is what the server delivers.
+ * highlighting, and what a mention run displays and whether it addresses the reader. What can
+ * follow `@` mirrors the server's findMentions (organization/names.ts) — an employee's id or
+ * its NAME, a member's user id, `all`, and the explicit `@agent:id` / `@user:id` — with its
+ * rules: the longest handle wins, an ASCII handle ends at the end of its word, a name in a
+ * script without spaces needs no space after it, and an employee comes before a member of the
+ * same id. So what the composer highlights is what the server delivers.
  *
  * Membership is the source, not the org chart: a mention delivers only inside the channel it
  * was written in, and the server rejects a message naming an outsider (`mention_not_member`).
@@ -137,25 +138,55 @@ export interface TextRun {
   mention: string | null;
 }
 
-const MENTION_RE = /(^|[^A-Za-z0-9_@])@((?:(?:agent|user):)?[A-Za-z0-9][A-Za-z0-9_.-]*)/g;
+const ASCII_TOKEN = /^((?:(?:agent|user):)?[A-Za-z0-9][A-Za-z0-9_.-]*)/;
+const WORD = /[A-Za-z0-9_]/;
 
-/** Splits a message into plain runs and mention runs, in order; trailing `.`/`-` stay outside the mention as the server reads them. */
-export function mentionRuns(text: string): TextRun[] {
+/**
+ * Splits a message into plain runs and mention runs, in order. `names` are the employees'
+ * names (name → agent id): a mention by name becomes a run whose token is `agent:<id>`, so
+ * it is labelled and recognised exactly like one written by id. Without them only the ASCII
+ * forms are found, as before; trailing `.`/`-` stay outside the mention as the server reads
+ * them.
+ */
+export function mentionRuns(
+  text: string,
+  names: ReadonlyMap<string, string> = new Map(),
+): TextRun[] {
+  const byLength = [...names.keys()].sort((a, b) => b.length - a.length);
   const runs: TextRun[] = [];
   let last = 0;
-  for (const m of text.matchAll(MENTION_RE)) {
-    const lead = m[1]!;
-    let token = m[2]!;
-    const trailing = /[.-]+$/.exec(token)?.[0] ?? "";
-    token = token.slice(0, token.length - trailing.length);
-    if (token === "" || /^(agent|user):$/.test(token)) continue;
-    const mentionStart = m.index + lead.length;
-    if (mentionStart > last) runs.push({ text: text.slice(last, mentionStart), mention: null });
-    runs.push({ text: `@${token}`, mention: token });
-    last = mentionStart + 1 + token.length;
+  for (let at = text.indexOf("@"); at !== -1; at = text.indexOf("@", at + 1)) {
+    const before = at === 0 ? "" : text[at - 1]!;
+    if (before === "@" || WORD.test(before)) continue;
+    const rest = text.slice(at + 1);
+    let ascii = ASCII_TOKEN.exec(rest)?.[1] ?? "";
+    ascii = ascii.replace(/[.-]+$/, "");
+    if (/^(agent|user):$/.test(ascii)) ascii = "";
+    const name = byLength.find((handle) => {
+      if (handle === "" || !rest.startsWith(handle)) return false;
+      const next = rest[handle.length] ?? "";
+      return !(WORD.test(handle[handle.length - 1]!) && WORD.test(next));
+    });
+    // The longest reading wins, as on the server: a name that goes further than the id-shaped
+    // token is the mention; otherwise the token is.
+    const byName = name !== undefined && name.length >= ascii.length;
+    const shown = byName ? name : ascii;
+    if (shown === "") continue;
+    if (at > last) runs.push({ text: text.slice(last, at), mention: null });
+    runs.push({ text: `@${shown}`, mention: byName ? `agent:${names.get(name)!}` : ascii });
+    last = at + 1 + shown.length;
+    at = last - 1;
   }
   if (last < text.length) runs.push({ text: text.slice(last), mention: null });
   return runs;
+}
+
+/** Employees' names as `mentionRuns` wants them (name → agent id), from the usual id → name map. */
+export function mentionNameHandles(names: ReadonlyMap<string, string>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [agentId, name] of names)
+    if (name !== agentId && !name.includes("@")) out.set(name, agentId);
+  return out;
 }
 
 /**

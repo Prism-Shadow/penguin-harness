@@ -18,7 +18,6 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import type { OrgChannelDetail, OrgChannelMember } from "@prismshadow/penguin-server/api";
 import {
-  AgentAvatar,
   AvatarStack,
   Button,
   ConfirmModal,
@@ -45,6 +44,7 @@ import { S } from "../../lib/strings";
 import { apiErrorText } from "../../lib/api-error";
 import { useProject } from "../../state/project";
 import { Truncated } from "../../components/ui/truncated";
+import { EmployeeAvatar } from "./employee-avatar";
 import { ChannelTextDialog } from "./channel-dialogs";
 import { channelGlyph } from "./channel-sidebar";
 import { channelLabel, inviteCandidates, isAllHands } from "./channel-list";
@@ -77,7 +77,7 @@ function MemberAvatar({ member, size }: { member: OrgChannelMember; size: number
   if (item.kind === "user") {
     return <UserAvatar userId={item.id} displayName={item.name} size={size} />;
   }
-  return <AgentAvatar id={item.id} name={item.name} size={size} className="shrink-0 rounded" />;
+  return <EmployeeAvatar id={item.id} name={item.name} size={size} className="shrink-0 rounded" />;
 }
 
 /** The member list: who is in the channel, with an employee's desk session one click away. */

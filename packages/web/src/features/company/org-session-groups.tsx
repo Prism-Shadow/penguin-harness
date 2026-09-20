@@ -35,7 +35,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ActivityIcon,
-  AgentAvatar,
   Button,
   CloseIcon,
   Dropdown,
@@ -62,6 +61,7 @@ import { useProject } from "../../state/project";
 import { useLiveSessionStatuses } from "../../state/sessions";
 import { writeClipboard } from "../../lib/clipboard";
 import { Icon } from "../../components/ui/group-list";
+import { EmployeeAvatar } from "./employee-avatar";
 import {
   DESK_ROW_ACTIONS,
   SessionRowHoverActions,
@@ -227,7 +227,7 @@ function DeskRow({
           }}
           className={`${rowButton(active)}${missing ? " cursor-default opacity-60" : ""}`}
         >
-          <AgentAvatar
+          <EmployeeAvatar
             id={row.agentId}
             name={row.name}
             size={ICON_SIZE.rowLead}
@@ -367,7 +367,7 @@ function TempRow({
           onClick={onOpen}
           className={rowButton(row.active)}
         >
-          <AgentAvatar
+          <EmployeeAvatar
             id={row.agentId}
             name={row.name}
             size={ICON_SIZE.rowLead}
@@ -420,7 +420,7 @@ export function TempSessionRailRows({ projectId, orgId }: { projectId: string; o
             onClick={() => openSession(row.sessionId, row.agentId)}
             className={railItemClass()}
           >
-            <AgentAvatar id={row.agentId} name={row.name} size={18} className="rounded" />
+            <EmployeeAvatar id={row.agentId} name={row.name} size={18} className="rounded" />
             {row.activity !== null && (
               <span
                 aria-hidden
@@ -577,7 +577,7 @@ export function DeskRailRows({ projectId, orgId }: { projectId: string; orgId: s
             }}
             className={`${railItemClass()} disabled:opacity-60${missing ? " opacity-60" : ""}`}
           >
-            <AgentAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
+            <EmployeeAvatar id={d.agentId} name={d.name} size={18} className="rounded" />
             {running && (
               <span
                 aria-hidden

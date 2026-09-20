@@ -45,7 +45,7 @@ export interface ChannelSender {
 }
 
 /** The avatar that leads somebody else's run, in pixels: a tile, one rung above a line glyph. */
-const RUN_AVATAR_PX = 28;
+export const CHANNEL_RUN_AVATAR_PX = 28;
 
 /** The run's leading tile. Decorative: the name beside it is what names the sender. */
 function SenderAvatar({ sender }: { sender: ChannelSender }) {
@@ -54,7 +54,7 @@ function SenderAvatar({ sender }: { sender: ChannelSender }) {
       <AgentAvatar
         id={sender.id}
         name={sender.name}
-        size={RUN_AVATAR_PX}
+        size={CHANNEL_RUN_AVATAR_PX}
         className="shrink-0 rounded-md"
       />
     );
@@ -81,15 +81,27 @@ export interface ChannelRunProps {
   ownLabel?: string;
   /** After the name on somebody else's run: a relay chip, with its tooltip. */
   meta?: ReactNode;
+  /**
+   * The run's leading picture in place of the sender's default tile — an employee's own avatar,
+   * which only the app knows. Drawn at the tile's size (`CHANNEL_RUN_AVATAR_PX`).
+   */
+  avatar?: ReactNode;
   /** The run's bubbles, in order. */
   children: ReactNode;
 }
 
 /** One sender's run of consecutive messages. */
-export function ChannelRun({ sender, own = false, ownLabel, meta, children }: ChannelRunProps) {
+export function ChannelRun({
+  sender,
+  own = false,
+  ownLabel,
+  meta,
+  avatar,
+  children,
+}: ChannelRunProps) {
   return (
     <div className={`flex items-start ${ICON_GAP.card} py-1.5`}>
-      {!own && <SenderAvatar sender={sender} />}
+      {!own && (avatar ?? <SenderAvatar sender={sender} />)}
       <div className={`flex min-w-0 flex-1 flex-col gap-1 ${own ? "items-end" : "items-start"}`}>
         {own ? (
           <span className="sr-only">{ownLabel ?? sender.name}</span>
