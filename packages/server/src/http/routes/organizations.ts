@@ -223,6 +223,7 @@ export function organizationRoutes(deps: OrgRouteDeps): Hono<AppEnv> {
         ...(model !== undefined && model !== null ? { model } : {}),
       },
       c.var.user.userId,
+      { admin: c.var.user.isAdmin === true },
     );
     return c.json(detail, 201);
   });

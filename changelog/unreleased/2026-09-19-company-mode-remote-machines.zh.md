@@ -12,7 +12,7 @@
 ## 创建
 
 - 创建弹窗的公共工作区选择器可以选 Project 已连接的机器，与新对话的选择器一致。选中机器上的目录，组织就在那台机器上运行；没有单独的「运行位置」字段。Model 列表随所选机器而定，因为工位使用的是那台机器的 Model 配置。
-- `POST /api/projects/:projectId/organizations` 在 `workspace` 之外接受 `workspaceMachine`（已连接机器自己的 id）。请求被转交给那台机器自己的服务端，由它完成创建——CEO 的 Agent、工位与第一轮工作都是它的会话与状态——所以它拒绝的理由（id 已占用、目录不存在、没有该 Model、那里未开启公司模式）原样返回。机器未连接时为 `409 machine_not_connected`。
+- `POST /api/projects/:projectId/organizations` 在 `workspace` 之外接受 `workspaceMachine`（已连接机器自己的 id）。请求被转交给那台机器自己的服务端，由它完成创建——CEO 的 Agent、工位与第一轮工作都是它的会话与状态——所以它拒绝的理由（id 已占用、目录不存在、没有该 Model、那里未开启公司模式）原样返回。机器未连接时为 `409 machine_not_connected`。公司模式是每个服务端各自的开关，机器上默认关闭，而那台机器的设置页在这里打不开：创建者是本服务端的管理员时，创建会替他在那台机器上打开开关并重试；其他人则收到那台机器的 `company_mode_off`。
 - `org_config.toml` 新增 `workspace_machine`，即组织运行所在机器的 id；缺省表示持有该文件的服务端。存量组织没有这个字段，不受影响。
 
 ## 运行与镜像

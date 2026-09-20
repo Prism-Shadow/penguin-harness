@@ -18,12 +18,21 @@ const MACHINE = "m-1";
 const NOW = Date.parse("2026-09-19T09:00:00Z");
 
 /** The machine's organization routes, as far as a mirror and a remote create use them. */
-function apiOf(machine: OrgHarness): OrgMachineApi {
+function apiOf(machine: OrgHarness, asked: string[] = []): OrgMachineApi {
   const base = `/api/projects/${P}/organizations`;
   return {
     async request(method, url, body) {
       const [pathname, query = ""] = url.split("?");
       const json = (status: number, value: unknown) => ({ status, text: JSON.stringify(value) });
+      asked.push(`${method} ${pathname}`);
+      // The switch is per server; with it off that server has no company routes at all.
+      if (method === "PUT" && pathname === "/api/admin/settings") {
+        machine.flags.companyMode = (body as { companyMode: boolean }).companyMode;
+        return json(200, {});
+      }
+      if (!machine.flags.companyMode) {
+        return json(404, { error: { code: "company_mode_off", message: "Company mode is off." } });
+      }
       try {
         if (method === "GET" && pathname === base) {
           return json(200, { organizations: await machine.service.list(P) });
@@ -57,7 +66,11 @@ describe("an organization on another machine", () => {
     for (const h of made.splice(0)) await fs.rm(h.root, { recursive: true, force: true });
   });
 
+  /** Every request this server made of the machine, in order. */
+  const asked: string[] = [];
+
   async function twoServers(connected = true) {
+    asked.length = 0;
     const machine = await makeOrgHarness({
       nowMs: NOW,
       ownerUserId: "machine-admin",
@@ -68,7 +81,7 @@ describe("an organization on another machine", () => {
       nowMs: NOW,
       machines: {
         ownId: () => "here",
-        api: async (id) => (id === MACHINE && link.up ? apiOf(machine) : null),
+        api: async (id) => (id === MACHINE && link.up ? apiOf(machine, asked) : null),
       },
     });
     made.push(machine, here);
@@ -173,6 +186,25 @@ describe("an organization on another machine", () => {
         "alice",
       ),
     ).rejects.toMatchObject({ status: 409, code: "machine_not_connected" });
+  });
+
+  it("switches company mode on over there for an administrator, and only tells anyone else", async () => {
+    // The switch is off on a machine until someone turns it on, and that machine's Settings
+    // page is not one a person here can open.
+    const { machine, here, workspace } = await twoServers();
+    machine.flags.companyMode = false;
+    const req = { orgId: ORG, mission: "Ship it", workspace, workspaceMachine: MACHINE };
+    await expect(here.service.create(P, req, "alice")).rejects.toMatchObject({
+      status: 404,
+      code: "company_mode_off",
+    });
+    expect(machine.flags.companyMode).toBe(false);
+    expect(await here.store.exists(P, ORG)).toBe(false);
+
+    const detail = await here.service.create(P, req, "alice", { admin: true });
+    expect(detail).toMatchObject({ orgId: ORG, machineId: MACHINE });
+    expect(machine.flags.companyMode).toBe(true);
+    expect(asked.filter((line) => line.startsWith("PUT "))).toEqual(["PUT /api/admin/settings"]);
   });
 
   it("says in the machine's own words why it would not create one", async () => {

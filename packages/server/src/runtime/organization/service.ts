@@ -566,6 +566,8 @@ export class OrganizationService {
     projectId: string,
     req: OrganizationCreateRequest,
     userId: string,
+    /** `admin`: the caller administers this server (see createOn for what that allows). */
+    opts: { admin?: boolean } = {},
   ): Promise<OrganizationDetail> {
     const orgId = req.orgId;
     if (!SEMANTIC_ID_PATTERN.test(orgId)) {
@@ -587,7 +589,7 @@ export class OrganizationService {
       throw new HttpError(409, "agent_exists", `The CEO's Agent id is already taken: ${ceo}`);
     }
     const elsewhere = runsOn(this.deps, { workspaceMachine: req.workspaceMachine });
-    if (elsewhere !== null) return this.createOn(elsewhere, projectId, req, userId);
+    if (elsewhere !== null) return this.createOn(elsewhere, projectId, req, opts.admin === true);
     const name = req.name?.trim() || orgId;
     if (req.model !== undefined) await this.validateModel(projectId, req.model);
     const workspace =
@@ -707,7 +709,7 @@ export class OrganizationService {
     machineId: string,
     projectId: string,
     req: OrganizationCreateRequest,
-    userId: string,
+    admin: boolean,
   ): Promise<OrganizationDetail> {
     if (req.workspace === undefined) {
       throw badRequest("An organization on a machine needs its shared workspace named.");
@@ -720,11 +722,20 @@ export class OrganizationService {
         "That machine is not connected; connect it on the Machines page first.",
       );
     }
-    const answer = await api.request(
-      "POST",
-      `/api/projects/${encodeURIComponent(projectId)}/organizations`,
-      req,
-    );
+    const path = `/api/projects/${encodeURIComponent(projectId)}/organizations`;
+    let answer = await api.request("POST", path, req);
+    // Company mode is a switch per server, off until someone turns it on — and the machine's
+    // own Settings page is not one a person here can open. An administrator of THIS server,
+    // where the switch is on (or this route would not exist), is who connected that machine
+    // and whom this server speaks to it as: the create turns the switch on over there and
+    // asks again. Anyone else is told where it stands.
+    if (answer.status === 404 && admin && errorCodeOf(answer.text) === "company_mode_off") {
+      const switched = await api.request("PUT", "/api/admin/settings", { companyMode: true });
+      if (switched.status >= 200 && switched.status < 300) {
+        this.deps.log?.(`[organization] company mode switched on on machine ${machineId}`);
+        answer = await api.request("POST", path, req);
+      }
+    }
     if (answer.status !== 201) {
       let error: { code?: string; message?: string } = {};
       try {
@@ -766,7 +777,6 @@ export class OrganizationService {
         `[organization] ${req.orgId} was created on ${machineId}; its first copy did not arrive (${pulled.kind}) and the next pass retries`,
       );
     }
-    void userId;
     return { ...created, machineId };
   }
 
@@ -2895,6 +2905,15 @@ export abstract class OrgService extends Interface<
     | "deleteHandbookFile"
   >
 >() {}
+
+/** The `error.code` of an API error envelope, or null for any other text. */
+function errorCodeOf(text: string): string | null {
+  try {
+    return (JSON.parse(text) as { error?: { code?: string } }).error?.code ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /** The organization scheduler as the boot sequence drives it (the pass itself is internal). */
 export abstract class OrgScheduler extends Interface<

@@ -255,6 +255,9 @@ describe("organization routes", () => {
         ownerProject,
         { orgId: "acme", mission: "Build a marketplace", name: "Acme" },
         "olivia",
+        // Whether the caller administers this server: what lets a create on a machine switch
+        // company mode on over there. A Project's owner is not one by that alone.
+        { admin: false },
       ],
     });
   });
@@ -269,7 +272,12 @@ describe("organization routes", () => {
     ).toBe(201);
     expect(calls.at(-1)).toMatchObject({
       method: "create",
-      args: [ownerProject, { orgId: "acme", mission: "做一个市场", language: "zh" }, "olivia"],
+      args: [
+        ownerProject,
+        { orgId: "acme", mission: "做一个市场", language: "zh" },
+        "olivia",
+        { admin: false },
+      ],
     });
     expect((await owner.patch(`${base}/acme`, { language: "de" })).status).toBe(400);
     expect((await owner.patch(`${base}/acme`, { language: "en" })).status).toBe(200);
