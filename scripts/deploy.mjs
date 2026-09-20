@@ -32,6 +32,7 @@ import { ESM_CJS_BANNER } from "./esm-cjs-banner.mjs";
 import { FAR_SIDE_SCRIPTS } from "./far-side-scripts.mjs";
 import { buildBuiltinPlugins } from "./build-plugins.mjs";
 import { archiveName, packArchive, prefixPackages } from "./asset-archives.mjs";
+import { typescriptPayload } from "./typescript-payload.mjs";
 import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
@@ -256,6 +257,17 @@ async function readNativeAssets() {
   // small files is hundreds of blobs, probes and transfers, and stalls. The platform unpacks
   // `archives/*.tgz` before resolving anything from its assets (hmr/asset-archives.ts).
   files[`archives/${archiveName("", "node-pty")}`] = await packArchive(pty);
+  // The compiler a plugin's interfaces are checked with: the target's program may predate it
+  // being a dependency (or be a desktop bundle with no node_modules), and a platform that
+  // cannot find it makes no comparison. Content-addressed like everything here, so it
+  // crosses once.
+  files[`archives/${archiveName("", "typescript")}`] = await packArchive(
+    typescriptPayload(path.join(ROOT, "packages", "server")).map(({ rel, abs }) => ({
+      rel: `node_modules/typescript/${rel}`,
+      abs,
+      exec: false,
+    })),
+  );
   // The scripts that run on the FAR side — the release installers a remote install feeds
   // over, the one thing that has to arrive before the CLI does. A pushed bundle resolves them
   // from its own assets directory, so a push that omits one leaves a server that cannot

@@ -41,6 +41,9 @@ import { readManifest } from "../hmr/manifest.js";
 import type { Plugin } from "@prismshadow/penguin-core/plugin";
 import type { LoadedPlugin } from "./host.js";
 import { PluginHost, pluginHostFrom } from "./host.js";
+import platformTable from "../ifaces.json" with { type: "json" };
+import { checkIfaces, ifaceQuestions } from "./iface-check.js";
+import { loadTypeScript, TypeScriptUnavailable, type TypeScript } from "./typescript.js";
 
 /**
  * Where a Project's list lives, for a surface that has to name the file. The data root's
@@ -456,6 +459,46 @@ async function readPackageTable(file: string | null): Promise<{
   }
 }
 
+/**
+ * Whether the host interfaces this package compiled against — its own table copies them —
+ * still fit this platform's, both for what its modules require and for what they provide.
+ * The tree check cannot say: it looks a key up in one merged table, where the host's entry
+ * stands, so it would compare the platform's declaration with itself.
+ *
+ * Two things can leave an interface uncompared, and neither fails the load — a pushed
+ * platform must not take plugins away from a machine for something the plugin did not do:
+ * a table that carries no copy of a host interface (the generator only writes the
+ * interfaces a package DECLARES, so today that is every host interface a plugin requires),
+ * and an installation whose program predates the compiler being a dependency. Both are
+ * logged; an interface the table does carry, and that no longer fits, fails the load.
+ */
+let compilerMissingLogged = false;
+async function interfaceMisfits(
+  specifier: string,
+  own: IfaceTable,
+  defs: readonly ModuleDef[],
+  assets: string | null,
+): Promise<string[]> {
+  const questions = ifaceQuestions(defs.map((d) => d.manifest));
+  if (questions.length === 0) return [];
+  let ts: TypeScript;
+  try {
+    ts = await loadTypeScript(assets);
+  } catch (err) {
+    if (!(err instanceof TypeScriptUnavailable)) throw err;
+    if (!compilerMissingLogged) console.warn(`[plugins] interfaces not compared: ${err.message}`);
+    compilerMissingLogged = true;
+    return [];
+  }
+  const fit = checkIfaces(ts, platformTable as unknown as IfaceTable, own, questions);
+  if (fit.uncompared.length > 0) {
+    console.warn(
+      `[plugins] ${specifier}: ${fit.uncompared.length} interface(s) not compared — its table carries no copy of them`,
+    );
+  }
+  return fit.problems;
+}
+
 /** The package's default export as a Plugin, or null when it is not one. */
 function asPlugin(module: unknown): Plugin | null {
   const def = (module as { default?: unknown }).default;
@@ -503,10 +546,8 @@ export async function loadPlugins(
   reuse: ReadonlyMap<string, LoadedPlugin> = new Map(),
 ): Promise<PluginLoadResult> {
   const failed = new Map<string, string>();
-  const bases = pluginBases(
-    root,
-    assetsDir === undefined ? await committedAssetsDir(root) : assetsDir,
-  );
+  const pushedAssets = assetsDir === undefined ? await committedAssetsDir(root) : assetsDir;
+  const bases = pluginBases(root, pushedAssets);
   // The closure over this root's Projects, and nothing else. A plugin the BUILD ships is
   // available without a download — that is what `builtin` means — but availability is not
   // consent: it loads when a Project asks for it, like every other plugin.
@@ -568,6 +609,13 @@ export async function loadPlugins(
         });
       const modules = pair(plugin.modules);
       const replaces = pair(plugin.replaces);
+      const misfits = await interfaceMisfits(
+        specifier,
+        read.ifaces,
+        [...modules, ...replaces],
+        pushedAssets,
+      );
+      if (misfits.length > 0) throw new Error(misfits.join("\n"));
       loaded.push({ specifier, file, stamp, modules, replaces, ifaces: read.ifaces });
     } catch (err) {
       failed.set(specifier, err instanceof Error ? err.message : String(err));

@@ -113,6 +113,19 @@ if (hostBinding(ptyFiles) === undefined) {
   process.exit(1);
 }
 
+// The compiler a plugin's interfaces are checked with, beside the server bundle for the same reason
+// node-pty is: the bundle has no node_modules of its own, and the server resolves
+// `typescript` from the program that is running.
+const { typescriptPayload } = await import(
+  pathToFileURL(path.resolve(pkgDir, "..", "..", "scripts", "typescript-payload.mjs")).href
+);
+const tsDest = path.join(pkgDir, "dist", "node_modules", "typescript");
+fs.rmSync(tsDest, { recursive: true, force: true });
+for (const { rel, abs } of typescriptPayload(path.resolve(pkgDir, "..", "server"))) {
+  fs.mkdirSync(path.dirname(path.join(tsDest, rel)), { recursive: true });
+  fs.copyFileSync(abs, path.join(tsDest, rel));
+}
+
 const { posixLauncherScript, windowsLauncherScript } = await import(
   pathToFileURL(launcherModule).href
 );
