@@ -3,6 +3,7 @@
 - **Date:** 2026-09-20
 - **Type:** feature
 - **Scope:** `server`, `web`
+- **PR:** [#803](https://github.com/Prism-Shadow/penguin-harness/pull/803)
 
 [English](2026-09-20-organization-delete.md)
 
