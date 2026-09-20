@@ -101,6 +101,13 @@ export const en: Strings = {
     wafRoot: "WAF checkout",
     wafRootHint:
       "Folder containing framework, modules and media. Leave empty for automatic discovery.",
+    readingMode: "Reading mode",
+    readingModeHint: "Choose a mode and build the media plan before assembly.",
+    readingModeHelp:
+      "Choose the reading behavior for this assembly. Read-along starts narration on the first visit to each page. Decodable waits for manually started narration after a reading delay and requires bound final-story audio.",
+    chooseReadingMode: "Choose a reading mode",
+    readAlong: "Read-along",
+    decodable: "Decodable",
     assemble: "Assemble WAF module",
     moduleRun: "Module assembly",
     moduleReady: "Assembled",

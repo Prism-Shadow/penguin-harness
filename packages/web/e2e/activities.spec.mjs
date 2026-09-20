@@ -43,6 +43,7 @@ async function fixture(page) {
   let imageCandidateFailure = false;
   let imageGenerationFailure = false;
   let mediaTextCandidateReads = 0;
+  const assembleRequests = [];
   const errors = [];
   page.on("pageerror", (error) => {
     errors.push(error.message);
@@ -232,6 +233,7 @@ async function fixture(page) {
       return json(activity.draft);
     }
     if (p === `${base}/act_test/generate-spec` || p === `${base}/act_test/assemble-module`) {
+      if (p.endsWith("/assemble-module")) assembleRequests.push(request.postDataJSON());
       runs.unshift({
         kind: p.endsWith("/assemble-module") ? "module" : "spec",
         inputRevision: activity.draft.contentRevision,
@@ -465,6 +467,7 @@ async function fixture(page) {
     get mediaTextCandidateReads() {
       return mediaTextCandidateReads;
     },
+    assembleRequests,
     failImageCandidate() {
       imageCandidateFailure = true;
     },
@@ -526,11 +529,15 @@ async function fixture(page) {
   };
 }
 
-async function create(page) {
+async function create(page, { activityType = "standard" } = {}) {
   await page.goto(`${origin}/activities`);
   await page.getByRole("textbox", { name: "Product code", exact: true }).fill("words");
   await page.getByRole("spinbutton", { name: "Reference number", exact: true }).fill("12");
   await page.getByRole("textbox", { name: "Title", exact: true }).fill("Sight words");
+  if (activityType === "book") {
+    await page.getByRole("button", { name: "Activity type", exact: true }).click();
+    await page.getByRole("option", { name: "Book", exact: true }).click();
+  }
   await page.getByRole("button", { name: "Create activity", exact: true }).click();
   await expect(page).toHaveURL(/activities\/act_test$/);
   await page
@@ -660,10 +667,12 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   await expect(page.getByRole("textbox", { name: /^WAF checkout/ })).toHaveValue("C:/WAF checkout");
   const sent = page.waitForRequest((request) => request.url().endsWith("/assemble-module"));
   await assemble.click();
-  expect((await sent).postDataJSON()).toMatchObject({
+  const payload = (await sent).postDataJSON();
+  expect(payload).toMatchObject({
     wafRoot: "C:/WAF checkout",
     agentId: "default_agent",
   });
+  expect(payload).not.toHaveProperty("bookMode");
   await expect(page.getByText("Module assembly", { exact: true })).toBeVisible();
   f.complete();
   await page.reload();
@@ -678,6 +687,49 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   await page.getByRole("textbox", { name: "Description", exact: true }).fill("A new revision");
   await page.getByRole("button", { name: "Save description", exact: true }).click();
   await expect(page.getByText("Built from an earlier draft", { exact: true })).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("requires an explicit reading mode for book assembly and sends it per run", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page, { activityType: "book" });
+  await page.getByRole("textbox", { name: "Specification JSON", exact: true }).fill(
+    JSON.stringify({
+      ...spec,
+      scenes: [
+        {
+          id: "story",
+          role: "story",
+          description: "A penguin story",
+          media: { images: [{ key: "cover", description: "A penguin walking" }] },
+        },
+      ],
+    }),
+  );
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  const assemble = page.getByRole("button", { name: "Assemble WAF module", exact: true });
+  await expect(assemble).toBeDisabled();
+  const readingMode = page.getByRole("button", { name: "Reading mode", exact: true });
+  await expect(readingMode).toHaveText("Choose a reading mode");
+  await readingMode.scrollIntoViewIfNeeded();
+  await readingMode.click();
+  await page.getByRole("option", { name: "Read-along", exact: true }).click();
+  await expect(assemble).toBeDisabled();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await expect(assemble).toBeEnabled();
+  await expect(page.getByText("Validated", { exact: true })).toBeVisible();
+  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
+  const sent = page.waitForRequest(
+    (request) => request.url().endsWith("/assemble-module") && request.method() === "POST",
+  );
+  await assemble.click();
+  expect((await sent).postDataJSON()).toMatchObject({
+    agentId: "default_agent",
+    bookMode: "readAlong",
+  });
+  expect(f.assembleRequests).toEqual([expect.objectContaining({ bookMode: "readAlong" })]);
   expect(f.errors).toEqual([]);
 });
 

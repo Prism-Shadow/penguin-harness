@@ -170,7 +170,7 @@ describe("activity generation through Harness sessions", () => {
       "ActivitiesModule",
       "ActivityGeneration",
     );
-    async function start(wafRoot?: string) {
+    async function start(wafRoot?: string, bookMode?: "readAlong" | "decodable") {
       const current = (await (await client.get(endpoint)).json()) as ActivityDetail;
       const response = await client.post(
         `${endpoint}/${wafRoot ? "assemble-module" : "generate-spec"}`,
@@ -178,6 +178,7 @@ describe("activity generation through Harness sessions", () => {
           agentId: "default_agent",
           expectedRevision: current.draft.contentRevision,
           ...(wafRoot ? { wafRoot } : {}),
+          ...(bookMode ? { bookMode } : {}),
         },
       );
       expect(response.status, await response.clone().text()).toBe(202);
@@ -849,6 +850,106 @@ describe("activity generation through Harness sessions", () => {
     expect(((await (await f.client.get(f.endpoint)).json()) as ActivityDetail).draft.spec).toEqual(
       validBook,
     );
+  });
+
+  it("assembles an explicit read-along book, stages its compiled policy, and rejects mode tampering", async () => {
+    const f = await fixture(true, "book");
+    const validBook = {
+      ...activitySpec,
+      id: "storybook-assembly",
+      moduleFolder: "waf-module-storybook-assembly",
+      title: "Storybook assembly",
+      scenes: [
+        {
+          id: "cover",
+          description: "Cover page",
+          role: "cover",
+          media: { images: [{ key: "cover-image", description: "A clear cover." }] },
+          audio: { tracks: [] },
+        },
+        {
+          id: "title",
+          description: "Title page",
+          role: "title",
+          media: { images: [{ key: "title-image", description: "A clear title page." }] },
+          audio: { tracks: [] },
+        },
+        {
+          id: "story-1",
+          description: "Story page 1",
+          role: "story",
+          media: { images: [{ key: "story-1-image", description: "A clear story scene." }] },
+          audio: {
+            tracks: [{ key: "story-1-audio", description: "Narration", script: "Read the page." }],
+          },
+        },
+      ],
+    };
+    const current = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    const saved = (await (
+      await f.client.post(`${f.endpoint}/apply-generated-spec`, {
+        spec: validBook,
+        expectedRevision: current.draft.contentRevision,
+      })
+    ).json()) as ActivityDraft;
+    const planned = (await (
+      await f.client.post(`${f.endpoint}/plan-media`, {
+        expectedRevision: saved.contentRevision,
+      })
+    ).json()) as ActivityDraft;
+    const root = path.join(f.t.root, "book-waf-checkout");
+    for (const name of ["framework/src", "modules", "media"])
+      await fs.mkdir(path.join(root, name), { recursive: true });
+    await fs.writeFile(path.join(root, "framework/package.json"), "{}");
+    const beforeRuns = f.t.deps.db.prepare("SELECT * FROM activity_runs").all();
+    const beforeSessions = f.t.deps.db.prepare("SELECT session_id FROM sessions").all();
+    for (const mode of [undefined, "invalid"] as const) {
+      const response = await f.client.post(`${f.endpoint}/assemble-module`, {
+        agentId: "default_agent",
+        expectedRevision: planned.contentRevision,
+        wafRoot: root,
+        ...(mode === undefined ? {} : { bookMode: mode }),
+      });
+      expect(response.status).toBe(422);
+      expect(f.t.deps.db.prepare("SELECT * FROM activity_runs").all()).toEqual(beforeRuns);
+      expect(f.t.deps.db.prepare("SELECT session_id FROM sessions").all()).toEqual(beforeSessions);
+    }
+    const run = await f.start(root, "readAlong");
+    expect(run.bookMode).toBe("readAlong");
+    const session = f.t.deps.sessionsRepo.findById(run.sessionId!)!;
+    const input = JSON.parse(
+      await fs.readFile(path.join(session.workspace!, "input.json"), "utf8"),
+    );
+    expect(input.bookMode).toBe("readAlong");
+    const result = await f.finish(run);
+    expect(result.status, result.error ?? "").toBe("succeeded");
+    const configuration = JSON.parse(
+      await fs.readFile(path.join(session.workspace!, "module/configurations/p-1.json"), "utf8"),
+    );
+    expect(configuration.p.book.mode).toBe("readAlong");
+    expect(configuration.p["en-US"].scenes.map((scene: { role: string }) => scene.role)).toEqual([
+      "cover",
+      "title",
+      "story",
+    ]);
+    const after = (await (await f.client.get(f.endpoint)).json()) as ActivityDetail;
+    expect(after.draft.spec).toEqual(validBook);
+    expect(after.draft.contentRevision).toBe(run.inputRevision);
+
+    const tampered = await f.start(root, "readAlong");
+    const tamperedSession = f.t.deps.sessionsRepo.findById(tampered.sessionId!)!;
+    const configFile = path.join(tamperedSession.workspace!, "module/configurations/p-1.json");
+    const tamperedConfig = JSON.parse(await fs.readFile(configFile, "utf8"));
+    tamperedConfig.p.book.mode = "decodable";
+    await fs.writeFile(configFile, JSON.stringify(tamperedConfig));
+    // An agent changing the staging file cannot change the server-owned choice.
+    await fs.writeFile(
+      path.join(tamperedSession.workspace!, "input.json"),
+      JSON.stringify({ ...input, bookMode: "decodable" }),
+    );
+    const rejected = await f.finish(tampered);
+    expect(rejected.status).toBe("failed");
+    expect(rejected.error).toContain("selected book reading policy");
   });
 
   it("reads legacy book drafts but rejects invalid assembly before allocating a run or Session", async () => {

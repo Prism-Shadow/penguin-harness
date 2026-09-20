@@ -20,6 +20,7 @@ export abstract class ActivityGeneration extends Interface<{
     expectedRevision: string,
     module?: {
       wafRoot?: string;
+      bookMode?: string;
       audio?: { language: string; assetKey: string; voice: string };
       image?: { language: string; assetKey: string };
       mediaText?: { language: string; assetKey: string };

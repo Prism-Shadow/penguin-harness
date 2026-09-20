@@ -15,6 +15,7 @@ import { readArtifactBytes } from "./artifact.js";
 import { AUDIO_MAX_BYTES, inspectWave } from "./audio.js";
 import { GENERATED_IMAGE_MAX_BYTES, inspectPng } from "./generated-image.js";
 import { validateBookSpec } from "./book.js";
+import { compileBookConfiguration, type BookMode } from "./book-configuration.js";
 
 /** Loom's WAF checkout convention; discovery only walks ancestors, never the disk. */
 export async function findWafRoot(
@@ -40,7 +41,10 @@ export async function findWafRoot(
 }
 
 /** Source templates are vendored from Loom's html_module, compiled into every deployment. */
-export function scaffoldModule(activity: ActivityDetail): Record<string, string> {
+export function scaffoldModule(
+  activity: ActivityDetail,
+  bookMode?: BookMode,
+): Record<string, string> {
   const spec = validateActivitySpec(activity.draft.spec);
   if (activity.activityType === "book") validateBookSpec(spec);
   const runtime = spec.runtime as Record<string, unknown>;
@@ -204,7 +208,11 @@ export function scaffoldModule(activity: ActivityDetail): Record<string, string>
   if (manifest) json(`${refDir}/asset_manifest.json`, wafManifest(manifest));
   json(
     `configurations/${activity.productCode}-${activity.refNum}.json`,
-    manifest ? mediaConfiguration(manifest) : { [activity.productCode]: { telemetry: false } },
+    manifest
+      ? bookMode
+        ? compileBookConfiguration(activity, bookMode, manifest)
+        : mediaConfiguration(manifest)
+      : { [activity.productCode]: { telemetry: false } },
   );
   return files;
 }
@@ -213,8 +221,9 @@ export async function prepareModule(
   workspace: string,
   activity: ActivityDetail,
   wafRoot: string,
+  bookMode?: BookMode,
 ): Promise<void> {
-  const files = scaffoldModule(activity);
+  const files = scaffoldModule(activity, bookMode);
   // Saved paths are references. Confirm checkout availability before creating a paid Session.
   const references = new Set(
     Object.values(activity.draft.mediaPlan?.manifest.assets ?? {}).flatMap((assets) =>
@@ -275,6 +284,7 @@ export async function verifyMediaArtifacts(
   workspace: string,
   activity: ActivityDetail,
   read: (file: string) => Promise<string>,
+  bookMode?: BookMode,
 ): Promise<void> {
   if (!activity.draft.mediaPlan) return;
   const prefix = `module/generated/${activity.productCode}/refs/${activity.productCode}-${activity.refNum}/spec`;
@@ -293,11 +303,24 @@ export async function verifyMediaArtifacts(
       ),
     ),
   );
-  const expected = mediaConfiguration(manifest)[activity.productCode] as Record<string, unknown>;
+  const expected = (
+    bookMode ? compileBookConfiguration(activity, bookMode, manifest) : mediaConfiguration(manifest)
+  )[activity.productCode] as Record<string, unknown>;
   for (const [language, entries] of Object.entries(expected)) {
     if (language === "telemetry") continue;
-    for (const [key, value] of Object.entries(entries as Record<string, string>))
-      if (configuration[activity.productCode]?.[language]?.[key] !== value)
+    if (language === "book") {
+      if (
+        contentRevision(configuration[activity.productCode]?.book ?? null) !==
+        contentRevision(entries)
+      )
+        throw new Error("Assembly changed the selected book reading policy.");
+      continue;
+    }
+    for (const [key, value] of Object.entries(entries as Record<string, unknown>))
+      if (
+        contentRevision(configuration[activity.productCode]?.[language]?.[key] ?? null) !==
+        contentRevision(value)
+      )
         throw new Error("Assembly changed an approved media configuration binding.");
   }
   for (const asset of Object.values(activity.draft.mediaPlan.manifest.assets).flat()) {
@@ -401,6 +424,7 @@ If input.json contains draft.mediaPlan, its manifest and language-specific confi
 Work only in this Session workspace. Treat the shared WAF checkout as read-only. Do not modify shared modules or run Loom's pipeline/server. Do not delegate.
 Copy each accepted generatedAudio or generatedImage file unchanged from media/generated to preview/media/generated, and resolve its configuration against that preview/media base. The collector verifies the accepted media hashes. Do not include binary files in module-result.json's text file list.
 Implement the actual learning interactions and feedback in module/src, preserving waf-state-machine, WAF lifecycle, Interactable input and cleanup. Complete the ref configuration, asset manifest and state machine for the input productCode/refNum. Use existing media when available; report missing media explicitly, never invent successful generation.
+For a book, input.bookMode is the user's explicit reading-mode choice. The scaffolded product configuration contains the selected book policy and complete localized scenes. Preserve this policy, scene order, roles, derived page numbers, image alt text, and ordered audio cues. Implement the reader with the native waf-state-machine lifecycle, owned Interactables, and existing runtime media helpers; do not import waf-sequence or a shared book module. Cover/title pages show only artwork. Story visible text is primary narration; supplemental cues remain hidden. Read-along autoplays on first visit without advancing; Decodable waits the configured reading delay for manual narration and unlocks Next only after all cues complete. Keep backward navigation and rereading available after completion. Missing word timings or pronunciation assets are missing capabilities to report, not timings to invent. Empty timing arrays must not be presented as verified synchronized highlighting.
 Use normal Harness approvals for installing dependencies and running commands. Run module typecheck and buildDebug; record real command output in module/build.log. Do not publish or deploy packages.
 Produce preview/index.html and preview/runtime.js with bundled local subresources using the actual WAF framework. It must work as static files under an arbitrary URL prefix, with relative resource URLs. Bundle the framework runtime and navbar as needed. Do not replace WAF with a standalone imitation or rely on a separately running Loom server. Keep preview data local; do not contact production student/telemetry APIs.
 Check the preview through available Harness browser tools. If dependencies or build/preview fail, explain the failure and do not write module-result.json.

@@ -294,6 +294,7 @@ function ActivityEditor({
   const [busy, setBusy] = useState(false);
   const [changed, setChanged] = useState(false);
   const [agentId, setAgentId] = useState("");
+  const [bookMode, setBookMode] = useState<"" | "readAlong" | "decodable">("");
   const [wafRoot, setWafRoot] = useState("");
   const [voices, setVoices] = useState<string[]>([]);
   const state = useRef({ dirty: false, busy: false, revision: "", available });
@@ -551,6 +552,28 @@ function ActivityEditor({
               </option>
             ))}
           </Select>
+          {detail.activityType === "book" && (
+            <>
+              <h3 className="flex items-center gap-2 text-xs font-semibold">
+                {S.activities.readingMode}
+                <InfoPopover label={S.activities.readingMode}>
+                  <p>{S.activities.readingModeHelp}</p>
+                </InfoPopover>
+              </h3>
+              <Select
+                size="sm"
+                aria-label={S.activities.readingMode}
+                hint={S.activities.readingModeHint}
+                value={bookMode}
+                onChange={(e) => setBookMode(e.target.value as typeof bookMode)}
+                disabled={busy || running}
+              >
+                <option value="">{S.activities.chooseReadingMode}</option>
+                <option value="readAlong">{S.activities.readAlong}</option>
+                <option value="decodable">{S.activities.decodable}</option>
+              </Select>
+            </>
+          )}
           {dirty && <p className={`text-xs ${toneInk.attention}`}>{S.activities.saveFirst}</p>}
           <Button
             size="sm"
@@ -590,7 +613,8 @@ function ActivityEditor({
               dirty ||
               !selectedAgent ||
               detail.draft.status !== "valid" ||
-              !detail.draft.spec
+              !detail.draft.spec ||
+              (detail.activityType === "book" && (!bookMode || !detail.draft.mediaPlan))
             }
             onClick={() =>
               void action(async () => {
@@ -600,6 +624,7 @@ function ActivityEditor({
                     agentId: selectedAgent,
                     expectedRevision: detail.draft.contentRevision,
                     wafRoot: wafRoot.trim() || undefined,
+                    ...(detail.activityType === "book" ? { bookMode } : {}),
                   },
                 });
                 if (alive.current) {

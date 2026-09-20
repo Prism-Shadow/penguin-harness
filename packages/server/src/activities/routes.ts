@@ -58,7 +58,10 @@ export class ActivityRoutes {
           pathParam(c, "activityId"),
           requireString(body, "agentId", { minLen: 1, maxLen: 128 }),
           requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
-          { wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) || undefined },
+          {
+            wafRoot: optionalString(body, "wafRoot", { maxLen: 4096 }) || undefined,
+            bookMode: optionalString(body, "bookMode", { maxLen: 32 }) || undefined,
+          },
         ),
         202,
       );

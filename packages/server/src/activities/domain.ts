@@ -98,6 +98,8 @@ export function draftRevision(
 export type ActivityRunStatus =
   "running" | "succeeded" | "failed" | "conflict" | "cancelled" | "interrupted";
 export interface ActivityRun {
+  /** Explicit choice for this assembly; absent on other runs and older records. */
+  bookMode?: "readAlong" | "decodable";
   kind: "spec" | "module" | "audio" | "image" | "media-text";
   audio?: AudioTarget;
   image?: ImageTarget;

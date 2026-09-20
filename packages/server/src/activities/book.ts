@@ -6,24 +6,19 @@ const VISIBLE_WORD = /[\p{L}\p{N}]+(?:[\x27\u2019][\p{L}\p{N}]+)*/u;
 
 type JsonObject = Record<string, unknown>;
 
+export interface BookScene {
+  scene: JsonObject;
+  id: string;
+  description: string;
+  role: "cover" | "title" | "story";
+  pageNumber: number | null;
+  image: { key: string; description: string };
+  audioCues: { key: string; script: string }[];
+}
+
 /** Loom's book page contract, applied after generic ActivitySpec validation. */
 export function validateBookSpec(spec: JsonObject): void {
-  const rawScenes = sceneRecords(spec);
-  if (!rawScenes.length) throw new Error("A book activity must contain at least one scene.");
-
-  const interpreted: Array<{ scene: JsonObject; id: string; role: string }> = [];
-  for (const [index, scene] of rawScenes.entries()) {
-    const explicitRole = stringValue(scene.role).trim().toLowerCase();
-    if (explicitRole && !BOOK_ROLES.has(explicitRole))
-      throw new Error(
-        `Book scene "${stringValue(scene.id).trim()}" has unsupported role "${explicitRole}".`,
-      );
-    const inferred = inferRole(scene.id, scene.description);
-    const image = firstImage(scene);
-    const previousRole = interpreted[index - 1]?.role;
-    const role = explicitRole || recoverSpecialRole(inferred, image, index, previousRole);
-    interpreted.push({ scene, id: stringValue(scene.id).trim(), role });
-  }
+  const interpreted = interpretBookScenes(spec);
 
   const ids = interpreted.map((entry) => entry.id);
   const duplicates = [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
@@ -81,6 +76,46 @@ export function validateBookSpec(spec: JsonObject): void {
     )
       throw new Error(`Book story page "${id}" narration must contain visible words.`);
   }
+}
+
+/** Interpret the validated book scene shape once for validators and compilers. */
+export function interpretBookScenes(spec: JsonObject): BookScene[] {
+  const rawScenes = sceneRecords(spec);
+  if (!rawScenes.length) throw new Error("A book activity must contain at least one scene.");
+
+  const interpreted: BookScene[] = [];
+  let storyPageNumber = 0;
+  for (const [index, scene] of rawScenes.entries()) {
+    const explicitRole = stringValue(scene.role).trim().toLowerCase();
+    if (explicitRole && !BOOK_ROLES.has(explicitRole))
+      throw new Error(
+        `Book scene "${stringValue(scene.id).trim()}" has unsupported role "${explicitRole}".`,
+      );
+    const inferred = inferRole(scene.id, scene.description);
+    const image = firstImage(scene);
+    const previousRole = interpreted[index - 1]?.role;
+    const role = (explicitRole ||
+      recoverSpecialRole(inferred, image, index, previousRole)) as BookScene["role"];
+    if (role === "story") storyPageNumber += 1;
+    const audio = object(scene.audio);
+    const tracks = array(audio.tracks);
+    interpreted.push({
+      scene,
+      id: stringValue(scene.id).trim(),
+      description: stringValue(scene.description).trim(),
+      role,
+      pageNumber: role === "story" ? storyPageNumber : null,
+      image: {
+        key: image ? stringValue(image.key).trim() : "",
+        description: image ? stringValue(image.description).trim() : "",
+      },
+      audioCues: tracks.filter(isObject).map((track) => ({
+        key: stringValue(track.key).trim(),
+        script: stringValue(track.script).trim(),
+      })),
+    });
+  }
+  return interpreted;
 }
 
 function sceneRecords(spec: JsonObject): JsonObject[] {
