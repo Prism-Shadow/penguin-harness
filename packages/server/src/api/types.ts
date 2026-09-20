@@ -888,6 +888,22 @@ export interface PlatformModelSyncResponse extends ModelsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// ModelScope key authorization (/api/projects/:p/modelscope-auth, owner)
+// ---------------------------------------------------------------------------
+
+/**
+ * The wire shapes are Penguin Go's, deliberately: both flows create a request, poll it, and
+ * report the same six states and the same seven failure codes, so the App drives both with one
+ * dialog. They are aliases rather than a second declaration because a copy would be the same
+ * fields with the same meaning, and a shape that drifted apart in one of the two would be a
+ * bug rather than a distinction. The endpoints stay separate regardless — a flow id issued by
+ * one is not accepted by the other.
+ */
+export type ModelScopeAuthStartResponse = PlatformAuthStartResponse;
+export type ModelScopeAuthFlowErrorCode = PlatformAuthFlowErrorCode;
+export type ModelScopeAuthFlowStatusResponse = PlatformAuthFlowStatusResponse;
+
+// ---------------------------------------------------------------------------
 // New-chat defaults (the `[default_chat]` block of .project_config.toml)
 // ---------------------------------------------------------------------------
 

@@ -83,6 +83,7 @@ import { UsageService } from "./services/usage-service.js";
 import { ProjectConfigService } from "./services/project-config-service.js";
 import { ModelOAuthService } from "./services/model-oauth-service.js";
 import { PlatformAuth, PlatformAuthProvider } from "./services/platform-auth-service.js";
+import { ModelScopeAuth, ModelScopeAuthProvider } from "./services/modelscope-auth-service.js";
 import { TraceIndexService } from "./services/trace-index.js";
 import { TraceService } from "./services/trace-service.js";
 import { WorkspaceFilesService } from "./services/workspace-files-service.js";
@@ -261,6 +262,7 @@ export class IdentityModule {}
     ProjectConfigService,
     ModelOAuthService,
     PlatformAuthProvider,
+    ModelScopeAuthProvider,
     ProjectsRoutes,
     ProjectAdminRoutes,
   ],
@@ -273,6 +275,7 @@ export class IdentityModule {}
     ProjectConfigStore,
     ModelOAuth,
     PlatformAuth,
+    ModelScopeAuth,
     InitialProjectProvisioner,
   ],
 })

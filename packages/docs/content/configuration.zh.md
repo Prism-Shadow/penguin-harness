@@ -18,6 +18,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 | `PENGUIN_WEB_DIST` | 前端静态资源目录 | 服务器包自带的 `web-dist`（源码检出中为 `packages/web/dist`） |
 | `PENGUIN_PREVIEW_ORIGIN` | 提供 Workspace HTML 预览的源，例如 `https://preview.example.com` | 未设置：每次请求推导对应的回环地址 |
 | `PENGUIN_GO_ORIGIN` | 服务端发起 Penguin Go Key 授权时调用的可信源 | `https://token.penguin.ooo` |
+| `MODELSCOPE_BRIDGE_URL` | 服务端发起 ModelScope Key 授权时调用的授权中转层地址 | `https://go.penguin.ooo/modelscope` |
 | `PENGUIN_TRUST_PROXY` | 设为 `1` 时信任 `x-forwarded-proto` 请求头 | 未设置：忽略请求头 |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | 预置内置管理员的固定初始密码（自动化测试 / e2e） | 未设置：生成随机密码 |
 | `PENGUIN_LANG` | CLI 语言（`en` / `zh`），用 `penguin config lang` 设置 | `en` |
@@ -31,6 +32,7 @@ CLI 和服务器启动时会从工作目录加载 `.env` 文件。
 - `PENGUIN_TRUST_PROXY`：只在反向代理终结 TLS、并由代理自己设置或清除这个请求头时启用。启用后，会话 Cookie 会带上 `Secure` 标记，热更新的网络检查也能识别出 HTTPS。
 - `PENGUIN_SEED_ADMIN_PASSWORD`：不设置时，预置管理员时会生成一个随机密码，哈希后立即丢弃，没有人见过；账号通过首次登录链接认领。
 - `PENGUIN_GO_ORIGIN`：它是服务端配置，不接受浏览器指定的端点。取值必须是不带路径的 HTTPS 源；只有 `localhost`、`127.0.0.1` 和 `[::1]` 这类集成环境可以用明文 HTTP。带路径、凭据、查询参数或 fragment 的取值会在启动时被拒绝。见[授权获取新 API key](/models#授权获取新-api-key)。
+- `MODELSCOPE_BRIDGE_URL`：与 `PENGUIN_GO_ORIGIN` 一样是服务端配置，不接受浏览器指定的端点。它必须是不带凭据、查询参数或 fragment 的 HTTPS 地址。不同之处是**它允许带路径前缀**，因为生产环境的中转层就挂在 `https://go.penguin.ooo/modelscope` 下。见[授权获取新 API key](/models#授权获取新-api-key)。
 - `PENGUIN_UPDATE_CHECK`：设为 `off` 只关闭自动的版本检查，不影响其他对外请求：模型请求、已启用的远程控制连接、Key 授权和代理测试照常联网。
 - `PENGUIN_NO_LOGIN_SHELL_ENV`：不设置时，导入只填补启动过程没有设置的变量。见[桌面应用快速开始](/quickstart-desktop)。
 - `PENGUIN_CLI_ENTRY`：服务器从源码检出启动时，会回退到检出目录中的 `packages/cli/dist/penguin.js`。
@@ -70,14 +72,14 @@ Agent 运行的每条命令，PATH 的第一位都是本安装自带的 `penguin
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai、openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai、openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、modelscope、vllm、custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
+openrouter、fireworks、siliconflow、tokendance、qwen-pay-as-you-go、qwen-token-plan、vllm 和 custom 这几组供应商使用 OpenAI 兼容协议，因此共用 `OPENAI_*` 变量。ModelScope 也共用 `OPENAI_*`，因为它的分组凭据是 api-inference token，即使某条预置固定了模型专属协议也是如此。Penguin Go 中转分组单独使用一对自己的变量，应用因此不会为它推荐任何厂商凭证。MiniMax M3 的直连 Responses 客户端使用 `MINIMAX_*`，内置的 MiniMax 预设也已经固定为官方端点。供应商分组和内置模型目录见[模型与供应商](/models)。
 
 ## Project 配置
 

@@ -18,6 +18,7 @@ The CLI and the server load a `.env` file from the working directory on startup.
 | `PENGUIN_WEB_DIST` | Front-end static assets directory | The server package's bundled `web-dist` (in a source checkout, `packages/web/dist`) |
 | `PENGUIN_PREVIEW_ORIGIN` | Origin that serves Workspace HTML previews, e.g. `https://preview.example.com` | Unset: the loopback counterpart is derived per request |
 | `PENGUIN_GO_ORIGIN` | Trusted origin the server-side Penguin Go key authorization calls | `https://token.penguin.ooo` |
+| `MODELSCOPE_BRIDGE_URL` | Address of the authorization bridge the server-side ModelScope key authorization calls | `https://go.penguin.ooo/modelscope` |
 | `PENGUIN_TRUST_PROXY` | `1` trusts the `x-forwarded-proto` header | Unset: the header is ignored |
 | `PENGUIN_SEED_ADMIN_PASSWORD` | Fixed initial password for the seeded built-in admin (automated tests / e2e) | Unset: a random password is generated |
 | `PENGUIN_LANG` | CLI language (`en` / `zh`), set with `penguin config lang` | `en` |
@@ -31,6 +32,7 @@ Notes:
 - `PENGUIN_TRUST_PROXY`: set it behind a reverse proxy that terminates TLS and sets or strips the header itself. Session cookies are then marked `Secure`, and the hot-update network gate sees HTTPS.
 - `PENGUIN_SEED_ADMIN_PASSWORD`: without it, the seed generates a random password that is hashed and discarded unseen, and you claim the account through the first-login link.
 - `PENGUIN_GO_ORIGIN`: server configuration, not an endpoint the browser can name. It must be a bare HTTPS origin; plain HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`, for integration environments. A path, credentials, a query string or a fragment is rejected at startup. See [Authorize a new API key](/models#authorize-a-new-api-key).
+- `MODELSCOPE_BRIDGE_URL`: server configuration like `PENGUIN_GO_ORIGIN`, not an endpoint the browser can name. It must be an HTTPS address with no credentials, query string or fragment. Unlike `PENGUIN_GO_ORIGIN`, a path prefix **is** allowed, because the production bridge lives under `https://go.penguin.ooo/modelscope`. See [Authorize a new API key](/models#authorize-a-new-api-key).
 - `PENGUIN_UPDATE_CHECK`: `off` turns off the automatic release check, nothing else. Model requests, an enabled remote-control connection, provider key authorization and the proxy test still reach the network.
 - `PENGUIN_NO_LOGIN_SHELL_ENV`: without it, the import fills only variables the launch left unset. See [Desktop quickstart](/quickstart-desktop).
 - `PENGUIN_CLI_ENTRY`: when the server was started from a source checkout, it falls back to that checkout's `packages/cli/dist/penguin.js`.
@@ -70,14 +72,14 @@ When a model entry has no inline `api_key`, AgentHub falls back to the provider'
 | --- | --- | --- |
 | deepseek | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
 | anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
-| openai, openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, vllm, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| openai, openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, modelscope, vllm, custom | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
 | penguin-go | `PENGUIN_GO_API_KEY` | `PENGUIN_GO_BASE_URL` |
 | minimax | `MINIMAX_API_KEY` | `MINIMAX_BASE_URL` |
 | google | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
 | zhipu | `ZAI_API_KEY` | `ZAI_BASE_URL` |
 | moonshot | `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL` |
 
-The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. The direct MiniMax M3 Responses client uses `MINIMAX_*`, and the built-in MiniMax preset already pins the official endpoint. For provider groups and the built-in model catalog, see [Models & Providers](/models).
+The openrouter, fireworks, siliconflow, tokendance, qwen-pay-as-you-go, qwen-token-plan, vllm and custom groups speak an OpenAI-compatible protocol, hence the shared `OPENAI_*` variables. ModelScope also shares `OPENAI_*` because its group credential is an api-inference token, even when a preset row pins a model-specific protocol. The Penguin Go relay keeps a pair of its own, so the app never offers a vendor credential for it. The direct MiniMax M3 Responses client uses `MINIMAX_*`, and the built-in MiniMax preset already pins the official endpoint. For provider groups and the built-in model catalog, see [Models & Providers](/models).
 
 ## Project config
 

@@ -1227,6 +1227,23 @@ export const en: Strings = {
       apply_failed:
         "The API key was received but could not be written to the model group. Retry without authorizing again.",
     },
+    // ModelScope goes through the authorization bridge: the harness never talks to ModelScope
+    // itself, and the bridge holds the client secret that buys an api-inference token. Unlike
+    // Penguin Go's key that token expires, and nothing here renews it yet, so the copy says so.
+    modelScopeKeyIntro: (n: number): string =>
+      `Authorization automatically obtains a ModelScope API token (ModelScope decides how long it lasts, and it has to be authorized again once it lapses) and writes it to all ${n} preset models in this group, replacing their current key.`,
+    modelScopeKeyAppliedBody: (n: number): string =>
+      `Authorized. The ModelScope API token is set on ${n} model${n === 1 ? "" : "s"} and ready to use.`,
+    modelScopeKeyErrors: {
+      unreachable: "The authorization bridge could not be reached. Check the network and start again.",
+      upstream_failed: "The bridge could not complete authorization. Start again.",
+      invalid_key: "The bridge returned no usable API token. Start again.",
+      expired: "The authorization expired. Start again.",
+      locked: "The authorization was locked. Start again.",
+      already_delivered: "That authorization was already delivered. Start again.",
+      apply_failed:
+        "The API token was received but could not be written to the model group. Retry without authorizing again.",
+    },
     providerEnvNotes: {
       zhipu:
         "Defaults to the Z.AI global endpoint (api.z.ai); keys from bigmodel.cn need base URL https://open.bigmodel.cn/api/paas/v4",

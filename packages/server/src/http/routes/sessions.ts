@@ -118,12 +118,14 @@ import { vaultRoutes } from "./vault.js";
 import { modelsRoutes } from "./models.js";
 import { modelOAuthCallbackRoutes, modelOAuthRoutes } from "./model-oauth.js";
 import { platformAuthRoutes } from "./platform-auth.js";
+import { modelScopeAuthRoutes } from "./modelscope-auth.js";
 import { chatDefaultsRoutes } from "./chat-defaults.js";
 import { commandPolicyRoutes } from "./command-policy.js";
 import { usageRoutes } from "./usage.js";
 import { PreviewTokens } from "./preview.js";
 import type { Access, ModelOAuth, ProjectConfigStore } from "../../mechanisms/projects.js";
 import type { PlatformAuth } from "../../services/platform-auth-service.js";
+import type { ModelScopeAuth } from "../../services/modelscope-auth-service.js";
 import type { Schedules, SessionIndex, SessionOrigins } from "../../mechanisms/sessions.js";
 import type { ErrorLog, UsageQueries } from "../../mechanisms/observability.js";
 import type { TraceIndex, Traces } from "../../mechanisms/traces.js";
@@ -1607,6 +1609,12 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
         order: 115,
       },
       {
+        id: "session-api.modelscope-auth",
+        prefix: "/api/projects/:projectId/modelscope-auth",
+        auth: "user",
+        order: 116,
+      },
+      {
         id: "session-api.chat-defaults",
         prefix: "/api/projects/:projectId/chat-defaults",
         auth: "user",
@@ -1671,6 +1679,7 @@ export class SessionApiRoutes {
   @Use() private readonly projectConfig!: ProjectConfigStore;
   @Use() private readonly modelOAuth!: ModelOAuth;
   @Use() private readonly platformAuth!: PlatformAuth;
+  @Use() private readonly modelScopeAuth!: ModelScopeAuth;
   @Use() private readonly traceIndex!: TraceIndex;
   @Use() private readonly traces!: Traces;
   @Use() private readonly workspaceFiles!: WorkspaceFiles;
@@ -1686,6 +1695,7 @@ export class SessionApiRoutes {
   @Bind("session-api.models") modelsRoutes!: Hono<AppEnv>;
   @Bind("session-api.model-oauth") modelOauthRoutes!: Hono<AppEnv>;
   @Bind("session-api.platform-auth") platformAuthRoutes!: Hono<AppEnv>;
+  @Bind("session-api.modelscope-auth") modelScopeAuthRoutes!: Hono<AppEnv>;
   @Bind("session-api.chat-defaults") chatDefaultsRoutes!: Hono<AppEnv>;
   @Bind("session-api.command-policy") commandPolicyRoutes!: Hono<AppEnv>;
   @Bind("session-api.agents") agentsRoutes!: Hono<AppEnv>;
@@ -1744,6 +1754,10 @@ export class SessionApiRoutes {
     this.modelsRoutes = modelsRoutes(modelDeps);
     this.modelOauthRoutes = modelOAuthRoutes(modelOAuthDeps);
     this.platformAuthRoutes = platformAuthRoutes({ ...modelDeps, platformAuth: this.platformAuth });
+    this.modelScopeAuthRoutes = modelScopeAuthRoutes({
+      ...modelDeps,
+      modelScopeAuth: this.modelScopeAuth,
+    });
     this.chatDefaultsRoutes = chatDefaultsRoutes({
       agentConfigService,
       projectConfigService,

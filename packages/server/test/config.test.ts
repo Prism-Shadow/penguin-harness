@@ -112,3 +112,31 @@ describe("resolveServerConfig: PENGUIN_GO_ORIGIN parsing", () => {
     }
   });
 });
+
+describe("resolveServerConfig: MODELSCOPE_BRIDGE_URL parsing", () => {
+  it("defaults to the production bridge URL", () => {
+    expect(resolveServerConfig({ ...base }).modelscopeBridgeUrl).toBe(
+      "https://go.penguin.ooo/modelscope",
+    );
+  });
+
+  it("allows a path prefix but rejects plaintext HTTP, credentials, query and fragment", () => {
+    expect(
+      resolveServerConfig({
+        ...base,
+        MODELSCOPE_BRIDGE_URL: " https://go.penguin.ooo/modelscope/ ",
+      }).modelscopeBridgeUrl,
+    ).toBe("https://go.penguin.ooo/modelscope");
+
+    for (const bad of [
+      "http://go.penguin.ooo/modelscope",
+      "https://user:pass@go.penguin.ooo/modelscope",
+      "https://go.penguin.ooo/modelscope?next=x",
+      "https://go.penguin.ooo/modelscope#token",
+    ]) {
+      expect(() => resolveServerConfig({ ...base, MODELSCOPE_BRIDGE_URL: bad }), bad).toThrow(
+        /Invalid MODELSCOPE_BRIDGE_URL/,
+      );
+    }
+  });
+});

@@ -4,8 +4,8 @@ import type {
   PlatformAuthFlowStatusResponse,
   PlatformAuthStartResponse,
 } from "@prismshadow/penguin-server/api";
+import type { KeyAuthEndpoints } from "../../api/endpoints";
 import { ApiError } from "../../api/client";
-import * as api from "../../api/endpoints";
 import { Button } from "../../components/ui/button";
 import { Modal } from "../../components/ui/modal";
 import { apiErrorText } from "../../lib/api-error";
@@ -15,25 +15,38 @@ const POLL_MS = 3_000;
 
 type Phase = "starting" | "ready" | "waiting" | "applying" | "failed" | "done";
 
-function flowError(code: PlatformAuthFlowErrorCode | undefined): string {
-  return code ? S.models.platformKeyErrors[code] : S.models.platformKeyErrors.upstream_failed;
+/**
+ * The localized copy a group's dialog shows. Everything else — the phases, the poll, the
+ * apply/retry path — is the same for every group that uses this component, so the vendor's
+ * name appears in these three and nowhere else.
+ */
+export interface KeyAuthTexts {
+  intro: (count: number) => string;
+  appliedBody: (applied: number) => string;
+  errors: Record<PlatformAuthFlowErrorCode, string>;
 }
 
 /**
- * Penguin Go uses a device-style start/poll exchange internally, but presents the
- * same group-level "authorize a key" interaction as TokenDance. Account metadata never
- * enters this component; the completed flow only reports how many preset rows got the key.
+ * A group whose credential the server fetches for the user, presented like any other provider's
+ * "authorize a key" action. The wire protocol behind it is a device-style start/poll rather
+ * than OAuth/PKCE, and which one applies is the `endpoints` prop's business: Penguin Go polls
+ * its own relay, ModelScope polls the harness's authorization bridge. Account metadata never
+ * enters this component; a completed flow only reports how many preset rows took the key.
  */
-export function PlatformKeyAuthDialog({
+export function KeyAuthDialog({
   projectId,
   providerLabel,
   count,
+  endpoints,
+  texts,
   onClose,
   onApplied,
 }: {
   projectId: string;
   providerLabel: string;
   count: number;
+  endpoints: KeyAuthEndpoints;
+  texts: KeyAuthTexts;
   onClose: () => void;
   onApplied: (applied: number) => void;
 }) {
@@ -47,6 +60,17 @@ export function PlatformKeyAuthDialog({
   const startGenerationRef = useRef(0);
   const onAppliedRef = useRef(onApplied);
   onAppliedRef.current = onApplied;
+  // The poll effect below must not depend on these two: a caller building its `texts` inline
+  // would hand this component a new object every render, and the effect would restart the poll
+  // on each one.
+  const endpointsRef = useRef(endpoints);
+  endpointsRef.current = endpoints;
+  const textsRef = useRef(texts);
+  textsRef.current = texts;
+
+  const flowError = (code: PlatformAuthFlowErrorCode | undefined): string =>
+    (code !== undefined ? textsRef.current.errors[code] : undefined) ??
+    textsRef.current.errors.upstream_failed;
 
   useEffect(
     () => () => {
@@ -68,9 +92,10 @@ export function PlatformKeyAuthDialog({
     if ((phase !== "waiting" && phase !== "applying") || flow === null) return;
     let stopped = false;
     let timer: number | undefined;
+    const { current: auth } = endpointsRef;
     const tick = async (): Promise<void> => {
       try {
-        const next = await api.getPlatformAuthFlow(projectId, flow.flowId);
+        const next = await auth.status(projectId, flow.flowId);
         if (stopped) return;
         if (next.status === "pending") {
           timer = window.setTimeout(() => void tick(), POLL_MS);
@@ -100,7 +125,7 @@ export function PlatformKeyAuthDialog({
         if (stopped) return;
         setError(apiErrorText(cause));
         setRetryableApply(false);
-        if (cause instanceof ApiError && cause.code === "platform_auth_flow_not_found") {
+        if (cause instanceof ApiError && cause.code === auth.flowNotFoundCode) {
           setFlow(null);
         }
         setPhase("failed");
@@ -116,7 +141,7 @@ export function PlatformKeyAuthDialog({
   const close = (): void => {
     startGenerationRef.current += 1;
     if (flow !== null && phase !== "done") {
-      void api.cancelPlatformAuth(projectId, flow.flowId).catch(() => {});
+      void endpoints.cancel(projectId, flow.flowId).catch(() => {});
     }
     onClose();
   };
@@ -124,7 +149,7 @@ export function PlatformKeyAuthDialog({
   const beginAuthorization = async (): Promise<void> => {
     if (phase === "starting" || retrySeconds > 0) return;
     if (flow !== null) {
-      void api.cancelPlatformAuth(projectId, flow.flowId).catch(() => {});
+      void endpoints.cancel(projectId, flow.flowId).catch(() => {});
     }
     completedRef.current = false;
     setFlow(null);
@@ -138,10 +163,10 @@ export function PlatformKeyAuthDialog({
     const authorizationTab = window.open("about:blank", "_blank");
     if (authorizationTab !== null) authorizationTab.opener = null;
     try {
-      const started = await api.startPlatformAuth(projectId);
+      const started = await endpoints.start(projectId);
       if (generation !== startGenerationRef.current) {
         authorizationTab?.close();
-        void api.cancelPlatformAuth(projectId, started.flowId).catch(() => {});
+        void endpoints.cancel(projectId, started.flowId).catch(() => {});
         return;
       }
       setFlow(started);
@@ -169,7 +194,7 @@ export function PlatformKeyAuthDialog({
     setError(null);
     setPhase("applying");
     try {
-      const next: PlatformAuthFlowStatusResponse = await api.retryPlatformAuthApply(
+      const next: PlatformAuthFlowStatusResponse = await endpoints.retryApply(
         projectId,
         flow.flowId,
       );
@@ -244,9 +269,7 @@ export function PlatformKeyAuthDialog({
     >
       <div className="space-y-3">
         <p className="text-sm text-gray-700 dark:text-gray-300">
-          {phase === "done"
-            ? S.models.platformKeyAppliedBody(applied)
-            : S.models.platformKeyIntro(count)}
+          {phase === "done" ? texts.appliedBody(applied) : texts.intro(count)}
         </p>
         {(phase === "starting" || phase === "waiting" || phase === "applying") && (
           <p className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">

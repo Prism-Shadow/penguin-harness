@@ -108,6 +108,9 @@ export function testConfig(root: string): ServerConfig {
     dbPath: ":memory:",
     previewOrigin: null,
     penguinGoOrigin: "https://token.penguin.ooo",
+    // The production bridge address, path prefix included. Nothing reaches it in tests: the
+    // ModelScope cases construct the service themselves with a stubbed fetch.
+    modelscopeBridgeUrl: "https://go.penguin.ooo/modelscope",
     // Points to a nonexistent directory: static hosting is disabled in tests.
     webDist: path.join(root, "__no_web_dist__"),
     // Fixed seed password so loginAdmin needs no seed-time capture.

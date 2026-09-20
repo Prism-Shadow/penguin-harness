@@ -406,30 +406,58 @@ export const submitModelOAuthCode = (projectId: string, flowId: string, code: st
     { method: "POST", body: { code } },
   );
 
-// Penguin Go key authorization (owner) -------------------------------------------
+// Bridge-authorized groups (owner) -----------------------------------------------
+//
+// Penguin Go and ModelScope both hand a group an API key by creating a server-side flow,
+// polling it, and reporting the same six states and seven failure codes; only the route and
+// the name of the "this flow is gone" code differ. Each group therefore gets one descriptor
+// here rather than four loose exports, and the dialog they share takes one as a prop — a
+// third such group is an entry in this section, not a third copy of the dialog.
 
-export const startPlatformAuth = (projectId: string) =>
-  apiFetch<PlatformAuthStartResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/start`,
-    { method: "POST", body: {} },
-  );
+export interface KeyAuthEndpoints {
+  /**
+   * The code the server answers with once a flow no longer exists (expired or unknown). The
+   * dialog drops its handle on it and offers a fresh start instead of a retry.
+   */
+  flowNotFoundCode: string;
+  start: (projectId: string) => Promise<PlatformAuthStartResponse>;
+  status: (projectId: string, flowId: string) => Promise<PlatformAuthFlowStatusResponse>;
+  retryApply: (projectId: string, flowId: string) => Promise<PlatformAuthFlowStatusResponse>;
+  cancel: (projectId: string, flowId: string) => Promise<{ ok: boolean }>;
+}
 
-export const getPlatformAuthFlow = (projectId: string, flowId: string) =>
-  apiFetch<PlatformAuthFlowStatusResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/${encodeURIComponent(flowId)}/status`,
-  );
+function keyAuth(route: string, flowNotFoundCode: string): KeyAuthEndpoints {
+  const prefix = (projectId: string): string =>
+    `/api/projects/${encodeURIComponent(projectId)}/${route}`;
+  const flow = (projectId: string, flowId: string): string =>
+    `${prefix(projectId)}/${encodeURIComponent(flowId)}`;
+  return {
+    flowNotFoundCode,
+    start: (projectId) =>
+      apiFetch<PlatformAuthStartResponse>(`${prefix(projectId)}/start`, {
+        method: "POST",
+        body: {},
+      }),
+    status: (projectId, flowId) =>
+      apiFetch<PlatformAuthFlowStatusResponse>(`${flow(projectId, flowId)}/status`),
+    retryApply: (projectId, flowId) =>
+      apiFetch<PlatformAuthFlowStatusResponse>(`${flow(projectId, flowId)}/retry`, {
+        method: "POST",
+        body: {},
+      }),
+    cancel: (projectId, flowId) =>
+      apiFetch<{ ok: boolean }>(`${flow(projectId, flowId)}/cancel`, { method: "POST", body: {} }),
+  };
+}
 
-export const retryPlatformAuthApply = (projectId: string, flowId: string) =>
-  apiFetch<PlatformAuthFlowStatusResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/${encodeURIComponent(flowId)}/retry`,
-    { method: "POST", body: {} },
-  );
+/** Penguin Go's relay authorization. */
+export const platformAuthEndpoints = keyAuth("platform-auth", "platform_auth_flow_not_found");
 
-export const cancelPlatformAuth = (projectId: string, flowId: string) =>
-  apiFetch<{ ok: boolean }>(
-    `/api/projects/${encodeURIComponent(projectId)}/platform-auth/${encodeURIComponent(flowId)}/cancel`,
-    { method: "POST", body: {} },
-  );
+/** ModelScope's, run through the harness's own authorization bridge. */
+export const modelScopeAuthEndpoints = keyAuth(
+  "modelscope-auth",
+  "modelscope_auth_flow_not_found",
+);
 
 export const syncPlatformModels = (projectId: string) =>
   apiFetch<PlatformModelSyncResponse>(

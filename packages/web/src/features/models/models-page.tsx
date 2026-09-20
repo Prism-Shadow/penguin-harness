@@ -89,7 +89,11 @@ import {
   providerInfo,
   resolveProviderModelEnv,
 } from "@prismshadow/penguin-core/model-catalog";
-import type { FastModeProtocol, ModelProviderInfo } from "@prismshadow/penguin-core/model-catalog";
+import type {
+  FastModeProtocol,
+  ModelProviderBridgeAuth,
+  ModelProviderInfo,
+} from "@prismshadow/penguin-core/model-catalog";
 import {
   allGroupKeys,
   discountedPrice,
@@ -137,7 +141,36 @@ import { tpsTone, ttftTone } from "./speed-test";
 import type { SpeedResult, SpeedTone } from "./speed-test";
 import { toneInk, toneStrip } from "../../lib/tone";
 import { InfoPopover } from "../../components/ui/info-popover";
-import { PlatformKeyAuthDialog } from "./platform-key-auth-dialog";
+import { KeyAuthDialog } from "./key-auth-dialog";
+import type { KeyAuthTexts } from "./key-auth-dialog";
+
+/**
+ * The authorization flows a group's "authorize a key" dialog can run, keyed by the flow named
+ * in that group's catalog descriptor. Everything the two differ in lives here — the four
+ * endpoint calls and the copy — because everything else about the dialog is shared, and a
+ * group picks its entry by carrying `bridgeAuth` rather than by being named in this file.
+ */
+const KEY_AUTH: Record<
+  ModelProviderBridgeAuth["flow"],
+  { endpoints: api.KeyAuthEndpoints; texts: KeyAuthTexts }
+> = {
+  "penguin-go": {
+    endpoints: api.platformAuthEndpoints,
+    texts: {
+      intro: S.models.platformKeyIntro,
+      appliedBody: S.models.platformKeyAppliedBody,
+      errors: S.models.platformKeyErrors,
+    },
+  },
+  modelscope: {
+    endpoints: api.modelScopeAuthEndpoints,
+    texts: {
+      intro: S.models.modelScopeKeyIntro,
+      appliedBody: S.models.modelScopeKeyAppliedBody,
+      errors: S.models.modelScopeKeyErrors,
+    },
+  },
+};
 
 /** Display currency follows the user setting (pricing is always stored in USD/million tokens; conversion happens only for display and input). */
 const CURRENCY_SYMBOL: Record<Currency, string> = { USD: "$", CNY: "¥" };
@@ -1078,6 +1111,12 @@ export function ModelsPage() {
     };
   };
 
+  // Which dialog the open authorization runs: the group's descriptor decides, so a group with
+  // a bridge flow gets the shared bridge dialog and every other authorizable group gets the
+  // PKCE one. Null means the open group authorizes some other way (or none).
+  const oauthFlow = oauthFor === null ? undefined : providerInfo(oauthFor)?.bridgeAuth?.flow;
+  const oauthKeyAuth = oauthFlow === undefined ? null : KEY_AUTH[oauthFlow];
+
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-5xl">
@@ -1292,10 +1331,13 @@ export function ModelsPage() {
                         </Button>
                       )}
                       {isOwner &&
-                        (group.provider.oauth || group.provider.id === PENGUIN_GO_PROVIDER_ID) && (
+                        (group.provider.oauth ||
+                          group.provider.bridgeAuth !== undefined) && (
                           // Authorize-a-key action: rendered off the group's own catalog
                           // descriptor, so a provider gains this button by publishing a flow
-                          // rather than by being named here. Same narrow-row rule as its
+                          // rather than by being named here — `oauth` for the ones whose PKCE
+                          // round-trip the App runs itself, `bridgeAuth` for the ones an
+                          // authorization bridge runs for it. Same narrow-row rule as its
                           // neighbours — the label goes, the icon and its names stay. It leads the
                           // manual key action: where a group can mint a key, that is the shorter path.
                           <Button
@@ -1489,13 +1531,15 @@ export function ModelsPage() {
           momentary absence of rows reads as zero and is never seen. */}
       {projectId &&
         oauthFor !== null &&
-        (oauthFor === PENGUIN_GO_PROVIDER_ID ? (
-          <PlatformKeyAuthDialog
+        (oauthKeyAuth !== null ? (
+          <KeyAuthDialog
             projectId={projectId}
             providerLabel={
               MODEL_PROVIDERS.find((provider) => provider.id === oauthFor)?.label ?? oauthFor
             }
             count={rows?.filter((row) => row.provider === oauthFor).length ?? 0}
+            endpoints={oauthKeyAuth.endpoints}
+            texts={oauthKeyAuth.texts}
             onClose={() => {
               setOauthFor(null);
               if (keyLanded.current) void load();
