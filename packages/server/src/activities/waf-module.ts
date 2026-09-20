@@ -16,6 +16,8 @@ import { AUDIO_MAX_BYTES, inspectWave } from "./audio.js";
 import { GENERATED_IMAGE_MAX_BYTES, inspectPng } from "./generated-image.js";
 import { validateBookSpec } from "./book.js";
 import { compileBookConfiguration, type BookMode } from "./book-configuration.js";
+import { bookReaderTemplate } from "./book-reader-template.js";
+import { bookReaderControllerTemplate } from "./book-reader-controller-template.js";
 
 /** Loom's WAF checkout convention; discovery only walks ancestors, never the disk. */
 export async function findWafRoot(
@@ -88,6 +90,10 @@ export function scaffoldModule(
   const json = (name: string, value: unknown) => {
     files[name] = JSON.stringify(value, null, 2) + "\n";
   };
+  if (bookMode) {
+    files["src/book-reader/model.ts"] = bookReaderTemplate;
+    files["src/book-reader/controller.ts"] = bookReaderControllerTemplate;
+  }
   json("package.json", {
     name: `wafmodule-${String(spec.id).toLowerCase()}`,
     version: "1.0.0",
@@ -425,6 +431,8 @@ Work only in this Session workspace. Treat the shared WAF checkout as read-only.
 Copy each accepted generatedAudio or generatedImage file unchanged from media/generated to preview/media/generated, and resolve its configuration against that preview/media base. The collector verifies the accepted media hashes. Do not include binary files in module-result.json's text file list.
 Implement the actual learning interactions and feedback in module/src, preserving waf-state-machine, WAF lifecycle, Interactable input and cleanup. Complete the ref configuration, asset manifest and state machine for the input productCode/refNum. Use existing media when available; report missing media explicitly, never invent successful generation.
 For a book, input.bookMode is the user's explicit reading-mode choice. The scaffolded product configuration contains the selected book policy and complete localized scenes. Preserve this policy, scene order, roles, derived page numbers, image alt text, and ordered audio cues. Implement the reader with the native waf-state-machine lifecycle, owned Interactables, and existing runtime media helpers; do not import waf-sequence or a shared book module. Cover/title pages show only artwork. Story visible text is primary narration; supplemental cues remain hidden. Read-along autoplays on first visit without advancing; Decodable waits the configured reading delay for manual narration and unlocks Next only after all cues complete. Keep backward navigation and rereading available after completion. Missing word timings or pronunciation assets are missing capabilities to report, not timings to invent. Empty timing arrays must not be presented as verified synchronized highlighting.
+Use BookReaderModel from module/src/book-reader/model.ts with the complete selected-language scene collection. Connect its returned intents and ownership tokens to native media operations and cancellable timers; stop superseded operations and reject stale callbacks. The model is state logic, not a finished DOM/audio adapter: implement accessible controls, image/text rendering, framework pause/resume, and true pagehide cleanup. Keep activity completion separate from reader disposal so Previous and rereading survive completion. Include the model source in module-result.json and exercise delay, pause/resume, interrupted narration, follow-up cues, quiet revisits, and post-completion navigation in the real preview.
+Use BookReaderController from module/src/book-reader/controller.ts to coordinate narration and follow-up operations and reading timers. Supply its port with native WAF media operations, a cancellable clock, rendering notifications, completion, and visible errors. Wire native pause/resume to the controller's framework methods and dispose it on pagehide, not activity completion. This coordinator does not supply DOM controls, word playback/alignment, intro video, or native operation implementations: implement those explicitly and report any unfinished capabilities. Include both reader source files in module-result.json.
 Use normal Harness approvals for installing dependencies and running commands. Run module typecheck and buildDebug; record real command output in module/build.log. Do not publish or deploy packages.
 Produce preview/index.html and preview/runtime.js with bundled local subresources using the actual WAF framework. It must work as static files under an arbitrary URL prefix, with relative resource URLs. Bundle the framework runtime and navbar as needed. Do not replace WAF with a standalone imitation or rely on a separately running Loom server. Keep preview data local; do not contact production student/telemetry APIs.
 Check the preview through available Harness browser tools. If dependencies or build/preview fail, explain the failure and do not write module-result.json.
