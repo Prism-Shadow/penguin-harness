@@ -37,13 +37,12 @@ export function browserHostOf(label: string): string {
 }
 
 export type BrowserTarget =
-  /** A port on the loopback of the Workspace's machine. Plain http only. */
-  | { kind: "workspace"; origin: string; port: number }
+  /** A port on the loopback of the Workspace's machine; `secure` = the server there speaks TLS. */
+  | { kind: "workspace"; origin: string; port: number; secure: boolean }
   /** A public origin, fetched by this server. */
   | { kind: "public"; origin: string };
 
-export type AddressRefusal =
-  "invalid_url" | "unsupported_scheme" | "credentials_in_url" | "workspace_https";
+export type AddressRefusal = "invalid_url" | "unsupported_scheme" | "credentials_in_url";
 
 function isLoopbackName(hostname: string): boolean {
   const host = hostname.toLowerCase();
@@ -75,11 +74,10 @@ export function parseBrowserAddress(
   if (url.hostname === "") return { refused: "invalid_url" };
 
   if (isLoopbackName(url.hostname)) {
-    // The hop to a machine's loopback is already inside ssh, and a dev server's certificate
-    // is its own; TLS to a loopback port is left for when someone needs it.
-    if (url.protocol === "https:") return { refused: "workspace_https" };
-    const port = url.port === "" ? 80 : Number(url.port);
-    return { target: { kind: "workspace", origin: `http://localhost:${port}`, port }, url };
+    const secure = url.protocol === "https:";
+    const port = url.port === "" ? (secure ? 443 : 80) : Number(url.port);
+    const origin = `${secure ? "https" : "http"}://localhost:${port}`;
+    return { target: { kind: "workspace", origin, port, secure }, url };
   }
   return { target: { kind: "public", origin: url.origin }, url };
 }

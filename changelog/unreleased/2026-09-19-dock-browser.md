@@ -7,11 +7,11 @@
 
 [中文版](2026-09-19-dock-browser.zh.md)
 
-The dock gets Browser tabs beside the terminal. `localhost:3000` in one means port 3000 of the machine the conversation's Workspace is on; any other address is the public internet. Every page runs on a host of its own, away from the app's cookie.
+The dock gets Browser tabs. `localhost:3000` in one means port 3000 of the machine the conversation's Workspace is on; any other address is the public internet. Every page runs on a host of its own, away from the app's cookie.
 
 ## Addresses
 
-- **A loopback name is the Workspace's machine.** `localhost`, `127.0.0.1`, `[::1]` and `*.localhost` reach the loopback of the machine the Workspace is on, through the connection already held to it (it never opens ssh of its own), or directly for a Workspace on this server. `http` only, and never this server's own port. It needs no port forward and makes none.
+- **A loopback name is the Workspace's machine.** `localhost`, `127.0.0.1`, `[::1]` and `*.localhost` reach the loopback of the machine the Workspace is on, through the connection already held to it (it never opens ssh of its own), or directly for a Workspace on this server — over `http`, or `https` when the server there speaks TLS (its certificate is not verified: the hop is a loopback or an ssh channel). Never this server's own port. It needs no port forward and makes none.
 - **Any other name is a public address**, fetched by this server through its ordinary outbound path, so the admin proxy settings apply.
 - Only `http` and `https`; an address with a user name or password is refused; a bare address gets `http://`.
 
@@ -32,19 +32,17 @@ The dock gets Browser tabs beside the terminal. `localhost:3000` in one means po
 
 ## Proxy and theme
 
-- The upstream is asked under its own `Host`, with `Origin` and `Referer` mapped back to its origin. `X-Frame-Options`, CSP `frame-ancestors` and HSTS are dropped from the answer, and `Set-Cookie` loses `Domain=`.
+- The upstream is asked under its own `Host`, with `Origin` and `Referer` mapped back to its origin. `X-Frame-Options`, CSP `frame-ancestors` and HSTS are dropped from the answer.
+- **A site's cookies work inside the tab.** The frame is cross-site to the app by design, and a browser drops a cookie there unless it says `SameSite=None; Secure` — the default, Lax, is refused from a header and from script alike. So every `Set-Cookie` loses `Domain=` and is rewritten to `SameSite=None; Secure; Partitioned`, and the bootstrap does the same to `document.cookie`. `Secure` is honoured on `*.localhost` over plain http; `Partitioned` keeps the cookie where third-party cookies are blocked.
+- **An address the page wrote out in full comes back to its host.** A page that believes it is on `http://localhost:3000` and says so — `fetch("http://localhost:3000/api")`, `new WebSocket("ws://localhost:3000")` — would reach the viewer's own port 3000. The bootstrap brings such an address back to the Browser host, in `fetch`, `XMLHttpRequest`, `WebSocket` and `EventSource`.
 - HTML up to 8MB gets a bootstrap script first in `<head>`, carrying the page's CSP nonce when it has one.
 - **The theme is offered, not forced.** The bootstrap keeps `:root { color-scheme; --penguin-* }` in a `<style>` placed first, so the page's own declarations win. The variables are the app's resolved tokens under a `--penguin-` prefix — the roles resolved for the scheme in force (`--penguin-bg`, `--penguin-surface`, `--penguin-fg`, `--penguin-muted`, `--penguin-border`, `--penguin-hover`), the accent pair, the font stack and the gray scale — because the unprefixed names are Tailwind's too. They are posted to the frame on load and on every appearance change, to that tab's host only.
 - The page reports its address and title, so the address bar follows its links and the tab takes its title. A link that leaves the site is handed to the tab, which opens it as a site of its own.
 
 ## Pages
 
-- Browser tabs open from the dock picker, the "+" menu, the launcher fan, and a Ports panel row ("Open in a browser tab"). They land in the right dock by default.
+- The entries sit next to the terminal's: the dock picker, the "+" menu and the launcher fan, plus a Ports panel row ("Open in a browser tab"). They land in the right dock by default.
 - The bar has back, forward, reload and the address; a Workspace on this server also gets "Open in the system browser". A tab's address is remembered with the dock layout, so a reload returns to the page.
-
-## Limits
-
-- A Browser host is a different site from the app, by design, so inside the tab a page is a third party: a browser profile that blocks third-party cookies (a private window, Safari, strict tracking protection) does not keep a browsed site's cookies. "Open in the system browser" is first party.
 
 ## Not proxied
 

@@ -7,11 +7,11 @@
 
 [English](2026-09-19-dock-browser.md)
 
-停靠栏在终端旁新增浏览器标签。其中的 `localhost:3000` 指本对话 Workspace 所在机器的 3000 端口；其他地址是公网地址。每个页面都运行在自己的主机上，远离 App 的 Cookie。
+停靠栏新增浏览器标签。其中的 `localhost:3000` 指本对话 Workspace 所在机器的 3000 端口；其他地址是公网地址。每个页面都运行在自己的主机上，远离 App 的 Cookie。
 
 ## 地址
 
-- **回环名指 Workspace 所在的机器。** `localhost`、`127.0.0.1`、`[::1]` 与 `*.localhost` 到达 Workspace 所在机器的回环：经已持有的连接（自身从不拉起 ssh），Workspace 在本服务端时直连。仅 `http`，且永不指向本服务端自己的端口。它不需要、也不会创建端口转发。
+- **回环名指 Workspace 所在的机器。** `localhost`、`127.0.0.1`、`[::1]` 与 `*.localhost` 到达 Workspace 所在机器的回环：经已持有的连接（自身从不拉起 ssh），Workspace 在本服务端时直连——走 `http`，那边的服务说 TLS 时走 `https`（不校验其证书：这一跳是回环或 ssh 通道）。永不指向本服务端自己的端口。它不需要、也不会创建端口转发。
 - **其余主机名是公网地址**，由本服务端经常规出站通道请求，因此遵循管理员代理设置。
 - 只接受 `http` 与 `https`；带用户名或密码的地址被拒绝；裸地址按 `http://` 补全。
 
@@ -32,19 +32,17 @@
 
 ## 代理与主题
 
-- 向上游请求时使用它自己的 `Host`，`Origin` 与 `Referer` 映射回其 Origin。响应中删除 `X-Frame-Options`、CSP 的 `frame-ancestors` 与 HSTS，`Set-Cookie` 去掉 `Domain=`。
+- 向上游请求时使用它自己的 `Host`，`Origin` 与 `Referer` 映射回其 Origin。响应中删除 `X-Frame-Options`、CSP 的 `frame-ancestors` 与 HSTS。
+- **站点的 Cookie 在标签内可用。** iframe 按设计与 App 跨站，浏览器在这种位置会丢弃未声明 `SameSite=None; Secure` 的 Cookie——缺省的 Lax 无论来自响应头还是脚本都被拒绝。因此每条 `Set-Cookie` 去掉 `Domain=` 并改写为 `SameSite=None; Secure; Partitioned`，引导脚本对 `document.cookie` 做同样处理。`Secure` 在明文 http 的 `*.localhost` 上被接受；`Partitioned` 让 Cookie 在屏蔽第三方 Cookie 的环境下也能保留。
+- **页面写死的完整地址会回到它的主机。** 以为自己在 `http://localhost:3000` 上并这样写的页面——`fetch("http://localhost:3000/api")`、`new WebSocket("ws://localhost:3000")`——本会连到查看者自己的 3000 端口。引导脚本在 `fetch`、`XMLHttpRequest`、`WebSocket` 与 `EventSource` 中把这类地址带回浏览器主机。
 - 不超过 8MB 的 HTML 在 `<head>` 最前注入引导脚本，页面 CSP 带 nonce 时沿用其 nonce。
 - **主题是提供，不是强加。** 引导脚本把 `:root { color-scheme; --penguin-* }` 放在最前的 `<style>` 里，因此页面自己的声明总是胜出。变量为 App 已解析的 token 加 `--penguin-` 前缀——按当前明暗解析好的角色色（`--penguin-bg`、`--penguin-surface`、`--penguin-fg`、`--penguin-muted`、`--penguin-border`、`--penguin-hover`）、accent 对、字体栈与灰阶——因为未加前缀的名字同时也是 Tailwind 的。它们在加载完成与每次外观变化时发给 iframe，且只发给该标签的主机。
 - 页面回报自己的地址与标题，因此地址栏跟随页内链接，标签取页面标题。离开本站点的链接交回标签，由它作为另一个站点打开。
 
 ## 页面
 
-- 浏览器标签可从停靠栏选单、「+」菜单、浮动球扇面以及端口面板行上的「在浏览器标签中打开」进入，缺省落在右侧停靠栏。
+- 入口与终端的入口并列：停靠栏选单、「+」菜单、浮动球扇面，另有端口面板行上的「在浏览器标签中打开」，缺省落在右侧停靠栏。
 - 顶部一行为后退、前进、重新加载与地址栏；Workspace 在本服务端时另有「在系统浏览器中打开」。标签所示地址随停靠栏布局一并保存，刷新后回到原页面。
-
-## 限制
-
-- 浏览器主机按设计与 App 不同站，因此标签内的页面处于第三方上下文：屏蔽第三方 Cookie 的浏览器环境（隐私窗口、Safari、严格跟踪保护）不会保留被浏览站点的 Cookie。「在系统浏览器中打开」则是第一方。
 
 ## 不代理
 

@@ -20,7 +20,7 @@ import { badRequest, readJson, requireString } from "../http/validate.js";
 import { hostOnly, requestAuthority } from "../services/preview-token.js";
 import type { AddressRefusal, BrowserTarget } from "./address.js";
 import { browserHostOf, browserLabelOf, parseBrowserAddress } from "./address.js";
-import { BOOTSTRAP_SOURCE } from "./bootstrap.js";
+import { bootstrapFor } from "./bootstrap.js";
 import { EgressRefused } from "./egress.js";
 import type { BrowserEgress } from "./egress.js";
 import {
@@ -38,7 +38,6 @@ const REFUSALS: Record<AddressRefusal, string> = {
   invalid_url: "That is not an address.",
   unsupported_scheme: "The Browser opens http and https addresses.",
   credentials_in_url: "An address with a user name or password in it is not opened.",
-  workspace_https: "A Workspace port is opened over http (localhost:<port>).",
 };
 
 /** The host the App must be reached on for `<label>.localhost` to be the same server. */
@@ -134,8 +133,14 @@ export interface BrowserHostDeps {
 export function browserHostApp(deps: BrowserHostDeps): Hono {
   const app = new Hono();
 
-  app.get(BOOTSTRAP_PATH, () => {
-    return new Response(BOOTSTRAP_SOURCE, {
+  app.get(BOOTSTRAP_PATH, (c) => {
+    // Served per site: the script has to know which origin the page THINKS it is on, to bring
+    // an address the page wrote out in full back to the host it is really on.
+    const label = browserLabelOf(hostOnly(requestAuthority(c.req.url, c.req.header("host"))));
+    const site = label === null ? null : deps.sites.byLabel(label);
+    const parsed = site === null ? null : parseBrowserAddress(site.origin);
+    const target = parsed !== null && "target" in parsed ? parsed.target : null;
+    return new Response(bootstrapFor(target), {
       headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" },
     });
   });

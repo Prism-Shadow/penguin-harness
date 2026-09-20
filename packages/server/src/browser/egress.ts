@@ -23,6 +23,7 @@ import dns from "node:dns";
 import http from "node:http";
 import net from "node:net";
 import { Readable } from "node:stream";
+import tls from "node:tls";
 import { Agent } from "undici";
 import type { BrowserTarget } from "./address.js";
 import { isPublicAddress } from "./address.js";
@@ -127,6 +128,15 @@ function vettedDispatcher(resolve?: (hostname: string) => Promise<string[]>): Ag
   });
 }
 
+/**
+ * TLS to a Workspace port. The certificate is not verified: it is a dev server's own, issued
+ * for `localhost` by nobody, and the hop it would protect is this process's loopback or an
+ * ssh channel — there is no network between the two ends for anyone to stand in.
+ */
+function overTls(socket: net.Socket): net.Socket {
+  return tls.connect({ socket, servername: "localhost", rejectUnauthorized: false });
+}
+
 export class BrowserEgress {
   #direct: Agent | null = null;
 
@@ -144,7 +154,7 @@ export class BrowserEgress {
     request: EgressRequest,
   ): Promise<Response> {
     return target.kind === "workspace"
-      ? this.#workspace(target.port, machineId, request)
+      ? this.#workspace(target.port, target.secure, machineId, request)
       : this.#public(target.origin, request);
   }
 
@@ -174,6 +184,7 @@ export class BrowserEgress {
 
   async #workspace(
     port: number,
+    secure: boolean,
     machineId: string | null,
     request: EgressRequest,
   ): Promise<Response> {
@@ -188,6 +199,8 @@ export class BrowserEgress {
       if (!dialled.ok) throw new EgressRefused("machine_unreachable", dialled.detail);
       socket = dialled.socket;
     }
+
+    if (secure) socket = overTls(socket);
 
     const headers: Record<string, string> = {};
     request.headers.forEach((value, name) => (headers[name] = value));

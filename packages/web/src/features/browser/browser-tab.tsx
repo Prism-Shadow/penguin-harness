@@ -1,5 +1,5 @@
 /**
- * A Browser tab — a page in the dock, beside the terminal.
+ * A Browser tab — a page in the dock.
  *
  * WHAT IT OPENS. `localhost:3000` here means port 3000 of the machine the conversation's
  * Workspace is on: the dev server the agent just started, wherever it is running. Any other

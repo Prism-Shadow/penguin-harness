@@ -1,6 +1,5 @@
 /**
- * Ports panel — the conversation's Workspace's port forwards, as a dock tab beside the
- * terminal. A forward brings a TCP port of the machine the Workspace is on to THIS
+ * Ports panel — the conversation's Workspace's port forwards, as a dock tab. A forward brings a TCP port of the machine the Workspace is on to THIS
  * server's loopback; it belongs to the Workspace (machine + directory), so every
  * conversation there sees the same rows, and they are still there after a restart.
  *

@@ -33,7 +33,7 @@ function isUpstream(url: URL, target: BrowserTarget): boolean {
   const loopback =
     host === "localhost" || host.endsWith(".localhost") || host === "[::1]" || /^127\./.test(host);
   const port = url.port === "" ? (url.protocol === "https:" ? 443 : 80) : Number(url.port);
-  return loopback && url.protocol === "http:" && port === target.port;
+  return loopback && (url.protocol === "https:") === target.secure && port === target.port;
 }
 
 /** The headers the upstream is asked with. */
@@ -106,15 +106,36 @@ export function browserResponseHeaders(
     }
     out.append(name, value);
   });
-  for (const cookie of upstream.getSetCookie()) {
-    // A Domain the site names is its own, and means nothing on the Browser host: without it
-    // the cookie is host-only — this site's, on this host, and nobody else's.
-    out.append("set-cookie", cookie.replace(/;\s*domain=[^;]*/gi, ""));
-  }
+  for (const cookie of upstream.getSetCookie()) out.append("set-cookie", framedCookie(cookie));
   // The Browser host's name is a capability. A Referer would hand it to every third party
   // the page links to or loads from.
   out.set("referrer-policy", "no-referrer");
   return out;
+}
+
+/**
+ * A cookie as it has to be written to survive in the panel's frame.
+ *
+ * `Domain` goes: the site's own domain means nothing on the Browser host, and without it the
+ * cookie is host-only — this site's, on this host, and nobody else's.
+ *
+ * `SameSite=None; Secure; Partitioned` comes: the frame is CROSS-SITE to the app by design
+ * (that is the isolation), and a browser drops a cookie there unless it says `SameSite=None`
+ * — the default, Lax, is refused outright, from a header and from script alike, so a site's
+ * sign-in would not last one request. `Secure` is what `None` requires, and is honoured on
+ * `*.localhost` over plain http; `Partitioned` keeps the cookie where third-party cookies
+ * are blocked, by keying it to the app it is framed in — which is the only place it is used.
+ * What the site asked for (`Strict`, `Lax`) protected it against being framed by strangers;
+ * here the only embedder is the panel, and the host is a capability strangers do not have.
+ */
+export function framedCookie(cookie: string): string {
+  const kept = cookie
+    .split(";")
+    .map((part) => part.trim())
+    .filter(
+      (part, index) => index === 0 || !/^(domain|samesite|secure|partitioned)(=|$)/i.test(part),
+    );
+  return [...kept, "SameSite=None", "Secure", "Partitioned"].join("; ");
 }
 
 /** A redirect to the site itself stays in the Browser; one that leaves is the browser's to follow. */

@@ -10,8 +10,10 @@ import {
   parseBrowserAddress,
   BROWSER_HOST_PATTERN,
 } from "../src/browser/address.js";
+import { bootstrapFor } from "../src/browser/bootstrap.js";
 import { BrowserEgress, EgressRefused, vetPublicHost } from "../src/browser/egress.js";
 import {
+  framedCookie,
   BOOTSTRAP_PATH,
   browserResponseHeaders,
   injectBootstrap,
@@ -33,7 +35,7 @@ describe("an address", () => {
     ]) {
       const parsed = parseBrowserAddress(typed);
       expect(parsed).toMatchObject({
-        target: { kind: "workspace", origin: "http://localhost:3000", port: 3000 },
+        target: { kind: "workspace", origin: "http://localhost:3000", port: 3000, secure: false },
       });
     }
     expect(parseBrowserAddress("localhost")).toMatchObject({ target: { port: 80 } });
@@ -48,14 +50,20 @@ describe("an address", () => {
     });
   });
 
-  it("refuses what is not a web address, credentials in one, and https to a Workspace port", () => {
+  it("reads https to a loopback name as a Workspace port that speaks TLS", () => {
+    expect(parseBrowserAddress("https://localhost:8443/x")).toMatchObject({
+      target: { kind: "workspace", origin: "https://localhost:8443", port: 8443, secure: true },
+    });
+    expect(parseBrowserAddress("https://localhost")).toMatchObject({ target: { port: 443 } });
+  });
+
+  it("refuses what is not a web address, and credentials in one", () => {
     expect(parseBrowserAddress("")).toEqual({ refused: "invalid_url" });
     expect(parseBrowserAddress("file:///etc/passwd")).toEqual({ refused: "unsupported_scheme" });
     expect(parseBrowserAddress("javascript://x")).toEqual({ refused: "unsupported_scheme" });
     expect(parseBrowserAddress("http://user:pw@example.com")).toEqual({
       refused: "credentials_in_url",
     });
-    expect(parseBrowserAddress("https://localhost:3000")).toEqual({ refused: "workspace_https" });
   });
 });
 
@@ -213,14 +221,14 @@ describe("the egress", () => {
     });
     await expect(
       egress.fetch(
-        { kind: "workspace", origin: "http://localhost:7364", port: 7364 },
+        { kind: "workspace", origin: "http://localhost:7364", port: 7364, secure: false },
         null,
         request(),
       ),
     ).rejects.toMatchObject({ code: "own_port" });
     await expect(
       egress.fetch(
-        { kind: "workspace", origin: "http://localhost:3000", port: 3000 },
+        { kind: "workspace", origin: "http://localhost:3000", port: 3000, secure: false },
         "machine",
         request(),
       ),
@@ -229,7 +237,12 @@ describe("the egress", () => {
 });
 
 describe("what is rewritten", () => {
-  const target = { kind: "workspace", origin: "http://localhost:3000", port: 3000 } as const;
+  const target = {
+    kind: "workspace",
+    origin: "http://localhost:3000",
+    port: 3000,
+    secure: false,
+  } as const;
 
   it("asks the site under its own name, and tells it nothing of the app", () => {
     const out = upstreamRequestHeaders(
@@ -276,11 +289,37 @@ describe("what is rewritten", () => {
     expect(out.get("content-security-policy")).toBe(
       "default-src 'self'; script-src 'nonce-abc123'",
     );
-    expect(out.getSetCookie()).toEqual(["sid=1; Path=/; HttpOnly", "theme=dark"]);
+    expect(out.getSetCookie()).toEqual([
+      "sid=1; Path=/; HttpOnly; SameSite=None; Secure; Partitioned",
+      "theme=dark; SameSite=None; Secure; Partitioned",
+    ]);
     expect(out.get("referrer-policy")).toBe("no-referrer");
     expect(browserResponseHeaders(upstream, target, BROWSER, false).get("content-length")).toBe(
       "10",
     );
+  });
+
+  it("writes a cookie so that it survives in a cross-site frame, whatever the site asked for", () => {
+    expect(framedCookie("sid=a=b; Path=/; SameSite=Strict; Secure; Domain=.example.com")).toBe(
+      "sid=a=b; Path=/; SameSite=None; Secure; Partitioned",
+    );
+    // A NAME that reads like an attribute is still the cookie, not an attribute.
+    expect(framedCookie("secure=1")).toBe("secure=1; SameSite=None; Secure; Partitioned");
+    expect(framedCookie("gone=; Max-Age=0; samesite=lax")).toBe(
+      "gone=; Max-Age=0; SameSite=None; Secure; Partitioned",
+    );
+  });
+
+  it("gives the page a bootstrap that knows the origin it thinks it is on", () => {
+    const local = bootstrapFor(target);
+    expect(local).toContain('{"host":"localhost","port":"3000","secure":false,"loopback":true}');
+    expect(local).not.toContain("__UPSTREAM__");
+    expect(bootstrapFor({ kind: "public", origin: "https://example.com" })).toContain(
+      '{"host":"example.com","port":"443","secure":true,"loopback":false}',
+    );
+    expect(bootstrapFor(null)).toContain("var UPSTREAM = null;");
+    // It must at least parse: it runs in a page this server did not build.
+    expect(() => new Function(local)).not.toThrow();
   });
 
   it("keeps a redirect to the site inside the Browser, under any loopback name, and leaves the rest alone", () => {
@@ -290,6 +329,10 @@ describe("what is rewritten", () => {
     expect(rewriteLocation("/login", target, BROWSER)).toBe("/login");
     expect(rewriteLocation("http://localhost:4000/", target, BROWSER)).toBe(
       "http://localhost:4000/",
+    );
+    // The same port over the other scheme is another origin, and so another site.
+    expect(rewriteLocation("https://localhost:3000/", target, BROWSER)).toBe(
+      "https://localhost:3000/",
     );
     expect(rewriteLocation("https://example.com/", target, BROWSER)).toBe("https://example.com/");
     const site = { kind: "public", origin: "https://example.com" } as const;

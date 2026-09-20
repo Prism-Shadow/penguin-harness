@@ -99,7 +99,9 @@ describe("the Browser", () => {
       `<html><head><script src="${BOOTSTRAP_PATH}"></script><title>site</title></head><body>hello</body></html>`,
     );
     expect(page.headers.get("x-frame-options")).toBeNull();
-    expect(page.headers.getSetCookie()).toEqual(["sid=1; Path=/"]);
+    expect(page.headers.getSetCookie()).toEqual([
+      "sid=1; Path=/; SameSite=None; Secure; Partitioned",
+    ]);
     expect(page.headers.get("referrer-policy")).toBe("no-referrer");
     expect(asked[0]?.headers.host).toBe(`localhost:${port}`);
 
@@ -108,7 +110,9 @@ describe("the Browser", () => {
 
     const script = await t.app.request(`${site.origin}${BOOTSTRAP_PATH}`);
     expect(script.headers.get("content-type")).toContain("text/javascript");
-    expect(await script.text()).toContain("penguin:browser:theme");
+    const source = await script.text();
+    expect(source).toContain("penguin:browser:theme");
+    expect(source).toContain(`"port":"${port}"`);
   });
 
   it("keeps a redirect to the site inside its host", async () => {
