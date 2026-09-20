@@ -24,17 +24,21 @@ import {
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import { HttpError } from "../http/errors.js";
 import { badRequest } from "../http/validate.js";
-import type { AttachmentLimits } from "./attachment-limits.js";
 
 /**
- * The size limits are no longer constants here: they are admin-settable (see attachment-limits.ts
- * for the numbers and the reasoning) and are resolved per request, so a change applies to the very
- * next upload without a restart. The caps are still enforced in THIS module rather than delegated
- * to the global body cap — that cap is derived from these limits, and a validator that depends on
- * the middleware upstream of it would be silently unbounded by a caller that never passes through
- * it. Without the per-request caps a legal body fits ~350k minimal `file` parts, which is 350k
- * sequential writes into one directory and 350k marker lines on one message.
+ * A file's SIZE is bounded here by nothing, and nothing downstream of this module scales with it:
+ * the bytes go to disk and come back through the model's own bounded file tools, never into the
+ * conversation. How large a request may be is the transport's own ceiling, not a rule stated here
+ * (see http/validate.ts readJson).
+ *
+ * The per-message file COUNT is a different question and is enforced. It bounds how many files
+ * one message can NAME, which is a composer concern rather than a byte-budget one: a request the
+ * transport carries happily still fits hundreds of thousands of minimal `file` parts, and that is
+ * as many sequential writes into one directory and as many marker lines on one message. 20 is far
+ * past any plausible composer use — the chip row stops being usable long before that — while
+ * still allowing "drop a folder of small files in".
  */
+export const MAX_ATTACHMENT_COUNT = 20;
 
 /**
  * Longest stem kept on disk, measured in **UTF-8 bytes**: filesystems cap a name near 255
@@ -96,16 +100,15 @@ export interface TaskAttachment {
 }
 
 /**
- * Validate one `{type:"file"}` input part. Shape problems are 400s in the same style as the
- * neighbouring text/image checks; only the size cap answers 413 (`file_too_large`, the code
- * the Web App already has copy for). `index` is the part's position in the request array
- * named by `field` (default `input`; the steer route passes `files`), so the message points
- * at the offending item like the other input errors do.
+ * Validate one `{type:"file"}` input part. Every problem here is a shape problem and answers
+ * 400, in the same style as the neighbouring text/image checks — a file's size is the body
+ * cap's business (app.ts), not this function's. `index` is the part's position in the request
+ * array named by `field` (default `input`; the steer route passes `files`), so the message
+ * points at the offending item like the other input errors do.
  */
 export function parseAttachmentPart(
   part: Record<string, unknown>,
   index: number,
-  limits: AttachmentLimits,
   field = "input",
 ): TaskAttachment {
   const fileName = part.fileName;
@@ -137,13 +140,6 @@ export function parseAttachmentPart(
   const bytes = Buffer.from(match[2]!, "base64");
   if (bytes.length === 0) {
     throw badRequest(`${field}[${index}].dataUrl decodes to an empty file.`);
-  }
-  if (bytes.length > limits.maxBytes) {
-    throw new HttpError(
-      413,
-      "file_too_large",
-      `Attached file exceeds the ${limits.maxBytes / (1024 * 1024)}MB limit.`,
-    );
   }
   return { fileName, bytes, mime: match[1]! };
 }
@@ -184,30 +180,16 @@ export async function readRecalledFiles(
 }
 
 /**
- * Enforce the per-request caps against everything accepted so far. Called after **each** `file`
- * part rather than once at the end, so an oversized `input` stops at the part that crosses the
- * line instead of base64-decoding the whole array first. Both answer 413: the count reuses a
- * dedicated `too_many_files` code, the aggregate the `payload_too_large` the body cap already
- * uses — from the caller's side it is the same "this request is too big" outcome.
+ * Enforce the per-request file count against everything accepted so far. Called after **each**
+ * `file` part rather than once at the end, so an `input` naming a hundred files stops at the
+ * part that crosses the line instead of base64-decoding the whole array first.
  */
-export function assertAttachmentBudget(
-  attachments: TaskAttachment[],
-  limits: AttachmentLimits,
-): void {
-  if (attachments.length > limits.maxCount) {
+export function assertAttachmentBudget(attachments: TaskAttachment[]): void {
+  if (attachments.length > MAX_ATTACHMENT_COUNT) {
     throw new HttpError(
       413,
       "too_many_files",
-      `A message may carry at most ${limits.maxCount} attached files.`,
-    );
-  }
-  let total = 0;
-  for (const a of attachments) total += a.bytes.length;
-  if (total > limits.totalBytes) {
-    throw new HttpError(
-      413,
-      "payload_too_large",
-      `Attached files exceed the ${limits.totalBytes / (1024 * 1024)}MB total limit for one message.`,
+      `A message may carry at most ${MAX_ATTACHMENT_COUNT} attached files.`,
     );
   }
 }

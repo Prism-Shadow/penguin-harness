@@ -3,12 +3,9 @@ import type { Opaque, Slot, ClassCtx } from "@prismshadow/penguin-core/kernel";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
 import { Config, Log } from "../hmr/capabilities.js";
-import type { MiddlewareHandler } from "hono";
-import { bodyLimit } from "hono/body-limit";
 import { authMiddleware, jsonOnlyWrites } from "../auth/middleware.js";
 import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
-import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
 import type { Auth } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
@@ -67,26 +64,9 @@ export class HttpModule {
         `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
       );
     });
-    let capped: { size: number; mw: MiddlewareHandler } | null = null;
-    app.use("/api/*", (c, next) => {
-      const size = bodyLimitBytes(this.settings.getAttachmentLimitsMb());
-      if (capped === null || capped.size !== size) {
-        capped = {
-          size,
-          mw: bodyLimit({
-            maxSize: size,
-            onError: () => {
-              throw new HttpError(
-                413,
-                "payload_too_large",
-                `Request body exceeds the ${Math.floor(size / (1024 * 1024))}MB limit.`,
-              );
-            },
-          }),
-        };
-      }
-      return capped.mw(c, next);
-    });
+    // No request body size cap: a size refusal here could only ever fire on a request the
+    // transport was going to fail anyway (the body becomes one string for JSON.parse, and V8
+    // caps a string near 512MB). http/validate.ts readJson names that ceiling when it is hit.
     app.use("/api/*", jsonOnlyWrites);
 
     const routes = [...(contributions.routes ?? [])]

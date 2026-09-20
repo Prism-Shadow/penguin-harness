@@ -76,8 +76,6 @@ import { imageUrlMessage, scratchpadDir, userText } from "@prismshadow/penguin-c
 import type { OmniMessage } from "@prismshadow/penguin-core";
 import type { MessagingDeliveryError, MessagingRuntimeStatus } from "../../api/types.js";
 import type { MessagingBindingRow } from "../../db/repos/messaging-bindings.js";
-import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../../services/attachment-limits.js";
-import type { AttachmentLimits } from "../../services/attachment-limits.js";
 import { attachFilesToInput, removeAttachments } from "../../services/task-attachments.js";
 import type { AttachedFiles, TaskAttachment } from "../../services/task-attachments.js";
 import type { ChannelEvent, ChannelHub } from "../channel.js";
@@ -168,6 +166,34 @@ export const MESSAGING_MAX_LINE_MESSAGES = 20;
  */
 export const MESSAGING_LINE_DELAY_MS = 1000;
 
+/**
+ * Per-image ceiling on what this bridge will DOWNLOAD from a chat channel.
+ *
+ * Not a composer limit and not a policy about picture quality: the bytes come from a remote
+ * chat over a binding anyone in that chat can post to, so the fetch needs a number it stops at.
+ * The image then rides the conversation and the Trace like a pasted one, where its size is paid
+ * again on every history page and every Session resume — 20MB is above anything the channels
+ * actually hand over (both re-encode a chat photo to a fraction of it) and far below the size
+ * that makes a Session slow to reopen.
+ */
+export const MESSAGING_INBOUND_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Per-file and per-message ceilings on what this bridge will DOWNLOAD as an attachment.
+ *
+ * The composer has no size limit any more, and these are deliberately not one either in the same
+ * sense: they are the bound on a *fetch this process performs on someone else's say-so*. A
+ * composer upload is an authenticated user spending their own bandwidth to reach a server they
+ * are logged into; an inbound file is this server pulling bytes because someone posted them in a
+ * chat the bot can see. A fetch with no ceiling has nothing to stop at.
+ *
+ * The numbers are the ones the composer's limits used to carry, kept because they were never the
+ * cramped part — both channels cap a chat file far below them anyway (Telegram serves a bot no
+ * file over 20MB).
+ */
+export const MESSAGING_INBOUND_FILE_MAX_BYTES = 100 * 1024 * 1024;
+export const MESSAGING_INBOUND_FILE_BUDGET_BYTES = 120 * 1024 * 1024;
+
 // The fixed outbound notices are user-facing chat content, deliberately bilingual
 // like the rest of the product's user-facing copy (the server has no locale for an
 // external chat, so both languages ride each notice).
@@ -182,7 +208,7 @@ export const MESSAGING_UNSUPPORTED_NOTICE =
  * A message that names two causes names neither.
  */
 export function messagingImageTooLargeNotice(): string {
-  const mb = Math.floor(INLINE_IMAGE_MAX_BYTES / (1024 * 1024));
+  const mb = Math.floor(MESSAGING_INBOUND_IMAGE_MAX_BYTES / (1024 * 1024));
   return `That image is larger than the ${mb}MB limit, so it was not sent to the Agent. Try a smaller one. 该图片超过 ${mb}MB 上限，未发送给智能体，请改用更小的图片。`;
 }
 
@@ -607,20 +633,19 @@ function filesSkippedError(
  * How many bytes of inbound imagery one binding may hand its Session inside a rolling
  * window, and how long that window is.
  *
- * Per image, the ceiling is the server's inline-image limit. In aggregate there was
- * nothing: every accepted image is written into the conversation as a base64 data URL, and
- * services/attachment-limits.ts says what that costs — the Trace JSONL is read back whole,
- * into a single JS string, on every history page and every Session resume, so a large
- * enough pile of inline images is not a slow Session but one that never recovers. The web
- * composer reaches the same ceiling only through an authenticated user; anyone who can DM
- * the bot reaches this one.
+ * Per image the ceiling is MESSAGING_INBOUND_IMAGE_MAX_BYTES above; in aggregate it is this.
+ * Every accepted image is written into the conversation as a base64 data URL, and the Trace
+ * JSONL that holds it is read back whole — into a single JS string — on every history page and
+ * every Session resume, so a large enough pile of inline images is not a slow Session but one
+ * that never recovers. A web composer reaches this cost only through an authenticated user;
+ * anyone who can DM the bot reaches it here.
  *
  * A burst bound, not a lifetime one: two full-size images per ten minutes is far above any
  * real conversation (both channels re-encode a chat photo to a fraction of the ceiling) and
  * far below the pile that breaks a Session. Sustained abuse still costs the attacker time
  * they cannot compress.
  */
-export const MESSAGING_INBOUND_IMAGE_BUDGET_BYTES = 2 * INLINE_IMAGE_MAX_BYTES;
+export const MESSAGING_INBOUND_IMAGE_BUDGET_BYTES = 2 * MESSAGING_INBOUND_IMAGE_MAX_BYTES;
 const MESSAGING_INBOUND_IMAGE_WINDOW_MS = 10 * 60_000;
 
 /**
@@ -863,12 +888,6 @@ export interface MessagingBridgeDeps {
    * directory because the Project and Agent are per Session, not per binding.
    */
   root: string;
-  /**
-   * The attachment limits in force right now. A function, not a snapshot: the per-file and
-   * per-message ceilings are admin-settable and read fresh per request everywhere else, so
-   * a change has to reach the next inbound message without a restart.
-   */
-  attachmentLimits: () => AttachmentLimits;
   channels: ChannelHub;
   runner: MessagingTaskRunner;
   /** One connector per channel; a stored binding whose channel has no connector is skipped with an error record. */
@@ -880,6 +899,9 @@ export interface MessagingBridgeDeps {
   lineDelayMs?: number;
   /** Test hook: one binding's inbound image budget (default MESSAGING_INBOUND_IMAGE_BUDGET_BYTES). */
   inboundImageBudgetBytes?: number;
+  /** Test hook: the inbound-file ceilings (defaults MESSAGING_INBOUND_FILE_MAX_BYTES / _BUDGET_BYTES; tests turn them down so a refusal costs bytes rather than megabytes). */
+  inboundFileMaxBytes?: number;
+  inboundFileBudgetBytes?: number;
 }
 
 /**
@@ -1017,6 +1039,8 @@ export class MessagingBridge {
   private readonly log: (line: string) => void;
   private readonly lineDelayMs: number;
   private readonly inboundImageBudgetBytes: number;
+  private readonly inboundFileMaxBytes: number;
+  private readonly inboundFileBudgetBytes: number;
 
   constructor(private readonly deps: MessagingBridgeDeps) {
     this.connectors = new Map(deps.connectors.map((c) => [c.channel, c]));
@@ -1025,6 +1049,9 @@ export class MessagingBridge {
     this.lineDelayMs = deps.lineDelayMs ?? MESSAGING_LINE_DELAY_MS;
     this.inboundImageBudgetBytes =
       deps.inboundImageBudgetBytes ?? MESSAGING_INBOUND_IMAGE_BUDGET_BYTES;
+    this.inboundFileMaxBytes = deps.inboundFileMaxBytes ?? MESSAGING_INBOUND_FILE_MAX_BYTES;
+    this.inboundFileBudgetBytes =
+      deps.inboundFileBudgetBytes ?? MESSAGING_INBOUND_FILE_BUDGET_BYTES;
   }
 
   /**
@@ -1501,18 +1528,18 @@ export class MessagingBridge {
    * Downloads the message's files into composer attachments, or the notice to answer with
    * when one of them could not be delivered.
    *
-   * The caps are the server's attachment limits — the very numbers an authenticated
-   * composer upload answers to — because these files land in exactly the same place, the
-   * Session scratchpad, and are read back the same way, through the model's bounded file
-   * tools. Both byte budgets apply:
+   * The caps are this bridge's own (MESSAGING_INBOUND_FILE_MAX_BYTES and its per-message
+   * budget), not the composer's — the composer has none, and what it does have would be the
+   * wrong number here anyway: these bytes are fetched because someone posted them in a chat,
+   * not because a logged-in user chose to upload them. Both byte budgets apply:
    *
    * - the per-file ceiling rides into each `fetch`, so an oversized attachment is refused at
    *   the byte that crosses it and is never resident in this process;
    * - the per-message total is spent as the batch is collected, each later file's cap
    *   shrinking to what is left, so a message carrying several cannot add up past it either.
    *
-   * The per-message file COUNT is deliberately not enforced: attachment-limits.ts calls it a
-   * composer-usability bound rather than a resource one, the byte budgets being what actually
+   * The per-message file COUNT is deliberately not enforced: it is a composer-usability bound
+   * rather than a resource one (see task-attachments.ts), the byte budgets being what actually
    * bound memory and disk — and a chat message carries one file today on both channels.
    *
    * There is no rolling per-binding budget like the image one, because the cost it exists to
@@ -1530,13 +1557,14 @@ export class MessagingBridge {
     files: readonly MessagingInboundFile[],
   ): Promise<{ attachments: TaskAttachment[] } | { notice: string }> {
     if (files.length === 0) return { attachments: [] };
-    const limits = this.deps.attachmentLimits();
     const attachments: TaskAttachment[] = [];
     let spent = 0;
     for (const file of files) {
-      const remaining = limits.totalBytes - spent;
-      if (remaining <= 0) return { notice: messagingInboundFilesTooLargeNotice(limits.totalBytes) };
-      const cap = Math.min(limits.maxBytes, remaining);
+      const remaining = this.inboundFileBudgetBytes - spent;
+      if (remaining <= 0) {
+        return { notice: messagingInboundFilesTooLargeNotice(this.inboundFileBudgetBytes) };
+      }
+      const cap = Math.min(this.inboundFileMaxBytes, remaining);
       try {
         const data = await file.fetch(cap);
         spent += data.length;
@@ -1556,10 +1584,11 @@ export class MessagingBridge {
           // platform's limit (Telegram serves a bot no file over 20MB), and that refusal is
           // still about this one file even on a later file whose cap the message's remaining
           // budget had already shrunk.
-          const spentTheMessage = err.maxBytes === remaining && remaining < limits.maxBytes;
+          const spentTheMessage =
+            err.maxBytes === remaining && remaining < this.inboundFileMaxBytes;
           return {
             notice: spentTheMessage
-              ? messagingInboundFilesTooLargeNotice(limits.totalBytes)
+              ? messagingInboundFilesTooLargeNotice(this.inboundFileBudgetBytes)
               : messagingInboundFileTooLargeNotice(file.fileName, err.maxBytes),
           };
         }
@@ -1601,7 +1630,7 @@ export class MessagingBridge {
       // The window's remainder rides into the fetch exactly as the ceiling does, so an
       // image that would overspend is refused at the byte that crosses rather than
       // buffered whole and measured afterwards.
-      const cap = Math.min(INLINE_IMAGE_MAX_BYTES, remaining);
+      const cap = Math.min(MESSAGING_INBOUND_IMAGE_MAX_BYTES, remaining);
       try {
         const { data, mimeType } = await image.fetch(cap);
         budget.spend(this.now(), data.length);
@@ -1614,7 +1643,7 @@ export class MessagingBridge {
           // fixed by sending a smaller picture, the window's budget only by waiting.
           return {
             notice:
-              cap < INLINE_IMAGE_MAX_BYTES
+              cap < MESSAGING_INBOUND_IMAGE_MAX_BYTES
                 ? messagingImageBudgetNotice()
                 : messagingImageTooLargeNotice(),
           };
@@ -2153,7 +2182,6 @@ export class MessagingModule {
       sessions: sessionsRepo,
       files: this.workspaceFiles,
       root: this.paths.root,
-      attachmentLimits: () => toAttachmentLimits(this.settings.getAttachmentLimitsMb()),
       channels: this.channels as ChannelHub,
       runner: this.runner,
       // Every connector arrives as a contribution — the built-in three from the child
