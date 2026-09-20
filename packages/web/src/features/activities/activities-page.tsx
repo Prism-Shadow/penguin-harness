@@ -6,6 +6,7 @@ import type {
   ActivityRecord,
   ActivityRun,
   ActivityRunSummary,
+  AssetManifest,
 } from "@prismshadow/penguin-server/api";
 import { apiFetch } from "../../api/client";
 import { apiErrorText } from "../../lib/api-error";
@@ -18,6 +19,8 @@ import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { InfoPopover } from "../../components/ui/info-popover";
+import { MediaWorkbench } from "./media-workbench";
+import { SceneReview } from "./scene-review";
 
 const basePath = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/activities`;
 const pretty = (value: unknown) => (value ? JSON.stringify(value, null, 2) : "");
@@ -281,6 +284,7 @@ function ActivityEditor({
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
   const [description, setDescription] = useState("");
   const [spec, setSpec] = useState("");
+  const [specOpen, setSpecOpen] = useState(false);
   const [media, setMedia] = useState("");
   const [runs, setRuns] = useState<ActivityRunSummary[]>([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -290,13 +294,22 @@ function ActivityEditor({
   const [busy, setBusy] = useState(false);
   const [changed, setChanged] = useState(false);
   const [agentId, setAgentId] = useState("");
+  const [bookMode, setBookMode] = useState<"" | "readAlong" | "decodable">("");
   const [wafRoot, setWafRoot] = useState("");
+  const [voices, setVoices] = useState<string[]>([]);
   const state = useRef({ dirty: false, busy: false, revision: "", available });
   const alive = useRef(true);
   const endpoint = `${basePath(projectId)}/${encodeURIComponent(activityId)}`;
   useEffect(() => {
     if (!available || !editable) return;
     let cancelled = false;
+    void apiFetch<{ voices: string[] }>(`${basePath(projectId)}/speech-setup`)
+      .then((value) => {
+        if (!cancelled) setVoices(value.voices);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(apiErrorText(e));
+      });
     void apiFetch<{ wafRoot: string | null }>(`${basePath(projectId)}/module-setup`)
       .then((value) => {
         if (!cancelled) setWafRoot(value.wafRoot ?? "");
@@ -408,6 +421,46 @@ function ActivityEditor({
   }
   const selectedAgent = agentId || currentAgent?.agentId || agents[0]?.agentId || "";
   const running = runs.some((run) => run.status === "running");
+  let editedManifest: AssetManifest | null = null;
+  try {
+    const value = JSON.parse(media);
+    // Structured controls require the saved shape; advanced edits are validated by the server.
+    if (
+      value &&
+      typeof value.assets === "object" &&
+      value.assets &&
+      Object.values(value.assets).every(
+        (items) =>
+          Array.isArray(items) &&
+          items.every(
+            (item) =>
+              item &&
+              typeof item.key === "string" &&
+              ["audio", "image", "video", "animation"].includes(item.type) &&
+              typeof item.description === "string" &&
+              Array.isArray(item.usages) &&
+              item.usages.every(
+                (usage: unknown) =>
+                  usage &&
+                  typeof usage === "object" &&
+                  "sceneId" in usage &&
+                  typeof usage.sceneId === "string",
+              ) &&
+              (item.script === undefined || typeof item.script === "string") &&
+              (item.path === undefined || typeof item.path === "string") &&
+              (item.generatedAudio === undefined ||
+                (item.generatedAudio && typeof item.generatedAudio.runId === "string")) &&
+              (item.generatedImage === undefined ||
+                (item.generatedImage &&
+                  typeof item.generatedImage.runId === "string" &&
+                  typeof item.generatedImage.sha256 === "string")),
+          ),
+      )
+    )
+      editedManifest = value;
+  } catch {
+    /* Preserve invalid JSON for correction without replacing it with a saved manifest. */
+  }
   if (!detail)
     return (
       <p
@@ -499,6 +552,28 @@ function ActivityEditor({
               </option>
             ))}
           </Select>
+          {detail.activityType === "book" && (
+            <>
+              <h3 className="flex items-center gap-2 text-xs font-semibold">
+                {S.activities.readingMode}
+                <InfoPopover label={S.activities.readingMode}>
+                  <p>{S.activities.readingModeHelp}</p>
+                </InfoPopover>
+              </h3>
+              <Select
+                size="sm"
+                aria-label={S.activities.readingMode}
+                hint={S.activities.readingModeHint}
+                value={bookMode}
+                onChange={(e) => setBookMode(e.target.value as typeof bookMode)}
+                disabled={busy || running}
+              >
+                <option value="">{S.activities.chooseReadingMode}</option>
+                <option value="readAlong">{S.activities.readAlong}</option>
+                <option value="decodable">{S.activities.decodable}</option>
+              </Select>
+            </>
+          )}
           {dirty && <p className={`text-xs ${toneInk.attention}`}>{S.activities.saveFirst}</p>}
           <Button
             size="sm"
@@ -538,7 +613,8 @@ function ActivityEditor({
               dirty ||
               !selectedAgent ||
               detail.draft.status !== "valid" ||
-              !detail.draft.spec
+              !detail.draft.spec ||
+              (detail.activityType === "book" && (!bookMode || !detail.draft.mediaPlan))
             }
             onClick={() =>
               void action(async () => {
@@ -548,6 +624,7 @@ function ActivityEditor({
                     agentId: selectedAgent,
                     expectedRevision: detail.draft.contentRevision,
                     wafRoot: wafRoot.trim() || undefined,
+                    ...(detail.activityType === "book" ? { bookMode } : {}),
                   },
                 });
                 if (alive.current) {
@@ -564,7 +641,18 @@ function ActivityEditor({
           </Button>
         </div>
       )}
-      <div className="space-y-2">
+      <section className="space-y-3">
+        <h3 className="text-sm font-semibold">{S.activities.sceneReview}</h3>
+        <SceneReview spec={detail.draft.spec} />
+      </section>
+      <details
+        className="space-y-2"
+        open={specOpen}
+        onToggle={(event) => setSpecOpen(event.currentTarget.open)}
+      >
+        <summary className="cursor-pointer text-xs font-medium">
+          {S.activities.advancedSpec}
+        </summary>
         <Textarea
           size="sm"
           label={S.activities.spec}
@@ -585,11 +673,16 @@ function ActivityEditor({
             {S.activities.saveSpec}
           </Button>
         )}
-      </div>
+      </details>
       <section className="space-y-3">
         <h3 className="flex items-center gap-2 text-sm font-semibold">
           {S.activities.mediaTitle}
-          <InfoPopover label={S.activities.mediaTitle}>{S.activities.mediaHelp}</InfoPopover>
+          <InfoPopover label={S.activities.mediaTitle}>
+            <p>{S.activities.mediaHelp}</p>
+            <p>{S.activities.speechHelp}</p>
+            <p>{S.activities.imageHelp}</p>
+            <p>{S.activities.textHelp}</p>
+          </InfoPopover>
         </h3>
         {editable && (
           <Button
@@ -615,6 +708,138 @@ function ActivityEditor({
         )}
         {detail.draft.mediaPlan && (
           <>
+            {editedManifest ? (
+              <MediaWorkbench
+                manifest={editedManifest}
+                runs={runs}
+                endpoint={endpoint}
+                editable={editable}
+                disabled={busy || !available}
+                canGenerate={
+                  editable &&
+                  available &&
+                  detail.draft.status === "valid" &&
+                  !busy &&
+                  !running &&
+                  !dirty &&
+                  !!selectedAgent
+                }
+                revision={detail.draft.contentRevision}
+                canAccept={editable && available && !busy && !running && !dirty}
+                canPreview={editable && available && !busy && !dirty}
+                wafRoot={wafRoot}
+                voices={voices}
+                onChange={(value) => setMedia(pretty(value))}
+                onGenerateAudio={(language, assetKey, voice) =>
+                  void action(async () => {
+                    const run = await apiFetch<ActivityRun>(`${endpoint}/generate-audio`, {
+                      method: "POST",
+                      body: {
+                        agentId: selectedAgent,
+                        expectedRevision: detail.draft.contentRevision,
+                        language,
+                        assetKey,
+                        voice,
+                      },
+                    });
+                    if (alive.current) {
+                      setRuns((previous) => [
+                        summarize(run),
+                        ...previous.filter((item) => item.runId !== run.runId),
+                      ]);
+                      setRefreshVersion((value) => value + 1);
+                    }
+                  })
+                }
+                onGenerateImage={(language, assetKey) =>
+                  void action(async () => {
+                    const run = await apiFetch<ActivityRun>(`${endpoint}/generate-image`, {
+                      method: "POST",
+                      body: {
+                        agentId: selectedAgent,
+                        expectedRevision: detail.draft.contentRevision,
+                        language,
+                        assetKey,
+                      },
+                    });
+                    if (alive.current) {
+                      setRuns((previous) => [
+                        summarize(run),
+                        ...previous.filter((item) => item.runId !== run.runId),
+                      ]);
+                      setRefreshVersion((value) => value + 1);
+                    }
+                  })
+                }
+                onGenerateText={(language, assetKey) =>
+                  void action(async () => {
+                    const run = await apiFetch<ActivityRun>(`${endpoint}/generate-media-text`, {
+                      method: "POST",
+                      body: {
+                        agentId: selectedAgent,
+                        expectedRevision: detail.draft.contentRevision,
+                        language,
+                        assetKey,
+                      },
+                    });
+                    if (alive.current) {
+                      setRuns((previous) => [
+                        summarize(run),
+                        ...previous.filter((item) => item.runId !== run.runId),
+                      ]);
+                      setRefreshVersion((value) => value + 1);
+                    }
+                  })
+                }
+                onAcceptText={(runId) =>
+                  void action(async () => {
+                    const draft = await apiFetch<ActivityDraft>(
+                      `${endpoint}/runs/${encodeURIComponent(runId)}/accept-media-text`,
+                      {
+                        method: "POST",
+                        body: { expectedRevision: detail.draft.contentRevision },
+                      },
+                    );
+                    if (alive.current) {
+                      accept({ ...detail, draft });
+                      setNotice(S.activities.saved);
+                    }
+                  })
+                }
+                onAcceptAudio={(runId) =>
+                  void action(async () => {
+                    const draft = await apiFetch<ActivityDraft>(
+                      `${endpoint}/runs/${encodeURIComponent(runId)}/accept-audio`,
+                      {
+                        method: "POST",
+                        body: { expectedRevision: detail.draft.contentRevision },
+                      },
+                    );
+                    if (alive.current) {
+                      accept({ ...detail, draft });
+                      setNotice(S.activities.saved);
+                    }
+                  })
+                }
+                onAcceptImage={(runId) =>
+                  void action(async () => {
+                    const draft = await apiFetch<ActivityDraft>(
+                      `${endpoint}/runs/${encodeURIComponent(runId)}/accept-image`,
+                      {
+                        method: "POST",
+                        body: { expectedRevision: detail.draft.contentRevision },
+                      },
+                    );
+                    if (alive.current) {
+                      accept({ ...detail, draft });
+                      setNotice(S.activities.saved);
+                    }
+                  })
+                }
+              />
+            ) : (
+              <p className={`text-xs ${toneInk.attention}`}>{S.activities.invalidMediaEditor}</p>
+            )}
             <ul className="space-y-1 text-xs">
               {Object.entries(detail.draft.mediaPlan.manifest.assets).map(([language, assets]) => (
                 <li key={language}>
@@ -626,18 +851,23 @@ function ActivityEditor({
                 </li>
               ))}
             </ul>
-            <Textarea
-              size="sm"
-              label={S.activities.mediaManifest}
-              rows={12}
-              className="font-mono"
-              value={media}
-              onChange={(event) => setMedia(event.target.value)}
-              spellCheck={false}
-              disabled={available && (!editable || busy)}
-              readOnly={!available}
-              hint={S.activities.mediaPathHint}
-            />
+            <details className="space-y-2">
+              <summary className="cursor-pointer text-xs font-medium">
+                {S.activities.advancedMedia}
+              </summary>
+              <Textarea
+                size="sm"
+                label={S.activities.mediaManifest}
+                rows={12}
+                className="font-mono"
+                value={media}
+                onChange={(event) => setMedia(event.target.value)}
+                spellCheck={false}
+                disabled={available && (!editable || busy)}
+                readOnly={!available}
+                hint={S.activities.mediaPathHint}
+              />
+            </details>
             {editable && (
               <Button
                 size="sm"
@@ -663,12 +893,22 @@ function ActivityEditor({
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs">
-                  {run.kind === "module" ? S.activities.moduleRun : S.activities.specRun}
+                  {run.kind === "module"
+                    ? S.activities.moduleRun
+                    : run.kind === "audio"
+                      ? S.activities.audioRun
+                      : run.kind === "image"
+                        ? S.activities.imageRun
+                        : run.kind === "media-text"
+                          ? S.activities.textRun
+                          : S.activities.specRun}
                 </span>
                 <span className={`rounded px-2 py-0.5 text-xs ${toneSurface[runTone[run.status]]}`}>
                   {run.kind === "module" && run.status === "succeeded"
                     ? S.activities.moduleReady
-                    : S.activities.status[run.status]}
+                    : run.kind === "audio" || run.kind === "image" || run.kind === "media-text"
+                      ? S.activities.speechStatus[run.status]
+                      : S.activities.status[run.status]}
                 </span>
                 <time className="text-xs text-gray-500" dateTime={run.createdAt}>
                   {new Date(run.createdAt).toLocaleString()}
@@ -726,10 +966,13 @@ function ActivityEditor({
               {run.hasCandidate && (
                 <CandidateReview
                   endpoint={`${endpoint}/runs/${encodeURIComponent(run.runId)}/candidate`}
-                  editable={editable && run.kind !== "module"}
+                  editable={editable && run.kind === "spec"}
                   busy={busy}
                   onUse={(candidate) => {
-                    if (!dirty || window.confirm(S.activities.discard)) setSpec(candidate);
+                    if (!dirty || window.confirm(S.activities.discard)) {
+                      setSpec(candidate);
+                      setSpecOpen(true);
+                    }
                   }}
                 />
               )}

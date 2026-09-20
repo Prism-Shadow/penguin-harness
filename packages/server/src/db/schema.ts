@@ -319,6 +319,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_runs_active ON activity_runs(acti
 CREATE TABLE IF NOT EXISTS activity_module_runs (
   run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS activity_audio_runs (
+  run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS activity_image_runs (
+  run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS activity_media_text_runs (
+  run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE
+);
 CREATE TABLE IF NOT EXISTS activity_run_candidates (
 run_id TEXT PRIMARY KEY REFERENCES activity_runs(run_id) ON DELETE CASCADE,
 candidate TEXT NOT NULL

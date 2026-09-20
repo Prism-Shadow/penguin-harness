@@ -5,7 +5,89 @@ import type { Strings } from "./strings-types";
 export const en: Strings = {
   appName: "PenguinHarness",
   activities: {
+    mediaLanguage: "Language",
+    mediaType: "Media type",
+    noMediaAssets: "No assets match this filter.",
+    assetList: "Assets",
+    boundMedia: "Bound",
+    unboundMedia: "Needs media",
+    usedInScenes: "Used in scenes",
+    noSceneUsage: "No scene references",
+    assetPath: "Media path",
+    assetPathHint: "A relative path beneath the WAF checkout, for example media/audio/welcome.wav.",
+    speechScript: "Speech script",
+    speechScriptHint: "1–5000 characters.",
+    acceptedAudio: "Accepted audio",
+    speechVoice: "Voice",
+    regenerateSpeech: "Regenerate speech",
+    generateSpeech: "Generate speech",
+    speechCandidates: "Speech candidates",
+    speechCandidate: "Speech candidate",
+    acceptSpeech: "Accept this audio",
+    olderSpeech:
+      "Generated from an older draft. Generate again to accept against the current draft.",
+    imageDescription: "Image description",
+    imageDescriptionHint: "1–5000 characters. Save the description before generating an image.",
+    acceptedImage: "Accepted image",
+    textHelp:
+      "Improve an image prompt or narration script with the selected Agent. Review the original and suggested text before using it. Existing media stays available; generate a new image or speech separately when you want it to reflect the revised text.",
+    improveImagePrompt: "Improve image prompt",
+    improveNarration: "Improve narration script",
+    textCandidates: "Text suggestions",
+    reviewText: "Review text",
+    originalText: "Original text",
+    suggestedText: "Suggested text",
+    noOriginalText: "No script saved yet.",
+    acceptText: "Use this text",
+    olderText: "Suggested for an older draft. Generate a new suggestion before accepting it.",
+    matchingText: "This suggestion matches the current text.",
+    mediaTextChanged:
+      "The text has changed since this file was generated. Regenerate to update the media.",
+    invalidTextCandidate: "This text suggestion does not match the selected asset.",
+    textRun: "Media text",
+    imageHelp:
+      "Images use Gemini through the selected Agent's normal Session and tool approvals. Add GEMINI_API_KEY to that Agent's Vault. Preview a candidate before accepting it; regeneration keeps your accepted image.",
+    generateImage: "Generate image",
+    regenerateImage: "Regenerate image",
+    imageCandidates: "Image candidates",
+    acceptImage: "Accept this image",
+    olderImage:
+      "Generated from an older draft. Generate again to accept against the current draft.",
+    noScenes: "Save or generate a specification to review its scenes.",
+    sceneReview: "Scenes",
+    advancedSpec: "Advanced: specification JSON",
+    advancedMedia: "Advanced: asset manifest JSON",
+    audioRun: "Speech",
+    imageRun: "Image",
+    speechReady: "Ready to review",
+    speechHelp:
+      "Speech uses Gemini TTS through the selected Agent’s normal Session and tool approvals. Add GEMINI_API_KEY to that Agent’s Vault. Listen to a candidate before accepting it; regeneration keeps your accepted audio.",
+    invalidMediaEditor: "Fix or reload the manifest JSON before using the asset editor.",
+    mediaTypes: {
+      all: "All media",
+      audio: "Audio",
+      image: "Images",
+      video: "Video",
+      animation: "Animation",
+    },
+    speechStatus: {
+      running: "Generating",
+      succeeded: "Ready to review",
+      failed: "Failed",
+      conflict: "Draft changed",
+      cancelled: "Cancelled",
+      interrupted: "Interrupted",
+    },
     mediaTitle: "Media plan",
+    previewImage: "Preview image",
+    loadingImage: "Loading image…",
+    fullImage: "Open full-size image",
+    reloadImage: "Reload image",
+    imageDimensions: (dimensions: string) => `${dimensions} pixels`,
+    imageUnbound: "Assign and save a media path to preview this image.",
+    imageSaveFirst: "Save or reload the draft before previewing its saved image.",
+    imageUnavailable:
+      "Image unavailable. Check the saved path and WAF checkout, or reload the draft. Previews support PNG, JPEG, GIF and WebP files up to 8 MiB; linked files are not supported.",
     mediaHelp:
       "Build a plan from the saved specification, then assign existing media paths. Rebuild after changing the specification; unchanged requirements keep their bindings. Planning does not generate media files.",
     planMedia: "Plan media",
@@ -19,6 +101,13 @@ export const en: Strings = {
     wafRoot: "WAF checkout",
     wafRootHint:
       "Folder containing framework, modules and media. Leave empty for automatic discovery.",
+    readingMode: "Reading mode",
+    readingModeHint: "Choose a mode and build the media plan before assembly.",
+    readingModeHelp:
+      "Choose the reading behavior for this assembly. Read-along starts narration on the first visit to each page. Decodable waits for manually started narration after a reading delay and requires bound final-story audio.",
+    chooseReadingMode: "Choose a reading mode",
+    readAlong: "Read-along",
+    decodable: "Decodable",
     assemble: "Assemble WAF module",
     moduleRun: "Module assembly",
     moduleReady: "Assembled",
@@ -4343,6 +4432,14 @@ Scenarios:
         "The media plan is invalid. Check its activity identity, unique keys, language groups, scene usages and relative media paths.",
       media_stale:
         "Rebuild the media plan from the saved specification before saving bindings or assembling a module.",
+      speech_credential_missing:
+        "Add GEMINI_API_KEY to the selected Agent’s Vault before generating speech.",
+      speech_helper_missing:
+        "The speech helper is missing. Rebuild the bundled plugins and restart the server.",
+      audio_invalid:
+        "Choose a supported voice and an audio asset with a saved script of 1–5000 characters.",
+      audio_changed:
+        "This audio candidate or its requirement changed. Generate a new candidate before accepting.",
       media_missing:
         "Referenced media is missing or linked in the selected WAF checkout. Check the saved paths before retrying assembly.",
       module_spec_invalid: "Module scenes need unique safe IDs other than activity.",

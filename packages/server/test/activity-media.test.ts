@@ -132,6 +132,41 @@ describe("activity media planning", () => {
     manifest.assets["en-US"] = [];
     expect(() => validateMediaCoverage(manifest, a)).toThrow("every asset");
   });
+  it("validates generated image provenance and its immutable media path", () => {
+    const a = activity();
+    const manifest = planMedia(a).manifest;
+    const image = manifest.assets["en-US"]![0]!;
+    const runId = "run_0123456789abcdef0123456789abcdef";
+    const sha256 = "a".repeat(64);
+    image.path = `media/generated/${runId}.png`;
+    image.generatedImage = { runId, sha256 };
+    expect(validateManifest(manifest, a).assets["en-US"]![0]!.generatedImage).toEqual({
+      runId,
+      sha256,
+    });
+    for (const change of [
+      {
+        generatedImage: { runId: "run_0123456789abcdef0123456789abcdef", sha256 },
+        path: "media/cat.png",
+      },
+      {
+        generatedImage: { runId: "run_0123456789abcdef0123456789abcdeg", sha256 },
+        path: `media/generated/${runId}.png`,
+      },
+      { generatedImage: { runId, sha256: "bad" }, path: `media/generated/${runId}.png` },
+      { generatedImage: { runId, sha256 }, path: `media/generated/${runId}.wav` },
+    ]) {
+      const invalid = planMedia(a).manifest;
+      Object.assign(invalid.assets["en-US"]![0]!, change);
+      expect(() => validateManifest(invalid, a)).toThrow("generated image");
+    }
+    const wrongType = planMedia(a).manifest;
+    const wrong = wrongType.assets["en-US"]![0]!;
+    wrong.type = "audio";
+    wrong.path = `media/generated/${runId}.png`;
+    wrong.generatedImage = { runId, sha256 };
+    expect(() => validateManifest(wrongType, a)).toThrow("generated image");
+  });
   it("leaves legacy revisions unchanged and includes media edits in concurrency control", () => {
     const a = activity();
     expect(draftRevision(a.draft)).toBe(

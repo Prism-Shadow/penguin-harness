@@ -8,6 +8,8 @@ export interface MediaAsset {
   script?: string;
   /** A reference in the WAF media checkout, never a server filesystem path. */
   path?: string;
+  generatedAudio?: { runId: string; sha256: string };
+  generatedImage?: { runId: string; sha256: string };
   usages: {
     sceneId: string;
     sourceKey: string;
@@ -59,7 +61,17 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
       if (
         Object.keys(asset).some(
           (key) =>
-            !["key", "type", "description", "sourceKey", "script", "path", "usages"].includes(key),
+            ![
+              "key",
+              "type",
+              "description",
+              "sourceKey",
+              "script",
+              "path",
+              "usages",
+              "generatedAudio",
+              "generatedImage",
+            ].includes(key),
         )
       )
         throw new Error("Unsupported media asset field.");
@@ -101,6 +113,32 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
       }
       if (!Array.isArray(asset.usages) || asset.usages.length > 2000)
         throw new Error("Media assets require a usages array.");
+      if (asset.generatedAudio !== undefined) {
+        const generated = object(asset.generatedAudio);
+        if (
+          asset.type !== "audio" ||
+          Object.keys(generated).some((key) => !["runId", "sha256"].includes(key)) ||
+          typeof generated.runId !== "string" ||
+          !/^run_[a-f0-9]{32}$/.test(generated.runId) ||
+          typeof generated.sha256 !== "string" ||
+          !/^[a-f0-9]{64}$/.test(generated.sha256) ||
+          asset.path !== `media/generated/${generated.runId}.wav`
+        )
+          throw new Error("Invalid generated audio binding.");
+      }
+      if (asset.generatedImage !== undefined) {
+        const generated = object(asset.generatedImage);
+        if (
+          asset.type !== "image" ||
+          Object.keys(generated).some((key) => !["runId", "sha256"].includes(key)) ||
+          typeof generated.runId !== "string" ||
+          !/^run_[a-f0-9]{32}$/.test(generated.runId) ||
+          typeof generated.sha256 !== "string" ||
+          !/^[a-f0-9]{64}$/.test(generated.sha256) ||
+          asset.path !== `media/generated/${generated.runId}.png`
+        )
+          throw new Error("Invalid generated image binding.");
+      }
       const usages = asset.usages.map((value) => {
         const usage = object(value);
         if (
@@ -128,6 +166,12 @@ export function validateManifest(value: unknown, address: ActivityAddress): Asse
         ...(asset.sourceKey !== undefined ? { sourceKey: String(asset.sourceKey) } : {}),
         ...(asset.script !== undefined ? { script: String(asset.script) } : {}),
         ...(asset.path !== undefined ? { path: String(asset.path) } : {}),
+        ...(asset.generatedAudio !== undefined
+          ? { generatedAudio: asset.generatedAudio as MediaAsset["generatedAudio"] }
+          : {}),
+        ...(asset.generatedImage !== undefined
+          ? { generatedImage: asset.generatedImage as MediaAsset["generatedImage"] }
+          : {}),
         usages,
       };
     });
@@ -246,4 +290,17 @@ export function mediaConfiguration(manifest: AssetManifest): Record<string, unkn
     languages[language] = bindings;
   }
   return { [manifest.productCode]: { telemetry: false, ...languages } };
+}
+
+/** Storage provenance belongs to Penguin, not Loom's runtime asset schema. */
+export function wafManifest(manifest: AssetManifest): AssetManifest {
+  return {
+    ...manifest,
+    assets: Object.fromEntries(
+      Object.entries(manifest.assets).map(([language, assets]) => [
+        language,
+        assets.map(({ generatedAudio: _audio, generatedImage: _image, ...asset }) => asset),
+      ]),
+    ),
+  };
 }

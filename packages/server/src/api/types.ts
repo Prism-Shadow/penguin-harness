@@ -4891,3 +4891,5 @@ export interface CodingAgentModeRequest {
 
 /** The kernel's protocol-neutral event vocabulary, re-exported for API consumers. */
 export type CodingAgentEvent = import("@prismshadow/penguin-coding-agents").AgentSessionEvent;
+export type { AudioTarget, AudioResult } from "../activities/audio.js";
+export type { MediaAsset, AssetManifest } from "../activities/media.js";

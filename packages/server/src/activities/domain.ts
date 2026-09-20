@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { MediaPlan } from "./media.js";
+import type { AudioTarget } from "./audio.js";
+import type { ImageTarget } from "./generated-image.js";
+import type { MediaTextTarget } from "./media-text.js";
 
 export const PRODUCT_CODE_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9_.-]*[A-Za-z0-9])?$/;
 
@@ -95,7 +98,12 @@ export function draftRevision(
 export type ActivityRunStatus =
   "running" | "succeeded" | "failed" | "conflict" | "cancelled" | "interrupted";
 export interface ActivityRun {
-  kind: "spec" | "module";
+  /** Explicit choice for this assembly; absent on other runs and older records. */
+  bookMode?: "readAlong" | "decodable";
+  kind: "spec" | "module" | "audio" | "image" | "media-text";
+  audio?: AudioTarget;
+  image?: ImageTarget;
+  mediaText?: MediaTextTarget;
   runId: string;
   activityId: string;
   projectId: string;

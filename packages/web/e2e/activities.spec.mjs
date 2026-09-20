@@ -37,6 +37,13 @@ async function fixture(page) {
   let activityRequests = 0;
   let deletedProjects = 0;
   const prefsWrites = [];
+  const imageRequests = [];
+  let imageFailure = false;
+  let imageCandidateReads = 0;
+  let imageCandidateFailure = false;
+  let imageGenerationFailure = false;
+  let mediaTextCandidateReads = 0;
+  const assembleRequests = [];
   const errors = [];
   page.on("pageerror", (error) => {
     errors.push(error.message);
@@ -120,6 +127,19 @@ async function fixture(page) {
     if (p === base && request.method() === "GET")
       return json({ activities: activity ? [activity] : [] });
     if (p === `${base}/module-setup`) return json({ wafRoot: "C:/WAF checkout" });
+    if (p === `${base}/speech-setup`) return json({ voices: ["Kore", "Puck"] });
+    if (p === `${base}/act_test/media-image`) {
+      imageRequests.push(Object.fromEntries(url.searchParams));
+      if (imageFailure)
+        return json({ error: { code: "image_unavailable", message: "Missing image" } }, 404);
+      return route.fulfill({
+        contentType: "image/png",
+        body: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      });
+    }
     if (p === base && request.method() === "POST") {
       const input = request.postDataJSON();
       activity = {
@@ -155,6 +175,11 @@ async function fixture(page) {
     }
     if (p.startsWith(`${base}/act_test/runs/`) && p.endsWith("/candidate")) {
       candidateReads++;
+      mediaTextCandidateReads += runs.some(
+        (run) => p.includes(`/${run.runId}/`) && run.kind === "media-text",
+      )
+        ? 1
+        : 0;
       if (p.includes("/run_test/")) await firstCandidateGate;
       if (failCandidate && p.includes("/run_second/")) {
         failCandidate = false;
@@ -165,6 +190,23 @@ async function fixture(page) {
       }
       return json({
         candidate: runs.find((run) => p.includes(`/${run.runId}/`))?.candidate ?? null,
+      });
+    }
+    if (p.startsWith(`${base}/act_test/runs/`) && p.endsWith("/image")) {
+      imageCandidateReads++;
+      if (imageCandidateFailure) {
+        imageCandidateFailure = false;
+        return json(
+          { error: { code: "unavailable", message: "Candidate temporarily unavailable." } },
+          503,
+        );
+      }
+      return route.fulfill({
+        contentType: "image/png",
+        body: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+          "base64",
+        ),
       });
     }
     if (p === "/api/projects/second-project/activities") return json({ activities: [] });
@@ -191,6 +233,7 @@ async function fixture(page) {
       return json(activity.draft);
     }
     if (p === `${base}/act_test/generate-spec` || p === `${base}/act_test/assemble-module`) {
+      if (p.endsWith("/assemble-module")) assembleRequests.push(request.postDataJSON());
       runs.unshift({
         kind: p.endsWith("/assemble-module") ? "module" : "spec",
         inputRevision: activity.draft.contentRevision,
@@ -204,6 +247,114 @@ async function fixture(page) {
         error: null,
       });
       return json(runs[0], 202);
+    }
+    if (p === `${base}/act_test/generate-audio`) {
+      const body = request.postDataJSON();
+      runs.unshift({
+        kind: "audio",
+        audio: {
+          language: body.language,
+          assetKey: body.assetKey,
+          voice: body.voice,
+          script: "Hello",
+        },
+        runId: `run_audio_${runs.length}`,
+        inputRevision: activity.draft.contentRevision,
+        activityId: activity.id,
+        projectId,
+        sessionId: "session_test",
+        status: "running",
+        createdAt: "2026-09-19T10:00:00Z",
+        candidate: null,
+        error: null,
+      });
+      return json(runs[0], 202);
+    }
+    if (p === `${base}/act_test/generate-image`) {
+      if (imageGenerationFailure) {
+        imageGenerationFailure = false;
+        return json({ error: { code: "unavailable", message: "Image generation failed." } }, 503);
+      }
+      const body = request.postDataJSON();
+      runs.unshift({
+        kind: "image",
+        image: {
+          language: body.language,
+          assetKey: body.assetKey,
+          prompt: body.prompt,
+          model: body.model,
+        },
+        runId: `run_image_${runs.length}`,
+        inputRevision: activity.draft.contentRevision,
+        activityId: activity.id,
+        projectId,
+        sessionId: "session_test",
+        status: "running",
+        createdAt: "2026-09-19T10:00:00Z",
+        candidate: null,
+        error: null,
+      });
+      return json(runs[0], 202);
+    }
+    if (p === `${base}/act_test/generate-media-text`) {
+      const body = request.postDataJSON();
+      const asset = activity.draft.mediaPlan.manifest.assets[body.language].find(
+        (candidate) => candidate.key === body.assetKey,
+      );
+      runs.unshift({
+        kind: "media-text",
+        mediaText: {
+          language: body.language,
+          assetKey: body.assetKey,
+          type: asset.type,
+          text: asset.type === "audio" ? asset.script : asset.description,
+        },
+        runId: `run_media_text_${runs.length}`,
+        inputRevision: activity.draft.contentRevision,
+        activityId: activity.id,
+        projectId,
+        sessionId: "session_test",
+        status: "running",
+        createdAt: "2026-09-19T10:00:00Z",
+        candidate: null,
+        error: null,
+      });
+      return json(runs[0], 202);
+    }
+    if (p.endsWith("/accept-audio")) {
+      const run = runs.find((run) => p.includes(`/${run.runId}/`));
+      const asset = activity.draft.mediaPlan.manifest.assets["en-US"][0];
+      asset.path = `media/generated/${run.runId}.wav`;
+      asset.generatedAudio = { runId: run.runId, sha256: "test" };
+      activity.draft.contentRevision = String(++revision);
+      return json(activity.draft);
+    }
+    if (p.endsWith("/accept-image")) {
+      const run = runs.find((candidate) => p.includes(`/${candidate.runId}/`));
+      const asset = activity.draft.mediaPlan.manifest.assets[run.image.language].find(
+        (candidate) => candidate.key === run.image.assetKey,
+      );
+      asset.path = `media/generated/${run.runId}.png`;
+      asset.generatedImage = { runId: run.runId, sha256: "test-image" };
+      activity.draft.contentRevision = String(++revision);
+      return json(activity.draft);
+    }
+    if (p.endsWith("/accept-media-text")) {
+      const body = request.postDataJSON();
+      const run = runs.find((candidate) => p.includes(`/${candidate.runId}/`));
+      if (body.expectedRevision !== activity.draft.contentRevision)
+        return json(
+          { error: { code: "draft_conflict", message: "Draft changed. Reload it first." } },
+          409,
+        );
+      const suggestion = JSON.parse(run.candidate);
+      const asset = activity.draft.mediaPlan.manifest.assets[suggestion.language].find(
+        (candidate) => candidate.key === suggestion.assetKey,
+      );
+      if (suggestion.type === "audio") asset.script = suggestion.text;
+      else asset.description = suggestion.text;
+      activity.draft.contentRevision = String(++revision);
+      return json(activity.draft);
     }
     if (p === `${base}/act_test/apply-generated-spec`) {
       const body = request.postDataJSON();
@@ -270,7 +421,23 @@ async function fixture(page) {
     return route.fulfill({ contentType, body: await fs.readFile(asset) });
   });
   return {
+    completeAudio() {
+      runs[0].status = "succeeded";
+      runs[0].candidate = "{}";
+    },
+    completeImage() {
+      runs[0].status = "succeeded";
+      runs[0].candidate = "image";
+    },
+    completeMediaText(text) {
+      runs[0].status = "succeeded";
+      runs[0].candidate = JSON.stringify({ ...runs[0].mediaText, text });
+    },
     errors,
+    imageRequests,
+    setImageFailure(value) {
+      imageFailure = value;
+    },
     prefsWrites,
     removeProject() {
       projectAvailable = false;
@@ -293,6 +460,24 @@ async function fixture(page) {
     },
     get candidateReads() {
       return candidateReads;
+    },
+    get imageCandidateReads() {
+      return imageCandidateReads;
+    },
+    get mediaTextCandidateReads() {
+      return mediaTextCandidateReads;
+    },
+    assembleRequests,
+    failImageCandidate() {
+      imageCandidateFailure = true;
+    },
+    failImageGeneration() {
+      imageGenerationFailure = true;
+    },
+    conflictMediaText(text) {
+      runs[0].status = "conflict";
+      runs[0].candidate = JSON.stringify({ ...runs[0].mediaText, text });
+      activity.draft.contentRevision = String(++revision);
     },
     secondCandidate() {
       runs.push({
@@ -344,11 +529,15 @@ async function fixture(page) {
   };
 }
 
-async function create(page) {
+async function create(page, { activityType = "standard" } = {}) {
   await page.goto(`${origin}/activities`);
   await page.getByRole("textbox", { name: "Product code", exact: true }).fill("words");
   await page.getByRole("spinbutton", { name: "Reference number", exact: true }).fill("12");
   await page.getByRole("textbox", { name: "Title", exact: true }).fill("Sight words");
+  if (activityType === "book") {
+    await page.getByRole("button", { name: "Activity type", exact: true }).click();
+    await page.getByRole("option", { name: "Book", exact: true }).click();
+  }
   await page.getByRole("button", { name: "Create activity", exact: true }).click();
   await expect(page).toHaveURL(/activities\/act_test$/);
   await page
@@ -358,6 +547,7 @@ async function create(page) {
   await expect(
     page.getByRole("button", { name: "Generate specification", exact: true }),
   ).toBeEnabled();
+  await page.getByText("Advanced: specification JSON", { exact: true }).click();
 }
 
 test("plans media, preserves unsaved bindings on navigation, and saves paths for assembly", async ({
@@ -382,6 +572,7 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
     .fill(JSON.stringify(withMedia));
   await page.getByRole("button", { name: "Validate and save", exact: true }).click();
   await plan.click();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
   const editor = page.getByRole("textbox", { name: /^Asset manifest/ });
   await expect(editor).toBeVisible();
   await expect(page.getByText(/1 assets, 0 paths assigned, 1 unbound/)).toBeVisible();
@@ -403,8 +594,63 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
     page.getByRole("button", { name: "Assemble WAF module", exact: true }),
   ).toBeEnabled();
   await page.reload();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
   await expect(editor).toHaveValue(JSON.stringify(manifest, null, 2));
   await expect(page.getByText(/1 assets, 1 paths assigned, 0 unbound/)).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("previews only saved images and resets previews across edits, checkout changes and failures", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await expect(page.getByText("Assign and save a media path to preview this image.")).toBeVisible();
+  const binding = page.getByRole("textbox", { name: /^Media path/ });
+  await binding.fill("media/images/cat.png");
+  await expect(page.getByRole("button", { name: "Preview image", exact: true })).toHaveCount(0);
+  expect(f.imageRequests).toHaveLength(0);
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await page.getByRole("button", { name: "Preview image", exact: true }).click();
+  await expect(page.getByRole("img", { name: "A cat", exact: true })).toBeVisible();
+  await expect(page.getByText("1 × 1 pixels", { exact: true })).toBeVisible();
+  expect(f.imageRequests[0]).toMatchObject({
+    language: "en-US",
+    assetKey: "cat",
+    wafRoot: "C:/WAF checkout",
+  });
+  expect(f.imageRequests[0].expectedRevision).toBeTruthy();
+  await expect(page.getByRole("link", { name: "Open full-size image" })).toHaveAttribute(
+    "href",
+    /media-image\?/,
+  );
+  await binding.fill("media/images/different.png");
+  await expect(page.getByRole("img", { name: "A cat", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("Save or reload the draft before previewing its saved image."),
+  ).toBeVisible();
+  expect(f.imageRequests).toHaveLength(1);
+  await binding.fill("media/images/cat.png");
+  await page.getByRole("textbox", { name: /^WAF checkout/ }).fill("C:/Other WAF");
+  f.setImageFailure(true);
+  await page.getByRole("button", { name: "Preview image", exact: true }).click();
+  await expect(page.getByText(/^Image unavailable\./)).toBeVisible();
+  f.setImageFailure(false);
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.getByText("1 × 1 pixels", { exact: true })).toBeVisible();
+  expect(f.imageRequests.at(-1).wafRoot).toBe("C:/Other WAF");
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  f.member();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Preview image", exact: true })).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
 
@@ -421,10 +667,12 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   await expect(page.getByRole("textbox", { name: /^WAF checkout/ })).toHaveValue("C:/WAF checkout");
   const sent = page.waitForRequest((request) => request.url().endsWith("/assemble-module"));
   await assemble.click();
-  expect((await sent).postDataJSON()).toMatchObject({
+  const payload = (await sent).postDataJSON();
+  expect(payload).toMatchObject({
     wafRoot: "C:/WAF checkout",
     agentId: "default_agent",
   });
+  expect(payload).not.toHaveProperty("bookMode");
   await expect(page.getByText("Module assembly", { exact: true })).toBeVisible();
   f.complete();
   await page.reload();
@@ -442,6 +690,374 @@ test("assembles a saved spec and links to the Harness-isolated WAF preview", asy
   expect(f.errors).toEqual([]);
 });
 
+test("requires an explicit reading mode for book assembly and sends it per run", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page, { activityType: "book" });
+  await page.getByRole("textbox", { name: "Specification JSON", exact: true }).fill(
+    JSON.stringify({
+      ...spec,
+      scenes: [
+        {
+          id: "story",
+          role: "story",
+          description: "A penguin story",
+          media: { images: [{ key: "cover", description: "A penguin walking" }] },
+        },
+      ],
+    }),
+  );
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  const assemble = page.getByRole("button", { name: "Assemble WAF module", exact: true });
+  await expect(assemble).toBeDisabled();
+  const readingMode = page.getByRole("button", { name: "Reading mode", exact: true });
+  await expect(readingMode).toHaveText("Choose a reading mode");
+  await readingMode.scrollIntoViewIfNeeded();
+  await readingMode.click();
+  await page.getByRole("option", { name: "Read-along", exact: true }).click();
+  await expect(assemble).toBeDisabled();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await expect(assemble).toBeEnabled();
+  await expect(page.getByText("Validated", { exact: true })).toBeVisible();
+  await expect(page.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
+  const sent = page.waitForRequest(
+    (request) => request.url().endsWith("/assemble-module") && request.method() === "POST",
+  );
+  await assemble.click();
+  expect((await sent).postDataJSON()).toMatchObject({
+    agentId: "default_agent",
+    bookMode: "readAlong",
+  });
+  expect(f.assembleRequests).toEqual([expect.objectContaining({ bookMode: "readAlong" })]);
+  expect(f.errors).toEqual([]);
+});
+
+test("edits scripts and explicitly accepts speech while regeneration keeps the accepted player", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
+  const manifest = {
+    productCode: "words",
+    refNum: 12,
+    assets: {
+      "en-US": [
+        {
+          key: "welcome",
+          type: "audio",
+          description: "Greeting",
+          script: "Hello",
+          usages: [{ sceneId: "intro" }],
+        },
+      ],
+    },
+  };
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(JSON.stringify(manifest));
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await page.getByRole("textbox", { name: /^Speech script/ }).fill("Hello there");
+  await expect(page.getByRole("button", { name: "Generate speech", exact: true })).toBeDisabled();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: /^Speech script/ })).toHaveValue("Hello there");
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await page.getByRole("button", { name: "Generate speech", exact: true }).click();
+  f.completeAudio();
+  await page.reload();
+  await expect(page.locator('audio[aria-label="Accepted audio"]')).toHaveCount(0);
+  await expect(page.locator('audio[aria-label="Speech candidate"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "Accept this audio", exact: true }).click();
+  const accepted = page.locator('audio[aria-label="Accepted audio"]');
+  const source = await accepted.getAttribute("src");
+  await page.getByRole("button", { name: "Regenerate speech", exact: true }).click();
+  await expect(accepted).toHaveAttribute("src", source);
+  f.completeAudio();
+  await page.reload();
+  await expect(accepted).toHaveAttribute("src", source);
+  await expect(page.locator('audio[aria-label="Speech candidate"]')).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Accept this audio", exact: true })).toBeEnabled();
+  expect(f.errors).toEqual([]);
+});
+
+test("edits image descriptions and explicitly accepts images while failed regeneration preserves the accepted image", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
+  const manifest = {
+    productCode: "words",
+    refNum: 12,
+    assets: {
+      "en-US": [
+        {
+          key: "cat",
+          type: "image",
+          description: "A friendly orange cat",
+          usages: [{ sceneId: "intro" }],
+        },
+      ],
+    },
+  };
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(JSON.stringify(manifest));
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  const description = page.getByRole("textbox", { name: /^Image description/ });
+  await description.fill("A friendly orange cat wearing a blue scarf");
+  await expect(page.getByRole("button", { name: "Generate image", exact: true })).toBeDisabled();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await expect(description).toHaveValue("A friendly orange cat wearing a blue scarf");
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  const generated = page.waitForRequest(
+    (request) => request.url().endsWith("/generate-image") && request.method() === "POST",
+  );
+  await page.getByRole("button", { name: "Generate image", exact: true }).click();
+  expect((await generated).postDataJSON()).toMatchObject({
+    agentId: "default_agent",
+    expectedRevision: expect.any(String),
+    language: "en-US",
+    assetKey: "cat",
+  });
+  f.completeImage();
+  await page.reload();
+  const candidates = page.getByRole("region", { name: "Image candidates", exact: true });
+  await expect(candidates).toBeVisible();
+  await candidates.getByRole("button", { name: "Preview image", exact: true }).click();
+  await expect(
+    candidates.getByRole("img", { name: "A friendly orange cat wearing a blue scarf" }),
+  ).toBeVisible();
+  expect(f.imageCandidateReads).toBe(1);
+  await candidates.getByRole("button", { name: "Accept this image", exact: true }).click();
+  const acceptedPath = page.getByRole("textbox", { name: /^Media path/ });
+  await expect(acceptedPath).toHaveValue("media/generated/run_image_0.png");
+  const accepted = page.getByRole("region", { name: "Accepted image", exact: true });
+  await accepted.getByRole("button", { name: "Preview image", exact: true }).click();
+  await expect(accepted.locator("img")).toBeVisible();
+  const acceptedSource = await accepted.locator("img").getAttribute("src");
+  await expect(page.getByRole("button", { name: "Regenerate image", exact: true })).toBeVisible();
+  f.failImageGeneration();
+  await page.getByRole("button", { name: "Regenerate image", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Image generation failed.");
+  await expect(acceptedPath).toHaveValue("media/generated/run_image_0.png");
+  await expect(accepted.locator("img")).toHaveAttribute("src", acceptedSource);
+  f.member();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Regenerate image", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Accept this image", exact: true })).toHaveCount(0);
+  await accepted.getByRole("button", { name: "Preview image", exact: true }).click();
+  await expect(accepted.locator("img")).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("reviews and accepts an improved image prompt without changing its saved media", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
+  const manifest = {
+    productCode: "words",
+    refNum: 12,
+    assets: {
+      "en-US": [
+        {
+          key: "cat",
+          type: "image",
+          description: "A cat",
+          path: "media/images/cat.png",
+          usages: [{ sceneId: "intro" }],
+        },
+      ],
+    },
+  };
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(JSON.stringify(manifest));
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  const description = page.getByRole("textbox", { name: /^Image description/ });
+  const improve = page.getByRole("button", { name: "Improve image prompt", exact: true });
+  await description.fill("Unsaved prompt");
+  await expect(improve).toBeDisabled();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "Reload draft", exact: true }).click();
+  await expect(description).toHaveValue("Unsaved prompt");
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  const sent = page.waitForRequest(
+    (request) => request.url().endsWith("/generate-media-text") && request.method() === "POST",
+  );
+  await improve.click();
+  expect((await sent).postDataJSON()).toMatchObject({
+    agentId: "default_agent",
+    expectedRevision: expect.any(String),
+    language: "en-US",
+    assetKey: "cat",
+  });
+  f.completeMediaText("A friendly orange cat wearing a blue scarf");
+  await page.reload();
+  const suggestions = page.getByRole("region", { name: "Text suggestions", exact: true });
+  await expect(suggestions).toBeVisible();
+  await suggestions.getByRole("button", { name: "Review text", exact: true }).click();
+  await expect(suggestions).toContainText("Unsaved prompt");
+  await expect(suggestions).toContainText("A friendly orange cat wearing a blue scarf");
+  expect(f.mediaTextCandidateReads).toBe(1);
+  await suggestions.getByRole("button", { name: "Use this text", exact: true }).click();
+  await expect(description).toHaveValue("A friendly orange cat wearing a blue scarf");
+  await expect(page.getByRole("textbox", { name: /^Media path/ })).toHaveValue(
+    "media/images/cat.png",
+  );
+  expect(f.errors).toEqual([]);
+});
+
+test("reviews narration suggestions, preserves existing audio provenance, and blocks stale acceptance", async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
+  const manifest = {
+    productCode: "words",
+    refNum: 12,
+    assets: {
+      "en-US": [
+        {
+          key: "welcome",
+          type: "audio",
+          description: "Greeting",
+          script: "Hello",
+          path: "media/generated/run_audio_accepted.wav",
+          generatedAudio: { runId: "run_audio_accepted", sha256: "test" },
+          usages: [{ sceneId: "intro" }],
+        },
+      ],
+    },
+  };
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(JSON.stringify(manifest));
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  const improve = page.getByRole("button", { name: "Improve narration script", exact: true });
+  await improve.click();
+  f.completeMediaText("Hello there, sight word friends.");
+  await page.reload();
+  const suggestions = page.getByRole("region", { name: "Text suggestions", exact: true });
+  await suggestions.getByRole("button", { name: "Review text", exact: true }).click();
+  await expect(suggestions).toContainText("Hello");
+  await expect(suggestions).toContainText("Hello there, sight word friends.");
+  await suggestions.getByRole("button", { name: "Use this text", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: /^Speech script/ })).toHaveValue(
+    "Hello there, sight word friends.",
+  );
+  await expect(page.getByRole("textbox", { name: /^Media path/ })).toHaveValue(
+    "media/generated/run_audio_accepted.wav",
+  );
+
+  const regenerate = page.getByRole("button", { name: "Improve narration script", exact: true });
+  await regenerate.click();
+  f.completeMediaText("A conflicting narration candidate.");
+  f.conflictMediaText("A conflicting narration candidate.");
+  await page.reload();
+  const conflicted = page.getByRole("region", { name: "Text suggestions", exact: true });
+  await conflicted.getByRole("button", { name: "Review text", exact: true }).first().click();
+  await expect(conflicted).toContainText("A conflicting narration candidate.");
+  await expect(conflicted.getByRole("button", { name: "Use this text", exact: true })).toHaveCount(
+    0,
+  );
+  expect(f.errors).toEqual([]);
+});
+
+test("members cannot edit media text", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(
+    JSON.stringify({
+      productCode: "words",
+      refNum: 12,
+      assets: {
+        "en-US": [
+          {
+            key: "cat",
+            type: "image",
+            description: "A cat",
+            usages: [{ sceneId: "intro" }],
+          },
+        ],
+      },
+    }),
+  );
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  f.member();
+  await page.reload();
+  await expect(page.getByRole("textbox", { name: /^Image description/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Improve image prompt", exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "Improve narration script", exact: true }),
+  ).toHaveCount(0);
+  expect(f.errors).toEqual([]);
+});
+
+test("image candidates from a conflicting run remain view-only", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
+  const manifest = {
+    productCode: "words",
+    refNum: 12,
+    assets: {
+      "en-US": [
+        {
+          key: "cat",
+          type: "image",
+          description: "A cat",
+          usages: [{ sceneId: "intro" }],
+        },
+      ],
+    },
+  };
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(JSON.stringify(manifest));
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+  await page.getByRole("button", { name: "Generate image", exact: true }).click();
+  f.conflict();
+  await page.reload();
+  const candidates = page.getByRole("region", { name: "Image candidates", exact: true });
+  await expect(candidates).toBeVisible();
+  await expect(
+    candidates.getByRole("button", { name: "Accept this image", exact: true }),
+  ).toHaveCount(0);
+  await candidates.getByRole("button", { name: "Preview image", exact: true }).click();
+  await expect(candidates.locator("img")).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
 test("create, save, generate, leave and reopen a completed specification", async ({ page }) => {
   const f = await fixture(page);
   await create(page);
@@ -453,6 +1069,7 @@ test("create, save, generate, leave and reopen a completed specification", async
   await page.reload();
   await expect(page.getByText("Running", { exact: true })).toBeVisible();
   f.complete();
+  await page.getByText("Advanced: specification JSON", { exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Specification JSON", exact: true })).toHaveValue(
     JSON.stringify(spec, null, 2),
   );
@@ -581,11 +1198,12 @@ test("idle history polls slowly and candidate text is fetched only on expansion"
   await candidates.nth(0).click();
   await candidates.nth(1).click();
   await expect(page.getByRole("alert")).toContainText("Candidate temporarily unavailable.");
-  await page.locator("details").nth(1).getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(page.locator("details").nth(1).locator("pre")).toContainText(
-    '"title":"Second candidate"',
-  );
-  await expect(page.locator("details").nth(0).locator("pre")).toContainText("Loading");
+  const reviews = page
+    .locator("details")
+    .filter({ has: page.getByText("View candidate JSON", { exact: true }) });
+  await reviews.nth(1).getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(reviews.nth(1).locator("pre")).toContainText('"title":"Second candidate"');
+  await expect(reviews.nth(0).locator("pre")).toContainText("Loading");
   release();
   await expect(page.locator("details pre").nth(0)).toContainText('"title":"Sight words"');
   await expect(page.locator("details pre").nth(1)).toContainText('"title":"Second candidate"');
