@@ -1,8 +1,9 @@
 /**
  * Icon sizes and icon-to-text gaps, named by the role the mark plays rather than by a number.
  *
- * Every line icon in the app is drawn on a 24x24 grid at `strokeWidth` 1.7 and rendered through
- * `components/ui/glyph-icon.tsx`, so the only thing a call site chooses is how big the box is —
+ * Every line icon in the app is drawn on a 24x24 grid and rendered through
+ * `components/ui/glyph-icon.tsx` at the theme's stroke weight (`--ui-icon-stroke`, 1.7 in the
+ * default theme), so the only thing a call site chooses is how big the box is —
  * and structurally equivalent places must choose the same. Picking a rung by role is what keeps
  * two list rows, or two menu rows, from drifting a pixel apart.
  *

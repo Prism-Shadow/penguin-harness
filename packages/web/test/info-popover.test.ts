@@ -15,6 +15,25 @@ import { Input } from "../src/components/ui/input";
 import { Switch } from "../src/components/ui/switch";
 import { PrefRow } from "../src/features/settings/setting-row";
 import { S } from "../src/lib/strings";
+import { expectEveryRootScanned, expectSingleHome, scanSources } from "./helpers/roots";
+
+/**
+ * The modules rendered below, found by scanning web and the shared UI package: a component that
+ * moves must be re-pointed here, and a copy left behind would otherwise stay the one under test.
+ */
+describe("the popover's sources", () => {
+  it("scan every source root, and find each rendered module in one place", () => {
+    const scan = scanSources();
+    expectEveryRootScanned(scan);
+    for (const id of [
+      "packages/web/src/components/ui/info-popover.tsx",
+      "packages/web/src/components/ui/field.tsx",
+      "packages/web/src/features/settings/setting-row.tsx",
+    ]) {
+      expectSingleHome(scan, id);
+    }
+  });
+});
 
 describe("InfoPopover", () => {
   const html = renderToStaticMarkup(

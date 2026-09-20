@@ -21,8 +21,11 @@
 /* Appended after Tailwind's own `theme, base, components, utilities`. A theme's blocks live in
    ui-theme and the accent presets in ui-accent, so a preset beats a theme's `.dark` block by layer
    order alone — `:root[data-theme="x"].dark` would otherwise out-rank `:root[data-accent="blue"]`
-   on specificity. Both layers only declare custom properties, so sitting after `utilities` never
-   lets them override a utility's declaration. */
+   on specificity. The token blocks and the presets declare custom properties only, so sitting
+   after `utilities` never lets them override a utility's declaration. The one thing in ui-theme
+   that does override utilities is a theme's style-hook recipes (hooks.ts), and they sit there for
+   exactly that: `.ui-live` re-times its host's `animate-spin`, `.ui-glass` replaces its host's
+   opaque fill. */
 @layer ui-theme, ui-accent;
 
 /*
@@ -132,6 +135,10 @@
      theme's radius, including all the way down to 0. */
   --radius-2xl: calc(var(--ui-radius-xl) * 4 / 3);
   --radius-3xl: calc(var(--ui-radius-xl) * 2);
+  /* The pressable control's shape (Button, IconButton, Segmented, the Switch track, SendButton):
+     `rounded-control`. Its own token because a theme's controls and boxes differ in kind, not in
+     scale step — Frost's controls are pills while its boxes stay on the scale. */
+  --radius-control: var(--ui-radius-control);
 
   --shadow-sm: var(--ui-shadow-raised);
   --shadow-lg: var(--ui-shadow-overlay);
@@ -163,6 +170,13 @@
   pre,
   kbd {
     font-family: var(--ui-font-mono);
+  }
+  /* What a pressable element may animate: colour, lines, opacity and the focus/elevation shadow,
+     never geometry (no radius, size or position easing on hover). Only the property list is set
+     here, so nothing animates until a component adds a duration (`duration-150`), and any
+     `transition-*` utility replaces the list. `:where()` keeps the rule at zero specificity. */
+  :where(button, a, [role="button"], [role="tab"]) {
+    transition-property: color, background-color, border-color, opacity, box-shadow;
   }
   /* Keyboard focus for buttons and links; text controls draw their own ring and do not stack this one. */
   button:focus-visible,
