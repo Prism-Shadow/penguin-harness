@@ -14,6 +14,7 @@ import { HttpError } from "../http/errors.js";
 import { readArtifactBytes } from "./artifact.js";
 import { AUDIO_MAX_BYTES, inspectWave } from "./audio.js";
 import { GENERATED_IMAGE_MAX_BYTES, inspectPng } from "./generated-image.js";
+import { validateBookSpec } from "./book.js";
 
 /** Loom's WAF checkout convention; discovery only walks ancestors, never the disk. */
 export async function findWafRoot(
@@ -41,6 +42,7 @@ export async function findWafRoot(
 /** Source templates are vendored from Loom's html_module, compiled into every deployment. */
 export function scaffoldModule(activity: ActivityDetail): Record<string, string> {
   const spec = validateActivitySpec(activity.draft.spec);
+  if (activity.activityType === "book") validateBookSpec(spec);
   const runtime = spec.runtime as Record<string, unknown>;
   const scenes = (spec.scenes ?? spec.stages) as { id: string; description: string }[];
   if (

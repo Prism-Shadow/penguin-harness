@@ -45,6 +45,18 @@ async function directory() {
 }
 
 describe("native WAF module boundary", () => {
+  it("rejects book pages without their primary image while retaining generic activity support", () => {
+    const generic = structuredClone(activity);
+    generic.draft.spec = {
+      ...activitySpec,
+      scenes: [{ id: "story", role: "story", description: "Read the story" }],
+    };
+    expect(() => scaffoldModule(generic)).not.toThrow();
+    expect(() => scaffoldModule({ ...generic, activityType: "book" })).toThrow(
+      "exactly one primary image",
+    );
+  });
+
   it("checks referenced media before writing assembly files, without changing the checkout", async () => {
     const root = await directory();
     const workspace = await directory();

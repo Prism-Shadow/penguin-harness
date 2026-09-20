@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { validateBookSpec } from "./book.js";
 import path from "node:path";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { projectDir } from "@prismshadow/penguin-core";
@@ -476,11 +477,16 @@ export class ActivityService implements ActivityAuthoring {
     } catch (error) {
       throw new HttpError(422, "spec_invalid", (error as Error).message);
     }
-    return this.change(projectId, activityId, expectedRevision, (draft) => ({
-      ...draft,
-      spec: parsed,
-      status: "valid",
-    }));
+    return this.change(projectId, activityId, expectedRevision, (draft, activity) => {
+      if (activity.activityType === "book") {
+        try {
+          validateBookSpec(parsed);
+        } catch (error) {
+          throw new HttpError(422, "spec_invalid", (error as Error).message);
+        }
+      }
+      return { ...draft, spec: parsed, status: "valid" };
+    });
   }
   async planMedia(
     projectId: string,
