@@ -67,6 +67,7 @@ import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
 import { orgKey } from "./company-nav";
 import { ChannelComposer } from "./channel-composer";
+import { useChannelDraft } from "./channel-draft";
 import { ChannelHeader } from "./channel-header";
 import { ChannelMessageBody, ChannelReaderProvider, MentionChip } from "./channel-markdown";
 import { noticeText } from "./channel-notices";
@@ -354,9 +355,13 @@ export function ChannelView() {
     syncScrollState();
   };
 
+  // The unsent text outlives the view: leaving a channel (or reloading) must not lose it.
+  const draft = useChannelDraft(projectId, orgId, channelId);
+
   const send = async (text: string): Promise<boolean> => {
     try {
       const msg = await api.sendOrgChannelMessage(projectId, orgId, channelId, { text });
+      draft.discard();
       follow.resume();
       setDays((prev) =>
         prev === null ? prev : appendMessage(prev, meta?.today ?? msg.time.slice(0, 10), msg),
@@ -685,7 +690,15 @@ export function ChannelView() {
           </div>
           <div className="mx-auto w-full max-w-5xl">
             {canPost ? (
-              <ChannelComposer candidates={candidates} names={names} onSend={send} />
+              <ChannelComposer
+                // Remounted per draft: the box starts from the text this channel was left with.
+                key={draft.key ?? channelId}
+                candidates={candidates}
+                names={names}
+                initialText={draft.initial}
+                onTextChange={draft.onTextChange}
+                onSend={send}
+              />
             ) : detail !== null && detail.archived ? (
               <NoticeStrip
                 tone="neutral"
