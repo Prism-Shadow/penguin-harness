@@ -3,6 +3,7 @@
 - **Date:** 2026-09-20
 - **Type:** fix
 - **Scope:** `web`
+- **PR:** [#807](https://github.com/Prism-Shadow/penguin-harness/pull/807)
 
 [English](2026-09-20-desk-model-switch.md)
 
