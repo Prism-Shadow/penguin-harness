@@ -88,8 +88,8 @@ export function SettingsDialog({
   /** On the Plugins page: the card an opening scrolls to (e.g. `sandbox`). */
   pluginFocus?: string;
 }) {
-  // uploadLimits feeds the Upload limits page's "?" (sectionInfo below); the rest pick pages.
-  const { user, desktopMode, sessionVia, uploadLimits } = useAuth();
+  // uploadPolicy feeds the Uploads page's "?" (sectionInfo below); the rest pick pages.
+  const { user, desktopMode, sessionVia, uploadPolicy } = useAuth();
   const sections = visibleSettingsSections({
     isAdmin: user?.isAdmin === true,
     desktopMode,
@@ -137,7 +137,7 @@ export function SettingsDialog({
     shortcuts: S.settings.shortcutsInfo,
     archived: S.settings.archivedInfo,
     proxy: S.settings.proxyInfo,
-    uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
+    uploads: S.settings.uploadsInfo(uploadPolicy.attachmentMaxCount),
     company: S.settings.companyModeServerInfo,
     chromeExtension: S.settings.chromeExtensionInfo,
     agentApi: S.settings.agentApiHint,

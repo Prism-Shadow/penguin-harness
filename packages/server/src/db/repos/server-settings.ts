@@ -4,11 +4,6 @@
  * settings added after a web.db was formed need no migration.
  */
 import {
-  clampAttachmentMb,
-  DEFAULT_ATTACHMENT_MAX_MB,
-  DEFAULT_ATTACHMENT_TOTAL_MB,
-} from "../../services/attachment-limits.js";
-import {
   clampImageCompressionOverMb,
   DEFAULT_IMAGE_COMPRESSION,
   DEFAULT_IMAGE_COMPRESSION_OVER_MB,
@@ -35,16 +30,24 @@ const LEGACY_USE_SYSTEM_PROXY_KEY = "use_system_proxy";
 /** Key of the explicit proxy address; absent/null = follow the proxy environment variables. */
 const PROXY_URL_KEY = "proxy_url";
 
-/** Key of the per-file composer attachment limit, in whole MB; default DEFAULT_ATTACHMENT_MAX_MB. */
-const ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
-
-/** Key of the per-message total attachment limit, in whole MB; default DEFAULT_ATTACHMENT_TOTAL_MB. */
-const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
 /** Key of the "compress large images in the composer" switch; default DEFAULT_IMAGE_COMPRESSION. */
 const IMAGE_COMPRESSION_KEY = "image_compression";
 
 /** Key of the size above which an image is re-encoded, in whole MB; default DEFAULT_IMAGE_COMPRESSION_OVER_MB. */
 const IMAGE_COMPRESSION_OVER_MB_KEY = "image_compression_over_mb";
+
+/**
+ * Keys of the retired attachment limits (per file and per message, in whole MB). Nothing writes
+ * them any more; getAttachmentLimitsMb reads what an admin stored before they were retired.
+ */
+const LEGACY_ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
+const LEGACY_ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
+
+/** The retired limits' last defaults and bounds, for getAttachmentLimitsMb. */
+const LEGACY_ATTACHMENT_MAX_MB = 100;
+const LEGACY_ATTACHMENT_TOTAL_MB = 120;
+const LEGACY_ATTACHMENT_MIN_MB = 1;
+const LEGACY_ATTACHMENT_CEILING_MB = 200;
 
 /** Key of the company-mode master switch; default off (see getCompanyMode). */
 const COMPANY_MODE_KEY = "companyMode";
@@ -137,24 +140,6 @@ export class ServerSettingsRepo implements Settings {
     this.set(PROXY_URL_KEY, JSON.stringify(value));
   }
 
-  /**
-   * Shared read for the two attachment limits: the stored whole-MB number, clamped back into the
-   * legal range, or the built-in default when the row is absent or unreadable. Values only ever
-   * enter through the validated PUT, so the clamp is for a database that predates a change to the
-   * bounds (or was hand-edited) — using the nearest legal number is a better answer there than
-   * refusing to serve uploads at all.
-   */
-  private getAttachmentMb(key: string, fallback: number): number {
-    const raw = this.get(key);
-    if (raw === null) return fallback;
-    try {
-      const value: unknown = JSON.parse(raw);
-      return typeof value === "number" ? clampAttachmentMb(value, fallback) : fallback;
-    } catch {
-      return fallback;
-    }
-  }
-
   /** Whether a GitHub token is stored (the value itself is read by the package service). */
   hasGithubToken(): boolean {
     const raw = this.get(GITHUB_TOKEN_KEY);
@@ -184,36 +169,6 @@ export class ServerSettingsRepo implements Settings {
     this.set(GITHUB_TOKEN_KEY, JSON.stringify(value));
   }
 
-  /** Per-file composer attachment cap, in whole MB. */
-  getAttachmentMaxMb(): number {
-    return this.getAttachmentMb(ATTACHMENT_MAX_MB_KEY, DEFAULT_ATTACHMENT_MAX_MB);
-  }
-
-  setAttachmentMaxMb(value: number): void {
-    this.set(ATTACHMENT_MAX_MB_KEY, JSON.stringify(value));
-  }
-
-  /** Per-message total attachment cap (decoded bytes), in whole MB. */
-  getAttachmentTotalMb(): number {
-    return this.getAttachmentMb(ATTACHMENT_TOTAL_MB_KEY, DEFAULT_ATTACHMENT_TOTAL_MB);
-  }
-
-  setAttachmentTotalMb(value: number): void {
-    this.set(ATTACHMENT_TOTAL_MB_KEY, JSON.stringify(value));
-  }
-
-  /**
-   * The pair as one value — what the validators, the body cap and `/api/me` all read. Kept here
-   * so no caller has to remember that the two numbers are only meaningful together (the total is
-   * never below the per-file cap; the PUT enforces that against the effective post-write pair).
-   */
-  getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number } {
-    return {
-      attachmentMaxMb: this.getAttachmentMaxMb(),
-      attachmentTotalMb: this.getAttachmentTotalMb(),
-    };
-  }
-
   /** Whether the composer re-encodes images above the threshold before uploading them. */
   getImageCompression(): boolean {
     const raw = this.get(IMAGE_COMPRESSION_KEY);
@@ -226,9 +181,9 @@ export class ServerSettingsRepo implements Settings {
   }
 
   /**
-   * The size above which an image is re-encoded, in whole MB. Clamped on read for the same reason
-   * the attachment limits are: values only ever enter through the validated PUT, so this covers a
-   * database that predates a change to the bounds, or a hand-edited one.
+   * The size above which an image is re-encoded, in whole MB. Clamped on read: values only ever
+   * enter through the validated PUT, so this covers a database that predates a change to the
+   * bounds, or a hand-edited one.
    */
   getImageCompressionOverMb(): number {
     const raw = this.get(IMAGE_COMPRESSION_OVER_MB_KEY);
@@ -256,6 +211,33 @@ export class ServerSettingsRepo implements Settings {
     return {
       imageCompression: this.getImageCompression(),
       imageCompressionOverMb: this.getImageCompressionOverMb(),
+    };
+  }
+
+  /**
+   * Compatibility member — see `Settings.getAttachmentLimitsMb`: a hot push replaces the
+   * platform but never the runtime, and an older runtime (the packaged v0.2.13 release among
+   * them) derives its request body cap from this on every request, so removing it made every
+   * request on such a runtime answer 500. Uploads have no size limit on this platform and
+   * nothing here reads it. It answers the pair an admin stored before the limits were retired,
+   * clamped into the old bounds, or the old defaults. Remove it only when no supported runtime
+   * calls it.
+   */
+  getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number } {
+    const read = (key: string, fallback: number): number => {
+      const raw = this.get(key);
+      if (raw === null) return fallback;
+      try {
+        const value: unknown = JSON.parse(raw);
+        if (typeof value !== "number" || !Number.isInteger(value)) return fallback;
+        return Math.min(LEGACY_ATTACHMENT_CEILING_MB, Math.max(LEGACY_ATTACHMENT_MIN_MB, value));
+      } catch {
+        return fallback;
+      }
+    };
+    return {
+      attachmentMaxMb: read(LEGACY_ATTACHMENT_MAX_MB_KEY, LEGACY_ATTACHMENT_MAX_MB),
+      attachmentTotalMb: read(LEGACY_ATTACHMENT_TOTAL_MB_KEY, LEGACY_ATTACHMENT_TOTAL_MB),
     };
   }
 

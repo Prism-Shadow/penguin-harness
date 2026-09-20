@@ -38,7 +38,7 @@ function hostWith(...replaces: ModuleDef[]): PluginHost {
   return host;
 }
 
-function memorySettings(maxMb = 7): Settings {
+function memorySettings(overMb = 7): Settings {
   const kv = new Map<string, string>();
   return {
     get: (k) => kv.get(k) ?? null,
@@ -59,16 +59,15 @@ function memorySettings(maxMb = 7): Settings {
     getGithubToken: () => null,
     setGithubToken: () => {},
     setProxyUrl: () => {},
-    getAttachmentMaxMb: () => maxMb,
-    setAttachmentMaxMb: () => {},
-    getAttachmentTotalMb: () => maxMb * 10,
-    setAttachmentTotalMb: () => {},
-    getAttachmentLimitsMb: () => ({ attachmentMaxMb: maxMb, attachmentTotalMb: maxMb * 10 }),
+    getAttachmentLimitsMb: () => ({ attachmentMaxMb: 100, attachmentTotalMb: 120 }),
     getImageCompression: () => true,
     setImageCompression: () => {},
-    getImageCompressionOverMb: () => 4,
+    getImageCompressionOverMb: () => overMb,
     setImageCompressionOverMb: () => {},
-    getImageCompressionSettings: () => ({ imageCompression: true, imageCompressionOverMb: 4 }),
+    getImageCompressionSettings: () => ({
+      imageCompression: true,
+      imageCompressionOverMb: overMb,
+    }),
   };
 }
 
@@ -94,13 +93,14 @@ describe("hot replacement by a plugin", () => {
     const res = await t.app.request("/api/admin/settings", { headers: { cookie: admin.cookie } });
     expect(res.status).toBe(200);
     expect(
-      ((await res.json()) as { settings: { attachmentMaxMb: number } }).settings.attachmentMaxMb,
+      ((await res.json()) as { settings: { imageCompressionOverMb: number } }).settings
+        .imageCompressionOverMb,
     ).toBe(7);
   });
 
   it("a stand-in whose instance lacks a method the interface names is refused, by name", async () => {
     const hollow = { ...memorySettings() } as Record<string, unknown>;
-    delete hollow.getAttachmentLimitsMb;
+    delete hollow.getImageCompressionSettings;
     await expect(
       createTestApp({
         plugins: hostWith(
@@ -108,7 +108,7 @@ describe("hot replacement by a plugin", () => {
         ),
       }),
     ).rejects.toThrow(
-      /ServerSettingsRepo: api 'Settings' does not satisfy 'Settings': missing \[getAttachmentLimitsMb\]/,
+      /ServerSettingsRepo: api 'Settings' does not satisfy 'Settings': missing \[getImageCompressionSettings\]/,
     );
   });
 
@@ -162,7 +162,8 @@ describe("hot replacement by a plugin", () => {
     const res = await t.app.request("/api/admin/settings", { headers: { cookie: admin.cookie } });
     expect(res.status).toBe(200);
     expect(
-      ((await res.json()) as { settings: { attachmentMaxMb: number } }).settings.attachmentMaxMb,
+      ((await res.json()) as { settings: { imageCompressionOverMb: number } }).settings
+        .imageCompressionOverMb,
     ).toBe(7);
   });
 

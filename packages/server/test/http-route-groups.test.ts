@@ -16,10 +16,6 @@ import type { AppEnv } from "../src/auth/middleware.js";
 import type { UserRow } from "../src/db/repos/users.js";
 import { HttpModule } from "../src/http/app.js";
 import { WebModule } from "../src/http/routes/contributions.js";
-import {
-  DEFAULT_ATTACHMENT_MAX_MB,
-  DEFAULT_ATTACHMENT_TOTAL_MB,
-} from "../src/services/attachment-limits.js";
 
 const TOKEN = "good-token";
 const USER = { userId: "u1", isAdmin: false };
@@ -62,12 +58,7 @@ function assemble(groups: Group[]): {
       sessionIsLive: (token: string) => token === "remote-cookie",
     },
     errors: { record: () => {} },
-    settings: {
-      getAttachmentLimitsMb: () => ({
-        attachmentMaxMb: DEFAULT_ATTACHMENT_MAX_MB,
-        attachmentTotalMb: DEFAULT_ATTACHMENT_TOTAL_MB,
-      }),
-    },
+    settings: {},
     access: {},
   });
   http.setup({ contributions: { routes: groups.map(group) } } as unknown as ClassCtx);

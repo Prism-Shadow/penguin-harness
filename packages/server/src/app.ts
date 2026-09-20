@@ -19,10 +19,8 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { Hono } from "hono";
-import type { Context, MiddlewareHandler } from "hono";
+import type { Context } from "hono";
 import type { HttpBindings } from "@hono/node-server";
-import { bodyLimit } from "hono/body-limit";
-import { bodyLimitBytes, toAttachmentLimits } from "./services/attachment-limits.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { Instance, ModuleTree } from "@prismshadow/penguin-core/kernel";
 import type { ServerConfig } from "./config.js";
@@ -481,55 +479,16 @@ export function createApp(boot: ServerBoot): Hono<AppEnv> {
     });
   }
 
-  // API common defenses: request body size cap (20MB) and write-request Content-Type (one of the CSRF MVP defenses).
+  // API common write defenses: the same-origin check and the write-request Content-Type check
+  // (the CSRF MVP defenses).
   //
-  // The cap has to be measured, not read: a chunked request carries no `content-length` at all,
-  // so a header check alone passes a body of any size — the sinks behind it (task input images,
-  // file attachments, Trace import) then decode whatever arrives. hono's bodyLimit keeps the
-  // header fast path when the length is declared and otherwise counts bytes off the stream,
-  // aborting the moment the total crosses the cap.
-  //
-  // The cap is DERIVED from the admin-settable attachment budget rather than fixed, because the
-  // two must not disagree in either direction: a cap below the budget would reject a request whose
-  // every attachment was individually legal (and with a body-shaped error, not a size-shaped one),
-  // while a cap permanently sized for the largest budget an admin *could* set would keep accepting
-  // 300MB bodies on a server whose limits were left at 10MB. It is re-derived per request, so an
-  // admin's change takes effect immediately; the middleware itself is memoized on the resulting
-  // size so the steady state allocates nothing.
-  //
-  // `/api/hmr` is outside the cap on every host. The cap exists because the sinks behind it buffer
-  // what arrives, and the upgrade channel's endpoints no longer do (packages/hmr streams a push
-  // into the blob store a chunk at a time); the attachment budget is a statement about chat
-  // attachments, not about how large a push may be. How large a push may be, if a deployment wants
-  // a number at all, is the platform's to decide on its own route group — not this layer's, which
-  // ships only by reinstall.
-  //
-  // The Agent API is called from browsers too: its CORS header (amsp/cors.ts) has to reach these
-  // two refusals, which answer before its group runs, or a caller reads a CORS failure, not the code.
+  // There is deliberately no request body size cap here. A size refusal on this path could only
+  // ever fire on a request the transport was going to fail anyway: the body is buffered and
+  // JSON-parsed as one string, and V8 caps a string near 512MB, so the ceiling is the platform's
+  // and not a policy anyone has to agree with. What that ceiling produces is made legible in
+  // http/validate.ts readJson rather than bounded here.
+  // CORS also covers refusals before the Agent API group runs.
   app.use(`${AMSP_PREFIX}/*`, amspAllowOrigin);
-  let capped: { size: number; mw: MiddlewareHandler } | null = null;
-  app.use("/api/*", (c, next) => {
-    if (isHmrPath(c.req.path)) return next();
-    const size = bodyLimitBytes(settings().getAttachmentLimitsMb());
-    if (capped === null || capped.size !== size) {
-      capped = {
-        size,
-        mw: bodyLimit({
-          maxSize: size,
-          // Its default is a bare text/plain 413; throw the App's own error instead so the
-          // response stays the documented `payload_too_large` body that every client handles.
-          onError: () => {
-            throw new HttpError(
-              413,
-              "payload_too_large",
-              `Request body exceeds the ${Math.floor(size / (1024 * 1024))}MB limit.`,
-            );
-          },
-        }),
-      };
-    }
-    return capped.mw(c, next);
-  });
   app.use("/api/*", sameOriginWrites);
   app.use("/api/*", jsonOnlyWrites);
 
@@ -588,11 +547,6 @@ export type WebSource = { kind: "mem"; files: Map<string, Buffer> } | { kind: "d
  *   makes that ask a 304 instead of a re-download. A web push changes the ETag, so the
  *   very next load anywhere picks the new app up.
  */
-/** The upgrade channel's own paths: streamed by the mechanism, so no body cap applies (see createApp). */
-function isHmrPath(pathname: string): boolean {
-  return pathname === HMR_ROUTE_PREFIX || pathname.startsWith(`${HMR_ROUTE_PREFIX}/`);
-}
-
 function cacheControlFor(servedPath: string): string {
   return servedPath.startsWith("assets/") ? "public, max-age=31536000, immutable" : "no-cache";
 }

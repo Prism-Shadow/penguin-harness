@@ -22,8 +22,8 @@ import type {
 } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
+  MESSAGING_INBOUND_IMAGE_MAX_BYTES,
   MESSAGING_TEST_MESSAGE,
   MESSAGING_UNSUPPORTED_NOTICE,
 } from "../src/runtime/messaging/bridge.js";
@@ -536,7 +536,7 @@ describe("discord binding routes and connector", () => {
     expect(fake.allFetches()).toEqual([
       {
         url: "https://cdn.example/chart.png?ex=1",
-        maxBytes: INLINE_IMAGE_MAX_BYTES,
+        maxBytes: MESSAGING_INBOUND_IMAGE_MAX_BYTES,
         what: "The image",
       },
     ]);
