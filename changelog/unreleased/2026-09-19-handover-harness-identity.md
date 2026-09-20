@@ -11,4 +11,6 @@ A server that was hot-pushed hands its build over to the machines it holds, and 
 
 The suffix now identifies the harness — the platform bundle, the CLI bundle and the web artifact folded into one sha. Assets are deliberately no part of it: they are what a harness loads (plugins, the native modules it pins), not the harness.
 
+The sweep that finds the machines behind also ran too early to see a push at all: a pushed platform boots before its version is committed to the store, and the sweep runs as part of that boot, so it read the previous version off the disk, found every machine already carrying it and handed nothing over — the push then reached the machines one push late. It now runs a second time shortly after boot, when the commit has landed; with nothing behind that is a no-op.
+
 Versions recorded for machines before this change carry the old suffix, so each held machine is handed the current build once more after the upgrade. Nothing has to be done by hand.
