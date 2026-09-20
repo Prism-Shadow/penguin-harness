@@ -190,7 +190,7 @@ export const en: Strings = {
     removeConfirmBody: (name) =>
       `Remove the agent definition "${name}"? Running sessions are not affected.`,
     noAgents:
-      "No agents yet. Any command that speaks the Agent Client Protocol over stdio works — for example: gemini --experimental-acp, npx @zed-industries/claude-code-acp.",
+      "No agents yet. Any command that speaks the Agent Client Protocol over stdio works — for example: gemini --experimental-acp, npx claude-agent-acp.",
     idLabel: "Id",
     idHint: 'Letters, digits, "_" and "-". Names the agent in sessions and in its data folder.',
     titleLabel: "Display name",
@@ -200,6 +200,13 @@ export const en: Strings = {
     argsHint: "One argument per line.",
     envLabel: "Environment",
     envHint: "One KEY=value per line.",
+    discoveredTitle: "Detected on the server",
+    discoveredLoading: "Checking what is installed on the server…",
+    discoveredUse: "Use",
+    discoveredAdded: "Added",
+    discoveredInstall: "Install",
+    discoveredInstalled: "Installed",
+    discoveredMissing: "Not installed",
     save: "Save",
     cancel: "Cancel",
     newSession: "New session",

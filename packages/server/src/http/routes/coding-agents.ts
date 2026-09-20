@@ -1,6 +1,7 @@
 /**
  * Coding-agent routes (Agent Client Protocol agents driven as server subprocesses):
  *   GET    /api/coding-agents/agents                                   (any user)
+ *   GET    /api/coding-agents/discover                                 (admin: probe the server for known agents)
  *   POST   /api/coding-agents/agents                                   (admin: save a custom definition)
  *   DELETE /api/coding-agents/agents/:agentId                          (admin)
  *   GET    /api/coding-agents/sessions                                 (any user)
@@ -56,6 +57,16 @@ export function codingAgentsRoutes(deps: CodingAgentsRouteDeps): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
 
   app.get("/agents", (c) => c.json({ agents: deps.codingAgents.listAgents() }));
+
+  // Discovery names what is installed on the server machine — host reconnaissance the
+  // definitions themselves never reveal — so it stays behind the same admin gate as
+  // writing them.
+  app.get("/discover", async (c) => {
+    if (!c.var.user.isAdmin) {
+      throw new HttpError(403, "forbidden", "Admin access is required.");
+    }
+    return c.json({ candidates: await deps.codingAgents.discoverAgents() });
+  });
 
   app.post("/agents", async (c) => {
     if (!c.var.user.isAdmin) {

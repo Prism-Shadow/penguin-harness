@@ -14,6 +14,8 @@ export {
   type AgentSessionView,
   type CodingAgentManagerOptions,
 } from "./manager.js";
+export { discoverAgents, type AgentDiscoveryCandidate, type AgentLaunch } from "./discovery.js";
+export { resolveCommandPath } from "./resolve.js";
 export { sandboxedAgentEnv } from "./env.js";
 export {
   AcpAgentError,

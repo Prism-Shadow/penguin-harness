@@ -7,6 +7,7 @@ import { Interface } from "@prismshadow/penguin-core/kernel";
 import type { AgentPermissionOutcome, AgentSessionEvent } from "@prismshadow/penguin-coding-agents";
 import type { ChannelApi } from "../hmr/capabilities.js";
 import type {
+  CodingAgentDiscoveryCandidate,
   CodingAgentServerInfo,
   CodingAgentSessionDetailResponse,
   CodingAgentSessionInfo,
@@ -14,6 +15,8 @@ import type {
 
 export abstract class CodingAgents extends Interface<{
   listAgents(): CodingAgentServerInfo[];
+  /** Probe the server machine for known agents (admin: host reconnaissance). */
+  discoverAgents(): Promise<CodingAgentDiscoveryCandidate[]>;
   /** Validate and persist a custom agent definition (admin-managed, server-global). */
   saveAgent(input: unknown): CodingAgentServerInfo;
   removeAgent(agentId: string): boolean;

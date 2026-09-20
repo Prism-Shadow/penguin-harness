@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type {
+  CodingAgentDiscoveryResponse,
   CodingAgentSessionDetailResponse,
   CodingAgentSessionInfo,
   CodingAgentsResponse,
@@ -79,6 +80,37 @@ describe("coding agents api", () => {
       (await admin.post("/api/coding-agents/agents", { id: "bad id!", command: "x" })).status,
     ).toBe(400);
     expect((await admin.post("/api/coding-agents/agents", { id: "no-cmd" })).status).toBe(400);
+  });
+
+  // Shape-only assertions: what the machine really has installed must not decide the test.
+  it("probes the server machine for known agents (admin-only)", async () => {
+    expect((await member.get("/api/coding-agents/discover")).status).toBe(403);
+    const res = await admin.get("/api/coding-agents/discover");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as CodingAgentDiscoveryResponse;
+    expect(body.candidates.map((c) => c.recipeId)).toEqual(
+      expect.arrayContaining(["gemini", "claude", "codex"]),
+    );
+    for (const candidate of body.candidates) {
+      expect(candidate.homepageUrl).toMatch(/^https:\/\//);
+      expect(candidate.authHint).not.toBe("");
+      expect(typeof candidate.detected).toBe("boolean");
+      if (candidate.launch === null) {
+        expect(candidate.setupHint).not.toBe("");
+      } else {
+        expect(path.isAbsolute(candidate.launch.command)).toBe(true);
+        expect(candidate.setupHint).toBeNull();
+      }
+    }
+  });
+
+  it("flags a recipe whose definition id is already saved", async () => {
+    await admin.post("/api/coding-agents/agents", { id: "gemini", command: "gemini" });
+    const res = await admin.get("/api/coding-agents/discover");
+    const body = (await res.json()) as CodingAgentDiscoveryResponse;
+    const byRecipe = new Map(body.candidates.map((c) => [c.recipeId, c]));
+    expect(byRecipe.get("gemini")?.alreadyAdded).toBe(true);
+    expect(byRecipe.get("codex")?.alreadyAdded).toBe(false);
   });
 
   it("rejects unknown agents and workspaces at session creation", async () => {

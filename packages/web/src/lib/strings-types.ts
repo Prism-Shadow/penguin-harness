@@ -165,6 +165,13 @@ export type Strings = {
     argsHint: string;
     envLabel: string;
     envHint: string;
+    discoveredTitle: string;
+    discoveredLoading: string;
+    discoveredUse: string;
+    discoveredAdded: string;
+    discoveredInstall: string;
+    discoveredInstalled: string;
+    discoveredMissing: string;
     save: string;
     cancel: string;
     newSession: string;
