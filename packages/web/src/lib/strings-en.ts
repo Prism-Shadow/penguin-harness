@@ -138,6 +138,23 @@ export const en: Strings = {
     adminOnly: "Only an admin can manage machines.",
   },
 
+  /** The Browser: a dock tab showing a page on a host of its own. */
+  browser: {
+    title: "Browser",
+    newTab: "New browser tab",
+    address: "Address",
+    addressPlaceholder: "localhost:3000 or a web address",
+    back: "Back",
+    forward: "Forward",
+    reload: "Reload",
+    openExternally: "Open in the system browser",
+    startLocal:
+      "Type an address and press Enter. localhost:<port> is a port on this server; a public web address works too.",
+    startMachine:
+      "Type an address and press Enter. localhost:<port> is a port on the machine this Workspace is on; a public web address works too.",
+    openInBrowser: "Open in a browser tab",
+  },
+
   /** Port forwarding: the dock's Ports panel, and a machine's Ports page. */
   ports: {
     panelTitle: "Ports",

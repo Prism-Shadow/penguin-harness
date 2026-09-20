@@ -70,6 +70,8 @@ function dropPortForwards(db: DatabaseSync): void {
   db.exec(
     "DROP INDEX IF EXISTS idx_port_forwards_local_in; DROP INDEX IF EXISTS idx_port_forwards_machine; DROP TABLE IF EXISTS port_forwards;",
   );
+  // And the Browser's own table, which every database older than that is older than too.
+  db.exec("DROP TABLE IF EXISTS browser_sites;");
 }
 
 /**

@@ -78,6 +78,8 @@ import type {
   ModelProtocolDetectRequest,
   ModelProtocolDetectResponse,
   MachinesUseResponse,
+  BrowserSiteRequest,
+  BrowserSiteResponse,
   PortForwardCreateRequest,
   PortForwardInfo,
   PortForwardsResponse,
@@ -1711,6 +1713,15 @@ export const createPortForward = (forward: PortForwardCreateRequest) =>
 
 export const deletePortForward = (id: string) =>
   apiFetch<void>(`/api/port-forwards/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+// Browser ------------------------------------------------------------------------------
+//
+// Always THIS server's, like the port forwards: the site's host is a name of the server the
+// browser is talking to, whichever machine the conversation's Workspace is on.
+
+/** Turns an address typed into a Browser tab into the `<label>.localhost` host it is shown on. */
+export const openBrowserSite = (site: BrowserSiteRequest) =>
+  apiFetch<BrowserSiteResponse>("/api/browser/sites", { method: "POST", body: site });
 
 export const installOnMachine = (projectId: string, machineId: string, replaceProgram = false) =>
   apiFetch<MachinesResponse>(

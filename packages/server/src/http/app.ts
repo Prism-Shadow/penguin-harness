@@ -10,6 +10,7 @@ import { HttpError, handleError } from "./errors.js";
 import { attributedProjectId } from "./attribution.js";
 import { bodyLimitBytes } from "../services/attachment-limits.js";
 import { declined } from "../hmr/hono-seam.js";
+import { hostOnly, requestAuthority } from "../services/preview-token.js";
 import type { Auth, Users } from "../mechanisms/identity.js";
 import type { Access } from "../mechanisms/projects.js";
 import type { Errors } from "../mechanisms/observability.js";
@@ -42,6 +43,21 @@ export interface HttpSlots {
     { prefix: string; auth: "user" | "none"; order: number },
     Opaque<"Hono", Hono<AppEnv>>
   >;
+  /**
+   * A HOST of its own. A request whose Host matches `pattern` (a RegExp source, tested
+   * against the lowercased hostname) goes to the bound app and NOWHERE else: ahead of the
+   * body cap, the JSON-only rule, the cookie gate and every route group, and whatever the
+   * app answers is the answer — it never falls through to the App. That is the point of the
+   * slot: such a host serves content that is not the App's (the Browser's sites), and the
+   * guarantee that no App route is reachable there has to hold by construction, not by each
+   * route remembering to check.
+   */
+  hosts: Slot<{ pattern: string }, Opaque<"Hono", Hono>>;
+}
+
+interface HostApp {
+  pattern: RegExp;
+  app: Hono;
 }
 
 /**
@@ -70,11 +86,20 @@ export class HttpModule {
       }))
       .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
+    const hosts: HostApp[] = [...(contributions.hosts ?? [])].map((c) => ({
+      pattern: new RegExp(c.data.pattern as string),
+      app: c.code as Hono,
+    }));
+
     // The HTTP surface, gated on the cookie; and the same surface once per socket user,
     // gated on that user — assembled lazily, since most users never open a socket, and kept,
     // since the one who did opens it on every page load. Hono copies a group's routes into
     // each parent it is mounted on, so mounting the groups twice shares handlers, not state.
-    const cookieGated = this.assemble(routes, authMiddleware(this.auth, this.config.trustProxy));
+    const cookieGated = this.assemble(
+      routes,
+      authMiddleware(this.auth, this.config.trustProxy),
+      hosts,
+    );
     const asUser = new Map<string, Hono<AppEnv>>();
     const enteredAs = (userId: string): Hono<AppEnv> => {
       let app = asUser.get(userId);
@@ -99,10 +124,12 @@ export class HttpModule {
     };
   }
 
-  /** The whole surface behind one gate: error handling, logging, body cap, JSON-only writes, the runtime-prefix decline, then every group in order. */
+  /** The whole surface behind one gate: error handling, logging, the hosts that are not the App's, body cap, JSON-only writes, the runtime-prefix decline, then every group in order. */
   private assemble(
     routes: { prefix: string; auth: "user" | "none"; order: number; app: Hono<AppEnv> }[],
     gate: MiddlewareHandler<AppEnv>,
+    /** Hosts answered by an app of their own. None on the socket's surface: a call frame names a path, never a Host. */
+    hosts: HostApp[] = [],
   ): Hono<AppEnv> {
     const errors = this.errors;
     const access = this.access;
@@ -124,6 +151,14 @@ export class HttpModule {
         `${c.req.method} ${c.req.path} ${c.res.status} ${Math.round(performance.now() - start)}ms`,
       );
     });
+    if (hosts.length > 0) {
+      app.use("*", async (c, next) => {
+        const hostname = hostOnly(requestAuthority(c.req.url, c.req.header("host"))).toLowerCase();
+        const host = hosts.find((h) => h.pattern.test(hostname));
+        if (host === undefined) return next();
+        return host.app.fetch(c.req.raw);
+      });
+    }
     let capped: { size: number; mw: MiddlewareHandler } | null = null;
     app.use("/api/*", (c, next) => {
       const size = bodyLimitBytes(this.settings.getAttachmentLimitsMb());

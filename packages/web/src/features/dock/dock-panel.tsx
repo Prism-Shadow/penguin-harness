@@ -34,6 +34,7 @@ import {
 import type { ReactNode } from "react";
 import { S } from "../../lib/strings";
 import {
+  BROWSER_ICON,
   ADD_ICON,
   CloseIcon,
   NAV_ICONS,
@@ -60,6 +61,7 @@ import {
   subscribeTerminalCloseRequests,
 } from "../terminal/terminal-view-pool";
 import type { TerminalInfo } from "../terminal/terminal-view";
+import { forgetBrowserTab, newBrowserTab } from "../browser/browser-tabs";
 import { confirmClose } from "./close-guard";
 import { createShellInDock, detachTerminal, openTerminalInDock } from "./dock-terminal";
 import { DockDragOverlay, dockDropCandidate } from "./dock-drag";
@@ -69,6 +71,7 @@ import {
   DOCK_RATIO_MAX,
   PANEL_KINDS,
   activateTab,
+  addBrowserTab,
   addTerminalTab,
   bottomRatio,
   dockVersion,
@@ -244,11 +247,13 @@ function terminalLabel(info: TerminalInfo | undefined, id: string, ordinal: numb
 function DockPicker({
   choose,
   chooseTerminal,
+  chooseBrowser,
   terminalSupported,
   horizontal,
 }: {
   choose: (kind: PanelKind) => void;
   chooseTerminal: () => void;
+  chooseBrowser: () => void;
   terminalSupported: boolean;
   /** The bottom (and merged) surface lays its choices out in a row, the right one as a list. */
   horizontal: boolean;
@@ -296,6 +301,17 @@ function DockPicker({
             </kbd>
           </button>
         )}
+        <button
+          type="button"
+          data-testid="dock-pick-browser"
+          onClick={chooseBrowser}
+          className={rowClass}
+        >
+          <span className="shrink-0 text-gray-500 dark:text-gray-400">
+            <GlyphIcon d={BROWSER_ICON} size={ICON_SIZE.iconButton} />
+          </span>
+          <span className="min-w-0 flex-1 truncate">{S.browser.title}</span>
+        </button>
         {row("workspace")}
         {row("memory")}
         {row("trace")}
@@ -315,6 +331,11 @@ export interface DockPanelProps {
   panelBadges?: Partial<Record<PanelKind, boolean>>;
   /** Whether the server serves the terminal API at all (an older runtime does not). */
   terminalSupported: boolean;
+  /**
+   * A Browser tab's body. The page's, like the panel bodies: what `localhost` means in a
+   * Browser tab is the machine the conversation's Workspace is on, which the page knows.
+   */
+  renderBrowser: (id: string, active: boolean, onTitle: (title: string) => void) => ReactNode;
   /** False only while the dock collapses on its way out (use-dock-mount keeps it mounted). */
   open?: boolean;
   /** Whether mounting plays the expand transition (false for instant changes — scope switches, moves). */
@@ -326,6 +347,7 @@ export function DockPanel({
   renderPanel,
   panelBadges,
   terminalSupported,
+  renderBrowser,
   open = true,
   animateEntrance = true,
 }: DockPanelProps) {
@@ -346,6 +368,11 @@ export function DockPanel({
   // a close guard (the Files panel's editor holding unsaved text), which asks first: the
   // tab's × is the one gesture here that really unmounts a body.
   const [confirmKill, setConfirmKill] = useState<{ id: string; label: string } | null>(null);
+  /** Page titles the Browser tabs reported, by tab id — the strip's labels. In memory: a title is the page's to say again. */
+  const [browserTitles, setBrowserTitles] = useState<Record<string, string>>({});
+  const setBrowserTitle = useCallback((id: string, title: string) => {
+    setBrowserTitles((titles) => (titles[id] === title ? titles : { ...titles, [id]: title }));
+  }, []);
   const closeTab = useCallback((tab: DockTab, label: string) => {
     if (tab.kind === "terminal") {
       setConfirmKill({ id: tab.terminalId, label });
@@ -353,7 +380,9 @@ export function DockPanel({
     }
     const key = tabKey(tab);
     void confirmClose([key]).then((ok) => {
-      if (ok) removeTab(key);
+      if (!ok) return;
+      removeTab(key);
+      if (tab.kind === "browser") forgetBrowserTab(tab.browserId);
     });
   }, []);
   // Hiding puts the surface away and nothing else — every body stays mounted at zero size —
@@ -618,6 +647,21 @@ export function DockPanel({
           <span className="min-w-0 truncate">{panelLabel(kind)}</span>
         </button>
       ))}
+      <div className="mx-2 my-1 border-t border-gray-100 dark:border-gray-800" />
+      <button
+        type="button"
+        data-testid="dock-add-browser"
+        onClick={() => {
+          setAddOpen(false);
+          addBrowserTab(newBrowserTab(), merged ? undefined : position);
+        }}
+        className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+      >
+        <span className="shrink-0 text-gray-500 dark:text-gray-400">
+          <GlyphIcon d={BROWSER_ICON} size={ICON_SIZE.iconButton} />
+        </span>
+        <span className="min-w-0 truncate">{S.browser.newTab}</span>
+      </button>
       {terminalSupported && (
         <>
           <div className="mx-2 my-1 border-t border-gray-100 dark:border-gray-800" />
@@ -703,6 +747,11 @@ export function DockPanel({
   const overlayActive = headerDrag.active || tabDrag.active;
   const overlayCandidate = headerDrag.active ? headerDrag.candidate : tabDrag.candidate;
 
+  const browserOrdinals = new Map<string, number>();
+  tabs.forEach((tab) => {
+    if (tab.kind === "browser") browserOrdinals.set(tab.browserId, browserOrdinals.size + 1);
+  });
+
   const terminalOrdinals = new Map<string, number>();
   tabs.forEach((tab) => {
     if (tab.kind === "terminal") terminalOrdinals.set(tab.terminalId, terminalOrdinals.size + 1);
@@ -752,6 +801,27 @@ export function DockPanel({
                 closeLabel={S.dock.closeTab}
                 onSelect={() => activateTab(key)}
                 onClose={() => closeTab(tab, panelLabel(tab.panel))}
+              />
+            );
+          }
+          if (tab.kind === "browser") {
+            const title = browserTitles[tab.browserId];
+            const label =
+              title !== undefined && title !== ""
+                ? title
+                : `${S.browser.title} ${browserOrdinals.get(tab.browserId) ?? 1}`;
+            return (
+              <DockTabButton
+                key={key}
+                tabId={key}
+                label={label}
+                title={label}
+                glyph={<GlyphIcon d={BROWSER_ICON} size={ICON_SIZE.inlineGlyph} />}
+                active={key === activeKey}
+                badge={false}
+                closeLabel={S.dock.closeTab}
+                onSelect={() => activateTab(key)}
+                onClose={() => closeTab(tab, label)}
               />
             );
           }
@@ -823,6 +893,7 @@ export function DockPanel({
       <DockPicker
         choose={(kind) => openPanel(kind, merged ? undefined : position)}
         chooseTerminal={() => void openTerminalInDock(merged ? undefined : position)}
+        chooseBrowser={() => addBrowserTab(newBrowserTab(), merged ? undefined : position)}
         terminalSupported={terminalSupported}
         horizontal={horizontal}
       />
@@ -838,6 +909,10 @@ export function DockPanel({
                   collapsed dock should cost nothing while it is away. */}
               {tab.kind === "panel" ? (
                 renderPanel(tab.panel, active && open)
+              ) : tab.kind === "browser" ? (
+                renderBrowser(tab.browserId, active && open, (title) =>
+                  setBrowserTitle(tab.browserId, title),
+                )
               ) : (
                 <TerminalBody id={tab.terminalId} active={active && open} />
               )}
