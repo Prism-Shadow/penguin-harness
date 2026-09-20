@@ -21,6 +21,8 @@ const settings = (companyMode: boolean): ServerSettings => ({
   proxyUrl: null,
   attachmentMaxMb: 100,
   attachmentTotalMb: 500,
+  imageCompression: true,
+  imageCompressionOverMb: 4,
   companyMode,
   browserExtensionsEnabled: true,
   agentApiEnabled: true,

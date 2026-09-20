@@ -6,7 +6,12 @@
  */
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import type { MeResponse, UploadLimits, UserInfo } from "@prismshadow/penguin-server/api";
+import type {
+  MeResponse,
+  UploadLimits,
+  UploadPolicy,
+  UserInfo,
+} from "@prismshadow/penguin-server/api";
 import * as api from "../api/endpoints";
 import { ApiError, setUnauthorizedHandler } from "../api/client";
 import { probeSession } from "../api/session-probe";
@@ -41,6 +46,18 @@ export function loginSessionSurvives(error: unknown): boolean {
   return !(error instanceof ApiError && error.status === 401);
 }
 
+/**
+ * The stand-in for the upload policy, as DEFAULT_UPLOAD_LIMITS is for the limits. A stale value here costs at most one image that was
+ * re-encoded, or not, against the previous setting — the policy shapes what a tab uploads, it
+ * does not decide what the server accepts.
+ */
+const DEFAULT_UPLOAD_POLICY: UploadPolicy = {
+  imageCompression: true,
+  imageCompressionOverMb: 4,
+  imageCompressionMinMb: 1,
+  imageCompressionMaxMb: 64,
+};
+
 interface AuthContextValue {
   /** undefined = initializing; null = not logged in. */
   user: UserInfo | null | undefined;
@@ -71,6 +88,11 @@ interface AuthContextValue {
    * check and the server check can never disagree about what "too large" means.
    */
   uploadLimits: UploadLimits;
+  /**
+   * How this server wants uploads handled (admin-settable). The composer reads it to decide
+   * whether a large image is re-encoded before it is uploaded.
+   */
+  uploadPolicy: UploadPolicy;
   /**
    * Whether company mode is enabled server-wide (the admin master switch in server settings,
    * default off). Off hides the work-mode switch for everyone and 404s every organization
@@ -116,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [desktopMode, setDesktopMode] = useState(false);
   const [sessionVia, setSessionVia] = useState<MeResponse["sessionVia"]>("password");
   const [uploadLimits, setUploadLimits] = useState<UploadLimits>(DEFAULT_UPLOAD_LIMITS);
+  const [uploadPolicy, setUploadPolicy] = useState<UploadPolicy>(DEFAULT_UPLOAD_POLICY);
   // Off until /api/me says otherwise, as it is on a server nobody has turned it on: the mode
   // switch must not flash for a server that has company mode off.
   const [companyMode, setCompanyMode] = useState(false);
@@ -140,6 +163,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setDesktopMode(res.desktopMode);
         setSessionVia(res.sessionVia);
         setUploadLimits(res.uploadLimits);
+        setUploadPolicy(res.uploadPolicy);
+        setUploadPolicy(res.uploadPolicy);
         setCompanyMode(res.companyMode);
       })
       .catch((err: unknown) => {
@@ -194,6 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setDesktopMode(me.desktopMode);
       setSessionVia(me.sessionVia);
       setUploadLimits(me.uploadLimits);
+      setUploadPolicy(me.uploadPolicy);
       setCompanyMode(me.companyMode);
     } catch (e) {
       // Login itself succeeded; adopt the user and keep the optimistic defaults — unless the
@@ -232,6 +258,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         desktopMode,
         sessionVia,
         uploadLimits,
+        uploadPolicy,
         companyMode,
         login,
         logout,

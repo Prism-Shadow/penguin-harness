@@ -23,6 +23,14 @@ export abstract class Settings {
   abstract getAttachmentTotalMb(): number;
   abstract setAttachmentTotalMb(value: number): void;
   abstract getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number };
+  abstract getImageCompression(): boolean;
+  abstract setImageCompression(value: boolean): void;
+  abstract getImageCompressionOverMb(): number;
+  abstract setImageCompressionOverMb(value: number): void;
+  abstract getImageCompressionSettings(): {
+    imageCompression: boolean;
+    imageCompressionOverMb: number;
+  };
   abstract getCompanyMode(): boolean;
   abstract setCompanyMode(value: boolean): void;
   abstract getBrowserExtensionsEnabled(): boolean;
