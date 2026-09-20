@@ -37,8 +37,8 @@ import type {
 } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { INLINE_IMAGE_MAX_BYTES } from "../src/services/attachment-limits.js";
 import {
+  MESSAGING_INBOUND_IMAGE_MAX_BYTES,
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_UNSUPPORTED_NOTICE,
   MESSAGING_TEST_MESSAGE,
@@ -1454,7 +1454,7 @@ describe("telegram binding routes and connector loop", () => {
     // The largest variant, not the thumbnails the Bot API lists first, and under the
     // shared inline-image ceiling (which is also Telegram's own bot download ceiling).
     expect(fake.allFileFetches()).toEqual([
-      { fileId: "full-1280", maxBytes: INLINE_IMAGE_MAX_BYTES, what: "The image" },
+      { fileId: "full-1280", maxBytes: MESSAGING_INBOUND_IMAGE_MAX_BYTES, what: "The image" },
     ]);
   });
 

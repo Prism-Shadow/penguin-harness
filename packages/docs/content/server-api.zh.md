@@ -10,7 +10,7 @@ PenguinHarness 服务器提供一组同源 HTTP API，内置 Web App 和其他�
 - 技术栈：Hono 和 `@hono/node-server`，要求 Node >= 24。
 - 存储：SQLite（内置的 `node:sqlite`，WAL 模式）只保存索引和聚合数据：用户、认证会话、Project 授权、Agent 与 Session 索引、用量、UI 偏好、错误记录和定时任务状态。所有 Agent、Trace 和 Workspace 数据都以文件形式存放在 `~/.penguin/data` 下，与 CLI 和 SDK 共享；参见[配置参考](/configuration)。
 - 绑定地址：默认 `127.0.0.1:7364`，可通过 `PORT` / `HOST` 环境变量调整。
-- 请求体：写操作只接受 JSON，检查 Content-Type 是防 CSRF 的手段之一。请求体大小上限并非固定值，而是由附件额度推导出来的。附件以 base64 `data:` URL 的形式随请求传输，体积会膨胀 4/3，所以上限按 `base64(attachmentTotalMb)` 计算，再为一张内嵌图片和 JSON 封装留出余量。按默认 120MB 的总量计，约为 190MB；管理员调低总量，上限也会随之下降。服务器边读请求体边统计字节数，因此不声明长度（chunked）的请求同样受此限制。
+- 请求体：写操作只接受 JSON，检查 Content-Type 是防 CSRF 的手段之一。请求体体积不设上限。唯一的天花板来自平台本身：请求体在交给 `JSON.parse` 之前会被解码成一个字符串，而 V8 对字符串长度的上限约为 512MB，超出者返回 `413` `payload_too_large`，报出的是那个天花板，而不是本服务自定的数字。`/api/hmr` 接收 gzip 请求体，并把**解压后**的体积限制在同一个天花板——否则一小段 gzip 就能决定这个进程分配多少内存。
 - 所有错误共用同一种结构：
 
 ```text
@@ -110,7 +110,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, imageCompression, imageCompressionOverMb, companyMode}}` |
+| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, imageCompression, imageCompressionOverMb, companyMode}}` |
 | PUT | `/api/admin/settings` | 更新设置；省略的字段保持当前值，任何字段非法都会拒绝整个 PUT。返回更新后的完整设置 |
 | GET | `/api/admin/settings/proxy-probe` | 可达性探测的目标：`{targets: [{provider, url}]}`。不发起任何请求 |
 | POST | `/api/admin/settings/proxy-probe/:provider` | 经服务器的出站链路探测其中一个目标，不发送任何凭证：`{probe: {provider, url, outcome, ms, status?}}` |
@@ -143,18 +143,11 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ### 附件上限
 
-输入框中的文件附件由两个以整数 MB 为单位的值控制。两者都从下一个请求起生效，无需重启，因为校验逻辑和请求体上限在每次请求时都会读取它们。
+没有了。文件附件写入 Session scratchpad，模型通过自己那套有界的文件工具按路径打开，上传之后没有任何环节的开销随文件体积增长——唯一的天花板是这套 API 能解码多大的请求体（见[请求体](#请求体)）。
 
-- `attachmentMaxMb`（默认 100）是单个文件的大小上限，超过则返回 `413` `file_too_large`。
-- `attachmentTotalMb`（默认 120）是单条消息解码后字节总数的上限，超过则返回 `413` `payload_too_large`。
+只剩下一项限制，而且它约束的不是字节：一条消息最多携带 20 个文件（`413` `too_many_files`）。它约束的是一条消息能**点名**多少文件——同一个目录里那么多次顺序写入、同一条消息上那么多行标记——这是传输天花板管不到的。该项不可配置，`GET /api/me` 在 `uploadPolicy` 中返回它。
 
-PUT 按如下规则校验：
-
-- 两者都必须是 1–200 之间的整数。
-- 生效的总量（本次 PUT 传入的值；若本次未修改，则为已存储的值）不得低于生效的单文件上限。
-- 其余情况返回 `400`，错误码为 `invalid_attachment_limit`，且这次 PUT 不会写入任何内容。
-
-有两项限制不可更改：每条消息的文件数量上限（20）和内嵌图片上限（20MB，超限返回 `413` `image_too_large`）。内嵌图片会写入 Trace，之后每次分页加载历史、每次恢复会话都要重新读取，因此刻意不随附件上限一同调大。`GET /api/me` 会在 `uploadLimits` 中返回上述全部限制，客户端发送文件前可以先对照实际生效的限制检查文件。
+通过 Workspace 文件接口上传是另一回事，仍保留各自的 `file_too_large`。
 
 ### 图片压缩
 
@@ -164,7 +157,7 @@ PUT 按如下规则校验：
 - `imageCompressionOverMb`（默认 4）是触发重新编码的体积。小于它的图片按原样上传；动图与矢量图（GIF、SVG）同样不作处理——经过 canvas 往返它们会变成另一张图。
 - PUT 校验阈值为 1–64 之间的整数。其余情况返回 `400`，错误码为 `invalid_image_compression`，且这次 PUT 不会写入任何内容。
 
-`GET /api/me` 在 `uploadPolicy` 中返回二者，并附带阈值的取值范围。该策略塑造客户端上传什么，本身不是关卡：忽略它的 API 调用方不会被拒绝，只是自行承担完整体积。上面的附件上限对上传的内容一律适用，压缩与否都一样。
+`GET /api/me` 在 `uploadPolicy` 中返回二者，并附带阈值的取值范围。该策略塑造客户端上传什么，本身不是关卡：忽略它的 API 调用方不会被拒绝，只是自行承担完整体积。
 
 ### 公司模式开关
 
@@ -748,11 +741,10 @@ interface TaskCreateRequest {
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs, ≤20MB (413 image_too_large)
-  // File attachment: base64 data: URL, by default ≤100MB each (413 file_too_large beyond that),
-  // at most 20 per request and 120MB of decoded bytes in total (413 too_many_files /
-  // payload_too_large; all three are checked before anything is written). The two sizes are
-  // admin-settable (PUT /api/admin/settings) and reported by GET /api/me. The server writes it into the Session
+  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs (no size limit of their own)
+  // File attachment: base64 data: URL, no per-file size limit, at most 20 per request
+  // (413 too_many_files, checked before anything is written); the request as a whole still
+  // has to be one this API can decode. The server writes it into the Session
   // scratchpad and appends an `[attached file: <path>]` line to the message text — the model
   // opens the file by path. `fileName` carries no path separators; on disk it keeps its own
   // words (`报告 2026.pdf` → `报告-2026.pdf`: non-ASCII survives, shell-hostile ASCII becomes

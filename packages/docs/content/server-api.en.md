@@ -10,7 +10,7 @@ The PenguinHarness server exposes a same-origin HTTP API that the bundled Web Ap
 - Stack: Hono and `@hono/node-server`; requires Node >= 24.
 - Storage: SQLite (the built-in `node:sqlite`, in WAL mode) holds only indexes and aggregates: users, auth sessions, Project authorization, agent and Session indexes, usage, UI preferences, error records and schedule state. All agent, Trace and Workspace data stays as files under `~/.penguin/data`, shared with the CLI and SDK; see the [Configuration Reference](/configuration).
 - Binding: `127.0.0.1:7364` by default, adjustable with the `PORT` / `HOST` environment variables.
-- Request bodies: writes accept JSON only; the Content-Type check is one of the CSRF defenses. The body size cap is derived from the attachment budget rather than fixed. Attachments travel in the request as base64 `data:` URLs, which inflate them by 4/3, so the cap is `base64(attachmentTotalMb)` plus headroom for one inline image and the JSON framing. That is about 190MB at the default 120MB total, and the cap drops again if an admin lowers the total. The server counts bytes as it reads the body, so a request that declares no length (chunked) is capped the same way.
+- Request bodies: writes accept JSON only; the Content-Type check is one of the CSRF defenses. Nothing caps their size. The only ceiling is the platform's own: the body is decoded into one string before `JSON.parse` sees it, and V8 caps a string near 512MB, so a larger body answers `413` `payload_too_large` naming that ceiling rather than a number this server chose. `/api/hmr` takes a gzip body and bounds what it *inflates* to at the same ceiling — without that, a small gzip would decide how much memory the process allocates.
 - Errors share one shape:
 
 ```text
@@ -110,7 +110,7 @@ Server-wide proxy, attachment and company-mode settings.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, imageCompression, imageCompressionOverMb, companyMode}}` |
+| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, imageCompression, imageCompressionOverMb, companyMode}}` |
 | PUT | `/api/admin/settings` | Updates settings; omitted fields keep their current value, and an invalid field rejects the whole PUT. Returns the full updated settings |
 | GET | `/api/admin/settings/proxy-probe` | The reachability probe's targets: `{targets: [{provider, url}]}`. Makes no request |
 | POST | `/api/admin/settings/proxy-probe/:provider` | Probes one target over the server's outbound path, sending no credential: `{probe: {provider, url, outcome, ms, status?}}` |
@@ -143,18 +143,11 @@ In every on-state, the effective `NO_PROXY` includes `localhost,127.0.0.1,::1`, 
 
 ### Attachment limits
 
-Two whole-MB integers govern file attachments in the composer. Both apply from the next request with no restart, because the validators and the body cap read them on every request.
+There are none. A file attachment goes to the Session scratchpad and the model opens it by path through its own bounded file tools, so nothing downstream of the upload scales with the file's size — the only ceiling is what the API can decode (see [Request bodies](#request-bodies)).
 
-- `attachmentMaxMb` (default 100) is the per-file cap. A larger file returns `413` `file_too_large`.
-- `attachmentTotalMb` (default 120) is the per-message total of decoded bytes. A larger total returns `413` `payload_too_large`.
+One limit remains, and it is not about bytes: a message may carry at most 20 files (`413` `too_many_files`). It bounds how many files one message can NAME — that many sequential writes into one directory and that many marker lines on one message — which the transport ceiling does not. It is not admin-settable, and `GET /api/me` reports it under `uploadPolicy`.
 
-PUT validates them as follows:
-
-- Each must be an integer from 1 to 200.
-- The effective total (the value in this PUT, or the stored one if this PUT does not change it) must not be below the effective per-file cap.
-- Anything else returns `400` with code `invalid_attachment_limit`, and the rejected PUT writes nothing.
-
-Two limits cannot be changed: the number of files per message (20) and the inline-image cap (20MB, `413` `image_too_large`). An inline image is written into the Trace and read again on every history page and every resume, so it deliberately does not follow the attachment cap upward. `GET /api/me` reports all of these limits under `uploadLimits`, so a client can check a file against the limits actually in force before sending it.
+Uploads through the Workspace file endpoints are a different transaction and keep their own `file_too_large`.
 
 ### Image compression
 
@@ -164,7 +157,7 @@ A limit is what the server refuses; this is what the Web App is asked to do befo
 - `imageCompressionOverMb` (default 4) is the size above which an image is re-encoded. A smaller one is uploaded byte-for-byte, and so is any animated or vector image (GIF, SVG), which a canvas round trip would turn into a different picture.
 - PUT validates the threshold as an integer from 1 to 64. Anything else returns `400` with code `invalid_image_compression`, and the rejected PUT writes nothing.
 
-`GET /api/me` reports both under `uploadPolicy`, together with the range the threshold may be set to. The policy shapes what a client uploads; it gates nothing, and an API client that ignores it is not refused — it simply pays the full size itself. The attachment limits above still apply to whatever is uploaded, compressed or not.
+`GET /api/me` reports both under `uploadPolicy`, together with the range the threshold may be set to. The policy shapes what a client uploads; it gates nothing, and an API client that ignores it is not refused — it simply pays the full size itself. 
 
 ### Company mode switch
 
@@ -748,11 +741,10 @@ interface TaskCreateRequest {
 }
 type TaskInputPart =
   | { type: "text"; text: string }
-  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs, ≤20MB (413 image_too_large)
-  // File attachment: base64 data: URL, by default ≤100MB each (413 file_too_large beyond that),
-  // at most 20 per request and 120MB of decoded bytes in total (413 too_many_files /
-  // payload_too_large; all three are checked before anything is written). The two sizes are
-  // admin-settable (PUT /api/admin/settings) and reported by GET /api/me. The server writes it into the Session
+  | { type: "image_url"; imageUrl: string }    // pasted images arrive as data URLs (no size limit of their own)
+  // File attachment: base64 data: URL, no per-file size limit, at most 20 per request
+  // (413 too_many_files, checked before anything is written); the request as a whole still
+  // has to be one this API can decode. The server writes it into the Session
   // scratchpad and appends an `[attached file: <path>]` line to the message text — the model
   // opens the file by path. `fileName` carries no path separators; on disk it keeps its own
   // words (`报告 2026.pdf` → `报告-2026.pdf`: non-ASCII survives, shell-hostile ASCII becomes

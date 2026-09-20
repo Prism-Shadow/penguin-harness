@@ -20,8 +20,6 @@ const settings = (companyMode: boolean): ServerSettings => ({
   proxyForApp: true,
   proxyForAgent: true,
   proxyUrl: null,
-  attachmentMaxMb: 100,
-  attachmentTotalMb: 500,
   imageCompression: true,
   imageCompressionOverMb: 4,
   companyMode,

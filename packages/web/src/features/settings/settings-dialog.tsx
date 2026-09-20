@@ -53,8 +53,8 @@ const SECTION_ICONS: Record<SettingsSectionKey, string> = {
 };
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  // uploadLimits feeds the Upload limits page's "?" (sectionInfo below); the rest pick pages.
-  const { user, desktopMode, sessionVia, uploadLimits } = useAuth();
+  // uploadPolicy feeds the Uploads page's "?" (sectionInfo below); the rest pick pages.
+  const { user, desktopMode, sessionVia, uploadPolicy } = useAuth();
   const sections = visibleSettingsSections({
     isAdmin: user?.isAdmin === true,
     desktopMode,
@@ -91,7 +91,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   // Pages whose rows explain themselves one by one carry none.
   const sectionInfo: Partial<Record<SettingsSectionKey, string>> = {
     proxy: S.settings.proxyInfo,
-    uploads: S.settings.uploadLimitsInfo(uploadLimits.attachmentMaxCount, uploadLimits.imageMaxMb),
+    uploads: S.settings.uploadsInfo(uploadPolicy.attachmentMaxCount),
     company: S.settings.companyModeServerInfo,
   };
 

@@ -40,12 +40,7 @@ export interface MeRouteDeps {
 }
 import { resolvePreviewTarget } from "../../services/preview-token.js";
 import { validateDraftShortcuts } from "../../services/draft-shortcuts.js";
-import {
-  INLINE_IMAGE_MAX_MB,
-  MAX_ATTACHMENT_COUNT,
-  MAX_ATTACHMENT_MB,
-  MIN_ATTACHMENT_MB,
-} from "../../services/attachment-limits.js";
+import { MAX_ATTACHMENT_COUNT } from "../../services/task-attachments.js";
 import {
   MAX_IMAGE_COMPRESSION_OVER_MB,
   MIN_IMAGE_COMPRESSION_OVER_MB,
@@ -142,14 +137,8 @@ export function meRoutes(deps: MeRouteDeps): Hono<AppEnv> {
       previewIsolated: target !== null,
       desktopMode: deps.desktop !== null,
       sessionVia: c.var.sessionVia,
-      uploadLimits: {
-        ...deps.serverSettingsRepo.getAttachmentLimitsMb(),
-        attachmentMaxCount: MAX_ATTACHMENT_COUNT,
-        imageMaxMb: INLINE_IMAGE_MAX_MB,
-        attachmentLimitMinMb: MIN_ATTACHMENT_MB,
-        attachmentLimitMaxMb: MAX_ATTACHMENT_MB,
-      },
       uploadPolicy: {
+        attachmentMaxCount: MAX_ATTACHMENT_COUNT,
         ...deps.serverSettingsRepo.getImageCompressionSettings(),
         imageCompressionMinMb: MIN_IMAGE_COMPRESSION_OVER_MB,
         imageCompressionMaxMb: MAX_IMAGE_COMPRESSION_OVER_MB,

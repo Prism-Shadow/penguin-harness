@@ -2,15 +2,14 @@
  * Admin server-settings routes (admin only, 403 for non-admins):
  * GET|PUT /api/admin/settings — the server-global settings stored in server_settings:
  * the proxy settings (the "application uses the proxy" and "agent environment uses the
- * proxy" switches and their shared explicit address), the upload limits (the
- * per-file and per-message attachment caps, in whole MB) and the upload policy (the
- * automatic image-compression switch and the size above which it applies).
+ * proxy" switches and their shared explicit address) and the upload policy (the automatic
+ * image-compression switch and the size above which it applies).
  * A PUT applies immediately: everything is validated first (a rejected request writes
  * nothing), then the persisted values are written, then the process dispatcher is
  * rebuilt so new outbound connections follow the change without a restart (the agent
  * switch needs no push — the command-subprocess policy getter re-reads the repo at
- * every spawn). The upload limits need no push either, for the same reason: the
- * attachment validators and the request body cap both read the repo per request.
+ * every spawn). The upload policy needs no push either: a composer reads it from
+ * `/api/me`, which reads the repo per request.
  *
  * GET /api/admin/settings/proxy-probe names the model provider hosts the reachability probe
  * would request; POST .../proxy-probe/:provider measures one of them — unauthenticated, see
@@ -33,7 +32,6 @@ export interface AdminSettingsRouteDeps {
   serverSettingsRepo: Settings;
 }
 import { applyProxySettings, normalizeProxyUrl } from "../../net/proxy.js";
-import { MAX_ATTACHMENT_MB, MIN_ATTACHMENT_MB } from "../../services/attachment-limits.js";
 import {
   MAX_IMAGE_COMPRESSION_OVER_MB,
   MIN_IMAGE_COMPRESSION_OVER_MB,
@@ -65,26 +63,9 @@ function parseProxyUrl(value: unknown): string | null {
 }
 
 /**
- * An attachment limit update value -> stored whole-MB integer. Everything outside the supported
- * range is refused with one dedicated code the Web App renders under the field — the range is the
- * point of the setting (an admin typing 100GB must be told no, not obeyed), so the failure has to
- * be legible rather than a generic `bad_request`.
- */
-function parseAttachmentMb(value: unknown, field: string): number {
-  if (typeof value === "number" && Number.isInteger(value)) {
-    if (value >= MIN_ATTACHMENT_MB && value <= MAX_ATTACHMENT_MB) return value;
-  }
-  throw new HttpError(
-    400,
-    "invalid_attachment_limit",
-    `${field} must be a whole number of MB between ${MIN_ATTACHMENT_MB} and ${MAX_ATTACHMENT_MB}.`,
-  );
-}
-
-/**
  * A compression-threshold update value -> stored whole-MB integer. Out of range is refused with
- * its own code for the same reason the attachment limits have one: an admin typing 100GB into a
- * MB field has made a legible mistake and deserves a legible answer, not a generic `bad_request`.
+ * its own code rather than a generic `bad_request`: an admin typing 100GB into a MB field has
+ * made a legible mistake and deserves a legible answer.
  */
 function parseImageCompressionMb(value: unknown): number {
   if (typeof value === "number" && Number.isInteger(value)) {
@@ -114,7 +95,6 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
       proxyForApp: deps.serverSettingsRepo.getProxyForApp(),
       proxyForAgent: deps.serverSettingsRepo.getProxyForAgent(),
       proxyUrl: deps.serverSettingsRepo.getProxyUrl(),
-      ...deps.serverSettingsRepo.getAttachmentLimitsMb(),
       ...deps.serverSettingsRepo.getImageCompressionSettings(),
       companyMode: deps.serverSettingsRepo.getCompanyMode(),
     },
@@ -131,48 +111,22 @@ export function adminSettingsRoutes(deps: AdminSettingsRouteDeps): Hono<AppEnv> 
     const companyMode = optionalBoolean(body, "companyMode");
     const proxyUrlProvided = body.proxyUrl !== undefined;
     const proxyUrl = proxyUrlProvided ? parseProxyUrl(body.proxyUrl) : null;
-    const attachmentMaxMb =
-      body.attachmentMaxMb === undefined
-        ? undefined
-        : parseAttachmentMb(body.attachmentMaxMb, "attachmentMaxMb");
-    const attachmentTotalMb =
-      body.attachmentTotalMb === undefined
-        ? undefined
-        : parseAttachmentMb(body.attachmentTotalMb, "attachmentTotalMb");
     const imageCompression = optionalBoolean(body, "imageCompression");
     const imageCompressionOverMb =
       body.imageCompressionOverMb === undefined
         ? undefined
         : parseImageCompressionMb(body.imageCompressionOverMb);
-    // The pair is only meaningful together, so the relation is checked against the EFFECTIVE
-    // post-write values: a PUT that raises only the per-file cap must be refused when the stored
-    // total would leave a legal single attachment unsendable, and one that lowers only the total
-    // must be refused for the same reason. Checked before any write, like every other field.
-    const stored = deps.serverSettingsRepo.getAttachmentLimitsMb();
-    const effectiveMax = attachmentMaxMb ?? stored.attachmentMaxMb;
-    const effectiveTotal = attachmentTotalMb ?? stored.attachmentTotalMb;
-    if (effectiveTotal < effectiveMax) {
-      throw new HttpError(
-        400,
-        "invalid_attachment_limit",
-        `attachmentTotalMb (${effectiveTotal}) must not be below attachmentMaxMb (${effectiveMax}).`,
-      );
-    }
     // Read per tick by the organization scheduler and per request by the organization routes, so
     // flipping it needs no restart: off holds every automatic trigger and 404s the routes.
     if (companyMode !== undefined) deps.serverSettingsRepo.setCompanyMode(companyMode);
     if (proxyForApp !== undefined) deps.serverSettingsRepo.setProxyForApp(proxyForApp);
     if (proxyForAgent !== undefined) deps.serverSettingsRepo.setProxyForAgent(proxyForAgent);
     if (proxyUrlProvided) deps.serverSettingsRepo.setProxyUrl(proxyUrl);
-    if (attachmentMaxMb !== undefined) deps.serverSettingsRepo.setAttachmentMaxMb(attachmentMaxMb);
     if (imageCompression !== undefined) {
       deps.serverSettingsRepo.setImageCompression(imageCompression);
     }
     if (imageCompressionOverMb !== undefined) {
       deps.serverSettingsRepo.setImageCompressionOverMb(imageCompressionOverMb);
-    }
-    if (attachmentTotalMb !== undefined) {
-      deps.serverSettingsRepo.setAttachmentTotalMb(attachmentTotalMb);
     }
     // Mirror the app switch + address into the process: rebuilds the global fetch
     // dispatcher (live change, no restart; a no-op when nothing effectively changed).

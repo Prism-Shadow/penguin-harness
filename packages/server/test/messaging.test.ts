@@ -43,9 +43,10 @@ import type { ApproveFn, OmniMessage } from "@prismshadow/penguin-core";
 import type { FeishuBindingResponse, FeishuTestResponse } from "../src/api/types.js";
 import type { SessionRow } from "../src/db/repos/sessions.js";
 import type { RuntimeSession } from "../src/runtime/session-manager.js";
-import { INLINE_IMAGE_MAX_BYTES, toAttachmentLimits } from "../src/services/attachment-limits.js";
 import { MESSAGE_MAX } from "../src/runtime/error-recorder.js";
 import {
+  MESSAGING_INBOUND_FILE_MAX_BYTES,
+  MESSAGING_INBOUND_IMAGE_MAX_BYTES,
   MESSAGING_APPROVAL_NOTICE,
   MESSAGING_MAX_LINE_MESSAGES,
   MESSAGING_OUTBOUND_FILE_MAX_BYTES,
@@ -925,7 +926,6 @@ describe("messaging binding routes and bridge", () => {
       sessions: t.deps.sessionsRepo,
       files: t.deps.workspaceFiles,
       root: t.root,
-      attachmentLimits: () => toAttachmentLimits(t.deps.serverSettingsRepo.getAttachmentLimitsMb()),
       channels: t.deps.channels,
       runner,
       connectors: [new FeishuConnector(fake)],
@@ -1886,7 +1886,7 @@ describe("messaging binding routes and bridge", () => {
     expect(part.image_url).toBe(`data:image/png;base64,${IMAGE_BYTES.toString("base64")}`);
     // Downloaded from the message that carried it, under the shared inline-image ceiling.
     expect(fake.allImageFetches()).toEqual([
-      { messageId: "om_img_1", fileKey: "img_v2_abc", maxBytes: INLINE_IMAGE_MAX_BYTES },
+      { messageId: "om_img_1", fileKey: "img_v2_abc", maxBytes: MESSAGING_INBOUND_IMAGE_MAX_BYTES },
     ]);
     // Nothing about the picture is announced back to the chat; the reply mirrors as usual.
     await waitFor(() => fake.allSends().length > 0);
@@ -1926,7 +1926,7 @@ describe("messaging binding routes and bridge", () => {
     await bindEnabled(SID);
     // One byte past the ceiling: the cap refuses it, and the user fixes that by sending
     // something smaller — a different notice from a failure, and nobody's fault.
-    fake.imageBytes = Buffer.alloc(INLINE_IMAGE_MAX_BYTES + 1, 0x41);
+    fake.imageBytes = Buffer.alloc(MESSAGING_INBOUND_IMAGE_MAX_BYTES + 1, 0x41);
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
       chatType: "p2p",
@@ -2079,7 +2079,7 @@ describe("messaging binding routes and bridge", () => {
       {
         messageId: "om_file_1",
         fileKey: "file_v3_abc",
-        maxBytes: toAttachmentLimits(t.deps.serverSettingsRepo.getAttachmentLimitsMb()).maxBytes,
+        maxBytes: MESSAGING_INBOUND_FILE_MAX_BYTES,
       },
     ]);
     // Nothing about the file is announced back to the chat; the reply mirrors as usual.
@@ -2089,8 +2089,7 @@ describe("messaging binding routes and bridge", () => {
 
   it("a file over the per-file cap says so by name, with the limit, and is not an error record", async () => {
     await bindEnabled(SID);
-    const limits = toAttachmentLimits(t.deps.serverSettingsRepo.getAttachmentLimitsMb());
-    fake.fileBytes = Buffer.alloc(limits.maxBytes + 1, 0x41);
+    fake.fileBytes = Buffer.alloc(MESSAGING_INBOUND_FILE_MAX_BYTES + 1, 0x41);
     await fake.lastConnection().fire({
       chatId: "oc_chat_1",
       chatType: "p2p",
@@ -2100,7 +2099,7 @@ describe("messaging binding routes and bridge", () => {
     });
     await waitFor(() => fake.allSends().length > 0);
     expect(fake.allTexts().at(-1)!.text).toBe(
-      messagingInboundFileTooLargeNotice("dump.bin", limits.maxBytes),
+      messagingInboundFileTooLargeNotice("dump.bin", MESSAGING_INBOUND_FILE_MAX_BYTES),
     );
     // The name is in the notice: a message may carry several, and "that file" leaves the
     // sender guessing which one to shrink.
@@ -3644,7 +3643,7 @@ describe("a message carrying several files", () => {
   let release: (() => void) | null;
 
   /** Small enough to overrun with a few bytes: the real defaults are 100MB and 120MB. */
-  const LIMITS = { maxBytes: 40, totalBytes: 60, maxCount: 20 };
+  const LIMITS = { maxBytes: 40, totalBytes: 60 };
 
   /** One file handle over fixed bytes, recording the cap it was offered. */
   const fileOf = (fileName: string, bytes: Buffer): MessagingInboundFile => ({
@@ -3731,7 +3730,8 @@ describe("a message carrying several files", () => {
       sessions: t.deps.sessionsRepo,
       files: t.deps.workspaceFiles,
       root: t.root,
-      attachmentLimits: () => LIMITS,
+      inboundFileMaxBytes: LIMITS.maxBytes,
+      inboundFileBudgetBytes: LIMITS.totalBytes,
       channels: t.deps.channels,
       runner: t.deps.manager,
       connectors: [connector],

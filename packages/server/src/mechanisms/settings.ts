@@ -13,11 +13,6 @@ export abstract class Settings extends Interface<{
   setProxyForAgent(value: boolean): void;
   getProxyUrl(): string | null;
   setProxyUrl(value: string | null): void;
-  getAttachmentMaxMb(): number;
-  setAttachmentMaxMb(value: number): void;
-  getAttachmentTotalMb(): number;
-  setAttachmentTotalMb(value: number): void;
-  getAttachmentLimitsMb(): { attachmentMaxMb: number; attachmentTotalMb: number };
   getImageCompression(): boolean;
   setImageCompression(value: boolean): void;
   getImageCompressionOverMb(): number;
