@@ -3,7 +3,7 @@
 - **Date:** 2026-09-19
 - **Type:** refactor
 - **Scope:** `server`
-- **PR:** [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3), [#9](https://github.com/nicolaepocroianu/penguin-harness/pull/9), [#15](https://github.com/nicolaepocroianu/penguin-harness/pull/15), [#16](https://github.com/nicolaepocroianu/penguin-harness/pull/16), [#20](https://github.com/nicolaepocroianu/penguin-harness/pull/20)
+- **PR:** [#3](https://github.com/nicolaepocroianu/penguin-harness/pull/3), [#9](https://github.com/nicolaepocroianu/penguin-harness/pull/9), [#15](https://github.com/nicolaepocroianu/penguin-harness/pull/15), [#16](https://github.com/nicolaepocroianu/penguin-harness/pull/16), [#20](https://github.com/nicolaepocroianu/penguin-harness/pull/20), [#21](https://github.com/nicolaepocroianu/penguin-harness/pull/21)
 
 Migration 12 moved existing candidate text from activity run JSON into a separate payload table and retained compact history metadata, without resetting drafts or run history.
 
@@ -38,3 +38,9 @@ Migration 15 adds an image-run identity table without rewriting existing attempt
 Accepted images add optional `generatedImage` provenance to draft media assets; immutable PNG candidates live with the activity draft. Existing plans remain valid without this field. Native WAF exports omit Penguin's provenance and preserve the accepted PNG bytes. Restore a pre-image-generation backup before running an older writer against drafts containing generated images.
 
 Repository maintainers retain migration 15 until schema versions below 15 cease to be supported. The optional provenance field remains permanently for activities using generated images.
+
+## Media text suggestion storage
+
+Migration 16 adds a media-text-run identity table without rewriting prior attempts or drafts. Restart the server to apply it. Rollback refuses databases containing media text attempts because older collectors would interpret them as specification attempts. Restore a pre-upgrade backup before downgrading a database with media text history.
+
+Accepted suggestions use the existing media manifest description and script fields. No additional draft format was introduced, and accepted media files were preserved. Repository maintainers retain migration 16 until schema versions below 16 cease to be supported.

@@ -4,8 +4,9 @@ import { Button } from "../../components/ui/button";
 import { Input, Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { S } from "../../lib/strings";
-import { toneSurface } from "../../lib/tone";
+import { toneInk, toneSurface } from "../../lib/tone";
 import { ImagePreview } from "./image-preview";
+import { MediaTextReview } from "./media-text-review";
 
 export function MediaWorkbench({
   manifest,
@@ -24,6 +25,8 @@ export function MediaWorkbench({
   onGenerateImage,
   onAcceptAudio,
   onAcceptImage,
+  onGenerateText,
+  onAcceptText,
 }: {
   manifest: AssetManifest;
   runs: ActivityRunSummary[];
@@ -41,6 +44,8 @@ export function MediaWorkbench({
   onGenerateImage: (language: string, assetKey: string) => void;
   onAcceptAudio: (runId: string) => void;
   onAcceptImage: (runId: string) => void;
+  onGenerateText: (language: string, assetKey: string) => void;
+  onAcceptText: (runId: string) => void;
 }) {
   const [languageChoice, setLanguage] = useState("");
   const [kind, setKind] = useState("all");
@@ -81,6 +86,15 @@ export function MediaWorkbench({
       run.image?.language === language &&
       run.image?.assetKey === asset?.key,
   );
+  const textCandidates = runs.filter(
+    (run) =>
+      run.kind === "media-text" &&
+      run.mediaText?.language === language &&
+      run.mediaText?.assetKey === asset?.key &&
+      run.mediaText?.type === asset?.type,
+  );
+  const acceptedImage = runs.find((run) => run.runId === asset?.generatedImage?.runId)?.image;
+  const acceptedAudio = runs.find((run) => run.runId === asset?.generatedAudio?.runId)?.audio;
   return (
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -160,6 +174,15 @@ export function MediaWorkbench({
             ) : (
               <p className="whitespace-pre-wrap break-words text-sm">{asset.description}</p>
             )}
+            {asset.type === "image" && editable && (
+              <Button
+                size="sm"
+                disabled={!canGenerate}
+                onClick={() => onGenerateText(language, asset.key)}
+              >
+                {S.activities.improveImagePrompt}
+              </Button>
+            )}
             {asset.type === "image" &&
               editable &&
               !asset.generatedImage &&
@@ -173,6 +196,9 @@ export function MediaWorkbench({
             {asset.type === "image" && asset.generatedImage && (
               <section className="space-y-1" aria-label={S.activities.acceptedImage}>
                 <p className="text-xs font-medium">{S.activities.acceptedImage}</p>
+                {acceptedImage && acceptedImage.prompt !== asset.description && (
+                  <p className={`text-xs ${toneInk.attention}`}>{S.activities.mediaTextChanged}</p>
+                )}
                 <ImagePreview
                   key={`${endpoint}/${asset.generatedImage.runId}`}
                   src={generatedImageUrl(asset.generatedImage.runId)}
@@ -218,9 +244,23 @@ export function MediaWorkbench({
                     })
                   }
                 />
+                {editable && (
+                  <Button
+                    size="sm"
+                    disabled={!canGenerate}
+                    onClick={() => onGenerateText(language, asset.key)}
+                  >
+                    {S.activities.improveNarration}
+                  </Button>
+                )}
                 {asset.generatedAudio && (
                   <div className="space-y-1">
                     <p className="text-xs font-medium">{S.activities.acceptedAudio}</p>
+                    {acceptedAudio && acceptedAudio.script !== asset.script && (
+                      <p className={`text-xs ${toneInk.attention}`}>
+                        {S.activities.mediaTextChanged}
+                      </p>
+                    )}
                     <audio
                       key={asset.generatedAudio.runId}
                       aria-label={S.activities.acceptedAudio}
@@ -354,6 +394,42 @@ export function MediaWorkbench({
                         {run.inputRevision !== revision &&
                           run.runId !== asset.generatedImage?.runId && (
                             <p className="text-xs text-gray-500">{S.activities.olderImage}</p>
+                          )}
+                      </div>
+                    ))}
+                  </section>
+                )}
+              </>
+            )}
+            {(asset.type === "image" || asset.type === "audio") && (
+              <>
+                {textCandidates.length > 0 && (
+                  <section className="space-y-3" aria-label={S.activities.textCandidates}>
+                    <h5 className="text-xs font-semibold">{S.activities.textCandidates}</h5>
+                    {textCandidates.map((run) => (
+                      <div
+                        key={run.runId}
+                        className="space-y-2 border-t border-gray-200 pt-3 dark:border-gray-800"
+                      >
+                        <p className="text-xs">
+                          {new Date(run.createdAt).toLocaleString()} ·{" "}
+                          {S.activities.speechStatus[run.status]}
+                        </p>
+                        {run.error && <p className="break-words text-xs">{run.error}</p>}
+                        {run.hasCandidate &&
+                          (run.status === "succeeded" || run.status === "conflict") && (
+                            <MediaTextReview
+                              key={`${endpoint}/${run.runId}`}
+                              endpoint={`${endpoint}/runs/${encodeURIComponent(run.runId)}/candidate`}
+                              target={run.mediaText!}
+                              currentText={
+                                asset.type === "image" ? asset.description : (asset.script ?? "")
+                              }
+                              stale={run.inputRevision !== revision}
+                              editable={editable && run.status === "succeeded"}
+                              canAccept={canAccept && run.inputRevision === revision}
+                              onAccept={() => onAcceptText(run.runId)}
+                            />
                           )}
                       </div>
                     ))}

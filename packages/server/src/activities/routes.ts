@@ -92,6 +92,24 @@ export class ActivityRoutes {
         202,
       );
     });
+    app.post("/:activityId/generate-media-text", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.generation.start(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          requireString(body, "agentId", { minLen: 1, maxLen: 128 }),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+          {
+            mediaText: {
+              language: requireString(body, "language", { minLen: 5, maxLen: 5 }),
+              assetKey: requireString(body, "assetKey", { minLen: 1, maxLen: 128 }),
+            },
+          },
+        ),
+        202,
+      );
+    });
     app.get("/:activityId/runs/:runId/image", async (c) => {
       const bytes = await this.generation.imageCandidateContent(
         requireValidId(c, "projectId"),
@@ -113,6 +131,17 @@ export class ActivityRoutes {
       const body = await readJson(c);
       return c.json(
         await this.generation.acceptImage(
+          requireValidId(c, "projectId"),
+          pathParam(c, "activityId"),
+          pathParam(c, "runId"),
+          requireString(body, "expectedRevision", { minLen: 1, maxLen: 128 }),
+        ),
+      );
+    });
+    app.post("/:activityId/runs/:runId/accept-media-text", async (c) => {
+      const body = await readJson(c);
+      return c.json(
+        await this.generation.acceptMediaText(
           requireValidId(c, "projectId"),
           pathParam(c, "activityId"),
           pathParam(c, "runId"),

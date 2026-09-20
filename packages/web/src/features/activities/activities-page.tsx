@@ -656,6 +656,7 @@ function ActivityEditor({
             <p>{S.activities.mediaHelp}</p>
             <p>{S.activities.speechHelp}</p>
             <p>{S.activities.imageHelp}</p>
+            <p>{S.activities.textHelp}</p>
           </InfoPopover>
         </h3>
         {editable && (
@@ -690,7 +691,13 @@ function ActivityEditor({
                 editable={editable}
                 disabled={busy || !available}
                 canGenerate={
-                  editable && available && !busy && !running && !dirty && !!selectedAgent
+                  editable &&
+                  available &&
+                  detail.draft.status === "valid" &&
+                  !busy &&
+                  !running &&
+                  !dirty &&
+                  !!selectedAgent
                 }
                 revision={detail.draft.contentRevision}
                 canAccept={editable && available && !busy && !running && !dirty}
@@ -736,6 +743,41 @@ function ActivityEditor({
                         ...previous.filter((item) => item.runId !== run.runId),
                       ]);
                       setRefreshVersion((value) => value + 1);
+                    }
+                  })
+                }
+                onGenerateText={(language, assetKey) =>
+                  void action(async () => {
+                    const run = await apiFetch<ActivityRun>(`${endpoint}/generate-media-text`, {
+                      method: "POST",
+                      body: {
+                        agentId: selectedAgent,
+                        expectedRevision: detail.draft.contentRevision,
+                        language,
+                        assetKey,
+                      },
+                    });
+                    if (alive.current) {
+                      setRuns((previous) => [
+                        summarize(run),
+                        ...previous.filter((item) => item.runId !== run.runId),
+                      ]);
+                      setRefreshVersion((value) => value + 1);
+                    }
+                  })
+                }
+                onAcceptText={(runId) =>
+                  void action(async () => {
+                    const draft = await apiFetch<ActivityDraft>(
+                      `${endpoint}/runs/${encodeURIComponent(runId)}/accept-media-text`,
+                      {
+                        method: "POST",
+                        body: { expectedRevision: detail.draft.contentRevision },
+                      },
+                    );
+                    if (alive.current) {
+                      accept({ ...detail, draft });
+                      setNotice(S.activities.saved);
                     }
                   })
                 }
@@ -832,12 +874,14 @@ function ActivityEditor({
                       ? S.activities.audioRun
                       : run.kind === "image"
                         ? S.activities.imageRun
-                        : S.activities.specRun}
+                        : run.kind === "media-text"
+                          ? S.activities.textRun
+                          : S.activities.specRun}
                 </span>
                 <span className={`rounded px-2 py-0.5 text-xs ${toneSurface[runTone[run.status]]}`}>
                   {run.kind === "module" && run.status === "succeeded"
                     ? S.activities.moduleReady
-                    : run.kind === "audio" || run.kind === "image"
+                    : run.kind === "audio" || run.kind === "image" || run.kind === "media-text"
                       ? S.activities.speechStatus[run.status]
                       : S.activities.status[run.status]}
                 </span>
