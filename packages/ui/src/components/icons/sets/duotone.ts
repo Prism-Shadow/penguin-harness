@@ -424,6 +424,7 @@ export const ICON_TINTS: Readonly<Record<IconName, IconTint>> = {
   arrowDown: "slate",
   arrowUpRight: "slate",
   letterMArrow: "slate",
+  arrowsOpposed: "slate",
   panelBottom: "slate",
   panelRight: "slate",
   panelLeft: "slate",

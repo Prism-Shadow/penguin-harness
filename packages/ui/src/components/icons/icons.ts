@@ -421,6 +421,11 @@ export const ICONS = {
   arrowUpRight: "M7 7h10v10M7 17 17 7",
   /** A capital M with an arrow leaving its top-right shoulder. */
   letterMArrow: "M4 17V7l4 4 4-4v10M16 7h4v4m0-4-6 6",
+  /**
+   * Two opposed arrows, one line each way — bytes going out and coming back: port forwarding.
+   * Arrows rather than a plug, which the Machines page already reads as "use".
+   */
+  arrowsOpposed: "M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4",
 
   // --- Layout -------------------------------------------------------------------------------
 

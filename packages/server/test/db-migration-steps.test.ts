@@ -300,6 +300,7 @@ describe("machines-columns → current: browser-extensions", () => {
       expect(migrate(db, { swapPath: true }).applied).toEqual([
         "browser-extensions",
         "sessions-surface",
+        "port-forwards",
       ]);
       db.exec("PRAGMA foreign_keys = ON");
       db.exec(
