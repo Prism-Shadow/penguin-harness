@@ -10,6 +10,22 @@ import * as api from "../../api/endpoints";
 import { AgentAvatar } from "../../components/ui/agent-avatar";
 import { useCompany } from "../../state/company";
 
+/**
+ * How large a face is drawn, by where it sits. These are a chat product's rungs rather than
+ * the icon scale's: a face is how a reader finds a PERSON in a list or a conversation, and at
+ * a line glyph's 14px a picture is a smudge. A list row carries one that still fits a one-line
+ * row; a message run is led by one large enough to recognise at a glance, as every messenger
+ * does it.
+ */
+export const FACE_PX = {
+  /** A row of a list: the sidebar's desks, a channel's members. */
+  row: 22,
+  /** The collapsed sidebar's rail, where the face is the whole row. */
+  rail: 24,
+  /** The avatar that leads somebody's run of messages. */
+  message: 36,
+} as const;
+
 export function EmployeeAvatar({
   id,
   name,

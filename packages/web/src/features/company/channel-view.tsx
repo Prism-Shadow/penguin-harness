@@ -51,7 +51,7 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
-import { EmployeeAvatar } from "./employee-avatar";
+import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { Button } from "../../components/ui/button";
 import { EmptyState } from "../../components/ui/empty-state";
 import { GlyphIcon } from "../../components/ui/glyph-icon";
@@ -103,9 +103,6 @@ interface StreamMeta {
 
 /** Downward arrow on the return-to-latest pill (lucide arrow-down). */
 const ARROW_DOWN_ICON = "M12 5v14M6 13l6 6 6-6";
-
-/** The avatar that leads somebody else's run, in pixels — a tile, so one rung above a line glyph. */
-const RUN_AVATAR_PX = 28;
 
 /**
  * The two bubble surfaces. The reader's own takes the app's brand blue rather than a tone from
@@ -570,13 +567,14 @@ export function ChannelView() {
             <EmployeeAvatar
               id={p.id}
               name={senderLabel}
-              size={RUN_AVATAR_PX}
-              className="shrink-0 rounded-md"
+              size={FACE_PX.message}
+              className="shrink-0 rounded-lg"
             />
           ) : (
             <span
               aria-hidden
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900 text-xs font-bold text-white dark:bg-gray-200 dark:text-gray-900"
+              // A person's tile, the same size as an employee's face beside it.
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-900 text-sm font-bold text-white dark:bg-gray-200 dark:text-gray-900"
             >
               {senderLabel.slice(0, 1).toUpperCase()}
             </span>
@@ -590,7 +588,7 @@ export function ChannelView() {
             <span className="sr-only">{S.company.channels.you}</span>
           ) : (
             <div
-              className={`flex max-w-full flex-wrap items-baseline ${ICON_GAP.row} px-1 text-[11px]`}
+              className={`flex max-w-full flex-wrap items-baseline ${ICON_GAP.row} px-1 text-xs`}
             >
               <span className="truncate font-semibold text-gray-700 dark:text-gray-300">
                 {senderLabel}
