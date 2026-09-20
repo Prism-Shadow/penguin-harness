@@ -246,17 +246,18 @@ export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
   // A workflow's handler answers every method, so its GET is whatever the workflow made it
   // — not the read every other route's GET is. A `SameSite=Lax` cookie rides along on a
   // cross-site top-level navigation, so `window.open` on another site would otherwise run
-  // that handler as the signed-in user; the browser's own account of where the request came
-  // from is what settles it, on every method rather than only on writes.
-  if (!WRITE_METHODS.has(c.req.method) && WORKFLOW_API.test(c.req.path)) {
-    if (!fromThisOrigin((name) => c.req.header(name))) throw crossOrigin();
+  // that handler as the signed-in user. Its write takes any body, so the content-type rule
+  // below cannot judge that either: on this path the browser's own account of where the
+  // request came from is what settles both.
+  if (WORKFLOW_API.test(c.req.path) && !fromThisOrigin((name) => c.req.header(name))) {
+    throw crossOrigin();
   }
   if (WRITE_METHODS.has(c.req.method)) {
     const contentType = c.req.header("content-type")?.toLowerCase();
     const hasBody =
       Number(c.req.header("content-length") ?? 0) > 0 ||
       c.req.header("transfer-encoding") !== undefined;
-    // A workflow's own handler takes any body; there the origin rule above is the whole defense.
+    // A workflow's own handler takes any body; the origin rule above is its whole defense.
     const refused = WORKFLOW_API.test(c.req.path)
       ? false
       : contentType
