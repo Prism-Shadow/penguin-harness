@@ -1,8 +1,8 @@
 {
   "description": "Agent development on PenguinHarness: build on the SDK, call any model through one unified LLM API, manage models and secrets, and orchestrate agents, sessions, costs and schedules.",
-  "description_zh": "\u57fa\u4e8e PenguinHarness \u7684\u667a\u80fd\u4f53\u5f00\u53d1\uff1a\u7528 SDK \u6784\u5efa\u5e94\u7528\u3001\u7ecf\u7edf\u4e00\u7684 LLM API \u8c03\u7528\u4efb\u610f\u6a21\u578b\u3001\u7ba1\u7406\u6a21\u578b\u4e0e\u5bc6\u94a5\u3001\u7f16\u6392\u667a\u80fd\u4f53/\u4f1a\u8bdd/\u6210\u672c/\u5b9a\u65f6\u4efb\u52a1\u3002",
+  "description_zh": "基于 PenguinHarness 的智能体开发：用 SDK 构建应用、经统一的 LLM API 调用任意模型、管理模型与密钥、编排智能体/会话/成本/定时任务。",
   "short_description": "SDK, unified LLM API, config and orchestration.",
-  "short_description_zh": "SDK\u3001\u7edf\u4e00 LLM API\u3001\u914d\u7f6e\u4e0e\u7f16\u6392\u3002",
+  "short_description_zh": "SDK、统一 LLM API、配置与编排。",
   "version": "2026.09.20.2",
   "category": "ai-app-development"
 }
