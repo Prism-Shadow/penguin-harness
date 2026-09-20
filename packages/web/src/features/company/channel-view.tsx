@@ -78,6 +78,7 @@ import {
   mentionIsMe,
   mentionLabel,
   mentionNameHandles,
+  mentionNote,
   mentionRuns,
 } from "./channel-mentions";
 import {
@@ -384,11 +385,15 @@ export function ChannelView() {
   };
 
   const names = useMemo(() => new Map(employees.map((e) => [e.agentId, e.name])), [employees]);
+  const titles = useMemo(() => new Map(employees.map((e) => [e.agentId, e.title])), [employees]);
   const nameHandles = useMemo(() => mentionNameHandles(names), [names]);
   const employeeIds = useMemo(() => new Set(employees.map((e) => e.agentId)), [employees]);
   // Who the mention chips inside the rendered bodies are measured against. Memoized because it
   // is a context value: a fresh object per render would re-render every message body.
-  const reader = useMemo(() => ({ names, me, employeeIds }), [names, me, employeeIds]);
+  const reader = useMemo(
+    () => ({ names, titles, me, employeeIds }),
+    [names, titles, me, employeeIds],
+  );
   const memberPrincipals = useMemo(
     () => (detail === null ? null : new Set(detail.members.map((m) => m.principal))),
     [detail],
@@ -423,6 +428,7 @@ export function ChannelView() {
           key={i}
           raw={run.text}
           label={mentionLabel(run.mention, names, S.company.principalAll)}
+          note={mentionNote(run.mention, titles)}
           me={mentionIsMe(run.mention, me, employeeIds)}
         />
       ),
@@ -517,6 +523,7 @@ export function ChannelView() {
                   <MentionChip
                     raw={`@${principal}`}
                     label={mentionLabel(principal, names, S.company.principalAll)}
+                    note={mentionNote(principal, titles)}
                     me={mentionIsMe(principal, me, employeeIds)}
                   />
                 </span>
