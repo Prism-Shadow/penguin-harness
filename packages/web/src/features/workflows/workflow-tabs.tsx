@@ -16,14 +16,16 @@ import { Button } from "../../components/ui/button";
 import { formatDateTime } from "../../lib/format";
 import { S } from "../../lib/strings";
 import { toneInk, toneStrip } from "../../lib/tone";
-import { readDocumentTheme, themeWorkflowFrame } from "../../lib/workflow-theme";
+import { forwardFrameKeys, readDocumentTheme, themeWorkflowFrame } from "../../lib/workflow-theme";
 import {
   FILL_APP_MESSAGE,
   settleActiveTab,
   WORKFLOW_UPDATED_EVENT,
   workflowAppPath,
+  workflowNoticesOf,
   workflowTabsOf,
   workflowUiUrl,
+  type WorkflowNotice,
   type WorkflowTab,
   type WorkflowUpdatedDetail,
 } from "../../lib/workflow-tabs";
@@ -34,16 +36,25 @@ import { localizedText } from "../chat/skill-use";
 /** The Agent's workflow tabs, kept fresh by the server's `workflow_updated` events. */
 export function useWorkflowTabs(projectId: string | null, agentId: string | null) {
   const [tabs, setTabs] = useState<WorkflowTab[]>([]);
+  const [notices, setNotices] = useState<WorkflowNotice[]>([]);
   const [active, setActiveRaw] = useState<string | null>(null);
 
+  // Which Agent the newest request was for. A slow answer for the Agent just left must not
+  // land on the one now open: the strip would show its tabs beside another Agent's chat, and
+  // a Remove from there would address the wrong Agent's workflow.
+  const asked = useRef(0);
   const refresh = useCallback(async () => {
+    const mine = ++asked.current;
     if (projectId === null || agentId === null) {
       setTabs([]);
+      setNotices([]);
       return;
     }
     try {
       const res = await api.getWorkflows(projectId, agentId);
+      if (asked.current !== mine) return;
       setTabs(workflowTabsOf(res.workflows));
+      setNotices(workflowNoticesOf(res.workflows));
     } catch {
       // The strip is a convenience over the chat: a failed list leaves it as it was.
     }
@@ -64,8 +75,14 @@ export function useWorkflowTabs(projectId: string | null, agentId: string | null
   }, [projectId, agentId, refresh]);
 
   const settled = settleActiveTab(active, tabs);
+  // A tab that is gone is forgotten, not merely filtered: kept, the raw id would pull the
+  // frame back over the chat the moment a workflow of the same id reappears — which is what
+  // an Agent rewriting its folder (delete, then write) looks like from here.
+  useEffect(() => {
+    if (active !== null && settled === null) setActiveRaw(null);
+  }, [active, settled]);
   const activeTab = settled === null ? null : (tabs.find((t) => t.tabId === settled) ?? null);
-  return { tabs, active: settled, activeTab, setActive: setActiveRaw, refresh };
+  return { tabs, notices, active: settled, activeTab, setActive: setActiveRaw, refresh };
 }
 
 /** How long a page that never finishes loading stays hidden before it is shown as it is. */
@@ -79,49 +96,68 @@ const TAB_IDLE =
 
 export function WorkflowTabStrip({
   tabs,
+  notices = [],
   active,
   onSelect,
 }: {
   tabs: readonly WorkflowTab[];
+  /** Workflows with nothing to show but something to say; see workflowNoticesOf. */
+  notices?: readonly WorkflowNotice[];
   active: string | null;
   onSelect: (tabId: string | null) => void;
 }) {
   const { locale } = useLocale();
-  if (tabs.length === 0) return null;
+  if (tabs.length === 0 && notices.length === 0) return null;
   return (
-    <div
-      role="tablist"
-      aria-label={S.workflows.tabsLabel}
-      className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-b border-gray-200 px-2 dark:border-gray-800"
-    >
-      <button
-        type="button"
-        role="tab"
-        aria-selected={active === null}
-        className={`${TAB_BASE} ${active === null ? TAB_ACTIVE : TAB_IDLE}`}
-        onClick={() => onSelect(null)}
-      >
-        {S.workflows.chatTab}
-      </button>
-      {tabs.map((t) => (
-        <button
-          key={t.tabId}
-          type="button"
-          role="tab"
-          aria-selected={active === t.tabId}
-          title={t.error ?? undefined}
-          className={`${TAB_BASE} ${active === t.tabId ? TAB_ACTIVE : TAB_IDLE}`}
-          onClick={() => onSelect(t.tabId)}
+    <>
+      {notices.map((n) => (
+        <div
+          key={n.workflowId}
+          role="status"
+          className={`shrink-0 truncate px-3 py-1 text-xs ${
+            n.error === null ? toneStrip.muted : toneStrip.attention
+          }`}
+          title={n.error ?? n.hints.join("\n")}
         >
-          {localizedText(locale, t.title, t.titleZh)}
-          {t.error !== null && (
-            <span className={`ml-1.5 ${toneInk.danger}`} aria-label={S.workflows.brokenMark}>
-              !
-            </span>
-          )}
-        </button>
+          <span className="font-mono">{n.workflowId}</span>: {n.error ?? n.hints[0]}
+        </div>
       ))}
-    </div>
+      {tabs.length > 0 && (
+        <div
+          role="tablist"
+          aria-label={S.workflows.tabsLabel}
+          className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-b border-gray-200 px-2 dark:border-gray-800"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={active === null}
+            className={`${TAB_BASE} ${active === null ? TAB_ACTIVE : TAB_IDLE}`}
+            onClick={() => onSelect(null)}
+          >
+            {S.workflows.chatTab}
+          </button>
+          {tabs.map((t) => (
+            <button
+              key={t.tabId}
+              type="button"
+              role="tab"
+              aria-selected={active === t.tabId}
+              title={t.error ?? undefined}
+              className={`${TAB_BASE} ${active === t.tabId ? TAB_ACTIVE : TAB_IDLE}`}
+              onClick={() => onSelect(t.tabId)}
+            >
+              {localizedText(locale, t.title, t.titleZh)}
+              {t.error !== null && (
+                <span className={`ml-1.5 ${toneInk.danger}`} aria-label={S.workflows.brokenMark}>
+                  !
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -210,8 +246,14 @@ export function WorkflowFrame({
   // (a hung subresource): it is shown anyway rather than hidden forever.
   const frameKey = `${tab.tabId}@${tab.uiRev}`;
   const [shownKey, setShownKey] = useState<string | null>(null);
+  const detachKeys = useRef<() => void>(() => undefined);
+  useEffect(() => () => detachKeys.current(), []);
   const onFrameLoad = useCallback(() => {
     applyTheme();
+    // The page's keys reach the app too, so the palette — the only way out of the full-page
+    // route — still answers once the reader has clicked into the page.
+    detachKeys.current();
+    detachKeys.current = forwardFrameKeys(frameRef.current);
     setShownKey(frameKey);
   }, [applyTheme, frameKey]);
   useEffect(() => {

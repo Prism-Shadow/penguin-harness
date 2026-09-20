@@ -57,6 +57,7 @@ import { loadTypeScript } from "../plugin/typescript.js";
 import {
   historyDir,
   isSafeRelPath,
+  isTempName,
   isWorkflowId,
   listFolders,
   listVersions,
@@ -64,6 +65,7 @@ import {
   readState,
   recordVersion,
   restoreVersion,
+  STATE_FILE,
   UI_DIR,
   workflowsDir,
   writeState,
@@ -424,6 +426,8 @@ export class WorkflowService implements Workflows {
     const previous = this.loaded.get(k);
     const loadedAt = this.clock.now().toISOString();
     let next: Loaded;
+    /** The tree this attempt booted, so a later throw can let it go instead of leaking it. */
+    let booted: { dispose: () => void } | null = null;
     try {
       const manifests = await readManifests(folder);
       const tabs = contributedTabs(manifests, uiBase(projectId, agentId, folder.id));
@@ -467,16 +471,31 @@ export class WorkflowService implements Workflows {
       )![0];
       const main = tree.api<Loaded["main"]>(ROOT_MODULE, alias);
       next = { folder, tree, main, tabs, loadedAt, error: null };
+      booted = tree;
+      // Recording the version is bookkeeping around a load that has already succeeded, so it
+      // cannot be inside the try that decides whether the load failed: a copy that ENOENTs on
+      // a file rewritten since it was hashed would hand the caller back the tree disposed
+      // just above, and leak the one that is actually serving.
       previous?.tree?.dispose();
       pruneBuilds(folder.dir, folder.revision);
-      await recordVersion(
-        historyDir(this.paths.root, projectId, agentId),
-        folder,
-        this.clock.now(),
-      );
+      try {
+        await recordVersion(
+          historyDir(this.paths.root, projectId, agentId),
+          folder,
+          this.clock.now(),
+        );
+      } catch (err) {
+        this.log.line(
+          `[workflows] ${k}@${folder.revision}: version not recorded: ${messageOf(err)}`,
+        );
+      }
     } catch (err) {
       const error = messageOf(err);
       this.log.line(`[workflows] ${k}@${folder.revision}: ${error}`);
+      // A tree booted before the throw serves nobody: nothing holds it, so it is let go here
+      // rather than left behind. The previous instance keeps answering — it was never
+      // disposed, because that only happens once the new one is in place.
+      booted?.dispose();
       next = {
         folder,
         tree: previous?.tree ?? null,
@@ -598,7 +617,11 @@ export class WorkflowService implements Workflows {
     try {
       watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
         const id = typeof filename === "string" ? filename.split(/[\\/]/)[0] : undefined;
-        if (id === undefined || !isWorkflowId(id) || filename?.endsWith("state.json")) return;
+        // The workflow's own document is not code, and neither is the staging file a write
+        // of it goes through: `state.json` used to be the only name skipped, so every
+        // `setState` recompiled the workflow and tore down the tree that had just written it.
+        if (id === undefined || !isWorkflowId(id)) return;
+        if (filename?.endsWith(STATE_FILE) || (filename !== null && isTempName(filename))) return;
         // The server's own emit (`.build/`), and any other dot-directory, is not an edit.
         if (filename?.split(/[\\/]/)[1]?.startsWith(".")) return;
         this.schedule(projectId, agentId, id);

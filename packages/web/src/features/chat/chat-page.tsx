@@ -1904,12 +1904,16 @@ export function ChatPage() {
           strip; the strip is absent when the Agent has no workflow with a UI. */}
       <WorkflowTabStrip
         tabs={workflowTabs.tabs}
+        notices={workflowTabs.notices}
         active={workflowTabs.active}
         onSelect={workflowTabs.setActive}
       />
       {workflowTabs.activeTab !== null && projectId !== null && agentId !== null && (
         <div className="absolute inset-x-0 bottom-0 top-9 z-10">
           <WorkflowFrame
+            // Per tab: the frame keeps this workflow's history fold, its error and its
+            // armed Remove, and none of that belongs to the next tab.
+            key={workflowTabs.activeTab.tabId}
             projectId={projectId}
             agentId={agentId}
             tab={workflowTabs.activeTab}

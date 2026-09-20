@@ -15,7 +15,7 @@
  * dot-directories, which are the server's. Reading is tolerant:
  * a folder without a package.json is not a workflow, a broken versions.json is an empty list.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { agentDir } from "@prismshadow/penguin-core";
@@ -63,7 +63,7 @@ async function walk(dir: string, prefix = ""): Promise<string[]> {
   }
   const out: string[] = [];
   for (const e of entries) {
-    if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+    if (e.name === "node_modules" || e.name.startsWith(".") || isTempName(e.name)) continue;
     const rel = prefix === "" ? e.name : `${prefix}/${e.name}`;
     if (e.isDirectory()) out.push(...(await walk(path.join(dir, e.name), rel)));
     else if (e.isFile()) out.push(rel);
@@ -74,8 +74,18 @@ async function walk(dir: string, prefix = ""): Promise<string[]> {
 async function hashFiles(dir: string, files: string[]): Promise<string> {
   const h = createHash("sha256");
   for (const rel of files) {
+    // A file listed a moment ago can be gone by now — an editor's own scratch file, the
+    // Agent deleting one mid-write. That is a folder that has changed, not a broken read:
+    // the hash covers what is still there, and the watcher brings the next one round.
+    // Reading whatever is there is also what every other read in this module does.
+    let body: Buffer;
+    try {
+      body = await fs.readFile(path.join(dir, rel));
+    } catch {
+      continue;
+    }
     h.update(rel).update("\0");
-    h.update(await fs.readFile(path.join(dir, rel))).update("\0");
+    h.update(body).update("\0");
   }
   return h.digest("hex").slice(0, 12);
 }
@@ -133,10 +143,27 @@ export async function readState(dir: string): Promise<unknown> {
   }
 }
 
+/**
+ * The suffix every staged write of ours carries. It is what tells the watcher and the
+ * revision hash that a file is the server's own scratch and not an edit: a fixed
+ * `state.json.tmp` was neither — it reloaded the workflow on every `setState`, and entered
+ * the hash it was supposed to be outside of. The random middle keeps two concurrent writes
+ * from truncating each other's staging file and renaming a half-written document into place.
+ */
+export const TMP_SUFFIX = ".penguin-tmp";
+export const isTempName = (name: string): boolean => name.includes(TMP_SUFFIX);
+const tempPath = (file: string) => `${file}${TMP_SUFFIX}${randomBytes(6).toString("hex")}`;
+
 export async function writeState(dir: string, state: unknown): Promise<void> {
   const file = path.join(dir, STATE_FILE);
-  await fs.writeFile(`${file}.tmp`, JSON.stringify(state ?? null, null, 2));
-  await fs.rename(`${file}.tmp`, file);
+  const staged = tempPath(file);
+  try {
+    await fs.writeFile(staged, JSON.stringify(state ?? null, null, 2));
+    await fs.rename(staged, file);
+  } catch (err) {
+    await fs.rm(staged, { force: true }).catch(() => undefined);
+    throw err;
+  }
 }
 
 async function readVersions(dir: string): Promise<WorkflowVersion[]> {
@@ -151,8 +178,9 @@ async function readVersions(dir: string): Promise<WorkflowVersion[]> {
 async function writeVersions(dir: string, versions: WorkflowVersion[]): Promise<void> {
   await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, "versions.json");
-  await fs.writeFile(`${file}.tmp`, JSON.stringify(versions, null, 2));
-  await fs.rename(`${file}.tmp`, file);
+  const staged = tempPath(file);
+  await fs.writeFile(staged, JSON.stringify(versions, null, 2));
+  await fs.rename(staged, file);
 }
 
 /**

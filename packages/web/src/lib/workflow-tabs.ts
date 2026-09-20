@@ -55,6 +55,27 @@ export function workflowUiUrl(tab: Pick<WorkflowTab, "src" | "uiRev">): string {
   return `${tab.src}${tab.src.includes("?") ? "&" : "?"}rev=${tab.uiRev}`;
 }
 
+/**
+ * A workflow the reader would otherwise never hear about: it contributes no tab, so nothing
+ * of it can appear in the strip, and yet the server has something to say about it — the load
+ * failed, or it loaded and the harness noticed the pages go nowhere (`hints`). A workflow
+ * that HAS tabs carries its error on them instead, on the tab itself.
+ *
+ * The author is an Agent and reads `.build/status.json`, but the person watching the chat
+ * page has only this.
+ */
+export interface WorkflowNotice {
+  workflowId: string;
+  error: string | null;
+  hints: readonly string[];
+}
+
+export function workflowNoticesOf(workflows: readonly WorkflowInfo[]): WorkflowNotice[] {
+  return workflows
+    .filter((w) => w.tabs.length === 0 && (w.error !== null || (w.hints ?? []).length > 0))
+    .map((w) => ({ workflowId: w.id, error: w.error, hints: w.hints ?? [] }));
+}
+
 export function workflowTabsOf(workflows: readonly WorkflowInfo[]): WorkflowTab[] {
   return workflows.flatMap((w) =>
     w.tabs.flatMap((tab) =>

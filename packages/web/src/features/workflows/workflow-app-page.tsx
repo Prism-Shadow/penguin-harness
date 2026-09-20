@@ -23,6 +23,7 @@ import {
 } from "../../lib/workflow-tabs";
 import { rememberSelection } from "../../state/project";
 import { AppPalette } from "../palette/app-palette";
+import { openUserEvents } from "../../api/sse";
 import { WorkflowFrame } from "./workflow-tabs";
 
 export function WorkflowAppPage() {
@@ -53,9 +54,20 @@ export function WorkflowAppPage() {
       if (d.projectId === projectId && d.agentId === agentId) void load();
     };
     window.addEventListener(WORKFLOW_UPDATED_EVENT, onUpdated);
+    // This route is outside the app shell, so the provider that usually holds the event
+    // stream open (and raises the event above) is not mounted: without a stream of its own,
+    // a page shown as the whole app would never notice its workflow being edited or removed.
+    const conn = openUserEvents({
+      onOmniMessage: () => undefined,
+      onServerEvent: (ev) => {
+        if (ev.type !== "workflow_updated" && ev.type !== "workflow_removed") return;
+        if (ev.projectId === projectId && ev.agentId === agentId) void load();
+      },
+    });
     return () => {
       alive = false;
       window.removeEventListener(WORKFLOW_UPDATED_EVENT, onUpdated);
+      conn.close();
     };
   }, [projectId, agentId, workflowId, tabKey]);
 
@@ -75,7 +87,17 @@ export function WorkflowAppPage() {
   );
 
   return (
-    <div className="h-full w-full bg-white dark:bg-gray-950">
+    <div className="relative h-full w-full bg-white dark:bg-gray-950">
+      {/* A list request that fails after the page is up says so over it, rather than leaving
+          a frame that quietly stopped following the workflow. */}
+      {tab && failure !== null && (
+        <div
+          className="absolute inset-x-0 top-0 z-10 bg-amber-50 px-3 py-1 text-center text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          role="status"
+        >
+          {failure}
+        </div>
+      )}
       {tab ? (
         <WorkflowFrame
           projectId={projectId}
@@ -86,12 +108,13 @@ export function WorkflowAppPage() {
           onRemoved={() => exit[0]!.run()}
         />
       ) : (
-        <div className="flex h-full items-center justify-center px-6 text-center text-sm text-gray-500 dark:text-gray-400">
-          {tab === undefined && failure === null
-            ? S.workflows.loadingHistory
-            : (failure ?? S.workflows.noSuchPage)}
-          <br />
-          {S.workflows.exitHint}
+        <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+          <span>
+            {tab === undefined && failure === null
+              ? S.workflows.loadingPage
+              : (failure ?? S.workflows.noSuchPage)}
+          </span>
+          <span>{S.workflows.exitHint}</span>
         </div>
       )}
       <AppPalette extra={exit} />

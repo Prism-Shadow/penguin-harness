@@ -1847,7 +1847,7 @@ export const rollbackWorkflow = (
     `${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}/rollback`,
     { method: "POST", body: { revision } },
   );
-/** Delete the folder; its recorded versions stay on disk. */
+/** Delete the folder and the versions recorded for it; nothing of the workflow is kept. */
 export const removeWorkflow = (projectId: string, agentId: string, workflowId: string) =>
   apiFetch<void>(`${workflowsBase(projectId, agentId)}/${encodeURIComponent(workflowId)}`, {
     method: "DELETE",

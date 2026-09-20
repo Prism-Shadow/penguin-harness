@@ -47,8 +47,10 @@ export interface WorkflowResponse {
   /**
    * A body sent as it is produced — server-sent events, a model's answer token by token, a
    * large download — each chunk written to the client when the iterator yields it; wins over
-   * `bytes` and `body`. A client that goes away ends the iteration (`return()` is called), so
-   * a `finally` in the generator is where an upstream request is aborted.
+   * `bytes` and `body`. A client that goes away ends the iteration: `return()` is called, so
+   * a `finally` in the generator is where an upstream request is aborted — but a generator
+   * suspended inside an `await` receives it only once that await settles, so a relay whose
+   * upstream can hang should carry its own deadline rather than rely on the disconnect.
    */
   stream?: AsyncIterable<Uint8Array | string>;
 }

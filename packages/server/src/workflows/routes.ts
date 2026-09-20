@@ -89,13 +89,65 @@ function forwardedHeaders(headers: Headers): Record<string, string> {
  * download, a redirect — and `stream` sends it as it is produced. The same origin already serves the workflow's `ui/` files as
  * written, so a handler that answers HTML is no wider than a file that is HTML.
  */
+/**
+ * The body, refused the moment it goes past the cap rather than after it is in memory. A
+ * declared `content-length` is only a claim — a chunked request carries none at all — so the
+ * count that decides is the one taken while reading. Nothing larger than the cap is ever
+ * held, and the reader is cancelled so the sender is not left writing into a socket no one
+ * reads.
+ */
+async function readCapped(body: ReadableStream<Uint8Array> | null): Promise<Uint8Array> {
+  if (body === null) return new Uint8Array(0);
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_BODY_BYTES) throw tooLarge();
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return out;
+}
+
 function respond(response: WorkflowResponse): Response {
   const status = response.status ?? 200;
   const headers = new Headers();
   for (const [name, value] of Object.entries(response.headers ?? {})) {
-    if (!DROPPED_RESPONSE_HEADERS.has(name.toLowerCase())) headers.set(name, value);
+    if (DROPPED_RESPONSE_HEADERS.has(name.toLowerCase())) continue;
+    // An illegal value (a CR/LF among them, which is why this throws) loses the header, not
+    // the whole answer: the handler still gets to reply.
+    try {
+      headers.set(name, value);
+    } catch {
+      continue;
+    }
   }
-  const bodiless = status === 204 || status === 304 || (status >= 300 && status < 400);
+  // The statuses fetch forbids a body on: constructing a Response with one throws, which
+  // would reach the client as a bare 500 instead of the answer the handler meant.
+  const bodiless =
+    status === 101 ||
+    status === 103 ||
+    status === 204 ||
+    status === 205 ||
+    status === 304 ||
+    (status >= 300 && status < 400);
+  if (response.stream !== undefined && bodiless) {
+    // Nothing will read it, so whatever it holds open is released now.
+    const it = response.stream[Symbol.asyncIterator]();
+    void it.return?.(undefined);
+  }
   if (response.stream !== undefined && !bodiless) {
     if (!headers.has("content-type")) headers.set("content-type", "application/octet-stream");
     return new Response(streamOf(response.stream), { status, headers });
@@ -225,10 +277,9 @@ export function workflowRoutes(deps: WorkflowRouteDeps): Hono<AppEnv> {
       body: null,
     };
     if (c.req.method !== "GET" && c.req.method !== "HEAD") {
-      const declared = Number(c.req.header("content-length") ?? 0);
-      if (declared > MAX_BODY_BYTES) throw tooLarge();
-      const bytes = new Uint8Array(await c.req.arrayBuffer());
-      if (bytes.byteLength > MAX_BODY_BYTES) throw tooLarge();
+      const declared = Number(c.req.header("content-length"));
+      if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) throw tooLarge();
+      const bytes = await readCapped(c.req.raw.body);
       // JSON stays what it always was — parsed, and `null` when it does not parse. Anything
       // else reaches the handler as the bytes that were sent.
       if (isJson(c.req.header("content-type"))) request.body = parseJson(bytes);

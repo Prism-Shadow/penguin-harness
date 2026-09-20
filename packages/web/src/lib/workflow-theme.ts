@@ -103,3 +103,51 @@ export function themeWorkflowFrame(frame: HTMLIFrameElement | null, theme: Workf
     // Not our document to style.
   }
 }
+
+/**
+ * Sends the frame's own keyboard shortcuts on to the app.
+ *
+ * A page is a separate document, so a key pressed inside it never reaches the app's own
+ * `window` — which is where the command palette listens. On the full-page route the palette
+ * is the only way out, so it would stop working the moment the reader clicked into the page.
+ * The frame is same-origin (that is what lets the theme be written into it), so the same
+ * listener can be attached to its document and the event re-raised on the app's window.
+ *
+ * Returns a function that detaches it, and does nothing at all for a frame of another origin.
+ */
+export function forwardFrameKeys(
+  frame: HTMLIFrameElement | null,
+  host: Window = window,
+): () => void {
+  let doc: Document | null = null;
+  const onKey = (e: KeyboardEvent) => {
+    // Re-raised rather than handled here: whatever the app listens for decides, and a page
+    // that has already acted on the key (preventDefault) is left alone.
+    if (e.defaultPrevented) return;
+    const copy = new KeyboardEvent(e.type, {
+      key: e.key,
+      code: e.code,
+      ctrlKey: e.ctrlKey,
+      metaKey: e.metaKey,
+      shiftKey: e.shiftKey,
+      altKey: e.altKey,
+      bubbles: true,
+      cancelable: true,
+    });
+    const ran = host.dispatchEvent(copy);
+    if (!ran) e.preventDefault();
+  };
+  try {
+    doc = frame?.contentDocument ?? null;
+    doc?.addEventListener("keydown", onKey);
+  } catch {
+    doc = null; // Not our document to listen to.
+  }
+  return () => {
+    try {
+      doc?.removeEventListener("keydown", onKey);
+    } catch {
+      // The frame is gone; nothing to detach.
+    }
+  };
+}

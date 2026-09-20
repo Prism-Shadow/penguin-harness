@@ -297,6 +297,8 @@ export const zh = {
     history: "历史",
     loadError: "加载失败",
     loadingHistory: "加载历史…",
+    /** The full-page route while it is still finding out which page it should show. */
+    loadingPage: "正在打开页面…",
     noHistory: "还没有记录过版本。",
     current: "当前",
     restore: "恢复",

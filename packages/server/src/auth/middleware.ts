@@ -137,7 +137,22 @@ function fromThisOrigin(header: (name: string) => string | undefined): boolean {
   }
 }
 
+const crossOrigin = () =>
+  new HttpError(
+    403,
+    "cross_origin_write",
+    "A request to a workflow's handler must come from this app's own pages.",
+  );
+
 export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
+  // A workflow's handler answers every method, so its GET is whatever the workflow made it
+  // — not the read every other route's GET is. A `SameSite=Lax` cookie rides along on a
+  // cross-site top-level navigation, so `window.open` on another site would otherwise run
+  // that handler as the signed-in user; the browser's own account of where the request came
+  // from is what settles it, on every method rather than only on writes.
+  if (!WRITE_METHODS.has(c.req.method) && WORKFLOW_API.test(c.req.path)) {
+    if (!fromThisOrigin((name) => c.req.header(name))) throw crossOrigin();
+  }
   if (WRITE_METHODS.has(c.req.method)) {
     const contentType = c.req.header("content-type")?.toLowerCase();
     const forgeable =
@@ -145,13 +160,7 @@ export const jsonOnlyWrites: MiddlewareHandler = async (c, next) => {
       contentType !== "" &&
       !ALLOWED_WRITE_CONTENT_TYPES.some((t) => contentType.startsWith(t));
     if (forgeable && WORKFLOW_API.test(c.req.path)) {
-      if (!fromThisOrigin((name) => c.req.header(name))) {
-        throw new HttpError(
-          403,
-          "cross_origin_write",
-          "A write to a workflow's handler must come from this app's own pages.",
-        );
-      }
+      if (!fromThisOrigin((name) => c.req.header(name))) throw crossOrigin();
     } else if (forgeable) {
       throw new HttpError(
         415,

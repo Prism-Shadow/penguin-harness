@@ -201,6 +201,31 @@ describe("workflows", () => {
     });
   });
 
+  it("does not treat its own state write as an edit: the revision holds and nothing is staged", async () => {
+    const [before] = await list();
+    // Writing state used to leave a `state.json.tmp` behind, which the watcher read as an
+    // edit (recompiling the workflow and tearing down the tree that had just written it) and
+    // the revision hash read as content.
+    expect(await (await owner.post(`${BASE}/demo/api/count`, {})).json()).toEqual({ count: 1 });
+    const [after] = await list();
+    expect(after!.revision).toBe(before!.revision);
+    expect(after!.loadedAt).toBe(before!.loadedAt);
+    const left = (await fs.readdir(dir)).filter((n) => n.includes("tmp"));
+    expect(left).toEqual([]);
+  });
+
+  it("a folder file that disappears mid-read is a change, not a failed request", async () => {
+    // `walk` lists the files, then each is read: one that goes away in between (an editor's
+    // scratch file, the Agent deleting one) used to reject the read and answer 500 although
+    // the loaded instance was fine.
+    await fs.writeFile(path.join(dir, "notes.md"), "gone in a moment");
+    const [listed] = await list();
+    expect(listed!.error).toBe(null);
+    await fs.rm(path.join(dir, "notes.md"));
+    const res = await owner.get(`${BASE}/demo/api/greet`);
+    expect(res.status, await res.text()).toBe(200);
+  });
+
   it("re-imports an edited folder, records every version and rolls back to any of them", async () => {
     const [v1] = await list();
     await fs.writeFile(path.join(dir, "index.ts"), indexSource("bonjour"));

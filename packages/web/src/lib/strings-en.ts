@@ -282,6 +282,8 @@ export const en: Strings = {
     history: "History",
     loadError: "Load error",
     loadingHistory: "Loading history…",
+    /** The full-page route while it is still finding out which page it should show. */
+    loadingPage: "Opening the page…",
     noHistory: "No versions recorded yet.",
     current: "current",
     restore: "Restore",
