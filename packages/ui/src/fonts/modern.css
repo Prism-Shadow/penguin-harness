@@ -1,0 +1,17 @@
+/**
+ * Frost (`modern`) faces:
+ * - MiSans (sans), Latin and Chinese in one family, so zh text sits in the same face as the Latin
+ *   around it. MiSans Regular is weight 400 and MiSans Medium is 500, each cut into `unicode-range`
+ *   slices under `misans/`, which `scripts/build-misans.py` writes from Xiaomi's official package.
+ *   It is the one font this package vendors: MiSans has no official npm package. Licence: the MiSans
+ *   Font Intellectual Property License Agreement (`LICENSES/misans.txt`). The software must credit
+ *   MiSans (the Web App does, in the account menu), may not adapt the font, and never offers it for
+ *   download on its own.
+ * - JetBrains Mono (mono): the variable face Primer also names, declared once in `github.css`, so
+ *   Frost's mono adds no bytes.
+ *
+ * Only `themes/modern.css` names MiSans, so only a Frost session downloads its slices, and only the
+ * slices its text touches. Frost uses weights 400 and 500 alone; its theme turns weight synthesis
+ * off, so a 600 or 700 request renders in Medium rather than as a smeared fake bold.
+ */
+@import "./misans/misans.css";
