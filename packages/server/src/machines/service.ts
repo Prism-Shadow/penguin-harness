@@ -110,6 +110,8 @@ type ConnectRefusal = "busy" | "unknown-machine" | "not-installed" | "self" | "u
  * what is faked here is only the reaching-out, never the logic under test.
  */
 export interface MachinesEffects {
+  /** How long after boot the second out-of-date sweep runs (see start()). */
+  lateSweepMs: number;
   listAliases: typeof listHostAliases;
   /** The writes to the ssh config: appending a host block a person composed in the page, and rewriting one this app wrote. */
   appendHost: typeof appendHostBlock;
@@ -198,6 +200,8 @@ export class MachinesService {
   /** Per machine, when the next re-hold may be tried (epoch ms) and how many tries have failed in a row. */
   readonly #reholdNotBefore = new Map<string, number>();
   readonly #reholdFailures = new Map<string, number>();
+  /** The boot's second sweep, pending (see start()). */
+  #lateSweep: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly dataRoot: string,
@@ -228,6 +232,7 @@ export class MachinesService {
       upgrade: upgradeRemote,
       loadConfig: (projectId) => loadProjectConfig(dataRoot, projectId),
       now: () => new Date(),
+      lateSweepMs: 20_000,
       ...effects,
     };
   }
@@ -1095,6 +1100,16 @@ export class MachinesService {
       this.#keepHeld = setInterval(() => void this.autoConnect(), KEEP_HELD_MS);
       this.#keepHeld.unref?.();
     }
+    // Once more, later. A pushed platform boots BEFORE its version is committed: the store is
+    // written only when the boot has succeeded, and this method runs as part of that boot. So
+    // the pass above usually read the PREVIOUS version off the disk, found every machine
+    // already carrying it, and handed nothing over — the push then reached the machines one
+    // push late, or never. By now the commit has landed; with nothing behind this is a no-op.
+    this.#lateSweep = setTimeout(() => {
+      this.#lateSweep = null;
+      void this.syncOutOfDate().catch(() => undefined);
+    }, this.#effects.lateSweepMs);
+    this.#lateSweep.unref?.();
   }
 
   /**
@@ -1105,6 +1120,8 @@ export class MachinesService {
   stop(): void {
     if (this.#keepHeld !== null) clearInterval(this.#keepHeld);
     this.#keepHeld = null;
+    if (this.#lateSweep !== null) clearTimeout(this.#lateSweep);
+    this.#lateSweep = null;
     closeAllConnections();
   }
 
