@@ -3,6 +3,7 @@
 - **Date:** 2026-09-20
 - **Type:** feature
 - **Scope:** `coding-agents`, `server`, `web`
+- **PR:** [#25](https://github.com/nicolaepocroianu/penguin-harness/pull/25)
 
 The coding-agents "Add agent" dialog now probes the server machine for known agents and offers them as one-click pre-fills. Detection is filesystem-only: the server walks PATH plus the version-manager install homes a server process's PATH usually misses (volta, asdf, mise, bun, npm/pnpm globals) and spawns nothing to do it.
 
