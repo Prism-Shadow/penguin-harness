@@ -1,0 +1,32 @@
+{
+  "name": "@prismshadow/penguin-ui-gallery",
+  "version": "0.2.13",
+  "private": true,
+  "type": "module",
+  "description": "PenguinHarness component gallery (local dev tool, Vite + React): the shared UI package as fifteen module compositions in every theme, mode, size and language, with part demos, screen composites and an address for every view.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "shots": "node scripts/shots.mjs"
+  },
+  "dependencies": {
+    "@prismshadow/penguin-ui": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.6.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.6"
+  }
+}

@@ -17,23 +17,12 @@
  * hook's consumers rather than listing them, and a fifth one is covered on the day it is
  * written.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { expectEveryRootScanned, expectSingleHome, scanSources, sourceFile } from "./helpers/roots";
 
-const SRC = fileURLToPath(new URL("../src", import.meta.url));
-const HOOK = join(SRC, "components", "ui", "use-portal-panel.ts");
-
-/** Every .ts/.tsx under src, as absolute paths (required-mark.test.ts convention). */
-function sourceFiles(dir = SRC, out: string[] = []): string[] {
-  for (const name of readdirSync(dir)) {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) sourceFiles(path, out);
-    else if (/\.tsx?$/.test(name)) out.push(path);
-  }
-  return out;
-}
+/** Every .ts/.tsx under web and the shared UI package: a consumer is covered on either side. */
+const SCAN = scanSources([".ts", ".tsx"]);
+const HOOK = "packages/web/src/components/ui/use-portal-panel.ts";
 
 /** The body of a handler declared as `const <name> = ...` up to its closing `};`. */
 function handler(src: string, name: string): string {
@@ -43,7 +32,12 @@ function handler(src: string, name: string): string {
 }
 
 describe("use-portal-panel scroll dismissal", () => {
-  const hook = readFileSync(HOOK, "utf8");
+  const hook = sourceFile(SCAN, HOOK).text;
+
+  it("reads every source root, and finds the hook in one place", () => {
+    expectEveryRootScanned(SCAN);
+    expectSingleHome(SCAN, HOOK);
+  });
 
   it("asks whether the scroll moved this panel's trigger before closing", () => {
     const onScroll = handler(hook, "onScroll");
@@ -69,22 +63,22 @@ describe("use-portal-panel scroll dismissal", () => {
 
 describe("use-portal-panel consumers", () => {
   /** Files that open a panel through the hook — the hook's own module excluded. */
-  const consumers = sourceFiles().filter(
-    (path) => path !== HOOK && readFileSync(path, "utf8").includes("usePortalPanel({"),
-  );
+  const consumers = SCAN.files
+    .filter((file) => file.id !== HOOK && file.text.includes("usePortalPanel({"))
+    .map((file) => file.id);
 
   it("finds the call sites the rule has to cover, including the reported one", () => {
     // A scan that silently matched nothing would pass every assertion below. The context
     // ring is the panel the failure was reported against: it is opened to watch the context
     // fill while a run streams, which is exactly when the message list scrolls itself.
     expect(consumers.length).toBeGreaterThanOrEqual(4);
-    expect(consumers).toContain(join(SRC, "features", "chat", "context-gauge.tsx"));
+    expect(consumers).toContain("packages/web/src/features/chat/context-gauge.tsx");
   });
 
   it("each attaches the hook's triggerRef, so the ownership test has an element to read", () => {
-    const missing = consumers
-      .filter((path) => !readFileSync(path, "utf8").includes("ref={triggerRef}"))
-      .map((path) => path.slice(SRC.length + 1));
+    const missing = consumers.filter(
+      (id) => !sourceFile(SCAN, id).text.includes("ref={triggerRef}"),
+    );
     expect(missing).toEqual([]);
   });
 });

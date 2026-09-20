@@ -1,6 +1,7 @@
 /**
- * The app's one line-icon renderer: a 24x24 path stroked at 1.7 in currentColor, so the mark
- * follows the caller's text colour and every glyph in the app carries the same weight. Icon
+ * The app's one line-icon renderer: a 24x24 path in currentColor, stroked at the active theme's
+ * `--ui-icon-stroke` (1.7 in the default theme), so the mark follows the caller's text colour and
+ * every glyph in the app carries the same weight. Icon
  * paths live in the modules that own them — `lib/stat-icons.ts`, `components/ui/icons.tsx`,
  * `components/ui/group-list.tsx`, `components/ui/session-row-menu.tsx` — and the size comes from
  * the role-named scale in `lib/icon-scale.ts`.
@@ -26,7 +27,9 @@ export function GlyphIcon({
       viewBox="0 0 24 24"
       fill={filled ? "currentColor" : "none"}
       stroke="currentColor"
-      strokeWidth="1.7"
+      // A style, not the attribute: an SVG presentation attribute cannot read a custom property.
+      // The fallback is the default theme's weight, for a page that has not loaded the theme CSS.
+      style={{ strokeWidth: "var(--ui-icon-stroke, 1.7)" }}
       strokeLinecap="round"
       strokeLinejoin="round"
       className={`block shrink-0 ${className}`}

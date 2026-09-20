@@ -1,0 +1,971 @@
+/*
+ * The Foundations boards. They render inside the themed preview, so they are the opposite of the
+ * chrome: lengths are rem (they follow the root size under test) and colours are the theme's
+ * tokens, read bare — an undefined token must look broken, not fall back to something plausible.
+ */
+
+/* ---- Board layout ---- */
+
+.gf-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2.5rem;
+}
+.gf-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  align-content: start;
+  min-width: 0;
+}
+.gf-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+.gf-group-head h3 {
+  margin: 0;
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+  font-weight: var(--ui-weight-medium);
+  color: var(--ui-fg);
+}
+.gf-aside {
+  font-size: var(--ui-text-caption-size);
+  line-height: var(--ui-text-caption-lh);
+  color: var(--ui-fg-subtle);
+}
+.gf-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 2.5rem 2rem;
+}
+.gf-caption {
+  font-size: var(--ui-text-caption-size);
+  line-height: var(--ui-text-caption-lh);
+  color: var(--ui-fg-muted);
+}
+.gf-mono {
+  font-family: var(--ui-font-mono);
+}
+.gf-muted {
+  color: var(--ui-fg-muted);
+}
+.gf-subtle {
+  color: var(--ui-fg-subtle);
+}
+.gf-note {
+  margin: 0;
+}
+.gf-glyph {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* ---- Colour ---- */
+
+.gf-surfaces-head,
+.gf-surface {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1rem;
+}
+.gf-surfaces-head {
+  margin-bottom: -0.25rem;
+}
+.gf-surfaces {
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  overflow: hidden;
+}
+.gf-surface {
+  padding-block: 0.875rem;
+}
+.gf-surface + .gf-surface {
+  border-top: 1px solid var(--ui-line);
+}
+.gf-inks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  font-size: var(--ui-text-body-size);
+  line-height: var(--ui-text-body-lh);
+}
+.gf-lines {
+  display: flex;
+  gap: 0.5rem;
+}
+.gf-line {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  height: 2rem;
+  border: 1px solid;
+  border-radius: var(--ui-radius-sm);
+}
+.gf-line .gf-caption {
+  color: var(--ui-fg-subtle);
+}
+
+.gf-accents {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem 0.75rem;
+}
+.gf-accent {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  min-width: 0;
+}
+.gf-accent-button {
+  padding: var(--ui-control-py-md) var(--ui-control-px-md);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-accent);
+  color: var(--ui-accent-fg);
+  font-size: var(--ui-text-body-size);
+  line-height: var(--ui-text-body-lh);
+  font-weight: var(--ui-weight-medium);
+}
+.gf-accent-row {
+  justify-self: stretch;
+  padding: var(--ui-row-py) var(--ui-row-px);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-accent-muted);
+  color: var(--ui-fg);
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gf-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  margin: 0.25rem 0 0;
+  font-size: var(--ui-text-body-size);
+}
+.gf-link {
+  color: var(--ui-fg-link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 0.2em;
+}
+.gf-link[data-hover] {
+  color: var(--ui-fg-link-hover);
+  text-decoration-color: currentColor;
+}
+
+.gf-tones {
+  display: grid;
+  grid-template-columns: 5rem 7rem repeat(3, max-content);
+  align-items: center;
+  gap: 0.625rem 1rem;
+}
+.gf-tone {
+  display: contents;
+}
+.gf-tone-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-stack-0);
+  font-size: var(--ui-text-body-size);
+  line-height: var(--ui-text-body-lh);
+  font-weight: var(--ui-weight-medium);
+}
+.gf-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: currentColor;
+}
+.gf-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 1.375rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-pill);
+  font-size: var(--ui-text-caption-size);
+  font-weight: var(--ui-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.gf-charts {
+  display: grid;
+  gap: 1.25rem;
+}
+.gf-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  height: 6.5rem;
+  padding: 0 0.5rem;
+  border-top: 1px solid var(--ui-chart-grid);
+  border-bottom: 1px solid var(--ui-chart-axis);
+}
+.gf-bar {
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--ui-radius-xs) var(--ui-radius-xs) 0 0;
+}
+.gf-bar-captions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+  padding: 0 0.5rem;
+}
+.gf-bar-captions > span {
+  flex: 1;
+  text-align: center;
+}
+.gf-stacked {
+  display: grid;
+  gap: 0.375rem;
+}
+.gf-stacked-bar {
+  display: flex;
+  height: 0.75rem;
+  border-radius: var(--ui-radius-xs);
+  overflow: hidden;
+}
+.gf-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+.gf-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-stack-0);
+}
+.gf-swatch {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: var(--ui-radius-xs);
+}
+
+.gf-code {
+  display: grid;
+  padding: 0.375rem 0;
+  border: 1px solid var(--ui-code-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-code-bg);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-code-size);
+  line-height: var(--ui-text-code-lh);
+  color: var(--ui-fg);
+  overflow-x: auto;
+}
+.gf-code-line {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0 0.75rem;
+  white-space: pre;
+}
+.gf-gutter {
+  width: 1.25rem;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--ui-code-gutter);
+}
+.gf-code mark {
+  color: inherit;
+}
+
+/* ---- Type ---- */
+
+.gf-type {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 1.5rem;
+  align-items: start;
+}
+.gf-type > .gf-caption {
+  padding-bottom: 0.5rem;
+}
+.gf-type-row {
+  display: contents;
+}
+.gf-type-row > * {
+  min-width: 0;
+  margin: 0;
+  padding-block: 0.75rem;
+  border-top: 1px solid var(--ui-line-muted);
+  overflow-wrap: anywhere;
+}
+.gf-type-row > code {
+  padding-top: 1rem;
+}
+
+/* ---- Shape & depth ---- */
+
+.gf-scene {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+  gap: 1rem;
+}
+.gf-scene-page,
+.gf-scene-modal {
+  position: relative;
+  min-height: 24rem;
+  padding: 2.25rem 1rem 1rem;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-canvas);
+  overflow: hidden;
+}
+.gf-tier {
+  position: absolute;
+  top: 0.625rem;
+  left: 1rem;
+  z-index: 2;
+  white-space: nowrap;
+}
+.gf-card {
+  position: relative;
+  display: grid;
+  gap: 0.75rem;
+  padding: var(--ui-card-p);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-raised);
+}
+.gf-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: var(--ui-text-body-size);
+}
+.gf-card-head > .gf-caption {
+  flex: 1;
+}
+.gf-more {
+  color: var(--ui-fg-muted);
+  letter-spacing: 0.1em;
+}
+.gf-nested {
+  padding: 0.5rem 0.75rem;
+  border-radius: max(var(--ui-radius-xs), calc(var(--ui-radius-lg) - var(--ui-card-p)));
+  background: var(--ui-surface-muted);
+}
+.gf-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.gf-controls-end {
+  justify-content: flex-end;
+}
+.gf-button {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--ui-control-py-sm) var(--ui-control-px-sm);
+  border: 1px solid var(--ui-line-emphasis);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+  color: var(--ui-fg);
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+  font-weight: var(--ui-weight-medium);
+  white-space: nowrap;
+}
+.gf-button[data-variant="primary"] {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
+  color: var(--ui-accent-fg);
+}
+.gf-button[data-variant="danger"] {
+  border-color: var(--ui-tone-danger-emphasis);
+  background: var(--ui-tone-danger-emphasis);
+  color: var(--ui-tone-danger-emphasis-fg);
+}
+.gf-input {
+  display: flex;
+  min-width: 9rem;
+  padding: var(--ui-control-py-sm) var(--ui-control-px-sm);
+  border: 1px solid var(--ui-line-emphasis);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+  color: var(--ui-fg-subtle);
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+}
+/* Hung from the card's bottom-right corner, so no label is cut in half at any theme's row heights. */
+.gf-menu {
+  position: absolute;
+  top: calc(100% - 1.75rem);
+  right: -0.75rem;
+  display: grid;
+  gap: 0.125rem;
+  width: 9.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-overlay);
+  box-shadow: var(--ui-shadow-overlay);
+}
+.gf-layer-tier {
+  padding: 0.25rem var(--ui-menu-row-px) 0.125rem;
+  border-top: 1px solid var(--ui-line-muted);
+}
+.gf-menu-row {
+  padding: var(--ui-menu-row-py) var(--ui-menu-row-px);
+  border-radius: max(var(--ui-radius-xs), calc(var(--ui-radius-md) - 0.25rem));
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+}
+.gf-menu-row[data-active] {
+  background: var(--ui-surface-muted);
+}
+.gf-scene-lines {
+  position: absolute;
+  inset: 2.25rem 1rem auto;
+  display: grid;
+  gap: 0.875rem;
+}
+.gf-scene-lines > span {
+  height: 0.5rem;
+  border-radius: var(--ui-radius-xs);
+  background: var(--ui-fg-subtle);
+}
+.gf-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--ui-overlay-backdrop);
+}
+.gf-dialog {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-overlay);
+  box-shadow: var(--ui-shadow-modal);
+  font-size: var(--ui-text-body-size);
+}
+.gf-dialog p {
+  margin: 0 0 0.5rem;
+  font-size: var(--ui-text-small-size);
+}
+.gf-toast {
+  position: absolute;
+  z-index: 1;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-overlay);
+  box-shadow: var(--ui-shadow-overlay);
+  font-size: var(--ui-text-small-size);
+}
+
+.gf-radii {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.gf-radius {
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+}
+.gf-radius-box {
+  width: 3rem;
+  height: 2.25rem;
+  border: 1px solid var(--ui-line-emphasis);
+  background: var(--ui-surface-muted);
+}
+.gf-borders {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.gf-border-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.gf-border {
+  flex: 1;
+  border-top-style: solid;
+  border-top-color: var(--ui-fg);
+}
+.gf-shadows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.25rem;
+}
+.gf-shadow {
+  display: grid;
+  place-items: center;
+  width: 5rem;
+  height: 3.5rem;
+  /* The hairline keeps the box visible in a theme that raises nothing by shadow. */
+  border: var(--ui-border-w) solid var(--ui-line-muted);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+}
+
+/* ---- Spacing ---- */
+
+.gf-ruler {
+  display: grid;
+  max-width: 34rem;
+}
+.gf-page-title {
+  margin: 0;
+  font-family: var(--ui-h2-font);
+  font-size: var(--ui-h2-size);
+  line-height: var(--ui-h2-lh);
+  font-weight: var(--ui-h2-weight);
+  letter-spacing: var(--ui-h2-tracking);
+}
+.gf-section-title {
+  margin: 0;
+  font-family: var(--ui-h4-font);
+  font-size: var(--ui-h4-size);
+  line-height: var(--ui-h4-lh);
+  font-weight: var(--ui-h4-weight);
+}
+.gf-gap {
+  position: relative;
+  background: color-mix(in srgb, var(--ui-tone-info-emphasis) 16%, transparent);
+}
+.gf-gap-label {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 0.75rem);
+  transform: translateY(-50%);
+  color: var(--ui-tone-info-fg);
+  white-space: nowrap;
+}
+.gf-ruler-note {
+  padding-top: 1rem;
+}
+.gf-gap-inline {
+  display: inline-block;
+  align-self: stretch;
+  background: color-mix(in srgb, var(--ui-tone-info-emphasis) 32%, transparent);
+}
+.gf-pref {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.gf-pref-label {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--ui-text-body-size);
+  line-height: var(--ui-text-body-lh);
+}
+.gf-pref-label .gf-glyph {
+  color: var(--ui-fg-muted);
+}
+.gf-segmented {
+  display: inline-flex;
+  padding: 0.125rem;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-muted);
+}
+.gf-segmented > span {
+  padding: 0.125rem 0.625rem;
+  border-radius: var(--ui-radius-control);
+  font-size: var(--ui-text-small-size);
+  line-height: var(--ui-text-small-lh);
+  color: var(--ui-fg-muted);
+}
+.gf-segmented > span[data-active] {
+  background: var(--ui-surface);
+  color: var(--ui-fg);
+  box-shadow: var(--ui-shadow-raised);
+}
+.gf-switch {
+  position: relative;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--ui-line-emphasis);
+}
+.gf-switch::after {
+  content: "";
+  position: absolute;
+  top: 0.125rem;
+  left: 0.125rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  /* Light in both modes, with a hairline so it reads on a near-white accent (Primer dark). */
+  border: 1px solid var(--ui-line);
+  background: var(--ui-tone-neutral-emphasis-fg);
+}
+.gf-switch[data-on] {
+  background: var(--ui-accent);
+}
+.gf-switch[data-on]::after {
+  left: calc(100% - 1.125rem);
+}
+.gf-rungs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 2rem;
+}
+.gf-rung,
+.gf-measured {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.gf-control {
+  display: inline-flex;
+  align-items: center;
+  /* A control's height is two paddings, a line box AND its two borders — the figure tokens.ts
+     states (29px at the 18px root, 31.25px in Frost and Console). Transparent, because this
+     board measures the box the themes agree on, not the accent button's own outline. */
+  border: var(--ui-border-w) solid transparent;
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-accent);
+  color: var(--ui-accent-fg);
+  font-weight: var(--ui-weight-medium);
+}
+
+/* ---- Icons ---- */
+
+.gf-icon-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem 1.5rem;
+}
+.gf-icon-size {
+  display: grid;
+  justify-items: center;
+  gap: 0.375rem;
+  color: var(--ui-fg);
+}
+.gf-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.25rem 0.5rem;
+}
+.gf-icon {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 0.375rem;
+  min-width: 0;
+  padding: 0.625rem 0.25rem;
+  color: var(--ui-fg);
+}
+.gf-icon-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gf-icon-dupes {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  color: var(--ui-tone-attention-fg);
+}
+
+/* ---- Motion ---- */
+
+.gf-motion {
+  display: grid;
+  grid-template-columns: 6.5rem repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 0.5rem 1rem;
+}
+.gf-motion-row {
+  display: contents;
+}
+.gf-track {
+  position: relative;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--ui-surface-muted);
+}
+.gf-track-dot {
+  position: absolute;
+  top: 50%;
+  left: 0.25rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-top: -0.375rem;
+  border-radius: 999px;
+  background: var(--ui-accent);
+  animation: gf-slide calc(var(--gf-dur) * 4) var(--gf-ease) infinite;
+}
+@keyframes gf-slide {
+  0% {
+    left: 0.25rem;
+  }
+  25%,
+  50% {
+    left: calc(100% - 1rem);
+  }
+  75%,
+  100% {
+    left: 0.25rem;
+  }
+}
+.gf-live {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 2rem;
+  font-size: var(--ui-text-body-size);
+}
+.gf-live-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* ---- Focus ---- */
+
+.gf-focused {
+  outline: var(--ui-focus-ring);
+  outline-offset: var(--ui-focus-ring-offset);
+}
+.gf-input-focused {
+  border-color: var(--ui-accent);
+  box-shadow: var(--ui-focus-ring-input);
+  color: var(--ui-fg);
+}
+.gf-selection {
+  margin: 0;
+  font-size: var(--ui-text-body-size);
+  line-height: var(--ui-text-body-lh);
+}
+.gf-selection mark {
+  background: var(--ui-selection-bg);
+  color: inherit;
+}
+.gf-scroll {
+  height: 7rem;
+  overflow-y: scroll;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-surface);
+  font-size: var(--ui-text-small-size);
+}
+.gf-scroll p {
+  margin: 0 0 0.25rem;
+}
+
+/* ---- Hooks ----
+ * Base looks only, in `components`: each hook's recipe lives in `@layer ui-theme` and must win. */
+
+@layer components {
+  .gf-hooks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+    gap: 2.5rem 2rem;
+  }
+  .gf-hook {
+    display: grid;
+    gap: 0.75rem;
+    align-content: start;
+    min-width: 0;
+  }
+  .gf-hook-body {
+    display: grid;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+  .gh-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    font-size: var(--ui-text-body-size);
+  }
+  .gh-live {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+  .gh-stage {
+    position: relative;
+    height: 10rem;
+    overflow: hidden;
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-lg);
+    background-color: var(--ui-canvas);
+  }
+  .gh-stage-text {
+    margin: 0;
+    padding: 0.75rem;
+    font-size: var(--ui-text-prose-size);
+    line-height: var(--ui-text-prose-lh);
+    color: var(--ui-fg-muted);
+  }
+  .gh-panel {
+    position: absolute;
+    top: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    gap: 0.125rem;
+    width: min(12rem, 80%);
+    padding: 0.25rem;
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-md);
+    background-color: var(--ui-overlay);
+    box-shadow: var(--ui-shadow-overlay);
+  }
+  .gh-menu-row {
+    padding: var(--ui-menu-row-py) var(--ui-menu-row-px);
+    border-radius: max(var(--ui-radius-xs), calc(var(--ui-radius-md) - 0.25rem));
+    font-size: var(--ui-text-small-size);
+    line-height: var(--ui-text-small-lh);
+  }
+  .gh-menu-row[data-active] {
+    background: var(--ui-surface-muted);
+  }
+  .gh-list {
+    display: grid;
+    gap: 0.125rem;
+  }
+  .gh-eyebrow {
+    margin: 0 0 0.25rem;
+    padding: 0 var(--ui-row-px);
+    font-size: var(--ui-h6-size);
+    line-height: var(--ui-h6-lh);
+    font-weight: var(--ui-h6-weight);
+    color: var(--ui-fg-muted);
+  }
+  .gh-list-row {
+    padding: var(--ui-row-py) var(--ui-row-px);
+    border-radius: var(--ui-radius-md);
+    font-size: var(--ui-text-body-size);
+    line-height: var(--ui-text-body-lh);
+  }
+  .gh-list-row:first-of-type {
+    background: var(--ui-accent-muted);
+  }
+  .gh-display {
+    margin: 0;
+    font-family: var(--ui-h1-font);
+    font-size: var(--ui-h1-size);
+    line-height: var(--ui-h1-lh);
+    font-weight: var(--ui-h1-weight);
+    letter-spacing: var(--ui-h1-tracking);
+  }
+  .gh-caret,
+  .gf-caret {
+    margin-left: 0.125rem;
+    animation: gf-blink 1s steps(2, jump-none) infinite;
+  }
+  .gh-dot,
+  .gf-live-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    background-color: var(--ui-tone-success-fg);
+    animation: gf-pulse 1.4s ease-in-out infinite;
+  }
+  .gh-spinner,
+  .gf-spinner {
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--ui-line);
+    border-top-color: var(--ui-fg);
+    animation: gf-spin 0.8s linear infinite;
+  }
+  .gh-frame {
+    overflow: hidden;
+    border: 1px solid var(--ui-line);
+    border-radius: var(--ui-radius-lg);
+    background-color: var(--ui-code-bg);
+  }
+  .gh-frame-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    border-bottom: 1px solid var(--ui-line);
+    background-color: var(--ui-surface-muted);
+    font-size: var(--ui-text-caption-size);
+    color: var(--ui-fg-muted);
+  }
+  .gh-frame-body {
+    margin: 0;
+    padding: 0.75rem;
+    overflow-x: auto;
+    font-family: var(--ui-font-mono);
+    font-size: var(--ui-text-code-size);
+    line-height: var(--ui-text-code-lh);
+    white-space: pre-wrap;
+  }
+  .gh-frame-foot {
+    padding: 0.25rem 0.75rem;
+    border-top: 1px solid var(--ui-line);
+    font-size: var(--ui-text-caption-size);
+    color: var(--ui-fg-muted);
+  }
+  .gh-frame-panes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background-color: var(--ui-surface);
+  }
+  .gh-frame-panes > [data-slot="pane"] {
+    padding: 0.75rem;
+    font-size: var(--ui-text-small-size);
+  }
+  .gh-tabs {
+    display: flex;
+    gap: 1rem;
+    border-bottom: 1px solid var(--ui-line);
+  }
+  .gh-tab {
+    padding: 0.375rem 0.125rem;
+    font-size: var(--ui-text-body-size);
+    color: var(--ui-fg-muted);
+  }
+  .gh-tab[aria-selected="true"] {
+    color: var(--ui-fg);
+    font-weight: var(--ui-weight-medium);
+  }
+}
+@keyframes gf-blink {
+  50% {
+    opacity: 0.15;
+  }
+}
+@keyframes gf-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+@keyframes gf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
