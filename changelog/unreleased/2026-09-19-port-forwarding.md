@@ -7,7 +7,7 @@
 
 [中文版](2026-09-19-port-forwarding.zh.md)
 
-A Workspace on a machine can forward that machine's TCP ports to this server's loopback, from a Ports panel beside the terminal. Forwards are saved, and a machine's Ports page lists every one of them with what is known of each.
+A Workspace on a machine can forward that machine's TCP ports to this server's loopback, from a Ports panel in the dock. Forwards are saved, and a machine's Ports page lists every one of them with what is known of each.
 
 ## Forwards
 
