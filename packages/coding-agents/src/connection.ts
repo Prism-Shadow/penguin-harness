@@ -38,7 +38,15 @@ export type SpawnProcess = typeof spawn;
  */
 function spawnTarget(command: string, args: string[]): [string, string[]] {
   if (process.platform !== "win32" || !/\.(cmd|bat)$/i.test(command)) return [command, args];
-  return ["cmd.exe", ["/d", "/s", "/c", `"${[command, ...args].join(" ")}"`]];
+  // Tokens with spaces (an npm dir under "C:\Program Files") carry their own quotes;
+  // with /s, cmd strips only the outer pair before executing the rest.
+  const line = [command, ...args].map(quoteForCmdLine).join(" ");
+  return ["cmd.exe", ["/d", "/s", "/c", `"${line}"`]];
+}
+
+function quoteForCmdLine(token: string): string {
+  if (token !== "" && !/[\s"]/.test(token)) return token;
+  return `"${token.replaceAll('"', '""')}"`;
 }
 
 export interface AcpConnectionHandlers {

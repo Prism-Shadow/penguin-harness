@@ -14,7 +14,12 @@ function pathDirs(env: NodeJS.ProcessEnv): string[] {
   return (env.PATH ?? "").split(path.delimiter).filter((dir) => dir.trim() !== "");
 }
 
-/** Candidate extensions for a bare command name; `""` first so a spelled extension wins. */
+/**
+ * Candidate extensions for a bare command name. On Windows the extensions come before
+ * the bare name on purpose: npm leaves an extensionless POSIX shim (`gemini`, `npx`)
+ * beside the real `gemini.cmd`, and the bare file exists but cannot be spawned by
+ * Windows — trying it first would resolve discovery to the wrong twin.
+ */
 function candidateExtensions(env: NodeJS.ProcessEnv): string[] {
   if (process.platform !== "win32") return [""];
   const exts = (env.PATHEXT ?? "")
@@ -22,7 +27,7 @@ function candidateExtensions(env: NodeJS.ProcessEnv): string[] {
     .map((e) => e.trim())
     .filter((e) => e !== "")
     .map((e) => (e.startsWith(".") ? e : `.${e}`));
-  return ["", ...(exts.length > 0 ? exts : DEFAULT_PATHEXT)];
+  return [...(exts.length > 0 ? exts : DEFAULT_PATHEXT), ""];
 }
 
 async function isExecutable(file: string): Promise<boolean> {

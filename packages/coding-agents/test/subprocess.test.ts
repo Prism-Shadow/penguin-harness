@@ -126,7 +126,7 @@ describe("AcpConnection spawn routing", () => {
   });
 
   it("passes ordinary commands through untouched", async () => {
-    const seen: { file: string; args: string[] }[] = [];
+    const seen: { file: string; args: string[]; options: SpawnOptions }[] = [];
     const connection = await AcpConnection.spawn(
       process.execPath,
       ["--version"],
@@ -140,4 +140,31 @@ describe("AcpConnection spawn routing", () => {
     expect(seen[0]?.args).toEqual(["--version"]);
     expect(seen[0]?.options).not.toHaveProperty("windowsVerbatimArguments");
   });
+
+  // A shim under "C:\Program Files\..." must keep its own quotes once cmd strips the
+  // outer pair; otherwise cmd's prefix guessing picks "C:\program".
+  it.skipIf(process.platform !== "win32")(
+    "quotes shim paths that contain spaces on their own",
+    async () => {
+      const seen: { file: string; args: string[] }[] = [];
+      const connection = await AcpConnection.spawn(
+        "C:\\Program Files\\nodejs\\npx.cmd",
+        ["-y", "claude-agent-acp"],
+        {},
+        CLIENT_INFO,
+        HANDLERS,
+        recordingSpawn((entry) => seen.push(entry)),
+      );
+      connection.dispose();
+      expect(seen[0]?.file).toBe("cmd.exe");
+      // The doubled outer pair is the cross-spawn form: cmd /s strips the outermost
+      // quotes, leaving the spaced path quoted for cmd's own parsing.
+      expect(seen[0]?.args).toEqual([
+        "/d",
+        "/s",
+        "/c",
+        '""C:\\Program Files\\nodejs\\npx.cmd" -y claude-agent-acp"',
+      ]);
+    },
+  );
 });

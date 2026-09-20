@@ -120,4 +120,13 @@ describe("resolveCommandPath", () => {
     expect(await resolveCommandPath(explicit, { env: { PATH: bin } })).toBe(explicit);
     expect(await resolveCommandPath("no-such-tool", { env: { PATH: bin } })).toBe("no-such-tool");
   });
+
+  // npm drops an extensionless POSIX shim beside the spawnable .cmd twin; on Windows
+  // the shim must lose, or discovery hands out a command Windows cannot start.
+  it.skipIf(!WIN)("prefers the .cmd twin over npm's extensionless shim", async () => {
+    await fs.writeFile(path.join(bin, "tool"), "", { mode: 0o755 });
+    await fs.writeFile(path.join(bin, "tool.cmd"), "", { mode: 0o755 });
+    const resolved = await resolveCommandPath("tool", { env: { PATH: bin } });
+    expect(resolved.toLowerCase()).toBe(path.join(bin, "tool.cmd").toLowerCase());
+  });
 });
