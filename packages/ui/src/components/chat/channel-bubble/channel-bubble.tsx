@@ -44,8 +44,11 @@ export interface ChannelSender {
   name: string;
 }
 
-/** The avatar that leads somebody else's run, in pixels: a tile, one rung above a line glyph. */
-export const CHANNEL_RUN_AVATAR_PX = 28;
+/**
+ * The avatar that leads somebody else's run, in pixels: a chat product's size rather than the
+ * icon scale's, large enough to recognise a face at a glance, as every messenger draws it.
+ */
+export const CHANNEL_RUN_AVATAR_PX = 36;
 
 /** The run's leading tile. Decorative: the name beside it is what names the sender. */
 function SenderAvatar({ sender }: { sender: ChannelSender }) {
@@ -55,14 +58,15 @@ function SenderAvatar({ sender }: { sender: ChannelSender }) {
         id={sender.id}
         name={sender.name}
         size={CHANNEL_RUN_AVATAR_PX}
-        className="shrink-0 rounded-md"
+        className="shrink-0 rounded-lg"
       />
     );
   }
   return (
     <span
       aria-hidden
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-fg text-xs font-bold text-canvas"
+      // A person's tile, the same size as an employee's face beside it.
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-fg text-sm font-bold text-canvas"
     >
       {avatarInitial(sender.name, sender.id)}
     </span>

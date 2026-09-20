@@ -39,7 +39,6 @@ import { useNavigate, useParams } from "react-router";
 import type { OrgChannelDetail, OrgChannelMessage } from "@prismshadow/penguin-server/api";
 import {
   Button,
-  CHANNEL_RUN_AVATAR_PX,
   ChannelBubble,
   ChannelRun,
   EmptyState,
@@ -63,7 +62,7 @@ import { useAuth } from "../../state/auth";
 import { useCompany, useCompanyEvents } from "../../state/company";
 import { NAV_ICONS } from "../../lib/nav-icons";
 import { createStreamFollow, stickToBottom } from "../chat/stream-follow";
-import { EmployeeAvatar } from "./employee-avatar";
+import { EmployeeAvatar, FACE_PX } from "./employee-avatar";
 import { useOrg } from "./org-layout";
 import { principalLabel } from "./shared";
 import { orgKey } from "./company-nav";
@@ -557,8 +556,8 @@ export function ChannelView() {
             <EmployeeAvatar
               id={p.id}
               name={sender.name}
-              size={CHANNEL_RUN_AVATAR_PX}
-              className="shrink-0 rounded-md"
+              size={FACE_PX.message}
+              className="shrink-0 rounded-lg"
             />
           ) : undefined
         }
