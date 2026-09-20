@@ -4455,6 +4455,50 @@ export interface MachinesStopUsingRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Port forwarding (a machine's TCP port on this server's loopback, per Workspace)
+// ---------------------------------------------------------------------------
+
+/**
+ * One forward, its record and what is known of it right now. The facts are reported by
+ * layer and never folded into one "working" flag: a listener that is up says nothing about
+ * the machine behind it.
+ */
+export interface PortForwardInfo {
+  id: string;
+  /** That machine's own id. */
+  machineId: string;
+  /** The Workspace directory on that machine the forward belongs to. */
+  workspace: string;
+  /** `127.0.0.1:<remotePort>` over there. */
+  remotePort: number;
+  /** `127.0.0.1:<localPort>` on this server; fixed once given. */
+  localPort: number;
+  createdAt: string;
+  /** The local listener: up, or why it is not (`EADDRINUSE`, …). */
+  listener: { listening: true } | { error: string };
+  /** The last dial to the machine; null until a client has connected since this process started. */
+  dial: { answeredAt: string } | { failedAt: string; detail: string } | null;
+  /** Connections open right now. */
+  open: number;
+  /** Bytes to the machine and back, since this process started. */
+  bytesUp: number;
+  bytesDown: number;
+}
+
+/** `GET /api/port-forwards?machine=&workspace=` — both filters optional. */
+export interface PortForwardsResponse {
+  forwards: PortForwardInfo[];
+}
+
+/** `POST /api/port-forwards`; 201 with the forward. `localPort` omitted = chosen here, starting at `remotePort`. */
+export interface PortForwardCreateRequest {
+  machineId: string;
+  workspace: string;
+  remotePort: number;
+  localPort?: number;
+}
+
+// ---------------------------------------------------------------------------
 // Company mode: organizations (files are the truth; every DTO here is a projection)
 // ---------------------------------------------------------------------------
 

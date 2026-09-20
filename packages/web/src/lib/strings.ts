@@ -160,6 +160,41 @@ export const zh = {
     adminOnly: "只有管理员可以管理机器。",
   },
 
+  /** Port forwarding: the dock's Ports panel, and a machine's Ports page. */
+  ports: {
+    panelTitle: "端口",
+    /** A Workspace on this server has nothing to forward. */
+    localNote: "此 Workspace 在本服务端上，端口可直接经 localhost 访问。",
+    adminOnly: "只有管理员可以转发机器的端口。",
+    empty: "还没有转发的端口。",
+    remotePort: "远端端口",
+    localPort: "本地端口（自动）",
+    forward: "转发",
+    copyAddress: "复制本地地址",
+    open: "在浏览器中打开",
+    remove: "删除转发",
+    connections: (n: number) => `${n} 个连接`,
+    invalidRemotePort: "远端端口须为 1–65535 的整数。",
+    invalidLocalPort: "本地端口须为 1024–65535 的整数。",
+    /** The facts, one line each — by layer, never folded into one word. */
+    listenerUp: "监听中",
+    listenerError: (error: string) => `监听失败：${error}`,
+    neverDialled: "尚无连接",
+    dialOk: (when: string) => `最近一次拨号成功 · ${when}`,
+    dialFailed: (detail: string, when: string) => `最近一次拨号失败：${detail} · ${when}`,
+    /** A machine's Ports page. */
+    machineTitle: (alias: string) => `${alias} 的端口转发`,
+    backToMachines: "机器",
+    machineEmpty: "这台机器还没有端口转发。在位于它上面的对话里，从「端口」面板添加。",
+    colListener: "监听",
+    colDial: "最近一次拨号",
+    colOpen: "连接",
+    colTraffic: "上行 / 下行",
+    /** The verb on a machine's card. */
+    verb: "端口",
+    verbTitle: "查看这台机器的全部端口转发",
+  },
+
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "终端",

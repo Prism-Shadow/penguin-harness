@@ -138,6 +138,39 @@ export const en: Strings = {
     adminOnly: "Only an admin can manage machines.",
   },
 
+  /** Port forwarding: the dock's Ports panel, and a machine's Ports page. */
+  ports: {
+    panelTitle: "Ports",
+    localNote:
+      "This Workspace is on this server: its ports are reachable on localhost as they are.",
+    adminOnly: "Only an admin can forward a machine's port.",
+    empty: "No forwarded ports yet.",
+    remotePort: "Remote port",
+    localPort: "Local port (auto)",
+    forward: "Forward",
+    copyAddress: "Copy local address",
+    open: "Open in browser",
+    remove: "Remove forward",
+    connections: (n: number) => `${n} open`,
+    invalidRemotePort: "The remote port must be a whole number from 1 to 65535.",
+    invalidLocalPort: "The local port must be a whole number from 1024 to 65535.",
+    listenerUp: "Listening",
+    listenerError: (error: string) => `Not listening: ${error}`,
+    neverDialled: "No connection yet",
+    dialOk: (when: string) => `Last dial answered · ${when}`,
+    dialFailed: (detail: string, when: string) => `Last dial failed: ${detail} · ${when}`,
+    machineTitle: (alias: string) => `Port forwards of ${alias}`,
+    backToMachines: "Machines",
+    machineEmpty:
+      "No port forwards on this machine yet. Add one from the Ports panel of a conversation on it.",
+    colListener: "Listener",
+    colDial: "Last dial",
+    colOpen: "Open",
+    colTraffic: "Up / down",
+    verb: "Ports",
+    verbTitle: "Every port forward of this machine",
+  },
+
   /** Server-side terminal (the in-app dock and the standalone /terminal page). */
   terminal: {
     title: "Terminal",
