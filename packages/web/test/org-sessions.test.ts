@@ -16,6 +16,7 @@ import type {
   SessionStatus,
 } from "@prismshadow/penguin-server/api";
 import {
+  deskRowLabel,
   deskRows,
   liveEmployeeStates,
   orgRowActivity,
@@ -98,6 +99,26 @@ const sessions: OrgSessionsResponse = {
     { ticketId: "2026-09-empty", title: "Nothing yet", status: "proposed", sessions: [] },
   ],
 };
+
+describe("deskRowLabel", () => {
+  it("leads with a name when the employee has one, and with the title when it has none", () => {
+    expect(deskRowLabel({ agentId: "acme_ceo", name: "王总", jobTitle: "CEO" })).toEqual({
+      primary: "王总",
+      note: "CEO",
+    });
+    // An id says little to a person; the title leads, and the id tells two Developers apart.
+    expect(
+      deskRowLabel({ agentId: "acme_dev_a", name: "acme_dev_a", jobTitle: "Developer" }),
+    ).toEqual({
+      primary: "Developer",
+      note: "acme_dev_a",
+    });
+    expect(deskRowLabel({ agentId: "acme_x", name: "acme_x", jobTitle: "" })).toEqual({
+      primary: "acme_x",
+      note: "",
+    });
+  });
+});
 
 describe("deskRows", () => {
   it("keeps chart order and lists an employee whose desk was never opened", () => {

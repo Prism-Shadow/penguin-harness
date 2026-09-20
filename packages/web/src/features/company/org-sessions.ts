@@ -56,6 +56,23 @@ export interface OrgDeskRow {
 }
 
 /**
+ * What a desk row reads as: who, then — muted, in parentheses — what tells them apart. An
+ * employee with a name of its own is `name (title)`. One without is known by what it DOES:
+ * its id says little to a person (`acme_dev_a`), so the title leads and the id is the note —
+ * which is also what tells two "Developer" rows apart.
+ */
+export function deskRowLabel(row: Pick<OrgDeskRow, "agentId" | "name" | "jobTitle">): {
+  primary: string;
+  note: string;
+} {
+  const named = row.name !== row.agentId;
+  if (named) return { primary: row.name, note: row.jobTitle };
+  return row.jobTitle !== ""
+    ? { primary: row.jobTitle, note: row.agentId }
+    : { primary: row.agentId, note: "" };
+}
+
+/**
  * Desk rows in chart order — the reporting line, which is how the organization reads. The
  * chart is the roster; the run state comes from the live statuses, then from the sessions
  * route's snapshot, then from the chart's own `state` — a desk the sessions route has not

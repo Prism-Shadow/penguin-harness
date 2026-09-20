@@ -52,7 +52,7 @@ import { toastError, toastSuccess } from "../../components/ui/toast";
 import { Truncated } from "../../components/ui/truncated";
 import { MessagingBindingModal } from "../messaging/messaging-binding-modal";
 import { orgKey } from "./company-nav";
-import { deskRows, orgRowActivity } from "./org-sessions";
+import { deskRowLabel, deskRows, orgRowActivity } from "./org-sessions";
 import type { OrgDeskRow } from "./org-sessions";
 
 /**
@@ -169,6 +169,7 @@ function DeskRow({
     run(action);
   };
 
+  const shown = deskRowLabel(row);
   return (
     <li>
       <div
@@ -198,13 +199,13 @@ function DeskRow({
             size={FACE_PX.row}
             className="shrink-0 rounded-md"
           />
-          {/* Who, then what they are: the title is how a reader tells a desk apart before they
-              know the names — "(CEO)" — and it yields first when the row runs out of room. */}
+          {/* Who, then the note that tells them apart (deskRowLabel); the note yields first
+              when the row runs out of room. */}
           <span className="flex min-w-0 flex-1 items-baseline gap-1">
-            <Truncated text={row.name} className="min-w-0" />
-            {row.jobTitle !== "" && (
+            <Truncated text={shown.primary} className="min-w-0" />
+            {shown.note !== "" && (
               <span className="max-w-[45%] shrink-[9999] truncate text-xs font-normal text-gray-400 dark:text-gray-500">
-                ({row.jobTitle})
+                ({shown.note})
               </span>
             )}
           </span>
