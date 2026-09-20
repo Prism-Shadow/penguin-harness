@@ -15,9 +15,13 @@ import { readArtifactBytes } from "./artifact.js";
 import { AUDIO_MAX_BYTES, inspectWave } from "./audio.js";
 import { GENERATED_IMAGE_MAX_BYTES, inspectPng } from "./generated-image.js";
 import { validateBookSpec } from "./book.js";
+import { bookStateMachineDefinition } from "./book-machine.js";
 import { compileBookConfiguration, type BookMode } from "./book-configuration.js";
 import { bookReaderTemplate } from "./book-reader-template.js";
 import { bookReaderControllerTemplate } from "./book-reader-controller-template.js";
+import { bookReaderViewTemplate } from "./book-reader-view-template.js";
+import { bookReaderAdapterTemplate } from "./book-reader-adapter-template.js";
+import { bookReaderEntryTemplate } from "./book-reader-entry-template.js";
 
 /** Loom's WAF checkout convention; discovery only walks ancestors, never the disk. */
 export async function findWafRoot(
@@ -91,8 +95,15 @@ export function scaffoldModule(
     files[name] = JSON.stringify(value, null, 2) + "\n";
   };
   if (bookMode) {
-    files["src/book-reader/model.ts"] = bookReaderTemplate;
-    files["src/book-reader/controller.ts"] = bookReaderControllerTemplate;
+    const staged = (source: string) =>
+      source
+        .replace(/__[A-Z_]+__/g, (token) => replacements[token] ?? token)
+        .replaceAll("\r\n", "\n");
+    files["src/index.ts"] = staged(bookReaderEntryTemplate);
+    files["src/book-reader/model.ts"] = staged(bookReaderTemplate);
+    files["src/book-reader/controller.ts"] = staged(bookReaderControllerTemplate);
+    files["src/book-reader/view.ts"] = staged(bookReaderViewTemplate);
+    files["src/book-reader/adapter.ts"] = staged(bookReaderAdapterTemplate);
   }
   json("package.json", {
     name: `wafmodule-${String(spec.id).toLowerCase()}`,
@@ -165,42 +176,51 @@ export function scaffoldModule(
       },
     },
   });
-  const states: Record<string, unknown> = Object.fromEntries(
-    scenes.map((scene, i) => [
-      scene.id,
-      {
-        description: scene.description,
-        ...(runtime.usesAssessment
-          ? { entry: { type: "initializeAssessment", params: { sceneId: scene.id } } }
-          : {}),
-        exit: { type: "cleanupScene", params: { sceneId: scene.id } },
-        initial: "presenting",
-        states: {
-          presenting: {
-            entry: { type: "presentScene", params: { sceneId: scene.id } },
-            on: {
-              "SCENE.COMPLETED": {
-                guard: { type: "isEventForScene", params: { sceneId: scene.id } },
-                target: `#${spec.id}.${scenes[i + 1]?.id ?? "activity.complete"}`,
+  const states: Record<string, unknown> = bookMode
+    ? {}
+    : Object.fromEntries(
+        scenes.map((scene, i) => [
+          scene.id,
+          {
+            description: scene.description,
+            ...(runtime.usesAssessment
+              ? { entry: { type: "initializeAssessment", params: { sceneId: scene.id } } }
+              : {}),
+            exit: { type: "cleanupScene", params: { sceneId: scene.id } },
+            initial: "presenting",
+            states: {
+              presenting: {
+                entry: { type: "presentScene", params: { sceneId: scene.id } },
+                on: {
+                  "SCENE.COMPLETED": {
+                    guard: { type: "isEventForScene", params: { sceneId: scene.id } },
+                    target: `#${spec.id}.${scenes[i + 1]?.id ?? "activity.complete"}`,
+                  },
+                },
               },
             },
           },
-        },
-      },
-    ]),
-  );
-  states.activity = {
-    initial: "complete",
-    states: { complete: { entry: { type: "finalizeActivity" }, type: "final" } },
-  };
+        ]),
+      );
+  if (!bookMode) {
+    states.activity = {
+      initial: "complete",
+      states: { complete: { entry: { type: "finalizeActivity" }, type: "final" } },
+    };
+  }
   const refDir = `generated/${activity.productCode}/refs/${activity.productCode}-${activity.refNum}/spec`;
-  json(`${refDir}/state-machine.json`, {
-    $schema: "https://waterford.org/schemas/activity-state-machine-1.1.json",
-    version: "1.1",
-    id: spec.id,
-    initial: scenes[0]!.id,
-    states,
-  });
+  json(
+    `${refDir}/state-machine.json`,
+    bookMode
+      ? bookStateMachineDefinition(String(spec.id))
+      : {
+          $schema: "https://waterford.org/schemas/activity-state-machine-1.1.json",
+          version: "1.1",
+          id: spec.id,
+          initial: scenes[0]!.id,
+          states,
+        },
+  );
   json(`${refDir}/activity_spec.json`, spec);
   const plan = activity.draft.mediaPlan;
   if (plan && plan.specRevision !== contentRevision(spec))
@@ -322,6 +342,18 @@ export async function verifyMediaArtifacts(
         throw new Error("Assembly changed the selected book reading policy.");
       continue;
     }
+    if (language === "stateMachine" || language === "activityScenes") {
+      if (
+        contentRevision(configuration[activity.productCode]?.[language] ?? null) !==
+        contentRevision(entries)
+      )
+        throw new Error(
+          language === "stateMachine"
+            ? "Assembly changed the book state machine."
+            : "Assembly changed the book scene catalog.",
+        );
+      continue;
+    }
     for (const [key, value] of Object.entries(entries as Record<string, unknown>))
       if (
         contentRevision(configuration[activity.productCode]?.[language]?.[key] ?? null) !==
@@ -430,9 +462,8 @@ If input.json contains draft.mediaPlan, its manifest and language-specific confi
 Work only in this Session workspace. Treat the shared WAF checkout as read-only. Do not modify shared modules or run Loom's pipeline/server. Do not delegate.
 Copy each accepted generatedAudio or generatedImage file unchanged from media/generated to preview/media/generated, and resolve its configuration against that preview/media base. The collector verifies the accepted media hashes. Do not include binary files in module-result.json's text file list.
 Implement the actual learning interactions and feedback in module/src, preserving waf-state-machine, WAF lifecycle, Interactable input and cleanup. Complete the ref configuration, asset manifest and state machine for the input productCode/refNum. Use existing media when available; report missing media explicitly, never invent successful generation.
-For a book, input.bookMode is the user's explicit reading-mode choice. The scaffolded product configuration contains the selected book policy and complete localized scenes. Preserve this policy, scene order, roles, derived page numbers, image alt text, and ordered audio cues. Implement the reader with the native waf-state-machine lifecycle, owned Interactables, and existing runtime media helpers; do not import waf-sequence or a shared book module. Cover/title pages show only artwork. Story visible text is primary narration; supplemental cues remain hidden. Read-along autoplays on first visit without advancing; Decodable waits the configured reading delay for manual narration and unlocks Next only after all cues complete. Keep backward navigation and rereading available after completion. Missing word timings or pronunciation assets are missing capabilities to report, not timings to invent. Empty timing arrays must not be presented as verified synchronized highlighting.
-Use BookReaderModel from module/src/book-reader/model.ts with the complete selected-language scene collection. Connect its returned intents and ownership tokens to native media operations and cancellable timers; stop superseded operations and reject stale callbacks. The model is state logic, not a finished DOM/audio adapter: implement accessible controls, image/text rendering, framework pause/resume, and true pagehide cleanup. Keep activity completion separate from reader disposal so Previous and rereading survive completion. Include the model source in module-result.json and exercise delay, pause/resume, interrupted narration, follow-up cues, quiet revisits, and post-completion navigation in the real preview.
-Use BookReaderController from module/src/book-reader/controller.ts to coordinate narration and follow-up operations and reading timers. Supply its port with native WAF media operations, a cancellable clock, rendering notifications, completion, and visible errors. Wire native pause/resume to the controller's framework methods and dispose it on pagehide, not activity completion. This coordinator does not supply DOM controls, word playback/alignment, intro video, or native operation implementations: implement those explicitly and report any unfinished capabilities. Include both reader source files in module-result.json.
+For a book, input.bookMode is the user's explicit reading-mode choice. The scaffolded product configuration contains the selected book policy, the book state machine, the scene catalog, and complete localized scenes. Preserve the policy, scene order, roles, derived page numbers, image alt text, and ordered audio cues. Cover/title pages show only artwork. Story visible text is primary narration; supplemental cues remain hidden. Read-along autoplays on first visit without advancing; Decodable waits the configured reading delay for manual narration and unlocks Next only after all cues complete. Keep backward navigation and rereading available after completion. Missing word timings or pronunciation assets are missing capabilities to report, not timings to invent. Empty timing arrays must not be presented as verified synchronized highlighting.
+The scaffold ships the complete native reader under module/src: src/index.ts boots the waf-state-machine with enterReader/bookFinalize actions; src/book-reader holds the model, controller, view and adapter. Use them as shipped. The entry wires the intro video, framework pause/resume, pagehide teardown (controller.dispose plus stateMachine.stop), keyboard navigation, and completion via BOOK.COMPLETED while keeping the view interactive. The adapter compiles word highlight events only from timings present in the configuration; with the currently empty timing arrays narration must play without highlighting and the preview must report synchronized highlighting as unavailable. Supply native timed-audio operations through the port with channel vocals; a missing cue must reject as failed narration, never resolve as success. Keep the reader's Interactables scene-owned so they survive the final state. Verify the assembled module typechecks, and exercise the real scenarios in the preview: delay, pause/resume, interrupted narration, follow-up cues, quiet revisits, and post-completion navigation. Report any capability the data cannot support (word audio, timings, intro video) instead of claiming it. Include all reader source files in module-result.json.
 Use normal Harness approvals for installing dependencies and running commands. Run module typecheck and buildDebug; record real command output in module/build.log. Do not publish or deploy packages.
 Produce preview/index.html and preview/runtime.js with bundled local subresources using the actual WAF framework. It must work as static files under an arbitrary URL prefix, with relative resource URLs. Bundle the framework runtime and navbar as needed. Do not replace WAF with a standalone imitation or rely on a separately running Loom server. Keep preview data local; do not contact production student/telemetry APIs.
 Check the preview through available Harness browser tools. If dependencies or build/preview fail, explain the failure and do not write module-result.json.
