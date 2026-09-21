@@ -3,7 +3,7 @@
 - **Date:** 2026-09-08
 - **Type:** fix
 - **Scope:** `web`
-- **PR:** [#645](https://github.com/Prism-Shadow/penguin-harness/pull/645)
+- **PR:** [#645](https://github.com/Prism-Shadow/penguin-harness/pull/645), [#613](https://github.com/Prism-Shadow/penguin-harness/pull/613)
 
 [中文版](2026-09-08-terminal-scrolls-under-a-finger.zh.md)
 
