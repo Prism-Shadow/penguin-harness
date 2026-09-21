@@ -8,6 +8,12 @@ import {
   DEFAULT_ATTACHMENT_MAX_MB,
   DEFAULT_ATTACHMENT_TOTAL_MB,
 } from "../../services/attachment-limits.js";
+import {
+  clampImageCompressionOverMb,
+  DEFAULT_IMAGE_COMPRESSION,
+  DEFAULT_IMAGE_COMPRESSION_OVER_MB,
+} from "../../services/image-compression.js";
+import type { ImageCompressionSettings } from "../../services/image-compression.js";
 import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import type { Db } from "../../hmr/capabilities.js";
 import type { Settings } from "../../mechanisms/settings.js";
@@ -34,6 +40,12 @@ const ATTACHMENT_MAX_MB_KEY = "attachment_max_mb";
 
 /** Key of the per-message total attachment limit, in whole MB; default DEFAULT_ATTACHMENT_TOTAL_MB. */
 const ATTACHMENT_TOTAL_MB_KEY = "attachment_total_mb";
+/** Key of the "compress large images in the composer" switch; default DEFAULT_IMAGE_COMPRESSION. */
+const IMAGE_COMPRESSION_KEY = "image_compression";
+
+/** Key of the size above which an image is re-encoded, in whole MB; default DEFAULT_IMAGE_COMPRESSION_OVER_MB. */
+const IMAGE_COMPRESSION_OVER_MB_KEY = "image_compression_over_mb";
+
 /** Key of the company-mode master switch; default off (see getCompanyMode). */
 const COMPANY_MODE_KEY = "companyMode";
 
@@ -146,6 +158,51 @@ export class ServerSettingsRepo implements Settings {
     return {
       attachmentMaxMb: this.getAttachmentMaxMb(),
       attachmentTotalMb: this.getAttachmentTotalMb(),
+    };
+  }
+
+  /** Whether the composer re-encodes images above the threshold before uploading them. */
+  getImageCompression(): boolean {
+    const raw = this.get(IMAGE_COMPRESSION_KEY);
+    if (raw === null) return DEFAULT_IMAGE_COMPRESSION;
+    return raw !== "false";
+  }
+
+  setImageCompression(value: boolean): void {
+    this.set(IMAGE_COMPRESSION_KEY, JSON.stringify(value));
+  }
+
+  /**
+   * The size above which an image is re-encoded, in whole MB. Clamped on read for the same reason
+   * the attachment limits are: values only ever enter through the validated PUT, so this covers a
+   * database that predates a change to the bounds, or a hand-edited one.
+   */
+  getImageCompressionOverMb(): number {
+    const raw = this.get(IMAGE_COMPRESSION_OVER_MB_KEY);
+    if (raw === null) return DEFAULT_IMAGE_COMPRESSION_OVER_MB;
+    try {
+      const value: unknown = JSON.parse(raw);
+      return typeof value === "number"
+        ? clampImageCompressionOverMb(value, DEFAULT_IMAGE_COMPRESSION_OVER_MB)
+        : DEFAULT_IMAGE_COMPRESSION_OVER_MB;
+    } catch {
+      return DEFAULT_IMAGE_COMPRESSION_OVER_MB;
+    }
+  }
+
+  setImageCompressionOverMb(value: number): void {
+    this.set(IMAGE_COMPRESSION_OVER_MB_KEY, JSON.stringify(value));
+  }
+
+  /**
+   * The switch and the threshold as one value — what `/api/me` and the settings form both read.
+   * They are only meaningful together: a threshold is a statement about an inactive feature while
+   * the switch is off, and the form edits both in one PUT for that reason.
+   */
+  getImageCompressionSettings(): ImageCompressionSettings {
+    return {
+      imageCompression: this.getImageCompression(),
+      imageCompressionOverMb: this.getImageCompressionOverMb(),
     };
   }
 

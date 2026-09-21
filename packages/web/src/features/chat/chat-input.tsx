@@ -129,6 +129,7 @@ import { modelWindowBelowCompactionLimit } from "../../lib/context";
 import { toneStrip } from "../../lib/tone";
 import { splitDroppedFiles } from "../../lib/file-drop";
 import { splitBySize } from "../../lib/upload-limits";
+import { compressImage, shouldCompress } from "../../lib/image-compress";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import { ReferenceChip } from "./reference-chip";
 
@@ -1067,7 +1068,7 @@ export function ChatInput({
   const { locale } = useLocale();
   // Admin-settable, delivered on /api/me: the pre-flight checks below and the numbers in their
   // messages both come from here, so what the composer refuses is exactly what the server would.
-  const { uploadLimits } = useAuth();
+  const { uploadLimits, uploadPolicy } = useAuth();
   const [text, setText] = useState(initialText ?? "");
   /** Live text mirror for slash-command run() closures (the commands memo deliberately doesn't depend on text). */
   const textRef = useRef(text);
@@ -2037,26 +2038,36 @@ export function ChatInput({
     }
   };
 
+  /**
+   * Pasted, picked or dropped images.
+   *
+   * A large one is re-encoded BEFORE the size check (lib/image-compress), not after: an inline
+   * image rides the conversation and the Trace, where its size is paid again on every history
+   * page and every resume, and shrinking the picture keeps that cost down while letting a photo
+   * through that would otherwise have been refused whole. The threshold and the switch are the
+   * server's (uploadPolicy); an image under the threshold, or of a type a canvas round trip
+   * would change, goes up byte-for-byte. The cap is still there behind it, for the picture
+   * compression cannot help.
+   *
+   * The whole batch is prepared before any of it is staged, so the thumbnails — and therefore
+   * the order the images reach the message in — follow the order they were picked in, not the
+   * order the re-encodes happened to finish in.
+   */
   const addFiles = (files: Iterable<File>) => {
-    // Images had no size check at all: an oversize paste was read into a data URL, JSON'd and
-    // uploaded, freezing the tab on the way to a generic body-cap 413. They are capped well
-    // below file attachments on purpose — an inline image rides the conversation and the Trace,
-    // where its size is paid again on every history page and every resume.
     const imageFiles: File[] = [];
     for (const file of files) if (file.type.startsWith("image/")) imageFiles.push(file);
-    const { accepted, rejected } = splitBySize(imageFiles, uploadLimits.imageMaxMb);
-    for (const file of rejected) {
-      toastError(S.chat.attachmentTooLarge(file.name, uploadLimits.imageMaxMb));
-    }
-    for (const file of accepted) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") {
-          setImages((prev) => [...prev, reader.result as string]);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
+    if (imageFiles.length === 0) return;
+    void Promise.all(
+      imageFiles.map((file) => (shouldCompress(file, uploadPolicy) ? compressImage(file) : file)),
+    ).then(async (prepared) => {
+      const { accepted, rejected } = splitBySize(prepared, uploadLimits.imageMaxMb);
+      for (const file of rejected) {
+        toastError(S.chat.attachmentTooLarge(file.name, uploadLimits.imageMaxMb));
+      }
+      const urls = await Promise.all(accepted.map(readDataUrl));
+      const staged = urls.filter((url) => url !== null);
+      if (staged.length > 0) setImages((prev) => [...prev, ...staged]);
+    });
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {

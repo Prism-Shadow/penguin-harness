@@ -143,6 +143,11 @@ export interface MeResponse {
    */
   uploadLimits: UploadLimits;
   /**
+   * How this server wants uploads handled — what a client is asked to do, not what the server
+   * enforces. It rides `/api/me` beside the limits because every user's composer needs it.
+   */
+  uploadPolicy: UploadPolicy;
+  /**
    * Whether company mode is enabled server-wide (the admin switch in server settings, default
    * on). Off hides the mode switch in every client and 404s every organization route; the
    * user's own preference (`UiPrefs.companyMode`) only hides the switch for that user.
@@ -174,6 +179,23 @@ export interface UploadLimits {
    */
   attachmentLimitMinMb: number;
   attachmentLimitMaxMb: number;
+}
+
+/**
+ * The upload policy as the web app sees it: what the composer is asked to do with a pick before
+ * it is uploaded. Nothing here gates a request — a client that ignores it is not refused.
+ */
+export interface UploadPolicy {
+  /** Whether the composer re-encodes an image above the threshold before uploading it. */
+  imageCompression: boolean;
+  /** The size above which it does, in whole MB. Below it an image is uploaded byte-for-byte. */
+  imageCompressionOverMb: number;
+  /**
+   * The range the threshold may be set to. Carried here so the admin form states the real bounds
+   * without compiling its own copy of them.
+   */
+  imageCompressionMinMb: number;
+  imageCompressionMaxMb: number;
 }
 
 export interface PasswordChangeRequest {
@@ -249,6 +271,17 @@ export interface ServerSettings {
    */
   attachmentTotalMb: number;
   /**
+   * Whether the composer re-encodes an image larger than `imageCompressionOverMb` before
+   * uploading it (default on). Applies to the very next upload — a tab reads the policy from
+   * `/api/me`, and nothing is snapshotted at boot.
+   */
+  imageCompression: boolean;
+  /**
+   * The size above which an image is re-encoded, in whole MB (default 4). Meaningful only while
+   * `imageCompression` is on; a smaller image is uploaded byte-for-byte either way.
+   */
+  imageCompressionOverMb: number;
+  /**
    * Company mode master switch (default on). Off stops the organization scheduler (no
    * calendar event or chat mention fires, nothing is backfilled when it is turned on again),
    * every `/api/projects/:projectId/organizations` route answers 404, and `GET /api/me`
@@ -288,6 +321,14 @@ export interface ServerSettingsUpdateRequest {
    * attachment unsendable. Violations are 400 `invalid_attachment_limit`.
    */
   attachmentTotalMb?: number;
+  /** New state of the automatic image-compression switch. Anything but a boolean is 400. */
+  imageCompression?: boolean;
+  /**
+   * New compression threshold in whole MB. Must be an integer between 1 and 64; anything else —
+   * a fraction, a string, 102400 for "100GB" — is 400 `invalid_image_compression` and writes
+   * nothing.
+   */
+  imageCompressionOverMb?: number;
 }
 
 /**

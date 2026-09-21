@@ -110,7 +110,7 @@ Server-wide proxy, attachment and company-mode settings.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode}}` |
+| GET | `/api/admin/settings` | Server-wide settings: `{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, imageCompression, imageCompressionOverMb, companyMode}}` |
 | PUT | `/api/admin/settings` | Updates settings; omitted fields keep their current value, and an invalid field rejects the whole PUT. Returns the full updated settings |
 | GET | `/api/admin/settings/proxy-probe` | The reachability probe's targets: `{targets: [{provider, url}]}`. Makes no request |
 | POST | `/api/admin/settings/proxy-probe/:provider` | Probes one target over the server's outbound path, sending no credential: `{probe: {provider, url, outcome, ms, status?}}` |
@@ -155,6 +155,16 @@ PUT validates them as follows:
 - Anything else returns `400` with code `invalid_attachment_limit`, and the rejected PUT writes nothing.
 
 Two limits cannot be changed: the number of files per message (20) and the inline-image cap (20MB, `413` `image_too_large`). An inline image is written into the Trace and read again on every history page and every resume, so it deliberately does not follow the attachment cap upward. `GET /api/me` reports all of these limits under `uploadLimits`, so a client can check a file against the limits actually in force before sending it.
+
+### Image compression
+
+A limit is what the server refuses; this is what the Web App is asked to do before it uploads. An inline image enters the conversation and the Trace, where its size is paid again on every history page and every resume, so a large one is resized and re-encoded in the browser — before it becomes a base64 `data:` URL, so the upload shrinks with the picture.
+
+- `imageCompression` (default `true`) is the switch.
+- `imageCompressionOverMb` (default 4) is the size above which an image is re-encoded. A smaller one is uploaded byte-for-byte, and so is any animated or vector image (GIF, SVG), which a canvas round trip would turn into a different picture.
+- PUT validates the threshold as an integer from 1 to 64. Anything else returns `400` with code `invalid_image_compression`, and the rejected PUT writes nothing.
+
+`GET /api/me` reports both under `uploadPolicy`, together with the range the threshold may be set to. The policy shapes what a client uploads; it gates nothing, and an API client that ignores it is not refused — it simply pays the full size itself. The attachment limits above still apply to whatever is uploaded, compressed or not.
 
 ### Company mode switch
 

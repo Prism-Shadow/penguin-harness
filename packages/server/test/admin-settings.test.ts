@@ -9,7 +9,9 @@
  * range (the reason "100GB" is a clear refusal rather than an accepted number), the relation
  * between the two — the total may not sit below the per-file cap, checked against the EFFECTIVE
  * post-write pair so a one-field PUT cannot create an unsendable configuration — and the same
- * atomicity guarantee the proxy fields have.
+ * atomicity guarantee the proxy fields have. The image-compression policy rides it too: its
+ * defaults, its own bounded range and its own refusal code, kept apart from the limits because
+ * it gates nothing — it is what a composer is asked to do before it uploads.
  *
  * The reachability probe rides the same route too: the rule that decides reachable from
  * unreachable, and the endpoint around it. Its fetch is always stubbed — a test that reached a
@@ -29,6 +31,12 @@ import {
   MAX_ATTACHMENT_MB,
   MIN_ATTACHMENT_MB,
 } from "../src/services/attachment-limits.js";
+import {
+  DEFAULT_IMAGE_COMPRESSION,
+  DEFAULT_IMAGE_COMPRESSION_OVER_MB,
+  MAX_IMAGE_COMPRESSION_OVER_MB,
+  MIN_IMAGE_COMPRESSION_OVER_MB,
+} from "../src/services/image-compression.js";
 import { apiClient, createTestApp, loginAdmin, provisionUser } from "./helpers.js";
 import type { TestApp } from "./helpers.js";
 
@@ -296,6 +304,72 @@ describe("admin server settings", () => {
     expect(settings.proxyForApp).toBe(true);
     expect(settings.attachmentMaxMb).toBe(DEFAULT_ATTACHMENT_MAX_MB);
   });
+  it("image compression: defaults with no rows, and /api/me carries the policy with its range", async () => {
+    const { settings } = await getSettings();
+    expect(settings.imageCompression).toBe(DEFAULT_IMAGE_COMPRESSION);
+    expect(settings.imageCompressionOverMb).toBe(DEFAULT_IMAGE_COMPRESSION_OVER_MB);
+    // The composer reads the policy from /api/me, not from the admin route it cannot call.
+    const me = (await (await admin.get("/api/me")).json()) as {
+      uploadPolicy: Record<string, unknown>;
+    };
+    expect(me.uploadPolicy).toEqual({
+      imageCompression: DEFAULT_IMAGE_COMPRESSION,
+      imageCompressionOverMb: DEFAULT_IMAGE_COMPRESSION_OVER_MB,
+      imageCompressionMinMb: MIN_IMAGE_COMPRESSION_OVER_MB,
+      imageCompressionMaxMb: MAX_IMAGE_COMPRESSION_OVER_MB,
+    });
+  });
+
+  it("image compression: a valid PUT persists the switch and the threshold together", async () => {
+    const res = await admin.put("/api/admin/settings", {
+      imageCompression: false,
+      imageCompressionOverMb: 12,
+    });
+    expect(res.status).toBe(200);
+    const echoed = ((await res.json()) as ServerSettingsResponse).settings;
+    expect(echoed.imageCompression).toBe(false);
+    expect(echoed.imageCompressionOverMb).toBe(12);
+    expect(t.deps.serverSettingsRepo.getImageCompressionSettings()).toEqual({
+      imageCompression: false,
+      imageCompressionOverMb: 12,
+    });
+    // Turning the switch off leaves the threshold where it was: the two are stored apart, so
+    // switching back on does not silently reset the number an admin chose.
+    const back = await admin.put("/api/admin/settings", { imageCompression: true });
+    expect(back.status).toBe(200);
+    expect(t.deps.serverSettingsRepo.getImageCompressionOverMb()).toBe(12);
+  });
+
+  it("image compression: out-of-range thresholds are refused with invalid_image_compression", async () => {
+    for (const bad of [102400, MAX_IMAGE_COMPRESSION_OVER_MB + 1, 0, -5, 1.5, "8", null]) {
+      const res = await admin.put("/api/admin/settings", { imageCompressionOverMb: bad });
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe(
+        "invalid_image_compression",
+      );
+    }
+    expect(t.deps.serverSettingsRepo.getImageCompressionOverMb()).toBe(
+      DEFAULT_IMAGE_COMPRESSION_OVER_MB,
+    );
+    // The extremes of the range are the accepted ones.
+    for (const ok of [MIN_IMAGE_COMPRESSION_OVER_MB, MAX_IMAGE_COMPRESSION_OVER_MB]) {
+      expect((await admin.put("/api/admin/settings", { imageCompressionOverMb: ok })).status).toBe(
+        200,
+      );
+    }
+  });
+
+  it("image compression: a PUT mixing a good limit with a bad threshold writes neither", async () => {
+    const res = await admin.put("/api/admin/settings", {
+      attachmentMaxMb: 30,
+      imageCompressionOverMb: 999999,
+    });
+    expect(res.status).toBe(400);
+    const { settings } = await getSettings();
+    expect(settings.attachmentMaxMb).toBe(DEFAULT_ATTACHMENT_MAX_MB);
+    expect(settings.imageCompressionOverMb).toBe(DEFAULT_IMAGE_COMPRESSION_OVER_MB);
+  });
+
   // —— reachability probe ——
 
   /** undici's shape for a transport failure: `TypeError: fetch failed` over the real error. */

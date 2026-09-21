@@ -56,6 +56,11 @@ function memorySettings(maxMb = 7): Settings {
     getAttachmentTotalMb: () => maxMb * 10,
     setAttachmentTotalMb: () => {},
     getAttachmentLimitsMb: () => ({ attachmentMaxMb: maxMb, attachmentTotalMb: maxMb * 10 }),
+    getImageCompression: () => true,
+    setImageCompression: () => {},
+    getImageCompressionOverMb: () => 4,
+    setImageCompressionOverMb: () => {},
+    getImageCompressionSettings: () => ({ imageCompression: true, imageCompressionOverMb: 4 }),
   };
 }
 

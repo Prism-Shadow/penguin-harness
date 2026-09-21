@@ -6,7 +6,7 @@ description: Manage your profile, preferences and password, and, as an admin, us
 **System settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences and password, and, for an admin, the server's users, proxy, upload limits and company mode.
 
 - Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance) and [Account](#account).
-- Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Upload limits](#upload-limits) and [Company mode](#company-mode).
+- Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Uploads](#uploads) and [Company mode](#company-mode).
 
 ## Open System settings
 
@@ -27,7 +27,7 @@ The rail is grouped into **Personal** and **Server**:
 | [Account](#account) | Personal | Only where a password exists to change |
 | [Users](#users) | Server | Admin only, and not in the desktop app |
 | [Proxy options](#proxy-options) | Server | Admin only |
-| [Upload limits](#upload-limits) | Server | Admin only |
+| [Uploads](#uploads) | Server | Admin only |
 | [Company mode](#company-mode) | Server | Admin only |
 
 Personal preferences apply the moment they are touched. There is no Save button and nothing to lose by closing the dialog. The nickname on the Profile page is the one exception: typed text needs a commit, and its **Save** sits beside the field rather than under the page.
@@ -211,24 +211,36 @@ The test measures this server's own outbound hop to the model providers. It list
 > [!NOTE]
 > The test measures the saved settings, because only a save rebuilds the outbound dispatcher. If you edited the address, save it before testing.
 
-## Upload limits
+## Uploads
 
-The **Upload limits** page is admin-only and server-global. It sets two sizes, in whole MB:
+The **Uploads** page is admin-only and server-global. It holds the two size limits and the automatic image compression:
 
 | Field | Default | Allowed range |
 | --- | --- | --- |
 | **Max attachment size (MB)** | 100MB | 1–200MB |
 | **Max total per message (MB)** | 120MB | 1–200MB |
+| **Compress large images** | On | — |
+| **Compress images larger than (MB)** | 4MB | 1–64MB |
 
 The total may not sit below the per-file cap, because that combination would make a legal single attachment unsendable. A value outside the range, such as "100GB" typed into a MB field as 102400, is refused with the reason shown under the input rather than accepted. Validation precedes every write: one bad field in a PUT leaves the other fields untouched too.
 
+The limits and the compression answer different questions. A limit is what the server refuses. The compression is what the browser does before it uploads: an image over the threshold is resized to fit a 2048px box and re-encoded in its own format, so the upload shrinks with the picture. A smaller image is sent byte-for-byte, and so is any animated or vector image — a canvas round trip would return a first frame or a rasterization, which is a different picture, not a smaller one. If the re-encode comes out no smaller than the original, the original is sent.
+
+Compression is worth having because an inline image is not an attachment: it enters the conversation and the Trace, where its size is paid again on every history page and every Session resume. The 20MB inline-image cap applies to what is actually uploaded, so a compressed picture is measured after the re-encode.
+
 ### Change the upload limits
 
-1. On the **Upload limits** page, in **Max attachment size (MB)**, enter a whole number of MB between 1 and 200.
+1. On the **Uploads** page, in **Max attachment size (MB)**, enter a whole number of MB between 1 and 200.
 2. In **Max total per message (MB)**, enter a whole number of MB between 1 and 200, and not below the per-file cap.
 3. Select **Save**.
 
-Saving takes effect immediately, with no restart: the attachment validators and the request body cap both read the setting per request.
+### Change image compression
+
+1. On the **Uploads** page, set **Compress large images** on or off.
+2. In **Compress images larger than (MB)**, enter a whole number of MB between 1 and 64. The field stays editable while the switch is off, so both can be set in one pass.
+3. Select **Save**.
+
+Saving takes effect immediately, with no restart: the attachment validators and the request body cap read the limits per request, and a composer reads the compression policy from its next `/api/me`.
 
 ## Company mode
 

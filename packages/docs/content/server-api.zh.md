@@ -110,7 +110,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, companyMode}}` |
+| GET | `/api/admin/settings` | 服务器全局设置：`{settings: {proxyForApp, proxyForAgent, proxyUrl, attachmentMaxMb, attachmentTotalMb, imageCompression, imageCompressionOverMb, companyMode}}` |
 | PUT | `/api/admin/settings` | 更新设置；省略的字段保持当前值，任何字段非法都会拒绝整个 PUT。返回更新后的完整设置 |
 | GET | `/api/admin/settings/proxy-probe` | 可达性探测的目标：`{targets: [{provider, url}]}`。不发起任何请求 |
 | POST | `/api/admin/settings/proxy-probe/:provider` | 经服务器的出站链路探测其中一个目标，不发送任何凭证：`{probe: {provider, url, outcome, ms, status?}}` |
@@ -155,6 +155,16 @@ PUT 按如下规则校验：
 - 其余情况返回 `400`，错误码为 `invalid_attachment_limit`，且这次 PUT 不会写入任何内容。
 
 有两项限制不可更改：每条消息的文件数量上限（20）和内嵌图片上限（20MB，超限返回 `413` `image_too_large`）。内嵌图片会写入 Trace，之后每次分页加载历史、每次恢复会话都要重新读取，因此刻意不随附件上限一同调大。`GET /api/me` 会在 `uploadLimits` 中返回上述全部限制，客户端发送文件前可以先对照实际生效的限制检查文件。
+
+### 图片压缩
+
+上限是服务端拒绝什么，这一项则是 Web App 在上传前被要求做什么。内嵌图片会进入对话与 Trace，之后每次分页加载历史、每次恢复会话都要重新付出它的体积，因此大图会先在浏览器里缩放并重新编码——在它变成 base64 `data:` URL 之前，上传量随图片一同缩小。
+
+- `imageCompression`（默认 `true`）是开关。
+- `imageCompressionOverMb`（默认 4）是触发重新编码的体积。小于它的图片按原样上传；动图与矢量图（GIF、SVG）同样不作处理——经过 canvas 往返它们会变成另一张图。
+- PUT 校验阈值为 1–64 之间的整数。其余情况返回 `400`，错误码为 `invalid_image_compression`，且这次 PUT 不会写入任何内容。
+
+`GET /api/me` 在 `uploadPolicy` 中返回二者，并附带阈值的取值范围。该策略塑造客户端上传什么，本身不是关卡：忽略它的 API 调用方不会被拒绝，只是自行承担完整体积。上面的附件上限对上传的内容一律适用，压缩与否都一样。
 
 ### 公司模式开关
 

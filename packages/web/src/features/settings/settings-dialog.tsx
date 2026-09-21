@@ -79,7 +79,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     appearance: S.settings.appearanceTitle,
     account: S.settings.accountTitle,
     proxy: S.settings.proxyTitle,
-    uploads: S.settings.uploadLimitsTitle,
+    uploads: S.settings.uploadsTitle,
     company: S.settings.companyModeTitle,
     users: S.admin.users,
   };

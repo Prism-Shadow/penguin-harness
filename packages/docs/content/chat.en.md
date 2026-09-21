@@ -64,10 +64,12 @@ An attachment can be any type. Selected files show as removable chips above the 
 
 Limits apply at two moments:
 
-- When you pick or drop a file: a file over the per-file size (100MB by default) or an image over 20MB is refused before anything is read, and the message names the limit in force.
+- When you pick or drop a file: a file over the per-file size (100MB by default) or an image over 20MB is refused before anything is read, and the message names the limit in force. An image is compressed first, so what counts against the 20MB is the picture as it will be uploaded.
 - When you send: a message carries at most 20 files and 120MB in total by default. Over that, the send fails with "Too many files attached to one message." or "The request is too large."
 
-An admin can change both sizes under [System settings › Upload limits](/settings#upload-limits). The 20MB cap for images placed inline does not follow them: an inline image enters the conversation and the Trace, where its size is paid again on every history page and every Session resume.
+An admin can change both sizes under [System settings › Uploads](/settings#uploads). The 20MB cap for images placed inline does not follow them: an inline image enters the conversation and the Trace, where its size is paid again on every history page and every Session resume.
+
+That is also why an image larger than 4MB is resized and re-encoded in the browser before it is uploaded, rather than sent whole — an admin can change the threshold, or turn the compression off, on the same page. Animated and vector images (GIF, SVG) are never touched, and a re-encode that comes out no smaller is discarded.
 
 On send, attached files are written into the Session's scratchpad, which is deleted with the Session. The conversation shows an "Attached files" notice; the file contents never enter the conversation, and the model opens each file by path with its file tools. On a model without image input, images are saved to the scratchpad the same way and passed as file paths, and a hint above the composer says so.
 
@@ -358,7 +360,7 @@ A group's active conversations, and each open folder, show ten conversations at 
 | --- | --- |
 | Inline image | 20MB, separate from the attachment limits |
 | Attachments per message | 20 files |
-| Attachment size | 100MB per file and 120MB per message by default; set by an admin under [Upload limits](/settings#upload-limits) |
+| Attachment size | 100MB per file and 120MB per message by default; set by an admin under [Uploads](/settings#uploads) |
 | Shortcuts | 3 per user; name up to 40 characters, prompt up to 4000 |
 | History | The latest 50 turns on opening, then 50 more per load |
 | Conversation list | 10 conversations at a time per group or folder; 10 groups per page |
