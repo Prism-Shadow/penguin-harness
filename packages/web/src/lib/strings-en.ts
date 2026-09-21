@@ -324,8 +324,7 @@ export const en: Strings = {
     sessionsTitle: "Sessions",
     noSessions: "No coding-agent sessions yet.",
     workspaceLabel: "Workspace folder",
-    workspaceHint:
-      "The folder the agent works in. Left empty, a temporary workspace is created.",
+    workspaceHint: "The folder the agent works in. Left empty, a temporary workspace is created.",
     startSession: "Start session",
     endSession: "End session",
     busy: "Working…",
