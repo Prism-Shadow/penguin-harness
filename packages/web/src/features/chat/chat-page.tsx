@@ -84,6 +84,7 @@ import type { ForkTarget } from "./task-stats-line";
 import { latestTaskHasSubagent, modelTaskStartCount, taskStartCount } from "./agent-topology";
 import { ChatInput } from "./chat-input";
 import type { ComposerControl } from "./chat-input";
+import { approvalModeChoices } from "./approval-mode";
 import type { ComposerReference } from "../../lib/workspace-tree";
 import {
   compactionTally,
@@ -1680,6 +1681,7 @@ export function ChatPage() {
             subagents={stream.subagents}
             models={models?.models ?? []}
             approvalMode={selected.approvalMode}
+            approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}
             onChangeApprovalMode={onChangeApprovalMode}
             modeSaving={modeSaving}
             parentThinkingLevel={sessionThinkingLevel(turnThinkingLevel, agentThinkingLevel)}
@@ -1832,6 +1834,8 @@ export function ChatPage() {
       sessionId={selected.sessionId}
       vision={vision}
       approvalMode={selected.approvalMode}
+      // An organization's Session is not offered always-ask: nobody is there to be asked.
+      approvalModes={approvalModeChoices(selected.client, selected.approvalMode)}
       onChangeApprovalMode={onChangeApprovalMode}
       modeSaving={modeSaving}
       autoFocus

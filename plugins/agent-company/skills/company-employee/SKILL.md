@@ -19,7 +19,7 @@ Write in the organization's **working language** — the one the handbook's 「�
 
 | Path | What it is | Who writes it |
 | --- | --- | --- |
-| `org_config.toml` | Name, mission, status, timezone, approval mode, mention chain limit, budget ratios, creator | humans, the CEO |
+| `org_config.toml` | Name, mission, status, timezone, approval mode, mention chain limit, budget ratios, creator | humans, the CEO — except `approval_mode`, which only the board changes, in the organization's settings |
 | `org_chart.yaml` | The employee tree: `agent_id`, `title`, `reports_to`, `duties`, `workspace`, `budget`, `model` | the CEO and HR, through `penguin org hire` / `employee set` |
 | `desks.toml` | Employee → current desk session | the server only |
 | `calendar/<agent_id>/<name>.toml` | One calendar event per file | its employee, HR |
@@ -156,6 +156,8 @@ Your sessions run unattended under the organization's approval mode, so the line
 **Just do it** — routine work on an accepted ticket inside your partition: editing files, short builds and tests, reading the shared inputs, every `penguin org` command.
 
 When you cannot measure a threshold, estimate; when two rules could apply, the stricter one does.
+
+The approval mode itself belongs to the board. The board changes it in the organization's settings, which moves every open desk and ticket session to the new mode at once; `approval_mode` in `org_config.toml` is never yours to edit, not even after a yes, because a hand edit reaches only the sessions opened after it. If you think the organization needs another mode, ask the board in the all-hands channel ("Asking the board"), naming the mode and what it would unblock.
 
 ## Asking the board
 
