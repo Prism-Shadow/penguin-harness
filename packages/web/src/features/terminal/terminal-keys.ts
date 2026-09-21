@@ -69,16 +69,18 @@ export function controlCode(char: string): string | null {
 /**
  * What an armed modifier does to the characters typed after it.
  *
- * Only a lone character can carry Ctrl. Anything longer — a paste, an IME commit, an escape
- * sequence xterm produced itself — passes through untouched rather than collapsing into a
- * single control byte, which is the difference between "Ctrl armed, then paste" doing
- * nothing surprising and it sending one stray ^V.
+ * Only a lone character can carry a modifier. Anything longer — a paste, an IME commit, an
+ * escape sequence xterm produced itself — passes through untouched: under Ctrl it would
+ * otherwise collapse into a single control byte, and under Alt the ESC in front would pair
+ * with the chunk's FIRST character, so a pasted `ls -la` reaches readline as Meta-l
+ * (downcase-word) followed by `s -la`.
  *
  * A pairing with no control code (Ctrl+1) sends the plain character, matching what a
  * physical keyboard does.
  */
 export function applyModifiers(data: string, mods: TerminalModifiers): string {
-  if (!hasModifier(mods)) return data;
+  // One code point, not one UTF-16 unit: Alt composes with a character outside the BMP too.
+  if (!hasModifier(mods) || [...data].length !== 1) return data;
   let out = data;
   if (mods.ctrl) out = controlCode(data) ?? data;
   if (mods.alt) out = `\x1b${out}`;
