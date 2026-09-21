@@ -8,6 +8,7 @@ import {
   parseSessionSeen,
   dropSessionSeenCache,
   readSessionSeen,
+  refreshSessionSeenCache,
   resetSessionSeenCache,
   serializeSessionSeen,
   sessionSeenKey,
@@ -144,6 +145,35 @@ describe("another tab's write", () => {
     dropSessionSeenCache(key);
     expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T2));
     expect(isSessionUnread(readSessionSeen("proj", storage), "a", T2)).toBe(false);
+  });
+});
+
+describe("coming back to the tab", () => {
+  beforeEach(resetSessionSeenCache);
+
+  it("re-reads what storage holds", () => {
+    const storage = memoryStorage();
+    const key = sessionSeenKey("proj");
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T1) })));
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T1));
+    storage.setItem(key, serializeSessionSeen(state(AT(T0), { a: AT(T2) })));
+    refreshSessionSeenCache();
+    expect(readSessionSeen("proj", storage).seen.get("a")).toBe(AT(T2));
+  });
+
+  it("keeps markers storage refused: the copy in memory is the only one", () => {
+    const backing = memoryStorage();
+    const full = {
+      getItem: (key: string) => backing.getItem(key),
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+    };
+    noteSessionSeen("proj", "a", T1, full);
+    expect(isSessionUnread(readSessionSeen("proj", full), "a", T1)).toBe(false);
+    refreshSessionSeenCache();
+    dropSessionSeenCache(sessionSeenKey("proj"));
+    expect(isSessionUnread(readSessionSeen("proj", full), "a", T1)).toBe(false);
   });
 });
 

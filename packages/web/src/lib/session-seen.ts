@@ -160,15 +160,26 @@ function read(key: string, storage?: SessionSeenStorage): SessionSeenState {
   return state;
 }
 
+/**
+ * Keys whose latest markers never reached storage, so the parsed copy is the only one there
+ * is. Dropping it to "re-read storage" would re-read what storage had BEFORE the write, and
+ * every Session read since would light up unread again.
+ */
+const unsaved = new Set<string>();
+
 function write(key: string, state: SessionSeenState, storage?: SessionSeenStorage): void {
   const s = storageOf(storage);
+  let saved = false;
   if (s) {
     try {
       s.setItem(key, serializeSessionSeen(state));
+      saved = true;
     } catch {
       // Quota / private mode: the in-memory copy still serves this tab.
     }
   }
+  if (saved) unsaved.delete(key);
+  else unsaved.add(key);
   seenStore.setState((prev) => ({ cache: new Map(prev.cache).set(key, state) }));
 }
 
@@ -223,15 +234,26 @@ export function readSessionSeen(projectId: string, storage?: SessionSeenStorage)
  */
 export function dropSessionSeenCache(key: string): void {
   seenStore.setState((prev) => {
-    if (!prev.cache.has(key)) return prev;
+    if (!prev.cache.has(key) || unsaved.has(key)) return prev;
     const cache = new Map(prev.cache);
     cache.delete(key);
     return { cache };
   });
 }
 
-/** Drops the whole in-memory parse cache: every Project re-reads storage on its next read. */
+/**
+ * Drops every parsed copy storage can give back: those Projects re-read it on their next
+ * read. A copy that never reached storage stays — see `unsaved`.
+ */
+export function refreshSessionSeenCache(): void {
+  seenStore.setState((prev) => ({
+    cache: new Map([...prev.cache].filter(([key]) => unsaved.has(key))),
+  }));
+}
+
+/** Forgets everything held in memory, unsaved copies included (a test's clean slate). */
 export function resetSessionSeenCache(): void {
+  unsaved.clear();
   seenStore.setState({ cache: new Map() });
 }
 
@@ -245,6 +267,6 @@ if (typeof window !== "undefined") {
       dropSessionSeenCache(event.key);
   });
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") resetSessionSeenCache();
+    if (document.visibilityState === "visible") refreshSessionSeenCache();
   });
 }
