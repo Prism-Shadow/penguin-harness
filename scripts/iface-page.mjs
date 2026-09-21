@@ -128,6 +128,8 @@ function expr(e) {
   if ("promise" in e) return "Promise&lt;" + expr(e.promise) + "&gt;";
   if ("stream" in e) return "AsyncIterable&lt;" + expr(e.stream) + "&gt;";
   if ("array" in e) return "(" + expr(e.array) + ")[]";
+  if ("map" in e) return "Map&lt;" + expr(e.map[0]) + ", " + expr(e.map[1]) + "&gt;";
+  if ("set" in e) return "Set&lt;" + expr(e.set) + "&gt;";
   if ("maybe" in e) return expr(e.maybe) + " | undefined";
   if ("oneOf" in e) return e.oneOf.map(expr).join(" | ");
   if ("fn" in e) return "(" + sigParams(e.fn) + ") =&gt; " + expr(e.fn.returns);
