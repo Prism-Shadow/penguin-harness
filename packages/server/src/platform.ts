@@ -158,6 +158,7 @@ import {
   Projects,
 } from "./mechanisms/projects.js";
 import {
+  AgentState,
   Schedules,
   Scheduling,
   SessionDrivers,
@@ -347,6 +348,7 @@ export class ProjectsModule {}
     SessionIndex,
     SessionOrigins,
     SessionDrivers,
+    AgentState,
     Schedules,
     Scheduling,
     Sessions,
@@ -535,6 +537,8 @@ export function platformDef(
     await change?.write();
     return false;
   },
+  /** Nodes the previous App hands over, booted as they are in place of fresh ones (hmr/platform.ts: the Agent state). */
+  inherited: ReadonlyMap<ModuleClass, object> = new Map(),
 ): ModuleDef {
   const instances = new Map<ModuleClass, object>([
     [RuntimeConfig, new RuntimeConfig(caps)],
@@ -548,6 +552,7 @@ export function platformDef(
     [RuntimeAuthState, new RuntimeAuthState(caps)],
     [RuntimeResourceGroups, new RuntimeResourceGroups(adoptable)],
   ]);
+  for (const [cls, instance] of inherited) instances.set(cls, instance);
   for (const [cls, instance] of caps.replacements) instances.set(cls, instance);
   return moduleDefOf(PlatformModule, {
     manifests: table.modules as ManifestTable,
