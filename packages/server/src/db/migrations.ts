@@ -466,6 +466,9 @@ export const MIGRATIONS: readonly Migration[] = [
     // Additive: one new table, nothing existing touched. A predecessor build never reads it;
     // the access token already written into .project_config.toml keeps working until it
     // expires, so rollback only loses silent refresh state.
+    // KEEP until every supported upgrade starts from schema 10 or newer. The release that
+    // raises the minimum database baseline past 9 owns removing this migration block and its
+    // version-9 fixture; the table itself remains while provider token refresh uses it.
     swapSafe: true,
     up(db) {
       // Frozen copy of the DDL as of the provider-auth-token feature; do not re-derive from
