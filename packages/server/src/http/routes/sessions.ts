@@ -1414,6 +1414,11 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
   app.get("/:sessionId/files/preview-redirect", async (c) => {
     const row = resolveSession(c);
     const rel = c.req.query("path") ?? "";
+    // Every other query parameter rides along to the final document (the module
+    // preview's scene/language overrides) — the redirect is their only transport.
+    const overrides = new URL(c.req.url).searchParams;
+    overrides.delete("path");
+    const overrideQuery = overrides.toString();
     // Validate existence + containment while the caller is still authenticated, so a bad
     // path fails here rather than as an opaque 404 from the unauthenticated preview origin.
     // A stat, not a read: the file itself is fetched later, on the preview origin — reading
@@ -1429,7 +1434,8 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
     );
     if (!target) {
       return c.redirect(
-        `/api/sessions/${row.sessionId}/files/content?path=${encodeURIComponent(rel)}&preview=1`,
+        `/api/sessions/${row.sessionId}/files/content?path=${encodeURIComponent(rel)}&preview=1` +
+          (overrideQuery ? `&${overrideQuery}` : ""),
         302,
       );
     }
@@ -1440,7 +1446,10 @@ export function sessionsRoutes(deps: SessionsRouteDeps): Hono<AppEnv> {
       expiresAt: Date.now() + PREVIEW_TOKEN_TTL_MS,
     });
     const encoded = rel.split("/").map(encodeURIComponent).join("/");
-    return c.redirect(`${target.origin}/preview/${token}/${encoded}`, 302);
+    return c.redirect(
+      `${target.origin}/preview/${token}/${encoded}${overrideQuery ? `?${overrideQuery}` : ""}`,
+      302,
+    );
   });
 
   // Bulk existence check (message file cards list only files that actually exist):

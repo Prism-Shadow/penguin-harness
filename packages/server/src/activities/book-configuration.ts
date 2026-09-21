@@ -6,6 +6,7 @@ import {
   type MediaAsset,
 } from "./media.js";
 import { interpretBookScenes, validateBookSpec, type BookScene } from "./book.js";
+import { bookActivityScenes, bookStateMachineDefinition, INTRO_VIDEO_KEY } from "./book-machine.js";
 
 const DEFAULT_LANGUAGE = "en-US";
 const READING_DELAY = {
@@ -43,16 +44,21 @@ export function compileBookConfiguration(
   const layered = mediaConfiguration(manifest);
   const product = asObject(layered[activity.productCode]);
   const intro = index.asset("video", "book-intro-video", DEFAULT_LANGUAGE);
-  product.book = {
+  const book: Record<string, unknown> = {
     mode,
     readingDelay: { ...READING_DELAY },
     ...(intro?.path
       ? {
-          introVideoKey: "book-intro-video",
+          introVideoKey: INTRO_VIDEO_KEY,
           introVideoUrl: `{{MEDIA}}/${intro.path.slice("media/".length)}`,
         }
       : {}),
   };
+  product.book = book;
+  product.activityScenes = bookActivityScenes(scenes, {
+    introVideoKey: book.introVideoKey as string | undefined,
+  });
+  product.stateMachine = bookStateMachineDefinition(String(spec.id));
   const languages = new Set([DEFAULT_LANGUAGE, ...Object.keys(manifest.assets)]);
   const defaultScenes = compileScenes(scenes, index, DEFAULT_LANGUAGE);
   const defaultMedia = { ...asObject(product[DEFAULT_LANGUAGE]) };

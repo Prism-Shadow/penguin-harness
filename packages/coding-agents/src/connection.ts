@@ -30,6 +30,25 @@ import { AcpAgentError, type AgentSessionEvent, type AgentToolCall } from "./typ
 
 export type SpawnProcess = typeof spawn;
 
+/**
+ * npm-global CLIs are `.cmd`/`.bat` shims on Windows, which Node refuses to spawn
+ * directly (EINVAL without a shell) — route just those through cmd.exe as one pre-quoted
+ * command line. Definitions are admin-authored, the same trust as typing the command
+ * into a shell, so cmd metacharacters in args stay the admin's own intent.
+ */
+function spawnTarget(command: string, args: string[]): [string, string[]] {
+  if (process.platform !== "win32" || !/\.(cmd|bat)$/i.test(command)) return [command, args];
+  // Tokens with spaces (an npm dir under "C:\Program Files") carry their own quotes;
+  // with /s, cmd strips only the outer pair before executing the rest.
+  const line = [command, ...args].map(quoteForCmdLine).join(" ");
+  return ["cmd.exe", ["/d", "/s", "/c", `"${line}"`]];
+}
+
+function quoteForCmdLine(token: string): string {
+  if (token !== "" && !/[\s"]/.test(token)) return token;
+  return `"${token.replaceAll('"', '""')}"`;
+}
+
 export interface AcpConnectionHandlers {
   onEvent: (event: AgentSessionEvent) => void;
   /** Called on the agent's `session/request_permission`; resolves with the human's choice. */
@@ -68,12 +87,15 @@ export class AcpConnection {
     handlers: AcpConnectionHandlers,
     spawnProcess: SpawnProcess = spawn,
   ): Promise<AcpConnection> {
-    const proc = spawnProcess(command, args, {
+    const [file, spawnArgs] = spawnTarget(command, args);
+    const proc = spawnProcess(file, spawnArgs, {
       env,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       shell: false,
       detached: process.platform !== "win32",
+      // The cmd.exe route hands one pre-quoted string over; node must not re-quote it.
+      ...(file !== command ? { windowsVerbatimArguments: true } : {}),
     });
     proc.on("error", () => proc.kill());
     // Diagnostics can carry account secrets: drain without exposing them.

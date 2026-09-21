@@ -13,6 +13,7 @@ import {
   type AcpConnectionHandlers,
   type SpawnProcess,
 } from "./connection.js";
+import { resolveCommandPath } from "./resolve.js";
 import {
   AcpAgentError,
   type AgentPermissionOutcome,
@@ -96,15 +97,7 @@ export class CodingAgentManager {
     this.spawnProcess = options.spawnProcess;
     this.createConnection =
       options.createConnection ??
-      ((definition, handlers) =>
-        AcpConnection.spawn(
-          definition.command,
-          definition.args ?? [],
-          this.envFor(definition),
-          this.clientInfo,
-          handlers,
-          this.spawnProcess,
-        ));
+      ((definition, handlers) => this.spawnConnection(definition, handlers));
     this.permissionTimeoutMs = options.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
     this.maxLoggedEvents = options.maxLoggedEvents ?? DEFAULT_MAX_LOGGED_EVENTS;
   }
@@ -291,6 +284,28 @@ export class CodingAgentManager {
   }
 
   // --- internals ---------------------------------------------------------------------------
+
+  /**
+   * Resolve bare names before spawning: spawn's own Windows search never finds .cmd/.bat
+   * shims (they need cmd.exe), and PATH may miss the version-manager homes discovery
+   * knows about. Unresolved names pass through unchanged, so the spawn error stays the
+   * honest signal for a command that does not exist.
+   */
+  private spawnConnection(
+    definition: AgentServerDefinition,
+    handlers: AcpConnectionHandlers,
+  ): Promise<AcpConnection> {
+    return resolveCommandPath(definition.command).then((command) =>
+      AcpConnection.spawn(
+        command,
+        definition.args ?? [],
+        this.envFor(definition),
+        this.clientInfo,
+        handlers,
+        this.spawnProcess,
+      ),
+    );
+  }
 
   private requireSession(sessionId: string): SessionRecord {
     const record = this.sessions.get(sessionId);

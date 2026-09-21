@@ -210,4 +210,36 @@ describe("book configuration compiler", () => {
     expect(() => compileBookConfiguration(activity, "readAlong", withoutNarration)).not.toThrow();
     expect(() => compileBookConfiguration(activity, "decodable", withoutNarration)).toThrow();
   });
+
+  it("embeds the book state machine and reader scene catalog in the product configuration", () => {
+    const activity = bookActivity();
+    const manifest = languageManifest(activity);
+    const product = compileBookConfiguration(activity, "decodable", manifest)[
+      activity.productCode
+    ] as Record<string, any>;
+    expect(product.stateMachine).toMatchObject({
+      version: "1.1",
+      id: "sight-words",
+      initial: "reading",
+      states: {
+        reading: { entry: { type: "enterReader" } },
+        activity: {
+          states: { complete: { entry: { type: "bookFinalize" }, type: "final" } },
+        },
+      },
+    });
+    expect(product.stateMachine.states.reading.on["BOOK.COMPLETED"].target).toBe(
+      "#sight-words.activity.complete",
+    );
+    expect(product.activityScenes).toEqual([
+      {
+        id: "reading",
+        description: "Book reader",
+        imageKeys: ["cover", "title", "story"],
+        videoKeys: [],
+        animationKeys: [],
+        audioKeys: ["narration-1"],
+      },
+    ]);
+  });
 });

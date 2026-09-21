@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  CodingAgentDiscoveryCandidate,
   CodingAgentEvent,
   CodingAgentSaveRequest,
   CodingAgentServerInfo,
@@ -14,6 +15,7 @@ import {
   answerCodingAgentPermission,
   cancelCodingAgentSession,
   createCodingAgentSession,
+  discoverCodingAgents,
   promptCodingAgentSession,
   removeCodingAgent,
   saveCodingAgent,
@@ -519,6 +521,24 @@ function AddAgentModal({
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [env, setEnv] = useState("");
+  const [discovered, setDiscovered] = useState<CodingAgentDiscoveryCandidate[] | null>(null);
+
+  // Admin-only endpoint; on failure the section simply stays hidden and the manual form
+  // remains the whole dialog. Refetched on every open, so an install lands on next open.
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    discoverCodingAgents()
+      .then((res) => {
+        if (live) setDiscovered(res.candidates);
+      })
+      .catch(() => {
+        if (live) setDiscovered(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [open]);
 
   const reset = () => {
     setId("");
@@ -526,6 +546,16 @@ function AddAgentModal({
     setCommand("");
     setArgs("");
     setEnv("");
+  };
+
+  /** Pre-fill from a discovered recipe; the fields below stay the review step. */
+  const useCandidate = (candidate: CodingAgentDiscoveryCandidate) => {
+    setId(candidate.recipeId);
+    setTitle(candidate.title);
+    if (candidate.launch !== null) {
+      setCommand(candidate.launch.command);
+      setArgs(candidate.launch.args.join("\n"));
+    }
   };
 
   const save = () => {
@@ -576,23 +606,106 @@ function AddAgentModal({
       }
     >
       <div className="space-y-3">
-        <Field label={S.codingAgents.idLabel} hint={S.codingAgents.idHint} required>
-          <Input size="sm" value={id} onChange={(e) => setId(e.target.value)} />
-        </Field>
-        <Field label={S.codingAgents.titleLabel}>
-          <Input size="sm" value={title} onChange={(e) => setTitle(e.target.value)} />
-        </Field>
-        <Field label={S.codingAgents.commandLabel} hint={S.codingAgents.commandHint} required>
-          <Input size="sm" value={command} onChange={(e) => setCommand(e.target.value)} />
-        </Field>
-        <Field label={S.codingAgents.argsLabel} hint={S.codingAgents.argsHint}>
-          <Textarea size="sm" value={args} onChange={(e) => setArgs(e.target.value)} />
-        </Field>
-        <Field label={S.codingAgents.envLabel} hint={S.codingAgents.envHint}>
-          <Textarea size="sm" value={env} onChange={(e) => setEnv(e.target.value)} />
-        </Field>
+        {discovered !== null && discovered.length > 0 ? (
+          <DiscoveryList candidates={discovered} onUse={useCandidate} />
+        ) : discovered === null ? (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {S.codingAgents.discoveredLoading}
+          </p>
+        ) : null}
+        <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
+          <div className="space-y-3">
+            <Field label={S.codingAgents.idLabel} hint={S.codingAgents.idHint} required>
+              <Input size="sm" value={id} onChange={(e) => setId(e.target.value)} />
+            </Field>
+            <Field label={S.codingAgents.titleLabel}>
+              <Input size="sm" value={title} onChange={(e) => setTitle(e.target.value)} />
+            </Field>
+            <Field label={S.codingAgents.commandLabel} hint={S.codingAgents.commandHint} required>
+              <Input size="sm" value={command} onChange={(e) => setCommand(e.target.value)} />
+            </Field>
+            <Field label={S.codingAgents.argsLabel} hint={S.codingAgents.argsHint}>
+              <Textarea size="sm" value={args} onChange={(e) => setArgs(e.target.value)} />
+            </Field>
+            <Field label={S.codingAgents.envLabel} hint={S.codingAgents.envHint}>
+              <Textarea size="sm" value={env} onChange={(e) => setEnv(e.target.value)} />
+            </Field>
+          </div>
+        </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Known-agent recipes probed on the server, detected first. A candidate with a launch
+ * offers one-click pre-fill; an installed-but-adapter-less one names what to install; a
+ * missing one dims and links its homepage.
+ */
+function DiscoveryList({
+  candidates,
+  onUse,
+}: {
+  candidates: CodingAgentDiscoveryCandidate[];
+  onUse: (candidate: CodingAgentDiscoveryCandidate) => void;
+}) {
+  const ordered = [...candidates].sort((a, b) => Number(b.detected) - Number(a.detected));
+  return (
+    <div>
+      <div className="mb-1 text-xs font-medium text-gray-700 dark:text-gray-300">
+        {S.codingAgents.discoveredTitle}
+      </div>
+      <ul className="divide-y divide-gray-100 dark:divide-gray-800">
+        {ordered.map((candidate) => (
+          <li
+            key={candidate.recipeId}
+            className={`flex min-w-0 items-center gap-2 py-2 ${candidate.detected ? "" : "opacity-70"}`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm text-gray-900 dark:text-gray-100">
+                {candidate.title}
+                <span className="sr-only">
+                  {". "}
+                  {candidate.detected
+                    ? S.codingAgents.discoveredInstalled
+                    : S.codingAgents.discoveredMissing}
+                </span>
+              </div>
+              <div className="truncate font-mono text-xs text-gray-500 dark:text-gray-400">
+                {candidate.launch !== null
+                  ? [candidate.launch.command, ...candidate.launch.args].join(" ")
+                  : (candidate.setupHint ?? "")}
+              </div>
+              <div className="truncate text-xs text-gray-500 dark:text-gray-400">
+                {candidate.authHint}
+              </div>
+            </div>
+            {/* Use follows `detected`, not `launch`: an npx runner resolves even when
+                the agent itself is absent, and that row belongs to the install link. */}
+            {candidate.detected && candidate.launch !== null ? (
+              candidate.alreadyAdded ? (
+                <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                  {S.codingAgents.discoveredAdded}
+                </span>
+              ) : (
+                <Button size="sm" onClick={() => onUse(candidate)}>
+                  {S.codingAgents.discoveredUse}
+                </Button>
+              )
+            ) : (
+              <a
+                href={candidate.homepageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 text-xs text-[var(--accent-fg)] underline-offset-2 hover:underline"
+              >
+                {S.codingAgents.discoveredInstall}
+              </a>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

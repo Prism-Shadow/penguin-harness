@@ -18,6 +18,7 @@ import { Component, Use } from "@prismshadow/penguin-core/kernel";
 import { VERSION } from "@prismshadow/penguin-core";
 import {
   CodingAgentManager,
+  discoverAgents as discoverKnownAgents,
   parseDefinition,
   sandboxedAgentEnv,
   type AgentPermissionOutcome,
@@ -25,8 +26,10 @@ import {
   type AgentSessionEvent,
 } from "@prismshadow/penguin-coding-agents";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type {
+  CodingAgentDiscoveryCandidate,
   CodingAgentServerInfo,
   CodingAgentSessionDetailResponse,
   CodingAgentSessionInfo,
@@ -73,6 +76,17 @@ export class CodingAgentService implements CodingAgents {
         args: d.args ?? [],
         ...(d.title !== undefined ? { title: d.title } : {}),
       }));
+  }
+
+  async discoverAgents(): Promise<CodingAgentDiscoveryCandidate[]> {
+    // The server process's own machine is what sessions spawn on, so discovery probes
+    // it, not the browser's host.
+    const candidates = await discoverKnownAgents({ env: process.env, home: os.homedir() });
+    const addedIds = new Set(this.loadDefinitions().map((d) => d.id));
+    return candidates.map((candidate) => ({
+      ...candidate,
+      alreadyAdded: addedIds.has(candidate.recipeId),
+    }));
   }
 
   saveAgent(input: unknown): CodingAgentServerInfo {

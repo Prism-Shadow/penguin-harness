@@ -33,6 +33,7 @@ import type {
   CaseMaterial,
   ChatDefaultsDto,
   CodingAgentCreateRequest,
+  CodingAgentDiscoveryResponse,
   CodingAgentModeRequest,
   CodingAgentPermissionRequest,
   CodingAgentPromptRequest,
@@ -1808,6 +1809,9 @@ export const uninstallPlugin = (projectId: string, specifier: string) =>
 // --- Coding agents (Agent Client Protocol) ---------------------------------------------
 
 export const listCodingAgents = () => apiFetch<CodingAgentsResponse>("/api/coding-agents/agents");
+
+export const discoverCodingAgents = () =>
+  apiFetch<CodingAgentDiscoveryResponse>("/api/coding-agents/discover");
 
 export const saveCodingAgent = (body: CodingAgentSaveRequest) =>
   apiFetch<{ agent: CodingAgentServerInfo }>("/api/coding-agents/agents", {

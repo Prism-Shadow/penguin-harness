@@ -130,6 +130,53 @@ describe("native WAF module boundary", () => {
     ).toThrow("unique safe IDs");
   });
 
+  it("scaffolds the native book reader entry, view, adapter and machine for books only", () => {
+    const book = structuredClone(activity);
+    book.activityType = "book";
+    book.draft.spec = {
+      ...activitySpec,
+      id: "penguin-book",
+      scenes: [
+        {
+          id: "cover",
+          role: "cover",
+          description: "Cover",
+          media: { images: [{ key: "cover-image", description: "A blue penguin" }] },
+        },
+        {
+          id: "story",
+          role: "story",
+          description: "Story",
+          media: { images: [{ key: "story-image", description: "A penguin walking home" }] },
+        },
+      ],
+    };
+    const files = scaffoldModule(book, "readAlong");
+    expect(Object.values(files).join("\n")).not.toMatch(/__[A-Z_]+__/);
+    expect(files["src/index.ts"]).toContain("enterReader");
+    expect(files["src/index.ts"]).toContain("BOOK.COMPLETED");
+    expect(files["src/book-reader/model.ts"]).toContain("class BookReaderModel");
+    expect(files["src/book-reader/controller.ts"]).toContain("class BookReaderController");
+    expect(files["src/book-reader/view.ts"]).toContain("createBookReaderView");
+    expect(files["src/book-reader/adapter.ts"]).toContain("narrationEventsFromScene");
+    expect(JSON.parse(files["generated/P/refs/P-12/spec/state-machine.json"]!)).toMatchObject({
+      initial: "reading",
+      states: {
+        reading: { entry: { type: "enterReader" } },
+      },
+    });
+    expect(files["configurations/P-12.json"]).toBeDefined();
+
+    const generic = scaffoldModule(activity);
+    expect(generic["src/index.ts"]).not.toContain("enterReader");
+    expect(generic["src/book-reader/model.ts"]).toBeUndefined();
+    expect(generic["src/book-reader/view.ts"]).toBeUndefined();
+    expect(generic["src/book-reader/adapter.ts"]).toBeUndefined();
+    expect(JSON.parse(generic["generated/P/refs/P-12/spec/state-machine.json"]!).initial).toBe(
+      activitySpec.scenes[0]!.id,
+    );
+  });
+
   it("collects bounded artifact hashes and refuses traversal, duplicates and absent outputs", async () => {
     const root = await directory();
     await prepareModule(root, activity, root);

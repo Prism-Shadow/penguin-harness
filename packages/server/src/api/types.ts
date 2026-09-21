@@ -4847,6 +4847,31 @@ export interface CodingAgentsResponse {
   agents: CodingAgentServerInfo[];
 }
 
+/**
+ * GET /coding-agents/discover: one known agent recipe probed against the server machine.
+ * `launch` carries the suggested ACP entrypoint resolved to an absolute command, or null
+ * when nothing runnable was found — `setupHint` says what is missing. Note the two flags
+ * are independent: launch can be non-null via an npx-run adapter while `detected` is
+ * false (the agent's own CLI is absent), so consumers must gate "usable" on `detected`.
+ */
+export interface CodingAgentDiscoveryCandidate {
+  recipeId: string;
+  title: string;
+  homepageUrl: string;
+  /** The agent's own CLI was found on the server machine. */
+  detected: boolean;
+  launch: { command: string; args: string[] } | null;
+  /** How the agent authenticates, warned before the first session: the server cannot open a browser. */
+  authHint: string;
+  setupHint: string | null;
+  /** A definition with this recipe's id is already saved. */
+  alreadyAdded: boolean;
+}
+
+export interface CodingAgentDiscoveryResponse {
+  candidates: CodingAgentDiscoveryCandidate[];
+}
+
 /** POST /coding-agents/agents body: a full definition; `env` is write-only (never listed back). */
 export interface CodingAgentSaveRequest {
   id: string;
