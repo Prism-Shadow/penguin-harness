@@ -618,6 +618,63 @@ describe("model-reference rekeying and the connectivity test", () => {
     expect(moved.envKey).toBe("DEEPSEEK_API_KEY");
   });
 
+  it("serializes a ModelScope settings save with a group credential write", async () => {
+    const svc = wire(ProjectConfigService, { paths: { root: t.root } });
+    const raceProject = "modelscope-save-refresh-race";
+    await svc.writeRaw(raceProject, {
+      models: [
+        {
+          provider: "modelscope",
+          model_id: "Qwen/Qwen3.8-27B",
+          api_key: "old-access",
+          client_type: "openai-chat-vllm-adapter",
+        },
+      ],
+    });
+
+    const readRaw = svc.readRaw.bind(svc);
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>((resolve) => (releaseRead = resolve));
+    let announceRead!: () => void;
+    const readStarted = new Promise<void>((resolve) => (announceRead = resolve));
+    let firstRead = true;
+    svc.readRaw = async (id: string) => {
+      const raw = await readRaw(id);
+      if (firstRead) {
+        firstRead = false;
+        announceRead();
+        await readGate;
+      }
+      return raw;
+    };
+
+    const save = svc.updateModels(raceProject, {
+      models: [
+        {
+          provider: "modelscope",
+          modelId: "Qwen/Qwen3.8-27B",
+          clientType: "openai-chat-vllm-adapter",
+        },
+      ],
+    });
+    await readStarted;
+    let credentialWriteSettled = false;
+    const credentialWrite = svc
+      .setGroupApiKey(raceProject, "modelscope", "new-access")
+      .finally(() => {
+        credentialWriteSettled = true;
+      });
+    await Promise.resolve();
+    expect(credentialWriteSettled).toBe(false);
+
+    releaseRead();
+    await Promise.all([save, credentialWrite]);
+    const stored = await readRaw(raceProject);
+    expect((stored.models as Array<Record<string, unknown>>)[0]?.api_key).toBe("new-access");
+    expect(JSON.stringify(stored)).not.toContain("refreshToken");
+    expect(JSON.stringify(stored)).not.toContain("accessTokenExpiresAt");
+  });
+
   it("the display name is editable: not persisted when it matches the built-in catalog; provider is always persisted as an entry field", async () => {
     // Preset model: saved as-is → the display name falls back to the built-in catalog, and display_name isn't written to the config file.
     await api.put(url(), {

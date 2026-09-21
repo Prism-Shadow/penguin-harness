@@ -12,8 +12,8 @@
  * succeeded can never be re-polled — the bridge clears its server-side copy on delivery — so a
  * write that fails afterwards keeps the token on the flow for `retryApply` instead of asking
  * the user to authorize again. The refresh token is stored in web.db, never in
- * .project_config.toml; model requests call `ensureFresh` before loading a runtime and silently
- * rotate the access token when it is near expiry.
+ * .project_config.toml; model requests call `ensureFresh` before loading a runtime and again
+ * immediately before each upstream request, silently rotating the access token near expiry.
  */
 import { randomBytes } from "node:crypto";
 import { Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
@@ -40,6 +40,8 @@ const MAX_AUTHORIZE_URL_LENGTH = 2048;
 const DEFAULT_RETRY_AFTER_MS = 1_000;
 const MAX_RETRY_AFTER_MS = 60_000;
 const REFRESH_SKEW_MS = 5 * 60 * 1000;
+const MAX_CONSECUTIVE_REFRESH_FAILURES = 3;
+const REFRESH_FAILURE_BACKOFF_MS = 30_000;
 
 type FlowStatus = "pending" | "applying" | "completed" | "cancelled" | "apply_failed" | "error";
 
@@ -161,7 +163,19 @@ export function modelscopeCredential(
 ): ModelScopeCredential {
   const body = asRecord(value);
   if (body.status !== "completed") throw new Error("The bridge returned another status.");
-  const token = asRecord(body.token);
+  return modelscopeToken(body.token, fallbackRefreshToken);
+}
+
+/** Validates POST /oauth/refresh, whose successful envelope is `{ token }` without flow status. */
+export function modelscopeRefreshCredential(
+  value: unknown,
+  fallbackRefreshToken?: string,
+): ModelScopeCredential {
+  return modelscopeToken(asRecord(value).token, fallbackRefreshToken);
+}
+
+function modelscopeToken(value: unknown, fallbackRefreshToken?: string): ModelScopeCredential {
+  const token = asRecord(value);
   const refreshToken =
     optionalTokenString(token.refreshToken, MAX_REFRESH_TOKEN_LENGTH, "refresh token") ??
     fallbackRefreshToken;
@@ -193,6 +207,10 @@ function retryAfterSeconds(value: unknown): number {
 export class ModelScopeAuthService {
   private readonly flows = new Map<string, Flow>();
   private readonly refreshes = new Map<string, Promise<ModelScopeRefreshResult>>();
+  private readonly refreshFailures = new Map<
+    string,
+    { refreshToken: string; count: number; retryAt: number }
+  >();
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
 
@@ -230,9 +248,21 @@ export class ModelScopeAuthService {
     const state = this.refreshState(stored);
     if (stored === undefined || state === "fresh") return { changed: false };
     const key = `${input.projectId}:${input.provider}`;
+    const recordedFailures = this.refreshFailures.get(key);
+    const failures =
+      recordedFailures?.refreshToken === stored.refreshToken ? recordedFailures : undefined;
+    if (recordedFailures !== undefined && failures === undefined) {
+      this.refreshFailures.delete(key);
+    }
+    if (failures !== undefined) {
+      if (failures.count >= MAX_CONSECUTIVE_REFRESH_FAILURES) {
+        throw this.reauthorizationRequired();
+      }
+      if (state === "refresh" && failures.retryAt > this.now()) return { changed: false };
+    }
     const existing = this.refreshes.get(key);
     if (existing) return existing;
-    const refresh = this.refreshNow(input.projectId, stored, state).finally(() => {
+    const refresh = this.refreshNow(input.projectId, input.provider, stored, state).finally(() => {
       this.refreshes.delete(key);
     });
     this.refreshes.set(key, refresh);
@@ -401,9 +431,11 @@ export class ModelScopeAuthService {
 
   private async refreshNow(
     projectId: string,
+    provider: string,
     stored: ModelProviderAuthToken,
     state: "refresh" | "expired",
   ): Promise<ModelScopeRefreshResult> {
+    const key = `${projectId}:${provider}`;
     try {
       const response = await this.request("/oauth/refresh", {
         method: "POST",
@@ -411,20 +443,37 @@ export class ModelScopeAuthService {
         body: JSON.stringify({ refreshToken: stored.refreshToken }),
       });
       if (!response.ok) throw new Error(`Bridge refresh failed: ${response.status}`);
-      const credential = modelscopeCredential(await readJsonBounded(response), stored.refreshToken);
+      const credential = modelscopeRefreshCredential(
+        await readJsonBounded(response),
+        stored.refreshToken,
+      );
       const applied = await this.deps.applyCredential(projectId, credential, {
         expectedRefreshToken: stored.refreshToken,
       });
       if (applied === 0) return { changed: false };
+      this.refreshFailures.delete(key);
       return { changed: true };
     } catch (error) {
-      if (state === "refresh") return { changed: false };
-      throw new HttpError(
-        401,
-        "modelscope_refresh_failed",
-        "The ModelScope authorization expired and could not be refreshed. Authorize ModelScope again.",
-      );
+      const previous = this.refreshFailures.get(key);
+      const count = (previous?.refreshToken === stored.refreshToken ? previous.count : 0) + 1;
+      this.refreshFailures.set(key, {
+        refreshToken: stored.refreshToken,
+        count,
+        retryAt: this.now() + REFRESH_FAILURE_BACKOFF_MS * 2 ** (count - 1),
+      });
+      if (state === "refresh" && count < MAX_CONSECUTIVE_REFRESH_FAILURES) {
+        return { changed: false };
+      }
+      throw this.reauthorizationRequired();
     }
+  }
+
+  private reauthorizationRequired(): HttpError {
+    return new HttpError(
+      409,
+      "modelscope_refresh_failed",
+      "ModelScope authorization could not be refreshed after repeated attempts. Authorize ModelScope again on the Models page.",
+    );
   }
 
   private async pollBridge(flow: Flow): Promise<void> {
@@ -512,6 +561,7 @@ export class ModelScopeAuthService {
       // A group with no rows would silently swallow the token, leaving the user authorized
       // with nothing to show for it.
       if (applied === 0) throw new Error("The ModelScope group is empty.");
+      this.refreshFailures.delete(`${flow.projectId}:${MODELSCOPE_PROVIDER_ID}`);
       flow.applied = applied;
       flow.credential = undefined;
       flow.status = "completed";

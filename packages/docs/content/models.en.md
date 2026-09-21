@@ -424,7 +424,7 @@ The OpenAI-compatible gateway groups (openrouter / fireworks / siliconflow / tok
 
 - The OpenRouter group uses the Responses client (`client_type = "openai-responses"`) for its presets and for any model you add to it, because OpenRouter serves the Responses API at that same base URL for every model it resells.
 - The other gateway presets use the Chat Completions client (`client_type = "openai-chat"`).
-- ModelScope is an aggregate gateway like Penguin Go: its Qwen presets use Chat Completions, while its DeepSeek preset pins `deepseek-v4` so the Models page shows the DeepSeek protocol and the runtime uses that AgentHub client.
+- ModelScope is an aggregate gateway like Penguin Go: its Qwen presets use `openai-chat-vllm-adapter`, carrying Qwen template thinking controls over Chat Completions, while its DeepSeek preset pins `deepseek-v4` and uses AgentHub's Responses client.
 - Those gateway clients read the same `OPENAI_*` variables, so the credential rules are identical either way.
 
 The direct MiniMax M3 client reads `MINIMAX_API_KEY`. The built-in MiniMax preset uses `https://api.minimax.io/v1`. `MINIMAX_BASE_URL` is read only for entries without their own `base_url`.
@@ -443,7 +443,7 @@ The platform quotes peak rates in USD per million Tokens. The group's DeepSeek r
 
 ### The ModelScope group
 
-`modelscope` is an aggregate gateway group: one ModelScope api-inference endpoint behind the preset base URL `https://api-inference.modelscope.cn/v1`, with each preset row carrying the protocol that AgentHub should use for that upstream model. Model ids are upstream repo names, so they keep their vendor prefix (`deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`). The Qwen rows use OpenAI Chat Completions; the DeepSeek row pins `deepseek-v4`, matching the direct and Penguin Go DeepSeek V4 rows. A new Project gets these presets right away; a Project created earlier adds them with **Sync presets**.
+`modelscope` is an aggregate gateway group: one ModelScope api-inference endpoint behind the preset base URL `https://api-inference.modelscope.cn/v1`, with each preset row carrying the protocol that AgentHub should use for that upstream model. Model ids are upstream repo names, so they keep their vendor prefix (`deepseek-ai/DeepSeek-V4.1-Flash`, `Qwen/Qwen3.8-27B`). The Qwen rows use `openai-chat-vllm-adapter`, retaining Chat Completions on the wire while mapping thinking controls to the Qwen template; the DeepSeek row pins `deepseek-v4`, matching the direct and Penguin Go DeepSeek V4 rows. A new Project gets these presets right away; a Project created earlier adds them with **Sync presets**.
 
 The group's key comes from its header; see [Authorize a new API key](#authorize-a-new-api-key). Authorization goes through an authorization bridge, which holds the ModelScope client secret and returns an api-inference access token / refresh token pair, rather than through ModelScope's own pages. Nothing else about the group is special: inference requests go straight to `https://api-inference.modelscope.cn/v1` and never through the bridge. The access token is written into `.project_config.toml` like any other group key, while the refresh token stays only in the server DB. The access token expires, and PenguinHarness silently renews it before model requests; re-authorize from the header only when the refresh token is missing or no longer valid.
 

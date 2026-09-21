@@ -57,6 +57,7 @@ import type {
   CommandPolicyRule,
   GenerativeModelConfig,
   LLMOutcome,
+  ModelRequestContext,
   ModelRef,
   OmniMessage,
   ProjectConfig,
@@ -467,6 +468,8 @@ export class ProjectConfigService implements ProjectConfigStore {
    */
   private readonly cache = new Map<string, { mtimeMs: number; table: RawTable }>();
   private readonly providerCredentialLocks = new Map<string, Promise<unknown>>();
+  private modelApiKeyResolver:
+    ((context: ModelRequestContext) => Promise<string | undefined>) | undefined;
 
   @Use() private readonly paths!: Paths;
   /** Optional for narrow service tests; the production Projects module always provides it. */
@@ -479,6 +482,24 @@ export class ProjectConfigService implements ProjectConfigStore {
 
   private filePath(projectId: string): string {
     return projectConfigPath(this.root, projectId);
+  }
+
+  setModelApiKeyResolver(
+    resolver: (context: ModelRequestContext) => Promise<string | undefined>,
+  ): void {
+    this.modelApiKeyResolver = resolver;
+  }
+
+  private requestApiKeyResolver(
+    projectId: string,
+    provider: string,
+    modelId: string,
+    enabled = true,
+  ): Pick<GenerativeModelConfig, "resolveApiKey"> | Record<string, never> {
+    if (!enabled || this.modelApiKeyResolver === undefined) return {};
+    return {
+      resolveApiKey: () => this.modelApiKeyResolver!({ projectId, provider, modelId }),
+    };
   }
 
   private async withProviderCredentialLock<T>(
@@ -876,6 +897,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       const llm = new GenerativeModel({
         modelId: req.modelId,
         ...(apiKey ? { apiKey } : {}),
+        ...this.requestApiKeyResolver(
+          projectId,
+          req.provider,
+          req.modelId,
+          req.apiKey === undefined && req.clearApiKey !== true,
+        ),
         ...(baseUrl ? { baseUrl } : {}),
         ...(clientType ? { clientType } : {}),
         tools: [],
@@ -944,7 +971,10 @@ export class ProjectConfigService implements ProjectConfigStore {
       // Inside the try for the same reason as the probes: the SDK throws during
       // construction when a credential is missing, and that must read as a failure with a
       // reason rather than an exception out of a dialog's helper.
-      const llm = new GenerativeModel(utilityCompletionConfig(ref.model_id, entry));
+      const llm = new GenerativeModel({
+        ...utilityCompletionConfig(ref.model_id, entry),
+        ...this.requestApiKeyResolver(projectId, ref.provider, ref.model_id),
+      });
       return await collectUtilityCompletion(
         llm.streamGenerate({ newMessages: [userText(prompt)] }),
       );
@@ -993,6 +1023,12 @@ export class ProjectConfigService implements ProjectConfigStore {
       const llm = new GenerativeModel({
         modelId: req.modelId,
         ...(apiKey ? { apiKey } : {}),
+        ...this.requestApiKeyResolver(
+          projectId,
+          req.provider,
+          req.modelId,
+          req.apiKey === undefined && req.clearApiKey !== true,
+        ),
         ...(baseUrl ? { baseUrl } : {}),
         ...(clientType ? { clientType } : {}),
         ...(fastMode ? { fastMode: true } : {}),
@@ -1261,6 +1297,15 @@ export class ProjectConfigService implements ProjectConfigStore {
    * promotion with it. A `discount` outside (0, 1) rejects the request before any write.
    */
   async updateModels(projectId: string, req: ModelsUpdateRequest): Promise<ModelsResponse> {
+    return this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, () =>
+      this.updateModelsUnlocked(projectId, req),
+    );
+  }
+
+  private async updateModelsUnlocked(
+    projectId: string,
+    req: ModelsUpdateRequest,
+  ): Promise<ModelsResponse> {
     req.models.forEach((entry, i) => {
       const { discount } = entry;
       if (discount === undefined || discount === null) return;
@@ -1474,9 +1519,7 @@ export class ProjectConfigService implements ProjectConfigStore {
       }
       return this.getModels(projectId);
     };
-    return clearModelScopeProviderAuthToken
-      ? this.withProviderCredentialLock(projectId, MODELSCOPE_PROVIDER_ID, commit)
-      : commit();
+    return commit();
   }
 
   /**

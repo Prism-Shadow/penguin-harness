@@ -171,6 +171,19 @@ export interface AgentAssembly {
    * text. Empty = the prompt is exactly the Agent's own.
    */
   promptSections?(): readonly PromptSection[];
+  /**
+   * Resolves a model credential immediately before an upstream request. Hosting processes can
+   * rotate short-lived credentials here; core neither knows nor interprets the provider.
+   */
+  resolveModelApiKey?(context: ModelRequestContext): Promise<string | undefined>;
+}
+
+export interface ModelRequestContext {
+  projectId: string;
+  agentId?: string;
+  sessionId?: string;
+  provider: string;
+  modelId: string;
 }
 
 export interface PromptSection {
@@ -1119,6 +1132,18 @@ export class Agent {
             new GenerativeModel({
               modelId: visionEntry.model_id,
               ...(visionEntry.api_key !== undefined ? { apiKey: visionEntry.api_key } : {}),
+              ...(this.assembly?.resolveModelApiKey
+                ? {
+                    resolveApiKey: () =>
+                      this.assembly!.resolveModelApiKey!({
+                        projectId: this.state.projectId,
+                        agentId: this.state.agentId,
+                        sessionId,
+                        provider: visionEntry.provider,
+                        modelId: visionEntry.model_id,
+                      }),
+                  }
+                : {}),
               ...(visionEntry.base_url !== undefined ? { baseUrl: visionEntry.base_url } : {}),
               ...(visionEntry.client_type !== undefined
                 ? { clientType: visionEntry.client_type }
@@ -1194,6 +1219,18 @@ export class Agent {
         modelId: modelEntry.model_id,
         toolCallIds,
         ...(apiKey !== undefined ? { apiKey } : {}),
+        ...(this.assembly?.resolveModelApiKey
+          ? {
+              resolveApiKey: () =>
+                this.assembly!.resolveModelApiKey!({
+                  projectId: this.state.projectId,
+                  agentId: this.state.agentId,
+                  sessionId,
+                  provider: modelEntry.provider,
+                  modelId: modelEntry.model_id,
+                }),
+            }
+          : {}),
         ...(baseUrl !== undefined ? { baseUrl } : {}),
         ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
         tools,
@@ -1268,6 +1305,18 @@ export class Agent {
       new GenerativeModel({
         modelId: modelEntry.model_id,
         ...(apiKey !== undefined ? { apiKey } : {}),
+        ...(this.assembly?.resolveModelApiKey
+          ? {
+              resolveApiKey: () =>
+                this.assembly!.resolveModelApiKey!({
+                  projectId: this.state.projectId,
+                  agentId: this.state.agentId,
+                  sessionId,
+                  provider: modelEntry.provider,
+                  modelId: modelEntry.model_id,
+                }),
+            }
+          : {}),
         ...(baseUrl !== undefined ? { baseUrl } : {}),
         ...(modelEntry.client_type !== undefined ? { clientType: modelEntry.client_type } : {}),
         tools: [],

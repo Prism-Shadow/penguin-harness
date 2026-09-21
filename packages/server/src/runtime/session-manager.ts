@@ -48,6 +48,7 @@ import type {
   BackgroundSubagentInfo,
   CompactAvailability,
   ControlEnvContext,
+  AgentAssembly,
   OmniMessage,
   ProxyEnvPolicy,
   SpawnConfiner,
@@ -100,6 +101,7 @@ import type { Settings } from "../mechanisms/settings.js";
 import type { MessagingBindings } from "../mechanisms/messaging.js";
 import type { OrgCache } from "../mechanisms/organization.js";
 import { enabledMessagingChannel } from "./messaging/enabled-channel.js";
+import { MODELSCOPE_PROVIDER_ID } from "@prismshadow/penguin-core/model-catalog";
 
 /**
  * 409 for when there's nothing to compact: give the specific reason rather than a
@@ -260,6 +262,7 @@ export function createCoreSessionLoader(
     controlEnv?: (ctx: ControlEnvContext) => Record<string, string>;
     pathPrepend?: () => string[];
     confineSpawn?: () => SpawnConfiner | null;
+    assembly?: AgentAssembly;
   } = {},
 ): SessionLoader {
   return {
@@ -272,6 +275,7 @@ export function createCoreSessionLoader(
         ...(opts.controlEnv ? { controlEnv: opts.controlEnv } : {}),
         ...(opts.pathPrepend ? { pathPrepend: opts.pathPrepend } : {}),
         ...(opts.confineSpawn ? { confineSpawn: opts.confineSpawn } : {}),
+        ...(opts.assembly ? { assembly: opts.assembly } : {}),
       });
       const located = await findLatestTraceFile(
         tracesDir(root, row.projectId, row.agentId),
@@ -2346,6 +2350,18 @@ export class SessionsModule {
     const projectConfig = this.projectConfig;
     const sandbox = this.sandbox as SandboxService;
     const orgCache = this.orgCache;
+    const modelScopeAuth = this.modelScopeAuth;
+
+    const assembly: AgentAssembly = {
+      resolveModelApiKey: async ({ projectId, provider, modelId }) => {
+        if (provider !== MODELSCOPE_PROVIDER_ID) return undefined;
+        await modelScopeAuth.ensureFresh({ projectId, provider });
+        const apiKey = await projectConfig.getGroupApiKey(projectId, provider);
+        if (apiKey === undefined) throw modelCredentialMissing(modelId);
+        return apiKey;
+      },
+    };
+    projectConfig.setModelApiKeyResolver(assembly.resolveModelApiKey!);
 
     // Which commands run confined, under which policy, by which backend is policy — the
     // sandbox module's; core only carries the spawn seam, reached through this getter.
@@ -2411,6 +2427,7 @@ export class SessionsModule {
         controlEnv: env.controlEnv,
         pathPrepend: env.pathPrepend,
         confineSpawn: env.confineSpawn,
+        assembly,
       }),
       sources,
       recorder,
@@ -2446,6 +2463,7 @@ export class SessionsModule {
       orgIdsOfProject: (projectId) => orgCache.orgIdsOfProject(projectId),
       pathPrepend: env.pathPrepend,
       confineSpawn: env.confineSpawn,
+      assembly,
     });
     this.manager = manager;
     this.sessionService = sessionService;

@@ -66,8 +66,8 @@
  *   but maps the thinking level onto the served model's own chat template
  *   (VLLM_CLIENT_TYPE).
  * ModelScope's rows follow the same explicit-row rule as Penguin Go even though the endpoint is
- * one gateway: its Qwen rows pin `openai-chat`, while its DeepSeek row pins `deepseek-v4` so the
- * frontend shows the DeepSeek Responses protocol instead of flattening the group to one shape.
+ * one gateway: its Qwen rows pin the vLLM adapter, while its DeepSeek row pins `deepseek-v4` so
+ * the frontend shows each model's actual AgentHub protocol instead of flattening the group.
  *
  * Two direct-vendor rows pin anyway, because their own id does not route: the MiniMax M3
  * preset pins AgentHub's first-party `minimax-m3` protocol and direct API endpoint, and
@@ -1997,9 +1997,9 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
   //
   // Like Penguin Go, this is a mixed-protocol aggregate: rows pin the AgentHub protocol the
   // upstream model should display and use. The Qwen ids have no native AgentHub qwen client and
-  // therefore use the generic OpenAI Chat Completions client; the DeepSeek id pins `deepseek-v4`
-  // so it shows the same protocol family as the direct and Penguin Go DeepSeek V4 rows instead
-  // of flattening the group to `openai-chat`.
+  // therefore use the vLLM Chat Completions adapter, which maps thinking controls onto their
+  // chat templates; the DeepSeek id pins `deepseek-v4` so it shows the same protocol family as
+  // the direct and Penguin Go DeepSeek V4 rows instead of flattening the group to one protocol.
   //
   // The window and vision flags are NOT read from ModelScope's own docs — its model pages are
   // client-rendered and carry no price. They repeat what other rows of the same models record,
@@ -2025,7 +2025,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: MODELSCOPE_PROVIDER_ID,
     contextWindow: 262144,
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: VLLM_CLIENT_TYPE,
     baseUrl: MODELSCOPE_BASE_URL,
   },
   {
@@ -2034,7 +2034,7 @@ export const MODEL_CATALOG: ModelCatalogEntry[] = [
     provider: MODELSCOPE_PROVIDER_ID,
     contextWindow: 262144,
     supportsVision: true,
-    clientType: "openai-chat",
+    clientType: VLLM_CLIENT_TYPE,
     baseUrl: MODELSCOPE_BASE_URL,
   },
   // -- MiniMax (direct M3 Responses client; official USD pay-as-you-go list prices, standard

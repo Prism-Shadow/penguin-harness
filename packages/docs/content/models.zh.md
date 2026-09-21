@@ -423,7 +423,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 
 - OpenRouter 分组的预置模型，以及你添加到该分组的任何模型，都使用 Responses 客户端（`client_type = "openai-responses"`），因为 OpenRouter 在同一个 base URL 上为它转售的每一个模型提供 Responses API。
 - 其他网关的预置模型使用 Chat Completions 客户端（`client_type = "openai-chat"`）。
-- ModelScope 像 Penguin Go 一样是聚合网关：Qwen 预置使用 Chat Completions，DeepSeek 预置固定为 `deepseek-v4`，这样模型页显示的是 DeepSeek 协议，运行时也走对应的 AgentHub client。
+- ModelScope 像 Penguin Go 一样是聚合网关：Qwen 预置使用 `openai-chat-vllm-adapter`，在 Chat Completions 上按 Qwen 模板传递思考参数；DeepSeek 预置固定为 `deepseek-v4`，运行时走 AgentHub Responses client。
 - 这些网关客户端读取相同的 `OPENAI_*` 变量，所以无论哪种方式，凭据规则完全一致。
 
 直连 MiniMax M3 的客户端读取 `MINIMAX_API_KEY`。内置的 MiniMax 预置模型使用 `https://api.minimax.io/v1`。只有条目没有自己的 `base_url` 时，才会读取 `MINIMAX_BASE_URL`。
@@ -442,7 +442,7 @@ OpenAI 兼容网关分组（openrouter / fireworks / siliconflow / tokendance / 
 
 ### ModelScope 分组
 
-`modelscope` 是聚合网关分组：同一个魔搭 api-inference 端点，预置 base URL `https://api-inference.modelscope.cn/v1`，每条预置各自写明 AgentHub 应该为这个上游模型使用的协议。模型 id 就是上游仓库名，因此保留供应商前缀（`deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）。Qwen 条目使用 OpenAI Chat Completions；DeepSeek 条目固定为 `deepseek-v4`，与直连 DeepSeek 和 Penguin Go 的 DeepSeek V4 条目保持一致。新建的 Project 立即带上这些预置；更早创建的 Project 用**同步预置**补上。
+`modelscope` 是聚合网关分组：同一个魔搭 api-inference 端点，预置 base URL `https://api-inference.modelscope.cn/v1`，每条预置各自写明 AgentHub 应该为这个上游模型使用的协议。模型 id 就是上游仓库名，因此保留供应商前缀（`deepseek-ai/DeepSeek-V4.1-Flash`、`Qwen/Qwen3.8-27B`）。Qwen 条目使用 `openai-chat-vllm-adapter`，在线路仍为 Chat Completions 的同时正确控制 Qwen 模板的思考参数；DeepSeek 条目固定为 `deepseek-v4`，与直连 DeepSeek 和 Penguin Go 的 DeepSeek V4 条目保持一致。新建的 Project 立即带上这些预置；更早创建的 Project 用**同步预置**补上。
 
 分组的 key 从标题栏取得，见[授权获取新 API key](#授权获取新-api-key)。授权走一台授权中转层，由中转层持有魔搭的 client secret 并交回一组 api-inference access token / refresh token，而不是经过魔搭自己的页面。除此之外这个分组没有特别之处：推理请求直接发给 `https://api-inference.modelscope.cn/v1`，从不经过中转层；access token 和其他分组的 key 一样写进 `.project_config.toml`，refresh token 只保存在服务端 DB。access token 会过期，PenguinHarness 会在模型请求前静默续期；refresh token 缺失或失效时，才需要从标题栏重新授权一次。
 

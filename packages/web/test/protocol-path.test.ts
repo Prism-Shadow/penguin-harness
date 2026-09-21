@@ -31,7 +31,9 @@ describe("protocolPathForModel", () => {
 
   it("ModelScope aggregate presets display the path for their pinned protocol", () => {
     expect(protocolPathForModel("modelscope", "deepseek-v4")).toBe("/responses");
-    expect(protocolPathForModel("modelscope", "openai-chat")).toBe("/chat/completions");
+    expect(protocolPathForModel("modelscope", "openai-chat-vllm-adapter")).toBe(
+      "/chat/completions",
+    );
   });
 
   it("the remaining direct vendors speak chat completions", () => {

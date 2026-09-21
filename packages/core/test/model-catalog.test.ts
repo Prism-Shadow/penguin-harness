@@ -754,12 +754,18 @@ describe("model-catalog", () => {
         "deepseek-v4",
         "https://api-inference.modelscope.cn/v1",
       ],
-      ["Qwen/Qwen3.8-27B", 262144, true, "openai-chat", "https://api-inference.modelscope.cn/v1"],
+      [
+        "Qwen/Qwen3.8-27B",
+        262144,
+        true,
+        "openai-chat-vllm-adapter",
+        "https://api-inference.modelscope.cn/v1",
+      ],
       [
         "Qwen/Qwen3.8-Flash-Next",
         262144,
         true,
-        "openai-chat",
+        "openai-chat-vllm-adapter",
         "https://api-inference.modelscope.cn/v1",
       ],
     ]);

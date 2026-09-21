@@ -296,7 +296,6 @@ describe("ModelScope key authorization service", () => {
         expect(pathOf(input)).toBe("/modelscope/oauth/refresh");
         expect(JSON.parse(String(init?.body))).toEqual({ refreshToken: "old-refresh" });
         return json(200, {
-          status: "completed",
           token: {
             accessToken: "new-access",
             refreshToken: "new-refresh",
@@ -329,7 +328,6 @@ describe("ModelScope key authorization service", () => {
       },
       fetchImpl: async () =>
         json(200, {
-          status: "completed",
           token: {
             accessToken: "new-access",
             refreshToken: "new-refresh",
@@ -379,7 +377,85 @@ describe("ModelScope key authorization service", () => {
     });
     await expect(
       service.ensureFresh({ projectId: "p1", provider: "modelscope" }),
-    ).rejects.toMatchObject({ status: 401, code: "modelscope_refresh_failed" });
+    ).rejects.toMatchObject({ status: 409, code: "modelscope_refresh_failed" });
+  });
+
+  it("prompts for re-authorization after three proactive refresh failures", async () => {
+    let now = 1_000;
+    let attempts = 0;
+    const service = new ModelScopeAuthService({
+      bridgeUrl: BRIDGE,
+      now: () => now,
+      readStoredCredential: () => ({
+        provider: "modelscope",
+        refreshToken: "old-refresh",
+        accessTokenExpiresAt: new Date(241_000).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      }),
+      applyCredential: async () => 1,
+      fetchImpl: async () => {
+        attempts += 1;
+        return json(502, { error: "bridge_down" });
+      },
+    });
+
+    await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
+      { changed: false },
+    );
+    now += 30_000;
+    await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
+      { changed: false },
+    );
+    now += 60_000;
+    await expect(
+      service.ensureFresh({ projectId: "p1", provider: "modelscope" }),
+    ).rejects.toMatchObject({ status: 409, code: "modelscope_refresh_failed" });
+    await expect(
+      service.ensureFresh({ projectId: "p1", provider: "modelscope" }),
+    ).rejects.toMatchObject({ status: 409, code: "modelscope_refresh_failed" });
+    expect(attempts).toBe(3);
+  });
+
+  it("forgets an old failure ceiling after the stored refresh token changes", async () => {
+    let now = 1_000;
+    let refreshToken = "old-refresh";
+    let attempts = 0;
+    const service = new ModelScopeAuthService({
+      bridgeUrl: BRIDGE,
+      now: () => now,
+      readStoredCredential: () => ({
+        provider: "modelscope",
+        refreshToken,
+        accessTokenExpiresAt: new Date(now + 10_000).toISOString(),
+        updatedAt: new Date(now - 1_000).toISOString(),
+      }),
+      applyCredential: async () => 3,
+      fetchImpl: async () => {
+        attempts += 1;
+        if (refreshToken === "old-refresh") return json(502, { error: "bridge_down" });
+        return json(200, {
+          token: {
+            accessToken: "reauthorized-access",
+            refreshToken,
+            expiresAt: new Date(now + 3_600_000).toISOString(),
+          },
+        });
+      },
+    });
+
+    await service.ensureFresh({ projectId: "p1", provider: "modelscope" });
+    now += 30_000;
+    await service.ensureFresh({ projectId: "p1", provider: "modelscope" });
+    now += 60_000;
+    await expect(
+      service.ensureFresh({ projectId: "p1", provider: "modelscope" }),
+    ).rejects.toMatchObject({ status: 409, code: "modelscope_refresh_failed" });
+
+    refreshToken = "reauthorized-refresh";
+    await expect(service.ensureFresh({ projectId: "p1", provider: "modelscope" })).resolves.toEqual(
+      { changed: true },
+    );
+    expect(attempts).toBe(4);
   });
 
   it("cancels at the bridge as well as locally, and never applies the token", async () => {

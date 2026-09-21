@@ -27,6 +27,7 @@ import type { UserRow } from "../db/repos/users.js";
 import type { RawTable, UtilityCompletion } from "../services/project-config-service.js";
 import type {
   ListEndpointModelsOptions,
+  ModelRequestContext,
   ModelRef,
   PluginTable,
   ProjectConfig,
@@ -155,6 +156,9 @@ export abstract class ProjectConfigStore extends Interface<{
     options?: { expectedRefreshToken?: string },
   ): Promise<number>;
   getGroupApiKey(projectId: string, provider: string): Promise<string | undefined>;
+  setModelApiKeyResolver(
+    resolver: (context: ModelRequestContext) => Promise<string | undefined>,
+  ): void;
   mergePlatformModels(
     projectId: string,
     provider: string,

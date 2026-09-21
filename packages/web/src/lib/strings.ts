@@ -1234,7 +1234,7 @@ export const zh = {
     // 魔搭走的是授权中转层：harness 不直接与魔搭对话，中转层拿着 client secret 换回
     // api-inference token。access token 会写入模型表；refresh token 只保存在服务端 DB。
     modelScopeKeyIntro: (n: number): string =>
-      `授权后会自动获取一个魔搭 API token，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key；后续请求会在服务端静默续期。`,
+      `授权后会自动获取一个魔搭 API token，并写入该分组下全部 ${n} 个预置模型，覆盖它们当前的 key；后续请求会在服务端静默续期，连续续期失败时会提示你重新授权。`,
     modelScopeKeyAppliedBody: (n: number): string =>
       `已完成授权：魔搭 API token 已配置到 ${n} 个模型上，可以直接使用了。`,
     modelScopeKeyErrors: {
@@ -4176,7 +4176,7 @@ Benchmark：
       agent_deleting: "该 Agent 正在删除中。",
       project_exists: "该 Project id 已被占用。",
       project_not_found: "该 Project 已不存在，或你没有访问权限。",
-      modelscope_refresh_failed: "魔搭授权已过期且无法自动刷新，请在「模型」页重新授权。",
+      modelscope_refresh_failed: "魔搭授权连续自动续期失败，请在「模型」页重新授权。",
       cannot_delete_last_project: "这是最后一个 Project，不能删除。",
       user_exists: "该用户名已被占用。",
       user_not_found: "该用户已不存在。",
