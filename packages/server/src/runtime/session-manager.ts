@@ -84,7 +84,7 @@ import type { TitleNotifier } from "./title-generator.js";
 import type { UsageContext } from "./usage-recorder.js";
 import { Component, Interface, Module, Provide, Use } from "@prismshadow/penguin-core/kernel";
 import type { SessionService as SessionServiceImpl } from "../services/session-service.js";
-import type { ClassCtx, Opaque } from "@prismshadow/penguin-core/kernel";
+import type { ClassCtx, Json, Opaque } from "@prismshadow/penguin-core/kernel";
 import { Sandbox, SandboxModule } from "../sandbox/service.js";
 import { SessionService } from "../services/session-service.js";
 import { ModelScopeAuth } from "../services/modelscope-auth-service.js";
@@ -642,6 +642,7 @@ function isPlainText(role: "user" | "assistant") {
 export class SessionManager {
   // The state fields below are the AgentState component's (see agent-state.ts): this
   // class keeps its logic and its names, the component keeps the memory.
+  private readonly state: AgentState;
   private readonly entries: Map<string, RuntimeEntry>;
   /**
    * Each registered subagent Session's ROOT Session: a subagent runs under its root's
@@ -675,6 +676,13 @@ export class SessionManager {
 
   constructor(private readonly deps: SessionManagerDeps) {
     const state = deps.state ?? new AgentStateStore();
+    this.state = state;
+    // This generation works on the state from here on: whatever a run that is still going
+    // under an earlier generation starts when it ends, it starts through this one.
+    state.current = {
+      startQueuedFollowUp: (sessionId) => this.startQueuedFollowUp(sessionId),
+      startBackgroundNoticeTask: (sessionId) => this.startBackgroundNoticeTask(sessionId),
+    };
     this.entries = state.entries;
     this.childRoots = state.childRoots;
     this.locks = state.locks;
@@ -895,7 +903,9 @@ export class SessionManager {
    *   channel so every Session list shows which rows still own background work.
    */
   private registerNoticeListener(sessionId: string, session: RuntimeSession): void {
-    session.onBackgroundNotice?.(() => void this.startBackgroundNoticeTask(sessionId));
+    session.onBackgroundNotice?.(
+      () => void this.state.current?.startBackgroundNoticeTask(sessionId),
+    );
     session.onBackgroundMessage?.((msg) => this.forwardBackgroundMessage(sessionId, msg));
     session.onSubagentState?.(() => {
       const entry = this.entries.get(sessionId);
@@ -1631,6 +1641,21 @@ export class SessionManager {
     this.deletingSessions.delete(sessionId);
   }
 
+  /**
+   * The hand-over's half of a swap: this generation stops working on the state and leaves
+   * everything in it as it is — running Tasks keep running, pending approvals keep waiting —
+   * for the next generation to take over (PRFC-0015). Only what is this instance's own stops:
+   * the idle sweep. `shutdown` is the other ending, for a state nobody takes over.
+   */
+  detach(): void {
+    clearInterval(this.sweepTimer);
+  }
+
+  /** The Sessions with a Task in flight right now — what a swap parks, so that a successor that cannot take the state over knows which ones to start again. */
+  runningSessionIds(): string[] {
+    return [...this.entries.values()].filter((e) => e.status === "running").map((e) => e.sessionId);
+  }
+
   /** Graceful shutdown: reject new tasks (503), interrupt all active runs, and wait for them to finish (default ≤5s). */
   async shutdown(timeoutMs = 5000): Promise<void> {
     this.closed = true;
@@ -2094,11 +2119,11 @@ export class SessionManager {
       // Queued follow-ups: whenever a run finishes (Task or compaction, abort included),
       // the next queued input auto-starts as an ordinary task. Fire-and-forget — it
       // revalidates under the session lock.
-      if (entry.followUps.length > 0) void this.startQueuedFollowUp(entry.sessionId);
+      if (entry.followUps.length > 0) void this.state.current?.startQueuedFollowUp(entry.sessionId);
       // Background completion notices that raced this run's exit (arrived after its last
       // input-assembly boundary): start their delivery task now. No-op when a follow-up
       // just launched — that run's engine drains the same queue.
-      else void this.startBackgroundNoticeTask(entry.sessionId);
+      else void this.state.current?.startBackgroundNoticeTask(entry.sessionId);
     }
   }
 
@@ -2344,6 +2369,8 @@ export abstract class Sessions extends Interface<
     | "endSessionDeletion"
     | "atIdleBoundary"
     | "shutdown"
+    | "detach"
+    | "runningSessionIds"
     | "sweepIdle"
   >
 >() {}
@@ -2373,7 +2400,14 @@ export abstract class SessionEnv extends Interface<{
   confineSpawn(ctx: ControlEnvContext): SpawnConfiner | null;
 }>() {}
 
-@Module()
+@Module({
+  context: {
+    version: 1,
+    schema: {
+      "running?": "string[]",
+    },
+  },
+})
 export class SessionsModule {
   @Use() private readonly config!: Config;
   @Use() private readonly channels!: Channels;
@@ -2536,6 +2570,15 @@ export class SessionsModule {
     this.manager = manager;
     this.sessionService = sessionService;
     this.env = env;
+  }
+
+  /**
+   * The Sessions with a Task in flight. The state itself crosses a swap as a live object
+   * (hmr/platform.ts); this is for the successor that cannot take it over — it never reads
+   * the state, so the ids travel as data.
+   */
+  park(): Json {
+    return { running: this.manager.runningSessionIds() };
   }
 }
 

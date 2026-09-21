@@ -34,6 +34,7 @@ import type {
   ModuleTree,
 } from "@prismshadow/penguin-core/kernel";
 import {
+  closedShape,
   defineIface,
   schema,
   type,
@@ -57,6 +58,7 @@ import { isApiSocketRef } from "../socket/ref.js";
 import { serveApiSocket } from "../socket/serve.js";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.js";
+import { AgentStateStore } from "../runtime/agent-state.js";
 import type { SessionManager } from "../runtime/session-manager.js";
 import { terminalRoutes } from "../terminal/routes.js";
 import type { Identity } from "../terminal/identity.js";
@@ -75,7 +77,7 @@ import type { Interfaces, MembersOf, ReassemblyChange } from "./capabilities.js"
 import { PLUGINS_RESOURCE_ID, pluginHostFrom } from "../plugin/host.js";
 import type { PluginHost } from "../plugin/host.js";
 import { loadPluginHost } from "../plugin/loader.js";
-import { usePushedPluginLibrary } from "@prismshadow/penguin-core";
+import { usePushedPluginLibrary, userText } from "@prismshadow/penguin-core";
 import { pushedLibraryDir } from "./asset-archives.js";
 import { migrate } from "../db/migrations.js";
 import { MachinesRepo } from "../db/repos/machines.js";
@@ -213,6 +215,7 @@ interface ParkedInterfaces extends Interfaces {
   terminal: MembersOf<TerminalSession>;
   /** Versioned in its NAME (transport/ssh-session.ts SESSION_GROUP): a delivered object runs old code. */
   [SESSION_GROUP]: MembersOf<HeldSession>;
+  agentState: MembersOf<HandedAgentState>;
 }
 
 /**
@@ -233,6 +236,32 @@ const API_SOCKETS_RESOURCE_ID = "apiSockets:open";
  * than that hand-off takes and far less than anyone notices.
  */
 const RECONNECT_GRACE_MS = 2_000;
+
+/**
+ * The Agent state as one App leaves it for the next (PRFC-0015): the AgentState node
+ * itself, the closed shape of the AgentState interface as the leaving build declares it,
+ * and — once the entry's disposer has run — the end of the runs it stopped.
+ *
+ * The envelope is the group's declared contract and stays this small on purpose. What the
+ * state LOOKS like is not declared by hand anywhere: `shape` is printed from the generated
+ * interface table, so a change to RuntimeEntry or RuntimeSession changes it by itself.
+ */
+interface HandedAgentState {
+  state: object;
+  shape: string | null;
+  stopped?: Promise<void>;
+}
+
+/** Registry id of the handed-over Agent state — in the `agentState:` group, so a build that does not declare the group stops the runs behind it. */
+const AGENT_STATE_RESOURCE_ID = "agentState:state";
+/** The AgentState interface's key in the generated table. */
+const AGENT_STATE_IFACE = "@prismshadow/penguin-server#AgentState";
+/**
+ * What a Session whose Task a swap had to stop is started again with. The stopped turn
+ * itself comes back through core's carry-over (`[turn_aborted]`); this only says why.
+ */
+const RESUME_AFTER_UPDATE =
+  "[harness_updated] The harness was updated while you were working and your run was interrupted. Continue from where you left off.";
 
 export const DECLARED_RESOURCES: ParkedInterfaces = {
   family: PENGUIN_FAMILY,
@@ -269,6 +298,7 @@ export const DECLARED_RESOURCES: ParkedInterfaces = {
   // the old object's code: a behavior change bumps the name, so the old group is disposed
   // here (its sessions closed) and the machines are re-held fresh.
   [SESSION_GROUP]: ["hold", "held", "run", "session", "close", "setForwards", "forwardFacts"],
+  agentState: ["state", "shape", "stopped"],
 };
 
 /**
@@ -336,7 +366,22 @@ async function createInner(
       return !inheritable || !offers;
     })
     .map(([group]) => group);
+  // The Agent state is judged a second time, by structure: the envelope matching says the
+  // two builds agree on HOW a state is handed over, the closed shape says they agree on
+  // what a state IS — every field of it, and every interface behind those, the loaded
+  // Session objects' included. Equal means this build's logic can work on the predecessor's
+  // state as it stands; anything else dooms the group like a version bump would.
+  const handed = ctx.resources.claim<HandedAgentState>(AGENT_STATE_RESOURCE_ID);
+  const agentStateShape = closedShape(ifaceTable as unknown as IfaceTable, AGENT_STATE_IFACE);
+  if (
+    handed !== undefined &&
+    !doomedGroups.includes("agentState") &&
+    (agentStateShape === null || handed.shape !== agentStateShape)
+  ) {
+    doomedGroups.push("agentState");
+  }
   const adoptable = (group: string) => !doomedGroups.includes(group);
+  const takenOver = handed !== undefined && adoptable("agentState");
 
   // The skill/hook plugin LIBRARY is the one this build was made with, when the push carried
   // it: a machine installed before a plugin existed otherwise never offers it, and a feature
@@ -385,7 +430,16 @@ async function createInner(
     // data before any create() runs, created in dependency order. Sandbox backends the
     // plugin host registered enter the same tree as one contributing module.
     tree = await bootModules(
-      platformDef(caps, adoptable, [...plugins.modules()], plugins.replacements(), reassemble),
+      platformDef(
+        caps,
+        adoptable,
+        [...plugins.modules()],
+        plugins.replacements(),
+        reassemble,
+        // The predecessor's state boots in place of a fresh AgentState node: this App's
+        // SessionManager is built over it, running Tasks and all.
+        takenOver ? new Map([[AgentStateStore, handed.state]]) : new Map(),
+      ),
       {
         ifaces: plugins.ifaces(ifaceTable as unknown as IfaceTable),
         resources: ctx.resources,
@@ -418,11 +472,15 @@ async function createInner(
   //                         claims each by address (transient sessions are closed instead)
   //   - runtime singletons  db / auth-state / channels / config / proxy / desktop —
   //                         runtime-owned, re-claimed by every App
+  //   - the Agent state     registry `agentState:state` (PRFC-0015): running Tasks, pending
+  //                         approvals, queued follow-ups, loaded Sessions and their
+  //                         environments, all left as they are. A successor whose
+  //                         AgentState has the same closed shape boots over it; any other
+  //                         disposes the group, which stops the runs with THIS App's logic,
+  //                         and starts the parked ones again with its own
   // SUSPENDED (stopped here; the successor rebuilds it fresh at load):
   //   - scheduler, messaging bridge   their modules' dispose effects stop them; each
   //                         successor's setup starts over from the record
-  //   - agent runs          approvals → deny, drives → abort (manager.shutdown below)
-  //   - session environments dispose() after the drive settles
   //   - reap timers         the terminal module's effect quiesces them
   // DETACHED (the object survives, this App's grip on it does not):
   //   - pty exit listeners  unsubscribed, so a dead generation never releases a
@@ -437,20 +495,18 @@ async function createInner(
   // A module with state of its own (sandbox settings, workflow refs, ssh tunnels, an
   // in-flight job) belongs in the right list here — the list is the contract, not a
   // description of today's modules.
-  // The tree's dispose runs every module's effects in reverse creation order; the
-  // asynchronous tail (waiting for aborted runs to end) cannot run inside a sync
-  // effect, so it is exposed as api.drained(), which the KERNEL awaits between dispose
-  // and the successor's boot (kernel/upgrade.ts). Nothing about the handover touches
-  // the registry.
-  let drained: Promise<void> | undefined;
+  // The tree's dispose runs every module's effects in reverse creation order. It leaves
+  // no asynchronous tail any more — the one it had was waiting for aborted runs to end, and
+  // a swap aborts none — so api.drained(), which the KERNEL awaits between dispose and the
+  // successor's boot (kernel/upgrade.ts), has nothing to report.
   ctx.effect(() => {
     // Held machine sessions are DELIVERED, not suspended: the machines module's own dispose
     // effect closes only its transient sessions and leaves the held ones in the registry.
-    const drains: Promise<unknown>[] = [];
-    if (manager !== null) drains.push(manager.shutdown(DRAIN_GRACE_MS));
+    // Nothing is stopped here: whether the runs go on is the SUCCESSOR's call, made once it
+    // is built (see the commit below), so a boot that fails re-adopts a state nobody touched.
+    manager?.detach();
     tree.dispose();
     if (business === null) terminals.quiesce();
-    drained = Promise.allSettled(drains).then(() => undefined);
   });
 
   // COMMIT: from here the App is built and nothing below throws, so the irreversible
@@ -459,6 +515,26 @@ async function createInner(
   // doc) so the NEXT App reads this build's.
   for (const group of doomedGroups) ctx.resources.disposeGroup?.(group);
   ctx.resources.register(RESOURCE_IFACES_RESOURCE_ID, DECLARED_RESOURCES);
+  // The Agent state changes hands here and not a line earlier, for the reason the plugin
+  // host below does: a create() that threw leaves the previous App's entry, and the runs
+  // behind it, exactly as they were. The disposer is THIS App's way of stopping — it runs
+  // when a successor cannot take the state over, and at process exit.
+  if (business !== null && manager !== null) {
+    const envelope: HandedAgentState = {
+      state: business.api<object>("SessionRuntimeModule", "AgentState"),
+      shape: agentStateShape,
+    };
+    ctx.resources.register(AGENT_STATE_RESOURCE_ID, envelope, () => {
+      envelope.stopped = manager.shutdown(DRAIN_GRACE_MS);
+    });
+    // A predecessor's state this build could not take over: the group's disposal above
+    // stopped its runs with the predecessor's own logic; what was running is started again
+    // with this one's, from the Trace, once those runs have ended.
+    if (handed !== undefined && !takenOver) {
+      const running = parkedSelf(parkedModules(context), "SessionsModule")?.running;
+      void resumeStopped(manager, handed, Array.isArray(running) ? running : []);
+    }
+  }
   // The imported plugin objects, handed to whoever boots next — parked state, registered
   // at the commit so a create() that threw leaves the previous App's host in place.
   ctx.resources.register(PLUGINS_RESOURCE_ID, plugins);
@@ -517,8 +593,27 @@ async function createInner(
     shutdown: async () => {
       if (manager !== null) await manager.shutdown(DRAIN_GRACE_MS);
     },
-    drained: () => drained,
+    drained: () => undefined,
   };
+}
+
+/** Starts the Sessions a swap had to stop again — after the stop has settled, one by one, a failure logged and passed over. */
+async function resumeStopped(
+  manager: SessionManager,
+  handed: HandedAgentState,
+  running: readonly Json[],
+): Promise<void> {
+  await handed.stopped;
+  for (const sessionId of running) {
+    if (typeof sessionId !== "string") continue;
+    try {
+      await manager.startTask(sessionId, [userText(RESUME_AFTER_UPDATE, "server")]);
+    } catch (err) {
+      console.error(
+        `[platform] could not resume ${sessionId} after the update: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 }
 
 /**
