@@ -1,15 +1,24 @@
 import { useState } from "react";
 import type { AssetManifest, ActivityRunSummary } from "@prismshadow/penguin-server/api";
 import { Button } from "../../components/ui/button";
-import { Input, Textarea } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { S } from "../../lib/strings";
 import { toneInk, toneSurface } from "../../lib/tone";
 import { ImagePreview } from "./image-preview";
+import { MediaBinding } from "./media-binding";
 import { MediaTextReview } from "./media-text-review";
+import {
+  SceneAssetTree,
+  firstSelection,
+  sameSelection,
+  type SceneAssetSelection,
+} from "./scene-asset-tree";
+import { buildSceneTree, filterTree, treeSelections, type SceneAssetType } from "./scene-assets";
 
 export function MediaWorkbench({
   manifest,
+  spec,
   runs,
   endpoint,
   editable,
@@ -29,6 +38,8 @@ export function MediaWorkbench({
   onAcceptText,
 }: {
   manifest: AssetManifest;
+  /** The saved specification owns scene order, which the tree follows. */
+  spec: Record<string, unknown> | null;
   runs: ActivityRunSummary[];
   endpoint: string;
   editable: boolean;
@@ -48,16 +59,22 @@ export function MediaWorkbench({
   onAcceptText: (runId: string) => void;
 }) {
   const [languageChoice, setLanguage] = useState("");
-  const [kind, setKind] = useState("all");
-  const [selected, setSelected] = useState("");
+  const [kind, setKind] = useState<SceneAssetType | "all">("all");
+  const [selected, setSelected] = useState<SceneAssetSelection | null>(null);
   const [voiceChoice, setVoice] = useState("");
   const language = manifest.assets[languageChoice]
     ? languageChoice
     : (Object.keys(manifest.assets)[0] ?? "en-US");
-  const entries = (manifest.assets[language] ?? []).filter(
-    (asset) => kind === "all" || asset.type === kind,
-  );
-  const asset = entries.find((entry) => entry.key === selected) ?? entries[0];
+  const group = manifest.assets[language] ?? [];
+  const tree = filterTree(buildSceneTree(spec, group), kind);
+  // A selection the filter or a rebuilt plan removed falls back to the first leaf,
+  // so the detail panel never points at an asset the tree no longer draws.
+  const drawn = treeSelections(tree);
+  const selection =
+    selected && drawn.some((entry) => sameSelection(entry, selected))
+      ? selected
+      : firstSelection(tree);
+  const asset = group.find((entry) => entry.key === selection?.key);
   const voice = voices.includes(voiceChoice) ? voiceChoice : (voices[0] ?? "");
   const imageUrl = `${endpoint}/media-image?${new URLSearchParams({
     language,
@@ -114,7 +131,7 @@ export function MediaWorkbench({
           size="sm"
           label={S.activities.mediaType}
           value={kind}
-          onChange={(event) => setKind(event.target.value)}
+          onChange={(event) => setKind(event.target.value as SceneAssetType | "all")}
         >
           {(["all", "audio", "image", "video", "animation"] as const).map((type) => (
             <option key={type} value={type}>
@@ -126,30 +143,18 @@ export function MediaWorkbench({
       {!asset ? (
         <p className="text-sm text-gray-500">{S.activities.noMediaAssets}</p>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[12rem_minmax(0,1fr)]">
+        <div className="grid gap-4 xl:grid-cols-[16rem_minmax(0,1fr)]">
           <div
-            aria-label={S.activities.assetList}
-            className="flex max-h-80 flex-col gap-1 overflow-auto"
+            aria-label={S.activities.sceneAssets}
+            className="max-h-96 overflow-auto rounded-lg border border-gray-200 p-2 dark:border-gray-800"
           >
-            {entries.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                aria-pressed={item.key === asset.key}
-                onClick={() => setSelected(item.key)}
-                className={`rounded-md border p-3 text-left text-xs ${item.key === asset.key ? "border-gray-400 bg-gray-100 dark:border-gray-600 dark:bg-gray-800" : "border-gray-200 dark:border-gray-800"}`}
-              >
-                <span className="block break-all font-medium">{item.key}</span>
-                <span className="text-gray-500">
-                  {S.activities.mediaTypes[item.type]} ·{" "}
-                  {item.path ? S.activities.boundMedia : S.activities.unboundMedia}
-                </span>
-              </button>
-            ))}
+            <SceneAssetTree tree={tree} selection={selection} onSelect={setSelected} />
           </div>
           <article className="min-w-0 space-y-3 rounded-lg border border-gray-200 p-4 dark:border-gray-800">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 className="break-all text-sm font-semibold">{asset.key}</h4>
+              <h4 className="break-all text-sm font-semibold">
+                {selection?.sceneId ? `${selection.sceneId} · ${asset.key}` : asset.key}
+              </h4>
               <span
                 className={`rounded px-2 py-0.5 text-xs ${asset.path ? toneSurface.success : toneSurface.attention}`}
               >
@@ -211,23 +216,21 @@ export function MediaWorkbench({
               {[...new Set(asset.usages.map((usage) => usage.sceneId))].join(", ") ||
                 S.activities.noSceneUsage}
             </p>
-            <Input
-              size="sm"
-              label={S.activities.assetPath}
-              hint={
-                asset.generatedAudio || asset.generatedImage
-                  ? undefined
-                  : S.activities.assetPathHint
-              }
-              value={asset.path ?? ""}
-              disabled={!editable || disabled || !!asset.generatedAudio || !!asset.generatedImage}
-              onChange={(event) =>
+            <MediaBinding
+              asset={asset}
+              siblings={group}
+              editable={editable}
+              disabled={disabled}
+              onChange={(path) =>
                 edit((entry) => {
-                  if (event.target.value) entry.path = event.target.value;
+                  if (path) entry.path = path;
                   else delete entry.path;
                 })
               }
             />
+            {(asset.type === "video" || asset.type === "animation") && (
+              <p className="text-xs text-gray-500">{S.activities.noInAppPreview}</p>
+            )}
             {asset.type === "audio" && (
               <>
                 <Textarea

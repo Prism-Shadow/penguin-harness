@@ -703,6 +703,7 @@ function ActivityEditor({
             {editedManifest ? (
               <MediaWorkbench
                 manifest={editedManifest}
+                spec={detail.draft.spec}
                 runs={runs}
                 endpoint={endpoint}
                 editable={editable}
