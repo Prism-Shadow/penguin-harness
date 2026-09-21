@@ -1,17 +1,17 @@
 ---
 title: Settings
-description: Manage your profile, preferences and password, and, as an admin, users, the proxy, upload limits and company mode.
+description: Manage your profile, preferences and password, and, as an admin, users, the proxy, upload limits, company mode and plugins.
 ---
 
-**System settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences and password, and, for an admin, the server's users, proxy, upload limits and company mode.
+**Settings** is one dialog for the settings that belong to neither a Project nor an agent: your profile, your interface preferences and password, and, for an admin, the server's users, proxy, upload limits, company mode and plugins, the sandbox among them.
 
 - Your own settings: [Profile](#profile), [General](#general), [Appearance](#appearance) and [Account](#account).
-- Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Upload limits](#upload-limits) and [Company mode](#company-mode).
+- Server settings, for admins: [Users](#users), [Proxy options](#proxy-options), [Upload limits](#upload-limits), [Company mode](#company-mode) and [Plugins](#plugins).
 
-## Open System settings
+## Open Settings
 
 1. At the bottom of the sidebar, select your user row, or your avatar when the sidebar is collapsed. The account menu opens.
-2. Select **System settings**.
+2. Select **Settings**.
 
 ## How the dialog is organized
 
@@ -29,6 +29,7 @@ The rail is grouped into **Personal** and **Server**:
 | [Proxy options](#proxy-options) | Server | Admin only |
 | [Upload limits](#upload-limits) | Server | Admin only |
 | [Company mode](#company-mode) | Server | Admin only |
+| [Plugins](#plugins) | Server | Admin only |
 
 Personal preferences apply the moment they are touched. There is no Save button and nothing to lose by closing the dialog. The nickname on the Profile page is the one exception: typed text needs a commit, and its **Save** sits beside the field rather than under the page.
 
@@ -240,3 +241,22 @@ Turning it off stops the organization scheduler and every organization route, an
 
 > [!NOTE]
 > Company mode is a beta. See [Company mode](/company-mode).
+
+## Plugins
+
+The **Plugins** page is admin-only and server-global. It shows the options each loaded plugin declares, as a form drawn from the plugin's own schema. A plugin that declares no options has no card here. A save reaches the plugin at once, with no restart.
+
+### Sandbox
+
+The sandbox is the first card on the page. It sets the confinement every agent command is spawned under:
+
+- **Confinement mode**: off (full access), workspace write only, or read-only.
+- **Network**: full access, local network (localhost only), or no network. The local level needs a backend that can enforce it.
+- **Temporary directory**: whether it stays writable. On by default, in either confining mode, because shells and most tools cannot start without one.
+- **Masked paths**: paths hidden from a confined command, one absolute path per line, at most 64.
+
+A sandbox backend installed as a plugin (bwrap, Seatbelt, DSH) enforces the mode. The card lists the mounted backends and the isolation each one implements, and says so when there is none. Without a backend, every mode but off refuses every agent command.
+
+A backend's own options, such as bwrap's program and its probe timeout of 1–30 seconds, or Seatbelt's program, are drawn inside the same card, and the card's one **Save** stores both. A backend that failed its check, for example on a wrong program path, is loaded again by that save, with no restart.
+
+The settings apply to Sessions created after the save; each Session keeps the policy it was created with. A restart keeps the settings.

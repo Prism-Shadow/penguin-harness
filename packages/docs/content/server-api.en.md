@@ -106,7 +106,7 @@ In desktop mode (a server spawned by the desktop app), every route in this group
 
 ## Server Settings (admin only)
 
-Server-wide proxy, attachment and company-mode settings.
+Server-wide proxy, attachment and company-mode settings, and the settings groups plugins declare.
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -114,6 +114,9 @@ Server-wide proxy, attachment and company-mode settings.
 | PUT | `/api/admin/settings` | Updates settings; omitted fields keep their current value, and an invalid field rejects the whole PUT. Returns the full updated settings |
 | GET | `/api/admin/settings/proxy-probe` | The reachability probe's targets: `{targets: [{provider, url}]}`. Makes no request |
 | POST | `/api/admin/settings/proxy-probe/:provider` | Probes one target over the server's outbound path, sending no credential: `{probe: {provider, url, outcome, ms, status?}}` |
+| GET | `/api/admin/plugin-config` | Every settings group modules declare, the sandbox's first: `{plugins: [{name, configuration, values, parent?, notices?}]}`. See [Plugin settings](#plugin-settings) |
+| PUT | `/api/admin/plugin-config` | Saves one group's values: `{name, values}`. Returns every group, as GET does |
+| POST | `/api/admin/plugin-config/action` | Runs one of a group's actions: `{name, action}`. Returns what happened, with every group as it stands afterwards |
 
 A probe's `outcome` is `reachable` for any HTTP answer, and otherwise `timeout`, `dns`, `refused`, `tls` or `network`. A `:provider` that is not in the target list returns `404` `probe_target_not_found`.
 
@@ -159,6 +162,14 @@ Two limits cannot be changed: the number of files per message (20) and the inlin
 ### Company mode switch
 
 `companyMode` is the server's **Enable company mode** switch, off by default. A change applies without a restart: while the switch is off, every organization route returns `404` `company_mode_off` and the organization scheduler fires nothing.
+
+### Plugin settings
+
+A settings group is a contribution to `PluginConfigProvider.groups`; the sandbox's comes first. Each group in the list carries its schema (`configuration`), its stored values merged onto the defaults with secrets masked, the group whose card it is drawn inside (`parent`), and live status lines (`notices`).
+
+Field types are `string`, `secret`, `boolean`, `number`, `enum` (with `options`) and `list` (one value per line, optional `maxItems`). A `number` may declare `minimum` and `maximum`, and a `string` or `list` a `pattern` (with `patternErrorMessage`) that every value or line must match.
+
+On PUT, fields the request omits keep their value, `null` or `""` clears one, and a secret sent back as its mask keeps the stored value. A refused field returns `400` `plugin_config_invalid` naming it; a name no group answers to returns `404` `plugin_config_unknown`. The declaring module picks the change up itself, through its watch or at its next read, with no restart.
 
 ## Machines (admin only)
 

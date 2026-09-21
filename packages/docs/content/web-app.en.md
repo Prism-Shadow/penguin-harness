@@ -32,7 +32,7 @@ The initial account is `admin`, and it starts with no password of its own. Until
 1. Start the server with `penguin web`.
 2. Find the framed notice in the server output. It contains the first-login link.
 3. Open the link in your browser. You are signed in as `admin`.
-4. Set a password: select **Change now** on the banner that appears, or go to **System settings** › **Account**. This first session needs no current password.
+4. Set a password: select **Change now** on the banner that appears, or go to **Settings** › **Account**. This first session needs no current password.
 
 > [!NOTE]
 > The link can be opened again. It lasts 30 days, or until a password is set. A restart prints a new link and the old one stops working. A link that no longer works lands on the login page with an explanation.
@@ -43,7 +43,7 @@ The desktop app does not print the notice. The server also skips it while a pass
 
 The login page asks for a **Username** and a **Password**, and has language and theme switches in its corner.
 
-There is no self-registration. An admin creates accounts on the **Users** page of System settings. Every new user automatically gets an independent initial Project named `<userId>-default_project`.
+There is no self-registration. An admin creates accounts on the **Users** page of Settings. Every new user automatically gets an independent initial Project named `<userId>-default_project`.
 
 While the initial password is still in use, a banner prompts the user to change it, with a **Change now** link. Closing the banner hides it for good.
 
@@ -99,7 +99,7 @@ From top to bottom, the sidebar holds:
 
 - The conversation list, with search and grouping by Workspace, agent or time. See [Chat](/chat).
 - Your user row at the bottom. It opens the account menu:
-  - **System settings**. See [Settings](/settings).
+  - **Settings**. See [Settings](/settings).
   - The update row, which names where an update stands and opens the update dialog. See [Updates](/updates).
   - **Sign out**.
 
@@ -132,7 +132,7 @@ Two parts of the app have no sidebar entry.
 
 ### Language and theme
 
-The interface language (English / 中文 / System) and the theme (Light / Dark / System) can be switched at any time in [System settings](/settings), and on the login page. Both are saved per browser.
+The interface language (English / 中文 / System) and the theme (Light / Dark / System) can be switched at any time in [Settings](/settings), and on the login page. Both are saved per browser.
 
 ## Projects and members
 

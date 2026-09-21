@@ -32,7 +32,7 @@ The macOS builds are Developer ID signed and notarized, and the Windows installe
 > chmod +x penguin-desktop-linux-x86_64.AppImage
 > ```
 
-The app opens signed in. The window signs itself in, so there is no password to type or to change: in the app's window, **System settings** has no **Account** page with **Change password**.
+The app opens signed in. The window signs itself in, so there is no password to type or to change: in the app's window, **Settings** has no **Account** page with **Change password**.
 
 ## Configure a model
 

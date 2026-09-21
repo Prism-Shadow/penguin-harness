@@ -106,7 +106,7 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 
 ## 服务器设置（仅管理员）
 
-服务器全局的代理、附件和公司模式设置。
+服务器全局的代理、附件和公司模式设置，以及插件声明的设置分组。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -114,6 +114,9 @@ curl -H "Authorization: Bearer $(cat ~/.penguin/data/api-token)" \
 | PUT | `/api/admin/settings` | 更新设置；省略的字段保持当前值，任何字段非法都会拒绝整个 PUT。返回更新后的完整设置 |
 | GET | `/api/admin/settings/proxy-probe` | 可达性探测的目标：`{targets: [{provider, url}]}`。不发起任何请求 |
 | POST | `/api/admin/settings/proxy-probe/:provider` | 经服务器的出站链路探测其中一个目标，不发送任何凭证：`{probe: {provider, url, outcome, ms, status?}}` |
+| GET | `/api/admin/plugin-config` | 模块声明的每个设置分组，沙盒的排在最前：`{plugins: [{name, configuration, values, parent?, notices?}]}`。见[插件设置](#插件设置) |
+| PUT | `/api/admin/plugin-config` | 保存一个分组的值：`{name, values}`。返回全部分组，与 GET 相同 |
+| POST | `/api/admin/plugin-config/action` | 执行某个分组的一个动作：`{name, action}`。返回执行结果，以及执行后的全部分组 |
 
 只要有 HTTP 响应返回，探测的 `outcome` 就是 `reachable`，否则为 `timeout`、`dns`、`refused`、`tls` 或 `network`。`:provider` 不在目标列表里时返回 `404` `probe_target_not_found`。
 
@@ -159,6 +162,14 @@ PUT 按如下规则校验：
 ### 公司模式开关
 
 `companyMode` 是服务器的**启用公司模式**开关，默认关闭。修改无需重启即生效：开关关闭期间，所有组织路由都返回 `404` `company_mode_off`，组织的调度器也不会触发任何事件。
+
+### 插件设置
+
+设置分组是投给 `PluginConfigProvider.groups` 的 contribution，沙盒的排在最前。列表中的每个分组带有它的 schema（`configuration`）、合并到缺省值上的存储值（密钥掩码）、它被画在哪个分组的卡片里（`parent`），以及实时状态行（`notices`）。
+
+字段类型有 `string`、`secret`、`boolean`、`number`、`enum`（带 `options`）和 `list`（每行一个值，可选 `maxItems`）。`number` 可声明 `minimum` 与 `maximum`；`string` 与 `list` 可声明每个值或每一行都须匹配的 `pattern`（配 `patternErrorMessage`）。
+
+PUT 时，请求省略的字段保持原值，`null` 或 `""` 清除该字段，密钥按掩码原样送回即保持存储值。被拒的字段返回 `400` `plugin_config_invalid` 并点名该字段；没有分组叫这个名字时返回 `404` `plugin_config_unknown`。声明它的模块自己经 watch 或下次读取拿到改动，无需重启。
 
 ## 机器（仅管理员）
 

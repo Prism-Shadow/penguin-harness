@@ -17,7 +17,7 @@ Check which version of PenguinHarness you are running, and update it in the way 
 In the Web App:
 
 - The new-chat page shows the running version on a version line such as `vX.Y.Z · Last updated Jul 26`. The release workflow stamps the date into the build, so it is shown without any network access. Dev builds and releases from before the stamping, v0.1.2 and earlier, show no date.
-- In the sidebar user menu, the update row directly under **System settings** shows the running version, muted, on its right.
+- In the sidebar user menu, the update row directly under **Settings** shows the running version, muted, on its right.
 
 In a terminal:
 
@@ -32,7 +32,7 @@ Updating works the way an app updater does, from one dialog.
 
 Two entries open the dialog:
 
-- The update row directly under **System settings** in the sidebar user menu. The row says where things stand: **Check for updates**, **Checking…**, **New version vX available**, **Downloading vX 42%** or **Restart to update to vX**. Whatever it says, it opens the dialog.
+- The update row directly under **Settings** in the sidebar user menu. The row says where things stand: **Check for updates**, **Checking…**, **New version vX available**, **Downloading vX 42%** or **Restart to update to vX**. Whatever it says, it opens the dialog.
 - The small superscript on the new-chat page's version line. It reads **New version available** when a release is offered, **Downloading update** while a download runs, and **Restart to update** once the download is ready.
 
 ### Run the update

@@ -170,6 +170,6 @@ The approval mechanism itself is covered in [Tools & Approval](/tools).
 ### Moving Trace files across deployments
 
 - **Export:** in a conversation's Trace panel, **Export** downloads the selected file verbatim as JSONL.
-- **Import:** in [System settings](/settings#import-a-trace) → **General**, **Import Trace** adds a file to the Project and agent you choose, as a new conversation. Files can be up to 14 MB.
+- **Import:** in [Settings](/settings#import-a-trace) → **General**, **Import Trace** adds a file to the Project and agent you choose, as a new conversation. Files can be up to 14 MB.
 
 An import whose session id already exists anywhere in this installation is rejected, so an imported file always becomes index 001 of a new Session.

@@ -42,7 +42,7 @@ Notes:
 Commands an agent runs with `exec_command` inherit the host environment, with these changes:
 
 - **Removed:** `PORT`, `HOST`, `FORCE_COLOR`, `CLICOLOR_FORCE` and every `PENGUIN_*` variable. They configure PenguinHarness itself, not the command. Without this, a dev server started by `exec_command` would read `PORT` and try to bind the port meant for PenguinHarness instead of choosing its own.
-- **Proxy:** in Sessions the server runs, the **Agent environment uses the proxy** switch in [System settings](/settings#proxy-options) decides the proxy variables. Off removes `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY`; on injects the configured proxy address, or passes the host's variables through when no address is set.
+- **Proxy:** in Sessions the server runs, the **Agent environment uses the proxy** switch in [Settings](/settings#proxy-options) decides the proxy variables. Off removes `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY`; on injects the configured proxy address, or passes the host's variables through when no address is set.
 - **Vault:** the agent's [Vault](#vault) is applied on top, so setting `PORT` or a `PENGUIN_*` variable there does reach commands.
 - **Control variables:** a server-driven Session then injects `PENGUIN_API_URL`, `PENGUIN_API_TOKEN`, `PENGUIN_PROJECT_ID`, `PENGUIN_AGENT_ID` and `PENGUIN_SESSION_ID` (plus `PENGUIN_ORG_ID` in company mode), so the agent's own `penguin` calls reach the server that runs it. These override Vault entries of the same name. See [CLI Reference](/cli).
 - **Forced:** `GIT_EDITOR`, `GIT_TERMINAL_PROMPT`, `TERM`, `NO_COLOR`, `PAGER` and `GIT_PAGER` always get fixed values, so a command cannot hang waiting on an editor, a credential prompt or a pager. Nothing overrides them, the Vault included.
