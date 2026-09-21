@@ -47,6 +47,7 @@ async function fixture(page) {
   let imageFailure = false;
   // Media the activity workspace holds, as the upload routes would report it.
   const uploads = [];
+  const audioRequests = [];
   let imageCandidateReads = 0;
   let imageCandidateFailure = false;
   let imageGenerationFailure = false;
@@ -287,6 +288,18 @@ async function fixture(page) {
     }
     if (p === `${base}/act_test/generate-audio`) {
       const body = request.postDataJSON();
+      // The real server refuses a second concurrent generation for one activity.
+      if (runs.some((run) => run.status === "running"))
+        return json(
+          {
+            error: {
+              code: "generation_running",
+              message: "This activity already has a running generation.",
+            },
+          },
+          409,
+        );
+      audioRequests.push({ assetKey: body.assetKey, language: body.language, voice: body.voice });
       runs.unshift({
         kind: "audio",
         audio: {
@@ -471,6 +484,11 @@ async function fixture(page) {
       runs[0].candidate = JSON.stringify({ ...runs[0].mediaText, text });
     },
     errors,
+    audioRequests,
+    finishAudio() {
+      for (const run of runs)
+        if (run.kind === "audio" && run.status === "running") run.status = "succeeded";
+    },
     imageRequests,
     setImageFailure(value) {
       imageFailure = value;
@@ -636,6 +654,65 @@ test("plans media, preserves unsaved bindings on navigation, and saves paths for
   await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
   await expect(editor).toHaveValue(JSON.stringify(manifest, null, 2));
   await expect(page.getByText(/1 assets, 1 paths assigned, 0 unbound/)).toBeVisible();
+  expect(f.errors).toEqual([]);
+});
+
+test("reports speech coverage and generates every missing narration at once", async ({ page }) => {
+  const f = await fixture(page);
+  await create(page);
+  await page
+    .getByRole("textbox", { name: "Specification JSON", exact: true })
+    .fill(JSON.stringify(spec));
+  await page.getByRole("button", { name: "Validate and save", exact: true }).click();
+  await page.getByRole("button", { name: "Plan media", exact: true }).click();
+
+  // Three narrations: one already bound, one ready to generate, one still without a script.
+  const narration = (key, extra) => ({
+    key,
+    type: "audio",
+    description: `${key} line`,
+    usages: [{ sceneId: "intro", sourceKey: key, occurrence: 1, sceneOccurrenceCount: 1 }],
+    ...extra,
+  });
+  await page.getByText("Advanced: asset manifest JSON", { exact: true }).click();
+  await page.getByRole("textbox", { name: /^Asset manifest/ }).fill(
+    JSON.stringify({
+      productCode: "words",
+      refNum: 12,
+      assets: {
+        "en-US": [
+          narration("greeting", { script: "Hello there", path: "media/audio/greeting.wav" }),
+          narration("welcome", { script: "Welcome along" }),
+          narration("prompt", { script: "Pick a word" }),
+          narration("silent", {}),
+        ],
+      },
+    }),
+  );
+  await page.getByRole("button", { name: "Validate and save media", exact: true }).click();
+
+  await expect(page.getByText("1 of 4 narrations bound")).toBeVisible();
+  await expect(page.getByText("2 can be generated now")).toBeVisible();
+  await expect(page.getByText(/1 need a script of 1.5000 characters first/)).toBeVisible();
+
+  // The button names the same count the summary does, and asks before spending runs.
+  await page.getByRole("button", { name: "Generate 2 missing", exact: true }).click();
+  await expect(page.getByText(/Start 2 speech runs for en-US/)).toBeVisible();
+  await page.getByRole("button", { name: "Generate 2 missing", exact: true }).last().click();
+
+  // The server runs one generation per activity, so the queue waits rather than
+  // firing both at once and having the second refused.
+  await expect(page.getByText(/1 narration queued/)).toBeVisible();
+  expect(f.audioRequests.map((request) => request.assetKey)).toEqual(["welcome"]);
+  expect(f.audioRequests.every((request) => request.language === "en-US")).toBe(true);
+  expect(f.audioRequests.every((request) => request.voice === "Kore")).toBe(true);
+
+  // Once the first run finishes, the next narration is asked for.
+  f.finishAudio();
+  await expect
+    .poll(() => f.audioRequests.map((request) => request.assetKey))
+    .toEqual(["welcome", "prompt"]);
+  await expect(page.getByRole("button", { name: "Stop queue", exact: true })).toHaveCount(0);
   expect(f.errors).toEqual([]);
 });
 

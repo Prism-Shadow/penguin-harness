@@ -65,6 +65,30 @@ export const en: Strings = {
     uploadedBinding: "Stored with this activity.",
     checkoutBinding: "Read from the WAF checkout.",
     playMedia: "Play bound media",
+    waveform: "Waveform",
+    showWaveform: "Show waveform",
+    waveformLoading: "Reading the clip…",
+    waveformUnavailable: "This clip's waveform could not be drawn. Playback still works.",
+    bulkSpeechTitle: "Speech coverage",
+    bulkSpeechHelp:
+      "Narration counts as covered once it has any binding, whether generated, uploaded or taken from the checkout.",
+    bulkSpeechTally: (ready: number, total: number) => `${ready} of ${total} narrations bound`,
+    bulkSpeechPending: (count: number) => `${count} can be generated now`,
+    bulkSpeechBlocked: (count: number) => `${count} need a script of 1–5000 characters first`,
+    bulkSpeechNone: "This language has no narration.",
+    bulkSpeechGenerate: (count: number) => `Generate ${count} missing`,
+    bulkSpeechConfirm: (count: number, language: string) =>
+      `Start ${count} speech runs for ${language}? Each run uses the selected agent.`,
+    bulkSpeechStarted: (count: number) => `Started ${count} speech runs`,
+    bulkSpeechQueued: (count: number) =>
+      `${count} narration${count === 1 ? "" : "s"} queued; each runs after the one before it`,
+    bulkSpeechStop: "Stop queue",
+    speechState: {
+      ready: "Bound",
+      missing: "Needs speech",
+      scriptMissing: "Needs a script",
+      scriptTooLong: "Script too long",
+    },
     mediaCategories: {
       audio: "Audio",
       image: "Images",
