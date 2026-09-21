@@ -18,12 +18,49 @@
  * Workspaces are one row per machine, as the sidebar groups them — each is single-use, and a
  * row per path would be one-Session noise.
  */
-import type { SessionActivityInfo } from "@prismshadow/penguin-server/api";
+import type { MachinesResponse, SessionActivityInfo } from "@prismshadow/penguin-server/api";
 import { sessionActivity } from "../../lib/session-activity";
 import type { SessionActivity } from "../../lib/session-activity";
 import { isSessionUnread } from "../../lib/session-seen";
 import type { SessionSeenState } from "../../lib/session-seen";
 import { isTempWorkspace, workspaceLabel } from "../../lib/session-grouping";
+import { workspaceMachines } from "../../lib/workspace-machines";
+
+/** One server the dashboard asks: this one, or a machine reached through `/server/<id>/`. */
+export interface DashboardServer {
+  /** The machine's own id; null for the server serving this page. */
+  machineId: string | null;
+  /** The ssh alias, or this host's name for the local entry. */
+  label: string;
+  local: boolean;
+}
+
+/**
+ * Which servers to ask, and how many machines are known to be out of reach before asking.
+ *
+ * A machine is a candidate once it has an identity (`selectable` — the same test the
+ * Workspace picker applies), but that fact is about ssh, not about its API: a forward to
+ * `/server/<id>/api/…` has somewhere to go only while this server holds a connection to it
+ * (MachineInfo.connection). One without is counted as silent straight away — the request
+ * could only come back `not_connected`, every poll, for as long as the page is open.
+ */
+export function dashboardServers(state: MachinesResponse): {
+  servers: DashboardServer[];
+  unconnected: number;
+} {
+  const connected = new Set(
+    state.machines.filter((m) => m.connection !== null).map((m) => m.machineId),
+  );
+  const servers: DashboardServer[] = [];
+  let unconnected = 0;
+  for (const m of workspaceMachines(state)) {
+    if (m.local) servers.push({ machineId: null, label: m.label, local: true });
+    else if (!m.selectable || m.id === null) continue;
+    else if (connected.has(m.id)) servers.push({ machineId: m.id, label: m.label, local: false });
+    else unconnected += 1;
+  }
+  return { servers, unconnected };
+}
 
 /** One server's answer, with the machine it came from. */
 export interface DashboardSource {

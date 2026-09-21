@@ -13,7 +13,7 @@
  * counted and said, never silently dropped; a page that shows fewer rows than there are
  * Workspaces must say why. Non-admins cannot list machines, so they get this server's own.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import * as api from "../../api/endpoints";
 import { useProject } from "../../state/project";
@@ -23,26 +23,24 @@ import { useDocumentTitle } from "../../lib/use-document-title";
 import { toneDot, toneInk, toneStrip } from "../../lib/tone";
 import type { Tone } from "../../lib/tone";
 import { ICON_GAP } from "../../lib/icon-scale";
-import { workspaceMachines } from "../../lib/workspace-machines";
 import { noteSessionSeen, useSessionSeen } from "../../lib/session-seen";
 import { rememberSessionMachine } from "../../lib/session-machines";
 import { EmptyState } from "../../components/ui/empty-state";
 import { SkeletonList } from "../../components/ui/skeleton";
 import { SessionActivityIcon } from "../../components/ui/session-activity-icon";
 import { shortSessionId } from "../chat/agent-topology";
-import { dashboardRows, dashboardTotals } from "./dashboard-view";
-import type { DashboardRow, DashboardSession, DashboardSource } from "./dashboard-view";
+import { dashboardRows, dashboardServers, dashboardTotals } from "./dashboard-view";
+import type {
+  DashboardRow,
+  DashboardServer,
+  DashboardSession,
+  DashboardSource,
+} from "./dashboard-view";
 
 /** A running Session moves in seconds; the board follows at a pace a phone's battery forgives. */
 const REFRESH_MS = 15_000;
 
-interface Server {
-  machineId: string | null;
-  label: string;
-  local: boolean;
-}
-
-const THIS_SERVER: Server = { machineId: null, label: "", local: true };
+const THIS_SERVER: DashboardServer = { machineId: null, label: "", local: true };
 
 /** The two lists a row can unfold, by the count that names each. */
 type Kind = "running" | "pendingReview";
@@ -147,39 +145,54 @@ export function DashboardPage() {
       return next;
     });
 
+  /**
+   * The Project a poll is out for. The timer, the tab coming back and the mount all ask, and
+   * an answer through a machine can take longer than the interval: a second poll for the same
+   * Project waits for the first rather than racing it, so an older answer never lands on top
+   * of a newer one. A poll for another Project goes ahead, and the one it replaced is dropped.
+   */
+  const polling = useRef<string | null>(null);
+
   const load = useCallback(async () => {
-    if (projectId === null) return;
-    let servers: Server[] = [THIS_SERVER];
+    if (projectId === null || polling.current === projectId) return;
+    polling.current = projectId;
     try {
-      const machines = workspaceMachines(await api.getMachines(projectId)).filter(
-        (m) => m.local || (m.selectable && m.id !== null),
-      );
-      if (machines.length > 0) {
-        servers = machines.map((m) => ({ machineId: m.id, label: m.label, local: m.local }));
+      let servers: DashboardServer[] = [THIS_SERVER];
+      let unconnected = 0;
+      try {
+        const asked = dashboardServers(await api.getMachines(projectId));
+        if (asked.servers.length > 0) servers = asked.servers;
+        unconnected = asked.unconnected;
+      } catch {
+        // The machine list is admin-only; everyone else reads this server, which holds its own.
       }
-    } catch {
-      // The machine list is admin-only; everyone else reads this server, which holds its own.
+      const answers = await Promise.allSettled(
+        servers.map(async (server): Promise<DashboardSource> => {
+          const { sessions } = await api.getSessionsOverview(projectId, server.machineId);
+          return {
+            machineId: server.machineId,
+            machineLabel: server.label,
+            local: server.local,
+            sessions,
+          };
+        }),
+      );
+      if (polling.current !== projectId) return;
+      const sources = answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
+      const failed = answers.flatMap((a) => (a.status === "rejected" ? [a.reason as unknown] : []));
+      if (sources.length === 0) {
+        // Nobody answered: the rows on screen are counts nothing stands behind any more.
+        setError(apiErrorText(failed[0]));
+        setSilent(0);
+        setSources(null);
+        return;
+      }
+      setError(null);
+      setSilent(failed.length + unconnected);
+      setSources(sources);
+    } finally {
+      if (polling.current === projectId) polling.current = null;
     }
-    const answers = await Promise.allSettled(
-      servers.map(async (server): Promise<DashboardSource> => {
-        const { sessions } = await api.getSessionsOverview(projectId, server.machineId);
-        return {
-          machineId: server.machineId,
-          machineLabel: server.label,
-          local: server.local,
-          sessions,
-        };
-      }),
-    );
-    const sources = answers.flatMap((a) => (a.status === "fulfilled" ? [a.value] : []));
-    const failed = answers.flatMap((a) => (a.status === "rejected" ? [a.reason as unknown] : []));
-    if (sources.length === 0) {
-      setError(apiErrorText(failed[0]));
-      return;
-    }
-    setError(null);
-    setSilent(failed.length);
-    setSources(sources);
   }, [projectId]);
 
   useEffect(() => {

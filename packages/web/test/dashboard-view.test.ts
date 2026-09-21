@@ -3,11 +3,21 @@
  * Pinned: the counts are the sidebar's glyph states — running is a live status, to review is
  * a settled Session unread in this browser — a subagent Session is nobody's count, a
  * Workspace is per machine, temporary Workspaces merge into one row per machine, each list
- * names its Sessions latest first, and the order puts what waits on a person first.
+ * names its Sessions latest first, and the order puts what waits on a person first. Which
+ * servers are asked: this one and every machine a forward can reach — one without a
+ * connection is counted as silent without being asked.
  */
 import { describe, expect, it } from "vitest";
-import type { SessionActivityInfo } from "@prismshadow/penguin-server/api";
-import { dashboardRows, dashboardTotals } from "../src/features/dashboard/dashboard-view";
+import type {
+  MachineInfo,
+  MachinesResponse,
+  SessionActivityInfo,
+} from "@prismshadow/penguin-server/api";
+import {
+  dashboardRows,
+  dashboardServers,
+  dashboardTotals,
+} from "../src/features/dashboard/dashboard-view";
 import type { DashboardRow } from "../src/features/dashboard/dashboard-view";
 import type { SessionSeenState } from "../src/lib/session-seen";
 
@@ -187,5 +197,54 @@ describe("dashboardRows", () => {
     );
     expect(dashboardTotals(rows)).toEqual({ running: 2, pendingReview: 1 });
     expect(dashboardTotals([])).toEqual({ running: 0, pendingReview: 0 });
+  });
+});
+
+describe("dashboardServers", () => {
+  const machine = (over: Partial<MachineInfo> & { alias: string }): MachineInfo => ({
+    id: `ssh:${over.alias}`,
+    machineId: null,
+    installed: { version: "9.9.9", at: "2026-08-24T12:00:00.000Z" },
+    local: false,
+    root: "$HOME/.penguin/data",
+    connection: null,
+    api: null,
+    status: null,
+    ...over,
+  });
+  const state = (machines: MachineInfo[]): MachinesResponse => ({
+    machines,
+    imageVersion: "9.9.9",
+    job: null,
+    jobs: [],
+  });
+  const here = machine({ alias: "workstation", id: "local", local: true, machineId: "LOCAL" });
+
+  it("asks this server and each machine it holds a connection to", () => {
+    const far = machine({ alias: "far-box", machineId: "FAR", connection: { pid: 7 } });
+    expect(dashboardServers(state([here, far]))).toEqual({
+      servers: [
+        { machineId: null, label: "workstation", local: true },
+        { machineId: "FAR", label: "far-box", local: false },
+      ],
+      unconnected: 0,
+    });
+  });
+
+  it("counts a machine with no connection as silent rather than asking it", () => {
+    // The forward could only answer `not_connected`, on every poll.
+    const idle = machine({ alias: "idle-box", machineId: "IDLE" });
+    const result = dashboardServers(state([here, idle]));
+    expect(result.servers.map((s) => s.label)).toEqual(["workstation"]);
+    expect(result.unconnected).toBe(1);
+  });
+
+  it("leaves out what could hold no Session of this Project: not installed, or no identity", () => {
+    const bare = machine({ alias: "bare", installed: null });
+    const anonymous = machine({ alias: "anonymous", connection: { pid: 9 } });
+    expect(dashboardServers(state([here, bare, anonymous]))).toEqual({
+      servers: [{ machineId: null, label: "workstation", local: true }],
+      unconnected: 0,
+    });
   });
 });
