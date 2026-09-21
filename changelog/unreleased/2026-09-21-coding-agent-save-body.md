@@ -3,6 +3,7 @@
 - **Date:** 2026-09-21
 - **Type:** fix
 - **Scope:** `web`, `coding-agents`
+- **PR:** [#26](https://github.com/nicolaepocroianu/penguin-harness/pull/26)
 
 ## Details
 
