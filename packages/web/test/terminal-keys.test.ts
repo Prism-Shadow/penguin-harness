@@ -77,6 +77,18 @@ describe("applyModifiers", () => {
     expect(applyModifiers("hello", CTRL)).toBe("hello");
   });
 
+  it("leaves a multi-character chunk alone under Alt", () => {
+    // ESC in front of a paste pairs with its first character: readline would take `ESC l` as
+    // downcase-word and the command would arrive without its first letter.
+    expect(applyModifiers("ls -la", ALT)).toBe("ls -la");
+    expect(applyModifiers("\x1b[200~ls\x1b[201~", ALT)).toBe("\x1b[200~ls\x1b[201~");
+    expect(applyModifiers("hello", { ctrl: true, alt: true })).toBe("hello");
+  });
+
+  it("counts a character outside the BMP as one", () => {
+    expect(applyModifiers("😀", ALT)).toBe("\x1b😀");
+  });
+
   it("sends the plain character where the pairing has no control code", () => {
     expect(applyModifiers("1", CTRL)).toBe("1");
   });
