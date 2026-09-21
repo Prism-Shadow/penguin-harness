@@ -3,7 +3,7 @@
 - **Date:** 2026-09-21
 - **Type:** feature
 - **Scope:** `server`, `core`
-- **PR:** [#0000](https://github.com/Prism-Shadow/penguin-harness/pull/0000)
+- **PR:** [#818](https://github.com/Prism-Shadow/penguin-harness/pull/818)
 
 [中文版](2026-09-21-agent-state-handover.zh.md)
 
